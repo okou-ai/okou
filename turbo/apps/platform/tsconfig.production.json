@@ -4,6 +4,7 @@
     "node_modules",
     "dist",
     "src/**/__tests__/**",
+    "src/**/__benches__/**",
     "src/**/*.test.ts",
     "src/**/*.test.tsx",
     "src/**/*.spec.ts",

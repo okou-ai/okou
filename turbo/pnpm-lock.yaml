@@ -29,6 +29,9 @@ patchedDependencies:
   '@earendil-works/pi-coding-agent@0.85.1':
     hash: 7845aa2cc2c62908db74168513b9a2df083f1eedc398fe74edf4ede237ded8f9
     path: patches/@earendil-works__pi-coding-agent@0.85.1.patch
+  '@testing-library/jest-dom@6.9.1':
+    hash: 82080105f6adaf176f58b0ec2d5017702df2a069e46194cd9e1b0054f392a8bf
+    path: patches/@testing-library__jest-dom@6.9.1.patch
 
 importers:
 
@@ -758,7 +761,7 @@ importers:
         version: 4.2.2(vite@8.0.16(@types/node@24.13.4)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))
       '@testing-library/jest-dom':
         specifier: ^6.6.3
-        version: 6.9.1
+        version: 6.9.1(patch_hash=82080105f6adaf176f58b0ec2d5017702df2a069e46194cd9e1b0054f392a8bf)
       '@testing-library/react':
         specifier: ^16.3.0
         version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -1200,7 +1203,7 @@ importers:
         version: 10.4.1
       '@testing-library/jest-dom':
         specifier: ^6.7.0
-        version: 6.9.1
+        version: 6.9.1(patch_hash=82080105f6adaf176f58b0ec2d5017702df2a069e46194cd9e1b0054f392a8bf)
       '@testing-library/react':
         specifier: ^16.1.0
         version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -1208,8 +1211,8 @@ importers:
         specifier: ^14.6.1
         version: 14.6.1(@testing-library/dom@10.4.1)
       '@types/node':
-        specifier: ^24.3.0
-        version: 24.3.0
+        specifier: ^24.13.4
+        version: 24.13.4
       '@types/react':
         specifier: ^19.1.12
         version: 19.2.14
@@ -1221,7 +1224,7 @@ importers:
         version: typescript@7.0.2
       '@vitejs/plugin-react':
         specifier: ^6.0.1
-        version: 6.0.1(vite@8.0.16(@types/node@24.3.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))
+        version: 6.0.1(vite@8.0.16(@types/node@24.13.4)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))
       autoprefixer:
         specifier: ^10.5.4
         version: 10.5.4(postcss@8.5.25)
@@ -1248,7 +1251,7 @@ importers:
         version: '@typescript/typescript6@6.0.2'
       vitest:
         specifier: ^5.0.0
-        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@24.3.0)(@vitest/coverage-v8@5.0.0)(@vitest/ui@5.0.0)(happy-dom@20.11.6(bufferutil@4.1.0)(utf-8-validate@6.0.6))(msw@2.13.2(@types/node@24.3.0)(@typescript/typescript6@6.0.2))(vite@8.0.16(@types/node@24.3.0)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))
+        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@24.13.4)(@vitest/coverage-v8@5.0.0)(@vitest/ui@5.0.0)(happy-dom@20.11.6(bufferutil@4.1.0)(utf-8-validate@6.0.6))(msw@2.13.2(@types/node@24.13.4)(@typescript/typescript6@6.0.2))(vite@8.0.16(@types/node@24.13.4)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))
 
 packages:
 
@@ -14923,7 +14926,7 @@ snapshots:
       picocolors: 1.1.1
       pretty-format: 27.5.1
 
-  '@testing-library/jest-dom@6.9.1':
+  '@testing-library/jest-dom@6.9.1(patch_hash=82080105f6adaf176f58b0ec2d5017702df2a069e46194cd9e1b0054f392a8bf)':
     dependencies:
       '@adobe/css-tools': 4.4.4
       aria-query: 5.3.2
@@ -15185,7 +15188,7 @@ snapshots:
 
   '@types/mute-stream@0.0.4':
     dependencies:
-      '@types/node': 24.3.0
+      '@types/node': 22.20.2
 
   '@types/mysql@2.15.27':
     dependencies:
@@ -15282,11 +15285,11 @@ snapshots:
 
   '@types/ws@7.4.7':
     dependencies:
-      '@types/node': 24.3.0
+      '@types/node': 12.20.55
 
   '@types/ws@8.18.1':
     dependencies:
-      '@types/node': 24.3.0
+      '@types/node': 24.13.4
 
   '@types/yauzl@2.10.3':
     dependencies:
@@ -16084,7 +16087,7 @@ snapshots:
 
   buffer-image-size@0.6.4:
     dependencies:
-      '@types/node': 24.3.0
+      '@types/node': 24.13.4
 
   buffer@5.7.1:
     dependencies:
@@ -17521,7 +17524,7 @@ snapshots:
 
   happy-dom@20.11.6(bufferutil@4.1.0)(utf-8-validate@6.0.6):
     dependencies:
-      '@types/node': 24.3.0
+      '@types/node': 24.13.4
       '@types/whatwg-mimetype': 3.0.2
       '@types/ws': 8.18.1
       buffer-image-size: 0.6.4

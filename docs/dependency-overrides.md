@@ -6,6 +6,8 @@ This audit covers the 79 entries in `turbo/pnpm-workspace.yaml` under `overrides
 
 The resulting configuration has 11 overrides, removing 68. Tiptap's 19 direct declarations now match its already installed 3.31.0 version, making 28 blanket editor overrides unnecessary (including seven packages no longer in the graph).
 
+The additional `@testing-library/jest-dom@6.9.1` patch changes only its Vitest declaration from the obsolete single-parameter `Assertion` augmentation to Vitest 5's public `Matchers` interface. UI's Node type resolution is aligned with Platform and the root test tools so both consumers share Vitest's matcher declarations. Remove this test-only patch when an upstream jest-dom release supports Vitest 5; the three Pi runtime patches remain unchanged.
+
 ## Method and limits
 
 - Read all 25 commits touching the workspace configuration and the relevant source PRs. Many entries first appeared together in #22454 as dependency hardening; that PR did not document a separate rationale for each entry. Historical purpose below is classified from those changes, not a claim that every original pin had a dedicated advisory.

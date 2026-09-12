@@ -38,29 +38,30 @@ export default class BenchP90Reporter implements Reporter {
           test.parent.type === "suite"
             ? test.parent.fullName
             : mod.relativeModuleId;
-        for (const group of test.benchmarks()) {
-          for (const result of group.tasks) {
-            const samples = result.latency.samples;
-            if (!samples || samples.length === 0) {
-              throw new Error(
-                `Benchmark ${result.name} has no retained latency samples`,
-              );
-            }
-            const sortedSamples = [...samples].sort((a, b) => {
-              return a - b;
-            });
-            const benchmarks = groupsByName.get(groupName) ?? [];
-            benchmarks.push({
-              id: test.id,
-              name: result.name,
-              ...result.latency,
-              hz: result.throughput.mean,
-              totalTime: result.totalTime,
-              p90: percentile(sortedSamples, 0.9),
-              sampleCount: samples.length,
-            });
-            groupsByName.set(groupName, benchmarks);
+        const results = test.benchmarks().flatMap((group) => {
+          return group.tasks;
+        });
+        for (const result of results) {
+          const samples = result.latency.samples;
+          if (!samples || samples.length === 0) {
+            throw new Error(
+              `Benchmark ${result.name} has no retained latency samples`,
+            );
           }
+          const sortedSamples = [...samples].sort((a, b) => {
+            return a - b;
+          });
+          const benchmarks = groupsByName.get(groupName) ?? [];
+          benchmarks.push({
+            id: test.id,
+            name: result.name,
+            ...result.latency,
+            hz: result.throughput.mean,
+            totalTime: result.totalTime,
+            p90: percentile(sortedSamples, 0.9),
+            sampleCount: samples.length,
+          });
+          groupsByName.set(groupName, benchmarks);
         }
       }
 
