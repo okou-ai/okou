@@ -188,6 +188,7 @@ describe("getAllFeatureStates", () => {
     });
     expect(staffOrgStates[FeatureSwitchKey.Lab]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.OkouDebug]).toBe(true);
+    expect(staffOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.AgentMessageMath]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ProgressiveArtifactPreview]).toBe(
       true,
@@ -213,6 +214,7 @@ describe("getAllFeatureStates", () => {
     });
     expect(otherOrgStates[FeatureSwitchKey.Lab]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.OkouDebug]).toBe(false);
+    expect(otherOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.AgentMessageMath]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.ProgressiveArtifactPreview]).toBe(
       false,
@@ -341,7 +343,7 @@ describe("getFeatureSwitchMetadata", () => {
     expect(metadata[FeatureSwitchKey.MarkdownTime].rolloutStage).toBe(
       "released",
     );
-    expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("beta");
+    expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
     expect(metadata[FeatureSwitchKey.IntroVideo].rolloutStage).toBe("beta");
     expect(metadata[FeatureSwitchKey.WelcomeThread].rolloutStage).toBe("beta");
     expect(metadata[FeatureSwitchKey.AhrefsConnector].rolloutStage).toBe(
