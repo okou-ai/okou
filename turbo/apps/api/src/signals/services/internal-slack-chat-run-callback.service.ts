@@ -7,11 +7,8 @@ import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { agents } from "@okouai/db/schema/agent";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { and, countDistinct, eq, isNotNull } from "drizzle-orm";
 import { buildAgentResponseMessage } from "../../lib/slack-blocks";
-import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import type { Db } from "../external/db";
 import { chatEventTypeIn } from "./chat-event-type.service";
@@ -251,7 +248,6 @@ async function deliverClaimedSlackChatCallback(
       threadTs: payload.threadTs,
       blocks: buildAgentResponseMessage(
         messageContent,
-        presentation.logsUrl,
         presentation.footerText,
       ),
     },
@@ -417,9 +413,6 @@ export async function deliverSlackChatAdmissionFailure(
   if (mentionerCount > 1) {
     footerParts.push(`Reply to <@${binding.slackUserId}>`);
   }
-  const logsUrl = isFeatureEnabled(FeatureSwitchKey.OkouDebug, featureContext)
-    ? `${env("APP_URL")}/activities`
-    : undefined;
   const botToken = await decryptPersistentSecretValue(
     binding.encryptedBotToken,
     featureContext,
@@ -432,7 +425,6 @@ export async function deliverSlackChatAdmissionFailure(
       threadTs: args.threadTs,
       blocks: buildAgentResponseMessage(
         event.content,
-        logsUrl,
         footerParts.length > 0 ? footerParts.join(" · ") : undefined,
       ),
     },

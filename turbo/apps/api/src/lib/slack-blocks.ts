@@ -25,22 +25,9 @@ function buildMarkdownMessage(content: string): SlackAnyBlock[] {
 
 export function buildAgentResponseMessage(
   content: string,
-  logsUrl?: string,
   footerText?: string,
 ): SlackAnyBlock[] {
   const blocks: SlackAnyBlock[] = [...buildMarkdownMessage(content)];
-
-  if (logsUrl) {
-    blocks.push({
-      type: "context",
-      elements: [
-        {
-          type: "mrkdwn",
-          text: `:clipboard: <${logsUrl}|Audit>`,
-        },
-      ],
-    });
-  }
 
   if (footerText) {
     blocks.push({
