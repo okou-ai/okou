@@ -92,15 +92,10 @@ export const replacePathSilently$ = command(
     pathnameTemplate: Parameters<typeof generateRouterPath>[0],
     pathParams?: Parameters<typeof generateRouterPath>[1],
     searchParams?: URLSearchParams,
-    hash = "",
   ) => {
     const newPath = generateRouterPath(pathnameTemplate, pathParams);
     const searchStr = searchParams?.toString();
-    replaceState(
-      {},
-      "",
-      `${newPath}${searchStr ? `?${searchStr}` : ""}${hash}`,
-    );
+    replaceState({}, "", `${newPath}${searchStr ? `?${searchStr}` : ""}`);
     set(internalHistoryState$, {});
     set(reloadPathname$, (x) => {
       return x + 1;

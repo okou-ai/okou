@@ -9,7 +9,6 @@ export function AuthChoiceRow({
   leading,
   onSelect,
   primary,
-  secondary,
 }: {
   readonly actionLabel: string;
   readonly busy: boolean;
@@ -17,7 +16,6 @@ export function AuthChoiceRow({
   readonly leading: ReactNode;
   readonly onSelect: () => void;
   readonly primary: string;
-  readonly secondary?: string;
 }) {
   return (
     <Button
@@ -43,11 +41,6 @@ export function AuthChoiceRow({
         <span className="block truncate text-sm font-medium text-foreground">
           {primary}
         </span>
-        {secondary ? (
-          <span className="block truncate text-xs text-muted-foreground">
-            {secondary}
-          </span>
-        ) : null}
       </span>
     </Button>
   );
