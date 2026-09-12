@@ -22,9 +22,9 @@
     "check-types:bootstrap-wiring": "tsc -p tsconfig.bootstrap-wiring.json --noEmit --checkers $(node ../../scripts/tsc-checkers.mjs)"
   },
   "dependencies": {
-    "@aws-sdk/client-kms": "^3.1121.0",
-    "@aws-sdk/client-s3": "^3.1121.0",
-    "@aws-sdk/s3-request-presigner": "^3.1121.0",
+    "@aws-sdk/client-kms": "^3.1127.0",
+    "@aws-sdk/client-s3": "^3.1127.0",
+    "@aws-sdk/s3-request-presigner": "^3.1127.0",
     "@axiomhq/js": "^1.5.0",
     "@axiomhq/logging": "^0.1.6",
     "@clerk/backend": "^3.13.1",
@@ -62,7 +62,7 @@
     "resend": "^6.12.4",
     "signal-timers": "^1.0.4",
     "stripe": "^20.4.1",
-    "svix": "^1.89.0",
+    "svix": "^2.3.0",
     "tar": "^7.5.19",
     "uuid": "^14.0.0",
     "web-push": "^3.6.7",
@@ -92,6 +92,6 @@
     "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "vite": "^8.0.16",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.0"
   }
 }

@@ -260,7 +260,7 @@ beforeEach(() => {
   });
 });
 
-describe.sequential("Official Automation result email callbacks", () => {
+describe("Official Automation result email callbacks", () => {
   it("does not attach the Official result callback to a direct Workflow run", async () => {
     const scenario = await setupScenario();
     const directRun = await accept(

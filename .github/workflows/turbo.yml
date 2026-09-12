@@ -645,7 +645,7 @@ jobs:
         working-directory: turbo
         env:
           DATABASE_URL: postgresql://postgres@postgres:5432/postgres
-        run: pnpm -F api exec vitest bench --run --outputJson bench-results.json
+        run: pnpm -F api exec vitest bench --run --reporter=default --reporter=json --reporter=./scripts/bench-p90-reporter.ts --outputFile=bench-results.json
       - name: Print bench summary
         if: success() || failure()
         working-directory: turbo/apps/api
@@ -678,7 +678,7 @@ jobs:
       - uses: ./.github/actions/toolchain-init
       - name: Bench App
         working-directory: turbo
-        run: pnpm -F @okouai/app exec vitest bench --run --outputJson bench-results.json
+        run: pnpm -F @okouai/app exec vitest bench --run --reporter=default --reporter=json --reporter=./scripts/bench-p90-reporter.ts --outputFile=bench-results.json
       - name: Print bench summary
         if: success() || failure()
         working-directory: turbo/apps/platform

@@ -1,7 +1,7 @@
 import { cleanup, render } from "@testing-library/react";
 import { StoreProvider } from "ccstate-react";
 import type { Root } from "hast";
-import { bench, describe } from "vitest";
+import { describe, test } from "vitest";
 
 import { parseMarkdownTree } from "../../../../lib/markdown/pipeline.ts";
 import {
@@ -141,29 +141,37 @@ const CASES: readonly {
 ];
 
 describe.each(CASES)("$name", ({ sources }) => {
-  const trees = sources.map(prepareTree);
-  bench("parse (once per content, ensure command)", () => {
-    for (const source of sources) {
-      prepareTree(source);
-    }
+  test("parse (once per content, ensure command)", async ({ bench }) => {
+    await bench("parse (once per content, ensure command)", () => {
+      for (const source of sources) {
+        prepareTree(source);
+      }
+    }).run();
   });
-  bench("render from prepared tree (every render)", () => {
-    for (const tree of trees) {
-      renderTree(tree);
-    }
+  test("render from prepared tree (every render)", async ({ bench }) => {
+    const trees = sources.map(prepareTree);
+    await bench("render from prepared tree (every render)", () => {
+      for (const tree of trees) {
+        renderTree(tree);
+      }
+    }).run();
   });
 });
 
 describe("thread switch parse volume", () => {
-  bench(`full thread (${String(THREAD.length)} messages)`, () => {
-    for (const source of THREAD) {
-      prepareTree(source);
-    }
+  test(`full thread (${String(THREAD.length)} messages)`, async ({ bench }) => {
+    await bench(`full thread (${String(THREAD.length)} messages)`, () => {
+      for (const source of THREAD) {
+        prepareTree(source);
+      }
+    }).run();
   });
-  bench("visible window only (tail 10 messages)", () => {
-    for (const source of THREAD_TAIL) {
-      prepareTree(source);
-    }
+  test("visible window only (tail 10 messages)", async ({ bench }) => {
+    await bench("visible window only (tail 10 messages)", () => {
+      for (const source of THREAD_TAIL) {
+        prepareTree(source);
+      }
+    }).run();
   });
 });
 
@@ -227,7 +235,6 @@ function ensurePass(
 }
 
 describe("ensure pass over the event tree cache", () => {
-  const warmCache = ensurePass(THREAD_EVENTS, new Map());
   const streamingEvents: readonly ChatEvent[] = [
     ...THREAD_EVENTS.slice(0, -1),
     assistantEvent(
@@ -235,14 +242,27 @@ describe("ensure pass over the event tree cache", () => {
       `${REPORT_MESSAGE}\n\nOne more streamed paragraph.`,
     ),
   ];
-  bench(
-    `unchanged thread (${String(THREAD_EVENTS.length)} events, scroll capture path)`,
-    () => {
-      ensurePass(THREAD_EVENTS, warmCache);
-    },
-  );
-  bench("streaming delta (re-parses only the growing report message)", () => {
-    ensurePass(streamingEvents, warmCache);
+  test(`unchanged thread (${String(THREAD_EVENTS.length)} events, scroll capture path)`, async ({
+    bench,
+  }) => {
+    const warmCache = ensurePass(THREAD_EVENTS, new Map());
+    await bench(
+      `unchanged thread (${String(THREAD_EVENTS.length)} events, scroll capture path)`,
+      () => {
+        ensurePass(THREAD_EVENTS, warmCache);
+      },
+    ).run();
+  });
+  test("streaming delta (re-parses only the growing report message)", async ({
+    bench,
+  }) => {
+    const warmCache = ensurePass(THREAD_EVENTS, new Map());
+    await bench(
+      "streaming delta (re-parses only the growing report message)",
+      () => {
+        ensurePass(streamingEvents, warmCache);
+      },
+    ).run();
   });
 });
 
@@ -250,15 +270,19 @@ describe("ensure pass over the event tree cache", () => {
 // with "render from prepared tree" on the same report message to price the
 // pending migration.
 describe("standalone Markdown (parse-in-render surfaces)", () => {
-  bench(
-    `report message (${String(REPORT_MESSAGE.length)} chars, parses per render)`,
-    () => {
-      render(
-        <StoreProvider value={context.store}>
-          <Markdown source={REPORT_MESSAGE} mediaPreview />
-        </StoreProvider>,
-      );
-      cleanup();
-    },
-  );
+  test(`report message (${String(REPORT_MESSAGE.length)} chars, parses per render)`, async ({
+    bench,
+  }) => {
+    await bench(
+      `report message (${String(REPORT_MESSAGE.length)} chars, parses per render)`,
+      () => {
+        render(
+          <StoreProvider value={context.store}>
+            <Markdown source={REPORT_MESSAGE} mediaPreview />
+          </StoreProvider>,
+        );
+        cleanup();
+      },
+    ).run();
+  });
 });

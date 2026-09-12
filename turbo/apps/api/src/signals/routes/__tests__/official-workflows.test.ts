@@ -2073,7 +2073,7 @@ beforeEach(async () => {
   await cleanupCatalog();
 });
 
-describe.sequential("Morning Brief preference", () => {
+describe("Morning Brief preference", () => {
   it("installs idempotently without the Official Workflows feature and preserves identities across disable and re-enable", async () => {
     installCatalogStorageFixture();
     const synced = await syncDeployedCatalog();
@@ -2523,7 +2523,7 @@ async function prepareBriefMember({
   return { actor, createdAt };
 }
 
-describe.sequential("Morning Brief default onboarding", () => {
+describe("Morning Brief default onboarding", () => {
   it("waits for a connected source, then retries through the cron worker without another visit", async () => {
     const { actor } = await prepareBriefMember();
     await initializeBriefMember(actor, "Asia/Shanghai");
@@ -2822,7 +2822,7 @@ describe.sequential("Morning Brief default onboarding", () => {
   });
 });
 
-describe.sequential("Official Workflow installations", () => {
+describe("Official Workflow installations", () => {
   it("materializes active deployed Official Workflows and rejects retired installations", async () => {
     installCatalogStorageFixture();
     const synced = await syncDeployedCatalog();
@@ -7829,7 +7829,7 @@ describe.sequential("Official Workflow installations", () => {
   });
 });
 
-describe.sequential("Official Workflow Run admission", () => {
+describe("Official Workflow Run admission", () => {
   it("pins exact active and retained-retired artifacts without org shadowing", async () => {
     installCatalogStorageFixture();
     const suffix = randomUUID().replaceAll("-", "").slice(0, 10);

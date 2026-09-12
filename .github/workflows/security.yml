@@ -130,7 +130,7 @@ jobs:
           SEMGREP_SCAN_MODE: ${{ github.event_name == 'push' && 'full' || 'diff' }}
 
       - name: Upload Semgrep SARIF
-        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         if: always() && github.event_name != 'merge_group'
         with:
           sarif_file: semgrep-results-for-code-scanning.sarif
@@ -147,7 +147,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           languages: javascript-typescript
           trap-caching: false
@@ -155,7 +155,7 @@ jobs:
           CODEQL_ACTION_OVERLAY_DATABASE_CACHE: false
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           category: codeql
 
