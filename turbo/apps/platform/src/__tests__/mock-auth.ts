@@ -1,12 +1,6 @@
 import type {
-  Attribute,
-  AttributeData,
   BrowserClerk,
-  ClerkAPIError,
   CreateOrganizationParams,
-  PasswordSettingsData,
-  PasswordValidation,
-  UpdateUserPasswordParams,
 } from "@clerk/react/types";
 import type { ClerkOptions } from "@clerk/shared/types";
 import { vi } from "vitest";
@@ -67,100 +61,6 @@ interface MockedClientSession {
   };
 }
 
-interface MockedAuthCapabilities {
-  readonly appleOAuth?: boolean;
-  readonly googleOAuth?: boolean;
-  readonly googleOneTapClientId?: string | null;
-  readonly lastAuthenticationStrategy?: "oauth_apple" | "oauth_google" | null;
-  readonly passkey?: boolean;
-}
-
-type MockedSignInFactor =
-  | { readonly strategy: "password" }
-  | {
-      readonly emailAddressId: string;
-      readonly safeIdentifier: string;
-      readonly strategy: "email_code" | "reset_password_email_code";
-    }
-  | { readonly strategy: "oauth_apple" | "oauth_google" | "passkey" }
-  | {
-      readonly phoneNumberId: string;
-      readonly safeIdentifier: string;
-      readonly strategy: "phone_code";
-    }
-  | { readonly strategy: string };
-
-interface MockedSignInResourceState {
-  readonly createdSessionId?: string | null;
-  readonly identifier?: string | null;
-  readonly isTransferable?: boolean;
-  readonly secondFactorVerificationStatus?: string | null;
-  readonly secondFactorVerificationStrategy?: string | null;
-  readonly status: string | null;
-  readonly supportedFirstFactors?: readonly MockedSignInFactor[] | null;
-  readonly supportedSecondFactors?: readonly MockedSignInFactor[] | null;
-}
-
-interface MockedSignUpResourceState {
-  readonly createdSessionId?: string | null;
-  readonly emailAddress?: string | null;
-  readonly externalAccountError?: ClerkAPIError | null;
-  readonly externalAccountStatus?: string | null;
-  readonly emailVerificationExpireAt?: Date | null;
-  readonly emailVerificationStatus?: string | null;
-  readonly emailVerificationStrategy?: string | null;
-  readonly firstName?: string | null;
-  readonly hasPassword?: boolean;
-  readonly isTransferable?: boolean;
-  readonly lastName?: string | null;
-  readonly legalAcceptedAt?: number | null;
-  readonly missingFields?: readonly string[];
-  readonly optionalFields?: readonly string[];
-  readonly requiredFields?: readonly string[];
-  readonly status: string | null;
-  readonly unverifiedFields?: readonly string[];
-}
-
-interface MockedSignUpConfiguration {
-  readonly attributes?: Partial<
-    Record<
-      Attribute,
-      Pick<AttributeData, "enabled" | "required" | "used_for_first_factor"> &
-        Partial<Pick<AttributeData, "used_for_second_factor">>
-    >
-  >;
-  readonly captchaEnabled?: boolean;
-  readonly captchaWidgetType?: "invisible" | "smart" | null;
-  readonly legalConsentEnabled?: boolean;
-  readonly passwordSettings?: Partial<PasswordSettingsData>;
-  readonly privacyPolicyUrl?: string;
-  readonly progressive?: boolean;
-  readonly termsUrl?: string;
-}
-
-interface MockedSecurityPhone {
-  id: string;
-  phoneNumber: string;
-  verification: { status: string };
-  prepareVerification: () => Promise<void>;
-  attemptVerification: (params: {
-    code: string;
-  }) => Promise<MockedSecurityPhone>;
-  setReservedForSecondFactor: (params: {
-    reserved: boolean;
-  }) => Promise<MockedSecurityPhone & { backupCodes?: string[] }>;
-}
-
-const userUpdatePassword =
-  vi.fn<(params: UpdateUserPasswordParams) => Promise<void>>();
-const userCreateTOTP =
-  vi.fn<() => Promise<{ secret?: string; backupCodes?: string[] }>>();
-const userCreateBackupCode = vi.fn<() => Promise<{ codes: string[] }>>();
-const userVerifyTOTP =
-  vi.fn<(params: { code: string }) => Promise<{ backupCodes?: string[] }>>();
-const userCreatePhoneNumber =
-  vi.fn<(params: { phoneNumber: string }) => Promise<MockedSecurityPhone>>();
-
 interface MockedUser {
   id: string;
   fullName: string;
@@ -169,13 +69,6 @@ interface MockedUser {
   createdAt?: Date;
   primaryEmailAddress: { emailAddress: string } | null;
   unsafeMetadata: Record<string, unknown>;
-  updatePassword: typeof userUpdatePassword;
-  createTOTP: typeof userCreateTOTP;
-  createBackupCode: typeof userCreateBackupCode;
-  backupCodeEnabled: boolean;
-  verifyTOTP: typeof userVerifyTOTP;
-  createPhoneNumber: typeof userCreatePhoneNumber;
-  phoneNumbers: MockedSecurityPhone[];
   createOrganizationEnabled: boolean;
   createOrganizationsLimit: number | null;
   organizationMemberships: MockedMembership[];
@@ -204,193 +97,10 @@ let internalMockedOrganization: {
 let internalMockedInvitations: MockedInvitation[] = [];
 let internalMockedMemberships: MockedMembership[] = [{ id: "org_default" }];
 let internalMockedClientSessions: MockedClientSession[] = [];
-let internalMockedAuthCapabilities: Required<MockedAuthCapabilities> = {
-  appleOAuth: false,
-  googleOAuth: false,
-  googleOneTapClientId: null,
-  lastAuthenticationStrategy: null,
-  passkey: false,
-};
 let internalMockedClerkLoadOptions: MockedClerkLoadOptions = {};
 let internalMockedClerkLoaded = true;
 let internalMockedClerkSessionTransitioning = false;
 let internalMockedClerkSessionSignedOut = false;
-let internalMockedSignInResourceState: Required<MockedSignInResourceState> = {
-  createdSessionId: null,
-  identifier: null,
-  isTransferable: false,
-  secondFactorVerificationStatus: null,
-  secondFactorVerificationStrategy: null,
-  status: "needs_identifier",
-  supportedFirstFactors: null,
-  supportedSecondFactors: null,
-};
-let internalMockedSignUpResourceState: Required<MockedSignUpResourceState> = {
-  createdSessionId: null,
-  emailAddress: null,
-  externalAccountError: null,
-  externalAccountStatus: null,
-  emailVerificationExpireAt: null,
-  emailVerificationStatus: null,
-  emailVerificationStrategy: null,
-  firstName: null,
-  hasPassword: false,
-  isTransferable: false,
-  lastName: null,
-  legalAcceptedAt: null,
-  missingFields: [],
-  optionalFields: [],
-  requiredFields: [],
-  status: null,
-  unverifiedFields: [],
-};
-let internalMockedSignUpConfiguration: Required<MockedSignUpConfiguration> = {
-  attributes: {
-    email_address: {
-      enabled: true,
-      required: true,
-      used_for_first_factor: true,
-    },
-    first_name: {
-      enabled: true,
-      required: false,
-      used_for_first_factor: false,
-    },
-    last_name: {
-      enabled: true,
-      required: false,
-      used_for_first_factor: false,
-    },
-    password: {
-      enabled: true,
-      required: true,
-      used_for_first_factor: true,
-    },
-    phone_number: {
-      enabled: false,
-      required: false,
-      used_for_first_factor: false,
-    },
-    username: {
-      enabled: false,
-      required: false,
-      used_for_first_factor: false,
-    },
-  },
-  captchaEnabled: false,
-  captchaWidgetType: null,
-  legalConsentEnabled: false,
-  passwordSettings: {},
-  privacyPolicyUrl: "https://okou.ai/privacy",
-  progressive: true,
-  termsUrl: "https://okou.ai/terms",
-};
-let internalMockedPasswordValidation: PasswordValidation = {
-  complexity: {},
-  strength: undefined,
-};
-
-function mockSignInResource(state: MockedSignInResourceState): void {
-  internalMockedSignInResourceState = {
-    createdSessionId: state.createdSessionId ?? null,
-    identifier: state.identifier ?? null,
-    isTransferable: state.isTransferable ?? false,
-    secondFactorVerificationStatus:
-      state.secondFactorVerificationStatus ?? null,
-    secondFactorVerificationStrategy:
-      state.secondFactorVerificationStrategy ?? null,
-    status: state.status,
-    supportedFirstFactors: state.supportedFirstFactors ?? null,
-    supportedSecondFactors: state.supportedSecondFactors ?? null,
-  };
-}
-
-function mockSignUpResource(state: MockedSignUpResourceState): void {
-  internalMockedSignUpResourceState = {
-    createdSessionId: state.createdSessionId ?? null,
-    emailAddress: state.emailAddress ?? null,
-    externalAccountError: state.externalAccountError ?? null,
-    externalAccountStatus: state.externalAccountStatus ?? null,
-    emailVerificationExpireAt: state.emailVerificationExpireAt ?? null,
-    emailVerificationStatus: state.emailVerificationStatus ?? null,
-    emailVerificationStrategy: state.emailVerificationStrategy ?? null,
-    firstName: state.firstName ?? null,
-    hasPassword: state.hasPassword ?? false,
-    isTransferable: state.isTransferable ?? false,
-    lastName: state.lastName ?? null,
-    legalAcceptedAt: state.legalAcceptedAt ?? null,
-    missingFields: state.missingFields ?? [],
-    optionalFields:
-      state.optionalFields ??
-      (state.status === null ? [] : ["first_name", "last_name"]),
-    requiredFields:
-      state.requiredFields ??
-      (state.status === null ? [] : ["email_address", "password"]),
-    status: state.status,
-    unverifiedFields: state.unverifiedFields ?? [],
-  };
-}
-
-function mockSignUpConfiguration(
-  configuration: MockedSignUpConfiguration,
-): void {
-  const attributes = configuration.attributes;
-  internalMockedSignUpConfiguration = {
-    attributes: {
-      ...attributes,
-      email_address: {
-        enabled: true,
-        required: true,
-        used_for_first_factor: true,
-        ...attributes?.email_address,
-      },
-      first_name: {
-        enabled: true,
-        required: false,
-        used_for_first_factor: false,
-        ...attributes?.first_name,
-      },
-      last_name: {
-        enabled: true,
-        required: false,
-        used_for_first_factor: false,
-        ...attributes?.last_name,
-      },
-      password: {
-        enabled: true,
-        required: true,
-        used_for_first_factor: true,
-        ...attributes?.password,
-      },
-      phone_number: {
-        enabled: false,
-        required: false,
-        used_for_first_factor: false,
-        ...attributes?.phone_number,
-      },
-      username: {
-        enabled: false,
-        required: false,
-        used_for_first_factor: false,
-        ...attributes?.username,
-      },
-    },
-    captchaEnabled: configuration.captchaEnabled ?? false,
-    captchaWidgetType:
-      configuration.captchaWidgetType ??
-      (configuration.captchaEnabled ? "smart" : null),
-    legalConsentEnabled: configuration.legalConsentEnabled ?? false,
-    passwordSettings: configuration.passwordSettings ?? {},
-    privacyPolicyUrl:
-      configuration.privacyPolicyUrl ?? "https://okou.ai/privacy",
-    progressive: configuration.progressive ?? true,
-    termsUrl: configuration.termsUrl ?? "https://okou.ai/terms",
-  };
-}
-
-function mockSignUpPasswordValidation(validation: PasswordValidation): void {
-  internalMockedPasswordValidation = validation;
-}
 
 export function mockClerkLoaded(loaded: boolean): void {
   internalMockedClerkLoaded = loaded;
@@ -428,13 +138,6 @@ export function mockUser(
   if (user) {
     internalMockedUser = {
       ...user,
-      updatePassword: userUpdatePassword,
-      createTOTP: userCreateTOTP,
-      createBackupCode: userCreateBackupCode,
-      backupCodeEnabled: false,
-      verifyTOTP: userVerifyTOTP,
-      createPhoneNumber: userCreatePhoneNumber,
-      phoneNumbers: [],
       imageUrl: user.imageUrl,
       primaryEmailAddress: user.email ? { emailAddress: user.email } : null,
       unsafeMetadata: {},
@@ -521,21 +224,10 @@ function clearMockedAuth() {
   internalMockedInvitations = [];
   internalMockedMemberships = [{ id: "org_default" }];
   internalMockedClientSessions = [];
-  internalMockedAuthCapabilities = {
-    appleOAuth: false,
-    googleOAuth: false,
-    googleOneTapClientId: null,
-    lastAuthenticationStrategy: null,
-    passkey: false,
-  };
   internalMockedClerkLoadOptions = {};
   internalMockedClerkLoaded = true;
   internalMockedClerkSessionTransitioning = false;
   internalMockedClerkSessionSignedOut = false;
-  mockSignInResource({ status: "needs_identifier" });
-  mockSignUpResource({ status: null });
-  mockSignUpConfiguration({});
-  mockSignUpPasswordValidation({ complexity: {}, strength: undefined });
   clerkListeners.length = 0;
   clerkStatusListeners.clear();
   mockedClerk.on = defaultClerkStatusOn;
@@ -546,11 +238,6 @@ function clearMockedAuth() {
   mockedClerk.setActive.mockReset();
   mockedClerk.setActive.mockImplementation(defaultSetActiveImpl);
   mockedClerk.createOrganization.mockReset();
-  userUpdatePassword.mockReset();
-  userCreateTOTP.mockReset();
-  userCreateBackupCode.mockReset();
-  userVerifyTOTP.mockReset();
-  userCreatePhoneNumber.mockReset();
   mockedClerk.sessionGetToken.mockReset();
   mockedClerk.sessionGetToken.mockImplementation(defaultGetTokenImpl);
   mockedClerk.sessionTouch.mockReset();
@@ -561,74 +248,6 @@ function clearMockedAuth() {
   mockedClerk.clientSignInCreate.mockReset();
   mockedClerk.clientSignInCreate.mockImplementation(
     defaultClientSignInCreateImpl,
-  );
-  mockedClerk.signInPrepareFirstFactor.mockReset();
-  mockedClerk.signInPrepareFirstFactor.mockImplementation(
-    defaultSignInResourceOperationImpl,
-  );
-  mockedClerk.signInAttemptFirstFactor.mockReset();
-  mockedClerk.signInAttemptFirstFactor.mockImplementation(
-    defaultSignInResourceOperationImpl,
-  );
-  mockedClerk.signInPrepareSecondFactor.mockReset();
-  mockedClerk.signInPrepareSecondFactor.mockImplementation(
-    defaultSignInResourceOperationImpl,
-  );
-  mockedClerk.signInAttemptSecondFactor.mockReset();
-  mockedClerk.signInAttemptSecondFactor.mockImplementation(
-    defaultSignInResourceOperationImpl,
-  );
-  mockedClerk.signInResetPassword.mockReset();
-  mockedClerk.signInResetPassword.mockImplementation(
-    defaultSignInResourceOperationImpl,
-  );
-  mockedClerk.signInFutureReset.mockReset();
-  mockedClerk.signInFutureReset.mockImplementation(
-    defaultSignInFutureResetImpl,
-  );
-  mockedClerk.clientSignUpCreate.mockReset();
-  mockedClerk.clientSignUpCreate.mockImplementation(
-    defaultSignUpResourceOperationImpl,
-  );
-  mockedClerk.signUpUpdate.mockReset();
-  mockedClerk.signUpUpdate.mockImplementation(
-    defaultSignUpResourceOperationImpl,
-  );
-  mockedClerk.signUpPrepareEmailAddressVerification.mockReset();
-  mockedClerk.signUpPrepareEmailAddressVerification.mockImplementation(
-    defaultSignUpResourceOperationImpl,
-  );
-  mockedClerk.signUpAttemptEmailAddressVerification.mockReset();
-  mockedClerk.signUpAttemptEmailAddressVerification.mockImplementation(
-    defaultSignUpResourceOperationImpl,
-  );
-  mockedClerk.signUpValidatePassword.mockReset();
-  mockedClerk.signUpValidatePassword.mockImplementation(
-    defaultSignUpValidatePasswordImpl,
-  );
-  mockedClerk.signUpFutureReset.mockReset();
-  mockedClerk.signUpFutureReset.mockImplementation(
-    defaultSignUpFutureResetImpl,
-  );
-  mockedClerk.signUpReload.mockReset();
-  mockedClerk.signUpReload.mockImplementation(
-    defaultSignUpResourceOperationImpl,
-  );
-  mockedClerk.signUpAuthenticateWithRedirect.mockReset();
-  mockedClerk.signUpAuthenticateWithRedirect.mockImplementation(
-    defaultSignUpAuthenticateWithRedirectImpl,
-  );
-  mockedClerk.signInAuthenticateWithPasskey.mockReset();
-  mockedClerk.signInAuthenticateWithPasskey.mockImplementation(
-    defaultSignInResourceOperationImpl,
-  );
-  mockedClerk.signInAuthenticateWithRedirect.mockReset();
-  mockedClerk.signInAuthenticateWithRedirect.mockImplementation(
-    defaultSignInAuthenticateWithRedirectImpl,
-  );
-  mockedClerk.handleRedirectCallback.mockReset();
-  mockedClerk.handleRedirectCallback.mockImplementation(
-    defaultHandleRedirectCallbackImpl,
   );
   mockedClerk.buildUrlWithAuth.mockReset();
   mockedClerk.buildUrlWithAuth.mockImplementation(defaultBuildUrlWithAuthImpl);
@@ -695,276 +314,21 @@ const defaultSessionTouchImpl: SessionTouchImpl = () => {
   return Promise.resolve();
 };
 const sessionTouch = vi.fn<SessionTouchImpl>(defaultSessionTouchImpl);
-interface MockedSignInCreateParams {
-  readonly identifier?: string;
-  readonly signUpIfMissing?: boolean;
-  readonly strategy?: string;
-  readonly ticket?: string;
-  readonly token?: string;
-  readonly transfer?: boolean;
-}
 
-function defaultClientSignInCreateImpl(params: MockedSignInCreateParams) {
-  if (params.strategy === "ticket") {
-    return Promise.resolve({
-      status: "complete",
-      createdSessionId: "test-created-session-id",
-    });
-  }
-  return Promise.resolve(mockedClientSignIn);
+function defaultClientSignInCreateImpl(_params: {
+  strategy: "ticket";
+  ticket: string;
+}) {
+  return Promise.resolve({
+    status: "complete",
+    createdSessionId: "test-created-session-id",
+  });
 }
 
 const clientSignInCreate = vi.fn<typeof defaultClientSignInCreateImpl>(
   defaultClientSignInCreateImpl,
 );
 
-function defaultSignInResourceOperationImpl(_params?: unknown) {
-  return Promise.resolve(mockedClientSignIn);
-}
-
-const signInPrepareFirstFactor = vi.fn<
-  typeof defaultSignInResourceOperationImpl
->(defaultSignInResourceOperationImpl);
-const signInAttemptFirstFactor = vi.fn<
-  typeof defaultSignInResourceOperationImpl
->(defaultSignInResourceOperationImpl);
-const signInPrepareSecondFactor = vi.fn<
-  typeof defaultSignInResourceOperationImpl
->(defaultSignInResourceOperationImpl);
-const signInAttemptSecondFactor = vi.fn<
-  typeof defaultSignInResourceOperationImpl
->(defaultSignInResourceOperationImpl);
-const signInAuthenticateWithPasskey = vi.fn<
-  typeof defaultSignInResourceOperationImpl
->(defaultSignInResourceOperationImpl);
-
-interface MockedSignInAuthenticateWithRedirectParams {
-  readonly continueSignIn?: boolean;
-  readonly continueSignUp?: boolean;
-  readonly redirectUrl: string;
-  readonly redirectUrlComplete: string;
-  readonly strategy: string;
-}
-
-function defaultSignInAuthenticateWithRedirectImpl(
-  _params: MockedSignInAuthenticateWithRedirectParams,
-) {
-  return Promise.resolve();
-}
-
-const signInAuthenticateWithRedirect = vi.fn<
-  typeof defaultSignInAuthenticateWithRedirectImpl
->(defaultSignInAuthenticateWithRedirectImpl);
-
-interface MockedHandleRedirectCallbackParams {
-  readonly continueSignUpUrl?: string | null;
-  readonly firstFactorUrl?: string;
-  readonly reloadResource?: "signIn" | "signUp";
-  readonly resetPasswordUrl?: string;
-  readonly secondFactorUrl?: string;
-  readonly signInFallbackRedirectUrl?: string | null;
-  readonly signInForceRedirectUrl?: string | null;
-  readonly signInUrl?: string;
-  readonly signUpFallbackRedirectUrl?: string | null;
-  readonly signUpForceRedirectUrl?: string | null;
-  readonly signUpUrl?: string;
-  readonly transferable?: boolean;
-  readonly verifyEmailAddressUrl?: string | null;
-  readonly verifyPhoneNumberUrl?: string | null;
-}
-
-function defaultHandleRedirectCallbackImpl(
-  _params?: MockedHandleRedirectCallbackParams,
-) {
-  return Promise.resolve();
-}
-
-const handleRedirectCallback = vi.fn<typeof defaultHandleRedirectCallbackImpl>(
-  defaultHandleRedirectCallbackImpl,
-);
-const signInResetPassword = vi.fn<typeof defaultSignInResourceOperationImpl>(
-  defaultSignInResourceOperationImpl,
-);
-
-function defaultSignInFutureResetImpl(): void {
-  mockSignInResource({ status: "needs_identifier" });
-}
-
-const signInFutureReset = vi.fn<typeof defaultSignInFutureResetImpl>(
-  defaultSignInFutureResetImpl,
-);
-
-const mockedClientSignIn = {
-  get identifier() {
-    return internalMockedSignInResourceState.identifier;
-  },
-  get status() {
-    return internalMockedSignInResourceState.status;
-  },
-  get supportedFirstFactors() {
-    return internalMockedSignInResourceState.supportedFirstFactors;
-  },
-  get supportedSecondFactors() {
-    return internalMockedSignInResourceState.supportedSecondFactors;
-  },
-  get secondFactorVerification() {
-    const status =
-      internalMockedSignInResourceState.secondFactorVerificationStatus;
-    const strategy =
-      internalMockedSignInResourceState.secondFactorVerificationStrategy;
-    return status || strategy ? { status, strategy } : undefined;
-  },
-  get createdSessionId() {
-    return internalMockedSignInResourceState.createdSessionId;
-  },
-  create: clientSignInCreate,
-  prepareFirstFactor: signInPrepareFirstFactor,
-  attemptFirstFactor: signInAttemptFirstFactor,
-  prepareSecondFactor: signInPrepareSecondFactor,
-  attemptSecondFactor: signInAttemptSecondFactor,
-  authenticateWithPasskey: signInAuthenticateWithPasskey,
-  authenticateWithRedirect: signInAuthenticateWithRedirect,
-  resetPassword: signInResetPassword,
-  __internal_future: {
-    get isTransferable() {
-      return internalMockedSignInResourceState.isTransferable;
-    },
-    reset: signInFutureReset,
-  },
-};
-
-function defaultSignUpResourceOperationImpl(_params?: unknown) {
-  return Promise.resolve(mockedClientSignUp);
-}
-
-const clientSignUpCreate = vi.fn<typeof defaultSignUpResourceOperationImpl>(
-  defaultSignUpResourceOperationImpl,
-);
-const signUpUpdate = vi.fn<typeof defaultSignUpResourceOperationImpl>(
-  defaultSignUpResourceOperationImpl,
-);
-const signUpPrepareEmailAddressVerification = vi.fn<
-  typeof defaultSignUpResourceOperationImpl
->(defaultSignUpResourceOperationImpl);
-const signUpAttemptEmailAddressVerification = vi.fn<
-  typeof defaultSignUpResourceOperationImpl
->(defaultSignUpResourceOperationImpl);
-const signUpReload = vi.fn<typeof defaultSignUpResourceOperationImpl>(
-  defaultSignUpResourceOperationImpl,
-);
-
-interface MockedPasswordValidationCallbacks {
-  readonly onValidation?: (validation: PasswordValidation) => void;
-}
-
-function defaultSignUpValidatePasswordImpl(
-  _password: string,
-  callbacks?: MockedPasswordValidationCallbacks,
-): void {
-  callbacks?.onValidation?.(internalMockedPasswordValidation);
-}
-
-const signUpValidatePassword = vi.fn<typeof defaultSignUpValidatePasswordImpl>(
-  defaultSignUpValidatePasswordImpl,
-);
-
-function defaultSignUpFutureResetImpl() {
-  mockSignUpResource({ status: null });
-  return Promise.resolve({ error: null });
-}
-
-const signUpFutureReset = vi.fn<typeof defaultSignUpFutureResetImpl>(
-  defaultSignUpFutureResetImpl,
-);
-
-interface MockedSignUpAuthenticateWithRedirectParams {
-  readonly continueSignIn?: boolean;
-  readonly continueSignUp?: boolean;
-  readonly legalAccepted?: boolean;
-  readonly redirectUrl: string;
-  readonly redirectUrlComplete: string;
-  readonly strategy: string;
-}
-
-function defaultSignUpAuthenticateWithRedirectImpl(
-  _params: MockedSignUpAuthenticateWithRedirectParams,
-) {
-  return Promise.resolve();
-}
-
-const signUpAuthenticateWithRedirect = vi.fn<
-  typeof defaultSignUpAuthenticateWithRedirectImpl
->(defaultSignUpAuthenticateWithRedirectImpl);
-
-const mockedClientSignUp = {
-  reload: signUpReload,
-  get status() {
-    return internalMockedSignUpResourceState.status;
-  },
-  get requiredFields() {
-    return internalMockedSignUpResourceState.requiredFields;
-  },
-  get optionalFields() {
-    return internalMockedSignUpResourceState.optionalFields;
-  },
-  get missingFields() {
-    return internalMockedSignUpResourceState.missingFields;
-  },
-  get unverifiedFields() {
-    return internalMockedSignUpResourceState.unverifiedFields;
-  },
-  get emailAddress() {
-    return internalMockedSignUpResourceState.emailAddress;
-  },
-  get firstName() {
-    return internalMockedSignUpResourceState.firstName;
-  },
-  get lastName() {
-    return internalMockedSignUpResourceState.lastName;
-  },
-  get hasPassword() {
-    return internalMockedSignUpResourceState.hasPassword;
-  },
-  get legalAcceptedAt() {
-    return internalMockedSignUpResourceState.legalAcceptedAt;
-  },
-  get createdSessionId() {
-    return internalMockedSignUpResourceState.createdSessionId;
-  },
-  create: clientSignUpCreate,
-  update: signUpUpdate,
-  prepareEmailAddressVerification: signUpPrepareEmailAddressVerification,
-  attemptEmailAddressVerification: signUpAttemptEmailAddressVerification,
-  authenticateWithRedirect: signUpAuthenticateWithRedirect,
-  validatePassword: signUpValidatePassword,
-  verifications: {
-    emailAddress: {
-      get status() {
-        return internalMockedSignUpResourceState.emailVerificationStatus;
-      },
-      get strategy() {
-        return internalMockedSignUpResourceState.emailVerificationStrategy;
-      },
-      get expireAt() {
-        return internalMockedSignUpResourceState.emailVerificationExpireAt;
-      },
-    },
-    externalAccount: {
-      get error() {
-        return internalMockedSignUpResourceState.externalAccountError;
-      },
-      get status() {
-        return internalMockedSignUpResourceState.externalAccountStatus;
-      },
-    },
-  },
-  __internal_future: {
-    get isTransferable() {
-      return internalMockedSignUpResourceState.isTransferable;
-    },
-    reset: signUpFutureReset,
-  },
-};
 const defaultBuildUrlWithAuthImpl = (to: string) => {
   return to;
 };
@@ -1056,7 +420,6 @@ export const mockedClerkLoad = vi.fn<typeof defaultLoadImpl>(defaultLoadImpl);
 
 interface MockedSetActiveParams {
   organization?: string | null;
-  redirectUrl?: string;
   session?: string | null;
   navigate?: (params: {
     session: {
@@ -1076,7 +439,7 @@ interface MockedSetActiveParams {
 async function defaultSetActiveImpl(
   params: MockedSetActiveParams,
 ): Promise<void> {
-  let navigatedTo: string | null = params.redirectUrl ?? null;
+  let navigatedTo: string | null = null;
   const selectedSession = internalMockedClientSessions.find((session) => {
     return session.id === params.session;
   });
@@ -1118,11 +481,6 @@ type MockedCreateOrganization = (
 ) => Promise<{ readonly id: string }>;
 
 export const mockedClerk = {
-  userUpdatePassword,
-  userCreateTOTP,
-  userCreateBackupCode,
-  userVerifyTOTP,
-  userCreatePhoneNumber,
   get loaded() {
     return internalMockedClerkLoaded;
   },
@@ -1177,108 +535,14 @@ export const mockedClerk = {
   sessionGetToken,
   sessionTouch,
   clientSignInCreate,
-  signInPrepareFirstFactor,
-  signInAttemptFirstFactor,
-  signInPrepareSecondFactor,
-  signInAttemptSecondFactor,
-  signInAuthenticateWithPasskey,
-  signInAuthenticateWithRedirect,
-  signInResetPassword,
-  signInFutureReset,
-  clientSignUpCreate,
-  signUpUpdate,
-  signUpPrepareEmailAddressVerification,
-  signUpAttemptEmailAddressVerification,
-  signUpValidatePassword,
-  signUpFutureReset,
-  signUpReload,
-  signUpAuthenticateWithRedirect,
   client: {
-    get lastAuthenticationStrategy() {
-      return internalMockedAuthCapabilities.lastAuthenticationStrategy;
-    },
     get sessions() {
       return internalMockedClientSessions;
     },
-    get signedInSessions() {
-      return internalMockedClientSessions.filter((session) => {
-        return (
-          (session.status === "active" || session.status === "pending") &&
-          session.user !== undefined
-        );
-      });
+    signIn: {
+      create: clientSignInCreate,
     },
-    signIn: mockedClientSignIn,
-    signUp: mockedClientSignUp,
   },
-  get __internal_environment() {
-    return {
-      displayConfig: {
-        get captchaWidgetType() {
-          return internalMockedSignUpConfiguration.captchaWidgetType;
-        },
-        get captchaPublicKey() {
-          return internalMockedSignUpConfiguration.captchaEnabled
-            ? "test-captcha-key"
-            : null;
-        },
-        get captchaPublicKeyInvisible() {
-          return null;
-        },
-        get googleOneTapClientId() {
-          return (
-            internalMockedAuthCapabilities.googleOneTapClientId ?? undefined
-          );
-        },
-        get privacyPolicyUrl() {
-          return internalMockedSignUpConfiguration.privacyPolicyUrl;
-        },
-        get termsUrl() {
-          return internalMockedSignUpConfiguration.termsUrl;
-        },
-      },
-      userSettings: {
-        attributes: {
-          ...internalMockedSignUpConfiguration.attributes,
-          passkey: {
-            enabled: internalMockedAuthCapabilities.passkey,
-            required: false,
-            used_for_first_factor: internalMockedAuthCapabilities.passkey,
-          },
-        },
-        authenticatableSocialStrategies: [
-          ...(internalMockedAuthCapabilities.appleOAuth
-            ? (["oauth_apple"] as const)
-            : []),
-          ...(internalMockedAuthCapabilities.googleOAuth
-            ? (["oauth_google"] as const)
-            : []),
-        ],
-        passkeySettings: {
-          show_sign_in_button: internalMockedAuthCapabilities.passkey,
-        },
-        passwordSettings: {
-          allowed_special_characters: "",
-          disable_hibp: false,
-          min_length: 8,
-          max_length: 72,
-          require_special_char: false,
-          require_numbers: false,
-          require_uppercase: false,
-          require_lowercase: false,
-          show_zxcvbn: true,
-          min_zxcvbn_strength: 2,
-          ...internalMockedSignUpConfiguration.passwordSettings,
-        },
-        signUp: {
-          legal_consent_enabled:
-            internalMockedSignUpConfiguration.legalConsentEnabled,
-          progressive: internalMockedSignUpConfiguration.progressive,
-        },
-      },
-    };
-  },
-  handleRedirectCallback,
   openSignIn: vi.fn<() => Promise<void>>(() => Promise.resolve()),
   signOut: vi.fn<BrowserClerk["signOut"]>(() => {
     return Promise.resolve();
