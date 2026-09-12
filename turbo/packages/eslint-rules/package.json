@@ -24,11 +24,11 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@typescript-eslint/utils": "^8.68.0",
+    "@typescript-eslint/utils": "^8.69.0",
     "libpg-query": "17.7.4"
   },
   "devDependencies": {
-    "@typescript-eslint/rule-tester": "^8.68.0",
+    "@typescript-eslint/rule-tester": "^8.69.0",
     "@types/node": "^24.3.0",
     "@okouai/eslint-config": "workspace:*",
     "@okouai/typescript-config": "workspace:*",
