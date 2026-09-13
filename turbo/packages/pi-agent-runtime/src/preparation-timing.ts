@@ -6,6 +6,7 @@ export type PiPreparationPhase =
   | "launch_manifest_sign"
   | "launch_session_sign"
   | "launch_identity"
+  | "h0_metadata_preflight"
   | "resource_snapshot"
   | "credentials_route"
   | "h0_load"

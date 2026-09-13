@@ -1868,9 +1868,16 @@ const publishLargeHistoryTransfer$ = command(
     if (!resumeSession || !("historyRef" in resumeSession)) {
       return false;
     }
-    const metadata = await readResumeSessionMetadata(
-      args.db,
-      resumeSession.historyRef,
+    const metadata = await measurePiPreparation(
+      piPreparationObserver(args.activation.runId),
+      "h0_metadata_preflight",
+      () => {
+        return readResumeSessionMetadata(
+          args.db,
+          resumeSession.historyRef,
+          signal,
+        );
+      },
       signal,
     );
     if (decideApiFirstTurnHistory(metadata) === "api") {
