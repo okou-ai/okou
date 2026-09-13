@@ -199,6 +199,12 @@ for feature-enabled Runs; newly eligible Runs must start with a fresh token.
 These commands are Run-only, not PAT commands. Agents cannot grant themselves
 access or send target addresses, credentials or host keys to the helper.
 
+Within the same Run, a command or session can automatically reuse an idle SSH
+connection after the previous channel finished. Each active process owns its
+connection exclusively; independent commands keep separate shell state. Up to
+eight idle connections are retained for 60 seconds. Run end and delivered
+authorization changes close retained connections. No extra CLI option is needed.
+
 The CLI sends exactly one version-1 `ssh.exec` request to the fixed packaged
 `/usr/local/bin/runner-rpc-client`, with no shell, extra arguments or retry.
 Commands must contain 1–65,536 UTF-8 bytes. Human output preserves binary

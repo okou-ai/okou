@@ -125,7 +125,7 @@ url = { version = "2", default-features = false }
 uuid = { version = "1", default-features = false }
 which = { version = "8", default-features = false }
 zeroize = { version = "1", default-features = false }
-zstd = { version = "0.13", default-features = false }
+zstd = { version = "0.14", default-features = false }
 
 # Keep routine local validation usable in constrained environments while
 # retaining source locations in backtraces.

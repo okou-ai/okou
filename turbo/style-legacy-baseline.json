@@ -2912,9 +2912,6 @@
     ]
   },
   "classUsages": {
-    "apps/platform/src/views/auth-v2/auth-v2-add-account-dialog.tsx": {
-      "okou-app": 1
-    },
     "apps/platform/src/views/auth/auth-shell.tsx": {
       "okou-app": 1
     },

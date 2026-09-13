@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.191.2](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.191.1...runner-rs-v0.191.2) (2026-09-13)
+
+
+### Refactoring
+
+* **runner:** accept both connector-intent header names ([#33707](https://github.com/vm0-ai/vm0/issues/33707)) ([33e83ae](https://github.com/vm0-ai/vm0/commit/33e83ae7126fba27731120dbde3df8fff993ec96))
+
+## [0.191.1](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.191.0...runner-rs-v0.191.1) (2026-09-12)
+
+
+### Performance Improvements
+
+* **runner:** reuse idle ssh connections within a run ([#33690](https://github.com/vm0-ai/vm0/issues/33690)) ([17e9259](https://github.com/vm0-ai/vm0/commit/17e9259583f7682ccbc69214bd5da9442a3b6a21))
+
 ## [0.191.0](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.190.8...runner-rs-v0.191.0) (2026-09-12)
 
 

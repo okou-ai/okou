@@ -1,15 +1,14 @@
-import { fireEvent, screen, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import { toast } from "@okouai/ui/components/ui/sonner";
 import { expect, test } from "vitest";
 
 import {
   click,
-  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
   mockedClerk,
-  mockSignInResource,
   type MockedMembership,
 } from "../../../__tests__/mock-auth.ts";
 import { search } from "../../../signals/location.ts";
@@ -54,14 +53,6 @@ function actionByName(
   return action;
 }
 
-function containingForm(element: HTMLElement): HTMLFormElement {
-  const form = element.closest("form");
-  if (!(form instanceof HTMLFormElement)) {
-    throw new Error("Expected form control to be inside a form");
-  }
-  return form;
-}
-
 function completedInvitationPath(ticket: string): string {
   const params = new URLSearchParams([
     ["utm_campaign", "workspace-invite"],
@@ -100,31 +91,25 @@ test("An invitation accepted for another account offers account switching", asyn
   expect(location.hash).toBe("#private-agents");
 
   click(actionByName("button", "Switch account"));
-
-  const dialog = await screen.findByRole("dialog", {
-    name: "Sign in to Okou",
+  await waitFor(() => {
+    expect(mockedClerk.openSignIn).toHaveBeenCalledExactlyOnceWith({
+      fallbackRedirectUrl: "/",
+      forceRedirectUrl: "/",
+    });
   });
-  const emailAddress = within(dialog).getByLabelText("Email address");
-  expect(emailAddress).toBeVisible();
-  expect(emailAddress).toHaveValue("");
+  toast.dismiss();
+  await waitFor(() => {
+    expect(acceptedNotice).not.toBeInTheDocument();
+  });
 });
 
-test("An invitation requiring a password continues without exposing the ticket", async () => {
+test("An incomplete invitation stays available to the hosted Clerk UI", async () => {
   const ticket = invitationTicket("org_invited");
   const params = new URLSearchParams([
     ["utm_campaign", "workspace-invite"],
     ["__clerk_status", "sign_in"],
     ["__clerk_ticket", ticket],
   ]);
-  mockSignInResource({ status: "needs_identifier" });
-  mockedClerk.clientSignInCreate.mockImplementation(() => {
-    mockSignInResource({
-      status: "needs_first_factor",
-      identifier: "invitee@example.com",
-      supportedFirstFactors: [{ strategy: "password" }],
-    });
-    return Promise.resolve(mockedClerk.client.signIn);
-  });
   await setupPage({
     context,
     path: `/sign-in?${params.toString()}`,
@@ -132,32 +117,10 @@ test("An invitation requiring a password continues without exposing the ticket",
     auth: null,
   });
 
-  await screen.findByRole("heading", { name: "Use another method" });
-  click(actionByName("button", "Sign in with your password"));
-  const password = await screen.findByLabelText("Password");
-  expect(password).toBeVisible();
+  await expect(screen.findByTestId("clerk-sign-in")).resolves.toBeVisible();
   const remainingParams = new URLSearchParams(search());
-  expect(remainingParams.get("__clerk_status")).toBeNull();
-  expect(remainingParams.get("__clerk_ticket")).toBeNull();
-  expect(mockedClerk.clientSignInCreate).toHaveBeenCalledExactlyOnceWith({
-    strategy: "ticket",
-    ticket,
-  });
+  expect(remainingParams.get("__clerk_status")).toBe("sign_in");
+  expect(remainingParams.get("__clerk_ticket")).toBe(ticket);
   expect(remainingParams.get("utm_campaign")).toBe("workspace-invite");
-  expect(
-    screen.queryByText(/^Invitation accepted(?: for)?/u),
-  ).not.toBeInTheDocument();
-  mockedClerk.signInAttemptFirstFactor.mockImplementation(() => {
-    mockSignInResource({
-      status: "complete",
-      createdSessionId: "session_invited",
-    });
-    return Promise.resolve(mockedClerk.client.signIn);
-  });
-  await fill(password, "A good password 123!");
-  fireEvent.submit(containingForm(password));
-  await screen.findByRole("heading", { name: "Sign-in complete" });
-  expect(mockedClerk.setActive).toHaveBeenCalledExactlyOnceWith(
-    expect.objectContaining({ session: "session_invited" }),
-  );
+  expect(mockedClerk.clientSignInCreate).not.toHaveBeenCalled();
 });

@@ -3,7 +3,7 @@ use serde_json::json;
 use std::{sync::atomic::Ordering, time::Duration};
 
 #[tokio::test]
-async fn connection_evidence_is_independent_of_command_outcomes_and_cache_hits() {
+async fn connection_evidence_reports_actual_authentication_and_skips_reused_transports() {
     for (reply, failure) in [
         (Reply::default(), None),
         (Reply::Reject, Some("exec_rejected")),
@@ -36,9 +36,12 @@ async fn connection_evidence_is_independent_of_command_outcomes_and_cache_hits()
             }
         }
         dispatcher.shutdown().await;
-        report.assert_calls_async(2).await;
+        // Failed commands retire the transport; a normal exit reuses it without
+        // inventing authentication evidence for the second command.
+        let authentications = if failure.is_some() { 2 } else { 1 };
+        report.assert_calls_async(authentications).await;
         resolve.assert_calls_async(1).await;
-        assert_eq!(h.observed.auth.load(Ordering::SeqCst), 2);
+        assert_eq!(h.observed.auth.load(Ordering::SeqCst), authentications);
     }
 }
 
@@ -130,6 +133,63 @@ async fn first_authentication_reports_the_generation_returned_by_tofu() {
     );
     dispatcher.shutdown().await;
     report.assert_calls_async(1).await;
+}
+
+#[tokio::test]
+async fn failed_authentication_after_tofu_reports_the_new_generation_for_exec_and_sessions() {
+    for managed in [false, true] {
+        let mut h = Harness::new(Reply::default()).await;
+        let dispatcher = h.take_dispatcher();
+        h.runtime.ably_connected(true);
+        let mut credential = h.credential(false);
+        credential["privateKey"] = json!(
+            super::harness::key(russh::keys::Algorithm::Ed25519)
+                .to_openssh(russh::keys::ssh_key::LineEnding::LF)
+                .unwrap()
+                .as_str()
+        );
+        let _resolve = h.resolve(credential).await;
+        let pin = h
+            .api
+            .mock_async(|when, then| {
+                when.method("POST")
+                    .path(format!("/api/runners/runs/{}/ssh/pin", h.run));
+                then.status(200)
+                    .json_body(json!({"outcome":"pinned","generation":8}));
+            })
+            .await;
+        let report = h
+            .api
+            .mock_async(|when, then| {
+                when.method("POST")
+                    .path(format!("/api/runners/runs/{}/ssh/observations", h.run))
+                    .json_body_includes(
+                        json!({"expectedGeneration":8,"failureReason":"authentication_failed"})
+                            .to_string(),
+                    );
+                then.status(200).json_body(json!({"outcome":"recorded"}));
+            })
+            .await;
+        if managed {
+            let id =
+                super::sessions::start(&h, json!({"type":"exec","command":"true"}), false).await;
+            let failed = super::sessions::state(&h, &id, "failed").await;
+            assert_eq!(failed["state"]["failure_reason"], "authentication_failed");
+            assert_eq!(failed["effects"], "not_started");
+            assert_eq!(failed["generation"], 8);
+        } else {
+            let frames = h.request(params()).await;
+            assert_eq!(
+                super::terminal(&frames)["failure_reason"],
+                "authentication_failed"
+            );
+            assert_eq!(super::terminal(&frames)["effects"], "not_started");
+        }
+        dispatcher.shutdown().await;
+        pin.assert_calls_async(1).await;
+        report.assert_calls_async(1).await;
+        assert!(h.observed.commands.lock().unwrap().is_empty());
+    }
 }
 
 #[tokio::test]

@@ -45,7 +45,7 @@ export function deriveAppUrl(sourceUrl: string): string {
 
 export const STORAGE_STATE = path.join(__dirname, ".auth/storage-state.json");
 const appUrl = deriveAppUrl(apiUrl);
-const retainBlobReport = process.env.PLAYWRIGHT_PROJECT !== "auth-v2";
+const retainBlobReport = process.env.PLAYWRIGHT_PROJECT !== "auth-v1";
 
 export default defineConfig({
   testDir: "./tests",
@@ -72,9 +72,8 @@ export default defineConfig({
       testMatch: "paid-onboarding.spec.ts",
     },
     {
-      name: "auth-v2",
-      // Keep the default AuthV2 baseline and hosted V1 adapter in one auth lane.
-      testMatch: ["auth-v2.spec.ts", "auth-v1.spec.ts"],
+      name: "auth-v1",
+      testMatch: "auth-v1.spec.ts",
       workers: 1,
       use: {
         screenshot: "off",

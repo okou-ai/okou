@@ -30,10 +30,8 @@ export async function runInIsolatedProcess(testFileUrl) {
     }
     cwd = parent;
   }
-  // Vitest displays suites with " > " but filters them joined by spaces.
-  const pattern = fullName
-    .replaceAll(" > ", " ")
-    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Vitest 5 filters the same " > "-joined full name shown by reporters.
+  const pattern = fullName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   // A same-thread timeout cannot interrupt synchronous traversal. Threads
   // keep the probe in one child process, fully stopped by its kill deadline.
   const { stdout } = await promisify(execFile)(

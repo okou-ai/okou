@@ -8,7 +8,7 @@
  *   VITEST_PERF=1 pnpm -F @okouai/api exec vitest run
  *   pnpm test:perf
  */
-import type { Reporter, TestRunEndReason } from "vitest/reporters";
+import type { Reporter, TestRunEndReason } from "vitest/node";
 import type { TestModule } from "vitest/node";
 
 interface FileStat {

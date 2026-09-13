@@ -37,6 +37,12 @@ import {
   initializePiSessionResourceRegistry,
 } from "./session-model";
 import type { PiAgentModelConfig } from "./types";
+import {
+  measurePiPreparation,
+  measurePiPreparationSync,
+  startPiPreparationObservation,
+  type PiPreparationObserver,
+} from "./preparation-timing";
 
 const PI_INTERMEDIATE_COMMENTARY_PROMPT = `## Intermediate commentary
 
@@ -121,24 +127,143 @@ function recordConfiguredThinkingLevel(
   }
 }
 
-export async function createPiAgentSessionForRuntime(args: {
-  readonly cwd: string;
-  readonly agentDir: string;
-  readonly sessionManager: SessionManager;
-  readonly model: PiAgentModelConfig;
-  readonly appendSystemPrompt: string | null;
-  readonly resourceSnapshot?: PiPreheatedResourceSnapshot;
-  readonly memoryRecall?: PiMemoryRecallSelection;
-  readonly memoryRoot?: string;
-  readonly onMemoryRecallOutcome?: (outcome: PiMemoryRecallOutcome) => void;
-  readonly onMemoryToolSourceUse?: (sourceUse: PiMemoryToolSourceUse) => void;
-  readonly sessionStartEvent?: CreateAgentSessionFromServicesOptions["sessionStartEvent"];
-}) {
-  initializePiSessionResourceRegistry();
-  const memoryRecall = args.resourceSnapshot
-    ? resolvePiApiMemoryRecall(args.resourceSnapshot)
-    : await loadPiSandboxMemoryRecall(args.memoryRecall, args.memoryRoot);
-  args.onMemoryRecallOutcome?.(memoryRecall.outcome);
+export async function createPiAgentSessionForRuntime(
+  args: {
+    readonly cwd: string;
+    readonly agentDir: string;
+    readonly sessionManager: SessionManager;
+    readonly model: PiAgentModelConfig;
+    readonly appendSystemPrompt: string | null;
+    readonly resourceSnapshot?: PiPreheatedResourceSnapshot;
+    readonly memoryRecall?: PiMemoryRecallSelection;
+    readonly memoryRoot?: string;
+    readonly onMemoryRecallOutcome?: (outcome: PiMemoryRecallOutcome) => void;
+    readonly onMemoryToolSourceUse?: (sourceUse: PiMemoryToolSourceUse) => void;
+    readonly onPreparationTiming?: PiPreparationObserver;
+    readonly sessionStartEvent?: CreateAgentSessionFromServicesOptions["sessionStartEvent"];
+  },
+  signal?: AbortSignal,
+) {
+  const finishResources = startPiPreparationObservation(
+    args.onPreparationTiming,
+    "resources_prompt",
+    signal,
+  );
+  let resourcesOutcome: "success" | "error" = "error";
+  // Keep the existing synchronous/API and asynchronous/Sandbox preparation order.
+  let prepared: ReturnType<typeof prepareModelAndPrompt>;
+  let memoryRecall: Awaited<ReturnType<typeof loadPiSandboxMemoryRecall>>;
+  try {
+    initializePiSessionResourceRegistry();
+    memoryRecall = args.resourceSnapshot
+      ? resolvePiApiMemoryRecall(args.resourceSnapshot)
+      : await loadPiSandboxMemoryRecall(args.memoryRecall, args.memoryRoot);
+    args.onMemoryRecallOutcome?.(memoryRecall.outcome);
+    prepared = prepareModelAndPrompt(args, memoryRecall);
+    resourcesOutcome = "success";
+  } finally {
+    finishResources(resourcesOutcome);
+  }
+  const {
+    memoryTools,
+    appendSystemPrompt,
+    systemPrompt,
+    sandboxResourceLoaderOptions,
+    model,
+  } = prepared;
+
+  const modelRuntime = await measurePiPreparation(
+    args.onPreparationTiming,
+    "model_runtime",
+    () => {
+      return createPiModelRuntime({
+        model,
+        config: args.model,
+        ...(args.resourceSnapshot ||
+        ["anthropic-messages", "bedrock-converse-stream"].includes(
+          args.model.dialect,
+        )
+          ? { credentials: new InMemoryCredentialStore() }
+          : {}),
+      });
+    },
+    signal,
+  );
+  const resourceSnapshot = args.resourceSnapshot;
+  const services = await measurePiPreparation(
+    args.onPreparationTiming,
+    "session_services",
+    () => {
+      return createAgentSessionServices({
+        cwd: args.cwd,
+        agentDir: args.agentDir,
+        modelRuntime,
+        ...(resourceSnapshot
+          ? {
+              settingsManager: SettingsManager.inMemory(
+                {},
+                { projectTrusted: true },
+              ),
+            }
+          : {}),
+        resourceLoaderOptions: resourceSnapshot
+          ? measurePiPreparationSync(
+              args.onPreparationTiming,
+              "resource_loader",
+              () => {
+                return piPreheatedResourceLoaderOptions({
+                  snapshot: resourceSnapshot,
+                  appendSystemPrompt,
+                  systemPrompt,
+                });
+              },
+              signal,
+            )
+          : sandboxResourceLoaderOptions,
+      });
+    },
+    signal,
+  );
+  const created = await measurePiPreparation(
+    args.onPreparationTiming,
+    "session_create",
+    () => {
+      return createAgentSessionFromServices({
+        services,
+        sessionManager: args.sessionManager,
+        sessionStartEvent: args.sessionStartEvent,
+        model,
+        thinkingLevel: configuredThinkingLevel(
+          args.sessionManager,
+          args.model.thinkingLevel,
+        ),
+        customTools: [
+          createBashTool(args.cwd, PI_BASH_TOOL_OPTIONS),
+          ...memoryTools,
+        ],
+      });
+    },
+    signal,
+  );
+  measurePiPreparationSync(
+    args.onPreparationTiming,
+    "session_finalize",
+    () => {
+      return recordConfiguredThinkingLevel(
+        args.sessionManager,
+        args.model.thinkingLevel,
+        created.session.thinkingLevel,
+      );
+    },
+    signal,
+  );
+  return { ...created, services, model };
+}
+
+function prepareModelAndPrompt(
+  args: Parameters<typeof createPiAgentSessionForRuntime>[0],
+  memoryRecall: Awaited<ReturnType<typeof loadPiSandboxMemoryRecall>>,
+) {
   const memorySelection = args.resourceSnapshot
     ? args.resourceSnapshot.schemaVersion === 2
       ? args.resourceSnapshot.memoryRecall
@@ -183,54 +308,11 @@ export async function createPiAgentSessionForRuntime(args: {
     );
   }
 
-  const modelRuntime = await createPiModelRuntime({
+  return {
+    memoryTools,
+    appendSystemPrompt,
+    systemPrompt,
+    sandboxResourceLoaderOptions,
     model,
-    config: args.model,
-    ...(args.resourceSnapshot ||
-    ["anthropic-messages", "bedrock-converse-stream"].includes(
-      args.model.dialect,
-    )
-      ? { credentials: new InMemoryCredentialStore() }
-      : {}),
-  });
-  const services = await createAgentSessionServices({
-    cwd: args.cwd,
-    agentDir: args.agentDir,
-    modelRuntime,
-    ...(args.resourceSnapshot
-      ? {
-          settingsManager: SettingsManager.inMemory(
-            {},
-            { projectTrusted: true },
-          ),
-        }
-      : {}),
-    resourceLoaderOptions: args.resourceSnapshot
-      ? piPreheatedResourceLoaderOptions({
-          snapshot: args.resourceSnapshot,
-          appendSystemPrompt,
-          systemPrompt,
-        })
-      : sandboxResourceLoaderOptions,
-  });
-  const created = await createAgentSessionFromServices({
-    services,
-    sessionManager: args.sessionManager,
-    sessionStartEvent: args.sessionStartEvent,
-    model,
-    thinkingLevel: configuredThinkingLevel(
-      args.sessionManager,
-      args.model.thinkingLevel,
-    ),
-    customTools: [
-      createBashTool(args.cwd, PI_BASH_TOOL_OPTIONS),
-      ...memoryTools,
-    ],
-  });
-  recordConfiguredThinkingLevel(
-    args.sessionManager,
-    args.model.thinkingLevel,
-    created.session.thinkingLevel,
-  );
-  return { ...created, services, model };
+  };
 }

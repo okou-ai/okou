@@ -13,7 +13,7 @@ use std::{
     net::SocketAddr,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -72,6 +72,8 @@ pub(super) struct Observed {
     pub(super) reservations: AtomicUsize,
     pub(super) ptys: AtomicUsize,
     pub(super) signals: AtomicUsize,
+    pub(super) closed: AtomicUsize,
+    pub(super) reject_reused_channels: AtomicBool,
     pub(super) input: Mutex<Vec<u8>>,
 }
 
@@ -305,7 +307,7 @@ impl Harness {
                     accepted = listener.accept() => {
                         let Ok((socket, _)) = accepted else { break; };
                         let config = Arc::clone(&config);
-                        let handler = Peer { key: peer_key.clone(), observed: Arc::clone(&peer_observed), reply: reply.clone(), output: None, process: None, pty: false };
+                        let handler = Peer { key: peer_key.clone(), observed: Arc::clone(&peer_observed), reply: reply.clone(), output: None, process: None, pty: false, opened: false };
                         sessions.spawn(async move { if let Ok(session) = server::run_stream(config, socket, handler).await { let _ = session.await; } });
                     }
                     _ = sessions.join_next(), if !sessions.is_empty() => (),
@@ -370,6 +372,14 @@ impl Harness {
         if let Some(dispatcher) = self.dispatcher.take() {
             dispatcher.shutdown().await;
         }
+    }
+
+    pub(super) async fn expire_idle(&self) {
+        let closed = self.observed.closed.load(Ordering::SeqCst);
+        tokio::time::pause();
+        tokio::time::advance(Duration::from_secs(61)).await;
+        tokio::time::resume();
+        super::wait_for(|| self.observed.closed.load(Ordering::SeqCst) > closed).await;
     }
 
     pub(super) fn take_dispatcher(&mut self) -> SshRun {
@@ -550,6 +560,13 @@ struct Peer {
     output: Option<Outgoing>,
     process: Option<process::Process>,
     pty: bool,
+    opened: bool,
+}
+
+impl Drop for Peer {
+    fn drop(&mut self) {
+        self.observed.closed.fetch_add(1, Ordering::SeqCst);
+    }
 }
 
 struct Outgoing {
@@ -639,6 +656,17 @@ impl server::Handler for Peer {
         reply: server::ChannelOpenHandle,
         _session: &mut server::Session,
     ) -> Result<(), Self::Error> {
+        if self.opened && self.observed.reject_reused_channels.load(Ordering::SeqCst) {
+            reply
+                .reject(russh::ChannelOpenFailure::AdministrativelyProhibited)
+                .await;
+            return Ok(());
+        }
+        self.opened = true;
+        // A reused transport starts a distinct channel with no inherited process or PTY state.
+        self.process = None;
+        self.output = None;
+        self.pty = false;
         reply.accept().await;
         Ok(())
     }

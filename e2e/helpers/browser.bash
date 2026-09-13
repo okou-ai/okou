@@ -375,16 +375,21 @@ wait_for_auth_next_step() {
   local auth_path="$1"
   local otp_selector='input[autocomplete="one-time-code"], input[name="code"], input[inputmode="numeric"]'
 
-  wait_for_browser_target --fn \
+  if ! wait_for_browser_target --fn \
     "(() => {
       if (!window.location.pathname.includes('/${auth_path}')) return true;
       if (document.querySelector('${otp_selector}')) return true;
       if ('${auth_path}' !== 'sign-in') return false;
-      const text = document.body.innerText.toLowerCase();
-      return Boolean(document.querySelector('input[type=\"password\"]'))
-        || text.includes('use another method')
-        || text.includes('forgot password');
-    })()"
+      const signIn = window.Clerk?.client?.signIn;
+      const text = (document.body?.innerText ?? '').toLowerCase();
+      return signIn?.status === 'needs_first_factor'
+        && (Boolean(document.querySelector('input[type=\"password\"]'))
+          || text.includes('use another method')
+          || text.includes('forgot password'));
+    })()"; then
+    report_auth_page_failure
+    return 1
+  fi
 
   if [[ "$(agent_browser_on_page eval "window.location.pathname.includes('/${auth_path}')")" != "true" ]]; then
     echo "complete"
@@ -415,8 +420,9 @@ wait_for_sign_in_email_code_ready() {
 # accept_legal_consent — Accept legal consent when the auth form requires it
 # ---------------------------------------------------------------------------
 accept_legal_consent() {
-  if [[ "$(agent_browser_on_page get count '[role="checkbox"]')" -gt 0 ]]; then
-    agent_browser_on_page find role checkbox click
+  local legal_consent_selector='input[name="legalAccepted"]:not(:checked)'
+  if [[ "$(agent_browser_on_page get count "$legal_consent_selector")" -gt 0 ]]; then
+    agent_browser_on_page click "$legal_consent_selector"
   fi
 }
 
@@ -424,10 +430,16 @@ accept_legal_consent() {
 # click_continue — Click form "Continue" button (not "Continue with Google")
 # ---------------------------------------------------------------------------
 click_continue() {
-  wait_for_browser_target --fn \
+  if ! wait_for_browser_target --fn \
     "Array.from(document.querySelectorAll('button')).some(
       (button) => button.textContent?.trim() === 'Continue' && !button.disabled
-    )"
+    )"; then
+    return 1
+  fi
+  agent_browser_on_page eval \
+    "Array.from(document.querySelectorAll('button'))
+      .find((button) => button.textContent?.trim() === 'Continue' && !button.disabled)
+      ?.scrollIntoView({ block: 'center' })" >/dev/null || return
   agent_browser_on_page find role button click --name "Continue" --exact
 }
 
@@ -450,7 +462,9 @@ enter_otp() {
   local code="$1"
   local otp_selector='input[autocomplete="one-time-code"], input[name="code"], input[inputmode="numeric"]'
 
-  wait_for_browser_target "$otp_selector"
+  if ! wait_for_browser_target "$otp_selector"; then
+    return 1
+  fi
   if [[ "$(agent_browser_on_page get count "$otp_selector")" -eq 1 ]]; then
     agent_browser_on_page fill "$otp_selector" "$code"
   else

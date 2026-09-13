@@ -1,9 +1,9 @@
 #!/usr/bin/env bats
-# brw-t01-platform-e2e.bats — Auth v2 sign-up and sign-in with a single test account
+# brw-t01-platform-e2e.bats — Hosted Clerk sign-up and sign-in with one test account
 #
-# These two tests exercise the deployed platform-owned Auth v2 forms via
+# These two tests exercise Clerk's hosted forms on the deployed platform via
 # agent-browser:
-#   1. Sign up a new test account through Clerk-backed Auth v2
+#   1. Sign up a new test account through hosted Clerk
 #   2. Sign out, then sign in with the same account
 #
 # Tests 3-11 (token sign-in, onboarding, chat, team, automation) are covered
@@ -35,7 +35,7 @@ setup_file() {
   SIGN_UP_COMPLETE_FILE="${BATS_FILE_TMPDIR}/sign-up-complete"
   export SIGN_UP_COMPLETE_FILE
 
-  echo "# Auth v2 E2E (sign-up and sign-in)" >&3
+  echo "# Hosted Clerk E2E (sign-up and sign-in)" >&3
   echo "#   Auth URL: ${OKOU_AUTH_URL:-${E2E_API_BACKEND_URL}}" >&3
   echo "#   Auth domain: ${OKOU_AUTH_DOMAIN:-<default>}" >&3
   echo "#   Auth redirect URL: ${OKOU_AUTH_REDIRECT_URL:-<default>}" >&3
@@ -188,15 +188,15 @@ open_auth_form() {
   echo "# Navigating to $sign_up_url" >&3
   open_auth_form "$sign_up_url" \
     "Boolean(
-      document.querySelector('input[name=\"email-address\"]')
-      && document.querySelector('input[name=\"password\"]')
+      document.querySelector('input[name=\"emailAddress\"]')
+      && document.querySelector('input[type=\"password\"]')
     )"
   dismiss_cookie_banner
 
   # Fill sign-up form
   echo "# Filling sign-up form with $E2E_ACCOUNT" >&3
-  agent_browser_on_page fill 'input[name="email-address"]' "$E2E_ACCOUNT"
-  agent_browser_on_page fill 'input[name="password"]' "$SIGNUP_PASSWORD"
+  agent_browser_on_page find label "Email address" fill "$E2E_ACCOUNT" --exact
+  agent_browser_on_page find label "Password" fill "$SIGNUP_PASSWORD" --exact
   accept_legal_consent
   click_continue
 
@@ -204,7 +204,6 @@ open_auth_form() {
   sign_up_state="$(wait_for_auth_next_step "sign-up")"
   if [[ "$sign_up_state" == "otp" ]]; then
     enter_otp "$OTP"
-    click_continue
     wait_for_auth_completion "sign-up"
   fi
   touch "$SIGN_UP_COMPLETE_FILE"
@@ -246,7 +245,7 @@ open_auth_form() {
 
   # Enter email and click Continue
   echo "# Entering email: $E2E_ACCOUNT" >&3
-  agent_browser_on_page fill 'input[name="identifier"]' "$E2E_ACCOUNT"
+  agent_browser_on_page find label "Email address" fill "$E2E_ACCOUNT" --exact
   click_continue
 
   local sign_in_state
@@ -268,7 +267,6 @@ open_auth_form() {
 
   wait_for_sign_in_email_code_ready
   enter_otp "$OTP"
-  click_continue
   wait_for_auth_completion "sign-in"
   echo "# Sign-in successful!" >&3
 }

@@ -1,4 +1,13 @@
 import {
+  measurePiPreparation,
+  measurePiPreparationSync,
+  startPiPreparationObservation,
+} from "./preparation-timing";
+import type {
+  PiPreparationObservation,
+  PiPreparationObserver,
+} from "./preparation-timing";
+import {
   classifyPiApiProviderFailure,
   PiApiModelRequestError,
   type PiApiModelFailureDiagnostic,
@@ -64,6 +73,12 @@ export {
   UnsupportedPiSessionVersionError,
 };
 export { createPiApiFirstTurnOwnership };
+export {
+  measurePiPreparation,
+  measurePiPreparationSync,
+  startPiPreparationObservation,
+};
+export type { PiPreparationObservation, PiPreparationObserver };
 export type {
   PiApiModelFailureDiagnostic,
   PiApiAssistantContent,

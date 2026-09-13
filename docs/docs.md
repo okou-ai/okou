@@ -30,6 +30,8 @@ surface; the index does not replace their detailed rules.
 
 ## Specialized Guidance
 
+- [Dependency override audit](./dependency-overrides.md): retained dependency
+  constraints, their origins, and evidence for removing obsolete overrides.
 - [Marketing privacy rollback](./marketing-privacy-choices.md): withdrawn runtime
   behavior, retained database state, and rollout boundaries.
 - [Google Cloud LLM voice routing](./google-llm-voice.md): shared Vercel workload
@@ -40,7 +42,7 @@ surface; the index does not replace their detailed rules.
   contracts, current versus run evidence, account identity, and next actions.
 - [Platform lint boundaries](./platform-lint.md): current transport and lifecycle
   exceptions, polling policy, and retired configuration history.
-- [Clerk customization](./clerk-customize.md): hosted Auth V1 styling ownership,
+- [Clerk customization](./clerk-customize.md): hosted Clerk styling ownership,
   public appearance boundaries, lint enforcement, and upgrade verification.
 - [React commit analysis](./react-commit.md): measuring and attributing React
   work without confusing executions, scheduler events, or DOM mutations with

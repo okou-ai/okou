@@ -870,6 +870,7 @@ function ChatThreadEmojiMenuButton({
                 aria-label={t(($) => {
                   return $.chat.thread.changeIcon;
                 })}
+                aria-keyshortcuts="Shift+F2"
                 variant="quiet"
                 size="icon-xs"
                 iconSize="md"
@@ -888,10 +889,19 @@ function ChatThreadEmojiMenuButton({
               </Button>
             </PopoverTrigger>
           </TooltipTrigger>
-          <TooltipContent side="bottom">
-            {t(($) => {
-              return $.chat.thread.icon;
-            })}
+          <TooltipContent
+            role="tooltip"
+            side="bottom"
+            className="flex flex-col items-center gap-1 py-1.5"
+          >
+            <span>
+              {t(($) => {
+                return $.chat.thread.icon;
+              })}
+            </span>
+            <kbd className="whitespace-nowrap font-sans text-xs opacity-70">
+              {getShortcutLabel("shift+f2")}
+            </kbd>
           </TooltipContent>
         </Tooltip>
         <PopoverContent

@@ -5,8 +5,8 @@ import { logger } from "./log.ts";
 
 const L = logger("Promise");
 
-export const NEVER_RESOLVED_PROMISE: Promise<unknown> =
-  Promise.withResolvers<unknown>().promise;
+export const NEVER_RESOLVED_PROMISE: Promise<never> =
+  Promise.withResolvers<never>().promise;
 
 export enum Reason {
   DomCallback = "dom_callback",
@@ -118,16 +118,6 @@ export function isNonArrayRecord(
   value: unknown,
 ): value is Record<string, unknown> {
   return isRecord(value) && !Array.isArray(value);
-}
-
-export function stringProperty(
-  value: Record<string, unknown>,
-  property: string,
-): string | undefined {
-  const candidate = value[property];
-  return typeof candidate === "string" && candidate.length > 0
-    ? candidate
-    : undefined;
 }
 
 export function jsonParseOr<T>(value: string, fallback: T): T {
@@ -454,12 +444,16 @@ export function onRef<T extends HTMLElement | SVGSVGElement>(
  * Create a deferred promise that can be resolved/rejected externally.
  * The promise is automatically rejected when the abort signal is triggered.
  */
-export function createDeferredPromise<T>(signal: AbortSignal): {
+export interface DeferredPromise<T> {
   promise: Promise<T>;
   resolve: (value: T) => void;
   reject: (reason?: unknown) => void;
   settled: () => boolean;
-} {
+}
+
+export function createDeferredPromise<T>(
+  signal: AbortSignal,
+): DeferredPromise<T> {
   const { promise, resolve, reject } = Promise.withResolvers<T>();
   let settled = false;
   let removeAbortListener = () => {};

@@ -1,3 +1,8 @@
+import {
+  measurePiPreparation,
+  measurePiPreparationSync,
+  startPiPreparationObservation,
+} from "@okouai/pi-agent-runtime/api";
 import { isPiNativeModel } from "@okouai/core/pi-execution";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
 import {
@@ -311,6 +316,7 @@ import {
 import { currentConnectorCatalogValidatorIdentity } from "./connector-catalog-validator-authority";
 import { logger } from "../../lib/log";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
+import { piPreparationObserver } from "./pi-preparation-timing.service";
 import type { InternalRunCallbackKind } from "./internal-run-callback";
 import type {
   ChatThreadSessionResolution,
@@ -7236,26 +7242,66 @@ function storedExecutionContextWithPiResources(
   };
 }
 
+function assemblePiLaunchResources(args: {
+  readonly modelConfig: PiModelConfig;
+  readonly storageMounts: StoredExecutionContext["storageMounts"];
+  readonly apiStartTime: number;
+  readonly maintenance: PiMemoryPhase2Maintenance | undefined;
+  readonly memoryRecall: PiMemoryRecallSelection | undefined;
+  readonly resumeSession: PreparedPiLaunchResources["resumeSession"];
+  readonly sessionId: string;
+  readonly manifestUrl: string;
+  readonly sessionUrl: string;
+}): PreparedPiLaunchResources {
+  const { memoryRecall, resumeSession, sessionId } = args;
+  return {
+    modelConfig: args.modelConfig,
+    launchConfig: {
+      schemaVersion: 2,
+      apiFirstTurn: {
+        schemaVersion: 1,
+        resourceSnapshotDigest: piResourceSnapshotDigest(
+          piResourceDiscoveryMounts(args.storageMounts),
+          memoryRecall,
+        ),
+        manifestUrl: args.manifestUrl,
+        sessionUrl: args.sessionUrl,
+        deadlineAt:
+          args.apiStartTime + PI_API_FIRST_TURN_COORDINATION_TIMEOUT_MS,
+        baseSession: piBaseSession(resumeSession, sessionId),
+        sandboxEventSequenceStart: 1,
+      },
+      ...(memoryRecall === undefined ? {} : { memoryRecall }),
+      ...(args.maintenance === undefined
+        ? {}
+        : { maintenance: args.maintenance }),
+    },
+    ...(memoryRecall === undefined ? {} : { memoryRecall }),
+    resumeSession,
+    sessionId,
+  };
+}
+
+interface PreparePiLaunchResourcesArgs {
+  readonly db: Db;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly runId: string;
+  readonly agentSessionId: string;
+  readonly apiStartTime: number;
+  readonly storageMounts: StoredExecutionContext["storageMounts"];
+  readonly persistedStorageMounts: readonly PersistedStorageMount[] | undefined;
+  readonly previousRunStorageMounts:
+    | readonly PersistedStorageMount[]
+    | undefined;
+  readonly piSandbox: PiModelConfig | undefined;
+  readonly chatThreadId: string | undefined;
+  readonly timing: ApiDispatchTimingCollector;
+  readonly maintenance: PiMemoryPhase2Maintenance | undefined;
+}
+
 function preparePiLaunchResources(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly runId: string;
-    readonly agentSessionId: string;
-    readonly apiStartTime: number;
-    readonly storageMounts: StoredExecutionContext["storageMounts"];
-    readonly persistedStorageMounts:
-      | readonly PersistedStorageMount[]
-      | undefined;
-    readonly previousRunStorageMounts:
-      | readonly PersistedStorageMount[]
-      | undefined;
-    readonly piSandbox: PiModelConfig | undefined;
-    readonly chatThreadId: string | undefined;
-    readonly timing: ApiDispatchTimingCollector;
-    readonly maintenance: PiMemoryPhase2Maintenance | undefined;
-  },
+  args: PreparePiLaunchResourcesArgs,
   signal: AbortSignal,
 ): Computed<Promise<PreparedPiLaunchResources | undefined>> {
   return computed(async (get) => {
@@ -7267,87 +7313,116 @@ function preparePiLaunchResources(
     }
     const piSandbox = args.piSandbox;
     const sessionId = args.chatThreadId ?? args.runId;
-    return await measureApiDispatchTiming(
-      args.timing,
-      "api_dispatch_prepare_pi_launch_resources",
-      "nested",
-      async () => {
-        const resumeSession = args.maintenance
-          ? undefined
-          : await measureApiDispatchTiming(
-              args.timing,
-              "api_dispatch_prepare_pi_launch_resume_session",
-              "nested",
-              async () => {
-                return await resolveLatestPiResumeSession(
-                  args.db,
-                  sessionId,
-                  args.agentSessionId,
+    const observe = piPreparationObserver(args.runId);
+    const finish = startPiPreparationObservation(observe, "launch", signal);
+    const result = await onRejection(
+      measureApiDispatchTiming(
+        args.timing,
+        "api_dispatch_prepare_pi_launch_resources",
+        "nested",
+        async () => {
+          const resumeSession = args.maintenance
+            ? undefined
+            : await measureApiDispatchTiming(
+                args.timing,
+                "api_dispatch_prepare_pi_launch_resume_session",
+                "nested",
+                async () => {
+                  return await measurePiPreparation(
+                    observe,
+                    "launch_resume",
+                    () => {
+                      return resolveLatestPiResumeSession(
+                        args.db,
+                        sessionId,
+                        args.agentSessionId,
+                      );
+                    },
+                    signal,
+                  );
+                },
+              );
+          const memoryRecall = args.maintenance
+            ? undefined
+            : await measurePiPreparation(
+                observe,
+                "launch_memory",
+                () => {
+                  return resolvePiMemoryRecall(
+                    {
+                      db: args.db,
+                      orgId: args.orgId,
+                      userId: args.userId,
+                      storageMounts: args.storageMounts,
+                      persistedStorageMounts: args.persistedStorageMounts,
+                      previousRunStorageMounts: args.previousRunStorageMounts,
+                    },
+                    signal,
+                  );
+                },
+                signal,
+              );
+          const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+          const [manifestUrl, sessionUrl] = await Promise.all([
+            measurePiPreparation(
+              observe,
+              "launch_manifest_sign",
+              () => {
+                return get(
+                  generatePresignedGetUrl(
+                    bucket,
+                    piApiFirstTurnObjectKey(args.runId, "manifest"),
+                    PI_API_FIRST_TURN_URL_TTL_SECONDS,
+                    undefined,
+                    true,
+                  ),
                 );
               },
-            );
-        const memoryRecall = args.maintenance
-          ? undefined
-          : await resolvePiMemoryRecall(
-              {
-                db: args.db,
-                orgId: args.orgId,
-                userId: args.userId,
-                storageMounts: args.storageMounts,
-                persistedStorageMounts: args.persistedStorageMounts,
-                previousRunStorageMounts: args.previousRunStorageMounts,
+              signal,
+            ),
+            measurePiPreparation(
+              observe,
+              "launch_session_sign",
+              () => {
+                return get(
+                  generatePresignedGetUrl(
+                    bucket,
+                    piApiFirstTurnObjectKey(args.runId, "session"),
+                    PI_API_FIRST_TURN_URL_TTL_SECONDS,
+                    undefined,
+                    true,
+                  ),
+                );
               },
               signal,
-            );
-        const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-        const [manifestUrl, sessionUrl] = await Promise.all([
-          get(
-            generatePresignedGetUrl(
-              bucket,
-              piApiFirstTurnObjectKey(args.runId, "manifest"),
-              PI_API_FIRST_TURN_URL_TTL_SECONDS,
-              undefined,
-              true,
             ),
-          ),
-          get(
-            generatePresignedGetUrl(
-              bucket,
-              piApiFirstTurnObjectKey(args.runId, "session"),
-              PI_API_FIRST_TURN_URL_TTL_SECONDS,
-              undefined,
-              true,
-            ),
-          ),
-        ]);
-        return {
-          modelConfig: piSandbox,
-          launchConfig: {
-            schemaVersion: 2,
-            apiFirstTurn: {
-              schemaVersion: 1,
-              resourceSnapshotDigest: piResourceSnapshotDigest(
-                piResourceDiscoveryMounts(args.storageMounts),
+          ]);
+          return measurePiPreparationSync(
+            observe,
+            "launch_identity",
+            () => {
+              return assemblePiLaunchResources({
+                modelConfig: piSandbox,
+                storageMounts: args.storageMounts,
+                apiStartTime: args.apiStartTime,
+                maintenance: args.maintenance,
                 memoryRecall,
-              ),
-              manifestUrl,
-              sessionUrl,
-              deadlineAt:
-                args.apiStartTime + PI_API_FIRST_TURN_COORDINATION_TIMEOUT_MS,
-              baseSession: piBaseSession(resumeSession, sessionId),
-              sandboxEventSequenceStart: 1,
+                resumeSession,
+                sessionId,
+                manifestUrl,
+                sessionUrl,
+              });
             },
-            ...(memoryRecall === undefined ? {} : { memoryRecall }),
-            ...(args.maintenance === undefined
-              ? {}
-              : { maintenance: args.maintenance }),
-          },
-          ...(memoryRecall === undefined ? {} : { memoryRecall }),
-          resumeSession,
-          sessionId,
-        };
+            signal,
+          );
+        },
+      ),
+      () => {
+        finish("error");
       },
     );
+    finish("success");
+    return result;
   });
 }
 

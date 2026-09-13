@@ -188,6 +188,24 @@ async def test_invalid_captured_connector_intent_fails_ambiguous_route_before_au
             (("X-VM0-Connector-Intent", "inactive"),),
             "connector_intent_not_candidate",
         ),
+        (
+            (
+                ("X-Okou-Connector-Intent", "primary"),
+                ("X-Okou-Connector-Intent", "auditor"),
+            ),
+            "malformed_connector_intent",
+        ),
+        (
+            (("X-Okou-Connector-Intent", "inactive"),),
+            "connector_intent_not_candidate",
+        ),
+        (
+            (
+                ("X-VM0-Connector-Intent", "primary"),
+                ("X-Okou-Connector-Intent", "inactive"),
+            ),
+            "connector_intent_not_candidate",
+        ),
     ],
 )
 async def test_ambiguous_connector_route_fails_before_auth_and_logs_candidates(
@@ -219,6 +237,7 @@ async def test_ambiguous_connector_route_fails_before_auth_and_logs_candidates(
     assert flow.response is not None
     assert flow.response.status_code == 409
     assert "X-VM0-Connector-Intent" not in flow.request.headers
+    assert "X-Okou-Connector-Intent" not in flow.request.headers
     assert metadata_keys.FIREWALL_BASE not in flow.metadata
     assert metadata_keys.FIREWALL_NAME not in flow.metadata
     assert metadata_keys.FIREWALL_PERMISSION not in flow.metadata

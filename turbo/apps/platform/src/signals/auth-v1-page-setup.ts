@@ -39,10 +39,8 @@ function setupAuthV1Page(mode: AuthV1PageMode) {
     // after readiness lets its provider reuse the loaded instance directly.
     const clerk = await get(clerk$);
     signal.throwIfAborted();
-    // Only the v1 comparison routes request Clerk's optional UI. Stable auth
-    // routes continue to use the platform-owned auth v2 implementation. That
-    // resource can fail before a form exists, so `settle` keeps cancellation
-    // propagating while this route offers a visible reload instead.
+    // The optional hosted UI can fail before a form exists, so `settle` keeps
+    // cancellation propagating while this route offers a visible reload.
     const uiLoad = await settle(set(ensureClerkUiLoaded$, signal), signal);
     if (!uiLoad.ok) {
       L.error("Clerk UI failed to load", uiLoad.error);
@@ -50,10 +48,7 @@ function setupAuthV1Page(mode: AuthV1PageMode) {
       return;
     }
     const signals = createAuthV1ClerkSignals(clerk);
-    set(
-      updatePage$,
-      createElement(AuthV1Page, { clerk, mode, ui: uiLoad.value, signals }),
-    );
+    set(updatePage$, createElement(AuthV1Page, { mode, signals }));
   });
 }
 

@@ -166,6 +166,27 @@ describe("cron monitor chat event queue", () => {
     });
   });
 
+  it("continues orphan monitoring after a full revoked candidate page", async () => {
+    const fixture = await trackFixture(seedFixture("paginated-orphan"));
+
+    const response = await accept(
+      stateClient().monitor({ body: { event_ids: [...fixture.eventIds] } }),
+      [500],
+    );
+
+    expect(response.body).toStrictEqual({
+      error: "Internal server error",
+    });
+    expect(
+      context.mocks.sentry.captureException.mock.calls.at(-1)?.[0],
+    ).toMatchObject({
+      name: "OrphanedQueuedChatEventsError",
+      code: "ORPHANED_QUEUED_CHAT_MESSAGES",
+      orphanedMessages: 1,
+      orphanedMessagesBySource: { slack: 1 },
+    });
+  });
+
   it("does not flag input.automation without legacy encrypted params", async () => {
     const fixture = await trackFixture(seedFixture("orphaned-automation"));
 
@@ -183,6 +204,21 @@ describe("cron monitor chat event queue", () => {
 
   it("does not alert for a newly queued event below the age threshold", async () => {
     const fixture = await trackFixture(seedFixture("queued-integration"));
+
+    const response = await accept(
+      stateClient().monitor({ body: { event_ids: [fixture.eventId] } }),
+      [200],
+    );
+
+    expect(response.body).toStrictEqual({
+      success: true,
+      orphanedMessages: 0,
+    });
+    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it("ignores orphaned events outside the recent stale window", async () => {
+    const fixture = await trackFixture(seedFixture("old-orphan"));
 
     const response = await accept(
       stateClient().monitor({ body: { event_ids: [fixture.eventId] } }),

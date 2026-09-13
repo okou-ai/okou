@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import { match } from "path-to-regexp";
-import { clerk$, resolveAppAuthUrl } from "../auth.ts";
+import { clerk$, clerkUser$, resolveAppAuthUrl } from "../auth.ts";
 import { ROUTES } from "../route-paths.ts";
 import { detachedNavigateTo$, pathname$, searchParams$ } from "../route.ts";
 import { tapError } from "../utils.ts";
@@ -102,8 +102,9 @@ export const bootstrapOnboardingGuard$ = command(
 
     const clerk = await get(clerk$);
     signal.throwIfAborted();
+    const user = await get(clerkUser$);
+    signal.throwIfAborted();
     const session = clerk.session;
-    const user = clerk.user;
     const organization = clerk.organization;
     if (!session || !user || !organization) {
       return;

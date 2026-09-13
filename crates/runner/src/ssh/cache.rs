@@ -75,6 +75,7 @@ pub(super) struct Registration {
     identity: Arc<()>,
 }
 
+#[derive(Clone)]
 pub(super) struct Access {
     registration: Arc<Registration>,
     connection: uuid::Uuid,
@@ -190,29 +191,8 @@ impl Registration {
         connection: uuid::Uuid,
     ) -> Result<Access, FailureReason> {
         let access = self.lookup(connection)?;
-        let mut state = self.cache.state.lock().unwrap_or_else(|p| p.into_inner());
-        if !state.connected {
+        if !access.retain()? {
             return Err(FailureReason::Unavailable);
-        }
-        let run = state
-            .runs
-            .get_mut(&self.run)
-            .filter(|run| Arc::ptr_eq(&run.identity, &self.identity))
-            .ok_or(FailureReason::Cancelled)?;
-        if access.cached
-            && !run
-                .entries
-                .get(&connection)
-                .is_some_and(|entry| Arc::ptr_eq(entry, &access.entry))
-        {
-            return Err(FailureReason::ConfigurationChanged);
-        }
-        if !access.cached {
-            // Cache capacity must not become a global connection quota. A weak
-            // watcher owns no credential and is bounded by live Run admission.
-            run.sessions.retain(|(_, entry)| entry.strong_count() > 0);
-            run.sessions
-                .push((connection, Arc::downgrade(&access.entry)));
         }
         Ok(access)
     }
@@ -240,6 +220,47 @@ impl Drop for Registration {
 }
 
 impl Access {
+    /// Register retained authority before resolving credentials, including cache misses.
+    /// Disconnected one-shot requests still resolve afresh and retain no transport.
+    pub(super) fn retain(&self) -> Result<bool, FailureReason> {
+        let mut state = self
+            .registration
+            .cache
+            .state
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if !state.connected {
+            return Ok(false);
+        }
+        let run = state
+            .runs
+            .get_mut(&self.registration.run)
+            .filter(|run| Arc::ptr_eq(&run.identity, &self.registration.identity))
+            .ok_or(FailureReason::Cancelled)?;
+        if self.entry.cancelled.is_cancelled()
+            || (self.cached
+                && !run
+                    .entries
+                    .get(&self.connection)
+                    .is_some_and(|entry| Arc::ptr_eq(entry, &self.entry)))
+        {
+            return Err(FailureReason::ConfigurationChanged);
+        }
+        if !self.cached {
+            // Weak watchers own no credentials; live operations and idle transports bound them.
+            run.sessions.retain(|(_, entry)| entry.strong_count() > 0);
+            if !run
+                .sessions
+                .iter()
+                .any(|(_, entry)| entry.ptr_eq(&Arc::downgrade(&self.entry)))
+            {
+                run.sessions
+                    .push((self.connection, Arc::downgrade(&self.entry)));
+            }
+        }
+        Ok(true)
+    }
+
     pub(super) fn cancelled(&self) -> CancellationToken {
         self.entry.cancelled.clone()
     }

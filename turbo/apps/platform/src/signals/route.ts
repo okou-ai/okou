@@ -2,7 +2,12 @@ import { isDesktopAuthFlow } from "../lib/desktop-auth-flow.ts";
 import { command, computed, state, type Command } from "ccstate";
 import { match } from "path-to-regexp";
 import type { RoutePath } from "./route-paths";
-import { clerk$, needsOrgSelection$, resolveAppAuthUrl } from "./auth.ts";
+import {
+  clerk$,
+  clerkUser$,
+  needsOrgSelection$,
+  resolveAppAuthUrl,
+} from "./auth.ts";
 import { hash, pathname, pushState, replaceState, search } from "./location.ts";
 import { setPageSignal$ } from "./page-signal.ts";
 import { clearPage$ } from "./react-router.ts";
@@ -87,15 +92,10 @@ export const replacePathSilently$ = command(
     pathnameTemplate: Parameters<typeof generateRouterPath>[0],
     pathParams?: Parameters<typeof generateRouterPath>[1],
     searchParams?: URLSearchParams,
-    hash = "",
   ) => {
     const newPath = generateRouterPath(pathnameTemplate, pathParams);
     const searchStr = searchParams?.toString();
-    replaceState(
-      {},
-      "",
-      `${newPath}${searchStr ? `?${searchStr}` : ""}${hash}`,
-    );
+    replaceState({}, "", `${newPath}${searchStr ? `?${searchStr}` : ""}`);
     set(internalHistoryState$, {});
     set(reloadPathname$, (x) => {
       return x + 1;
@@ -363,7 +363,13 @@ export const setupAuthPageWrapper = (
       return;
     }
 
-    if (!clerk.user) {
+    // Wait out Clerk's transitive state instead of reading `clerk.user`: while
+    // `setActive()` navigates, the user is `undefined` rather than signed out,
+    // and redirecting here would bounce a completed sign-in back to the form.
+    const user = await get(clerkUser$);
+    signal.throwIfAborted();
+
+    if (!user) {
       const signInUrl = new URL(
         clerk.buildSignInUrl({ redirectUrl: location.href }),
       );

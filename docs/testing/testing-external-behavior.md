@@ -32,6 +32,10 @@ For example:
 3. If a user can see a toast, list, URL, or dialog, the test asserts on that
    surface.
 
+For rendered content, default to `toBeInTheDocument()` as described in
+[App assertions](app-testing.md#assertions). Use `toBeVisible()` when showing or
+hiding content is itself the contract.
+
 Do not render an internal component just because it is convenient. Do not mutate
 the store directly. Do not call hooks directly. Do not assert on query cache,
 component state, CSS classes, or whether an internal callback was called.

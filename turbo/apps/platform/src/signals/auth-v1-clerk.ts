@@ -5,43 +5,59 @@ import { registerClerkRouter } from "../lib/clerk-runtime.ts";
 import { onRef } from "./utils.ts";
 import { pageSignal$ } from "./page-signal.ts";
 import { detachedNavigateTo$ } from "./route.ts";
-import type { RoutePath } from "./route-paths.ts";
+import { ROUTES, type RoutePath } from "./route-paths.ts";
 
 type ClerkRouter = NonNullable<ClerkProviderProps["routerPush"]>;
 type ClerkRouterMetadata = Parameters<ClerkRouter>[1];
 
-/** A route-owned integration with the external Clerk runtime. */
+function isAuthV1Pathname(pathname: string): boolean {
+  return (
+    pathname === ROUTES.signIn ||
+    pathname.startsWith(`${ROUTES.signIn}/`) ||
+    pathname === ROUTES.signUp ||
+    pathname.startsWith(`${ROUTES.signUp}/`)
+  );
+}
+
+/**
+ * Keeps Clerk's hosted auth steps in app history and reloads on auth exit.
+ *
+ * Authenticated startup is document-scoped: feature switches, the realtime
+ * daemon, the shared database bridge and the onboarding guard all run once from
+ * `bootstrap$` and return early while signed out. Leaving the hosted sign-in or
+ * sign-up routes therefore needs a new document, while their internal factor
+ * and task steps remain same-document navigations without a loading flash.
+ */
 export function createAuthV1ClerkSignals(clerk: Pick<Clerk, "on" | "off">) {
   const navigateClerkUrl$ = command(
-    (
-      { set },
-      url: string,
-      metadata: ClerkRouterMetadata,
-      replace: boolean,
-    ): void => {
+    ({ set }, url: string, replace: boolean): void => {
       const destination = new URL(url, window.location.href);
-      if (destination.origin !== window.location.origin) {
-        // Clerk keeps ownership of protocol checks and cross-origin loads.
-        metadata?.windowNavigate(url);
+      if (
+        destination.origin === window.location.origin &&
+        isAuthV1Pathname(destination.pathname)
+      ) {
+        set(detachedNavigateTo$, destination.pathname as RoutePath, {
+          hash: destination.hash,
+          replace,
+          searchParams: destination.searchParams,
+        });
         return;
       }
-      // The route table has a final catch-all, so every same-origin pathname
-      // is a valid runtime destination even when it is not a generated route.
-      set(detachedNavigateTo$, destination.pathname as RoutePath, {
-        hash: destination.hash,
-        replace,
-        searchParams: destination.searchParams,
-      });
+      if (replace) {
+        window.location.replace(destination.href);
+        return;
+      }
+      window.location.assign(destination.href);
     },
   );
   const clerkRouterPush$ = command(
-    ({ set }, url: string, metadata?: ClerkRouterMetadata): void => {
-      set(navigateClerkUrl$, url, metadata, false);
+    ({ set }, url: string, _metadata?: ClerkRouterMetadata): void => {
+      set(navigateClerkUrl$, url, false);
     },
   );
   const clerkRouterReplace$ = command(
-    ({ set }, url: string, metadata?: ClerkRouterMetadata): void => {
-      set(navigateClerkUrl$, url, metadata, true);
+    ({ set }, url: string, _metadata?: ClerkRouterMetadata): void => {
+      set(navigateClerkUrl$, url, true);
     },
   );
   const status$ = state<ClerkStatus>("loading");

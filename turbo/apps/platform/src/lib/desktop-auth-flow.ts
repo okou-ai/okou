@@ -11,7 +11,7 @@ const DESKTOP_AUTH_PATHS = [
 
 const redirectUrlSchema = z.url();
 
-/** Protocol pages and their Auth v2 continuations own navigation and secrets. */
+/** Protocol pages and their hosted Clerk continuations own navigation and secrets. */
 export function isDesktopAuthFlow(url = new URL(location.href)): boolean {
   if (
     DESKTOP_AUTH_PATHS.some((path) => {

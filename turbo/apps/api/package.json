@@ -1,6 +1,6 @@
 {
   "name": "api",
-  "version": "1.590.0",
+  "version": "1.590.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -22,9 +22,9 @@
     "check-types:bootstrap-wiring": "tsc -p tsconfig.bootstrap-wiring.json --noEmit --checkers $(node ../../scripts/tsc-checkers.mjs)"
   },
   "dependencies": {
-    "@aws-sdk/client-kms": "^3.1121.0",
-    "@aws-sdk/client-s3": "^3.1121.0",
-    "@aws-sdk/s3-request-presigner": "^3.1121.0",
+    "@aws-sdk/client-kms": "^3.1127.0",
+    "@aws-sdk/client-s3": "^3.1127.0",
+    "@aws-sdk/s3-request-presigner": "^3.1127.0",
     "@axiomhq/js": "^1.5.0",
     "@axiomhq/logging": "^0.1.6",
     "@clerk/backend": "^3.13.1",
@@ -32,9 +32,9 @@
     "@hono/otel": "^1.1.2",
     "@modelcontextprotocol/client": "^2.0.0",
     "@opentelemetry/api": "^1.9.1",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.215.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
     "@opentelemetry/semantic-conventions": "^1.43.0",
-    "@sentry/node": "^10.50.0",
+    "@sentry/node": "^10.73.0",
     "@slack/web-api": "^7.13.0",
     "@t3-oss/env-core": "^0.13.11",
     "@vercel/functions": "^3.4.4",
@@ -54,7 +54,7 @@
     "google-auth-library": "^10.9.0",
     "gpt-tokenizer": "^3.4.0",
     "hono": "^4.13.0",
-    "html-to-text": "^10.0.0",
+    "html-to-text": "^10.0.1",
     "ignore": "^7.0.5",
     "image-dimensions": "^2.5.1",
     "markdown-it": "14.2.0",
@@ -63,7 +63,7 @@
     "resend": "^6.12.4",
     "signal-timers": "^1.0.4",
     "stripe": "^20.4.1",
-    "svix": "^1.89.0",
+    "svix": "^2.3.0",
     "tar": "^7.5.19",
     "uuid": "^14.0.0",
     "web-push": "^3.6.7",
@@ -72,8 +72,8 @@
   "devDependencies": {
     "@hono/node-server-v1": "npm:@hono/node-server@1.19.14",
     "@hono/vite-build": "^1.11.1",
-    "@opentelemetry/context-async-hooks": "2.7.0",
-    "@opentelemetry/sdk-trace-base": "2.7.0",
+    "@opentelemetry/context-async-hooks": "2.11.0",
+    "@opentelemetry/sdk-trace-base": "2.11.0",
     "@types/archiver": "^8.0.0",
     "@types/html-to-text": "^9.0.4",
     "@types/markdown-it": "^14.1.2",
@@ -93,6 +93,6 @@
     "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "vite": "^8.0.16",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.0"
   }
 }

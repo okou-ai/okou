@@ -8,6 +8,7 @@ mod keys;
 mod network;
 mod observation;
 mod output;
+mod pool;
 mod sessions;
 #[cfg(test)]
 mod tests;
@@ -295,7 +296,7 @@ impl SshRuntime {
                 &work,
                 &mut writer,
                 &mut output,
-                &sessions.registration,
+                &sessions,
             )
             .await;
         let observation = output.connection.finish(result.as_ref().err().copied());
@@ -331,11 +332,12 @@ impl SshRuntime {
         scope: &Scope,
         writer: &mut ResponseWriter<GuestIo>,
         output: &mut output::Output,
-        registration: &Arc<cache::Registration>,
+        sessions: &sessions::Manager,
     ) -> Result<output::RemoteExit, FailureReason> {
         let run = request.run;
         let connection = request.connection;
-        let access = registration.lookup(connection)?;
+        let access = sessions.registration.lookup(connection)?;
+        let retained = access.retain()?;
         let result = async {
             let credential = scope
                 .wait(access.prepare(self.prepare(
@@ -354,16 +356,28 @@ impl SshRuntime {
                     .generation,
             );
             output.connection.connecting = true;
-            let result = self
-                .execute_prepared(
-                    lease,
-                    request,
-                    Arc::clone(&credential),
+            let transport = sessions
+                .pool
+                .acquire(
+                    self,
+                    pool::Request {
+                        connection,
+                        credential: Arc::clone(&credential),
+                        access: access.clone(),
+                        operation: lease,
+                        retained,
+                    },
                     scope,
-                    writer,
-                    output,
+                    &mut output.connection,
                 )
+                .await?;
+            let result = transport
+                .connected()
+                .execute(request.command, scope, writer, output)
                 .await;
+            if result.is_ok() {
+                transport.reuse();
+            }
             // TOFU advances trust during this attempt, before user authentication.
             output.connection.generation = Some(
                 credential
@@ -460,37 +474,9 @@ impl SshRuntime {
         result
     }
 
-    async fn execute_prepared(
-        &self,
-        lease: Arc<OwnedSemaphorePermit>,
-        request: ExecRequest,
-        credential: Arc<PreparedCredential>,
-        scope: &Scope,
-        writer: &mut ResponseWriter<GuestIo>,
-        output: &mut output::Output,
-    ) -> Result<output::RemoteExit, FailureReason> {
-        let ExecRequest {
-            run,
-            connection,
-            command,
-        } = request;
-        let stream = self
-            .open_socket(Arc::clone(&lease), &credential.host, credential.port, scope)
-            .await?;
-        engine::Execution {
-            authority: Arc::clone(&self.authority),
-            run,
-            connection,
-            lease,
-            credential,
-        }
-        .execute(stream, command, scope, writer, output)
-        .await
-    }
-
     async fn open_socket(
         &self,
-        lease: Arc<OwnedSemaphorePermit>,
+        lease: Arc<io::HostLease>,
         host: &str,
         port: u16,
         scope: &Scope,

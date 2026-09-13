@@ -166,11 +166,11 @@ test("The inline Clerk bootstrap uses the current page sign-in URL", () => {
   }
 });
 
-test("The inline bootstrap loads installed UI only for v1 auth routes", () => {
+test("The inline bootstrap loads installed UI only for auth routes", () => {
   for (const pathname of [
     "/agents",
-    "/sign-in",
-    "/sign-up",
+    "/v1/sign-in",
+    "/v1/sign-up",
     "/v1/sign-invader",
   ]) {
     expect(
@@ -178,10 +178,10 @@ test("The inline bootstrap loads installed UI only for v1 auth routes", () => {
     ).toStrictEqual([]);
   }
   for (const pathname of [
-    "/v1/sign-in",
-    "/v1/sign-in/tasks/choose-organization",
-    "/v1/sign-up",
-    "/v1/sign-up/tasks/choose-organization",
+    "/sign-in",
+    "/sign-in/tasks/choose-organization",
+    "/sign-up",
+    "/sign-up/tasks/choose-organization",
   ]) {
     const { appendedScripts } = runInlineBootstrap("app.okou.ai", pathname);
     expect(appendedScripts).toHaveLength(1);
@@ -198,8 +198,8 @@ test("The inline Clerk router delegates only while an app route owns it", () => 
     },
   };
 
-  bootstrap.loadOptions.routerPush("/v1/sign-in/factor-one", metadata);
-  expect(windowNavigations).toStrictEqual(["/v1/sign-in/factor-one"]);
+  bootstrap.loadOptions.routerPush("/sign-in/factor-one", metadata);
+  expect(windowNavigations).toStrictEqual(["/sign-in/factor-one"]);
 
   const routeNavigations: string[] = [];
   bootstrapWindow.__okouClerkRouter = {
@@ -210,12 +210,12 @@ test("The inline Clerk router delegates only while an app route owns it", () => 
       routeNavigations.push(`replace:${url}`);
     },
   };
-  bootstrap.loadOptions.routerPush("/v1/sign-in/factor-one", metadata);
-  bootstrap.loadOptions.routerReplace("/v1/sign-in", metadata);
+  bootstrap.loadOptions.routerPush("/sign-in/factor-one", metadata);
+  bootstrap.loadOptions.routerReplace("/sign-in", metadata);
 
   expect(routeNavigations).toStrictEqual([
-    "push:/v1/sign-in/factor-one",
-    "replace:/v1/sign-in",
+    "push:/sign-in/factor-one",
+    "replace:/sign-in",
   ]);
-  expect(windowNavigations).toStrictEqual(["/v1/sign-in/factor-one"]);
+  expect(windowNavigations).toStrictEqual(["/sign-in/factor-one"]);
 });

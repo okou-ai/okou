@@ -23,7 +23,7 @@ fn notify(h: &Harness, data: Value) {
 }
 
 #[tokio::test]
-async fn run_cache_reuses_authority_and_parsed_key_but_rechecks_destinations() {
+async fn run_cache_reuses_transport_but_validates_each_cold_destination() {
     let h = Harness::new(Reply::default()).await;
     h.runtime.ably_connected(true);
     let resolve = h.resolve(h.credential(true)).await;
@@ -34,12 +34,13 @@ async fn run_cache_reuses_authority_and_parsed_key_but_rechecks_destinations() {
         .unwrap();
     assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
     *h.network.answers.lock().unwrap() = vec!["127.0.0.1:22".parse().unwrap()];
+    h.expire_idle().await;
     assert_eq!(
         terminal(&h.request(params()).await)["failure_reason"],
         "unsafe_destination"
     );
     resolve.assert_calls_async(1).await;
-    assert_eq!(h.observed.queries.lock().unwrap().len(), 3);
+    assert_eq!(h.observed.queries.lock().unwrap().len(), 2);
     assert_eq!(h.observed.commands.lock().unwrap().len(), 2);
 }
 
@@ -69,6 +70,7 @@ async fn cached_pin_still_rejects_a_different_peer_before_authentication() {
     assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
     let original = *h.network.target.lock().unwrap();
     *h.network.target.lock().unwrap() = *other.network.target.lock().unwrap();
+    h.expire_idle().await;
     assert_eq!(
         terminal(&h.request(params()).await)["failure_reason"],
         "host_key_mismatch"
@@ -245,11 +247,20 @@ async fn full_retained_cache_bypasses_caching_without_rejecting_commands() {
         assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
     }
     resolve.assert_calls_async(258).await;
+    assert_eq!(h.observed.auth.load(Ordering::SeqCst), 1);
+    resolve.delete_async().await;
+    let mut credential = h.credential(true);
+    credential["generation"] = json!(8);
+    let fresh = h.resolve(credential).await;
+    // Even without a delivered notice, newly resolved authority cannot reuse an older generation.
+    assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
+    assert_eq!(h.observed.auth.load(Ordering::SeqCst), 2);
     notify(&h, json!({"runId":h.run, "connectionId":null}));
     for _ in 0..2 {
         assert_eq!(terminal(&h.request(params()).await)["type"], "finished");
     }
-    resolve.assert_calls_async(259).await;
+    fresh.assert_calls_async(2).await;
+    assert_eq!(h.observed.auth.load(Ordering::SeqCst), 3);
 }
 
 #[tokio::test]
@@ -330,23 +341,28 @@ async fn late_pin_results_cannot_repopulate_or_evict_a_replacement_snapshot() {
             };
             let (second, ()) = tokio::join!(h.request(params()), replacement);
             assert_eq!(terminal(&second)["type"], "finished");
-            respond(&mut pin, pin_result.clone()).await.unwrap();
+            let late = respond(&mut pin, pin_result.clone()).await;
+            assert!(
+                late.is_ok()
+                    || late.is_err_and(|error| matches!(
+                        error.kind(),
+                        std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::ConnectionReset
+                    ))
+            );
         };
         let ((), first) = tokio::time::timeout(Duration::from_secs(10), async {
             tokio::join!(server, h.request(params()))
         })
         .await
         .unwrap();
-        if pin_result["outcome"] == "pinned" {
-            // Already-started connections are not revoked by an invalidation.
-            assert_eq!(terminal(&first)["type"], "finished");
-        } else {
-            assert_eq!(terminal(&first)["failure_reason"], "configuration_changed");
-        }
+        // The invalidated attempt must never authenticate, even if its pin arrives late.
+        assert_eq!(terminal(&first)["failure_reason"], "configuration_changed");
+        assert_eq!(h.observed.auth.load(Ordering::SeqCst), 1);
         // No further HTTP response is provided: the replacement must still be cached.
         let third = tokio::time::timeout(Duration::from_secs(10), h.request(params()))
             .await
             .unwrap();
         assert_eq!(terminal(&third)["type"], "finished");
+        assert_eq!(h.observed.auth.load(Ordering::SeqCst), 1);
     }
 }

@@ -11,6 +11,7 @@ import {
   bridgeConnected$,
   installedSharedDatabaseBridge$,
 } from "../shared-database-bridge-state.ts";
+import { setupClerkUser$ } from "../auth.ts";
 import { setRootSignal$ } from "../root-signal.ts";
 import { detach, Reason } from "../utils.ts";
 import { testContext } from "./test-helpers.ts";
@@ -140,6 +141,13 @@ function setupBridge(): void {
     activeOrg: { id: "shared-worker-org", name: "Shared Worker Org" },
     memberships: [{ id: "shared-worker-org" }],
   });
+  // Bootstrap owns `clerkUser$` in production; this test drives the bridge
+  // directly, so it has to claim the same owner.
+  detach(
+    context.store.set(setupClerkUser$, context.signal),
+    Reason.Daemon,
+    "test clerk user owner",
+  );
   detach(
     context.store.set(setupSharedDatabaseBridge$, context.signal),
     Reason.Daemon,

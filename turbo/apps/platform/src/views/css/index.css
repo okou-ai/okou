@@ -9,7 +9,7 @@
 @source "../../../../../packages/ui/src/**/*.{ts,tsx}";
 
 @theme {
-  /* V1 comparison geometry follows AuthV2 without changing its styles. */
+  /* Hosted Clerk card geometry owned by the application page shell. */
   --okou-auth-card-max-width: 25rem;
   --okou-auth-card-page-width: calc(100% + 0.5rem);
   --okou-auth-card-padding-inline: 2.5rem;
@@ -136,18 +136,6 @@ body,
 
 body {
   margin: 0;
-}
-
-@keyframes auth-v2-otp-caret-blink {
-  0%,
-  45% {
-    opacity: 1;
-  }
-
-  50%,
-  100% {
-    opacity: 0;
-  }
 }
 
 #root {

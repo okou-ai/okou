@@ -153,13 +153,18 @@ async function filterProfessionalAvatars(
   return filters;
 }
 
-test("Preview avatar templates within the selected style", async () => {
+test("Hovering a video avatar plays its preview within the selected style", async () => {
   const { user, dialog, media } = await openAvatarCatalog();
   await filterProfessionalAvatars(user, dialog);
   await user.hover(
     within(dialog).getByLabelText("Select template Motion Maya"),
   );
   expect(media.play).toHaveBeenCalledWith();
+});
+
+test("A still avatar preview remains visible within the selected style", async () => {
+  const { user, dialog } = await openAvatarCatalog();
+  await filterProfessionalAvatars(user, dialog);
   expect(within(dialog).getByAltText("Still Sara")).toBeVisible();
 });
 

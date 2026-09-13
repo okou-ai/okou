@@ -184,13 +184,8 @@ export function checkSource(relativePath, sourceText) {
     }
 
     const specifier = moduleSpecifier(node);
-    if (specifier !== null) {
-      if (/\.css(?:\?.*)?$/iu.test(specifier)) {
-        record(node, "imports a route-owned stylesheet");
-      }
-      if (/(?:^|\/)auth-v2(?:\/|$)/u.test(specifier)) {
-        record(node, "imports the independent Auth V2 implementation");
-      }
+    if (specifier !== null && /\.css(?:\?.*)?$/iu.test(specifier)) {
+      record(node, "imports a route-owned stylesheet");
     }
 
     if (

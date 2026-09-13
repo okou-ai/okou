@@ -7,6 +7,7 @@ mod key_wait;
 mod lifecycle;
 mod observations;
 mod passwords;
+mod pooling;
 mod proof;
 mod sessions;
 mod telemetry;

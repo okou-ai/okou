@@ -41,6 +41,7 @@ function setupSentry() {
 
   init({
     dsn,
+    enableLogs: false,
     environment,
     initialScope: {
       tags: {

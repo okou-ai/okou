@@ -51,7 +51,7 @@ test.each([
   await setupPage({
     context,
     host: "app.okou.ai",
-    path: `/v1/${mode}${suffix}`,
+    path: `/${mode}${suffix}`,
     auth: null,
   });
 
@@ -65,14 +65,14 @@ test("Leaving hosted auth restores the existing app zoom policy", async () => {
   await setupPage({
     context,
     host: "app.okou.ai",
-    path: "/v1/sign-in",
+    path: "/sign-in",
     auth: null,
   });
   expect(screen.getByTestId("clerk-sign-in")).toBeVisible();
   expectPinchPrevented(false);
 
   act(() => {
-    window.history.pushState(null, "", "/v1/sign-up");
+    window.history.pushState(null, "", "/sign-up");
     window.dispatchEvent(new PopStateEvent("popstate"));
   });
   await expect(screen.findByTestId("clerk-sign-up")).resolves.toBeVisible();
@@ -80,11 +80,11 @@ test("Leaving hosted auth restores the existing app zoom policy", async () => {
   expectPinchPrevented(false);
 
   act(() => {
-    window.history.pushState(null, "", "/sign-in");
+    window.history.pushState(null, "", "/_/error");
     window.dispatchEvent(new PopStateEvent("popstate"));
   });
   await expect(
-    screen.findByRole("region", { name: "Sign in to Okou" }),
+    screen.findByText("Oops! Something went sideways"),
   ).resolves.toBeVisible();
   expect(viewport.content).toBe(DEFAULT_VIEWPORT);
   expectPinchPrevented(true);

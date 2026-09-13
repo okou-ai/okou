@@ -93,31 +93,9 @@ function waitForFastRole(
   });
 }
 
-async function openAddAccount(
-  addAccountLabel: string,
-  dialogTitle: string,
-): Promise<HTMLElement> {
-  const trigger = await waitFor(() => {
-    const button = accountMenuTrigger();
-    if (!button) {
-      throw new Error("Expected the account menu trigger");
-    }
-    return button;
-  });
-  click(trigger);
-  const menu = await screen.findByRole("menu");
-  click(within(menu).getByText(addAccountLabel));
-  return screen.findByRole("dialog", { name: dialogTitle });
-}
-
-async function closeAddAccount(
-  dialog: HTMLElement,
-  closeLabel: string,
-): Promise<void> {
-  click(fastRoleElement("button", closeLabel, dialog));
-  await waitFor(() => {
-    expect(dialog).not.toBeInTheDocument();
-  });
+function clerkProviderLocalization(): string | undefined {
+  return screen.getByTestId("clerk-provider-config").dataset
+    .clerkSignInStartActionLink;
 }
 
 async function selectLanguage(
@@ -165,11 +143,6 @@ test("Authentication copy falls back without changing the app language", async (
   expect(
     screen.getByText("Escolha seu idioma preferido para a interface do Okou"),
   ).toBeVisible();
-  const authentication = await openAddAccount(
-    "Adicionar conta",
-    "Entrar no Okou",
-  );
-  expect(within(authentication).getByLabelText("Seu e-mail")).toBeVisible();
   expect(document.documentElement).toHaveAttribute("lang", "pt-BR");
   expect(clerk.localizationRequests).toStrictEqual(["pt-BR"]);
 });
@@ -351,14 +324,9 @@ async function openFrenchAuthenticationSettings() {
   await expect(
     screen.findByRole("heading", { name: "Préférences" }),
   ).resolves.toBeInTheDocument();
-  const frenchAuthentication = await openAddAccount(
-    "Ajouter un compte",
-    "Se connecter à Okou",
-  );
-  expect(
-    within(frenchAuthentication).getByLabelText("Adresse e-mail"),
-  ).toBeVisible();
-  await closeAddAccount(frenchAuthentication, "Fermer");
+  // Clerk takes `localization` only as a global option, so the app-level
+  // provider is what carries it to components opened outside the auth route.
+  expect(clerkProviderLocalization()).toBe("S'inscrire");
   return clerk;
 }
 
@@ -368,14 +336,7 @@ test("Authentication copy follows the selected language after switching", async 
   await expect(
     screen.findByRole("heading", { name: "Preference" }),
   ).resolves.toBeInTheDocument();
-  const englishAuthentication = await openAddAccount(
-    "Add account",
-    "Sign in to Okou",
-  );
-  expect(
-    within(englishAuthentication).getByLabelText("Email address"),
-  ).toBeVisible();
-  await closeAddAccount(englishAuthentication, "Close");
+  expect(clerkProviderLocalization()).toBe("Sign up");
   expect(clerk.localizationRequests).toStrictEqual(["fr-FR"]);
 });
 
@@ -389,13 +350,10 @@ test("Switching back reuses the previously loaded authentication language", asyn
   await expect(
     screen.findByRole("heading", { name: "Préférences" }),
   ).resolves.toBeInTheDocument();
-  const reusedFrenchAuthentication = await openAddAccount(
-    "Ajouter un compte",
-    "Se connecter à Okou",
-  );
-  expect(
-    within(reusedFrenchAuthentication).getByLabelText("Adresse e-mail"),
-  ).toBeVisible();
+  expect(clerkProviderLocalization()).toBe("S'inscrire");
+
+  // Returning to French reuses the cached resource instead of downloading it
+  // again, and English never downloads because it ships as the default.
   expect(clerk.localizationRequests).toStrictEqual(["fr-FR"]);
 });
 

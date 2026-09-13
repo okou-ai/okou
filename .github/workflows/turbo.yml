@@ -645,7 +645,7 @@ jobs:
         working-directory: turbo
         env:
           DATABASE_URL: postgresql://postgres@postgres:5432/postgres
-        run: pnpm -F api exec vitest bench --run --outputJson bench-results.json
+        run: pnpm -F api exec vitest bench --run --reporter=default --reporter=json --reporter=./scripts/bench-p90-reporter.ts --outputFile=bench-results.json
       - name: Print bench summary
         if: success() || failure()
         working-directory: turbo/apps/api
@@ -678,7 +678,7 @@ jobs:
       - uses: ./.github/actions/toolchain-init
       - name: Bench App
         working-directory: turbo
-        run: pnpm -F @okouai/app exec vitest bench --run --outputJson bench-results.json
+        run: pnpm -F @okouai/app exec vitest bench --run --reporter=default --reporter=json --reporter=./scripts/bench-p90-reporter.ts --outputFile=bench-results.json
       - name: Print bench summary
         if: success() || failure()
         working-directory: turbo/apps/platform
@@ -1917,8 +1917,8 @@ jobs:
             project: features
           - lane: paid-onboarding
             project: paid-onboarding
-          - lane: auth-v2
-            project: auth-v2
+          - lane: auth-v1
+            project: auth-v1
     concurrency:
       group: cli-e2e-02-playwright-${{ matrix.lane }}-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
@@ -2021,7 +2021,7 @@ jobs:
             --config playwright/playwright.config.ts
             --project="$PLAYWRIGHT_PROJECT"
           )
-          if [[ "$PLAYWRIGHT_PROJECT" == "auth-v2" ]]; then
+          if [[ "$PLAYWRIGHT_PROJECT" == "auth-v1" ]]; then
             set -o pipefail
             "${playwright_command[@]}" 2>&1 |
               sed -E \
@@ -2062,7 +2062,7 @@ jobs:
             kill "$(cat /tmp/stripe-listen.pid)" 2>/dev/null || true
           fi
       - name: Upload Playwright blob report
-        if: always() && matrix.project != 'auth-v2'
+        if: always() && matrix.project != 'auth-v1'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-blob-${{ matrix.lane }}

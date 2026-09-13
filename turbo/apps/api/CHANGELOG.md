@@ -8,6 +8,59 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.590.3](https://github.com/vm0-ai/vm0/compare/api-v1.590.2...api-v1.590.3) (2026-09-13)
+
+
+### Bug Fixes
+
+* **api:** remove audit links from slack messages ([#33723](https://github.com/vm0-ai/vm0/issues/33723)) ([9499882](https://github.com/vm0-ai/vm0/commit/94998821c526e5d7c2eb8e7dbea19dd5157e99cb))
+
+
+### Refactoring
+
+* **runner:** accept both connector-intent header names ([#33707](https://github.com/vm0-ai/vm0/issues/33707)) ([33e83ae](https://github.com/vm0-ai/vm0/commit/33e83ae7126fba27731120dbde3df8fff993ec96))
+
+
+### Performance Improvements
+
+* **api:** bound stale chat event queue scans ([#33708](https://github.com/vm0-ai/vm0/issues/33708)) ([f2e6794](https://github.com/vm0-ai/vm0/commit/f2e679411c25a7e497e1cd3cd811b7864e301a40))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.432.1
+    * @okouai/core bumped to 8.660.1
+    * @okouai/db bumped to 1.254.4
+    * @okouai/pi-agent-runtime bumped to 1.27.1
+
+## [1.590.2](https://github.com/vm0-ai/vm0/compare/api-v1.590.1...api-v1.590.2) (2026-09-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.660.0
+    * @okouai/db bumped to 1.254.3
+
+## [1.590.1](https://github.com/vm0-ai/vm0/compare/api-v1.590.0...api-v1.590.1) (2026-09-12)
+
+
+### Refactoring
+
+* **api:** rename the oauth web origin header to x-okou-web-origin ([#33700](https://github.com/vm0-ai/vm0/issues/33700)) ([b090bcc](https://github.com/vm0-ai/vm0/commit/b090bccfdb424775ac472b24ef5d95471cba3734))
+* **api:** table-drive the per-channel delivery blocks in the chat run callback ([#33689](https://github.com/vm0-ai/vm0/issues/33689)) ([4f50f4a](https://github.com/vm0-ai/vm0/commit/4f50f4af3e12856b74865842236eeb8a2adfd440)), closes [#33655](https://github.com/vm0-ai/vm0/issues/33655)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.659.0
+    * @okouai/db bumped to 1.254.2
+
 ## [1.590.0](https://github.com/vm0-ai/vm0/compare/api-v1.589.0...api-v1.590.0) (2026-09-12)
 
 

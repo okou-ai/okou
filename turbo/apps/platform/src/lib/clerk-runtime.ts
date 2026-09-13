@@ -1,10 +1,6 @@
 import { loadClerkJSScript } from "@clerk/shared/loadClerkJsScript";
 import { loadScript } from "@clerk/shared/loadScript";
-import type {
-  BrowserClerk,
-  ClerkOptions,
-  EnvironmentResource,
-} from "@clerk/shared/types";
+import type { BrowserClerk, ClerkOptions } from "@clerk/shared/types";
 import type { ClerkUIConstructor } from "@clerk/shared/ui";
 import type { ui } from "@clerk/ui";
 import { createDeferredPromise } from "../signals/utils.ts";
@@ -22,11 +18,11 @@ interface ClerkRuntimeLoadOptions {
 }
 
 interface ClerkBrowserRuntime {
-  readonly clerk: PlatformClerk;
+  readonly clerk: BrowserClerk;
   /**
    * Loads the installed Clerk UI export and hands it to the shared core.
-   * Only v1 comparison routes request it, so stable routes keep the core-only
-   * download.
+   * Auth pages and account switching request it; other app routes keep the
+   * core-only download.
    */
   readonly ensureUiLoaded: () => Promise<typeof ui>;
   readonly loaded: Promise<void>;
@@ -74,11 +70,7 @@ export function registerClerkRouter(
   };
 }
 
-export type PlatformClerk = BrowserClerk & {
-  readonly __internal_environment?: EnvironmentResource;
-};
-
-function isBrowserClerk(value: unknown): value is PlatformClerk {
+function isBrowserClerk(value: unknown): value is BrowserClerk {
   return (
     (typeof value === "object" || typeof value === "function") &&
     value !== null &&
@@ -143,7 +135,7 @@ function matchesEarlyLoadOptions(
 }
 
 function adoptEarlyClerkRuntime(
-  clerk: PlatformClerk,
+  clerk: BrowserClerk,
   options: ClerkRuntimeOptions,
   signal: AbortSignal,
 ): ClerkBrowserRuntime | null {

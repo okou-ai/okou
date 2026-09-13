@@ -271,7 +271,7 @@
         };
 
         // Clerk accepts its hosted UI constructor as a promise, so the core
-        // starts now and only the v1 comparison routes resolve the UI.
+        // starts now and auth routes can resolve the UI independently.
         var resolveClerkUI;
         var clerkUI = new Promise(function (resolve) {
           resolveClerkUI = resolve;
@@ -284,8 +284,8 @@
         };
         window.__okouClerkBootstrap = bootstrap;
 
-        function isAuthV1Route(pathname) {
-          return /^\/v1\/sign-(?:in|up)(?:\/|$)/.test(pathname || "");
+        function isAuthRoute(pathname) {
+          return /^\/sign-(?:in|up)(?:\/|$)/.test(pathname || "");
         }
 
         function startClerk() {
@@ -305,10 +305,9 @@
           );
         }
 
-        // Direct v1 route entries start the installed UI alongside the app.
-        // Stable auth routes keep the platform-owned UI without this download.
+        // Direct auth route entries start the installed UI alongside the app.
         function startClerkUI() {
-          if (!isAuthV1Route(location.pathname)) return;
+          if (!isAuthRoute(location.pathname)) return;
           var uiScript = document.createElement("script");
           uiScript.src = "__OKOU_CLERK_UI_SCRIPT_URL__";
           uiScript.type = "module";

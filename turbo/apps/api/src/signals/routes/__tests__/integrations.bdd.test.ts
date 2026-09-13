@@ -5267,12 +5267,11 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
   });
 
-  it("delivers canonical Slack callbacks for progress, audit footers, failures, and Slack errors", async () => {
+  it("delivers canonical Slack callbacks for progress, attribution footers, failures, and Slack errors", async () => {
     const actor = bdd.user();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     integrations.configureSlackAppMocks();
-    mockEnv("APP_URL", "https://app.okou.ai");
     integrations.acceptSlackSessionHistoryDownloads();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
@@ -5290,7 +5289,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await integrations.postSlackEvent(teamId, {
       type: "app_mention",
       user: slackUser1,
-      text: "summarize the audited thread",
+      text: "summarize the thread",
       ts: threadT1,
       channel: channelId,
     });
@@ -5340,16 +5339,19 @@ describe("INT-01: Slack app deep webhook flows", () => {
           channel: channelId,
           thread_ts: threadT1,
           text: "SLACK_BDD_OUTPUT",
+          blocks: [
+            { type: "markdown", text: "SLACK_BDD_OUTPUT" },
+            {
+              type: "context",
+              elements: [{ type: "mrkdwn", text: "Claude Sonnet 5" }],
+            },
+          ],
         }),
       );
     });
     expect(failedMessagePublishCount).toBeGreaterThan(0);
     expect(failedThreadListPublishCount).toBeGreaterThan(0);
     context.mocks.ably.publish.mockResolvedValue(undefined);
-    const auditedBlocks = slackPostMessageCallsJson();
-    expect(auditedBlocks).toContain("Audit");
-    expect(auditedBlocks).toContain(`https://app.okou.ai/activities/${run1Id}`);
-    expect(auditedBlocks).toContain("Claude Sonnet 5");
 
     await flushWaitUntilAndAssert(() => {
       expect(

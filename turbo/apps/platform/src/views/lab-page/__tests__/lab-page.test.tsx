@@ -58,7 +58,7 @@ test("Lab remains available while onboarding is required", async () => {
 
   await screen.findByRole("heading", { name: "Lab" });
   expect(
-    within(featureSwitchGroup("Beta")).getByText(FeatureSwitchKey.Banking),
+    within(featureSwitchGroup("Alpha")).getByText(FeatureSwitchKey.Banking),
   ).toBeInTheDocument();
   expect((await screen.findAllByText("Pinned Agent")).length).toBeGreaterThan(
     0,
@@ -87,7 +87,7 @@ test("Lab groups every feature by rollout stage with a switch", async () => {
   expect(
     within(released).getByText(FeatureSwitchKey.AvatarNeckSweater),
   ).toBeVisible();
-  expect(within(beta).getByText(FeatureSwitchKey.Banking)).toBeVisible();
+  expect(within(alpha).getByText(FeatureSwitchKey.Banking)).toBeVisible();
   expect(within(beta).getByText(FeatureSwitchKey.IntroVideo)).toBeVisible();
   expect(
     within(alpha).getByText(FeatureSwitchKey.AhrefsConnector),

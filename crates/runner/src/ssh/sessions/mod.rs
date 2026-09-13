@@ -37,6 +37,7 @@ pub(super) struct Manager {
     runtime: Arc<SshRuntime>,
     run: RunId,
     pub(super) registration: Arc<Registration>,
+    pub(super) pool: Arc<super::pool::Pool>,
     cancel: CancellationToken,
     capacity: Arc<Semaphore>,
     entries: Mutex<HashMap<Uuid, Arc<Entry>>>,
@@ -112,6 +113,7 @@ impl Manager {
             runtime,
             run,
             registration,
+            pool: super::pool::Pool::new(run, cancel.clone()),
             cancel,
             capacity: Arc::new(Semaphore::new(CAPACITY)),
             entries: Mutex::new(HashMap::new()),
@@ -120,6 +122,7 @@ impl Manager {
     }
 
     pub(super) fn prune(&self) {
+        self.pool.prune();
         let now = Instant::now();
         self.entries
             .lock()
@@ -143,6 +146,7 @@ impl Manager {
         self.cancel.cancel();
         self.tasks.close();
         self.tasks.wait().await;
+        self.pool.shutdown().await;
         self.entries
             .lock()
             .unwrap_or_else(|p| p.into_inner())
@@ -193,9 +197,10 @@ impl Manager {
                 .insert(entry.id, Arc::clone(&entry));
             let id = entry.id;
             let runtime = Arc::clone(&self.runtime);
+            let pool = Arc::clone(&self.pool);
             let run = self.run;
             self.tasks.spawn(async move {
-                process::run(runtime, run, entry, params, receiver).await;
+                process::run(runtime, pool, run, entry, params, receiver).await;
             });
             Ok(id)
         })();

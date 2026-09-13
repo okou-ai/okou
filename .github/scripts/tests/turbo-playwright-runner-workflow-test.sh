@@ -55,18 +55,18 @@ grep -Fq '["list"]' "$PLAYWRIGHT_CONFIG" ||
   fail "Playwright CI must retain human-readable list reporting"
 grep -Fq '["blob", { outputDir: "blob-report" }]' "$PLAYWRIGHT_CONFIG" ||
   fail "Playwright CI must emit mergeable blob reports"
-grep -Fq 'name: "auth-v2"' "$PLAYWRIGHT_CONFIG" ||
-  fail "Playwright must register the dedicated Auth v2 project"
-grep -Fq 'testMatch: ["auth-v2.spec.ts", "auth-v1.spec.ts"]' "$PLAYWRIGHT_CONFIG" ||
-  fail "the auth project must cover both auth versions without unrelated specs"
+grep -Fq 'name: "auth-v1"' "$PLAYWRIGHT_CONFIG" ||
+  fail "Playwright must register the dedicated Auth v1 project"
+grep -Fq 'testMatch: "auth-v1.spec.ts"' "$PLAYWRIGHT_CONFIG" ||
+  fail "the auth project must cover the hosted Clerk auth spec without unrelated specs"
 grep -Fq 'workers: 1' "$PLAYWRIGHT_CONFIG" ||
-  fail "the Auth v2 project must use one worker"
+  fail "the Auth v1 project must use one worker"
 grep -Fq 'trace: "off"' "$PLAYWRIGHT_CONFIG" ||
-  fail "the Auth v2 project must not retain credential-bearing traces"
-grep -Fq 'process.env.PLAYWRIGHT_PROJECT !== "auth-v2"' "$PLAYWRIGHT_CONFIG" ||
-  fail "the Auth v2 project must not retain credential-bearing blob reports"
-grep -Fq "if: always() && matrix.project != 'auth-v2'" "$WORKFLOW" ||
-  fail "the Auth v2 lane must not upload a Playwright blob report"
+  fail "the Auth v1 project must not retain credential-bearing traces"
+grep -Fq 'process.env.PLAYWRIGHT_PROJECT !== "auth-v1"' "$PLAYWRIGHT_CONFIG" ||
+  fail "the Auth v1 project must not retain credential-bearing blob reports"
+grep -Fq "if: always() && matrix.project != 'auth-v1'" "$WORKFLOW" ||
+  fail "the Auth v1 lane must not upload a Playwright blob report"
 if grep -R -Fq '/api/test/' "$RUNNER_TESTS" "${RUNNER_HELPERS[@]}"; then
   fail "runner E2E coverage must use supported public APIs"
 fi
@@ -196,7 +196,7 @@ end
 expected_playwright_lanes = [
   { "lane" => "features", "project" => "features" },
   { "lane" => "paid-onboarding", "project" => "paid-onboarding" },
-  { "lane" => "auth-v2", "project" => "auth-v2" },
+  { "lane" => "auth-v1", "project" => "auth-v1" },
 ]
 unless playwright.dig("strategy", "matrix", "include") ==
     expected_playwright_lanes
@@ -222,20 +222,20 @@ unless playwright_run&.fetch("shell") == "bash" &&
 end
 assert_canonical_api_backend_url.call(playwright_run, "Playwright E2E")
 unless playwright_run.fetch("run").include?(
-    'if [[ "$PLAYWRIGHT_PROJECT" == "auth-v2" ]]',
+    'if [[ "$PLAYWRIGHT_PROJECT" == "auth-v1" ]]',
   ) && playwright_run.fetch("run").include?("__clerk_db_jwt") &&
     playwright_run.fetch("run").include?("masked-clerk-test-email") &&
     playwright_run.fetch("run").include?("masked-clerk-resource-id") &&
     playwright_run.fetch("run").include?("sess|user|org|sia|sua") &&
     playwright_run.fetch("run").include?("set -o pipefail")
-  raise "the Auth v2 lane must redact Clerk secrets and identifiers"
+  raise "the Auth v1 lane must redact Clerk secrets and identifiers"
 end
 playwright_blob_upload = playwright.fetch("steps").find do |step|
   step["name"] == "Upload Playwright blob report"
 end
 unless playwright_blob_upload &&
     playwright_blob_upload.fetch("if") ==
-      "always() && matrix.project != 'auth-v2'" &&
+      "always() && matrix.project != 'auth-v1'" &&
     playwright_blob_upload.dig("with", "name") ==
       "playwright-blob-${{ matrix.lane }}" &&
     playwright_blob_upload.dig("with", "path") ==

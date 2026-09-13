@@ -121,7 +121,11 @@ function runnerNotificationAttributionEvents(
       ),
       success: true,
       runId: notification.runId,
-      dimensions,
+      dimensions: {
+        ...dimensions,
+        logical_queue_created_at: notification.createdAt.toISOString(),
+        boundary_at: new Date(milestone.completedAt).toISOString(),
+      },
     };
   });
 }

@@ -34,8 +34,9 @@ path that uses it. Keep the database real.
 
 Do not use `vi.useFakeTimers()` or `vi.advanceTimersByTime()` to hide timing and
 ownership problems. Platform uses `mockNow(value, context.signal)` for its
-application clock. Synchronize on visible or accessible behavior within the
-normal test timeout, not a delay or internal state transition.
+application clock. Synchronize on expected rendered content, control state, or
+accessible behavior within the normal test timeout, not a delay or internal
+state transition.
 
 ## AP-6: Partial Internal Mocks
 
@@ -55,7 +56,7 @@ cannot be constructed through a production interface.
 
 Avoid tests that duplicate existing coverage, re-prove a third-party validator,
 or pin static configuration and incidental copy. Test error statuses and
-loading/empty states when they establish a meaningful product contract. Visible
+loading/empty states when they establish a meaningful product contract. Rendered
 text, disabled controls, and accessible state can be valid evidence of that
 contract; internal flags are not a replacement.
 
@@ -98,6 +99,15 @@ the next request instead. The logger's own suite and one shared-sanitizer
 redaction check are the only exceptions. Where a log record is a surface's own
 contract, AP-9 applies. See [external behavior](testing-external-behavior.md).
 
+## AP-13: Requiring Visibility for Content Presence
+
+A completion message can already be in the DOM while its toast's enter effect
+is still updating opacity. When the contract is that the message rendered, use
+an awaited `findByText` with `toBeInTheDocument()`. An extra `toBeVisible()` or
+animation wait couples that assertion to unrelated presentation timing.
+Reserve visibility assertions for behavior that specifically shows or hides
+content. See [App assertions](app-testing.md#assertions).
+
 ## Review Checklist
 
 - Does setup follow a real external entry point?
@@ -105,4 +115,6 @@ contract, AP-9 applies. See [external behavior](testing-external-behavior.md).
   HTTP response, including authenticated endpoints?
 - Are only external dependencies mocked, with the normal cleanup owner?
 - Does synchronization wait for the observable outcome?
+- Does a content-presence assertion use `toBeInTheDocument()`, reserving
+  `toBeVisible()` for an explicit visibility contract?
 - Does the test protect a meaningful contract beyond existing coverage?

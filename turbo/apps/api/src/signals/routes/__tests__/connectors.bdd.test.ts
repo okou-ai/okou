@@ -6659,6 +6659,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       "Content-Type",
       "Last-Event-ID",
       "MCP-Protocol-Version",
+      "X-Okou-Connector-Intent",
       "X-VM0-Connector-Intent",
     ]) {
       const definition = manualMcpConnectorBody({

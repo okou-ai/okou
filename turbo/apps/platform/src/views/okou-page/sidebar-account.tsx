@@ -30,7 +30,11 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
 } from "@okouai/ui";
-import { clerk$, currentUserInfo$ } from "../../signals/auth.ts";
+import {
+  clerk$,
+  currentUserInfo$,
+  openClerkAddAccount$,
+} from "../../signals/auth.ts";
 import {
   reloadAccountMenuSubscriptionUsageRows$,
   type AccountMenuSubscriptionUsageRowsCacheKey,
@@ -67,7 +71,6 @@ import { DropdownMenuModalItem } from "../components/dropdown-menu-modal-item.ts
 import { UserAvatar } from "../components/avatar.tsx";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { i18n } from "../../i18n/index.ts";
-import { openAuthV2AddAccountDialog$ } from "../../signals/okou-page/auth-v2-add-account-dialog.ts";
 
 interface SessionAccount {
   sessionId: string;
@@ -602,7 +605,7 @@ export function AccountDropdown({
   const actionLoadable = useLoadable(personalActionPromise$);
   const setSidebarExpanded = useSet(setSidebarExpanded$);
   const pageSignal = useGet(pageSignal$);
-  const openAuthV2AddAccountDialog = useSet(openAuthV2AddAccountDialog$);
+  const openClerkAddAccount = useSet(openClerkAddAccount$);
 
   const current = accounts.find((a) => {
     return a.isActive;
@@ -651,9 +654,9 @@ export function AccountDropdown({
 
   const handleAddAccount = () => {
     detach(
-      openAuthV2AddAccountDialog(pageSignal),
+      openClerkAddAccount(pageSignal),
       Reason.DomCallback,
-      "open auth v2 add account dialog",
+      "open Clerk add account dialog",
     );
   };
 

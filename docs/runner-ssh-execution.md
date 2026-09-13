@@ -19,10 +19,10 @@ The guest calls `runner-rpc-client` with the [generic envelope](runner-rpc-trans
 Run, owner, Agent, endpoint, username, private key, pin, timeout or SSH options.
 Unknown methods and invalid params are rejected before credential resolution.
 
-The Runner resolves or reuses its Run-owned credentials, validates the destination, makes one
-TCP connection, verifies host trust, authenticates using the selected private key
-or password, opens
-one session channel and requests one non-PTY exec with acknowledgement. It sends
+The Runner resolves or reuses its Run-owned credentials and exclusively leases an
+idle authenticated connection, or validates the destination and establishes a new
+TCP/SSH connection with host trust and private-key/password authentication. It opens
+a new session channel and requests one non-PTY exec with acknowledgement. It sends
 EOF on stdin. It never requests shell, environment, PTY, agent forwarding, port
 forwarding or subsystems, and rejects unsolicited server channels. There is no
 reconnection, alternate-address fallback or command replay.
@@ -63,8 +63,8 @@ socket but cannot guarantee the remote process stopped.
 
 #33464 adds `ssh.session.start/list/read/status/write/signal/close` as opaque
 version-1 RPC methods. Each request is still short and owns its guest stream
-only until its response. Each admitted session initially owns a separate verified,
-authenticated SSH transport; connection pooling remains #33465.
+only until its response. Each active session exclusively owns a verified,
+authenticated SSH transport, which may be reused after an earlier channel ended.
 
 `start` accepts `sshConnectionId`, `program: {type: "exec", command}` or
 `program: {type: "shell"}`, and optional `pty: true`. A PTY requests
@@ -116,6 +116,84 @@ snapshot also retires sessions using that snapshot. The documented
 missed-notification window still applies; close/revocation
 does not guarantee remote process-tree termination.
 
+## Idle connection reuse
+
+#33465 reuses healthy authenticated transports between independent exec/session
+channels in the same exact Run registration. A transport has one active channel
+at a time. Concurrent processes use separate transports, so cancelling one process
+or stalling its output consumer does not close or block another process's connection.
+Each channel starts a new process; cwd, environment, stdin and PTY state are not
+inherited from the preceding channel. No CLI or RPC changes are required.
+
+Only an observed channel close with actual exit evidence can return a connection
+to idle. Rejected setup, missing exit, cancellation, partial input, protocol failure
+or an uncertain channel-open result closes that execution's exclusive socket.
+No failed command/input is reconnected or replayed. A later separate request may
+establish its own fresh connection.
+
+A peer can retire an idle socket or refuse its next channel. If that races reuse,
+the current request reports its failure/effects; it does not retry on another
+connection. A peer that refuses sequential channels can therefore cause an extra
+failed request compared with always establishing a new connection.
+
+Completed connections enable `TCP_NODELAY` before idle retention so later channels'
+small control packets avoid Nagle/delayed-ACK stalls. The first handshake and
+command keep their existing socket behavior. If the socket cannot be prepared
+for reuse, it is retired without changing the completed command's result.
+
+The Run retains at most eight idle transports, evicting the oldest on overflow.
+An idle timer closes each socket after 60 seconds without another request.
+Idle expiry rechecks current pool membership under the same lock as checkout, so
+a delayed timeout cannot close a connection already in use or newly returned to idle.
+Physical work has 24 Run-local permits: eight short operations, eight retained sessions and
+eight idle transports. Physical-capacity waits observe the caller's setup deadline
+and cancellation. Neither this bound nor idle retention creates a Runner-wide quota.
+The socket's host lease holds its physical permit through actual DNS/library cleanup.
+It also holds the current operation permit until failure cleanup or proven channel
+completion; only normal completion releases that operation permit for idle retention.
+Guest park reservations remain exclusively owned by live guest RPC streams.
+
+Reuse matches the configured connection ID and current authority generation, never
+just the endpoint. Cancellation watchers are registered before credential preparation,
+including when the credential cache is full. Delivered invalidation, notification
+disconnect and Run/sandbox retirement close active and idle retained transports.
+This also interrupts an in-flight one-shot command using retained authority; a
+late pin result cannot revive its retired transport or evict a newer snapshot.
+Before notification readiness, one-shot commands still resolve/connect afresh and
+retain no idle socket; managed sessions keep their existing readiness requirement.
+
+Each physical connection independently validates the public destination and server
+proof/pin before authentication. Reused sockets keep their original verified peer;
+new physical connections repeat validation. Keepalives run every 30 seconds, with
+three unanswered probes allowed. Rekey and transport cancellation use a lifetime
+of at most two hours, independent of the initial RPC deadline. Run end always
+closes the transport. Existing missed-notification and remote-process termination
+limitations still apply.
+
+Sequential reuse avoids repeated TCP/KEX/authentication; busy connections are not
+shared by concurrent processes. A manual real-peer cold/warm measurement lives in
+`ssh::tests::pooling::measure_cold_and_warm_repeated_exec`. It reports elapsed
+samples and authentication counts without a timing assertion; local measurements
+do not establish a production speedup.
+
+On 2026-09-12, the local-profile dispatcher and loopback SSH peer ran a real `true`
+process for ten cold and ten warm samples. Both paths reused prepared credentials;
+priming and forced idle expiry were outside the measured request. The warm path
+opened a separate process/channel for every sample.
+
+| Path | Median   | Min–max        | New connections / authentications |
+| ---- | -------- | -------------- | --------------------------------- |
+| Cold | 65.70 ms | 64.63–66.29 ms | 10 / 10                           |
+| Warm | 44.02 ms | 43.12–44.12 ms | 0 / 0                             |
+
+Rerun the optional measurement with:
+
+```bash
+cargo test --manifest-path crates/Cargo.toml --profile local -p runner --bin runner \
+  ssh::tests::pooling::measure_cold_and_warm_repeated_exec \
+  -- --ignored --exact --nocapture --test-threads=1
+```
+
 ## Authority, trust and destination
 
 Resolve/pin requests use the host's immutable Runner process identity and exact
@@ -133,10 +211,11 @@ The first use of a connection resolves current authority and prepares exactly on
 authentication method. Private keys are parsed under the existing CPU/admission
 limits; passwords require no key-decoding slot. While the Runner's Ably subscription
 is connected, later commands in the same Run reuse that prepared configuration,
-generation, host trust and parsed key or bounded zeroizing password. There is no TTL, periodic refresh,
-connection pooling, disk persistence or cross-Run credential sharing. Raw private
+generation, host trust and parsed key or bounded zeroizing password. The credential
+cache has no TTL, periodic refresh, disk persistence or cross-Run sharing; idle
+authenticated transports have the separate bounded lifetime above. Raw private
 key/passphrase text is released after preparation rather than retained alongside
-the parsed key. Every connection still validates its public destination and the
+the parsed key. Every new physical connection validates its public destination and the
 server's cryptographic proof and fingerprint.
 
 The runtime retains at most 256 cache cells, including evicted cells still owned

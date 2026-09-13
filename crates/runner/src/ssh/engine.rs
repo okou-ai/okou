@@ -12,12 +12,12 @@ use std::{
     sync::{Arc, atomic::Ordering},
     time::Duration,
 };
-use tokio::{net::TcpStream, sync::OwnedSemaphorePermit};
+use tokio::net::TcpStream;
 
 use super::{
     FailureReason, Scope,
     authority::{Authority, PreparedAuth, PreparedCredential},
-    io::{GuestIo, SocketGuard, SshSocket},
+    io::{GuestIo, HostLease, SocketGuard, SshSocket},
     observation::Attempt,
     output::{Output, RemoteExit, Stream},
 };
@@ -27,7 +27,7 @@ pub(super) struct Execution {
     pub(super) authority: Arc<Authority>,
     pub(super) run: RunId,
     pub(super) connection: uuid::Uuid,
-    pub(super) lease: Arc<OwnedSemaphorePermit>,
+    pub(super) lease: Arc<HostLease>,
     pub(super) credential: Arc<PreparedCredential>,
 }
 
@@ -37,10 +37,15 @@ pub(super) struct Connected {
 }
 
 impl Connected {
-    pub(super) async fn close(self, scope: &Scope) {
-        // The library's detached I/O retains its host permit until socket release.
-        drop(self.guard);
-        let _ = scope.wait(self.session).await;
+    pub(super) fn prepare_reuse(&self) -> std::io::Result<()> {
+        // Small control packets on later channels must not wait for delayed ACKs.
+        // Preserve the initial handshake/command's existing socket behavior.
+        self.guard.enable_nodelay()
+    }
+
+    pub(super) fn close(&self) {
+        // The library's detached I/O retains its host lease until socket release.
+        self.guard.close();
     }
 }
 
@@ -68,6 +73,14 @@ impl Execution {
             .wait(client::connect_stream(Arc::new(config), stream, handler))
             .await;
         observation.connecting = !authority_pending.load(Ordering::Acquire);
+        // TOFU may advance trust even when the following authentication fails.
+        observation.generation = Some(
+            self.credential
+                .trust
+                .lock()
+                .map_err(|_| FailureReason::Protocol)?
+                .generation,
+        );
         let session = connection?.map_err(|_| {
             failure
                 .lock()
@@ -117,101 +130,91 @@ impl Execution {
         observation.authenticated_at = Some(chrono::Utc::now());
         Ok(connected)
     }
+}
 
+impl Connected {
     pub(super) async fn execute(
-        self,
-        stream: TcpStream,
+        &self,
         command: String,
         scope: &Scope,
         writer: &mut ResponseWriter<GuestIo>,
         output: &mut Output,
     ) -> Result<RemoteExit, FailureReason> {
-        let mut connected = self
-            .connect(stream, scope, scope, config(), &mut output.connection)
-            .await?;
-        let result = async {
-            let session = &mut connected.session;
-            let mut channel = scope
-                .wait(session.channel_open_session())
-                .await?
-                .map_err(|_| FailureReason::Protocol)?;
-            scope.check()?;
-            // Sending the request, not receiving its acknowledgement, is the
-            // ambiguity boundary. A failed write must never trigger replay.
-            output.attempted();
-            scope
-                .wait(channel.exec(true, command))
-                .await?
-                .map_err(|_| FailureReason::Disconnected)?;
-            scope
-                .wait(channel.eof())
-                .await?
-                .map_err(|_| FailureReason::Disconnected)?;
-            let mut exit = None;
-            let mut eof = false;
-            let mut flush_tick = tokio::time::interval(Duration::from_millis(250));
-            flush_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            loop {
-                let message = scope
-                    .wait(async {
-                        tokio::select! {
-                            biased;
-                            _ = flush_tick.tick() => None,
-                            message = channel.wait() => Some(message),
-                        }
-                    })
-                    .await?;
-                let Some(message) = message else {
-                    scope.wait(output.flush(writer)).await??;
-                    continue;
-                };
-                match message {
-                    Some(ChannelMsg::Success) if !output.is_accepted() => {
-                        scope.wait(output.accept(writer)).await??;
+        let session = &self.session;
+        let mut channel = scope
+            .wait(session.channel_open_session())
+            .await?
+            .map_err(|_| FailureReason::Protocol)?;
+        scope.check()?;
+        // Sending the request, not receiving its acknowledgement, is the
+        // ambiguity boundary. A failed write must never trigger replay.
+        output.attempted();
+        scope
+            .wait(channel.exec(true, command))
+            .await?
+            .map_err(|_| FailureReason::Disconnected)?;
+        scope
+            .wait(channel.eof())
+            .await?
+            .map_err(|_| FailureReason::Disconnected)?;
+        let mut exit = None;
+        let mut eof = false;
+        let mut flush_tick = tokio::time::interval(Duration::from_millis(250));
+        flush_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            let message = scope
+                .wait(async {
+                    tokio::select! {
+                        biased;
+                        _ = flush_tick.tick() => None,
+                        message = channel.wait() => Some(message),
                     }
-                    Some(ChannelMsg::Failure) if !output.is_accepted() => {
-                        output.rejected();
-                        return Err(FailureReason::ExecRejected);
-                    }
-                    Some(ChannelMsg::Data { data }) if !eof => {
-                        scope
-                            .wait(output.data(writer, Stream::Stdout, &data))
-                            .await??;
-                    }
-                    Some(ChannelMsg::ExtendedData { ext: 1, data }) if !eof => {
-                        scope
-                            .wait(output.data(writer, Stream::Stderr, &data))
-                            .await??;
-                    }
-                    Some(ChannelMsg::ExitStatus { exit_status })
-                        if output.is_accepted() && exit.is_none() =>
-                    {
-                        exit = Some(RemoteExit::Status { code: exit_status });
-                    }
-                    Some(ChannelMsg::ExitSignal {
-                        signal_name,
-                        core_dumped,
-                        ..
-                    }) if output.is_accepted() && exit.is_none() => {
-                        exit = Some(RemoteExit::Signal {
-                            signal: signal(&signal_name),
-                            core_dumped,
-                        });
-                    }
-                    Some(ChannelMsg::Eof) if !eof => eof = true,
-                    Some(ChannelMsg::Close) => return exit.ok_or(FailureReason::Disconnected),
-                    Some(ChannelMsg::WindowAdjusted { .. }) => (),
-                    None => return Err(FailureReason::Disconnected),
-                    _ => return Err(FailureReason::Protocol),
+                })
+                .await?;
+            let Some(message) = message else {
+                scope.wait(output.flush(writer)).await??;
+                continue;
+            };
+            match message {
+                Some(ChannelMsg::Success) if !output.is_accepted() => {
+                    scope.wait(output.accept(writer)).await??;
                 }
+                Some(ChannelMsg::Failure) if !output.is_accepted() => {
+                    output.rejected();
+                    return Err(FailureReason::ExecRejected);
+                }
+                Some(ChannelMsg::Data { data }) if !eof => {
+                    scope
+                        .wait(output.data(writer, Stream::Stdout, &data))
+                        .await??;
+                }
+                Some(ChannelMsg::ExtendedData { ext: 1, data }) if !eof => {
+                    scope
+                        .wait(output.data(writer, Stream::Stderr, &data))
+                        .await??;
+                }
+                Some(ChannelMsg::ExitStatus { exit_status })
+                    if output.is_accepted() && exit.is_none() =>
+                {
+                    exit = Some(RemoteExit::Status { code: exit_status });
+                }
+                Some(ChannelMsg::ExitSignal {
+                    signal_name,
+                    core_dumped,
+                    ..
+                }) if output.is_accepted() && exit.is_none() => {
+                    exit = Some(RemoteExit::Signal {
+                        signal: signal(&signal_name),
+                        core_dumped,
+                    });
+                }
+                Some(ChannelMsg::Eof) if !eof => eof = true,
+                Some(ChannelMsg::Close) => return exit.ok_or(FailureReason::Disconnected),
+                Some(ChannelMsg::WindowAdjusted { .. }) => (),
+                None => return Err(FailureReason::Disconnected),
+                _ => return Err(FailureReason::Protocol),
             }
         }
-        .await;
-        // russh's handle does not abort its spawned I/O task on Drop. Closing
-        // the exact connected socket wakes it; its socket retains host capacity
-        // until the library really releases the connection, even on cancellation.
-        connected.close(scope).await;
-        result
     }
 }
 

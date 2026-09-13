@@ -1,5 +1,33 @@
 # Changelog
 
+## [8.660.1](https://github.com/vm0-ai/vm0/compare/core-v8.660.0...core-v8.660.1) (2026-09-13)
+
+
+### Bug Fixes
+
+* move banking rollout to alpha ([#33724](https://github.com/vm0-ai/vm0/issues/33724)) ([c3e7211](https://github.com/vm0-ai/vm0/commit/c3e7211fec24c53fae7b5d4e9d13e8dc5bc8be56))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.432.1
+
+## [8.660.0](https://github.com/vm0-ai/vm0/compare/core-v8.659.0...core-v8.660.0) (2026-09-12)
+
+
+### Features
+
+* **core:** roll out markdown time ([#33704](https://github.com/vm0-ai/vm0/issues/33704)) ([a8970b8](https://github.com/vm0-ai/vm0/commit/a8970b8e481c29ebb4d0b7277820c2dd179f1c2b))
+
+## [8.659.0](https://github.com/vm0-ai/vm0/compare/core-v8.658.0...core-v8.659.0) (2026-09-12)
+
+
+### Features
+
+* **chat:** enable reasoning effort for the staff team ([#33688](https://github.com/vm0-ai/vm0/issues/33688)) ([d836e6d](https://github.com/vm0-ai/vm0/commit/d836e6d2341225e16a5065c44e49467dcce5274c))
+
 ## [8.658.0](https://github.com/vm0-ai/vm0/compare/core-v8.657.0...core-v8.658.0) (2026-09-12)
 
 

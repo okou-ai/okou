@@ -4,9 +4,9 @@ import { StoreProvider, useGet, useSet } from "ccstate-react";
 import { Toaster } from "@okouai/ui/components/ui/sonner";
 import { ErrorBoundary } from "./error-boundary.tsx";
 import { AppSkeletonOverlay, Router } from "./router.tsx";
+import { ClerkOptionsProvider } from "./clerk-options-provider.tsx";
 import { ForceUpgradeDialog } from "./components/force-upgrade-dialog.tsx";
 import { SharedWorkerFailureDialog } from "./components/shared-worker-failure-dialog.tsx";
-import { AuthV2AddAccountDialog } from "./auth-v2/auth-v2-add-account-dialog.tsx";
 import { InspectLogFileInput } from "./inspect-log-file-input.tsx";
 import { listenForceUpgradeDialog$ } from "../signals/force-upgrade.ts";
 import { rootSignal$ } from "../signals/root-signal.ts";
@@ -79,8 +79,9 @@ export const setupRouter = (
       <StoreProvider value={store}>
         <ErrorBoundary>
           <AppSkeletonOverlay />
-          <Router />
-          <AuthV2AddAccountDialog />
+          <ClerkOptionsProvider>
+            <Router />
+          </ClerkOptionsProvider>
           <InspectLogFileInput />
           <ForceUpgradeDialog />
           <InstatusStatusNotice />

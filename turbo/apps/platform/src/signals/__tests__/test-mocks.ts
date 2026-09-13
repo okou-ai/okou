@@ -140,6 +140,10 @@ interface LocationAssignMock {
   calls: string[];
 }
 
+interface LocationReplaceMock {
+  calls: string[];
+}
+
 interface ClipboardWriteMock {
   writes: string[];
 }
@@ -232,7 +236,9 @@ interface ClerkMock {
   readonly loads: readonly (MockedClerkLoadOptions | undefined)[];
   readonly localizationRequests: ClerkLocalizationLocale[];
   readonly resourceRequests: ClerkResourceRequest[];
-  /** Hosted UI script requests; only v1 comparison routes should add one. */
+  /**
+   * Hosted UI script requests; only auth pages and account switching add one.
+   */
   readonly uiRequests: string[];
   /** Clerk `status` handlers the SDK still holds, so leaks stay observable. */
   readonly statusListenerCount: () => number;
@@ -426,6 +432,9 @@ export function createTestMocks(getSignal: () => AbortSignal) {
       },
       locationAssign: (): LocationAssignMock => {
         return mockLocationAssign();
+      },
+      locationReplace: (): LocationReplaceMock => {
+        return mockLocationReplace();
       },
       authWindow: (): MockWindow => {
         return createMockWindow();
@@ -821,6 +830,14 @@ function mockWindowOpen(openedWindow: Window | null): BrowserOpenMock {
 function mockLocationAssign(): LocationAssignMock {
   const calls: string[] = [];
   vi.spyOn(window.location, "assign").mockImplementation((url) => {
+    calls.push(String(url));
+  });
+  return { calls };
+}
+
+function mockLocationReplace(): LocationReplaceMock {
+  const calls: string[] = [];
+  vi.spyOn(window.location, "replace").mockImplementation((url) => {
     calls.push(String(url));
   });
   return { calls };

@@ -30,6 +30,10 @@ import {
 import type { PiApiFirstTurnOwnership } from "./provider-ownership";
 import type { PiAgentStreamOptions } from "./stream-options";
 import { PiApiModelRequestError } from "./api-failure";
+import {
+  measurePiPreparationSync,
+  type PiPreparationObserver,
+} from "./preparation-timing";
 
 interface CreateMemoryPiSessionOptions {
   readonly cwd: string;
@@ -49,6 +53,7 @@ interface RunPiFirstModelTurnOptions<TApi extends Api = Api> {
   readonly timestamp?: number;
   readonly streamOptions?: Omit<PiAgentStreamOptions, "sessionId">;
   readonly ownership: PiApiFirstTurnOwnership;
+  readonly onPreparationTiming?: PiPreparationObserver;
   readonly providerRequestBoundary?: (
     markProviderRequestMayHaveStarted: () => void,
   ) => Promise<void>;
@@ -318,18 +323,26 @@ function piAssistantRequiresHandoff(message: AssistantMessage): boolean {
 export async function runPiFirstModelTurn<TApi extends Api>(
   options: RunPiFirstModelTurnOptions<TApi>,
 ): Promise<PiModelTurnResult> {
-  options.session.prepareModelTurn(options.model, options.thinkingLevel);
-  options.session.appendMessage({
-    role: "user",
-    content: options.prompt,
-    timestamp: options.timestamp ?? Date.now(),
-  });
-  const sessionContext = options.session.buildSessionContext();
-  const context: Context = {
-    systemPrompt: options.systemPrompt,
-    messages: convertToLlm(sessionContext.messages),
-    tools: [...options.tools],
-  };
+  const { sessionContext, context } = measurePiPreparationSync(
+    options.onPreparationTiming,
+    "model_context",
+    () => {
+      options.session.prepareModelTurn(options.model, options.thinkingLevel);
+      options.session.appendMessage({
+        role: "user",
+        content: options.prompt,
+        timestamp: options.timestamp ?? Date.now(),
+      });
+      const sessionContext = options.session.buildSessionContext();
+      const context: Context = {
+        systemPrompt: options.systemPrompt,
+        messages: convertToLlm(sessionContext.messages),
+        tools: [...options.tools],
+      };
+      return { sessionContext, context };
+    },
+    options.streamOptions?.signal,
+  );
   if (options.providerRequestBoundary) {
     await options.providerRequestBoundary(() => {
       options.ownership.markProviderRequestMayHaveStarted();

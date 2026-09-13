@@ -712,7 +712,7 @@ test.each([null, "Close", "Escape", "backdrop"] as const)(
     authorization.resolve();
     await expect(
       screen.findByText("Google Analytics connected and authorized for Scout"),
-    ).resolves.toBeVisible();
+    ).resolves.toBeInTheDocument();
     await waitFor(() => {
       expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(0);
     });

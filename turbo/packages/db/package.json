@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "1.254.1",
+  "version": "1.254.4",
   "private": true,
   "type": "module",
   "exports": {
@@ -61,8 +61,8 @@
     "test:reusable-ssh-credentials": "tsx scripts/test-reusable-ssh-credentials.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-kms": "^3.1121.0",
-    "@aws-sdk/client-s3": "^3.1121.0",
+    "@aws-sdk/client-kms": "^3.1127.0",
+    "@aws-sdk/client-s3": "^3.1127.0",
     "@clerk/backend": "^3.13.1",
     "@okouai/api-contracts": "workspace:*",
     "@okouai/core": "workspace:*",
@@ -82,6 +82,6 @@
     "tsx": "^4.21.0",
     "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.0"
   }
 }

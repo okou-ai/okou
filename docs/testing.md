@@ -8,7 +8,9 @@ changes should not break a test when that contract is preserved.
 ## Choose the Boundary
 
 - **Platform:** boot the real Router with `setupPage`, interact with the page,
-  and assert visible or accessible state, controls, navigation, and downloads.
+  and assert rendered content, controls, navigation, and downloads. Default to
+  `toBeInTheDocument()` for content presence; use `toBeVisible()` only when
+  visibility itself is the contract. See [App assertions](testing/app-testing.md#assertions).
 - **API:** call production endpoints for setup and verification. Assert HTTP
   responses, including status, headers, bodies, and effects observable through
   subsequent requests. Exercise auth, validation, serialization, permissions,

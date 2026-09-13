@@ -78,13 +78,13 @@ eagerly loaded application bundle. `@clerk/clerk-js` stays behind
 `lib/clerk-runtime.ts` and is restricted in every form; `ably` stays behind
 `lib/ably-realtime.ts` and still permits type-only imports.
 
-`@clerk/ui` is a live dependency again, used only by the `/v1` comparison
-routes. `src/clerk-ui.ts` is the single entry allowed to import it at runtime;
-it is built as its own asset by `scripts/clerk-ui.ts` and requested through
-`ensureClerkUiLoaded$`. Every other `src/**` module may import the package for
-types only. `scripts/check-runtime-imports.node.mjs` asserts that boundary from
-the real ESLint configuration, so the entry cannot regain a lint suppression and
-other entries cannot acquire a runtime import.
+`@clerk/ui` is a live dependency again, used only by the auth pages and account
+switching. `src/clerk-ui.ts` is the single entry allowed to import it at
+runtime; it is built as its own asset by `scripts/clerk-ui.ts` and requested
+through `ensureClerkUiLoaded$`. Every other `src/**` module may import the
+package for types only. `scripts/check-runtime-imports.node.mjs` asserts that
+boundary from the real ESLint configuration, so the entry cannot regain a lint
+suppression and other entries cannot acquire a runtime import.
 
 ## Retired configuration
 

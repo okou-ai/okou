@@ -7,6 +7,7 @@ use super::super::{
     FailureReason, Scope, SshRuntime, engine,
     observation::Attempt,
     output::{RemoteExit, Stream},
+    pool,
 };
 use super::{
     Command, Entry, Input,
@@ -16,6 +17,7 @@ use crate::ids::RunId;
 
 pub(super) async fn run(
     runtime: Arc<SshRuntime>,
+    pool: Arc<pool::Pool>,
     run: RunId,
     entry: Arc<Entry>,
     start: Start,
@@ -25,10 +27,11 @@ pub(super) async fn run(
     let cancelled = entry.access.cancelled();
     let result = tokio::select! { biased;
         () = cancelled.cancelled() => Err(FailureReason::ConfigurationChanged),
-        result = execute(&runtime, run, &entry, start, receiver, &mut observation) => result,
+        result = execute(&runtime, &pool, run, &entry, start, receiver, &mut observation) => result,
     };
     {
         let mut data = entry.data.lock().unwrap_or_else(|p| p.into_inner());
+        data.generation = observation.generation;
         data.state = match result.as_ref() {
             Ok(exit) => {
                 data.effects = Effects::Completed;
@@ -53,6 +56,7 @@ pub(super) async fn run(
 
 async fn execute(
     runtime: &SshRuntime,
+    pool: &Arc<pool::Pool>,
     run: RunId,
     entry: &Entry,
     start: Start,
@@ -87,28 +91,20 @@ async fn execute(
         .unwrap_or_else(|p| p.into_inner())
         .generation = observation.generation;
     observation.connecting = true;
-    let stream = runtime
-        .open_socket(
-            Arc::clone(&entry.lease),
-            &credential.host,
-            credential.port,
+    let connected = pool
+        .acquire(
+            runtime,
+            pool::Request {
+                connection: entry.connection,
+                credential: Arc::clone(&credential),
+                access: entry.access.clone(),
+                operation: Arc::clone(&entry.lease),
+                retained: true,
+            },
             &setup,
+            observation,
         )
         .await?;
-    entry.current()?;
-    let mut config = engine::config();
-    config.inactivity_timeout = None;
-    config.keepalive_interval = Some(Duration::from_secs(30));
-    config.keepalive_max = 3;
-    let connected = engine::Execution {
-        authority: Arc::clone(&runtime.authority),
-        run,
-        connection: entry.connection,
-        lease: Arc::clone(&entry.lease),
-        credential: Arc::clone(&credential),
-    }
-    .connect(stream, &setup, scope, config, observation)
-    .await?;
     observation.generation = Some(
         credential
             .trust
@@ -124,7 +120,7 @@ async fn execute(
     let result = scope
         .wait(async {
             let mut channel = setup
-                .wait(connected.session.channel_open_session())
+                .wait(connected.connected().session.channel_open_session())
                 .await?
                 .map_err(|_| FailureReason::Protocol)?;
             if start.pty {
@@ -159,11 +155,9 @@ async fn execute(
         })
         .await
         .and_then(|result| result);
-    let cleanup = Scope {
-        deadline: scope.deadline.min(Instant::now() + Duration::from_secs(1)),
-        ..scope.clone()
-    };
-    connected.close(&cleanup).await;
+    if result.is_ok() {
+        connected.reuse();
+    }
     result
 }
 

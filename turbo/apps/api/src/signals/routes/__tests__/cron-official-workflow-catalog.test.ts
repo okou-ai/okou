@@ -344,7 +344,7 @@ beforeEach(async () => {
   await stateAction({ action: "cleanup" });
 });
 
-describe.sequential("Official Workflow catalog release boundary", () => {
+describe("Official Workflow catalog release boundary", () => {
   it("replaces a previous schema release with retained historical revisions", async () => {
     const seeded = await stateAction({
       action: "seed-previous-schema-release",

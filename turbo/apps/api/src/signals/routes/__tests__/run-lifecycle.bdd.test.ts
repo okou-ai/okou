@@ -4585,8 +4585,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await api.requestCancelRun(actor, expiredFollowUp.runId, [200]);
   });
 
-  it("keeps runner heartbeat snapshots ordered", async () => {
-    expect.hasAssertions();
+  async function setupOrderedHeartbeats() {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
@@ -4705,6 +4704,13 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       await flushWaitUntilForTest();
     }
 
+    return { api, runnerGroup, baseTime, heartbeat, expectReusePreference };
+  }
+
+  it("retains a newer heartbeat despite a lower sequence and unrelated runner", async () => {
+    expect.hasAssertions();
+    const { api, runnerGroup, baseTime, heartbeat, expectReusePreference } =
+      await setupOrderedHeartbeats();
     await heartbeat({
       generation: 1,
       sequence: 2,
@@ -4724,7 +4730,17 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await api.heartbeatRunner(runnerGroup);
     mockNow(baseTime + 5000);
     await expectReusePreference("reusableSandbox");
+  });
 
+  it("does not refresh heartbeat expiry for a stale sequence", async () => {
+    expect.hasAssertions();
+    const { baseTime, heartbeat, expectReusePreference } =
+      await setupOrderedHeartbeats();
+    await heartbeat({
+      generation: 1,
+      sequence: 2,
+      resource: "reusableSandbox",
+    });
     mockNow(baseTime + 20_000);
     await heartbeat({
       generation: 1,
@@ -4733,7 +4749,11 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     });
     mockNow(baseTime + 31_000);
     await expectReusePreference(undefined);
+  });
 
+  it("retains the workspace cache when a heartbeat sequence is repeated", async () => {
+    expect.hasAssertions();
+    const { heartbeat, expectReusePreference } = await setupOrderedHeartbeats();
     await heartbeat({
       generation: 1,
       sequence: 3,
@@ -4745,7 +4765,16 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       resource: undefined,
     });
     await expectReusePreference("workspaceCache");
+  });
 
+  it("keeps a new heartbeat generation ahead of an older high sequence", async () => {
+    expect.hasAssertions();
+    const { heartbeat, expectReusePreference } = await setupOrderedHeartbeats();
+    await heartbeat({
+      generation: 1,
+      sequence: 3,
+      resource: "workspaceCache",
+    });
     await heartbeat({
       generation: 2,
       sequence: 1,
