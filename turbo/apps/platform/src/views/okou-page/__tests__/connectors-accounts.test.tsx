@@ -286,7 +286,9 @@ test("Distinguish unavailable account information from no accounts", async () =>
   expect(within(custom).queryByText("No accounts")).not.toBeInTheDocument();
 });
 
-test("Summarize connector access on its card", async () => {
+async function openConnectorAccessSummary(
+  initialAccess: "none" | "first-agent",
+) {
   const ids = [
     "c0000000-0000-4000-a000-000000000001",
     "c0000000-0000-4000-a000-000000000002",
@@ -295,8 +297,11 @@ test("Summarize connector access on its card", async () => {
   ];
   const longName = "Research Operations for International Partnerships";
   const enabled = new Map(
-    ids.map((id) => {
-      return [id, [] as string[]];
+    ids.map((id, index) => {
+      return [
+        id,
+        initialAccess === "first-agent" && index === 0 ? ["github"] : [],
+      ];
     }),
   );
   mockConnectors(context, [
@@ -328,6 +333,11 @@ test("Summarize connector access on its card", async () => {
   const card = await waitFor(() => {
     return getConnectorCard("GitHub");
   });
+  return { card, longName };
+}
+
+test("Show the full agent name after granting the first connector access", async () => {
+  const { card, longName } = await openConnectorAccessSummary("none");
   expect(
     getConnectorAction("button", "Manage GitHub access", card),
   ).toHaveTextContent("Add access");
@@ -360,7 +370,19 @@ test("Summarize connector access on its card", async () => {
     expect(access).toHaveTextContent(`Used by ${longName}`);
     expect(access).toHaveAttribute("title", longName);
   });
+});
 
+test("Summarize connector access by count after adding more agents", async () => {
+  const { longName } = await openConnectorAccessSummary("first-agent");
+  await waitFor(() => {
+    expect(
+      getConnectorAction(
+        "button",
+        "Manage GitHub access",
+        getConnectorCard("GitHub"),
+      ),
+    ).toHaveTextContent(`Used by ${longName}`);
+  });
   click(
     getConnectorAction(
       "button",
@@ -926,7 +948,7 @@ test("Reconnect the selected non-default account after cancellation", async () =
   expect(within(workRow).queryByText("Reconnect required")).toBeNull();
 });
 
-test("Rename and disconnect a specific connector account", async () => {
+async function openNamedConnectorAccountRename() {
   const [connector] = mockConnectors(context, [
     { connectorSlug: "github", externalUsername: "octocat" },
   ]);
@@ -1013,6 +1035,11 @@ test("Rename and disconnect a specific connector account", async () => {
       return getConnectorAction("menuitem", "Rename");
     }),
   );
+  return manager;
+}
+
+test("Rename a specific connector account to a new label", async () => {
+  const manager = await openNamedConnectorAccountRename();
   await fill(await within(manager).findByLabelText("Account name"), "Personal");
   click(getConnectorAction("button", "Save", manager));
   await waitFor(() => {
@@ -1022,21 +1049,10 @@ test("Rename and disconnect a specific connector account", async () => {
       ).getByText("Personal"),
     ).toBeInTheDocument();
   });
+});
 
-  click(
-    await waitFor(() => {
-      const action = accountActions(manager)[0];
-      if (!action) {
-        throw new Error("Expected Personal account actions");
-      }
-      return action;
-    }),
-  );
-  click(
-    await waitFor(() => {
-      return getConnectorAction("menuitem", "Rename");
-    }),
-  );
+test("Clear a connector account label and disconnect its fallback identity", async () => {
+  const manager = await openNamedConnectorAccountRename();
   await fill(await within(manager).findByLabelText("Account name"), " ");
   click(getConnectorAction("button", "Save", manager));
   await waitFor(() => {
@@ -1179,7 +1195,7 @@ test("Review and reconnect the connector account the user selected", async () =>
   });
 });
 
-test("Keep account search results aligned with the latest query", async () => {
+async function openSearchableConnectorAccounts() {
   const accounts = mockGithubAccounts(context, 7);
   const stale = {
     ...accounts[0],
@@ -1190,18 +1206,19 @@ test("Keep account search results aligned with the latest query", async () => {
   const staleReady = context.mocks.deferred<void>();
   const staleStarted = context.mocks.deferred<void>();
   const clearStarted = context.mocks.deferred<void>();
-  let awaitingClear = false;
+  let staleWasRequested = false;
   const searches: (string | null)[] = [];
   context.mocks.api(
     connectorAccountsContract.connections,
     async ({ query, respond }) => {
       searches.push(query.search ?? null);
       if (query.search === "Stale") {
+        staleWasRequested = true;
         staleStarted.resolve();
         await staleReady.promise;
         return respond(200, { connections: [stale], nextCursor: null });
       }
-      if (!query.search && awaitingClear) {
+      if (!query.search && staleWasRequested) {
         clearStarted.resolve();
       }
       const filtered = query.search
@@ -1224,6 +1241,11 @@ test("Keep account search results aligned with the latest query", async () => {
     name: "Manage GitHub accounts",
   });
   const input = await within(manager).findByPlaceholderText("Find accounts");
+  return { manager, input, searches, staleReady, staleStarted, clearStarted };
+}
+
+test("Debounce rapid connector account searches to the latest query", async () => {
+  const { manager, input, searches } = await openSearchableConnectorAccounts();
   const initialCount = searches.length;
 
   fireEvent.input(input, { target: { value: "W" } });
@@ -1234,10 +1256,13 @@ test("Keep account search results aligned with the latest query", async () => {
     expect(searches.slice(initialCount)).toStrictEqual(["Work 2"]);
     expect(within(manager).getByText("Work 2")).toBeInTheDocument();
   });
+});
 
+test("Ignore a stale connector account response after clearing the search", async () => {
+  const { manager, input, staleReady, staleStarted, clearStarted } =
+    await openSearchableConnectorAccounts();
   fireEvent.input(input, { target: { value: "Stale" } });
   await staleStarted.promise;
-  awaitingClear = true;
   fireEvent.input(input, { target: { value: "" } });
   await clearStarted.promise;
   staleReady.resolve();

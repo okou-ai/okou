@@ -443,7 +443,7 @@ async function selectMemberUsagePack(
   click(await screen.findByRole("option", { name: optionName }));
 }
 
-test("Compare usage-pack plans before choosing one", async () => {
+test("Compare usage-pack plan pricing before choosing one", async () => {
   mockInitialUsagePackPurchase(true);
   const { choosePlanHeading, proPlan, teamPlan } =
     await openUsagePackPlanSelection();
@@ -469,17 +469,16 @@ test("Compare usage-pack plans before choosing one", async () => {
   expect(
     screen.queryByRole("group", { name: "Member usage" }),
   ).not.toBeInTheDocument();
+});
 
+test("Show the included Pro usage-pack plan features", async () => {
+  mockInitialUsagePackPurchase(true);
+  const { proPlan } = await openUsagePackPlanSelection();
   expect(
     within(proPlan).getByText("Everyday agent work, priced per member."),
   ).toBeInTheDocument();
   expect(within(proPlan).queryByText("20,000 credits / month")).toBeNull();
   expect(within(proPlan).queryByText("Pay as you go after that")).toBeNull();
-  expect(
-    within(teamPlan).getByText("For a team that keeps agents running all day."),
-  ).toBeInTheDocument();
-  expect(within(teamPlan).queryByText("120,000 credits / month")).toBeNull();
-
   // Pro carries the whole list.
   expect(within(proPlan).getByText("Included")).toBeInTheDocument();
   for (const item of [
@@ -495,7 +494,15 @@ test("Compare usage-pack plans before choosing one", async () => {
   ]) {
     expect(within(proPlan).getByText(item)).toBeInTheDocument();
   }
+});
 
+test("Show the additional Team usage-pack plan features", async () => {
+  mockInitialUsagePackPurchase(true);
+  const { teamPlan } = await openUsagePackPlanSelection();
+  expect(
+    within(teamPlan).getByText("For a team that keeps agents running all day."),
+  ).toBeInTheDocument();
+  expect(within(teamPlan).queryByText("120,000 credits / month")).toBeNull();
   /* Concurrency, webhooks and the voice caps are the real entitlement
        differences; the middle rows are shared capability the label inherits with
        "Everything in Pro", each phrased as an outcome rather than a setting. */
@@ -1031,7 +1038,7 @@ test.each([false, true])(
   },
 );
 
-test("Offer a safe conversion path for a legacy plan", async () => {
+async function openLegacyConversionEligibility() {
   const migrationReady = createDeferredPromise<void>(context.signal);
   context.mocks.data.org({
     id: "org_1",
@@ -1091,7 +1098,11 @@ test("Offer a safe conversion path for a legacy plan", async () => {
 
   await screen.findByText("Team plan");
   click(buttonByText("Compare all plans"));
+  return migrationReady;
+}
 
+test("Gate legacy conversion eligibility and return from Pro configuration", async () => {
+  const migrationReady = await openLegacyConversionEligibility();
   expect(screen.getByRole("status")).toBeInTheDocument();
   expect(
     screen.queryByRole("heading", { name: "Choose a plan" }),
@@ -1163,7 +1174,20 @@ test("Offer a safe conversion path for a legacy plan", async () => {
   expect(screen.getByText("Legacy")).toBeInTheDocument();
   expect(screen.queryByText("Move to member packages")).not.toBeInTheDocument();
   expect(buttonByText("Convert plan")).toBeEnabled();
+});
 
+test("Cancel a legacy downgrade and reopen conversion choices", async () => {
+  const migrationReady = await openLegacyConversionEligibility();
+  migrationReady.resolve(undefined);
+  const choosePlanDialog = await screen.findByRole("dialog", {
+    name: "Choose a plan",
+  });
+  click(within(choosePlanDialog).getByLabelText("Close"));
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Choose a plan" }),
+    ).not.toBeInTheDocument();
+  });
   click(screen.getByText("Downgrade"));
   const downgradeDialog = await screen.findByRole("dialog", {
     name: "Downgrade plan",
@@ -1526,7 +1550,7 @@ async function openLegacyTeamConversion(scheduled = false): Promise<void> {
   await screen.findByText("Team plan");
 }
 
-test("Schedule a legacy Team conversion after reviewing member packages", async () => {
+async function configureLegacyTeamConversion() {
   await openLegacyTeamConversion();
   click(buttonByText("Compare all plans"));
   const choosePlanDialog = await screen.findByRole("dialog", {
@@ -1566,6 +1590,11 @@ test("Schedule a legacy Team conversion after reviewing member packages", async 
   const orderSummary = screen.getByRole("region", {
     name: "Order summary",
   });
+  return orderSummary;
+}
+
+test("Compare legacy Team packages and review conversion totals", async () => {
+  const orderSummary = await configureLegacyTeamConversion();
   expect(
     within(orderSummary).queryByRole("table", {
       name: "Current and new subscription comparison",
@@ -1661,7 +1690,14 @@ test("Schedule a legacy Team conversion after reviewing member packages", async 
   expect(reviewConversionNotice.parentElement).toContainElement(
     buttonByText("Confirm", reviewDialog),
   );
+});
 
+test("Retain legacy Team packages through Back and confirm conversion", async () => {
+  const orderSummary = await configureLegacyTeamConversion();
+  click(buttonByText("Review conversion", orderSummary));
+  const reviewDialog = await screen.findByRole("dialog", {
+    name: "Review plan conversion",
+  });
   click(within(reviewDialog).getByLabelText("Back"));
   const returnedPackagesDialog = await screen.findByRole("dialog", {
     name: "Configure member packages",
@@ -2503,7 +2539,7 @@ test.each([
   },
 );
 
-test("Upgrade Pro to Team without repurchasing member packages", async () => {
+async function openProToTeamUpgrade() {
   context.mocks.data.org({
     id: "org_1",
     name: "Usage Pack Upgrade Org",
@@ -2598,6 +2634,11 @@ test("Upgrade Pro to Team without repurchasing member packages", async () => {
   const orderSummary = screen.getByRole("region", {
     name: "Order summary",
   });
+  return { packageSelect, orderSummary };
+}
+
+test("Update Pro-to-Team pricing when editing and restoring a member package", async () => {
+  const { packageSelect, orderSummary } = await openProToTeamUpgrade();
   let comparison = within(await hoverSubscriptionComparison()).getByRole(
     "table",
     {
@@ -2652,6 +2693,13 @@ test("Upgrade Pro to Team without repurchasing member packages", async () => {
     }),
   ).toBeInTheDocument();
 
+  click(confirmButton);
+  await screen.findByRole("dialog", { name: "Review package change" });
+});
+
+test("Confirm a Pro-to-Team upgrade without repurchasing existing packages", async () => {
+  const { orderSummary } = await openProToTeamUpgrade();
+  const confirmButton = buttonByText("Confirm", orderSummary);
   const locationBeforeConfirmation = window.location.href;
   click(confirmButton);
   const confirmationDialog = await screen.findByRole("dialog", {
@@ -2669,7 +2717,7 @@ test("Upgrade Pro to Team without repurchasing member packages", async () => {
   expect(window.location.href).toBe(locationBeforeConfirmation);
 });
 
-test("Schedule a Team-to-Pro downgrade", async () => {
+async function openTeamToProDowngrade() {
   let billingStatus: BillingStatusResponse = activeTeamBillingStatus();
   context.mocks.data.org({
     id: "org_1",
@@ -2772,7 +2820,12 @@ test("Schedule a Team-to-Pro downgrade", async () => {
   });
   const confirmDowngradeButton = buttonByText("Confirm", orderSummary);
   expect(confirmDowngradeButton).toBeEnabled();
+  return { memberUsage, orderSummary, confirmDowngradeButton };
+}
 
+test("Require a paid member package before previewing a Team-to-Pro downgrade", async () => {
+  const { memberUsage, orderSummary, confirmDowngradeButton } =
+    await openTeamToProDowngrade();
   await selectMemberUsagePack(memberUsage, "Alex Chen", "No package");
   expect(confirmDowngradeButton).toBeDisabled();
   expect(
@@ -2792,6 +2845,13 @@ test("Schedule a Team-to-Pro downgrade", async () => {
       "Select a paid package for at least one member to continue.",
     ),
   ).not.toBeInTheDocument();
+  click(confirmDowngradeButton);
+  await screen.findByRole("dialog", { name: "Review package change" });
+});
+
+test("Review and confirm a scheduled Team-to-Pro downgrade", async () => {
+  const { orderSummary, confirmDowngradeButton } =
+    await openTeamToProDowngrade();
   const comparison = within(await hoverSubscriptionComparison()).getByRole(
     "table",
     {

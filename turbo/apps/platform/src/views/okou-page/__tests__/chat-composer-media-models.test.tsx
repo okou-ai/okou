@@ -460,7 +460,7 @@ test("Follow the live video model default in an untouched new chat", async () =>
   });
 });
 
-async function exerciseNewChatThreeModePicker(): Promise<void> {
+async function browseNewChatModelCategories(): Promise<void> {
   await openPicker();
   expect(category("Chat")).toHaveAttribute("aria-checked", "true");
   await expect(
@@ -482,6 +482,9 @@ async function exerciseNewChatThreeModePicker(): Promise<void> {
       }),
     ).toBeFalsy();
   });
+}
+
+async function selectModelsAcrossNewChatCategories(): Promise<void> {
   click(mediaModelRow("Veo 3.1 fast"));
 
   await chooseMediaModel("Image", "GPT Image 2");
@@ -509,7 +512,7 @@ async function exerciseNewChatThreeModePicker(): Promise<void> {
   expect(scopeCard("Image model for this chat")).toBeNull();
 }
 
-test("Switch Chat, Image, and Video from one model picker in a desktop new chat", async () => {
+async function openDesktopNewChatModelPicker() {
   setDesktopViewport();
   installModelEnvironment();
   mockChatLifecycle(context, { threadId: "desktop-new-model-modes" });
@@ -521,8 +524,18 @@ test("Switch Chat, Image, and Video from one model picker in a desktop new chat"
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
+}
 
-  await exerciseNewChatThreeModePicker();
+test("Browse Chat, Image, and Video catalogs in a desktop new chat", async () => {
+  await openDesktopNewChatModelPicker();
+  await browseNewChatModelCategories();
+  expect(category("Video")).toHaveAttribute("aria-checked", "true");
+});
+
+test("Retain independent Chat, Image, and Video selections in a desktop new chat", async () => {
+  await openDesktopNewChatModelPicker();
+  await openCategory("Video");
+  await selectModelsAcrossNewChatCategories();
   expect(scopeCard("Video model for this chat")).not.toBeNull();
 });
 
@@ -539,7 +552,8 @@ test("Switch Chat, Image, and Video from one model picker in a mobile new chat",
     },
   });
 
-  await exerciseNewChatThreeModePicker();
+  await browseNewChatModelCategories();
+  await selectModelsAcrossNewChatCategories();
   expect(scopeCard("Video model for this chat")).not.toBeNull();
 });
 

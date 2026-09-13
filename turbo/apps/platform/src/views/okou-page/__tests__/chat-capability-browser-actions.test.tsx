@@ -161,7 +161,7 @@ function buttonsByName(
   });
 }
 
-test("Follow a managed browser session from its chat card", async () => {
+async function openManagedBrowserChat() {
   const sessionReady = context.mocks.deferred<void>();
   let browser = managedBrowserSession({
     status: "active",
@@ -197,6 +197,21 @@ test("Follow a managed browser session from its chat card", async () => {
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
 
   await readyChat();
+  return {
+    sessionReady,
+    foreignBrowserUrl,
+    untrustedBrowserUrl,
+    updateBrowser(next: ReturnType<typeof managedBrowserSession>) {
+      browser = next;
+      context.mocks.ably.trigger("browserSessionChanged", {
+        threadId: RUN_THREAD_ID,
+      });
+    },
+  };
+}
+
+test("Render a managed browser card from loading to live", async () => {
+  const { sessionReady } = await openManagedBrowserChat();
   const renderAppStyles = await createRenderedAppStyles(context.signal);
   const loadingCard = await screen.findByTestId("browser-session-card-loading");
   renderAppStyles(loadingCard);
@@ -218,7 +233,12 @@ test("Follow a managed browser session from its chat card", async () => {
     "src",
     INITIAL_SCREENSHOT_URL,
   );
+});
 
+test("Follow suspension and resumption in the live browser panel", async () => {
+  const { sessionReady, updateBrowser } = await openManagedBrowserChat();
+  sessionReady.resolve();
+  const card = await findButton("Open Research browser");
   click(card);
 
   const sidebar = await screen.findByRole("complementary", {
@@ -234,14 +254,13 @@ test("Follow a managed browser session from its chat card", async () => {
     INITIAL_SCREENSHOT_URL,
   );
 
-  browser = managedBrowserSession({
-    status: "suspended",
-    screenshotUrl: SUSPENDED_SCREENSHOT_URL,
-    liveUrl: null,
-  });
-  context.mocks.ably.trigger("browserSessionChanged", {
-    threadId: RUN_THREAD_ID,
-  });
+  updateBrowser(
+    managedBrowserSession({
+      status: "suspended",
+      screenshotUrl: SUSPENDED_SCREENSHOT_URL,
+      liveUrl: null,
+    }),
+  );
 
   await waitFor(() => {
     expect(buttonsByName("Open Research browser")[0]).toHaveTextContent(
@@ -254,14 +273,13 @@ test("Follow a managed browser session from its chat card", async () => {
   ).resolves.toHaveAttribute("src", SUSPENDED_SCREENSHOT_URL);
   expect(within(sidebar).getByText("Browser not live")).toBeVisible();
 
-  browser = managedBrowserSession({
-    status: "active",
-    screenshotUrl: SUSPENDED_SCREENSHOT_URL,
-    liveUrl: RESUMED_BROWSER_URL,
-  });
-  context.mocks.ably.trigger("browserSessionChanged", {
-    threadId: RUN_THREAD_ID,
-  });
+  updateBrowser(
+    managedBrowserSession({
+      status: "active",
+      screenshotUrl: SUSPENDED_SCREENSHOT_URL,
+      liveUrl: RESUMED_BROWSER_URL,
+    }),
+  );
 
   await waitFor(() => {
     expect(screen.getByText("Live")).toBeVisible();
@@ -270,7 +288,13 @@ test("Follow a managed browser session from its chat card", async () => {
     screen.findByTitle("Live browser: Research"),
   ).resolves.toHaveAttribute("src", RESUMED_BROWSER_URL);
   expect(screen.queryByTestId("browser-session-panel-screenshot")).toBeNull();
+});
 
+test("Keep foreign and untrusted browser URLs as ordinary links", async () => {
+  const { sessionReady, foreignBrowserUrl, untrustedBrowserUrl } =
+    await openManagedBrowserChat();
+  sessionReady.resolve();
+  await findButton("Open Research browser");
   const foreignLink = linkByName("Other conversation browser");
   expect(foreignLink).toHaveAttribute("href", foreignBrowserUrl);
   expect(foreignLink.closest("[data-browser-session-card]")).toBeNull();

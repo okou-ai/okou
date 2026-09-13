@@ -71,7 +71,7 @@ function fullUsage() {
   ]);
 }
 
-test("Inspect friendly credit usage for a run", async () => {
+async function openRunCreditUsage() {
   const user = userEvent.setup({ delay: null });
   installRunChat({
     chatEvents: [
@@ -108,6 +108,11 @@ test("Inspect friendly credit usage for a run", async () => {
 
   const details = await screen.findByText("Credit usage");
   expect(details).toBeVisible();
+  return { user, usageButton };
+}
+
+test("Show friendly labels for every run credit category", async () => {
+  await openRunCreditUsage();
   for (const name of [
     "Claude Sonnet 4.6",
     "Flux Pro",
@@ -124,7 +129,10 @@ test("Inspect friendly credit usage for a run", async () => {
     }
   }
   expect(document.body).not.toHaveTextContent("internal_web_search_v2");
+});
 
+test("Dismiss run credit usage with Escape and reopen it", async () => {
+  const { user, usageButton } = await openRunCreditUsage();
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(screen.queryByText("Credit usage")).not.toBeInTheDocument();
