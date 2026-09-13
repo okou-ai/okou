@@ -52,7 +52,7 @@ export interface ChatThreadScrollSignals {
   readonly isProgrammaticScrollEvent$: Command<boolean, [EventTarget | null]>;
   readonly readRenderedThreadScrollPosition$: Command<
     ThreadScrollPosition | null,
-    []
+    [excludedAnchorAncestors?: string]
   >;
   readonly autoScroll$: Command<
     Promise<void>,
@@ -193,14 +193,29 @@ function scrollToPosition(
   return true;
 }
 
-function firstVisibleScrollAnchor(container: HTMLElement): HTMLElement | null {
-  const anchors = scrollAnchors(container);
+function firstVisibleScrollAnchor(
+  container: HTMLElement,
+  excludedAnchorAncestors?: string,
+  preferredEventId?: string,
+): HTMLElement | null {
+  const anchors = scrollAnchors(container).filter((anchor) => {
+    return !excludedAnchorAncestors || !anchor.closest(excludedAnchorAncestors);
+  });
   const containerRect = container.getBoundingClientRect();
+  const visibleAnchors = anchors.filter((anchor) => {
+    const rect = anchor.getBoundingClientRect();
+    return rect.bottom > containerRect.top && rect.top < containerRect.bottom;
+  });
   return (
-    anchors.find((anchor) => {
-      const rect = anchor.getBoundingClientRect();
-      return rect.bottom > containerRect.top && rect.top < containerRect.bottom;
+    visibleAnchors.find((anchor) => {
+      return anchor.getAttribute(SCROLL_ANCHOR_ATTRIBUTE) === preferredEventId;
     }) ??
+    visibleAnchors[0] ??
+    (excludedAnchorAncestors
+      ? anchors.find((anchor) => {
+          return anchor.getBoundingClientRect().top >= containerRect.bottom;
+        })
+      : undefined) ??
     anchors.at(-1) ??
     null
   );
@@ -208,17 +223,29 @@ function firstVisibleScrollAnchor(container: HTMLElement): HTMLElement | null {
 
 function captureScrollPosition(
   container: HTMLElement,
+  excludedAnchorAncestors?: string,
+  preferredEventId?: string,
 ): ThreadScrollPosition | null {
-  const anchor = firstVisibleScrollAnchor(container);
+  const anchor = firstVisibleScrollAnchor(
+    container,
+    excludedAnchorAncestors,
+    preferredEventId,
+  );
   const targetEventId = anchor?.getAttribute(SCROLL_ANCHOR_ATTRIBUTE);
   if (!anchor || !targetEventId) {
     return null;
   }
+  const anchorRect = anchor.getBoundingClientRect();
+  const containerRect = container.getBoundingClientRect();
+  // If the entire viewport is being removed, continue at the nearest retained
+  // message rather than jumping to an unrelated message at the thread's end.
+  const removedViewport =
+    excludedAnchorAncestors &&
+    (anchorRect.bottom <= containerRect.top ||
+      anchorRect.top >= containerRect.bottom);
   return {
     targetEventId,
-    viewportOffsetTop:
-      anchor.getBoundingClientRect().top -
-      container.getBoundingClientRect().top,
+    viewportOffsetTop: removedViewport ? 0 : anchorRect.top - containerRect.top,
   };
 }
 
@@ -332,20 +359,30 @@ function createInternalScrollSignals(
       }
     },
   );
-  const readRenderedThreadScrollPosition$ = command(({ get }) => {
-    const currentPosition = get(threadScrollPosition$);
-    if (currentPosition === null) {
-      return null;
-    }
-    const container = get(scrollContainer$);
-    if (!container) {
-      return currentPosition;
-    }
-    if (isAtBottom(container)) {
-      return null;
-    }
-    return captureScrollPosition(container) ?? currentPosition;
-  });
+  const readRenderedThreadScrollPosition$ = command(
+    ({ get }, excludedAnchorAncestors?: string) => {
+      const currentPosition = get(threadScrollPosition$);
+      if (currentPosition === null) {
+        return null;
+      }
+      const container = get(scrollContainer$);
+      if (!container) {
+        return currentPosition;
+      }
+      if (isAtBottom(container)) {
+        return null;
+      }
+      // Keep the reader's held message when it survives the layout change.
+      // Collapsing content can expose an earlier message above that anchor.
+      return (
+        captureScrollPosition(
+          container,
+          excludedAnchorAncestors,
+          currentPosition.targetEventId,
+        ) ?? (excludedAnchorAncestors ? null : currentPosition)
+      );
+    },
+  );
   const bindScrollContainer$ = command(
     ({ set }, container: HTMLElement): void => {
       set(internalScrollContainer$, container);
@@ -584,6 +621,10 @@ function createRenderScrollSignals(
       set(internalPendingRequest$, request);
       if (position === null) {
         await set(scroll.clearThreadScrollPosition$, signal);
+      } else {
+        // Layout commits and the matching render commit must restore the same
+        // anchor, including when a projection removes the previously held one.
+        await set(scroll.setThreadScrollPosition$, position, signal);
       }
     },
   );

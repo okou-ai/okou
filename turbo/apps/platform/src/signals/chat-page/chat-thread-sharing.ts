@@ -62,25 +62,24 @@ export function createChatThreadSharingSignals(
   const internalCreatedSharedThreadId$ = state<string | null>(null);
 
   const start$ = command(({ set }, signal: AbortSignal) => {
+    // History and status-tail messages disappear in the sharing projection.
+    // Capture a surviving message before the phase changes the rendered DOM.
+    const position = set(
+      scroll.readRenderedThreadScrollPosition$,
+      "[data-chat-run-work-history], [data-chat-run-status-tail]",
+    );
     set(internalSelectedGroups$, new Map());
     set(internalCreatedSharedThreadId$, null);
     set(internalPhase$, "selecting");
-    return set(
-      scroll.autoScroll$,
-      set(scroll.readRenderedThreadScrollPosition$),
-      signal,
-    );
+    return set(scroll.autoScroll$, position, signal);
   });
 
   const close$ = command(({ set }, signal: AbortSignal) => {
+    const position = set(scroll.readRenderedThreadScrollPosition$);
     set(internalSelectedGroups$, new Map());
     set(internalCreatedSharedThreadId$, null);
     set(internalPhase$, "idle");
-    return set(
-      scroll.autoScroll$,
-      set(scroll.readRenderedThreadScrollPosition$),
-      signal,
-    );
+    return set(scroll.autoScroll$, position, signal);
   });
 
   const toggle$ = command(

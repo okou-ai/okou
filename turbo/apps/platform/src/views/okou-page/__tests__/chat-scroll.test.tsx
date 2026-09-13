@@ -42,6 +42,7 @@ const THREAD_IDS = {
   mobileLatest: "b0000000-0000-4000-a000-000000000931",
   expandedWork: "b0000000-0000-4000-a000-000000000932",
   selectedPassage: "b0000000-0000-4000-a000-000000000933",
+  sharingHistory: "b0000000-0000-4000-a000-000000000934",
 } as const;
 
 interface ChatScrollGeometry {
@@ -572,6 +573,100 @@ test("Keep a visible work message in place when its run completes", async () => 
     ).toBe(historyMessageTop);
   });
 });
+
+test.each(["answer", "work message", "hidden history", "bottom"] as const)(
+  "Preserve the reading position when sharing hides an expanded history at the %s",
+  async (reading) => {
+    mockMutableConversation(THREAD_IDS.sharingHistory, [
+      ...completedHistoryEvents(6),
+      {
+        id: "scroll-sharing-user",
+        role: "user",
+        content: "Inspect the rollout",
+        runId: "scroll-sharing-run",
+        seqId: 19,
+        createdAt: "2026-08-20T12:20:00.000Z",
+      },
+      ...["First check", "Second check", "The rollout is healthy"].map(
+        (content, index) => {
+          return {
+            id: `scroll-sharing-output-${index.toString()}`,
+            role: "assistant" as const,
+            content,
+            runId: "scroll-sharing-run",
+            seqId: 20 + index,
+            createdAt: `2026-08-20T12:20:0${(index + 1).toString()}.000Z`,
+          };
+        },
+      ),
+      {
+        id: "scroll-sharing-complete",
+        role: "assistant",
+        content: null,
+        runId: "scroll-sharing-run",
+        runLifecycleEvent: "completed",
+        seqId: 23,
+        createdAt: "2026-08-20T12:20:04.000Z",
+      },
+      ...completedTurn(9),
+    ]);
+    const container = await openConversation(
+      THREAD_IDS.sharingHistory,
+      "History answer 9",
+    );
+    click(buttonByLabel("Expand work history"));
+    await screen.findByText("First check");
+    const geometry = installChatScrollGeometry(container);
+    if (reading === "hidden history") {
+      geometry.resizeViewport(150);
+    }
+    const answerId = "scroll-sharing-output-2";
+    const readingId =
+      reading === "answer" ? answerId : "scroll-sharing-output-0";
+    if (reading === "bottom") {
+      scrollFromUser(container, geometry.bottomScrollTop());
+    } else {
+      scrollFromUser(
+        container,
+        container.scrollTop +
+          anchorById(container, readingId).getBoundingClientRect().top +
+          20,
+      );
+    }
+    await waitFor(() => {
+      expect(queryButtonByLabel("Scroll to bottom") !== null).toBe(
+        reading !== "bottom",
+      );
+    });
+    expect(anchorId(geometry.firstVisibleAnchor())).toBe(
+      reading === "bottom" ? "scroll-user-9" : readingId,
+    );
+    const answerTop =
+      reading === "hidden history"
+        ? 0
+        : anchorById(container, answerId).getBoundingClientRect().top;
+    const expectReadingPosition = () => {
+      expect(
+        reading === "bottom"
+          ? container.scrollTop
+          : anchorById(container, answerId).getBoundingClientRect().top,
+      ).toBe(reading === "bottom" ? geometry.bottomScrollTop() : answerTop);
+    };
+
+    click(buttonByLabel("Share messages"));
+    await screen.findAllByText("0 selected");
+    expect(screen.queryByText("First check")).not.toBeInTheDocument();
+    await waitFor(expectReadingPosition);
+
+    fireEvent(window, new Event("resize"));
+    expectReadingPosition();
+
+    click(screen.getByText("Cancel", { selector: "button" }));
+    await screen.findByText("First check");
+    await waitFor(expectReadingPosition);
+    expect(buttonByLabel("Collapse work history")).toBeVisible();
+  },
+);
 
 test("Follow new messages while reading the latest reply", async () => {
   const conversation = mockMutableConversation(
