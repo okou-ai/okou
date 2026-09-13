@@ -56,7 +56,6 @@ interface MockedClientSession {
   user?: {
     fullName?: string | null;
     imageUrl?: string;
-    organizationMemberships?: MockedMembership[];
     primaryEmailAddress?: { emailAddress: string } | null;
   };
 }
@@ -68,7 +67,6 @@ interface MockedUser {
   imageUrl?: string;
   createdAt?: Date;
   primaryEmailAddress: { emailAddress: string } | null;
-  unsafeMetadata: Record<string, unknown>;
   createOrganizationEnabled: boolean;
   createOrganizationsLimit: number | null;
   organizationMemberships: MockedMembership[];
@@ -79,9 +77,6 @@ interface MockedUser {
   getOrganizationInvitations: (params?: {
     status?: string;
   }) => Promise<{ data: MockedInvitation[]; total_count: number }>;
-  update: (params: {
-    unsafeMetadata: Record<string, unknown>;
-  }) => Promise<void>;
 }
 
 let internalMockedUser: MockedUser | null = null;
@@ -140,7 +135,6 @@ export function mockUser(
       ...user,
       imageUrl: user.imageUrl,
       primaryEmailAddress: user.email ? { emailAddress: user.email } : null,
-      unsafeMetadata: {},
       createOrganizationEnabled: user.createOrganizationEnabled ?? false,
       createOrganizationsLimit: user.createOrganizationsLimit ?? null,
       get organizationMemberships() {
@@ -161,12 +155,6 @@ export function mockUser(
           total_count: internalMockedInvitations.length,
         });
       },
-      update: (params: { unsafeMetadata: Record<string, unknown> }) => {
-        if (internalMockedUser) {
-          internalMockedUser.unsafeMetadata = params.unsafeMetadata;
-        }
-        return Promise.resolve();
-      },
     };
     internalMockedClientSessions = user.clientSessions ?? [
       {
@@ -175,9 +163,6 @@ export function mockUser(
         user: {
           fullName: user.fullName,
           imageUrl: user.imageUrl,
-          get organizationMemberships() {
-            return internalMockedMemberships;
-          },
           primaryEmailAddress: user.email ? { emailAddress: user.email } : null,
         },
       },
@@ -343,7 +328,6 @@ export interface MockedClerkLoadOptions {
   routerReplace?: NonNullable<ClerkOptions["routerReplace"]>;
   signInUrl?: string;
   signUpUrl?: string;
-  touchSession?: boolean;
   ui?: unknown;
 }
 
@@ -423,14 +407,9 @@ interface MockedSetActiveParams {
   session?: string | null;
   navigate?: (params: {
     session: {
-      readonly id: string;
-      readonly status: string;
       currentTask?: {
         key: string;
       };
-      readonly user: {
-        readonly organizationMemberships: MockedMembership[];
-      } | null;
     };
     decorateUrl: (url: string) => string;
   }) => void | Promise<unknown>;
@@ -447,23 +426,10 @@ async function defaultSetActiveImpl(
     return session.status === "pending" || session.status === "active";
   });
   const sourceSession = selectedSession ?? activeSession;
-  const session = {
-    id: sourceSession?.id ?? params.session ?? "test-session-id",
-    ...(!params.organization && sourceSession?.currentTask
+  const session =
+    !params.organization && sourceSession?.currentTask
       ? { currentTask: sourceSession.currentTask }
-      : {}),
-    status: params.organization
-      ? "active"
-      : (sourceSession?.status ?? "active"),
-    user: {
-      ...internalMockedUser,
-      ...sourceSession?.user,
-      organizationMemberships:
-        sourceSession?.user?.organizationMemberships ??
-        internalMockedUser?.organizationMemberships ??
-        [],
-    },
-  };
+      : {};
   await params.navigate?.({
     session,
     decorateUrl: (url) => {
@@ -515,7 +481,6 @@ export const mockedClerk = {
     if (recoverableSession) {
       return {
         ...recoverableSession,
-        user: { ...internalMockedUser, ...recoverableSession.user },
         get lastActiveOrganizationId() {
           return internalMockedOrganization?.id ?? null;
         },

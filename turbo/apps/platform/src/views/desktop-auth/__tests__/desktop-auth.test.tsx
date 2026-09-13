@@ -290,10 +290,7 @@ test("ticket session tasks preserve the handoff without exposing the ticket to h
   mockedClerk.setActive.mockImplementation(async (params) => {
     await params.navigate?.({
       session: {
-        id: "pending",
-        status: "pending",
         currentTask: { key: "setup-mfa" },
-        user: null,
       },
       decorateUrl: (url) => {
         return url;
