@@ -30,11 +30,8 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
 } from "@okouai/ui";
-import {
-  clerk$,
-  currentUserInfo$,
-  openClerkAddAccount$,
-} from "../../signals/auth.ts";
+import { clerk$, currentUserInfo$ } from "../../signals/auth.ts";
+import { openClerkAddAccount$ } from "../../signals/clerk-add-account.ts";
 import {
   reloadAccountMenuSubscriptionUsageRows$,
   type AccountMenuSubscriptionUsageRowsCacheKey,

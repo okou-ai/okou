@@ -1,6 +1,7 @@
 import { command, state } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { clerk$, clerkUser$, openClerkAddAccount$ } from "./auth.ts";
+import { clerk$, clerkUser$ } from "./auth.ts";
+import { openClerkAddAccount$ } from "./clerk-add-account.ts";
 import { replaceSearchParams$, searchParams$ } from "./route.ts";
 import { jsonParseOr, onDomEventFn } from "./utils.ts";
 import { i18n } from "../i18n/index.ts";

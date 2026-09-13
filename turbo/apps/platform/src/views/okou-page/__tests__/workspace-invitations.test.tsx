@@ -65,6 +65,7 @@ function completedInvitationPath(ticket: string): string {
 }
 
 test("An invitation accepted for another account offers account switching", async () => {
+  context.mocks.browser.matchMedia(false);
   await setupPage({
     context,
     path: completedInvitationPath(invitationTicket("org_invited")),
@@ -92,10 +93,19 @@ test("An invitation accepted for another account offers account switching", asyn
 
   click(actionByName("button", "Switch account"));
   await waitFor(() => {
-    expect(mockedClerk.openSignIn).toHaveBeenCalledExactlyOnceWith({
-      fallbackRedirectUrl: "/",
-      forceRedirectUrl: "/",
-    });
+    expect(mockedClerk.openSignIn).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        appearance: expect.objectContaining({
+          theme: "simple",
+          options: expect.objectContaining({
+            logoImageUrl: undefined,
+            logoLinkUrl: "/",
+          }),
+        }),
+        fallbackRedirectUrl: "/",
+        forceRedirectUrl: "/",
+      }),
+    );
   });
   toast.dismiss();
   await waitFor(() => {
