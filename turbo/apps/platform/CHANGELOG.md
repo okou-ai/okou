@@ -11,6 +11,28 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.893.3](https://github.com/vm0-ai/vm0/compare/app-v0.893.2...app-v0.893.3) (2026-09-13)
+
+
+### Bug Fixes
+
+* **app:** show chat header shortcut hints ([#33727](https://github.com/vm0-ai/vm0/issues/33727)) ([3025a87](https://github.com/vm0-ai/vm0/commit/3025a87b94af94a5e4ca08f4866d456d0f9e3d13))
+* move banking rollout to alpha ([#33724](https://github.com/vm0-ai/vm0/issues/33724)) ([c3e7211](https://github.com/vm0-ai/vm0/commit/c3e7211fec24c53fae7b5d4e9d13e8dc5bc8be56))
+
+
+### Refactoring
+
+* **auth:** remove remaining v2 helper branches ([#33725](https://github.com/vm0-ai/vm0/issues/33725)) ([850c17b](https://github.com/vm0-ai/vm0/commit/850c17bcb85103b5003266346bdcb9b8cd5defd9))
+* **auth:** remove unused v2 mocks and clerk environment type ([#33728](https://github.com/vm0-ai/vm0/issues/33728)) ([93d16f9](https://github.com/vm0-ai/vm0/commit/93d16f9861cfe4c670d234e48cbda139714b345e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.432.1
+    * @okouai/core bumped to 8.660.1
+
 ## [0.893.2](https://github.com/vm0-ai/vm0/compare/app-v0.893.1...app-v0.893.2) (2026-09-12)
 
 

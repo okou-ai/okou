@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.191.2](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.191.1...runner-rs-v0.191.2) (2026-09-13)
+
+
+### Refactoring
+
+* **runner:** accept both connector-intent header names ([#33707](https://github.com/vm0-ai/vm0/issues/33707)) ([33e83ae](https://github.com/vm0-ai/vm0/commit/33e83ae7126fba27731120dbde3df8fff993ec96))
+
 ## [0.191.1](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.191.0...runner-rs-v0.191.1) (2026-09-12)
 
 
