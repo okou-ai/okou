@@ -22,6 +22,8 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
+from mitmproxy import http
+from mitmproxy.net.http.http1 import read_request_head
 
 import firewall_auth_cache as auth_cache
 import firewall_auth_client as auth_client
@@ -2314,9 +2316,22 @@ class TestFirewallAuthAsyncTransport:
         assert origin.request_count == 1
         assert proxy.request_count == 0
 
+    @pytest.mark.parametrize(
+        ("origin_authority", "connect_authority"),
+        [
+            ("platform.example", "platform.example:443"),
+            ("platform.example:443", "platform.example:443"),
+            ("platform.example:8443", "platform.example:8443"),
+            ("[2001:db8::1]", "[2001:db8::1]:443"),
+            ("[2001:db8::1]:443", "[2001:db8::1]:443"),
+            ("[2001:db8::1]:8443", "[2001:db8::1]:8443"),
+        ],
+    )
     async def test_https_proxy_connect_failure_preserves_status_with_response_body(
         self,
         mitm_ctx,
+        origin_authority: str,
+        connect_authority: str,
     ):
         proxy_requests: list[_RawHttpRequest] = []
         response_body = b"proxy authentication required"
@@ -2341,7 +2356,7 @@ class TestFirewallAuthAsyncTransport:
                     _https_proxy_environment(f"http://127.0.0.1:{proxy_port}"),
                 ),
                 patch.object(platform_api, "VERCEL_BYPASS", ""),
-                mitm_ctx(api_url="https://platform.example"),
+                mitm_ctx(api_url=f"https://{origin_authority}"),
                 pytest.raises(
                     OSError,
                     match=r"^Firewall auth HTTP proxy CONNECT failed with status 407$",
@@ -2351,7 +2366,8 @@ class TestFirewallAuthAsyncTransport:
 
         assert len(proxy_requests) == 1
         assert proxy_requests[0].method == "CONNECT"
-        assert proxy_requests[0].target == "platform.example"
+        assert proxy_requests[0].target == connect_authority
+        assert proxy_requests[0].headers["host"] == connect_authority
         assert response_body.decode() not in str(exc_info.value)
 
     async def test_https_proxy_connect_scans_fragmented_headers_incrementally(
@@ -2451,7 +2467,7 @@ class TestFirewallAuthAsyncTransport:
 
         assert len(proxy_requests) == 1
         assert proxy_requests[0].method == "CONNECT"
-        assert proxy_requests[0].target == "platform.example"
+        assert proxy_requests[0].target == "platform.example:443"
 
     async def test_total_deadline_aborts_stalled_https_proxy_connect(
         self,
@@ -2490,21 +2506,33 @@ class TestFirewallAuthAsyncTransport:
 
         assert exc_info.value.phase is auth_client.FirewallAuthFetchPhase.PROXY_CONNECT
 
+    @pytest.mark.parametrize(
+        ("origin_authority", "connect_authority"),
+        [
+            ("localhost", "localhost:443"),
+            ("localhost:443", "localhost:443"),
+            ("localhost:8443", "localhost:8443"),
+        ],
+    )
     async def test_https_proxy_connect_preserves_origin_tls_and_isolates_credentials(
         self,
         mitm_ctx,
         tmp_path: Path,
+        origin_authority: str,
+        connect_authority: str,
     ):
         server_context, ca_path = _create_tls_server(tmp_path)
         origin_requests: list[_RawHttpRequest] = []
-        proxy_requests: list[_RawHttpRequest] = []
+        proxy_requests: list[http.Request] = []
 
         async def handle_origin(
             reader: asyncio.StreamReader,
             writer: asyncio.StreamWriter,
         ) -> None:
             origin_requests.append(await _read_raw_http_request(reader))
-            await _write_success_response(writer)
+            await _write_success_response(
+                writer, headers={"Authorization": "Bearer resolved-token"}
+            )
 
         async with _run_test_server(handle_origin, ssl_context=server_context) as origin_port:
 
@@ -2512,7 +2540,18 @@ class TestFirewallAuthAsyncTransport:
                 client_reader: asyncio.StreamReader,
                 client_writer: asyncio.StreamWriter,
             ) -> None:
-                proxy_requests.append(await _read_raw_http_request(client_reader))
+                header_block = await client_reader.readuntil(b"\r\n\r\n")
+                try:
+                    request = read_request_head(header_block[:-4].split(b"\r\n"))
+                except ValueError:
+                    client_writer.write(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")
+                    await client_writer.drain()
+                    await _close_test_writer(client_writer)
+                    return
+                proxy_requests.append(request)
+                assert request.method == "CONNECT"
+                assert request.authority == connect_authority
+                # Map the validated synthetic target to an unprivileged loopback TLS endpoint.
                 origin_reader, origin_writer = await asyncio.open_connection(
                     "127.0.0.1",
                     origin_port,
@@ -2539,21 +2578,33 @@ class TestFirewallAuthAsyncTransport:
                         _https_proxy_environment(proxy_url) | _tls_trust_environment(ca_path),
                     ),
                     patch.object(platform_api, "VERCEL_BYPASS", ""),
-                    mitm_ctx(api_url=f"https://localhost:{origin_port}"),
+                    mitm_ctx(api_url=f"https://{origin_authority}"),
                 ):
-                    result = await auth_client.fetch_firewall_headers(firewall_auth_request())
+                    result = await auth_client.fetch_firewall_headers(
+                        firewall_auth_request(
+                            auth_headers={"Authorization": "Bearer ${{ secrets.TOKEN }}"}
+                        )
+                    )
 
         expected_proxy_authorization = "Basic " + base64.b64encode(
             b"proxy-user:proxy-password"
         ).decode("ascii")
-        assert result.payload.headers == {}
+        assert result.payload.headers == {"Authorization": "Bearer resolved-token"}
         assert len(proxy_requests) == 1
         assert proxy_requests[0].method == "CONNECT"
-        assert proxy_requests[0].target == f"localhost:{origin_port}"
+        assert proxy_requests[0].authority == connect_authority
+        assert proxy_requests[0].headers["host"] == connect_authority
         assert proxy_requests[0].headers["proxy-authorization"] == expected_proxy_authorization
+        assert "authorization" not in proxy_requests[0].headers
         assert len(origin_requests) == 1
+        assert origin_requests[0].method == "POST"
         assert origin_requests[0].target == "/api/webhooks/agent/firewall/auth"
+        assert origin_requests[0].headers["host"] == origin_authority
         assert origin_requests[0].headers["authorization"] == "Bearer tok-xyz"
+        assert json.loads(origin_requests[0].body) == {
+            "encryptedSecrets": "iv:tag:data",
+            "authHeaders": {"Authorization": "Bearer ${{ secrets.TOKEN }}"},
+        }
         assert "proxy-authorization" not in origin_requests[0].headers
 
     async def test_https_proxy_connect_rejects_pre_tls_response_bytes(

@@ -23,6 +23,7 @@ HTTPS              Connect to the origin, negotiate  Connect to the proxy, issue
 
 Proxy selection uses the standard environment settings for the origin scheme and ``no_proxy``
 bypass rules. Only HTTP proxy endpoints are supported; an HTTPS or other proxy endpoint is rejected.
+CONNECT targets always include the effective origin port, even when the platform URL omits it.
 For an HTTP origin, proxy authorization is sent in ``Proxy-Authorization`` on the absolute-form
 request. For an HTTPS origin, it is sent only on ``CONNECT`` and is never forwarded through the
 tunnel to the origin. After ``CONNECT`` succeeds, any bytes already buffered from the proxy are
@@ -178,6 +179,7 @@ class _FirewallAuthFetchProgress:
 class _ConnectionPlan:
     origin_scheme: str
     origin_host: str
+    origin_port: int
     origin_authority: str
     connect_host: str
     connect_port: int
@@ -372,6 +374,7 @@ def _build_connection_plan(req: urllib.request.Request) -> _ConnectionPlan:
         return _ConnectionPlan(
             origin_scheme=scheme,
             origin_host=origin_host,
+            origin_port=origin_port,
             origin_authority=origin_authority,
             connect_host=origin_host,
             connect_port=origin_port,
@@ -387,6 +390,7 @@ def _build_connection_plan(req: urllib.request.Request) -> _ConnectionPlan:
     return _ConnectionPlan(
         origin_scheme=scheme,
         origin_host=origin_host,
+        origin_port=origin_port,
         origin_authority=origin_authority,
         connect_host=proxy_host,
         connect_port=proxy_port,
@@ -596,9 +600,10 @@ async def _establish_proxy_tunnel(
     sock: socket.socket,
     plan: _ConnectionPlan,
 ) -> None:
+    connect_authority = _format_authority(plan.origin_host, plan.origin_port, include_port=True)
     lines = [
-        f"CONNECT {plan.origin_authority} HTTP/1.1",
-        f"Host: {plan.origin_authority}",
+        f"CONNECT {connect_authority} HTTP/1.1",
+        f"Host: {connect_authority}",
     ]
     if plan.proxy_authorization is not None:
         lines.append(f"Proxy-Authorization: {plan.proxy_authorization}")
