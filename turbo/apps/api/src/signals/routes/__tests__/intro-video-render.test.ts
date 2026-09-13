@@ -501,7 +501,9 @@ describe("managed Intro Video cloud rendering", () => {
     const archive = new AdmZip(Buffer.from(await snapshot.arrayBuffer()));
     expect(archive.readAsText("index.html")).toContain("Original slides");
     const write = context.mocks.s3.send.mock.calls
-      .map(([command]) => command)
+      .map(([command]) => {
+        return command;
+      })
       .find((command): command is PutObjectCommand => {
         return (
           command instanceof PutObjectCommand &&
