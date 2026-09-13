@@ -6,6 +6,8 @@ import type { ChatEvent } from "./chat-event-types.ts";
 const L = logger("AutoScroll");
 const AT_BOTTOM_THRESHOLD_PX = 10;
 const SCROLL_ANCHOR_ATTRIBUTE = "data-chat-scroll-anchor-event-id";
+const SCROLL_ANCHOR_ALIASES_ATTRIBUTE =
+  "data-chat-scroll-anchor-alias-event-ids";
 const SCROLL_COMMIT_REVISION_ATTRIBUTE = "data-chat-scroll-commit-revision";
 const SCROLL_COMMIT_TO_TAIL_ATTRIBUTE = "data-chat-scroll-commit-to-tail";
 
@@ -121,10 +123,29 @@ function scrollAnchorForEvent(
   container: HTMLElement,
   eventId: string,
 ): HTMLElement | null {
+  const anchor = scrollAnchors(container).find((candidate) => {
+    return candidate.getAttribute(SCROLL_ANCHOR_ATTRIBUTE) === eventId;
+  });
+  if (anchor) {
+    return anchor;
+  }
+  // A projection can replace source messages with one retained body. Resolve
+  // their anchors within that same group until the next capture holds its
+  // current event, including when a live answer replaces the previous one.
+  const projectedGroup = Array.from(
+    container.querySelectorAll<HTMLElement>(
+      `[${SCROLL_ANCHOR_ALIASES_ATTRIBUTE}]`,
+    ),
+  ).find((group) => {
+    return group
+      .getAttribute(SCROLL_ANCHOR_ALIASES_ATTRIBUTE)
+      ?.split(" ")
+      .includes(eventId);
+  });
   return (
-    scrollAnchors(container).find((anchor) => {
-      return anchor.getAttribute(SCROLL_ANCHOR_ATTRIBUTE) === eventId;
-    }) ?? null
+    projectedGroup?.querySelector<HTMLElement>(
+      `[${SCROLL_ANCHOR_ATTRIBUTE}]`,
+    ) ?? null
   );
 }
 
@@ -196,7 +217,7 @@ function scrollToPosition(
 function firstVisibleScrollAnchor(
   container: HTMLElement,
   excludedAnchorAncestors?: string,
-  preferredEventId?: string,
+  preferredAnchor?: HTMLElement | null,
 ): HTMLElement | null {
   const anchors = scrollAnchors(container).filter((anchor) => {
     return !excludedAnchorAncestors || !anchor.closest(excludedAnchorAncestors);
@@ -208,7 +229,7 @@ function firstVisibleScrollAnchor(
   });
   return (
     visibleAnchors.find((anchor) => {
-      return anchor.getAttribute(SCROLL_ANCHOR_ATTRIBUTE) === preferredEventId;
+      return anchor === preferredAnchor;
     }) ??
     visibleAnchors[0] ??
     (excludedAnchorAncestors
@@ -224,12 +245,12 @@ function firstVisibleScrollAnchor(
 function captureScrollPosition(
   container: HTMLElement,
   excludedAnchorAncestors?: string,
-  preferredEventId?: string,
+  preferredAnchor?: HTMLElement | null,
 ): ThreadScrollPosition | null {
   const anchor = firstVisibleScrollAnchor(
     container,
     excludedAnchorAncestors,
-    preferredEventId,
+    preferredAnchor,
   );
   const targetEventId = anchor?.getAttribute(SCROLL_ANCHOR_ATTRIBUTE);
   if (!anchor || !targetEventId) {
@@ -378,7 +399,7 @@ function createInternalScrollSignals(
         captureScrollPosition(
           container,
           excludedAnchorAncestors,
-          currentPosition.targetEventId,
+          scrollAnchorForEvent(container, currentPosition.targetEventId),
         ) ?? (excludedAnchorAncestors ? null : currentPosition)
       );
     },

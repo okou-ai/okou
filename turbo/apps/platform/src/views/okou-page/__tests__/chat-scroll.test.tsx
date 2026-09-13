@@ -668,6 +668,90 @@ test.each(["answer", "work message", "hidden history", "bottom"] as const)(
   },
 );
 
+test("Keep a live answer readable when it changes during sharing", async () => {
+  const runId = "scroll-live-sharing-run";
+  const conversation = mockMutableConversation(
+    THREAD_IDS.sharingHistory,
+    [
+      ...completedHistoryEvents(6),
+      {
+        id: "scroll-live-sharing-user",
+        role: "user",
+        content: "Inspect the rollout live",
+        runId,
+        seqId: 19,
+        createdAt: "2026-08-20T12:20:00.000Z",
+      },
+      {
+        id: "scroll-live-sharing-answer",
+        role: "assistant",
+        content: "The first rollout check is complete",
+        runId,
+        seqId: 20,
+        createdAt: "2026-08-20T12:20:01.000Z",
+      },
+    ],
+    [runId],
+  );
+  const container = await openConversation(
+    THREAD_IDS.sharingHistory,
+    "The first rollout check is complete",
+  );
+  const geometry = installChatScrollGeometry(container);
+  geometry.resizeViewport(100);
+  scrollFromUser(
+    container,
+    container.scrollTop +
+      anchorById(
+        container,
+        "scroll-live-sharing-answer",
+      ).getBoundingClientRect().top +
+      20,
+  );
+  await expectHistoryPositionHeld();
+  click(buttonByLabel("Share messages"));
+  await screen.findAllByText("0 selected");
+  expect(anchorId(geometry.firstVisibleAnchor())).toBe(
+    "scroll-live-sharing-answer",
+  );
+  const readingTop = geometry.firstVisibleAnchor().getBoundingClientRect().top;
+
+  act(() => {
+    conversation.publish([
+      {
+        id: "scroll-live-sharing-next-answer",
+        role: "assistant",
+        content: "The second rollout check is complete",
+        runId,
+        seqId: 21,
+        createdAt: "2026-08-20T12:20:02.000Z",
+      },
+    ]);
+  });
+
+  await screen.findByText("The second rollout check is complete");
+  expect(
+    screen.queryByText("The first rollout check is complete"),
+  ).not.toBeInTheDocument();
+  const expectReadingPosition = () => {
+    expect(
+      anchorById(
+        container,
+        "scroll-live-sharing-next-answer",
+      ).getBoundingClientRect().top,
+    ).toBe(readingTop);
+  };
+  await waitFor(expectReadingPosition);
+  fireEvent(window, new Event("resize"));
+  expectReadingPosition();
+
+  click(screen.getByText("Cancel", { selector: "button" }));
+  await waitFor(() => {
+    expect(buttonByLabel("Expand work history")).toBeInTheDocument();
+    expectReadingPosition();
+  });
+});
+
 test("Follow new messages while reading the latest reply", async () => {
   const conversation = mockMutableConversation(
     THREAD_IDS.incomingLatest,

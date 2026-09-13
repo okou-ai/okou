@@ -5569,6 +5569,25 @@ function SelectablePagedGroupRow({
   return (
     <div
       data-chat-share-selectable-group
+      data-chat-scroll-anchor-alias-event-ids={
+        group.role === "assistant"
+          ? [
+              ...group.events,
+              ...(runWorkSection
+                ? [
+                    ...runWorkSection.hiddenGroups,
+                    ...runWorkSection.hiddenGroupsAfterAnchor,
+                  ].flatMap((hiddenGroup) => {
+                    return hiddenGroup.events;
+                  })
+                : []),
+            ]
+              .map((event) => {
+                return event.id;
+              })
+              .join(" ")
+          : undefined
+      }
       className={cn(
         "relative -my-1 rounded-lg py-1 transition-colors",
         phase === "selecting" && "cursor-pointer hover:bg-state-hover",
