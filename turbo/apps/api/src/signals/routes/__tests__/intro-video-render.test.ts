@@ -20,7 +20,6 @@ import {
   type IntroVideoRenderRequest,
 } from "@okouai/api-contracts/contracts/intro-video-render";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
@@ -29,10 +28,7 @@ import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv } from "../../../lib/env";
 import { now, nowDate, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import {
-  createUsagePricingFixture,
-  seedOrgMetadata,
-} from "../../../test-fixtures/system-config-seeds";
+import { createUsagePricingFixture } from "../../../test-fixtures/system-config-seeds";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { billingStatusRoutes } from "../billing-status";
 import { introVideoRenderRoutes } from "../intro-video-render";
@@ -40,13 +36,16 @@ import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { webhooksBuiltInGenerationRoutes } from "../webhooks-built-in-generations";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { seedOrgMembership$ } from "./helpers/org-membership";
-import { seedCompose$, seedRun$ } from "./helpers/usage-state";
+import { createBddApi } from "./helpers/api-bdd";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
-const store = createStore();
+const bdd = createBddApi(context);
+const chat = createChatFilesBddApi(context);
+const runs = createRunsApi(context);
 const CREATE = "https://api.heygen.com/v3/hyperframes/renders";
 const VIDEO_URL = "https://files.heygen.test/cloud.mp4";
 const VIDEO_BYTES = Buffer.concat([
@@ -70,18 +69,26 @@ async function fixture(enabled = true, priced = true) {
     userId: `user_${randomUUID()}`,
     orgId: `org_${randomUUID()}`,
   };
-  await seedOrgMetadata({ ...identity, tier: "team", credits: 10_000 });
-  await store.set(
-    seedOrgMembership$,
-    { ...identity, role: "admin" },
-    context.signal,
+  const actor = bdd.user(identity);
+  runs.configureRunnerGroup();
+  await runs.grantProEntitlement(actor, { tier: "team" });
+  await runs.ensureOrgModelProvider(actor);
+  const agent = await bdd.createAgent(actor, {
+    displayName: "Cloud render acceptance",
+    visibility: "private",
+  });
+  const sent = await chat.requestSendEvent(
+    actor,
+    { agentId: agent.agentId, prompt: "Render the preserved presentation." },
+    [201],
   );
-  const { composeId } = await store.set(seedCompose$, identity, context.signal);
-  const { runId } = await store.set(
-    seedRun$,
-    { ...identity, composeId, triggerSource: "web" },
-    context.signal,
-  );
+  if (sent.status !== 201 || !sent.body.runId) {
+    throw new Error("Expected the chat API to create a render owner's run");
+  }
+  const runId = sent.body.runId;
+  onTestFinished(async () => {
+    await runs.requestCancelRun(actor, runId, [200]);
+  });
   mocks.clerk.session(identity.userId, identity.orgId);
   await updateFeatureSwitchesForUser(context, identity, {
     [FeatureSwitchKey.IntroVideo]: enabled,

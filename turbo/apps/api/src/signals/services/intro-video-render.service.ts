@@ -67,7 +67,7 @@ const stateSchema = z.object({
   notice: z.string().optional(),
   artifact: introVideoRenderResultSchema.optional(),
   lease: z.object({ token: z.uuid(), claimedAt: z.iso.datetime() }).optional(),
-  phaseTimes: z.record(z.string(), z.string()).optional(),
+  phaseTimes: z.record(z.string(), z.iso.datetime()),
 });
 type RenderState = z.infer<typeof stateSchema>;
 type RenderJob = typeof builtInGenerationJobs.$inferSelect;
