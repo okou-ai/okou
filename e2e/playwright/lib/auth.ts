@@ -62,8 +62,8 @@ export async function signInWithClerkEmailCode(
         (organizationId) => {
           return Boolean(
             window.Clerk?.loaded &&
-            window.Clerk.session &&
-            window.Clerk.organization?.id === organizationId,
+              window.Clerk.session &&
+              window.Clerk.organization?.id === organizationId,
           );
         },
         options.activeOrganizationId,
@@ -116,6 +116,25 @@ async function submitClerkEmailCode(page: Page): Promise<void> {
   }
 
   await expect(codeInput).toBeVisible({ timeout: 30_000 });
+  // Clerk mounts the OTP input before preparing the first factor, and filling
+  // all six digits submits it immediately. Wait for preparation to complete.
+  await waitForClerkReadiness(
+    page,
+    "Clerk to prepare the email-code first factor before submitting the code",
+    () =>
+      page.waitForFunction(
+        () => {
+          const verification =
+            window.Clerk?.client?.signIn?.firstFactorVerification;
+          return (
+            verification?.strategy === "email_code" &&
+            verification.status === "unverified"
+          );
+        },
+        undefined,
+        { timeout: 30_000 },
+      ),
+  );
   await codeInput.fill(CLERK_TEST_EMAIL_CODE);
 }
 
