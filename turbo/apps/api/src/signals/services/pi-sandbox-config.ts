@@ -28,6 +28,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isCodexFastModeEnabled } from "@okouai/core/model-feature-switch";
 import { isPiAgentModelSupported } from "@okouai/pi-agent-runtime";
+import { OPENROUTER_US_ORIGIN } from "@okouai/api-contracts/contracts/openrouter-routing";
 
 import {
   resolvePiNativeModelConfig,
@@ -444,6 +445,15 @@ function resolveResponsesPiModelConfig(
   const endpoint = getModelProviderPiEndpoint(
     concreteType.data,
     "openai-responses",
+    provider.credentialOwner
+      ? {
+          credentialOwner: provider.credentialOwner,
+          model,
+          usRoutingEnabled:
+            provider.environment.OPENAI_BASE_URL ===
+            `${OPENROUTER_US_ORIGIN}/api/v1`,
+        }
+      : undefined,
   );
   if (!endpoint) {
     return null;

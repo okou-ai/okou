@@ -6,6 +6,9 @@ import {
   SESSION_HISTORY_ENCODING_IDENTITY,
 } from "@okouai/api-contracts/contracts/runners";
 import { getModelProviderPiEndpoint } from "@okouai/api-contracts/contracts/model-provider-firewalls";
+import { getOpenRouterBaseUrl } from "@okouai/api-contracts/contracts/openrouter-routing";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { blobs } from "@okouai/db/schema/blob";
@@ -30,6 +33,7 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
+import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
   downloadS3BufferWithMaxBytes,
   S3ObjectSizeLimitError,
@@ -735,6 +739,38 @@ async function resolveStage1ProviderConfig(
   return providerConfig({ route, apiKey: key.apiKey });
 }
 
+async function extractPreparedWork(
+  args: {
+    readonly db: Db;
+    readonly prepared: PreparedWork;
+    readonly model: ReturnType<typeof providerConfig>;
+  },
+  requestId: string,
+  signal: AbortSignal,
+): Promise<PiMemoryStage1ProviderResult> {
+  let model = args.model;
+  if (model.provider === "openrouter") {
+    const { orgId, userId } = args.prepared.work;
+    const context = await loadUserFeatureSwitchContext(args.db, orgId, userId);
+    signal.throwIfAborted();
+    model = {
+      ...model,
+      baseUrl: getOpenRouterBaseUrl("responses", {
+        credentialOwner: "builtin",
+        model: model.model,
+        usRoutingEnabled: isFeatureEnabled(
+          FeatureSwitchKey.OpenRouterUsRouting,
+          context,
+        ),
+      }),
+    };
+  }
+  return await runPiMemoryStage1Extraction(
+    { model, projectedHistory: args.prepared.projectedHistory, requestId },
+    signal,
+  );
+}
+
 async function processPreparedWork(
   args: {
     readonly db: Db;
@@ -746,14 +782,7 @@ async function processPreparedWork(
   const startedAt = performance.now();
   const requestId = randomUUID();
   const provider = await settleIncludingAbort(
-    runPiMemoryStage1Extraction(
-      {
-        model: args.model,
-        projectedHistory: args.prepared.projectedHistory,
-        requestId,
-      },
-      signal,
-    ),
+    extractPreparedWork(args, requestId, signal),
   );
   if (!provider.ok) {
     return await failWork(

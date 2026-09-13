@@ -1,0 +1,57 @@
+# Platform OpenRouter US routing
+
+`OpenRouterUsRouting` (`openRouterUsRouting`) is disabled by default, including
+for staff. It uses the existing per-user feature-switch overrides. Enabling it
+selects `https://us.openrouter.ai` only for platform-owned keys and the verified
+model/API pairs in `openrouter-routing.ts`. BYOK, connection presets, saved URLs,
+direct providers, model defaults and provider-selection policy are unchanged.
+
+The 2026-09-13 tests and official US catalog comparison in
+[#33565](https://github.com/vm0-ai/vm0/issues/33565) support four Claude Messages
+models and seven GPT/DeepSeek Responses models among the current platform routes.
+Gemini voice uses Google Cloud after [#33769](https://github.com/vm0-ai/vm0/pull/33769)
+and is outside this OpenRouter switch. No remaining platform Chat Completions or
+dedicated transcription model has verified US support. Unsupported combinations
+retain their global endpoint, including DeepSeek V4.1 Flash, Claude Fable 5.1, the current internal
+text/image/translation helpers and dedicated transcription. Catalog presence
+alone does not authorize another API or model; update the allowlist only after
+verifying that combination.
+
+## Selection and capture
+
+Built-in primary/fallback selection resolves the platform key before choosing
+the endpoint. The execution context captures the environment, Codex/Pi metadata,
+and exact firewall destinations together. US overrides use an existing inline
+firewall entry so a later name lookup cannot restore the global endpoint.
+Unverified API paths retain their current destination and auth binding.
+
+Pi memory Stage 1 retains its batch-selected
+platform model/key, but reads each work owner's feature context before inference;
+a batch must not borrow one user's switch for another user's work.
+
+Switch changes affect new selections. Queued/claimed executions and requests
+already in progress keep their captured endpoint and credentials. There is no
+failure-triggered retry against the global OpenRouter host. Ordinary existing
+retry, error handling, billing and provider selection remain in place.
+
+## Deployment and rollback
+
+Deploy with the switch off. Confirm the platform keys' Business/Enterprise
+in-region entitlement and compatible API, commit-pinned CLI and Runner native
+readers before enabling an override. The earlier live probes used the authorized
+connector key; they do not establish entitlement for every platform key.
+
+GA Claude Code/Codex consumers use existing environment, runtime configuration
+and inline-firewall contracts; no new job fields or database migration are
+needed. New readers continue accepting existing global contexts.
+
+Pi native Messages has a strict endpoint reader in both TypeScript and Rust.
+The new reader accepts US only for eligible builtin-owned Messages routes.
+Turning the switch off stops new US selection but does not rewrite captured
+work or stored metadata. Retain supporting readers for those contexts; an older
+API/Runner rollback can reject them even after switch-off. Prefer reverting the
+writer policy while keeping the readers that understand captured US contexts.
+PiLoop remains non-GA, with a
+staff-default rollout, and no additional compatibility path is introduced.
+Follow [deployment compatibility](deployment-compatibility.md) when planning
+rollout or rollback; this implementation does not activate or publish it.

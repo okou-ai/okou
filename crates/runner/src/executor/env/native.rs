@@ -211,7 +211,22 @@ pub(super) fn validate(value: &Value) -> Result<(), String> {
             "{{secret}}",
         ),
         "openrouter-api-key" => (
-            "https://openrouter.ai/api",
+            // Mirrors openrouter-routing.ts; shared native fixtures verify
+            // the owned Messages allowlist at both protocol boundaries.
+            if base == "https://us.openrouter.ai/api"
+                && value["credentialOwner"] == "builtin"
+                && matches!(
+                    field(value, "model")?,
+                    "anthropic/claude-opus-5"
+                        | "anthropic/claude-opus-4.8"
+                        | "anthropic/claude-sonnet-5"
+                        | "anthropic/claude-sonnet-4.6"
+                )
+            {
+                "https://us.openrouter.ai/api"
+            } else {
+                "https://openrouter.ai/api"
+            },
             "OPENROUTER_API_KEY",
             "authorization",
             "Bearer {{secret}}",

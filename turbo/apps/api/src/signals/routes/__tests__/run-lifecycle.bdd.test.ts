@@ -5915,6 +5915,9 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       );
     }
     const { actor, agentId, runnerGroup } = await entitledRunActor();
+    await createConnectorBddApi(context).updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.OpenRouterUsRouting]: true,
+    });
 
     const run = await api.createRun(actor, {
       agentId,
@@ -5924,6 +5927,9 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
     await expectBuiltInModelRunRuntimeRoute(run.runId, selectedModel);
+    expect(claim.environment).toMatchObject({
+      OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
+    });
 
     expect(
       claim.firewalls?.map((firewall) => {

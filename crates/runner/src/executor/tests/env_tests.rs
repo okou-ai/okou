@@ -2156,3 +2156,35 @@ fn native_pi_context_rejects_wrong_dialects_credentials_and_regions() {
         }
     }
 }
+
+#[test]
+fn native_pi_us_rejects_user_credentials_and_unsupported_models() {
+    let fixtures: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+        "../../../../../turbo/packages/api-contracts/src/contracts/__tests__/fixtures/pi-native.json"
+    )).unwrap();
+    let fixture = fixtures
+        .iter()
+        .find(|fixture| fixture["name"] == "built-in US anthropic/claude-sonnet-4.6")
+        .unwrap();
+    let mut context = pi_context_for_test();
+    context.pi_model_config = Some(fixture["config"].clone());
+    context.environment.get_or_insert_with(HashMap::new).insert(
+        "OKOU_PI_NATIVE_API_KEY".into(),
+        api_contracts::generated::constants::runners::PI_NATIVE_CREDENTIAL_PLACEHOLDER.into(),
+    );
+    assert!(validate_context_for_test(&context).is_ok());
+    for change in [
+        json!({"credentialOwner": "organization", "billingOwner": "user"}),
+        json!({"credentialOwner": "member", "billingOwner": "user"}),
+        json!({"model": "anthropic/claude-fable-5.1", "catalogModel": "claude-fable-5-1"}),
+        json!({"baseUrl": "https://us.openrouter.ai/api/v1"}),
+    ] {
+        let mut config = fixture["config"].clone();
+        config
+            .as_object_mut()
+            .unwrap()
+            .extend(change.as_object().unwrap().clone());
+        context.pi_model_config = Some(config);
+        assert!(validate_context_for_test(&context).is_err());
+    }
+}

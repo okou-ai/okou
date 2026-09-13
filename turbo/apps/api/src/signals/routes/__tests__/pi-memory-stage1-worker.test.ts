@@ -9,6 +9,7 @@ import {
   SESSION_HISTORY_ENCODING_ZSTD,
 } from "@okouai/api-contracts/contracts/runners";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -17,7 +18,13 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { seedBuiltInModelKey } from "./helpers/runtime-state";
+import {
+  seedBuiltInModelKey,
+  seedBuiltInModelCandidateKeys,
+  resolveBuiltInModelRouteFixture,
+} from "./helpers/runtime-state";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { createDeferredPromise } from "../../utils";
 import {
@@ -51,6 +58,7 @@ interface CandidateFixture {
 interface ProviderInvocation {
   readonly sequence: number;
   readonly request: unknown;
+  readonly url: string;
 }
 
 type SessionHistoryEncoding =
@@ -211,11 +219,12 @@ function installProvider(
   const calls: ProviderInvocation[] = [];
   server.use(
     http.post(
-      /https:\/\/(?:api\.openai\.com|openrouter\.ai)\/.*\/responses/u,
+      /https:\/\/(?:api\.openai\.com|(?:us\.)?openrouter\.ai)\/.*\/responses/u,
       async ({ request }) => {
         sequence += 1;
         const invocation = {
           sequence,
+          url: request.url,
           request: (await request.json()) as unknown,
         };
         calls.push(invocation);
@@ -470,6 +479,66 @@ beforeEach(async () => {
 });
 
 describe("Pi memory Stage 1 worker", () => {
+  it("selects the OpenRouter region from each work owner's switch", async () => {
+    const selectedModel = "gpt-5.6-terra";
+    await seedBuiltInModelCandidateKeys(context, selectedModel);
+    const primary = await resolveBuiltInModelRouteFixture(
+      context,
+      selectedModel,
+    );
+    if (!primary || primary.provider_type !== "openai-api-key") {
+      throw new Error("Expected primary OpenAI route");
+    }
+    const storages = [createStorageFixture(), createStorageFixture()];
+    for (const [index, storage] of storages.entries()) {
+      const piSessionId = randomUUID();
+      await storage.seed({
+        piSessionId,
+        raw: settledHistory(piSessionId, `regional owner ${index}`),
+      });
+      await updateFeatureSwitchesForUser(
+        context,
+        { orgId: storage.org_id, userId: storage.user_id },
+        {
+          [FeatureSwitchKey.OpenRouterUsRouting]: index === 0,
+        },
+      );
+    }
+    const provider = installProvider();
+    await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
+      {
+        selectedModel,
+        providerType: primary.provider_type,
+        upstreamModel: primary.upstream_model,
+      },
+      async () => {
+        for (const result of await Promise.all(
+          storages.map((storage) => {
+            return runScoped(storage);
+          }),
+        )) {
+          expect(result).toMatchObject({
+            succeeded: 1,
+            retryableFailure: 0,
+            terminalFailure: 0,
+          });
+        }
+      },
+    );
+    expect(provider.calls).toHaveLength(2);
+    for (const [index, host] of [
+      "us.openrouter.ai",
+      "openrouter.ai",
+    ].entries()) {
+      const invocation = provider.calls.find((call) => {
+        return JSON.stringify(call.request).includes(`regional owner ${index}`);
+      });
+      expect(invocation?.url).toBe(`https://${host}/api/v1/responses`);
+      expect(invocation?.request).toMatchObject({
+        model: "openai/gpt-5.6-terra",
+      });
+    }
+  });
   it("authenticates the production cron route before the disabled breaker", async () => {
     mockEnv("PI_MEMORY_BACKGROUND_WORKERS_ENABLED", "false");
     const provider = installProvider();

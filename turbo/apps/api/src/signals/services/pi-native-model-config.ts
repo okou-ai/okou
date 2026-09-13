@@ -134,7 +134,9 @@ export function resolvePiNativeModelConfig(
       header: { name: "x-api-key", valueTemplate: "{{secret}}" },
     },
     "openrouter-api-key": {
-      baseUrl: "https://openrouter.ai/api",
+      // The captured environment owns rollout selection; parseNativeConfig
+      // validates ownership and the exact eligible endpoint below.
+      baseUrl: environment.ANTHROPIC_BASE_URL,
       secretName: "OPENROUTER_API_KEY",
       header: { name: "Authorization", valueTemplate: "Bearer {{secret}}" },
     },
