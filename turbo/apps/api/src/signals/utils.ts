@@ -276,6 +276,22 @@ export async function settleIncludingAbort<T>(
   }
 }
 
+/** Join every started branch before propagating Promise.all's result or error. */
+export function joinAll<T extends readonly unknown[] | []>(
+  operations: T,
+): Promise<{ -readonly [P in keyof T]: Awaited<T[P]> }>;
+export async function joinAll(
+  operations: readonly unknown[],
+): Promise<unknown[]> {
+  // Normalize once so joining cannot execute a lazy thenable a second time.
+  const promises = operations.map((operation) => {
+    return Promise.resolve(operation);
+  });
+  const result = Promise.all(promises);
+  await Promise.allSettled([result, ...promises]);
+  return await result;
+}
+
 interface PromiseResolvers<T> {
   readonly promise: Promise<T>;
   readonly resolve: (value: T | PromiseLike<T>) => void;

@@ -6,6 +6,7 @@ import { command, computed, type Computed } from "ccstate";
 import { and, asc, eq, gte, inArray, like, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 
+import { joinAll } from "../utils";
 import { executeRawRows } from "../../lib/db-raw-rows";
 import type { Db } from "../external/db";
 import { generatePresignedGetUrl } from "../external/s3";
@@ -616,7 +617,7 @@ function resolveStoragePresignedUrls<TRequest>(args: {
       });
     }
 
-    const freshValues = await Promise.all(
+    const freshValues = await joinAll(
       needsFresh.map((entry) => {
         return get(
           signCacheValue({

@@ -209,7 +209,7 @@ import { getDatasetName, ingestToAxiom } from "../external/axiom";
 import { now, nowDate } from "../../lib/time";
 import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
 import { generateOkouToken } from "../auth/tokens";
-import { onRejection, safeSync, settle, tapError } from "../utils";
+import { joinAll, onRejection, safeSync, settle, tapError } from "../utils";
 import {
   environmentRecordToEntries,
   executionFirewallsToAxiomEntries,
@@ -246,7 +246,10 @@ import {
 } from "./custom-connector-permission-bundle.service";
 import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
 import {
-  prepareAgentRunStorage,
+  resolveAgentRunStorage,
+  materializeAgentRunStorage,
+  type ResolvedAgentRunStorage,
+  type StorageMountMetadata,
   OfficialWorkflowArtifactResolutionError,
   type PreparedAgentRunStorage,
   StorageManifestBuildStats,
@@ -7076,7 +7079,10 @@ function noContentPiMemoryRecall(args: {
 }
 
 function priorPiMemoryRecall(args: {
-  readonly currentMemoryMount: StoredExecutionContext["storageMounts"][number];
+  readonly currentMemoryMount: Pick<
+    StorageMountMetadata,
+    "storageId" | "versionId"
+  >;
   readonly previousRunStorageMounts:
     | readonly PersistedStorageMount[]
     | undefined;
@@ -7114,7 +7120,7 @@ async function resolvePiMemoryRecall(
     readonly db: Db;
     readonly orgId: string;
     readonly userId: string;
-    readonly storageMounts: StoredExecutionContext["storageMounts"];
+    readonly storageMounts: readonly StorageMountMetadata[];
     readonly persistedStorageMounts:
       | readonly PersistedStorageMount[]
       | undefined;
@@ -7244,7 +7250,7 @@ function storedExecutionContextWithPiResources(
 
 function assemblePiLaunchResources(args: {
   readonly modelConfig: PiModelConfig;
-  readonly storageMounts: StoredExecutionContext["storageMounts"];
+  readonly storageMounts: readonly StorageMountMetadata[];
   readonly apiStartTime: number;
   readonly maintenance: PiMemoryPhase2Maintenance | undefined;
   readonly memoryRecall: PiMemoryRecallSelection | undefined;
@@ -7289,8 +7295,7 @@ interface PreparePiLaunchResourcesArgs {
   readonly runId: string;
   readonly agentSessionId: string;
   readonly apiStartTime: number;
-  readonly storageMounts: StoredExecutionContext["storageMounts"];
-  readonly persistedStorageMounts: readonly PersistedStorageMount[] | undefined;
+  readonly storagePlan: Promise<ResolvedAgentRunStorage>;
   readonly previousRunStorageMounts:
     | readonly PersistedStorageMount[]
     | undefined;
@@ -7298,6 +7303,50 @@ interface PreparePiLaunchResourcesArgs {
   readonly chatThreadId: string | undefined;
   readonly timing: ApiDispatchTimingCollector;
   readonly maintenance: PiMemoryPhase2Maintenance | undefined;
+}
+
+function signPiLaunchObjectUrls(
+  runId: string,
+  observe: ReturnType<typeof piPreparationObserver>,
+  signal: AbortSignal,
+): Computed<Promise<[string, string]>> {
+  return computed(async (get) => {
+    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+    return await joinAll([
+      measurePiPreparation(
+        observe,
+        "launch_manifest_sign",
+        () => {
+          return get(
+            generatePresignedGetUrl(
+              bucket,
+              piApiFirstTurnObjectKey(runId, "manifest"),
+              PI_API_FIRST_TURN_URL_TTL_SECONDS,
+              undefined,
+              true,
+            ),
+          );
+        },
+        signal,
+      ),
+      measurePiPreparation(
+        observe,
+        "launch_session_sign",
+        () => {
+          return get(
+            generatePresignedGetUrl(
+              bucket,
+              piApiFirstTurnObjectKey(runId, "session"),
+              PI_API_FIRST_TURN_URL_TTL_SECONDS,
+              undefined,
+              true,
+            ),
+          );
+        },
+        signal,
+      ),
+    ]);
+  });
 }
 
 function preparePiLaunchResources(
@@ -7321,9 +7370,9 @@ function preparePiLaunchResources(
         "api_dispatch_prepare_pi_launch_resources",
         "nested",
         async () => {
-          const resumeSession = args.maintenance
-            ? undefined
-            : await measureApiDispatchTiming(
+          const resumeSessionPromise = args.maintenance
+            ? Promise.resolve(undefined)
+            : measureApiDispatchTiming(
                 args.timing,
                 "api_dispatch_prepare_pi_launch_resume_session",
                 "nested",
@@ -7342,68 +7391,62 @@ function preparePiLaunchResources(
                   );
                 },
               );
-          const memoryRecall = args.maintenance
-            ? undefined
-            : await measurePiPreparation(
-                observe,
-                "launch_memory",
-                () => {
-                  return resolvePiMemoryRecall(
-                    {
-                      db: args.db,
-                      orgId: args.orgId,
-                      userId: args.userId,
-                      storageMounts: args.storageMounts,
-                      persistedStorageMounts: args.persistedStorageMounts,
-                      previousRunStorageMounts: args.previousRunStorageMounts,
-                    },
-                    signal,
-                  );
-                },
-                signal,
-              );
-          const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-          const [manifestUrl, sessionUrl] = await Promise.all([
-            measurePiPreparation(
-              observe,
-              "launch_manifest_sign",
-              () => {
-                return get(
-                  generatePresignedGetUrl(
-                    bucket,
-                    piApiFirstTurnObjectKey(args.runId, "manifest"),
-                    PI_API_FIRST_TURN_URL_TTL_SECONDS,
-                    undefined,
-                    true,
-                  ),
+          const memoryPromise = (async () => {
+            // Both request and canonical session writeback ownership/version and
+            // overlay order are final before recall can observe this attempt.
+            const { metadata } = await args.storagePlan;
+            signal.throwIfAborted();
+            const memoryRecall = args.maintenance
+              ? undefined
+              : await measurePiPreparation(
+                  observe,
+                  "launch_memory",
+                  () => {
+                    return resolvePiMemoryRecall(
+                      {
+                        db: args.db,
+                        orgId: args.orgId,
+                        userId: args.userId,
+                        storageMounts: metadata.storageMounts,
+                        persistedStorageMounts: metadata.persistedStorageMounts,
+                        previousRunStorageMounts: args.previousRunStorageMounts,
+                      },
+                      signal,
+                    );
+                  },
+                  signal,
                 );
-              },
-              signal,
-            ),
-            measurePiPreparation(
-              observe,
-              "launch_session_sign",
-              () => {
-                return get(
-                  generatePresignedGetUrl(
-                    bucket,
-                    piApiFirstTurnObjectKey(args.runId, "session"),
-                    PI_API_FIRST_TURN_URL_TTL_SECONDS,
-                    undefined,
-                    true,
-                  ),
-                );
-              },
-              signal,
-            ),
-          ]);
+            return { metadata, memoryRecall };
+          })();
+          const urlsPromise = get(
+            signPiLaunchObjectUrls(args.runId, observe, signal),
+          );
+          const [resumeResult, memoryResult, urlsResult] =
+            await Promise.allSettled([
+              resumeSessionPromise,
+              memoryPromise,
+              urlsPromise,
+            ]);
+          if (resumeResult.status === "rejected") {
+            throw resumeResult.reason;
+          }
+          if (memoryResult.status === "rejected") {
+            throw memoryResult.reason;
+          }
+          if (urlsResult.status === "rejected") {
+            throw urlsResult.reason;
+          }
+          signal.throwIfAborted();
+          const resumeSession = resumeResult.value;
+          const { metadata, memoryRecall } = memoryResult.value;
+          const [manifestUrl, sessionUrl] = urlsResult.value;
           return measurePiPreparationSync(
             observe,
             "launch_identity",
             () => {
               return assemblePiLaunchResources({
                 modelConfig: piSandbox,
-                storageMounts: args.storageMounts,
+                storageMounts: metadata.storageMounts,
                 apiStartTime: args.apiStartTime,
                 maintenance: args.maintenance,
                 memoryRecall,
@@ -7480,6 +7523,30 @@ function okouTokenEnvironment(body: CreateRunBody): Record<string, string> {
   return { OKOU_TOKEN: okouToken };
 }
 
+async function joinLaunchPreparation(
+  builtContextPromise: Promise<BuiltStoredExecutionContext>,
+  piResourcesPromise: Promise<PreparedPiLaunchResources | undefined>,
+  signal: AbortSignal,
+): Promise<{
+  readonly builtContext: BuiltStoredExecutionContext;
+  readonly piResources: PreparedPiLaunchResources | undefined;
+}> {
+  // Keep Storage, context, then Pi error precedence after every owned branch
+  // has settled, including dependencies that do not support cancellation.
+  const [contextResult, piResult] = await Promise.allSettled([
+    builtContextPromise,
+    piResourcesPromise,
+  ]);
+  if (contextResult.status === "rejected") {
+    throw contextResult.reason;
+  }
+  if (piResult.status === "rejected") {
+    throw piResult.reason;
+  }
+  signal.throwIfAborted();
+  return { builtContext: contextResult.value, piResources: piResult.value };
+}
+
 function buildRunnerJobPayload(
   db: Db,
   args: BuildRunnerJobPayloadInput,
@@ -7500,29 +7567,28 @@ function buildRunnerJobPayload(
       ? { ...args.platformEnvironment, ...okouTokenEnvironment(body) }
       : args.platformEnvironment;
     const storageManifestStats = new StorageManifestBuildStats();
+    const storagePlan$ = resolveAgentRunStorage({
+      db,
+      content: args.resolved.content,
+      vars: body.vars,
+      agentOrgId: args.resolved.orgId,
+      runtimeOrgId: args.orgId,
+      userId: args.userId,
+      artifacts: checkpointArtifacts,
+      volumeVersionOverrides: body.volumeVersions,
+      additionalVolumes: args.additionalVolumes,
+      additionalVolumeSources: args.additionalVolumeSources,
+      framework: args.launchSnapshot.framework,
+      persistedStorageMounts: args.resolved.persistedStorageMounts,
+      timing: args.timing,
+      stats: storageManifestStats,
+    });
     const preparedStoragePromise = measureApiDispatchTiming(
       args.timing,
       "api_dispatch_prepare_storage_manifest",
       "nested",
       async () => {
-        return await get(
-          prepareAgentRunStorage({
-            db,
-            content: args.resolved.content,
-            vars: body.vars,
-            agentOrgId: args.resolved.orgId,
-            runtimeOrgId: args.orgId,
-            userId: args.userId,
-            artifacts: checkpointArtifacts,
-            volumeVersionOverrides: body.volumeVersions,
-            additionalVolumes: args.additionalVolumes,
-            additionalVolumeSources: args.additionalVolumeSources,
-            framework: args.launchSnapshot.framework,
-            persistedStorageMounts: args.resolved.persistedStorageMounts,
-            timing: args.timing,
-            stats: storageManifestStats,
-          }),
-        );
+        return get(materializeAgentRunStorage(await get(storagePlan$)));
       },
       () => {
         return storageManifestStats.overallDimensions();
@@ -7541,11 +7607,11 @@ function buildRunnerJobPayload(
         });
       },
     );
-    const builtContext = await resolveBuiltStoredExecutionContext(
+    const builtContextPromise = resolveBuiltStoredExecutionContext(
       preparedStoragePromise,
       builtContextDraftPromise,
     );
-    const piResources = await get(
+    const piResourcesPromise = get(
       preparePiLaunchResources(
         {
           db,
@@ -7554,8 +7620,7 @@ function buildRunnerJobPayload(
           runId: args.run.id,
           agentSessionId: args.run.sessionId,
           apiStartTime: args.apiStartTime,
-          storageMounts: builtContext.context.storageMounts,
-          persistedStorageMounts: builtContext.persistedStorageMounts,
+          storagePlan: get(storagePlan$),
           previousRunStorageMounts: args.resolved.previousRunStorageMounts,
           piSandbox: args.piSandbox,
           chatThreadId: args.chatThreadId,
@@ -7564,6 +7629,11 @@ function buildRunnerJobPayload(
         },
         signal,
       ),
+    );
+    const { builtContext, piResources } = await joinLaunchPreparation(
+      builtContextPromise,
+      piResourcesPromise,
+      signal,
     );
     const storedContext = storedExecutionContextWithPiResources(
       builtContext.context,

@@ -21,6 +21,7 @@ import {
 } from "../../../test-fixtures/goal-queue";
 
 import {
+  GetObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
@@ -69,6 +70,7 @@ import {
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
   CANONICAL_CODEX_MEMORY_MOUNT_PATH,
   DEFAULT_PROFILE,
+  PI_AGENT_DIR,
   PI_MEMORY_ROOT,
   PI_API_FIRST_TURN_SESSION_MAX_BYTES,
   RESUME_SESSION_HISTORY_MAX_BYTES,
@@ -102,6 +104,7 @@ import { v5 as uuidv5 } from "uuid";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
+import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
 import { createAppWithRoutes } from "../../../app-factory-core";
@@ -6961,6 +6964,61 @@ function mockPiResourceArchiveDownloads(unavailable = false): void {
   );
 }
 
+async function uploadLaunchMemoryNote(
+  runId: string,
+  claimed: Awaited<ReturnType<typeof claimChatRun>>,
+  mount: { readonly storageId: string; readonly versionId: string },
+  objects: Map<string, Buffer>,
+  content: string,
+): Promise<string> {
+  const path = "extensions/ad_hoc/notes/launch-overlap.md";
+  const files = [storageTextFile(path, content)];
+  const prepared = await webhooks.requestAgentStoragePrepare(
+    {
+      runId,
+      storageId: mount.storageId,
+      parentVersionId: mount.versionId,
+      files,
+    },
+    claimed.sandboxHeaders,
+    [200],
+  );
+  if (prepared.status !== 200 || !prepared.body.uploads) {
+    throw new Error("Expected a new sandbox memory upload");
+  }
+  const bytes = Buffer.from(content);
+  const header = Buffer.alloc(512);
+  new Header({ path, size: bytes.length, type: "File", mode: 0o644 }).encode(
+    header,
+  );
+  const archive = gzipSync(
+    Buffer.concat([
+      header,
+      bytes,
+      Buffer.alloc((512 - (bytes.length % 512)) % 512),
+      Buffer.alloc(1024),
+    ]),
+  );
+  const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+  objects.set(`${bucket}/${prepared.body.uploads.archive.key}`, archive);
+  objects.set(
+    `${bucket}/${prepared.body.uploads.manifest.key}`,
+    Buffer.from(JSON.stringify({ files })),
+  );
+  await webhooks.requestAgentStorageCommit(
+    {
+      runId,
+      storageId: mount.storageId,
+      parentVersionId: mount.versionId,
+      versionId: prepared.body.versionId,
+      files,
+    },
+    claimed.sandboxHeaders,
+    [200],
+  );
+  return prepared.body.versionId;
+}
+
 async function completeSandboxFirstPiRun(args: {
   readonly actor: ApiTestUser;
   readonly answer: string;
@@ -8095,6 +8153,559 @@ describe("CHAT-02: model-first provider policies", () => {
     );
 
     await cancelChatRun(actor, second.runId, claimed.sandboxHeaders);
+  }, 90_000);
+
+  it.each(["archive", "session"] as const)(
+    "overlaps Pi launch signing and archive URLs while joining the held %s branch",
+    async (heldBranch) => {
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+      await updateFeatureSwitchesForUser(
+        context,
+        {
+          ...actor,
+          orgId: requireOrgId(actor),
+        },
+        { [FeatureSwitchKey.PiLoop]: true },
+      );
+      await bdd.updateAgentInstructions(
+        actor,
+        agentId,
+        `Launch overlap ${randomUUID()}`,
+      );
+      mockPiResourceArchiveDownloads();
+      const checkpointObjects = mockPiCheckpointObjectStore();
+      const usagePricingResolution = await createGptUsagePricingResolution();
+      let providerCalls = 0;
+      server.use(
+        http.post("https://api.openai.com/v1/responses", () => {
+          providerCalls += 1;
+          return new HttpResponse(
+            piResponsesToolSse({
+              callId: "call_launch_overlap",
+              name: "read",
+              arguments: { path: "/home/user/workspace/AGENTS.md" },
+              sequence: 1,
+            }),
+            { headers: { "content-type": "text/event-stream" } },
+          );
+        }),
+      );
+      await api.heartbeatRunner(runnerGroup);
+      const archiveEntered = createDeferredPromise<void>(context.signal);
+      const manifestEntered = createDeferredPromise<string>(context.signal);
+      const sessionEntered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      onTestFinished(() => {
+        if (!release.settled()) {
+          release.resolve(undefined);
+        }
+      });
+      const signedArchiveUrls = new Set<string>();
+      context.mocks.s3.getSignedUrl.mockImplementation(
+        async (_client, command) => {
+          if (command instanceof GetObjectCommand) {
+            const key = command.input.Key ?? "";
+            if (key.endsWith("/archive.tar.gz")) {
+              signedArchiveUrls.add(apiTestS3PresignedUrl(command));
+              if (!archiveEntered.settled()) {
+                archiveEntered.resolve(undefined);
+              }
+              if (heldBranch === "archive") {
+                await release.promise;
+              }
+            }
+            const manifest =
+              /^pi-api-first-turn\/([^/]+)\/manifest.json$/u.exec(key);
+            if (manifest?.[1] && !manifestEntered.settled()) {
+              manifestEntered.resolve(manifest[1]);
+            }
+            if (
+              key.startsWith("pi-api-first-turn/") &&
+              key.endsWith("/session.jsonl")
+            ) {
+              if (!sessionEntered.settled()) {
+                sessionEntered.resolve(undefined);
+              }
+              if (heldBranch === "session") {
+                await release.promise;
+              }
+            }
+          }
+          return apiTestS3PresignedUrl(command);
+        },
+      );
+      const sending = sendChatRun(
+        actor,
+        {
+          agentId,
+          prompt: "prepare a complete Pi launch",
+          model: "gpt-5.6-terra",
+        },
+        usagePricingResolution,
+      );
+      const [runId] = await Promise.all([
+        manifestEntered.promise,
+        archiveEntered.promise,
+        sessionEntered.promise,
+      ]);
+      const capturedArchiveUrls = new Set(signedArchiveUrls);
+      // The production read and Runner poll surfaces must expose no partial run.
+      await api.requestReadRun(actor, runId, [404]);
+      expect((await api.pollRunner(runnerGroup)).body.job).toBeNull();
+      expect(providerCalls).toBe(0);
+      // Publish a new instruction HEAD after capture. This attempt must still
+      // launch the version whose archive signature is already in progress.
+      if (heldBranch === "archive") {
+        await bdd.updateAgentInstructions(
+          actor,
+          agentId,
+          `Later HEAD ${randomUUID()}`,
+        );
+      }
+      release.resolve(undefined);
+      const run = await sending;
+      expect(run.runId).toBe(runId);
+      const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${runId}/manifest.json`;
+      await expect
+        .poll(() => {
+          return checkpointObjects.has(manifestKey);
+        })
+        .toBe(true);
+      expect(providerCalls).toBe(1);
+      const claimed = await claimChatRun(runnerGroup, runId);
+      const mounts = expectCanonicalStorageManifest(
+        claimed.claim.storageManifest,
+      )?.storageMounts;
+      expect(mounts).toStrictEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: "memory",
+            mountPath: PI_MEMORY_ROOT,
+            writeback: true,
+            empty: true,
+          }),
+          expect.objectContaining({
+            mountPath: PI_AGENT_DIR,
+            instructionsTargetFilename: "AGENTS.md",
+            archiveUrl: expect.any(String),
+          }),
+        ]),
+      );
+      expect(
+        mounts?.every((mount) => {
+          return mount.empty === true || Boolean(mount.archiveUrl);
+        }),
+      ).toBeTruthy();
+      expect(capturedArchiveUrls).toContain(
+        mounts?.find((mount) => {
+          return mount.instructionsTargetFilename === "AGENTS.md";
+        })?.archiveUrl,
+      );
+      expect(claimed.claim.piLaunchConfig).toMatchObject({
+        apiFirstTurn: {
+          manifestUrl: expect.any(String),
+          sessionUrl: expect.any(String),
+          resourceSnapshotDigest: expect.stringMatching(/^[a-f0-9]{64}$/u),
+          baseSession: { sessionId: run.threadId, sha256: null },
+        },
+        memoryRecall: { status: "no-content" },
+      });
+      await cancelChatRun(actor, runId, claimed.sandboxHeaders);
+    },
+    90_000,
+  );
+
+  it.each(["error", "context", "storage", "abort"] as const)(
+    "joins archive signing after an early Pi signing %s without publishing a launch",
+    async (outcome) => {
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+      await updateFeatureSwitchesForUser(
+        context,
+        {
+          ...actor,
+          orgId: requireOrgId(actor),
+        },
+        { [FeatureSwitchKey.PiLoop]: true },
+      );
+      await bdd.updateAgentInstructions(
+        actor,
+        agentId,
+        `Failed overlap ${randomUUID()}`,
+      );
+      const release = createDeferredPromise<void>(context.signal);
+      const archiveEntered = createDeferredPromise<void>(context.signal);
+      const piFailed = createDeferredPromise<string>(context.signal);
+      if (outcome === "context" || outcome === "storage") {
+        useSecretKmsProbe(async () => {
+          await piFailed.promise;
+          throw new Error("Context encryption failed");
+        });
+      }
+      const controller = new AbortController();
+      onTestFinished(() => {
+        if (!release.settled()) {
+          release.resolve(undefined);
+        }
+        controller.abort();
+      });
+      context.mocks.s3.getSignedUrl.mockImplementation(
+        async (_client, command) => {
+          if (command instanceof GetObjectCommand) {
+            const key = command.input.Key ?? "";
+            if (key.endsWith("/archive.tar.gz")) {
+              if (!archiveEntered.settled()) {
+                archiveEntered.resolve(undefined);
+              }
+              await release.promise;
+              if (outcome === "storage") {
+                throw new Error("Archive signing failed");
+              }
+            }
+            const manifest =
+              /^pi-api-first-turn\/([^/]+)\/manifest.json$/u.exec(key);
+            if (manifest?.[1]) {
+              piFailed.resolve(manifest[1]);
+              if (outcome === "abort") {
+                controller.abort();
+              }
+              throw new Error("Pi manifest signing failed");
+            }
+          }
+          return apiTestS3PresignedUrl(command);
+        },
+      );
+      let returned = false;
+      const sending = chat
+        .requestSendEvent(
+          actor,
+          {
+            agentId,
+            prompt: "fail an owned launch preparation",
+            model: "gpt-5.6-terra",
+            clientEventId: randomUUID(),
+          },
+          [201],
+          {},
+          controller.signal,
+        )
+        .finally(() => {
+          returned = true;
+        });
+      const completion = Promise.allSettled([sending]);
+      const [runId] = await Promise.all([
+        piFailed.promise,
+        archiveEntered.promise,
+      ]);
+      await api.requestReadRun(actor, runId, [404]);
+      expect((await api.pollRunner(runnerGroup)).body.job).toBeNull();
+      expect(returned).toBeFalsy();
+      release.resolve(undefined);
+      const [result] = await completion;
+      if (outcome === "abort") {
+        expect(result).toMatchObject({
+          status: "rejected",
+          reason: new Error(
+            "Unknown response status 500 for POST /api/chat/events",
+          ),
+        });
+        await api.requestReadRun(actor, runId, [404]);
+      } else {
+        expect(result.status).toBe("fulfilled");
+        await expect(api.readRun(actor, runId)).resolves.toMatchObject({
+          status: "failed",
+          error:
+            outcome === "storage"
+              ? "Archive signing failed"
+              : outcome === "context"
+                ? "Context encryption failed"
+                : "Pi manifest signing failed",
+        });
+        await api.requestClaimRunnerJob(true, runId, [404]);
+      }
+      expect((await api.pollRunner(runnerGroup)).body.job).toBeNull();
+    },
+    90_000,
+  );
+
+  it("pins canonical session writeback before archive materialization when HEAD advances", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await updateFeatureSwitchesForUser(
+      context,
+      {
+        ...actor,
+        orgId: requireOrgId(actor),
+      },
+      { [FeatureSwitchKey.PiLoop]: true },
+    );
+    mockPiResourceArchiveDownloads();
+    const objects = mockPiCheckpointObjectStore();
+    const originalSend = context.mocks.s3.send.getMockImplementation();
+    context.mocks.s3.send.mockImplementation((command) => {
+      if (command instanceof HeadObjectCommand) {
+        const bytes = objects.get(
+          `${command.input.Bucket}/${command.input.Key}`,
+        );
+        if (bytes) {
+          return Promise.resolve({ ContentLength: bytes.length });
+        }
+      }
+      if (!originalSend) {
+        throw new Error("Expected the external object store");
+      }
+      return originalSend(command);
+    });
+    const pricing = await createGptUsagePricingResolution();
+    let providerCalls = 0;
+    server.use(
+      http.post("https://api.openai.com/v1/responses", () => {
+        providerCalls += 1;
+        return new HttpResponse(
+          piResponsesToolSse({
+            callId: `call_canonical_launch_${providerCalls}`,
+            name: "read",
+            arguments: { path: "/home/user/workspace/AGENTS.md" },
+            sequence: providerCalls,
+          }),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      }),
+    );
+    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+    const seed = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "seed a nonempty memory version",
+        model: "gpt-5.6-terra",
+      },
+      pricing,
+    );
+    await expect
+      .poll(() => {
+        return objects.has(
+          `${bucket}/pi-api-first-turn/${seed.runId}/manifest.json`,
+        );
+      })
+      .toBe(true);
+    const seedClaim = await claimChatRun(runnerGroup, seed.runId);
+    const seedMemory = expectCanonicalStorageManifest(
+      seedClaim.claim.storageManifest,
+    )?.storageMounts.find((mount) => {
+      return mount.name === "memory";
+    });
+    if (!seedMemory) {
+      throw new Error("Expected seed memory");
+    }
+    const version = await uploadLaunchMemoryNote(
+      seed.runId,
+      seedClaim,
+      seedMemory,
+      objects,
+      "pinned note",
+    );
+    await cancelChatRun(actor, seed.runId, seedClaim.sandboxHeaders);
+    // Pi continuation pins the previous launch version, including when the
+    // checkpoint publishes a different HEAD. Establish a nonempty launch first.
+    const first = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "establish canonical Pi writeback",
+        model: "gpt-5.6-terra",
+      },
+      pricing,
+    );
+    await expect
+      .poll(() => {
+        return objects.has(
+          `${bucket}/pi-api-first-turn/${first.runId}/manifest.json`,
+        );
+      })
+      .toBe(true);
+    const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    const memory = expectCanonicalStorageManifest(
+      firstClaim.claim.storageManifest,
+    )?.storageMounts.find((mount) => {
+      return mount.name === "memory";
+    });
+    if (!memory) {
+      throw new Error("Expected canonical Pi memory");
+    }
+    expect(memory.versionId).toBe(version);
+    const completion = frameworkMatchingCompletionOptions(first.threadId, "pi");
+    if (!completion.sessionHistory) {
+      throw new Error("Expected native checkpoint history");
+    }
+    const history = completion.sessionHistory;
+    const historyHash = createHash("sha256").update(history).digest("hex");
+    await webhooks.requestAgentCheckpointPrepareHistory(
+      {
+        runId: first.runId,
+        hash: historyHash,
+        rawSize: Buffer.byteLength(history),
+        encodedSize: Buffer.byteLength(history),
+        encoding: "identity",
+      },
+      firstClaim.sandboxHeaders,
+      [200],
+    );
+    objects.set(`${bucket}/blobs/${historyHash}.blob`, Buffer.from(history));
+    await webhooks.requestAgentComplete(
+      {
+        runId: first.runId,
+        exitCode: 0,
+        checkpoint: {
+          cliAgentType: "pi",
+          cliAgentSessionId: first.threadId,
+          cliAgentSessionHistoryHash: historyHash,
+          artifactSnapshots: [
+            {
+              name: memory.name,
+              version,
+              mountPath: memory.mountPath,
+              missingRootPolicy: memory.missingRootPolicy,
+            },
+          ],
+        },
+      },
+      firstClaim.sandboxHeaders,
+      [200],
+      undefined,
+      pricing,
+    );
+    await waitForRunStatus(actor, first.runId, "completed");
+
+    // A separate active run can legitimately publish a newer memory HEAD.
+    const writer = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "own a concurrent memory write",
+        model: "gpt-5.6-terra",
+      },
+      pricing,
+    );
+    await expect
+      .poll(() => {
+        return objects.has(
+          `${bucket}/pi-api-first-turn/${writer.runId}/manifest.json`,
+        );
+      })
+      .toBe(true);
+    const writerClaim = await claimChatRun(runnerGroup, writer.runId);
+    const writerMemory = expectCanonicalStorageManifest(
+      writerClaim.claim.storageManifest,
+    )?.storageMounts.find((mount) => {
+      return mount.name === "memory";
+    });
+    if (!writerMemory) {
+      throw new Error("Expected the writer's memory mount");
+    }
+    expect(writerMemory.versionId).toBe(version);
+    // Unique instructions force this attempt through the real signing boundary
+    // even when shared skill and memory URL cache entries are already warm.
+    await bdd.updateAgentInstructions(
+      actor,
+      agentId,
+      `Canonical overlap ${randomUUID()}`,
+    );
+    const archiveEntered = createDeferredPromise<void>(context.signal);
+    const piEntered = createDeferredPromise<string>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      if (!release.settled()) {
+        release.resolve(undefined);
+      }
+    });
+    context.mocks.s3.getSignedUrl.mockImplementation(
+      async (_client, command) => {
+        if (command instanceof GetObjectCommand) {
+          const key = command.input.Key ?? "";
+          if (key.endsWith("/archive.tar.gz")) {
+            if (!archiveEntered.settled()) {
+              archiveEntered.resolve(undefined);
+            }
+            await release.promise;
+          }
+          const manifest = /^pi-api-first-turn\/([^/]+)\/manifest.json$/u.exec(
+            key,
+          );
+          if (manifest?.[1] && !piEntered.settled()) {
+            piEntered.resolve(manifest[1]);
+          }
+        }
+        return apiTestS3PresignedUrl(command);
+      },
+    );
+    const callsBeforeResume = providerCalls;
+    const sending = sendChatRun(
+      actor,
+      {
+        agentId,
+        threadId: first.threadId,
+        prompt: "resume the frozen canonical memory",
+        model: "gpt-5.6-terra",
+      },
+      pricing,
+    );
+    const [runId] = await Promise.all([
+      piEntered.promise,
+      archiveEntered.promise,
+    ]);
+    await api.requestReadRun(actor, runId, [404]);
+    expect(providerCalls).toBe(callsBeforeResume);
+    const newerVersion = await uploadLaunchMemoryNote(
+      writer.runId,
+      writerClaim,
+      writerMemory,
+      objects,
+      "later note",
+    );
+    expect(newerVersion).not.toBe(version);
+    release.resolve(undefined);
+    const resumed = await sending;
+    expect(resumed.runId).toBe(runId);
+    await expect
+      .poll(() => {
+        return objects.has(
+          `${bucket}/pi-api-first-turn/${runId}/manifest.json`,
+        );
+      })
+      .toBe(true);
+    const claimed = await claimChatRun(runnerGroup, runId);
+    const mounts = expectCanonicalStorageManifest(
+      claimed.claim.storageManifest,
+    )?.storageMounts;
+    expect(
+      mounts?.filter((mount) => {
+        return mount.name === "memory" || mount.mountPath === PI_MEMORY_ROOT;
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({
+        storageId: memory.storageId,
+        versionId: version,
+        name: "memory",
+        mountPath: PI_MEMORY_ROOT,
+        writeback: true,
+        missingRootPolicy: "preserveParentVersion",
+        archiveUrl: expect.any(String),
+      }),
+    ]);
+    expect(claimed.claim.piLaunchConfig).toMatchObject({
+      memoryRecall: {
+        status: "no-content",
+        memoryStorageId: memory.storageId,
+        storageVersionId: version,
+      },
+      apiFirstTurn: {
+        baseSession: { sessionId: first.threadId, sha256: historyHash },
+      },
+    });
+    await cancelChatRun(actor, runId, claimed.sandboxHeaders);
+    await cancelChatRun(actor, writer.runId, writerClaim.sandboxHeaders);
   }, 90_000);
 
   it("keeps an empty recall-enabled Pi memory mount valid", async () => {

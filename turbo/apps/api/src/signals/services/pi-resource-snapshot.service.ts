@@ -56,8 +56,17 @@ function resourcePreparationError(cause: unknown): Error {
   );
 }
 
+type PiResourceMountIdentity = Pick<
+  StoredStorageMountEntry,
+  | "versionId"
+  | "mountPath"
+  | "instructionsTargetFilename"
+  | "writeback"
+  | "empty"
+>;
+
 function snapshotIdentity(
-  mounts: readonly StoredStorageMountEntry[],
+  mounts: readonly PiResourceMountIdentity[],
   memoryRecall?: PiMemoryRecallSelection,
 ): string {
   const mountIdentity = mounts.map((mount) => {
@@ -87,9 +96,9 @@ function pathsOverlap(first: string, second: string): boolean {
   );
 }
 
-export function piResourceDiscoveryMounts(
-  mounts: readonly StoredStorageMountEntry[],
-): readonly StoredStorageMountEntry[] {
+export function piResourceDiscoveryMounts<
+  T extends Pick<StoredStorageMountEntry, "mountPath">,
+>(mounts: readonly T[]): readonly T[] {
   const contextDirectoriesForDiscovery = [
     PI_AGENT_DIR,
     ...contextDirectories(CANONICAL_WORKING_DIR),
@@ -122,7 +131,7 @@ export function piResourceDiscoveryMounts(
 }
 
 export function piResourceSnapshotDigest(
-  mounts: readonly StoredStorageMountEntry[],
+  mounts: readonly PiResourceMountIdentity[],
   memoryRecall?: PiMemoryRecallSelection,
 ): string {
   return createHash("sha256")

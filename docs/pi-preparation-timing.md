@@ -1,9 +1,9 @@
 # Pi preparation timing
 
-This is the instrumentation runbook for [#33730](https://github.com/vm0-ai/vm0/issues/33730),
-the first slice of [#33703](https://github.com/vm0-ai/vm0/issues/33703).
-It measures existing work; it is not a latency optimization or production
-acceptance result. The historical English DeepSeek V4 Flash cohort averaged
+This runbook covers the instrumentation from [#33730](https://github.com/vm0-ai/vm0/issues/33730)
+and the launch-preparation overlap in [#33764](https://github.com/vm0-ai/vm0/issues/33764),
+the first two slices of [#33703](https://github.com/vm0-ai/vm0/issues/33703).
+These measurements are not a production acceptance result. The historical English DeepSeek V4 Flash cohort averaged
 639.6 ms before transport, including an unattributed 63.8 ms between KMS and
 the ownership transaction. Neither interval is established as SDK CPU time.
 
@@ -52,7 +52,7 @@ The phase names below omit the common `pi_prepare_` prefix.
 | `launch`                                      | `preparePiLaunchResources` around the existing measured launch body. Covers the same work as legacy `api_dispatch_prepare_pi_launch_resources`; never add both.                                         |
 | `launch_resume`                               | `resolveLatestPiResumeSession`; child of `launch` and the legacy resume measurement. Absent for maintenance.                                                                                            |
 | `launch_memory`                               | `resolvePiMemoryRecall` with captured mounts and versions; child of `launch`. Absent for maintenance.                                                                                                   |
-| `launch_manifest_sign`, `launch_session_sign` | The two existing `generatePresignedGetUrl` reads, still in the same `Promise.all`; overlapping children of `launch`.                                                                                    |
+| `launch_manifest_sign`, `launch_session_sign` | The two `generatePresignedGetUrl` reads; overlapping children of `launch`, started alongside resume lookup and canonical Storage planning.                                                              |
 | `launch_identity`                             | Resource digest, base-session identity, deadline and unchanged final launch-object assembly; synchronous child of `launch`.                                                                             |
 | `h0_metadata_preflight`                       | `readResumeSessionMetadata` for blob-backed history in `publishLargeHistoryTransfer$`, before API resource loading. Absent for new or inline sessions.                                                  |
 | `resource_snapshot`                           | API `loadApiFirstTurnResource$`, including validation. Existing `pi_resource_snapshot_prepare` is nested and supplies cache/index dimensions.                                                           |
@@ -71,11 +71,12 @@ The phase names below omit the common `pi_prepare_` prefix.
 | `model_context`                               | Native history preparation, user-message append, context build and conversion to model messages/tools, before the durable provider gate.                                                                |
 | `provider_boundary`                           | Start of `withApiFirstTurnLifecycle` through transaction return/throw, including lock, eligibility, active input and ownership marking. **Not HTTP transport start.**                                   |
 
-An interrupted `Promise.all` can return before a sibling settles. Its late child
-retains its own actual finish/outcome even if it extends beyond the failed
-parent; no extra joining, replay or error-precedence change is introduced.
-Prepared work may end as `cancelled` even when an uncooperative dependency
-eventually returns. Phases skipped by native-input/large-history transfer or
+Launch preparation now joins all started Storage, encrypted-context and Pi
+branches before propagating an error. Storage errors retain precedence over
+context errors, then Pi errors; within Pi, resume and memory errors retain their
+previous precedence over signing failures. Signing batches also settle all
+started siblings. Prepared work may end as `cancelled` even when an
+uncooperative dependency eventually returns. Phases skipped by native-input/large-history transfer or
 earlier failures have no fabricated observations.
 
 Reconstruct serial boundaries rather than summing every row. In particular,
@@ -84,6 +85,70 @@ exclude the runtime children when counting `runtime_initialize`, exclude
 signing intervals rather than their sum. Leave measured gaps visible, including
 observer/adapter overhead. Wall time has millisecond resolution and may move;
 do not silently clamp or reinterpret it as monotonic CPU time.
+
+## Launch dependency graph
+
+Each preparation attempt captures a fresh canonical Storage plan. Request
+mounts and persisted session writeback mounts resolve concurrently. Their join
+fixes ownership, exact versions, empty semantics, overlay winners/order and
+writeback lineage before Pi can freeze recall. The metadata projection and
+complete mount builder share the same identity and overlay functions; no HEAD
+lookup occurs during URL materialization.
+
+```mermaid
+flowchart LR
+  A[Authoritative run and session inputs] --> B[Canonical Storage plan]
+  A --> C[Encrypted context draft]
+  A --> D[Pi resume lookup]
+  A --> E[Pi manifest and session URL signing]
+  B --> F[Archive URL materialization]
+  B --> G[Frozen memory recall]
+  D --> H[Pi identity assembly]
+  E --> H
+  G --> H
+  F --> I[Join complete context and Pi launch]
+  C --> I
+  H --> I
+  I --> J[Existing atomic commit and session validation]
+  J --> K[Existing API-first activation and Runner preheat]
+```
+
+`api_dispatch_prepare_storage_manifest` retains the complete Storage interval.
+The bounded `api_dispatch_prepare_storage_manifest_resolve_plan` child ends
+only after both canonical branches and their metadata assembly finish.
+`...build_entries` now measures URL materialization and full entry construction;
+its per-category `...generate_*_urls` children still overlap. Continued sessions
+can emit one `...build_entries` interval per requested/session-writeback
+materializer; those intervals overlap and must not be added. The
+`...build_*_entries` and `...resolve_*_versions` observations describe resolution
+inside the plan interval. Resolve and generate windows are each emitted once. Storage dispatch records
+retain completion `_time` and monotonic duration; they do not gain Pi's explicit
+wall-clock boundary fields. Treat a derived Storage start as an approximation,
+not an independently observed wall-clock instant.
+
+`pi_prepare_launch` starts alongside Storage and context drafting, so it now
+includes the wait for canonical metadata. Resume lookup and both Pi signatures
+can overlap that wait. Memory selection and identity assembly can overlap archive
+signing. Maintenance still skips resume/memory; non-Pi launches skip Pi work.
+A stale session validation repeats the whole preparation with new plans and
+promises; no previous attempt's Pi identity is reused.
+
+The launch critical path is the latest of complete Storage materialization,
+context encryption, and Pi assembly, followed by the unchanged commit and
+activation path. Pi assembly waits for resume, both run-object signatures and
+plan-dependent memory selection. Compare interval unions and actual boundaries;
+never add these concurrent parent/child durations or interpret the former Pi
+launch interval as guaranteed end-to-end savings.
+
+All persisted contexts and Runner claims still contain the existing full
+schemas, including real URLs for nonempty mounts. API/Runner cross-version
+readers, queued activation, provider ownership and immediate preheat therefore
+retain their existing contracts. No claim-time signature dependency is added.
+
+The completed five-attempt instrumentation cohort is frozen. It must not be
+expanded or relabeled as the controlled baseline for this behavior change.
+The controller collects the separately defined matched before/after cohorts,
+including failures and first-tool readiness, before/after an authorized release.
 
 ## Admission, activation and actual transport
 
@@ -141,6 +206,8 @@ and the existing cache/process/milestone context without reading run contents:
 | where op_type startswith 'pi_prepare_'
     or op_type startswith 'api_dispatch_phase_'
     or op_type startswith 'api_dispatch_prepare_pi_launch_'
+    or op_type startswith 'api_dispatch_prepare_storage_manifest'
+    or op_type == 'api_dispatch_build_stored_execution_context'
     or op_type startswith 'api_dispatch_connector_catalog_'
     or op_type startswith 'runner_notification_queue_to_'
     or op_type == 'pi_resource_snapshot_prepare'
