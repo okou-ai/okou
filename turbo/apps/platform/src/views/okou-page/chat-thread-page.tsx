@@ -3203,7 +3203,10 @@ function ChatThreadThinkingIndicator({
   thread: ChatPanelSignals;
   mode: ThinkingIndicatorMode;
 }) {
-  return <ThinkingIndicator thread={thread} mode={mode} />;
+  const sharingPhase = useGet(thread.sharing.phase$);
+  return sharingPhase === "idle" ? (
+    <ThinkingIndicator thread={thread} mode={mode} />
+  ) : null;
 }
 
 function ChatThreadNextRunModelNotice({
@@ -5512,22 +5515,35 @@ function SelectablePagedGroupRow({
   const phase = useGet(thread.sharing.phase$);
   const selectedEventIds = useGet(thread.sharing.selectedEventIds$);
   const toggle = useSet(thread.sharing.toggle$);
-  const events = group.events.flatMap((event) => {
+  const sharing = phase !== "idle";
+  const displayGroup =
+    sharing && group.role === "assistant"
+      ? {
+          ...group,
+          events: group.events
+            .filter((event) => {
+              return event.eventType === "output.message";
+            })
+            .slice(-1),
+        }
+      : group;
+  const content = (
+    <PagedGroupRow
+      group={displayGroup}
+      thread={thread}
+      modelChanges={modelChanges}
+      stackFirstOnPrevious={stackFirstOnPrevious}
+      runWorkSection={sharing ? undefined : runWorkSection}
+      runIndicatorMode={sharing ? undefined : runIndicatorMode}
+      statusTailEvents={sharing ? undefined : statusTailEvents}
+    />
+  );
+  const events = displayGroup.events.flatMap((event) => {
     const shareable = shareableEventFromChatEvent(event);
     return shareable ? [shareable] : [];
   });
   if (phase === "idle" || events.length === 0) {
-    return (
-      <PagedGroupRow
-        group={group}
-        thread={thread}
-        modelChanges={modelChanges}
-        stackFirstOnPrevious={stackFirstOnPrevious}
-        runWorkSection={runWorkSection}
-        runIndicatorMode={runIndicatorMode}
-        statusTailEvents={statusTailEvents}
-      />
-    );
+    return content;
   }
   const selectedCount = events.filter((event) => {
     return selectedEventIds.has(event.id);
@@ -5563,15 +5579,7 @@ function SelectablePagedGroupRow({
         }
       }}
     >
-      <PagedGroupRow
-        group={group}
-        thread={thread}
-        modelChanges={modelChanges}
-        stackFirstOnPrevious={stackFirstOnPrevious}
-        runWorkSection={runWorkSection}
-        runIndicatorMode={runIndicatorMode}
-        statusTailEvents={statusTailEvents}
-      />
+      {content}
       <Checkbox
         checked={checked}
         disabled={phase !== "selecting"}
@@ -7721,6 +7729,10 @@ function PagedGroupActions({
   const copiedId = useGet(thread.copiedEventId$);
   const copied = copiedId === group.beginEventId;
   const copyEvent = useSet(thread.copyEvent$);
+  const sharingPhase = useGet(thread.sharing.phase$);
+  if (sharingPhase !== "idle") {
+    return null;
+  }
 
   const firstRunId = group.events.find((m) => {
     return m.runId;
