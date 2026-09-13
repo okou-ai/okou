@@ -212,6 +212,11 @@ import { generatePresignedGetUrl } from "../external/s3";
 import { getDatasetName, ingestToAxiom } from "../external/axiom";
 import { now, nowDate } from "../../lib/time";
 import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
+import {
+  piLangfuseDebugPlatformEnvironment,
+  piLangfuseDebugSecretEnvironment,
+  resolvePiLangfuseDebugConfig,
+} from "../../lib/pi-langfuse-debug";
 import { generateOkouToken } from "../auth/tokens";
 import { joinAll, onRejection, safeSync, settle, tapError } from "../utils";
 import {
@@ -6581,6 +6586,31 @@ function assertNativeEnvironment(
   }
 }
 
+function piLangfuseExecutionEnvironment(args: {
+  readonly featureSwitchContext: FeatureSwitchContext;
+  readonly includeOkouTokenSecret: boolean | undefined;
+  readonly piSandbox: PiModelConfig | undefined;
+  readonly userId: string;
+}): {
+  readonly platformEnvironment?: Readonly<Record<string, string>>;
+  readonly secrets?: Readonly<Record<string, string>>;
+} {
+  if (!args.includeOkouTokenSecret || args.piSandbox === undefined) {
+    return {};
+  }
+  const config = resolvePiLangfuseDebugConfig(args.featureSwitchContext);
+  if (!config) {
+    return {};
+  }
+  return {
+    platformEnvironment: piLangfuseDebugPlatformEnvironment({
+      config,
+      userId: args.userId,
+    }),
+    secrets: piLangfuseDebugSecretEnvironment(config),
+  };
+}
+
 async function buildStoredExecutionContextDraft(args: {
   readonly runId: string;
   readonly userId: string;
@@ -6589,6 +6619,7 @@ async function buildStoredExecutionContextDraft(args: {
   readonly resolved: ResolvedRunExecution;
   readonly body: CreateRunBody;
   readonly framework: SupportedFramework;
+  readonly piSandbox: PiModelConfig | undefined;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly connectorContext: ConnectorRuntimeContext;
   readonly customConnectorContext: CustomConnectorRuntimeContext;
@@ -6603,11 +6634,12 @@ async function buildStoredExecutionContextDraft(args: {
   readonly includeOkouTokenSecret: boolean | undefined;
 }): Promise<BuiltStoredExecutionContextDraft> {
   const permissions = args.permissionManifest;
+  const langfuseEnvironment = piLangfuseExecutionEnvironment(args);
   assertNativeCredentialOverrides(args.modelProvider, args.body.secrets);
   const executionSecrets = buildStoredExecutionSecrets({
     connectorContext: args.connectorContext,
     modelProvider: args.modelProvider,
-    bodySecrets: args.body.secrets,
+    bodySecrets: mergeRecords(args.body.secrets, langfuseEnvironment.secrets),
     customConnectorContext: args.customConnectorContext,
   });
   const secretNames = executionSecrets.secrets
@@ -6637,7 +6669,11 @@ async function buildStoredExecutionContextDraft(args: {
     capturedPiExecutionRoute(args.modelProvider),
   );
   const platformEnvironment = buildStoredPlatformEnvironment({
-    platformEnvironment: { ...args.platformEnvironment, ...nativeEnvironment },
+    platformEnvironment: {
+      ...args.platformEnvironment,
+      ...nativeEnvironment,
+      ...langfuseEnvironment.platformEnvironment,
+    },
     canonicalOkouRuntime: args.includeOkouTokenSecret === true,
   });
   const untrustedEnvironment = buildStoredUntrustedEnvironment({

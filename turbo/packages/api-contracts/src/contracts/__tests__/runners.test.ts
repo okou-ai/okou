@@ -626,6 +626,41 @@ describe("Pi sandbox execution contract", () => {
     });
   });
 
+  it("accepts one strict sampled Langfuse handoff parent", () => {
+    const langfuseParent = {
+      traceId: "1".repeat(32),
+      spanId: "2".repeat(16),
+      traceFlags: 1,
+      sessionId: piSessionId,
+    } as const;
+    const manifest = piApiFirstTurnManifestSchema.parse({
+      schemaVersion: 3,
+      outcome: "ownership-transfer",
+      mode: "pending-tool-continuation",
+      baseSession: { sessionId: piSessionId, sha256: null },
+      session: handoffSession,
+      sandboxEventSequenceStart: 4,
+      langfuseParent,
+    });
+
+    expect(manifest.langfuseParent).toStrictEqual(langfuseParent);
+    for (const invalidParent of [
+      { ...langfuseParent, traceId: "0".repeat(32) },
+      { ...langfuseParent, traceId: "1".repeat(31) },
+      { ...langfuseParent, spanId: "0".repeat(16) },
+      { ...langfuseParent, spanId: "2".repeat(15) },
+      { ...langfuseParent, traceFlags: 0 },
+      { ...langfuseParent, extra: true },
+    ]) {
+      expect(
+        piApiFirstTurnManifestSchema.safeParse({
+          ...manifest,
+          langfuseParent: invalidParent,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
   it("bounds referenced sandbox history at 128 MiB while retaining the V3 API budget", () => {
     const manifest = {
       schemaVersion: 4,

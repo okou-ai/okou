@@ -236,6 +236,9 @@ export async function runPiSandboxAgentLoop(args: {
     },
     sessionFile: handoff.sessionFile,
     ownershipTransferMode: handoff.ownershipTransferMode,
+    ...(handoff.langfuseParent
+      ? { langfuseParent: handoff.langfuseParent }
+      : {}),
   });
 }
 

@@ -887,6 +887,26 @@ export const piResourceSnapshotSchema = z.discriminatedUnion("schemaVersion", [
   piResourceSnapshotV2Schema,
 ]);
 
+export const piLangfuseParentSchema = z
+  .object({
+    traceId: z
+      .string()
+      .regex(/^[a-f0-9]{32}$/)
+      .refine((value) => {
+        return !/^0+$/.test(value);
+      }, "Trace ID must be non-zero"),
+    spanId: z
+      .string()
+      .regex(/^[a-f0-9]{16}$/)
+      .refine((value) => {
+        return !/^0+$/.test(value);
+      }, "Span ID must be non-zero"),
+    traceFlags: z.literal(1),
+    sessionId: z.uuid(),
+  })
+  .strict()
+  .readonly();
+
 const piApiFirstTurnSessionSchema = z
   .object({
     sessionId: z.uuid(),
@@ -908,6 +928,7 @@ const piApiFirstTurnOwnershipTransferManifestShape = {
   baseSession: piSessionCheckpointSchema,
   session: piApiFirstTurnSessionSchema,
   sandboxEventSequenceStart: piSandboxEventSequenceStartSchema,
+  langfuseParent: piLangfuseParentSchema.optional(),
 };
 
 export const piApiFirstTurnOwnershipTransferModeSchema = z.enum([
@@ -1845,6 +1866,7 @@ export type PiApiFirstTurnConfig = z.infer<typeof piApiFirstTurnConfigSchema>;
 export type PiApiFirstTurnOwnershipTransferMode = z.infer<
   typeof piApiFirstTurnOwnershipTransferModeSchema
 >;
+export type PiLangfuseParent = z.infer<typeof piLangfuseParentSchema>;
 export type PiApiFirstTurnManifest = z.infer<
   typeof piApiFirstTurnManifestSchema
 >;

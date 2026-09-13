@@ -63,6 +63,14 @@ AXIOM_TOKEN_SESSIONS=op://Development/axiom/AXIOM_TOKEN_SESSIONS
 AXIOM_TOKEN_TELEMETRY=op://Development/axiom/AXIOM_TOKEN_TELEMETRY
 AXIOM_DATASET_SUFFIX=dev
 
+# Optional: isolated personal Pi Langfuse debug project. The exact user-ID
+# allowlist is enforced in addition to the internal feature switch and
+# staff-org boundary.
+LANGFUSE_PUBLIC_KEY=op://Development/langfuse/LANGFUSE_PUBLIC_KEY
+LANGFUSE_SECRET_KEY=op://Development/langfuse/LANGFUSE_SECRET_KEY
+LANGFUSE_BASE_URL=https://us.cloud.langfuse.com
+PI_LANGFUSE_DEBUG_USER_IDS=
+
 # Required: Secrets encryption
 SECRETS_ENCRYPTION_KEY=op://Development/vm0/SECRETS_ENCRYPTION_KEY
 

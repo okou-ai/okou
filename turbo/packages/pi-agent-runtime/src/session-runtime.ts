@@ -12,6 +12,8 @@ import {
   createWriteToolDefinition,
   SettingsManager,
   type CreateAgentSessionFromServicesOptions,
+  type ExtensionAPI,
+  type ExtensionFactory,
   type SessionManager,
 } from "@earendil-works/pi-coding-agent";
 
@@ -43,6 +45,33 @@ import {
   startPiPreparationObservation,
   type PiPreparationObserver,
 } from "./preparation-timing";
+
+async function createLangfuseDebugExtension(pi: ExtensionAPI): Promise<void> {
+  try {
+    if (
+      !process.env.LANGFUSE_PUBLIC_KEY?.trim() ||
+      !process.env.LANGFUSE_SECRET_KEY?.trim()
+    ) {
+      return;
+    }
+    const { default: langfuseObservabilityExtension } =
+      await import("@langfuse/pi-observability-plugin");
+    langfuseObservabilityExtension(pi);
+  } catch {
+    // Optional debug telemetry must not prevent the Pi runtime from starting.
+  } finally {
+    // The official plugin captures both credentials in its extension closure.
+    // Remove them before any model or tool execution can inherit the CLI env.
+    delete process.env.LANGFUSE_PUBLIC_KEY;
+    delete process.env.LANGFUSE_SECRET_KEY;
+  }
+}
+
+function langfuseDebugExtensionFactories(
+  enabled: boolean | undefined,
+): ExtensionFactory[] {
+  return enabled ? [createLangfuseDebugExtension] : [];
+}
 
 const PI_INTERMEDIATE_COMMENTARY_PROMPT = `## Intermediate commentary
 
@@ -141,6 +170,7 @@ export async function createPiAgentSessionForRuntime(
     readonly onMemoryToolSourceUse?: (sourceUse: PiMemoryToolSourceUse) => void;
     readonly onPreparationTiming?: PiPreparationObserver;
     readonly sessionStartEvent?: CreateAgentSessionFromServicesOptions["sessionStartEvent"];
+    readonly enableLangfuseObservability?: boolean;
   },
   signal?: AbortSignal,
 ) {
@@ -190,6 +220,9 @@ export async function createPiAgentSessionForRuntime(
     signal,
   );
   const resourceSnapshot = args.resourceSnapshot;
+  const extensionFactories = langfuseDebugExtensionFactories(
+    args.enableLangfuseObservability,
+  );
   const services = await measurePiPreparation(
     args.onPreparationTiming,
     "session_services",
@@ -211,15 +244,18 @@ export async function createPiAgentSessionForRuntime(
               args.onPreparationTiming,
               "resource_loader",
               () => {
-                return piPreheatedResourceLoaderOptions({
-                  snapshot: resourceSnapshot,
-                  appendSystemPrompt,
-                  systemPrompt,
-                });
+                return {
+                  ...piPreheatedResourceLoaderOptions({
+                    snapshot: resourceSnapshot,
+                    appendSystemPrompt,
+                    systemPrompt,
+                  }),
+                  extensionFactories,
+                };
               },
               signal,
             )
-          : sandboxResourceLoaderOptions,
+          : { ...sandboxResourceLoaderOptions, extensionFactories },
       });
     },
     signal,

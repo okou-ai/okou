@@ -1,0 +1,487 @@
+import { randomBytes } from "node:crypto";
+
+import type { PiLangfuseParent } from "@okouai/api-contracts/contracts/runners";
+import type { PiApiFirstTurnResult } from "@okouai/pi-agent-runtime/api";
+import {
+  type LangfuseGeneration,
+  LangfuseOtelSpanAttributes,
+  type LangfuseSpan,
+  startObservation,
+} from "@langfuse/tracing";
+import {
+  isSpanContextValid,
+  TraceFlags,
+  type Attributes,
+  type SpanContext,
+} from "@opentelemetry/api";
+
+import { safeSync, settleIncludingAbort } from "../signals/utils";
+
+const LANGFUSE_TRACE_NAME = "Pi Agent Run";
+
+function traceTags(): string[] {
+  return ["pi", "api-first", "internal-debug"];
+}
+
+/** Complete API-side ancestor set used by the start-time export filter. */
+export const PI_LANGFUSE_API_OBSERVATION_NAMES: readonly string[] =
+  Object.freeze(["API First Turn", "API LLM Call", "Ownership Transfer"]);
+
+export interface PiApiFirstTurnTraceContext {
+  readonly rootSpanContext: SpanContext;
+  readonly runId: string;
+  readonly sessionId: string;
+  readonly userId: string;
+  readonly end: (error?: unknown) => void;
+}
+
+export interface PiApiFirstTurnTraceResult {
+  readonly result: PiApiFirstTurnResult;
+  readonly traceContext?: PiApiFirstTurnTraceContext;
+}
+
+export interface PiLangfuseOwnershipTransfer {
+  readonly parent: PiLangfuseParent;
+  readonly end: (error?: unknown) => void;
+}
+
+interface PiApiFirstTurnTraceArgs {
+  readonly enabled: boolean;
+  readonly runId: string;
+  readonly sessionId: string;
+  readonly userId: string;
+  readonly prompt: string;
+  readonly model: string;
+  readonly provider: string;
+  readonly execute: () => Promise<PiApiFirstTurnResult>;
+}
+
+export function normalizePiLangfuseTraceId(runId: string): string | undefined {
+  const traceId = runId.replaceAll("-", "").toLowerCase();
+  if (!/^[a-f0-9]{32}$/.test(traceId) || /^0+$/.test(traceId)) {
+    return undefined;
+  }
+  return traceId;
+}
+
+function randomSpanId(): string {
+  let spanId = randomBytes(8).toString("hex");
+  while (/^0+$/.test(spanId)) {
+    spanId = randomBytes(8).toString("hex");
+  }
+  return spanId;
+}
+
+function bootstrapParent(traceId: string): SpanContext {
+  return {
+    traceId,
+    spanId: randomSpanId(),
+    traceFlags: TraceFlags.SAMPLED,
+    isRemote: true,
+  };
+}
+
+function traceAttributes(args: {
+  readonly sessionId: string;
+  readonly userId: string;
+}): Attributes {
+  return {
+    [LangfuseOtelSpanAttributes.TRACE_NAME]: LANGFUSE_TRACE_NAME,
+    [LangfuseOtelSpanAttributes.TRACE_SESSION_ID]: args.sessionId,
+    [LangfuseOtelSpanAttributes.TRACE_USER_ID]: args.userId,
+    [LangfuseOtelSpanAttributes.TRACE_TAGS]: traceTags(),
+  };
+}
+
+function stampObservation(
+  observation: LangfuseSpan | LangfuseGeneration,
+  args: {
+    readonly sessionId: string;
+    readonly userId: string;
+    readonly attributes: Attributes;
+  },
+): void {
+  observation.otelSpan.setAttributes({
+    ...traceAttributes(args),
+    "vm0.pi.telemetry.schema_version": 1,
+    ...args.attributes,
+  });
+}
+
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.name : "UnknownError";
+}
+
+function assistantTextLength(result: PiApiFirstTurnResult): number {
+  return result.assistantMessage.content.reduce((length, content) => {
+    return content.type === "text" ? length + content.text.length : length;
+  }, 0);
+}
+
+function usageDetails(
+  result: PiApiFirstTurnResult,
+): Record<string, number> | undefined {
+  const usage = result.assistantMessage.usage;
+  const details = {
+    ...(usage.input > 0 ? { input: usage.input } : {}),
+    ...(usage.output > 0 ? { output: usage.output } : {}),
+    ...(usage.cacheRead > 0
+      ? { cache_read_input_tokens: usage.cacheRead }
+      : {}),
+    ...(usage.cacheWrite > 0
+      ? { cache_creation_input_tokens: usage.cacheWrite }
+      : {}),
+  };
+  return Object.keys(details).length > 0 ? details : undefined;
+}
+
+function safeEnd(observation: LangfuseSpan | LangfuseGeneration): void {
+  safeSync(() => {
+    observation.end();
+  });
+}
+
+function startApiTrace(
+  args: PiApiFirstTurnTraceArgs,
+): LangfuseSpan | undefined {
+  const traceId = normalizePiLangfuseTraceId(args.runId);
+  if (!args.enabled || !traceId) {
+    return undefined;
+  }
+
+  let root: LangfuseSpan | undefined;
+  const started = safeSync(() => {
+    root = startObservation(
+      "API First Turn",
+      {
+        metadata: {
+          source: "vm0-api",
+          run_id: args.runId,
+          session_id: args.sessionId,
+          prompt_chars: args.prompt.length,
+          content_capture: "metadata-only",
+        },
+      },
+      {
+        asType: "span",
+        parentSpanContext: bootstrapParent(traceId),
+      },
+    );
+    stampObservation(root, {
+      sessionId: args.sessionId,
+      userId: args.userId,
+      attributes: {
+        "vm0.pi.run_id": args.runId,
+        "vm0.pi.phase": "api-first",
+        "vm0.pi.langfuse_debug": true,
+      },
+    });
+    return root;
+  });
+  if ("ok" in started) {
+    return started.ok;
+  }
+  if (root) {
+    safeEnd(root);
+  }
+  return undefined;
+}
+
+function startGeneration(
+  root: LangfuseSpan,
+  args: PiApiFirstTurnTraceArgs,
+): LangfuseGeneration | undefined {
+  let generation: LangfuseGeneration | undefined;
+  const started = safeSync(() => {
+    generation = root.startObservation(
+      "API LLM Call",
+      {
+        model: args.model,
+        metadata: {
+          provider: args.provider,
+          prompt_chars: args.prompt.length,
+          content_capture: "metadata-only",
+        },
+      },
+      { asType: "generation" },
+    );
+    stampObservation(generation, {
+      sessionId: args.sessionId,
+      userId: args.userId,
+      attributes: {
+        "vm0.pi.run_id": args.runId,
+        "vm0.pi.phase": "api-first-generation",
+        "vm0.pi.langfuse_debug": true,
+        "gen_ai.operation.name": "chat",
+        "gen_ai.provider.name": args.provider,
+        "gen_ai.request.model": args.model,
+      },
+    });
+    return generation;
+  });
+  if ("ok" in started) {
+    return started.ok;
+  }
+  if (generation) {
+    safeEnd(generation);
+  }
+  return undefined;
+}
+
+function updateGeneration(
+  generation: LangfuseGeneration | undefined,
+  result: PiApiFirstTurnResult,
+): void {
+  if (!generation) {
+    return;
+  }
+  safeSync(() => {
+    const stopReason = result.assistantMessage.stopReason;
+    generation.update({
+      usageDetails: usageDetails(result),
+      level:
+        stopReason === "error" || stopReason === "aborted"
+          ? "ERROR"
+          : undefined,
+      statusMessage:
+        stopReason === "error" || stopReason === "aborted"
+          ? `Pi provider result: ${stopReason}`
+          : undefined,
+      metadata: {
+        stop_reason: stopReason,
+        response_id_present: Boolean(result.assistantMessage.responseId),
+        assistant_text_chars: assistantTextLength(result),
+        assistant_content_blocks: result.assistantMessage.content.length,
+        handoff_required: result.handoffRequired,
+        content_capture: "metadata-only",
+      },
+    });
+  });
+}
+
+function sampledSpanContext(
+  observation: LangfuseSpan | LangfuseGeneration,
+): SpanContext | undefined {
+  const context = observation.otelSpan.spanContext();
+  if (
+    !isSpanContextValid(context) ||
+    !(context.traceFlags & TraceFlags.SAMPLED)
+  ) {
+    return undefined;
+  }
+  return context;
+}
+
+function createApiFirstTurnTraceContext(args: {
+  readonly root: LangfuseSpan;
+  readonly rootSpanContext: SpanContext;
+  readonly runId: string;
+  readonly sessionId: string;
+  readonly userId: string;
+}): PiApiFirstTurnTraceContext {
+  let ended = false;
+  return {
+    rootSpanContext: args.rootSpanContext,
+    runId: args.runId,
+    sessionId: args.sessionId,
+    userId: args.userId,
+    end(error?: unknown): void {
+      if (ended) {
+        return;
+      }
+      ended = true;
+      if (error !== undefined) {
+        safeSync(() => {
+          args.root.update({
+            level: "ERROR",
+            statusMessage: `Pi API first turn failed after provider response: ${errorName(error)}`,
+            metadata: { post_provider_error_name: errorName(error) },
+          });
+        });
+      }
+      safeEnd(args.root);
+    },
+  };
+}
+
+/**
+ * Start the real transfer observation only after the API commit decides that
+ * Sandbox will own the run. The observation remains open while H1 is
+ * published, so a failed publication cannot look like a successful handoff.
+ */
+export function startPiLangfuseOwnershipTransfer(
+  traceContext: PiApiFirstTurnTraceContext | undefined,
+): PiLangfuseOwnershipTransfer | undefined {
+  if (!traceContext) {
+    return undefined;
+  }
+
+  let ownership: LangfuseSpan | undefined;
+  const started = safeSync(() => {
+    ownership = startObservation(
+      "Ownership Transfer",
+      {
+        metadata: {
+          source: "vm0-api",
+          run_id: traceContext.runId,
+          target: "sandbox",
+        },
+      },
+      {
+        asType: "span",
+        parentSpanContext: traceContext.rootSpanContext,
+      },
+    );
+    stampObservation(ownership, {
+      sessionId: traceContext.sessionId,
+      userId: traceContext.userId,
+      attributes: {
+        "vm0.pi.run_id": traceContext.runId,
+        "vm0.pi.phase": "ownership-transfer",
+        "vm0.pi.langfuse_debug": true,
+      },
+    });
+    return ownership;
+  });
+  if ("error" in started) {
+    if (ownership) {
+      safeEnd(ownership);
+    }
+    return undefined;
+  }
+
+  const context = sampledSpanContext(started.ok);
+  if (!context) {
+    safeEnd(started.ok);
+    return undefined;
+  }
+
+  let ended = false;
+  const observation = started.ok;
+  return {
+    parent: {
+      traceId: context.traceId,
+      spanId: context.spanId,
+      traceFlags: 1,
+      sessionId: traceContext.sessionId,
+    },
+    end(error?: unknown): void {
+      if (ended) {
+        return;
+      }
+      ended = true;
+      safeSync(() => {
+        observation.update(
+          error === undefined
+            ? { metadata: { publication: "published" } }
+            : {
+                level: "ERROR",
+                statusMessage: `Pi ownership transfer failed: ${errorName(error)}`,
+                metadata: {
+                  publication: "failed",
+                  error_name: errorName(error),
+                },
+              },
+        );
+      });
+      safeEnd(observation);
+    },
+  };
+}
+
+async function executeTraceOperation(
+  execute: () => Promise<PiApiFirstTurnResult>,
+): Promise<PiApiFirstTurnResult> {
+  return await execute();
+}
+
+function updateApiTraceResult(
+  root: LangfuseSpan,
+  result: PiApiFirstTurnResult,
+): void {
+  safeSync(() => {
+    root.update({
+      level:
+        result.assistantMessage.stopReason === "error" ||
+        result.assistantMessage.stopReason === "aborted"
+          ? "ERROR"
+          : undefined,
+      metadata: {
+        stop_reason: result.assistantMessage.stopReason,
+        handoff_required: result.handoffRequired,
+        assistant_text_chars: assistantTextLength(result),
+        content_capture: "metadata-only",
+      },
+    });
+  });
+}
+
+function updateApiTraceFailure(
+  root: LangfuseSpan,
+  generation: LangfuseGeneration | undefined,
+  error: unknown,
+): void {
+  safeSync(() => {
+    generation?.update({
+      level: "ERROR",
+      statusMessage: `Pi provider exception: ${errorName(error)}`,
+      metadata: { error_name: errorName(error) },
+    });
+    root.update({
+      level: "ERROR",
+      statusMessage: `Pi API first turn failed: ${errorName(error)}`,
+      metadata: { error_name: errorName(error) },
+    });
+  });
+}
+
+/**
+ * Trace one API-first provider turn without changing ownership or error
+ * semantics. The exported API observations are metadata-only because the same
+ * global provider also feeds Axiom; the isolated Sandbox plugin owns opt-in
+ * prompt and tool capture.
+ */
+export async function tracePiApiFirstTurn(
+  args: PiApiFirstTurnTraceArgs,
+): Promise<PiApiFirstTurnTraceResult> {
+  const root = startApiTrace(args);
+  if (!root) {
+    return { result: await args.execute() };
+  }
+
+  const generation = startGeneration(root, args);
+  const executed = await settleIncludingAbort(
+    executeTraceOperation(args.execute),
+  );
+  if (!executed.ok) {
+    updateApiTraceFailure(root, generation, executed.error);
+    if (generation) {
+      safeEnd(generation);
+    }
+    safeEnd(root);
+    throw executed.error;
+  }
+
+  const result = executed.value;
+  updateGeneration(generation, result);
+  updateApiTraceResult(root, result);
+  if (generation) {
+    safeEnd(generation);
+  }
+
+  const rootSpanContext = sampledSpanContext(root);
+  if (!rootSpanContext) {
+    safeEnd(root);
+    return { result };
+  }
+  return {
+    result,
+    traceContext: createApiFirstTurnTraceContext({
+      root,
+      rootSpanContext,
+      runId: args.runId,
+      sessionId: args.sessionId,
+      userId: args.userId,
+    }),
+  };
+}
