@@ -128,17 +128,28 @@ async function openMermaidSplitView() {
   return { sidebar, firstSidebarSource, secondExpand };
 }
 
-test("Opening another Mermaid diagram replaces the current artifact split view", async () => {
+test("Opening another Mermaid diagram releases and replaces the current artifact split view", async () => {
   const { sidebar, firstSidebarSource, secondExpand } =
     await openMermaidSplitView();
+  if (!firstSidebarSource) {
+    throw new Error("Expected the first sidebar diagram to have a blob URL");
+  }
+  const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL");
   click(secondExpand);
 
-  await waitFor(() => {
+  const secondSidebarSource = await waitFor(() => {
     const currentImage = within(sidebar).getByRole("img", {
       name: "diagram.svg",
     });
-    expect(currentImage.getAttribute("src")).not.toBe(firstSidebarSource);
+    const source = currentImage.getAttribute("src");
+    if (!source) {
+      throw new Error("Expected the replacement diagram to have a blob URL");
+    }
+    expect(source).not.toBe(firstSidebarSource);
+    return source;
   });
+  expect(revokeObjectUrl).toHaveBeenCalledWith(firstSidebarSource);
+  expect(revokeObjectUrl).not.toHaveBeenCalledWith(secondSidebarSource);
   expect(
     screen.queryByRole("dialog", { name: "diagram.svg preview" }),
   ).toBeNull();
@@ -157,6 +168,27 @@ test("Closing a Mermaid artifact split view releases its blob and preserves the 
   expect(revokeObjectUrl).toHaveBeenCalledWith(firstSidebarSource);
   expect(screen.getAllByRole("img", { name: "Diagram" })).toHaveLength(2);
   expect(screen.getAllByText("Diagram source")).toHaveLength(2);
+});
+
+test("Leaving the page releases the active Mermaid artifact split view blob", async () => {
+  const { firstSidebarSource } = await openMermaidSplitView();
+  if (!firstSidebarSource) {
+    throw new Error("Expected the sidebar diagram to have a blob URL");
+  }
+  const agentsLink = queryAllByRoleFast("link").find((link) => {
+    return link.textContent?.trim() === "Agents";
+  });
+  if (!agentsLink) {
+    throw new Error("Expected the Agents navigation link");
+  }
+  const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL");
+
+  click(agentsLink);
+
+  await expect(
+    screen.findByRole("heading", { name: "Agents" }),
+  ).resolves.toBeInTheDocument();
+  expect(revokeObjectUrl).toHaveBeenCalledWith(firstSidebarSource);
 });
 
 test("Completed Mermaid diagrams remain accessible and inspectable", async () => {
