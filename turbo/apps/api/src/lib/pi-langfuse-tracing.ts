@@ -40,7 +40,7 @@ export interface PiApiFirstTurnTraceResult {
   readonly traceContext?: PiApiFirstTurnTraceContext;
 }
 
-export interface PiLangfuseOwnershipTransfer {
+interface PiLangfuseOwnershipTransfer {
   readonly parent: PiLangfuseParent;
   readonly end: (error?: unknown) => void;
 }

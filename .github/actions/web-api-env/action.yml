@@ -203,6 +203,10 @@ runs:
           add_var GCP_LLM_PROJECT_ID GCP_LLM_PROJECT_ID
           add_var GCP_LLM_WORKLOAD_IDENTITY_PROVIDER GCP_LLM_WORKLOAD_IDENTITY_PROVIDER
           add_var GCP_LLM_SERVICE_ACCOUNT_EMAIL GCP_LLM_SERVICE_ACCOUNT_EMAIL
+          # Repository secrets feed previews; the production GitHub Environment
+          # overrides these same unsuffixed names for release-please deploys.
+          add_secret LANGFUSE_PUBLIC_KEY LANGFUSE_PUBLIC_KEY
+          add_secret LANGFUSE_SECRET_KEY LANGFUSE_SECRET_KEY
           if [[ -z "$INPUT_CLI_PKG_URL" ]]; then
             echo "::error::cli-pkg-url is required for API deployments"
             exit 1

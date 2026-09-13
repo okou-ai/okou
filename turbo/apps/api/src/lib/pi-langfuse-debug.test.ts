@@ -18,7 +18,6 @@ function configureDebugProject(): void {
   mockOptionalEnv("LANGFUSE_PUBLIC_KEY", "pk-lf-debug");
   mockOptionalEnv("LANGFUSE_SECRET_KEY", "sk-lf-debug");
   mockOptionalEnv("LANGFUSE_BASE_URL", "https://langfuse.example/");
-  mockOptionalEnv("PI_LANGFUSE_DEBUG_USER_IDS", USER_ID);
 }
 
 afterEach(() => {
@@ -26,7 +25,7 @@ afterEach(() => {
 });
 
 describe("Pi Langfuse debug configuration", () => {
-  it("requires the exact staff user allowlist and per-user feature switch", () => {
+  it("requires a staff user and per-user feature switch", () => {
     configureDebugProject();
 
     expect(
@@ -47,7 +46,11 @@ describe("Pi Langfuse debug configuration", () => {
         orgId: STAFF_ORG_ID,
         overrides: { [FeatureSwitchKey.PiLangfuseDebug]: true },
       }),
-    ).toBeUndefined();
+    ).toStrictEqual({
+      publicKey: "pk-lf-debug",
+      secretKey: "sk-lf-debug",
+      baseUrl: "https://langfuse.example",
+    });
     expect(
       resolvePiLangfuseDebugConfig({
         userId: USER_ID,
@@ -65,8 +68,9 @@ describe("Pi Langfuse debug configuration", () => {
   });
 
   it("fails closed when project credentials or the base URL are invalid", () => {
-    mockOptionalEnv("PI_LANGFUSE_DEBUG_USER_IDS", USER_ID);
     mockOptionalEnv("LANGFUSE_PUBLIC_KEY", "pk-lf-debug");
+    mockOptionalEnv("LANGFUSE_SECRET_KEY", undefined);
+    mockOptionalEnv("LANGFUSE_BASE_URL", undefined);
     expect(
       resolvePiLangfuseDebugConfig({
         userId: USER_ID,

@@ -19,13 +19,11 @@ const LANGFUSE_TRACING_ENABLED_ENV = "LANGFUSE_TRACING_ENABLED";
 const LANGFUSE_MEDIA_UPLOAD_ENABLED_ENV = "LANGFUSE_MEDIA_UPLOAD_ENABLED";
 const LANGFUSE_USER_ID_ENV = "LANGFUSE_USER_ID";
 const PI_LANGFUSE_MAX_CHARS_ENV = "PI_LANGFUSE_MAX_CHARS";
-const PI_LANGFUSE_DEBUG_USER_IDS_ENV = "PI_LANGFUSE_DEBUG_USER_IDS";
-
 const DEFAULT_LANGFUSE_BASE_URL = "https://us.cloud.langfuse.com";
 const DEBUG_TRACING_ENVIRONMENT = "internal-debug";
 const MAX_CAPTURED_CHARS = "20000";
 
-export interface PiLangfuseServerConfig {
+interface PiLangfuseServerConfig {
   readonly publicKey: string;
   readonly secretKey: string;
   readonly baseUrl: string;
@@ -65,19 +63,8 @@ export function readPiLangfuseServerConfig():
   return { publicKey, secretKey, baseUrl };
 }
 
-function isAllowedPiLangfuseDebugUser(context: FeatureSwitchContext): boolean {
-  if (!context.userId || !isStaffOrg(context.orgId)) {
-    return false;
-  }
-  const allowedUserIds = new Set(
-    (trimmedOptionalEnv(PI_LANGFUSE_DEBUG_USER_IDS_ENV) ?? "")
-      .split(",")
-      .map((value) => {
-        return value.trim();
-      })
-      .filter(Boolean),
-  );
-  return allowedUserIds.has(context.userId);
+function isEligiblePiLangfuseDebugUser(context: FeatureSwitchContext): boolean {
+  return Boolean(context.userId) && isStaffOrg(context.orgId);
 }
 
 /** Resolve the immutable per-run decision from its captured feature context. */
@@ -85,7 +72,7 @@ export function resolvePiLangfuseDebugConfig(
   context: FeatureSwitchContext,
 ): PiLangfuseServerConfig | undefined {
   if (
-    !isAllowedPiLangfuseDebugUser(context) ||
+    !isEligiblePiLangfuseDebugUser(context) ||
     !getAllFeatureStates(context)[FeatureSwitchKey.PiLangfuseDebug]
   ) {
     return undefined;
