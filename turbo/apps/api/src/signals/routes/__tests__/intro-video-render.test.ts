@@ -353,8 +353,8 @@ async function queueRender(f: Fixture) {
   return input;
 }
 
-function providerProjectUrl(body: Record<string, unknown>): URL {
-  const project = body.project;
+function providerProjectUrl(body: Record<string, unknown> | undefined): URL {
+  const project = body?.project;
   if (
     typeof project !== "object" ||
     !project ||
@@ -489,7 +489,7 @@ describe("managed Intro Video cloud rendering", () => {
     const cloud = provider();
     expect((await submit(f, input)).status).toBe(202);
     expect(cloud.requests).toHaveLength(1);
-    const projectUrl = providerProjectUrl(cloud.requests[0].body);
+    const projectUrl = providerProjectUrl(cloud.requests[0]?.body);
     expect(projectUrl.searchParams.get("object")).toMatch(
       new RegExp(
         `^test-user-storages/intro-video-render-inputs/${input.requestId}/[a-f0-9]{64}\\.zip$`,
@@ -552,7 +552,7 @@ describe("managed Intro Video cloud rendering", () => {
     await withMockNowForTest(new Date(now() + 31 * 60 * 1000), async () => {
       expect((await submit(f, input)).status).toBe(202);
       expect(cloud.requests).toHaveLength(4);
-      const projectUrl = providerProjectUrl(cloud.requests[3].body);
+      const projectUrl = providerProjectUrl(cloud.requests[3]?.body);
       expect(projectUrl.searchParams.get("object")).toContain(
         `test-user-storages/intro-video-render-inputs/${input.requestId}/`,
       );
@@ -578,7 +578,7 @@ describe("managed Intro Video cloud rendering", () => {
     await withMockNowForTest(new Date(now() + 31 * 60 * 1000), async () => {
       expect((await submit(f, input)).status).toBe(202);
       expect(cloud.requests).toHaveLength(4);
-      const projectUrl = providerProjectUrl(cloud.requests[3].body);
+      const projectUrl = providerProjectUrl(cloud.requests[3]?.body);
       expect(projectUrl.searchParams.get("object")).toContain(
         `test-private-artifacts/intro-video-render-inputs/${input.requestId}/`,
       );
