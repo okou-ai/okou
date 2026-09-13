@@ -40,7 +40,6 @@ type VoiceDraftTranscriptionInput = VoiceIoTranscribeContext &
   VoiceIoTranscribeSegmentOptions & {
     readonly files: readonly File[];
     readonly model: VoiceInputModel;
-    readonly useGoogleCloud: boolean;
     readonly debug: boolean;
     readonly audioDurationSeconds: number;
   };
@@ -190,7 +189,7 @@ async function transcribeIncrementalVoice(
     const result = await finishIncrementalVoice(
       audio,
       input,
-      { model: input.model.id, useGoogleCloud: input.useGoogleCloud },
+      input.model.id,
       signal,
     );
     if (!result) {
@@ -208,12 +207,7 @@ async function transcribeIncrementalVoice(
           ),
           language: "und",
         }
-      : await transcribeVoice(
-          audio,
-          input,
-          { model: input.model.id, useGoogleCloud: input.useGoogleCloud },
-          signal,
-        )
+      : await transcribeVoice(audio, input, input.model.id, signal)
     : { transcript: "", language: "und" };
   if (!result) {
     throw new Error("Voice transcription is not configured");
@@ -229,10 +223,7 @@ async function transcribeIncrementalVoice(
       transcript,
       input,
       input.final,
-      {
-        model: DEFAULT_VOICE_INPUT_MODEL,
-        useGoogleCloud: input.useGoogleCloud,
-      },
+      DEFAULT_VOICE_INPUT_MODEL,
       signal,
     );
     if (!reconciled) {
@@ -253,7 +244,7 @@ async function transcribeIncrementalVoice(
   const polished = await polishLongVoiceTranscript(
     completeTranscript,
     input,
-    { model: voicePolishModel(input), useGoogleCloud: input.useGoogleCloud },
+    voicePolishModel(input),
     signal,
   );
   if (!polished) {
@@ -293,12 +284,7 @@ function voiceProvidersConfigured(
       input.model.kind === "transcription" &&
       input.overlapDurationSeconds > 0 &&
       Boolean(input.previousTranscript));
-  return (
-    !gemini ||
-    (input.useGoogleCloud
-      ? gcpLlmConfiguration() !== undefined
-      : isLlmConfigured())
-  );
+  return !gemini || gcpLlmConfiguration() !== undefined;
 }
 
 export const transcribeVoiceSegment$ = command(

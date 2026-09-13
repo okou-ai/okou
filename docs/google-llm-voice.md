@@ -1,7 +1,6 @@
 # Google Cloud LLM identity and voice routing
 
-When the `voiceGoogleCloud` feature switch is enabled, Gemini-backed voice
-operations use native Google `generateContent`, authenticated
+Gemini-backed voice operations use native Google `generateContent`, authenticated
 with the API deployment's Vercel workload identity. The identities and
 `GCP_LLM_*` configuration are reusable for future Google Cloud LLM operations;
 this migration changes voice only. It covers partial/final audio transcription,
@@ -11,16 +10,12 @@ OpenRouter/fal provider, and generic chat/image/LLM consumers retain their routi
 
 ## Configuration
 
-The public `voiceGoogleCloud` switch is **on by default in staff organizations**
-and off by default elsewhere. Manage it in **Lab → Beta** using the existing
-per-user feature-switch override. An explicit off override still disables it
-for staff; resetting the override restores the organization default. The existing
-`voiceInputV2` access switch must also be enabled. Both voice API routes resolve
-the authenticated user's override on every request; no browser/API contract or
-additional environment variable is needed. Off preserves the existing OpenRouter
-Gemini path and does not require Google credentials. On selects Google for all
-Gemini voice steps, including independent text polish. Failures never change the
-selected provider.
+Google Cloud routing is fully rolled out for all users with voice input access.
+The existing `voiceInputV2` access switch must be enabled; both voice API routes
+resolve that access on every request. All Gemini voice steps, including
+independent text polish, use Google Cloud without a routing override. GPT Audio
+recognition and dedicated ASR retain their selected providers. Failures never
+change the selected provider.
 
 The active billed project is `vm0-ai-488909` (number `662642595011`). The separate
 project `vm0-ai` is deprecated. These values are GitHub Actions **Variables**:
@@ -39,7 +34,7 @@ to API deployments through the existing Vercel build/runtime environment path.
 There are no `_DEV`/`_PROD` source keys or new GCP Secrets. Do not supply static
 Google credentials, a Gemini API key, or a Vercel OIDC token through this action.
 All three settings are validated together when a Google LLM operation is needed;
-with the switch on, incomplete configuration returns `NOT_CONFIGURED` before
+incomplete configuration returns `NOT_CONFIGURED` before
 starting an ASR step whose finalization needs Gemini.
 
 Vercel project `vm0-api` (`prj_6mw0CgYjECVrJV57VJ47VN03B4UR`) belongs to team
@@ -143,15 +138,14 @@ unbounded provider-supplied reason strings. Auth, native validation/transport,
 and exhausted HTTP recovery retain separate diagnostic owners; successful
 recovery and caller cancellation do not produce terminal-error warnings.
 
-## Verification and rollout gates
+## Runtime verification
 
 Follow [issue #33138](https://github.com/vm0-ai/vm0/issues/33138) for the verification
 record. Provisioned IAM and configured Variables establish prerequisites, not
 successful runtime authentication or model access. HTTP fixtures establish code
-behavior, not Google's live project capacity or audio limits. Enabling the staff
-default does not establish these live acceptance criteria.
+behavior, not Google's live project capacity or audio limits.
 
-Before expanding beyond staff, use the PR preview to verify the actual dev runtime
+For routing or identity changes, use the PR preview to verify the actual dev runtime
 identity and each model/location with non-sensitive audio, all three structured
 output schemas, plain-text polish, normal 75s browser PCM, and the existing valid
 WAV boundary up to 25 MiB including base64 expansion. Bound functional generation
@@ -174,11 +168,9 @@ insufficient evidence or use one bounded follow-up of at most 24 hours. Keep the
 issue open until the live acceptance criteria are satisfied. Neither merge nor
 one successful model call proves reduced capacity failures.
 
-Disable `voiceGoogleCloud` for the affected user to route subsequent Gemini
-voice requests back through OpenRouter. An in-flight request retains its selected
-provider. Broader rollback uses the normal approved API deployment rollback/revert path.
-Retain OpenRouter credentials for unchanged providers and rollback. Browser
-drafts/checkpoints remain compatible; there is no automatic runtime fallback.
+Rollback uses the normal approved API deployment rollback/revert path. Retain
+OpenRouter credentials for GPT Audio and dedicated ASR providers that use it.
+Browser drafts/checkpoints remain compatible; there is no automatic runtime fallback.
 Keep the shared identities/configuration until an explicit cleanup is reviewed.
 
 ## Focused validation

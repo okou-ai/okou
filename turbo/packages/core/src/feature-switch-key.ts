@@ -69,7 +69,6 @@ export enum FeatureSwitchKey {
   IntroVideo = "introVideo",
   ChatTranslation = "chatTranslation",
   VoiceInputV2 = "voiceInputV2",
-  VoiceGoogleCloud = "voiceGoogleCloud",
   ComposerCreateCommands = "composerCreateCommands",
   ComposerTaskChips = "composerTaskChips",
   ComposerWorkflowFuzzySearch = "composerWorkflowFuzzySearch",

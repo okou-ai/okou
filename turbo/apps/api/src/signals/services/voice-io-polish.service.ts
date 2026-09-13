@@ -12,12 +12,6 @@ import {
   generateVertexVoice,
   VertexVoiceError,
 } from "../external/vertex-voice";
-import {
-  FAST_PATH_MODEL,
-  generateText,
-  isLlmConfigured,
-  OpenRouterRequestError,
-} from "../external/openrouter";
 import { VoiceProviderUnavailableError } from "../external/voice-provider-request";
 import { settle } from "../utils";
 
@@ -46,9 +40,7 @@ function providerError(error: unknown) {
   if (
     error instanceof VoiceProviderUnavailableError ||
     (error instanceof GcpLlmAuthError && error.temporary) ||
-    (error instanceof VertexVoiceError && error.temporary) ||
-    (error instanceof OpenRouterRequestError &&
-      (error.status === 429 || error.status >= 500))
+    (error instanceof VertexVoiceError && error.temporary)
   ) {
     return polishError(
       503,
@@ -64,44 +56,28 @@ function providerError(error: unknown) {
 }
 
 export const polishVoiceTranscript$ = command(
-  async (
-    { get },
-    body: VoiceIoPolishRequest,
-    useGoogleCloud: boolean,
-    signal: AbortSignal,
-  ) => {
+  async ({ get }, body: VoiceIoPolishRequest, signal: AbortSignal) => {
     const requestSignal = AbortSignal.any([signal, get(requestSignal$)]);
     requestSignal.throwIfAborted();
-    if (useGoogleCloud ? !gcpLlmConfiguration() : !isLlmConfigured()) {
+    if (!gcpLlmConfiguration()) {
       return notConfigured("Voice draft cleanup is not configured");
     }
 
     const generated = await settle(
-      useGoogleCloud
-        ? generateVertexVoice(
-            {
-              model: "google/gemini-3.8-flash",
-              systemPrompt: VOICE_IO_POLISH_SYSTEM_PROMPT,
-              content: JSON.stringify(body),
-            },
-            (text) => {
-              if (text.length > VOICE_IO_POLISH_MAX_TEXT_CHARS) {
-                throw new Error("Voice draft cleanup returned invalid text");
-              }
-              return text;
-            },
-            requestSignal,
-          )
-        : generateText(
-            FAST_PATH_MODEL,
-            [
-              { role: "system", content: VOICE_IO_POLISH_SYSTEM_PROMPT },
-              { role: "user", content: JSON.stringify(body) },
-            ],
-            65_536,
-            { reasoning: { effort: "low" }, temperature: 0 },
-            requestSignal,
-          ),
+      generateVertexVoice(
+        {
+          model: "google/gemini-3.8-flash",
+          systemPrompt: VOICE_IO_POLISH_SYSTEM_PROMPT,
+          content: JSON.stringify(body),
+        },
+        (text) => {
+          if (text.length > VOICE_IO_POLISH_MAX_TEXT_CHARS) {
+            throw new Error("Voice draft cleanup returned invalid text");
+          }
+          return text;
+        },
+        requestSignal,
+      ),
     );
     signal.throwIfAborted();
     requestSignal.throwIfAborted();

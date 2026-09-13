@@ -148,7 +148,7 @@ function form(
   return data;
 }
 
-async function enabledActor(useGoogleCloud = true) {
+async function enabledActor() {
   const actor = createBddApi(context).user();
   if (!actor.orgId) {
     throw new Error("Voice draft tests require an organization");
@@ -160,7 +160,6 @@ async function enabledActor(useGoogleCloud = true) {
     { userId: actor.userId, orgId: actor.orgId, orgRole: "org:admin" },
     {
       [FeatureSwitchKey.VoiceInputV2]: true,
-      ...(useGoogleCloud ? { [FeatureSwitchKey.VoiceGoogleCloud]: true } : {}),
     },
   );
   return actor;
@@ -175,105 +174,6 @@ function requestAudioParts(request: VertexVoiceRequest) {
 }
 
 describe("voice input models and reference context", () => {
-  it.each([
-    { model: "google/gemini-2.5-flash-lite", tokens: 65_535, effort: "none" },
-    { model: "google/gemini-3.8-flash", tokens: 65_536, effort: "minimal" },
-  ] as const)(
-    "keeps $model on OpenRouter by default without Google credentials",
-    async ({ model, tokens, effort }) => {
-      await enabledActor(false);
-      mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
-      mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
-      await accept(
-        preferencesClient().update({
-          headers: { authorization: "Bearer clerk-session" },
-          body: { voiceInputModel: model },
-        }),
-        [200],
-      );
-      let requestBody: unknown;
-      server.use(
-        http.post(OPENROUTER_URL, async ({ request }) => {
-          requestBody = await request.json();
-          return recoveredVoiceResponse("openrouter");
-        }),
-      );
-      const result = await accept(
-        client().segment({
-          headers: { authorization: "Bearer clerk-session" },
-          body: form([audioFile(1)]),
-        }),
-        [200],
-      );
-      expect(result.body.polishedText).toBe("Recorded speech.");
-      expect(requestBody).toMatchObject({
-        model,
-        max_tokens: tokens,
-        reasoning: { effort },
-        temperature: 0,
-        store: false,
-        response_format: { type: "json_schema" },
-        messages: [
-          expect.anything(),
-          {
-            role: "user",
-            content: expect.arrayContaining([
-              {
-                type: "input_audio",
-                input_audio: {
-                  format: "wav",
-                  data: Buffer.from(wavBytes(1)).toString("base64"),
-                },
-              },
-            ]),
-          },
-        ],
-      });
-    },
-  );
-
-  it("applies the Google override per request and switches back to OpenRouter when disabled", async () => {
-    const actor = await enabledActor(false);
-    if (!actor.orgId) {
-      throw new Error("Voice draft tests require an organization");
-    }
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
-    let googleRequests = 0;
-    let openRouterRequests = 0;
-    const content = JSON.stringify({
-      polishedText: "Recorded speech.",
-      language: "en",
-    });
-    server.use(
-      http.post(VERTEX_VOICE_URL, () => {
-        googleRequests += 1;
-        return vertexVoiceResponse(content);
-      }),
-      http.post(OPENROUTER_URL, () => {
-        openRouterRequests += 1;
-        return HttpResponse.json({
-          choices: [{ finish_reason: "stop", message: { content } }],
-        });
-      }),
-    );
-    for (const enabled of [false, true, false]) {
-      await updateFeatureSwitchesForUser(
-        context,
-        { userId: actor.userId, orgId: actor.orgId, orgRole: "org:admin" },
-        { [FeatureSwitchKey.VoiceGoogleCloud]: enabled },
-      );
-      await accept(
-        client().segment({
-          headers: { authorization: "Bearer clerk-session" },
-          body: segmentForm([], "Recorded speech.", true, 1),
-        }),
-        [200],
-      );
-    }
-    expect(googleRequests).toBe(1);
-    expect(openRouterRequests).toBe(2);
-  });
-
   describe("maximum-size voice upload", () => {
     let wav: File;
 
@@ -1014,7 +914,6 @@ describe("voice input models and reference context", () => {
       { userId: actor.userId, orgId: actor.orgId, orgRole: "org:admin" },
       {
         [FeatureSwitchKey.VoiceInputV2]: true,
-        [FeatureSwitchKey.VoiceGoogleCloud]: true,
       },
     );
     const oversized = await client().segment({

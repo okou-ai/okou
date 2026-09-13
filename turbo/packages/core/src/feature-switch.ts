@@ -367,13 +367,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.VoiceGoogleCloud]: {
-    maintainer: "liangyou@okou.ai",
-    description:
-      "Route Gemini voice transcription and polishing through Google Cloud instead of OpenRouter.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ZapierConnector]: {
     maintainer: "yuma@okou.ai",
     description:

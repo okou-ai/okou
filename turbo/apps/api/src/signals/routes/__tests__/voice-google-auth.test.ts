@@ -62,7 +62,6 @@ beforeEach(async () => {
     { userId: actor.userId, orgId: actor.orgId, orgRole: "org:admin" },
     {
       [FeatureSwitchKey.VoiceInputV2]: true,
-      [FeatureSwitchKey.VoiceGoogleCloud]: true,
     },
   );
   server.use(

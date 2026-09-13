@@ -39,12 +39,7 @@ const postVoiceIoPolish$ = command(
     if (!bodyResult.ok) {
       return bodyResult.response;
     }
-    return await set(
-      polishVoiceTranscript$,
-      bodyResult.data,
-      isFeatureEnabled(FeatureSwitchKey.VoiceGoogleCloud, featureContext),
-      signal,
-    );
+    return await set(polishVoiceTranscript$, bodyResult.data, signal);
   },
 );
 

@@ -9,10 +9,7 @@ import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { createBddApi } from "./helpers/api-bdd";
-import {
-  deleteFeatureSwitchesForUser,
-  updateFeatureSwitchesForUser,
-} from "./helpers/feature-switches";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   mockGoogleVoice,
@@ -37,7 +34,7 @@ function client() {
   );
 }
 
-async function enableVoicePolish(useGoogleCloud = true) {
+async function enableVoicePolish() {
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   const actor = createBddApi(context).user();
   if (!actor.orgId) {
@@ -49,7 +46,6 @@ async function enableVoicePolish(useGoogleCloud = true) {
     { userId: actor.userId, orgId: actor.orgId, orgRole: "org:admin" },
     {
       [FeatureSwitchKey.VoiceInputV2]: true,
-      ...(useGoogleCloud ? { [FeatureSwitchKey.VoiceGoogleCloud]: true } : {}),
     },
   );
 }
@@ -110,95 +106,6 @@ describe("POST /api/voice-io/polish", () => {
     );
     expect(response.body.error.code).toBe("PROVIDER_UNAVAILABLE");
     expect(calls).toBe(1);
-  });
-
-  it("defaults staff to Google and honors disabling and resetting the override", async () => {
-    const actor = {
-      ...createBddApi(context).user(),
-      orgId: createUniqueStaffOrgIdFixture(),
-      orgRole: "org:member" as const,
-    };
-    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
-    server.use(
-      http.post(VERTEX_VOICE_URL, () => {
-        return vertexVoiceResponse("Google staff default.");
-      }),
-      http.post("https://openrouter.ai/api/v1/chat/completions", () => {
-        return HttpResponse.json({
-          choices: [
-            {
-              finish_reason: "stop",
-              message: { content: "OpenRouter override." },
-            },
-          ],
-        });
-      }),
-    );
-    const polish = () => {
-      return client().post({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { text: "Synthetic dictation." },
-      });
-    };
-
-    const staffDefault = await accept(polish(), [200]);
-    expect(staffDefault.body.text).toBe("Google staff default.");
-
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.VoiceGoogleCloud]: false,
-    });
-    const disabled = await accept(polish(), [200]);
-    expect(disabled.body.text).toBe("OpenRouter override.");
-
-    await deleteFeatureSwitchesForUser(context, actor);
-    const reset = await accept(polish(), [200]);
-    expect(reset.body.text).toBe("Google staff default.");
-  });
-
-  it("preserves OpenRouter polishing by default without Google credentials", async () => {
-    await enableVoicePolish(false);
-    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
-    mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
-    let requestBody: unknown;
-    server.use(
-      http.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json({
-            choices: [
-              {
-                finish_reason: "stop",
-                message: { content: "  Ship on Monday.  " },
-              },
-            ],
-          });
-        },
-      ),
-    );
-    const response = await accept(
-      client().post({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { text: "um ship on Monday" },
-      }),
-      [200],
-    );
-    expect(response.body.text).toBe("Ship on Monday.");
-    expect(requestBody).toMatchObject({
-      model: "google/gemini-3.8-flash",
-      max_tokens: 65_536,
-      reasoning: { effort: "low" },
-      temperature: 0,
-      messages: [
-        expect.anything(),
-        {
-          role: "user",
-          content: JSON.stringify({ text: "um ship on Monday" }),
-        },
-      ],
-    });
-    expect(requestBody).not.toHaveProperty("response_format");
   });
 
   it("retains the maximum text contract with JSON escaping and rejects oversize output", async () => {
@@ -475,7 +382,6 @@ describe("POST /api/voice-io/polish", () => {
       { userId: actor.userId, orgId: actor.orgId, orgRole: "org:admin" },
       {
         [FeatureSwitchKey.VoiceInputV2]: true,
-        [FeatureSwitchKey.VoiceGoogleCloud]: true,
       },
     );
     let requestBody: unknown;
@@ -579,7 +485,6 @@ describe("POST /api/voice-io/polish", () => {
       { userId: actor.userId, orgId: actor.orgId, orgRole: "org:admin" },
       {
         [FeatureSwitchKey.VoiceInputV2]: true,
-        [FeatureSwitchKey.VoiceGoogleCloud]: true,
       },
     );
     server.use(

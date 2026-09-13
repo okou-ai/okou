@@ -144,12 +144,8 @@ export async function generateOpenRouterVoice<T>(
     return null;
   }
 
-  const isGemini = args.model.startsWith("google/");
-  const isGemini25 = args.model === "google/gemini-2.5-flash-lite";
   // GPT Audio returns prompted JSON; strict validation belongs to the shared caller.
-  const systemPrompt = isGemini
-    ? args.systemPrompt
-    : `${args.systemPrompt}\nJSON schema: ${JSON.stringify(args.jsonSchema.schema)}`;
+  const systemPrompt = `${args.systemPrompt}\nJSON schema: ${JSON.stringify(args.jsonSchema.schema)}`;
   const content =
     typeof args.content === "string"
       ? args.content
@@ -173,18 +169,10 @@ export async function generateOpenRouterVoice<T>(
             { role: "system", content: systemPrompt },
             { role: "user", content },
           ],
-          max_tokens: isGemini ? (isGemini25 ? 65_535 : 65_536) : 16_384,
-          ...(isGemini
-            ? { reasoning: { effort: isGemini25 ? "none" : "minimal" } }
-            : { modalities: ["text"] }),
+          max_tokens: 16_384,
+          modalities: ["text"],
           temperature: 0,
           store: false,
-          ...(isGemini && {
-            response_format: {
-              type: "json_schema",
-              json_schema: args.jsonSchema,
-            },
-          }),
         }),
         signal: requestSignal,
       });
