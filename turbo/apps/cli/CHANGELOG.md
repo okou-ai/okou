@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.325.0](https://github.com/vm0-ai/vm0/compare/cli-v9.324.5...cli-v9.325.0) (2026-09-13)
+
+
+### Features
+
+* add managed intro video cloud rendering ([#33702](https://github.com/vm0-ai/vm0/issues/33702)) ([379e4a3](https://github.com/vm0-ai/vm0/commit/379e4a34860834c72b7f4bf6f5d0fbe324537d72))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.433.0
+    * @okouai/core bumped to 8.660.2
+    * @okouai/pi-agent-runtime bumped to 1.27.2
+
 ## [9.324.5](https://github.com/vm0-ai/vm0/compare/cli-v9.324.4...cli-v9.324.5) (2026-09-13)
 
 

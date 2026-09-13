@@ -8,6 +8,28 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.591.0](https://github.com/vm0-ai/vm0/compare/api-v1.590.3...api-v1.591.0) (2026-09-13)
+
+
+### Features
+
+* add managed intro video cloud rendering ([#33702](https://github.com/vm0-ai/vm0/issues/33702)) ([379e4a3](https://github.com/vm0-ai/vm0/commit/379e4a34860834c72b7f4bf6f5d0fbe324537d72))
+
+
+### Performance Improvements
+
+* **pi:** instrument preparation before the first provider request ([#33733](https://github.com/vm0-ai/vm0/issues/33733)) ([ddd898d](https://github.com/vm0-ai/vm0/commit/ddd898dd332c843cdfd6987f0ba987472d89eed3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.433.0
+    * @okouai/core bumped to 8.660.2
+    * @okouai/db bumped to 1.255.0
+    * @okouai/pi-agent-runtime bumped to 1.27.2
+
 ## [1.590.3](https://github.com/vm0-ai/vm0/compare/api-v1.590.2...api-v1.590.3) (2026-09-13)
 
 
