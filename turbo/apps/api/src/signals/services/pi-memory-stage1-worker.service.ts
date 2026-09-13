@@ -84,7 +84,7 @@ const stage1OutputSchema = z
   .strict();
 
 interface PiMemoryStage1Scope {
-  readonly memoryStorageId: string;
+  readonly memoryStorageIds: readonly string[];
   readonly piSessionId?: string;
 }
 
@@ -165,7 +165,10 @@ class RetryableWorkError extends Error {
 function scopeCondition(scope: PiMemoryStage1Scope | undefined) {
   return scope
     ? and(
-        eq(piMemoryStage1Candidates.memoryStorageId, scope.memoryStorageId),
+        inArray(
+          piMemoryStage1Candidates.memoryStorageId,
+          scope.memoryStorageIds,
+        ),
         scope.piSessionId
           ? eq(piMemoryStage1Candidates.piSessionId, scope.piSessionId)
           : undefined,

@@ -437,7 +437,7 @@ const action$ = command(async ({ get, set }, signal: AbortSignal) => {
         executePiMemoryStage1Work$,
         {
           scope: {
-            memoryStorageId: body.memory_storage_id,
+            memoryStorageIds: [body.memory_storage_id],
             ...(body.pi_session_id ? { piSessionId: body.pi_session_id } : {}),
           },
           currentTime: body.current_time

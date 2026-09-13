@@ -2770,7 +2770,7 @@ async function extractOwnedThreadPiMemory(actor: ApiTestUser, runId: string) {
       // Scope the existing cron worker to this source; no production API
       // exposes internal candidate extraction or its private output.
       routes: cronExtractPiMemoryStage1RoutesForTest({
-        memoryStorageId: candidate.memoryStorageId,
+        memoryStorageIds: [candidate.memoryStorageId],
         piSessionId: candidate.piSessionId,
       }),
     })(cronExtractPiMemoryStage1Contract).extract({

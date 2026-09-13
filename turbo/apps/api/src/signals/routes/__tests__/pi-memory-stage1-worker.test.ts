@@ -461,11 +461,15 @@ function stage1Headers(secret = CRON_SECRET) {
   return { authorization: `Bearer ${secret}` };
 }
 
-function stage1Client(storage: ReturnType<typeof createStorageFixture>) {
+function stage1Client(
+  storages: readonly ReturnType<typeof createStorageFixture>[],
+) {
   return setupApp({
     context,
     routes: cronExtractPiMemoryStage1RoutesForTest({
-      memoryStorageId: storage.memory_storage_id,
+      memoryStorageIds: storages.map((storage) => {
+        return storage.memory_storage_id;
+      }),
     }),
   })(cronExtractPiMemoryStage1Contract);
 }
@@ -479,7 +483,7 @@ beforeEach(async () => {
 });
 
 describe("Pi memory Stage 1 worker", () => {
-  it("selects the OpenRouter region from each work owner's switch", async () => {
+  it("selects the OpenRouter region from each work owner's switch in one batch", async () => {
     const selectedModel = "gpt-5.6-terra";
     await seedBuiltInModelCandidateKeys(context, selectedModel);
     const primary = await resolveBuiltInModelRouteFixture(
@@ -512,17 +516,18 @@ describe("Pi memory Stage 1 worker", () => {
         upstreamModel: primary.upstream_model,
       },
       async () => {
-        for (const result of await Promise.all(
-          storages.map((storage) => {
-            return runScoped(storage);
-          }),
-        )) {
-          expect(result).toMatchObject({
-            succeeded: 1,
-            retryableFailure: 0,
-            terminalFailure: 0,
-          });
-        }
+        const result = await accept(
+          stage1Client(storages).extract({ headers: stage1Headers() }),
+          [200],
+        );
+        expect(result.body).toMatchObject({
+          success: true,
+          scanned: 2,
+          claimed: 2,
+          succeeded: 2,
+          retryableFailure: 0,
+          terminalFailure: 0,
+        });
       },
     );
     expect(provider.calls).toHaveLength(2);
@@ -564,7 +569,7 @@ describe("Pi memory Stage 1 worker", () => {
     context.mocks.s3.send.mockClear();
 
     const response = await accept(
-      stage1Client(storage).extract({ headers: stage1Headers() }),
+      stage1Client([storage]).extract({ headers: stage1Headers() }),
       [200],
     );
 
@@ -603,7 +608,7 @@ describe("Pi memory Stage 1 worker", () => {
     const provider = installProvider();
 
     const response = await accept(
-      stage1Client(storage).extract({ headers: stage1Headers() }),
+      stage1Client([storage]).extract({ headers: stage1Headers() }),
       [200],
     );
 
