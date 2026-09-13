@@ -61,7 +61,6 @@ function mockBillingStatus(
         {
           category: "plan",
           tier: "pro",
-          ...billingPlanCapabilities("pro"),
           label: "Pro credits",
           credits: 8000,
         },

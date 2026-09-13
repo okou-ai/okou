@@ -36,7 +36,7 @@ type BillingPlanCapabilities = Pick<
 
 export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
   switch (tier) {
-    case "free":
+    case "free": {
       return {
         status: "active",
         canBuyConcurrency: false,
@@ -48,7 +48,8 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
         workflowWebhookAutomationAllowed: false,
         canRestorePlan: false,
       };
-    case "limited-free-1":
+    }
+    case "limited-free-1": {
       return {
         status: "active",
         canBuyConcurrency: false,
@@ -60,7 +61,8 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
         workflowWebhookAutomationAllowed: false,
         canRestorePlan: false,
       };
-    case "pro-suspend":
+    }
+    case "pro-suspend": {
       return {
         status: "suspended",
         canBuyConcurrency: false,
@@ -72,8 +74,9 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
         workflowWebhookAutomationAllowed: false,
         canRestorePlan: false,
       };
+    }
     case "team":
-    case "custom":
+    case "custom": {
       return {
         status: "active",
         canBuyConcurrency: true,
@@ -85,7 +88,8 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
         workflowWebhookAutomationAllowed: true,
         canRestorePlan: false,
       };
-    default:
+    }
+    default: {
       return {
         status: "active",
         canBuyConcurrency: false,
@@ -97,6 +101,7 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
         workflowWebhookAutomationAllowed: false,
         canRestorePlan: false,
       };
+    }
   }
 }
 

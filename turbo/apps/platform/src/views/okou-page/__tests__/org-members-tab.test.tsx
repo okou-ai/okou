@@ -278,7 +278,6 @@ function mockUsagePackManagement(
   context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
     return respond(200, {
       tier: "pro",
-      ...billingPlanCapabilities("pro"),
       currentPeriodEnd: "2026-09-01T00:00:00.000Z",
       allocations: [
         {

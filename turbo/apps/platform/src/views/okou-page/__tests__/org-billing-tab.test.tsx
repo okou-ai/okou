@@ -103,7 +103,6 @@ function activeProBillingStatus(): BillingStatusResponse {
       {
         category: "plan",
         tier: "pro",
-        ...billingPlanCapabilities("pro"),
         label: "Pro credits",
         credits: 20_000,
       },
@@ -132,7 +131,6 @@ function activeTeamBillingStatus(): BillingStatusResponse {
       {
         category: "plan",
         tier: "team",
-        ...billingPlanCapabilities("team"),
         label: "Team credits",
         credits: 120_000,
       },
@@ -1359,7 +1357,6 @@ test("Manage member packages on an Atom-granted plan", async () => {
 async function openLegacyTeamConversion(scheduled = false): Promise<void> {
   let migrationState: UsagePackMigrationStateResponse = {
     tier: "team",
-    ...billingPlanCapabilities("team"),
     targetTier: scheduled ? "team" : null,
     status: scheduled ? "scheduled" : "eligible",
     migrationId: scheduled ? "3ea4b7cf-d71e-45dc-8273-8bc8b9712490" : null,

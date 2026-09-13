@@ -141,7 +141,6 @@ async function expectProCheckout(): Promise<void> {
 test("Direct a workspace member to an admin when billing blocks a run", async () => {
   installBillingState({
     tier: "free",
-    ...billingPlanCapabilities("free"),
     role: "member",
     credits: 0,
     canBuyCredits: false,
@@ -162,7 +161,6 @@ test("Direct a workspace member to an admin when billing blocks a run", async ()
 test("Let a workspace admin recover from a free-plan billing limit", async () => {
   installBillingState({
     tier: "free",
-    ...billingPlanCapabilities("free"),
     role: "admin",
     credits: 0,
     canBuyCredits: false,
@@ -182,7 +180,6 @@ test("Let a workspace admin recover from a free-plan billing limit", async () =>
 test("Let a limited-free workspace admin unlock a Pro-only video capability", async () => {
   installBillingState({
     tier: "limited-free-1",
-    ...billingPlanCapabilities("limited-free-1"),
     role: "admin",
     credits: 500,
     canBuyCredits: false,
@@ -204,7 +201,6 @@ test("Let a paid workspace admin buy more credits", async () => {
   const checkoutRequests: CreditCheckoutRequest[] = [];
   installBillingState({
     tier: "pro",
-    ...billingPlanCapabilities("pro"),
     role: "admin",
     credits: 0,
     canBuyCredits: true,
@@ -283,7 +279,6 @@ test("Let a paid workspace admin buy more credits", async () => {
 test("Offer a plan upgrade when a paid workspace cannot buy top-ups", async () => {
   installBillingState({
     tier: "pro-suspend",
-    ...billingPlanCapabilities("pro-suspend"),
     role: "admin",
     credits: 0,
     canBuyCredits: false,
@@ -304,7 +299,6 @@ test("Offer a plan upgrade when a paid workspace cannot buy top-ups", async () =
 test("Show that a previously blocked chat can continue after credits return", async () => {
   installBillingState({
     tier: "pro",
-    ...billingPlanCapabilities("pro"),
     role: "member",
     credits: 25_000,
     canBuyCredits: true,
