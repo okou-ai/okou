@@ -316,13 +316,17 @@ export interface ApiTestMocks {
     readonly getUserProfilePhotos: AsyncMock;
   };
   readonly otel: {
-    readonly registerOTel: SyncMock;
+    readonly registerOTel: Mock<typeof import("@vercel/otel").registerOTel>;
   };
   readonly sentry: {
     readonly captureException: SyncMock;
-    readonly httpIntegration: Mock<(...args: unknown[]) => unknown>;
-    readonly init: SyncMock;
-    readonly nativeNodeFetchIntegration: Mock<(...args: unknown[]) => unknown>;
+    readonly httpIntegration: Mock<
+      typeof import("@sentry/node").httpIntegration
+    >;
+    readonly init: Mock<typeof import("@sentry/node").init>;
+    readonly nativeNodeFetchIntegration: Mock<
+      typeof import("@sentry/node").nativeNodeFetchIntegration
+    >;
   };
 }
 
@@ -583,19 +587,21 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
     },
     telegram,
     otel: {
-      registerOTel: vi.fn<(...args: unknown[]) => void>(),
+      registerOTel: vi.fn<typeof import("@vercel/otel").registerOTel>(),
     },
     sentry: {
       captureException: vi.fn<(...args: unknown[]) => void>(),
-      httpIntegration: vi.fn<(...args: unknown[]) => unknown>((options) => {
-        return { name: "Http", options };
-      }),
-      init: vi.fn<(...args: unknown[]) => void>(),
-      nativeNodeFetchIntegration: vi.fn<(...args: unknown[]) => unknown>(
+      httpIntegration: vi.fn<typeof import("@sentry/node").httpIntegration>(
         (options) => {
-          return { name: "NodeFetch", options };
+          return { name: "Http", options };
         },
       ),
+      init: vi.fn<typeof import("@sentry/node").init>(),
+      nativeNodeFetchIntegration: vi.fn<
+        typeof import("@sentry/node").nativeNodeFetchIntegration
+      >((options) => {
+        return { name: "NodeFetch", options };
+      }),
     },
   };
 });
@@ -1551,7 +1557,7 @@ export function resetApiTestMocks(): void {
   apiTestMocks.telegram.getUserProfilePhotos.mockReset();
   apiTestMocks.otel.registerOTel.mockReset();
   apiTestMocks.sentry.captureException.mockReset();
-  apiTestMocks.sentry.httpIntegration.mockClear();
+  apiTestMocks.sentry.httpIntegration.mockReset();
   apiTestMocks.sentry.init.mockReset();
-  apiTestMocks.sentry.nativeNodeFetchIntegration.mockClear();
+  apiTestMocks.sentry.nativeNodeFetchIntegration.mockReset();
 }

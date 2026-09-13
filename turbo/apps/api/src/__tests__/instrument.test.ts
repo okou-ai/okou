@@ -66,6 +66,7 @@ describe("instrument", () => {
 
     expect(context.mocks.sentry.init).toHaveBeenCalledWith({
       dsn: "https://examplePublicKey@o0.ingest.sentry.io/0",
+      enableLogs: false,
       environment: "production",
       initialScope: {
         tags: {
