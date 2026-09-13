@@ -9,6 +9,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import type { OrgMembersPinnedAgentIds } from "@okouai/db/jsonb-contracts/org-members-metadata";
+import type { ModelSettings } from "@okouai/db/jsonb-contracts/chat-model-settings";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type {
   ChatTranslationLanguage,
@@ -41,6 +42,11 @@ export const orgMembersMetadata = pgTable(
     theme: text("theme").$type<ThemePreference>(),
     colorTheme: text("color_theme").$type<ColorTheme>(),
     selectedModel: varchar("selected_model", { length: 255 }),
+    /** Sparse defaults keyed by run model. */
+    modelSettings: jsonb("model_settings")
+      .$type<ModelSettings>()
+      .default({})
+      .notNull(),
     serviceTier: varchar("service_tier", {
       length: 32,
     }).$type<ChatThreadServiceTier>(),

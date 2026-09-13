@@ -339,6 +339,7 @@ const prepareDefinitionArtifact$ = command(
         {
           orgId: SYSTEM_ORG_ID,
           storageName,
+          piResourceIndex: true,
           files: [
             {
               path: "SKILL.md",

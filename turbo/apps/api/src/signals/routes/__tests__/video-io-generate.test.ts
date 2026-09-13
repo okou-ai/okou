@@ -58,8 +58,6 @@ const FAL_STATUS_URL =
 const FAL_RESPONSE_URL =
   "https://queue.fal.run/fal-ai/veo3.1/fast/requests/video-request/response";
 const FAL_VIDEO_URL = "https://v3b.fal.media/files/video-output.mp4";
-const FAL_FAILURE_LOG_MESSAGE =
-  "Fal built-in generation webhook reported failed generation";
 const KLING_V3_4K_MODEL = "fal-ai/kling-video/v3/4k/text-to-video";
 const KLING_V3_4K_QUEUE_URL = `https://queue.fal.run/${KLING_V3_4K_MODEL}`;
 const KLING_STATUS_URL =
@@ -2538,20 +2536,13 @@ describe("POST /api/video-io/generate", () => {
       status: "completed",
       result: body,
     });
-    for (const level of ["info", "warn", "debug"] as const) {
-      expect(
-        context.mocks.axiomLogging[level].mock.calls.filter(([message]) => {
-          return message === FAL_FAILURE_LOG_MESSAGE;
-        }),
-      ).toHaveLength(0);
-    }
 
     // creditsCharged 1504 = 8 seconds at the audio rate (188/s); the silent
     // rate would charge 1000, so the exact balance drop pins the category.
     await expect(orgCredits(fixture)).resolves.toBe(10_000 - 1504);
   });
 
-  it("retains safe Fal video failure diagnostics without changing the public error or charging", async () => {
+  it("keeps an unclassified Fal video failure a generic failure without charging", async () => {
     const fixture = await seedVideoFixture();
     mocks.clerk.session(fixture.userId, fixture.orgId);
     let observedRequestUrl: string | null = null;
@@ -2618,37 +2609,9 @@ describe("POST /api/video-io/generate", () => {
       `built-in-generation:${generationId}`,
       expect.objectContaining({ status: "failed", error: expectedError }),
     );
-    const failureLogs = context.mocks.axiomLogging.warn.mock.calls.filter(
-      ([message]) => {
-        return message === FAL_FAILURE_LOG_MESSAGE;
-      },
-    );
-    expect(failureLogs).toStrictEqual([
-      [
-        FAL_FAILURE_LOG_MESSAGE,
-        expect.objectContaining({
-          provider: "fal",
-          generationId,
-          type: "video",
-          providerHttpStatus: 422,
-          providerErrorType: "file_download_error",
-          failureKind: "unknown",
-          publicErrorCode: "INTERNAL_SERVER_ERROR",
-          expected: false,
-        }),
-      ],
-    ]);
-    for (const level of ["info", "debug"] as const) {
-      expect(
-        context.mocks.axiomLogging[level].mock.calls.filter(([message]) => {
-          return message === FAL_FAILURE_LOG_MESSAGE;
-        }),
-      ).toHaveLength(0);
-    }
-    const publicAndLogSurfaces = JSON.stringify({
+    const publicSurfaces = JSON.stringify({
       statusBody,
       realtime: context.mocks.ably.publish.mock.calls,
-      failureLogs,
     });
     for (const privateValue of [
       "private-video-prompt",
@@ -2657,7 +2620,7 @@ describe("POST /api/video-io/generate", () => {
       "private.example",
       "Invalid status code:",
     ]) {
-      expect(publicAndLogSurfaces).not.toContain(privateValue);
+      expect(publicSurfaces).not.toContain(privateValue);
     }
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
     await expect(orgCredits(fixture)).resolves.toBe(10_000);

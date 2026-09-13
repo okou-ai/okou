@@ -220,10 +220,10 @@ test("A prompt link starts a presentation chat with its selected template", asyn
       },
     },
   });
-  expect(capture.createdThreads[0]?.model).toBe("deepseek-v4-pro");
+  expect(capture.createdThreads[0]?.model).toBe("deepseek-v4.1-flash");
   expect(userMessageParts(send)).toContainEqual({
     type: "model",
-    selectedModel: "deepseek-v4-pro",
+    selectedModel: "deepseek-v4.1-flash",
   });
 });
 

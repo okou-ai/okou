@@ -135,6 +135,7 @@ function waitForWorkerOperation<T>(
   signal: AbortSignal,
 ): Promise<T> {
   signal.throwIfAborted();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const waitController = createChildAbortController(signal);
   const aborted = createDeferredPromise<never>(waitController.signal);
   return withCleanup(Promise.race([operation, aborted.promise]), () => {
@@ -246,6 +247,7 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
     if (this.connectionSignal) {
       throw new Error("Shared database tab is already registered");
     }
+    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
     const connectionController = createChildAbortController(signal);
     const connectionSignal = connectionController.signal;
     this.connectionSignal = this.workerStore.set(

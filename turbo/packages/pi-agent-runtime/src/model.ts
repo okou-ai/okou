@@ -1,4 +1,4 @@
-import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native";
+import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { streamPiNative } from "./native-stream";
 import { stream as streamCodexResponses } from "@earendil-works/pi-ai/api/openai-codex-responses";

@@ -70,11 +70,11 @@ const TEAMS_LOGIN_PROMPT_FALLBACK_TEXT =
 const TEAMS_LOGIN_PROMPT_CARD_TEXT =
   "Please connect your account to use Okou in this Teams workspace.";
 const TEAMS_WELCOME_TEXT = [
-  "Hi, I'm Zero. I connect Teams conversations to AI agents for research, triage, reports, engineering work, operations, and support.",
+  "Hi, I'm Nova. I connect Teams conversations to AI agents for research, triage, reports, engineering work, operations, and support.",
   "",
   "To get started, use `connect` to link this Teams workspace to Okou. An org admin may need to complete workspace setup first.",
   "",
-  "Commands: `help`, `connect`, `disconnect`, `switch`, `model`. Mention `@Zero` with a task or send a DM to work privately.",
+  "Commands: `help`, `connect`, `disconnect`, `switch`, `model`. Mention `@Nova` with a task or send a DM to work privately.",
 ].join("\n");
 const BOT_FRAMEWORK_METADATA_URL =
   "https://login.botframework.com/v1/.well-known/openidconfiguration";
@@ -596,13 +596,13 @@ function teamsMessageActivity(
       aadObjectId: fixture.teamsAadObjectId,
       userPrincipalName: fixture.teamsUserPrincipalName,
     },
-    recipient: { id: fixture.teamsBotId, name: "Zero" },
-    text: "<at>Zero</at> deploy the preview",
+    recipient: { id: fixture.teamsBotId, name: "Nova" },
+    text: "<at>Nova</at> deploy the preview",
     entities: [
       {
         type: "mention",
-        text: "<at>Zero</at>",
-        mentioned: { id: fixture.teamsBotId, name: "Zero" },
+        text: "<at>Nova</at>",
+        mentioned: { id: fixture.teamsBotId, name: "Nova" },
       },
     ],
     replyToId: fixture.teamsThreadId,
@@ -633,8 +633,8 @@ function teamsBotRemovedActivity(
       channel: { id: fixture.teamsChannelId, name: "General" },
       teamsAppId: fixture.teamsAppId,
     },
-    recipient: { id: fixture.teamsBotId, name: "Zero" },
-    membersRemoved: [{ id: fixture.teamsBotId, name: "Zero" }],
+    recipient: { id: fixture.teamsBotId, name: "Nova" },
+    membersRemoved: [{ id: fixture.teamsBotId, name: "Nova" }],
   };
 }
 
@@ -667,8 +667,8 @@ function teamsBotInstalledActivity(
       aadObjectId: fixture.teamsAadObjectId,
       userPrincipalName: fixture.teamsUserPrincipalName,
     },
-    recipient: { id: fixture.teamsBotId, name: "Zero" },
-    membersAdded: [{ id: fixture.teamsBotId, name: "Zero" }],
+    recipient: { id: fixture.teamsBotId, name: "Nova" },
+    membersAdded: [{ id: fixture.teamsBotId, name: "Nova" }],
   };
 }
 
@@ -702,7 +702,7 @@ function teamsBotInstallationAddedActivity(
       aadObjectId: fixture.teamsAadObjectId,
       userPrincipalName: fixture.teamsUserPrincipalName,
     },
-    recipient: { id: fixture.teamsBotId, name: "Zero" },
+    recipient: { id: fixture.teamsBotId, name: "Nova" },
   };
 }
 
@@ -1035,11 +1035,11 @@ describe("POST /api/webhooks/teams/bot", () => {
         },
         recipient: {
           id: fixture.teamsBotId,
-          name: "Zero",
+          name: "Nova",
           aadObjectId: null,
           userPrincipalName: null,
         },
-        rawText: "<at>Zero</at> deploy the preview",
+        rawText: "<at>Nova</at> deploy the preview",
         text: "deploy the preview",
         mentionsRecipient: true,
         idempotencyKey: `${fixture.teamsConversationId}:message:${fixture.teamsActivityId}`,
@@ -1072,7 +1072,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     expect(connectUrl.searchParams.get("teamId")).toBe(fixture.teamsTeamId);
     expect(connectUrl.searchParams.get("teamName")).toBe("Team One");
     expect(connectUrl.searchParams.get("conversationType")).toBe("channel");
-    expect(connectUrl.searchParams.get("botName")).toBe("Zero");
+    expect(connectUrl.searchParams.get("botName")).toBe("Nova");
     expect(body).not.toHaveProperty("dispatch");
     await flushWaitUntilForTest();
     expect(outboundRequests).toHaveLength(1);
@@ -1306,7 +1306,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       body: {
         type: "message",
         text: expect.stringContaining(
-          "<at>Ada Lovelace</at> added Zero to this Teams workspace.",
+          "<at>Ada Lovelace</at> added Nova to this Teams workspace.",
         ),
         textFormat: "markdown",
         entities: [
@@ -1470,10 +1470,10 @@ describe("POST /api/webhooks/teams/bot", () => {
       greetingActivityId,
     ]);
     expect(outboundRequests[0]?.body).toMatchObject({
-      text: expect.stringContaining("Zero Teams Bot Help"),
+      text: expect.stringContaining("Nova Teams Bot Help"),
     });
     expect(outboundRequests[2]?.body).toMatchObject({
-      text: expect.stringContaining("Zero Teams Bot Help"),
+      text: expect.stringContaining("Nova Teams Bot Help"),
     });
     expect(outboundRequests[3]?.body).toMatchObject({
       text: TEAMS_WELCOME_TEXT,
@@ -1489,7 +1489,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     const response = await postTeamsActivity({
       activity: teamsMessageActivity(fixture, {
         id: activityId,
-        text: "<at>Zero</at> Hi",
+        text: "<at>Nova</at> Hi",
       }),
       token: teamsToken(),
     });
@@ -1738,7 +1738,7 @@ describe("POST /api/webhooks/teams/bot", () => {
               filenameSnapshot: "spec.png",
               contentType: "image/png",
             },
-            { type: "text", text: "@Zero please inspect this" },
+            { type: "text", text: "@Nova please inspect this" },
             {
               type: "source",
               kind: "teams",
@@ -1916,12 +1916,12 @@ describe("POST /api/webhooks/teams/bot", () => {
     const response = await postTeamsActivity({
       activity: teamsMessageActivity(fixture, {
         id: teamsFixtureExternalId(fixture, "activity-user-mention"),
-        text: "<at>Zero</at> ask <at>Grace Hopper</at> to review",
+        text: "<at>Nova</at> ask <at>Grace Hopper</at> to review",
         entities: [
           {
             type: "mention",
-            text: "<at>Zero</at>",
-            mentioned: { id: fixture.teamsBotId, name: "Zero" },
+            text: "<at>Nova</at>",
+            mentioned: { id: fixture.teamsBotId, name: "Nova" },
           },
           {
             type: "mention",
@@ -2094,7 +2094,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     ]);
     expect(outboundRequests[0]?.body).toMatchObject({
       type: "message",
-      text: expect.stringContaining("Zero Teams Bot Help"),
+      text: expect.stringContaining("Nova Teams Bot Help"),
     });
     expect(outboundRequests[1]?.body).toMatchObject({
       type: "message",
@@ -2230,176 +2230,193 @@ describe("POST /api/webhooks/teams/bot", () => {
     );
   });
 
-  it("applies agent and model switches to existing Teams chat threads", async () => {
-    const { fixture, actor, runnerGroup } = await setupConnectedTeamsBotActor();
-    const threadId = teamsFixtureExternalId(
-      fixture,
-      "activity-existing-switch-root",
-    );
-    const activityIds = {
-      initial: teamsFixtureExternalId(
+  it.each(["agent", "model"] as const)(
+    "applies a Teams %s switch to an existing chat thread",
+    async (selection) => {
+      const { fixture, actor, runnerGroup } =
+        await setupConnectedTeamsBotActor();
+      const threadId = teamsFixtureExternalId(
         fixture,
-        "activity-existing-switch-initial",
-      ),
-      switchAgent: teamsFixtureExternalId(
-        fixture,
-        "activity-existing-switch-agent",
-      ),
-      switchedAgentRun: teamsFixtureExternalId(
-        fixture,
-        "activity-existing-switch-agent-run",
-      ),
-      switchModel: teamsFixtureExternalId(
-        fixture,
-        "activity-existing-switch-model",
-      ),
-      switchedModelRun: teamsFixtureExternalId(
-        fixture,
-        "activity-existing-switch-model-run",
-      ),
-    };
-    const supportAgent = await authOrgApi.createAgent(actor, {
-      displayName: "Teams switched agent",
-      visibility: "public",
-    });
-    const anthropic = await runsApi.createOrgModelProvider(actor, {
-      type: "anthropic-api-key",
-      secret: "teams-switch-anthropic-key",
-    });
-    const openai = await runsApi.createOrgModelProvider(actor, {
-      type: "openai-api-key",
-      secret: "teams-switch-openai-key",
-    });
-    await runsApi.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-sonnet-5",
-        isDefault: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: anthropic.providerId,
-      },
-      {
-        model: "gpt-5.6-sol",
-        isDefault: false,
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: openai.providerId,
-      },
-    ]);
-    teamsGraphHistoryHandlers({
-      fixture,
-      chatMessages: [],
-      channelMessages: [],
-      threadRoots: {},
-      threadReplies: {},
-    });
-
-    const initialResponse = await postTeamsActivity({
-      activity: teamsPersonalThreadMessageActivity({
-        fixture,
-        id: activityIds.initial,
-        threadId,
-        text: "run before switching",
-      }),
-      token: teamsToken(),
-    });
-    expect(initialResponse.status).toBe(200);
-    await readTeamsBotResponseAndFlush(initialResponse);
-    const initialRunId = await runIdForPrompt(actor, "run before switching");
-    await runsApi.heartbeatRunner(runnerGroup);
-    const initialClaim = await runsApi.claimRunnerJob(initialRunId);
-    await runsApi.requestCancelRun(actor, initialRunId, [200]);
-    await completeCancelledRun(initialRunId, initialClaim.sandboxToken);
-
-    const switchAgentResponse = await postTeamsActivity({
-      activity: teamsPersonalMessageActivity({
-        fixture,
-        id: activityIds.switchAgent,
-        text: "",
-        value: {
-          okouTeamsAction: "switch_agent",
-          selectedAgentId: supportAgent.agentId,
+        "activity-existing-switch-root",
+      );
+      const activityIds = {
+        initial: teamsFixtureExternalId(
+          fixture,
+          "activity-existing-switch-initial",
+        ),
+        switchAgent: teamsFixtureExternalId(
+          fixture,
+          "activity-existing-switch-agent",
+        ),
+        switchedAgentRun: teamsFixtureExternalId(
+          fixture,
+          "activity-existing-switch-agent-run",
+        ),
+        switchModel: teamsFixtureExternalId(
+          fixture,
+          "activity-existing-switch-model",
+        ),
+        switchedModelRun: teamsFixtureExternalId(
+          fixture,
+          "activity-existing-switch-model-run",
+        ),
+      };
+      const supportAgent = await authOrgApi.createAgent(actor, {
+        displayName: "Teams switched agent",
+        visibility: "public",
+      });
+      const anthropic = await runsApi.createOrgModelProvider(actor, {
+        type: "anthropic-api-key",
+        secret: "teams-switch-anthropic-key",
+      });
+      const openai = await runsApi.createOrgModelProvider(actor, {
+        type: "openai-api-key",
+        secret: "teams-switch-openai-key",
+      });
+      await runsApi.updateOrgModelPolicies(actor, [
+        {
+          model: "claude-sonnet-5",
+          isDefault: true,
+          defaultProviderType: "anthropic-api-key",
+          credentialScope: "org",
+          modelProviderId: anthropic.providerId,
         },
-      }),
-      token: teamsToken(),
-    });
-    expect(switchAgentResponse.status).toBe(200);
-    await readTeamsBotResponseAndFlush(switchAgentResponse);
-
-    const switchedAgentResponse = await postTeamsActivity({
-      activity: teamsPersonalThreadMessageActivity({
-        fixture,
-        id: activityIds.switchedAgentRun,
-        threadId,
-        text: "run after agent switch",
-      }),
-      token: teamsToken(),
-    });
-    expect(switchedAgentResponse.status).toBe(200);
-    await readTeamsBotResponseAndFlush(switchedAgentResponse);
-    const switchedAgentRunId = await runIdForPrompt(
-      actor,
-      "run after agent switch",
-    );
-    await runsApi.heartbeatRunner(runnerGroup);
-    const switchedAgentClaim = await runsApi.claimRunnerJob(switchedAgentRunId);
-    expect(switchedAgentClaim.appendSystemPrompt).toContain(
-      "Your name is Teams switched agent.",
-    );
-    await runsApi.requestCancelRun(actor, switchedAgentRunId, [200]);
-    await completeCancelledRun(
-      switchedAgentRunId,
-      switchedAgentClaim.sandboxToken,
-    );
-
-    const switchModelResponse = await postTeamsActivity({
-      activity: teamsPersonalMessageActivity({
-        fixture,
-        id: activityIds.switchModel,
-        text: "",
-        value: {
-          okouTeamsAction: "switch_model",
-          selectedModel: "gpt-5.6-sol",
+        {
+          model: "gpt-5.6-sol",
+          isDefault: false,
+          defaultProviderType: "openai-api-key",
+          credentialScope: "org",
+          modelProviderId: openai.providerId,
         },
-      }),
-      token: teamsToken(),
-    });
-    expect(switchModelResponse.status).toBe(200);
-    await readTeamsBotResponseAndFlush(switchModelResponse);
-
-    const switchedModelResponse = await postTeamsActivity({
-      activity: teamsPersonalThreadMessageActivity({
+      ]);
+      teamsGraphHistoryHandlers({
         fixture,
-        id: activityIds.switchedModelRun,
-        threadId,
-        text: "run after model switch",
-      }),
-      token: teamsToken(),
-    });
-    expect(switchedModelResponse.status).toBe(200);
-    await readTeamsBotResponseAndFlush(switchedModelResponse);
-    const switchedModelRunId = await runIdForPrompt(
-      actor,
-      "run after model switch",
-    );
-    await runsApi.heartbeatRunner(runnerGroup);
-    const switchedModelClaim = await runsApi.claimRunnerJob(switchedModelRunId);
-    expect(switchedModelClaim.appendSystemPrompt).toContain(
-      "Your name is Teams switched agent.",
-    );
-    expect(switchedModelClaim.appendSystemPrompt).toContain(
-      "# Microsoft Teams Run Context",
-    );
-    expect(switchedModelClaim.appendSystemPrompt).toContain(
-      `- AGENT_SESSION_COMMAND: okou search "${switchedAgentRunId}" --source agent-session`,
-    );
-    expect(switchedModelClaim.appendSystemPrompt).toContain(
-      "Use the AGENT_SESSION_COMMAND for a run",
-    );
-    expect(switchedModelClaim.appendSystemPrompt).not.toContain("LOG_COMMAND");
-    expect(switchedModelClaim.modelUsageProvider).toBe("gpt-5.6-sol");
-    await runsApi.requestCancelRun(actor, switchedModelRunId, [200]);
-  });
+        chatMessages: [],
+        channelMessages: [],
+        threadRoots: {},
+        threadReplies: {},
+      });
+
+      if (selection === "agent") {
+        const initialResponse = await postTeamsActivity({
+          activity: teamsPersonalThreadMessageActivity({
+            fixture,
+            id: activityIds.initial,
+            threadId,
+            text: "run before switching",
+          }),
+          token: teamsToken(),
+        });
+        expect(initialResponse.status).toBe(200);
+        await readTeamsBotResponseAndFlush(initialResponse);
+        const initialRunId = await runIdForPrompt(
+          actor,
+          "run before switching",
+        );
+        await runsApi.heartbeatRunner(runnerGroup);
+        const initialClaim = await runsApi.claimRunnerJob(initialRunId);
+        await runsApi.requestCancelRun(actor, initialRunId, [200]);
+        await completeCancelledRun(initialRunId, initialClaim.sandboxToken);
+      }
+
+      const switchAgentResponse = await postTeamsActivity({
+        activity: teamsPersonalMessageActivity({
+          fixture,
+          id: activityIds.switchAgent,
+          text: "",
+          value: {
+            okouTeamsAction: "switch_agent",
+            selectedAgentId: supportAgent.agentId,
+          },
+        }),
+        token: teamsToken(),
+      });
+      expect(switchAgentResponse.status).toBe(200);
+      await readTeamsBotResponseAndFlush(switchAgentResponse);
+
+      const switchedAgentResponse = await postTeamsActivity({
+        activity: teamsPersonalThreadMessageActivity({
+          fixture,
+          id: activityIds.switchedAgentRun,
+          threadId,
+          text: "run after agent switch",
+        }),
+        token: teamsToken(),
+      });
+      expect(switchedAgentResponse.status).toBe(200);
+      await readTeamsBotResponseAndFlush(switchedAgentResponse);
+      const switchedAgentRunId = await runIdForPrompt(
+        actor,
+        "run after agent switch",
+      );
+      await runsApi.heartbeatRunner(runnerGroup);
+      const switchedAgentClaim =
+        await runsApi.claimRunnerJob(switchedAgentRunId);
+      expect(switchedAgentClaim.appendSystemPrompt).toContain(
+        "Your name is Teams switched agent.",
+      );
+      await runsApi.requestCancelRun(actor, switchedAgentRunId, [200]);
+      await completeCancelledRun(
+        switchedAgentRunId,
+        switchedAgentClaim.sandboxToken,
+      );
+
+      if (selection === "agent") {
+        return;
+      }
+
+      const switchModelResponse = await postTeamsActivity({
+        activity: teamsPersonalMessageActivity({
+          fixture,
+          id: activityIds.switchModel,
+          text: "",
+          value: {
+            okouTeamsAction: "switch_model",
+            selectedModel: "gpt-5.6-sol",
+          },
+        }),
+        token: teamsToken(),
+      });
+      expect(switchModelResponse.status).toBe(200);
+      await readTeamsBotResponseAndFlush(switchModelResponse);
+
+      const switchedModelResponse = await postTeamsActivity({
+        activity: teamsPersonalThreadMessageActivity({
+          fixture,
+          id: activityIds.switchedModelRun,
+          threadId,
+          text: "run after model switch",
+        }),
+        token: teamsToken(),
+      });
+      expect(switchedModelResponse.status).toBe(200);
+      await readTeamsBotResponseAndFlush(switchedModelResponse);
+      const switchedModelRunId = await runIdForPrompt(
+        actor,
+        "run after model switch",
+      );
+      await runsApi.heartbeatRunner(runnerGroup);
+      const switchedModelClaim =
+        await runsApi.claimRunnerJob(switchedModelRunId);
+      expect(switchedModelClaim.appendSystemPrompt).toContain(
+        "Your name is Teams switched agent.",
+      );
+      expect(switchedModelClaim.appendSystemPrompt).toContain(
+        "# Microsoft Teams Run Context",
+      );
+      expect(switchedModelClaim.appendSystemPrompt).toContain(
+        `- AGENT_SESSION_COMMAND: okou search "${switchedAgentRunId}" --source agent-session`,
+      );
+      expect(switchedModelClaim.appendSystemPrompt).toContain(
+        "Use the AGENT_SESSION_COMMAND for a run",
+      );
+      expect(switchedModelClaim.appendSystemPrompt).not.toContain(
+        "LOG_COMMAND",
+      );
+      expect(switchedModelClaim.modelUsageProvider).toBe("gpt-5.6-sol");
+      await runsApi.requestCancelRun(actor, switchedModelRunId, [200]);
+    },
+  );
 
   it("replies when a connected Teams run is queued", async () => {
     const { fixture, actor, outboundRequests } =
@@ -2430,29 +2447,31 @@ describe("POST /api/webhooks/teams/bot", () => {
     );
     outboundRequests.splice(0, outboundRequests.length);
 
-    const firstResponse = await postTeamsActivity({
-      activity: teamsPersonalThreadMessageActivity({
-        fixture,
-        id: firstActivityId,
-        threadId: firstThreadId,
-        text: "active run one",
+    const [firstResponse, secondResponse] = await Promise.all([
+      postTeamsActivity({
+        activity: teamsPersonalThreadMessageActivity({
+          fixture,
+          id: firstActivityId,
+          threadId: firstThreadId,
+          text: "active run one",
+        }),
+        token: teamsToken(),
       }),
-      token: teamsToken(),
-    });
+      postTeamsActivity({
+        activity: teamsPersonalThreadMessageActivity({
+          fixture,
+          id: secondActivityId,
+          threadId: secondThreadId,
+          text: "active run two",
+        }),
+        token: teamsToken(),
+      }),
+    ]);
     expect(firstResponse.status).toBe(200);
     const firstBody = await readTeamsBotResponseAndFlush(firstResponse);
     expect(firstBody).not.toHaveProperty("dispatch");
     const firstRunId = await runIdForPrompt(actor, "active run one");
 
-    const secondResponse = await postTeamsActivity({
-      activity: teamsPersonalThreadMessageActivity({
-        fixture,
-        id: secondActivityId,
-        threadId: secondThreadId,
-        text: "active run two",
-      }),
-      token: teamsToken(),
-    });
     expect(secondResponse.status).toBe(200);
     const secondBody = await readTeamsBotResponseAndFlush(secondResponse);
     expect(secondBody).not.toHaveProperty("dispatch");
@@ -2620,7 +2639,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     const failedResponse = await postTeamsActivity({
       activity: teamsMessageActivity(fixture, {
         id: failedActivityId,
-        text: "<at>Zero</at> run without entitlement",
+        text: "<at>Nova</at> run without entitlement",
       }),
       token: teamsToken(),
     });
@@ -2705,391 +2724,411 @@ describe("POST /api/webhooks/teams/bot", () => {
     await runsApi.requestCancelRun(actor, run.id, [200]);
   });
 
-  it("dispatches connected Teams messages to the org default agent", async () => {
-    const fixture = await trackTeamsFixture(
-      Promise.resolve(teamsConnectFixture()),
-    );
-    const rootDispatchId = teamsFixtureExternalId(fixture, "root-dispatch");
-    const contextActivityId = teamsFixtureExternalId(
-      fixture,
-      "activity-context",
-    );
-    const contextFileActivityId = teamsFixtureExternalId(
-      fixture,
-      "activity-context-file-only",
-    );
-    const dispatchActivityId = teamsFixtureExternalId(
-      fixture,
-      "activity-dispatch",
-    );
-    const channelContextActivityId = teamsFixtureExternalId(
-      fixture,
-      "activity-channel-context",
-    );
-    const priorChannelMessageId = teamsFixtureExternalId(
-      fixture,
-      "channel-prior",
-    );
-    const futureChannelMessageId = teamsFixtureExternalId(
-      fixture,
-      "channel-future",
-    );
-    const mentionedUserId = teamsFixtureExternalId(fixture, "29:user-grace");
-    const planAttachmentId = teamsFixtureExternalId(fixture, "teams-file-plan");
-    const checklistAttachmentId = teamsFixtureExternalId(
-      fixture,
-      "teams-file-checklist",
-    );
-    const currentAttachmentId = teamsFixtureExternalId(
-      fixture,
-      "teams-file-current",
-    );
-    const actor = authOrgApi.user({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-      orgRole: "org:admin",
-    });
-    const runnerGroup = runsApi.configureRunnerGroup();
-    context.mocks.ably.publish.mockResolvedValue(undefined);
-    authOrgApi.acceptAgentStorageWrites();
-    runsApi.acceptStorageDownloads();
-    runsApi.acceptTelemetryIngest();
-    const defaultAgent = await authOrgApi.bootstrapLimitedFreeOnboarding(
-      actor,
-      {
-        displayName: "Teams default agent",
-      },
-    );
-    await authOrgApi.updateAgentMetadata(actor, defaultAgent.body.agentId, {
-      visibility: "public",
-    });
-    await runsApi.grantProEntitlement(actor);
-    await runsApi.ensureOrgModelProvider(actor);
-    botFrameworkHandlers();
-    const outboundRequests = teamsOutboundHandlers(fixture.serviceUrl);
-
-    const installResponse = await postTeamsActivity({
-      activity: teamsMessageActivity(fixture),
-      token: teamsToken(),
-    });
-    expect(installResponse.status).toBe(200);
-    await installResponse.json();
-    await flushWaitUntilForTest();
-    await connectTeamsFixture(fixture);
-    outboundRequests.splice(0, outboundRequests.length);
-    outboundRequests.reactions.splice(0, outboundRequests.reactions.length);
-
-    const channelMessages: TeamsGraphMessageFixture[] = [];
-    const threadRoots: Record<string, TeamsGraphMessageFixture> = {
-      [rootDispatchId]: {
-        id: rootDispatchId,
-        text: "remember the deployment target",
-        createdDateTime: "2026-06-30T09:10:00.000Z",
-        senderId: fixture.teamsUserId,
-        graphUserPrincipalName: fixture.teamsUserPrincipalName,
-      },
-    };
-    const threadReplies: Record<string, TeamsGraphMessageFixture[]> = {
-      [rootDispatchId]: [
+  it.each(["channel", "thread"] as const)(
+    "dispatches a connected Teams %s message with its context",
+    async (surface) => {
+      const fixture = await trackTeamsFixture(
+        Promise.resolve(teamsConnectFixture()),
+      );
+      const rootDispatchId = teamsFixtureExternalId(fixture, "root-dispatch");
+      const contextActivityId = teamsFixtureExternalId(
+        fixture,
+        "activity-context",
+      );
+      const contextFileActivityId = teamsFixtureExternalId(
+        fixture,
+        "activity-context-file-only",
+      );
+      const dispatchActivityId = teamsFixtureExternalId(
+        fixture,
+        "activity-dispatch",
+      );
+      const channelContextActivityId = teamsFixtureExternalId(
+        fixture,
+        "activity-channel-context",
+      );
+      const priorChannelMessageId = teamsFixtureExternalId(
+        fixture,
+        "channel-prior",
+      );
+      const futureChannelMessageId = teamsFixtureExternalId(
+        fixture,
+        "channel-future",
+      );
+      const mentionedUserId = teamsFixtureExternalId(fixture, "29:user-grace");
+      const planAttachmentId = teamsFixtureExternalId(
+        fixture,
+        "teams-file-plan",
+      );
+      const checklistAttachmentId = teamsFixtureExternalId(
+        fixture,
+        "teams-file-checklist",
+      );
+      const currentAttachmentId = teamsFixtureExternalId(
+        fixture,
+        "teams-file-current",
+      );
+      const actor = authOrgApi.user({
+        userId: fixture.userId,
+        orgId: fixture.orgId,
+        orgRole: "org:admin",
+      });
+      const runnerGroup = runsApi.configureRunnerGroup();
+      context.mocks.ably.publish.mockResolvedValue(undefined);
+      authOrgApi.acceptAgentStorageWrites();
+      runsApi.acceptStorageDownloads();
+      runsApi.acceptTelemetryIngest();
+      const defaultAgent = await authOrgApi.bootstrapLimitedFreeOnboarding(
+        actor,
         {
-          id: contextActivityId,
-          text: 'confirm with <at id="0">Grace Hopper</at> that the target is staging',
-          createdDateTime: "2026-06-30T09:11:00.000Z",
+          displayName: "Teams default agent",
+        },
+      );
+      await authOrgApi.updateAgentMetadata(actor, defaultAgent.body.agentId, {
+        visibility: "public",
+      });
+      await runsApi.grantProEntitlement(actor);
+      await runsApi.ensureOrgModelProvider(actor);
+      botFrameworkHandlers();
+      const outboundRequests = teamsOutboundHandlers(fixture.serviceUrl);
+
+      const installResponse = await postTeamsActivity({
+        activity: teamsMessageActivity(fixture),
+        token: teamsToken(),
+      });
+      expect(installResponse.status).toBe(200);
+      await installResponse.json();
+      await flushWaitUntilForTest();
+      await connectTeamsFixture(fixture);
+      outboundRequests.splice(0, outboundRequests.length);
+      outboundRequests.reactions.splice(0, outboundRequests.reactions.length);
+
+      const channelMessages: TeamsGraphMessageFixture[] = [];
+      const threadRoots: Record<string, TeamsGraphMessageFixture> = {
+        [rootDispatchId]: {
+          id: rootDispatchId,
+          text: "remember the deployment target",
+          createdDateTime: "2026-06-30T09:10:00.000Z",
           senderId: fixture.teamsUserId,
-          mentions: [
-            {
-              id: 0,
-              mentionText: '<at id="0">Grace Hopper</at>',
-              mentioned: {
-                user: {
-                  id: mentionedUserId,
-                  displayName: "Grace Hopper",
+          graphUserPrincipalName: fixture.teamsUserPrincipalName,
+        },
+      };
+      const threadReplies: Record<string, TeamsGraphMessageFixture[]> = {
+        [rootDispatchId]: [
+          {
+            id: contextActivityId,
+            text: 'confirm with <at id="0">Grace Hopper</at> that the target is staging',
+            createdDateTime: "2026-06-30T09:11:00.000Z",
+            senderId: fixture.teamsUserId,
+            mentions: [
+              {
+                id: 0,
+                mentionText: '<at id="0">Grace Hopper</at>',
+                mentioned: {
+                  user: {
+                    id: mentionedUserId,
+                    displayName: "Grace Hopper",
+                  },
                 },
               },
-            },
-          ],
-          attachments: [
-            {
-              id: planAttachmentId,
-              name: "deployment-plan.pdf",
-              contentType: "application/vnd.microsoft.teams.file.download.info",
-              content: {
-                downloadUrl: "https://files.example.test/deployment-plan.pdf",
-                fileType: "pdf",
+            ],
+            attachments: [
+              {
+                id: planAttachmentId,
+                name: "deployment-plan.pdf",
+                contentType:
+                  "application/vnd.microsoft.teams.file.download.info",
+                content: {
+                  downloadUrl: "https://files.example.test/deployment-plan.pdf",
+                  fileType: "pdf",
+                },
               },
-            },
-          ],
+            ],
+          },
+          {
+            id: contextFileActivityId,
+            text: "",
+            createdDateTime: "2026-06-30T09:11:30.000Z",
+            senderId: fixture.teamsUserId,
+            attachments: [
+              {
+                id: checklistAttachmentId,
+                name: "release-checklist.txt",
+                contentType:
+                  "application/vnd.microsoft.teams.file.download.info",
+                content: {
+                  downloadUrl:
+                    "https://files.example.test/release-checklist.txt",
+                  fileType: "txt",
+                },
+              },
+            ],
+          },
+          {
+            id: dispatchActivityId,
+            text: "ship the Teams dispatch",
+            createdDateTime: "2026-06-30T09:12:00.000Z",
+            senderId: fixture.teamsUserId,
+          },
+        ],
+      };
+      const graphRequests = teamsGraphHistoryHandlers({
+        fixture,
+        channelMessages,
+        threadRoots,
+        threadReplies,
+      });
+
+      if (surface === "channel") {
+        channelMessages.push(
+          {
+            id: channelContextActivityId,
+            text: "start another topic",
+            createdDateTime: "2026-06-30T09:12:00.000Z",
+            senderId: fixture.teamsUserId,
+          },
+          {
+            id: priorChannelMessageId,
+            text: "api channel planning",
+            createdDateTime: "2026-06-30T09:09:00.000Z",
+            senderId: fixture.teamsUserId,
+          },
+          {
+            id: futureChannelMessageId,
+            text: "future channel topic",
+            createdDateTime: "2026-06-30T09:13:00.000Z",
+            senderId: fixture.teamsUserId,
+          },
+        );
+
+        const channelContextResponse = await postTeamsActivity({
+          activity: teamsMessageActivity(fixture, {
+            id: channelContextActivityId,
+            replyToId: null,
+            text: "<at>Nova</at>",
+          }),
+          token: teamsToken(),
+        });
+        expect(channelContextResponse.status).toBe(200);
+        const channelContextBody = await readTeamsBotResponseAndFlush(
+          channelContextResponse,
+        );
+        expect(channelContextBody).not.toHaveProperty("dispatch");
+        expect(outboundRequests).toHaveLength(0);
+        expect(outboundRequests.reactions).toStrictEqual([
+          {
+            method: "PUT",
+            conversationId: fixture.teamsConversationId,
+            activityId: channelContextActivityId,
+            reactionType: "1f4ad_thoughtballoon",
+          },
+        ]);
+        const channelContextRunId = await runIdForPrompt(actor, "@Nova");
+        await runsApi.heartbeatRunner(runnerGroup);
+        const channelContextClaim =
+          await runsApi.claimRunnerJob(channelContextRunId);
+        const channelContextAppendSystemPrompt =
+          channelContextClaim.appendSystemPrompt ?? "";
+        const recentChannelContext = promptSection(
+          channelContextAppendSystemPrompt,
+          "# Recent Channel Messages",
+        );
+        expect(channelContextClaim.prompt).toBe("@Nova");
+        expect(graphRequests).toContain("channel-messages");
+        expect(recentChannelContext).toContain("api channel planning");
+        expect(recentChannelContext).not.toContain("start another topic");
+        expect(channelContextAppendSystemPrompt).not.toContain(
+          "# Microsoft Teams Thread Context",
+        );
+
+        await runsApi.requestCancelRun(actor, channelContextRunId, [200]);
+        await completeCancelledRun(
+          channelContextRunId,
+          channelContextClaim.sandboxToken,
+        );
+        return;
+      }
+
+      channelMessages.splice(
+        0,
+        channelMessages.length,
+        {
+          id: rootDispatchId,
+          text: "remember the deployment target",
+          createdDateTime: "2026-06-30T09:10:00.000Z",
+          senderId: fixture.teamsUserId,
         },
         {
-          id: contextFileActivityId,
-          text: "",
-          createdDateTime: "2026-06-30T09:11:30.000Z",
+          id: priorChannelMessageId,
+          text: "api channel planning",
+          createdDateTime: "2026-06-30T09:09:00.000Z",
           senderId: fixture.teamsUserId,
+        },
+      );
+
+      const response = await postTeamsActivity({
+        activity: teamsMessageActivity(fixture, {
+          id: dispatchActivityId,
+          replyToId: rootDispatchId,
+          text: "<at>Nova</at> ship the Teams dispatch",
           attachments: [
             {
-              id: checklistAttachmentId,
-              name: "release-checklist.txt",
+              id: currentAttachmentId,
+              name: "current-task.txt",
               contentType: "application/vnd.microsoft.teams.file.download.info",
               content: {
-                downloadUrl: "https://files.example.test/release-checklist.txt",
+                downloadUrl: "https://files.example.test/current-task.txt",
                 fileType: "txt",
               },
             },
           ],
-        },
+        }),
+        token: teamsToken(),
+      });
+
+      expect(response.status).toBe(200);
+      const body = await readTeamsBotResponseAndFlush(response);
+      expect(body).not.toHaveProperty("dispatch");
+      expect(outboundRequests).toHaveLength(0);
+      expect(outboundRequests.reactions).toStrictEqual([
         {
-          id: dispatchActivityId,
-          text: "ship the Teams dispatch",
-          createdDateTime: "2026-06-30T09:12:00.000Z",
-          senderId: fixture.teamsUserId,
+          method: "PUT",
+          conversationId: fixture.teamsConversationId,
+          activityId: dispatchActivityId,
+          reactionType: "1f4ad_thoughtballoon",
         },
-      ],
-    };
-    const graphRequests = teamsGraphHistoryHandlers({
-      fixture,
-      channelMessages,
-      threadRoots,
-      threadReplies,
-    });
+      ]);
 
-    channelMessages.push(
-      {
-        id: channelContextActivityId,
-        text: "start another topic",
-        createdDateTime: "2026-06-30T09:12:00.000Z",
-        senderId: fixture.teamsUserId,
-      },
-      {
-        id: priorChannelMessageId,
-        text: "api channel planning",
-        createdDateTime: "2026-06-30T09:09:00.000Z",
-        senderId: fixture.teamsUserId,
-      },
-      {
-        id: futureChannelMessageId,
-        text: "future channel topic",
-        createdDateTime: "2026-06-30T09:13:00.000Z",
-        senderId: fixture.teamsUserId,
-      },
-    );
-
-    const channelContextResponse = await postTeamsActivity({
-      activity: teamsMessageActivity(fixture, {
-        id: channelContextActivityId,
-        replyToId: null,
-        text: "<at>Zero</at>",
-      }),
-      token: teamsToken(),
-    });
-    expect(channelContextResponse.status).toBe(200);
-    const channelContextBody = await readTeamsBotResponseAndFlush(
-      channelContextResponse,
-    );
-    expect(channelContextBody).not.toHaveProperty("dispatch");
-    expect(outboundRequests).toHaveLength(0);
-    expect(outboundRequests.reactions).toStrictEqual([
-      {
-        method: "PUT",
-        conversationId: fixture.teamsConversationId,
-        activityId: channelContextActivityId,
-        reactionType: "1f4ad_thoughtballoon",
-      },
-    ]);
-    const channelContextRunId = await runIdForPrompt(actor, "@Zero");
-    await runsApi.heartbeatRunner(runnerGroup);
-    const channelContextClaim =
-      await runsApi.claimRunnerJob(channelContextRunId);
-    const channelContextAppendSystemPrompt =
-      channelContextClaim.appendSystemPrompt ?? "";
-    const recentChannelContext = promptSection(
-      channelContextAppendSystemPrompt,
-      "# Recent Channel Messages",
-    );
-    expect(channelContextClaim.prompt).toBe("@Zero");
-    expect(graphRequests).toContain("channel-messages");
-    expect(recentChannelContext).toContain("api channel planning");
-    expect(recentChannelContext).not.toContain("start another topic");
-    expect(channelContextAppendSystemPrompt).not.toContain(
-      "# Microsoft Teams Thread Context",
-    );
-
-    channelMessages.splice(
-      0,
-      channelMessages.length,
-      {
-        id: rootDispatchId,
-        text: "remember the deployment target",
-        createdDateTime: "2026-06-30T09:10:00.000Z",
-        senderId: fixture.teamsUserId,
-      },
-      {
-        id: priorChannelMessageId,
-        text: "api channel planning",
-        createdDateTime: "2026-06-30T09:09:00.000Z",
-        senderId: fixture.teamsUserId,
-      },
-    );
-
-    const response = await postTeamsActivity({
-      activity: teamsMessageActivity(fixture, {
-        id: dispatchActivityId,
-        replyToId: rootDispatchId,
-        text: "<at>Zero</at> ship the Teams dispatch",
-        attachments: [
+      const dispatchRuns = await runsApi.listAgentRuns(actor, { limit: 20 });
+      const dispatchRun = dispatchRuns.runs.find((run) => {
+        return run.prompt.includes("ship the Teams dispatch");
+      });
+      if (!dispatchRun) {
+        throw new Error("Expected Teams dispatch run");
+      }
+      const runId = dispatchRun.id;
+      await runsApi.heartbeatRunner(runnerGroup);
+      const claim = await runsApi.claimRunnerJob(runId);
+      const appendSystemPrompt = claim.appendSystemPrompt ?? "";
+      const currentUserPrompt = promptSection(
+        appendSystemPrompt,
+        "# Current User Info",
+        "# Current Integration",
+      );
+      const currentIntegrationPrompt = promptSection(
+        appendSystemPrompt,
+        "# Current Integration",
+        "# Recent Channel Messages",
+      );
+      const replyRecentChannelContext = promptSection(
+        appendSystemPrompt,
+        "# Recent Channel Messages",
+        "# Microsoft Teams Thread Context",
+      );
+      const teamsThreadContext = promptSection(
+        appendSystemPrompt,
+        "# Microsoft Teams Thread Context",
+      );
+      expect(claim.prompt).toContain("ship the Teams dispatch");
+      expect(claim.prompt).toContain(
+        "[Web file] current-task.txt (text/plain)",
+      );
+      expect(claim.prompt).not.toContain("deployment-plan.pdf");
+      expect(claim.prompt).not.toContain("release-checklist.txt");
+      await expect(
+        callbackStore.set(
+          readAgentRunCallbacks$,
           {
-            id: currentAttachmentId,
-            name: "current-task.txt",
-            contentType: "application/vnd.microsoft.teams.file.download.info",
-            content: {
-              downloadUrl: "https://files.example.test/current-task.txt",
-              fileType: "txt",
-            },
+            orgId: fixture.orgId,
+            userId: fixture.userId,
+            runId,
           },
-        ],
-      }),
-      token: teamsToken(),
-    });
-
-    expect(response.status).toBe(200);
-    const body = await readTeamsBotResponseAndFlush(response);
-    expect(body).not.toHaveProperty("dispatch");
-    expect(outboundRequests).toHaveLength(0);
-    expect(outboundRequests.reactions).toStrictEqual([
-      {
-        method: "PUT",
-        conversationId: fixture.teamsConversationId,
-        activityId: channelContextActivityId,
-        reactionType: "1f4ad_thoughtballoon",
-      },
-      {
-        method: "PUT",
-        conversationId: fixture.teamsConversationId,
-        activityId: dispatchActivityId,
-        reactionType: "1f4ad_thoughtballoon",
-      },
-    ]);
-
-    const dispatchRuns = await runsApi.listAgentRuns(actor, { limit: 20 });
-    const dispatchRun = dispatchRuns.runs.find((run) => {
-      return run.prompt.includes("ship the Teams dispatch");
-    });
-    if (!dispatchRun) {
-      throw new Error("Expected Teams dispatch run");
-    }
-    const runId = dispatchRun.id;
-    await runsApi.heartbeatRunner(runnerGroup);
-    const claim = await runsApi.claimRunnerJob(runId);
-    const appendSystemPrompt = claim.appendSystemPrompt ?? "";
-    const currentUserPrompt = promptSection(
-      appendSystemPrompt,
-      "# Current User Info",
-      "# Current Integration",
-    );
-    const currentIntegrationPrompt = promptSection(
-      appendSystemPrompt,
-      "# Current Integration",
-      "# Recent Channel Messages",
-    );
-    const replyRecentChannelContext = promptSection(
-      appendSystemPrompt,
-      "# Recent Channel Messages",
-      "# Microsoft Teams Thread Context",
-    );
-    const teamsThreadContext = promptSection(
-      appendSystemPrompt,
-      "# Microsoft Teams Thread Context",
-    );
-    expect(claim.prompt).toContain("ship the Teams dispatch");
-    expect(claim.prompt).toContain("[Web file] current-task.txt (text/plain)");
-    expect(claim.prompt).not.toContain("deployment-plan.pdf");
-    expect(claim.prompt).not.toContain("release-checklist.txt");
-    await expect(
-      callbackStore.set(
-        readAgentRunCallbacks$,
-        {
-          orgId: fixture.orgId,
-          userId: fixture.userId,
-          runId,
-        },
-        context.signal,
-      ),
-    ).resolves.toStrictEqual([
-      expect.objectContaining({
-        payload: expect.objectContaining({
-          teamsDelivery: expect.objectContaining({
-            publicBrand: "okou",
-            files: expect.arrayContaining([
-              expect.objectContaining({ name: "current-task.txt" }),
-              expect.objectContaining({ name: "deployment-plan.pdf" }),
-              expect.objectContaining({ name: "release-checklist.txt" }),
-            ]),
+          context.signal,
+        ),
+      ).resolves.toStrictEqual([
+        expect.objectContaining({
+          payload: expect.objectContaining({
+            teamsDelivery: expect.objectContaining({
+              publicBrand: "okou",
+              files: expect.arrayContaining([
+                expect.objectContaining({ name: "current-task.txt" }),
+                expect.objectContaining({ name: "deployment-plan.pdf" }),
+                expect.objectContaining({ name: "release-checklist.txt" }),
+              ]),
+            }),
           }),
         }),
-      }),
-    ]);
-    expect(currentIntegrationPrompt).toContain(
-      "You are currently running inside: Microsoft Teams",
-    );
-    expect(appendSystemPrompt).toContain("Microsoft Teams messaging and files");
-    expect(appendSystemPrompt).toContain("okou teams --help");
-    expect(appendSystemPrompt).toContain("okou teams message send -h");
-    expect(appendSystemPrompt).toContain("okou teams download-file -h");
-    expect(appendSystemPrompt).toContain("okou teams upload-file -h");
-    expect(currentIntegrationPrompt).toContain(
-      `Tenant ID: ${fixture.teamsTenantId}`,
-    );
-    expect(currentIntegrationPrompt).toContain(
-      `Team ID: ${fixture.teamsTeamId}`,
-    );
-    expect(currentIntegrationPrompt).toContain(
-      `Conversation ID: ${fixture.teamsConversationId}`,
-    );
-    expect(currentIntegrationPrompt).toContain(`Thread ID: ${rootDispatchId}`);
-    expect(currentIntegrationPrompt).not.toContain("Teams user ID:");
-    expect(currentIntegrationPrompt).not.toContain("Teams display name:");
-    expect(currentIntegrationPrompt).not.toContain(
-      "Teams user principal name:",
-    );
-    expect(replyRecentChannelContext).toContain("api channel planning");
-    expect(replyRecentChannelContext).not.toContain(
-      "remember the deployment target",
-    );
-    expect(replyRecentChannelContext).not.toContain("future channel topic");
-    expect(currentUserPrompt).toContain(
-      `Teams user ID: ${fixture.teamsUserId}`,
-    );
-    expect(currentUserPrompt).toContain(
-      `Teams user principal name: ${fixture.teamsUserPrincipalName}`,
-    );
-    expect(currentUserPrompt).toContain("Teams display name: Ada Lovelace");
-    expect(teamsThreadContext).toContain(
-      "The messages below are from a Microsoft Teams conversation",
-    );
-    expect(teamsThreadContext).toContain("- RELATIVE_INDEX: -1");
-    expect(teamsThreadContext).toContain(
-      `- SENDER: {id: ${fixture.teamsUserId}, name: Ada Lovelace, email: ${fixture.teamsUserPrincipalName}}`,
-    );
-    expect(teamsThreadContext).toContain("remember the deployment target");
-    expect(teamsThreadContext).toContain(
-      `confirm with @Grace Hopper (${mentionedUserId}) that the target is staging`,
-    );
-    expect(teamsThreadContext).toContain(
-      "[Teams file] deployment-plan.pdf (application/pdf)",
-    );
-    expect(teamsThreadContext).toContain(
-      `[Teams attachment ID] ${planAttachmentId}`,
-    );
-    expect(teamsThreadContext).toContain(
-      "[Teams file] release-checklist.txt (text/plain)",
-    );
-    expect(teamsThreadContext).toContain(
-      `[Teams attachment ID] ${checklistAttachmentId}`,
-    );
-    expect(teamsThreadContext).not.toContain("ship the Teams dispatch");
-    expect(graphRequests).toContain(`thread-root:${rootDispatchId}`);
-    expect(graphRequests).toContain(`thread-replies:${rootDispatchId}`);
-    expect(graphRequests).toContain(`user:${fixture.teamsUserId}`);
-  });
+      ]);
+      expect(currentIntegrationPrompt).toContain(
+        "You are currently running inside: Microsoft Teams",
+      );
+      expect(appendSystemPrompt).toContain(
+        "Microsoft Teams messaging and files",
+      );
+      expect(appendSystemPrompt).toContain("okou teams --help");
+      expect(appendSystemPrompt).toContain("okou teams message send -h");
+      expect(appendSystemPrompt).toContain("okou teams download-file -h");
+      expect(appendSystemPrompt).toContain("okou teams upload-file -h");
+      expect(currentIntegrationPrompt).toContain(
+        `Tenant ID: ${fixture.teamsTenantId}`,
+      );
+      expect(currentIntegrationPrompt).toContain(
+        `Team ID: ${fixture.teamsTeamId}`,
+      );
+      expect(currentIntegrationPrompt).toContain(
+        `Conversation ID: ${fixture.teamsConversationId}`,
+      );
+      expect(currentIntegrationPrompt).toContain(
+        `Thread ID: ${rootDispatchId}`,
+      );
+      expect(currentIntegrationPrompt).not.toContain("Teams user ID:");
+      expect(currentIntegrationPrompt).not.toContain("Teams display name:");
+      expect(currentIntegrationPrompt).not.toContain(
+        "Teams user principal name:",
+      );
+      expect(replyRecentChannelContext).toContain("api channel planning");
+      expect(replyRecentChannelContext).not.toContain(
+        "remember the deployment target",
+      );
+      expect(replyRecentChannelContext).not.toContain("future channel topic");
+      expect(currentUserPrompt).toContain(
+        `Teams user ID: ${fixture.teamsUserId}`,
+      );
+      expect(currentUserPrompt).toContain(
+        `Teams user principal name: ${fixture.teamsUserPrincipalName}`,
+      );
+      expect(currentUserPrompt).toContain("Teams display name: Ada Lovelace");
+      expect(teamsThreadContext).toContain(
+        "The messages below are from a Microsoft Teams conversation",
+      );
+      expect(teamsThreadContext).toContain("- RELATIVE_INDEX: -1");
+      expect(teamsThreadContext).toContain(
+        `- SENDER: {id: ${fixture.teamsUserId}, name: Ada Lovelace, email: ${fixture.teamsUserPrincipalName}}`,
+      );
+      expect(teamsThreadContext).toContain("remember the deployment target");
+      expect(teamsThreadContext).toContain(
+        `confirm with @Grace Hopper (${mentionedUserId}) that the target is staging`,
+      );
+      expect(teamsThreadContext).toContain(
+        "[Teams file] deployment-plan.pdf (application/pdf)",
+      );
+      expect(teamsThreadContext).toContain(
+        `[Teams attachment ID] ${planAttachmentId}`,
+      );
+      expect(teamsThreadContext).toContain(
+        "[Teams file] release-checklist.txt (text/plain)",
+      );
+      expect(teamsThreadContext).toContain(
+        `[Teams attachment ID] ${checklistAttachmentId}`,
+      );
+      expect(teamsThreadContext).not.toContain("ship the Teams dispatch");
+      expect(graphRequests).toContain(`thread-root:${rootDispatchId}`);
+      expect(graphRequests).toContain(`thread-replies:${rootDispatchId}`);
+      expect(graphRequests).toContain(`user:${fixture.teamsUserId}`);
+      await runsApi.requestCancelRun(actor, runId, [200]);
+      await completeCancelledRun(runId, claim.sandboxToken);
+    },
+  );
 
   it("includes recent Teams personal messages in the run context", async () => {
     const { fixture, actor, runnerGroup, outboundRequests } =
@@ -3189,23 +3228,28 @@ describe("POST /api/webhooks/teams/bot", () => {
 
   it("includes Teams thread computer use host bindings in queued agent tokens", async () => {
     const { fixture, actor, runnerGroup } = await setupConnectedTeamsBotActor();
-    const host = await computerUseApi.startComputerUseHost(actor, {
-      hostName: "Teams authorized host",
-    });
     const threadId = teamsFixtureExternalId(
       fixture,
       "teams-computer-use-thread",
     );
 
-    const firstResponse = await postTeamsActivity({
-      activity: teamsPersonalThreadMessageActivity({
-        fixture,
-        id: teamsFixtureExternalId(fixture, "activity-computer-use-authorize"),
-        threadId,
-        text: "authorize the browser",
+    const [host, firstResponse] = await Promise.all([
+      computerUseApi.startComputerUseHost(actor, {
+        hostName: "Teams authorized host",
       }),
-      token: teamsToken(),
-    });
+      postTeamsActivity({
+        activity: teamsPersonalThreadMessageActivity({
+          fixture,
+          id: teamsFixtureExternalId(
+            fixture,
+            "activity-computer-use-authorize",
+          ),
+          threadId,
+          text: "authorize the browser",
+        }),
+        token: teamsToken(),
+      }),
+    ]);
     expect(firstResponse.status).toBe(200);
     const firstBody = await readTeamsBotResponseAndFlush(firstResponse);
     expect(firstBody).not.toHaveProperty("dispatch");
@@ -3277,7 +3321,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     const response = await postTeamsActivity({
       activity: teamsMessageActivity(fixture, {
         id: activityId,
-        text: "<at>Zero</at> hello",
+        text: "<at>Nova</at> hello",
       }),
       token: teamsToken(),
     });
@@ -3320,7 +3364,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         membersRemoved: [
           {
             id: fixture.teamsBotId,
-            name: "Zero",
+            name: "Nova",
             aadObjectId: null,
             userPrincipalName: null,
           },

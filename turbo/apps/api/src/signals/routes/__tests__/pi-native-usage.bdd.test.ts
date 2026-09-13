@@ -1,9 +1,7 @@
+import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import {
-  piModelConfigV4Schema,
-  piNativeCatalogModelSchema,
-} from "@okouai/api-contracts/contracts/pi-native";
+import { piModelConfigV4Schema } from "@okouai/api-contracts/contracts/pi-native";
 import type { PiApiFirstTurnResult } from "@okouai/pi-agent-runtime/api";
 import { readRunUsageEventsFixture } from "../../../test-fixtures/chat-events";
 

@@ -100,6 +100,7 @@ export const updateWorkflow$ = command(
           orgId: workflow.orgId,
           storageName: getCustomSkillStorageName(workflow.id),
           files: [{ path: SKILL_FILENAME, content: skillMd }, ...attachedFiles],
+          piResourceIndex: true,
         },
         signal,
       );

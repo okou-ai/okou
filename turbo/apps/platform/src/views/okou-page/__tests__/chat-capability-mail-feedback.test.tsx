@@ -136,7 +136,7 @@ test("Keep inline feedback tied to the source email", async () => {
   });
   mockMail("draft");
 
-  await setupPage({ context, path: RUN_PATH });
+  await setupPage({ locale: "en-US", context, path: RUN_PATH });
 
   await readyChat();
   await openMailDetails();

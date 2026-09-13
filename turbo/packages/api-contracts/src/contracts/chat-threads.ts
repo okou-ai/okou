@@ -1,4 +1,8 @@
-import { reasoningEffortSchema } from "./model-reasoning-effort";
+import {
+  modelSettingsPatchSchema,
+  modelSettingsSchema,
+  reasoningEffortSchema,
+} from "./model-reasoning-effort";
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { chatEventRowSchema } from "./chat-event-rows";
@@ -340,6 +344,8 @@ const chatThreadSnapshotProjectionSchema = z.object({
   pinOrder: z.string().nullable().optional(),
   renamedAt: z.string().nullable(),
   selectedModel: z.string().nullable().default(null),
+  modelSettings: modelSettingsSchema.optional(),
+  /** Legacy pre-GA projection. Ignored by current clients. */
   reasoningEffort: reasoningEffortSchema.nullable().optional(),
   serviceTier: chatThreadServiceTierSchema.nullable().default(null),
   computerUseHostId: z.string().uuid().nullable().default(null),
@@ -377,6 +383,11 @@ const chatThreadEventSchema = z.object({
   // On sort_touched, this changes pin rank instead of activity recency.
   pinOrder: z.string().nullable().optional(),
   selectedModel: z.string().nullable().default(null),
+  /** Full map is present on created events. */
+  modelSettings: modelSettingsSchema.optional(),
+  /** Later updates change at most one model entry. */
+  modelSettingsPatch: modelSettingsPatchSchema.optional(),
+  /** Legacy pre-GA projection. Ignored by current clients. */
   reasoningEffort: reasoningEffortSchema.nullable().optional(),
   serviceTier: chatThreadServiceTierSchema.nullable().default(null),
   computerUseHostId: z.string().uuid().nullable().default(null),
@@ -1036,6 +1047,8 @@ const chatThreadMetadataSchema = z.object({
   agentId: z.string().uuid(),
   title: z.string().nullable(),
   selectedModel: z.string().nullable(),
+  modelSettings: modelSettingsSchema,
+  /** Legacy pre-GA projection. Ignored by current clients. */
   reasoningEffort: reasoningEffortSchema.nullable().optional(),
   serviceTier: chatThreadServiceTierSchema.nullable(),
   pinnedAt: z.string().nullable(),
@@ -1080,6 +1093,8 @@ const chatThreadCreateBodySchema = z.object({
    * thread image model.
    */
   imageModel: imageModelIdSchema.optional(),
+  /** Concrete override for the selected model; omission keeps its default. */
+  reasoningEffort: reasoningEffortSchema.optional(),
   title: z.string().optional(),
 });
 
@@ -1100,8 +1115,8 @@ const chatThreadModelSelectionUpdateBodySchema = z.object({
    * Selected model id, or null to clear the thread's selected model.
    */
   model: selectedModelRequestSchema.nullable(),
-  /** Omit to keep the selection; null restores the model default. */
-  reasoningEffort: reasoningEffortSchema.nullable().optional(),
+  /** Omit to keep all model settings; a value patches the selected model. */
+  reasoningEffort: reasoningEffortSchema.optional(),
   codexServiceTier: codexServiceTierSchema.nullable().optional(),
   eventId: chatThreadEventIdSchema.optional(),
   serviceTierEventId: chatThreadEventIdSchema.optional(),
@@ -1125,8 +1140,8 @@ const chatRunVideoOptionsRequestSchema = z
   .partial();
 
 const chatRunOptionsRequestSchema = z.object({
-  /** Update the thread effort; null explicitly restores the model default. */
-  reasoningEffort: reasoningEffortSchema.nullable().optional(),
+  /** Update the selected model's effort. */
+  reasoningEffort: reasoningEffortSchema.optional(),
   codexServiceTier: codexServiceTierSchema.optional(),
   video: chatRunVideoOptionsRequestSchema.optional(),
 });

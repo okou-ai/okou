@@ -9,9 +9,17 @@ import type {
   ComposerCreateMode,
   ComposerCreateSignals,
 } from "./composer-create.ts";
+import { createComposerVisualizationSignals } from "./composer-visualization.ts";
 
-export type ComposerTask = ComposerCreateMode | "workflow" | "website";
-export type ComposerIdeaTask = Exclude<ComposerTask, "presentation">;
+export type ComposerTask =
+  | ComposerCreateMode
+  | "workflow"
+  | "website"
+  | "visualization";
+export type ComposerIdeaTask = Exclude<
+  ComposerTask,
+  "presentation" | "visualization"
+>;
 
 export function createComposerTaskChipsSignals(
   create: ComposerCreateSignals,
@@ -20,7 +28,10 @@ export function createComposerTaskChipsSignals(
   const enabled$ = computed((get) => {
     return get(featureSwitch$)[FeatureSwitchKey.ComposerTaskChips];
   });
-  const internalGeneralTask$ = state<"workflow" | "website" | null>(null);
+  const internalGeneralTask$ = state<
+    "workflow" | "website" | "visualization" | null
+  >(null);
+  const visualization = createComposerVisualizationSignals();
   const task$ = computed((get): ComposerTask | null => {
     if (!get(enabled$) || get(create.choosing$)) {
       return null;
@@ -42,9 +53,16 @@ export function createComposerTaskChipsSignals(
     const next = get(task$) === task ? null : task;
     set(
       internalGeneralTask$,
-      next === "workflow" || next === "website" ? next : null,
+      next === "workflow" || next === "website" || next === "visualization"
+        ? next
+        : null,
     );
-    if (next === null || next === "workflow" || next === "website") {
+    if (
+      next === null ||
+      next === "workflow" ||
+      next === "website" ||
+      next === "visualization"
+    ) {
       set(create.setMode$, null);
     } else {
       set(create.selectCommand$, next);
@@ -75,6 +93,7 @@ export function createComposerTaskChipsSignals(
     ideaPages$,
     nextIdeas$,
     workflows,
+    visualization,
   };
 }
 

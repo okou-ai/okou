@@ -1,3 +1,4 @@
+import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
 import { crc32 } from "node:zlib";
 import {
   afterAll,
@@ -15,7 +16,6 @@ import {
   PI_NATIVE_CREDENTIAL_PLACEHOLDER,
   piModelConfigV4Schema,
   piNativeInferenceUrl,
-  piNativeCatalogModelSchema,
 } from "@okouai/api-contracts/contracts/pi-native";
 import fixtures from "../../api-contracts/src/contracts/__tests__/fixtures/pi-native.json";
 import { MemoryPiSession } from "./session-memory";

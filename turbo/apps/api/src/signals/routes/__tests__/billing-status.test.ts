@@ -134,6 +134,7 @@ describe("GET /api/billing/status", () => {
     expect(response.body.tier).toBe("limited-free-1");
     expect(response.body.status).toBe("active");
     expect(response.body.supportByok).toBeFalsy();
+    expect(response.body.restrictedBuiltInModels).toBeTruthy();
     expect(response.body.restrictedVm0Models).toBeTruthy();
     expect(response.body.videoGenerationAllowed).toBeFalsy();
     expect(response.body.credits).toBe(100_000);
@@ -430,7 +431,7 @@ describe("GET /api/billing/status", () => {
       showUsagePack: true,
       autoRechargeAllowed: false,
       supportByok: false,
-      restrictedVm0Models: false,
+      restrictedBuiltInModels: false,
       videoGenerationAllowed: false,
       workflowWebhookAutomationAllowed: true,
     });
@@ -454,6 +455,11 @@ describe("GET /api/billing/status", () => {
     expect(response.body.memberInvitationAllowed).toBeTruthy();
     expect(response.body.autoRechargeAllowed).toBeFalsy();
     expect(response.body.supportByok).toBeFalsy();
+    // Both names are optional on the contract, so `toBeFalsy` alone would also
+    // pass on an omitted field. Pin the emitted type as well.
+    expect(typeof response.body.restrictedBuiltInModels).toBe("boolean");
+    expect(typeof response.body.restrictedVm0Models).toBe("boolean");
+    expect(response.body.restrictedBuiltInModels).toBeFalsy();
     expect(response.body.restrictedVm0Models).toBeFalsy();
     expect(response.body.videoGenerationAllowed).toBeFalsy();
     expect(response.body.workflowWebhookAutomationAllowed).toBeTruthy();

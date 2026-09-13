@@ -3,7 +3,12 @@ import { createElement } from "react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isDesktopAuthFlow } from "../lib/desktop-auth-flow.ts";
 import { setupDesktopAuthPage } from "./desktop-auth/desktop-auth.ts";
-import { clerk$, setupClerk$, watchOrgSwitch$ } from "./auth.ts";
+import {
+  clerk$,
+  setupClerk$,
+  setupClerkUser$,
+  watchOrgSwitch$,
+} from "./auth.ts";
 import {
   runAuthenticatedRealtime$,
   setupAuthenticatedBootstrapData$,
@@ -79,10 +84,6 @@ import { setupConnectorCallbackPage$ } from "./connectors-page/connector-callbac
 import { setupBankingConnectReturnPage$ } from "./banking-connect-return-page-setup.ts";
 import { setupEmailUnsubscribePage$ } from "./email-unsubscribe/email-unsubscribe-page-setup.ts";
 import { setupSignInTokenPage$ } from "./sign-in-token-setup.ts";
-import {
-  setupSignInV2Page$,
-  setupSignUpV2Page$,
-} from "./auth-v2-page-setup.ts";
 import {
   setupSignInV1Page$,
   setupSignUpV1Page$,
@@ -211,34 +212,18 @@ const ROUTE_CONFIG = [
   },
   {
     path: ROUTES.signIn,
-    setup: setupPageWrapper(setupSignInV2Page$),
+    setup: setupPageWrapper(setupSignInV1Page$),
   },
   {
     path: ROUTES.signInCatchAll,
-    setup: setupPageWrapper(setupSignInV2Page$),
+    setup: setupPageWrapper(setupSignInV1Page$),
   },
   {
     path: ROUTES.signUp,
-    setup: setupPageWrapper(setupSignUpV2Page$),
-  },
-  {
-    path: ROUTES.signUpCatchAll,
-    setup: setupPageWrapper(setupSignUpV2Page$),
-  },
-  {
-    path: ROUTES.signInV1,
-    setup: setupPageWrapper(setupSignInV1Page$),
-  },
-  {
-    path: ROUTES.signInV1CatchAll,
-    setup: setupPageWrapper(setupSignInV1Page$),
-  },
-  {
-    path: ROUTES.signUpV1,
     setup: setupPageWrapper(setupSignUpV1Page$),
   },
   {
-    path: ROUTES.signUpV1CatchAll,
+    path: ROUTES.signUpCatchAll,
     setup: setupPageWrapper(setupSignUpV1Page$),
   },
 
@@ -573,7 +558,7 @@ const completeBootstrap$ = command(
     render();
 
     // These public protocol pages also run before an embedded Clerk session exists.
-    // Auth v2 task continuations retain the same ownership via redirect_url.
+    // Hosted Clerk task continuations retain the same ownership via redirect_url.
     if (isDesktopAuthFlow()) {
       await Promise.all([
         set(setupClerk$, signal),
@@ -605,6 +590,7 @@ const completeBootstrap$ = command(
 
 interface BootstrapRuntime {
   readonly authenticatedRealtimeDaemon: Promise<void>;
+  readonly clerkIdentityDaemon: Promise<void>;
   readonly ready: Promise<void>;
   readonly sharedDatabaseDaemon: Promise<void>;
 }
@@ -621,6 +607,9 @@ export const bootstrap$ = command(
     set(captureInvitationRedirect$);
     set(markBootstrapLocaleInitStarted$);
     set(setRootSignal$, signal);
+    // Claims `clerkUser$` in this synchronous pass. The daemons and route
+    // setups below read it, and without an owner it never settles.
+    const clerkIdentityDaemon = set(setupClerkUser$, signal);
     const apiBaseUrl = resolveApiBaseForTarget("api");
     const vercelProtectionBypass =
       getCapturedPreviewBypassForTarget(apiBaseUrl);
@@ -659,6 +648,7 @@ export const bootstrap$ = command(
 
     return {
       authenticatedRealtimeDaemon,
+      clerkIdentityDaemon,
       ready,
       sharedDatabaseDaemon,
     };

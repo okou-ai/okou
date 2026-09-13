@@ -30,6 +30,8 @@ surface; the index does not replace their detailed rules.
 
 ## Specialized Guidance
 
+- [Dependency override audit](./dependency-overrides.md): retained dependency
+  constraints, their origins, and evidence for removing obsolete overrides.
 - [Marketing privacy rollback](./marketing-privacy-choices.md): withdrawn runtime
   behavior, retained database state, and rollout boundaries.
 - [Google Cloud LLM voice routing](./google-llm-voice.md): shared Vercel workload
@@ -40,7 +42,7 @@ surface; the index does not replace their detailed rules.
   contracts, current versus run evidence, account identity, and next actions.
 - [Platform lint boundaries](./platform-lint.md): current transport and lifecycle
   exceptions, polling policy, and retired configuration history.
-- [Clerk customization](./clerk-customize.md): hosted Auth V1 styling ownership,
+- [Clerk customization](./clerk-customize.md): hosted Clerk styling ownership,
   public appearance boundaries, lint enforcement, and upgrade verification.
 - [React commit analysis](./react-commit.md): measuring and attributing React
   work without confusing executions, scheduler events, or DOM mutations with
@@ -49,6 +51,8 @@ surface; the index does not replace their detailed rules.
   thread-scoped card signals, and rendering rich interactive cards.
 - [Pi native provider preparation](./pi-native-provider-preparation.md): additive
   native readers, transport/auth ownership, accounting and activation gates.
+- [Pi runtime architecture](./pi-runtime-architecture.md): launch, SDK/session,
+  memory, accounting, retained compatibility, and patch ownership boundaries.
 - [Runner host configuration](./runner-host-configuration.md): configure and
   verify host-local concurrency and I/O capacity overrides.
 - [Runner multi-architecture rollout](./runner-multi-architecture.md): build,

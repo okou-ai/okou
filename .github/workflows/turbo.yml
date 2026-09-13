@@ -645,7 +645,7 @@ jobs:
         working-directory: turbo
         env:
           DATABASE_URL: postgresql://postgres@postgres:5432/postgres
-        run: pnpm -F api exec vitest bench --run --outputJson bench-results.json
+        run: pnpm -F api exec vitest bench --run --reporter=default --reporter=json --reporter=./scripts/bench-p90-reporter.ts --outputFile=bench-results.json
       - name: Print bench summary
         if: success() || failure()
         working-directory: turbo/apps/api
@@ -678,7 +678,7 @@ jobs:
       - uses: ./.github/actions/toolchain-init
       - name: Bench App
         working-directory: turbo
-        run: pnpm -F @okouai/app exec vitest bench --run --outputJson bench-results.json
+        run: pnpm -F @okouai/app exec vitest bench --run --reporter=default --reporter=json --reporter=./scripts/bench-p90-reporter.ts --outputFile=bench-results.json
       - name: Print bench summary
         if: success() || failure()
         working-directory: turbo/apps/platform
@@ -1851,10 +1851,6 @@ jobs:
             --extra-vars "$EXTRA_VARS" \
             -v
 
-  # CI_CHECK_BROWSER_E2E=1 makes both Browser and Playwright E2E failures
-  # blocking. Any other value keeps the tests running but makes them
-  # informational.
-  #
   # Exercise the hosted Clerk UI via agent-browser. This is intentionally
   # separate from Playwright because Playwright signs in through Clerk's
   # testing helper instead of the third-party form UI.
@@ -1880,6 +1876,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
         with:
+          # E2E sources follow the API/CLI revision, not the PR merge commit.
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           submodules: recursive
       - uses: actions/setup-node@v7
         with:
@@ -1887,7 +1885,6 @@ jobs:
       - name: Install E2E dependencies
         run: npm install -g agent-browser@0.22.0
       - name: Run browser E2E tests
-        continue-on-error: ${{ vars.CI_CHECK_BROWSER_E2E != '1' }}
         run: |
           BATS_TEST_TIMEOUT=180 ./e2e/test/libs/bats/bin/bats -T ./e2e/tests/02-browser/*.bats
         env:
@@ -1920,8 +1917,8 @@ jobs:
             project: features
           - lane: paid-onboarding
             project: paid-onboarding
-          - lane: auth-v2
-            project: auth-v2
+          - lane: auth-v1
+            project: auth-v1
     concurrency:
       group: cli-e2e-02-playwright-${{ matrix.lane }}-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
@@ -1954,6 +1951,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           submodules: recursive
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
@@ -2015,7 +2013,6 @@ jobs:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
       - name: Run Playwright E2E tests
         id: playwright-tests
-        continue-on-error: ${{ vars.CI_CHECK_BROWSER_E2E != '1' }}
         shell: bash
         run: |
           cd e2e
@@ -2024,7 +2021,7 @@ jobs:
             --config playwright/playwright.config.ts
             --project="$PLAYWRIGHT_PROJECT"
           )
-          if [[ "$PLAYWRIGHT_PROJECT" == "auth-v2" ]]; then
+          if [[ "$PLAYWRIGHT_PROJECT" == "auth-v1" ]]; then
             set -o pipefail
             "${playwright_command[@]}" 2>&1 |
               sed -E \
@@ -2065,7 +2062,7 @@ jobs:
             kill "$(cat /tmp/stripe-listen.pid)" 2>/dev/null || true
           fi
       - name: Upload Playwright blob report
-        if: always() && matrix.project != 'auth-v2'
+        if: always() && matrix.project != 'auth-v1'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-blob-${{ matrix.lane }}
@@ -2084,6 +2081,8 @@ jobs:
     if: always() && needs.cli-e2e-02-playwright.result != 'skipped'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
@@ -2361,6 +2360,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
         with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           submodules: recursive
       - uses: actions/setup-node@v7
         with:
@@ -2569,6 +2569,8 @@ jobs:
       runner-shard-matrix: ${{ steps.shards.outputs.matrix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           version: 10.33.4
@@ -2655,6 +2657,8 @@ jobs:
       needs.cli-e2e-03-runner-prepare.result == 'success'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       - name: Download runner E2E API tokens
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -2871,6 +2875,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           submodules: recursive
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
@@ -3024,6 +3029,8 @@ jobs:
         if: steps.cleanup-scope.outputs.scope == 'retain'
         run: echo "Retaining runner E2E accounts until a successful rerun or fallback cleanup"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         if: steps.cleanup-scope.outputs.scope == 'generation' || steps.cleanup-scope.outputs.scope == 'run'
         with:
@@ -3244,8 +3251,6 @@ jobs:
               echo "✅ $job: $result"
             elif { [ "$allow_skip" = "skipped" ] || [ "$allow_skip" = "true" ]; } && [ "$result" = "skipped" ]; then
               echo "⏭️ $job: $result (allowed)"
-            elif [ "$allow_skip" = "informational" ]; then
-              echo "ℹ️ $job: $result (informational, not blocking)"
             else
               if [ "$allow_skip" = "true" ]; then
                 echo "::error::$job: expected success or skipped, got $result"
@@ -3282,8 +3287,8 @@ jobs:
           check_result "deploy-app" "${{ needs.deploy-app.result }}" "$CF_APP_SKIP_ALLOWED"
           check_result "deploy-stripe-listener" "${{ needs.deploy-stripe-listener.result }}" "true"
           check_result "deploy-cli" "${{ needs.deploy-cli.result }}" "$CF_APP_SKIP_ALLOWED"
-          check_result "cli-e2e-02-browser" "${{ needs.cli-e2e-02-browser.result }}" "${{ vars.CI_CHECK_BROWSER_E2E == '1' && 'true' || 'informational' }}"
-          check_result "cli-e2e-02-playwright" "${{ needs.cli-e2e-02-playwright.result }}" "${{ vars.CI_CHECK_BROWSER_E2E == '1' && 'true' || 'informational' }}"
+          check_result "cli-e2e-02-browser" "${{ needs.cli-e2e-02-browser.result }}" "true"
+          check_result "cli-e2e-02-playwright" "${{ needs.cli-e2e-02-playwright.result }}" "true"
           check_result "cli-e2e-01-serial" "${{ needs.cli-e2e-01-serial.result }}" "true"
           check_result "cli-e2e-03-runner-prepare" "${{ needs.cli-e2e-03-runner-prepare.result }}" "$RUNNER_E2E_SKIP_ALLOWED"
           check_result "cli-e2e-03-runner-bootstrap" "${{ needs.cli-e2e-03-runner-bootstrap.result }}" "$RUNNER_E2E_SKIP_ALLOWED"

@@ -59,6 +59,8 @@ import { computeContentHashFromHashes } from "./storage-content-hash.service";
 import { enqueueMemorySummaryProjection } from "./memory-summary-projection.service";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
 
+import { publishPiResourceVersionIndex } from "./pi-resource-version-index.service";
+
 type StorageManifestEntryKind = "compose" | "additional" | "artifact";
 export type StorageManifestSource =
   | "system_skill"
@@ -1410,6 +1412,12 @@ async function insertInitialArtifactVersion(args: {
             ),
           )
           .returning({ id: storages.id });
+        await publishPiResourceVersionIndex({
+          db: tx,
+          versionId: args.versionId,
+          projection: { schemaVersion: 1, files: [] },
+          archiveSize: 0,
+        });
         if (updated) {
           await enqueueMemorySummaryProjection({
             db: tx,

@@ -1214,6 +1214,15 @@ impl NetnsPool {
     }
 
     #[cfg(test)]
+    pub(crate) fn active_at_capacity_for_test() -> Self {
+        let mut state = NetnsPoolState::inactive_for_test();
+        state.active = true;
+        // Acquisition can observe recycled leases without creating host netns.
+        state.next_ns_index = MAX_NAMESPACES;
+        Self::from_state_for_test(state)
+    }
+
+    #[cfg(test)]
     pub(crate) fn inactive_for_test() -> Self {
         Self::from_state_for_test(NetnsPoolState::inactive_for_test())
     }

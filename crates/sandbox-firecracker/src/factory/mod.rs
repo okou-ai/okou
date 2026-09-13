@@ -493,11 +493,16 @@ fn clean_stale_create_dir(id: &str, kind: &'static str, path: &Path) -> sandbox:
     }
 }
 
-async fn destroy_firecracker_sandbox(mut sandbox: FirecrackerSandbox, netns_pool: NetnsPoolHandle) {
+pub(crate) async fn destroy_firecracker_sandbox(
+    mut sandbox: FirecrackerSandbox,
+    netns_pool: NetnsPoolHandle,
+) {
     // Ensure the sandbox is killed before releasing pool resources.
-    // After kill(), `sandbox.process` is `None`, so the Drop impl's
-    // killpg becomes a no-op when `sandbox` is dropped below.
     let _ = sandbox.kill().await;
+    if !sandbox.terminate_process_for_cleanup().await {
+        warn!(id = %sandbox.id(), "process exit unconfirmed; deferring resources to leak cleanup");
+        return;
+    }
 
     // Clone lightweight handles before dropping sandbox.
     let sandbox_id = sandbox.id.clone();

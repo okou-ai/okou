@@ -10,7 +10,7 @@ use std::{
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[test]
-fn cancelled_blocking_job_keeps_capacity_and_park_reservation_until_it_actually_exits() {
+fn cancelled_blocking_job_keeps_host_capacity_without_blocking_guest_park() {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .max_blocking_threads(1)
@@ -29,22 +29,26 @@ fn cancelled_blocking_job_keeps_capacity_and_park_reservation_until_it_actually_
         entered.notified().await;
         let (frames, ()) = tokio::join!(h.request(params()), async {
             wait_for(|| h.runtime.cpu.available_permits() == 1).await;
+            assert_eq!(
+                h.control.try_fence_normal_operations().err(),
+                Some(guest_control_client::NormalOperationFenceRejection::Busy)
+            );
             h.cancel.cancel();
         });
         assert_eq!(terminal(&frames)["failure_reason"], "cancelled");
+        assert_eq!(terminal(&frames)["effects"], "not_started");
         h.shutdown().await;
+        // RPC terminal+EOF and shutdown do not wait for host blocking work.
+        // Its CPU capacity remains charged while the guest can park.
         assert_eq!(h.runtime.cpu.available_permits(), 1);
-        assert_eq!(h.observed.reservations.load(Ordering::SeqCst), 1);
-        assert!(h.control.try_fence_normal_operations().is_err());
+        let fence = h.control.try_fence_normal_operations().unwrap();
         release.send(()).unwrap();
         occupied.await.unwrap();
-        wait_for(|| {
-            h.runtime.cpu.available_permits() == 2
-                && h.observed.reservations.load(Ordering::SeqCst) == 0
-        })
-        .await;
-        drop(h.control.try_fence_normal_operations().unwrap());
+        wait_for(|| h.runtime.cpu.available_permits() == 2).await;
+        assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
         assert!(h.observed.attempts.lock().unwrap().is_empty());
+        assert!(h.observed.commands.lock().unwrap().is_empty());
+        drop(fence);
     });
 }
 
@@ -140,9 +144,19 @@ async fn run_cancellation_during_input_does_not_decode_or_call_authority() {
     let mut guest = h.open().await;
     guest.write_u32(100).await.unwrap();
     guest.write_all(b"{").await.unwrap();
-    wait_for(|| h.runtime.permits.available_permits() == super::super::RUNNER_CAPACITY - 1).await;
+    let mut pending = vec![guest];
+    for _ in 1..8 {
+        pending.push(h.open().await);
+    }
+    // The ninth rejection proves the earlier partial input was admitted.
+    assert_eq!(
+        frames(h.open().await).await[0]["code"],
+        "resource_exhausted"
+    );
     h.cancel.cancel();
-    assert!(frames(guest).await.is_empty());
+    for guest in pending {
+        assert!(frames(guest).await.is_empty());
+    }
     resolve.assert_calls_async(0).await;
     h.shutdown().await;
     drop(h.control.try_fence_normal_operations().unwrap());

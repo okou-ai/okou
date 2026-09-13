@@ -20,7 +20,7 @@ const RUN_A = "a0000000-0000-4000-a000-000000000291";
 const RUN_B = "a0000000-0000-4000-a000-000000000292";
 const GROUP_ID = "a0000000-0000-4000-a000-000000000293";
 const RESULT = "The API is checking dependencies. No errors so far.";
-const OLD_ERROR = "You've hit your usage limit. Please try again later.";
+const OLD_ERROR = "The provider could not complete the previous request.";
 const NEW_ERROR = "The provider could not complete the next request.";
 const GENERIC_ERROR = "Oops, something went wrong. Please try again later.";
 

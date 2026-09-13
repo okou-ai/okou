@@ -127,6 +127,7 @@ function installWorkflowQueueFixture(
       agentId: AGENT_ID,
       title: "Workflow queue",
       selectedModel: "claude-sonnet-4-6",
+      modelSettings: {},
       serviceTier: null,
       pinnedAt: null,
       computerUseHostId: null,

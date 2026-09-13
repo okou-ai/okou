@@ -9,7 +9,7 @@
 @source "../../../../../packages/ui/src/**/*.{ts,tsx}";
 
 @theme {
-  /* V1 comparison geometry follows AuthV2 without changing its styles. */
+  /* Hosted Clerk card geometry owned by the application page shell. */
   --okou-auth-card-max-width: 25rem;
   --okou-auth-card-page-width: calc(100% + 0.5rem);
   --okou-auth-card-padding-inline: 2.5rem;
@@ -28,6 +28,12 @@
   /* Sidebar colors - using tokens for dark mode support */
   --color-sidebar-border: hsl(var(--gray-200));
 
+  /* Nav copy. The gradient color themes define the two raw values at :root and
+     collapse every nav consumer onto them. Everywhere else the values are
+     unset, so each consumer falls back to the foreground it already spells. */
+  --color-nav-copy: var(--nav-copy, var(--color-sidebar-foreground));
+  --color-nav-copy-muted: var(--nav-copy-muted, var(--color-muted-foreground));
+
   /* Credit balance breakdown segment colors (usage bar chart) */
   --color-credit-free: #008d76;
   --color-credit-promotional: #ff6030;
@@ -43,12 +49,35 @@
   --color-usage-kind-connector: #779aad;
   --color-usage-kind-other: #c8b800;
 
+  /* Data-viz palette shared with the Okou chart gallery, consumed by the
+     composer's chart previews. Keep categorical order stable and use the blue
+     scale for ordered magnitude. These stay identical in Light and Dark on
+     purpose: a series keeps its identity across themes, and the surrounding
+     background, border, and foreground tokens carry the theme instead. Add a
+     stop only when a preview actually paints it. */
+  --color-chart-blue-100: #cde2fb;
+  --color-chart-blue-200: #9ec5f4;
+  --color-chart-blue-300: #6da7ec;
+  --color-chart-blue-400: #3987e5;
+  --color-chart-blue-500: #2a78d6;
+  --color-chart-blue-600: #1c5cab;
+  --color-chart-orange: #eb6834;
+  --color-chart-green: #1baf7a;
+  --color-chart-gold: #eda100;
+  --color-chart-red: #e34948;
+
   /* Artifact-type icon foregrounds, shared by type choices, selected labels,
      and their menus. These glyph colors retain contrast on light and dark
      surfaces; they are not body-text colors. */
   --color-artifact-presentation: #8175a8;
   --color-artifact-video: #ad775f;
   --color-artifact-image: #638b80;
+
+  /* Mic button — the starting spinner. Its keyframes animate `transform`, so
+     the consumer sets `transform` rather than the individual `rotate`
+     property, which would compose with the animation instead of being
+     replaced by it. */
+  --animate-mic-starting-spin: mic-starting-spin 0.7s linear infinite;
 }
 
 /* Palette previews keep the fixed 135deg/52% sRGB blend in Light and Dark.
@@ -107,18 +136,6 @@ body,
 
 body {
   margin: 0;
-}
-
-@keyframes auth-v2-otp-caret-blink {
-  0%,
-  45% {
-    opacity: 1;
-  }
-
-  50%,
-  100% {
-    opacity: 0;
-  }
 }
 
 #root {
@@ -545,9 +562,6 @@ body {
 .okou-border {
   border: 0.7px solid hsl(var(--gray-400));
 }
-.okou-border-t {
-  border-top: 0.7px solid hsl(var(--gray-400));
-}
 
 /* Avatar / logo thumbnails: a hairline lighter than okou-border, so the edge of
    a picture stays readable without the stroke reading as a frame. */
@@ -569,15 +583,6 @@ body {
   --color-sidebar: hsl(var(--sidebar));
   --color-sidebar-border: hsl(var(--border) / 0.5);
 }
-.okou-app[data-gradient-color-themes] .okou-nav .okou-nav-copy {
-  color: hsl(var(--okou-nav-foreground));
-}
-.okou-app[data-gradient-color-themes] .okou-nav .okou-nav-copy-muted {
-  color: hsl(var(--okou-nav-muted-foreground));
-}
-.okou-app[data-gradient-color-themes] .group:hover .okou-nav-copy-muted-hover {
-  color: hsl(var(--okou-nav-foreground));
-}
 .okou-app[data-gradient-color-themes] .okou-nav.okou-nav-rail {
   background-color: hsl(var(--okou-nav-rail));
 }
@@ -585,90 +590,20 @@ body {
   --color-sidebar: hsl(var(--sidebar));
 }
 
-/* Sidebar thread titles.
-
-   A title that does not fit fades out instead of ending in an ellipsis, and
-   hovering or focusing its row scrolls the text to its end and stops there.
-
-   `--okou-nav-title-overflow` is the only measured input; the mask and the
-   travel are both derived from it, which is what makes an edge fade exactly
-   when content is cut off at it: at rest only the right edge is masked, at the
-   end of the travel only the left one, and a title that fits gets neither.
-   `sidebarThreadTitleOverflowRef$` writes it together with the duration. */
+/* The travel a sidebar thread title is scrolled by while its row is hovered or
+   focused. `ChatThreadItemTitle` composes the mask and the travel as Tailwind
+   utilities and reads this property from both; it is registered here because a
+   registered property is what lets a transition interpolate a length, and
+   because `inherits: true` is what carries the animated value down to the text
+   span inside the clipping box. Registration is an at-rule, not a class
+   selector, so it stays with the other document-level declarations. */
 @property --okou-nav-title-shift {
   syntax: "<length>";
   inherits: true;
   initial-value: 0px;
 }
 
-.okou-nav-title {
-  --okou-nav-title-overflow: 0px;
-  --okou-nav-title-duration: 780ms;
-  --okou-nav-title-fade: 24px;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  mask-image: linear-gradient(
-    90deg,
-    transparent 0,
-    #000
-      clamp(
-        0px,
-        calc(-1 * var(--okou-nav-title-shift)),
-        var(--okou-nav-title-fade)
-      ),
-    #000
-      calc(
-        100% -
-          clamp(
-            0px,
-            calc(var(--okou-nav-title-overflow) + var(--okou-nav-title-shift)),
-            var(--okou-nav-title-fade)
-          )
-      ),
-    transparent 100%
-  );
-  mask-repeat: no-repeat;
-  mask-size: 100% 100%;
-  transition: --okou-nav-title-shift 660ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.okou-nav-title > span {
-  display: block;
-  width: max-content;
-  white-space: nowrap;
-  transform: translateX(var(--okou-nav-title-shift));
-}
-
-/* The delay keeps a pointer sweeping down the list from setting every row in
-   motion; leaving has none, so the title snaps back under the next row. */
-.okou-nav-title-row:hover .okou-nav-title,
-.okou-nav-title-row:focus-visible .okou-nav-title {
-  --okou-nav-title-shift: calc(-1 * var(--okou-nav-title-overflow));
-  transition: --okou-nav-title-shift var(--okou-nav-title-duration)
-    cubic-bezier(0.33, 0, 0.2, 1) 750ms;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .okou-nav-title-row:hover .okou-nav-title,
-  .okou-nav-title-row:focus-visible .okou-nav-title {
-    --okou-nav-title-shift: 0px;
-  }
-}
-
 /* Morandi outline buttons */
-.okou-app .okou-btn-morandi {
-  background-color: hsl(var(--gray-50));
-  border: 0.7px solid hsl(var(--gray-400));
-  color: hsl(var(--foreground));
-}
-.okou-app .okou-btn-morandi:hover {
-  background-image: linear-gradient(
-    var(--color-state-hover),
-    var(--color-state-hover)
-  );
-  border-color: hsl(var(--gray-400));
-}
 
 /* Cards inside the chat transcript: notice cards, action cards, artifact and
    media frames. One surface, one border, one shadow, one radius — before this
@@ -1372,21 +1307,6 @@ details > summary {
  * Mic button – voice activity fill
  * ------------------------------------------------------------------------- */
 
-.mic-starting-spinner {
-  display: block;
-  width: 17px;
-  height: 17px;
-  border: 2px solid rgb(255 255 255 / 0.35);
-  border-top-color: #ffffff;
-  border-radius: 9999px;
-  pointer-events: none;
-  transform: rotate(0deg) translateZ(0);
-  transform-origin: 50% 50%;
-  animation: mic-starting-spin 0.7s linear infinite;
-  backface-visibility: hidden;
-  will-change: transform;
-}
-
 @keyframes mic-starting-spin {
   from {
     transform: rotate(0deg) translateZ(0);
@@ -1394,31 +1314,6 @@ details > summary {
   to {
     transform: rotate(360deg) translateZ(0);
   }
-}
-
-.mic-volume-icon-meter {
-  position: absolute;
-  bottom: 16px;
-  left: 50%;
-  height: 8px;
-  width: 5px;
-  border-radius: 9999px;
-  background-color: rgb(255 255 255 / 0.18);
-  overflow: hidden;
-  pointer-events: none;
-  transform: translateX(-50%);
-}
-
-.mic-volume-icon-meter::after {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: var(--mic-volume-fill, 0%);
-  border-radius: inherit;
-  background: linear-gradient(to top, #bdf9ff, #ffffff);
-  content: "";
-  transition: height 0.12s ease;
 }
 
 /* Onboarding workflow preview diagram (owf-) */
@@ -1868,8 +1763,8 @@ details > summary {
      white sheet overpowers it. The rail keeps its depth and stays the anchor. */
   --sidebar: var(--okou-color-theme-hue) 30% 98.4%;
   --okou-nav-rail: var(--okou-color-theme-hue) 36% 93.5%;
-  --okou-nav-foreground: var(--okou-color-theme-hue) 24% 18%;
-  --okou-nav-muted-foreground: var(--okou-color-theme-hue) 18% 38%;
+  --nav-copy: hsl(var(--okou-color-theme-hue) 24% 18%);
+  --nav-copy-muted: hsl(var(--okou-color-theme-hue) 18% 38%);
   --background-50: var(--gray-50);
   --state-layer: var(--okou-color-theme-ring);
   --segment-selected: var(--card);
@@ -1909,8 +1804,8 @@ details > summary {
   --ring: var(--okou-color-theme-hue) 45% 62%;
   --sidebar: var(--okou-color-theme-hue) 14% 12%;
   --okou-nav-rail: var(--okou-color-theme-hue) 18% 8%;
-  --okou-nav-foreground: var(--okou-color-theme-hue) 22% 90%;
-  --okou-nav-muted-foreground: var(--okou-color-theme-hue) 16% 64%;
+  --nav-copy: hsl(var(--okou-color-theme-hue) 22% 90%);
+  --nav-copy-muted: hsl(var(--okou-color-theme-hue) 16% 64%);
   --background-50: var(--gray-50);
   --state-layer: var(--okou-color-theme-hue) 35% 82%;
   --segment-selected: var(--gray-400);

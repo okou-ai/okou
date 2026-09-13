@@ -207,7 +207,9 @@ function connectProtocolTransport(
 
 test("share one Worker realtime subscription until tabs disconnect", async () => {
   initializeWorker();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const firstOwner = createChildAbortController(context.signal);
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const secondOwner = createChildAbortController(context.signal);
   const first = connectProtocolTransport(firstOwner.signal);
   const second = connectProtocolTransport(secondOwner.signal);
@@ -286,6 +288,7 @@ test("share one Worker realtime subscription until tabs disconnect", async () =>
 
 test("route workspace realtime subscriptions through the organization channel", async () => {
   initializeWorker();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const owner = createChildAbortController(context.signal);
   const { bridge } = connectProtocolTransport(owner.signal);
   const messages: unknown[] = [];
@@ -397,6 +400,7 @@ test.each([401, 426])(
 
 test("Keep concurrent shared chat loads independent", async () => {
   initializeWorker();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const owner = createChildAbortController(context.signal);
   const { bridge } = connectProtocolTransport(owner.signal);
   await bridge.registerTab(owner.signal);
@@ -455,7 +459,9 @@ test("Keep concurrent shared chat loads independent", async () => {
 
 test("Authenticate worker requests through the tab with the latest heartbeat", async () => {
   initializeWorker();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const firstOwner = createChildAbortController(context.signal);
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const secondOwner = createChildAbortController(context.signal);
   const first = connectProtocolTransport(firstOwner.signal, () => {
     return Promise.resolve("first-tab-token");
@@ -526,6 +532,7 @@ test("Authenticate worker requests through the tab with the latest heartbeat", a
 
 test("Cancel one shared chat load without cancelling worker progress", async () => {
   initializeWorker();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const owner = createChildAbortController(context.signal);
   const { bridge, workerPort } = connectProtocolTransport(owner.signal);
   await bridge.registerTab(owner.signal);
@@ -554,6 +561,7 @@ test("Cancel one shared chat load without cancelling worker progress", async () 
     },
   );
 
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const caller = createChildAbortController(owner.signal);
   const pending = bridge.query(
     { dataKey: key, afterSeqId: null, consistency: "catch-up" },
@@ -577,7 +585,9 @@ test("Cancel one shared chat load without cancelling worker progress", async () 
 
 test("Disconnect one tab without interrupting another tab", async () => {
   initializeWorker();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const firstOwner = createChildAbortController(context.signal);
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const secondOwner = createChildAbortController(context.signal);
   const first = connectProtocolTransport(firstOwner.signal);
   const second = connectProtocolTransport(secondOwner.signal);
@@ -616,6 +626,7 @@ test("Send a heartbeat immediately after tab registration", async () => {
 
 test("Keep sending heartbeats while the tab bridge is active", async () => {
   const [platformPort] = messagePortPair();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const owner = createChildAbortController(context.signal);
   const bridge = new MessagePortSharedDatabaseBridge(
     platformPort,
@@ -659,6 +670,7 @@ test("Reject shared-data access before the tab is registered", async () => {
 
 test("Validate shared chat results received from the worker", async () => {
   const [platformPort, workerPort] = messagePortPair();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const owner = createChildAbortController(context.signal);
   const bridge = new MessagePortSharedDatabaseBridge(
     platformPort,
@@ -702,6 +714,7 @@ test("Validate shared chat results received from the worker", async () => {
 
 test("Stop pending requests when the bridge lifecycle ends", async () => {
   const [platformPort, workerPort] = messagePortPair();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const owner = createChildAbortController(context.signal);
   const bridge = new MessagePortSharedDatabaseBridge(
     platformPort,
@@ -732,6 +745,7 @@ test("Stop pending requests when the bridge lifecycle ends", async () => {
   workerPort.start();
   await bridge.registerTab(owner.signal);
 
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const caller = createChildAbortController(context.signal);
   const pendingQuery = bridge.query(
     {
@@ -938,6 +952,7 @@ test("Keep indicators readable when chat warming fails", async () => {
 test("Cancel waiting indicator reads when their Worker lifecycle ends", async () => {
   mockNow(30_000, context.signal);
   const threadId = crypto.randomUUID();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const worker = createChildAbortController(context.signal);
   const refreshLoaded = context.mocks.deferred<void>();
   let refreshing = false;

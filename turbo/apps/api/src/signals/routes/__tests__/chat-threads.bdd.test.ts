@@ -437,7 +437,7 @@ async function createSnapshotCursorScenario(label: string) {
   if (!actor.orgId) {
     throw new Error("Expected an organization-scoped chat actor");
   }
-  await api.ensureOrgModelProvider(actor);
+  const { providerId } = await api.ensureOrgModelProvider(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: `${label} agent`,
   });
@@ -472,6 +472,7 @@ async function createSnapshotCursorScenario(label: string) {
   return {
     actor,
     orgId: actor.orgId,
+    providerId,
     agent,
     thread,
     firstEvent,
@@ -678,35 +679,67 @@ const malformedChatThreadIdRequests = [
 ] as const;
 
 describe("CHAT-01 thread detail, create, and delete cascades", () => {
-  it("preserves reasoning effort through snapshot compaction and reset replay", async () => {
-    const { actor, thread } =
+  it("preserves model settings through snapshot compaction and patch replay", async () => {
+    const { actor, providerId, thread } =
       await createSnapshotCursorScenario("Effort snapshot");
     await createBillingMediaApi(context).updateFeatureSwitches(actor, {
       [FeatureSwitchKey.ChatReasoningEffort]: true,
     });
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-sonnet-5",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+      {
+        model: "claude-opus-4-8",
+        isDefault: false,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
     await chat.updateThreadModelSelection(actor, thread.id, "claude-sonnet-5", {
       reasoningEffort: "high",
     });
     await compactChatThreadSnapshots(actor);
     const snapshot = await chat.getThreadSnapshot(actor);
     expect(snapshot.chatThreads).toContainEqual(
-      expect.objectContaining({ id: thread.id, reasoningEffort: "high" }),
+      expect.objectContaining({
+        id: thread.id,
+        modelSettings: { "claude-sonnet-5": { effort: "high" } },
+      }),
     );
     if (snapshot.latestSeqId === null) {
       throw new Error("Expected snapshot cursor");
     }
-    await chat.updateThreadModelSelection(actor, thread.id, "claude-sonnet-5", {
-      reasoningEffort: null,
+    await chat.updateThreadModelSelection(actor, thread.id, "claude-opus-4-8", {
+      reasoningEffort: "extra",
     });
     const events = await threadEventPage(actor, snapshot.latestSeqId);
     expect(
       replayChatThreadEvents(snapshot.chatThreads, events.events),
     ).toContainEqual(
-      expect.objectContaining({ id: thread.id, reasoningEffort: null }),
+      expect.objectContaining({
+        id: thread.id,
+        selectedModel: "claude-opus-4-8",
+        modelSettings: {
+          "claude-sonnet-5": { effort: "high" },
+          "claude-opus-4-8": { effort: "extra" },
+        },
+      }),
     );
     await compactChatThreadSnapshots(actor);
     expect((await chat.getThreadSnapshot(actor)).chatThreads).toContainEqual(
-      expect.objectContaining({ id: thread.id, reasoningEffort: null }),
+      expect.objectContaining({
+        id: thread.id,
+        modelSettings: {
+          "claude-sonnet-5": { effort: "high" },
+          "claude-opus-4-8": { effort: "extra" },
+        },
+      }),
     );
   });
 
@@ -4501,17 +4534,12 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       code: "drive-reconnected-again",
       state: stateFromAuthorizationUrl(secondReconnectStart.authorizationUrl),
     });
-    context.mocks.axiomLogging.warn.mockClear();
     artifacts = await chat.listThreadArtifacts(actor, run.threadId);
     expectDriveStatuses(artifacts, {
       status: "disconnected",
       recovery: { action: "reconnect", connectionId: connected.id },
     });
     expect(unknownSubtypeRefresh.refreshBodies).toHaveLength(1);
-    expect(context.mocks.axiomLogging.warn).toHaveBeenCalledWith(
-      "Connector credential refresh failed",
-      expect.objectContaining({ connectorSlug: "google-drive" }),
-    );
     await expect(
       connectorsApi.readConnectorBySlug(actor, "google-drive"),
     ).resolves.toMatchObject({

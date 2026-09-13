@@ -16,7 +16,6 @@ import { createBddApi } from "./helpers/api-bdd";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { chatTranslationRoutes } from "../chat-translation";
-import { auxiliaryResults } from "./helpers/auxiliary-generation";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 
 const context = testContext();
@@ -141,7 +140,6 @@ describe("POST /api/chat/translate", () => {
       },
     });
     await flushWaitUntilForTest();
-    expect(auxiliaryResults(context)).toStrictEqual([]);
   });
 
   it("requires session auth and the chat translation switch", async () => {

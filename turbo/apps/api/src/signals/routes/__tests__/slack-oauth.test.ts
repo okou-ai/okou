@@ -294,7 +294,7 @@ describe("Slack OAuth API routes", () => {
     it("uses the configured API origin with production web baselines", async () => {
       const response = await appRequest("/api/slack/oauth/install", {
         origin: API_ORIGIN,
-        headers: { "x-vm0-web-origin": WEB_ORIGIN },
+        headers: { "x-okou-web-origin": WEB_ORIGIN },
       });
 
       expect(response.status).toBe(307);
@@ -307,7 +307,7 @@ describe("Slack OAuth API routes", () => {
     it("accepts the exact okou.ai web origin for a shared Okou start", async () => {
       const response = await appRequest("/api/slack/oauth/install", {
         origin: API_ORIGIN,
-        headers: { "x-vm0-web-origin": "https://okou.ai" },
+        headers: { "x-okou-web-origin": "https://okou.ai" },
       });
 
       expect(response.status).toBe(307);
@@ -322,7 +322,7 @@ describe("Slack OAuth API routes", () => {
     it("trusts okou.ai subdomains for shared Okou starts", async () => {
       const response = await appRequest("/api/slack/oauth/install", {
         origin: API_ORIGIN,
-        headers: { "x-vm0-web-origin": "https://console.okou.ai" },
+        headers: { "x-okou-web-origin": "https://console.okou.ai" },
       });
 
       expect(response.status).toBe(307);
@@ -337,7 +337,7 @@ describe("Slack OAuth API routes", () => {
     it("does not accept a callback host from untrusted request headers", async () => {
       const response = await appRequest("/api/slack/oauth/install", {
         origin: API_ORIGIN,
-        headers: { "x-vm0-web-origin": "https://evil.example" },
+        headers: { "x-okou-web-origin": "https://evil.example" },
       });
 
       expect(response.status).toBe(307);
@@ -353,7 +353,7 @@ describe("Slack OAuth API routes", () => {
       const response = await appRequest("/api/slack/oauth/install", {
         origin: API_ORIGIN,
         headers: {
-          "x-vm0-web-origin": "https://okou.ai.evil.example",
+          "x-okou-web-origin": "https://okou.ai.evil.example",
         },
       });
 
@@ -415,7 +415,7 @@ describe("Slack OAuth API routes", () => {
         `/api/slack/oauth/connect?orgId=${fixture.orgId}&userId=${fixture.userId}`,
         {
           origin: API_ORIGIN,
-          headers: { "x-vm0-web-origin": WEB_ORIGIN },
+          headers: { "x-okou-web-origin": WEB_ORIGIN },
         },
       );
 

@@ -132,6 +132,7 @@ export function createMarkdownChatFixture(
             agentId: MARKDOWN_AGENT_ID,
             title: "Rich content",
             selectedModel: "claude-sonnet-4-6",
+            modelSettings: {},
             serviceTier: null,
             pinnedAt: null,
             computerUseHostId: null,

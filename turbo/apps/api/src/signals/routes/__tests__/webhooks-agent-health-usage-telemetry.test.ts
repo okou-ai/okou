@@ -16,13 +16,13 @@ beforeEach(() => {
 });
 
 describe("agent usage event webhook", () => {
-  it("returns not found and logs underbilling when a usage event targets a missing run", async () => {
+  it("returns not found when a usage event targets a missing run", async () => {
     const runId = randomUUID();
     const orgId = `org_usage_missing_${randomUUID().slice(0, 8)}`;
     const userId = `user_usage_missing_${randomUUID().slice(0, 8)}`;
     const sandboxToken = generateSandboxToken(userId, runId, orgId);
 
-    await accept(
+    const response = await accept(
       setupApp({ context, routes: webhooksAgentHealthUsageTelemetryRoutes })(
         webhookUsageEventContract,
       ).send({
@@ -43,19 +43,7 @@ describe("agent usage event webhook", () => {
       [404],
     );
 
-    expect(context.mocks.axiomLogging.error).toHaveBeenCalledWith(
-      "Run not found for usage event, dropping",
-      expect.objectContaining({
-        type: "usage_underbilling",
-        reason: "run_not_found",
-        underbilling_class: "confirmed",
-        component: "api",
-        context: "webhooks:agent",
-        runId,
-        orgId,
-        eventCount: 1,
-      }),
-    );
+    expect(response.status).toBe(404);
   });
 
   it("rejects a usage quantity above the exact integer range", async () => {
@@ -64,7 +52,7 @@ describe("agent usage event webhook", () => {
     const userId = `user_usage_unsafe_${randomUUID().slice(0, 8)}`;
     const sandboxToken = generateSandboxToken(userId, runId, orgId);
 
-    await accept(
+    const response = await accept(
       setupApp({ context, routes: webhooksAgentHealthUsageTelemetryRoutes })(
         webhookUsageEventContract,
       ).send({
@@ -85,6 +73,6 @@ describe("agent usage event webhook", () => {
       [400],
     );
 
-    expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
+    expect(response.status).toBe(400);
   });
 });

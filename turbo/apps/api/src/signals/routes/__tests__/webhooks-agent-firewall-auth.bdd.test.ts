@@ -19,7 +19,6 @@ import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settle } from "../../utils";
 import {
   basicTemplate,
@@ -83,32 +82,6 @@ const TERMINAL_RUN_STATUSES = [
   "cancelled",
   "timeout",
 ] as const satisfies readonly TestTerminalRunStatus[];
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function firewallAuthTimingEventsForRun(
-  runId: string,
-): readonly Record<string, unknown>[] {
-  return context.mocks.axiom.sdkIngest.mock.calls.flatMap((call) => {
-    const dataset = call[0];
-    const events = call[1];
-    if (dataset !== "vm0-sandbox-op-log-dev" || !Array.isArray(events)) {
-      return [];
-    }
-    return events.filter((event): event is Record<string, unknown> => {
-      if (!isRecord(event) || event.run_id !== runId) {
-        return false;
-      }
-      return (
-        event.op_type === "firewall_auth_prepare" ||
-        event.op_type === "firewall_auth_resolve" ||
-        event.op_type === "firewall_auth_admit"
-      );
-    });
-  });
-}
 
 async function firewallRun(existingActor?: ApiTestUser): Promise<{
   readonly actor: ApiTestUser;
@@ -278,9 +251,7 @@ describe("FW-1: firewall auth boundaries", () => {
 describe("FW-2: template resolution without connector refresh", () => {
   it("resolves secret, var, and basic templates across headers, base, and query", async () => {
     const fw = createFirewallApi(context);
-    const { headers, runId } = await firewallRun();
-
-    context.mocks.axiom.sdkIngest.mockClear();
+    const { headers } = await firewallRun();
 
     const resolved = await fw.requestFirewallAuth(
       headers,
@@ -339,42 +310,6 @@ describe("FW-2: template resolution without connector refresh", () => {
     expect(resolved.body.resolvedSecrets).toContain("BASE_SECRET");
     expect(resolved.body.resolvedSecrets).toContain("QUERY_SECRET");
     expect(resolved.body.resolvedSecrets).toContain("SCRAPENINJA_TOKEN");
-
-    await flushWaitUntilForTest();
-    const timingEvents = firewallAuthTimingEventsForRun(runId);
-    expect(
-      timingEvents.map((event) => {
-        return event.op_type;
-      }),
-    ).toStrictEqual([
-      "firewall_auth_prepare",
-      "firewall_auth_resolve",
-      "firewall_auth_admit",
-    ]);
-    for (const event of timingEvents) {
-      expect(event).toStrictEqual(
-        expect.objectContaining({
-          source: "api",
-          sandbox_type: "runner",
-          run_id: runId,
-          duration_ms: expect.any(Number),
-          success: true,
-        }),
-      );
-      expect(Number.isFinite(event.duration_ms)).toBeTruthy();
-      expect(Number(event.duration_ms)).toBeGreaterThanOrEqual(0);
-    }
-    const serializedTimingEvents = JSON.stringify(timingEvents);
-    for (const sensitiveValue of [
-      "secret-value",
-      "rapidapi-secret",
-      "base-secret",
-      "query-secret",
-      "encryptedSecrets",
-      "authHeaders",
-    ]) {
-      expect(serializedTimingEvents).not.toContain(sensitiveValue);
-    }
   });
 
   it("reports unresolvable template references as connector-not-configured", async () => {
@@ -1431,8 +1366,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
           TEST_OAUTH_TOKEN: "test-oauth",
         })),
       };
-      context.mocks.axiomLogging.warn.mockClear();
-      context.mocks.axiomLogging.error.mockClear();
       context.mocks.sentry.captureException.mockClear();
       for (const forceRefresh of [true, false, true]) {
         const failed = await fw.requestFirewallAuth(
@@ -1449,8 +1382,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
         });
       }
       expect(failedRefreshCalls).toBe(3);
-      expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
-      expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
       expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
       await expect(
         connectorsApi.listBuiltinConnectorAccounts(actor, "test-oauth"),
@@ -1530,7 +1461,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     },
   );
 
-  it("logs unknown OAuth refresh error subtypes without exposing them", async () => {
+  it("requires reconnect for unknown OAuth refresh error subtypes", async () => {
     const fw = createFirewallApi(context);
     const { actor, headers } = await firewallRun();
     const longSubtype = `invalid_rapt:${"x".repeat(200)}`;
@@ -1564,7 +1495,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       })),
     };
 
-    context.mocks.axiomLogging.warn.mockClear();
     const failed = await fw.requestFirewallAuth(headers, body, [502]);
     if (failed.status !== 502) {
       throw new Error("Expected invalid_grant to fail with 502");
@@ -1572,17 +1502,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     expect(failed.body.error.code).toBe("TOKEN_REFRESH_FAILED");
     expect(failed.body.error.failureReason).toBe("reconnect_required");
     expect(failed.body.error.connectors).toStrictEqual(["test-oauth"]);
-    expect(context.mocks.axiomLogging.warn).toHaveBeenCalledWith(
-      expect.stringContaining("test-oauth token refresh failed"),
-      expect.objectContaining({
-        accessSourceKey: "test-oauth",
-        errorCode: "invalid_grant",
-        failureReason: "reconnect_required",
-        oauthError: "invalid_grant",
-        oauthErrorSubtype: `${longSubtype.slice(0, 125)}...`,
-        oauthStatus: 400,
-      }),
-    );
 
     const connectorsApi = createConnectorBddApi(context);
     await connectorsApi.updateFeatureSwitches(actor, {
@@ -1766,25 +1685,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       throw new Error("Expected the flagged connector to keep failing");
     }
     expect(flagged.body.error.failureReason).toBe("reconnect_required");
-    const missingInputWarnings =
-      context.mocks.axiomLogging.warn.mock.calls.filter(([message]) => {
-        return (
-          message === "test-oauth token refresh failed: required input missing"
-        );
-      });
-    expect(missingInputWarnings).toHaveLength(1);
-    expect(context.mocks.axiomLogging.warn).toHaveBeenCalledWith(
-      "test-oauth token refresh failed: required input missing",
-      expect.objectContaining({
-        accessSourceKey: "test-oauth",
-        failureReason: "reconnect_required",
-        missingInputNames: ["refreshToken"],
-      }),
-    );
-    expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalledWith(
-      expect.stringContaining("Failed to refresh test-oauth token"),
-      expect.anything(),
-    );
 
     // The reconnect flag is visible through the public connector read.
     const connectorsApi = createConnectorBddApi(context);
@@ -1804,7 +1704,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     onTestFinished(() => {
       mockOptionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS", undefined);
     });
-    const { actor, headers, runId } = await firewallRun();
+    const { actor, headers } = await firewallRun();
     await fw.seedTestConnector(actor, {
       connectorSlug: "test-oauth",
       authMethod: "oauth",
@@ -1832,7 +1732,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       })),
     };
 
-    context.mocks.axiom.sdkIngest.mockClear();
     const timedOut = await fw.requestFirewallAuth(headers, body, [502]);
     if (timedOut.status !== 502) {
       throw new Error("Expected the refresh timeout to fail with 502");
@@ -1840,20 +1739,6 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
     expect(timedOut.body.error.code).toBe("TOKEN_REFRESH_FAILED");
     expect(timedOut.body.error.failureReason).toBe("upstream_provider");
     expect(timedOut.body.error.connectors).toStrictEqual(["test-oauth"]);
-
-    await flushWaitUntilForTest();
-    expect(firewallAuthTimingEventsForRun(runId)).toStrictEqual([
-      expect.objectContaining({
-        op_type: "firewall_auth_prepare",
-        run_id: runId,
-        success: true,
-      }),
-      expect.objectContaining({
-        op_type: "firewall_auth_resolve",
-        run_id: runId,
-        success: false,
-      }),
-    ]);
 
     // The connector was not flagged for reconnect: with the normal timeout
     // restored and a fast provider, the next call refreshes successfully.
@@ -2744,7 +2629,6 @@ describe("FW-9: codex model-provider access", () => {
   });
 
   it("stops retrying terminal chatgpt refresh failures", async () => {
-    mockOptionalEnv("OKOU_DEBUG", "webhook:firewall-auth");
     const fw = createFirewallApi(context);
     const { actor, headers } = await firewallRun();
     const terminalErrorCodes = [
@@ -2783,7 +2667,6 @@ describe("FW-9: codex model-provider access", () => {
           { status: 401 },
         );
       });
-      context.mocks.axiomLogging.warn.mockClear();
 
       for (let requestIndex = 0; requestIndex < 3; requestIndex += 1) {
         const failed = await fw.requestFirewallAuth(headers, body, [502]);
@@ -2798,18 +2681,7 @@ describe("FW-9: codex model-provider access", () => {
       }
 
       expect(refreshCalls).toBe(1);
-      expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
-      expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
       expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
-      for (const log of [
-        context.mocks.axiomLogging.debug,
-        context.mocks.axiomLogging.info,
-      ]) {
-        expect(log).not.toHaveBeenCalledWith(
-          expect.stringContaining("token refresh failed"),
-          expect.anything(),
-        );
-      }
     }
   });
 
@@ -2880,7 +2752,6 @@ describe("FW-9: codex model-provider access", () => {
         },
       },
     };
-    context.mocks.axiomLogging.warn.mockClear();
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const failed = await fw.requestFirewallAuth(headers, body, [502]);
       expect(failed.body).toMatchObject({
@@ -2891,8 +2762,6 @@ describe("FW-9: codex model-provider access", () => {
       });
     }
     expect(refreshCalls).toBe(1);
-    expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
-    expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
     expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     const failedAccounts = await support.listPersonalModelProviders(
       actor,
@@ -3004,10 +2873,6 @@ describe("FW-9: codex model-provider access", () => {
       "Bearer recovered-chatgpt-token",
     );
     expect(refreshCalls).toBe(2);
-    expect(context.mocks.axiomLogging.warn).toHaveBeenCalledWith(
-      "codex-oauth-token token refresh failed",
-      expect.objectContaining({ failureReason: "upstream_provider" }),
-    );
   });
 
   it("omits the failure reason for unknown chatgpt refresh error codes", async () => {
@@ -3051,10 +2916,6 @@ describe("FW-9: codex model-provider access", () => {
     expect(failed.body.error.code).toBe("TOKEN_REFRESH_FAILED");
     expect(failed.body.error.failureReason).toBeUndefined();
     expect(failed.body.error.connectors).toStrictEqual(["codex-oauth-token"]);
-    expect(context.mocks.axiomLogging.warn).toHaveBeenCalledWith(
-      "codex-oauth-token token refresh failed",
-      expect.objectContaining({ errorCode: "refresh_token_other" }),
-    );
   });
 });
 

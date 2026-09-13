@@ -1,7 +1,6 @@
 import type { ClerkUIConstructor } from "@clerk/shared/ui";
-import type { ClerkOptions } from "@clerk/shared/types";
+import type { BrowserClerk, ClerkOptions } from "@clerk/shared/types";
 import type { ui } from "@clerk/ui";
-import type { PlatformClerk } from "./lib/clerk-runtime";
 import type { DebugLoggers } from "./types/global-method";
 
 interface OkouClerkBootstrapLoadOptions {
@@ -11,7 +10,7 @@ interface OkouClerkBootstrapLoadOptions {
 }
 
 interface OkouClerkBootstrap {
-  clerk?: PlatformClerk;
+  clerk?: BrowserClerk;
   readonly loadOptions: OkouClerkBootstrapLoadOptions;
   loaded?: Promise<void>;
   uiLoaded?: Promise<typeof ui>;

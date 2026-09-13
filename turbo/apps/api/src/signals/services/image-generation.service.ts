@@ -2054,12 +2054,9 @@ const openAiImageErrorSchema = z.object({
 
 interface OpenAiImageFailure {
   readonly response: ErrorResponse;
-  readonly providerErrorType: string;
-  readonly providerErrorCode: string;
-  readonly failureKind: string;
-  readonly failureStage: string;
   readonly retryPolicy: string;
-  readonly expected: boolean;
+  /** A failure the caller resolves by changing the request, not an operator. */
+  readonly userInput: boolean;
 }
 
 const OPENAI_IMAGE_USER_ERROR_TYPE = "image_generation_user_error";
@@ -2070,12 +2067,8 @@ function unclassifiedOpenAiImageFailure(): OpenAiImageFailure {
       "Image generation failed",
       "OPENAI_IMAGE_REQUEST_FAILED",
     ),
-    providerErrorType: "unknown",
-    providerErrorCode: "unknown",
-    failureKind: "unknown",
-    failureStage: "provider",
     retryPolicy: "retry_once",
-    expected: false,
+    userInput: false,
   };
 }
 
@@ -2084,7 +2077,7 @@ function unclassifiedOpenAiImageFailure(): OpenAiImageFailure {
  * callers not to retry it unmodified, and names `error.code` the stable
  * discriminator. Only the allowlisted codes below become an actionable input
  * failure; every other status, type, or code keeps the provider-fault
- * classification so an unrecognized failure stays visible at error level.
+ * classification so an unrecognized failure stays visible to an operator.
  */
 function classifyOpenAiImageFailure(
   status: number,
@@ -2104,12 +2097,8 @@ function classifyOpenAiImageFailure(
         "An input image could not be read by the generation provider.",
         "GENERATION_INPUT_MEDIA_INVALID",
       ),
-      providerErrorType: OPENAI_IMAGE_USER_ERROR_TYPE,
-      providerErrorCode: providerError.code,
-      failureKind: "input_media_invalid",
-      failureStage: "input",
       retryPolicy: "after_input_change",
-      expected: true,
+      userInput: true,
     };
   }
   if (providerError.code === "moderation_blocked") {
@@ -2121,24 +2110,16 @@ function classifyOpenAiImageFailure(
             "The generated image was blocked by the safety filter.",
             "GENERATION_OUTPUT_SAFETY_BLOCKED",
           ),
-          providerErrorType: OPENAI_IMAGE_USER_ERROR_TYPE,
-          providerErrorCode: providerError.code,
-          failureKind: "output_safety_blocked",
-          failureStage: "output",
           retryPolicy: "manual_once",
-          expected: true,
+          userInput: true,
         }
       : {
           response: badRequest(
             "The prompt or reference image was blocked by the safety filter.",
             "GENERATION_INPUT_SAFETY_REJECTED",
           ),
-          providerErrorType: OPENAI_IMAGE_USER_ERROR_TYPE,
-          providerErrorCode: providerError.code,
-          failureKind: "input_safety_rejected",
-          failureStage: "input",
           retryPolicy: "after_input_change",
-          expected: true,
+          userInput: true,
         };
   }
   return unclassifiedOpenAiImageFailure();
@@ -2192,27 +2173,18 @@ export async function generateOpenAiImage(
       response.status,
       safeJsonParse(responseBody),
     );
-    // Bounded taxonomy fields only. The provider body echoes request input and
-    // provider request IDs, so it never reaches the log.
-    const fields = {
-      provider: "openai",
-      model: options.model,
-      providerStatus: response.status,
-      providerErrorType: failure.providerErrorType,
-      providerErrorCode: failure.providerErrorCode,
-      failureKind: failure.failureKind,
-      failureStage: failure.failureStage,
-      publicErrorCode: failure.response.body.error.code,
-      retryPolicy: failure.retryPolicy,
-      billingDisposition: "not_charged",
-      expected: failure.expected,
-    };
-    if (failure.expected) {
-      // Provider-rejected input is routine and not actionable by us. The job
-      // row keeps the durable record through its public error code.
-      L.debug("OpenAI image generation request failed", fields);
-    } else {
-      L.error("OpenAI image generation request failed", fields);
+    // Provider-rejected input is routine and already carried by the public
+    // error code the caller receives, so only a provider-side failure is
+    // logged. The provider body echoes request input and provider request IDs,
+    // so it never reaches the log.
+    if (!failure.userInput) {
+      L.warn("OpenAI image generation request failed", {
+        provider: "openai",
+        model: options.model,
+        providerStatus: response.status,
+        publicErrorCode: failure.response.body.error.code,
+        retryPolicy: failure.retryPolicy,
+      });
     }
     return failure.response;
   }

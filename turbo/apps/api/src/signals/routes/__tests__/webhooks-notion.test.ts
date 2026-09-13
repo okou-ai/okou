@@ -345,7 +345,7 @@ function notionPageEvent(args: {
       id,
       timestamp: args.timestamp,
       workspace_id: NOTION_WORKSPACE_ID,
-      workspace_name: "Zero Test Workspace",
+      workspace_name: "Nova Test Workspace",
       subscription_id: NOTION_SUBSCRIPTION_ID,
       integration_id: NOTION_INTEGRATION_ID,
       type: args.type,
@@ -994,7 +994,7 @@ describe("POST /api/webhooks/notion", () => {
         lastEditedTime: "2026-07-06T12:16:00.000Z",
       },
       latestEventContext: {
-        workspaceName: "Zero Test Workspace",
+        workspaceName: "Nova Test Workspace",
         attemptNumber: 1,
       },
     });

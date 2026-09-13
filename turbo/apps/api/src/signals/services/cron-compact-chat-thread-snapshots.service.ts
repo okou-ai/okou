@@ -211,7 +211,7 @@ function rebuiltCte(db: Pick<Db, "select">): SQL {
             'pinOrder', thread.pin_order,
             'renamedAt', thread.renamed_at,
             'selectedModel', thread.selected_model,
-            'reasoningEffort', thread.reasoning_effort,
+            'modelSettings', thread.model_settings,
             'serviceTier', CASE
               WHEN ${eq(thread.codexServiceTier, sql`'fast'`)} THEN 'priority'
               ELSE NULL

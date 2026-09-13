@@ -21,6 +21,7 @@ import type {
   ArtifactSignals,
 } from "../../signals/chat-page/artifact-card-signals.ts";
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
+import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import { isImageUrl, isSafeMediaUrl } from "../../lib/media-url.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { MarkdownCardView } from "../okou-page/chat-body-cards.tsx";
@@ -72,6 +73,8 @@ function MediaImage({
   url,
   alt,
   load,
+  filename,
+  resolvedPreview,
   asLink = false,
   insideLink = false,
 }: {
@@ -79,6 +82,8 @@ function MediaImage({
   url: string;
   alt: string;
   load: ImageLoadSignals;
+  filename?: string;
+  resolvedPreview?: AttachmentPreviewSignals;
   asLink?: boolean;
   insideLink?: boolean;
 }) {
@@ -150,7 +155,12 @@ function MediaImage({
         const threadId = event.currentTarget.closest<HTMLElement>(
           "[data-chat-thread-container-id]",
         )?.dataset.chatThreadContainerId;
-        openImageLightbox(threadId ? { threadId, url } : url);
+        openImageLightbox({
+          threadId,
+          url,
+          filename,
+          preview: resolvedPreview,
+        });
       }}
       className={className}
     >
@@ -224,13 +234,15 @@ function ArtifactImage({
   signals: ArtifactSignals;
   alt: string;
 }) {
-  const src = useLastResolved(signals.resourceUrl$);
+  const src = useLastResolved(signals.thumbnailUrl$);
   return (
     <MediaImage
       src={src}
       url={signals.url}
       alt={alt}
       load={signals.previewImageLoad}
+      filename={signals.filename}
+      resolvedPreview={signals}
     />
   );
 }

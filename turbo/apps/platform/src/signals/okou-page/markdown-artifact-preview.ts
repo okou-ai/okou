@@ -20,7 +20,11 @@ export const openMarkdownArtifact$ = command(
     const { filename, url, kind } = signals;
     switch (kind) {
       case "image": {
-        set(openImageLightbox$, { threadId, url }, target);
+        set(
+          openImageLightbox$,
+          { threadId, url, filename, preview: signals },
+          target,
+        );
         return;
       }
       case "video": {

@@ -3,9 +3,9 @@ import {
   chatThreadMetadataContract,
   type ChatThreadEvent,
   type ChatThreadMetadata,
-  type ReasoningEffort,
   type ChatThreadSnapshotProjection,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { accept } from "../../lib/accept.ts";
 import { nowDate } from "../../lib/time.ts";
@@ -60,7 +60,7 @@ export interface ThreadMeta {
   readonly title: string | null;
   readonly pinnedAt: string | null;
   readonly selectedModel: string | null;
-  readonly reasoningEffort?: ReasoningEffort | null;
+  readonly modelSettings: ModelSettings;
   readonly serviceTier: "priority" | null;
   readonly computerUseHostId: string | null;
   readonly cloudBrowserEnabled: boolean;
@@ -330,7 +330,7 @@ const canonicalThreadMetaMap$ = computed((get) => {
       title: thread.title,
       pinnedAt: thread.pinnedAt,
       selectedModel: thread.selectedModel,
-      reasoningEffort: thread.reasoningEffort ?? null,
+      modelSettings: thread.modelSettings,
       serviceTier: thread.serviceTier,
       computerUseHostId: thread.computerUseHostId,
       cloudBrowserEnabled: thread.cloudBrowserEnabled,
@@ -365,7 +365,7 @@ function remoteThreadMeta(metadata: ChatThreadMetadata): ThreadMeta {
     title: metadata.title,
     pinnedAt: metadata.pinnedAt,
     selectedModel: metadata.selectedModel,
-    reasoningEffort: metadata.reasoningEffort ?? null,
+    modelSettings: metadata.modelSettings,
     serviceTier: metadata.serviceTier,
     computerUseHostId: metadata.computerUseHostId,
     cloudBrowserEnabled: metadata.cloudBrowserEnabled,
@@ -402,6 +402,7 @@ function waitForSharedWork<T>(
   signal: AbortSignal,
 ): Promise<T> {
   signal.throwIfAborted();
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const waitController = createChildAbortController(signal);
   const aborted = createDeferredPromise<never>(waitController.signal);
   return withCleanup(Promise.race([work, aborted.promise]), () => {
@@ -462,6 +463,7 @@ const resolveColdThreadMeta$ = command(
     canonicalSync: Promise<void>,
     signal: AbortSignal,
   ): Promise<ColdThreadMetaResolution> => {
+    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
     const controller = createChildAbortController(signal);
     const metadata = set(attemptRemoteThreadMeta$, threadId, controller.signal);
     const eventStream = set(

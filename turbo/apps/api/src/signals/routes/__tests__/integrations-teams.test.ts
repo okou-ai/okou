@@ -263,7 +263,7 @@ describe("Microsoft Teams integration CLI routes", () => {
       conversationId: outgoing.dmConversationId,
     });
     expect(captured.conversationBody).toMatchObject({
-      bot: { id: fixture.teamsBotId, name: "Zero" },
+      bot: { id: fixture.teamsBotId, name: "Nova" },
       members: [{ id: fixture.teamsUserId, name: "Ada Lovelace" }],
       isGroup: false,
       channelData: { tenant: { id: fixture.teamsTenantId } },

@@ -16,7 +16,6 @@ import {
   webhookTelemetryContract,
   webhookUsageEventContract,
 } from "@okouai/api-contracts/contracts/webhooks";
-import { HttpResponse, http } from "msw";
 import type StripeSDK from "stripe";
 import { Webhook } from "svix";
 import type { z } from "zod";
@@ -24,7 +23,6 @@ import type { z } from "zod";
 import { createApp } from "../../../../app-factory";
 import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
-import { server } from "../../../../mocks/server";
 import { generateSandboxToken } from "../../../auth/tokens";
 import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 import { mockStripeClient } from "../../../external/stripe-client";
@@ -84,11 +82,6 @@ type AgentStorageCommitBody = z.infer<
 interface EventConsumerSignatureHeaders {
   readonly "x-okou-signature": string;
   readonly "x-okou-timestamp": string;
-}
-
-interface CapturedInternalCallbackDelivery {
-  readonly body: string;
-  readonly headers: Record<string, string>;
 }
 
 interface SvixHeaders {
@@ -475,61 +468,6 @@ export function createWebhookCallbackApi(context: TestContext) {
 
     signedEventConsumerHeaders(body: unknown): EventConsumerSignatureHeaders {
       return eventConsumerSignatureHeaders(body);
-    },
-
-    /**
-     * Records real dispatcher deliveries POSTed to an internal callback URL
-     * without letting them reach the route (responds 500, marking the
-     * callback row failed). The captured raw body and headers form a
-     * legitimately signed request that tests replay into any callback path —
-     * `callbackRoute` resolves the row by the body's callbackId/runId, never
-     * by path, so cross-path replays still pass signature verification.
-     */
-    captureInternalCallbackDeliveries(
-      path: string,
-    ): readonly CapturedInternalCallbackDelivery[] {
-      const deliveries: CapturedInternalCallbackDelivery[] = [];
-      server.use(
-        http.post(`http://localhost:3000${path}`, async ({ request }) => {
-          deliveries.push({
-            body: await request.text(),
-            headers: Object.fromEntries(request.headers.entries()),
-          });
-          return HttpResponse.json(
-            { error: "captured for replay" },
-            { status: 500 },
-          );
-        }),
-      );
-      return deliveries;
-    },
-
-    /** Re-POSTs a captured delivery into the app verbatim on any callback path. */
-    async replayInternalCallback(
-      path: string,
-      delivery: CapturedInternalCallbackDelivery,
-      overrides: { readonly signature?: string } = {},
-    ): Promise<Response> {
-      const headers: Record<string, string> = { ...delivery.headers };
-      if (overrides.signature !== undefined) {
-        headers["x-okou-signature"] = overrides.signature;
-      }
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      return await app.request(path, {
-        method: "POST",
-        headers,
-        body: delivery.body,
-      });
-    },
-
-    /** Captured signature with one flipped hex character. */
-    tamperedSignature(delivery: CapturedInternalCallbackDelivery): string {
-      const signature = delivery.headers["x-okou-signature"] ?? "";
-      const flipped = signature.startsWith("a") ? "b" : "a";
-      return `${flipped}${signature.slice(1)}`;
     },
 
     sandboxWebhookHeaders,

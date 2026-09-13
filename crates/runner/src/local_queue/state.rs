@@ -1421,24 +1421,57 @@ mod tests {
     #[test]
     fn claim_job_sync_rejects_job_file_symlink() {
         let dir = tempfile::tempdir().unwrap();
-        let group_dir = dir.path();
-        let queue = LocalQueue::new(group_dir.to_path_buf());
         let run_id = RunId::new_v4();
         let profile = crate::profile::DEFAULT_PROFILE;
-        let job_path = super::super::job_path(group_dir, profile, run_id).unwrap();
+
+        // Prove the same bytes are claimable without a symlink. Use a separate
+        // queue so the successful control's claim cannot mask the rejection.
+        let regular_group_dir = dir.path().join("regular");
+        let regular_job_path = write_job_request(&regular_group_dir, run_id, profile);
+        let job_bytes = std::fs::read(&regular_job_path).unwrap();
+        assert!(matches!(
+            LocalQueue::new(regular_group_dir).claim_job_sync(run_id, profile, &regular_job_path),
+            LocalClaimResult::Claimed { .. }
+        ));
+
+        let group_dir = dir.path().join("symlink");
+        let queue = LocalQueue::new(group_dir.clone());
+        let job_path = super::super::job_path(&group_dir, profile, run_id).unwrap();
         std::fs::create_dir_all(job_path.parent().unwrap()).unwrap();
         let target = dir.path().join("target-job");
-        std::fs::write(&target, b"{}").unwrap();
+        std::fs::write(&target, &job_bytes).unwrap();
         symlink(&target, &job_path).unwrap();
 
         let claim = queue.claim_job_sync(run_id, profile, &job_path);
 
         assert!(matches!(claim, LocalClaimResult::NotClaimed));
+        let response: JobResponse = serde_json::from_slice(
+            &std::fs::read(super::super::result_path(&group_dir, run_id)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(response.run_id, run_id);
+        assert_eq!(response.exit_code, 1);
         assert!(
-            std::fs::symlink_metadata(&job_path).is_err(),
+            response
+                .error
+                .as_deref()
+                .is_some_and(|error| error.starts_with("failed to read job file:")),
+            "symlink rejection must be a read failure, got {:?}",
+            response.error
+        );
+        assert_eq!(
+            std::fs::symlink_metadata(&job_path).unwrap_err().kind(),
+            std::io::ErrorKind::NotFound,
             "failed symlink jobs should be removed after terminal result write"
         );
-        assert!(queue.result_file_has_content(run_id));
+        assert_eq!(
+            std::fs::symlink_metadata(super::super::claim_path(&group_dir, run_id))
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::NotFound,
+            "failed symlink jobs should release their claim"
+        );
+        assert_eq!(std::fs::read(&target).unwrap(), job_bytes);
     }
 
     #[test]

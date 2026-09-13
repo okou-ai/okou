@@ -268,7 +268,10 @@ function filterPolicyUpdatesForPlan(
   policies: UpdateOrgModelPolicy[],
   modelCapabilities: ModelPlanCapabilities,
 ): UpdateOrgModelPolicy[] {
-  if (modelCapabilities.supportByok && !modelCapabilities.restrictedVm0Models) {
+  if (
+    modelCapabilities.supportByok &&
+    !modelCapabilities.restrictedBuiltInModels
+  ) {
     return policies;
   }
 
@@ -600,9 +603,9 @@ function AddModelButton({
   return (
     <Button
       type="button"
-      variant="outline"
+      variant="neutral"
       size="sm"
-      className="okou-btn-morandi h-9 gap-2 rounded-lg border"
+      className="h-9 gap-2 rounded-lg"
       disabled={disabled}
       onClick={onClick}
     >

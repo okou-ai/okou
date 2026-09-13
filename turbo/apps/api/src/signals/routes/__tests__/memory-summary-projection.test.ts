@@ -440,14 +440,6 @@ describe("memory summary projection", () => {
       source_hash: declaredFile("memory_summary.md", secondContent).hash,
       source_size: secondContent.length,
     });
-
-    const serializedLogs = JSON.stringify([
-      ...context.mocks.axiomLogging.debug.mock.calls,
-      ...context.mocks.axiomLogging.info.mock.calls,
-      ...context.mocks.axiomLogging.warn.mock.calls,
-      ...context.mocks.axiomLogging.error.mock.calls,
-    ]);
-    expect(serializedLogs).not.toContain(firstContent.toString("utf8"));
   });
 
   const invalidCases: readonly {

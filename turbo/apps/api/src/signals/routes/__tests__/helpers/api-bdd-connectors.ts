@@ -1326,13 +1326,15 @@ interface DeferredTestOAuthTokenEndpoint {
  * Shadows the test-oauth device token endpoint with a handler whose first
  * call blocks until {@link DeferredTestOAuthTokenEndpoint.release} is called
  * and then completes; later calls return authorization_pending immediately.
- * The gate auto-releases when the test finishes (even on assertion failure)
- * so a hung handler can never leak past the test; callers must still release
- * explicitly and await all in-flight polls before the test ends.
+ * The owner signal cancels both synchronization promises before detached-work
+ * teardown. Callers must still release explicitly and await all in-flight
+ * polls before the test ends; the finish hook also releases a pending gate.
  */
-export function mockDeferredTestOAuthTokenEndpoint(): DeferredTestOAuthTokenEndpoint {
+export function mockDeferredTestOAuthTokenEndpoint(
+  signal: AbortSignal,
+): DeferredTestOAuthTokenEndpoint {
   let callCount = 0;
-  const gate = createDeferredPromise<void>(AbortSignal.any([]));
+  const gate = createDeferredPromise<void>(signal);
   const releaseGate = (): void => {
     if (!gate.settled()) {
       gate.resolve(undefined);
@@ -1341,7 +1343,7 @@ export function mockDeferredTestOAuthTokenEndpoint(): DeferredTestOAuthTokenEndp
   onTestFinished(() => {
     releaseGate();
   });
-  const started = createDeferredPromise<void>(AbortSignal.any([]));
+  const started = createDeferredPromise<void>(signal);
   const markStarted = (): void => {
     if (!started.settled()) {
       started.resolve(undefined);

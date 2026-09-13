@@ -43,15 +43,7 @@ function summary(
   return {
     runId: RUN_ID,
     messages: [{ id: PREPARATION, text: PREPARATION }],
-    status: "fresh",
-    sourceRevision: "source-z",
-    summaryRevision: "summary-z",
-    sourceSequence: 2,
-    summarySequence: 2,
-    messageCursor: 1,
-    summaryMessageCursor: 1,
-    summarizedAt: "2026-09-09T08:00:00.000Z",
-    retryAfterMs: 15_000,
+    status: "available",
     ...overrides,
   };
 }
@@ -117,9 +109,9 @@ test("A chat event starts demand for the newly active run", async () => {
   await expect(screen.findByText(PREPARATION)).resolves.toBeVisible();
 });
 
-test.each(["pending", "cooldown", 500] as const)(
-  "A %s response uses the fallback and recovers on a later loop tick",
-  async (status) => {
+test.each(["available", "unavailable", 500] as const)(
+  "A %s response without a batch uses the fallback and recovers on a later loop tick",
+  async (outcome) => {
     installActiveRun();
     let recovered = false;
     context.mocks.api(
@@ -128,17 +120,16 @@ test.each(["pending", "cooldown", 500] as const)(
         if (recovered) {
           return respond(200, summary());
         }
-        return status === 500
+        // A storage failure answers 500, which this viewer handles exactly as it
+        // handles `unavailable`: the request rejects and the last batch stands.
+        return outcome === 500
           ? respond(500, {
               error: {
                 message: "Summary unavailable",
                 code: "INTERNAL_SERVER_ERROR",
               },
             })
-          : respond(
-              200,
-              summary({ status, messages: [], summaryRevision: null }),
-            );
+          : respond(200, summary({ status: outcome, messages: [] }));
       },
     );
 
@@ -156,7 +147,7 @@ async function openPendingActivitySummary() {
   context.mocks.api(
     chatThreadActivitySummaryContract.summarize,
     ({ respond }) => {
-      return respond(200, summary({ status: "pending", messages: [] }));
+      return respond(200, summary({ messages: [] }));
     },
   );
 
@@ -191,32 +182,58 @@ test("The pending summary fallback follows a saved language change", async () =>
   expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
 });
 
-test("Authoritative switch hydration starts demand in the mounted thread", async () => {
-  installActiveRun();
+test("Authoritative switch hydration waits for a chat event before starting demand", async () => {
+  const events = installActiveRun();
   const featureResponse = createDeferredPromise<void>(context.signal);
+  const featureResponseReturned = createDeferredPromise<void>(context.signal);
   context.mocks.api(featureSwitchesContract.get, async ({ respond }) => {
     await featureResponse.promise;
-    return respond(200, {
+    const response = respond(200, {
       switches: featureSwitches,
       effectiveSwitches: featureSwitches,
     });
+    featureResponseReturned.resolve(undefined);
+    return response;
   });
+  let eventPublished = false;
+  let requestedBeforeEvent = false;
   context.mocks.api(
     chatThreadActivitySummaryContract.summarize,
     ({ respond }) => {
-      return respond(200, summary({ status: "pending", messages: [] }));
+      if (!eventPublished) {
+        requestedBeforeEvent = true;
+      }
+      return respond(200, summary());
     },
   );
 
   await setupPage({ context, path: RUN_PATH });
   await expect(screen.findByText(LEGACY_FALLBACK)).resolves.toBeVisible();
 
-  featureResponse.resolve(undefined);
+  await act(async () => {
+    featureResponse.resolve(undefined);
+    await featureResponseReturned.promise;
+  });
   await expect(screen.findByText("Thinking...")).resolves.toBeVisible();
+  expect(requestedBeforeEvent).toBeFalsy();
+  expect(screen.queryByText(PREPARATION)).not.toBeInTheDocument();
+
+  eventPublished = true;
+  events.push(
+    thinkingEvent({
+      id: "hydrated-thinking",
+      runId: RUN_ID,
+      seqId: 2,
+      text: "Preparing the original response",
+    }),
+  );
+  publishRunUpdate();
+
+  await expect(screen.findByText(PREPARATION)).resolves.toBeVisible();
   expect(screen.queryByText(LEGACY_FALLBACK)).not.toBeInTheDocument();
 });
 
-test("The loop keeps polling while hidden and does not adopt retryAfterMs", async () => {
+test("The loop keeps polling on its fixed interval while hidden", async () => {
   context.mocks.browser.visibilityState("hidden");
   installActiveRun();
   let refreshed = false;
@@ -224,16 +241,11 @@ test("The loop keeps polling while hidden and does not adopt retryAfterMs", asyn
     chatThreadActivitySummaryContract.summarize,
     ({ respond }) => {
       if (!refreshed) {
-        return respond(200, summary({ retryAfterMs: 60_000 }));
+        return respond(200, summary());
       }
       return respond(
         200,
-        summary({
-          messages: [{ id: ACTIVITY, text: ACTIVITY }],
-          summaryRevision: "summary-next",
-          summarySequence: 3,
-          summaryMessageCursor: 3,
-        }),
+        summary({ messages: [{ id: ACTIVITY, text: ACTIVITY }] }),
       );
     },
   );
@@ -377,10 +389,7 @@ test.each([403, 404, "ineligible"] as const)(
           );
         }
         return status === "ineligible"
-          ? respond(
-              200,
-              summary({ status, messages: [], summaryRevision: null }),
-            )
+          ? respond(200, summary({ status, messages: [] }))
           : respond(status, {
               error: { message: "Unavailable", code: "FORBIDDEN" },
             });

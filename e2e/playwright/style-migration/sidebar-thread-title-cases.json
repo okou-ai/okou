@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "batch": "session-list-title",
+  "cases": [
+    {
+      "id": "session-list-title-light",
+      "path": "/chats/:threadId",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "session-list-title-dark",
+      "path": "/chats/:threadId",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "session-list-title-light-retina",
+      "path": "/chats/:threadId",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 2
+    },
+    {
+      "id": "session-list-title-dark-retina",
+      "path": "/chats/:threadId",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 2
+    },
+    {
+      "id": "session-list-title-narrow",
+      "path": "/chats/:threadId",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "deviceScaleFactor": 2,
+      "hasTouch": true,
+      "isMobile": true
+    },
+    {
+      "id": "session-list-title-narrow-dark",
+      "path": "/chats/:threadId",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "deviceScaleFactor": 2,
+      "hasTouch": true,
+      "isMobile": true
+    }
+  ]
+}

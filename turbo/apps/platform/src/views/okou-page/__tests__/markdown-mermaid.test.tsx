@@ -81,6 +81,7 @@ async function openMermaidSplitView() {
   });
 
   await setupPage({
+    locale: "en-US",
     context,
     path: chat.path,
     host: "app.okou.ai",

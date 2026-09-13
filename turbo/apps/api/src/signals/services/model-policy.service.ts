@@ -1,3 +1,4 @@
+import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
 import { command } from "ccstate";
 import { and, eq, inArray, notInArray } from "drizzle-orm";
@@ -180,26 +181,28 @@ function resolveOmittedModelProviderSurfaceIds(
 async function orgModelCapabilities(
   db: Db,
   orgId: string,
-): Promise<Pick<OrgPlanCapabilities, "restrictedVm0Models" | "supportByok">> {
+): Promise<
+  Pick<OrgPlanCapabilities, "restrictedBuiltInModels" | "supportByok">
+> {
   const capabilities = await loadOrgPlanCapabilities(db, orgId);
   if (capabilities?.status !== "active") {
     return {
-      restrictedVm0Models: false,
+      restrictedBuiltInModels: false,
       supportByok: true,
     };
   }
   return {
-    restrictedVm0Models: capabilities.restrictedVm0Models,
+    restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
     supportByok: capabilities.supportByok,
   };
 }
 
 function modelAllowedForOrgPlan(
   model: string,
-  capabilities: Pick<OrgPlanCapabilities, "restrictedVm0Models">,
+  capabilities: Pick<OrgPlanCapabilities, "restrictedBuiltInModels">,
 ): boolean {
   return (
-    getRunModelAccess(model, capabilities.restrictedVm0Models) === "allowed"
+    getRunModelAccess(model, capabilities.restrictedBuiltInModels) === "allowed"
   );
 }
 
@@ -222,9 +225,9 @@ function sortRowsByCatalog(rows: OrgModelPolicyRow[]): OrgModelPolicyRow[] {
 }
 
 function getSeedDefaultModelForPlan(
-  capabilities: Pick<OrgPlanCapabilities, "restrictedVm0Models">,
+  capabilities: Pick<OrgPlanCapabilities, "restrictedBuiltInModels">,
 ): SupportedRunModel {
-  return capabilities.restrictedVm0Models
+  return capabilities.restrictedBuiltInModels
     ? LIMITED_FREE1_DEFAULT_RUN_MODEL
     : DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
 }
@@ -233,17 +236,17 @@ function shouldReplaceExistingDefaultForPlan(
   existingDefault: OrgModelPolicyRow | undefined,
   capabilities: Pick<
     OrgPlanCapabilities,
-    "restrictedVm0Models" | "supportByok"
+    "restrictedBuiltInModels" | "supportByok"
   >,
 ): boolean {
-  if (capabilities.supportByok && !capabilities.restrictedVm0Models) {
+  if (capabilities.supportByok && !capabilities.restrictedBuiltInModels) {
     return existingDefault === undefined;
   }
   if (existingDefault === undefined) {
     return true;
   }
   const shouldReplaceModel =
-    capabilities.restrictedVm0Models &&
+    capabilities.restrictedBuiltInModels &&
     existingDefault.model !== LIMITED_FREE1_DEFAULT_RUN_MODEL &&
     (existingDefault.model === DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL ||
       isLimitedFree1RestrictedRunModel(existingDefault.model));
@@ -343,7 +346,7 @@ export async function ensureOrgModelPolicies(
       return sortRowsByCatalog(existing);
     }
 
-    if (!capabilities.supportByok || capabilities.restrictedVm0Models) {
+    if (!capabilities.supportByok || capabilities.restrictedBuiltInModels) {
       await setDefaultModelPolicy(db, orgId, userId, seedDefaultModel, {
         resetRouteToBuiltIn: !capabilities.supportByok,
       });
@@ -574,7 +577,7 @@ async function validateUpdatePolicies(
   policies: UpdateOrgModelPolicy[],
   capabilities: Pick<
     OrgPlanCapabilities,
-    "restrictedVm0Models" | "supportByok"
+    "restrictedBuiltInModels" | "supportByok"
   >,
 ): Promise<ServiceResult<UpdateOrgModelPolicy[]>> {
   if (policies.length === 0) {
@@ -777,9 +780,22 @@ async function listOrgModelPolicies(
       return [surface.id, surface];
     }),
   );
-  const policies = rows.map((row) => {
-    return serializePolicy(row, providersById, surfacesById);
-  });
+  const policies = await Promise.all(
+    rows.map(async (row) => {
+      const policy = serializePolicy(row, providersById, surfacesById);
+      if (!isBuiltInModelProviderType(policy.defaultProviderType)) {
+        return policy;
+      }
+      const runtimeRoute = await resolveBuiltInModelRuntimeRoute(
+        db,
+        policy.model,
+      );
+      return {
+        ...policy,
+        runtimeProviderType: runtimeRoute?.providerType ?? null,
+      };
+    }),
+  );
   const workspaceDefault = selectWorkspaceDefaultPolicy(policies);
 
   return {

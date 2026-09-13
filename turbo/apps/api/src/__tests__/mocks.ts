@@ -316,13 +316,17 @@ export interface ApiTestMocks {
     readonly getUserProfilePhotos: AsyncMock;
   };
   readonly otel: {
-    readonly registerOTel: SyncMock;
+    readonly registerOTel: Mock<typeof import("@vercel/otel").registerOTel>;
   };
   readonly sentry: {
     readonly captureException: SyncMock;
-    readonly httpIntegration: Mock<(...args: unknown[]) => unknown>;
-    readonly init: SyncMock;
-    readonly nativeNodeFetchIntegration: Mock<(...args: unknown[]) => unknown>;
+    readonly httpIntegration: Mock<
+      typeof import("@sentry/node").httpIntegration
+    >;
+    readonly init: Mock<typeof import("@sentry/node").init>;
+    readonly nativeNodeFetchIntegration: Mock<
+      typeof import("@sentry/node").nativeNodeFetchIntegration
+    >;
   };
 }
 
@@ -583,19 +587,21 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
     },
     telegram,
     otel: {
-      registerOTel: vi.fn<(...args: unknown[]) => void>(),
+      registerOTel: vi.fn<typeof import("@vercel/otel").registerOTel>(),
     },
     sentry: {
       captureException: vi.fn<(...args: unknown[]) => void>(),
-      httpIntegration: vi.fn<(...args: unknown[]) => unknown>((options) => {
-        return { name: "Http", options };
-      }),
-      init: vi.fn<(...args: unknown[]) => void>(),
-      nativeNodeFetchIntegration: vi.fn<(...args: unknown[]) => unknown>(
+      httpIntegration: vi.fn<typeof import("@sentry/node").httpIntegration>(
         (options) => {
-          return { name: "NodeFetch", options };
+          return { name: "Http", options };
         },
       ),
+      init: vi.fn<typeof import("@sentry/node").init>(),
+      nativeNodeFetchIntegration: vi.fn<
+        typeof import("@sentry/node").nativeNodeFetchIntegration
+      >((options) => {
+        return { name: "NodeFetch", options };
+      }),
     },
   };
 });
@@ -1330,6 +1336,44 @@ export async function withRealAxiomLoggingForTest(
     });
 }
 
+// A telemetry write that fails is not a diagnostic: production decides whether
+// the request survives it, and `external/axiom.ts` plus
+// `external/sandbox-op-log.ts` own the guards that make that decision. Both
+// reach Axiom through this file's `@axiomhq/js` stub, so the only faithful
+// place to break a write is that SDK boundary; replacing the wrappers instead
+// lets the error escape where production never sees it. Routing through the
+// real wrappers is part of the failure mode, not a separate step, so this
+// helper enables them. Tests name the datasets to break and assert the HTTP
+// response and the effect afterwards; no event payload is handed back.
+type AxiomSdkTelemetryFailure =
+  // `datasets` lists exact Axiom dataset names, including the
+  // `AXIOM_DATASET_SUFFIX`. Omit it to fail every ingest.
+  | { readonly mode: "ingest"; readonly datasets?: readonly string[] }
+  // The SDK flushes a client, not a dataset, so this mode takes no filter.
+  | { readonly mode: "flush" };
+
+export function mockAxiomSdkTelemetryFailure(
+  failure: AxiomSdkTelemetryFailure,
+): void {
+  apiTestMocks.axiom.useRealTelemetry.mockReturnValue(true);
+  if (failure.mode === "flush") {
+    apiTestMocks.axiom.flush.mockRejectedValue(
+      new Error("Axiom SDK flush failed"),
+    );
+    return;
+  }
+  const datasets = failure.datasets;
+  apiTestMocks.axiom.sdkIngest.mockImplementation((dataset: unknown) => {
+    if (
+      datasets === undefined ||
+      (typeof dataset === "string" && datasets.includes(dataset))
+    ) {
+      throw new Error("Axiom SDK ingest failed");
+    }
+    return undefined;
+  });
+}
+
 export function getApiTestMocks(): ApiTestMocks {
   return apiTestMocks;
 }
@@ -1513,7 +1557,7 @@ export function resetApiTestMocks(): void {
   apiTestMocks.telegram.getUserProfilePhotos.mockReset();
   apiTestMocks.otel.registerOTel.mockReset();
   apiTestMocks.sentry.captureException.mockReset();
-  apiTestMocks.sentry.httpIntegration.mockClear();
+  apiTestMocks.sentry.httpIntegration.mockReset();
   apiTestMocks.sentry.init.mockReset();
-  apiTestMocks.sentry.nativeNodeFetchIntegration.mockClear();
+  apiTestMocks.sentry.nativeNodeFetchIntegration.mockReset();
 }

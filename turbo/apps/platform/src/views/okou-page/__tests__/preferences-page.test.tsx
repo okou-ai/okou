@@ -387,6 +387,7 @@ test("Chat settings keep the agreed row order and save chat defaults", async () 
   context.mocks.data.userModelPreference({
     selectedModel: "gpt-6-astra",
     serviceTier: null,
+    modelSettings: {},
     selectedVideoModel: null,
     selectedImageModel: null,
     updatedAt: "2026-09-06T00:00:00.000Z",
@@ -397,6 +398,14 @@ test("Chat settings keep the agreed row order and save chat defaults", async () 
     const preference = {
       selectedModel: body.selectedModel,
       serviceTier: body.serviceTier,
+      modelSettings:
+        body.modelSettingsPatch === undefined
+          ? {}
+          : {
+              [body.modelSettingsPatch.model]: {
+                effort: body.modelSettingsPatch.effort,
+              },
+            },
       selectedVideoModel: null,
       selectedImageModel: null,
       updatedAt: "2026-09-06T00:00:01.000Z",
@@ -510,6 +519,7 @@ test("Chat setting controls disable while their saves settle", async () => {
   context.mocks.data.userModelPreference({
     selectedModel: "gpt-6-astra",
     serviceTier: null,
+    modelSettings: {},
     selectedVideoModel: null,
     selectedImageModel: null,
     updatedAt: "2026-09-06T00:00:00.000Z",
@@ -522,6 +532,14 @@ test("Chat setting controls disable while their saves settle", async () => {
       const preference = {
         selectedModel: body.selectedModel,
         serviceTier: body.serviceTier,
+        modelSettings:
+          body.modelSettingsPatch === undefined
+            ? {}
+            : {
+                [body.modelSettingsPatch.model]: {
+                  effort: body.modelSettingsPatch.effort,
+                },
+              },
         selectedVideoModel: null,
         selectedImageModel: null,
         updatedAt: "2026-09-06T00:00:01.000Z",

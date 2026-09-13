@@ -870,6 +870,7 @@ function ChatThreadEmojiMenuButton({
                 aria-label={t(($) => {
                   return $.chat.thread.changeIcon;
                 })}
+                aria-keyshortcuts="Shift+F2"
                 variant="quiet"
                 size="icon-xs"
                 iconSize="md"
@@ -888,10 +889,19 @@ function ChatThreadEmojiMenuButton({
               </Button>
             </PopoverTrigger>
           </TooltipTrigger>
-          <TooltipContent side="bottom">
-            {t(($) => {
-              return $.chat.thread.icon;
-            })}
+          <TooltipContent
+            role="tooltip"
+            side="bottom"
+            className="flex flex-col items-center gap-1 py-1.5"
+          >
+            <span>
+              {t(($) => {
+                return $.chat.thread.icon;
+              })}
+            </span>
+            <kbd className="whitespace-nowrap font-sans text-xs opacity-70">
+              {getShortcutLabel("shift+f2")}
+            </kbd>
           </TooltipContent>
         </Tooltip>
         <PopoverContent
@@ -2125,9 +2135,9 @@ function HeaderWorkflowAutomationCard({
             ) : null}
             <Button
               type="button"
-              variant="outline"
+              variant="neutral"
               size="sm"
-              className="okou-btn-morandi h-8 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-medium"
+              className="h-8 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-medium"
               disabled={running}
               onClick={() => {
                 detach(
@@ -3959,13 +3969,10 @@ function RecommendedFollowupList({
   source: RecommendedFollowupSource;
 }) {
   const { t } = useTranslation();
-  const responsiveFollowupCards =
-    useGet(featureSwitch$)[FeatureSwitchKey.ResponsiveFollowupCards] ?? false;
   // Quick replies only on actual mobile/touch text-entry devices, mirroring the
   // composer auto-focus heuristic. A desktop window dragged narrow must still
   // render the flat list, so container width is not the deciding factor.
-  const showFollowupCards =
-    responsiveFollowupCards && isMobileTextInputDevice();
+  const showFollowupCards = isMobileTextInputDevice();
   const selectOrAppendComposerText = useSet(
     thread.composer.editor.selectOrAppendText$,
   );
@@ -5061,8 +5068,7 @@ function AssistantRecoveryActions({
         <Button
           type="button"
           size="sm"
-          variant="outline"
-          className="okou-btn-morandi"
+          variant="neutral"
           disabled={retrying || resetting}
           onClick={() => {
             detach(resetAndRetry(pageSignal), Reason.DomCallback);
@@ -5092,10 +5098,9 @@ function AssistantRecoveryActions({
         <Button
           type="button"
           size="sm"
-          variant="outline"
           // Filled neutral leads; the plain outline reads as the secondary
           // action when reset is also offered.
-          className={hasResetAction ? undefined : "okou-btn-morandi"}
+          variant={hasResetAction ? "outline" : "neutral"}
           disabled={retrying || resetting}
           onClick={() => {
             detach(retry(pageSignal), Reason.DomCallback);
@@ -5659,7 +5664,7 @@ interface ResolvedMessageAttachment {
   readonly signals: ArtifactSignals;
 }
 
-type OpenMessageImagePreview = (url: string, filename?: string) => void;
+type OpenMessageImagePreview = (attachment: ResolvedMessageAttachment) => void;
 
 function userMessageRenderAttachments(
   document: UserMessageRenderDocument | undefined,
@@ -5744,10 +5749,11 @@ function MessageAttachment({
         imageClassName="block h-full w-full object-contain"
         linkClassName={CHAT_INLINE_IMAGE_PREVIEW_CLASS}
         onPreview={() => {
-          onImageClick(a.url, a.filename);
+          onImageClick(a);
         }}
         placeholderClassName="h-full w-full"
         resourceUrl$={a.signals.resourceUrl$}
+        thumbnailUrl$={a.signals.thumbnailUrl$}
         url={a.url}
       />
     );
@@ -6796,14 +6802,6 @@ function inputPromptRunAnchor(inputEvent: ChatInputEvent | undefined) {
     : undefined;
 }
 
-function messageImageLightboxTarget(
-  threadId: string,
-  url: string,
-  filename: string | undefined,
-) {
-  return { threadId, url, ...(filename ? { filename } : {}) };
-}
-
 function PagedUserMessage({
   event,
   thread,
@@ -6821,10 +6819,13 @@ function PagedUserMessage({
     });
   const pageSignal = useGet(pageSignal$);
   const openImageLightbox = useSet(openAttachmentImageLightbox$);
-  const openLightbox: OpenMessageImagePreview = (url, filename) => {
-    openImageLightbox(
-      messageImageLightboxTarget(thread.threadId, url, filename),
-    );
+  const openLightbox: OpenMessageImagePreview = (attachment) => {
+    openImageLightbox({
+      threadId: thread.threadId,
+      url: attachment.url,
+      filename: attachment.filename,
+      preview: attachment.signals,
+    });
   };
   const copiedId = useGet(thread.copiedEventId$);
   const copied = copiedId === event.id;

@@ -9,39 +9,41 @@ import {
   type PiMemoryRecallSelection,
   type StoredStorageMountEntry,
 } from "@okouai/api-contracts/contracts/runners";
-import { parseSkillFrontmatter } from "@okouai/core";
 import type { PiResourceSnapshot } from "@okouai/db/jsonb-contracts/pi-resource-snapshot";
+import type {
+  PiResourceIndexFile,
+  PiResourceVersionIndex,
+} from "@okouai/db/jsonb-contracts/pi-resource-version-index";
 import { piResourceSnapshots } from "@okouai/db/schema/pi-resource-snapshot";
 import { computed, type Computed } from "ccstate";
 import { eq } from "drizzle-orm";
 import ignore, { type Ignore } from "ignore";
 
-import { extractBinaryFilesFromTarGz } from "../../lib/tar";
+import {
+  CONTEXT_FILE_NAMES,
+  IGNORE_FILE_NAMES,
+  indexPiResourceArchive,
+  PI_RESOURCE_EXTRACTOR_VERSION,
+  readPiDiscoveryText,
+  RESOURCE_ARCHIVE_MAX_BYTES,
+} from "../../lib/pi-resource-index";
 import type { Db } from "../external/db";
+import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { safeSync, settle, startUntrackedBestEffortCleanup } from "../utils";
 
-const RESOURCE_ARCHIVE_MAX_BYTES = 32 * 1024 * 1024;
-const RESOURCE_ARCHIVE_MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
+import {
+  publishPiResourceVersionIndex,
+  readPiResourceVersionIndexes,
+} from "./pi-resource-version-index.service";
+
 const RESOURCE_SNAPSHOT_MAX_BYTES = 2 * 1024 * 1024;
-const CONTEXT_FILE_NAMES = [
-  "AGENTS.override.md",
-  "AGENTS.md",
-  "AGENTS.MD",
-  "CLAUDE.md",
-  "CLAUDE.MD",
-] as const;
-const IGNORE_FILE_NAMES = [".gitignore", ".ignore", ".fdignore"] as const;
 
 interface VirtualFile {
   readonly path: string;
   readonly content: string;
 }
 
-type VirtualFiles = ReadonlyMap<string, Buffer>;
-
-function decodePiDiscoveryText(content: Buffer): string {
-  return new TextDecoder("utf-8", { fatal: true }).decode(content);
-}
+type VirtualFiles = ReadonlyMap<string, PiResourceIndexFile>;
 
 export class UnsupportedPiResourceError extends Error {}
 
@@ -251,9 +253,9 @@ function mountedPath(mountPath: string, archivePath: string): string | null {
 }
 
 function applyMount(
-  files: Map<string, Buffer>,
+  files: Map<string, PiResourceIndexFile>,
   mount: StoredStorageMountEntry,
-  archive: Buffer | null,
+  projection: PiResourceVersionIndex | null,
 ): void {
   const mountPath = posix.resolve("/", mount.mountPath);
   for (const path of files.keys()) {
@@ -261,14 +263,10 @@ function applyMount(
       files.delete(path);
     }
   }
-  if (!archive) {
+  if (!projection) {
     return;
   }
-  const extracted = extractBinaryFilesFromTarGz(
-    archive,
-    undefined,
-    RESOURCE_ARCHIVE_MAX_OUTPUT_BYTES,
-  );
+  const extracted = projection.files;
   if (mount.instructionsTargetFilename) {
     const target = mount.instructionsTargetFilename;
     const source =
@@ -281,14 +279,14 @@ function applyMount(
         );
       });
     if (source) {
-      files.set(posix.join(mountPath, target), source.content);
+      files.set(posix.join(mountPath, target), source);
     }
     return;
   }
   for (const file of extracted) {
     const path = mountedPath(mountPath, file.path);
     if (path) {
-      files.set(path, file.content);
+      files.set(path, file);
     }
   }
 }
@@ -301,7 +299,7 @@ function contextFileInDirectory(
     const path = posix.join(directory, name);
     const content = files.get(path);
     if (content !== undefined) {
-      return { path, content: decodePiDiscoveryText(content) };
+      return { path, content: readPiDiscoveryText(content) };
     }
   }
   return null;
@@ -398,7 +396,7 @@ function addIgnoreRules(args: {
     if (content === undefined) {
       continue;
     }
-    const patterns = decodePiDiscoveryText(content)
+    const patterns = readPiDiscoveryText(content)
       .split(/\r?\n/)
       .map((line) => {
         return prefixedIgnorePattern(line, prefix);
@@ -421,7 +419,16 @@ function skillFromFile(args: {
   if (content === undefined) {
     return null;
   }
-  const frontmatter = parseSkillFrontmatter(decodePiDiscoveryText(content));
+  const frontmatter = content.skill;
+  if (!frontmatter) {
+    throw new Error("Pi resource index is missing selected skill metadata");
+  }
+  if (frontmatter.kind === "invalid_utf8") {
+    throw new TypeError("The encoded data was not valid for encoding utf-8");
+  }
+  if (frontmatter.kind !== "skill") {
+    throw new Error("Pi skill frontmatter is invalid");
+  }
   if (!frontmatter.description?.trim()) {
     return null;
   }
@@ -548,9 +555,23 @@ export function buildPiResourceSnapshot(
   archives: readonly (Buffer | null)[],
   memoryRecall?: PiMemoryRecallSelection,
 ): PiResourceSnapshot {
-  const files = new Map<string, Buffer>();
+  return buildPiResourceSnapshotFromIndexes(
+    mounts,
+    archives.map((archive) => {
+      return archive ? indexPiResourceArchive(archive) : null;
+    }),
+    memoryRecall,
+  );
+}
+
+export function buildPiResourceSnapshotFromIndexes(
+  mounts: readonly StoredStorageMountEntry[],
+  projections: readonly (PiResourceVersionIndex | null)[],
+  memoryRecall?: PiMemoryRecallSelection,
+): PiResourceSnapshot {
+  const files = new Map<string, PiResourceIndexFile>();
   for (const [index, mount] of mounts.entries()) {
-    applyMount(files, mount, archives[index] ?? null);
+    applyMount(files, mount, projections[index] ?? null);
   }
   if (hasUnsupportedPiResources(files)) {
     throw new UnsupportedPiResourceError(
@@ -572,11 +593,106 @@ export function buildPiResourceSnapshot(
   return piResourceSnapshotSchema.parse(snapshot);
 }
 
+async function loadResourceVersionIndexes(
+  args: {
+    readonly db: Db;
+    readonly mounts: readonly StoredStorageMountEntry[];
+  },
+  signal?: AbortSignal,
+) {
+  const { mounts } = args;
+  const lookupStartedAt = performance.now();
+  const { indexes, misses } = await readPiResourceVersionIndexes(
+    args.db,
+    mounts.map((mount) => {
+      return mount.versionId;
+    }),
+    signal,
+  );
+  const indexLookupMs = performance.now() - lookupStartedAt;
+  let archiveMissCount = 0;
+  let archiveBytes = 0;
+  let archiveDownloadMs = 0;
+  let archiveDecodeMs = 0;
+  const pending = new Map<string, Promise<PiResourceVersionIndex | null>>();
+  const projections = await Promise.all(
+    mounts.map(async (mount) => {
+      if (!mount.archiveUrl) {
+        return null;
+      }
+      const indexed = indexes.get(mount.versionId);
+      if (indexed) {
+        if (
+          indexed.storageId !== mount.storageId ||
+          indexed.archiveSize !== mount.archiveSize
+        ) {
+          throw resourcePreparationError(
+            new Error(
+              "Pi resource index does not match the captured Storage version",
+            ),
+          );
+        }
+        return indexed.projection;
+      }
+      // Pending asynchronous writes and pre-index rollout versions both need
+      // exact-version reads. Remove the latter case after #33619's backfill
+      // and old-API rollback gates; pending writes remain a normal cache miss.
+      const previous = pending.get(mount.versionId);
+      if (previous) {
+        return await previous;
+      }
+      const build = async () => {
+        archiveMissCount++;
+        const downloadStartedAt = performance.now();
+        const archive = await downloadArchive(mount, signal);
+        archiveDownloadMs += performance.now() - downloadStartedAt;
+        if (!archive) {
+          return null;
+        }
+        archiveBytes += archive.length;
+        const decodeStartedAt = performance.now();
+        const projection = indexPiResourceArchive(archive);
+        archiveDecodeMs += performance.now() - decodeStartedAt;
+        await publishPiResourceVersionIndex(
+          {
+            db: args.db,
+            versionId: mount.versionId,
+            projection,
+            archiveSize: archive.length,
+            source: "captured-read",
+          },
+          signal,
+        );
+        return projection;
+      };
+      const building = build();
+      pending.set(mount.versionId, building);
+      return await building;
+    }),
+  );
+  return {
+    projections,
+    dimensions: {
+      index_lookup_ms: indexLookupMs,
+      index_hit_count: indexes.size,
+      index_pending_count: misses.pending,
+      index_running_count: misses.running,
+      index_unindexable_count: misses.unindexable,
+      index_legacy_missing_count: misses.missing,
+      archive_miss_count: archiveMissCount,
+      archive_bytes: archiveBytes,
+      archive_download_sum_ms: archiveDownloadMs,
+      archive_decode_ms: archiveDecodeMs,
+    },
+  };
+}
+
 export function preparePiResourceSnapshot(
   args: {
     readonly db: Db;
     readonly mounts: readonly StoredStorageMountEntry[];
     readonly memoryRecall?: PiMemoryRecallSelection;
+    readonly runId?: string;
   },
   signal?: AbortSignal,
 ): Computed<
@@ -587,33 +703,65 @@ export function preparePiResourceSnapshot(
       readonly digest: string;
       readonly snapshot: PiResourceSnapshot;
     }> => {
+      const startedAt = performance.now();
       const mounts = piResourceDiscoveryMounts(args.mounts);
       const digest = piResourceSnapshotDigest(mounts, args.memoryRecall);
+      // Cache generations are private; the launch's captured digest stays stable.
+      const cacheKey = createHash("sha256")
+        .update(`pi-resource-index:${PI_RESOURCE_EXTRACTOR_VERSION}:${digest}`)
+        .digest("hex");
       const [existing] = await args.db
         .select({ snapshot: piResourceSnapshots.snapshot })
         .from(piResourceSnapshots)
-        .where(eq(piResourceSnapshots.digest, digest))
+        .where(eq(piResourceSnapshots.digest, cacheKey))
         .limit(1);
+      const cacheLookupMs = performance.now() - startedAt;
       if (existing) {
+        if (args.runId) {
+          recordSandboxOperation({
+            sandboxType: "runner",
+            actionType: "pi_resource_snapshot_prepare",
+            runId: args.runId,
+            success: true,
+            durationMs: performance.now() - startedAt,
+            dimensions: { cache_hit: true, cache_lookup_ms: cacheLookupMs },
+          });
+        }
         return {
           digest,
           snapshot: piResourceSnapshotSchema.parse(existing.snapshot),
         };
       }
-      const archives = await Promise.all(
-        mounts.map(async (mount) => {
-          return await downloadArchive(mount, signal);
-        }),
+      const { projections, dimensions } = await loadResourceVersionIndexes(
+        { db: args.db, mounts },
+        signal,
       );
-      const snapshot = buildPiResourceSnapshot(
+      const composeStartedAt = performance.now();
+      const snapshot = buildPiResourceSnapshotFromIndexes(
         mounts,
-        archives,
+        projections,
         args.memoryRecall,
       );
+      const composeMs = performance.now() - composeStartedAt;
       await args.db
         .insert(piResourceSnapshots)
-        .values({ digest, snapshot })
+        .values({ digest: cacheKey, snapshot })
         .onConflictDoNothing();
+      if (args.runId) {
+        recordSandboxOperation({
+          sandboxType: "runner",
+          actionType: "pi_resource_snapshot_prepare",
+          runId: args.runId,
+          success: true,
+          durationMs: performance.now() - startedAt,
+          dimensions: {
+            cache_hit: false,
+            cache_lookup_ms: cacheLookupMs,
+            ...dimensions,
+            compose_ms: composeMs,
+          },
+        });
+      }
       return { digest, snapshot };
     },
   );

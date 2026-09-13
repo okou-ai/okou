@@ -9,7 +9,7 @@ use super::{FailureReason, io::GuestIo};
 pub(super) const CHUNK_BYTES: usize = 16 * 1024;
 const STREAM_BYTES: usize = 1024 * 1024;
 
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum Stream {
     Stdout,
@@ -33,7 +33,7 @@ pub(super) struct Output {
     failure: Option<FailureReason>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub(super) enum RemoteExit {
     Status {

@@ -92,6 +92,7 @@ test.each([
 ])(
   "Recover committed PCM across a reload ($reloadAt) at $path",
   async ({ path, reloadAt }) => {
+    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
     const firstPage = createChildAbortController(context.signal);
     const capture = context.mocks.deferred<(samples: Float32Array) => void>();
     context.mocks.browser.voiceInput({
@@ -131,6 +132,7 @@ test.each([
       },
     );
     await setupPage({
+      locale: "en-US",
       context: { ...context, signal: firstPage.signal },
       path,
       featureSwitches: flags,
@@ -149,7 +151,12 @@ test.each([
     // each case needs only one reload before its successful recovery.
     if (reloadAt === "recording") {
       unload(firstPage);
-      await setupPage({ context: secondContext, path, featureSwitches: flags });
+      await setupPage({
+        locale: "en-US",
+        context: secondContext,
+        path,
+        featureSwitches: flags,
+      });
     }
     for (const retry of retries) {
       const action = retry === retries[0] ? "Stop recording" : "Retry";
@@ -161,7 +168,12 @@ test.each([
     }
     if (reloadAt === "failed retries") {
       unload(firstPage);
-      await setupPage({ context: secondContext, path, featureSwitches: flags });
+      await setupPage({
+        locale: "en-US",
+        context: secondContext,
+        path,
+        featureSwitches: flags,
+      });
     }
     const retryButton = await findEnabledButton("Retry");
     expect(queryButton("Stop recording")).toBeNull();
@@ -232,6 +244,7 @@ test.each([
 ])(
   "Do not restore a completed silent recording at $path (empty: $empty)",
   async ({ path, empty }) => {
+    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
     const firstPage = createChildAbortController(context.signal);
     context.mocks.browser.voiceInput({
       rms: 0,
@@ -319,6 +332,7 @@ test("Stop capture and expose a failed chunk write without discarding the saved 
 });
 
 test("Restore audio when voice input v2 enables after the composer mounts", async () => {
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const firstPage = createChildAbortController(context.signal);
   context.mocks.browser.voiceInput({ rms: 0.12 });
   installVoiceBoundaries();

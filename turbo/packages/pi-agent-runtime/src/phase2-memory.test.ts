@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { encode } from "gpt-tokenizer/encoding/o200k_base";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { resolvePiAgentModel } from "./model";
 import type { PiMemoryPhase2Diagnostic } from "./phase2-memory-diagnostics";
@@ -42,6 +42,7 @@ const servers: Server[] = [];
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(
     servers.splice(0).map(async (server) => {
       server.closeAllConnections();
@@ -628,6 +629,11 @@ describe("Pi memory Phase 2 consolidation engine", () => {
   });
 
   it("uses one restricted official AgentSession and returns exact prepared usage", async () => {
+    const credentialDir = await mkdtemp(
+      join(tmpdir(), "pi-phase2-credentials-"),
+    );
+    temporaryDirectories.push(credentialDir);
+    vi.stubEnv("PI_CODING_AGENT_DIR", credentialDir);
     const provider = await startProvider([
       {
         type: "tool",
@@ -674,6 +680,11 @@ describe("Pi memory Phase 2 consolidation engine", () => {
     );
 
     expect(result.status).toBe("prepared");
+    await expect(
+      readFile(join(credentialDir, "auth.json")),
+    ).rejects.toMatchObject({
+      code: "ENOENT",
+    });
     expect(result.responseId).toBe("resp_phase2_final_3");
     expect(result.usage).toStrictEqual({
       input: 36,

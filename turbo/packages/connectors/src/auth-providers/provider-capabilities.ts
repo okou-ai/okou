@@ -225,8 +225,8 @@ export const CONNECTOR_AUTH_PROVIDER_METHOD_REGISTRATIONS = [
     contract: {
       client: {
         kind: "static-confidential-env",
-        clientIdEnv: "CALCOM_OAUTH_CLIENT_ID",
-        clientSecretEnv: "CALCOM_OAUTH_CLIENT_SECRET",
+        clientIdEnv: "CAL_COM_OAUTH_CLIENT_ID",
+        clientSecretEnv: "CAL_COM_OAUTH_CLIENT_SECRET",
       },
       grant: {
         kind: "auth-code",

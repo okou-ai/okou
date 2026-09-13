@@ -34,8 +34,8 @@
     "@commitlint/cli": "^20.5.0",
     "@eslint/css": "^2.0.0",
     "@eslint/css-tree": "^4.1.0",
-    "@vitest/coverage-v8": "^4.1.11",
-    "@vitest/ui": "^4.1.11",
+    "@vitest/coverage-v8": "^5.0.0",
+    "@vitest/ui": "^5.0.0",
     "dotenv-cli": "^11.0.0",
     "eslint": "^9.39.4",
     "eslint-plugin-better-tailwindcss": "^4.7.0",
@@ -46,8 +46,8 @@
     "tsx": "^4.21.0",
     "turbo": "^2.10.12",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "typescript-eslint": "^8.68.0",
-    "vitest": "^4.1.11"
+    "typescript-eslint": "^8.69.0",
+    "vitest": "^5.0.0"
   },
   "packageManager": "pnpm@10.33.4",
   "engines": {

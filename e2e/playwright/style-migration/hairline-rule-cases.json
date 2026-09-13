@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "batch": "hairline-rule",
+  "cases": [
+    {
+      "id": "hairline-rule-billing-light",
+      "path": "/agents?settings=billing",
+      "theme": "light",
+      "viewport": { "width": 1440, "height": 1000 },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "hairline-rule-billing-dark",
+      "path": "/agents?settings=billing",
+      "theme": "dark",
+      "viewport": { "width": 1440, "height": 1000 },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "hairline-rule-invoices-light",
+      "path": "/agents?settings=invoices",
+      "theme": "light",
+      "viewport": { "width": 1440, "height": 1000 },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "hairline-rule-invoices-dark",
+      "path": "/agents?settings=invoices",
+      "theme": "dark",
+      "viewport": { "width": 1440, "height": 1000 },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "hairline-rule-people-light",
+      "path": "/agents?settings=people",
+      "theme": "light",
+      "viewport": { "width": 1440, "height": 1000 },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "hairline-rule-people-dark",
+      "path": "/agents?settings=people",
+      "theme": "dark",
+      "viewport": { "width": 1440, "height": 1000 },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "hairline-rule-general-light",
+      "path": "/agents?settings=general",
+      "theme": "light",
+      "viewport": { "width": 1440, "height": 1000 },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "hairline-rule-general-dark",
+      "path": "/agents?settings=general",
+      "theme": "dark",
+      "viewport": { "width": 1440, "height": 1000 },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "hairline-rule-usage-light",
+      "path": "/agents?settings=usage",
+      "theme": "light",
+      "viewport": { "width": 1440, "height": 1000 },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "hairline-rule-usage-dark",
+      "path": "/agents?settings=usage",
+      "theme": "dark",
+      "viewport": { "width": 1440, "height": 1000 },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "hairline-rule-connectors-light",
+      "path": "/connectors",
+      "theme": "light",
+      "viewport": { "width": 1440, "height": 1000 },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "hairline-rule-connectors-dark",
+      "path": "/connectors",
+      "theme": "dark",
+      "viewport": { "width": 1440, "height": 1000 },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "hairline-rule-agent-profile-light",
+      "path": "/agents/:agentId?tab=profile",
+      "theme": "light",
+      "viewport": { "width": 1440, "height": 1000 },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "hairline-rule-agent-profile-dark",
+      "path": "/agents/:agentId?tab=profile",
+      "theme": "dark",
+      "viewport": { "width": 1440, "height": 1000 },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "hairline-rule-billing-narrow",
+      "path": "/agents?settings=billing",
+      "theme": "light",
+      "viewport": { "width": 390, "height": 844 },
+      "deviceScaleFactor": 2,
+      "hasTouch": true,
+      "isMobile": true
+    },
+    {
+      "id": "hairline-rule-billing-narrow-dark",
+      "path": "/agents?settings=billing",
+      "theme": "dark",
+      "viewport": { "width": 390, "height": 844 },
+      "deviceScaleFactor": 2,
+      "hasTouch": true,
+      "isMobile": true
+    }
+  ]
+}

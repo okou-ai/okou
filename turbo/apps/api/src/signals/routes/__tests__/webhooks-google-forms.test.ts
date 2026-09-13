@@ -455,7 +455,7 @@ describe("Google Forms Pub/Sub webhook", () => {
     await flushWaitUntilForTest();
   });
 
-  it("silently acknowledges events after Forms access becomes unavailable", async () => {
+  it("acknowledges events without dispatching after Forms access becomes unavailable", async () => {
     const startedAt = now();
     const { actor, automationId, formsApi } =
       await setupGoogleFormsAutomation();
@@ -473,8 +473,6 @@ describe("Google Forms Pub/Sub webhook", () => {
     );
     const googleIdToken = signedGoogleIdToken();
     mockNow(startedAt + 2 * 60 * 60 * 1000);
-    context.mocks.axiomLogging.warn.mockClear();
-    context.mocks.axiomLogging.error.mockClear();
     context.mocks.sentry.captureException.mockClear();
 
     for (const messageId of [
@@ -497,8 +495,6 @@ describe("Google Forms Pub/Sub webhook", () => {
     }
 
     expect(refreshCalls).toBe(1);
-    expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
-    expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
     expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     await expect(
       connectors.readConnectorBySlug(actor, "google-forms"),

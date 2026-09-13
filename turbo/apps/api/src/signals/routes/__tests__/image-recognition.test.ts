@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { createStore } from "ccstate";
+import { CLIENT_REQUEST_ID_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import {
   IMAGE_RECOGNITION_MAX_FILE_BYTES,
   imageRecognitionContract,
@@ -181,7 +182,7 @@ function requestImageRecognition(args: {
   const headers = {
     ...(args.token ? { authorization: `Bearer ${args.token}` } : {}),
     ...(args.clientRequestId
-      ? { "x-vm0-client-request-id": args.clientRequestId }
+      ? { [CLIENT_REQUEST_ID_HEADER]: args.clientRequestId }
       : {}),
   };
   const client = setupApp({

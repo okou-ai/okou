@@ -37,11 +37,20 @@ import {
 
 const context = testContext();
 
-function createAuthWindow(): Window {
+function createAuthWindow(onNavigate?: (href: string) => void): Window {
   const authWindow = context.mocks.browser.authWindow();
+  let href = "";
   Object.defineProperty(authWindow, "location", {
     configurable: true,
-    value: { href: "" },
+    value: {
+      get href() {
+        return href;
+      },
+      set href(value: string) {
+        href = value;
+        onNavigate?.(value);
+      },
+    },
   });
   return authWindow;
 }
@@ -371,7 +380,15 @@ test("Add an account through OpenID", async () => {
       ],
     }),
   ]);
-  const authWindow = createAuthWindow();
+  const authorizationUrl = "https://openid.test/partner-steam/authorize";
+  const authWindow = createAuthWindow((href) => {
+    if (href !== authorizationUrl) {
+      return;
+    }
+    const connected = storeConnectedConnector(slug, "partner-openid");
+    completedAttempts.set(oauthAttemptId, connected.id);
+    context.mocks.ably.trigger("connector:changed", { connectorSlug: slug });
+  });
   context.mocks.browser.open(authWindow);
   context.mocks.api(connectorOpenIdStartContract.start, ({ body, respond }) => {
     expect(body).toMatchObject({
@@ -379,7 +396,7 @@ test("Add an account through OpenID", async () => {
       authMethod: "partner-openid",
     });
     return respond(200, {
-      authorizationUrl: "https://openid.test/partner-steam/authorize",
+      authorizationUrl,
       oauthAttemptId,
     });
   });
@@ -396,13 +413,12 @@ test("Add an account through OpenID", async () => {
   click(getConnectorAction("button", "Connect Partner Steam"));
 
   await waitFor(() => {
-    expect(authWindow.location.href).toBe(
-      "https://openid.test/partner-steam/authorize",
-    );
+    expect(authWindow.location.href).toBe(authorizationUrl);
   });
-  const connected = storeConnectedConnector(slug, "partner-openid");
-  completedAttempts.set(oauthAttemptId, connected.id);
-  context.mocks.ably.trigger("connector:changed", { connectorSlug: slug });
+  const naming = await screen.findByRole("dialog", {
+    name: "Name your Partner Steam account",
+  });
+  click(getConnectorAction("button", "Skip", naming));
   await waitFor(() => {
     expect(
       getConnectorAction("button", "Manage Partner Steam access"),
@@ -457,7 +473,7 @@ test("Authorize visible agents only for the first manual account", async () => {
   const researchId = "c0000000-0000-4000-a000-000000000002";
   mockConnectors(context, []);
   context.mocks.data.agents([
-    listAgent("c0000000-0000-4000-a000-000000000001", "Zero"),
+    listAgent("c0000000-0000-4000-a000-000000000001", "Nova"),
     listAgent(researchId, "Research Agent"),
   ]);
   mockPublicConnectorStatus(context, [
@@ -524,10 +540,10 @@ test("Authorize visible agents only for the first manual account", async () => {
   const access = await screen.findByRole("dialog", {
     name: "Manage Public Axiom access",
   });
-  click(getConnectorSwitch("Revoke Public Axiom access for Zero", access));
+  click(getConnectorSwitch("Revoke Public Axiom access for Nova", access));
   await waitFor(() => {
     expect(
-      getConnectorSwitch("Authorize Public Axiom access for Zero", access),
+      getConnectorSwitch("Authorize Public Axiom access for Nova", access),
     ).not.toBeChecked();
   });
   click(getConnectorAction("button", "Close", access));
@@ -556,7 +572,7 @@ test("Authorize visible agents only for the first manual account", async () => {
     name: "Manage Public Axiom access",
   });
   expect(
-    getConnectorSwitch("Authorize Public Axiom access for Zero", updatedAccess),
+    getConnectorSwitch("Authorize Public Axiom access for Nova", updatedAccess),
   ).not.toBeChecked();
   expect(
     getConnectorSwitch(
@@ -711,7 +727,7 @@ test("Enable a connector that needs no credentials", async () => {
   const researchId = "c0000000-0000-4000-a000-000000000002";
   mockConnectors(context, []);
   context.mocks.data.agents([
-    listAgent("c0000000-0000-4000-a000-000000000001", "Zero"),
+    listAgent("c0000000-0000-4000-a000-000000000001", "Nova"),
     listAgent(researchId, "Research Agent"),
   ]);
   mockPublicConnectorStatus(context, [
@@ -818,7 +834,7 @@ test("Complete OAuth only after the current attempt succeeds", async () => {
   const researchId = "c0000000-0000-4000-a000-000000000002";
   let listed = mockConnectors(context, []);
   context.mocks.data.agents([
-    listAgent("c0000000-0000-4000-a000-000000000001", "Zero"),
+    listAgent("c0000000-0000-4000-a000-000000000001", "Nova"),
     listAgent(researchId, "Research Agent"),
   ]);
   mockPublicConnectorStatus(context, [
@@ -874,7 +890,9 @@ test("Complete OAuth only after the current attempt succeeds", async () => {
     );
   });
 
-  context.mocks.ably.trigger("connector:changed", null);
+  context.mocks.ably.trigger("connector:changed", {
+    connectorSlug: "stripe",
+  });
   authWindow.close();
 
   await waitFor(() => {
@@ -972,7 +990,7 @@ async function addManualAccountForNaming() {
   );
   await setupPage({
     context,
-    path: "/connectors",
+    path: "/connectors?keywords=ahrefs",
   });
   click(
     await waitFor(() => {

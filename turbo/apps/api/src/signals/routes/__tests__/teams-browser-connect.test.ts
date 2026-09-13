@@ -252,7 +252,7 @@ describe("GET /api/teams/connect", () => {
     expect(redirectUrl.searchParams.get("serviceUrl")).toBe(fixture.serviceUrl);
     expect(redirectUrl.searchParams.get("activityId")).toBe(linkedActivityId);
     expect(redirectUrl.searchParams.get("teamName")).toBe("Team From Link");
-    expect(redirectUrl.searchParams.get("botName")).toBe("Zero");
+    expect(redirectUrl.searchParams.get("botName")).toBe("Nova");
     await expectTeamsConnected(fixture, {
       tenantName: "Tenant From Link",
       teamId: linkedTeamId,

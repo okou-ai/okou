@@ -75,7 +75,7 @@ function limitedFreeBillingStatus(): BillingStatusResponse {
     showUsagePack: false,
     tier: "limited-free-1",
     supportByok: false,
-    restrictedVm0Models: true,
+    restrictedBuiltInModels: true,
     credits: 0,
     onboardingPaymentPending: false,
     subscriptionStatus: null,
@@ -432,7 +432,6 @@ test("A Codex capacity failure offers a neutral retry", async () => {
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.ChatErrorRecovery]: true },
   });
 
   await readyChat();
@@ -460,7 +459,6 @@ test("A structured capacity failure offers recovery despite generic provider tex
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.ChatErrorRecovery]: true },
   });
 
   await readyChat();
@@ -486,7 +484,6 @@ test("An unknown structured failure does not infer recovery from provider text",
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.ChatErrorRecovery]: true },
   });
 
   await readyChat();
@@ -509,7 +506,6 @@ test("A Claude Code capacity failure offers a neutral retry", async () => {
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.ChatErrorRecovery]: true },
   });
 
   await readyChat();
@@ -566,7 +562,6 @@ test("Recover from a personal model account limit", async () => {
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.ChatErrorRecovery]: true },
   });
 
   await readyChat();
@@ -598,7 +593,6 @@ test("Recover when a model is at capacity", async () => {
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.ChatErrorRecovery]: true },
   });
 
   await readyChat();
@@ -642,7 +636,6 @@ test("Continue a run that reached its execution time limit", async () => {
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.ChatErrorRecovery]: false },
   });
 
   await readyChat();
@@ -685,7 +678,6 @@ test("Continue a run classified by a structured execution timeout reason", async
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.ChatErrorRecovery]: false },
   });
 
   await readyChat();
@@ -710,7 +702,6 @@ test("Preserve provider errors that have no guided recovery", async () => {
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.ChatErrorRecovery]: false },
   });
 
   await readyChat();

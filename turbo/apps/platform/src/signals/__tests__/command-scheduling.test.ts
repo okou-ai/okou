@@ -65,6 +65,7 @@ test("A cancelled debounce can be reused without running the discarded command",
     return value;
   });
   const debounced$ = debounceCommand(read$, 20);
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const caller = createChildAbortController(context.signal);
   const reason = new DOMException("Search closed", "AbortError");
   const pending = context.store.set(debounced$, "discarded", caller.signal);

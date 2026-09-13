@@ -25,6 +25,18 @@
 //! instruction normalization are best-effort operations, so the result
 //! reports required target preparation and downloads rather than
 //! transaction-wide success for every filesystem change.
+//!
+//! ## Archive metadata limits
+//!
+//! Each tar member has a 1 MiB budget for encoded metadata, including headers,
+//! GNU/PAX extension bodies and padding, and GNU sparse maps. This is both an
+//! individual-extension and combined metadata bound, enforced while tar parses
+//! metadata, before it can buffer unbounded input. Vector capacity and parsed
+//! descriptors add bounded overhead; the budget is not an exact heap/RSS cap.
+//! Oversized metadata is a non-retriable archive error. Ordinary file payloads
+//! and their padding are exempt, including unread payloads of skipped entries;
+//! sparse files retain their physical-data streaming and hole-seeking behavior.
+//! The budget resets between members and is independent for each attempt.
 
 mod archive;
 mod cleanup;
@@ -36,6 +48,7 @@ mod manifest;
 mod path;
 mod plan;
 mod source;
+mod tar_metadata;
 mod telemetry;
 
 use guest_contracts::storage_manifest::Manifest;

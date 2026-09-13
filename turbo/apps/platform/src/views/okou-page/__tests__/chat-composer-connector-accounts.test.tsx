@@ -111,6 +111,7 @@ async function openAgentScopedConnectors(pendingAuthorization: boolean) {
   });
 
   await setupPage({
+    locale: "en-US",
     context,
     path: `/chats/${SCOUT_THREAD_ID}?sidebar=${OTHER_THREAD_ID}`,
   });
@@ -175,6 +176,7 @@ test("Carry a connector account choice into a new chat", async () => {
   });
 
   await setupPage({
+    locale: "en-US",
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
   });
@@ -231,7 +233,11 @@ test("Preserve connector context across chats with the same agent", async () => 
     threadId: SCOUT_THREAD_ID,
   });
 
-  await setupPage({ context, path: `/chats/${SCOUT_THREAD_ID}` });
+  await setupPage({
+    locale: "en-US",
+    context,
+    path: `/chats/${SCOUT_THREAD_ID}`,
+  });
 
   await loadComposer();
   await openConnectors();
@@ -281,6 +287,7 @@ test("Choose an account for a custom MCP connector", async () => {
   });
 
   await setupPage({
+    locale: "en-US",
     context,
     path: `/chats/${SCOUT_THREAD_ID}`,
     featureSwitches: {
@@ -329,6 +336,7 @@ test("Keep the selected connector account visible during search", async () => {
   });
 
   await setupPage({
+    locale: "en-US",
     context,
     path: `/chats/${SCOUT_THREAD_ID}`,
   });
@@ -366,6 +374,7 @@ test("Choose which connector account a chat uses", async () => {
   });
 
   await setupPage({
+    locale: "en-US",
     context,
     path: `/chats/${SCOUT_THREAD_ID}`,
   });
@@ -430,6 +439,7 @@ test("Keep connector access synchronized across split chats for the same agent",
   });
 
   await setupPage({
+    locale: "en-US",
     context,
     path: `/chats/${SCOUT_THREAD_ID}?sidebar=${SECOND_SCOUT_THREAD_ID}`,
   });

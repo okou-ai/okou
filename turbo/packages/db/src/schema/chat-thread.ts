@@ -20,6 +20,7 @@ import type {
   ChatThreadDraftAttachments,
   ChatThreadDraftUserMessage,
 } from "@okouai/db/jsonb-contracts/chat-thread";
+import type { ModelSettings } from "@okouai/db/jsonb-contracts/chat-model-settings";
 import {
   resolveAgentRunId,
   resolveAgentSessionId,
@@ -98,6 +99,12 @@ export const chatThreads = pgTable(
     }),
     /** Per-thread selected model pin. Provider routing is resolved per run. */
     selectedModel: varchar("selected_model", { length: 255 }),
+    /** Sparse per-model preferences copied from the member when created. */
+    modelSettings: jsonb("model_settings")
+      .$type<ModelSettings>()
+      .default({})
+      .notNull(),
+    /** Legacy pre-GA column. Remove after the model-settings rollout settles. */
     reasoningEffort: varchar("reasoning_effort", {
       length: 20,
     }).$type<ReasoningEffort>(),

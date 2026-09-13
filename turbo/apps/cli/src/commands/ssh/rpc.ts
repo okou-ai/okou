@@ -12,7 +12,7 @@ const totals = {
   stdout_truncated: z.boolean(),
   stderr_truncated: z.boolean(),
 };
-const reason = z.enum([
+export const failureReasonSchema = z.enum([
   "unavailable",
   "authority_failure",
   "invalid_credential",
@@ -32,54 +32,55 @@ const reason = z.enum([
   "resource_exhausted",
   "transport",
 ]);
+export const remoteExitSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("status"),
+      code: z.number().int().min(0).max(0xffffffff),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("signal"),
+      signal: z.enum([
+        "ABRT",
+        "ALRM",
+        "FPE",
+        "HUP",
+        "ILL",
+        "INT",
+        "KILL",
+        "PIPE",
+        "QUIT",
+        "SEGV",
+        "TERM",
+        "USR1",
+        "USR2",
+        "UNKNOWN",
+      ]),
+      core_dumped: z.boolean(),
+    })
+    .strict(),
+]);
 const terminalSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("finished"),
       effects: z.literal("completed"),
       ...totals,
-      exit: z.discriminatedUnion("type", [
-        z
-          .object({
-            type: z.literal("status"),
-            code: z.number().int().min(0).max(0xffffffff),
-          })
-          .strict(),
-        z
-          .object({
-            type: z.literal("signal"),
-            signal: z.enum([
-              "ABRT",
-              "ALRM",
-              "FPE",
-              "HUP",
-              "ILL",
-              "INT",
-              "KILL",
-              "PIPE",
-              "QUIT",
-              "SEGV",
-              "TERM",
-              "USR1",
-              "USR2",
-              "UNKNOWN",
-            ]),
-            core_dumped: z.boolean(),
-          })
-          .strict(),
-      ]),
+      exit: remoteExitSchema,
     })
     .strict(),
   z
     .object({
       type: z.literal("failed"),
-      failure_reason: reason,
+      failure_reason: failureReasonSchema,
       effects: z.enum(["not_started", "unknown"]),
       ...totals,
     })
     .strict(),
 ]);
-const rpcErrorSchema = z
+export const rpcErrorSchema = z
   .object({
     type: z.literal("error"),
     code: z.enum([
@@ -118,7 +119,7 @@ type RpcError = z.infer<typeof rpcErrorSchema>;
 
 // A pipe consumer can stall independently of the helper. Bound writes without
 // destroying the caller's stdout/stderr; never replay the remote request.
-async function writeOutput(
+export async function writeOutput(
   stream: Writable,
   bytes: Buffer,
   signal: AbortSignal,
@@ -141,7 +142,7 @@ async function writeOutput(
   });
 }
 
-class SshProtocolError extends Error {
+export class SshProtocolError extends Error {
   constructor() {
     super("Invalid SSH helper response");
   }
@@ -257,6 +258,15 @@ class SshResponse {
     };
   }
 
+  fail(failureReason: LocalFailure, effects: "not_started" | "unknown") {
+    this.terminal = {
+      type: "failed",
+      failure_reason: failureReason,
+      effects,
+      ...this.capture(),
+    };
+  }
+
   output() {
     const output = {
       stdout_base64: Buffer.concat(this.chunks.stdout).toString("base64"),
@@ -280,6 +290,30 @@ export async function executeSsh(
   command: string,
   json: boolean,
 ) {
+  return invokeSshRpc(
+    "ssh.exec",
+    { sshConnectionId: connectionId, command },
+    new SshResponse(),
+    json,
+  );
+}
+
+type LocalFailure = "cancelled" | "timed_out" | "transport" | "protocol";
+
+interface ResponseReader<T> {
+  read(chunk: unknown, json: boolean, signal: AbortSignal): Promise<void>;
+  finish(code: number | null, termination: NodeJS.Signals | null): void;
+  fail(reason: LocalFailure, effects: "not_started" | "unknown"): void;
+  output(): T;
+}
+
+/** One bounded helper invocation. Losing an acknowledgement never triggers replay. */
+export async function invokeSshRpc<T>(
+  method: string,
+  params: Readonly<Record<string, unknown>>,
+  response: ResponseReader<T>,
+  json = true,
+): Promise<T> {
   const controller = new AbortController();
   const signal = controller.signal;
   let localReason: "cancelled" | "timed_out" | "transport" = "transport";
@@ -292,7 +326,6 @@ export async function executeSsh(
     localReason = "timed_out";
     controller.abort();
   }, 65_000);
-  const response = new SshResponse();
   let spawnFailed = false;
   const child = spawn("/usr/local/bin/runner-rpc-client", [], {
     stdio: ["pipe", "pipe", "pipe"],
@@ -330,8 +363,8 @@ export async function executeSsh(
   child.stdin.end(
     JSON.stringify({
       version: 1,
-      method: "ssh.exec",
-      params: { sshConnectionId: connectionId, command },
+      method,
+      params,
     }),
   );
   try {
@@ -343,13 +376,10 @@ export async function executeSsh(
     response.finish(exit.code, exit.exitSignal);
   } catch (error) {
     // Once dispatched, losing the helper cannot prove execution stopped.
-    response.terminal = {
-      type: "failed",
-      failure_reason:
-        error instanceof SshProtocolError ? "protocol" : localReason,
-      effects: spawnFailed ? "not_started" : "unknown",
-      ...response.capture(),
-    };
+    response.fail(
+      error instanceof SshProtocolError ? "protocol" : localReason,
+      spawnFailed ? "not_started" : "unknown",
+    );
   } finally {
     kill();
     await closed;

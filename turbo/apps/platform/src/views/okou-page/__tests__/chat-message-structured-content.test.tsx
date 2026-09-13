@@ -194,7 +194,7 @@ test("Related feedback notes are grouped with clear source links", async () => {
   assertBefore(group, after);
 });
 
-test("Structured message context survives navigation and split view", async () => {
+async function openStructuredContextChat() {
   const userMessage = {
     version: 1,
     parts: [
@@ -246,6 +246,10 @@ test("Structured message context survives navigation and split view", async () =
   await expect(
     screen.findByText("source-context.bin"),
   ).resolves.toBeInTheDocument();
+}
+
+test("Structured message context survives navigation away and back", async () => {
+  await openStructuredContextChat();
   fireEvent.click(await findFastControl("link", "Agents"));
   await expect(
     screen.findByRole("heading", { name: "Agents" }),
@@ -261,7 +265,11 @@ test("Structured message context survives navigation and split view", async () =
     findFastControl("link", "Open chat Source thread"),
   ).resolves.toBeInTheDocument();
   expect(screen.queryByText("Page not found")).not.toBeInTheDocument();
+  await expect(screen.findByText("source-context.bin")).resolves.toBeVisible();
+});
 
+test("Structured message context stays in its pane when a companion chat opens", async () => {
+  await openStructuredContextChat();
   fireEvent.click(await findFastControl("link", "Companion chat"), {
     altKey: true,
   });

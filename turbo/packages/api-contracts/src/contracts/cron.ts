@@ -637,6 +637,26 @@ export const cronMaterializeMemorySummariesContract = c.router({
   },
 });
 
+export const cronMaterializePiResourceIndexesContract = c.router({
+  materialize: {
+    method: "GET",
+    path: "/api/cron/materialize-pi-resource-indexes",
+    headers: authHeadersSchema,
+    responses: {
+      200: z.object({
+        success: z.literal(true),
+        claimed: z.number().int().nonnegative(),
+        ready: z.number().int().nonnegative(),
+        unindexable: z.number().int().nonnegative(),
+        retried: z.number().int().nonnegative(),
+        stale: z.number().int().nonnegative(),
+      }),
+      401: apiErrorSchema,
+    },
+    summary: "Materialize a bounded batch of immutable Pi resource indexes",
+  },
+});
+
 export const cronExtractPiMemoryStage1Contract = c.router({
   extract: {
     method: "GET",

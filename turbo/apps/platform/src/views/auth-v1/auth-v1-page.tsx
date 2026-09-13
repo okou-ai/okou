@@ -1,11 +1,11 @@
 import { GoogleOneTap, SignIn, SignUp } from "@clerk/react";
-import type { BrowserClerk } from "@clerk/shared/types";
-import type { ui } from "@clerk/ui";
 import { Loader2 } from "lucide-react";
 import { useGet, useSet } from "ccstate-react";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { activeRoute$ } from "../../signals/active-route.ts";
 import {
+  buildAuthModeSwitchUrl,
   buildSignInRedirectUrl,
   buildSignupRedirectUrl,
   resolveAuthBrandContext,
@@ -14,15 +14,12 @@ import { hideAppSkeletonOnContentReadyRef$ } from "../../signals/app-skeleton.ts
 import { theme$ } from "../../signals/theme.ts";
 import type { AuthV1ClerkSignals } from "../../signals/auth-v1-clerk.ts";
 import { AuthV1Layout } from "./auth-v1-layout.tsx";
-import { AuthV1ClerkProvider } from "./clerk-provider.tsx";
 import { getAuthV1ComponentAppearance } from "./component-appearance.ts";
 
 export type AuthV1PageMode = "sign-in" | "sign-up";
 
 interface AuthV1PageProps {
-  readonly clerk: BrowserClerk;
   readonly mode: AuthV1PageMode;
-  readonly ui: typeof ui;
   readonly signals: AuthV1ClerkSignals;
 }
 
@@ -57,10 +54,22 @@ function AuthV1PageContent({ mode }: Pick<AuthV1PageProps, "mode">) {
       undefined,
       location.hash,
     );
+    const signInUrl = buildAuthModeSwitchUrl(
+      "/sign-in",
+      location.search,
+      undefined,
+      location.hash,
+    );
+    const signUpUrl = buildAuthModeSwitchUrl(
+      "/sign-up",
+      location.search,
+      undefined,
+      location.hash,
+    );
 
     return (
       <>
-        {activeRoute === "signInV1" && (
+        {activeRoute === "signIn" && (
           <GoogleOneTap
             signInForceRedirectUrl={redirectUrl}
             signUpForceRedirectUrl={redirectUrl}
@@ -77,10 +86,10 @@ function AuthV1PageContent({ mode }: Pick<AuthV1PageProps, "mode">) {
               fallback={<AuthLoadingFallback />}
               fallbackRedirectUrl={redirectUrl}
               forceRedirectUrl={redirectUrl}
-              path="/v1/sign-in"
+              path="/sign-in"
               routing="path"
-              signInUrl="/v1/sign-in"
-              signUpUrl="/v1/sign-up"
+              signInUrl={signInUrl}
+              signUpUrl={signUpUrl}
             />
           </div>
         </AuthV1Layout>
@@ -89,6 +98,12 @@ function AuthV1PageContent({ mode }: Pick<AuthV1PageProps, "mode">) {
   }
 
   const redirectUrl = buildSignupRedirectUrl(
+    location.search,
+    undefined,
+    location.hash,
+  );
+  const signInUrl = buildAuthModeSwitchUrl(
+    "/sign-in",
     location.search,
     undefined,
     location.hash,
@@ -106,19 +121,41 @@ function AuthV1PageContent({ mode }: Pick<AuthV1PageProps, "mode">) {
           fallback={<AuthLoadingFallback />}
           fallbackRedirectUrl={redirectUrl}
           forceRedirectUrl={redirectUrl}
-          path="/v1/sign-up"
+          path="/sign-up"
           routing="path"
-          signInUrl="/v1/sign-in"
+          signInUrl={signInUrl}
         />
       </div>
     </AuthV1Layout>
   );
 }
 
-export function AuthV1Page({ clerk, mode, ui, signals }: AuthV1PageProps) {
+/**
+ * The app root owns the single Clerk provider, so this route only waits for the
+ * runtime to report readiness before it mounts the hosted forms.
+ */
+function ClerkRuntimeBoundary({
+  children,
+  signals,
+}: {
+  readonly children: ReactNode;
+  readonly signals: AuthV1ClerkSignals;
+}) {
+  const ready = useGet(signals.ready$);
+  const attach = useSet(signals.attach$);
+
   return (
-    <AuthV1ClerkProvider clerk={clerk} ui={ui} signals={signals}>
+    <>
+      <span hidden ref={attach} />
+      {ready ? children : null}
+    </>
+  );
+}
+
+export function AuthV1Page({ mode, signals }: AuthV1PageProps) {
+  return (
+    <ClerkRuntimeBoundary signals={signals}>
       <AuthV1PageContent mode={mode} />
-    </AuthV1ClerkProvider>
+    </ClerkRuntimeBoundary>
   );
 }

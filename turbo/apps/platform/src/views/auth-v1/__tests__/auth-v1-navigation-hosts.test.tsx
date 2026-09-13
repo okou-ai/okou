@@ -6,10 +6,10 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 const context = testContext();
 
 test.each(["sign-in", "sign-up"] as const)(
-  "A nested v1 %s retains its route state on the canonical Okou app",
+  "A nested %s route retains its state on the canonical Okou app",
   async (mode) => {
-    const returnUrl = "https://app.okou.ai/agents?source=v1-task";
-    const pathname = `/v1/${mode}/tasks/choose-organization`;
+    const returnUrl = "https://app.okou.ai/agents?source=auth-task";
+    const pathname = `/${mode}/tasks/choose-organization`;
     const search = `?session_id=session-test&redirect_url=${encodeURIComponent(returnUrl)}`;
     const hash = "#/tasks/choose-organization?attempt=1";
     await setupPage({

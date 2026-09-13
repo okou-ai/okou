@@ -70,7 +70,14 @@ test("The start page shows only task choices until one is selected", async () =>
     queryAllByRoleFast("button", tasks).map((item) => {
       return item.textContent?.trim();
     }),
-  ).toStrictEqual(["Workflow", "Presentation", "Image", "Video", "Website"]);
+  ).toStrictEqual([
+    "Workflow",
+    "Presentation",
+    "Image",
+    "Video",
+    "Website",
+    "Visualization",
+  ]);
   expect(
     screen.queryByRole("group", { name: "Ideas to get started" }),
   ).toBeNull();
@@ -79,7 +86,14 @@ test("The start page shows only task choices until one is selected", async () =>
   ).toBeNull();
 });
 
-test.each(["Workflow", "Presentation", "Image", "Video", "Website"])(
+test.each([
+  "Workflow",
+  "Presentation",
+  "Image",
+  "Video",
+  "Website",
+  "Visualization",
+])(
   "%s moves into the composer and can be removed without losing the draft",
   async (task) => {
     mockTemplateChat();
@@ -91,12 +105,13 @@ test.each(["Workflow", "Presentation", "Image", "Video", "Website"])(
     expect(screen.queryByRole("group", { name: "Choose a task" })).toBeNull();
     expect(editor).toHaveFocus();
     expect(editor).toHaveTextContent("Keep my draft");
-    await screen.findByRole("group", {
-      name:
-        task === "Presentation"
-          ? "Presentation templates"
-          : "Ideas to get started",
-    });
+    if (task === "Presentation") {
+      await screen.findByRole("group", { name: "Presentation templates" });
+    } else if (task === "Visualization") {
+      await screen.findByRole("region", { name: "Visualization options" });
+    } else {
+      await screen.findByRole("group", { name: "Ideas to get started" });
+    }
     click(button(`Remove ${task}`, selected));
     await screen.findByRole("group", { name: "Choose a task" });
     expect(screen.queryByRole("group", { name: task })).toBeNull();
@@ -106,25 +121,32 @@ test.each(["Workflow", "Presentation", "Image", "Video", "Website"])(
     expect(
       screen.queryByRole("group", { name: "Presentation templates" }),
     ).toBeNull();
+    expect(
+      screen.queryByRole("region", { name: "Visualization options" }),
+    ).toBeNull();
     expect(editor).toHaveTextContent("Keep my draft");
     expect(editor).toHaveFocus();
   },
 );
 
-test.each(["Workflow", "Presentation", "Image", "Video", "Website"])(
-  "Backspace removes %s from an empty composer",
-  async (task) => {
-    mockTemplateChat();
-    const user = userEvent.setup({ delay: null });
-    const editor = await setupChips();
-    click(button(task, screen.getByRole("group", { name: "Choose a task" })));
-    expect(selectedTask(editor, task)).toBeVisible();
-    await user.keyboard("{Backspace}");
-    await screen.findByRole("group", { name: "Choose a task" });
-    expect(screen.queryByRole("group", { name: task })).toBeNull();
-    expect(editor).toHaveFocus();
-  },
-);
+test.each([
+  "Workflow",
+  "Presentation",
+  "Image",
+  "Video",
+  "Website",
+  "Visualization",
+])("Backspace removes %s from an empty composer", async (task) => {
+  mockTemplateChat();
+  const user = userEvent.setup({ delay: null });
+  const editor = await setupChips();
+  click(button(task, screen.getByRole("group", { name: "Choose a task" })));
+  expect(selectedTask(editor, task)).toBeVisible();
+  await user.keyboard("{Backspace}");
+  await screen.findByRole("group", { name: "Choose a task" });
+  expect(screen.queryByRole("group", { name: task })).toBeNull();
+  expect(editor).toHaveFocus();
+});
 
 test("Backspace edits a nonempty draft and preserves task selection during composition", async () => {
   mockTemplateChat();
@@ -157,6 +179,153 @@ test("The original start cards remain when task chips are disabled", async () =>
   expect(
     screen.queryByRole("region", { name: "Tasks to get started" }),
   ).toBeNull();
+});
+
+test("Visualization starts with no selected preferences", async () => {
+  const capture = mockTemplateChat();
+  const editor = await setupChips();
+  await fill(editor, "Explain the quarterly results");
+  click(
+    button(
+      "Visualization",
+      screen.getByRole("group", { name: "Choose a task" }),
+    ),
+  );
+  const panel = await screen.findByRole("region", {
+    name: "Visualization options",
+  });
+  const outputPicker = within(panel).getByRole("group", {
+    name: "Output format",
+  });
+  const outputOptions = queryAllByRoleFast("button", outputPicker);
+  expect(outputOptions).toHaveLength(4);
+  for (const output of outputOptions) {
+    expect(output).toHaveAttribute("aria-pressed", "false");
+  }
+  const chartPicker = within(panel).getByRole("group", {
+    name: "Preferred charts",
+  });
+  const chartOptions = queryAllByRoleFast("button", chartPicker).filter(
+    (chart) => {
+      return chart.hasAttribute("aria-pressed");
+    },
+  );
+  expect(chartOptions).toHaveLength(18);
+  for (const chart of chartOptions) {
+    expect(chart).toHaveAttribute("aria-pressed", "false");
+  }
+  expect(within(panel).queryByText("Visual methods")).toBeNull();
+
+  click(button("Send"));
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  const additionalInfo = capture.sentMessages[0]?.parts.find((part) => {
+    return part.type === "additional_info";
+  });
+  expect(additionalInfo).toMatchObject({
+    type: "additional_info",
+    text: expect.stringContaining(
+      "The user wants a visualized result for this run.",
+    ),
+  });
+  expect(additionalInfo).toMatchObject({
+    text: expect.not.stringContaining("Preferred output format"),
+  });
+  expect(additionalInfo).toMatchObject({
+    text: expect.not.stringContaining("Preferred chart types"),
+  });
+});
+
+test("Visualization preferences are interactive and are sent as agent-only context", async () => {
+  const capture = mockTemplateChat();
+  const editor = await setupChips();
+  await fill(editor, "Explain the quarterly results");
+  click(
+    button(
+      "Visualization",
+      screen.getByRole("group", { name: "Choose a task" }),
+    ),
+  );
+  const panel = await screen.findByRole("region", {
+    name: "Visualization options",
+  });
+  const outputPicker = within(panel).getByRole("group", {
+    name: "Output format",
+  });
+  const website = button("Website", outputPicker);
+  click(website);
+  expect(website).toHaveAttribute("aria-pressed", "true");
+  click(website);
+  expect(website).toHaveAttribute("aria-pressed", "false");
+  click(website);
+
+  const chartPicker = within(panel).getByRole("group", {
+    name: "Preferred charts",
+  });
+  click(button("Bar chart", chartPicker));
+  click(button("Sankey diagram", chartPicker));
+
+  click(button("Send"));
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  expect(capture.runPrompts).toStrictEqual(["Explain the quarterly results"]);
+  const additionalInfo = capture.sentMessages[0]?.parts.find((part) => {
+    return part.type === "additional_info";
+  });
+  expect(additionalInfo).toMatchObject({
+    type: "additional_info",
+    text: expect.stringContaining("- Preferred output format: website"),
+  });
+  expect(additionalInfo).toMatchObject({
+    text: expect.stringContaining("- Preferred chart types: bar, sankey"),
+  });
+});
+
+test("Visualization preferences stay behind once another task is chosen", async () => {
+  const capture = mockTemplateChat();
+  const editor = await setupChips();
+  await fill(editor, "Explain the quarterly results");
+  const tasks = screen.getByRole("group", { name: "Choose a task" });
+  click(button("Visualization", tasks));
+  const panel = await screen.findByRole("region", {
+    name: "Visualization options",
+  });
+  click(
+    button(
+      "Report",
+      within(panel).getByRole("group", { name: "Output format" }),
+    ),
+  );
+  click(
+    button(
+      "Bar chart",
+      within(panel).getByRole("group", { name: "Preferred charts" }),
+    ),
+  );
+
+  click(button("Remove Visualization", selectedTask(editor, "Visualization")));
+  click(
+    button(
+      "Website",
+      await screen.findByRole("group", { name: "Choose a task" }),
+    ),
+  );
+  await screen.findByRole("group", { name: "Ideas to get started" });
+
+  click(button("Send"));
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  const parts = capture.sentMessages[0]?.parts ?? [];
+  expect(
+    parts.filter((part) => {
+      return (
+        part.type === "additional_info" && part.text.includes("# Visualization")
+      );
+    }),
+  ).toStrictEqual([]);
 });
 
 test.each([

@@ -1287,11 +1287,11 @@ function WorkflowChatButton({
 
   return (
     <Button
-      variant="outline"
+      variant="neutral"
       size="sm"
       type="button"
       aria-label={chatLabel}
-      className="okou-btn-morandi max-w-[220px] shrink-0 gap-1.5"
+      className="max-w-[220px] shrink-0 gap-1.5"
       disabled={opening}
       onClick={() => {
         detach(
@@ -1417,9 +1417,9 @@ function WorkflowInfoTab({
           >
             <Button
               type="button"
-              variant="outline"
+              variant="neutral"
               size="sm"
-              className="okou-btn-morandi h-9 gap-2 rounded-lg"
+              className="h-9 gap-2 rounded-lg"
               onClick={() => {
                 setActionDialog("copy");
               }}
@@ -1563,9 +1563,9 @@ function OfficialWorkflowReconfigureCard({
         >
           <Button
             type="button"
-            variant="outline"
+            variant="neutral"
             size="sm"
-            className="okou-btn-morandi h-9 rounded-lg"
+            className="h-9 rounded-lg"
             disabled={!definition || loading}
             onClick={() => {
               if (!definition) {
@@ -4538,9 +4538,10 @@ function AutomationCreateMenu({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <button
+        <Button
           type="button"
-          className="okou-btn-morandi inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-medium"
+          variant="neutral"
+          className="shrink-0 gap-1.5 px-3 hover:bg-control-surface active:bg-control-surface [&_svg]:size-3.5"
         >
           <Plus size={14} />
           <span>
@@ -4548,7 +4549,7 @@ function AutomationCreateMenu({
               return $.workflows.automations.common.addAutomation;
             })}
           </span>
-        </button>
+        </Button>
       </DialogTrigger>
       <DialogContent smMaxWidth={880}>
         <DialogHeader>

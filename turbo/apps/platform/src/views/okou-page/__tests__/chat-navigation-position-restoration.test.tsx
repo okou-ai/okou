@@ -474,7 +474,7 @@ test("Restore the reading position during keyboard thread navigation", async () 
   await chooseReadingPosition(initialGeometry, targetText);
   expect(initialGeometry.atBottom()).toBeFalsy();
 
-  await user.click(threadSection(KEYBOARD_CURRENT_THREAD_ID));
+  threadSection(KEYBOARD_CURRENT_THREAD_ID).focus();
   expect(threadSection(KEYBOARD_CURRENT_THREAD_ID)).toHaveFocus();
   await user.keyboard("{Control>}{Shift>}{ArrowUp}{/Shift}{/Control}");
   await waitForInteractiveThread(
@@ -483,7 +483,7 @@ test("Restore the reading position during keyboard thread navigation", async () 
     "Previous message 1",
   );
 
-  await user.click(threadSection(KEYBOARD_PREVIOUS_THREAD_ID));
+  threadSection(KEYBOARD_PREVIOUS_THREAD_ID).focus();
   expect(threadSection(KEYBOARD_PREVIOUS_THREAD_ID)).toHaveFocus();
   await user.keyboard("{Control>}{Shift>}{ArrowDown}{/Shift}{/Control}");
   await waitForInteractiveThread(

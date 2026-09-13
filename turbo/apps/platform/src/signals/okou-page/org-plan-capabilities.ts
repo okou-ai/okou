@@ -16,7 +16,7 @@ export interface OrgPlanCapabilities {
   readonly showUsagePack: boolean;
   readonly autoRechargeAllowed: boolean;
   readonly supportByok: boolean;
-  readonly restrictedVm0Models: boolean;
+  readonly restrictedBuiltInModels: boolean;
   readonly videoGenerationAllowed: boolean;
   readonly workflowWebhookAutomationAllowed: boolean;
 }
@@ -31,7 +31,7 @@ const LEGACY_TIER_CAPABILITIES: Readonly<
     legacyMemberInvitationAllowed: false,
     autoRechargeAllowed: false,
     supportByok: true,
-    restrictedVm0Models: false,
+    restrictedBuiltInModels: false,
     videoGenerationAllowed: true,
     workflowWebhookAutomationAllowed: false,
   },
@@ -42,7 +42,7 @@ const LEGACY_TIER_CAPABILITIES: Readonly<
     legacyMemberInvitationAllowed: false,
     autoRechargeAllowed: false,
     supportByok: false,
-    restrictedVm0Models: true,
+    restrictedBuiltInModels: true,
     videoGenerationAllowed: false,
     workflowWebhookAutomationAllowed: false,
   },
@@ -55,7 +55,7 @@ const LEGACY_TIER_CAPABILITIES: Readonly<
     // Preserve the model picker behavior of browsers talking to an older API.
     // New APIs always return these two capabilities explicitly.
     supportByok: true,
-    restrictedVm0Models: false,
+    restrictedBuiltInModels: false,
     videoGenerationAllowed: false,
     workflowWebhookAutomationAllowed: false,
   },
@@ -66,7 +66,7 @@ const LEGACY_TIER_CAPABILITIES: Readonly<
     legacyMemberInvitationAllowed: true,
     autoRechargeAllowed: true,
     supportByok: true,
-    restrictedVm0Models: false,
+    restrictedBuiltInModels: false,
     videoGenerationAllowed: true,
     workflowWebhookAutomationAllowed: false,
   },
@@ -77,7 +77,7 @@ const LEGACY_TIER_CAPABILITIES: Readonly<
     legacyMemberInvitationAllowed: true,
     autoRechargeAllowed: true,
     supportByok: true,
-    restrictedVm0Models: false,
+    restrictedBuiltInModels: false,
     videoGenerationAllowed: true,
     workflowWebhookAutomationAllowed: true,
   },
@@ -88,7 +88,7 @@ const LEGACY_TIER_CAPABILITIES: Readonly<
     legacyMemberInvitationAllowed: true,
     autoRechargeAllowed: true,
     supportByok: true,
-    restrictedVm0Models: false,
+    restrictedBuiltInModels: false,
     videoGenerationAllowed: true,
     workflowWebhookAutomationAllowed: true,
   },
@@ -111,8 +111,13 @@ export function orgPlanCapabilitiesFromBilling(
     autoRechargeAllowed:
       billing.autoRechargeAllowed ?? fallback.autoRechargeAllowed,
     supportByok: billing.supportByok ?? fallback.supportByok,
-    restrictedVm0Models:
-      billing.restrictedVm0Models ?? fallback.restrictedVm0Models,
+    // Surface: new web/app -> old API. APIs from before #33658 step 1 send
+    // only the retired brand alias, so it is preferred over the tier table.
+    // Remove once no such API is serving or retained for rollback: step 2.
+    restrictedBuiltInModels:
+      billing.restrictedBuiltInModels ??
+      billing.restrictedVm0Models ??
+      fallback.restrictedBuiltInModels,
     videoGenerationAllowed:
       billing.videoGenerationAllowed ?? fallback.videoGenerationAllowed,
     workflowWebhookAutomationAllowed:

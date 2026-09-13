@@ -21,6 +21,7 @@ import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { clerk$ } from "../external/clerk";
+import { clerkAttributionDisabled } from "../../lib/clerk-attribution";
 import { nowDate } from "../../lib/time";
 import {
   googleAdsAccountForUser$,
@@ -92,6 +93,13 @@ const recordSignupInner$ = command(
     signal.throwIfAborted();
     if (!bodyResult.ok) {
       return bodyResult.response;
+    }
+
+    if (clerkAttributionDisabled()) {
+      return {
+        status: 200 as const,
+        body: { recorded: false, googleAdsAccountId: null },
+      };
     }
 
     const clerk = get(clerk$);

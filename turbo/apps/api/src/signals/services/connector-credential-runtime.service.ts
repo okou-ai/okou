@@ -16,7 +16,6 @@ import type { Db, ReadonlyDb } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { settleIncludingAbort } from "../utils";
 import { lockConnectorState } from "./auth-state-lock.service";
-import { isExpectedOAuthRefreshFailure } from "./connector-oauth-refresh-policy";
 import type {
   ConnectorRuntimeMethod,
   ConnectorRuntimeSnapshot,
@@ -661,19 +660,6 @@ export async function refreshConnectorCredentialAccess(
   );
   signal.throwIfAborted();
   if (!refreshed.ok) {
-    if (
-      !isExpectedOAuthRefreshFailure({
-        error: refreshed.error,
-        connectorSlug: args.connection.connectorSlug,
-        authMethod: args.connection.runtimeMethod.authMethodId,
-      })
-    ) {
-      log.warn("Connector credential refresh failed", {
-        connectorSlug: args.connection.connectorSlug,
-        authMethodId: args.connection.runtimeMethod.authMethodId,
-        error: refreshed.error,
-      });
-    }
     const terminalFailure = await terminalConnectorCredentialRefreshFailure(
       args,
       refreshed.error,
@@ -682,6 +668,14 @@ export async function refreshConnectorCredentialAccess(
     if (terminalFailure !== null) {
       return terminalFailure;
     }
+    // A reconnect-required failure is already visible as persisted connection
+    // state; only an upstream provider failure writes one warn.
+    log.warn("Connector credential refresh failed", {
+      connectorSlug: args.connection.connectorSlug,
+      authMethodId: args.connection.runtimeMethod.authMethodId,
+      orgId: args.orgId,
+      userId: args.userId,
+    });
     return await connectorCredentialRefreshFailure(
       args,
       "provider-failed",

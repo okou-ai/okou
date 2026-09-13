@@ -4,6 +4,288 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { server } from "../../../mocks/server";
 import { sshCommand } from "../index";
 
+describe("okou ssh session", () => {
+  const id = "a0000000-0000-4000-8000-000000000001";
+  const sessionId = "b0000000-0000-4000-8000-000000000001";
+  const session = {
+    session_id: sessionId,
+    ssh_connection_id: id,
+    generation: 7,
+    state: { type: "running" },
+    effects: "unknown",
+    stdin_closed: false,
+    oldest_cursor: 0,
+    end_cursor: 0,
+  };
+  async function invoke(...args: string[]) {
+    await sshCommand.parseAsync(["session", ...args, "--json"], {
+      from: "user",
+    });
+  }
+  function reply(data: unknown) {
+    response({ type: "result", data });
+  }
+
+  it("starts once, preserves shell syntax as data, and returns before remote completion", async () => {
+    reply({ type: "started", session_id: sessionId });
+    await invoke(
+      "start",
+      id,
+      "--command",
+      "printf '$secret'; sleep 90",
+      "--pty",
+    );
+    expect(result()).toEqual({ type: "started", session_id: sessionId });
+    expect(
+      helper.requests.map((request) => {
+        return JSON.parse(request);
+      }),
+    ).toEqual([
+      {
+        version: 1,
+        method: "ssh.session.start",
+        params: {
+          sshConnectionId: id,
+          program: { type: "exec", command: "printf '$secret'; sleep 90" },
+          pty: true,
+        },
+      },
+    ]);
+    expect(spawn).toHaveBeenCalledTimes(1);
+  });
+
+  it("requests an explicit persistent shell", async () => {
+    reply({ type: "started", session_id: sessionId });
+    await invoke("start", id, "--shell");
+    expect(JSON.parse(helper.requests[0]!)).toMatchObject({
+      params: { program: { type: "shell" }, pty: false },
+    });
+  });
+
+  it.each([
+    ["start", id],
+    ["start", id, "--shell", "--command", "true"],
+    ["start", id, "--command", ""],
+    ["start", id, "--command", "界".repeat(21846)],
+    ["read", sessionId, "--cursor", "-1"],
+    ["read", sessionId, "--cursor", "9007199254740992"],
+    ["write", sessionId],
+    ["write", sessionId, "--base64", "YQ"],
+    ["write", sessionId, "--text", "a", "--base64", "YQ=="],
+    ["write", sessionId, "--text", "a".repeat(16385)],
+    ["signal", sessionId, "--signal", "CUSTOM"],
+    ["status", "invented"],
+  ])("rejects invalid input before helper dispatch: %j", async (...args) => {
+    await expect(invoke(...args)).rejects.toThrow("CLI exit");
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("preserves binary input and EOF in one structured submission", async () => {
+    reply({ type: "submitted", session_id: sessionId, effects: "unknown" });
+    await invoke("write", sessionId, "--base64", "AP8=", "--eof");
+    expect(JSON.parse(helper.requests[0]!)).toEqual({
+      version: 1,
+      method: "ssh.session.write",
+      params: { sessionId, dataBase64: "AP8=", eof: true },
+    });
+    expect(result()).toMatchObject({ type: "submitted", effects: "unknown" });
+  });
+
+  it("accepts bounded output with an explicit lost range and continuation cursor", async () => {
+    const read = {
+      type: "read",
+      session: { ...session, oldest_cursor: 10, end_cursor: 12 },
+      chunks: [{ cursor: 10, stream: "stderr", data: "AP8=" }],
+      next_cursor: 12,
+      lost: { from: 0, to: 10 },
+    };
+    reply(read);
+    await invoke("read", sessionId);
+    expect(result()).toEqual(read);
+    expect(JSON.parse(helper.requests[0]!)).toMatchObject({
+      method: "ssh.session.read",
+      params: { sessionId, cursor: 0 },
+    });
+  });
+
+  it.each([
+    { chunks: [{ cursor: 1, stream: "stdout", data: "YQ==" }], next_cursor: 2 },
+    { chunks: [{ cursor: 0, stream: "stdout", data: "YQ" }], next_cursor: 1 },
+    { chunks: [], next_cursor: 1 },
+    { chunks: [{ cursor: 0, stream: "stdout", data: "YQ==" }], next_cursor: 0 },
+    {
+      chunks: [{ cursor: 0, stream: "stdout", data: "YQ==" }],
+      next_cursor: 1,
+      lost: { from: 0, to: 1 },
+    },
+  ])(
+    "rejects inconsistent cursor or binary output without replay %#",
+    async (output) => {
+      reply({
+        type: "read",
+        session: { ...session, end_cursor: 1 },
+        ...output,
+      });
+      await invoke("read", sessionId);
+      expect(result()).toMatchObject({
+        type: "failed",
+        failure_reason: "protocol",
+        effects: "unknown",
+      });
+      expect(spawn).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("returns setup failures through status without inventing remote exit evidence", async () => {
+    reply({
+      type: "status",
+      session: {
+        ...session,
+        state: { type: "failed", failure_reason: "authentication_failed" },
+        effects: "not_started",
+      },
+    });
+    await invoke("status", sessionId);
+    expect(result()).toMatchObject({
+      session: { state: { type: "failed" }, effects: "not_started" },
+    });
+  });
+
+  it("recovers admitted IDs through list", async () => {
+    reply({ type: "sessions", sessions: [session] });
+    await invoke("list");
+    expect(result()).toEqual({ type: "sessions", sessions: [session] });
+  });
+
+  it("rejects a response for another method or session", async () => {
+    reply({ type: "status", session: { ...session, session_id: id } });
+    await invoke("status", sessionId);
+    expect(result()).toMatchObject({
+      failure_reason: "protocol",
+      effects: "unknown",
+    });
+  });
+
+  it("surfaces old Runner unknown_method without downgrading into exec", async () => {
+    helper.exit = 1;
+    response({
+      type: "error",
+      code: "unknown_method",
+      delivery: "not_dispatched",
+    });
+    await invoke("start", id, "--shell");
+    expect(result()).toEqual({
+      type: "rpc_error",
+      code: "unknown_method",
+      delivery: "not_dispatched",
+    });
+    expect(spawn).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not accept a duplicate terminal or retry a possibly admitted start", async () => {
+    const value = {
+      type: "result",
+      data: { type: "started", session_id: sessionId },
+    };
+    response(value, value);
+    await invoke("start", id, "--shell");
+    expect(result()).toMatchObject({
+      failure_reason: "protocol",
+      effects: "unknown",
+    });
+    expect(spawn).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires execution capability for retained session access", async () => {
+    token(["ssh:read"]);
+    await expect(invoke("list")).rejects.toThrow("CLI exit");
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("canonicalizes UUID casing before comparing a mutating response", async () => {
+    reply({ type: "closed", session_id: sessionId, effects: "unknown" });
+    await invoke("close", sessionId.toUpperCase());
+    expect(result()).toEqual({
+      type: "closed",
+      session_id: sessionId,
+      effects: "unknown",
+    });
+    expect(JSON.parse(helper.requests[0]!)).toMatchObject({
+      params: { sessionId },
+    });
+  });
+
+  it("sends the selected signal without treating submission as a remote exit", async () => {
+    reply({ type: "submitted", session_id: sessionId, effects: "unknown" });
+    await invoke("signal", sessionId, "--signal", "USR2");
+    expect(JSON.parse(helper.requests[0]!)).toEqual({
+      version: 1,
+      method: "ssh.session.signal",
+      params: { sessionId, signal: "USR2" },
+    });
+    expect(result()).toEqual({
+      type: "submitted",
+      session_id: sessionId,
+      effects: "unknown",
+    });
+  });
+
+  it("preserves binary read output and waits for backpressure before reporting the next cursor", async () => {
+    const bytes = Buffer.from([0, 255, 10]);
+    reply({
+      type: "read",
+      session: { ...session, oldest_cursor: 10, end_cursor: 13 },
+      chunks: [
+        { cursor: 10, stream: "stdout", data: bytes.toString("base64") },
+      ],
+      next_cursor: 13,
+      lost: { from: 0, to: 10 },
+    });
+    const writes: Buffer[] = [];
+    let completeWrite: (() => void) | undefined;
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation((chunk, encodingOrCallback, callback) => {
+        writes.push(Buffer.from(chunk));
+        const done =
+          typeof encodingOrCallback === "function"
+            ? encodingOrCallback
+            : callback;
+        completeWrite = () => {
+          done?.();
+        };
+        return false;
+      });
+    let settled = false;
+    try {
+      const work = sshCommand
+        .parseAsync(["session", "read", sessionId], { from: "user" })
+        .then(() => {
+          settled = true;
+        });
+      await vi.waitFor(() => {
+        expect(writes).toHaveLength(1);
+      });
+      expect(settled).toBe(false);
+      expect(errors).toHaveBeenCalledWith(
+        "Output bytes 0–10 were discarded from the bounded buffer.",
+      );
+      expect(errors).not.toHaveBeenCalledWith(
+        expect.stringContaining("next_cursor"),
+      );
+      completeWrite?.();
+      await work;
+      expect(Buffer.concat(writes)).toEqual(bytes);
+      expect(errors).toHaveBeenCalledWith("next_cursor=13; state=running");
+      expect(output).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(0);
+    } finally {
+      completeWrite?.();
+      stdout.mockRestore();
+    }
+  });
+});
+
 const helper = vi.hoisted(() => {
   return { response: "", exit: 0, mode: "normal", requests: [] as string[] };
 });
@@ -121,6 +403,12 @@ beforeEach(() => {
   helper.exit = 0;
   response(accepted, finished());
   vi.mocked(spawn).mockClear();
+  for (const command of sshCommand.commands.find((command) => {
+    return command.name() === "session";
+  })?.commands ?? []) {
+    for (const option of command.options)
+      command.setOptionValue(option.attributeName(), option.defaultValue);
+  }
 });
 afterEach(() => {
   process.exitCode = 0;

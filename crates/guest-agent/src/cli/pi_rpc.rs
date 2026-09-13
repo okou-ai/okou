@@ -1164,6 +1164,63 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn projection_matches_shared_public_event_fixtures() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../../../fixtures/pi-public-events.json"))
+                .expect("shared public event fixture must parse");
+        for case in fixture["cases"].as_array().expect("fixture cases") {
+            let name = case["name"].as_str().expect("case name");
+            let (responses, _rx) = response_channel();
+            let mut projection = PiRpcProjection::new(
+                fixture["runId"].as_str().expect("run id"),
+                fixture["sessionId"].as_str().expect("session id"),
+            );
+            let projected = projection
+                .project(
+                    json!({ "type": "message_end", "message": case["guestMessage"] }),
+                    &responses,
+                    0,
+                )
+                .expect("official assistant should project");
+            let events: Vec<Value> = projected
+                .into_iter()
+                .flat_map(|event| {
+                    super::super::provider_event_normalization::normalize_for_sequencing(
+                        crate::env::Framework::Pi,
+                        event,
+                    )
+                })
+                .collect();
+            let messages: Vec<&Value> = events.iter().map(|event| &event["message"]).collect();
+            assert_eq!(json!(messages), case["expectedMessages"], "{name}");
+            // Guest sequencing belongs to the installed startup boundary and
+            // ingestor. Projection does not invent the API's zero-based index.
+            for event in events {
+                assert_eq!(event["type"], "assistant", "{name}");
+                assert!(event.get("sequenceNumber").is_none(), "{name}");
+                assert!(event.get("duration_ms").is_none(), "{name}");
+            }
+            assert!(
+                projection
+                    .project(json!({ "type": "agent_end" }), &responses, 0)
+                    .expect("agent_end is not terminal")
+                    .is_none(),
+                "{name}"
+            );
+            let terminal = projection
+                .project(json!({ "type": "agent_settled" }), &responses, 0)
+                .expect("agent_settled should project")
+                .expect("only agent_settled owns the terminal result");
+            assert_eq!(terminal["type"], "result", "{name}");
+            assert_eq!(terminal["subtype"], "success", "{name}");
+            assert_eq!(terminal["is_error"], false, "{name}");
+            assert_eq!(terminal["result"], case["guestResult"], "{name}");
+            assert_eq!(terminal["session_id"], fixture["sessionId"], "{name}");
+            assert!(terminal["duration_ms"].as_u64().is_some(), "{name}");
+        }
+    }
+
     async fn next_command(reader: &mut BufReader<tokio::process::ChildStdout>) -> Value {
         let mut line = String::new();
         reader

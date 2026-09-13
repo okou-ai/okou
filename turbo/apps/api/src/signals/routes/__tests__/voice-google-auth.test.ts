@@ -91,7 +91,7 @@ describe("Google voice workload identity through the public API", () => {
     },
   ])(
     "reports temporary $stage I/O failure (body=$bodyFailure) without replay",
-    async ({ url, stage, bodyFailure }) => {
+    async ({ url, bodyFailure }) => {
       let calls = 0;
       server.use(
         http.post(url, () => {
@@ -114,17 +114,6 @@ describe("Google voice workload identity through the public API", () => {
       const response = await accept(polish(), [503]);
       expect(response.body.error.code).toBe("PROVIDER_UNAVAILABLE");
       expect(calls).toBe(1);
-      expect(context.mocks.axiomLogging.warn).toHaveBeenCalledExactlyOnceWith(
-        "Google Cloud LLM authentication rejected",
-        expect.objectContaining({
-          stage,
-          status: 503,
-          reason: bodyFailure ? "upstream_timeout" : "network",
-        }),
-      );
-      expect(
-        JSON.stringify(context.mocks.axiomLogging.warn.mock.calls),
-      ).not.toContain("private credential response");
     },
   );
 
@@ -149,10 +138,6 @@ describe("Google voice workload identity through the public API", () => {
       );
       const response = await accept(polish(), [502]);
       expect(response.body.error.code).toBe("VOICE_POLISH_FAILED");
-      expect(context.mocks.axiomLogging.warn).toHaveBeenCalledExactlyOnceWith(
-        "Google Cloud LLM authentication rejected",
-        expect.objectContaining({ status: 403, reason: "http" }),
-      );
     },
   );
 
@@ -182,14 +167,6 @@ describe("Google voice workload identity through the public API", () => {
     deadline.abort(new DOMException("Auth deadline", "TimeoutError"));
     await accept(pending, [503]);
     await aborted.promise;
-    expect(context.mocks.axiomLogging.warn).toHaveBeenCalledExactlyOnceWith(
-      "Google Cloud LLM authentication rejected",
-      expect.objectContaining({
-        stage: "deadline",
-        reason: "deadline",
-        status: 503,
-      }),
-    );
     context.mocks.abortSignal.timeout.mockReset();
     server.use(
       http.post(GOOGLE_STS_URL, () => {

@@ -1,6 +1,5 @@
 import { command, computed, state } from "ccstate";
 import { delay } from "signal-timers";
-import { stableChatThreadNavigationEnabled$ } from "./external/feature-switch.ts";
 import { onDomEventFn, resetSignal } from "./utils.ts";
 
 const internalKeyboardShortcutHintPhase$ = state<
@@ -10,10 +9,7 @@ const resetKeyboardShortcutHintHold$ = resetSignal();
 const resetShortcutHintSignal$ = resetSignal();
 
 export const keyboardShortcutHintsVisible$ = computed((get) => {
-  return (
-    get(stableChatThreadNavigationEnabled$) &&
-    get(internalKeyboardShortcutHintPhase$) === "visible"
-  );
+  return get(internalKeyboardShortcutHintPhase$) === "visible";
 });
 
 export const hideKeyboardShortcutHints$ = command(({ get, set }) => {
@@ -61,11 +57,8 @@ const startKeyboardShortcutHintHold$ = command(
 );
 
 const updateKeyboardShortcutHintModifiers$ = command(
-  ({ get, set }, event: KeyboardEvent, hintSignal: AbortSignal) => {
-    if (
-      !get(stableChatThreadNavigationEnabled$) ||
-      !shortcutHintModifierHeld(event)
-    ) {
+  ({ set }, event: KeyboardEvent, hintSignal: AbortSignal) => {
+    if (!shortcutHintModifierHeld(event)) {
       set(resetShortcutHintSignal$);
       return;
     }
@@ -83,7 +76,6 @@ const updateKeyboardShortcutHintModifiers$ = command(
 const startKeyboardShortcutHint$ = command(
   ({ get, set }, event: KeyboardEvent, signal: AbortSignal) => {
     if (
-      !get(stableChatThreadNavigationEnabled$) ||
       get(internalKeyboardShortcutHintPhase$) !== "idle" ||
       !shortcutHintEventEligible(event) ||
       event.repeat

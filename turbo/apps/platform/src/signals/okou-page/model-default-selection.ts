@@ -6,8 +6,8 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
-import { withCompatibleChatReasoningEffort } from "./model-reasoning-effort.ts";
+import { withChatModelSettings } from "./model-reasoning-effort.ts";
+import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import {
   modelAllowedForPlan,
   modelPlanCapabilities$,
@@ -17,27 +17,32 @@ import {
 interface UserModelDefaultSource {
   selectedModel: string | null;
   serviceTier?: "priority" | null;
+  modelSettings?: ModelSettings;
 }
 
 function createModelFirstSelection(
   selectedModel: string | null | undefined,
+  modelSettings: ModelSettings = {},
 ): ModelProviderSelection | null {
   if (!isSupportedRunModel(selectedModel)) {
     return null;
   }
   return {
     selectedModel,
+    modelSettings,
   };
 }
 
 function resolveModelFirstWorkspaceDefaultSelection(
   policies: OrgModelPoliciesResponse | null | undefined,
+  modelSettings: ModelSettings = {},
 ): ModelProviderSelection | null {
   const defaultPolicy = policies?.policies.find((policy) => {
     return policy.isDefault && policy.routeStatus === "valid";
   });
   return createModelFirstSelection(
     defaultPolicy?.model ?? policies?.workspaceDefaultModel,
+    modelSettings,
   );
 }
 
@@ -65,7 +70,11 @@ export function resolveModelFirstUserDefaultSelection(params: {
 }): ModelProviderSelection | null {
   const userSelection = resolveModelFirstStoredUserSelection(params);
   return (
-    userSelection ?? resolveModelFirstWorkspaceDefaultSelection(params.policies)
+    userSelection ??
+    resolveModelFirstWorkspaceDefaultSelection(
+      params.policies,
+      params.userPreference?.modelSettings,
+    )
   );
 }
 
@@ -76,6 +85,7 @@ export function resolveModelFirstStoredUserSelection(params: {
 }): ModelProviderSelection | null {
   const userSelection = createModelFirstSelection(
     params.userPreference?.selectedModel,
+    params.userPreference?.modelSettings,
   );
   if (!userSelection) {
     return null;
@@ -124,10 +134,9 @@ export const resolveExplicitModelSelection$ = command(
     }
     return {
       kind: "select",
-      selection: withCompatibleChatReasoningEffort(
+      selection: withChatModelSettings(
         params.selection,
         params.previousSelection,
-        get(featureSwitch$),
       ),
     };
   },

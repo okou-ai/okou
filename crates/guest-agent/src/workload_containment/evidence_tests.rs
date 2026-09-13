@@ -39,17 +39,22 @@ fn frame(bytes: &[u8]) -> Vec<u8> {
     frame
 }
 
-// Keep the paused clock from auto-advancing past socket readiness that the
-// kernel has not delivered to Tokio yet. The bound catches a missing I/O event.
+// Blocking work inhibits Tokio's paused-clock auto-advance while the runtime
+// waits for real I/O. Use a wall-clock watchdog, not a scheduler-turn budget.
 async fn ready_io<F: Future>(future: F) -> F::Output {
-    tokio::select! {
+    let (release, wait) = std::sync::mpsc::channel::<()>();
+    let mut watchdog = tokio::task::spawn_blocking(move || {
+        let _ = wait.recv_timeout(Duration::from_secs(5));
+    });
+    let result = tokio::select! {
         result = future => result,
-        _ = async {
-            for _ in 0..1_000 {
-                tokio::task::yield_now().await;
-            }
-        } => panic!("expected socket I/O did not become ready"),
-    }
+        _ = &mut watchdog => panic!("expected I/O did not complete within the wall-clock watchdog"),
+    };
+    // Dropping the sender also releases the blocking task on cancellation or
+    // panic. Join it on success before allowing the test to advance time again.
+    drop(release);
+    watchdog.await.unwrap();
+    result
 }
 
 async fn expect_request<F: Future>(capture: Pin<&mut F>, peer: &mut AsyncUnixStream, request: u8) {
@@ -241,6 +246,29 @@ async fn evidence_rejects_invalid_frames_and_closes_the_connection() {
                 .is_none()
         );
     }
+}
+
+#[tokio::test(start_paused = true)]
+async fn evidence_accepts_a_response_after_peer_scheduling_delay() {
+    let (containment, peer) = containment_pair();
+    let mut peer = async_peer(peer);
+    let evidence = fixture();
+    let response = frame(&serde_json::to_vec(&evidence).unwrap());
+    let started = tokio::time::Instant::now();
+    let (captured, ()) = ready_io(async {
+        tokio::join!(containment.oom_evidence(CaptureReason::Sample), async {
+            assert_eq!(peer.read_u8().await.unwrap(), 1);
+            // A peer can have runnable work before its response is available.
+            // Scheduler turns are not elapsed protocol time or an I/O deadline.
+            for _ in 0..2_000 {
+                tokio::task::yield_now().await;
+            }
+            peer.write_all(&response).await.unwrap();
+        })
+    })
+    .await;
+    assert_eq!(captured, Some(evidence));
+    assert_eq!(started.elapsed(), Duration::ZERO);
 }
 
 #[tokio::test(start_paused = true)]

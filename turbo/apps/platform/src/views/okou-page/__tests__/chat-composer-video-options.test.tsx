@@ -36,6 +36,7 @@ function installVideoEnvironment(): void {
   const preference: UserModelPreferenceResponse = {
     selectedModel: "claude-fable-5-1",
     serviceTier: null,
+    modelSettings: {},
     selectedImageModel: "fal-ai/nano-banana-2",
     selectedVideoModel: "dreamina-seedance-2-0-260128",
     updatedAt: "2026-06-13T00:00:00.000Z",
@@ -56,7 +57,7 @@ function installVideoEnvironment(): void {
   mockOrgModelRoutes("claude-fable-5-1");
   mockBillingCapabilities({
     supportByok: true,
-    restrictedVm0Models: false,
+    restrictedBuiltInModels: false,
   });
 }
 
@@ -206,7 +207,6 @@ test.each([false, true])(
       path: `/agents/${AGENT_ID}/chat`,
       featureSwitches: { [FeatureSwitchKey.ComposerCreateCommands]: enabled },
     });
-    await enterText("Generate the first cinematic clip.");
     await enterVideoMode("Claude Fable 5.1");
     await selectVideoTemplate();
     await expect(
@@ -221,6 +221,7 @@ test.each([false, true])(
   async (enabled) => {
     const submissions = installVideoSubmissionCapture();
     await setupPage({
+      locale: "en-US",
       context,
       path: `/agents/${AGENT_ID}/chat`,
       featureSwitches: { [FeatureSwitchKey.ComposerCreateCommands]: enabled },
@@ -257,6 +258,7 @@ test.each([false, true])(
     const user = userEvent.setup({ delay: null });
     const submissions = installVideoSubmissionCapture();
     await setupPage({
+      locale: "en-US",
       context,
       path: `/agents/${AGENT_ID}/chat`,
       featureSwitches: { [FeatureSwitchKey.ComposerCreateCommands]: enabled },

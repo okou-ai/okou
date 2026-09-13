@@ -19,6 +19,7 @@
  * - no-getter-setter-params: Functions must not accept ccstate Getter/Setter — use command()
  * - no-accessor-escape: ccstate get/set accessors must only be called directly
  * - no-new-abort-controller: Disallow new AbortController() — use signal hierarchy
+ * - no-create-child-abort-controller: Disallow createChildAbortController() lifecycle escape hatches
  * - no-direct-local-storage: Disallow direct localStorage access — use localStorageSignals()
  * - no-direct-session-storage: Disallow direct sessionStorage access — use sessionStorageSignals()
  * - no-detach-in-signals: Disallow detach() in signals/ — use await or signal chain
@@ -51,6 +52,7 @@ import noCommandInCommand from "./rules/no-command-in-command.ts";
 import noGetterSetterParams from "./rules/no-getter-setter-params.ts";
 import noAccessorEscape from "./rules/no-accessor-escape.ts";
 import noNewAbortController from "./rules/no-new-abort-controller.ts";
+import noCreateChildAbortController from "./rules/no-create-child-abort-controller.ts";
 import noNewPromise from "./rules/no-new-promise.ts";
 import noDirectLocalStorage from "./rules/no-direct-local-storage.ts";
 import noDirectSessionStorage from "./rules/no-direct-session-storage.ts";
@@ -96,6 +98,7 @@ const plugin = {
     "no-getter-setter-params": noGetterSetterParams,
     "no-accessor-escape": noAccessorEscape,
     "no-new-abort-controller": noNewAbortController,
+    "no-create-child-abort-controller": noCreateChildAbortController,
     "no-new-promise": noNewPromise,
     "no-direct-local-storage": noDirectLocalStorage,
     "no-direct-session-storage": noDirectSessionStorage,

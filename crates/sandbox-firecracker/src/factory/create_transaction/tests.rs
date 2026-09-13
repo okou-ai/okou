@@ -568,6 +568,7 @@ impl CreateRollbackCleanup for BlockingNetworkAfterCowCleanup {
 fn test_leaked_resource(sandbox_id: &str) -> LeakedResources {
     LeakedResources {
         sandbox_id: sandbox_id.into(),
+        process_exit: None,
         cow_device: None,
         network: None,
         sock_dir: PathBuf::from("/nonexistent"),

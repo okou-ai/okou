@@ -139,7 +139,7 @@ async def prepare_miss(flow: http.HTTPFlow, *, expected_encoding: str = "identit
 
 
 async def prepare_prefetch_miss(flow: http.HTTPFlow) -> None:
-    flow.request.headers["X-VM0-Codex-Model-Catalog-Prefetch"] = "1"
+    flow.request.headers["X-Okou-Codex-Model-Catalog-Prefetch"] = "1"
     catalog_cache.capture_and_strip_prefetch_marker(flow)
     await prepare_miss(flow, expected_encoding="br")
 

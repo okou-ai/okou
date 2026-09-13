@@ -26,6 +26,10 @@ import {
   ensureMorningBriefDefaultEnabled$,
   type EnsureMorningBriefDefaultEnabledResult,
 } from "../services/morning-brief-preference.service";
+import {
+  deliverWelcomeChatThread$,
+  type WelcomeThreadDeliveryOutcome,
+} from "../services/welcome-chat-thread.service";
 
 const L = logger("WebhookClerkRoute");
 
@@ -192,6 +196,43 @@ function enqueueMorningBriefMembershipProvisioning(args: {
   );
 }
 
+interface WelcomeThreadDelivery {
+  readonly trigger: string;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly task: Promise<WelcomeThreadDeliveryOutcome>;
+}
+
+async function observeWelcomeThreadDelivery(
+  args: WelcomeThreadDelivery,
+): Promise<void> {
+  const delivery = await args.task;
+  L.debug("welcome thread delivery outcome", {
+    trigger: args.trigger,
+    orgId: args.orgId,
+    userId: args.userId,
+    delivery,
+  });
+}
+
+/**
+ * Welcome delivery is a one-shot registration side effect, guarded like the
+ * other bootstrap work here: the handler answers 200 either way, a failure
+ * cannot block Morning Brief enrollment or org bootstrap, and a workspace that
+ * is not ready is logged and abandoned rather than retried.
+ */
+function enqueueWelcomeThreadDelivery(args: WelcomeThreadDelivery): void {
+  waitUntil(
+    tapError(observeWelcomeThreadDelivery(args), (error) => {
+      L.error(`${args.trigger} welcome thread delivery failed`, {
+        orgId: args.orgId,
+        userId: args.userId,
+        error,
+      });
+    }),
+  );
+}
+
 function organizationInvitationAcceptedIdentity(data: unknown):
   | {
       readonly orgId: string;
@@ -306,16 +347,23 @@ function handleOrganizationInvitationAcceptedWebhook(
   return new Response("OK", { status: 200 });
 }
 
+interface OrganizationMembershipSideEffects {
+  readonly bootstrap: (
+    identity: NonNullable<ReturnType<typeof organizationMembershipIdentity>>,
+  ) => void;
+  readonly provisionMorningBrief: (
+    identity: NonNullable<ReturnType<typeof organizationMembershipIdentity>>,
+  ) => Promise<void>;
+  readonly deliverWelcomeThread: (
+    identity: NonNullable<ReturnType<typeof organizationMembershipIdentity>>,
+  ) => void;
+}
+
 async function handleOrganizationMembershipCreatedWebhook(
   data: unknown,
   db: Db,
   signal: AbortSignal,
-  bootstrap: (
-    identity: NonNullable<ReturnType<typeof organizationMembershipIdentity>>,
-  ) => void,
-  provisionMorningBrief: (
-    identity: NonNullable<ReturnType<typeof organizationMembershipIdentity>>,
-  ) => Promise<void>,
+  sideEffects: OrganizationMembershipSideEffects,
 ): Promise<Response> {
   const identity = organizationMembershipIdentity(data);
   if (!identity) {
@@ -334,7 +382,13 @@ async function handleOrganizationMembershipCreatedWebhook(
     );
   }
 
-  await provisionMorningBrief(identity);
+  await sideEffects.provisionMorningBrief(identity);
+
+  // Every new member is owed a welcome, so this runs before the admin-only
+  // bootstrap below. An invited member joins a workspace whose default agent
+  // already exists; a creator's own membership usually arrives before that
+  // agent does, and bootstrap completion delivers theirs instead.
+  sideEffects.deliverWelcomeThread(identity);
 
   if (!isAdminMembershipRole(identity.role)) {
     if (!identity.purchaseId) {
@@ -347,7 +401,7 @@ async function handleOrganizationMembershipCreatedWebhook(
     return new Response("OK", { status: 200 });
   }
 
-  bootstrap(identity);
+  sideEffects.bootstrap(identity);
   return new Response("OK", { status: 200 });
 }
 
@@ -389,6 +443,45 @@ const handleOrganizationDeletedWebhook$ = command(
   },
 );
 
+/**
+ * A new workspace's default agent only becomes usable when bootstrap
+ * publishes it, which is after its creator's membership event has already
+ * passed. Deliver the creator's welcome here, where the workspace is finally
+ * able to answer for one. The identity-derived thread id makes the second
+ * trigger for an already-served recipient a no-op.
+ */
+const bootstrapOrgAndDeliverWelcome$ = command(
+  async (
+    { set },
+    args: {
+      readonly eventType: string;
+      readonly orgId: string;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const bootstrap = await set(
+      ensureOrgLimitedFreeBootstrap$,
+      { orgId: args.orgId, ownerUserId: args.userId },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!bootstrap.agentId) {
+      return;
+    }
+    enqueueWelcomeThreadDelivery({
+      trigger: args.eventType,
+      orgId: args.orgId,
+      userId: args.userId,
+      task: set(
+        deliverWelcomeChatThread$,
+        { orgId: args.orgId, userId: args.userId },
+        signal,
+      ),
+    });
+  },
+);
+
 const handleOrganizationCreatedWebhook$ = command(
   async ({ set }, data: unknown, signal: AbortSignal): Promise<Response> => {
     const identity = organizationCreatedIdentity(data);
@@ -405,10 +498,11 @@ const handleOrganizationCreatedWebhook$ = command(
       orgId: identity.orgId,
       userId: identity.userId,
       task: set(
-        ensureOrgLimitedFreeBootstrap$,
+        bootstrapOrgAndDeliverWelcome$,
         {
+          eventType: "organization.created",
           orgId: identity.orgId,
-          ownerUserId: identity.userId,
+          userId: identity.userId,
         },
         signal,
       ),
@@ -503,20 +597,38 @@ const postClerkWebhook$ = command(
         event.data,
         set(writeDb$),
         signal,
-        (identity) => {
-          enqueueOrgBootstrap({
-            eventType: "organizationMembership.created",
-            orgId: identity.orgId,
-            userId: identity.userId,
-            task: set(
-              ensureOrgLimitedFreeBootstrap$,
-              { orgId: identity.orgId, ownerUserId: identity.userId },
-              signal,
-            ),
-          });
-        },
-        async (identity) => {
-          await set(enrollMorningBriefMembership$, identity, signal);
+        {
+          bootstrap: (identity) => {
+            enqueueOrgBootstrap({
+              eventType: "organizationMembership.created",
+              orgId: identity.orgId,
+              userId: identity.userId,
+              task: set(
+                bootstrapOrgAndDeliverWelcome$,
+                {
+                  eventType: "organizationMembership.created",
+                  orgId: identity.orgId,
+                  userId: identity.userId,
+                },
+                signal,
+              ),
+            });
+          },
+          provisionMorningBrief: async (identity) => {
+            await set(enrollMorningBriefMembership$, identity, signal);
+          },
+          deliverWelcomeThread: (identity) => {
+            enqueueWelcomeThreadDelivery({
+              trigger: "organizationMembership.created",
+              orgId: identity.orgId,
+              userId: identity.userId,
+              task: set(
+                deliverWelcomeChatThread$,
+                { orgId: identity.orgId, userId: identity.userId },
+                signal,
+              ),
+            });
+          },
         },
       );
     }

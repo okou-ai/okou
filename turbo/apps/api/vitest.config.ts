@@ -16,8 +16,7 @@ export default defineConfig({
     ],
     benchmark: {
       include: ["src/**/__benches__/**/*.bench.ts"],
-      includeSamples: true,
-      reporters: ["default", "./scripts/bench-p90-reporter.ts"],
+      retainSamples: true,
     },
   },
 });

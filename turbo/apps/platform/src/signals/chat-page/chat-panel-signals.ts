@@ -10,7 +10,10 @@ import type {
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ChatClipboardPayload } from "../okou-page/clipboard.ts";
-import type { ChatEventGroup } from "./chat-event.ts";
+import type {
+  ChatEventGroup,
+  UserMessageRenderDocument,
+} from "./chat-event.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
 import type { ThreadMeta } from "./chat-thread-event-sourcing.ts";
 import type { HeaderAutomationSignals } from "./header-automation-menu.ts";
@@ -50,6 +53,7 @@ export interface EventImageGroupProjection {
   readonly role: ChatEventGroup["role"];
   readonly events: readonly {
     readonly userMessage?: UserMessageDocument;
+    readonly userMessageRenderDocument?: UserMessageRenderDocument;
     readonly tree?: Root;
   }[];
 }

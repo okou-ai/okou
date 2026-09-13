@@ -168,7 +168,7 @@ describe("AUTH-02: CLI device authorization", () => {
 });
 
 describe("AUTH-02: desktop auth handoff", () => {
-  it("requires a session, returns a safe legacy Zero callback URL, and consumes the handoff once", async () => {
+  it("requires a session, returns a safe dev callback URL, and consumes the handoff once", async () => {
     authDevice.mockDesktopSignInToken("ticket_desktop_bdd");
 
     const unauthenticated = await authDevice.requestDesktopHandoff(
@@ -182,7 +182,7 @@ describe("AUTH-02: desktop auth handoff", () => {
     const actor = bdd.user();
     const handoff = await authDevice.requestDesktopHandoff(
       actor,
-      { callbackScheme: "ai.vm0.zero.desktop.dev" },
+      { callbackScheme: "ai.okou.desktop.dev" },
       [200],
     );
     if (handoff.status !== 200) {
@@ -191,7 +191,7 @@ describe("AUTH-02: desktop auth handoff", () => {
       );
     }
     const callbackUrl = new URL(handoff.body.callbackUrl);
-    expect(callbackUrl.protocol).toBe("ai.vm0.zero.desktop.dev:");
+    expect(callbackUrl.protocol).toBe("ai.okou.desktop.dev:");
     expect(callbackUrl.hostname).toBe("auth");
     expect(callbackUrl.pathname).toBe("/callback");
     expect(handoff.body.callbackUrl).not.toContain("ticket");
@@ -225,6 +225,16 @@ describe("AUTH-02: desktop auth handoff", () => {
     const missingCode = await authDevice.requestDesktopConsume("", [400]);
     expectApiError(missingCode.body);
     expect(missingCode.body.error.code).toBe("BAD_REQUEST");
+  });
+
+  it("rejects a retired Zero callback scheme", async () => {
+    const retired = await authDevice.requestDesktopHandoffRaw(
+      bdd.user(),
+      JSON.stringify({ callbackScheme: "ai.vm0.zero.desktop" }),
+    );
+    expect(retired.status).toBe(400);
+    expectApiError(retired.body);
+    expect(retired.body.error.code).toBe("BAD_REQUEST");
   });
 
   it("creates and consumes an Okou desktop auth callback", async () => {

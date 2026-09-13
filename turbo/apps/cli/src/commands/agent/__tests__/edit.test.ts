@@ -308,32 +308,6 @@ describe("okou agent edit command", () => {
       },
     );
 
-    it("rejects protected edits when the API omits identity", async () => {
-      let writes = 0;
-      server.use(
-        http.get("http://localhost:3000/api/agents/my-agent", () => {
-          return HttpResponse.json({ ...mockAgent, isDefaultAgent: undefined });
-        }),
-        http.put("http://localhost:3000/api/agents/my-agent", () => {
-          writes++;
-          return HttpResponse.json(mockAgent);
-        }),
-      );
-      await expect(
-        editCommand.parseAsync([
-          "node",
-          "cli",
-          "my-agent",
-          "--visibility",
-          "private",
-        ]),
-      ).rejects.toThrow("process.exit called");
-      expect(mockConsoleError).toHaveBeenCalledWith(
-        expect.stringContaining("Agent identity is unavailable"),
-      );
-      expect(writes).toBe(0);
-    });
-
     it("edits a default description and repeats canonical fields", async () => {
       const requests: unknown[] = [];
       server.use(

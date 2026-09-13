@@ -10,6 +10,7 @@ import {
 import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { executeSsh } from "./rpc";
+import { createSessionCommand } from "./sessions";
 
 function requireCapability(capability: "ssh:read" | "ssh:write") {
   if (!decodeSandboxTokenPayload()?.capabilities.includes(capability)) {
@@ -106,4 +107,9 @@ export const sshCommand = new Command("ssh")
       .description("Inspect authorized SSH hosts")
       .addCommand(list),
   )
-  .addCommand(exec);
+  .addCommand(exec)
+  .addCommand(
+    createSessionCommand(() => {
+      return requireCapability("ssh:write");
+    }),
+  );

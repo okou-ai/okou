@@ -169,12 +169,6 @@ export const voiceInputV2Enabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.VoiceInputV2] ?? false;
 });
 
-export const stableChatThreadNavigationEnabled$ = computed((get): boolean => {
-  return (
-    get(featureSwitch$)[FeatureSwitchKey.StableChatThreadNavigation] ?? false
-  );
-});
-
 const hydrateFeatureSwitch$ = command(
   async (
     { get, set },
@@ -231,6 +225,7 @@ const refreshFeatureSwitchState$ = command(
       return;
     }
 
+    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
     const requestController = createChildAbortController(signal);
     const abortIfIdentityChanged = () => {
       if (

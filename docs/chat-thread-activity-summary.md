@@ -21,28 +21,26 @@ not end eligibility. Responses use `Cache-Control: no-store`.
 The typed contract is `chatThreadActivitySummaryContract` in
 `@okouai/api-contracts/contracts/chat-thread-activity-summary`.
 
-| Field                                   | Meaning                                                                               |
-| --------------------------------------- | ------------------------------------------------------------------------------------- |
-| `runId`                                 | Requested and verified run identity                                                   |
-| `phrase`                                | One plain-text line, at most 60 grapheme clusters, or `null`                          |
-| `status`                                | `fresh`, `stale`, `pending`, `cooldown`, `ineligible`, or `unavailable`               |
-| `sourceRevision`                        | Opaque revision of the currently retained activity and visible-message cursor         |
-| `summaryRevision`                       | Actual revision read by the successful generation, or `null`                          |
-| `sourceSequence`, `summarySequence`     | Latest retained event sequence now and at generation, or `null` before tools/messages |
-| `messageCursor`, `summaryMessageCursor` | Canonical visible-message sequence now and at generation                              |
-| `summarizedAt`                          | UTC generation completion time, or `null`                                             |
-| `retryAfterMs`                          | Bounded delay before another useful request; fresh results suggest 15 seconds         |
+| Field      | Meaning                                                            |
+| ---------- | ------------------------------------------------------------------ |
+| `runId`    | Requested and verified run identity                                |
+| `messages` | At most four plain-text lines of at most 60 grapheme clusters each |
+| `status`   | `available`, `ineligible`, or `unavailable`                        |
+
+`available` is the stored batch, which is empty while the first generation is
+still pending. `ineligible` is an owned run that is queued, terminal, or not the
+thread's admitted run. `unavailable` means the evidence expired.
 
 Authentication/validation errors use the existing 400/401/403 error contract.
 Disabled accounts receive 403. Missing, inaccessible, or mismatched thread/run
 identities receive 404 without cache exposure. An owned but ineligible run
-receives 200 with `status: ineligible`, no phrase, and no generation. An optional
-storage failure returns `unavailable` without exposing the snapshot.
+receives 200 with `status: ineligible`, no messages, and no generation. A storage
+failure is this service's own defect and reaches the caller as a plain 500
+without exposing the snapshot.
 
-A cached phrase may be returned with a different current revision while a claim
-or cooldown prevents another attempt. Only `summaryRevision` identifies what
-that phrase describes. A delayed completion never claims to summarize newer
-activity. The response includes no raw tool arguments or activity entries.
+Generation provenance is not published: the response includes no revision,
+sequence, cursor, completion time, retry delay, raw tool arguments, or activity
+entries.
 
 ## Storage and concurrency
 
@@ -74,16 +72,15 @@ credential-shaped argument keys are additionally redacted.
   current task, with 700-character excerpts. Queued messages enter the context
   after the runtime acknowledges delivery. Indicator copy is excluded.
 - Reuse `FAST_PATH_MODEL` and `generateText`, a reasoning-inclusive 1024-token
-  budget with low reasoning, and a 10-second provider deadline. No request
-  means no new summarizer call. An unconfigured, rejected or failed generation
-  keeps the last phrase or `null`; it never retries inside the request.
-- Failed attempts use a shared 60-second cooldown. HTTP `Retry-After` can extend
-  it up to five minutes. Expired or replaced claim owners cannot write results.
-  An attempt whose request lifetime ended first — today the API instance
-  stopping — charges no cooldown: its lease expires like any owner that stopped
-  reporting, and the attempt interval written at claim time still bounds the
-  next provider call. A phrase that finished first is still stored for the next
-  viewer.
+  budget with low reasoning, and a 10-second provider deadline, all through the
+  shared `generateAuxiliary` boundary that every other optional generation uses.
+  No request means no new summarizer call. An unconfigured, rejected or failed
+  generation keeps the last phrase or `null`; it never retries inside the request.
+- Failed attempts use a fixed 60-second cooldown; HTTP `Retry-After` does not
+  extend it. Expired or replaced claim owners cannot write results. An attempt
+  whose request lifetime ended first — today the API instance stopping — charges
+  no cooldown: its lease expires like any owner that stopped reporting, and the
+  attempt interval written at claim time still bounds the next provider call.
 - Relevant capture or visible messages retain evidence for at most 24 hours
   from activity; first observing an old message does not restart its retention. Expired evidence is never returned. An expiry index supports
   one cleanup batch of at most 500 rows with `FOR UPDATE SKIP LOCKED`, attached
@@ -91,147 +88,31 @@ credential-shaped argument keys are additionally redacted.
 
 ## Production diagnostics
 
-The existing activity records use `info` for an outcome worth counting, `warn`
-or `error` for operations that need an operator, and no record at all for an
-outcome an established fallback already absorbs. Recorded events survive the
-default Axiom transport's `info` threshold. The shared logger and unrelated
-debug filtering are unchanged. Axiom events retain `source: api`, the stable
-message, and the following nested `fields`:
+Summary generation itself reports nothing from this service: it runs through the
+shared `generateAuxiliary` boundary, so every attempt is counted exactly once in
+the shared `auxiliary_generation_result` Axiom event under
+`feature: chat_activity_summary`, like every other auxiliary generation, and only
+the outcomes that boundary classifies as failures produce a diagnostic. The
+remaining records this feature writes are:
 
-| Message                        | Context                | Level                                                                                                                                                              | Safe fields besides context                                                                                                            |
-| ------------------------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `Activity summary cache`       | `api:activity-summary` | info                                                                                                                                                               | `runId`, `outcome` (existing response status)                                                                                          |
-| `Activity summary attempt`     | `api:activity-summary` | info                                                                                                                                                               | `runId`                                                                                                                                |
-| `Activity summary completion`  | `api:activity-summary` | info for success; error for a reported provider_failure, a rejected response contract or an unclassified exception; no record at any level for an absorbed outcome | `runId`, `outcome`, `durationMs`, `cooldownMs`; numeric `providerStatus` and the enumerated `reason` only for `OpenRouterRequestError` |
-| `Activity summary unavailable` | `api:activity-summary` | warn                                                                                                                                                               | `runId`, `outcome: storage_failed`                                                                                                     |
-| `Activity snapshot capture`    | `api:run-activity`     | info for written/unchanged and for an expected failure; warn otherwise                                                                                             | `runId`, `outcome`, `eventCount`; `stage` and `errorCode` on failure                                                                   |
-| `Activity snapshot cleanup`    | `api:run-activity`     | info on success; warn on failure                                                                                                                                   | `outcome`, `removed`, `retentionMs`; `errorCode` on failure                                                                            |
+| Message                            | Context            | Level | Safe fields besides context        |
+| ---------------------------------- | ------------------ | ----- | ---------------------------------- |
+| `Activity snapshot capture failed` | `api:run-activity` | warn  | `runId`, `eventCount`, `errorCode` |
+| `Activity snapshot cleanup failed` | `api:run-activity` | warn  | `errorCode`                        |
 
-Completion outcomes reachable in production are `success`, `provider_failure`,
-`cancelled`, `timeout`, `unconfigured`, `unusable_output`, and the subset of
-the shared OpenRouter failure reasons a non-request throw can carry: `network`,
-`upstream_timeout`, `output_truncated`, `unexpected_tool_calls`,
-`invalid_output` and `unknown`. A `provider_failure` also carries `reason`, the
-shared `openRouterFailureReason` classification of that request, alongside the
-numeric `providerStatus`. The reason union also contains `auth`,
-`invalid_request`, `rate_limited` and `provider_unavailable`, but those are
-recorded only while constructing an `OpenRouterRequestError`, so they arrive as
-`provider_failure` and are not residual outcomes. No error object or provider
-body is attached.
-
-`reason` is what decides whether a provider failure is reported, because the
-transport status cannot. OpenRouter delivers a native rate limit inside an HTTP
-200 error envelope that this client wraps as a synthetic `502`, while a raw
-`429` whose native evidence is `auth` or `invalid_request` is a real failure.
-Both cases are classified by the shared reason, never by `providerStatus`.
-
-The residual outcomes are kept apart rather than collapsed into one label.
-`unconfigured` is the optional enrichment's documented return when no API key
-is set, `unusable_output` is a returned completion the strict phrase contract
-rejected, and a thrown failure keeps the reason the shared classifier already
-recorded. `unknown` stays unknown: it names an exception nothing classified and
-asserts no cause.
-
-An outcome this endpoint's fallback absorbs emits **no record at any level**.
-On the residual side that covers `cancelled`, `timeout`, `unconfigured`,
-`unusable_output`, `output_truncated`, `unexpected_tool_calls`, and the two
-transport reasons a non-request throw can carry, `network` and
-`upstream_timeout`. In each case the response stays truthful (`cooldown` with
-the caller's last usable phrase or the existing generic label, or `pending` when
-none exists yet), the attempt interval or the shared cooldown bounds recovery,
-and no operator action exists. Emitting them at a quieter level, or as an
-equivalent replacement event, would only restore the noise; they are removed
-instead. `invalid_output` and `unknown` reach `error` because the contract or
-the exception genuinely needs an operator.
-
-A `provider_failure` is absorbed the same way, and emits no record at any level,
-whenever its `reason` is one the shared classifier calls transient:
-`rate_limited`, `upstream_timeout` or `provider_unavailable`. The provider is
-momentarily over its limit or unreachable, the caller keeps its last usable
-phrase or the generic label, and the cooldown that record would have reported
-already bounds the retry, so there is nothing for an operator to do. The set is
-the classifier's own, so a reason that stops counting as transient there stops
-being absorbed here. (`network` is in that set but cannot occur on that branch:
-a transport rejection is not an `OpenRouterRequestError`, so it becomes a
-residual `network` outcome instead, absorbed by the residual rule above.)
-
-Every other `provider_failure` reason is a real failure and records at `error`:
-`auth` and `invalid_request` are credential and request-contract defects, and a
-request error the classifier could not place records as `reason: unknown`.
-`unknown` stays unknown — it names no cause and implies nothing about the main
-run — but it is still reported, because nothing here shows it recovers on its
-own.
-
-This deliberately removes the per-outcome counts those records used to carry,
-including the deadline rate that a previous revision documented here. **An
-absorbed outcome is not recoverable from these logs, and no arithmetic over the
-retained records recovers it.** Subtracting the emitted completions from the
-attempts does not yield the absorbed share: an attempt and its completion are
-separate records written up to the ten-second provider deadline apart, so they
-fall into different time bins at any bin width, and an attempt whose request
-ended without reaching the completion site has no matching record to subtract
-at all. Widening or clamping the bin hides the skew rather than removing it,
-and restoring the count would require a new observation channel, which this
-revision deliberately does not add.
-
-What the retained records do support is a count of each reported outcome and of
-attempts, each in its own right:
-
-```
-['vm0-web-logs-prod']
-| where ['fields.context'] == 'api:activity-summary'
-    and message in ('Activity summary attempt', 'Activity summary completion')
-| summarize attempts=countif(message == 'Activity summary attempt'),
-            successes=countif(['fields.outcome'] == 'success'),
-            provider=countif(['fields.outcome'] == 'provider_failure'),
-            failures=countif(['fields.outcome'] in ('invalid_output', 'unknown'))
-        by bin(_time, 30m)
-```
-
-Read those four series independently. Do not treat `attempts` as their total.
-Alerting on any of them is an operator decision and is not configured here.
-
-Absorbed outcomes, provider failures and residual ones alike, are deliberately
-not counted anywhere. `attempts` minus the emitted completions is not that
-count: an attempt and its completion are written separately, so an instance that
-stops between them leaves the same residual. No replacement record or telemetry
-channel is added to recover the number, and the rate-limit counters of other
-auxiliary generations describe their own features, not this one. `provider`
-above therefore counts only the reported failures, which are exactly the ones at
-`error`.
-
-A failed capture is classified into a finite set instead of one opaque
-`write_failed`. `contended` (`55P03`) and `run_missing` (`23503`) are expected
-consequences of concurrent delivery for one run, so they record at `info`;
-sustained unavailability is read by aggregating `fields.outcome`, not from a
-per-batch error level. `interrupted` (`57014`), `snapshot_missing` (the row
-vanished between the upsert and the locking read) and the residual
-`write_failed` keep `warn` because they need an owner. `fields.stage` is one of
-`begin`, `admission`, `lock`, `persist` or `commit`, where `begin` covers
-connection acquisition and the transaction's own timeout statements. Its
-companion `fields.errorCode` is the SQLSTATE class code alone — five characters,
+A contended capture (`55P03`) and a run deleted mid-flight (`23503`) are expected
+consequences of concurrent delivery for one run and stay silent; any other
+capture failure warns with the SQLSTATE class code alone — five characters,
 validated before it is published, and omitted when the driver reports no
-SQLSTATE. Driver messages, statement text, constraint details and bound
-parameters are never attached.
+SQLSTATE. Successful captures and cleanups record nothing. Driver messages,
+statement text, constraint details and bound parameters are never attached.
 
-Granularity is otherwise unchanged: one cache record for a request resolved
-without a claim, one attempt record per generation attempt and one completion
-record for each attempt that is not absorbed, one unavailable
-record for an optional summary storage failure, one capture record per relevant
-batch (including unchanged duplicates), and one cleanup record per maintenance
-operation (including zero removals). Disabled, irrelevant, and ineligible
-captures remain silent. `eventCount` counts the submitted batch, not new retained
-entries. Failed cleanup reports `removed: 0` with `outcome: failed`; that is not a
-successful empty cleanup. A skipped capture still drops that batch's evidence:
-the runner already holds its `200`, and no redelivery or retry is attempted.
+A skipped capture still drops that batch's evidence: the runner already holds
+its `200`, and no redelivery or retry is attempted.
 
 These records never contain prompts, phrases, messages, arguments, evidence,
-credentials, database-driver errors, or provider response bodies. The tests call
-real endpoints and exercise the production logger and real Axiom SDK/transport,
-with ingestion captured by MSW and unrelated debug records verified as filtered.
-No test logs go to production. Attempt records measure this service's generation
-attempts; they do not establish provider billing, token usage, or cost savings.
-Production verification remains controller-owned after release.
+credentials, database-driver errors, or provider response bodies. Production
+verification remains controller-owned after release.
 
 ## Visible viewer lifecycle
 
@@ -240,24 +121,19 @@ callback-ref AbortSignal and page lifecycle. Sidebar panels and unmounted routes
 do not request summaries. A visible, enabled viewer requests immediately for the
 latest eligible live run from the canonical event fold; the API independently
 verifies the admitted-run pointer and authorization. Subsequent requests use a
-15-second baseline and never precede `retryAfterMs`. Cooldown deadlines survive
-visibility changes. Each viewer serializes requests, including an aborted
+15-second interval. Each viewer serializes requests, including an aborted
 transport still settling after a ref change.
 
 Hiding, navigating away, unmounting, switching off, losing thread access, queuing,
 ending or replacing a run cancels demand and rejects late responses. An
-`ineligible`, 401, 403 or 404 response clears dynamic copy and stops retries for
-that run identity. An unavailable, malformed or failed optional response keeps
-the current run's last usable phrase (or the existing generic indicator) and
-backs off at least 60 seconds, stopping after three consecutive failures.
+`ineligible`, 401, 403 or 404 response clears dynamic copy for that run identity.
+An `unavailable`, malformed or failed response keeps the current run's last
+usable batch, or the existing generic indicator when it never had one.
 
-Cached `pending`, `cooldown` and `stale` phrases keep their actual
-`summaryRevision`, sequence, message cursor and completion time. Hashes are
-opaque; only monotonic summary provenance may replace current copy. Identical
-text preserves the mounted typewriter; changed text restarts it even after
-commentary or a completed animation. Run status remains the existing programmatic
-projection. All dynamic copy stays in transient page state, outside chat events,
-browser persistence, history and model context.
+Identical text preserves the mounted typewriter; changed text restarts it even
+after commentary or a completed animation. Run status remains the existing
+programmatic projection. All dynamic copy stays in transient page state, outside
+chat events, browser persistence, history and model context.
 
 Normal-send preparation suppresses automatic initial thinking for enabled
 owners through the shared gate used by both retained scheduling branches. The

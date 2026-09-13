@@ -102,7 +102,7 @@ The variant uses `border-(length:--border-width-surface)` so class merging recog
 
 The pointer overlay reuses the shared `bg-state-hover-overlay` token rather than declaring a surface-specific one, so one interaction-state decision keeps one owner. Like the choice variant, it applies through `[&:hover]` to preserve the existing touch-browser hover contract as well as pointer hover, and it does not replace the card fill with a translucent background. Radius, border, shadow, and transition decisions belong to this variant; use layout utilities for padding, size, alignment, and overflow.
 
-Integration and connector tests scope controls through the documented `data-slot="integration-card"` and `data-slot="connector-card"` component boundaries. These slots carry no styles; tests must not locate surfaces through utility or legacy class names.
+Integration and connector tests scope controls through the documented `data-slot="integration-card"`, `data-slot="connector-card"`, `data-slot="badge"`, and `data-slot="sidebar-thread-title"` component boundaries. These slots carry no styles; tests must not locate surfaces through utility or legacy class names.
 
 The `okou-card` selector and its consumers have been removed. This equivalent migration also removes background, border, shadow, and focus-ring overrides that the old unlayered selector had suppressed; activating those overrides would be a separate visual change. Existing `--okou-card-*` variables still consumed by other legacy components remain frozen until those components migrate; they are not a supported API for new surfaces.
 
@@ -182,6 +182,178 @@ component sets, read through an arbitrary `[animation-delay:var(...)]`.
 The `running-indicator`, `running-indicator-center`, and
 `running-indicator-ripple` recipes have been removed; their keyframes remain,
 since keyframes are not class selectors.
+
+### Literal colours and gradients
+
+Tailwind's colour and gradient utilities interpolate in oklab, so they do not
+reproduce a literal `rgb()` fill or a plain `linear-gradient()`. Migrating the
+mic meter with `bg-white/[0.18]` and `bg-linear-to-t from-[#bdf9ff] to-white`
+changed 618 pixels against the retired rule; the exact forms
+`bg-[rgb(255_255_255_/_0.18)]` and
+`bg-[linear-gradient(to_top,#bdf9ff,#ffffff)]` reproduce it at zero. Reach for
+the ergonomic utilities when a token supplies the colour, and for an exact
+value when the retired rule named one.
+
+The mic starting spinner sets `[transform:rotate(0deg)_translateZ(0)]` for the
+same reason the running indicator does: its keyframes animate `transform`, and
+Tailwind's `rotate-*` utility sets the individual `rotate` property, which would
+compose with the animation rather than be replaced by it.
+
+`--mic-volume-fill` stays a component-set runtime value, read through
+`after:h-[var(--mic-volume-fill,0%)]`.
+
+The `mic-starting-spinner` and `mic-volume-icon-meter` selectors have been
+removed; the `mic-starting-spin` keyframes remain.
+
+### Ancestor state without the hover media query
+
+Tailwind wraps `hover:` and `group-hover:` in `@media (hover: hover)`, so a
+`group-hover:` utility is not an equivalent replacement for a retired
+`.parent:hover .child` rule: the retired rule also fired on coarse pointers,
+where a tap leaves a sticky hover. Reproduce that contract with an arbitrary
+variant over the element's own semantic attribute, as in
+`[:is([data-sidebar-chat-thread-id]:hover,[data-sidebar-chat-thread-id]:focus-visible)_&]:…`,
+which generates the same unconditional descendant selector at the same
+specificity, and folds a two-state rule into one utility. This matches the
+unconditional `[&:hover]` form the choice and surface variants already use;
+reach for `group-hover:` only when the media gate is wanted. The sidebar copy
+foreground above is such a case: it keeps the guard deliberately, because a
+foreground that never repaints on a sticky tap state is the better behaviour
+there, while a title that never scrolls to its end would lose the affordance.
+
+Spell such a variant out at every call site. Tailwind's scanner is text-based,
+so a variant assembled from a constant produces a candidate that never appears
+in the source and therefore generates no CSS at all.
+
+A retired `@media (prefers-reduced-motion: reduce)` override that reset a value
+back to its initial becomes `motion-safe:` on the rule it used to override,
+rather than a second `motion-reduce:` utility. Both utilities land in the same
+layer at the same specificity, so a `motion-reduce:` override would depend on
+Tailwind's emission order to win; `motion-safe:` simply does not apply, and the
+registered initial value is what reduced motion resolved to anyway.
+
+The sidebar thread title keeps its `@property --okou-nav-title-shift`
+registration in the App stylesheet. A registration is an at-rule rather than a
+class selector, and it is what lets a transition interpolate the length and
+`inherits: true` carry the animated value to the text span; the mask, the
+travel and the delayed hover transition are Tailwind utilities on the component.
+The `okou-nav-title`, `okou-nav-title-row`, and `okou-nav-recent-label`
+selectors and their consumers have been removed. `okou-nav-recent-label` had no
+declarations at all. `data-slot="sidebar-thread-title"` identifies the clipping
+box for page tests and carries no styles.
+
+### Neutral button and select variants
+
+Use `Button variant="neutral"` for neutral actions and
+`SelectTrigger variant="neutral"` for neutral select controls. Each component
+owns its utilities; their public API does not export class strings.
+Use `Button asChild variant="neutral"` around a router `Link` for navigation
+styled as a button, and compose `Button` with `DialogTrigger` for dialog
+actions. The existing components own the interaction contract; `neutral` is
+only a visual variant. Link composition preserves the native anchor, ref,
+and navigation behavior without adding a wrapper.
+
+The components compose `border border-control-border bg-control-surface
+text-foreground [&:hover]:bg-state-hover-overlay` internally. This is the treatment the
+settings-select batch established, extended with the border and foreground the
+retired `okou-btn-morandi` selector owned. Language, timezone, and voice-input
+settings all use the select variant. Dimensions, padding, and radius remain
+with the existing component and caller.
+
+The neutral button adds the existing outline interaction fills
+(`hover:bg-state-hover active:bg-state-pressed`) to the shared surface, keeping
+the hover overlay above those fills. Select triggers retain the opaque surface
+and hover overlay. The existing recovery links and Add automation trigger
+preserve that same interaction treatment with `hover:bg-control-surface
+active:bg-control-surface` on their `Button` instances.
+
+Preserve consumer-specific interaction colors when extracting shared styles.
+The official workflow Configure button, for example, retains its existing
+`hover:bg-primary-hover active:bg-primary-pressed` overrides.
+
+The retired rule hard-coded a `0.7px` border while the rest of the product had
+already moved to `--default-border-width`. The replacement takes the shared
+hairline instead of naming a width. Blink and Gecko round both values up to one
+device pixel, so the change is invisible there and layout is unchanged; WebKit
+may draw the true hairline on a high-density display, which is the product
+behaviour the shared token already describes.
+
+`text-foreground` is currently redundant at every consumer, because each one
+already inherits that foreground. It is kept because the retired rule set it,
+so a control moved onto a differently coloured surface keeps the treatment it
+has today.
+
+The `okou-btn-morandi` selector has been removed.
+
+### Sidebar copy under the gradient color themes
+
+The `okou-nav-copy`, `okou-nav-copy-muted`, and `okou-nav-copy-muted-hover`
+selectors have been removed. They were scoped to
+`.okou-app[data-gradient-color-themes]` and collapsed every nav consumer onto one
+foreground and one muted foreground, overriding whatever each consumer spelled
+for itself. The collapse now happens at the variable layer instead:
+
+```css
+:root[data-gradient-color-themes][data-color-theme] {
+  --nav-copy: hsl(var(--okou-color-theme-hue) 24% 18%);
+  --nav-copy-muted: hsl(var(--okou-color-theme-hue) 18% 38%);
+}
+```
+
+```css
+--color-nav-copy: var(--nav-copy, var(--color-sidebar-foreground));
+--color-nav-copy-muted: var(--nav-copy-muted, var(--color-muted-foreground));
+```
+
+When the gradient themes are on, the raw values exist and every consumer resolves
+to them. Everywhere else they are unset and each consumer falls back to the
+foreground it already had, so both sides keep their current appearance without a
+conditional selector. Consumers whose foreground matches a registered fallback
+use `text-nav-copy` or `text-nav-copy-muted`; the rest carry their own fallback
+in the utility, including `var(--nav-copy, inherit)` where the consumer inherits
+its colour from an ancestor `Link` or `button` and must keep inheriting that
+ancestor's hover.
+
+Measured against `main` with the App's own Tailwind compiler in Chromium over
+CDP — 18 theme states, 19 class variants, hover forced on every row and on its
+colour-bearing ancestor: zero changed computed colours on the default palette and
+zero on all eight gradient palettes. A negative control that perturbs one
+fallback reports changes on both, so the zeros are not degenerate.
+
+One difference remains on a coarse pointer: `group-hover` carries Tailwind's
+`@media (hover: hover)` guard, which the retired selector lacked, so the gradient
+themes no longer paint the hover foreground onto a sticky tap state. Removing
+that guard would need either a first-party selector or a global `hover` variant
+override, and the guard is the better behaviour.
+
+Sidebar thread titles carry `data-slot="sidebar-thread-title"` so tests select
+them through a documented slot instead of the styling class.
+
+### Horizontal hairline rules
+
+The `okou-border-t` selector and its consumers have been removed. It was one
+declaration — `border-top: 0.7px solid hsl(var(--gray-400))` — spelled at 27
+sites as the rule between rows of a settings card, list or menu. Each consumer
+now writes `border-t border-t-gray-400`.
+
+The width joins the shared hairline the same way the retired `okou-btn-morandi`
+border did: `border-t` reads `--default-border-width` rather than naming a
+value, so these rules stop being a second registry for a decision that token
+already owns. The colour is unchanged, because `border-t-gray-400` resolves to
+the registered `--color-gray-400`, which is `hsl(var(--gray-400))` — the same
+runtime variable the retired rule read. Every Dark and gradient-palette override
+it followed therefore still applies without a per-theme branch.
+
+These are rules rather than real borders, so the newer `bg-divider` guidance
+would suit them. Adopting it would change their colour, which is a visual
+decision and belongs to a separately reviewed change; this migration preserved
+the existing stroke.
+
+The shared `Select` and `DropdownMenu` separators compose these utilities
+alongside their existing `border-0`. That still paints, because Tailwind emits
+`border-width` before `border-top-width` inside the utilities layer; previously
+the legacy rule won only by sitting outside every layer. Tests continue to
+select both separators through `data-slot`.
 
 ## Exception boundary
 

@@ -80,6 +80,7 @@ export const closeGoogleCalendarReconnect$ = command(
 const confirmRecovery$ = command(
   async ({ get, set }, target: CalendarRecoveryTarget, signal: AbortSignal) => {
     const deadline = now() + 30_000;
+    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
     const controller = createChildAbortController(signal);
     timeout(
       () => {

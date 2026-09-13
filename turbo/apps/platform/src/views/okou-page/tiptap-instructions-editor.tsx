@@ -374,7 +374,7 @@ export function TiptapInstructionsEditor({
       )}
       <EditorContent editor={editor} />
       {resolvedFooterHint ? (
-        <p className="mx-4 okou-border-t pt-2 pb-3 text-xs text-muted-foreground">
+        <p className="mx-4 border-t border-t-gray-400 pt-2 pb-3 text-xs text-muted-foreground">
           {resolvedFooterHint}
         </p>
       ) : null}

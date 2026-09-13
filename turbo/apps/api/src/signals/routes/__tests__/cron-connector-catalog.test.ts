@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 
-import { EVENT } from "@axiomhq/logging";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import { connectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
@@ -146,7 +145,7 @@ const DEFAULT_API_VERSION = apiPackage.version;
 const ZERO_DIGEST = `sha256:${"0".repeat(64)}`;
 const PREVIOUS_CONNECTOR_CATALOG_MAX_RAW_BYTES = 32 * 1024 * 1024;
 const EXPECTED_CAPABILITY_DIGEST =
-  "sha256:5d43292132013c7fee2675742b5d601b7e9c597c922418e2d1264bc0f9d6b159";
+  "sha256:9a8c84f91a49b1ab88d0771fda4bfa91816dcd9d471d98d2d3eb2f2aafbc4627";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const GOOGLE_OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const SLACK_OAUTH_TOKEN_URL = "https://slack.com/api/oauth.v2.access";
@@ -1430,34 +1429,6 @@ async function expectCatalogUnavailableRequestError(
     reason,
     code,
   });
-
-  const [message, fields] =
-    context.mocks.axiomLogging.error.mock.calls.at(-1) ?? [];
-  expect(message).toBe(
-    "Unhandled request error: Accepted external connector catalog is unavailable",
-  );
-  const logFields = fields as Record<PropertyKey, unknown>;
-  expect(logFields).toMatchObject({
-    type: "unhandled_request_error",
-    errorSummary: "Accepted external connector catalog is unavailable",
-    method: "POST",
-    route: "/api/runners/builtin-firewalls/resolve",
-    errorCode: code,
-    error: expect.objectContaining({
-      name: "ExternalConnectorCatalogUnavailableError",
-      message: "Accepted external connector catalog is unavailable",
-      reason,
-      code,
-    }),
-  });
-  expect(logFields[EVENT]).toMatchObject({
-    source: "api",
-    type: "unhandled_request_error",
-    errorSummary: "Accepted external connector catalog is unavailable",
-    method: "POST",
-    route: "/api/runners/builtin-firewalls/resolve",
-    errorCode: code,
-  });
 }
 
 interface VolumeStorageState {
@@ -2406,6 +2377,22 @@ describe("connector catalog valid lifecycle", () => {
       routes: featureSwitchesRoutes,
     })(featureSwitchesContract);
 
+    const released = await accept(catalogClient.list({ headers }), [200]);
+    expect(
+      released.body.connectors[0]?.authMethods.map((method) => {
+        return method.id;
+      }),
+    ).toStrictEqual(["api-token", "cli"]);
+
+    await accept(
+      featureClient.update({
+        headers,
+        body: {
+          switches: { [FeatureSwitchKey.CalComConnector]: false },
+        },
+      }),
+      [200],
+    );
     const disabled = await accept(catalogClient.list({ headers }), [200]);
     expect(disabled.body.connectors[0]?.authMethods).toStrictEqual([
       {
@@ -4357,7 +4344,7 @@ describe("connector catalog valid lifecycle", () => {
       orgId,
       status: "active",
       supportByok: true,
-      restrictedVm0Models: false,
+      restrictedBuiltInModels: false,
     });
     const initialOauth = await connectorsApi.startOauth(
       actor,
@@ -7432,14 +7419,13 @@ describe("connector catalog rejection and latest-valid retention", () => {
     );
   });
 
-  it("does not return or log raw source failures", async () => {
+  it("does not return raw source failures", async () => {
     const bucket = configureSource();
     const privateError =
       `credential=${PRIVATE_VALUE} bucket=${bucket} key=${ACTIVE_KEY} ` +
       "url=https://signed.example.test/private";
     context.mocks.s3.send.mockRejectedValue(new Error(privateError));
     const response = await syncCatalog();
-    const logged = JSON.stringify(context.mocks.axiomLogging.warn.mock.calls);
 
     expectRejectedBeforeAcceptance(response.body, "source-unavailable");
     for (const privateText of [
@@ -7449,7 +7435,6 @@ describe("connector catalog rejection and latest-valid retention", () => {
       "signed.example.test",
     ]) {
       expect(JSON.stringify(response.body)).not.toContain(privateText);
-      expect(logged).not.toContain(privateText);
     }
   });
 });

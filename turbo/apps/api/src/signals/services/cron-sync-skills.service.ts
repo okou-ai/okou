@@ -40,6 +40,12 @@ import { createDeferredPromise, safeSync, tapError } from "../utils";
 import type { FileEntryWithHash } from "./storage-content-hash.service";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
 
+import { preparePiResourceIndex } from "../../lib/pi-resource-index";
+import {
+  publishPiResourceVersionIndex,
+  readPiResourceVersionIndexes,
+} from "./pi-resource-version-index.service";
+
 interface SyncSkillsResult {
   readonly commitSha: string;
   readonly synced: number;
@@ -323,6 +329,7 @@ async function hasCurrentSkillVersion(
     readonly url: string;
     readonly versionHash: string;
     readonly commitSha: string;
+    readonly files: readonly ExtractedFile[];
   },
   signal: AbortSignal,
 ): Promise<boolean> {
@@ -337,6 +344,34 @@ async function hasCurrentSkillVersion(
     return false;
   }
 
+  const { indexes } = await readPiResourceVersionIndexes(
+    args.db,
+    [args.versionHash],
+    signal,
+  );
+  if (!indexes.has(args.versionHash)) {
+    const [version] = await args.db
+      .select({ archiveSize: storageVersions.archiveSize })
+      .from(storageVersions)
+      .where(eq(storageVersions.id, args.versionHash))
+      .limit(1);
+    if (!version) {
+      throw new Error("Current skill references a missing Storage version");
+    }
+    // Reuse the publisher's archive encoding and bounded parser even when the
+    // logical version is unchanged. Raw files would bypass the expansion limit.
+    const { archiveBuffer } = await createSkillArchive(args.files);
+    signal.throwIfAborted();
+    await publishPiResourceVersionIndex(
+      {
+        db: args.db,
+        versionId: args.versionHash,
+        projection: preparePiResourceIndex(archiveBuffer),
+        archiveSize: version.archiveSize,
+      },
+      signal,
+    );
+  }
   await args.db
     .update(skills)
     .set({ commitSha: args.commitSha, updatedAt: nowDate() })
@@ -537,6 +572,7 @@ function syncSingleSkill(
           url: context.url,
           versionHash: context.versionHash,
           commitSha,
+          files: context.files,
         },
         signal,
       )
@@ -559,37 +595,30 @@ function syncSingleSkill(
     const upload = await get(
       uploadSkillArchive(context, storage.s3Prefix, signal),
     );
-    await insertSkillStorageVersion(
-      {
-        db,
-        storageId,
-        context,
-        upload,
-        commitSha,
-      },
-      signal,
-    );
-    await updateSkillStorageHead(
-      {
-        db,
-        storageId,
-        context,
-        upload,
-        timestamp,
-      },
-      signal,
-    );
-    await upsertSkillRecord(
-      {
-        db,
-        storageId,
-        context,
-        upload,
-        commitSha,
-        timestamp,
-      },
-      signal,
-    );
+    const projection = preparePiResourceIndex(upload.archiveBuffer);
+    await db.transaction(async (tx) => {
+      await insertSkillStorageVersion(
+        { db: tx, storageId, context, upload, commitSha },
+        signal,
+      );
+      await updateSkillStorageHead(
+        { db: tx, storageId, context, upload, timestamp },
+        signal,
+      );
+      await upsertSkillRecord(
+        { db: tx, storageId, context, upload, commitSha, timestamp },
+        signal,
+      );
+      await publishPiResourceVersionIndex(
+        {
+          db: tx,
+          versionId: context.versionHash,
+          projection,
+          archiveSize: upload.archiveBuffer.length,
+        },
+        signal,
+      );
+    });
 
     log.debug("Synced skill", {
       skillName: context.skillName,

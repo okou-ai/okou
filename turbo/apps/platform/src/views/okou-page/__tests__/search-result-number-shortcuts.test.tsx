@@ -1,7 +1,6 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   chatSearchContract,
   chatThreadsContract,
@@ -37,9 +36,6 @@ import {
 } from "./chat-list-test-helpers.ts";
 
 const context = testContext();
-const featureSwitches = {
-  [FeatureSwitchKey.StableChatThreadNavigation]: true,
-} as const;
 const SEARCH_LABEL = "Search workspace...";
 
 async function openSearch(modifiers = { ctrlKey: true, metaKey: false }) {
@@ -184,7 +180,6 @@ test("Limit empty search to 25 cached chats in sidebar order", async () => {
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     ...workspace.pageOptions,
-    featureSwitches,
   });
   const expectedTitles = [
     "Chat 1",
@@ -261,7 +256,6 @@ test.each([
       context,
       path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
       ...workspace.pageOptions,
-      featureSwitches,
     });
     const expectedTitles = [
       "Chat 1",
@@ -359,7 +353,6 @@ test("Empty search follows the current agent and unread filter", async () => {
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     ...workspace.pageOptions,
-    featureSwitches,
   });
   await waitFor(() => {
     expect(sidebarThreadTitles()).toHaveLength(3);
@@ -435,7 +428,6 @@ test("Search numbers follow fresh matches and restart after filtering", async ()
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     ...workspace.pageOptions,
-    featureSwitches,
   });
   const { dialog, search } = await openSearch();
   await fill(search, "budget");
@@ -484,7 +476,6 @@ test("Search shortcuts preserve typing and reset hints when the modifier is rele
     context,
     path: `/chats/${first.id}`,
     ...workspace.pageOptions,
-    featureSwitches,
   });
   const { dialog, search } = await openSearch();
   await waitFor(() => {
@@ -575,7 +566,6 @@ test.each([
       context,
       path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
       ...workspace.pageOptions,
-      featureSwitches,
     });
     const { dialog, search } = await openSearch();
     await fill(search, "budget");
@@ -622,58 +612,3 @@ test.each([
     });
   },
 );
-
-test("Disabling stable navigation restores activity order and workspace-wide search without shortcuts", async () => {
-  context.mocks.browser.matchMedia((query) => {
-    return (
-      query === "(display-mode: standalone)" || query === "(min-width: 48rem)"
-    );
-  });
-  const firstPin = chatListThread(1, "Latest pin", {
-    pinnedAt: "2026-08-01T00:52:00.000Z",
-  });
-  const secondPin = chatListThread(2, "Recently active pin", {
-    pinnedAt: "2026-08-01T00:51:00.000Z",
-  });
-  const foreign = chatListThread(3, "Another agent's chat", {
-    agentId: "c7000000-0000-4000-a000-000000000002",
-  });
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 28,
-    threads: [firstPin, secondPin, foreign],
-  });
-  await setupPage({
-    context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
-    ...workspace.pageOptions,
-    featureSwitches: {
-      [FeatureSwitchKey.StableChatThreadNavigation]: false,
-    },
-  });
-  await waitFor(() => {
-    expect(sidebarThreadTitles()).toStrictEqual([
-      "Recently active pin",
-      "Latest pin",
-    ]);
-  });
-  const { dialog, search } = await openSearch();
-  await waitFor(() => {
-    expect(searchResultTitles(dialog)).toStrictEqual([
-      "Recently active pin",
-      "Latest pin",
-      "Another agent's chat",
-    ]);
-  });
-  expect(numberedHints(dialog)).toStrictEqual([]);
-  const event = new KeyboardEvent("keydown", {
-    key: "1",
-    code: "Digit1",
-    ctrlKey: true,
-    shiftKey: false,
-    bubbles: true,
-    cancelable: true,
-  });
-  search.dispatchEvent(event);
-  expect(event.defaultPrevented).toBeFalsy();
-  expect(dialog).toBeInTheDocument();
-});

@@ -88,10 +88,9 @@ export const chatPageModelSelection$ = computed(
       }
       const selection: ModelProviderSelection = {
         selectedModel: user.value.selectedModel,
-        ...(get(chatReasoningEffortEnabled$) &&
-        user.value.reasoningEffort !== undefined
-          ? { reasoningEffort: user.value.reasoningEffort }
-          : {}),
+        modelSettings: get(chatReasoningEffortEnabled$)
+          ? (user.value.modelSettings ?? {})
+          : {},
       };
       if (user.value.codexServiceTier !== "fast") {
         return selection;

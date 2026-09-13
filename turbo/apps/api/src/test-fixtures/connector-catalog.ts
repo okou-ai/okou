@@ -224,23 +224,6 @@ export async function readApiTestConnectorCatalogSnapshot(
   return snapshot;
 }
 
-export function setApiTestConnectorCatalogRuntimeProjectionIdentityReplacements(
-  catalogVersions: readonly string[],
-): void {
-  let nextIndex = 0;
-  setConnectorCatalogRuntimeProjectionIdentityReadHookForTest(async () => {
-    const catalogVersion = catalogVersions[nextIndex];
-    if (catalogVersion === undefined) {
-      return;
-    }
-    nextIndex += 1;
-    await installApiTestConnectorCatalog({
-      catalogVersion,
-      runtimeProjection: true,
-    });
-  });
-}
-
 export function setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook(
   hook: () => Promise<void>,
 ): void {

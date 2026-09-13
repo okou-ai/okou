@@ -52,6 +52,7 @@ function preference(
   return {
     selectedModel: DEFAULT_RUN_MODEL,
     serviceTier: "priority",
+    modelSettings: {},
     selectedImageModel: DEFAULT_IMAGE_MODEL,
     selectedVideoModel: DEFAULT_VIDEO_MODEL,
     updatedAt: "2026-06-12T00:00:00.000Z",
@@ -66,7 +67,7 @@ function installModelEnvironment(
   mockOrgModelRoutes(modelPreference.selectedModel ?? DEFAULT_RUN_MODEL);
   mockBillingCapabilities({
     supportByok: true,
-    restrictedVm0Models: false,
+    restrictedBuiltInModels: false,
   });
   context.mocks.data.userModelPreference(modelPreference);
 }
@@ -595,7 +596,7 @@ test("Switch Chat, Image, and Video from one model picker in a mobile existing c
   expect(category("Chat")).toHaveAttribute("aria-checked", "true");
 });
 
-test("Temporarily choose an image model for a new chat", async () => {
+async function openTemporaryImageModelChat() {
   const creates: ({ readonly imageModel?: string } | undefined)[] = [];
   const preferenceUpdates: UpdateUserModelPreferenceRequest[] = [];
   let currentPreference = preference();
@@ -629,6 +630,11 @@ test("Temporarily choose an image model for a new chat", async () => {
     },
   });
 
+  return { creates, preferenceUpdates };
+}
+
+test("A temporary image model applies to one new chat and resets for the next", async () => {
+  const { creates, preferenceUpdates } = await openTemporaryImageModelChat();
   await chooseMediaModel("Image", "GPT Image 2");
   await waitFor(() => {
     expect(scopeCard("Image model for this chat")).toHaveTextContent(
@@ -660,7 +666,11 @@ test("Temporarily choose an image model for a new chat", async () => {
   await screen.findByRole("heading", { level: 2 });
   await openCategory("Image");
   expectSelected("Nano Banana 2");
-  click(mediaModelRow("GPT Image 2"));
+});
+
+test("Save a temporary image model as the default for future chats", async () => {
+  const { preferenceUpdates } = await openTemporaryImageModelChat();
+  await chooseMediaModel("Image", "GPT Image 2");
   await waitFor(() => {
     expect(scopeCard("Image model for this chat")).not.toBeNull();
   });
@@ -676,7 +686,6 @@ test("Temporarily choose an image model for a new chat", async () => {
       },
     ]);
   });
-  currentPreference = preference({ selectedImageModel: "gpt-image-2" });
   await waitFor(() => {
     expect(
       context.mocks.ably.hasSubscription("userPreferenceChanged"),

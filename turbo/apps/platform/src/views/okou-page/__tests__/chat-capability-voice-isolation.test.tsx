@@ -54,11 +54,13 @@ test.each(["user", "org", "target"] as const)(
   "Keep local recordings isolated when the composer changes %s",
   async (part) => {
     installVoiceBoundaries();
+    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
     const firstPage = createChildAbortController(context.signal);
     context.mocks.http.post("*/api/voice-io/transcribe/segment", () => {
       return HttpResponse.json({ error: "Temporary outage" }, { status: 503 });
     });
     await setupPage({
+      locale: "en-US",
       context: { ...context, signal: firstPage.signal },
       path: RUN_PATH,
       featureSwitches: flags,
@@ -68,6 +70,7 @@ test.each(["user", "org", "target"] as const)(
     await findEnabledButton("Retry");
     unload(firstPage);
     await setupPage({
+      locale: "en-US",
       context: secondContext,
       path: part === "target" ? NEW_CHAT_PATH : RUN_PATH,
       featureSwitches: flags,
@@ -104,7 +107,12 @@ test("Removing another target's local recording preserves the original recording
       : HttpResponse.json({ error: "Temporary outage" }, { status: 503 });
   });
 
-  await setupPage({ context, path: RUN_PATH, featureSwitches: flags });
+  await setupPage({
+    locale: "en-US",
+    context,
+    path: RUN_PATH,
+    featureSwitches: flags,
+  });
   const firstComposer = await screen.findByRole("textbox", {
     name: "Message",
   });
@@ -115,6 +123,7 @@ test("Removing another target's local recording preserves the original recording
 
   restoreHistory();
   await setupPage({
+    locale: "en-US",
     context: secondContext,
     path: NEW_CHAT_PATH,
     featureSwitches: flags,

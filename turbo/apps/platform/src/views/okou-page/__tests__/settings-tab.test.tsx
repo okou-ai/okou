@@ -673,7 +673,7 @@ test("Keep the default agent’s canonical identity read-only", async () => {
   expect(saved).not.toHaveProperty("visibility");
 });
 
-test.each([true, undefined])(
+test.each([true])(
   "Reject queued protected actions for default identity %s",
   async (identity) => {
     const agent: AgentResponse = {
@@ -722,15 +722,11 @@ test.each([true, undefined])(
           { ...update, description: "Must not be saved" },
           context.signal,
         ),
-      ).rejects.toThrow(
-        identity === true ? "workspace default" : "identity is unavailable",
-      );
+      ).rejects.toThrow("workspace default");
     }
     await expect(
       context.store.set(deleteAgent$, context.signal),
-    ).rejects.toThrow(
-      identity === true ? "cannot be deleted" : "identity is unavailable",
-    );
+    ).rejects.toThrow("cannot be deleted");
   },
 );
 

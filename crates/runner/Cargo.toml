@@ -1,6 +1,6 @@
 [package]
 name = "runner"
-version = "0.190.6"
+version = "0.191.2"
 edition.workspace = true
 
 [dependencies]
@@ -84,7 +84,7 @@ guest-workspace-mount = { workspace = true }
 httpmock = { workspace = true, features = ["cookies"] }
 http-body = { workspace = true }
 sandbox-mock = { workspace = true }
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["process", "test-util"] }
 tracing-test-support.workspace = true
 
 [lints]

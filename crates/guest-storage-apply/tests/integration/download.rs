@@ -388,6 +388,28 @@ fn invalid_tar_gz_non_retriable() {
 }
 
 #[test]
+fn http_metadata_body_read_error_retries_then_succeeds() -> std::io::Result<()> {
+    let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    let mut builder = tar::Builder::new(encoder);
+    builder.append_pax_extensions([("comment", vec![b'A'; 32 * 1024].as_slice())])?;
+    let mut header = tar::Header::new_ustar();
+    header.set_size(2);
+    header.set_mode(0o644);
+    header.set_cksum();
+    builder.append_data(&mut header, "ok.txt", &b"ok"[..])?;
+    let archive = builder.into_inner()?.finish()?;
+    let server = start_truncated_then_valid_server(archive)?;
+    let dir = tempfile::tempdir()?;
+    let mount = dir.path().join("mount");
+    let url = format!("{}{STORAGE_ARCHIVE_PATH}", server.base_url());
+
+    assert!(run_storage_download(&dir, &mount, Some(&url))?);
+    assert_eq!(server.finish()?, 2);
+    assert_eq!(std::fs::read(mount.join("ok.txt"))?, b"ok");
+    Ok(())
+}
+
+#[test]
 fn http_body_read_error_retries_then_succeeds() {
     let tar_gz = create_tar_gz(&[("recovered.txt", b"recovered")]).unwrap();
     let server = start_truncated_then_valid_server(tar_gz).unwrap();

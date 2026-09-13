@@ -32,6 +32,10 @@ For example:
 3. If a user can see a toast, list, URL, or dialog, the test asserts on that
    surface.
 
+For rendered content, default to `toBeInTheDocument()` as described in
+[App assertions](app-testing.md#assertions). Use `toBeVisible()` when showing or
+hiding content is itself the contract.
+
 Do not render an internal component just because it is convenient. Do not mutate
 the store directly. Do not call hooks directly. Do not assert on query cache,
 component state, CSS classes, or whether an internal callback was called.
@@ -71,9 +75,16 @@ case, or asserting on a service return value, bypasses the route, middleware,
 contract, auth, and request parsing. That test can pass while the real API is
 still broken.
 
+Log records are not the external interface either. Messages, levels, fields, and
+telemetry ingestion are internal implementation that any refactor may rename or
+drop. API tests must not enable the real Axiom transport, intercept the ingest
+endpoint, or assert on logger calls. The two exceptions, which must be stated as
+exceptions, are the logger's own suite and one redaction test proving a shared
+sanitizer keeps secrets out of records.
+
 For the API project, testing the DB, mutating the DB, asserting on the DB,
-calling services, or asserting on services all test internal implementation. The
-only trusted boundary is the API endpoint.
+calling services, asserting on services, or asserting on log records all test
+internal implementation. The only trusted boundary is the API endpoint.
 
 ## Exceptions
 
@@ -101,9 +112,21 @@ inherit internal coupling by default.
 
 ## Lint
 
-API test files should not import DB schema or API service files.
+API test files should not import DB schema, API service files, or the logger.
 
 This lint rule is not about making code look tidy. It is a reminder that the
 test is crossing the external behavior boundary and starting to control internal
 implementation. Go back to the endpoint first and see whether the case can be
 constructed with the real API.
+
+API tests should not reach the same diagnostics through the test mocks either. A
+`no-restricted-syntax` rule in `turbo/apps/api/eslint.config.mjs` rejects
+`axiomLogging`, `sdkIngest`, and `useRealTelemetry` member access in API tests.
+The four suites that own the logger, its Axiom transport, the telemetry SDK
+client, and the app factory's log wiring are exempt, because there the logger is
+the subject rather than a diagnostic.
+
+The files that still read those mocks are listed in
+`apiTestDiagnosticsBaseline`. That list may only shrink: a test leaves it by
+asserting HTTP responses and effects instead, and the list is deleted once it is
+empty. Never add a file to it.

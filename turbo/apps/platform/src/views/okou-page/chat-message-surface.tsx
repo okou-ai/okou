@@ -35,13 +35,13 @@ export const CHAT_THREAD_WORK_HISTORY_TEXT_CLASS =
   "text-sm leading-5 text-muted-foreground";
 export const CHAT_THREAD_WORK_HISTORY_MARKDOWN_CLASS = "!text-muted-foreground";
 
-// Keep the entry animation, but do not let its duration also animate the
-// responsive margin: that would continue changing layout after resize.
+// `transition-none` keeps the responsive margin from animating, which would
+// otherwise continue changing layout after resize.
 export const CHAT_THREAD_USER_MESSAGE_ROW_CLASS =
-  "flex flex-col items-end min-w-0 animate-in fade-in slide-in-from-bottom-2 duration-300 transition-none @[900px]:grid @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start";
+  "flex flex-col items-end min-w-0 duration-300 transition-none @[900px]:grid @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start";
 
 export const CHAT_THREAD_ASSISTANT_MESSAGE_GROUP_CLASS =
-  "flex flex-col gap-2 animate-in fade-in slide-in-from-bottom-2 duration-300";
+  "flex flex-col gap-2 duration-300";
 
 export const CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS =
   "flex flex-col gap-2 @[900px]:grid @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:items-start";

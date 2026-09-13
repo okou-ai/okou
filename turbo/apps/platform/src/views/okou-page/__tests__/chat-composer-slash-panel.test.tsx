@@ -27,10 +27,14 @@ const WORKFLOW_NAME = "axiom-red";
 function setupModels(): void {
   mockAgent();
   mockOrgModelRoutes("claude-fable-5-1");
-  mockBillingCapabilities({ supportByok: true, restrictedVm0Models: false });
+  mockBillingCapabilities({
+    supportByok: true,
+    restrictedBuiltInModels: false,
+  });
   context.mocks.data.userModelPreference({
     selectedModel: "claude-fable-5-1",
     serviceTier: null,
+    modelSettings: {},
     selectedImageModel: "gpt-image-2",
     selectedVideoModel: "dreamina-seedance-2-0-260128",
     updatedAt: "2026-09-07T00:00:00.000Z",

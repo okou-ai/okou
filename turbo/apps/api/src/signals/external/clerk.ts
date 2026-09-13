@@ -266,28 +266,12 @@ export function isClerkResourceNotFound(error: unknown): boolean {
   return isClerkAPIResponseError(error) && error.status === 404;
 }
 
-interface ClerkRateLimitRetry {
-  readonly kind: "rate_limit";
-  readonly delayMs: number;
-}
-
-interface ClerkProviderUnavailableRetry {
-  readonly kind: "provider_unavailable";
+interface ClerkReadRetry {
   readonly delayMs: number;
   readonly providerStatus: number;
 }
 
-type ClerkReadRetry = ClerkRateLimitRetry | ClerkProviderUnavailableRetry;
-
 function clerkReadRetry(error: unknown): ClerkReadRetry | null {
-  const rateLimit = clerkRateLimit(error);
-  if (rateLimit) {
-    return {
-      kind: "rate_limit",
-      delayMs: rateLimit.retryAfterSeconds * 1000,
-    };
-  }
-
   if (
     !isClerkAPIResponseError(error) ||
     !Number.isInteger(error.status) ||
@@ -298,20 +282,12 @@ function clerkReadRetry(error: unknown): ClerkReadRetry | null {
   }
 
   return {
-    kind: "provider_unavailable",
     delayMs: CLERK_READ_PROVIDER_UNAVAILABLE_DELAY_MS,
     providerStatus: error.status,
   };
 }
 
-function throwTerminalClerkRead(error: unknown, retry: ClerkReadRetry): never {
-  if (retry.kind === "provider_unavailable") {
-    throw new ClerkReadUnavailableError(retry.providerStatus, error);
-  }
-  throw error;
-}
-
-/** Apply the shared transient-failure policy inside a Clerk read adapter. */
+/** Retry Clerk 5xx reads; rate limits are surfaced without another request. */
 export async function retryClerkRead<T>(
   read: () => Promise<T>,
   context: ClerkReadContext = createClerkReadContext(),
@@ -330,7 +306,7 @@ export async function retryClerkRead<T>(
       throw result.error;
     }
     if (attempt >= CLERK_READ_MAX_ATTEMPTS) {
-      throwTerminalClerkRead(result.error, retry);
+      throw new ClerkReadUnavailableError(retry.providerStatus, result.error);
     }
 
     const remainingDelayMs = Math.min(
@@ -338,7 +314,7 @@ export async function retryClerkRead<T>(
       context.remainingDelayMs(),
     );
     if (retry.delayMs > remainingDelayMs) {
-      throwTerminalClerkRead(result.error, retry);
+      throw new ClerkReadUnavailableError(retry.providerStatus, result.error);
     }
     const jitterBudgetMs = Math.min(
       CLERK_READ_MAX_JITTER_MS,

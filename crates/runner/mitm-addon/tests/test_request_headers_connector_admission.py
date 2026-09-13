@@ -116,7 +116,7 @@ async def test_test_connector_bounded_requestheaders_uses_connector_binding(
         path="/api/test/oauth-provider/echo",
         request_headers=headers(
             ("Host", "api.okou.ai"),
-            ("x-vm0-test-endpoint-bypass", "preview-secret"),
+            ("x-okou-test-endpoint-bypass", "preview-secret"),
         ),
     )
     monkeypatch.setenv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret")
@@ -293,7 +293,7 @@ async def test_test_connector_bounded_requestheaders_without_bypass_blocks(
         path="/api/test/oauth-provider/echo",
         request_headers=headers(
             ("Host", "api.okou.ai"),
-            ("x-vm0-test-endpoint-bypass", "wrong-secret"),
+            ("x-okou-test-endpoint-bypass", "wrong-secret"),
         ),
     )
     monkeypatch.setenv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret")

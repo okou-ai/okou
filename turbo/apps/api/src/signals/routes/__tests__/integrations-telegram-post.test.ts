@@ -568,24 +568,6 @@ async function latestRunForFixture(
   return (await telegramPostRunState(fixture)).run;
 }
 
-function sandboxOperationEventsForRun(
-  runId: string,
-): readonly Record<string, unknown>[] {
-  return context.mocks.axiom.sdkIngest.mock.calls.flatMap((call) => {
-    const dataset = call[0];
-    const events = call[1];
-    if (dataset !== "vm0-sandbox-op-log-dev" || !Array.isArray(events)) {
-      return [];
-    }
-    return events.filter((event): event is Record<string, unknown> => {
-      if (!isRecord(event)) {
-        return false;
-      }
-      return event.run_id === runId;
-    });
-  });
-}
-
 async function latestAgentRunForFixture(
   fixture: TelegramPostFixture,
 ): Promise<TelegramAgentRunSnapshot | null> {
@@ -1357,53 +1339,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       payload: expect.objectContaining({ publicBrand: "okou" }),
     });
     expect(runState.jobExists).toBeTruthy();
-    const timingEvents = sandboxOperationEventsForRun(run!.id).filter(
-      (event) => {
-        return (
-          typeof event.op_type === "string" &&
-          event.op_type.startsWith("api_dispatch_")
-        );
-      },
-    );
-    expect(timingEvents).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          op_type: "api_dispatch_pre_create_agent_run",
-          span_kind: "top_level",
-          trigger_source: "telegram",
-          agent_run_origin: "direct",
-        }),
-        expect.objectContaining({
-          op_type: "api_dispatch_pre_create_agent_entrypoint_gap",
-          span_kind: "nested",
-          trigger_source: "telegram",
-        }),
-        expect.objectContaining({
-          op_type: "api_dispatch_pre_create_agent_load_agent",
-          span_kind: "nested",
-          trigger_source: "telegram",
-        }),
-        expect.objectContaining({
-          op_type: "api_dispatch_pre_create_agent_load_bootstrap_snapshot_rows",
-          span_kind: "nested",
-          trigger_source: "telegram",
-        }),
-        expect.objectContaining({
-          op_type: "api_dispatch_pre_create_agent_build_create_run_args",
-          span_kind: "nested",
-          trigger_source: "telegram",
-        }),
-      ]),
-    );
-    const timingActionTypes = timingEvents.map((event) => {
-      return event.op_type;
-    });
-    expect(timingActionTypes).not.toContain(
-      "api_dispatch_pre_create_agent_parse_body",
-    );
-    expect(timingActionTypes).not.toContain(
-      "api_dispatch_pre_create_agent_prepare_args",
-    );
   });
 
   it("snapshots thread reuse inputs before a CLI session exists", async () => {
@@ -1483,17 +1418,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         expiresAt: expect.any(String),
       },
     });
-    for (const actionType of [
-      "runner_notification_queue_to_entry",
-      "runner_poll_pending_job_lookup",
-    ]) {
-      expect(sandboxOperationEventsForRun(runId)).toContainEqual(
-        expect.objectContaining({
-          op_type: actionType,
-          reuse_key_kind: "thread",
-        }),
-      );
-    }
 
     const claim = await runsApi.claimRunnerJob(runId);
     expect(claim.reuseKey).toBe(reuseKey);
@@ -1751,12 +1675,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     const secondState = await telegramPostRunState(fixture, secondPrompt);
     expect(secondState.agentRun?.chatThreadId).toBe(
       firstState.agentRun?.chatThreadId,
-    );
-    expect(sandboxOperationEventsForRun(secondState.run!.id)).toContainEqual(
-      expect.objectContaining({
-        op_type: "chat_thread_session_binding_persisted",
-        binding_action: "reused",
-      }),
     );
     const secondClaim = await claimTelegramRun(
       secondState.run!.id,

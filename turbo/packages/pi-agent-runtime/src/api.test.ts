@@ -1,4 +1,5 @@
 import { zstdDecompressSync } from "node:zlib";
+import { readFileSync } from "node:fs";
 import { createServer, type ServerResponse } from "node:http";
 
 import { piModelConfigSchema } from "@okouai/api-contracts/contracts/runners";
@@ -26,6 +27,31 @@ import {
 import { projectPiApiAssistantMessage } from "./api-turn";
 import { resolvePiAgentModel } from "./model";
 import { MemoryPiSession } from "./session-memory";
+import type { PiApiAssistantMessage, PiApiFirstTurnArgs } from "./api-types";
+
+const publicEventFixture = JSON.parse(
+  readFileSync(
+    new URL("../../../../fixtures/pi-public-events.json", import.meta.url),
+    "utf8",
+  ),
+) as {
+  readonly cases: readonly {
+    readonly name: string;
+    readonly guestMessage: AssistantMessage;
+    readonly apiAssistant: PiApiAssistantMessage;
+  }[];
+};
+
+describe("Pi API input normalization fixtures", () => {
+  it.each(publicEventFixture.cases)(
+    "normalizes $name before API event projection",
+    (example) => {
+      expect(projectPiApiAssistantMessage(example.guestMessage)).toEqual(
+        example.apiAssistant,
+      );
+    },
+  );
+});
 
 const SESSION_ID = "00000000-0000-4000-8000-000000000123";
 const SESSION_TIMESTAMP = "2026-08-31T12:34:56.000Z";
@@ -411,6 +437,7 @@ describe("Pi API facade", () => {
             | "openai-codex-responses"
             | "openai-responses"
             | undefined,
+          thinkingLevel: "low" | "high" = "low",
         ) => {
           const result = await runPiApiFirstTurn({
             cwd: "/home/user/workspace",
@@ -429,7 +456,7 @@ describe("Pi API facade", () => {
                       provider: "openai-codex",
                       baseUrl: `http://127.0.0.1:${address.port}/v1`,
                       model: "gpt-5.6-terra",
-                      thinkingLevel: "low",
+                      thinkingLevel,
                       ...(serviceTier === undefined ? {} : { serviceTier }),
                       credentialBindings: [
                         {
@@ -459,7 +486,7 @@ describe("Pi API facade", () => {
                       ...(api === undefined ? {} : { api }),
                       apiKeyEnv: "OPENAI_API_KEY",
                       credentialSecretName: "OPENAI_API_KEY",
-                      thinkingLevel: "low",
+                      thinkingLevel,
                       ...(serviceTier ? { serviceTier } : {}),
                     }),
                     target: "direct",
@@ -477,6 +504,7 @@ describe("Pi API facade", () => {
         const priorityResult = await runTurn(
           route === "native" ? "fast" : "priority",
           "openai-codex-responses",
+          "high",
         );
         const standardReturnResult = await runTurn(undefined, undefined);
         const publicResult = await runTurn(undefined, "openai-responses");
@@ -511,7 +539,7 @@ describe("Pi API facade", () => {
           url: route === "native" ? "/v1/codex/responses" : "/v1/responses",
           body: {
             model: "gpt-5.6-terra",
-            reasoning: { effort: "low" },
+            reasoning: { effort: "high" },
             service_tier: "priority",
           },
         });
@@ -541,7 +569,10 @@ describe("Pi API facade", () => {
           MemoryPiSession.fromJsonl(
             priorityResult.sessionJsonl,
           ).buildSessionContext().thinkingLevel,
-        ).toBe("low");
+        ).toBe("high");
+        expect(providerRequests[2]?.body).toMatchObject({
+          reasoning: { effort: "low" },
+        });
       } finally {
         await new Promise<void>((resolve, reject) => {
           server.close((error) => {
@@ -556,92 +587,118 @@ describe("Pi API facade", () => {
     },
   );
 
-  it("sends direct DeepSeek through Responses with the stable Pi identity and no Chat fields", async () => {
-    const providerRequests: Array<{
-      readonly url: string | undefined;
-      readonly body: Record<string, unknown>;
-      readonly userAgent: string | undefined;
-    }> = [];
-    const server = createServer((request, response) => {
-      void (async () => {
-        const chunks: Buffer[] = [];
-        for await (const chunk of request) {
-          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-        }
-        providerRequests.push({
-          url: request.url,
-          body: JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<
-            string,
-            unknown
-          >,
-          userAgent: request.headers["user-agent"],
-        });
-        responsesTextSse(response, "DeepSeek API-first answer");
-      })().catch((error: unknown) => {
-        response.destroy(
-          error instanceof Error ? error : new Error(String(error)),
-        );
-      });
-    });
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(0, "127.0.0.1", () => {
-        server.off("error", reject);
-        resolve();
-      });
-    });
-    const address = server.address();
-    if (address === null || typeof address === "string") {
-      throw new Error("DeepSeek API-first test server has no TCP address");
-    }
-
-    try {
-      const result = await runPiApiFirstTurn({
-        cwd: "/home/user/workspace",
-        agentDir: "/home/user/.pi/agent",
-        sessionId: SESSION_ID,
-        prompt: "answer through direct DeepSeek",
-        appendSystemPrompt: null,
-        model: {
-          provider: "deepseek",
-          baseUrl: `http://127.0.0.1:${address.port}`,
-          apiKey: "test-key",
-          model: "deepseek-v4-flash",
-          dialect: "openai-responses",
-          transport: "sse",
-        },
-        resourceSnapshot: { schemaVersion: 1, agentsFiles: [], skills: [] },
-        ownership: createPiApiFirstTurnOwnership(),
-      });
-
-      expect(providerRequests).toHaveLength(1);
-      expect(providerRequests[0]).toMatchObject({
-        url: "/responses",
-        userAgent: "okou-pi-agent/1.0",
-        body: {
-          model: "deepseek-v4-flash",
-          stream: true,
-          store: false,
-        },
-      });
-      expect(providerRequests[0]?.body).not.toHaveProperty("service_tier");
-      expect(providerRequests[0]?.body).not.toHaveProperty("temperature");
-      expect(providerRequests[0]?.body).not.toHaveProperty("top_p");
-      expect(result.assistantMessage.content).toStrictEqual([
-        { type: "text", text: "DeepSeek API-first answer" },
-      ]);
-    } finally {
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => {
-          if (error) {
-            reject(error);
-          } else {
-            resolve();
+  it.each(["absent", "throwing"] as const)(
+    "preserves DeepSeek transport and pre-provider cancellation with a %s preparation observer",
+    async (observer) => {
+      const providerRequests: Array<{
+        readonly url: string | undefined;
+        readonly body: Record<string, unknown>;
+        readonly userAgent: string | undefined;
+      }> = [];
+      const server = createServer((request, response) => {
+        void (async () => {
+          const chunks: Buffer[] = [];
+          for await (const chunk of request) {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
           }
+          providerRequests.push({
+            url: request.url,
+            body: JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<
+              string,
+              unknown
+            >,
+            userAgent: request.headers["user-agent"],
+          });
+          responsesTextSse(response, "DeepSeek API-first answer");
+        })().catch((error: unknown) => {
+          response.destroy(
+            error instanceof Error ? error : new Error(String(error)),
+          );
         });
       });
-    }
-  });
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(0, "127.0.0.1", () => {
+          server.off("error", reject);
+          resolve();
+        });
+      });
+      const address = server.address();
+      if (address === null || typeof address === "string") {
+        throw new Error("DeepSeek API-first test server has no TCP address");
+      }
+
+      try {
+        const args: PiApiFirstTurnArgs = {
+          cwd: "/home/user/workspace",
+          agentDir: "/home/user/.pi/agent",
+          sessionId: SESSION_ID,
+          prompt: "answer through direct DeepSeek",
+          appendSystemPrompt: null,
+          model: {
+            provider: "deepseek",
+            baseUrl: `http://127.0.0.1:${address.port}`,
+            apiKey: "test-key",
+            model: "deepseek-v4-flash",
+            dialect: "openai-responses",
+            transport: "sse",
+          },
+          resourceSnapshot: { schemaVersion: 1, agentsFiles: [], skills: [] },
+          ownership: createPiApiFirstTurnOwnership(),
+          onPreparationTiming:
+            observer === "throwing"
+              ? () => {
+                  throw new Error("telemetry unavailable");
+                }
+              : undefined,
+        };
+        const result = await runPiApiFirstTurn(args);
+
+        expect(providerRequests).toHaveLength(1);
+        expect(providerRequests[0]).toMatchObject({
+          url: "/responses",
+          userAgent: "okou-pi-agent/1.0",
+          body: {
+            model: "deepseek-v4-flash",
+            stream: true,
+            store: false,
+          },
+        });
+        expect(providerRequests[0]?.body).not.toHaveProperty("service_tier");
+        expect(providerRequests[0]?.body).not.toHaveProperty("temperature");
+        expect(providerRequests[0]?.body).not.toHaveProperty("top_p");
+        expect(result.assistantMessage.content).toStrictEqual([
+          { type: "text", text: "DeepSeek API-first answer" },
+        ]);
+        const cancellation = new AbortController();
+        const reason = new DOMException("request cancelled", "AbortError");
+        await expect(
+          runPiApiFirstTurn(
+            {
+              ...args,
+              ownership: createPiApiFirstTurnOwnership(),
+              providerRequestBoundary: async () => {
+                cancellation.abort(reason);
+                cancellation.signal.throwIfAborted();
+              },
+            },
+            cancellation.signal,
+          ),
+        ).rejects.toBe(reason);
+        expect(providerRequests).toHaveLength(1);
+      } finally {
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => {
+            if (error) {
+              reject(error);
+            } else {
+              resolve();
+            }
+          });
+        });
+      }
+    },
+  );
 
   it("captures fragmented terminal OpenRouter tiers without persisting them", async () => {
     const observedTiers = [
@@ -1024,6 +1081,9 @@ describe("Pi API facade", () => {
           model,
           resourceSnapshot: { schemaVersion: 1, agentsFiles: [], skills: [] },
           ownership: blockedOwnership,
+          onPreparationTiming() {
+            throw new Error("telemetry unavailable");
+          },
         }),
       ).rejects.toThrow(PiApiFirstTurnCompactionRequiredError);
       expect(providerRequests).toBe(1);

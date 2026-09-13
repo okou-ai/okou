@@ -194,7 +194,7 @@ function billingStatus(
   tier: string,
   modelCapabilities?: {
     readonly supportByok?: boolean;
-    readonly restrictedVm0Models?: boolean;
+    readonly restrictedBuiltInModels?: boolean;
   },
 ): BillingStatusResponse {
   return {
@@ -223,7 +223,7 @@ function billingStatus(
 export function mockBillingCapabilities(
   modelCapabilities: {
     readonly supportByok: boolean;
-    readonly restrictedVm0Models: boolean;
+    readonly restrictedBuiltInModels: boolean;
   },
   tier = "pro",
 ): void {

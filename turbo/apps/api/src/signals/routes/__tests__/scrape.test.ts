@@ -345,21 +345,6 @@ describe("okou scrape route", () => {
     expect(context.mocks.signalTimers.delay).toHaveBeenCalledTimes(2);
     expect(firecrawlRequests).toBe(0);
     expect(afterCredits).toBe(beforeCredits);
-    expect(context.mocks.axiomLogging.error).toHaveBeenCalledOnce();
-    expect(context.mocks.axiomLogging.error).toHaveBeenCalledWith(
-      "Clerk read unavailable during scrape authentication",
-      expect.objectContaining({
-        type: "provider_unavailable",
-        provider: "clerk",
-        provider_status: 521,
-        failure_class: "transient_read_exhausted",
-        method: "POST",
-        route: "/api/scrape",
-      }),
-    );
-    expect(
-      JSON.stringify(context.mocks.axiomLogging.error.mock.calls),
-    ).not.toContain("sensitive");
     expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
   });
 
@@ -404,7 +389,6 @@ describe("okou scrape route", () => {
     expect(
       context.mocks.clerk.users.getOrganizationMembershipList,
     ).toHaveBeenCalledOnce();
-    expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
   });
 
   it("keeps successful Clerk membership misses on the unauthorized path", async () => {
@@ -427,10 +411,9 @@ describe("okou scrape route", () => {
 
     expect(response.status).toBe(401);
     expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
-    expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
   });
 
-  it("does not classify direct Clerk session failures as exhausted reads", async () => {
+  it("does not retry direct Clerk session failures", async () => {
     context.mocks.clerk.authenticateRequest.mockRejectedValue(
       new ClerkApiResponseTestError(521),
     );
@@ -447,11 +430,6 @@ describe("okou scrape route", () => {
 
     expect(response.status).toBe(500);
     expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
-    expect(context.mocks.axiomLogging.error).toHaveBeenCalledOnce();
-    expect(context.mocks.axiomLogging.error).not.toHaveBeenCalledWith(
-      "Clerk read unavailable during scrape authentication",
-      expect.anything(),
-    );
     expect(context.mocks.sentry.captureException).toHaveBeenCalledOnce();
   });
 

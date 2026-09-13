@@ -18,6 +18,7 @@ if (sentryDsn) {
 
   Sentry.init({
     dsn: sentryDsn,
+    enableLogs: false,
     release: sentryRelease,
     environment: sentryEnvironment,
     sendDefaultPii: false,

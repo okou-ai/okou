@@ -222,14 +222,17 @@ function DetailError({ error, agentId }: { error: string; agentId: string }) {
                 )}
               </p>
             </div>
-            <Link
-              pathname="/agents"
-              className="okou-btn-morandi inline-flex items-center justify-center rounded-md border px-3 py-1.5 text-sm font-medium no-underline text-inherit hover:bg-state-hover"
+            <Button
+              asChild
+              variant="neutral"
+              className="h-auto rounded-md px-3 py-1.5 no-underline text-inherit hover:bg-control-surface active:bg-control-surface"
             >
-              {t(($) => {
-                return $.detail.notFound.back;
-              })}
-            </Link>
+              <Link pathname="/agents">
+                {t(($) => {
+                  return $.detail.notFound.back;
+                })}
+              </Link>
+            </Button>
           </div>
         </main>
       </DetailPageShell>
@@ -244,15 +247,20 @@ function DetailError({ error, agentId }: { error: string; agentId: string }) {
           <Card className={surfaceVariants()}>
             <CardContent className="px-6 py-6 text-center space-y-3">
               <p className="text-sm text-destructive">{error}</p>
-              <Link
-                pathname="/agents/:agentId"
-                options={{ pathParams: { agentId: agentId } }}
-                className="okou-btn-morandi inline-flex items-center justify-center rounded-md border px-3 py-1.5 text-sm font-medium no-underline text-inherit hover:bg-state-hover"
+              <Button
+                asChild
+                variant="neutral"
+                className="h-auto rounded-md px-3 py-1.5 no-underline text-inherit hover:bg-control-surface active:bg-control-surface"
               >
-                {t(($) => {
-                  return $.actions.retry;
-                })}
-              </Link>
+                <Link
+                  pathname="/agents/:agentId"
+                  options={{ pathParams: { agentId: agentId } }}
+                >
+                  {t(($) => {
+                    return $.actions.retry;
+                  })}
+                </Link>
+              </Button>
             </CardContent>
           </Card>
         </div>
@@ -958,9 +966,9 @@ function AgentHeader({
           </div>
         </div>
         <Button
-          variant="outline"
+          variant="neutral"
           size="sm"
-          className="okou-btn-morandi max-w-[220px] shrink-0 gap-1.5"
+          className="max-w-[220px] shrink-0 gap-1.5"
           onClick={() => {
             nav("/agents/:agentId/chat", {
               pathParams: { agentId: agentId },

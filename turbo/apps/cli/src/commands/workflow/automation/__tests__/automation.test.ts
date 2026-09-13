@@ -47,8 +47,8 @@ function okouToken(orgId: string): string {
 const workflowSummary = {
   id: WORKFLOW_ID,
   agentId: AGENT_ID,
-  agentName: "Zero",
-  agentDisplayName: "Zero",
+  agentName: "Nova",
+  agentDisplayName: "Nova",
   name: "tell-a-joke",
   displayName: "Tell a joke",
   description: "Tell one short joke",

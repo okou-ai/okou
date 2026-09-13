@@ -2,12 +2,14 @@ import {
   type UserModelPreferenceResponse,
   userModelPreferenceContract,
 } from "@okouai/api-contracts/contracts/user-model-preference";
+import { withModelReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { nowDate } from "../../lib/time.ts";
 import { mockApi } from "../msw-contract.ts";
 
 let mockUserModelPreference: UserModelPreferenceResponse = {
   selectedModel: null,
   serviceTier: null,
+  modelSettings: {},
   selectedVideoModel: null,
   selectedImageModel: null,
   updatedAt: null,
@@ -17,6 +19,7 @@ export function resetMockUserModelPreference(): void {
   mockUserModelPreference = {
     selectedModel: null,
     serviceTier: null,
+    modelSettings: {},
     selectedVideoModel: null,
     selectedImageModel: null,
     updatedAt: null,
@@ -37,6 +40,13 @@ export const apiUserModelPreferenceHandlers = [
     mockUserModelPreference = {
       selectedModel: body.selectedModel,
       serviceTier: body.serviceTier,
+      modelSettings:
+        body.modelSettingsPatch === undefined
+          ? mockUserModelPreference.modelSettings
+          : withModelReasoningEffort(
+              mockUserModelPreference.modelSettings,
+              body.modelSettingsPatch,
+            ),
       // Omitted by an older bundle: keep the stored default rather than clear it.
       selectedVideoModel:
         "selectedVideoModel" in body

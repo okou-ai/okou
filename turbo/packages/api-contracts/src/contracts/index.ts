@@ -1899,3 +1899,11 @@ export {
   activitySummaryResponseSchema,
   type ActivitySummaryResponse,
 } from "./chat-thread-activity-summary";
+
+export {
+  introVideoRenderContract,
+  introVideoRenderRequestSchema,
+  introVideoRenderResponseSchema,
+  type IntroVideoRenderRequest,
+  type IntroVideoRenderResponse,
+} from "./intro-video-render";

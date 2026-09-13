@@ -21,6 +21,7 @@ import {
   type ChatThreadEventTransaction,
 } from "./chat-thread-event.service";
 import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
+import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
 import {
   readAcceptedOfficialWorkflowDefinition,
   readAcceptedOfficialWorkflowRevision,
@@ -205,6 +206,10 @@ async function createAutomationChatThread(
     orgId: args.orgId,
     userId: args.userId,
   });
+  const modelSettings = await loadNewChatThreadModelSettings(db, {
+    orgId: args.orgId,
+    userId: args.userId,
+  });
   const pinColumns = chatThreadModelPinColumns(pin);
   const [thread] = await db
     .insert(chatThreads)
@@ -216,6 +221,7 @@ async function createAutomationChatThread(
       modelProviderType: pinColumns.modelProviderType,
       modelProviderCredentialScope: pinColumns.modelProviderCredentialScope,
       selectedModel: pinColumns.selectedModel,
+      modelSettings,
       codexServiceTier: pin.serviceTier === "priority" ? "fast" : null,
       lastMessageAt: args.currentTime,
       createdAt: args.currentTime,
@@ -235,6 +241,7 @@ async function createAutomationChatThread(
     agentId: args.agentId,
     title: args.title,
     selectedModel: pin.selectedModel,
+    modelSettings,
     serviceTier: pin.serviceTier,
     ...mediaModels,
     createdAt: thread.createdAt,

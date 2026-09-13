@@ -14,7 +14,8 @@
     "style:migration:tone": "tsx playwright/style-migration/run-tone.ts",
     "style:migration:settings-select": "tsx playwright/style-migration/run-settings-select.ts",
     "style:migration:swatch": "tsx playwright/style-migration/run-swatch.ts",
-    "style:migration:tone-preview": "tsx playwright/style-migration/run-tone-preview.ts"
+    "style:migration:tone-preview": "tsx playwright/style-migration/run-tone-preview.ts",
+    "style:migration:mic-motion": "tsx playwright/style-migration/run-mic-motion.ts"
   },
   "keywords": [],
   "author": "",

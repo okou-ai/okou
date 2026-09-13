@@ -1,6 +1,7 @@
 import type { PiAgentModelConfig } from "./types";
 import type { PiApiModelFailureDiagnostic } from "./api-failure";
 import type { PiApiFirstTurnOwnership } from "./provider-ownership";
+import type { PiPreparationObserver } from "./preparation-timing";
 import type { PiMemoryCitation } from "@okouai/api-contracts/contracts/pi-memory-citations";
 import type { PiResourceSnapshot } from "@okouai/api-contracts/contracts/runners";
 
@@ -154,6 +155,7 @@ export interface PiApiFirstTurnArgs {
   readonly resourceSnapshot: PiPreheatedResourceSnapshot;
   readonly ownership: PiApiFirstTurnOwnership;
   readonly onMemoryRecallOutcome?: (outcome: PiMemoryRecallOutcome) => void;
+  readonly onPreparationTiming?: PiPreparationObserver;
   /**
    * Optional durable gate run immediately before the provider transport.
    * The gate must invoke the marker while it owns its commit boundary.

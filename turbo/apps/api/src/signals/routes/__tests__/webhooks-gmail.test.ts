@@ -108,23 +108,6 @@ function connectorAccountsClient() {
   );
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function sandboxOperationEvents(): readonly Record<string, unknown>[] {
-  return context.mocks.axiom.sdkIngest.mock.calls.flatMap((call) => {
-    const dataset = call[0];
-    const events = call[1];
-    if (dataset !== "vm0-sandbox-op-log-dev" || !Array.isArray(events)) {
-      return [];
-    }
-    return events.filter((event): event is Record<string, unknown> => {
-      return isRecord(event);
-    });
-  });
-}
-
 function expectGmailEventContextInPrompt(
   prompt: string,
   expected: Record<string, unknown>,
@@ -1119,7 +1102,7 @@ describe("POST /api/webhooks/gmail", () => {
     );
   });
 
-  it("silently acknowledges events after Gmail access becomes unavailable", async () => {
+  it("acknowledges events without dispatching after Gmail access becomes unavailable", async () => {
     const startedAt = now();
     const gmailEmail = uniqueGmailEmail();
     configureGmailEnv();
@@ -1148,8 +1131,6 @@ describe("POST /api/webhooks/gmail", () => {
     );
     const googleIdToken = signedGoogleIdToken();
     mockNow(startedAt + 2 * 60 * 60 * 1000);
-    context.mocks.axiomLogging.warn.mockClear();
-    context.mocks.axiomLogging.error.mockClear();
     context.mocks.sentry.captureException.mockClear();
 
     for (const messageId of [
@@ -1174,8 +1155,6 @@ describe("POST /api/webhooks/gmail", () => {
     }
 
     expect(refreshCalls).toBe(1);
-    expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
-    expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
     expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     await expect(
       connectorsApi.listBuiltinConnectorAccounts(actor, "gmail"),
@@ -1192,13 +1171,6 @@ describe("POST /api/webhooks/gmail", () => {
         params: { id: created.body.id },
       }),
       [200],
-    );
-    expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalledWith(
-      "Workflow watch lifecycle reconciliation failed",
-      expect.objectContaining({
-        provider: "gmail",
-        result: "access_unavailable",
-      }),
     );
 
     mockNow(startedAt);
@@ -1434,54 +1406,6 @@ describe("POST /api/webhooks/gmail", () => {
     expect(
       Object.values(claim.secretConnectorMetadataMap ?? {}),
     ).toContainEqual(expect.objectContaining({ sourceId: secondConnectorId }));
-    const timingEvents = sandboxOperationEvents().filter((event) => {
-      return event.automation_event_source === "gmail";
-    });
-    const timingRunIds = new Set(
-      timingEvents.map((event) => {
-        return event.run_id;
-      }),
-    );
-    expect(timingRunIds.size).toBe(1);
-    expect([...timingRunIds][0]).toStrictEqual(expect.any(String));
-    const actionTypes = new Set(
-      timingEvents.map((event) => {
-        return event.op_type;
-      }),
-    );
-    for (const actionType of [
-      "api_dispatch_pre_create_agent_workflow_automation_entrypoint_gap",
-      "api_dispatch_pre_create_agent_automation_event_load_source_state",
-      "api_dispatch_pre_create_agent_automation_event_load_external_events",
-      "api_dispatch_pre_create_agent_automation_event_load_automations",
-      "api_dispatch_pre_create_agent_automation_event_match_automations",
-      "api_dispatch_pre_create_agent_automation_event_record_processed_event",
-      "api_dispatch_pre_create_agent_automation_event_build_run_input",
-      "api_dispatch_pre_create_agent_automation_event_handoff_run",
-    ]) {
-      expect(actionTypes).toContain(actionType);
-    }
-    expect(timingEvents).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          op_type: "api_dispatch_pre_create_agent_automation_event_handoff_run",
-          automation_event_source: "gmail",
-          trigger_source: "automation-event",
-          agent_run_origin: "workflow_automation",
-          span_kind: "nested",
-        }),
-      ]),
-    );
-    const serializedTiming = JSON.stringify(timingEvents);
-    expect(serializedTiming).not.toContain(secondEmail);
-    expect(serializedTiming).not.toContain("pubsub-1");
-    expect(serializedTiming).not.toContain("msg-1");
-    expect(serializedTiming).not.toContain("gmail-thread-1");
-    expect(serializedTiming).not.toContain("customer@example.com");
-    expect(serializedTiming).not.toContain("Invoice needs a reply");
-    expect(serializedTiming).not.toContain("Please draft a helpful reply.");
-    expect(serializedTiming).not.toContain(created.body.id);
-    expect(serializedTiming).not.toContain(WORKFLOW_NAME);
 
     const second = await postGmailWebhook(body);
 

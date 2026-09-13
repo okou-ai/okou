@@ -10,6 +10,7 @@ export function initRendererSentry(): void {
 
   initElectronSentry(
     {
+      enableLogs: false,
       sendDefaultPii: false,
       tracesSampleRate: 0,
     },

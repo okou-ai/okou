@@ -63,7 +63,7 @@ async def test_requestheaders_rejects_over_budget_names_before_header_processing
         (b"X-Trace", b"first"),
         (b"x-trace", b"second"),
         (b"x-VM0-Connector-Intent", b"primary"),
-        (b"x-VM0-Codex-Model-Catalog-Prefetch", b"1"),
+        (b"x-Okou-Codex-Model-Catalog-Prefetch", b"1"),
     )
     flow = real_flow(
         with_response=False,
@@ -120,7 +120,7 @@ async def test_requestheaders_accepts_name_budget_and_preserves_existing_header_
         *repeated_fields,
         (boundary_name, b"accepted"),
         (b"x-VM0-Connector-Intent", b"primary"),
-        (b"x-VM0-Codex-Model-Catalog-Prefetch", b"1"),
+        (b"x-Okou-Codex-Model-Catalog-Prefetch", b"1"),
     )
     padding_fields = ((b"X-Padding", b""),) * (_MAX_REQUEST_HEADER_FIELDS - len(fixed_fields))
     flow = real_flow(
@@ -143,7 +143,7 @@ async def test_requestheaders_accepts_name_budget_and_preserves_existing_header_
         name
         not in (
             b"x-VM0-Connector-Intent",
-            b"x-VM0-Codex-Model-Catalog-Prefetch",
+            b"x-Okou-Codex-Model-Catalog-Prefetch",
         )
         for name, _value in flow.request.headers.fields
     )

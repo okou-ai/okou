@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "batch": "sidebar-copy-foreground",
+  "cases": [
+    {
+      "id": "nav-copy-gradient-light",
+      "path": "/agents",
+      "theme": "light",
+      "viewport": { "width": 1440, "height": 1000 },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "nav-copy-gradient-dark",
+      "path": "/agents",
+      "theme": "dark",
+      "viewport": { "width": 1440, "height": 1000 },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "nav-copy-default-light",
+      "path": "/agents",
+      "theme": "light",
+      "viewport": { "width": 1280, "height": 900 },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "nav-copy-default-dark",
+      "path": "/agents",
+      "theme": "dark",
+      "viewport": { "width": 1280, "height": 900 },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "nav-copy-rail-light",
+      "path": "/agents",
+      "theme": "light",
+      "viewport": { "width": 900, "height": 900 },
+      "deviceScaleFactor": 2
+    },
+    {
+      "id": "nav-copy-rail-dark",
+      "path": "/agents",
+      "theme": "dark",
+      "viewport": { "width": 900, "height": 900 },
+      "deviceScaleFactor": 2
+    }
+  ]
+}

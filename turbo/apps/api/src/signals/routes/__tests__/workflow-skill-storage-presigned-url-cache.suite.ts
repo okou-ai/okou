@@ -179,51 +179,6 @@ function mockUniquePresignedUrls(): void {
   );
 }
 
-function apiDispatchTimingEventsForRun(
-  runId: string,
-): readonly Record<string, unknown>[] {
-  return context.mocks.axiom.sdkIngest.mock.calls.flatMap((call) => {
-    const dataset = call[0];
-    const events = call[1];
-    if (dataset !== "vm0-sandbox-op-log-dev" || !Array.isArray(events)) {
-      return [];
-    }
-    return events.filter((event): event is Record<string, unknown> => {
-      return (
-        isRecord(event) &&
-        event.run_id === runId &&
-        typeof event.op_type === "string" &&
-        event.op_type.startsWith("api_dispatch_")
-      );
-    });
-  });
-}
-
-function singleApiDispatchEvent(
-  events: readonly Record<string, unknown>[],
-  opType: string,
-): Record<string, unknown> {
-  const matching = events.filter((event) => {
-    return event.op_type === opType;
-  });
-  expect(matching).toHaveLength(1);
-  const event = matching[0];
-  if (!event) {
-    throw new Error(`Missing timing event ${opType}`);
-  }
-  return event;
-}
-
-function expectTimingDoesNotLeak(
-  events: readonly Record<string, unknown>[],
-  values: readonly string[],
-): void {
-  const serialized = JSON.stringify(events);
-  for (const value of values) {
-    expect(serialized).not.toContain(value);
-  }
-}
-
 async function entitledWorkflowActor(): Promise<{
   readonly actor: ApiTestUser;
   readonly agentId: string;
@@ -442,23 +397,6 @@ describe("workflow skill storage presigned URL cache", () => {
         presigned_url: first.archiveUrl,
       });
 
-      const firstTiming = apiDispatchTimingEventsForRun(first.runId);
-      expect(
-        singleApiDispatchEvent(
-          firstTiming,
-          "api_dispatch_prepare_storage_manifest_build_entries",
-        ),
-      ).toStrictEqual(
-        expect.objectContaining({
-          storage_manifest_source_workflow_skill_resolved_count_bucket: "1",
-          storage_manifest_source_workflow_skill_planned_presign_count_bucket:
-            "1",
-          storage_manifest_source_workflow_skill_non_system_presign_count_bucket:
-            "1",
-          storage_manifest_workflow_skill_presign_cache_miss_count_bucket: "1",
-          storage_manifest_workflow_skill_presign_cache_hit_count_bucket: "0",
-        }),
-      );
       const api = createRunsApi(context);
       await api.requestCancelRun(fixture.actor, first.runId, [200]);
 
@@ -476,30 +414,6 @@ describe("workflow skill storage presigned URL cache", () => {
       );
       expect(rowAfterTouch?.last_requested_at).toBe(touchedAt.toISOString());
 
-      const secondTiming = apiDispatchTimingEventsForRun(second.runId);
-      expect(
-        singleApiDispatchEvent(
-          secondTiming,
-          "api_dispatch_prepare_storage_manifest_build_entries",
-        ),
-      ).toStrictEqual(
-        expect.objectContaining({
-          storage_manifest_source_workflow_skill_resolved_count_bucket: "1",
-          storage_manifest_source_workflow_skill_planned_presign_count_bucket:
-            "0",
-          storage_manifest_source_workflow_skill_non_system_presign_count_bucket:
-            "0",
-          storage_manifest_workflow_skill_presign_cache_hit_count_bucket: "1",
-          storage_manifest_workflow_skill_presign_cache_miss_count_bucket: "0",
-        }),
-      );
-      expectTimingDoesNotLeak(secondTiming, [
-        fixture.workflowName,
-        fixture.workflowId,
-        fixture.agentId,
-        fixture.objectKeyPrefix,
-        second.archiveUrl,
-      ]);
       await api.requestCancelRun(fixture.actor, second.runId, [200]);
 
       mockNow(touchedAt.getTime() + 10 * 60 * 1000);
@@ -553,19 +467,6 @@ describe("workflow skill storage presigned URL cache", () => {
         prompt: "reuse stale but safe workflow skill URL",
       });
       expect(staleRun.archiveUrl).toBe(staleUrl);
-      expect(
-        singleApiDispatchEvent(
-          apiDispatchTimingEventsForRun(staleRun.runId),
-          "api_dispatch_prepare_storage_manifest_build_entries",
-        ),
-      ).toStrictEqual(
-        expect.objectContaining({
-          storage_manifest_workflow_skill_presign_cache_stale_reuse_count_bucket:
-            "1",
-          storage_manifest_source_workflow_skill_planned_presign_count_bucket:
-            "0",
-        }),
-      );
       await api.requestCancelRun(fixture.actor, staleRun.runId, [200]);
 
       const unsafeUrl = "https://r2.example.com/unsafe-workflow-skill-url";
@@ -586,21 +487,6 @@ describe("workflow skill storage presigned URL cache", () => {
       });
       expect(refreshedRun.archiveUrl).not.toBe(unsafeUrl);
       expect(refreshedRun.archiveUrl).toContain("?sig=");
-      expect(
-        singleApiDispatchEvent(
-          apiDispatchTimingEventsForRun(refreshedRun.runId),
-          "api_dispatch_prepare_storage_manifest_build_entries",
-        ),
-      ).toStrictEqual(
-        expect.objectContaining({
-          storage_manifest_workflow_skill_presign_cache_sync_refresh_count_bucket:
-            "1",
-          storage_manifest_source_workflow_skill_planned_presign_count_bucket:
-            "1",
-          storage_manifest_source_workflow_skill_non_system_presign_count_bucket:
-            "1",
-        }),
-      );
       await api.requestCancelRun(fixture.actor, refreshedRun.runId, [200]);
     });
   });

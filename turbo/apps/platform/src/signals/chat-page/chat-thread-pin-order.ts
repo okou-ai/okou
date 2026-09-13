@@ -6,7 +6,6 @@ import {
 } from "@okouai/core/chat-thread-pin-order";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
-import { stableChatThreadNavigationEnabled$ } from "../external/feature-switch.ts";
 import { chatThreadOnlyUnread$ } from "./chat-thread-only-unread.ts";
 import {
   eventDrivenChatThreads$,
@@ -14,7 +13,7 @@ import {
 } from "./chat-thread-event-sourcing.ts";
 
 export const pinnedThreadReorderEnabled$ = computed((get) => {
-  return get(stableChatThreadNavigationEnabled$) && !get(chatThreadOnlyUnread$);
+  return !get(chatThreadOnlyUnread$);
 });
 
 interface PinMove {

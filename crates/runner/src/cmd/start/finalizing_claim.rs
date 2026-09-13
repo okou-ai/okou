@@ -128,6 +128,20 @@ enum FinalizingResource {
     Fresh(BudgetLease),
 }
 
+enum FinalizingActivationOrigin {
+    IdlePool,
+    DirectHandoff,
+}
+
+/// Acquired capacity after origin-specific identity checks and snapshot capture.
+enum FinalizingActivation {
+    Reserved {
+        reservation: ReservedIdleActivation,
+        origin: FinalizingActivationOrigin,
+    },
+    Fresh(BudgetLease),
+}
+
 enum FallbackExactLookup {
     Hit(ReservedIdleActivation),
     Miss(ExactIdleReservationMiss),
@@ -260,16 +274,60 @@ async fn run_finalizing_claim(
         claimed.context().reuse_key().map(str::to_owned),
         profile_name.clone(),
     );
+    let activation = match resource {
+        FinalizingResource::Fresh(lease) => FinalizingActivation::Fresh(lease),
+        FinalizingResource::Exact(reservation) => FinalizingActivation::Reserved {
+            reservation,
+            origin: FinalizingActivationOrigin::IdlePool,
+        },
+        FinalizingResource::Handoff(candidate) => {
+            let reservation =
+                match candidate.into_reservation(run_id, admission.history_generation_run_id) {
+                    Ok(reservation) => reservation,
+                    Err(candidate) => {
+                        drop(active_run_guard);
+                        candidate
+                            .into_destroy_job()
+                            .run_with_context("finalizing_handoff_identity_mismatch")
+                            .await;
+                        ctx.reuse_state_notify.notify_one();
+                        pre_spawn_timing.record_finalizing_handoff(
+                            FinalizingHandoffOutcome::ActivationFailed,
+                            Some(FinalizingHandoffReason::HandoffIdentityMismatch),
+                        );
+                        return complete_claimed_without_sandbox(
+                            claimed,
+                            cancellation,
+                            ExecutionFailure::from_error(
+                                "finalizing handoff identity did not match claimed successor",
+                            ),
+                            None,
+                            pre_spawn_timing.finalizing_diagnostics(),
+                            &ctx,
+                        )
+                        .await;
+                    }
+                };
+            let idle_snapshot = ctx.idle_pool.lock().await.status_snapshot();
+            FinalizingActivation::Reserved {
+                reservation: ReservedIdleActivation::new(reservation, idle_snapshot),
+                origin: FinalizingActivationOrigin::DirectHandoff,
+            }
+        }
+    };
     let cancellation_handle = cancellation.handle();
     let mut activation_transfer_guard = None;
-    let ready = match resource {
-        FinalizingResource::Fresh(active_lease) => ReadyClaimedResource {
+    let ready = match activation {
+        FinalizingActivation::Fresh(active_lease) => ReadyClaimedResource {
             reuse_entry: None,
             active_lease,
             reuse_result: SandboxReuseResult::PoolMiss,
             idle_snapshot: None,
         },
-        FinalizingResource::Exact(reservation) => {
+        FinalizingActivation::Reserved {
+            reservation,
+            origin,
+        } => {
             let transfer_guard = cancellation_handle.transfer_guard().await;
             if cancellation_handle.is_cancelled() {
                 drop(transfer_guard);
@@ -315,117 +373,9 @@ async fn run_finalizing_claim(
                             FinalizingHandoffOutcome::ActivationFailed,
                             Some(FinalizingHandoffReason::ExactActivationFallback),
                         );
-                    }
-                    ReadyClaimedResource {
-                        reuse_entry: reuse_entry.map(|entry| *entry),
-                        active_lease,
-                        reuse_result,
-                        idle_snapshot: Some(idle_snapshot),
-                    }
-                }
-                ReservedActivation::CannotStart {
-                    budget_lease,
-                    reuse_result,
-                    error,
-                } => {
-                    drop(activation_transfer_guard.take());
-                    drop(active_run_guard);
-                    pre_spawn_timing.record_finalizing_handoff(
-                        FinalizingHandoffOutcome::ActivationFailed,
-                        Some(FinalizingHandoffReason::ExactActivationFailed),
-                    );
-                    let cancellation = complete_claimed_without_sandbox(
-                        claimed,
-                        cancellation,
-                        ExecutionFailure::from_error(error),
-                        Some(reuse_result),
-                        pre_spawn_timing.finalizing_diagnostics(),
-                        &ctx,
-                    )
-                    .await;
-                    drop(budget_lease);
-                    return cancellation;
-                }
-            }
-        }
-        FinalizingResource::Handoff(candidate) => {
-            let reservation =
-                match candidate.into_reservation(run_id, admission.history_generation_run_id) {
-                    Ok(reservation) => reservation,
-                    Err(candidate) => {
-                        drop(active_run_guard);
-                        candidate
-                            .into_destroy_job()
-                            .run_with_context("finalizing_handoff_identity_mismatch")
-                            .await;
-                        ctx.reuse_state_notify.notify_one();
-                        pre_spawn_timing.record_finalizing_handoff(
-                            FinalizingHandoffOutcome::ActivationFailed,
-                            Some(FinalizingHandoffReason::HandoffIdentityMismatch),
-                        );
-                        return complete_claimed_without_sandbox(
-                            claimed,
-                            cancellation,
-                            ExecutionFailure::from_error(
-                                "finalizing handoff identity did not match claimed successor",
-                            ),
-                            None,
-                            pre_spawn_timing.finalizing_diagnostics(),
-                            &ctx,
-                        )
-                        .await;
-                    }
-                };
-            let idle_snapshot = ctx.idle_pool.lock().await.status_snapshot();
-            let reservation = ReservedIdleActivation::new(reservation, idle_snapshot);
-            let transfer_guard = cancellation_handle.transfer_guard().await;
-            if cancellation_handle.is_cancelled() {
-                drop(transfer_guard);
-                drop(active_run_guard);
-                rollback_reserved_idle_for_spawn(reservation, &ctx).await;
-                pre_spawn_timing.record_finalizing_handoff(
-                    FinalizingHandoffOutcome::ActivationFailed,
-                    Some(FinalizingHandoffReason::ActivationCancelled),
-                );
-                return complete_claimed_without_sandbox(
-                    claimed,
-                    cancellation,
-                    ExecutionFailure::cancelled(),
-                    None,
-                    pre_spawn_timing.finalizing_diagnostics(),
-                    &ctx,
-                )
-                .await;
-            }
-            activation_transfer_guard = Some(transfer_guard);
-            match activate_reserved_idle(
-                reservation,
-                ReservedActivationRequest {
-                    run_id,
-                    profile_name: &profile_name,
-                    device_rate_limits: &device_rate_limits,
-                    workspace_disk_mb,
-                    context: claimed.context(),
-                },
-                &ctx,
-                &mut pre_spawn_timing,
-            )
-            .await
-            {
-                ReservedActivation::Ready {
-                    reuse_entry,
-                    active_lease,
-                    reuse_result,
-                    idle_snapshot,
-                } => {
-                    if reuse_entry.is_some() {
+                    } else if matches!(origin, FinalizingActivationOrigin::DirectHandoff) {
                         pre_spawn_timing
                             .record_finalizing_handoff_outcome(FinalizingHandoffOutcome::Accepted);
-                    } else {
-                        pre_spawn_timing.record_finalizing_handoff(
-                            FinalizingHandoffOutcome::ActivationFailed,
-                            Some(FinalizingHandoffReason::ExactActivationFallback),
-                        );
                     }
                     ReadyClaimedResource {
                         reuse_entry: reuse_entry.map(|entry| *entry),

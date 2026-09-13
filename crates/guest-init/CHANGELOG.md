@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.254](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.253...guest-init-v0.16.254) (2026-09-11)
+
+
+### Performance Improvements
+
+* **guest-init:** reduce dynamic cgroup placement latency ([#33531](https://github.com/vm0-ai/vm0/issues/33531)) ([98ddb4c](https://github.com/vm0-ai/vm0/commit/98ddb4cf21af498240fc63852cc8e6300b714b7c))
+
 ## [0.16.253](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.252...guest-init-v0.16.253) (2026-09-11)
 
 ## [0.16.252](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.251...guest-init-v0.16.252) (2026-09-11)

@@ -1,5 +1,6 @@
 import {
-  compatibleReasoningEffort,
+  withModelReasoningEffort,
+  type ModelSettings,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { waitFor } from "@testing-library/react";
@@ -19,6 +20,7 @@ import {
   type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
+import type { SupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import {
   runsCancelContract,
   runsByIdContract,
@@ -46,10 +48,12 @@ const MOCK_RUN_ID = "d0000000-0000-4000-a000-000000000001";
 
 interface ModelSelectionRequest {
   readonly modelProviderId: string;
-  readonly selectedModel: string;
+  readonly selectedModel: SupportedRunModel;
 }
 
-function modelFirstSelection(selectedModel: string): ModelSelectionRequest {
+function modelFirstSelection(
+  selectedModel: SupportedRunModel,
+): ModelSelectionRequest {
   return {
     modelProviderId: MODEL_FIRST_SELECTION_PROVIDER_ID,
     selectedModel,
@@ -57,7 +61,7 @@ function modelFirstSelection(selectedModel: string): ModelSelectionRequest {
 }
 
 function modelSelectionFromBody(body: {
-  readonly model?: string | null;
+  readonly model?: SupportedRunModel | null;
 }): ModelSelectionRequest | null | undefined {
   if (body.model === undefined) {
     return undefined;
@@ -105,7 +109,7 @@ interface ThreadListItem {
   renamedAt?: string | null;
   selectedModel?: string | null;
   serviceTier?: "priority" | null;
-  reasoningEffort?: ReasoningEffort | null;
+  modelSettings?: ModelSettings;
   computerUseHostId?: string | null;
   cloudBrowserEnabled?: boolean;
   selectedVideoModel?: string | null;
@@ -127,7 +131,7 @@ export function threadListSnapshot(threads: readonly ThreadListItem[]) {
       renamedAt: thread.renamedAt ?? null,
       selectedModel: thread.selectedModel ?? null,
       serviceTier: thread.serviceTier ?? null,
-      reasoningEffort: thread.reasoningEffort ?? null,
+      modelSettings: thread.modelSettings ?? {},
       computerUseHostId: thread.computerUseHostId ?? null,
       cloudBrowserEnabled: thread.cloudBrowserEnabled ?? false,
       selectedVideoModel: thread.selectedVideoModel ?? null,
@@ -275,16 +279,29 @@ function appendDefaultCompletionMarkers(args: {
 function initialMockThreadModelSelection(
   options:
     | {
-        selectedModel?: string | null;
+        selectedModel?: SupportedRunModel | null;
         codexServiceTier?: CodexServiceTier | null;
+        modelSettings?: ModelSettings;
         reasoningEffort?: ReasoningEffort | null;
       }
     | undefined,
 ) {
+  const selectedModel = options?.selectedModel ?? null;
+  const modelSettings =
+    options?.modelSettings ??
+    (selectedModel && options?.reasoningEffort
+      ? withModelReasoningEffort(
+          {},
+          {
+            model: selectedModel,
+            effort: options.reasoningEffort,
+          },
+        )
+      : {});
   return {
-    selectedModel: options?.selectedModel ?? null,
+    selectedModel,
     codexServiceTier: options?.codexServiceTier ?? null,
-    reasoningEffort: options?.reasoningEffort ?? null,
+    modelSettings,
   };
 }
 
@@ -295,8 +312,9 @@ export function mockChatLifecycle(
     historyEvents?: MockChatEvent[];
     chatEvents?: MockChatEvent[];
     threadTitle?: string | null;
-    selectedModel?: string | null;
+    selectedModel?: SupportedRunModel | null;
     codexServiceTier?: CodexServiceTier | null;
+    modelSettings?: ModelSettings;
     reasoningEffort?: ReasoningEffort | null;
     computerUseHostId?: string | null;
     cloudBrowserEnabled?: boolean;
@@ -365,9 +383,10 @@ export function mockChatLifecycle(
     onThreadCreate?: (body: {
       clientThreadId?: string;
       eventId?: string;
-      model?: string;
+      model?: SupportedRunModel;
       modelSelection: ModelSelectionRequest;
       serviceTier?: ChatThreadServiceTier | null;
+      reasoningEffort?: ReasoningEffort;
       imageModel?: string;
       videoModel?: string;
       connectorSelections?: readonly ConnectorAccountSelection[];
@@ -376,7 +395,7 @@ export function mockChatLifecycle(
       model?: string | null;
       modelSelection?: ModelSelectionRequest | null;
       codexServiceTier?: CodexServiceTier | null;
-      reasoningEffort?: ReasoningEffort | null;
+      reasoningEffort?: ReasoningEffort;
     }) => void;
   },
 ): MockLifecycleControl {
@@ -406,7 +425,7 @@ export function mockChatLifecycle(
   let assistantSeqId: number | undefined;
   let completedMarkerSeqId: number | undefined;
   let threadTitle: string | null = options?.threadTitle ?? null;
-  let { selectedModel, codexServiceTier, reasoningEffort } =
+  let { selectedModel, codexServiceTier, modelSettings } =
     initialMockThreadModelSelection(options);
   let computerUseHostId: string | null = options?.computerUseHostId ?? null;
   let cloudBrowserEnabled = options?.cloudBrowserEnabled ?? false;
@@ -550,7 +569,7 @@ export function mockChatLifecycle(
         updatedAt: "2026-03-10T00:00:00Z",
         pinnedAt: null,
         selectedModel,
-        reasoningEffort,
+        modelSettings,
         serviceTier: codexServiceTier === "fast" ? ("priority" as const) : null,
         computerUseHostId,
         cloudBrowserEnabled,
@@ -610,7 +629,7 @@ export function mockChatLifecycle(
     clientEventId?: string;
     hasTextContent?: boolean;
     userMessage?: UserMessageDocument;
-    model?: string;
+    model?: SupportedRunModel;
     runOptions?: ChatRunOptionsRequest;
   }) => {
     const clientEventId = body.clientEventId ?? crypto.randomUUID();
@@ -643,7 +662,7 @@ export function mockChatLifecycle(
     clientEventId?: string;
     hasTextContent?: boolean;
     userMessage?: UserMessageDocument;
-    model?: string;
+    model?: SupportedRunModel;
     runOptions?: ChatRunOptionsRequest;
     computerUseHostId?: string | null;
     cloudBrowserEnabled?: boolean;
@@ -735,10 +754,12 @@ export function mockChatLifecycle(
       const modelSelection = modelSelectionFromBody(body);
       selectedModel = modelSelection?.selectedModel ?? null;
       codexServiceTier = body.codexServiceTier ?? null;
-      reasoningEffort =
-        body.reasoningEffort === undefined
-          ? compatibleReasoningEffort(selectedModel, reasoningEffort)
-          : body.reasoningEffort;
+      if (selectedModel && body.reasoningEffort !== undefined) {
+        modelSettings = withModelReasoningEffort(modelSettings, {
+          model: selectedModel,
+          effort: body.reasoningEffort,
+        });
+      }
       latestThreadEventId =
         body.serviceTierEventId ?? body.eventId ?? crypto.randomUUID();
       latestThreadEventSeqId = (latestThreadEventSeqId ?? 0) + 1;
@@ -806,12 +827,19 @@ export function mockChatLifecycle(
     }
     selectedModel = modelSelection.selectedModel;
     codexServiceTier = body.serviceTier === "priority" ? "fast" : null;
+    if (body.reasoningEffort !== undefined) {
+      modelSettings = withModelReasoningEffort(modelSettings, {
+        model: selectedModel,
+        effort: body.reasoningEffort,
+      });
+    }
     options?.onThreadCreate?.({
       clientThreadId: body.clientThreadId,
       eventId: body.eventId,
       model: body.model,
       modelSelection,
       serviceTier: body.serviceTier,
+      reasoningEffort: body.reasoningEffort,
       imageModel: body.imageModel,
       videoModel: body.videoModel,
       connectorSelections: body.connectorSelections,

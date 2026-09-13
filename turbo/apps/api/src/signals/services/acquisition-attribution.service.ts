@@ -10,6 +10,7 @@ import { command } from "ccstate";
 
 import { googleAdsAccountForAttribution } from "@okouai/core/google-ads-account";
 import { clerk$ } from "../external/clerk";
+import { clerkAttributionDisabled } from "../../lib/clerk-attribution";
 
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -65,6 +66,9 @@ export const googleAdsAccountForUser$ = command(
     provided: AdAttributionMetadata | undefined,
     signal: AbortSignal,
   ) => {
+    if (clerkAttributionDisabled()) {
+      return null;
+    }
     const users = await get(clerk$).users.getUserList(
       { userId: [userId], limit: 1 },
       undefined,

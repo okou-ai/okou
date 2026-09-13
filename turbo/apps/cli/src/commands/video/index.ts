@@ -2,11 +2,13 @@ import { Command } from "commander";
 import { transcribeCommand } from "./transcribe";
 import { framesCommand } from "./frames";
 import { cameraCommand } from "./camera";
+import { renderCommand } from "./render";
 
 export const videoCommand = new Command()
   .name("video")
   .description("Video processing utilities")
   .addCommand(cameraCommand)
+  .addCommand(renderCommand)
   .addCommand(transcribeCommand)
   .addCommand(framesCommand)
   .addHelpText(

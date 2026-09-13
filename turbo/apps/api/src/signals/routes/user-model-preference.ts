@@ -2,10 +2,17 @@ import { command, computed } from "ccstate";
 import {
   getRunModelAccess,
   RETIRED_RUN_MODEL_MESSAGE,
+  type OrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  isModelReasoningEffortSupported,
+  type ModelSettingsPatch,
+} from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { UserPreferenceChangedPayload } from "@okouai/api-contracts/contracts/realtime";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { isCodexFastModeEnabled } from "@okouai/core/model-feature-switch";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { badRequestMessage } from "../../lib/error";
 import { publishUserPreferenceChangedForUserSafely } from "../external/realtime";
@@ -22,6 +29,57 @@ import {
 } from "../services/user-data.service";
 
 const updateBody$ = bodyResultOf(userModelPreferenceContract.update);
+
+function validateModelSettingsPatch(args: {
+  readonly patch: ModelSettingsPatch | undefined;
+  readonly selectedModel: string | null;
+  readonly enabled: boolean;
+}): ReturnType<typeof badRequestMessage> | undefined {
+  if (args.patch === undefined) {
+    return undefined;
+  }
+  if (args.patch.model !== args.selectedModel) {
+    return badRequestMessage("Reasoning effort must target the selected model");
+  }
+  if (!args.enabled) {
+    return badRequestMessage("Reasoning effort selection is not enabled");
+  }
+  if (!isModelReasoningEffortSupported(args.patch.model, args.patch.effort)) {
+    return badRequestMessage(
+      "Reasoning effort is not supported by the selected model",
+    );
+  }
+  return undefined;
+}
+
+function validatePriorityServiceTier(args: {
+  readonly requested: boolean;
+  readonly configuredPolicy: OrgModelPolicy | undefined;
+  readonly enabled: boolean;
+}): ReturnType<typeof badRequestMessage> | undefined {
+  if (!args.requested) {
+    return undefined;
+  }
+  if (!args.configuredPolicy || args.configuredPolicy.routeStatus !== "valid") {
+    return badRequestMessage("Invalid request");
+  }
+  if (!args.enabled) {
+    return badRequestMessage(
+      "Codex fast mode is not enabled for this workspace",
+    );
+  }
+  if (
+    !isCodexFastServiceTierSupported({
+      selectedModel: args.configuredPolicy.model,
+      codexFastModeEnabled: true,
+    })
+  ) {
+    return badRequestMessage(
+      "Codex fast mode is only available for GPT 5.6 runs",
+    );
+  }
+  return undefined;
+}
 
 const getUserModelPreferenceInner$ = computed(async (get): Promise<unknown> => {
   const auth = get(organizationAuthContext$);
@@ -59,29 +117,36 @@ const updateUserModelPreferenceInner$ = command(
       return badRequestMessage("Invalid request");
     }
 
-    if (body.data.serviceTier === "priority") {
-      if (!configuredPolicy || configuredPolicy.routeStatus !== "valid") {
-        return badRequestMessage("Invalid request");
-      }
-      const featureSwitchContext = await get(
-        userFeatureSwitchContext(auth.orgId, auth.userId),
-      );
-      signal.throwIfAborted();
-      if (!isCodexFastModeEnabled(featureSwitchContext)) {
-        return badRequestMessage(
-          "Codex fast mode is not enabled for this workspace",
-        );
-      }
-      if (
-        !isCodexFastServiceTierSupported({
-          selectedModel: configuredPolicy.model,
-          codexFastModeEnabled: true,
-        })
-      ) {
-        return badRequestMessage(
-          "Codex fast mode is only available for GPT 5.6 runs",
-        );
-      }
+    const modelSettingsPatch = body.data.modelSettingsPatch;
+    const featureSwitchContext =
+      body.data.serviceTier === "priority" || modelSettingsPatch !== undefined
+        ? await get(userFeatureSwitchContext(auth.orgId, auth.userId))
+        : undefined;
+    signal.throwIfAborted();
+
+    const modelSettingsError = validateModelSettingsPatch({
+      patch: modelSettingsPatch,
+      selectedModel: body.data.selectedModel,
+      enabled:
+        featureSwitchContext !== undefined &&
+        isFeatureEnabled(
+          FeatureSwitchKey.ChatReasoningEffort,
+          featureSwitchContext,
+        ),
+    });
+    if (modelSettingsError) {
+      return modelSettingsError;
+    }
+
+    const serviceTierError = validatePriorityServiceTier({
+      requested: body.data.serviceTier === "priority",
+      configuredPolicy,
+      enabled:
+        featureSwitchContext !== undefined &&
+        isCodexFastModeEnabled(featureSwitchContext),
+    });
+    if (serviceTierError) {
+      return serviceTierError;
     }
 
     const result = await set(

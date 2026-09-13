@@ -355,11 +355,8 @@ test("An unused credential can be deleted with confirmation and the rendered rev
   );
   await page();
   click(getAction("radio", "Credentials"));
-  click(
-    await waitFor(() => {
-      return getAction("button", "Delete credential");
-    }),
-  );
+  await screen.findByText("1 credential configured");
+  click(getAction("button", "Delete credential"));
   const dialog = await screen.findByRole("dialog");
   expect(
     within(dialog).getByText(/Its stored secret cannot be recovered/u),
@@ -369,6 +366,7 @@ test("An unused credential can be deleted with confirmation and the rendered rev
   await screen.findByText(
     "No SSH credentials yet. Add a private key or password to reuse across hosts.",
   );
+  expect(screen.getByText("0 credentials configured")).toBeVisible();
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(queryAction("button", "Delete credential")).toBeNull();
 });
@@ -857,6 +855,36 @@ test.each([
     await page();
     const configuredCount = await screen.findByText(label);
     expect(configuredCount).toBeInTheDocument();
+  },
+);
+
+test.each([
+  { count: 0, label: "0 credentials configured" },
+  { count: 1, label: "1 credential configured" },
+  { count: 2, label: "2 credentials configured" },
+])(
+  "Shows the configured credential count independently of hosts for $count credentials",
+  async ({ count, label }) => {
+    const credentials = Array.from({ length: count }, (_, index) => {
+      return {
+        ...credential,
+        id: `d0000000-0000-4000-8000-00000000000${index}`,
+        name: `Login ${index}`,
+        hosts: [],
+      };
+    });
+    context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+      return respond(200, { connections: [] });
+    });
+    context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
+      return respond(200, { credentials });
+    });
+    await page();
+    await screen.findByText("0 hosts configured");
+    click(getAction("radio", "Credentials"));
+    await expect(screen.findByText(label)).resolves.toBeVisible();
+    expect(getAction("button", "Add credential")).toBeEnabled();
+    expect(screen.queryByText("0 hosts configured")).toBeNull();
   },
 );
 

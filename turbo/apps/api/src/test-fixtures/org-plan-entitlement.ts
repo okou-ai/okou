@@ -25,7 +25,7 @@ interface OrgPlanEntitlementFixtureState {
   readonly showUsagePack: boolean;
   readonly autoRechargeAllowed: boolean;
   readonly supportByok: boolean;
-  readonly restrictedVm0Models: boolean;
+  readonly restrictedBuiltInModels: boolean;
   readonly videoGenerationAllowed: boolean;
   readonly workflowWebhookAutomationAllowed: boolean;
   readonly audioLifetimeLimit: number | null;
@@ -48,7 +48,7 @@ export async function upsertOrgPlanEntitlementFixture(values: {
   readonly showUsagePack?: boolean;
   readonly autoRechargeAllowed?: boolean;
   readonly supportByok?: boolean;
-  readonly restrictedVm0Models?: boolean;
+  readonly restrictedBuiltInModels?: boolean;
   readonly videoGenerationAllowed?: boolean;
   readonly workflowWebhookAutomationAllowed?: boolean;
 }): Promise<void> {
@@ -64,7 +64,7 @@ export async function upsertOrgPlanEntitlementFixture(values: {
     showUsagePack: values.showUsagePack,
     autoRechargeAllowed: values.autoRechargeAllowed,
     supportByok: values.supportByok,
-    restrictedBuiltInModels: values.restrictedVm0Models,
+    restrictedBuiltInModels: values.restrictedBuiltInModels,
     videoGenerationAllowed: values.videoGenerationAllowed,
     workflowWebhookTriggerAllowed: values.workflowWebhookAutomationAllowed,
   };
@@ -192,11 +192,13 @@ export async function readOrgPlanEntitlementFixture(
     );
   }
 
+  // Destructured rather than spread so the non-null narrowing above survives
+  // into the returned state, which is declared as a plain boolean.
   const { restrictedBuiltInModels, ...entitlement } = row;
 
   return {
     ...entitlement,
-    restrictedVm0Models: restrictedBuiltInModels,
+    restrictedBuiltInModels,
     currentPeriodStart: row.currentPeriodStart?.toISOString() ?? null,
     currentPeriodEnd: row.currentPeriodEnd?.toISOString() ?? null,
     cancelAt: row.cancelAt?.toISOString() ?? null,

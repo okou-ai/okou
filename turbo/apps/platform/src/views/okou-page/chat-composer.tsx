@@ -276,6 +276,7 @@ import {
   voiceInputV2Enabled$,
   featureSwitch$,
 } from "../../signals/external/feature-switch.ts";
+import { preferredChatReasoningEffort } from "../../signals/okou-page/model-reasoning-effort.ts";
 import {
   selectedComputerUseHostId,
   visibleComputerUseHosts,
@@ -3315,7 +3316,7 @@ function TemplatePreviewPage({
     <>
       <DialogHeader
         data-presentation-template-detail-header=""
-        className="flex h-[68px] shrink-0 justify-center border-b border-border px-6 pr-14 text-left duration-200 animate-in fade-in zoom-in-95 motion-reduce:animate-none"
+        className="flex h-[68px] shrink-0 justify-center border-b border-border px-6 pr-14 text-left duration-200 motion-reduce:animate-none"
       >
         <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-left text-base leading-none">
           <button
@@ -3333,7 +3334,7 @@ function TemplatePreviewPage({
           </span>
         </DialogTitle>
       </DialogHeader>
-      <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto bg-muted/20 p-3 duration-200 animate-in fade-in zoom-in-95 motion-reduce:animate-none sm:gap-4 sm:p-5 lg:max-h-[72vh] lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
+      <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto bg-muted/20 p-3 duration-200 motion-reduce:animate-none sm:gap-4 sm:p-5 lg:max-h-[72vh] lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
         <div className="rounded-lg border border-border bg-background p-2.5 sm:p-3">
           <div
             role="group"
@@ -5474,7 +5475,7 @@ function ImportedPresentationTemplatePreviewHeader({
 }) {
   const { t } = useTranslation();
   return (
-    <DialogHeader className="flex h-[68px] shrink-0 justify-center border-b border-border px-6 pr-14 text-left duration-200 animate-in fade-in zoom-in-95 motion-reduce:animate-none">
+    <DialogHeader className="flex h-[68px] shrink-0 justify-center border-b border-border px-6 pr-14 text-left duration-200 motion-reduce:animate-none">
       <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-left text-base leading-none">
         <button
           type="button"
@@ -5708,7 +5709,7 @@ function ImportedPresentationTemplatePreviewPage({
         title={title}
         onBack={onBack}
       />
-      <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto bg-muted/20 p-3 duration-200 animate-in fade-in zoom-in-95 motion-reduce:animate-none sm:gap-4 sm:p-5 lg:max-h-[72vh] lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
+      <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto bg-muted/20 p-3 duration-200 motion-reduce:animate-none sm:gap-4 sm:p-5 lg:max-h-[72vh] lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
         <div className="rounded-lg border border-border bg-background p-2.5 sm:p-3 lg:overflow-y-auto">
           <ImportedPresentationTemplateMainPreview
             title={title}
@@ -8841,11 +8842,14 @@ function MicButton({
             }
           >
             {starting || transcribing ? (
-              <span className="mic-starting-spinner" aria-hidden="true" />
+              <span
+                className="block size-[17px] rounded-full border-2 border-[rgb(255_255_255_/_0.35)] border-t-[#ffffff] pointer-events-none [transform:rotate(0deg)_translateZ(0)] origin-center [backface-visibility:hidden] [will-change:transform] animate-mic-starting-spin"
+                aria-hidden="true"
+              />
             ) : recording ? (
               <>
                 <span
-                  className="mic-volume-icon-meter"
+                  className="absolute bottom-4 left-1/2 h-2 w-[5px] rounded-full bg-[rgb(255_255_255_/_0.18)] overflow-hidden pointer-events-none [transform:translateX(-50%)] after:absolute after:right-0 after:bottom-0 after:left-0 after:h-[var(--mic-volume-fill,0%)] after:rounded-[inherit] after:bg-[linear-gradient(to_top,#bdf9ff,#ffffff)] after:content-[''] after:transition-[height] after:duration-[0.12s] after:ease-[cubic-bezier(0.25,0.1,0.25,1)]"
                   aria-hidden="true"
                   style={
                     {
@@ -10108,6 +10112,7 @@ function ComposerTemporaryModelNotice({
     updateUserModelPreference$,
   );
   const codexFastModeEnabled = useGet(codexFastModeEnabled$);
+  const featureSwitches = useGet(featureSwitch$);
   const pageSignal = useGet(pageSignal$);
   const defaultSelection = resolveModelFirstUserDefaultSelection({
     userPreference,
@@ -10121,10 +10126,16 @@ function ComposerTemporaryModelNotice({
   const modelChanged =
     selection?.selectedModel !== defaultSelection?.selectedModel;
   const serviceTierChanged = selectionServiceTier !== defaultServiceTier;
+  const effort = preferredChatReasoningEffort(selection, featureSwitches);
+  const defaultEffort = preferredChatReasoningEffort(
+    defaultSelection,
+    featureSwitches,
+  );
+  const effortChanged = effort !== defaultEffort;
   if (
     !selection ||
     !defaultSelection ||
-    (!modelChanged && !serviceTierChanged)
+    (!modelChanged && !serviceTierChanged && !effortChanged)
   ) {
     return withChatScrollLayout(null);
   }
@@ -10135,9 +10146,15 @@ function ComposerTemporaryModelNotice({
       ? $.settings.models.picker.fast
       : $.settings.models.picker.standard;
   });
-  const scopedModelLabel = serviceTierChanged
-    ? `${modelName} ${runSpeedLabel}`
-    : modelName;
+  const scopedModelLabel = [
+    modelName,
+    serviceTierChanged ? runSpeedLabel : undefined,
+    effortChanged && effort
+      ? effort.charAt(0).toUpperCase() + effort.slice(1)
+      : undefined,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const useForFutureChats = () => {
     if (updating) {
       return;
@@ -10147,6 +10164,14 @@ function ComposerTemporaryModelNotice({
         {
           selectedModel: selection.selectedModel,
           serviceTier: selectionServiceTier,
+          ...(effort === undefined
+            ? {}
+            : {
+                modelSettingsPatch: {
+                  model: selection.selectedModel,
+                  effort,
+                },
+              }),
         },
         pageSignal,
       ),

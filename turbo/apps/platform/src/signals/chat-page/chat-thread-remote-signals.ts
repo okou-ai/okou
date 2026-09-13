@@ -12,34 +12,34 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
 import type { VideoModel } from "@okouai/core/video-model-catalog";
+import type { ModelSettingsPatch } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { accept } from "../../lib/accept.ts";
 import { nowDate } from "../../lib/time.ts";
 import { apiClient$ } from "../api-client.ts";
 import { chatReasoningEffortEnabled$ } from "../external/feature-switch.ts";
 import { threadCodexServiceTierFromSelection } from "./model-selection-request.ts";
-import { setAblyLoop$ } from "../realtime.ts";
+import {
+  setAblyInvalidationLoop$,
+  setAblyLoop$,
+  type RealtimeInvalidationCommands,
+} from "../realtime.ts";
 import { createDeferredPromise } from "../utils.ts";
 import { reloadSidebarDraftThreads$ } from "./sidebar-draft-threads.ts";
 import {
   chatThreadMetaMap$,
   optimisticChatThreadCreateUnsettled,
   registerOptimisticChatThreadEvent$,
+  type ThreadMeta,
 } from "./chat-thread-event-sourcing.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 
+interface ChatThreadRealtimeInvalidations {
+  readonly threadDetail: RealtimeInvalidationCommands;
+  readonly automations: RealtimeInvalidationCommands;
+  readonly artifacts: RealtimeInvalidationCommands;
+}
+
 interface ChatThreadRealtimeHandlers {
-  readonly onThreadDetailChanged$: Command<
-    Promise<boolean> | boolean,
-    [AbortSignal]
-  >;
-  readonly onAutomationsChanged$: Command<
-    Promise<boolean> | boolean,
-    [AbortSignal]
-  >;
-  readonly onArtifactsChanged$: Command<
-    Promise<boolean> | boolean,
-    [AbortSignal]
-  >;
   readonly onWorkflowsChanged$: Command<
     Promise<boolean> | boolean,
     [AbortSignal]
@@ -76,13 +76,47 @@ interface PatchImageModelArgs {
 
 interface SubscribeRealtimeArgs {
   readonly threadId: string;
+  readonly invalidations: ChatThreadRealtimeInvalidations;
   readonly handlers: ChatThreadRealtimeHandlers;
 }
 
-type ChatRealtimeSubscription = {
-  readonly topic: string;
-  readonly loopCommand$: Command<Promise<boolean> | boolean, [AbortSignal]>;
-};
+function changedModelSettingsPatch(args: {
+  readonly enabled: boolean;
+  readonly threadMeta: ThreadMeta | undefined;
+  readonly selection: ModelProviderSelection | null;
+}): ModelSettingsPatch | undefined {
+  const selection = args.selection;
+  const selectedModel = selection?.selectedModel;
+  if (
+    !args.enabled ||
+    !args.threadMeta ||
+    !selection ||
+    args.threadMeta.selectedModel !== selectedModel ||
+    selectedModel === undefined
+  ) {
+    return undefined;
+  }
+  const selectedEffort = selection.modelSettings?.[selectedModel]?.effort;
+  if (
+    selectedEffort === undefined ||
+    args.threadMeta.modelSettings[selectedModel]?.effort === selectedEffort
+  ) {
+    return undefined;
+  }
+  return { model: selectedModel, effort: selectedEffort };
+}
+
+type ChatRealtimeSubscription =
+  | {
+      readonly kind: "invalidate";
+      readonly topic: string;
+      readonly invalidations: RealtimeInvalidationCommands;
+    }
+  | {
+      readonly kind: "command";
+      readonly topic: string;
+      readonly loopCommand$: Command<Promise<boolean> | boolean, [AbortSignal]>;
+    };
 
 export const patchChatThreadDraft$ = command(
   async (
@@ -113,14 +147,17 @@ export const patchChatThreadModelSelection$ = command(
     { threadId, modelSelection }: PatchModelSelectionArgs,
     signal: AbortSignal,
   ) => {
-    const reasoningEffort = get(chatReasoningEffortEnabled$)
-      ? modelSelection?.reasoningEffort
-      : undefined;
+    const threadMeta = get(chatThreadMetaMap$).get(threadId);
+    const modelSettingsPatch = changedModelSettingsPatch({
+      enabled: get(chatReasoningEffortEnabled$),
+      threadMeta,
+      selection: modelSelection,
+    });
+    const reasoningEffort = modelSettingsPatch?.effort;
     const effortUpdate =
       reasoningEffort === undefined ? {} : { reasoningEffort };
     const modelSelectionEventId = crypto.randomUUID();
     const serviceTierEventId = crypto.randomUUID();
-    const threadMeta = get(chatThreadMetaMap$).get(threadId);
     if (threadMeta) {
       const createdAt = nowDate().toISOString();
       set(registerOptimisticChatThreadEvent$, {
@@ -129,7 +166,7 @@ export const patchChatThreadModelSelection$ = command(
         chatThreadId: threadId,
         agentId: threadMeta.agentId,
         selectedModel: modelSelection?.selectedModel ?? null,
-        ...effortUpdate,
+        ...(modelSettingsPatch === undefined ? {} : { modelSettingsPatch }),
         createdAt,
       });
       set(registerOptimisticChatThreadEvent$, {
@@ -256,24 +293,28 @@ export const patchChatThreadImageModel$ = command(
 export const subscribeChatThreadRealtime$ = command(
   async (
     { set },
-    { threadId, handlers }: SubscribeRealtimeArgs,
+    { threadId, invalidations, handlers }: SubscribeRealtimeArgs,
     signal: AbortSignal,
   ) => {
     const ready = createDeferredPromise<void>(signal);
     const subscriptions: ChatRealtimeSubscription[] = [
       {
+        kind: "invalidate",
         topic: `chatThreadDetailChanged:${threadId}`,
-        loopCommand$: handlers.onThreadDetailChanged$,
+        invalidations: invalidations.threadDetail,
       },
       {
+        kind: "invalidate",
         topic: `chatThreadAutomationsChanged:${threadId}`,
-        loopCommand$: handlers.onAutomationsChanged$,
+        invalidations: invalidations.automations,
       },
       {
+        kind: "invalidate",
         topic: `chatThreadArtifactsChanged:${threadId}`,
-        loopCommand$: handlers.onArtifactsChanged$,
+        invalidations: invalidations.artifacts,
       },
       {
+        kind: "command",
         topic: `chatThreadWorkflowsChanged:${threadId}`,
         loopCommand$: handlers.onWorkflowsChanged$,
       },
@@ -289,6 +330,17 @@ export const subscribeChatThreadRealtime$ = command(
     const options = { onSubscribed: markSubscribed };
     const subscription = Promise.all(
       subscriptions.map((subscription) => {
+        if (subscription.kind === "invalidate") {
+          return set(
+            setAblyInvalidationLoop$,
+            {
+              topic: subscription.topic,
+              invalidations: subscription.invalidations,
+              options,
+            },
+            signal,
+          );
+        }
         return set(
           setAblyLoop$,
           {

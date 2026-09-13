@@ -43,25 +43,6 @@ function modelProvidersByTypeClient() {
   );
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function sandboxOperationEventsForRun(
-  runId: string,
-): readonly Record<string, unknown>[] {
-  return context.mocks.axiom.sdkIngest.mock.calls.flatMap((call) => {
-    const dataset = call[0];
-    const events = call[1];
-    if (dataset !== "vm0-sandbox-op-log-dev" || !Array.isArray(events)) {
-      return [];
-    }
-    return events.filter((event): event is Record<string, unknown> => {
-      return isRecord(event) && event.run_id === runId;
-    });
-  });
-}
-
 interface WorkflowsFixture {
   readonly orgId: string;
   readonly userId: string;
@@ -205,41 +186,6 @@ describe("POST /api/webhooks/workflow-automations/:token", () => {
       "normal replies are automatically sent to the originating thread",
     );
     expect(workflowPrompt).not.toContain("Never use SLACK_TOKEN directly");
-
-    const timingEvents = sandboxOperationEventsForRun(first.body.runId);
-    const actionTypes = new Set(
-      timingEvents.map((event) => {
-        return event.op_type;
-      }),
-    );
-    for (const actionType of [
-      "api_dispatch_pre_create_agent_workflow_automation_entrypoint_gap",
-      "api_dispatch_pre_create_agent_automation_event_load_source_state",
-      "api_dispatch_pre_create_agent_automation_event_match_automations",
-      "api_dispatch_pre_create_agent_automation_event_record_processed_event",
-      "api_dispatch_pre_create_agent_automation_event_build_run_input",
-      "api_dispatch_pre_create_agent_automation_event_handoff_run",
-    ]) {
-      expect(actionTypes).toContain(actionType);
-    }
-    expect(timingEvents).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          op_type: "api_dispatch_pre_create_agent_automation_event_handoff_run",
-          automation_event_source: "webhook",
-          trigger_source: "automation-event",
-          agent_run_origin: "workflow_automation",
-          span_kind: "nested",
-        }),
-      ]),
-    );
-    const serializedTiming = JSON.stringify(timingEvents);
-    expect(serializedTiming).not.toContain("okou-timing-sensitive-ping");
-    expect(serializedTiming).not.toContain("okou-timing-secret-value");
-    expect(serializedTiming).not.toContain(webhook.id);
-    expect(serializedTiming).not.toContain(WORKFLOW_NAME);
-    expect(serializedTiming).not.toContain(webhook.token);
-    expect(serializedTiming).not.toContain(webhook.secret);
 
     const second = await postWorkflowWebhook({
       token: webhook.token,

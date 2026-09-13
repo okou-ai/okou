@@ -8,97 +8,8 @@ const RUNTIME_CONFIG = resolvePlatformRuntimeConfig();
 const POSTHOG_HOST = RUNTIME_CONFIG.postHogHost;
 const POSTHOG_KEY = RUNTIME_CONFIG.postHogKey;
 
-const AUTH_V2_DIAGNOSTIC_EVENT = "auth_v2_diagnostic";
-const AUTH_V2_DIAGNOSTIC_DISTINCT_ID = "auth-v2";
 const APP_FIRST_SKELETON_PAINT_EVENT = "app_first_skeleton_paint";
 const APP_FIRST_SKELETON_PAINT_DISTINCT_ID = "app-bootstrap";
-
-const AUTH_V2_DIAGNOSTIC_FLOWS = ["sign-in", "sign-up", "unknown"] as const;
-export type AuthV2DiagnosticFlow = (typeof AUTH_V2_DIAGNOSTIC_FLOWS)[number];
-
-const AUTH_V2_DIAGNOSTIC_METHODS = [
-  "apple-oauth",
-  "backup-code",
-  "email-code",
-  "google-oauth",
-  "google-one-tap",
-  "identifier",
-  "organization",
-  "passkey",
-  "password",
-  "password-reset",
-  "phone-code",
-  "session",
-  "totp",
-  "unknown",
-] as const;
-export type AuthV2DiagnosticMethod =
-  (typeof AUTH_V2_DIAGNOSTIC_METHODS)[number];
-
-const AUTH_V2_DIAGNOSTIC_STEPS = [
-  "choose-factor",
-  "choose-organization",
-  "choose-session",
-  "details",
-  "email-code",
-  "identifier",
-  "initialize",
-  "new-password",
-  "oauth-callback",
-  "one-tap-continuation",
-  "one-tap-exchange",
-  "one-tap-prompt",
-  "one-tap-sign-up",
-  "password",
-  "password-reset-code",
-  "recovery",
-  "restart",
-  "second-factor",
-  "unknown",
-] as const;
-export type AuthV2DiagnosticStep = (typeof AUTH_V2_DIAGNOSTIC_STEPS)[number];
-
-const AUTH_V2_DIAGNOSTIC_OUTCOMES = ["failure", "success", "unknown"] as const;
-export type AuthV2DiagnosticOutcome =
-  (typeof AUTH_V2_DIAGNOSTIC_OUTCOMES)[number];
-
-const AUTH_V2_DIAGNOSTIC_ERROR_CATEGORIES = [
-  "account-not-found",
-  "cancelled",
-  "captcha",
-  "configuration",
-  "invalid-code",
-  "invalid-credentials",
-  "invalid-input",
-  "method-unavailable",
-  "none",
-  "organization-unavailable",
-  "provider-error",
-  "session-unavailable",
-  "unknown",
-  "unsupported-state",
-] as const;
-export type AuthV2DiagnosticErrorCategory =
-  (typeof AUTH_V2_DIAGNOSTIC_ERROR_CATEGORIES)[number];
-
-export interface AuthV2DiagnosticProperties {
-  readonly error_category: AuthV2DiagnosticErrorCategory;
-  readonly flow: AuthV2DiagnosticFlow;
-  readonly method: AuthV2DiagnosticMethod;
-  readonly outcome: AuthV2DiagnosticOutcome;
-  readonly step: AuthV2DiagnosticStep;
-}
-
-function oneOf<T extends string>(
-  value: unknown,
-  allowed: readonly T[],
-): T | "unknown" {
-  return (
-    allowed.find((candidate) => {
-      return candidate === value;
-    }) ?? "unknown"
-  );
-}
 
 function finiteNonNegativeNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
@@ -141,28 +52,7 @@ function sanitizePostHogCaptureResult(
       uuid: captureResult.uuid,
     };
   }
-  if (captureResult.event !== AUTH_V2_DIAGNOSTIC_EVENT) {
-    return captureResult;
-  }
-  const properties = captureResult.properties;
-  return {
-    event: AUTH_V2_DIAGNOSTIC_EVENT,
-    properties: {
-      $process_person_profile: false,
-      distinct_id: AUTH_V2_DIAGNOSTIC_DISTINCT_ID,
-      error_category: oneOf(
-        properties.error_category,
-        AUTH_V2_DIAGNOSTIC_ERROR_CATEGORIES,
-      ),
-      flow: oneOf(properties.flow, AUTH_V2_DIAGNOSTIC_FLOWS),
-      method: oneOf(properties.method, AUTH_V2_DIAGNOSTIC_METHODS),
-      outcome: oneOf(properties.outcome, AUTH_V2_DIAGNOSTIC_OUTCOMES),
-      step: oneOf(properties.step, AUTH_V2_DIAGNOSTIC_STEPS),
-      token: POSTHOG_KEY,
-    },
-    ...(captureResult.timestamp ? { timestamp: captureResult.timestamp } : {}),
-    uuid: captureResult.uuid,
-  };
+  return captureResult;
 }
 
 function runPostHog(action: (key: string, host: string) => void): void {
@@ -315,20 +205,6 @@ export const captureChatThreadMetadataShortcut$ = command(
     });
   },
 );
-
-export function captureAuthV2DiagnosticEvent(
-  properties: AuthV2DiagnosticProperties,
-): void {
-  runPostHog(() => {
-    posthog.capture(AUTH_V2_DIAGNOSTIC_EVENT, {
-      error_category: properties.error_category,
-      flow: properties.flow,
-      method: properties.method,
-      outcome: properties.outcome,
-      step: properties.step,
-    });
-  });
-}
 
 /**
  * Paid-onboarding funnel events. The `PaidOnboarding: ` prefix is load-bearing:

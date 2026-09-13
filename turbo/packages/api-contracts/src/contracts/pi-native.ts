@@ -4,17 +4,9 @@ import {
   validateBaseUrlHostPolicy,
 } from "@okouai/connectors/firewall-types";
 import { piCredentialHeaderSchema } from "./pi-credential";
+import { piNativeCatalogModelSchema } from "./pi-native-models";
 
 export const PI_MODEL_CONFIG_NATIVE_GENERATION = 4;
-
-// Frozen Gen4 reader vocabulary, not a product availability/admission policy.
-export const piNativeCatalogModelSchema = z.enum([
-  "claude-fable-5-1",
-  "claude-opus-5",
-  "claude-opus-4-8",
-  "claude-sonnet-5",
-  "claude-sonnet-4-6",
-]);
 
 export const PI_NATIVE_CREDENTIAL_PLACEHOLDER = "OKOUPINATIVEPLACEHOLDER";
 

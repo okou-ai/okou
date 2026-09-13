@@ -66,7 +66,10 @@ export async function readRunnerPaidEntitlement(
     result.tier === "pro" &&
     result.onboardingPaymentPending === false &&
     result.supportByok === true &&
-    result.restrictedVm0Models === false
+    // Surface: new client -> old API. APIs from before #33658 step 1 send only
+    // the retired brand alias. Remove once no such API is serving or retained
+    // for rollback: step 2.
+    (result.restrictedBuiltInModels ?? result.restrictedVm0Models) === false
   );
 }
 

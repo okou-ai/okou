@@ -1,9 +1,12 @@
+import { syncBuiltinESMExports } from "node:module";
 import { server } from "../mocks/server";
 import { afterAll, afterEach, beforeAll, beforeEach, vi } from "vitest";
 
 // Start MSW server before all tests
 beforeAll(() => {
   server.listen({ onUnhandledRequest: "error" });
+  // SDK transports can import named HTTP exports instead of the CJS module.
+  syncBuiltinESMExports();
 });
 
 // Baseline: no auth, no API URL. Test files override in their own beforeEach.
@@ -25,5 +28,6 @@ afterEach(() => {
 
 // Close server after all tests
 afterAll(() => {
-  return server.close();
+  server.close();
+  syncBuiltinESMExports();
 });

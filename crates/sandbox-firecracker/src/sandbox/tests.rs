@@ -18,6 +18,7 @@ use tracing_test_support::{CapturedEvent, CapturedEvents};
 mod guest_connection_timing;
 mod guest_rpc;
 mod private_write_diagnostics;
+mod process_exit;
 mod process_timeout_logging;
 mod process_write;
 

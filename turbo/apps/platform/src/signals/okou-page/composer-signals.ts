@@ -551,6 +551,13 @@ export function createComposerSignals(
     image: options.imageModel !== undefined,
     video: options.videoModel !== undefined,
   });
+  const taskChips = createComposerTaskChipsSignals(create, {
+    insertTemplate$: workflowComposer.insertTemplate$,
+    insertPrompt$: workflowComposer.selectOrAppendText$,
+    openTemplatePicker$: workflowComposer.openTemplatePicker$,
+    focusEditor$: workflowComposer.focus$,
+    saveDraft$: options.draft.save$,
+  });
   const voice = createComposerVoiceInput(
     options,
     workflowComposer,
@@ -561,7 +568,7 @@ export function createComposerSignals(
     eventSignals,
     workflowComposer,
     ui.videoOptions,
-    { voice, create },
+    { voice, create, taskChips },
   );
   const fileInput = createComposerFileInputSignals();
   const workflowPrompt = createComposerWorkflowPromptSignals(
@@ -600,13 +607,7 @@ export function createComposerSignals(
   return {
     agentId: options.agentId,
     create,
-    taskChips: createComposerTaskChipsSignals(create, {
-      insertTemplate$: workflowComposer.insertTemplate$,
-      insertPrompt$: workflowComposer.selectOrAppendText$,
-      openTemplatePicker$: workflowComposer.openTemplatePicker$,
-      focusEditor$: workflowComposer.focus$,
-      saveDraft$: options.draft.save$,
-    }),
+    taskChips,
     editor: composerEditorSignals(workflowComposer, options.singleLineOnMobile),
     voice,
     feedback: workflowComposer.feedback,
@@ -820,13 +821,21 @@ function createComposerPrimaryActionSignal(args: {
   });
 }
 
-function createSubmitCurrentInput(
-  options: CreateComposerSignalsOptions,
-  workflowComposer: WorkflowComposerSignals,
-  videoOptions: ComposerVideoOptionsSignals,
-  voice: ComposerVoiceInputSignals,
-  create: ComposerCreateSignals,
-) {
+function createSubmitCurrentInput({
+  options,
+  workflowComposer,
+  videoOptions,
+  voice,
+  create,
+  taskChips,
+}: {
+  readonly options: CreateComposerSignalsOptions;
+  readonly workflowComposer: WorkflowComposerSignals;
+  readonly videoOptions: ComposerVideoOptionsSignals;
+  readonly voice: ComposerVoiceInputSignals;
+  readonly create: ComposerCreateSignals;
+  readonly taskChips: ComposerTaskChipsSignals;
+}) {
   const draft = options.draft.signals;
   const voiceState$ = voice.state$;
   const readVideoRunOptions$ = createVideoRunOptionsSignal(
@@ -898,6 +907,9 @@ function createSubmitCurrentInput(
             mode,
             videoRunOptions,
             get(create.presentationSlideCount$),
+            get(taskChips.task$) === "visualization"
+              ? get(taskChips.visualization.preferences$)
+              : undefined,
           )
         : undefined;
       const editorDocument = additionalInfo
@@ -931,7 +943,12 @@ function createComposerSubmissionSignals(
   {
     voice,
     create,
-  }: { voice: ComposerVoiceInputSignals; create: ComposerCreateSignals },
+    taskChips,
+  }: {
+    voice: ComposerVoiceInputSignals;
+    create: ComposerCreateSignals;
+    taskChips: ComposerTaskChipsSignals;
+  },
 ) {
   const { state$: voiceState$, owner$ } = voice;
   const invocation$ = state<{
@@ -949,13 +966,14 @@ function createComposerSubmissionSignals(
     voiceState$,
     createPickerOpen$: create.pickerOpen$,
   });
-  const submitCurrentInput$ = createSubmitCurrentInput(
+  const submitCurrentInput$ = createSubmitCurrentInput({
     options,
     workflowComposer,
     videoOptions,
     voice,
     create,
-  );
+    taskChips,
+  });
   const activatePrimaryAction$ = command(
     async (
       { get, set },

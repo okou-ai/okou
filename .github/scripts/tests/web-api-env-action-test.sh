@@ -505,6 +505,10 @@ assert_env_value "$success_env_file" ZOOM_OAUTH_CLIENT_ID "doppler-ZOOM_OAUTH_CL
 assert_env_value "$success_env_file" ZOOM_OAUTH_CLIENT_SECRET "doppler-ZOOM_OAUTH_CLIENT_SECRET"
 assert_env_value "$success_env_file" MAILCHIMP_OAUTH_CLIENT_ID "doppler-MAILCHIMP_OAUTH_CLIENT_ID"
 assert_env_value "$success_env_file" MAILCHIMP_OAUTH_CLIENT_SECRET "doppler-MAILCHIMP_OAUTH_CLIENT_SECRET"
+assert_env_value "$success_env_file" CAL_COM_OAUTH_CLIENT_ID "doppler-CAL_COM_OAUTH_CLIENT_ID"
+assert_env_value "$success_env_file" CAL_COM_OAUTH_CLIENT_SECRET "doppler-CAL_COM_OAUTH_CLIENT_SECRET"
+assert_env_key_absent "$success_env_file" CALCOM_OAUTH_CLIENT_ID
+assert_env_key_absent "$success_env_file" CALCOM_OAUTH_CLIENT_SECRET
 assert_env_value "$success_env_file" BOX_OAUTH_CLIENT_ID "doppler-BOX_OAUTH_CLIENT_ID"
 assert_env_value "$success_env_file" BOX_OAUTH_CLIENT_SECRET "doppler-BOX_OAUTH_CLIENT_SECRET"
 assert_env_value "$success_env_file" QUICKBOOKS_OAUTH_CLIENT_ID "doppler-QUICKBOOKS_OAUTH_CLIENT_ID"
@@ -665,6 +669,8 @@ assert_debug_absent "$production_api_env_file"
 assert_google_llm_config "$production_api_env_file" "llm-prod@vm0-ai-488909.iam.gserviceaccount.com"
 assert_env_value "$production_api_env_file" MAILCHIMP_OAUTH_CLIENT_ID "doppler-MAILCHIMP_OAUTH_CLIENT_ID"
 assert_env_value "$production_api_env_file" MAILCHIMP_OAUTH_CLIENT_SECRET "doppler-MAILCHIMP_OAUTH_CLIENT_SECRET"
+assert_env_value "$production_api_env_file" CAL_COM_OAUTH_CLIENT_ID "doppler-CAL_COM_OAUTH_CLIENT_ID"
+assert_env_value "$production_api_env_file" CAL_COM_OAUTH_CLIENT_SECRET "doppler-CAL_COM_OAUTH_CLIENT_SECRET"
 assert_env_value "$production_api_env_file" R2_PRIVATE_ARTIFACTS_BUCKET_NAME "user-artifact-private-prod"
 assert_env_value "$production_api_env_file" R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID "private-prod-key"
 assert_env_value "$production_api_env_file" R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY "private-prod-secret"
@@ -724,16 +730,16 @@ if [[ "$status" -eq 0 ]]; then
 fi
 assert_contains "$missing_stripe_secret_output" "::error::STRIPE_OAUTH_CLIENT_SECRET is missing from Doppler OAuth config"
 
-for mailchimp_key in MAILCHIMP_OAUTH_CLIENT_ID MAILCHIMP_OAUTH_CLIENT_SECRET; do
-  missing_mailchimp_dir="$(mktemp -d)"
-  TEMP_DIRS+=("$missing_mailchimp_dir")
+for oauth_key in MAILCHIMP_OAUTH_CLIENT_ID MAILCHIMP_OAUTH_CLIENT_SECRET CAL_COM_OAUTH_CLIENT_ID CAL_COM_OAUTH_CLIENT_SECRET; do
+  missing_oauth_dir="$(mktemp -d)"
+  TEMP_DIRS+=("$missing_oauth_dir")
   status=0
-  missing_mailchimp_output="$(run_action "$(build_doppler_secrets_json "$mailchimp_key")" "$missing_mailchimp_dir" 2>&1)" || status=$?
+  missing_oauth_output="$(run_action "$(build_doppler_secrets_json "$oauth_key")" "$missing_oauth_dir" 2>&1)" || status=$?
   if [[ "$status" -eq 0 ]]; then
-    fail "expected missing Mailchimp Doppler OAuth config to fail"
+    fail "expected missing Doppler OAuth config to fail"
   fi
-  assert_contains "$missing_mailchimp_output" "::error::${mailchimp_key} is missing from Doppler OAuth config"
-  assert_no_fixture_secret_values "$missing_mailchimp_output"
+  assert_contains "$missing_oauth_output" "::error::${oauth_key} is missing from Doppler OAuth config"
+  assert_no_fixture_secret_values "$missing_oauth_output"
 done
 
 missing_cli_pkg_dir="$(mktemp -d)"

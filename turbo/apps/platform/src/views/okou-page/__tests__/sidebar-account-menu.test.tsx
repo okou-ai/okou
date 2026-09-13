@@ -1,10 +1,4 @@
-import {
-  act,
-  fireEvent,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 
@@ -21,19 +15,12 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
   click,
-  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import {
-  mockedClerk,
-  mockSignInResource,
-  mockSignUpConfiguration,
-  mockUser,
-} from "../../../__tests__/mock-auth.ts";
+import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { mockNow } from "../../../__tests__/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { createDeferredPromise } from "../../../signals/utils.ts";
 
 const context = testContext();
 
@@ -153,27 +140,6 @@ function linkByText(text: string): HTMLAnchorElement {
   return link;
 }
 
-function buttonByLabel(
-  label: string,
-  container: ParentNode = document.body,
-): HTMLElement {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
-    return candidate.getAttribute("aria-label") === label;
-  });
-  if (!button) {
-    throw new Error(`${label} button not found`);
-  }
-  return button;
-}
-
-function containingForm(element: HTMLElement): HTMLFormElement {
-  const form = element.closest("form");
-  if (!(form instanceof HTMLFormElement)) {
-    throw new Error("Expected element to be inside a form");
-  }
-  return form;
-}
-
 function formatResetInTimeZone(resetAt: string, timeZone: string): string {
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
@@ -254,12 +220,6 @@ function setupAddAccountPage(): Promise<void> {
       },
     },
   });
-}
-
-async function openAuthV2AddAccountDialog(): Promise<HTMLElement> {
-  const menu = await openAccountMenu();
-  click(within(menu).getByText("Add account"));
-  return screen.findByTestId("auth-v2-add-account-dialog");
 }
 
 interface MockAdminBillingStatusOptions {
@@ -1217,332 +1177,22 @@ test.each(["success", "failure", "pending task"])(
   },
 );
 
-test("Open Add account without leaving the current page", async () => {
+test("Add account opens the hosted Clerk account switcher", async () => {
+  const clerk = context.mocks.clerk();
   await setupAddAccountPage();
-  const originalUrl = window.location.href;
-  const dialog = await openAuthV2AddAccountDialog();
-  expect(dialog).toHaveAttribute("role", "dialog");
-  expect(within(dialog).getByTestId("app-auth-v2")).toBeVisible();
-  await expect(
-    within(dialog).findByLabelText("Email address"),
-  ).resolves.toBeVisible();
-  expect(window.location.href).toBe(originalUrl);
 
-  click(buttonByLabel("Close", dialog));
-  await waitFor(() => {
-    expect(
-      screen.queryByTestId("auth-v2-add-account-dialog"),
-    ).not.toBeInTheDocument();
-  });
-  expect(window.location.href).toBe(originalUrl);
-});
-
-test.each(["Password", "Verification code"])(
-  "Reset Add account after closing the %s step",
-  async (step) => {
-    mockedClerk.clientSignInCreate.mockImplementation((params) => {
-      mockSignInResource({
-        identifier: params.identifier,
-        status: "needs_first_factor",
-        supportedFirstFactors: [{ strategy: "password" }],
-      });
-      return Promise.resolve(mockedClerk.client.signIn);
-    });
-    mockedClerk.signInAttemptFirstFactor.mockImplementation(() => {
-      mockSignInResource({
-        identifier: "second.account@example.test",
-        secondFactorVerificationStatus: "unverified",
-        secondFactorVerificationStrategy: "email_code",
-        status: "needs_client_trust",
-        supportedSecondFactors: [
-          {
-            emailAddressId: "email_second",
-            safeIdentifier: "s***@example.test",
-            strategy: "email_code",
-          },
-        ],
-      });
-      return Promise.resolve(mockedClerk.client.signIn);
-    });
-
-    await setupAddAccountPage();
-    const originalUrl = window.location.href;
-    const dialog = await openAuthV2AddAccountDialog();
-    const identifier = await within(dialog).findByLabelText("Email address");
-    await fill(identifier, "second.account@example.test");
-    fireEvent.submit(containingForm(identifier));
-
-    const password = await within(dialog).findByLabelText("Password");
-    await fill(password, "correct-password");
-    if (step === "Verification code") {
-      fireEvent.submit(containingForm(password));
-      const code = await within(dialog).findByLabelText("Verification code");
-      await fill(code, "12");
-      await userEvent.keyboard("{Escape}");
-    } else {
-      click(buttonByLabel("Close", dialog));
-    }
-    await waitFor(() => {
-      expect(
-        screen.queryByTestId("auth-v2-add-account-dialog"),
-      ).not.toBeInTheDocument();
-    });
-
-    const reopenedDialog = await openAuthV2AddAccountDialog();
-    const freshIdentifier =
-      await within(reopenedDialog).findByLabelText("Email address");
-    expect(freshIdentifier).toHaveValue("");
-    expect(
-      within(reopenedDialog).queryByLabelText("Password"),
-    ).not.toBeInTheDocument();
-    expect(
-      within(reopenedDialog).queryByLabelText("Verification code"),
-    ).not.toBeInTheDocument();
-    expect(mockedClerk.setActive).not.toHaveBeenCalled();
-    expect(window.location.href).toBe(originalUrl);
-
-    await fill(freshIdentifier, "third.account@example.test");
-    fireEvent.submit(containingForm(freshIdentifier));
-    const freshPassword =
-      await within(reopenedDialog).findByLabelText("Password");
-    expect(freshPassword).toHaveValue("");
-    expect(mockedClerk.clientSignInCreate).toHaveBeenLastCalledWith({
-      identifier: "third.account@example.test",
-    });
-  },
-);
-
-test("Continue or restart organization selection while adding an account", async () => {
-  await setupAddAccountPage();
-  const originalUrl = window.location.href;
-  const dialog = await openAuthV2AddAccountDialog();
-  const organizationMembership = {
-    id: "membership_target",
-    organization: {
-      id: "org_target",
-      imageUrl: null,
-      name: "Target Organization",
-    },
-  };
-
-  mockedClerk.setActive.mockImplementation(async (params) => {
-    await params.navigate?.({
-      decorateUrl: (url) => {
-        return url;
-      },
-      session: {
-        currentTask: { key: "choose-organization" },
-        id: "session_pending",
-        status: "pending",
-        user: { organizationMemberships: [organizationMembership] },
-      },
-    });
-  });
-
-  mockSignInResource({
-    status: "needs_first_factor",
-    supportedFirstFactors: [{ strategy: "password" }],
-  });
-  mockedClerk.clientSignInCreate.mockResolvedValue(mockedClerk.client.signIn);
-  const identifier = await within(dialog).findByLabelText("Email address");
-  fireEvent.change(identifier, {
-    target: { value: "second.account@example.test" },
-  });
-  fireEvent.submit(containingForm(identifier));
-
-  const password = await within(dialog).findByLabelText("Password");
-  mockSignInResource({
-    createdSessionId: "session_pending",
-    status: "complete",
-  });
-  mockedClerk.signInAttemptFirstFactor.mockResolvedValue(
-    mockedClerk.client.signIn,
-  );
-  fireEvent.change(password, { target: { value: "correct-password" } });
-  fireEvent.submit(containingForm(password));
-
-  await expect(
-    within(dialog).findByRole("heading", {
-      name: "Choose an organization",
-    }),
-  ).resolves.toBeVisible();
-  expect(window.location.href).toBe(originalUrl);
+  const menu = await openAccountMenu();
+  click(within(menu).getByText("Add account"));
 
   await waitFor(() => {
-    expect(
-      buttonByLabel("Continue with Target Organization", dialog),
-    ).toBeVisible();
-  });
-  click(buttonByLabel("Continue with Target Organization", dialog));
-  await waitFor(() => {
-    expect(buttonByText("Start over", dialog)).toBeVisible();
-  });
-  expect(window.location.href).toBe(originalUrl);
-
-  click(buttonByText("Start over", dialog));
-  await expect(
-    within(dialog).findByLabelText("Email address"),
-  ).resolves.toBeVisible();
-  expect(mockedClerk.signOut).toHaveBeenCalledWith({
-    sessionId: "session_pending",
-  });
-  expect(window.location.href).toBe(originalUrl);
-});
-
-async function signInToSecurityTask(dialog: HTMLElement, sessionId: string) {
-  mockSignInResource({
-    status: "needs_first_factor",
-    supportedFirstFactors: [{ strategy: "password" }],
-  });
-  mockedClerk.clientSignInCreate.mockResolvedValue(mockedClerk.client.signIn);
-  await fill(
-    await within(dialog).findByLabelText("Email address"),
-    `${sessionId}@example.test`,
-  );
-  click(buttonByText("Continue", dialog));
-  const password = await within(dialog).findByLabelText("Password");
-  mockedClerk.signInAttemptFirstFactor.mockImplementation(() => {
-    mockUser(
-      {
-        id: sessionId,
-        fullName: sessionId,
-        clientSessions: [
-          {
-            id: sessionId,
-            status: "pending",
-            currentTask: { key: "setup-mfa" },
-            user: { organizationMemberships: [] },
-          },
-        ],
-      },
-      { token: "test-token" },
-    );
-    mockSignInResource({ status: "complete", createdSessionId: sessionId });
-    return Promise.resolve(mockedClerk.client.signIn);
-  });
-  await fill(password, "correct-password");
-  click(buttonByText("Continue", dialog));
-  await within(dialog).findByLabelText("Phone number");
-}
-
-test("Restarting Add account isolates unfinished MFA resources between sessions", async () => {
-  mockSignUpConfiguration({
-    attributes: {
-      authenticator_app: {
-        enabled: true,
-        required: false,
-        used_for_first_factor: false,
-      },
-      phone_number: {
-        enabled: true,
-        required: false,
-        used_for_first_factor: false,
-        used_for_second_factor: true,
-      },
-    },
-  });
-  mockedClerk.userCreateTOTP
-    .mockResolvedValueOnce({
-      secret: "FIRST-SETUP-KEY",
-      backupCodes: ["first-account-recovery-code"],
-    })
-    .mockResolvedValueOnce({ secret: "SECOND-SETUP-KEY" });
-  mockedClerk.userVerifyTOTP.mockResolvedValue({});
-  type Phone = Awaited<ReturnType<typeof mockedClerk.userCreatePhoneNumber>>;
-  const prepare = vi
-    .fn<Phone["prepareVerification"]>()
-    .mockRejectedValueOnce(new Error("SMS delivery failed"))
-    .mockResolvedValue(undefined);
-  mockedClerk.userCreatePhoneNumber.mockResolvedValue({
-    id: "phone_created",
-    phoneNumber: "+15555550123",
-    verification: { status: "unverified" },
-    prepareVerification: prepare,
-    attemptVerification: vi.fn<Phone["attemptVerification"]>(),
-    setReservedForSecondFactor: vi.fn<Phone["setReservedForSecondFactor"]>(),
-  });
-  await setupAddAccountPage();
-  const dialog = await openAuthV2AddAccountDialog();
-  await signInToSecurityTask(dialog, "session_first");
-  click(buttonByText("Use an authenticator app", dialog));
-  await within(dialog).findByText("FIRST-SETUP-KEY");
-  await fill(within(dialog).getByLabelText("Phone number"), "+15555550123");
-  click(buttonByText("Send code", dialog));
-  await within(dialog).findByRole("alert");
-  expect(mockedClerk.userCreatePhoneNumber).toHaveBeenCalledTimes(1);
-  click(buttonByText("Sign out", dialog));
-  await within(dialog).findByLabelText("Email address");
-  expect(mockedClerk.signOut).toHaveBeenCalledWith({
-    sessionId: "session_first",
-  });
-
-  await signInToSecurityTask(dialog, "session_second");
-  await fill(within(dialog).getByLabelText("Phone number"), "+15555550123");
-  click(buttonByText("Send code", dialog));
-  await within(dialog).findByLabelText("Verification code");
-  expect(mockedClerk.userCreatePhoneNumber).toHaveBeenCalledTimes(2);
-  click(buttonByText("Use an authenticator app", dialog));
-  await within(dialog).findByText("SECOND-SETUP-KEY");
-  await fill(within(dialog).getByLabelText("Verification code"), "123456");
-  click(buttonByText("Verify", dialog));
-  await within(dialog).findByText(
-    "Your security settings are saved. Continue to finish signing in.",
-  );
-  expect(dialog).not.toHaveTextContent("first-account-recovery-code");
-  expect(dialog).not.toHaveTextContent("FIRST-SETUP-KEY");
-});
-
-test("Cancel an unfinished Add account sign-in", async () => {
-  await setupAddAccountPage();
-  const originalUrl = window.location.href;
-  const dialog = await openAuthV2AddAccountDialog();
-
-  mockSignInResource({
-    status: "needs_first_factor",
-    supportedFirstFactors: [{ strategy: "password" }],
-  });
-  mockedClerk.clientSignInCreate.mockResolvedValue(mockedClerk.client.signIn);
-  const identifier = await within(dialog).findByLabelText("Email address");
-  fireEvent.change(identifier, {
-    target: { value: "second.account@example.test" },
-  });
-  fireEvent.submit(containingForm(identifier));
-
-  const attempt = createDeferredPromise<typeof mockedClerk.client.signIn>(
-    context.signal,
-  );
-  mockedClerk.signInAttemptFirstFactor.mockReturnValue(attempt.promise);
-  const password = await within(dialog).findByLabelText("Password");
-  fireEvent.change(password, { target: { value: "correct-password" } });
-  fireEvent.submit(containingForm(password));
-  await waitFor(() => {
-    expect(mockedClerk.signInAttemptFirstFactor).toHaveBeenCalledTimes(1);
-  });
-
-  click(buttonByLabel("Close", dialog));
-  await waitFor(() => {
-    expect(
-      screen.queryByTestId("auth-v2-add-account-dialog"),
-    ).not.toBeInTheDocument();
-  });
-
-  await act(async () => {
-    mockSignInResource({
-      createdSessionId: "session_after_close",
-      status: "complete",
+    expect(mockedClerk.openSignIn).toHaveBeenCalledExactlyOnceWith({
+      fallbackRedirectUrl: "/",
+      forceRedirectUrl: "/",
     });
-    attempt.resolve(mockedClerk.client.signIn);
-    await attempt.promise;
   });
-  expect(mockedClerk.setActive).not.toHaveBeenCalled();
-  expect(window.location.href).toBe(originalUrl);
-
-  const reopenedDialog = await openAuthV2AddAccountDialog();
-  const identifierAfterClose =
-    await within(reopenedDialog).findByLabelText("Email address");
-  expect(identifierAfterClose).toHaveValue("");
-  expect(mockedClerk.setActive).not.toHaveBeenCalled();
-  expect(window.location.href).toBe(originalUrl);
+  expect(clerk.uiRequests).toStrictEqual([
+    "https://app.example.test/assets/clerk-ui-test.js",
+  ]);
 });
 
 test("Sign out from the account menu", async () => {

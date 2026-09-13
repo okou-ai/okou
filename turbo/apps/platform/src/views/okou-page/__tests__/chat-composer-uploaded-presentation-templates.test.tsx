@@ -396,7 +396,7 @@ test("Keep uploaded-template browsing stable during changes", async () => {
   expectTextBefore(remaining.title, firstBuiltInTitle());
 });
 
-test("Keep workspace template availability current", async () => {
+test("Keep workspace templates current through publication after changing chats", async () => {
   mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
   const capture = mockTemplateChat();
   const existing = createUploadedTemplate({
@@ -428,13 +428,11 @@ test("Keep workspace template availability current", async () => {
   ]);
   trackTemplatePreviewImagePreloads();
   const user = userEvent.setup();
-
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
   });
-
   await openTemplatePicker(user, "Presentation");
   await waitFor(() => {
     expect(screen.getByText(existing.title)).toBeVisible();
@@ -447,7 +445,6 @@ test("Keep workspace template availability current", async () => {
   await waitFor(() => {
     expect(secondChat).toHaveAttribute("aria-current", "page");
   });
-
   library.replace([existing, published]);
   context.mocks.ably.triggerOnChannel(
     "org:org_default",
@@ -461,12 +458,66 @@ test("Keep workspace template availability current", async () => {
       screen.getByLabelText(`Select template ${published.title}`),
     ).toBeEnabled();
   });
+});
+
+test("Keep workspace templates current through withdrawal after preview", async () => {
+  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
+  const capture = mockTemplateChat();
+  const existing = createUploadedTemplate({
+    id: UPLOADED_TEMPLATE_ID,
+    title: "Existing Workspace Deck",
+    canManage: false,
+  });
+  const published = createUploadedTemplate({
+    id: UPDATED_TEMPLATE_ID,
+    title: "New Workspace Deck",
+    canManage: false,
+  });
+  const library = mockPresentationTemplateLibrary([existing]);
+  capture.lifecycle.setThreadList([
+    {
+      id: THREAD_ID,
+      title: "First workspace chat",
+      agent: { id: AGENT_ID, avatarUrl: null },
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:01:00.000Z",
+    },
+    {
+      id: OTHER_THREAD_ID,
+      title: "Second workspace chat",
+      agent: { id: AGENT_ID, avatarUrl: null },
+      createdAt: "2026-08-01T00:02:00.000Z",
+      updatedAt: "2026-08-01T00:03:00.000Z",
+    },
+  ]);
+  trackTemplatePreviewImagePreloads();
+  const user = userEvent.setup();
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+  });
+  await openTemplatePicker(user, "Presentation");
+  await waitFor(() => {
+    expect(screen.getByText(existing.title)).toBeVisible();
+  });
+  library.replace([existing, published]);
+  context.mocks.ably.triggerOnChannel(
+    "org:org_default",
+    "presentationTemplatesChanged",
+    published.id,
+  );
+  await waitFor(() => {
+    expect(screen.getByText(published.title)).toBeVisible();
+    expect(
+      screen.getByLabelText(`Select template ${published.title}`),
+    ).toBeEnabled();
+  });
   click(buttonNamed(`Preview ${published.title} at current slide`));
   await screen.findByRole("group", {
     name: `${published.title} slide preview`,
   });
   click(buttonContainingText("Template", screen.getByRole("dialog")));
-
   library.replace([existing]);
   context.mocks.ably.triggerOnChannel(
     "org:org_default",

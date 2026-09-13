@@ -259,7 +259,7 @@ export function OrgMembersTab() {
 
       <div className="overflow-hidden rounded-xl bg-card okou-border">
         <MembersTableHeader showUsagePack={showUsagePack} />
-        <div className="h-0 okou-border-t mx-5" />
+        <div className="h-0 border-t border-t-gray-400 mx-5" />
 
         {isLoading && (
           <>
@@ -299,7 +299,9 @@ export function OrgMembersTab() {
             {membershipRequests.map((req, i) => {
               return (
                 <div key={req.id}>
-                  {i > 0 && <div className="h-0 okou-border-t mx-5" />}
+                  {i > 0 && (
+                    <div className="h-0 border-t border-t-gray-400 mx-5" />
+                  )}
                   <MembershipRequestRow
                     request={req}
                     showUsagePack={showUsagePack}
@@ -307,7 +309,7 @@ export function OrgMembersTab() {
                 </div>
               );
             })}
-            <div className="h-0 okou-border-t mx-5" />
+            <div className="h-0 border-t border-t-gray-400 mx-5" />
           </>
         )}
 
@@ -316,7 +318,7 @@ export function OrgMembersTab() {
             return (
               <div key={m.userId}>
                 {(i > 0 || membershipRequests.length > 0) && (
-                  <div className="h-0 okou-border-t mx-5" />
+                  <div className="h-0 border-t border-t-gray-400 mx-5" />
                 )}
                 <MemberRow
                   member={m}
@@ -340,7 +342,7 @@ export function OrgMembersTab() {
                 {(i > 0 ||
                   filtered.length > 0 ||
                   membershipRequests.length > 0) && (
-                  <div className="h-0 okou-border-t mx-5" />
+                  <div className="h-0 border-t border-t-gray-400 mx-5" />
                 )}
                 <PendingInvitationRow
                   invitation={inv}

@@ -315,11 +315,12 @@ function isStuckBuiltInGenerationJob(
   },
   referenceTime: Date,
 ): boolean {
-  // Video Agent sessions can remain active beyond the generic video timeout.
+  // Managed HeyGen jobs can remain active beyond the generic video timeout.
   // Only an authoritative provider failure ends these resumable jobs.
   if (
-    readBuiltInGenerationRequestInternal(job.request).providerTask ===
-    "intro-video-agent"
+    ["intro-video-agent", "intro-video-render"].includes(
+      readBuiltInGenerationRequestInternal(job.request).providerTask ?? "",
+    )
   ) {
     return false;
   }

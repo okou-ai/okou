@@ -1,5 +1,4 @@
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -345,7 +344,6 @@ test("A touch device renders the recommended follow-ups as a quick reply rail", 
   await setupPage({
     context,
     path: `/chats/${context.resourceId}`,
-    featureSwitches: { [FeatureSwitchKey.ResponsiveFollowupCards]: true },
   });
 
   const group = await keepGoingGroup();
@@ -369,23 +367,7 @@ test("A fine-pointer device keeps the recommended follow-up rows at any width", 
   await setupPage({
     context,
     path: `/chats/${context.resourceId}`,
-    featureSwitches: { [FeatureSwitchKey.ResponsiveFollowupCards]: true },
   });
-
-  const group = await keepGoingGroup();
-  expect(group).toHaveAttribute("data-followup-layout", "rows");
-});
-
-test("A disabled switch keeps the follow-up rows on a touch device", async () => {
-  context.mocks.browser.matchMedia((query) => {
-    return query === "(pointer: coarse)";
-  });
-  installMessageExperienceChat({
-    threadId: context.resourceId,
-    chatEvents: completedReply(),
-  });
-
-  await setupPage({ context, path: `/chats/${context.resourceId}` });
 
   const group = await keepGoingGroup();
   expect(group).toHaveAttribute("data-followup-layout", "rows");

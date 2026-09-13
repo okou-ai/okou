@@ -785,7 +785,15 @@ function Credentials() {
   }
   return (
     <div className="grid gap-5">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          {t(
+            ($) => {
+              return $.ssh.credential.summary;
+            },
+            { count: credentials.data.length },
+          )}
+        </p>
         <Button
           onClick={() => {
             return detach(

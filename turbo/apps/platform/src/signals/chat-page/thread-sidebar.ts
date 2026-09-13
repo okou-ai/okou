@@ -1,4 +1,7 @@
-import { createAttachmentPreviewSignals } from "../attachment-resource-url.ts";
+import {
+  createAttachmentPreviewSignals,
+  type AttachmentPreviewSignals,
+} from "../attachment-resource-url.ts";
 import {
   command,
   computed,
@@ -86,6 +89,7 @@ export type ArtifactMetadataRef = {
   readonly contentType?: string;
   readonly shareAvailable?: boolean;
   readonly text$?: TextPreviewComputed;
+  readonly preview?: AttachmentPreviewSignals;
 };
 
 export type ArtifactRefInput = string | ArtifactFileRef | ArtifactMetadataRef;

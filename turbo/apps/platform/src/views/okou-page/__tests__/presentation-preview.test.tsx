@@ -194,6 +194,7 @@ test("Selecting a slide preserves its authored layout", async () => {
       </body>
     </html>`);
   await setupPage({
+    locale: "en-US",
     context,
     host: "app.okou.ai",
     path: `/agents/${AGENT_ID}/chat`,

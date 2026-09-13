@@ -57,7 +57,8 @@ request boundary: the host validates it and dispatches at most once per connecti
 without waiting for EOF. Bytes after that frame are outside the one-shot request;
 they are never consumed as another request and cannot trigger another operation.
 The host does not drain or wait for trailing input and drops the connection after
-all handler work ends. This replaces connection-wide trailing-byte rejection,
+request handling ends. Detached host cleanup does not retain that connection.
+This replaces connection-wide trailing-byte rejection,
 not strict JSON validation inside the frame.
 
 The guest helper half-closes after sending, but dispatch does not depend on that
@@ -118,9 +119,17 @@ Runner ship together; no fallback or protocol negotiation is added.
 
 `Sandbox::guest_rpc(expected_run_id)` returns an assignment-bound
 `GuestRpcAcceptor`. `AcceptedGuestRpc` supplies a host-derived sandbox ID,
-an inseparable `GuestRpcStream`/normal-operation reservation, and lifecycle
-cancellation. Retain the stream through all handler work, even after terminal
-bytes and while awaiting non-I/O work.
+a `GuestRpcStream` owning a normal-operation reservation, and lifecycle
+cancellation. Keep the stream through request I/O and intervening handler work.
+Dropping the stream releases its reservation. Host-only work remaining after
+guest I/O closes must retain its own capacity and resources independently; it
+does not keep the guest busy for park. An input half-close or a terminal response
+alone does not drop the stream or release its reservation.
+
+Run authority and cancellation remain separate from both resource lifetimes.
+RPC closure does not grant continued authority or cross-Run attachment. Handlers
+must still observe lifecycle cancellation and must not publish late results into
+a retired or replacement Run registration.
 
 Admission checks Running/Open/current assignment and acquires the SAME
 `GuestControlClient` tracker reservation at the admission linearization point, with no
@@ -136,14 +145,24 @@ successful park close it. Failed bind never unlinks another owner's socket.
 
 Termination cancels pending admission and accepted I/O without waiting for
 external effects. Handlers must also select lifecycle cancellation throughout
-non-I/O work, retain their reservation, and bound their own concurrency and
-deadline. Transport cancellation cannot guarantee remote process termination.
+non-I/O work and bound their own concurrency and deadline. Host work that outlives
+cancellation retains its resource permits until it actually exits, without
+retaining closed guest I/O or its park reservation. Transport cancellation cannot
+guarantee remote process termination.
 
 This dedicated guest-initiated channel does not change the ordinary
 host-to-guest control protocol. `process-control-ipc` remains guest-local
 process control/placement IPC, not this cross-VM transport.
 
 ## SSH consumer ownership and delivery
+
+Managed `ssh.session.*` methods use the same opaque version-1 transport and one
+terminal result per short request. Session IDs, cursor reads, stdin/EOF, signals,
+PTY and retained process state belong to the SSH consumer, not this protocol.
+The Runner-owned session task never retains the initiating guest stream or its
+park reservation. No helper negotiation, method fallback or automatic replay is
+added: an older Runner returns `unknown_method` explicitly. See
+[managed SSH session ownership](runner-ssh-execution.md#managed-sessions-within-one-run).
 
 #32013 owns explicit `ssh.exec` dispatch, strict business schemas, dynamic JIT
 authorization, credentials, TOFU and execution. Generic events wrap SSH

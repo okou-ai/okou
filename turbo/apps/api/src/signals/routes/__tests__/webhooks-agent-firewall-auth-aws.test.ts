@@ -135,9 +135,6 @@ describe("AWS Sign-In refresh expiry", () => {
         );
       }),
     );
-    context.mocks.axiomLogging.debug.mockClear();
-    context.mocks.axiomLogging.warn.mockClear();
-    context.mocks.axiomLogging.error.mockClear();
     context.mocks.sentry.captureException.mockClear();
 
     const first = aws.request(aws.account.id, true);
@@ -161,25 +158,6 @@ describe("AWS Sign-In refresh expiry", () => {
     const expired = await aws.connectors.readConnectorBySlug(aws.actor, "aws");
     expect(expired.connectionStatus).toBe("reconnect-required");
     expect(expired.reconnectReason).toBe("credential_expired");
-    const expiryLogs = context.mocks.axiomLogging.debug.mock.calls.filter(
-      ([message]) => {
-        return (
-          message === "AWS Sign-In refresh token expired; reconnect required"
-        );
-      },
-    );
-    expect(expiryLogs).toHaveLength(1);
-    expect(expiryLogs[0]).toStrictEqual([
-      "AWS Sign-In refresh token expired; reconnect required",
-      expect.objectContaining({
-        connectorId: aws.account.id,
-        providerErrorCode: "TOKEN_EXPIRED",
-        failureReason: "reconnect_required",
-        oauthStatus: 401,
-      }),
-    ]);
-    expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
-    expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
     expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
 
     const provider = mockAwsExternalCodeProvider();
@@ -283,13 +261,11 @@ describe("AWS Sign-In refresh expiry", () => {
         return HttpResponse.json({ code: "TOKEN_EXPIRED" }, { status: 401 });
       }),
     );
-    context.mocks.axiomLogging.warn.mockClear();
     expect((await aws.request(aws.account.id, true)).status).toBe(502);
     expect((await aws.request(aws.account.id, true)).status).toBe(502);
     expect(refreshCalls).toBe(1);
     const expired = await aws.connectors.readConnectorBySlug(aws.actor, "aws");
     expect(expired.reconnectReason).toBe("credential_expired");
-    expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -314,7 +290,6 @@ describe("AWS Sign-In refresh expiry", () => {
           );
         }),
       );
-      context.mocks.axiomLogging.warn.mockClear();
       const failed = await aws.request(aws.account.id, true);
       expect(failed.status).toBe(502);
       expect(failed.body).toStrictEqual({
@@ -323,10 +298,6 @@ describe("AWS Sign-In refresh expiry", () => {
           failureReason,
         }),
       });
-      expect(context.mocks.axiomLogging.warn).toHaveBeenCalledWith(
-        expect.stringContaining("aws token refresh failed"),
-        expect.objectContaining({ oauthStatus: status, failureReason }),
-      );
       const account = await aws.connectors.readConnectorBySlug(
         aws.actor,
         "aws",

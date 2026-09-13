@@ -14,11 +14,30 @@ export const updateDefaultModelPreference$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     signal.throwIfAborted();
+    const preference = await get(userModelPreference$);
+    signal.throwIfAborted();
+    const selectedModel = selection?.selectedModel;
+    const selectedEffort = selectedModel
+      ? selection.modelSettings?.[selectedModel]?.effort
+      : undefined;
+    const storedEffort = selectedModel
+      ? preference.modelSettings[selectedModel]?.effort
+      : undefined;
     await set(
       updateUserModelPreference$,
       {
         selectedModel: selection?.selectedModel ?? null,
         serviceTier: selection?.codexServiceTier === "fast" ? "priority" : null,
+        ...(selectedModel &&
+        selectedEffort !== undefined &&
+        selectedEffort !== storedEffort
+          ? {
+              modelSettingsPatch: {
+                model: selectedModel,
+                effort: selectedEffort,
+              },
+            }
+          : {}),
       },
       signal,
     );

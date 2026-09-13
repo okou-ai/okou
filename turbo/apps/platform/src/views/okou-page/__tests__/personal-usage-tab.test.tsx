@@ -168,7 +168,7 @@ function mockBillingStatus(
       tier,
       showUsagePack,
       supportByok: tier !== "limited-free-1",
-      restrictedVm0Models: tier === "limited-free-1",
+      restrictedBuiltInModels: tier === "limited-free-1",
       credits: 12_500,
       onboardingPaymentPending: false,
       subscriptionStatus,

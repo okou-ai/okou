@@ -44,13 +44,6 @@ const webhooks = createWebhookCallbackApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
 
 const DUPLICATE_EVENT_ID_NAMESPACE = "46842b1d-a596-47fb-86b3-4f51962751c7";
-const DUPLICATE_EVENT_ID_WARNING =
-  "Normalized duplicate chat event IDs in snapshot";
-const SNAPSHOT_COMPLETED_MESSAGE = "Completed chat event snapshot";
-const SNAPSHOT_COMPLETED_TYPE = "chat_event_snapshot_completed";
-const SNAPSHOT_TIMED_OUT_TYPE = "chat_event_snapshot_candidate_timed_out";
-const SNAPSHOT_FAILED_TYPE = "chat_event_snapshot_candidate_failed";
-const SNAPSHOT_THREAD_TIMEOUT_MS = 30_000;
 const OBJECT_KEY_PATTERN =
   /^chat-events\/([0-9a-f-]{36})\/(\d+)-r1-([0-9a-f]{64})\.ndjson\.gz$/;
 
@@ -82,60 +75,6 @@ async function runSnapshotCron(
     [200],
   );
   return response.body;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function snapshotCompletionEvents(): readonly Record<string, unknown>[] {
-  return context.mocks.axiom.ingest.mock.calls.flatMap(([dataset, events]) => {
-    if (dataset !== "web-logs" || !Array.isArray(events)) {
-      return [];
-    }
-    return events.filter((event): event is Record<string, unknown> => {
-      return isRecord(event) && event.type === SNAPSHOT_COMPLETED_TYPE;
-    });
-  });
-}
-
-function candidateLogFields(
-  level: "info" | "warn" | "error",
-  type: string,
-): readonly Record<string, unknown>[] {
-  return context.mocks.axiomLogging[level].mock.calls.flatMap((call) => {
-    const fields = call[1];
-    return isRecord(fields) && fields.type === type ? [fields] : [];
-  });
-}
-
-function expectSnapshotCompletion(expected: {
-  readonly duplicateEventIdConflictThreads: number;
-  readonly duplicateEventIdConflicts: number;
-  readonly duplicateEventIdsRemapped: number;
-  readonly duplicateEventReferencesRemapped: number;
-}): void {
-  const events = snapshotCompletionEvents();
-  expect(events).toHaveLength(1);
-  const event = events[0];
-  expect({
-    level: event?.level,
-    message: event?.message,
-    source: event?.source,
-    type: event?.type,
-    context: event?.context,
-    duplicateEventIdConflictThreads: event?.duplicateEventIdConflictThreads,
-    duplicateEventIdConflicts: event?.duplicateEventIdConflicts,
-    duplicateEventIdsRemapped: event?.duplicateEventIdsRemapped,
-    duplicateEventReferencesRemapped: event?.duplicateEventReferencesRemapped,
-  }).toStrictEqual({
-    level: "info",
-    message: SNAPSHOT_COMPLETED_MESSAGE,
-    source: "api",
-    type: SNAPSHOT_COMPLETED_TYPE,
-    context: "api:cron:snapshot-chat-events",
-    ...expected,
-  });
 }
 
 async function projectChatEventSearch(...chatThreadIds: readonly string[]) {
@@ -488,17 +427,8 @@ describe("cron snapshot chat events", () => {
         ),
       ]),
     );
-    context.mocks.axiomLogging.warn.mockClear();
-    context.mocks.axiom.ingest.mockClear();
-
     const result = await runSnapshotCron([threadId]);
     expect(result).toMatchObject({
-      duplicateEventIdConflictThreads: 0,
-      duplicateEventIdConflicts: 0,
-      duplicateEventIdsRemapped: 0,
-      duplicateEventReferencesRemapped: 0,
-    });
-    expectSnapshotCompletion({
       duplicateEventIdConflictThreads: 0,
       duplicateEventIdConflicts: 0,
       duplicateEventIdsRemapped: 0,
@@ -516,11 +446,6 @@ describe("cron snapshot chat events", () => {
         failureReason: "future_reason",
       }),
     );
-    expect(
-      context.mocks.axiomLogging.warn.mock.calls.some((call) => {
-        return call[0] === DUPLICATE_EVENT_ID_WARNING;
-      }),
-    ).toBeFalsy();
   }, 60_000);
 
   it("archives a database-backed V7 failure reason", async () => {
@@ -614,7 +539,6 @@ describe("cron snapshot chat events", () => {
         ? Promise.reject(snapshotFailure)
         : Promise.resolve();
     });
-    context.mocks.axiom.ingest.mockClear();
 
     const result = await runSnapshotCron([failedThreadId, repairableThreadId]);
     expect(result).toMatchObject({
@@ -628,20 +552,6 @@ describe("cron snapshot chat events", () => {
     });
     expect(putsForThread(failedThreadId)).toHaveLength(0);
     expect(putsForThread(repairableThreadId)).toHaveLength(1);
-    // A genuine archive failure keeps the error feed and now names its stage.
-    const failedLogs = candidateLogFields("error", SNAPSHOT_FAILED_TYPE);
-    expect(failedLogs).toHaveLength(1);
-    expect(failedLogs[0]).toMatchObject({ stage: "put_object" });
-    expect(candidateLogFields("info", SNAPSHOT_TIMED_OUT_TYPE)).toHaveLength(0);
-    expect(snapshotCompletionEvents()).toHaveLength(1);
-    expect(snapshotCompletionEvents()[0]).toMatchObject({
-      snapshots: 1,
-      selectedCandidates: 2,
-      processedCandidates: 2,
-      deferredCandidates: 0,
-      skippedFailedHeads: 1,
-      skippedTimedOutHeads: 0,
-    });
   }, 60_000);
 
   it("bounds concurrency and resumes candidates deferred by the start budget", async () => {
@@ -743,26 +653,6 @@ describe("cron snapshot chat events", () => {
       skippedTimedOutHeads: 1,
     });
 
-    // An expected bounded deadline is diagnostic info, not a warning: it must
-    // stay out of the warn/error feed while keeping the stuck stage locatable.
-    const timedOutLogs = candidateLogFields("info", SNAPSHOT_TIMED_OUT_TYPE);
-    expect(timedOutLogs).toHaveLength(1);
-    expect(timedOutLogs[0]).toMatchObject({
-      expected: true,
-      stage: "resolve_prefix",
-      timeoutMs: SNAPSHOT_THREAD_TIMEOUT_MS,
-      durationMs: expect.any(Number),
-    });
-    expect(candidateLogFields("warn", SNAPSHOT_TIMED_OUT_TYPE)).toHaveLength(0);
-    expect(candidateLogFields("error", SNAPSHOT_TIMED_OUT_TYPE)).toHaveLength(
-      0,
-    );
-    expect(candidateLogFields("error", SNAPSHOT_FAILED_TYPE)).toHaveLength(0);
-    expect(snapshotCompletionEvents()[0]).toMatchObject({
-      skippedTimedOutHeads: 1,
-      oldestCandidateAgeMs: expect.any(Number),
-    });
-
     context.mocks.abortSignal.timeout.mockReset();
     const resumed = await runSnapshotCron(threadIds);
     expect(resumed).toMatchObject({
@@ -845,13 +735,11 @@ describe("cron snapshot chat events", () => {
       }
       return Promise.resolve();
     });
-    context.mocks.axiom.ingest.mockClear();
 
     await expect(
       runSnapshotCron([threadId], [], controller.signal),
     ).rejects.toThrow("Unknown response status 500");
     expect(controller.signal.aborted).toBeTruthy();
-    expect(snapshotCompletionEvents()).toHaveLength(0);
     await expect(
       readChatEventSnapshotHead(context, threadId),
     ).resolves.toStrictEqual(parentHead);
@@ -937,7 +825,6 @@ describe("cron snapshot chat events", () => {
     });
     await projectChatEventSearch(firstThreadId, secondThreadId);
 
-    context.mocks.axiomLogging.warn.mockClear();
     const publicationGate = createDeferredPromise<void>(context.signal);
     let firstThreadArrivals = 0;
     installFakeChatEventR2(context, recordedPuts, async (put) => {
@@ -1024,15 +911,8 @@ describe("cron snapshot chat events", () => {
     ).toBeTruthy();
 
     installFakeChatEventR2(context, recordedPuts);
-    context.mocks.axiom.ingest.mockClear();
     const secondResult = await runSnapshotCron([secondThreadId]);
     expect(secondResult).toMatchObject({
-      duplicateEventIdConflictThreads: 1,
-      duplicateEventIdConflicts: 1,
-      duplicateEventIdsRemapped: 2,
-      duplicateEventReferencesRemapped: 2,
-    });
-    expectSnapshotCompletion({
       duplicateEventIdConflictThreads: 1,
       duplicateEventIdConflicts: 1,
       duplicateEventIdsRemapped: 2,
@@ -1080,57 +960,6 @@ describe("cron snapshot chat events", () => {
     ).toBe(duplicateId);
     expect(secondRemappedIds[0]).not.toBe(firstRemappedIds[0]);
 
-    const warningCalls = context.mocks.axiomLogging.warn.mock.calls.filter(
-      (call) => {
-        return call[0] === DUPLICATE_EVENT_ID_WARNING;
-      },
-    );
-    expect(
-      warningCalls.map((call) => {
-        const fields = call[1];
-        if (typeof fields !== "object" || fields === null) {
-          throw new Error("Expected structured duplicate ID warning fields");
-        }
-        return {
-          type: Reflect.get(fields, "type"),
-          context: Reflect.get(fields, "context"),
-          chatThreadId: Reflect.get(fields, "chatThreadId"),
-          conflictingEventIdCount: Reflect.get(
-            fields,
-            "conflictingEventIdCount",
-          ),
-          remappedEventIdCount: Reflect.get(fields, "remappedEventIdCount"),
-          remappedReferenceCount: Reflect.get(fields, "remappedReferenceCount"),
-        };
-      }),
-    ).toStrictEqual([
-      {
-        type: "chat_event_snapshot_duplicate_ids_normalized",
-        context: "api:cron:snapshot-chat-events",
-        chatThreadId: firstThreadId,
-        conflictingEventIdCount: 1,
-        remappedEventIdCount: 2,
-        remappedReferenceCount: 2,
-      },
-      {
-        type: "chat_event_snapshot_duplicate_ids_normalized",
-        context: "api:cron:snapshot-chat-events",
-        chatThreadId: firstThreadId,
-        conflictingEventIdCount: 1,
-        remappedEventIdCount: 2,
-        remappedReferenceCount: 2,
-      },
-      {
-        type: "chat_event_snapshot_duplicate_ids_normalized",
-        context: "api:cron:snapshot-chat-events",
-        chatThreadId: secondThreadId,
-        conflictingEventIdCount: 1,
-        remappedEventIdCount: 2,
-        remappedReferenceCount: 2,
-      },
-    ]);
-    expect(JSON.stringify(warningCalls)).not.toContain(firstMarker);
-    expect(JSON.stringify(warningCalls)).not.toContain(secondMarker);
     const firstHead = await readChatEventSnapshotHead(context, firstThreadId);
     const secondHead = await readChatEventSnapshotHead(context, secondThreadId);
     expect(firstHead.archive_schema_version).toBe(

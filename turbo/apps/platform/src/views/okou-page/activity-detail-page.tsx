@@ -268,14 +268,17 @@ function ActivityNotFound() {
             return $.activity.detail.notFound.description;
           })}
         </p>
-        <Link
-          pathname="/"
-          className="okou-btn-morandi mt-2 inline-flex items-center justify-center rounded-md border px-3 py-1.5 text-sm font-medium no-underline text-inherit hover:bg-state-hover"
+        <Button
+          asChild
+          variant="neutral"
+          className="mt-2 h-auto rounded-md px-3 py-1.5 no-underline text-inherit hover:bg-control-surface active:bg-control-surface"
         >
-          {t(($) => {
-            return $.activity.detail.notFound.back;
-          })}
-        </Link>
+          <Link pathname="/">
+            {t(($) => {
+              return $.activity.detail.notFound.back;
+            })}
+          </Link>
+        </Button>
       </div>
     </div>
   );

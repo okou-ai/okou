@@ -1,7 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { now } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -14,9 +13,6 @@ import {
 } from "./chat-list-test-helpers.ts";
 
 const context = testContext();
-const featureSwitches = {
-  [FeatureSwitchKey.StableChatThreadNavigation]: true,
-} as const;
 const SEARCH_LABEL = "Search workspace...";
 
 const platforms = [
@@ -55,7 +51,6 @@ test.each(platforms)(
       context,
       path: `/chats/${thread.id}`,
       ...workspace.pageOptions,
-      featureSwitches,
     });
     const composer = await screen.findByRole("textbox", { name: "Message" });
     click(composer);
@@ -121,7 +116,6 @@ test.each(platforms)(
       context,
       path: `/chats/${thread.id}`,
       ...workspace.pageOptions,
-      featureSwitches,
     });
     const composer = await screen.findByRole("textbox", { name: "Message" });
     click(composer);

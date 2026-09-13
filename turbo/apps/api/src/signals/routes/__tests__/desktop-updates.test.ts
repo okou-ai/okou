@@ -1,4 +1,3 @@
-import { EVENT } from "@axiomhq/logging";
 import { desktopUpdatesContract } from "@okouai/api-contracts/contracts/desktop-updates";
 import { testDesktopUpdateManifestStateContract } from "@okouai/api-contracts/contracts/test-desktop-update-manifest-state";
 import { HttpResponse, http } from "msw";
@@ -400,44 +399,6 @@ describe("desktop update routes", () => {
     };
   }
 
-  function unhandledRequestErrors(
-    testCase: ReturnType<typeof testContext>,
-  ): readonly Record<string, unknown>[] {
-    return testCase.mocks.axiomLogging.error.mock.calls.flatMap(
-      ([, fields]) => {
-        return typeof fields === "object" &&
-          fields !== null &&
-          (fields as Record<string, unknown>).type === "unhandled_request_error"
-          ? [fields as Record<string, unknown>]
-          : [];
-      },
-    );
-  }
-
-  // The logger attaches the emitting context and lifts the recognized root
-  // fields into the Axiom event root, so asserting the whole record also
-  // proves the event was promoted rather than passed through unrecognized.
-  function loggedManifestEvent(fields: Record<string, unknown>) {
-    return {
-      ...fields,
-      context: "DesktopUpdates",
-      [EVENT]: { source: "api", ...fields },
-    };
-  }
-
-  function manifestLogFields(
-    calls: readonly (readonly unknown[])[],
-  ): readonly Record<string, unknown>[] {
-    return calls.flatMap(([, fields]) => {
-      return typeof fields === "object" &&
-        fields !== null &&
-        (fields as Record<string, unknown>).type ===
-          "desktop_update_manifest_upstream"
-        ? [fields as Record<string, unknown>]
-        : [];
-    });
-  }
-
   it("still serves a release after transient upstream failures", async () => {
     const upstream = countingManifestHandler((attempt) => {
       if (attempt < 3) {
@@ -454,15 +415,11 @@ describe("desktop update routes", () => {
 
     expect(response.body.currentRelease).toBe("1.2.3");
     expect(upstream.attempts()).toBe(3);
-    // Absorbed, so it must not reach the error channels that page a human.
+    // Absorbed, so it must not reach the error channel that pages a human.
     expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
-    expect(unhandledRequestErrors(context)).toStrictEqual([]);
-    expect(
-      manifestLogFields(context.mocks.axiomLogging.warn.mock.calls),
-    ).toStrictEqual([]);
   });
 
-  it("stops retrying at the attempt bound and reports the upstream status", async () => {
+  it("stops retrying at the attempt bound and reports the feed as unavailable", async () => {
     const upstream = countingManifestHandler(() => {
       return new HttpResponse(null, { status: 500 });
     });
@@ -472,23 +429,6 @@ describe("desktop update routes", () => {
     expect(response.body.error.code).toBe("DESKTOP_UPDATE_UNAVAILABLE");
     expect(upstream.attempts()).toBe(3);
     expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
-    expect(unhandledRequestErrors(context)).toStrictEqual([]);
-    expect(
-      manifestLogFields(context.mocks.axiomLogging.warn.mock.calls),
-    ).toStrictEqual([
-      loggedManifestEvent({
-        type: "desktop_update_manifest_upstream",
-        outcome: "unavailable",
-        provider: "github_release_asset",
-        provider_status: 500,
-        failure_class: "transient_read_exhausted",
-        attempts: 3,
-        line: "ai-okou-desktop",
-        method: "GET",
-        route:
-          "/api/desktop/updates/:product/:channel/:platform/:arch/RELEASES.json",
-      }),
-    ]);
   });
 
   it("keeps an unavailable feed uncacheable and tells the caller to retry", async () => {
@@ -529,22 +469,6 @@ describe("desktop update routes", () => {
 
     expect(response.body.error.code).toBe("DESKTOP_UPDATE_UNAVAILABLE");
     expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
-    // No response ever arrived, so there is no upstream status to report.
-    expect(
-      manifestLogFields(context.mocks.axiomLogging.warn.mock.calls),
-    ).toStrictEqual([
-      loggedManifestEvent({
-        type: "desktop_update_manifest_upstream",
-        outcome: "unavailable",
-        provider: "github_release_asset",
-        failure_class: "transient_read_exhausted",
-        attempts: 3,
-        line: "ai-okou-desktop",
-        method: "GET",
-        route:
-          "/api/desktop/updates/:product/:channel/:platform/:arch/RELEASES.json",
-      }),
-    ]);
   });
 
   it("reports every manifest-backed route as unavailable, including the wall's download", async () => {
@@ -599,22 +523,6 @@ describe("desktop update routes", () => {
       const stale = await accept(feedRequest(), [200]);
 
       expect(stale.body.currentRelease).toBe("1.2.3");
-      expect(
-        manifestLogFields(context.mocks.axiomLogging.warn.mock.calls),
-      ).toStrictEqual([]);
-      expect(
-        manifestLogFields(context.mocks.axiomLogging.debug.mock.calls),
-      ).toStrictEqual([
-        loggedManifestEvent({
-          type: "desktop_update_manifest_upstream",
-          outcome: "served_stale",
-          provider: "github_release_asset",
-          failure_class: "transient_read",
-          attempts: 3,
-          stale_age_ms: 30 * 60_000 - 1,
-          line: "ai-okou-desktop",
-        }),
-      ]);
     });
   });
 

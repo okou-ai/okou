@@ -12,6 +12,8 @@ import {
   type OrgModelPolicy,
   type SupportedRunModel,
   getCanonicalModelDisplayName,
+  getBuiltInConcreteProviderType,
+  isBuiltInModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import {
@@ -65,6 +67,9 @@ function modelPolicy(
     modelLabel: getCanonicalModelDisplayName(model),
     isDefault: options.default ?? false,
     defaultProviderType: providerType,
+    ...(isBuiltInModelProviderType(providerType)
+      ? { runtimeProviderType: getBuiltInConcreteProviderType(model) }
+      : {}),
     credentialScope,
     modelProviderId:
       credentialScope === "member"
@@ -98,6 +103,7 @@ function preference(
   return {
     selectedModel,
     serviceTier,
+    modelSettings: {},
     selectedVideoModel: null,
     selectedImageModel: null,
     updatedAt: POLICY_DATE,
@@ -153,7 +159,7 @@ function limitedFreeBillingStatus(): BillingStatusResponse {
     showUsagePack: false,
     tier: "limited-free-1",
     supportByok: false,
-    restrictedVm0Models: true,
+    restrictedBuiltInModels: true,
     credits: 0,
     onboardingPaymentPending: false,
     subscriptionStatus: null,
@@ -252,7 +258,9 @@ test("Make a temporary Codex speed the default", async () => {
   const scopeCard = await screen.findByRole("group", {
     name: "Model for this chat",
   });
-  expect(scopeCard).toHaveTextContent("Temporarily switch to GPT 5.6 Sol Fast");
+  expect(scopeCard).toHaveTextContent(
+    "Temporarily switch to GPT 5.6 Sol · Fast",
+  );
   const futureChats = buttonNamed("Use this for future chats", scopeCard);
 
   click(futureChats);
@@ -766,14 +774,14 @@ test("Choose a model from the flyout without leaving the type list", async () =>
 
 test("Choose effort for a new chat and keep Fast independent", async () => {
   const user = userEvent.setup({ delay: null });
-  const updates: {
+  const creates: {
     reasoningEffort?: string | null;
-    codexServiceTier?: string | null;
+    serviceTier?: string | null;
   }[] = [];
   installRunChat({
     selectedModel: "gpt-5.6-sol",
-    onModelSelectionUpdate: (body) => {
-      updates.push(body);
+    onThreadCreate: (body) => {
+      creates.push(body);
     },
   });
   configurePolicies(["gpt-5.6-sol"], "gpt-5.6-sol");
@@ -818,10 +826,10 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
   await fillComposer(composer, "Use this effort for the new task");
   click(await findButton("Send"));
   await waitFor(() => {
-    expect(updates).toContainEqual(
+    expect(creates).toContainEqual(
       expect.objectContaining({
         reasoningEffort: "ultra",
-        codexServiceTier: "fast",
+        serviceTier: "priority",
       }),
     );
   });
@@ -884,7 +892,7 @@ test("Select the default effort on an existing thread without changing Fast", as
   });
 });
 
-test("Preserve compatible effort and reset incompatible choices when changing models", async () => {
+test("Keep independent effort selections when changing models", async () => {
   const user = userEvent.setup({ delay: null });
   installNewChat(
     ["claude-sonnet-5", "gpt-5.6-sol", "gpt-5.5"],
@@ -921,10 +929,6 @@ test("Preserve compatible effort and reset incompatible choices when changing mo
   });
   expect(screen.getByText("Extra")).toBeInTheDocument();
   expect(screen.queryByText("ultracode")).not.toBeInTheDocument();
-  await user.keyboard("{ArrowLeft}");
-  await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "High");
-  });
   click(
     buttonNamed(
       "Back to models",
@@ -933,7 +937,7 @@ test("Preserve compatible effort and reset incompatible choices when changing mo
   );
   await expect(
     screen.findByRole("region", { name: "Models" }),
-  ).resolves.toHaveTextContent("High");
+  ).resolves.toHaveTextContent("Extra");
   click(
     buttonNamed(
       "Change Chat model, Claude Sonnet 5",
@@ -953,7 +957,7 @@ test("Preserve compatible effort and reset incompatible choices when changing mo
     ),
   );
   slider = await screen.findByRole("slider", { name: "Reasoning effort" });
-  expect(slider).toHaveAttribute("aria-valuetext", "high");
+  expect(slider).toHaveAttribute("aria-valuetext", "max");
   slider.focus();
   await user.keyboard("{End}");
   await waitFor(() => {
@@ -990,6 +994,33 @@ test("Preserve compatible effort and reset incompatible choices when changing mo
   await waitFor(() => {
     expect(slider).toHaveAttribute("aria-valuetext", "xhigh");
   });
+  click(
+    buttonNamed(
+      "Back to models",
+      screen.getByRole("region", { name: "Chat settings" }),
+    ),
+  );
+  click(
+    buttonNamed(
+      "Change Chat model, GPT 5.5",
+      await screen.findByRole("region", { name: "Models" }),
+    ),
+  );
+  click(
+    buttonNamed(
+      "Claude Sonnet 5",
+      await screen.findByRole("region", { name: "Chat models" }),
+    ),
+  );
+  click(
+    buttonNamed(
+      "Adjust Claude Sonnet 5 settings",
+      await screen.findByRole("region", { name: "Models" }),
+    ),
+  );
+  await expect(
+    screen.findByRole("slider", { name: "Reasoning effort" }),
+  ).resolves.toHaveAttribute("aria-valuetext", "Extra");
 });
 
 test("Keep saved effort dormant when its feature is disabled", async () => {
@@ -1040,11 +1071,11 @@ test("Keep saved effort dormant when its feature is disabled", async () => {
   ).toBeUndefined();
 });
 
-test("Allow restoring a saved effort when the route no longer supports it", async () => {
+test("Show the Pi fallback without overwriting a saved native preference", async () => {
   const updates: { reasoningEffort?: string | null }[] = [];
   installRunChat({
     selectedModel: "gpt-5.6-sol",
-    reasoningEffort: "high",
+    reasoningEffort: "ultra",
     onModelSelectionUpdate: (body) => {
       updates.push(body);
     },
@@ -1068,21 +1099,77 @@ test("Allow restoring a saved effort when the route no longer supports it", asyn
     ),
   );
   const settings = await screen.findByRole("region", { name: "Chat settings" });
-  expect(settings).toHaveTextContent(
-    "Effort is unavailable for this model route",
+  const slider = await screen.findByRole("slider", {
+    name: "Reasoning effort",
+  });
+  expect(slider).toHaveAttribute("aria-valuetext", "max");
+  expect(settings).not.toHaveTextContent("Restore model default");
+  expect(updates).toStrictEqual([]);
+});
+
+test("Save the preferred effort for future chats when Pi displays a fallback", async () => {
+  const user = userEvent.setup({ delay: null });
+  const updates: UpdateUserModelPreferenceRequest[] = [];
+  installNewChat(["claude-sonnet-5", "gpt-5.6-sol"], "claude-sonnet-5");
+  context.mocks.data.userModelPreference({
+    ...preference("claude-sonnet-5"),
+    modelSettings: { "gpt-5.6-sol": { effort: "ultra" } },
+  });
+  context.mocks.api(userModelPreferenceContract.update, ({ body, respond }) => {
+    updates.push(body);
+    return respond(200, {
+      ...preference("gpt-5.6-sol"),
+      modelSettings: { "gpt-5.6-sol": { effort: "ultra" } },
+    });
+  });
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.ChatPreference]: true,
+      [FeatureSwitchKey.ModelPickerMenu]: true,
+      [FeatureSwitchKey.ChatReasoningEffort]: true,
+      [FeatureSwitchKey.PiLoop]: true,
+    },
+  });
+  const composer = await readyComposer();
+  click(await findButton("Claude Sonnet 5"));
+  click(
+    buttonNamed(
+      "Change Chat model, Claude Sonnet 5",
+      await screen.findByRole("region", { name: "Models" }),
+    ),
   );
-  expect(
-    screen.queryByRole("slider", { name: "Reasoning effort" }),
-  ).not.toBeInTheDocument();
-  click(buttonNamed("Restore model default", settings));
+  click(
+    buttonNamed(
+      "GPT 5.6 Sol",
+      await screen.findByRole("region", { name: "Chat models" }),
+    ),
+  );
+  click(
+    buttonNamed(
+      "Adjust GPT 5.6 Sol settings",
+      await screen.findByRole("region", { name: "Models" }),
+    ),
+  );
+  await expect(
+    screen.findByRole("slider", { name: "Reasoning effort" }),
+  ).resolves.toHaveAttribute("aria-valuetext", "max");
+  await user.click(composer);
+  const scopeCard = await screen.findByRole("group", {
+    name: "Model for this chat",
+  });
+  click(buttonNamed("Use this for future chats", scopeCard));
   await waitFor(() => {
-    expect(updates).toContainEqual(
-      expect.objectContaining({ reasoningEffort: null }),
-    );
+    expect(updates).toContainEqual({
+      selectedModel: "gpt-5.6-sol",
+      serviceTier: null,
+      modelSettingsPatch: { model: "gpt-5.6-sol", effort: "ultra" },
+    });
   });
 });
 
-test("Follow effort changes and resets made in another session", async () => {
+test("Follow model-scoped effort changes made in another session", async () => {
   const events: ChatThreadEvent[] = [];
   installRunChat({ selectedModel: "claude-sonnet-5", reasoningEffort: "high" });
   configurePolicies(["claude-sonnet-5"], "claude-sonnet-5");
@@ -1120,7 +1207,6 @@ test("Follow effort changes and resets made in another session", async () => {
     ["high", "High"],
     ["extra", "Extra"],
     ["max", "Max"],
-    [null, "High"],
   ] as const) {
     events.push({
       id: crypto.randomUUID(),
@@ -1130,7 +1216,10 @@ test("Follow effort changes and resets made in another session", async () => {
       agentId: "c0000000-0000-4000-a000-000000000001",
       title: null,
       selectedModel: "claude-sonnet-5",
-      reasoningEffort,
+      modelSettingsPatch: {
+        model: "claude-sonnet-5",
+        effort: reasoningEffort,
+      },
       serviceTier: null,
       computerUseHostId: null,
       selectedVideoModel: null,
@@ -1194,3 +1283,81 @@ test("Adjust effort and Fast from the desktop flyout with keyboard controls", as
   click(buttonNamed("Back to models", settings));
   await screen.findByRole("listbox", { name: "Chat models" });
 });
+
+test.each([
+  {
+    model: "gpt-6-astra",
+    providerType: "openai-api-key",
+    first: "low",
+    last: "ultra",
+  },
+  {
+    model: "gpt-5.6-sol",
+    providerType: "openai-api-key",
+    first: "low",
+    last: "max",
+  },
+  {
+    model: "claude-sonnet-5",
+    providerType: "anthropic-api-key",
+    first: "Low",
+    last: "Max",
+  },
+  {
+    model: "deepseek-v4-flash",
+    providerType: "deepseek",
+    first: "low",
+    last: "max",
+  },
+  {
+    model: "deepseek-v4-pro",
+    providerType: "deepseek",
+    first: "high",
+    last: "max",
+  },
+  {
+    model: "deepseek-v4-flash",
+    providerType: "openrouter-codex",
+    first: "high",
+    last: "xhigh",
+  },
+] as const)(
+  "Offer $model efforts for $providerType with Pi enabled",
+  async ({ model, providerType, first, last }) => {
+    const user = userEvent.setup({ delay: null });
+    installRunChat({ selectedModel: model });
+    context.mocks.data.orgModelPolicies([
+      modelPolicy(model, 1, { default: true, providerType }),
+    ]);
+    await setupPage({
+      context,
+      path: RUN_PATH,
+      featureSwitches: {
+        [FeatureSwitchKey.ModelPickerMenu]: true,
+        [FeatureSwitchKey.ChatReasoningEffort]: true,
+        [FeatureSwitchKey.PiLoop]: true,
+      },
+    });
+    await readyChat();
+    const label = getCanonicalModelDisplayName(model);
+    click(await findButton(label));
+    click(
+      buttonNamed(
+        `Adjust ${label} settings`,
+        await screen.findByRole("region", { name: "Models" }),
+      ),
+    );
+    const slider = await screen.findByRole("slider", {
+      name: "Reasoning effort",
+    });
+    slider.focus();
+    await user.keyboard("{Home}");
+    await waitFor(() => {
+      return expect(slider).toHaveAttribute("aria-valuetext", first);
+    });
+    await user.keyboard("{End}");
+    await waitFor(() => {
+      return expect(slider).toHaveAttribute("aria-valuetext", last);
+    });
+  },
+);

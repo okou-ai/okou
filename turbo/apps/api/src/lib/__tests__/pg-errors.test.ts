@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   isForeignKeyViolation,
   isLockNotAvailable,
-  isQueryCanceled,
   isUniqueViolation,
   safeSqlStateCode,
 } from "../pg-errors";
@@ -22,18 +21,14 @@ describe("SQLSTATE classification", () => {
     ["55P03", isLockNotAvailable],
     ["23503", isForeignKeyViolation],
     ["23505", isUniqueViolation],
-    ["57014", isQueryCanceled],
   ])("matches %s only for its own predicate", (code, predicate) => {
     expect(predicate(driverError(code))).toBeTruthy();
     expect(
-      [
-        isLockNotAvailable,
-        isForeignKeyViolation,
-        isUniqueViolation,
-        isQueryCanceled,
-      ].filter((other) => {
-        return other(driverError(code));
-      }),
+      [isLockNotAvailable, isForeignKeyViolation, isUniqueViolation].filter(
+        (other) => {
+          return other(driverError(code));
+        },
+      ),
     ).toStrictEqual([predicate]);
   });
 });

@@ -263,7 +263,7 @@ describe("POST /api/attribution/signup", () => {
     );
   });
 
-  it("retries the Clerk user read before writing attribution", async () => {
+  it("stops at the first Clerk rate limit without writing attribution", async () => {
     mockNow(new Date(RECORDED_AT_ISO));
     const userId = `user_${randomUUID()}`;
     mocks.clerk.session(userId, null);
@@ -284,18 +284,13 @@ describe("POST /api/attribution/signup", () => {
           },
         },
       }),
-      [200],
+      [500],
     );
 
-    expect(response.body).toStrictEqual({
-      recorded: true,
-      googleAdsAccountId: null,
-    });
-    expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledTimes(2);
-    expect(context.mocks.signalTimers.delay).toHaveBeenCalledTimes(1);
-    expect(context.mocks.clerk.users.updateUserMetadata).toHaveBeenCalledTimes(
-      1,
-    );
+    expect(response.body).toStrictEqual({ error: "Internal server error" });
+    expect(context.mocks.clerk.users.getUserList).toHaveBeenCalledTimes(1);
+    expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
+    expect(context.mocks.clerk.users.updateUserMetadata).not.toHaveBeenCalled();
   });
 
   it("does not overwrite existing signup attribution", async () => {

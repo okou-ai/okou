@@ -24,6 +24,8 @@ import type {
   ChatThreadArtifactRun,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ChatAttachment } from "../../signals/okou-page/chat-draft";
+import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
+import { canonicalUserMessageFileUrl } from "../../signals/chat-page/user-message-files.ts";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { downloadAttachment$ } from "../../signals/attachment-download.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -1114,6 +1116,7 @@ function ArtifactPreviewDialogThreadResolver({
           })
         : undefined,
       filename: navigationItem.filename,
+      preview: navigationItem.preview,
       threadId: thread.threadId,
       url: navigationItem.url,
     });
@@ -1615,25 +1618,25 @@ export function PreviewableAudioAttachmentChip({
 // ---------------------------------------------------------------------------
 
 /**
- * A restored attachment carries the canonical API URL, so the thumbnail needs
- * the same presigned exchange the sent message uses. Kept in its own component
- * so the surrounding button stays one DOM node across the pending-to-uploaded
- * transition. The canonical URL identifies the image load state.
+ * Composer attachments use the same presigned thumbnail as sent messages.
+ * The preview also supplies the original credential to the lightbox. Kept in
+ * its own component so the surrounding button stays one DOM node across the
+ * pending-to-uploaded transition. The canonical URL identifies the load state.
  */
 function ComposerImagePreviewImage({
-  resourceUrl$,
+  preview,
   load,
   loaded,
   url,
 }: {
-  resourceUrl$: ChatAttachment["resourceUrl$"];
+  preview: AttachmentPreviewSignals;
   load: ImageLoadSignals;
   loaded: boolean;
   url: string;
 }) {
   const markLoaded = useSet(load.loaded$);
   const markFailed = useSet(load.failed$);
-  const resolvedUrl = useLastResolved(resourceUrl$) ?? null;
+  const resolvedUrl = useLastResolved(preview.thumbnailUrl$) ?? null;
 
   if (resolvedUrl === null) {
     return null;
@@ -1653,24 +1656,24 @@ function ComposerImagePreviewImage({
 }
 
 function ComposerImagePreviewButton({
-  resourceUrl$,
+  preview,
   filename,
   load,
   markCount,
   openImageLightbox,
   url,
 }: {
-  resourceUrl$: ChatAttachment["resourceUrl$"];
+  preview: AttachmentPreviewSignals | null;
   filename: string;
   load: ImageLoadSignals;
   markCount: number;
-  openImageLightbox: (url: string) => void;
+  openImageLightbox: (url: string, preview: AttachmentPreviewSignals) => void;
   url: string | undefined;
 }) {
   const { t } = useTranslation();
   const currentImageStatus = useGet(load.status$);
 
-  if (!url) {
+  if (!url || !preview) {
     return (
       <button
         type="button"
@@ -1695,7 +1698,7 @@ function ComposerImagePreviewButton({
     <button
       type="button"
       onClick={() => {
-        openImageLightbox(url);
+        openImageLightbox(url, preview);
       }}
       aria-label={t(
         ($) => {
@@ -1721,7 +1724,7 @@ function ComposerImagePreviewButton({
         </span>
       )}
       <ComposerImagePreviewImage
-        resourceUrl$={resourceUrl$}
+        preview={preview}
         load={load}
         loaded={currentImageStatus === "loaded"}
         url={url}
@@ -1794,9 +1797,12 @@ function AttachmentChip({
 }) {
   const { t } = useTranslation();
   const infoLoadable = useLoadable(attachment.fileInfo$);
+  const preview = useLastResolved(attachment.preview$) ?? null;
   const uploading = useGet(attachment.uploadPending$);
   const url =
-    infoLoadable.state === "hasData" ? infoLoadable.data?.url : undefined;
+    infoLoadable.state === "hasData" && infoLoadable.data
+      ? canonicalUserMessageFileUrl(infoLoadable.data.id)
+      : undefined;
   const openImageLightbox = useSet(openImageLightbox$);
   const openAnnotationEditor = useSet(annotationSignals.openAnnotationEditor$);
   const confirmAnnotations = useSet(attachment.confirmAnnotations$);
@@ -1810,15 +1816,17 @@ function AttachmentChip({
     >
       {isImage ? (
         <ComposerImagePreviewButton
-          resourceUrl$={attachment.resourceUrl$}
+          preview={preview}
           filename={attachment.filename}
           load={attachment.imageLoad}
           markCount={annotationMarkCount(annotations)}
-          openImageLightbox={(previewUrl) => {
+          openImageLightbox={(previewUrl, imagePreview) => {
             // A pending upload is not an artifact yet, so checking it must not
             // take over an open artifact sidebar.
             openImageLightbox({
               url: previewUrl,
+              filename: attachment.filename,
+              preview: imagePreview,
               splitViewAvailable: false,
               ...(annotationEnabled && !uploading
                 ? {

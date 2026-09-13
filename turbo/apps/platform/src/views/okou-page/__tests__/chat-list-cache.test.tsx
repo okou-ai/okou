@@ -173,12 +173,9 @@ test("Signed-out pages do not sync private conversations", async () => {
 
   await setupPage({ context, path: "/sign-in", auth: null });
 
-  await waitFor(() => {
-    expect(
-      screen.getByRole("heading", { name: "Sign in to Okou" }),
-    ).toBeVisible();
-    expect(window.location.pathname).toBe("/sign-in");
-  });
+  // Hosted Clerk owns the form, so the mounted component marks readiness.
+  await screen.findByTestId("clerk-sign-in");
+  expect(window.location.pathname).toBe("/sign-in");
   expect(snapshotRequested).toBeFalsy();
   expect(eventsRequested).toBeFalsy();
   expect(unreadRequested).toBeFalsy();

@@ -73,7 +73,7 @@ export function SidebarUpgradeCard() {
       })}
     >
       <div className="min-w-0 flex-1">
-        <p className="okou-nav-copy text-sm font-medium text-foreground">
+        <p className="text-sm font-medium text-[color:var(--nav-copy,var(--color-foreground))]">
           {t(
             ($) => {
               return $.billing.sidebar.getPlan;
@@ -81,7 +81,7 @@ export function SidebarUpgradeCard() {
             { plan: nextLabel },
           )}
         </p>
-        <p className="okou-nav-copy-muted mt-0.5 text-[11px] text-muted-foreground">
+        <p className="mt-0.5 text-[11px] text-nav-copy-muted">
           {t(($) => {
             return $.billing.sidebar.description;
           })}

@@ -622,12 +622,9 @@ export async function generateChatThreadRecommendedFollowupsFromContext(
         // Whatever still reaches the diagnostic after that is a failure rather
         // than an omission: rejected credentials, a rejected request, a
         // response that broke its contract, or an exception nothing
-        // classified. Those are reported at error. The reason stays whatever
-        // the provider classification decided, including `unknown`, which is
-        // left unknown rather than presented as a specific cause. Scoped to
-        // this caller through the option; the shared default is unchanged for
-        // features whose own outcomes have not been characterized.
-        failureLevel: "error",
+        // classified. The reason stays whatever the provider classification
+        // decided, including `unknown`, which is left unknown rather than
+        // presented as a specific cause.
         diagnosticContext: args.threadId
           ? { threadId: args.threadId }
           : undefined,

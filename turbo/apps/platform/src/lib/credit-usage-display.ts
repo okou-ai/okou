@@ -77,7 +77,7 @@ const MODEL_DISPLAY_NAMES: Readonly<Record<string, () => string>> = {
 
 function titleCaseUsageToken(token: string): string {
   const upper = token.toUpperCase();
-  if (["AI", "API", "GLM", "GPT", "ID", "SQL", "URL", "VM0"].includes(upper)) {
+  if (["AI", "API", "GLM", "GPT", "ID", "SQL", "URL"].includes(upper)) {
     return upper;
   }
 

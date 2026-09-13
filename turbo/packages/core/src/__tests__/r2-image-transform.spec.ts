@@ -2,6 +2,44 @@ import { describe, expect, it } from "vitest";
 import { r2ImageTransformUrl } from "../r2-image-transform";
 
 describe("r2ImageTransformUrl", () => {
+  it("wraps a complete R2 presign without changing its path or signature", () => {
+    const url =
+      `https://${"a".repeat(32)}.r2.cloudflarestorage.com/private/photo%20%2B.png` +
+      "?X-Amz-Credential=key%2F20260911%2Fauto%2Fs3%2Faws4_request" +
+      "&X-Amz-Security-Token=token%2B%2F%3D&X-Amz-Expires=172800" +
+      "&response-cache-control=private%2C%20no-store&X-Amz-Signature=signature#preview";
+    expect(
+      r2ImageTransformUrl(
+        url,
+        { width: 800, height: 720 },
+        "https://cdn.vm7.io",
+      ),
+    ).toBe(
+      `https://cdn.vm7.io/cdn-cgi/image/width=800,height=720,fit=scale-down,format=auto,quality=85,metadata=none/${url}`,
+    );
+  });
+
+  it("does not forward unrelated signed URLs to the image service", () => {
+    const url = "https://example.com/photo.png?X-Amz-Signature=signature";
+    expect(r2ImageTransformUrl(url, { width: 800 }, "https://cdn.vm7.io")).toBe(
+      url,
+    );
+  });
+
+  it.each([
+    `https://${"a".repeat(32)}.r2.cloudflarestorage.com/private/photo.BMP?X-Amz-Signature=signature#preview`,
+    "https://a.okou.io/0123456789.bmp?download=1#preview",
+    `https://${"a".repeat(32)}.r2.cloudflarestorage.com/private/photo.tiff?X-Amz-Signature=signature`,
+    `https://${"a".repeat(32)}.r2.cloudflarestorage.com/private/image?X-Amz-Signature=signature`,
+  ])(
+    "keeps unsupported or unknown image inputs on their original URL: %s",
+    (url) => {
+      expect(
+        r2ImageTransformUrl(url, { width: 800 }, "https://cdn.vm7.io"),
+      ).toBe(url);
+    },
+  );
+
   it("keeps public shares on their policy-checked URL", () => {
     const url = `https://a.okou.io/${"a".repeat(24)}.png?download=1#preview`;
     expect(r2ImageTransformUrl(url, { width: 400, height: 300 })).toBe(url);

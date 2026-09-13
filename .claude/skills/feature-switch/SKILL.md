@@ -10,12 +10,14 @@ This skill documents the feature switch system and provides step-by-step instruc
 ## When to Use
 
 A feature switch is required when adding:
+
 - New UI pages, sections, or sidebar navigation items
 - New API endpoints exposed to users or agents
 - New integrations (connectors, Slack, Telegram, etc.)
 - New agent token capabilities
 
 A feature switch is **not** required for:
+
 - Internal refactors or code cleanup
 - Test infrastructure changes
 - Build/CI configuration
@@ -53,13 +55,13 @@ Add an entry to the `FEATURE_SWITCHES` record:
 
 **Configuration options:**
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `maintainer` | `string` | Email of the responsible person |
-| `enabled` | `boolean` | `true` = on for everyone, `false` = off by default |
-| `enabledUserHashes` | `string[]` | FNV-1a hashes of allowed user IDs |
-| `enabledEmailHashes` | `string[]` | FNV-1a hashes of allowed emails |
-| `enabledOrgIdHashes` | `string[]` | FNV-1a hashes of allowed org IDs |
+| Field                | Type       | Description                                        |
+| -------------------- | ---------- | -------------------------------------------------- |
+| `maintainer`         | `string`   | Email of the responsible person                    |
+| `enabled`            | `boolean`  | `true` = on for everyone, `false` = off by default |
+| `enabledUserHashes`  | `string[]` | FNV-1a hashes of allowed user IDs                  |
+| `enabledEmailHashes` | `string[]` | FNV-1a hashes of allowed emails                    |
+| `enabledOrgIdHashes` | `string[]` | FNV-1a hashes of allowed org IDs                   |
 
 **Common default states:**
 
@@ -145,15 +147,15 @@ const CONDITIONAL_CAPABILITIES = [
 
 ## Key Files
 
-| File | Role |
-|------|------|
-| `turbo/packages/core/src/feature-switch-key.ts` | Enum of all feature switch keys |
-| `turbo/packages/core/src/feature-switch.ts` | Registry and evaluation logic |
-| `turbo/apps/platform/src/signals/external/feature-switch.ts` | Client-side reactive state with override layers |
-| `turbo/apps/platform/src/views/okou-page/sidebar.tsx` | Sidebar nav item records (`MANAGE_NAV`, `FOOTER_NAV`) |
+| File                                                                            | Role                                                        |
+| ------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `turbo/packages/core/src/feature-switch-key.ts`                                 | Enum of all feature switch keys                             |
+| `turbo/packages/core/src/feature-switch.ts`                                     | Registry and evaluation logic                               |
+| `turbo/apps/platform/src/signals/external/feature-switch.ts`                    | Client-side reactive state with override layers             |
+| `turbo/apps/platform/src/views/okou-page/sidebar.tsx`                           | Sidebar nav item records (`MANAGE_NAV`, `FOOTER_NAV`)       |
 | `turbo/apps/api/src/signals/services/connector-auth-method-feature-switches.ts` | Connector auth-method → feature switch rollout associations |
-| `turbo/apps/api/src/signals/services/feature-switches.service.ts` | Override loading/writing and the org-scoped key list |
-| `turbo/apps/api/src/signals/auth/tokens.ts` | Token capability gating |
+| `turbo/apps/api/src/signals/services/feature-switches.service.ts`               | Override loading/writing and the org-scoped key list        |
+| `turbo/apps/api/src/signals/auth/tokens.ts`                                     | Token capability gating                                     |
 
 ## Override Layers
 
@@ -164,7 +166,7 @@ Evaluation has two layers (lowest to highest priority):
    `user_feature_switches` keyed by `(orgId, userId)`. Some switches are
    org-scoped and stored under the org sentinel user id (`ORG_SENTINEL_USER_ID`,
    `"__org__"`); `ORG_SCOPED_FEATURE_SWITCH_KEYS` currently holds
-   `ChatErrorRecovery` and `PiLoop`. Written
+   `PiLoop` and `ReferenceImages`. Written
    via `POST /api/feature-switches` and cleared via
    `DELETE /api/feature-switches`. The Lab page lets users update or reset these
    overrides and groups the registry into Released, Beta, Alpha, and Internal

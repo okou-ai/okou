@@ -10,6 +10,8 @@ import {
   loadNewChatThreadMediaModels,
   type NewChatThreadMediaModels,
 } from "./chat-thread-media-model.service";
+import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
+import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { Tx } from "../../lib/db-types";
 
 interface TeamsChatThreadRouteKey {
@@ -75,6 +77,7 @@ interface CreatedTeamsChatThread {
   readonly id: string;
   readonly createdAt: Date;
   readonly mediaModels: NewChatThreadMediaModels;
+  readonly modelSettings: ModelSettings;
 }
 
 async function createCanonicalTeamsChatThread(
@@ -92,6 +95,10 @@ async function createCanonicalTeamsChatThread(
     orgId: args.orgId,
     userId: args.userId,
   });
+  const modelSettings = await loadNewChatThreadModelSettings(tx, {
+    orgId: args.orgId,
+    userId: args.userId,
+  });
   const [thread] = await tx
     .insert(chatThreads)
     .values({
@@ -99,6 +106,7 @@ async function createCanonicalTeamsChatThread(
       agentId: args.agentId,
       computerUseHostId,
       selectedModel: args.selectedModel,
+      modelSettings,
       codexServiceTier: args.serviceTier === "priority" ? "fast" : null,
       title: null,
       lastReadAt: args.currentTime,
@@ -112,7 +120,7 @@ async function createCanonicalTeamsChatThread(
   if (!thread) {
     throw new Error("Failed to create canonical Teams chat thread");
   }
-  return { ...thread, mediaModels };
+  return { ...thread, mediaModels, modelSettings };
 }
 
 async function appendCanonicalTeamsChatThreadCreatedEvent(
@@ -134,6 +142,7 @@ async function appendCanonicalTeamsChatThreadCreatedEvent(
     agentId: args.agentId,
     title: null,
     selectedModel: args.selectedModel,
+    modelSettings: thread.modelSettings,
     serviceTier: args.serviceTier,
     computerUseHostId,
     ...thread.mediaModels,

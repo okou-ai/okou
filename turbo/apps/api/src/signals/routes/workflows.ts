@@ -512,6 +512,7 @@ const prepareAndCreateWorkflow$ = command(
           {
             orgId: args.orgId,
             storageName: getCustomSkillStorageName(workflowId),
+            piResourceIndex: true,
             files: [
               {
                 path: "SKILL.md",
@@ -1325,6 +1326,7 @@ const publishCopiedWorkflow$ = command(
                   input: {
                     orgId: args.orgId,
                     storageName: getCustomSkillStorageName(targetWorkflowId),
+                    piResourceIndex: true,
                     files: copiedWorkflowVolumeFiles(
                       copiedSourceWorkflow,
                       copiedSourceFiles,

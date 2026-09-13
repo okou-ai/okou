@@ -221,9 +221,9 @@ function AgentTabsView({
           </SegmentControlItem>
         </SegmentControl>
         <Button
-          variant="outline"
+          variant="neutral"
           size="sm"
-          className="okou-btn-morandi h-9 gap-2 shrink-0 rounded-lg border"
+          className="h-9 gap-2 shrink-0 rounded-lg"
           disabled={createDisabled}
           onClick={() => {
             return onCreate(activeTab);

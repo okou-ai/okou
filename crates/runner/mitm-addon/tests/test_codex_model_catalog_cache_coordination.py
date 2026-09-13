@@ -54,10 +54,10 @@ async def test_prefetch_marker_is_stripped_and_roles_distinguish_consumers(real_
     prefetch = catalog_flow(
         real_flow,
         version="prefetched",
-        extra_headers={"X-VM0-Codex-Model-Catalog-Prefetch": "1"},
+        extra_headers={"X-Okou-Codex-Model-Catalog-Prefetch": "1"},
     )
     catalog_cache.capture_and_strip_prefetch_marker(prefetch)
-    assert "X-VM0-Codex-Model-Catalog-Prefetch" not in prefetch.request.headers
+    assert "X-Okou-Codex-Model-Catalog-Prefetch" not in prefetch.request.headers
     await prepare_miss(prefetch, expected_encoding="br")
 
     in_flight_consumer = catalog_flow(real_flow, version="prefetched")
@@ -89,7 +89,7 @@ async def test_failed_prefetch_releases_consumer_to_retry_upstream(real_flow):
     prefetch = catalog_flow(
         real_flow,
         version="prefetch-failure",
-        extra_headers={"X-VM0-Codex-Model-Catalog-Prefetch": "1"},
+        extra_headers={"X-Okou-Codex-Model-Catalog-Prefetch": "1"},
     )
     catalog_cache.capture_and_strip_prefetch_marker(prefetch)
     await prepare_miss(prefetch, expected_encoding="br")

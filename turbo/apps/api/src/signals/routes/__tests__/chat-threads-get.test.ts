@@ -104,6 +104,7 @@ describe("GET /api/chat-threads/:id/metadata", () => {
       agentId: fixture.agentId,
       title: "Launch plan",
       selectedModel: DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+      modelSettings: {},
       serviceTier: null,
       pinnedAt: null,
       computerUseHostId: null,

@@ -444,6 +444,7 @@ function createVoiceActionBindings(
   const mount$ = onRef(
     command(async ({ set }, element: HTMLElement, signal: AbortSignal) => {
       set(element$, element);
+      // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
       set(internalOwner$, createChildAbortController(signal));
       signal.addEventListener(
         "abort",

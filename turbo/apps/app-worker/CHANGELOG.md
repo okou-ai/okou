@@ -1,5 +1,100 @@
 # Changelog
 
+## [1.8.9](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.8...app-worker-v1.8.9) (2026-09-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.660.2
+
+## [1.8.8](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.7...app-worker-v1.8.8) (2026-09-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.660.1
+
+## [1.8.7](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.6...app-worker-v1.8.7) (2026-09-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.660.0
+
+## [1.8.6](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.5...app-worker-v1.8.6) (2026-09-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.659.0
+
+## [1.8.5](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.4...app-worker-v1.8.5) (2026-09-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.658.0
+
+## [1.8.4](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.3...app-worker-v1.8.4) (2026-09-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.657.0
+
+## [1.8.3](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.2...app-worker-v1.8.3) (2026-09-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.656.0
+
+## [1.8.2](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.1...app-worker-v1.8.2) (2026-09-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.655.0
+
+## [1.8.1](https://github.com/vm0-ai/vm0/compare/app-worker-v1.8.0...app-worker-v1.8.1) (2026-09-12)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.654.3
+
+## [1.8.0](https://github.com/vm0-ai/vm0/compare/app-worker-v1.7.2...app-worker-v1.8.0) (2026-09-11)
+
+
+### Features
+
+* **connectors:** support posthog cimd oauth and regional accounts ([#33490](https://github.com/vm0-ai/vm0/issues/33490)) ([37967c7](https://github.com/vm0-ai/vm0/commit/37967c79fbe0658e97adfa1c1d3c2138e2469099))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.654.2
+
 ## [1.7.2](https://github.com/vm0-ai/vm0/compare/app-worker-v1.7.1...app-worker-v1.7.2) (2026-09-11)
 
 

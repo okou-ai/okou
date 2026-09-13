@@ -25,8 +25,9 @@ cargo test --manifest-path crates/Cargo.toml --profile local \
 cargo test --manifest-path crates/Cargo.toml --profile local -- --nocapture
 ```
 
-Pre-commit hooks run `cargo fmt`, `cargo clippy --profile local`, and
-`cargo doc --profile local` on staged Rust files.
+Pre-commit hooks run `cargo fmt` and `cargo doc --profile local` on staged Rust
+files. Clippy remains in the Crates CI workflow. To run it locally from `crates/`,
+use `cargo clippy --profile local --all-targets --all-features`.
 
 ## Test Organization
 

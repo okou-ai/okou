@@ -1037,6 +1037,43 @@ describe("workflow queue", () => {
     ).toBeTruthy();
   });
 
+  it("leaves queue events older than the recent stale sweep window", async () => {
+    mockNow(Date.UTC(2020, 0, 1));
+    const scenario = await setup();
+    const automation = await createWebhookAutomation(scenario);
+    const firstRunId = await expectAcceptedRunId(
+      await postWorkflowWebhook(automation, "first"),
+      automation.threadId,
+    );
+    expectAcceptedWithoutRun(
+      await postWorkflowWebhook(automation, "outside the recovery window"),
+    );
+    const event = (await pendingAutomationEvents(automation.threadId))[0];
+    if (!event) {
+      throw new Error("Expected a pending automation event");
+    }
+    await setWorkflowQueueEventCreatedAtFixture({
+      eventId: event.id,
+      createdAt: new Date("2019-12-31T23:44:00.000Z"),
+    });
+
+    await runsApi.heartbeatRunner(scenario.runnerGroup);
+    await runsApi.claimRunnerJob(firstRunId);
+    await completeRunWithoutCallbacksFixture({ runId: firstRunId });
+    await cleanupWorkflowQueueFixtures({
+      threadId: automation.threadId,
+      orgId: scenario.orgId,
+      runIds: [firstRunId],
+    });
+
+    await expect(workflowRunIds(automation.threadId)).resolves.toStrictEqual([
+      firstRunId,
+    ]);
+    await expect(
+      pendingAutomationEvents(automation.threadId),
+    ).resolves.toMatchObject([{ id: event.id }]);
+  });
+
   it("queues webhook events without extra keys and drains one per completion", async () => {
     const scenario = await setup();
     const automation = await createWebhookAutomation(scenario);
@@ -1606,14 +1643,16 @@ describe("workflow queue", () => {
     // Both values become the same JavaScript Date. The database-first event
     // deliberately has the lexicographically later UUID, so a millisecond
     // conversion followed by an id sort would choose the wrong queue head.
-    await setWorkflowQueueEventCreatedAtFixture({
-      eventId: databaseFirst.id,
-      createdAt: "2019-12-31 23:54:00.000100",
-    });
-    await setWorkflowQueueEventCreatedAtFixture({
-      eventId: databaseSecond.id,
-      createdAt: "2019-12-31 23:54:00.000900",
-    });
+    await Promise.all([
+      setWorkflowQueueEventCreatedAtFixture({
+        eventId: databaseFirst.id,
+        createdAt: "2019-12-31 23:54:00.000100",
+      }),
+      setWorkflowQueueEventCreatedAtFixture({
+        eventId: databaseSecond.id,
+        createdAt: "2019-12-31 23:54:00.000900",
+      }),
+    ]);
 
     const result = await postWorkflowWebhook(
       automation,

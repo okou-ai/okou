@@ -157,23 +157,13 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       );
       await expect(
         chat.readThreadMetadata(fixture.actor, fixture.threadId),
-      ).resolves.toMatchObject({ reasoningEffort });
+      ).resolves.toMatchObject({
+        modelSettings: { "claude-sonnet-5": { effort: reasoningEffort } },
+      });
     }
-    await chat.updateThreadModelSelection(
-      fixture.actor,
-      fixture.threadId,
-      "claude-sonnet-5",
-      { reasoningEffort: null },
-    );
-    const metadata = await chat.readThreadMetadata(
-      fixture.actor,
-      fixture.threadId,
-    );
-    expect(metadata).toMatchObject({ selectedModel: "claude-sonnet-5" });
-    expect(metadata.reasoningEffort ?? null).toBeNull();
   });
 
-  it("persists effort, preserves omitted values, and emits an explicit default reset", async () => {
+  it("persists independent model efforts and emits single-model patches", async () => {
     const fixture = await seedChatThread("Effort persistence");
     await updateFeatureSwitchesForUser(context, fixture, {
       [FeatureSwitchKey.ChatReasoningEffort]: true,
@@ -193,7 +183,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       chat.readThreadMetadata(fixture.actor, fixture.threadId),
     ).resolves.toMatchObject({
       selectedModel: "claude-opus-4-8",
-      reasoningEffort: "high",
+      modelSettings: { "claude-sonnet-5": { effort: "high" } },
     });
     // Disabled rollout rejects explicit settings without erasing preferences.
     await updateFeatureSwitchesForUser(context, fixture, {
@@ -204,14 +194,16 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       fixture.threadId,
       "claude-opus-4-8",
       [400],
-      { reasoningEffort: null },
+      { reasoningEffort: "low" },
     );
     expect(disabledReset.body).toMatchObject({
       error: { message: "Reasoning effort selection is not enabled" },
     });
     await expect(
       chat.readThreadMetadata(fixture.actor, fixture.threadId),
-    ).resolves.toMatchObject({ reasoningEffort: "high" });
+    ).resolves.toMatchObject({
+      modelSettings: { "claude-sonnet-5": { effort: "high" } },
+    });
     await updateFeatureSwitchesForUser(context, fixture, {
       [FeatureSwitchKey.ChatReasoningEffort]: true,
     });
@@ -219,12 +211,16 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       fixture.actor,
       fixture.threadId,
       "claude-opus-4-8",
-      { reasoningEffort: null },
+      { reasoningEffort: "extra" },
     );
-    expect(
-      (await chat.readThreadMetadata(fixture.actor, fixture.threadId))
-        .reasoningEffort ?? null,
-    ).toBeNull();
+    await expect(
+      chat.readThreadMetadata(fixture.actor, fixture.threadId),
+    ).resolves.toMatchObject({
+      modelSettings: {
+        "claude-sonnet-5": { effort: "high" },
+        "claude-opus-4-8": { effort: "extra" },
+      },
+    });
     const events = await chat.requestThreadEvents(fixture.actor, {}, [200]);
     if (events.status !== 200) {
       throw new Error("Expected thread events");
@@ -232,18 +228,24 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
     expect(events.body.events).toContainEqual(
       expect.objectContaining({
         kind: "model_selection_updated",
-        reasoningEffort: "high",
+        modelSettingsPatch: {
+          model: "claude-sonnet-5",
+          effort: "high",
+        },
       }),
     );
     expect(events.body.events).toContainEqual(
       expect.objectContaining({
         kind: "model_selection_updated",
-        reasoningEffort: null,
+        modelSettingsPatch: {
+          model: "claude-opus-4-8",
+          effort: "extra",
+        },
       }),
     );
   });
 
-  it("resets incompatible effort on a model switch", async () => {
+  it("preserves each model's effort on a model switch", async () => {
     const fixture = await seedChatThread("Effort model switch");
     await updateFeatureSwitchesForUser(context, fixture, {
       [FeatureSwitchKey.ChatReasoningEffort]: true,
@@ -263,8 +265,10 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       fixture.actor,
       fixture.threadId,
     );
-    expect(metadata.selectedModel).toBe("claude-sonnet-4-6");
-    expect(metadata.reasoningEffort ?? null).toBeNull();
+    expect(metadata).toMatchObject({
+      selectedModel: "claude-sonnet-4-6",
+      modelSettings: { "claude-sonnet-5": { effort: "extra" } },
+    });
   });
 
   it("preserves the thread selection when an old client requests a retired model", async () => {
@@ -326,6 +330,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       title: "Launch plan",
       pinnedAt: null,
       selectedModel: "claude-sonnet-5",
+      modelSettings: {},
       serviceTier: null,
       computerUseHostId: null,
       cloudBrowserEnabled: false,

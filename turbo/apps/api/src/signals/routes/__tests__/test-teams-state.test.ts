@@ -352,7 +352,6 @@ describe("POST /api/test/teams-dispatch-probe", () => {
       seedDefaultAgent: true,
     });
     const publishError = new Error("Ably channel rate limit exceeded");
-    context.mocks.axiomLogging.warn.mockClear();
     context.mocks.ably.publish.mockRejectedValue(publishError);
 
     await dispatchTeamsMessage({

@@ -915,7 +915,7 @@ export function createChatFilesBddApi(context: TestContext) {
       model: SupportedRunModel | null,
       options?: {
         readonly codexServiceTier?: CodexServiceTier | null;
-        readonly reasoningEffort?: ReasoningEffort | null;
+        readonly reasoningEffort?: ReasoningEffort;
         readonly eventId?: string;
       },
     ): Promise<void> {
@@ -991,7 +991,7 @@ export function createChatFilesBddApi(context: TestContext) {
       statuses: readonly (204 | 400 | 401 | 402 | 404)[],
       options?: {
         readonly codexServiceTier?: CodexServiceTier | null;
-        readonly reasoningEffort?: ReasoningEffort | null;
+        readonly reasoningEffort?: ReasoningEffort;
         readonly eventId?: string;
       },
     ) {

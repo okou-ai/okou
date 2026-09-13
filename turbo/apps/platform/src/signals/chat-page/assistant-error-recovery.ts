@@ -507,12 +507,6 @@ function createClassifiedAssistantErrorComputed(
     } else if (structuredKind === "execution-timeout") {
       classified = classifyExecutionTimeout(candidate.event, candidate.error);
     } else {
-      if (
-        structuredKind !== "model-unavailable" &&
-        !get(featureSwitch$)[FeatureSwitchKey.ChatErrorRecovery]
-      ) {
-        return null;
-      }
       const frameworkFromMessage = structuredRecoveryFrameworkFromMessage(
         structuredKind,
         candidate.error,
@@ -555,14 +549,6 @@ function createAssistantErrorRecoveryComputed(
     if (classified === null) {
       return null;
     }
-    if (
-      classified.kind !== "model-unavailable" &&
-      classified.kind !== "execution-timeout" &&
-      !get(featureSwitch$)[FeatureSwitchKey.ChatErrorRecovery]
-    ) {
-      return null;
-    }
-
     let retryAt: string | null = null;
     let limitWindow = classified.limitWindow;
     let resetAndTryAgain: {

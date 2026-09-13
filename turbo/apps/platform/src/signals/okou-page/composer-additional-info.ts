@@ -4,12 +4,14 @@ import type {
   ComposerCreateMode,
   PresentationSlideCount,
 } from "./composer-create.ts";
+import type { VisualizationPreferences } from "./composer-visualization.ts";
 
 /** Freeze the composer's selections as agent-only context for this message. */
 export function buildComposerAdditionalInfo(
   mode: ComposerCreateMode | null,
   videoRunOptions: ChatRunVideoOptionsRequest | undefined,
   presentationSlideCount: PresentationSlideCount,
+  visualization: VisualizationPreferences | undefined,
 ): string | undefined {
   const text = [
     buildVideoRunOptionsPrompt(videoRunOptions ?? null),
@@ -25,6 +27,24 @@ export function buildComposerAdditionalInfo(
           }`,
           "Where this run's message asks for a different slide count, the message wins.",
         ].join("\n")
+      : "",
+    visualization
+      ? [
+          "# Visualization",
+          "The user wants a visualized result for this run.",
+          visualization.output
+            ? `- Preferred output format: ${visualization.output}`
+            : "",
+          visualization.charts.length > 0
+            ? `- Preferred chart types: ${visualization.charts.join(", ")}`
+            : "",
+          "Chart selections are preferences, not requirements. Never invent or alter data to force a preferred chart; use another suitable visual treatment when the data does not support one.",
+          "Where this run's message asks for a different output or visual treatment, the message wins.",
+        ]
+          .filter((part) => {
+            return part.length > 0;
+          })
+          .join("\n")
       : "",
   ]
     .filter((part) => {

@@ -1,11 +1,15 @@
+mod admission;
 mod cache;
 mod credentials;
 mod framing;
 mod harness;
+mod key_wait;
 mod lifecycle;
 mod observations;
 mod passwords;
+mod pooling;
 mod proof;
+mod sessions;
 mod telemetry;
 
 use base64::Engine;
@@ -249,63 +253,52 @@ async fn canonical_shared_address_policy_is_enforced_at_dispatch() {
 }
 
 #[tokio::test]
-async fn sandbox_admission_precedes_parsing_and_jit_and_shutdown_releases_streams() {
-    let mut h = Harness::new(Reply::Hold).await;
-    let resolve = h.resolve(h.credential(true)).await;
-    let first = h.open().await;
-    let second = h.open().await;
-    let rejected = harness::frames(h.open().await).await;
-    assert_eq!(
-        rejected,
-        vec![json!({"type":"error","code":"resource_exhausted","delivery":"not_dispatched"})]
-    );
-    resolve.assert_calls_async(0).await;
-    assert_eq!(
-        h.runtime.permits.available_permits(),
-        super::RUNNER_CAPACITY - 2
-    );
-    assert!(h.control.try_fence_normal_operations().is_err());
-    h.shutdown().await;
-    assert!(harness::frames(first).await.is_empty());
-    assert!(harness::frames(second).await.is_empty());
-    assert_eq!(
-        h.runtime.permits.available_permits(),
-        super::RUNNER_CAPACITY
-    );
-    assert_eq!(h.observed.reservations.load(Ordering::SeqCst), 0);
-    drop(h.control.try_fence_normal_operations().unwrap());
-}
-
-#[tokio::test]
-async fn cancelled_dns_keeps_the_real_stream_and_admission_until_worker_finishes() {
+async fn cancelled_dns_does_not_block_guest_park_or_the_next_runs_quota() {
     let mut h = Harness::new(Reply::default()).await;
     let gate = Arc::new(tokio::sync::Semaphore::new(0));
     *h.network.resolve_gate.lock().unwrap() = Some(Arc::clone(&gate));
     let _resolve = h.resolve(h.credential(true)).await;
-    let frames = {
-        let request = h.request(params());
-        tokio::pin!(request);
-        tokio::select! {
-            _ = &mut request => panic!("DNS should be held"),
-            () = wait_for(|| !h.observed.queries.lock().unwrap().is_empty()) => (),
-        }
-        h.cancel.cancel();
-        // Detached resolver work still owns the actual accepted stream, not only a counter.
-        assert_eq!(h.observed.reservations.load(Ordering::SeqCst), 1);
+    let dispatcher = h.take_dispatcher();
+    let (frames, ()) = tokio::join!(h.request(params()), async {
+        wait_for(|| !h.observed.queries.lock().unwrap().is_empty()).await;
         assert_eq!(
-            h.runtime.permits.available_permits(),
-            super::RUNNER_CAPACITY - 1
+            h.control.try_fence_normal_operations().err(),
+            Some(guest_control_client::NormalOperationFenceRejection::Busy)
         );
-        assert!(h.control.try_fence_normal_operations().is_err());
-        gate.add_permits(1);
-        request.await
-    };
+        // Shutdown delivers terminal+EOF while its DNS task is still held.
+        dispatcher.shutdown().await;
+    });
     assert_eq!(terminal(&frames)["failure_reason"], "cancelled");
     assert_eq!(terminal(&frames)["effects"], "not_started");
-    h.shutdown().await;
-    assert_eq!(h.observed.reservations.load(Ordering::SeqCst), 0);
-    assert!(h.observed.attempts.lock().unwrap().is_empty());
     drop(h.control.try_fence_normal_operations().unwrap());
+    h.restart(crate::ids::RunId::new_v4()).await;
+    let mut pending = Vec::new();
+    for _ in 0..8 {
+        pending.push(h.open().await);
+    }
+    assert_eq!(
+        harness::frames(h.open().await).await[0]["code"],
+        "resource_exhausted"
+    );
+    // Every new-Run slot is usable while old-Run DNS remains held.
+    for guest in pending {
+        assert_eq!(
+            harness::request_frames(
+                guest,
+                r#"{"version":1,"method":"unknown","params":{}}"#.into()
+            )
+            .await[0]["code"],
+            "unknown_method"
+        );
+    }
+    let fence = h.control.try_fence_normal_operations().unwrap();
+    gate.add_permits(1);
+    wait_for(|| h.observed.resolved.load(Ordering::SeqCst) == 1).await;
+    assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
+    assert!(h.observed.attempts.lock().unwrap().is_empty());
+    assert!(h.observed.commands.lock().unwrap().is_empty());
+    drop(fence);
+    h.shutdown().await;
 }
 
 #[tokio::test]

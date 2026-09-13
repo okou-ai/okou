@@ -65,7 +65,7 @@ use crate::park_coordinator::{
     PrepareParkError, PrepareParkEvidence, RunControlBindError,
 };
 use crate::paths::{SandboxPaths, SockPaths};
-use crate::process::{ChildExitNotifier, kill_process_group};
+use crate::process::{ChildExitNotifier, ProcessExitCompletion, kill_process_group};
 use crate::process_log::{
     PROCESS_LOG_RECORD_MAX_BYTES, PROCESS_LOG_RECORD_TRUNCATED, ProcessLogRecord,
     read_process_log_records,
@@ -286,6 +286,7 @@ pub(crate) fn build_fresh_boot_firecracker_config(
 struct ProcessMonitorHandle {
     kill_tx: mpsc::Sender<control::ProcessTerminationRequest>,
     task: tokio::task::JoinHandle<()>,
+    exit: ProcessExitCompletion,
 }
 
 impl ProcessMonitorHandle {
@@ -313,12 +314,15 @@ impl ProcessMonitorHandle {
 #[derive(Default)]
 struct SandboxRuntimeHandles {
     process: Option<ProcessMonitorHandle>,
+    // Retained even when kill_process's consuming monitor wait is cancelled.
+    process_exit: Option<ProcessExitCompletion>,
     control: Option<control::ControlServerHandle>,
     balloon: Option<balloon::ControllerHandle>,
 }
 
 impl SandboxRuntimeHandles {
     fn set_process(&mut self, process: ProcessMonitorHandle) {
+        self.process_exit = Some(process.exit.clone());
         self.process = Some(process);
     }
 
@@ -714,6 +718,20 @@ impl FirecrackerSandbox {
 
     pub(crate) fn preserve_workspace_on_leak_cleanup(&mut self) {
         self.delete_workspace_on_leak_cleanup = false;
+    }
+
+    pub(crate) async fn terminate_process_for_cleanup(&mut self) -> bool {
+        // A cancelled stop may leave Stopping with a live monitor. Cleanup
+        // must still request termination when the public kill transition skips it.
+        self.runtime.kill_process().await;
+        self.process_exit_confirmed().await
+    }
+
+    async fn process_exit_confirmed(&self) -> bool {
+        match &self.runtime.process_exit {
+            Some(exit) => exit.confirmed().await,
+            None => true, // No process was launched.
+        }
     }
 
     pub(crate) fn allow_workspace_delete_on_leak_cleanup(&mut self) {
@@ -1758,6 +1776,7 @@ impl Drop for FirecrackerSandbox {
         {
             let resources = LeakedResources {
                 sandbox_id: self.id.clone(),
+                process_exit: self.runtime.process_exit.take(),
                 cow_device: self.cow_device.take(),
                 network: self.network.take_lease(),
                 sock_dir: self.sock_paths.dir().to_owned(),
@@ -1836,6 +1855,7 @@ fn monitor_process_with_log_readers_and_exit_notifier(
     }
     let id = id.to_owned();
     let (kill_tx, mut kill_rx) = mpsc::channel::<control::ProcessTerminationRequest>(1);
+    let (exit_tx, exit) = ProcessExitCompletion::channel();
     let task = tokio::spawn(async move {
         let exit = wait_for_process_monitor_exit(&mut child, &exit_notifier, &mut kill_rx).await;
         let (prev, status) = match exit {
@@ -1848,6 +1868,7 @@ fn monitor_process_with_log_readers_and_exit_notifier(
             }
             ProcessMonitorExit::Reaped(status) => (publish_process_monitor_exit(&context), status),
         };
+        let _ = exit_tx.send(status.is_ok());
 
         if let Err(error) = &status {
             warn!(id = %id, %error, "process monitor failed to wait for child");
@@ -1873,7 +1894,11 @@ fn monitor_process_with_log_readers_and_exit_notifier(
         readers.drain_or_abort().await;
     });
 
-    ProcessMonitorHandle { kill_tx, task }
+    ProcessMonitorHandle {
+        kill_tx,
+        task,
+        exit,
+    }
 }
 
 async fn wait_for_process_monitor_exit(

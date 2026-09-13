@@ -461,16 +461,6 @@ function stage1Client(storage: ReturnType<typeof createStorageFixture>) {
   })(cronExtractPiMemoryStage1Contract);
 }
 
-function stage1TerminalEvents(): readonly Record<string, unknown>[] {
-  return context.mocks.axiomLogging.info.mock.calls
-    .filter(([message]) => {
-      return message === "Pi memory Stage 1 candidate processed";
-    })
-    .map(([, fields]) => {
-      return fields as Record<string, unknown>;
-    });
-}
-
 beforeEach(async () => {
   mockEnv("R2_USER_STORAGES_BUCKET_NAME", BUCKET);
   mockEnv("CRON_SECRET", CRON_SECRET);
@@ -527,15 +517,8 @@ describe("Pi memory Stage 1 worker", () => {
     await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
     expect(provider.calls).toHaveLength(0);
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
-    expect(context.mocks.axiomLogging.debug).toHaveBeenCalledWith(
-      "Pi memory background worker invocation disabled",
-      expect.objectContaining({ route: "stage1", outcome: "disabled" }),
-    );
 
-    const captured = JSON.stringify({
-      body: response.body,
-      logs: context.mocks.axiomLogging.debug.mock.calls,
-    });
+    const captured = JSON.stringify(response.body);
     expect(captured).not.toContain(INPUT_SECRET);
     expect(captured).not.toContain(fixture.objectKey);
     expect(captured).not.toContain(CRON_SECRET);
@@ -570,26 +553,6 @@ describe("Pi memory Stage 1 worker", () => {
     expect(provider.calls).toHaveLength(1);
     await expect(inspect(fixture)).resolves.toMatchObject({
       status: "succeeded",
-    });
-    const events = stage1TerminalEvents();
-    expect(events).toHaveLength(1);
-    expect(Object.keys(events[0] ?? {}).sort()).toStrictEqual([
-      "attemptCount",
-      "context",
-      "durationMs",
-      "inputTokens",
-      "memoryStorageId",
-      "orgId",
-      "outcome",
-      "outputTokens",
-      "piSessionId",
-      "sourceHistoryHash",
-      "userId",
-    ]);
-    expect(events[0]).toMatchObject({
-      outcome: "succeeded",
-      memoryStorageId: fixture.memory_storage_id,
-      piSessionId,
     });
   });
 
@@ -665,14 +628,6 @@ describe("Pi memory Stage 1 worker", () => {
       ]),
     );
     await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
-    const serializedLogs = JSON.stringify([
-      ...context.mocks.axiomLogging.debug.mock.calls,
-      ...context.mocks.axiomLogging.info.mock.calls,
-      ...context.mocks.axiomLogging.warn.mock.calls,
-      ...context.mocks.axiomLogging.error.mock.calls,
-    ]);
-    expect(serializedLogs).not.toContain(INPUT_SECRET);
-    expect(serializedLogs).not.toContain(OUTPUT_SECRET);
   });
 
   it("isolates malformed and cyclic sources permanently before the provider", async () => {
@@ -991,13 +946,9 @@ describe("Pi memory Stage 1 worker", () => {
       rollout_summary: null,
       rollout_slug: null,
     });
-    expect(stage1TerminalEvents()).toHaveLength(1);
-    expect(stage1TerminalEvents()[0]).toMatchObject({
-      outcome: "succeeded_no_output",
-    });
   });
 
-  it("redacts an unsafe secret-bearing slug before retry and telemetry", async () => {
+  it("redacts an unsafe secret-bearing slug before retry", async () => {
     const storage = createStorageFixture();
     const piSessionId = randomUUID();
     const fixture = await storage.seed({
@@ -1021,13 +972,6 @@ describe("Pi memory Stage 1 worker", () => {
       last_error_class: "provider_output_invalid",
       rollout_slug: null,
     });
-    const terminalEvents = stage1TerminalEvents();
-    expect(terminalEvents).toHaveLength(1);
-    expect(terminalEvents[0]).toMatchObject({
-      outcome: "retryable_failure",
-      errorClass: "provider_output_invalid",
-    });
-    expect(JSON.stringify(terminalEvents)).not.toContain(OUTPUT_SECRET);
   });
 
   it("retries exactly owned work when cancellation interrupts the provider", async () => {

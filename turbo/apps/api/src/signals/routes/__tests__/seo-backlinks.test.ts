@@ -138,38 +138,6 @@ describe("SEO backlinks provider retries", () => {
         [{ target: "example.com", include_subdomains: true }],
       ]);
       expect(beforeCredits - (await credits())).toBe(30);
-      expect(context.mocks.axiomLogging.warn).toHaveBeenCalledWith(
-        "DataForSEO API request failed",
-        expect.objectContaining({
-          attempt: 1,
-          httpStatus,
-          providerStatusCode: 20_000,
-          providerCostUsd: 0.012,
-          tasksCount: 1,
-          tasksError: 0,
-          taskId: "failed-task",
-          taskStatusCode: 20_000,
-          taskCostUsd: 0.012,
-        }),
-      );
-      expect(context.mocks.axiomLogging.debug).toHaveBeenCalledWith(
-        "DataForSEO API request completed",
-        expect.objectContaining({
-          attempt: 2,
-          httpStatus: 200,
-          taskId: "successful-task",
-          taskStatusCode: 20_000,
-          providerCostUsd: 0.024,
-          taskCostUsd: 0.024,
-        }),
-      );
-      const warnings = JSON.stringify(
-        context.mocks.axiomLogging.warn.mock.calls,
-      );
-      expect(warnings).not.toContain("example.com");
-      expect(warnings).not.toContain("test-dataforseo-login");
-      expect(warnings).not.toContain("test-dataforseo-password");
-      expect(warnings).not.toContain("Basic ");
     },
   );
 
@@ -196,10 +164,6 @@ describe("SEO backlinks provider retries", () => {
       expect(response.body.error.code).toBe("DATAFORSEO_UPSTREAM_ERROR");
       expect(providerRequests).toBe(2);
       await expect(credits()).resolves.toBe(beforeCredits);
-      expect(context.mocks.axiomLogging.warn).toHaveBeenCalledWith(
-        "DataForSEO API request failed",
-        expect.objectContaining({ attempt: 2, httpStatus }),
-      );
     },
   );
 

@@ -623,3 +623,116 @@ with the text beside it.
 A batch that changes geometry on purpose cannot be accepted by an unchanged-code
 replay. It needs the per-page runners, or an explicit reviewed delta list, or
 both.
+
+## Mic motion batch
+
+`mic-motion-cases.json` and `run-mic-motion.ts` cover the composer microphone
+button on the real deployed `/chats/:threadId` page in Light/Dark at device
+scale factor 1 and 2. Run `pnpm style:migration:mic-motion` from `e2e`,
+supplying App/API origins, their full build SHAs, the source SHA, private Clerk
+TEST storage state, an output directory and an optional frozen `--baseline`
+directory. When an immutable App or API deployment needs its original PR alias
+for Clerk or CORS, pass that alias as `--app-url` / `--api-url` and pin the
+immutable deployments with `--app-artifact-url` / `--api-artifact-url`; both
+identities are retained in the manifest.
+
+The fixture controls only external API/bootstrap and browser-media boundaries.
+It keeps the deployed Router, production voice commands, component branches and
+CSS intact; it performs no Agent run, purchase or real transcription. Each case
+checks starting and transcribing spinners at 0/175/350/525 ms, the recording
+meter at the four production levels (0/33/67/100%), and unpaused animation
+progress for both spinner states. Full-page captures have no masks and reuse the
+existing `channel-rounding-v1` pixel bounds. The archive excludes private
+storage state and records browser, fixture, runner, source and deployment
+identities.
+
+Capture and upload an unmigrated-target BEFORE/A-A pair before accepting the
+consumer migration, then replay the frozen pair against the final PR
+deployment. Record the archive URL and SHA-256 in the PR and migration
+manifest. A pinned phase proves appearance at that phase; only the separate
+unpaused observation proves the normal-motion contract.
+
+### Mic motion acceptance record (#33345)
+
+The [frozen BEFORE and unchanged A/A archive](https://a.okou.io/tu82fjalef.zip)
+has SHA-256
+`cb2d57ff2c022af59fa893e08f72e4c538f4d4459ac35d9665950894ea0959c2`.
+Its immutable merge build `f3ae0b78c34b93d6a528c64851a8ac726ff8697f`
+starts from the same base as #33345 and leaves the target App stylesheet and
+composer source unchanged. The [AFTER and raw-diff archive](https://a.okou.io/s75ljvx543.zip)
+has SHA-256
+`23a02bd90b48702a8dea2f292eede718627685f08dc671de4e205478892ed716`
+and records target source `2e77c692de3b7e311c2547a03a30d89153ac5096`
+in merge build `99b0374201651de592a1ded743ef8ebe74145e88`.
+
+All 48 unchanged-build captures and all 48 migrated captures have zero content
+or rounding pixels changed. Starting and transcribing normal-motion checks
+progressed with the expected 700 ms infinite animation in all four cases. Raw
+computed styles differ only because the legacy `9999px` radius and Tailwind's
+`rounded-full` serialize to different, fully rounded values; the semantic
+observations match in every capture. Both archives were anonymously downloaded
+and SHA-256 verified. This is bounded Chromium acceptance with controlled
+bootstrap, API and browser-media boundaries; no Agent run, purchase, connector,
+real microphone recording or real transcription occurred.
+
+## Session list title batch
+
+The `session-list-title` batch owns `okou-nav-title`, `okou-nav-title-row` and
+`okou-nav-recent-label`: the clipped sidebar thread title, the row that drives
+its hover/focus travel, and the "Recent" header. It removes 17 CSS declarations
+and 5 consumption sites — 3 production sites in `sidebar-threads.tsx` and 2 test
+references in `sidebar.test.tsx`. `okou-nav-recent-label` carried no
+declarations, so its removal is a pure class deletion. `@property --okou-nav-title-shift` stays in
+the App stylesheet, because a registration is not a class selector and the
+transition cannot interpolate a length without it.
+
+`sidebar-thread-title-cases.json` registers the deployed surface: the real
+`/chats/:threadId` chat list in Light/Dark desktop at device scale 1 and 2, and
+narrow touch/DPR 2. That case file has no runner yet; the acceptance evidence
+below is a local equivalence harness, so the batch is `implemented` rather than
+`baselined` or `verified`.
+
+The harness compiles both sides with the App's own Tailwind entry point —
+`before` from `git show origin/main:` of the stylesheet with main's class
+strings, `after` from the branch — and renders the real ancestor chain
+(`.okou-app` shell, `aside.okou-nav` chat list column, the scroll content, the
+`.group` row wrapper, the `Link` row, the label wrapper) in system Chromium over
+CDP. Headless Chromium reports `(hover: hover)` as false, which silently
+disables every Tailwind `hover:` utility, so the fine-pointer run sets
+`--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4`
+and the coarse-pointer product is measured in a separate run without it.
+
+Each capture covers two titles (one clipped, one that fits) times rest, hovered
+and focus-visible, times the row's three template branches, with the pseudo-state
+forced on both the row and its `.group` ancestor and the travel allowed to
+settle. Every capture compares full-frame pixels and a computed-style and
+geometry observation of the title box and its text span.
+
+All 18 theme states (the default palette plus the eight gradient palettes, each
+in Light and Dark) report 0 changed pixels and 0 observation differences in the
+fine-pointer, coarse-pointer and reduced-motion runs. `GradientColorThemes` is
+disabled by default, so the default palette is the online-visible result and the
+palette states are a superset.
+
+The clipping box composes its utilities through `cn()` in one small
+`ChatThreadItemTitle` component rather than as a single opaque attribute string.
+`cn()` was checked to return that class list byte-identically, and the Tailwind
+`no-unknown-classes` rule was confirmed to still report an unknown class placed
+inside the call, so neither readability change costs coverage.
+
+The negative control is part of the acceptance, because a diff channel that
+cannot fail proves nothing. Dropping the merged `:is()` hover/focus travel
+changes 10,284 pixels and 6 observations, which is what establishes that the
+merged variant is load-bearing rather than silently inert. Dropping the text
+span's `[transform:translateX(var(--okou-nav-title-shift))]` changes 10,266
+pixels, and narrowing the fade from 24px to 23px changes 1,161, so the channel
+resolves both a gross and a one-pixel-scale change. Three earlier controls — dropping
+`overflow-hidden`, `mask-no-repeat` and `min-w-0` — changed 0 pixels and are
+retained: the mask already clips the overflow, `mask-size: 100% 100%` leaves
+nothing for `mask-repeat` to tile, and `overflow: hidden` already resolves the
+flex item's automatic minimum size to zero. Those three utilities are redundant
+in this composition and were kept only because the retired rule declared them.
+
+This is bounded local Chromium evidence against a reconstructed ancestor chain,
+not a deployed-preview capture: it does not certify the Base UI scroll area's
+own DOM, WebKit, native surfaces, or real navigation and virtualization.

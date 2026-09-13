@@ -236,7 +236,7 @@ describe("Codex expiry metadata resilience", () => {
   });
 
   it.each([false, true])(
-    "quietly cools down after 503 and restores expiry at 60 seconds, accounts=%s",
+    "cools down after 503 and restores expiry at 60 seconds, accounts=%s",
     async (accounts) => {
       mockNow(Date.UTC(2030, 0, 1));
       const remote = upstream();
@@ -247,23 +247,12 @@ describe("Codex expiry metadata resilience", () => {
           headers: { "Retry-After": "120" },
         });
       };
-      const expiryLogs = () => {
-        return context.mocks.axiomLogging.info.mock.calls.filter(
-          ([message]) => {
-            return (
-              typeof message === "string" &&
-              message.includes("codex reset credit expiry")
-            );
-          },
-        );
-      };
       const start = now();
       expectExpiry(await user.list(), null, 2);
       expectExpiry(await user.list(), null, 3);
       mockNow(start + 59_999);
       expectExpiry(await user.list(), null, 4);
       expect(remote.detailsCalls).toBe(2);
-      expect(expiryLogs()).toHaveLength(0);
 
       remote.details = () => {
         return expiryResponse(remote.expiry);
@@ -271,26 +260,8 @@ describe("Codex expiry metadata resilience", () => {
       mockNow(start + 60_000);
       expectExpiry(await user.list(), remote.expiry, 5);
       expect(remote.detailsCalls).toBe(3);
-      // The warm-instance aggregate spans bindings; its window need not align
-      // with this entry's cooldown. It may emit at most once in this minute.
-      const summaries = expiryLogs();
-      expect(summaries.length).toBeLessThanOrEqual(1);
-      for (const [message] of summaries) {
-        expect(message).toBe("codex reset credit expiry outcomes");
-      }
-      for (const sensitive of [
-        user.orgId,
-        user.userId,
-        user.auth.accountId,
-        user.auth.accessToken,
-      ]) {
-        expect(JSON.stringify(summaries)).not.toContain(sensitive);
-      }
       expectExpiry(await user.list(), remote.expiry, 6);
       expect(remote.detailsCalls).toBe(3);
-      expect(expiryLogs()).toHaveLength(summaries.length);
-      expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
-      expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
       expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     },
   );
@@ -329,7 +300,6 @@ describe("Codex expiry metadata resilience", () => {
       mockNow(start + 420_000);
       expectExpiry(await user.list(), recoveredExpiry, 8);
       expect(remote.detailsCalls).toBe(5);
-      expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
     },
   );
 
@@ -364,8 +334,6 @@ describe("Codex expiry metadata resilience", () => {
       expectExpiry(results[1], null, 3);
       expectExpiry(await user.list(), null, 4);
       expect(remote.detailsCalls).toBe(2);
-      expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
-      expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
       expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     },
   );
@@ -409,7 +377,6 @@ describe("Codex expiry metadata resilience", () => {
       mockNow(start + cooldown);
       expectExpiry(await user.list(), remote.expiry, 4);
       expect(remote.detailsCalls).toBe(3);
-      expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
     },
   );
 
@@ -449,7 +416,6 @@ describe("Codex expiry metadata resilience", () => {
     expect(remote.detailsCalls).toBe(2);
     expectExpiry(await user.list(), remote.expiry, 4);
     expect(remote.detailsCalls).toBe(2);
-    expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
   });
 
   it("aborts all-waiter work and lets a new flight survive late cleanup", async () => {
@@ -519,11 +485,10 @@ describe("Codex expiry metadata resilience", () => {
     mockNow(now() + 1);
     expectExpiry(await user.list(), remote.expiry, 4);
     expect(remote.detailsCalls).toBe(3);
-    expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
   });
 
   it.each([401, 500, "json", "schema", "transport"] as const)(
-    "keeps unexpected %s failures diagnosable and preserves the count",
+    "omits the expiry after an unexpected %s failure and preserves the count",
     async (failure) => {
       const remote = upstream();
       const user = await fixture();
@@ -539,10 +504,7 @@ describe("Codex expiry metadata resilience", () => {
               : new HttpResponse(null, { status: failure });
       };
       expectExpiry(await user.list(), null, 2);
-      expect(context.mocks.axiomLogging.warn).toHaveBeenCalledWith(
-        expect.stringContaining("failed to read codex reset credit expiry"),
-        expect.anything(),
-      );
+      expect(remote.detailsCalls).toBe(2);
     },
   );
 
@@ -854,9 +816,12 @@ describe("Codex expiry metadata resilience", () => {
     // More than 256 bindings must evict the oldest, without time manipulation.
     // Token-scoped Clerk responses let independent owners prepare concurrently
     // without racing the shared session mock or creating unrelated organizations.
-    for (let index = 0; index < userIds.length; index += 8) {
-      await Promise.all(
-        userIds.slice(index, index + 8).map(async (userId) => {
+    // Keep eight owners in flight without waiting for a whole batch's slowest
+    // request before starting the next owner.
+    const remainingOwners = userIds.values();
+    const preparations = await Promise.allSettled(
+      Array.from({ length: 8 }, async () => {
+        for (const userId of remainingOwners) {
           const ownerHeaders = { authorization: `Bearer ${userId}` };
           await accept(
             providers.upsert({
@@ -874,8 +839,15 @@ describe("Codex expiry metadata resilience", () => {
             [200],
           );
           expectExpiry(listed.body.modelProviders, remote.expiry);
-        }),
-      );
+        }
+      }),
+    );
+    // Join every worker before restoring the first owner's session, including
+    // when another owner's request or expiry assertion fails.
+    for (const preparation of preparations) {
+      if (preparation.status === "rejected") {
+        throw preparation.reason;
+      }
     }
     const before = remote.detailsCalls;
     remote.expiry = new Date(now() + 7_200_000).toISOString();

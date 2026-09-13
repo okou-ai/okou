@@ -43,7 +43,6 @@ import {
 } from "./helpers/fake-chat-event-r2";
 import { createOpsLogsApi } from "./helpers/api-bdd-ops-logs";
 import { createRouteMocks } from "./helpers/route-test";
-import { auxiliaryResults } from "./helpers/auxiliary-generation";
 
 const context = testContext();
 const store = createStore();
@@ -301,15 +300,6 @@ describe("archived chat event consumers", () => {
         },
       ],
     });
-    expect(auxiliaryResults(context)).toStrictEqual([
-      expect.objectContaining({
-        feature: "shared_thread_title",
-        outcome: "degraded",
-        reason: "provider_unavailable",
-      }),
-    ]);
-    expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
-    expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
     expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
   });
 

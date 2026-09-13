@@ -320,8 +320,7 @@ test("Edit or remove a quoted feedback item", async () => {
   expect(composer).toHaveTextContent("Keep this ordinary draft text.");
 });
 
-test("Manage multiple quoted passages in one feedback message", async () => {
-  const user = userEvent.setup({ delay: null });
+async function openMultipleQuoteFeedback() {
   const sends: CapturedChatSend[] = [];
   installCapabilityChat({
     events: completedConversation(`${FIRST_PASSAGE}\n\n${SECOND_PASSAGE}`),
@@ -333,11 +332,17 @@ test("Manage multiple quoted passages in one feedback message", async () => {
   await setupPage({ context, path: RUN_PATH });
 
   await readyChat();
+  return sends;
+}
+
+test("Edit and send independent notes on multiple quoted passages", async () => {
+  const user = userEvent.setup({ delay: null });
+  const sends = await openMultipleQuoteFeedback();
   await selectPassage("launch plan has three careful stages");
   await user.type(await quoteSelectedPassage(), "Add an owner to this stage.");
   await selectPassage("unrelated answer covers a separate decision");
   await quoteSelectedPassage();
-  let notes = feedbackNotes();
+  const notes = feedbackNotes();
 
   expect(notes).toHaveLength(2);
   expect(notes[0]).toHaveTextContent("Add an owner to this stage.");
@@ -363,12 +368,39 @@ test("Manage multiple quoted passages in one feedback message", async () => {
 
   await expect(findEnabledButton("Stop")).resolves.toBeVisible();
   expect(feedbackItems()).toHaveLength(0);
+});
+
+test("Quoting passages again clears comments from the previous feedback message", async () => {
+  const user = userEvent.setup({ delay: null });
+  const sends = await openMultipleQuoteFeedback();
+  await selectPassage("launch plan has three careful stages");
+  await user.type(await quoteSelectedPassage(), "Add an owner to this stage.");
+  await selectPassage("unrelated answer covers a separate decision");
+  await user.type(
+    await quoteSelectedPassage(),
+    "Acknowledge the separate decision.",
+  );
+  await findEnabledButton("Send");
+  click(buttonByLabel("Send"));
+  const commented = await waitForSend(sends, 1);
+  expect(feedbackParts(commented.userMessage)).toMatchObject([
+    {
+      quote: "launch plan has three careful stages",
+      note: [{ type: "text", text: "Add an owner to this stage." }],
+    },
+    {
+      quote: "unrelated answer covers a separate decision",
+      note: [{ type: "text", text: "Acknowledge the separate decision." }],
+    },
+  ]);
+  await expect(findEnabledButton("Stop")).resolves.toBeVisible();
+  expect(feedbackItems()).toHaveLength(0);
 
   await selectPassage("launch plan has three careful stages");
   await quoteSelectedPassage();
   await selectPassage("unrelated answer covers a separate decision");
   await quoteSelectedPassage();
-  notes = feedbackNotes();
+  const notes = feedbackNotes();
   expect(notes).toHaveLength(2);
   expect(notes[0]).not.toHaveTextContent("Add an owner to this stage.");
   expect(notes[1]).not.toHaveTextContent("Acknowledge the separate decision.");

@@ -207,10 +207,25 @@ interface RealtimeSubscribeOptions {
   readonly runOnSubscribe?: boolean;
 }
 
+export type RealtimeInvalidationCommands = readonly [
+  Command<void, []>,
+  ...Command<void, []>[],
+];
+
+type RealtimeLoopAction =
+  | {
+      readonly kind: "command";
+      readonly command$: Command<Promise<boolean> | boolean, [AbortSignal]>;
+    }
+  | {
+      readonly kind: "invalidate";
+      readonly invalidations: RealtimeInvalidationCommands;
+    };
+
 interface RealtimeLoopArgs {
   readonly channel: RealtimeSubscriptionChannel;
   readonly topic: string;
-  readonly loopCommand$: Command<Promise<boolean> | boolean, [AbortSignal]>;
+  readonly action: RealtimeLoopAction;
   readonly options?: RealtimeSubscribeOptions;
 }
 
@@ -233,6 +248,13 @@ interface SetAblyLoopArgs {
   readonly scope?: RealtimeChannelScope;
   readonly topic: string;
   readonly loopCommand$: Command<Promise<boolean> | boolean, [AbortSignal]>;
+  readonly options?: RealtimeSubscribeOptions;
+}
+
+interface SetAblyInvalidationLoopArgs {
+  readonly scope?: RealtimeChannelScope;
+  readonly topic: string;
+  readonly invalidations: RealtimeInvalidationCommands;
   readonly options?: RealtimeSubscribeOptions;
 }
 
@@ -334,7 +356,7 @@ async function subscribeChannel(
 const runWithChannel$ = command(
   async (
     { set },
-    { channel, topic, loopCommand$, options }: RealtimeLoopArgs,
+    { channel, topic, action, options }: RealtimeLoopArgs,
     signal: AbortSignal,
   ): Promise<void> => {
     // No implicit prime on subscribe by default. Callers whose loop body sets
@@ -390,7 +412,14 @@ const runWithChannel$ = command(
               poked = false;
               // eslint-disable-next-line no-restricted-syntax -- polling loop requires try/catch for transient error retry with backoff
               try {
-                const done = await set(loopCommand$, loopSignal);
+                let done = false;
+                if (action.kind === "command") {
+                  done = await set(action.command$, loopSignal);
+                } else {
+                  for (const invalidation$ of action.invalidations) {
+                    set(invalidation$);
+                  }
+                }
                 loopSignal.throwIfAborted();
                 transientRetryCount = 0;
                 if (done) {
@@ -1126,7 +1155,40 @@ export const setAblyLoop$ = command(
     signal.throwIfAborted();
     await set(
       runWithChannel$,
-      { channel, topic, loopCommand$, options },
+      {
+        channel,
+        topic,
+        action: { kind: "command", command$: loopCommand$ },
+        options,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+  },
+);
+
+/** Run existing synchronous invalidation commands for every notification. */
+export const setAblyInvalidationLoop$ = command(
+  async (
+    { set },
+    {
+      scope = "user",
+      topic,
+      invalidations,
+      options,
+    }: SetAblyInvalidationLoopArgs,
+    signal: AbortSignal,
+  ) => {
+    const channel = await set(realtimeChannel$, scope, topic, signal);
+    signal.throwIfAborted();
+    await set(
+      runWithChannel$,
+      {
+        channel,
+        topic,
+        action: { kind: "invalidate", invalidations },
+        options,
+      },
       signal,
     );
     signal.throwIfAborted();

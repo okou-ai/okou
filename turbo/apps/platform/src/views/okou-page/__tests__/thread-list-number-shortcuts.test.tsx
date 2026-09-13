@@ -1,7 +1,6 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   click,
@@ -21,9 +20,6 @@ import {
 } from "./chat-list-test-helpers.ts";
 
 const context = testContext();
-const featureSwitches = {
-  [FeatureSwitchKey.StableChatThreadNavigation]: true,
-} as const;
 const SEARCH_LABEL = "Search workspace...";
 
 function hintKeys(container: ParentNode): string[] {
@@ -107,7 +103,6 @@ async function openNumberShortcutPage(
         ? `/chats/${threads[4]!.id}`
         : `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     ...workspace.pageOptions,
-    featureSwitches,
   });
   await waitFor(() => {
     expect(sidebarThreadTitles()).toStrictEqual([
@@ -214,7 +209,6 @@ test("Cancel a short hold and clear hints on release or window blur", async () =
     context,
     path: `/chats/${thread.id}`,
     ...workspace.pageOptions,
-    featureSwitches,
   });
   await waitFor(() => {
     expect(sidebarThreadTitles()).toStrictEqual(["Hold lifecycle"]);
@@ -257,7 +251,6 @@ test("Keep browser mode free of number shortcuts and react to display mode chang
     context,
     path: `/chats/${first.id}`,
     ...workspace.pageOptions,
-    featureSwitches,
   });
   await waitFor(() => {
     expect(sidebarThreadTitles()).toStrictEqual([
@@ -346,7 +339,6 @@ test("Number filtered threads and give the search dialog priority over the list"
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     ...workspace.pageOptions,
-    featureSwitches,
   });
   await waitFor(() => {
     expect(sidebarThreadTitles()).toHaveLength(2);

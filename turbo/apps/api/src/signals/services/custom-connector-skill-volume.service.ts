@@ -55,6 +55,7 @@ export const prepareCustomConnectorSkillVolume$ = command(
         orgId: args.orgId,
         storageName: getCustomConnectorSkillStorageName(args.connectorId),
         files: buildCustomConnectorSkillFiles(args),
+        piResourceIndex: true,
       },
       signal,
     );

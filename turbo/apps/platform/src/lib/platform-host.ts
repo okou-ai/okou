@@ -157,6 +157,14 @@ export function resolvePublicArtifactsBaseUrl():
   return resolvePlatformRuntimeConfig().publicArtifactsBaseUrl;
 }
 
+export function resolveArtifactImageTransformOrigin():
+  | "https://a.okou.io"
+  | "https://cdn.vm7.io" {
+  return resolvePlatformEnvironment() === "production"
+    ? "https://a.okou.io"
+    : "https://cdn.vm7.io";
+}
+
 export function resolveOfficeDocumentViewerBaseUrl(): string {
   return OFFICE_DOCUMENT_VIEWER_BASE_URL;
 }

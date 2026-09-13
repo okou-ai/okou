@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { afterEach, describe, expect, it } from "vitest";
 import { DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL } from "@okouai/api-contracts/contracts/model-providers";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { testContext } from "../../../__tests__/test-context";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
@@ -11,6 +12,7 @@ import {
 } from "./helpers/api-bdd-auth-org";
 import { expectApiError } from "./helpers/api-bdd";
 import { createUserConfigBddApi } from "./helpers/api-bdd-user-config";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 /*
 Round-5 cluster auth-03 (AUTH-01/AUTH-03): user-owned configuration plus the
@@ -273,6 +275,7 @@ describe("AUTH-03 user model preference", () => {
     expect(defaults).toStrictEqual({
       selectedModel: null,
       serviceTier: null,
+      modelSettings: {},
       selectedVideoModel: null,
       selectedImageModel: null,
       updatedAt: null,
@@ -295,6 +298,7 @@ describe("AUTH-03 user model preference", () => {
     expect(cleared).toStrictEqual({
       selectedModel: null,
       serviceTier: null,
+      modelSettings: {},
       selectedVideoModel: null,
       selectedImageModel: null,
       updatedAt: null,
@@ -303,10 +307,83 @@ describe("AUTH-03 user model preference", () => {
     expect(readCleared).toStrictEqual({
       selectedModel: null,
       serviceTier: null,
+      modelSettings: {},
       selectedVideoModel: null,
       selectedImageModel: null,
       updatedAt: null,
     });
+  });
+
+  it("stores independent model effort preferences without deleting prior entries", async () => {
+    const admin = api.user();
+    await onboardAdmin(admin, { slug: slug("bdd-uc-effort") });
+
+    const disabled = await cfg.requestUpdateModelPreference(
+      admin,
+      {
+        selectedModel: "gpt-6-astra",
+        serviceTier: null,
+        modelSettingsPatch: { model: "gpt-6-astra", effort: "high" },
+      },
+      [400],
+    );
+    expectApiError(disabled.body);
+    expect(disabled.body.error.message).toBe(
+      "Reasoning effort selection is not enabled",
+    );
+
+    if (!admin.orgId) {
+      throw new Error("Expected an organization-backed test actor");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      {
+        userId: admin.userId,
+        orgId: admin.orgId,
+        orgRole: admin.orgRole,
+      },
+      {
+        [FeatureSwitchKey.ChatReasoningEffort]: true,
+      },
+    );
+    const astra = await cfg.updateModelPreference(admin, {
+      selectedModel: "gpt-6-astra",
+      serviceTier: null,
+      modelSettingsPatch: { model: "gpt-6-astra", effort: "high" },
+    });
+    expect(astra.modelSettings).toStrictEqual({
+      "gpt-6-astra": { effort: "high" },
+    });
+
+    const switched = await cfg.updateModelPreference(admin, {
+      selectedModel: "gpt-5.6-luna",
+      serviceTier: null,
+    });
+    expect(switched.modelSettings).toStrictEqual(astra.modelSettings);
+
+    const luna = await cfg.updateModelPreference(admin, {
+      selectedModel: "gpt-5.6-luna",
+      serviceTier: null,
+      modelSettingsPatch: { model: "gpt-5.6-luna", effort: "low" },
+    });
+    expect(luna.modelSettings).toStrictEqual({
+      "gpt-6-astra": { effort: "high" },
+      "gpt-5.6-luna": { effort: "low" },
+    });
+
+    const unsupported = await cfg.requestUpdateModelPreference(
+      admin,
+      {
+        selectedModel: "gpt-5.6-luna",
+        serviceTier: null,
+        modelSettingsPatch: { model: "gpt-5.6-luna", effort: "ultra" },
+      },
+      [400],
+    );
+    expectApiError(unsupported.body);
+    expect(unsupported.body.error.message).toBe(
+      "Reasoning effort is not supported by the selected model",
+    );
   });
 
   it("rejects contract-invalid model preference bodies and unauthenticated access", async () => {
@@ -642,7 +719,7 @@ describe("AUTH-01 sandbox and agent bearers", () => {
     const admin = api.user();
     api.acceptAgentStorageWrites();
     const agent = await api.createAgent(admin, {
-      displayName: "BDD Zero Cap Agent",
+      displayName: "BDD Nova Cap Agent",
     });
     cfg.mockMembership(admin, "org:admin");
 

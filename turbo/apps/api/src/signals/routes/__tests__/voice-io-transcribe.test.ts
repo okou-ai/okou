@@ -1867,7 +1867,7 @@ describe("voice provider capacity recovery", () => {
     },
   );
 
-  it("reports invalid structured Google output without logging its transcript", async () => {
+  it("reports invalid structured Google output as a transcription failure", async () => {
     await enabledActor();
     server.use(
       http.post(VERTEX_VOICE_URL, () => {
@@ -1886,17 +1886,6 @@ describe("voice provider capacity recovery", () => {
       [502],
     );
     expect(response.body.error.code).toBe("VOICE_TRANSCRIPTION_FAILED");
-    expect(context.mocks.axiomLogging.warn).toHaveBeenCalledExactlyOnceWith(
-      "Google voice request rejected",
-      expect.objectContaining({
-        reason: "invalid_output",
-        operation: "voice_transcript_and_polish",
-        status: 502,
-      }),
-    );
-    expect(
-      JSON.stringify(context.mocks.axiomLogging.warn.mock.calls),
-    ).not.toContain("private transcript");
   });
 
   it.each([
@@ -1988,13 +1977,7 @@ describe("voice provider capacity recovery", () => {
       );
       const usage = await accept(quota.get({ headers }), [200]);
       expect(usage.body).toMatchObject({ count: 1, allowed: true });
-      expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
-      expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
       expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
-      expect(context.mocks.axiomLogging.debug).toHaveBeenCalledWith(
-        "Voice provider request recovered",
-        expect.objectContaining({ attempts: 2, provider }),
-      );
     },
   );
 
@@ -2031,18 +2014,6 @@ describe("voice provider capacity recovery", () => {
     );
     expect(response.body.error.code).toBe("PROVIDER_UNAVAILABLE");
     expect(attempts).toBe(3);
-    expect(context.mocks.axiomLogging.warn).toHaveBeenCalledExactlyOnceWith(
-      "Voice provider recovery exhausted",
-      expect.objectContaining({
-        source: "completion",
-        status: 429,
-        errorType: "rate_limit_exceeded",
-        attempts: 3,
-      }),
-    );
-    expect(
-      JSON.stringify(context.mocks.axiomLogging.warn.mock.calls),
-    ).not.toContain("private");
   });
 
   it.each([
@@ -2074,16 +2045,9 @@ describe("voice provider capacity recovery", () => {
     expect(response.body.error.code).toBe("VOICE_TRANSCRIPTION_FAILED");
     expect(attempts).toBe(1);
     expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
-    expect(context.mocks.axiomLogging.warn).toHaveBeenCalledExactlyOnceWith(
-      "OpenRouter voice completion rejected",
-      expect.objectContaining({
-        source: "completion",
-        model: expect.any(String),
-      }),
-    );
   });
 
-  it("ends persistent capacity failures after three attempts with actionable reporting", async () => {
+  it("ends persistent capacity failures after three attempts", async () => {
     await enabledActor();
     let attempts = 0;
     server.use(
@@ -2107,10 +2071,6 @@ describe("voice provider capacity recovery", () => {
         "Speech recognition is temporarily busy. Please retry in a moment.",
     });
     expect(attempts).toBe(3);
-    expect(context.mocks.axiomLogging.warn).toHaveBeenCalledExactlyOnceWith(
-      "Voice provider recovery exhausted",
-      expect.objectContaining({ status: 429, attempts: 3 }),
-    );
   });
 
   it.each([
@@ -2246,10 +2206,6 @@ describe("voice provider capacity recovery", () => {
     const response = await accept(pending, [503]);
     expect(response.body.error.code).toBe("PROVIDER_UNAVAILABLE");
     expect(attempts).toBe(2);
-    expect(context.mocks.axiomLogging.warn).toHaveBeenCalledExactlyOnceWith(
-      "Voice provider recovery exhausted",
-      expect.objectContaining({ status: 429, attempts: 2 }),
-    );
   });
 
   it.each(["http", "completion"])(
@@ -2312,18 +2268,10 @@ describe("voice provider capacity recovery", () => {
       const response = await accept(pending, [503]);
       expect(response.body.error.code).toBe("PROVIDER_UNAVAILABLE");
       expect(attempts).toBe(2);
-      expect(context.mocks.axiomLogging.debug).not.toHaveBeenCalledWith(
-        "Voice provider request recovered",
-        expect.anything(),
-      );
-      expect(context.mocks.axiomLogging.warn).toHaveBeenCalledExactlyOnceWith(
-        "Voice provider recovery exhausted",
-        expect.objectContaining({ status: 429, attempts: 2 }),
-      );
     },
   );
 
-  it("keeps provider authentication errors non-retryable and actionable", async () => {
+  it("keeps provider authentication errors non-retryable", async () => {
     await enabledActor();
     let attempts = 0;
     server.use(
@@ -2344,10 +2292,6 @@ describe("voice provider capacity recovery", () => {
     expect(response.body.error.code).toBe("VOICE_TRANSCRIPTION_FAILED");
     expect(attempts).toBe(1);
     expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
-    expect(context.mocks.axiomLogging.warn).toHaveBeenCalledWith(
-      "Google voice request rejected",
-      expect.objectContaining({ status: 401 }),
-    );
   });
 
   it("keeps an invalid successful response as a genuine transcription failure", async () => {
@@ -2368,7 +2312,7 @@ describe("voice provider capacity recovery", () => {
     expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
   });
 
-  it("cancels backoff with the request owner without reporting provider exhaustion", async () => {
+  it("cancels backoff with the request owner", async () => {
     await enabledActor();
     const controller = new AbortController();
     const waiting = createDeferredPromise<void>(context.signal);
@@ -2406,8 +2350,6 @@ describe("voice provider capacity recovery", () => {
       reason: { name: "AbortError", message: "Request cancelled" },
     });
     expect(attempts).toBe(1);
-    expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
-    expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
     expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
   });
 
@@ -2450,7 +2392,6 @@ describe("voice provider capacity recovery", () => {
         language: "und",
       });
       expect(attempts).toBe(2);
-      expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
     },
   );
 
@@ -2498,7 +2439,6 @@ describe("voice provider capacity recovery", () => {
       });
       expect(asrAttempts).toBe(1);
       expect(polishAttempts).toBe(2);
-      expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
     },
   );
 });

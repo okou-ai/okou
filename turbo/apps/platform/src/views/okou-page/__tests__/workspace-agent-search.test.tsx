@@ -38,6 +38,7 @@ function prepareAgents() {
     },
   ].map((agent) => {
     return {
+      isDefaultAgent: agent.agentId === DEFAULT_AGENT_ID,
       ownerId: "test-user-123",
       description: null,
       sound: null,

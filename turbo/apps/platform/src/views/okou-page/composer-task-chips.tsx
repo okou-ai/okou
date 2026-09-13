@@ -26,6 +26,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ComposerPresentationRecommendations } from "./chat-composer.tsx";
 import { ComposerWorkflowRecommendations } from "./composer-workflow-recommendations.tsx";
+import { ComposerVisualizationOptions } from "./composer-visualization-options.tsx";
 
 const TASK_ICONS = {
   workflow: Workflow,
@@ -33,6 +34,7 @@ const TASK_ICONS = {
   image: Image,
   video: Video,
   website: Globe,
+  visualization: ChartNoAxesCombined,
 } as const;
 const IDEA_ICONS = {
   image: [
@@ -239,6 +241,7 @@ export function ComposerTaskChips({
     "image",
     "video",
     "website",
+    "visualization",
   ];
   return (
     <section
@@ -260,6 +263,7 @@ export function ComposerTaskChips({
               return (
                 task === "workflow" ||
                 task === "website" ||
+                task === "visualization" ||
                 signals.create.modes.includes(task)
               );
             })
@@ -289,9 +293,13 @@ export function ComposerTaskChips({
       {selected === "workflow" && (
         <ComposerWorkflowRecommendations signals={signals} />
       )}
+      {selected === "visualization" && (
+        <ComposerVisualizationOptions signals={signals} />
+      )}
       {selected !== null &&
         selected !== "presentation" &&
-        selected !== "workflow" && (
+        selected !== "workflow" &&
+        selected !== "visualization" && (
           <ComposerTaskIdeas signals={signals} task={selected} />
         )}
     </section>

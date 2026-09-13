@@ -313,12 +313,6 @@ function providerHandler(
   return method === "GET" ? http.get(url, response) : http.post(url, response);
 }
 
-function managedSocialKitWarningCalls(): unknown[][] {
-  return context.mocks.axiomLogging.warn.mock.calls.filter(([message]) => {
-    return message === "Managed SocialKit request failed";
-  });
-}
-
 describe("managed SocialKit route", () => {
   it("pins the reviewed 38-tool inventory and typed inputs", () => {
     expect(
@@ -1656,74 +1650,28 @@ describe("managed SocialKit route", () => {
     const pricing = await setupConfiguredPricing();
     await fundActor(actor);
     const beforeCredits = await credits(actor);
-    const invalidInputWarnings = [
-      [
-        "Managed SocialKit request failed",
-        expect.objectContaining({
-          context: "ManagedSocialKit",
-          tool: "youtube_transcript",
-          path: "/youtube/transcript",
-          failureKind: "http_error",
-          httpStatus: 400,
-        }),
-      ],
-    ];
-    const noWarnings: readonly unknown[] = [];
     const cases = [
-      [
-        400,
-        "raw invalid input payload",
-        400,
-        "SOCIALKIT_INVALID_INPUT",
-        invalidInputWarnings,
-      ],
-      [401, "raw missing key payload", 502, "SOCIALKIT_AUTH_ERROR", noWarnings],
-      [403, "Invalid Access key", 502, "SOCIALKIT_AUTH_ERROR", noWarnings],
+      [400, "raw invalid input payload", 400, "SOCIALKIT_INVALID_INPUT"],
+      [401, "raw missing key payload", 502, "SOCIALKIT_AUTH_ERROR"],
+      [403, "Invalid Access key", 502, "SOCIALKIT_AUTH_ERROR"],
       [
         403,
         "Request limit exceeded for this month",
         503,
         "SOCIALKIT_QUOTA_EXHAUSTED",
-        noWarnings,
       ],
-      [
-        403,
-        "unexpected forbidden response",
-        502,
-        "SOCIALKIT_UPSTREAM_ERROR",
-        noWarnings,
-      ],
+      [403, "unexpected forbidden response", 502, "SOCIALKIT_UPSTREAM_ERROR"],
       [
         404,
         "raw missing content payload",
         404,
         "SOCIALKIT_TRANSCRIPT_AVAILABILITY_UNKNOWN",
-        noWarnings,
       ],
-      [
-        429,
-        "raw rate limit payload",
-        502,
-        "SOCIALKIT_RATE_LIMITED",
-        noWarnings,
-      ],
-      [
-        500,
-        "raw provider failure payload",
-        502,
-        "SOCIALKIT_UPSTREAM_ERROR",
-        noWarnings,
-      ],
+      [429, "raw rate limit payload", 502, "SOCIALKIT_RATE_LIMITED"],
+      [500, "raw provider failure payload", 502, "SOCIALKIT_UPSTREAM_ERROR"],
     ] as const;
 
-    for (const [
-      providerStatus,
-      providerMessage,
-      apiStatus,
-      code,
-      expectedWarnings,
-    ] of cases) {
-      context.mocks.axiomLogging.warn.mockClear();
+    for (const [providerStatus, providerMessage, apiStatus, code] of cases) {
       server.use(
         providerHandler("GET", "/youtube/transcript", () => {
           return HttpResponse.json(
@@ -1740,7 +1688,6 @@ describe("managed SocialKit route", () => {
       expect(response.status).toBe(apiStatus);
       expect(body).toMatchObject({ error: { code } });
       expect(JSON.stringify(body)).not.toContain(providerMessage);
-      expect(managedSocialKitWarningCalls()).toStrictEqual(expectedWarnings);
     }
     await expect(credits(actor)).resolves.toBe(beforeCredits);
   });
@@ -1884,7 +1831,6 @@ describe("managed SocialKit route", () => {
     ];
 
     for (const responseFactory of invalidResponses) {
-      context.mocks.axiomLogging.warn.mockClear();
       server.use(
         providerHandler("GET", "/youtube/transcript", responseFactory),
       );
@@ -1898,7 +1844,6 @@ describe("managed SocialKit route", () => {
       expectApiError(response.body);
       expect(response.body.error.code).toBe("SOCIALKIT_INVALID_RESPONSE");
       expect(JSON.stringify(response.body)).not.toContain("test-socialkit-key");
-      expect(managedSocialKitWarningCalls()).toStrictEqual([]);
     }
     await expect(credits(actor)).resolves.toBe(beforeCredits);
   });
@@ -1934,7 +1879,6 @@ describe("managed SocialKit route", () => {
     ];
 
     for (const responseFactory of responses) {
-      context.mocks.axiomLogging.warn.mockClear();
       server.use(
         providerHandler("GET", "/youtube/transcript", responseFactory),
       );
@@ -1947,7 +1891,6 @@ describe("managed SocialKit route", () => {
       );
       expectApiError(response.body);
       expect(response.body.error.code).toBe("SOCIALKIT_OUTPUT_TOO_LARGE");
-      expect(managedSocialKitWarningCalls()).toStrictEqual([]);
     }
     await expect(credits(actor)).resolves.toBe(beforeCredits);
   });
@@ -1959,7 +1902,6 @@ describe("managed SocialKit route", () => {
     await fundActor(actor);
     const beforeCredits = await credits(actor);
 
-    context.mocks.axiomLogging.warn.mockClear();
     server.use(
       providerHandler("GET", "/youtube/transcript", () => {
         const stream = new ReadableStream<Uint8Array>({
@@ -1979,9 +1921,7 @@ describe("managed SocialKit route", () => {
     );
     expectApiError(timeout.body);
     expect(timeout.body.error.code).toBe("SOCIALKIT_REQUEST_TIMEOUT");
-    expect(managedSocialKitWarningCalls()).toStrictEqual([]);
 
-    context.mocks.axiomLogging.warn.mockClear();
     server.use(
       providerHandler("GET", "/youtube/transcript", () => {
         return HttpResponse.error();
@@ -1996,7 +1936,6 @@ describe("managed SocialKit route", () => {
     );
     expectApiError(network.body);
     expect(network.body.error.code).toBe("SOCIALKIT_UPSTREAM_ERROR");
-    expect(managedSocialKitWarningCalls()).toStrictEqual([]);
     await expect(credits(actor)).resolves.toBe(beforeCredits);
   });
 

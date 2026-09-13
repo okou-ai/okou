@@ -93,6 +93,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/materialize-pi-resource-indexes",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/materialize-memory-summaries",
       "schedule": "* * * * *"
     },

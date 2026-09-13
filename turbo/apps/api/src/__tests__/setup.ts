@@ -1,3 +1,4 @@
+import { syncBuiltinESMExports } from "node:module";
 import { resetApiTestMocks } from "./mocks";
 import { afterAll, afterEach, aroundEach, beforeAll, beforeEach } from "vitest";
 
@@ -46,6 +47,8 @@ beforeAll(async () => {
   mockApiTestConnectorProviderConfiguration();
   await installApiTestConnectorCatalog();
   server.listen({ onUnhandledRequest: "error" });
+  // SDK transports can import named HTTP exports instead of the CJS module.
+  syncBuiltinESMExports();
 });
 
 beforeEach(() => {
@@ -63,4 +66,5 @@ afterEach(async () => {
 
 afterAll(() => {
   server.close();
+  syncBuiltinESMExports();
 });

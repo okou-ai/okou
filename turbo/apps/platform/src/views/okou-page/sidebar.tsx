@@ -307,7 +307,7 @@ function ExpandedManageSection() {
           return setManageCollapsed(!manageCollapsed);
         }}
       >
-        <span className="okou-nav-copy-muted okou-nav-copy-muted-hover flex flex-1 items-center gap-1 truncate text-[13px] font-medium leading-4 text-sidebar-foreground/50 group-hover:text-sidebar-foreground transition-colors">
+        <span className="flex flex-1 items-center gap-1 truncate text-[13px] font-medium leading-4 text-[color:var(--nav-copy-muted,color-mix(in_oklab,var(--color-sidebar-foreground)_50%,transparent))] group-hover:text-nav-copy transition-colors">
           {t(($) => {
             return $.appShell.sidebar.manage;
           })}
@@ -345,7 +345,9 @@ function ExpandedManageSection() {
                   }`}
                 >
                   <Icon size={16} className="shrink-0" />
-                  <span className="okou-nav-copy truncate">{label}</span>
+                  <span className="text-[color:var(--nav-copy,inherit)] truncate">
+                    {label}
+                  </span>
                 </Link>
               );
             },
@@ -431,7 +433,9 @@ function ExpandedFooter() {
                 ) : (
                   <Icon size={16} className="shrink-0" />
                 )}
-                <span className="okou-nav-copy flex-1 truncate">{label}</span>
+                <span className="text-[color:var(--nav-copy,inherit)] flex-1 truncate">
+                  {label}
+                </span>
                 {id === "works" && slackScopeMismatch && (
                   <span
                     data-testid="slack-scope-mismatch-indicator"
@@ -546,8 +550,8 @@ function LabeledRailLink({
       <span
         className={`max-w-full truncate px-0.5 text-[10px] font-medium leading-[14px] ${
           isActive
-            ? "okou-nav-copy text-sidebar-foreground"
-            : "okou-nav-copy-muted text-sidebar-foreground/70"
+            ? "text-nav-copy"
+            : "text-[color:var(--nav-copy-muted,color-mix(in_oklab,var(--color-sidebar-foreground)_70%,transparent))]"
         }`}
       >
         {caption}
@@ -763,7 +767,7 @@ function ChatListColumn() {
           CHAT_LIST_INSET,
         )}
       >
-        <span className="okou-nav-copy flex-1 pl-2 text-[15px] font-semibold text-sidebar-foreground">
+        <span className="flex-1 pl-2 text-[15px] font-semibold text-nav-copy">
           {t(($) => {
             return $.appShell.sidebar.chat;
           })}

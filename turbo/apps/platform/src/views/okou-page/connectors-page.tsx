@@ -399,12 +399,12 @@ function ConnectorFilterDropdown({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
-          variant="outline"
+          variant="neutral"
           size="sm"
           aria-label={t(($) => {
             return $.connectors.catalog.filters.aria;
           })}
-          className="okou-btn-morandi hidden h-9 shrink-0 gap-1.5 rounded-lg border sm:inline-flex"
+          className="hidden h-9 shrink-0 gap-1.5 rounded-lg sm:inline-flex"
         >
           <Filter size={14} className="" />
           {activeAgent && (
@@ -1005,9 +1005,9 @@ function ConnectorsToolbarActions({
       )}
       {activeTab === "custom" && isAdmin && (
         <Button
-          variant="outline"
+          variant="neutral"
           size="sm"
-          className="okou-btn-morandi h-9 gap-2 shrink-0 rounded-lg border"
+          className="h-9 gap-2 shrink-0 rounded-lg"
           onClick={onCreateCustom}
         >
           <Plus size={14} />

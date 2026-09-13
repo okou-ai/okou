@@ -29,6 +29,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   getShortcutLabel,
+  cn,
 } from "@okouai/ui";
 import {
   Dialog,
@@ -377,6 +378,55 @@ function ChatThreadMenu({
   );
 }
 
+/**
+ * A title that does not fit fades out instead of ending in an ellipsis, and
+ * hovering or focusing its row scrolls the text to its end and stops there.
+ *
+ * `--okou-nav-title-overflow` is the only measured input; the mask and the
+ * travel are both derived from it, which is what makes an edge fade exactly
+ * when content is cut off at it. `--okou-nav-title-shift` is registered in the
+ * App stylesheet, because a transition cannot interpolate a length that is not,
+ * and `inherits: true` is what carries the animated value to the text span.
+ *
+ * The state variant spells the row's `data-sidebar-chat-thread-id` out rather
+ * than reaching for `group-hover`, and spells it out twice rather than hoisting
+ * it into a constant: Tailwind wraps `group-hover` in `@media (hover: hover)`
+ * while this affordance has always run on coarse pointers too, and Tailwind's
+ * scanner is text-based, so an interpolated variant would generate no CSS.
+ */
+function ChatThreadItemTitle({ title }: { title: string }) {
+  const measureTitle = useSet(sidebarThreadTitleOverflowRef$);
+
+  return (
+    <span
+      data-slot="sidebar-thread-title"
+      ref={measureTitle}
+      className={cn(
+        "text-[color:var(--nav-copy,inherit)] flex-1 min-w-0 overflow-hidden",
+        // `sidebarThreadTitleOverflowRef$` overwrites the first two inline as
+        // soon as it has measured; these are the values before it runs.
+        "[--okou-nav-title-overflow:0px] [--okou-nav-title-duration:780ms] [--okou-nav-title-fade:24px]",
+        // At rest only the right edge is masked, at the end of the travel only
+        // the left one, and a title that fits gets neither.
+        "[mask-image:linear-gradient(90deg,transparent_0,#000_clamp(0px,calc(-1*var(--okou-nav-title-shift)),var(--okou-nav-title-fade)),#000_calc(100%_-_clamp(0px,calc(var(--okou-nav-title-overflow)_+_var(--okou-nav-title-shift)),var(--okou-nav-title-fade))),transparent_100%)]",
+        "mask-no-repeat [mask-size:100%_100%]",
+        // Returning has no delay, so the title snaps back under the next row.
+        "[transition:--okou-nav-title-shift_660ms_cubic-bezier(0.4,0,0.2,1)]",
+        // The delay keeps a pointer sweeping down the list from setting every
+        // row in motion.
+        "[:is([data-sidebar-chat-thread-id]:hover,[data-sidebar-chat-thread-id]:focus-visible)_&]:[transition:--okou-nav-title-shift_var(--okou-nav-title-duration)_cubic-bezier(0.33,0,0.2,1)_750ms]",
+        // `motion-safe` leaves the shift at its registered `0px`, which is the
+        // value reduced motion has always resolved to.
+        "motion-safe:[:is([data-sidebar-chat-thread-id]:hover,[data-sidebar-chat-thread-id]:focus-visible)_&]:[--okou-nav-title-shift:calc(-1*var(--okou-nav-title-overflow))]",
+      )}
+    >
+      <span className="block w-max whitespace-nowrap [transform:translateX(var(--okou-nav-title-shift))]">
+        {title}
+      </span>
+    </span>
+  );
+}
+
 function ChatThreadItemLink({
   signals,
   shortcutNumber,
@@ -392,7 +442,6 @@ function ChatThreadItemLink({
   const select = useSet(signals.select$);
   const openRename = useSet(signals.openRename$);
   const pageSignal = useGet(pageSignal$);
-  const measureTitle = useSet(sidebarThreadTitleOverflowRef$);
 
   return (
     <Link
@@ -412,7 +461,7 @@ function ChatThreadItemLink({
         e.preventDefault();
         detach(openRename(pageSignal), Reason.DomCallback);
       }}
-      className={`okou-nav-title-row col-span-2 col-start-1 row-start-1 grid h-8 grid-cols-subgrid items-center rounded-lg pl-2 text-left text-sm leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
+      className={`col-span-2 col-start-1 row-start-1 grid h-8 grid-cols-subgrid items-center rounded-lg pl-2 text-left text-sm leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
         isHighlighted
           ? "bg-state-selected text-sidebar-foreground font-medium"
           : isUnread
@@ -422,14 +471,14 @@ function ChatThreadItemLink({
     >
       <span className="flex min-w-0 items-center gap-2 pr-8">
         <ChatThreadListPaneIcon signals={signals} />
-        <span className="okou-nav-copy okou-nav-title" ref={measureTitle}>
-          <span>
-            {title ??
-              t(($) => {
-                return $.chat.newChat;
-              })}
-          </span>
-        </span>
+        <ChatThreadItemTitle
+          title={
+            title ??
+            t(($) => {
+              return $.chat.newChat;
+            })
+          }
+        />
       </span>
       <span className="flex items-center pr-2 empty:hidden">
         <ThreadNumberShortcutHint shortcutNumber={shortcutNumber} />
@@ -699,7 +748,7 @@ function ChatThreads({
 
   if (threadCount === 0) {
     return (
-      <p className="okou-nav-copy-muted px-2 py-2 text-xs text-muted-foreground leading-relaxed">
+      <p className="px-2 py-2 text-xs text-nav-copy-muted leading-relaxed">
         {unreadOnly
           ? t(($) => {
               return $.chat.sidebar.noUnread;
@@ -902,12 +951,12 @@ function ChatThreadsTitle({ showMarkAllRead }: { showMarkAllRead: boolean }) {
 
   return (
     <div
-      className="okou-nav-recent-label group flex h-8 shrink-0 cursor-pointer items-center justify-between rounded-lg pl-2 pr-0 hover:bg-state-hover transition-colors"
+      className="group flex h-8 shrink-0 cursor-pointer items-center justify-between rounded-lg pl-2 pr-0 hover:bg-state-hover transition-colors"
       onClick={() => {
         return setCollapsed(!collapsed);
       }}
     >
-      <span className="okou-nav-copy-muted okou-nav-copy-muted-hover flex flex-1 items-center gap-1 truncate text-[13px] font-medium leading-4 text-muted-foreground group-hover:text-sidebar-foreground transition-colors">
+      <span className="flex flex-1 items-center gap-1 truncate text-[13px] font-medium leading-4 text-nav-copy-muted group-hover:text-nav-copy transition-colors">
         {titleLabel}
         <span className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
           <ChevronRight

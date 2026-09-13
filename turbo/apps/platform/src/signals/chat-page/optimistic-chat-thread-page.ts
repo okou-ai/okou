@@ -1,10 +1,9 @@
-import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { command, computed } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
 import type { VideoModel } from "@okouai/core/video-model-catalog";
 import {
-  chatThreadModelSelectionContract,
   chatThreadsContract,
   type ChatRunVideoOptionsRequest,
   type GenerationTemplateRequest,
@@ -344,7 +343,7 @@ const mintOptimisticThreadWithEvent$ = command(
       readonly agentId: string;
       readonly selectedModel: string | null;
       readonly serviceTier: "priority" | null;
-      readonly reasoningEffort?: ReasoningEffort | null;
+      readonly modelSettings: ModelSettings;
       readonly computerUseHostId: string | null;
       readonly cloudBrowserEnabled: boolean;
       readonly selectedImageModel: ImageModel | null;
@@ -363,10 +362,8 @@ const mintOptimisticThreadWithEvent$ = command(
       chatThreadId: args.threadId,
       agentId: args.agentId,
       selectedModel: args.selectedModel,
+      modelSettings: args.modelSettings,
       serviceTier: args.serviceTier,
-      ...(args.reasoningEffort === undefined
-        ? {}
-        : { reasoningEffort: args.reasoningEffort }),
       computerUseHostId: args.computerUseHostId,
       cloudBrowserEnabled: args.cloudBrowserEnabled,
       selectedVideoModel: args.selectedVideoModel,
@@ -383,12 +380,17 @@ async function createChatThread(
     readonly clientThreadId: string;
     readonly eventId: string;
     readonly modelSelection: ModelProviderSelection;
+    readonly reasoningEffortEnabled: boolean;
     readonly imageModel?: ImageModel;
     readonly videoModel?: VideoModel;
     readonly connectorSelections?: readonly ConnectorAccountSelection[];
   },
   signal: AbortSignal,
 ): Promise<void> {
+  const selectedEffort = args.reasoningEffortEnabled
+    ? args.modelSelection.modelSettings?.[args.modelSelection.selectedModel]
+        ?.effort
+    : undefined;
   const client = args.createClient(chatThreadsContract);
   await accept(
     client.create({
@@ -399,6 +401,9 @@ async function createChatThread(
         model: args.modelSelection.selectedModel,
         serviceTier:
           args.modelSelection.codexServiceTier === "fast" ? "priority" : null,
+        ...(selectedEffort === undefined
+          ? {}
+          : { reasoningEffort: selectedEffort }),
         ...(args.imageModel ? { imageModel: args.imageModel } : {}),
         ...(args.videoModel ? { videoModel: args.videoModel } : {}),
         ...(args.title ? { title: args.title } : {}),
@@ -411,31 +416,6 @@ async function createChatThread(
     [201],
   );
   signal.throwIfAborted();
-  if (
-    args.modelSelection.codexServiceTier === "fast" ||
-    args.modelSelection.reasoningEffort !== undefined
-  ) {
-    const modelSelectionClient = args.createClient(
-      chatThreadModelSelectionContract,
-    );
-    await accept(
-      modelSelectionClient.update({
-        params: { id: args.clientThreadId },
-        body: {
-          model: args.modelSelection.selectedModel,
-          ...(args.modelSelection.codexServiceTier === "fast"
-            ? { codexServiceTier: "fast" as const }
-            : {}),
-          ...(args.modelSelection.reasoningEffort === undefined
-            ? {}
-            : { reasoningEffort: args.modelSelection.reasoningEffort }),
-          eventId: crypto.randomUUID(),
-        },
-        fetchOptions: { signal },
-      }),
-      [204],
-    );
-  }
 }
 
 const startNewChatThreadCreate$ = command(
@@ -474,6 +454,7 @@ const startNewChatThreadCreate$ = command(
         eventId,
         agentId,
         selectedModel: modelSelection.selectedModel,
+        modelSettings: modelSelection.modelSettings ?? {},
         serviceTier:
           modelSelection.codexServiceTier === "fast" ? "priority" : null,
         computerUseHostId: null,
@@ -495,6 +476,8 @@ const startNewChatThreadCreate$ = command(
           clientThreadId: threadId,
           eventId,
           modelSelection,
+          reasoningEffortEnabled:
+            featureSwitches[FeatureSwitchKey.ChatReasoningEffort] ?? false,
         },
         signal,
       );
@@ -597,7 +580,7 @@ const sendNewThreadMessage$ = command(
         eventId: chatThreadEventId,
         agentId,
         selectedModel: resolvedModelSelection.selectedModel,
-        reasoningEffort: resolvedModelSelection.reasoningEffort,
+        modelSettings: resolvedModelSelection.modelSettings ?? {},
         serviceTier:
           resolvedModelSelection.codexServiceTier === "fast"
             ? "priority"
@@ -624,6 +607,8 @@ const sendNewThreadMessage$ = command(
         clientThreadId: threadId,
         eventId: chatThreadEventId,
         modelSelection: resolvedModelSelection,
+        reasoningEffortEnabled:
+          features[FeatureSwitchKey.ChatReasoningEffort] ?? false,
         imageModel,
         videoModel,
         connectorSelections: request.connectorSelections,

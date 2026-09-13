@@ -120,8 +120,18 @@ for component in "${components[@]}"; do
     fail "Release Please config is missing a release type for ${component}"
   component_release_types["$component"]=$release_type
 
-  pathspec=":(top,glob)${component}/**/src/**"
-  if git diff --quiet "$generation_base" "$merge_group_base" -- "$pathspec"; then
+  pathspecs=(":(top,glob)${component}/**/src/**")
+  if [ "$release_type" = "node" ]; then
+    # Match only colocated JS/TS test modules from turbo/vitest.config.ts and
+    # Platform's tsconfig.production.json. Helpers, fixtures and other assets
+    # remain source; their names or extensions alone do not prove test-only use.
+    pathspecs+=(
+      ":(top,glob,exclude)${component}/**/src/**/__tests__/**/*.test.[jt]s"
+      ":(top,glob,exclude)${component}/**/src/**/__tests__/**/*.test.[jt]sx"
+    )
+  fi
+  # Compare renames as deletion/addition so either production side is retained.
+  if git diff --quiet --no-renames "$generation_base" "$merge_group_base" -- "${pathspecs[@]}"; then
     continue
   else
     diff_status=$?

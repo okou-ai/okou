@@ -48,6 +48,7 @@ if (DSN) {
 
   Sentry.init({
     dsn: DSN,
+    enableLogs: false,
     environment: process.env.SENTRY_ENVIRONMENT ?? "production",
     release: __CLI_VERSION__,
     sendDefaultPii: false,

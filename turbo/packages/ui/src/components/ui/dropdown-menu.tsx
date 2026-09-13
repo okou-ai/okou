@@ -186,7 +186,10 @@ const DropdownMenuSeparator = React.forwardRef<
     <MenuPrimitive.Separator
       ref={ref}
       data-slot="dropdown-menu-separator"
-      className={cn("-mx-1 my-1 h-0 border-0 okou-border-t", className)}
+      className={cn(
+        "-mx-1 my-1 h-0 border-0 border-t border-t-gray-400",
+        className,
+      )}
       {...props}
     />
   );

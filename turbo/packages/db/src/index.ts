@@ -132,6 +132,7 @@ import * as browserSessionSchema from "./schema/browser-session";
 import * as presentationTemplateSchema from "./schema/presentation-template";
 import * as imageReferenceSchema from "./schema/image-reference";
 import * as piResourceSnapshotSchema from "./schema/pi-resource-snapshot";
+import * as piResourceVersionIndexSchema from "./schema/pi-resource-version-index";
 import * as memorySummaryProjectionSchema from "./schema/memory-summary-projection";
 import * as piMemoryStage1CandidateSchema from "./schema/pi-memory-stage1-candidate";
 import * as piMemoryPhase2JobSchema from "./schema/pi-memory-phase2-job";
@@ -276,6 +277,7 @@ export const schema = {
   ...presentationTemplateSchema,
   ...imageReferenceSchema,
   ...piResourceSnapshotSchema,
+  ...piResourceVersionIndexSchema,
   ...memorySummaryProjectionSchema,
   ...piMemoryStage1CandidateSchema,
   ...piMemoryPhase2JobSchema,

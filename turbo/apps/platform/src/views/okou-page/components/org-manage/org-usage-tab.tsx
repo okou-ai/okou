@@ -712,7 +712,7 @@ export function MemberUsageTable({
 
         return (
           <div key={member.userId}>
-            <div className="h-0 okou-border-t mx-5" />
+            <div className="h-0 border-t border-t-gray-400 mx-5" />
             <div className="grid grid-cols-[1fr_7rem] gap-x-4 items-center px-5 py-3">
               <div className="flex items-center gap-3 min-w-0">
                 <UserAvatar

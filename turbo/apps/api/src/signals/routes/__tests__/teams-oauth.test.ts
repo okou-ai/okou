@@ -278,7 +278,7 @@ describe("Teams OAuth API routes", () => {
     );
     expect(
       new URL(response.headers.get("location")!).searchParams.get("botName"),
-    ).toBe("Zero");
+    ).toBe("Nova");
 
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
     const client = setupApp({ context, routes: teamsConnectRoutes })(
@@ -295,7 +295,7 @@ describe("Teams OAuth API routes", () => {
       isConnected: true,
       connectUrl: null,
       tenantId: fixture.teamsTenantId,
-      botName: "Zero",
+      botName: "Nova",
     });
   });
 
@@ -331,7 +331,7 @@ describe("Teams OAuth API routes", () => {
     );
     expect(
       new URL(response.headers.get("location")!).searchParams.get("botName"),
-    ).toBe("Zero");
+    ).toBe("Nova");
   });
 
   it("rejects OAuth users when the org is already bound to another Microsoft tenant", async () => {

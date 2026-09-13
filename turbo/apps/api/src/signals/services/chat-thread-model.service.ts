@@ -1,4 +1,9 @@
-import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import {
+  modelSettingsSchema,
+  type ModelSettings,
+  type ModelSettingsPatch,
+  type ReasoningEffort,
+} from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
@@ -53,7 +58,7 @@ interface ResolvePersistedChatThreadModelParams {
   readonly threadId: string;
   readonly threadSnapshot?: PersistedChatThreadModelSnapshot;
   readonly requestedCodexServiceTier?: CodexServiceTier;
-  readonly requestedReasoningEffort?: ReasoningEffort | null;
+  readonly requestedReasoningEffort?: ReasoningEffort;
   readonly reasoningEffortEnabled?: boolean;
   readonly persistRequestedCodexServiceTier: boolean;
   readonly codexFastModeEnabled: boolean;
@@ -62,7 +67,7 @@ interface ResolvePersistedChatThreadModelParams {
 export function persistedChatThreadModelSnapshotColumns() {
   return {
     selectedModel: chatThreads.selectedModel,
-    reasoningEffort: chatThreads.reasoningEffort,
+    modelSettings: chatThreads.modelSettings,
     modelProviderId: chatThreads.modelProviderId,
     modelProviderType: chatThreads.modelProviderType,
     modelProviderCredentialScope: chatThreads.modelProviderCredentialScope,
@@ -73,7 +78,7 @@ export function persistedChatThreadModelSnapshotColumns() {
 
 interface PersistedChatThreadModelSnapshot {
   readonly selectedModel: string | null;
-  readonly reasoningEffort?: ReasoningEffort | null;
+  readonly modelSettings: ModelSettings;
   readonly modelProviderId: string | null;
   readonly modelProviderType: string | null;
   readonly modelProviderCredentialScope: string | null;
@@ -90,21 +95,23 @@ export interface ResolvedPersistedChatThreadModel {
   readonly providerAdmission: ModelFirstProviderAdmission;
   readonly runCodexServiceTier: "fast" | undefined;
   readonly persistedCodexServiceTier: CodexServiceTier | null;
-  readonly reasoningEffort: ReasoningEffort | null;
+  readonly modelSettings: ModelSettings;
+  readonly reasoningEffort: ReasoningEffort | undefined;
   readonly selectedModelChanged: boolean;
   readonly resolutionPath: PersistedChatThreadModelResolutionPath;
 }
 
 interface PersistedChatThreadModelEvaluation {
-  readonly persistedReasoningEffort: ReasoningEffort | null;
+  readonly modelSettings: ModelSettings;
+  readonly modelSettingsPatch: ModelSettingsPatch | undefined;
   readonly pin: ModelFirstPin;
   readonly providerAdmission: ModelFirstProviderAdmission;
   readonly runCodexServiceTier: "fast" | undefined;
   readonly persistedCodexServiceTier: CodexServiceTier | null;
-  readonly reasoningEffort: ReasoningEffort | null;
+  readonly reasoningEffort: ReasoningEffort | undefined;
   readonly selectedModelChanged: boolean;
   readonly tierChanged: boolean;
-  readonly effortChanged: boolean;
+  readonly modelSettingsChanged: boolean;
   readonly requiresReconciliation: boolean;
 }
 
@@ -250,15 +257,16 @@ async function persistReconciledChatThreadModel(args: {
   readonly thread: PersistedChatThreadModelSnapshot;
   readonly pin: ModelFirstPin;
   readonly persistedCodexServiceTier: CodexServiceTier | null;
-  readonly reasoningEffort: ReasoningEffort | null;
+  readonly modelSettings: ModelSettings;
+  readonly modelSettingsPatch: ModelSettingsPatch | undefined;
   readonly selectedModelChanged: boolean;
   readonly tierChanged: boolean;
-  readonly effortChanged: boolean;
+  readonly modelSettingsChanged: boolean;
 }): Promise<void> {
   if (
     !args.selectedModelChanged &&
     !args.tierChanged &&
-    !args.effortChanged &&
+    !args.modelSettingsChanged &&
     !legacyProviderPinPresent(args.thread)
   ) {
     return;
@@ -274,7 +282,7 @@ async function persistReconciledChatThreadModel(args: {
       modelProviderCredentialScope: pinColumns.modelProviderCredentialScope,
       selectedModel: pinColumns.selectedModel,
       codexServiceTier: args.persistedCodexServiceTier,
-      reasoningEffort: args.reasoningEffort,
+      modelSettings: args.modelSettings,
       updatedAt,
     })
     .where(
@@ -284,7 +292,7 @@ async function persistReconciledChatThreadModel(args: {
         chatThreadOrganizationCondition(args.tx, args.params.orgId),
       ),
     );
-  if (args.selectedModelChanged || args.effortChanged) {
+  if (args.selectedModelChanged || args.modelSettingsChanged) {
     await appendChatThreadEvent(args.tx, {
       kind: "model_selection_updated",
       userId: args.params.userId,
@@ -292,7 +300,7 @@ async function persistReconciledChatThreadModel(args: {
       chatThreadId: args.params.threadId,
       agentId: args.thread.agentId,
       selectedModel: args.pin.selectedModel,
-      reasoningEffort: args.reasoningEffort,
+      modelSettingsPatch: args.modelSettingsPatch,
       createdAt: updatedAt,
     });
   }
@@ -316,6 +324,7 @@ async function evaluatePersistedChatThreadModel(
   params: ResolvePersistedChatThreadModelParams,
   thread: PersistedChatThreadModelSnapshot,
 ): Promise<PersistedChatThreadModelEvaluationResult> {
+  const modelSettings = modelSettingsSchema.parse(thread.modelSettings);
   let pin: ModelFirstPin;
   let selectedModelChanged: boolean;
   let externalPlanCapabilities: ExternalModelProviderPlanCapabilitiesSource = {
@@ -374,15 +383,17 @@ async function evaluatePersistedChatThreadModel(
   }
   const effort = resolveChatReasoningEffort({
     selectedModel: pin.selectedModel,
-    stored: thread.reasoningEffort,
+    modelSettings,
     requested: params.requestedReasoningEffort,
     enabled: params.reasoningEffortEnabled ?? false,
   });
   if ("status" in effort) {
     return { kind: "error", error: effort };
   }
-  const effortChanged =
-    effort.persistedReasoningEffort !== (thread.reasoningEffort ?? null);
+  const modelSettingsChanged =
+    effort.modelSettingsPatch !== undefined &&
+    modelSettings[effort.modelSettingsPatch.model]?.effort !==
+      effort.modelSettingsPatch.effort;
   const providerAdmission = await resolveModelFirstProviderAdmission({
     db,
     orgId: params.orgId,
@@ -413,14 +424,17 @@ async function evaluatePersistedChatThreadModel(
       runCodexServiceTier: tier.runCodexServiceTier,
       persistedCodexServiceTier: tier.persistedCodexServiceTier,
       reasoningEffort: effort.reasoningEffort,
-      persistedReasoningEffort: effort.persistedReasoningEffort,
-      effortChanged,
+      modelSettings: effort.modelSettings,
+      modelSettingsPatch: modelSettingsChanged
+        ? effort.modelSettingsPatch
+        : undefined,
+      modelSettingsChanged,
       selectedModelChanged,
       tierChanged: tier.tierChanged,
       requiresReconciliation:
         selectedModelChanged ||
         tier.tierChanged ||
-        effortChanged ||
+        modelSettingsChanged ||
         legacyProviderPinPresent(thread),
     },
   };
@@ -435,6 +449,7 @@ function resolvedPersistedChatThreadModel(
     providerAdmission: evaluation.providerAdmission,
     runCodexServiceTier: evaluation.runCodexServiceTier,
     persistedCodexServiceTier: evaluation.persistedCodexServiceTier,
+    modelSettings: evaluation.modelSettings,
     reasoningEffort: evaluation.reasoningEffort,
     selectedModelChanged: evaluation.selectedModelChanged,
     resolutionPath,
@@ -462,10 +477,11 @@ async function resolvePersistedChatThreadModelInTransaction(
     thread,
     pin: evaluation.pin,
     persistedCodexServiceTier: evaluation.persistedCodexServiceTier,
-    reasoningEffort: evaluation.persistedReasoningEffort,
+    modelSettings: evaluation.modelSettings,
+    modelSettingsPatch: evaluation.modelSettingsPatch,
     selectedModelChanged: evaluation.selectedModelChanged,
     tierChanged: evaluation.tierChanged,
-    effortChanged: evaluation.effortChanged,
+    modelSettingsChanged: evaluation.modelSettingsChanged,
   });
   return {
     resolved: resolvedPersistedChatThreadModel(
@@ -475,8 +491,9 @@ async function resolvePersistedChatThreadModelInTransaction(
     publishThreadList:
       evaluation.selectedModelChanged ||
       evaluation.tierChanged ||
-      evaluation.effortChanged,
-    publishThreadDetail: evaluation.tierChanged || evaluation.effortChanged,
+      evaluation.modelSettingsChanged,
+    publishThreadDetail:
+      evaluation.tierChanged || evaluation.modelSettingsChanged,
   };
 }
 

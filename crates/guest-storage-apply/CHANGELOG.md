@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.23.82](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.81...guest-storage-apply-v0.23.82) (2026-09-12)
+
+
+### Bug Fixes
+
+* **guest-storage-apply:** bound tar extension metadata ([#33636](https://github.com/vm0-ai/vm0/issues/33636)) ([cc84395](https://github.com/vm0-ai/vm0/commit/cc84395b8f3e1acf054b6f73e301e3bac3e4d8b9))
+* **guest-storage-apply:** validate gzip trailers before extraction success ([#33632](https://github.com/vm0-ai/vm0/issues/33632)) ([fb96b45](https://github.com/vm0-ai/vm0/commit/fb96b45ee87e037ec8a004fab3e7d784d216a001))
+
 ## [0.23.81](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.80...guest-storage-apply-v0.23.81) (2026-09-11)
 
 ## [0.23.80](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.79...guest-storage-apply-v0.23.80) (2026-09-11)

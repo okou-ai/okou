@@ -148,7 +148,7 @@ export function AutoRechargeSection({
           </div>
           {displayEnabled && (
             <>
-              <div className="h-0 okou-border-t mx-5" />
+              <div className="h-0 border-t border-t-gray-400 mx-5" />
               <div className="flex items-center justify-between gap-4 px-5 py-4">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-foreground">
@@ -182,7 +182,7 @@ export function AutoRechargeSection({
                   })}
                 />
               </div>
-              <div className="h-0 okou-border-t mx-5" />
+              <div className="h-0 border-t border-t-gray-400 mx-5" />
               <div className="flex items-center justify-between gap-4 px-5 py-4">
                 <div className="min-w-0 flex flex-col gap-1">
                   <span className="text-xl font-semibold tabular-nums tracking-tight text-foreground">

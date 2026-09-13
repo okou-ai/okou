@@ -1,7 +1,12 @@
-import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import {
+  modelSettingsSchema,
+  type ModelSettings,
+  type ModelSettingsPatch,
+  type ReasoningEffort,
+} from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import {
   resolveChatReasoningEffort,
-  validateReasoningEffortDispatch,
+  resolveReasoningEffortForDispatch,
 } from "./chat-reasoning-effort.service";
 /** Canonical ChatEvent write commands. */
 import { loadIntroVideoTemplateAccess } from "./intro-video-access.service";
@@ -19,6 +24,7 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   isBuiltInModelProviderType,
+  isSupportedRunModel,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
@@ -31,7 +37,7 @@ import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { agents } from "@okouai/db/schema/agent";
-import { and, asc, eq, inArray, isNotNull, isNull, ne } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -89,6 +95,7 @@ import {
   type PersistedChatThreadModelResolutionPath,
 } from "./chat-thread-model.service";
 import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
+import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
 import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
 import {
   revokeChatEvent,
@@ -185,7 +192,7 @@ interface NormalSendBody {
   } | null;
   readonly runOptions?: {
     readonly codexServiceTier?: CodexServiceTier;
-    readonly reasoningEffort?: ReasoningEffort | null;
+    readonly reasoningEffort?: ReasoningEffort;
     readonly video?: ChatRunVideoOptionsRequest;
   };
   readonly userMessage: UserMessageDocument;
@@ -234,7 +241,8 @@ type ModelFirstProviderAdmission = Awaited<
 >;
 
 interface ResolvedRunConfiguration {
-  readonly reasoningEffort?: ReasoningEffort | null;
+  readonly reasoningEffort?: ReasoningEffort;
+  readonly modelSettings: ModelSettings;
   readonly modelPin: ThreadModelPin;
   readonly providerAdmission: ModelFirstProviderAdmission;
   readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
@@ -1044,8 +1052,13 @@ async function resolveExplicitRunConfiguration(params: {
   if ("status" in modelPin) {
     return modelPin;
   }
+  const modelSettings = await loadNewChatThreadModelSettings(params.db, {
+    orgId: params.orgId,
+    userId: params.userId,
+  });
   const effort = resolveChatReasoningEffort({
     selectedModel: modelPin.selectedModel,
+    modelSettings,
     requested: params.body.runOptions?.reasoningEffort,
     enabled: params.reasoningEffortEnabled,
   });
@@ -1089,6 +1102,7 @@ async function resolveExplicitRunConfiguration(params: {
     modelPin,
     providerAdmission,
     reasoningEffort: effort.reasoningEffort,
+    modelSettings: effort.modelSettings,
     codexServiceTier: codexServiceTierForRun({
       body: params.body,
       modelPin,
@@ -1185,25 +1199,50 @@ async function validateGenerationTemplatePrompt(
 
 async function updateUserModelPreference(
   db: Db,
-  orgId: string,
-  userId: string,
-  selectedModel: string,
-  serviceTier: ChatThreadServiceTier | null,
+  params: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly selectedModel: string;
+    readonly serviceTier: ChatThreadServiceTier | null;
+    readonly modelSettingsPatch?: ModelSettingsPatch;
+  },
 ): Promise<void> {
   const nowValue = nowDate();
   await db
     .insert(orgMembersMetadata)
     .values({
-      orgId,
-      userId,
-      selectedModel,
-      serviceTier,
+      orgId: params.orgId,
+      userId: params.userId,
+      selectedModel: params.selectedModel,
+      serviceTier: params.serviceTier,
+      ...(params.modelSettingsPatch === undefined
+        ? {}
+        : {
+            modelSettings: {
+              [params.modelSettingsPatch.model]: {
+                effort: params.modelSettingsPatch.effort,
+              },
+            },
+          }),
       createdAt: nowValue,
       updatedAt: nowValue,
     })
     .onConflictDoUpdate({
       target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
-      set: { selectedModel, serviceTier, updatedAt: nowValue },
+      set: {
+        selectedModel: params.selectedModel,
+        serviceTier: params.serviceTier,
+        ...(params.modelSettingsPatch === undefined
+          ? {}
+          : {
+              modelSettings: sql`${orgMembersMetadata.modelSettings} || jsonb_build_object(
+                cast(${params.modelSettingsPatch.model} as text),
+                COALESCE(${orgMembersMetadata.modelSettings} -> cast(${params.modelSettingsPatch.model} as text), '{}'::jsonb)
+                  || jsonb_build_object('effort', cast(${params.modelSettingsPatch.effort} as text))
+              )`,
+            }),
+        updatedAt: nowValue,
+      },
     });
 }
 
@@ -1213,6 +1252,7 @@ async function maybePersistExplicitModelFirstSelection(params: {
   readonly userId: string;
   readonly modelSelection: IncomingModelSelection;
   readonly serviceTier: ChatThreadServiceTier | null;
+  readonly modelSettingsPatch?: ModelSettingsPatch;
 }): Promise<boolean> {
   if (!params.modelSelection) {
     return false;
@@ -1222,13 +1262,13 @@ async function maybePersistExplicitModelFirstSelection(params: {
   ) {
     return false;
   }
-  await updateUserModelPreference(
-    params.db,
-    params.orgId,
-    params.userId,
-    params.modelSelection.selectedModel,
-    params.serviceTier,
-  );
+  await updateUserModelPreference(params.db, {
+    orgId: params.orgId,
+    userId: params.userId,
+    selectedModel: params.modelSelection.selectedModel,
+    serviceTier: params.serviceTier,
+    modelSettingsPatch: params.modelSettingsPatch,
+  });
   return true;
 }
 
@@ -1246,15 +1286,27 @@ async function maybePersistExplicitRunSettings(params: {
   }
   const codexServiceTier = params.codexServiceTier ?? null;
   const reasoningEffort = params.body.runOptions?.reasoningEffort;
+  const modelSettingsPatch =
+    reasoningEffort !== undefined &&
+    isSupportedRunModel(params.modelPin.selectedModel)
+      ? { model: params.modelPin.selectedModel, effort: reasoningEffort }
+      : undefined;
   await params.db.transaction(async (tx) => {
     const updatedAt = nowDate();
     const [thread] = await tx
       .update(chatThreads)
       .set({
         codexServiceTier,
-        ...(reasoningEffort === undefined
+        ...(modelSettingsPatch === undefined
           ? {}
-          : { ...chatThreadModelPinColumns(params.modelPin), reasoningEffort }),
+          : {
+              ...chatThreadModelPinColumns(params.modelPin),
+              modelSettings: sql`${chatThreads.modelSettings} || jsonb_build_object(
+                cast(${modelSettingsPatch.model} as text),
+                COALESCE(${chatThreads.modelSettings} -> cast(${modelSettingsPatch.model} as text), '{}'::jsonb)
+                  || jsonb_build_object('effort', cast(${modelSettingsPatch.effort} as text))
+              )`,
+            }),
         updatedAt,
       })
       .where(
@@ -1273,7 +1325,7 @@ async function maybePersistExplicitRunSettings(params: {
     if (!thread?.agentId) {
       return;
     }
-    if (reasoningEffort !== undefined) {
+    if (modelSettingsPatch !== undefined) {
       await appendChatThreadEvent(tx, {
         kind: "model_selection_updated",
         userId: params.userId,
@@ -1281,7 +1333,7 @@ async function maybePersistExplicitRunSettings(params: {
         chatThreadId: thread.id,
         agentId: thread.agentId,
         selectedModel: thread.selectedModel,
-        reasoningEffort,
+        modelSettingsPatch,
         createdAt: updatedAt,
       });
     }
@@ -1474,7 +1526,7 @@ async function createChatThread(
     readonly clientThreadId: string | undefined;
     readonly chatThreadEventId: string | undefined;
     readonly pin: ThreadModelPin;
-    readonly reasoningEffort: ReasoningEffort | null;
+    readonly modelSettings: ModelSettings;
     readonly codexServiceTier: CodexServiceTier | null;
   },
 ): Promise<CreateChatThreadResult> {
@@ -1497,7 +1549,7 @@ async function createChatThread(
           modelProviderCredentialScope: pinColumns.modelProviderCredentialScope,
           selectedModel: pinColumns.selectedModel,
           codexServiceTier: args.codexServiceTier,
-          reasoningEffort: args.reasoningEffort,
+          modelSettings: args.modelSettings,
           selectedVideoModel: mediaModels.selectedVideoModel,
           selectedImageModel: mediaModels.selectedImageModel,
         })
@@ -1513,7 +1565,7 @@ async function createChatThread(
           eventId: args.chatThreadEventId,
           title: null,
           selectedModel: args.pin.selectedModel,
-          reasoningEffort: args.reasoningEffort,
+          modelSettings: args.modelSettings,
           serviceTier: chatThreadServiceTierFromCodex(args.codexServiceTier),
           computerUseHostId: null,
           cloudBrowserEnabled: false,
@@ -1551,7 +1603,7 @@ async function createChatThread(
         modelProviderCredentialScope: pinColumns.modelProviderCredentialScope,
         selectedModel: pinColumns.selectedModel,
         codexServiceTier: args.codexServiceTier,
-        reasoningEffort: args.reasoningEffort,
+        modelSettings: args.modelSettings,
         selectedVideoModel: mediaModels.selectedVideoModel,
         selectedImageModel: mediaModels.selectedImageModel,
       })
@@ -1568,7 +1620,7 @@ async function createChatThread(
       eventId: args.chatThreadEventId,
       title: null,
       selectedModel: args.pin.selectedModel,
-      reasoningEffort: args.reasoningEffort,
+      modelSettings: args.modelSettings,
       serviceTier: chatThreadServiceTierFromCodex(args.codexServiceTier),
       computerUseHostId: null,
       cloudBrowserEnabled: false,
@@ -1629,11 +1681,11 @@ function loadTimedExistingThreadSnapshot(params: {
 function resolveExplicitThreadRunConfiguration(
   configuration: ResolvedRunConfiguration,
   thread: {
-    readonly reasoningEffort: ReasoningEffort | null;
+    readonly modelSettings: ModelSettings;
     readonly codexServiceTier: CodexServiceTier | null;
   },
   settings: {
-    readonly requestedReasoningEffort?: ReasoningEffort | null;
+    readonly requestedReasoningEffort?: ReasoningEffort;
     readonly requestedCodexServiceTier: CodexServiceTier | undefined;
     readonly reasoningEffortEnabled: boolean;
     readonly codexFastModeEnabled: boolean;
@@ -1641,7 +1693,7 @@ function resolveExplicitThreadRunConfiguration(
 ): ResolvedRunConfiguration | NormalSendFailure {
   const effort = resolveChatReasoningEffort({
     selectedModel: configuration.modelPin.selectedModel,
-    stored: thread.reasoningEffort,
+    modelSettings: thread.modelSettings,
     requested: settings.requestedReasoningEffort,
     enabled: settings.reasoningEffortEnabled,
   });
@@ -1651,6 +1703,7 @@ function resolveExplicitThreadRunConfiguration(
   return {
     ...configuration,
     reasoningEffort: effort.reasoningEffort,
+    modelSettings: effort.modelSettings,
     ...(settings.requestedReasoningEffort !== undefined &&
     settings.requestedCodexServiceTier === undefined
       ? {
@@ -1677,7 +1730,7 @@ async function resolveThread(params: {
   readonly chatThreadEventId: string | undefined;
   readonly initialPin: ThreadModelPin;
   readonly explicitRunConfiguration: ResolvedRunConfiguration | undefined;
-  readonly requestedReasoningEffort?: ReasoningEffort | null;
+  readonly requestedReasoningEffort?: ReasoningEffort;
   readonly reasoningEffortEnabled: boolean;
   readonly requestedCodexServiceTier: CodexServiceTier | undefined;
   readonly persistRequestedCodexServiceTier: boolean;
@@ -1695,7 +1748,7 @@ async function resolveThread(params: {
       clientThreadId: params.clientThreadId,
       chatThreadEventId: params.chatThreadEventId,
       pin: params.initialPin,
-      reasoningEffort: params.requestedReasoningEffort ?? null,
+      modelSettings: params.explicitRunConfiguration.modelSettings,
       codexServiceTier:
         params.explicitRunConfiguration.codexServiceTier ?? null,
     });
@@ -1724,6 +1777,7 @@ async function resolveThread(params: {
   if (!thread?.agentId) {
     return notFound("Chat thread not found");
   }
+  const threadModelSettings = modelSettingsSchema.parse(thread.modelSettings);
 
   let runConfiguration = params.explicitRunConfiguration;
   let persistedModelResolutionPath:
@@ -1763,6 +1817,7 @@ async function resolveThread(params: {
         providerAdmission: persisted.providerAdmission,
         codexServiceTier: persisted.runCodexServiceTier,
         reasoningEffort: persisted.reasoningEffort,
+        modelSettings: persisted.modelSettings,
       },
     );
     if ("status" in resolvedRunConfiguration) {
@@ -1773,7 +1828,7 @@ async function resolveThread(params: {
   } else {
     const explicit = resolveExplicitThreadRunConfiguration(
       runConfiguration,
-      thread,
+      { ...thread, modelSettings: threadModelSettings },
       params,
     );
     if ("status" in explicit) {
@@ -2617,22 +2672,31 @@ function resolveTimedThread(
         codexFastModeEnabled: featureSwitches.codexFastModeEnabled,
         timing: args.timing,
       });
-      if (!("status" in resolved)) {
-        const storedEffortError = validateReasoningEffortDispatch(
-          resolved.runConfiguration.reasoningEffort,
-          usesPi(
-            args,
-            resolved.thread,
-            resolved.runConfiguration,
-            featureSwitches,
-          ),
-        );
-        if (storedEffortError) {
-          return storedEffortError;
-        }
-        modelResolutionPath = resolved.modelResolutionPath;
+      if ("status" in resolved) {
+        return resolved;
       }
-      return resolved;
+      modelResolutionPath = resolved.modelResolutionPath;
+      return {
+        ...resolved,
+        runConfiguration: {
+          ...resolved.runConfiguration,
+          reasoningEffort: resolveReasoningEffortForDispatch({
+            selectedModel: resolved.runConfiguration.modelPin.selectedModel,
+            effort: resolved.runConfiguration.reasoningEffort,
+            runtimeProviderType:
+              resolved.runConfiguration.builtInModelRuntimeRoute
+                ?.providerType ??
+              resolved.runConfiguration.providerAdmission
+                .effectiveModelProvider,
+            piExecution: usesPi(
+              args,
+              resolved.thread,
+              resolved.runConfiguration,
+              featureSwitches,
+            ),
+          }),
+        },
+      };
     },
     () => {
       return modelResolutionPath
@@ -2647,6 +2711,12 @@ function maybePersistTimedExplicitModelFirstSelection(
   db: Db,
   codexServiceTier: CodexServiceTier | undefined,
 ): ReturnType<typeof maybePersistExplicitModelFirstSelection> {
+  const requestedEffort = args.body.runOptions?.reasoningEffort;
+  const requestedModel = args.body.modelSelection?.selectedModel;
+  const modelSettingsPatch =
+    requestedEffort !== undefined && isSupportedRunModel(requestedModel)
+      ? { model: requestedModel, effort: requestedEffort }
+      : undefined;
   return measureApiDispatchTiming(
     args.timing,
     "api_dispatch_pre_create_agent_web_chat_prepare_normal_send_persist_explicit_model_selection",
@@ -2658,6 +2728,7 @@ function maybePersistTimedExplicitModelFirstSelection(
         userId: args.userId,
         modelSelection: args.body.modelSelection,
         serviceTier: chatThreadServiceTierFromCodex(codexServiceTier ?? null),
+        modelSettingsPatch,
       });
     },
   );
@@ -3791,15 +3862,20 @@ const createNormalChatRun$ = command(
     });
 
     if (prepared.persistedExplicitSelection && modelPin.selectedModel) {
-      await updateUserModelPreference(
-        prepared.db,
-        args.orgId,
-        args.userId,
-        modelPin.selectedModel,
-        chatThreadServiceTierFromCodex(
+      const requestedEffort = args.body.runOptions?.reasoningEffort;
+      await updateUserModelPreference(prepared.db, {
+        orgId: args.orgId,
+        userId: args.userId,
+        selectedModel: modelPin.selectedModel,
+        serviceTier: chatThreadServiceTierFromCodex(
           prepared.runConfiguration.codexServiceTier ?? null,
         ),
-      );
+        modelSettingsPatch:
+          requestedEffort !== undefined &&
+          isSupportedRunModel(modelPin.selectedModel)
+            ? { model: modelPin.selectedModel, effort: requestedEffort }
+            : undefined,
+      });
       signal.throwIfAborted();
     }
 

@@ -4,6 +4,8 @@ import type {
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { Element, Root } from "hast";
+import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
+import type { UserMessageRenderDocument } from "../../signals/chat-page/chat-event.ts";
 
 import { classifyChatAttachment } from "../../signals/chat-page/parse-body-blocks.ts";
 import { artifactPreviewUrlsMatch } from "./attachment-url.ts";
@@ -12,6 +14,7 @@ import { userMessageFileAttachments } from "../../signals/chat-page/user-message
 export type ImageArtifactNavigationItem = {
   readonly url: string;
   readonly filename: string;
+  readonly preview?: AttachmentPreviewSignals;
   /**
    * Present when the image is a run artifact (agent-generated / hosted): carries
    * the artifact file and its run so the lightbox keeps full download/share/sync
@@ -37,6 +40,7 @@ type ImageArtifactNavigation = {
  */
 type EventImageSource = {
   readonly userMessage?: UserMessageDocument;
+  readonly userMessageRenderDocument?: UserMessageRenderDocument;
   readonly tree?: Root;
 };
 
@@ -62,6 +66,7 @@ function isImageDescriptor(descriptor: {
 type EventImage = {
   readonly url: string;
   readonly filename: string;
+  readonly preview?: AttachmentPreviewSignals;
 };
 
 type ArtifactImageMetadata = {
@@ -97,10 +102,14 @@ function filenameFromMarkdownLink(label: string, url: string): string {
 function eventImages(event: EventImageSource): EventImage[] {
   const images: EventImage[] = [];
   const seen = new Set<string>();
-  const add = (url: string, filename: string): void => {
+  const add = (
+    url: string,
+    filename: string,
+    preview?: AttachmentPreviewSignals,
+  ): void => {
     if (!seen.has(url)) {
       seen.add(url);
-      images.push({ url, filename });
+      images.push({ url, filename, preview });
     }
   };
 
@@ -108,7 +117,14 @@ function eventImages(event: EventImageSource): EventImage[] {
     ? userMessageFileAttachments(event.userMessage)
     : []) {
     if (isImageDescriptor(file)) {
-      add(file.url, file.filename);
+      const rendered = event.userMessageRenderDocument?.parts.find((part) => {
+        return part.type === "file" && part.signals.url === file.url;
+      });
+      add(
+        file.url,
+        file.filename,
+        rendered?.type === "file" ? rendered.signals : undefined,
+      );
     }
   }
   if (event.tree) {
@@ -131,7 +147,11 @@ function nodeText(node: Element): string {
 /** Walks a rendered body for its images: card slots, `<img>`, image links. */
 function visitTreeImages(
   root: Root,
-  add: (url: string, filename: string) => void,
+  add: (
+    url: string,
+    filename: string,
+    preview?: AttachmentPreviewSignals,
+  ) => void,
 ): void {
   const visit = (node: Root | Element): void => {
     for (const child of node.children) {
@@ -141,7 +161,7 @@ function visitTreeImages(
       const card = child.data?.card;
       if (card !== undefined) {
         if (card.kind === "artifact" && card.signals.kind === "image") {
-          add(card.signals.url, card.signals.filename);
+          add(card.signals.url, card.signals.filename, card.signals);
         }
         continue;
       }
@@ -229,7 +249,8 @@ export function equalEventImageGroups(
           return (
             nextImage !== undefined &&
             image.url === nextImage.url &&
-            image.filename === nextImage.filename
+            image.filename === nextImage.filename &&
+            image.preview === nextImage.preview
           );
         })
       );
@@ -283,11 +304,12 @@ export function currentEventImageArtifactNavigation(
     if (artifact) {
       return {
         url: image.url,
+        preview: image.preview,
         filename: artifact.file.filename,
         artifact,
       };
     }
-    return { url: image.url, filename: image.filename };
+    return image;
   });
   const currentIndex = images.findIndex((item) => {
     return artifactPreviewUrlsMatch(item.url, currentUrl);

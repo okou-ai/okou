@@ -251,7 +251,6 @@ async function resolveDirectAgentRun(
   return {
     agentId: agent.id,
     ownerUserId: agent.owner,
-    agentName: agent.name || undefined,
     orgId: agent.orgId,
     content:
       store.get(directAgentExecutionConfigs$).get(agent.id) ??
@@ -352,7 +351,6 @@ async function resolveDirectSessionRun(
   return {
     agentId: snapshot.agent.id,
     ownerUserId: snapshot.agent.owner,
-    agentName: snapshot.agent.name || undefined,
     orgId: snapshot.agent.orgId,
     content:
       store.get(directAgentExecutionConfigs$).get(snapshot.agent.id) ??

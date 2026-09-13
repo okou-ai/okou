@@ -1,5 +1,129 @@
 # Changelog
 
+## [8.660.2](https://github.com/vm0-ai/vm0/compare/core-v8.660.1...core-v8.660.2) (2026-09-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.433.0
+
+## [8.660.1](https://github.com/vm0-ai/vm0/compare/core-v8.660.0...core-v8.660.1) (2026-09-13)
+
+
+### Bug Fixes
+
+* move banking rollout to alpha ([#33724](https://github.com/vm0-ai/vm0/issues/33724)) ([c3e7211](https://github.com/vm0-ai/vm0/commit/c3e7211fec24c53fae7b5d4e9d13e8dc5bc8be56))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.432.1
+
+## [8.660.0](https://github.com/vm0-ai/vm0/compare/core-v8.659.0...core-v8.660.0) (2026-09-12)
+
+
+### Features
+
+* **core:** roll out markdown time ([#33704](https://github.com/vm0-ai/vm0/issues/33704)) ([a8970b8](https://github.com/vm0-ai/vm0/commit/a8970b8e481c29ebb4d0b7277820c2dd179f1c2b))
+
+## [8.659.0](https://github.com/vm0-ai/vm0/compare/core-v8.658.0...core-v8.659.0) (2026-09-12)
+
+
+### Features
+
+* **chat:** enable reasoning effort for the staff team ([#33688](https://github.com/vm0-ai/vm0/issues/33688)) ([d836e6d](https://github.com/vm0-ai/vm0/commit/d836e6d2341225e16a5065c44e49467dcce5274c))
+
+## [8.658.0](https://github.com/vm0-ai/vm0/compare/core-v8.657.0...core-v8.658.0) (2026-09-12)
+
+
+### Features
+
+* **chat:** support model-aware reasoning effort in pi ([#33683](https://github.com/vm0-ai/vm0/issues/33683)) ([ab64ece](https://github.com/vm0-ai/vm0/commit/ab64ece13b139daa0ca67e4049273e4e79ba4e76))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.432.0
+
+## [8.657.0](https://github.com/vm0-ai/vm0/compare/core-v8.656.0...core-v8.657.0) (2026-09-12)
+
+
+### Features
+
+* **chat:** persist model-aware reasoning effort settings ([#33551](https://github.com/vm0-ai/vm0/issues/33551)) ([1aa1036](https://github.com/vm0-ai/vm0/commit/1aa10365da1d277a04b4968a5e4218fc5c74b2a1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.431.0
+
+## [8.656.0](https://github.com/vm0-ai/vm0/compare/core-v8.655.0...core-v8.656.0) (2026-09-12)
+
+
+### Features
+
+* enable agent math and workflow fuzzy search for all users ([#33680](https://github.com/vm0-ai/vm0/issues/33680)) ([57b7f9b](https://github.com/vm0-ai/vm0/commit/57b7f9b726f0b7044877a6038f01d109ca0f3e06))
+* enable cal.com oauth for everyone ([#33401](https://github.com/vm0-ai/vm0/issues/33401)) ([97212da](https://github.com/vm0-ai/vm0/commit/97212daa5f952c629308bca23962636407b48737))
+
+
+### Refactoring
+
+* remove graduated chat experience switches ([#33612](https://github.com/vm0-ai/vm0/issues/33612)) ([8e51714](https://github.com/vm0-ai/vm0/commit/8e517146fbe73026d88d0a3f508150ae6ddf04a2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.430.1
+
+## [8.655.0](https://github.com/vm0-ai/vm0/compare/core-v8.654.3...core-v8.655.0) (2026-09-12)
+
+
+### Features
+
+* add deepseek v4.1 flash ([#33591](https://github.com/vm0-ai/vm0/issues/33591)) ([b7b8854](https://github.com/vm0-ai/vm0/commit/b7b885498764b690c4a194f86da198815daae4c9))
+* **artifacts:** share presigned thumbnails across composer and chat ([#33288](https://github.com/vm0-ai/vm0/issues/33288)) ([c21ce81](https://github.com/vm0-ai/vm0/commit/c21ce817535587b323a523abcef983f689365e9d))
+* **voice:** enable google cloud routing by default for staff ([#33571](https://github.com/vm0-ai/vm0/issues/33571)) ([e14e650](https://github.com/vm0-ai/vm0/commit/e14e650f944b25fd7b0b0b10f486e0a33354f567))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.430.0
+
+## [8.654.3](https://github.com/vm0-ai/vm0/compare/core-v8.654.2...core-v8.654.3) (2026-09-12)
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#33582](https://github.com/vm0-ai/vm0/issues/33582)) ([d5ae0e3](https://github.com/vm0-ai/vm0/commit/d5ae0e331d31465b7302bc63e1557420caf7358b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.429.1
+
+## [8.654.2](https://github.com/vm0-ai/vm0/compare/core-v8.654.1...core-v8.654.2) (2026-09-11)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.429.0
+
 ## [8.654.1](https://github.com/vm0-ai/vm0/compare/core-v8.654.0...core-v8.654.1) (2026-09-11)
 
 

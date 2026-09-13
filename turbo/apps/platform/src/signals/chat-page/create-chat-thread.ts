@@ -84,7 +84,6 @@ import {
 } from "@okouai/api-contracts/contracts/chat-events";
 
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
-import { compatibleReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { runOptionsFromModelProviderSelection } from "./model-selection-request.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
@@ -239,7 +238,10 @@ import {
   type SendChatEventResult,
   type SendInputChatEvent,
 } from "./chat-event-signals.ts";
-import { registerChatEventChangeHandler$ } from "./chat-event-change-registry.ts";
+import {
+  registerChatEventChangeHandler$,
+  type ChatEventChangeHandler,
+} from "./chat-event-change-registry.ts";
 import {
   canonicalUserMessageFileUrl,
   userMessageFileAttachments,
@@ -486,13 +488,10 @@ function createModelSelection(
     },
   );
 
-  const reasoningEffort$ = computed((get) => {
+  const modelSettings$ = computed((get) => {
     return get(chatReasoningEffortEnabled$)
-      ? compatibleReasoningEffort(
-          get(selectedModel$),
-          get(threadMeta$)?.reasoningEffort,
-        )
-      : undefined;
+      ? (get(threadMeta$)?.modelSettings ?? {})
+      : {};
   });
 
   const codexFastModeActive$ = computed(async (get): Promise<boolean> => {
@@ -521,7 +520,7 @@ function createModelSelection(
   return {
     selectedModel$,
     codexFastModeActive$,
-    reasoningEffort$,
+    modelSettings$,
     selectedModelOauthAvailable$,
     configureSelectedModel$,
     setModelSelection$,
@@ -1110,6 +1109,7 @@ function createRenderedChatGroups(
               userMessage: isInputChatEvent(event)
                 ? event.userMessage
                 : undefined,
+              userMessageRenderDocument: event.userMessageRenderDocument,
               tree: event.tree,
             };
           }),
@@ -2397,7 +2397,12 @@ function createEventChangeEffects(
     },
   );
   const afterEventsChange$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    async (
+      { get, set },
+      _handler: ChatEventChangeHandler,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      signal.throwIfAborted();
       const hasOptimisticUserMessage = get(
         chatEvents.hasOptimisticUserMessage$,
       );
@@ -2426,18 +2431,21 @@ function createEventChangeEffects(
       signal.throwIfAborted();
     },
   );
-  return { sidebar, afterEventsChange$ };
+  const eventChangeHandler: ChatEventChangeHandler = Object.freeze({
+    command$: afterEventsChange$,
+  });
+  return { sidebar, eventChangeHandler };
 }
 
 function createChatEventPresentationLifecycle({
   chatEvents,
-  afterEventsChange$,
+  eventChangeHandler,
   syncVisibleEventTrees$,
   enableSidebarEntryAnimations$,
   initialEventsReady$,
 }: {
   readonly chatEvents: ChatEventSignals;
-  readonly afterEventsChange$: Command<Promise<void>, [AbortSignal]>;
+  readonly eventChangeHandler: ChatEventChangeHandler;
   readonly syncVisibleEventTrees$: Command<
     Promise<void>,
     [boolean, AbortSignal]
@@ -2457,7 +2465,7 @@ function createChatEventPresentationLifecycle({
       set(
         registerChatEventChangeHandler$,
         chatEvents.chatEvents$,
-        afterEventsChange$,
+        eventChangeHandler,
         signal,
       );
       await set(syncVisibleEventTrees$, false, signal);
@@ -2526,18 +2534,20 @@ function createBrowserLifecycleOptimisticEvents(
   };
 }
 
+interface ChatThreadMessagePipelineOptions {
+  chatActionContext: ChatActionContext;
+  chatEvents: ChatEventSignals;
+  previewImageUrlsByUrl$: Computed<Promise<ReadonlyMap<string, string>>>;
+  connector: ComposerConnectorSignals;
+}
+
 function createChatThreadMessagePipeline(
   {
     chatActionContext,
     chatEvents,
     previewImageUrlsByUrl$,
     connector,
-  }: {
-    chatActionContext: ChatActionContext;
-    chatEvents: ChatEventSignals;
-    previewImageUrlsByUrl$: Computed<Promise<ReadonlyMap<string, string>>>;
-    connector: ComposerConnectorSignals;
-  },
+  }: ChatThreadMessagePipelineOptions,
   owner: Computed<AbortSignal>,
 ) {
   const { threadId } = chatActionContext;
@@ -2613,7 +2623,7 @@ function createChatThreadMessagePipeline(
   );
   const lifecycle = createChatEventPresentationLifecycle({
     chatEvents,
-    afterEventsChange$: effects.afterEventsChange$,
+    eventChangeHandler: effects.eventChangeHandler,
     syncVisibleEventTrees$,
     enableSidebarEntryAnimations$: effects.sidebar.enableEntryAnimations$,
     initialEventsReady$,
@@ -2686,18 +2696,23 @@ function createEventRunIndicatorState(chatEvents$: Computed<ChatEvent[]>) {
 }
 
 // ---------------------------------------------------------------------------
-// Factory: createChatThreadSubscriptions
+// Factory: createRunTracking
 // ---------------------------------------------------------------------------
 
-interface ChatThreadSubscriptionDeps {
+type ThreadActivitySummarySignals = ReturnType<
+  typeof createThreadActivitySummarySignals
+>;
+
+interface RunTrackingDeps {
   threadId: string;
   setupChatEvents$: Command<Promise<void>, [AbortSignal]>;
   catchUpChatEvents$: Command<Promise<void>, [AbortSignal]>;
   syncHydratedEventTrees$: Command<Promise<void>, [AbortSignal]>;
   reloadArtifacts$: Command<void, []>;
   subscribeBrowserSessions$: Command<Promise<void>, [AbortSignal]>;
-  subscribeThinkingSummaries$: Command<Promise<void>, [AbortSignal]>;
-  reloadAutomations$: Command<void, []>;
+  subscribeThinkingSummaries$: ThreadActivitySummarySignals["subscribe$"];
+  thinkingSummarySubscription: ThreadActivitySummarySignals["subscription"];
+  automationSignals: Pick<ChatPanelSignals, "headerAutomations">;
   cancellationRecovery: ReturnType<typeof createCancellationRecoverySignals>;
   reloadConnectorAccounts$: Command<void, []>;
   reloadConnectorAccountPreference$: Command<void, []>;
@@ -3022,7 +3037,7 @@ function createOnSubscribedCommand({
   cancellationRecovery,
   reloadConnectorAccounts$,
 }: Pick<
-  ChatThreadSubscriptionDeps,
+  RunTrackingDeps,
   | "threadId"
   | "catchUpChatEvents$"
   | "reloadArtifacts$"
@@ -3051,7 +3066,7 @@ const onWorkflowsChanged$ = command(
   },
 );
 
-function createChatThreadSubscriptions({
+function createRunTracking({
   threadId,
   setupChatEvents$,
   catchUpChatEvents$,
@@ -3059,35 +3074,18 @@ function createChatThreadSubscriptions({
   reloadArtifacts$,
   subscribeBrowserSessions$,
   subscribeThinkingSummaries$,
-  reloadAutomations$,
+  thinkingSummarySubscription,
+  automationSignals,
   cancellationRecovery,
   reloadConnectorAccounts$,
   reloadConnectorAccountPreference$,
-}: ChatThreadSubscriptionDeps) {
+}: RunTrackingDeps) {
   const onSubscribed$ = createOnSubscribedCommand({
     threadId,
     catchUpChatEvents$,
     reloadArtifacts$,
     cancellationRecovery,
     reloadConnectorAccounts$,
-  });
-
-  const onThreadDetailChanged$ = command(({ set }) => {
-    L.debug("onThreadDetailChanged$ fired", { threadId });
-    set(cancellationRecovery.reload$);
-    set(reloadConnectorAccountPreference$);
-    return false;
-  });
-
-  const onAutomationsChanged$ = command(({ set }) => {
-    set(reloadAutomations$);
-    return false;
-  });
-
-  const onArtifactsChanged$ = command(({ set }) => {
-    L.debug("onArtifactsChanged$ fired", { threadId });
-    set(reloadArtifacts$);
-    return false;
   });
 
   const subscribeChatThread$ = command(async ({ set }, signal: AbortSignal) => {
@@ -3098,15 +3096,20 @@ function createChatThreadSubscriptions({
     await Promise.all([
       set(syncHydratedEventTrees$, signal),
       set(subscribeBrowserSessions$, signal),
-      set(subscribeThinkingSummaries$, signal),
+      set(subscribeThinkingSummaries$, thinkingSummarySubscription, signal),
       set(
         subscribeChatThreadRealtime$,
         {
           threadId,
+          invalidations: {
+            threadDetail: [
+              cancellationRecovery.reload$,
+              reloadConnectorAccountPreference$,
+            ],
+            automations: [automationSignals.headerAutomations.reload$],
+            artifacts: [reloadArtifacts$],
+          },
           handlers: {
-            onThreadDetailChanged$,
-            onAutomationsChanged$,
-            onArtifactsChanged$,
             onWorkflowsChanged$,
             onSubscribed$,
           },
@@ -3666,10 +3669,6 @@ function createThinkingIndicatorSignals(
       }
       return {
         runId: eventId,
-        summaryRevision: eventId,
-        summarySequence: null,
-        summaryMessageCursor: null,
-        summarizedAt: null,
         messages: [
           ...new Set(
             text
@@ -3844,13 +3843,13 @@ function createChatThreadComposerSignals(
       if (!isSupportedRunModel(selectedModel)) {
         return null;
       }
-      const reasoningEffort = get(modelSelection.reasoningEffort$);
+      const modelSettings = get(modelSelection.modelSettings$);
       return {
         selectedModel,
         ...((await get(modelSelection.codexFastModeActive$))
           ? { codexServiceTier: "fast" as const }
           : {}),
-        ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
+        modelSettings,
       };
     },
   );
@@ -4043,7 +4042,7 @@ export function createChatPanelSignals(
     allChatGroups$: messagePipeline.allChatGroups$,
     threadScrollPosition$: messages.scroll.threadScrollPosition$,
   });
-  const subscriptions = createChatThreadSubscriptions({
+  const runTracking = createRunTracking({
     threadId,
     setupChatEvents$: messages.setup$,
     catchUpChatEvents$: messages.catchUp$,
@@ -4051,7 +4050,8 @@ export function createChatPanelSignals(
     reloadArtifacts$: messages.reloadArtifacts$,
     subscribeBrowserSessions$: messages.subscribeBrowserSessions$,
     subscribeThinkingSummaries$: activity.subscribe$,
-    reloadAutomations$: threadOwned.headerAutomations.reloadAutomations$,
+    thinkingSummarySubscription: activity.subscription,
+    automationSignals: threadOwned,
     cancellationRecovery,
     reloadConnectorAccounts$: composer.connector.accounts.reload$,
     reloadConnectorAccountPreference$:
@@ -4087,7 +4087,7 @@ export function createChatPanelSignals(
     ...threadOwned,
     sidebar: messages.sidebar,
     ...publicChatThreadEventSignals(messages),
-    subscribeChatThread$: subscriptions.subscribeChatThread$,
+    subscribeChatThread$: runTracking.subscribeChatThread$,
     ...createThinkingIndicatorSignals(activity, messages),
     artifacts$: messages.artifacts$,
     reloadArtifacts$: messages.reloadArtifacts$,

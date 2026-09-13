@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "ably-subscriber"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "base64 0.23.1",
  "futures-util",
@@ -302,9 +302,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-s3"
-version = "1.146.0"
+version = "1.146.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37b5ffaae346b9bd486ebdc3eb7053ec8ab8a1ad0f19a332eefeff036ed559e6"
+checksum = "2cd651b4400d4011b8927b83a9552bf90ff11e6e5da0b9f0a7583247aceec971"
 dependencies = [
  "arc-swap",
  "aws-credential-types",
@@ -1676,7 +1676,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.89.4"
+version = "0.89.6"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -1730,7 +1730,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-client"
-version = "0.20.5"
+version = "0.20.6"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -1770,7 +1770,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.11.5"
+version = "0.11.6"
 dependencies = [
  "guest-control-client",
  "guest-control-proto",
@@ -1785,7 +1785,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.16.253"
+version = "0.16.254"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -1804,7 +1804,7 @@ dependencies = [
 
 [[package]]
 name = "guest-storage-apply"
-version = "0.23.81"
+version = "0.23.82"
 dependencies = [
  "flate2",
  "guest-contracts",
@@ -3391,7 +3391,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.190.6"
+version = "0.191.2"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3720,7 +3720,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox"
-version = "0.22.5"
+version = "0.22.6"
 dependencies = [
  "async-trait",
  "serde",
@@ -3734,7 +3734,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.41.7"
+version = "0.41.9"
 dependencies = [
  "async-trait",
  "clap",
@@ -3769,7 +3769,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-mock"
-version = "0.10.34"
+version = "0.10.35"
 dependencies = [
  "async-trait",
  "guest-contracts",
@@ -4161,9 +4161,9 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "smallvec"
-version = "1.16.0"
+version = "1.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9be42f50aa861c555654aa3a37f52f4b1074bacf4e48fe0ef7fa584e80f1f0f"
+checksum = "ba467056f1b547ed52077911161fc86985becbc60e8e1857c8a144dab0def891"
 
 [[package]]
 name = "socket2"
@@ -5434,18 +5434,18 @@ checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 
 [[package]]
 name = "zstd"
-version = "0.13.3"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e91ee311a569c327171651566e07972200e76fcfe2242a4fa446149a3881c08a"
+checksum = "bf06bd8162af0734b344780deb55b42a2429ae430870d13fcc12f238e880fe6e"
 dependencies = [
  "zstd-safe",
 ]
 
 [[package]]
 name = "zstd-safe"
-version = "7.3.0"
+version = "8.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64d80649ab6db9d9f6f9c80a40becd948eda4714a0a5ac8c4d157a32231c7882"
+checksum = "ae42c0555055784c70058d19ba8e275528e8a99a706684868ace5da4e716a4ab"
 dependencies = [
  "zstd-sys",
 ]

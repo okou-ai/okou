@@ -649,7 +649,8 @@ export function verifyResendWebhook(
   if (!secret) {
     throw new Error("RESEND_WEBHOOK_SECRET is not configured");
   }
-  return new Webhook(secret).verify(payload, headers);
+  new Webhook(secret).verify(payload, headers);
+  return JSON.parse(payload);
 }
 
 export async function getUserEmail(

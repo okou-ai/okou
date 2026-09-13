@@ -24,6 +24,9 @@ log-and-rethrow wrappers and fabricated defaults that hide a broken invariant.
 Preserve resource cleanup, domain-error responses, legitimate retry/recovery,
 best-effort operation ownership, per-item failure isolation, and security checks.
 
+Do not add code whose only output is a log level. A fix for a noisy record first
+considers deleting the record; a new outcome classifier is a smell.
+
 Reference ownership follows the referenced entity's authority. An expected
 external miss is different from invalid input, a failed required operation, or
 a violated local invariant. Follow [externally managed references](externally-managed-references.md)

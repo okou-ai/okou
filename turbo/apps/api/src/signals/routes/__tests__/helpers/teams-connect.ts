@@ -184,13 +184,13 @@ export function teamsMessageActivityForTest(
       aadObjectId: fixture.teamsAadObjectId,
       userPrincipalName: fixture.teamsUserPrincipalName,
     },
-    recipient: { id: fixture.teamsBotId, name: "Zero" },
-    text: "<at>Zero</at> deploy the preview",
+    recipient: { id: fixture.teamsBotId, name: "Nova" },
+    text: "<at>Nova</at> deploy the preview",
     entities: [
       {
         type: "mention",
-        text: "<at>Zero</at>",
-        mentioned: { id: fixture.teamsBotId, name: "Zero" },
+        text: "<at>Nova</at>",
+        mentioned: { id: fixture.teamsBotId, name: "Nova" },
       },
     ],
     replyToId: fixture.teamsThreadId,
@@ -221,8 +221,8 @@ function teamsBotRemovedActivity(
       channel: { id: fixture.teamsChannelId, name: "General" },
       teamsAppId: fixture.teamsAppId,
     },
-    recipient: { id: fixture.teamsBotId, name: "Zero" },
-    membersRemoved: [{ id: fixture.teamsBotId, name: "Zero" }],
+    recipient: { id: fixture.teamsBotId, name: "Nova" },
+    membersRemoved: [{ id: fixture.teamsBotId, name: "Nova" }],
   };
 }
 

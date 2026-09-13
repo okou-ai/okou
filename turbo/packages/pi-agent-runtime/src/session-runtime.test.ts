@@ -8,12 +8,12 @@ import { zstdDecompressSync } from "node:zlib";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { piModelConfigSchema } from "@okouai/api-contracts/contracts/runners";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { piMemorySummaryTokenCount } from "./memory-recall";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
 import type { PiPreheatedResourceSnapshot } from "./api-types";
-import type { PiAgentRequestHeaders } from "./types";
+import type { PiAgentModelConfig, PiAgentRequestHeaders } from "./types";
 import { materializePiAgentModelConfig } from "./credential";
 import { resumePiApiFirstTurn } from "./rpc";
 import { createPiApiFirstTurnOwnership, runPiApiFirstTurn } from "./api";
@@ -1500,7 +1500,7 @@ describe("official Pi AgentSession runtime", () => {
     }
   });
 
-  it("keeps an existing explicit session thinking level authoritative", async () => {
+  it("applies the captured run effort to a restored session and records the change", async () => {
     const sessionManager = SessionManager.inMemory("/home/user/workspace", {
       id: "00000000-0000-4000-8000-000000000125",
     });
@@ -1523,12 +1523,91 @@ describe("official Pi AgentSession runtime", () => {
     });
 
     try {
-      expect(created.session.agent.state.thinkingLevel).toBe("high");
+      expect(created.session.agent.state.thinkingLevel).toBe("max");
       expect(
         sessionManager.getBranch().filter((entry) => {
           return entry.type === "thinking_level_change";
         }),
-      ).toHaveLength(1);
+      ).toEqual([
+        expect.objectContaining({ thinkingLevel: "high" }),
+        expect.objectContaining({ thinkingLevel: "max" }),
+      ]);
+    } finally {
+      created.session.dispose();
+    }
+  });
+});
+
+describe("Pi session credential storage", () => {
+  it.each([
+    {
+      name: "API snapshot",
+      model: TERRA_MODEL,
+      snapshot: EMPTY_RESOURCE_SNAPSHOT,
+      defaultStore: false,
+    },
+    {
+      name: "ordinary Sandbox",
+      model: TERRA_MODEL,
+      snapshot: undefined,
+      defaultStore: true,
+    },
+    {
+      name: "native Messages Sandbox",
+      model: {
+        provider: "anthropic",
+        model: "claude-sonnet-4-6",
+        catalogModel: "claude-sonnet-4-6",
+        baseUrl: "https://api.anthropic.com",
+        apiKey: "test-native-key",
+        requestHeaders: { "x-api-key": "test-native-key" },
+        dialect: "anthropic-messages",
+        transport: "sse",
+      } satisfies PiAgentModelConfig,
+      snapshot: undefined,
+      defaultStore: false,
+    },
+    {
+      name: "native Bedrock Sandbox",
+      model: {
+        provider: "amazon-bedrock",
+        model: "claude-sonnet-4-6",
+        catalogModel: "claude-sonnet-4-6",
+        baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
+        apiKey: "test-native-key",
+        region: "us-east-1",
+        bedrockAuth: { kind: "bearer", token: "test-native-key" },
+        dialect: "bedrock-converse-stream",
+        transport: "aws-event-stream",
+      } satisfies PiAgentModelConfig,
+      snapshot: undefined,
+      defaultStore: false,
+    },
+  ])("preserves credential-file behavior for $name", async (entry) => {
+    const root = await mkdtemp(join(tmpdir(), "pi-session-credentials-"));
+    const credentialDir = join(root, "credentials");
+    vi.stubEnv("PI_CODING_AGENT_DIR", credentialDir);
+    onTestFinished(async () => {
+      vi.unstubAllEnvs();
+      await rm(root, { force: true, recursive: true });
+    });
+    const created = await createPiAgentSessionForRuntime({
+      cwd: root,
+      agentDir: join(root, "agent"),
+      sessionManager: SessionManager.inMemory(root, { id: randomUUID() }),
+      model: entry.model,
+      appendSystemPrompt: null,
+      ...(entry.snapshot === undefined
+        ? {}
+        : { resourceSnapshot: entry.snapshot }),
+    });
+    try {
+      const credentials = readFile(join(credentialDir, "auth.json"), "utf8");
+      if (entry.defaultStore) {
+        await expect(credentials).resolves.toBe("{}");
+      } else {
+        await expect(credentials).rejects.toMatchObject({ code: "ENOENT" });
+      }
     } finally {
       created.session.dispose();
     }

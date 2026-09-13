@@ -507,7 +507,7 @@ describe("chat event snapshot read endpoints", () => {
     );
   }, 60_000);
 
-  it("classifies Snapshot decode failures without logging row data", async () => {
+  it("skips undecodable Snapshot heads and keeps the stored object", async () => {
     const owner = bdd.user({ orgId: `org_${randomUUID()}` });
     const agent = await bdd.createAgent(owner, {
       displayName: "Snapshot decode classification agent",
@@ -588,8 +588,6 @@ describe("chat event snapshot read endpoints", () => {
       {
         failureClass: "projection",
         object: gzipSync(projectionBody),
-        projectionSubstage: "current_contract",
-        projectionVariant: "invalid_event_shape",
       },
       {
         failureClass: "prefix",
@@ -611,7 +609,6 @@ describe("chat event snapshot read endpoints", () => {
       await trackFakeChatEventObject(Promise.resolve(objectKey));
       await updateChatEventSnapshotHead(context, threadId, objectKey);
       const staleHead = await readChatEventSnapshotHead(context, threadId);
-      context.mocks.axiomLogging.warn.mockClear();
 
       const result = await runSnapshotCron([threadId], [objectKey]);
 
@@ -623,45 +620,6 @@ describe("chat event snapshot read endpoints", () => {
         readChatEventSnapshotHead(context, threadId),
       ).resolves.toStrictEqual(staleHead);
       expect(readFakeChatEventObject(objectKey)).toStrictEqual(testCase.object);
-
-      const skipLog = context.mocks.axiomLogging.warn.mock.calls.find(
-        ([message, fields]) => {
-          return (
-            message === "Skipped Chat Event Snapshot pointer" &&
-            (fields as Record<string, unknown> | undefined)?.type ===
-              "chat_event_snapshot_head_skipped"
-          );
-        },
-      );
-      const fields = skipLog?.[1];
-      if (typeof fields !== "object" || fields === null) {
-        throw new Error("Expected a bounded Snapshot decode failure log");
-      }
-      expect(fields).toMatchObject({
-        type: "chat_event_snapshot_head_skipped",
-        chatThreadId: threadId,
-        reason: "undecodable",
-        failureClass: testCase.failureClass,
-        context: "api:cron:snapshot-chat-events",
-        ...("projectionSubstage" in testCase
-          ? {
-              projectionSubstage: testCase.projectionSubstage,
-              projectionVariant: testCase.projectionVariant,
-            }
-          : {}),
-      });
-      expect(Object.keys(fields).sort()).toStrictEqual(
-        [
-          "chatThreadId",
-          "context",
-          "failureClass",
-          "reason",
-          "type",
-          ...("projectionSubstage" in testCase
-            ? ["projectionSubstage", "projectionVariant"]
-            : []),
-        ].sort(),
-      );
     }
   }, 90_000);
 

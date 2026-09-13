@@ -15,6 +15,10 @@ rootSignal$ (app lifecycle)
           └── resetSignal() (per-operation, e.g. send/polling)
 ```
 
+Do not use `createChildAbortController()` to create an imperative owner outside
+this hierarchy. Existing calls are tracked with targeted
+`ccstate/no-create-child-abort-controller` suppressions while they migrate.
+
 ### Two usage patterns of `resetSignal()`
 
 `resetSignal()` creates an independent `AbortController` and aborts the previous one on each call. It has two normal usage patterns:

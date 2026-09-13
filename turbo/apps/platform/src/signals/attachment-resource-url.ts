@@ -1,4 +1,6 @@
 import { computed, type Computed } from "ccstate";
+import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
+import { resolveArtifactImageTransformOrigin } from "../lib/platform-host.ts";
 import { publicAttachmentUrl } from "../views/okou-page/attachment-url.ts";
 import {
   artifactReferencesContract,
@@ -134,9 +136,16 @@ function createAttachmentPresignedToken$(
  * API URL for a temporary token after the API has checked ownership. Public
  * addresses need no token and pass through unchanged.
  */
-export function createAttachmentPreviewSignals(inputUrl: string) {
+export function createAttachmentPreviewSignals(
+  inputUrl: string,
+  resolvedToken?: AttachmentPresignedToken,
+) {
   const url = publicAttachmentUrl(inputUrl);
-  const presignedToken$ = createAttachmentPresignedToken$(url);
+  const presignedToken$ = resolvedToken
+    ? computed(() => {
+        return Promise.resolve(resolvedToken);
+      })
+    : createAttachmentPresignedToken$(url);
   const resourceUrl$ = computed(async (get) => {
     return (await get(presignedToken$))?.token ?? url;
   });
@@ -144,12 +153,24 @@ export function createAttachmentPreviewSignals(inputUrl: string) {
     const presigned = await get(presignedToken$);
     return presigned === null ? url : presigned.publicUrl;
   });
+  const thumbnailUrl$ = computed(async (get) => {
+    return r2ImageTransformUrl(
+      await get(resourceUrl$),
+      { width: 800, height: 720 },
+      resolveArtifactImageTransformOrigin(),
+    );
+  });
   return {
     presignedToken$,
     resourceUrl$,
     shareUrl$,
+    thumbnailUrl$,
   };
 }
+
+export type AttachmentPreviewSignals = ReturnType<
+  typeof createAttachmentPreviewSignals
+>;
 
 export function createAttachmentResourceUrl$(url: string) {
   return createAttachmentPreviewSignals(url).resourceUrl$;

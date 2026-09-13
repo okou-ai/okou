@@ -319,7 +319,7 @@ async function seedGmailMailCardFixture() {
   const actorWithOrg = { ...actor, orgId: actor.orgId };
   bdd.acceptAgentStorageWrites();
   const agent = await bdd.createAgent(actor, {
-    displayName: "Zero Mail agent",
+    displayName: "Nova Mail agent",
     visibility: "private",
   });
   const thread = await chat.createThread(actor, {
@@ -1230,7 +1230,7 @@ describe("POST /api/mail/drafts/link", () => {
     expect(refreshCalls).toBe(0);
   });
 
-  it("logs the canonical connector dimension on refresh failure", async () => {
+  it("requires reconnect when the Gmail token refresh fails", async () => {
     const fixture = await seedGmailMailCardFixture();
     await setConnectorCredentialStorageState(context, {
       orgId: fixture.actor.orgId ?? "",
@@ -1244,7 +1244,6 @@ describe("POST /api/mail/drafts/link", () => {
         return HttpResponse.error();
       }),
     );
-    context.mocks.axiomLogging.warn.mockClear();
 
     const response = await accept(
       client().linkDraft({
@@ -1260,12 +1259,6 @@ describe("POST /api/mail/drafts/link", () => {
 
     expect(response.body.error.message).toBe(
       "Reconnect Gmail before continuing",
-    );
-    expect(context.mocks.axiomLogging.warn).toHaveBeenCalledWith(
-      "Connector credential refresh failed",
-      expect.objectContaining({
-        connectorSlug: "gmail",
-      }),
     );
   });
 

@@ -833,7 +833,7 @@ test("Reconnect the selected non-default account after cancellation", async () =
   context.mocks.browser.open(authWindow);
   await setupPage({
     context,
-    path: "/connectors",
+    path: "/connectors?keywords=stripe",
     sharedWorkerTestTransport: "message-port",
   });
   click(

@@ -1,7 +1,7 @@
 import { apiBackendUrl } from "./api-backend-url";
 import { webUrl } from "./web-url";
 
-const WEB_ORIGIN_HEADER = "x-vm0-web-origin";
+const WEB_ORIGIN_HEADER = "x-okou-web-origin";
 
 type HostRole = "api" | "www";
 

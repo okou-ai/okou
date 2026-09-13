@@ -9,10 +9,13 @@ import type {
  * would ever record: menu bar extras, the Dock, notification banners, and the
  * recorder's own overlays. Left in the list they crowd out the real windows —
  * one machine offered twenty-eight of them ahead of any document.
+ *
+ * These are macOS bundle identifiers, not desktop auth callback schemes. The
+ * two namespaces can spell an app the same way while meaning different things,
+ * so an entry here stands or falls on whether its windows are worth hiding.
  */
 const CHROME_BUNDLE_IDS: ReadonlySet<string> = new Set([
   "ai.okou.desktop",
-  "ai.vm0.zero.desktop",
   "com.apple.controlcenter",
   "com.apple.dock",
   "com.apple.notificationcenterui",

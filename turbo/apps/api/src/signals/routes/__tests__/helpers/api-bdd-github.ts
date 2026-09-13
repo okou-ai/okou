@@ -315,7 +315,7 @@ export function createGithubBddApi(context: TestContext) {
         method: "GET",
         origin: options.origin,
         headers: options.webOriginHeader
-          ? { "x-vm0-web-origin": options.webOriginHeader }
+          ? { "x-okou-web-origin": options.webOriginHeader }
           : undefined,
       },
     );
@@ -356,7 +356,7 @@ export function createGithubBddApi(context: TestContext) {
         githubClient().getInstallation({
           headers: authenticate(auth),
           ...(options.webOriginHeader
-            ? { extraHeaders: { "x-vm0-web-origin": options.webOriginHeader } }
+            ? { extraHeaders: { "x-okou-web-origin": options.webOriginHeader } }
             : {}),
         }),
         statuses,

@@ -73,8 +73,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.ComposerWorkflowFuzzySearch]: {
     maintainer: "bingjie@okou.ai",
     description: "Fuzzy workflow name matching in the chat composer",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.Dummy]: {
     maintainer: "ethan@okou.ai",
@@ -110,7 +109,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.CalComConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Cal.com scheduling connector",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.CopperConnector]: {
     maintainer: "yuma@okou.ai",
@@ -230,7 +229,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Enable the managed banking gateway and banking:read OKOU_TOKEN capability for Finicity-backed accounts, balances, and transactions.",
     enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.Lab]: {
     maintainer: "ethan@okou.ai",
@@ -323,10 +321,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.ChatReasoningEffort]: {
     maintainer: "bingjie@okou.ai",
     description:
-      "Choose model reasoning effort for Codex and Claude Code chats.",
+      "Choose model reasoning effort for Codex, Claude Code, and Pi chats.",
     enabled: false,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.PiLoop]: {
     maintainer: "lancy@okou.ai",
@@ -373,6 +372,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Route Gemini voice transcription and polishing through Google Cloud instead of OpenRouter.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ZapierConnector]: {
     maintainer: "yuma@okou.ai",
@@ -384,13 +384,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "lancy@okou.ai",
     description:
       "Enable Okou Desktop Computer Use plugins for local resources, starting with the bundled filesystem plugin gateway.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ChatErrorRecovery]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Replace supported Codex and Claude Code limit errors with recovery actions in chat.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -411,15 +404,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     description:
       "Render explicit LaTeX delimiters in Agent messages as native MathML.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.MarkdownTime]: {
     maintainer: "ethan@okou.ai",
     description:
       "Render Markdown time tags with explicit datetime offsets in the browser timezone.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.ProgressiveArtifactPreview]: {
     maintainer: "bingjie@okou.ai",
@@ -440,20 +431,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Let an attached image be marked up in the composer lightbox — boxes, arrows, freehand, text, highlight and redaction, each able to carry a note — and send a rendered copy carrying the editable marks.",
     enabled: false,
-  },
-  [FeatureSwitchKey.ResponsiveFollowupCards]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Render recommended follow-ups as a horizontally scrollable rail of tappable quick replies on touch devices.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.StableChatThreadNavigation]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Keep pinned chats in a stable, manually adjustable order, show current chats in empty search, and use numbered shortcuts inside the search dialog.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.GradientColorThemes]: {
     maintainer: "ming@okou.ai",

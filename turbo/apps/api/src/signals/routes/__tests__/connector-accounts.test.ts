@@ -100,6 +100,32 @@ function customConnectorValuesClient() {
   return setupApp({ context, routes })(customConnectorValuesContract);
 }
 
+async function deleteBuiltinAccountPage(
+  connectorSlug: "openai" | "github",
+  connections: readonly { readonly id: string }[],
+): Promise<void> {
+  const accountsApi = accountClient();
+  for (let offset = 0; offset < connections.length; offset += 4) {
+    const deleted = await Promise.allSettled(
+      connections.slice(offset, offset + 4).map(async (account) => {
+        await accept(
+          accountsApi.delete({
+            headers: authHeaders(),
+            params: { connectionId: account.id },
+            body: { target: { kind: "builtin", connectorSlug } },
+          }),
+          [200, 404],
+        );
+      }),
+    );
+    for (const result of deleted) {
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+    }
+  }
+}
+
 async function cleanupFixture(fixture: Fixture): Promise<void> {
   mocks.clerk.session(fixture.userId, fixture.orgId);
   const accountsApi = accountClient();
@@ -118,18 +144,7 @@ async function cleanupFixture(fixture: Fixture): Promise<void> {
       if (accounts.status !== 200) {
         break;
       }
-      for (const account of accounts.body.connections) {
-        await accept(
-          accountsApi.delete({
-            headers: authHeaders(),
-            params: { connectionId: account.id },
-            body: {
-              target: { kind: "builtin", connectorSlug },
-            },
-          }),
-          [200, 404],
-        );
-      }
+      await deleteBuiltinAccountPage(connectorSlug, accounts.body.connections);
     }
   }
   const customConnectors = await accept(
@@ -823,7 +838,7 @@ describe("connector account lifecycle routes", () => {
     return createdAccountIds;
   }
 
-  it("paginates and summarizes more than one hundred accounts", async () => {
+  it("paginates more than one hundred accounts", async () => {
     await createBulkAccounts();
     const ids = new Set<string>();
     let cursor: string | undefined;
@@ -846,6 +861,10 @@ describe("connector account lifecycle routes", () => {
       cursor = page.body.nextCursor ?? undefined;
     } while (cursor);
     expect(ids.size).toBe(101);
+  });
+
+  it("summarizes more than one hundred accounts", async () => {
+    await createBulkAccounts();
     const summary = await accept(
       accountClient().summaries({ headers: authHeaders() }),
       [200],
@@ -927,7 +946,7 @@ describe("connector account lifecycle routes", () => {
     );
   });
 
-  it("returns no matches and rejects blank searches with more than one hundred accounts", async () => {
+  it("returns no matches for absent searches with more than one hundred accounts", async () => {
     await createBulkAccounts();
     const noMatch = await accept(
       accountClient().connections({
@@ -945,8 +964,11 @@ describe("connector account lifecycle routes", () => {
       connections: [],
       nextCursor: null,
     });
+  });
 
-    await accept(
+  it("rejects blank searches with more than one hundred accounts", async () => {
+    await createBulkAccounts();
+    const response = await accept(
       accountClient().connections({
         headers: authHeaders(),
         query: {
@@ -958,6 +980,7 @@ describe("connector account lifecycle routes", () => {
       }),
       [400],
     );
+    expect(response.status).toBe(400);
   });
 
   it("does not enumerate or mutate another member account", async () => {

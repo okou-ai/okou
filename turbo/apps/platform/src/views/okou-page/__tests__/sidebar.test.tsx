@@ -572,6 +572,11 @@ function restoreElementProperty(
   Reflect.deleteProperty(HTMLElement.prototype, name);
 }
 
+/** The clipping box a sidebar thread title is faded and scrolled inside. */
+function isSidebarTitleBox(element: HTMLElement): boolean {
+  return element.dataset.slot === "sidebar-thread-title";
+}
+
 /**
  * Gives the title box a fixed width and its text a width per character, so one
  * title overflows the box and the other fits inside it.
@@ -588,15 +593,13 @@ function stubSidebarTitleLayout(): void {
   Object.defineProperty(HTMLElement.prototype, "clientWidth", {
     configurable: true,
     get(this: HTMLElement): number {
-      return this.classList.contains("okou-nav-title")
-        ? SIDEBAR_TITLE_BOX_WIDTH
-        : 0;
+      return isSidebarTitleBox(this) ? SIDEBAR_TITLE_BOX_WIDTH : 0;
     },
   });
   Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
     configurable: true,
     get(this: HTMLElement): number {
-      if (!this.classList.contains("okou-nav-title")) {
+      if (!isSidebarTitleBox(this)) {
         return 0;
       }
       return Math.max(

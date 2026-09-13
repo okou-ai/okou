@@ -10,7 +10,6 @@ import {
 import {
   createAgentSessionFromServices,
   createAgentSessionServices,
-  ModelRuntime,
   SessionManager,
   SettingsManager,
   type AgentSession,
@@ -53,8 +52,8 @@ import {
 } from "./phase2-memory-types";
 import { resolvePiAgentModel } from "./model";
 import {
+  createPiModelRuntime,
   initializePiSessionResourceRegistry,
-  registeredModelConfig,
 } from "./session-model";
 
 const ZERO_USAGE: PiMemoryPhase2ProviderUsage = Object.freeze({
@@ -486,16 +485,13 @@ async function createMaintenanceSession(args: {
     resolved,
     args.input.model,
   );
-  const modelRuntime = await ModelRuntime.create({
-    allowModelNetwork: false,
-    credentials: new InMemoryCredentialStore(),
-    modelsPath: null,
-    refreshOnCreate: false,
-    signal: args.input.signal,
-  });
-  modelRuntime.registerProvider(
-    args.input.model.provider,
-    registeredModelConfig(model, args.input.model.apiKey, args.input.model),
+  const modelRuntime = await createPiModelRuntime(
+    {
+      model,
+      config: args.input.model,
+      credentials: new InMemoryCredentialStore(),
+    },
+    args.input.signal,
   );
   const services = await createAgentSessionServices({
     cwd: PI_MEMORY_PHASE2_SESSION_CWD,

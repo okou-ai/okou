@@ -2,7 +2,14 @@ import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import type { KeyboardEvent, ReactNode } from "react";
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Check, ChevronDown, Globe, Workflow, X } from "lucide-react";
+import {
+  ChartNoAxesCombined,
+  Check,
+  ChevronDown,
+  Globe,
+  Workflow,
+  X,
+} from "lucide-react";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { resolveVideoRunOptions } from "../../signals/okou-page/video-run-options.ts";
 import { Button } from "@okouai/ui";
@@ -54,6 +61,7 @@ const TASK_ICONS = {
   ...COMPOSER_CREATE_ICONS,
   workflow: Workflow,
   website: Globe,
+  visualization: ChartNoAxesCombined,
 } as const;
 
 export function ComposerSelectedTask({
@@ -85,7 +93,9 @@ export function ComposerSelectedTask({
           size={16}
           className={cn(
             "shrink-0",
-            task === "workflow" || task === "website"
+            task === "workflow" ||
+              task === "website" ||
+              task === "visualization"
               ? "text-muted-foreground"
               : CREATE_MODE_ICON_CLASS[task],
           )}

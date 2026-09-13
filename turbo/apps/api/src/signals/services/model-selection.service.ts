@@ -119,27 +119,27 @@ function isOAuthMemberProviderType(type: ModelProviderType): boolean {
 
 function modelRouteCapabilities(
   capabilities: OrgPlanCapabilities | null,
-): Pick<OrgPlanCapabilities, "restrictedVm0Models" | "supportByok"> {
+): Pick<OrgPlanCapabilities, "restrictedBuiltInModels" | "supportByok"> {
   if (capabilities?.status !== "active") {
     return {
-      restrictedVm0Models: false,
+      restrictedBuiltInModels: false,
       supportByok: true,
     };
   }
   return {
-    restrictedVm0Models: capabilities.restrictedVm0Models,
+    restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
     supportByok: capabilities.supportByok,
   };
 }
 
 function modelAllowedForOrgPlan(args: {
-  readonly capabilities: Pick<OrgPlanCapabilities, "restrictedVm0Models">;
+  readonly capabilities: Pick<OrgPlanCapabilities, "restrictedBuiltInModels">;
   readonly selectedModel: string | null | undefined;
 }): boolean {
   return (
     getRunModelAccess(
       args.selectedModel,
-      args.capabilities.restrictedVm0Models,
+      args.capabilities.restrictedBuiltInModels,
     ) === "allowed"
   );
 }
@@ -248,7 +248,7 @@ async function resolveValidPolicyRoute(params: {
   readonly orgId: string;
   readonly capabilities: Pick<
     OrgPlanCapabilities,
-    "restrictedVm0Models" | "supportByok"
+    "restrictedBuiltInModels" | "supportByok"
   >;
   readonly selectedModel: string;
 }): Promise<ResolvedModelFirstPolicyRoute | null> {
@@ -424,7 +424,7 @@ async function resolveWorkspaceDefaultModelFirstRoute(params: {
   readonly orgId: string;
   readonly capabilities: Pick<
     OrgPlanCapabilities,
-    "restrictedVm0Models" | "supportByok"
+    "restrictedBuiltInModels" | "supportByok"
   >;
 }): Promise<ResolvedModelFirstPolicyRoute | null> {
   const [policy] = await params.db

@@ -560,6 +560,151 @@
       ],
       "status": "implemented",
       "evidence": []
+    },
+    {
+      "id": "mic-motion",
+      "family": "motion-and-injection",
+      "tokens": ["mic-starting-spinner", "mic-volume-icon-meter"],
+      "consumers": ["apps/platform/src/views/okou-page/chat-composer.tsx"],
+      "cases": ["mic-light", "mic-dark", "mic-light-retina", "mic-dark-retina"],
+      "status": "verified",
+      "evidence": [
+        {
+          "kind": "before-and-unchanged-aa-with-normal-motion",
+          "url": "https://a.okou.io/tu82fjalef.zip",
+          "sha256": "cb2d57ff2c022af59fa893e08f72e4c538f4d4459ac35d9665950894ea0959c2",
+          "commit": "f3ae0b78c34b93d6a528c64851a8ac726ff8697f"
+        },
+        {
+          "kind": "after-with-before-raw-diffs-and-normal-motion",
+          "url": "https://a.okou.io/s75ljvx543.zip",
+          "sha256": "23a02bd90b48702a8dea2f292eede718627685f08dc671de4e205478892ed716",
+          "commit": "99b0374201651de592a1ded743ef8ebe74145e88"
+        }
+      ],
+      "pullRequest": "https://github.com/vm0-ai/vm0/pull/33345",
+      "mergeCommit": null
+    },
+    {
+      "id": "neutral-control-surface",
+      "family": "local-controls",
+      "tokens": ["okou-btn-morandi"],
+      "consumers": [
+        "apps/platform/src/views/agents-page/agents-page-tabs.tsx",
+        "apps/platform/src/views/export-page/export-page.tsx",
+        "apps/platform/src/views/okou-page/activity-detail-page.tsx",
+        "apps/platform/src/views/okou-page/chat-thread-page.tsx",
+        "apps/platform/src/views/okou-page/components/org-manage/model-provider-connections-section.tsx",
+        "apps/platform/src/views/okou-page/components/org-manage/org-model-policies-section.tsx",
+        "apps/platform/src/views/okou-page/components/preferences/personal-providers-tab.tsx",
+        "apps/platform/src/views/okou-page/components/preferences/personal-usage-record.tsx",
+        "apps/platform/src/views/okou-page/components/settings/voice-input-model-settings.tsx",
+        "apps/platform/src/views/okou-page/connectors-page.tsx",
+        "apps/platform/src/views/team-page/job-detail-page.tsx",
+        "apps/platform/src/views/workflows-page/official-workflows-page.tsx",
+        "apps/platform/src/views/workflows-page/workflow-detail-page.tsx",
+        "apps/platform/src/views/workflows-page/workflows-page.tsx"
+      ],
+      "cases": [
+        "control-surface-workflows-light",
+        "control-surface-workflows-dark",
+        "control-surface-connectors-light",
+        "control-surface-connectors-dark",
+        "control-surface-agents-narrow",
+        "control-surface-agents-narrow-dark"
+      ],
+      "status": "implemented",
+      "evidence": []
+    },
+    {
+      "id": "sidebar-copy-foreground",
+      "family": "navigation",
+      "tokens": [
+        "okou-nav-copy",
+        "okou-nav-copy-muted",
+        "okou-nav-copy-muted-hover"
+      ],
+      "consumers": [
+        "apps/platform/src/views/okou-page/sidebar.tsx",
+        "apps/platform/src/views/okou-page/sidebar-pinned.tsx",
+        "apps/platform/src/views/okou-page/sidebar-threads.tsx",
+        "apps/platform/src/views/okou-page/sidebar-upgrade.tsx",
+        "apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts"
+      ],
+      "cases": [
+        "nav-copy-gradient-light",
+        "nav-copy-gradient-dark",
+        "nav-copy-default-light",
+        "nav-copy-default-dark",
+        "nav-copy-rail-light",
+        "nav-copy-rail-dark"
+      ],
+      "status": "implemented",
+      "evidence": []
+    },
+    {
+      "id": "hairline-rule",
+      "family": "local-controls",
+      "tokens": ["okou-border-t"],
+      "consumers": [
+        "apps/platform/src/views/okou-page/billing-dialog.tsx",
+        "apps/platform/src/views/okou-page/components/org-manage/buy-credits-section.tsx",
+        "apps/platform/src/views/okou-page/components/org-manage/org-billing-tab.tsx",
+        "apps/platform/src/views/okou-page/components/org-manage/org-general-tab.tsx",
+        "apps/platform/src/views/okou-page/components/org-manage/org-invoices-tab.tsx",
+        "apps/platform/src/views/okou-page/components/org-manage/org-members-tab.tsx",
+        "apps/platform/src/views/okou-page/components/org-manage/org-usage-tab.tsx",
+        "apps/platform/src/views/okou-page/components/settings/add-connection-dialog.tsx",
+        "apps/platform/src/views/okou-page/components/settings/connector-account-manager-dialog.tsx",
+        "apps/platform/src/views/okou-page/tiptap-instructions-editor.tsx",
+        "packages/ui/src/components/ui/dropdown-menu.tsx",
+        "packages/ui/src/components/ui/select.tsx"
+      ],
+      "cases": [
+        "hairline-rule-billing-light",
+        "hairline-rule-billing-dark",
+        "hairline-rule-invoices-light",
+        "hairline-rule-invoices-dark",
+        "hairline-rule-people-light",
+        "hairline-rule-people-dark",
+        "hairline-rule-general-light",
+        "hairline-rule-general-dark",
+        "hairline-rule-usage-light",
+        "hairline-rule-usage-dark",
+        "hairline-rule-connectors-light",
+        "hairline-rule-connectors-dark",
+        "hairline-rule-agent-profile-light",
+        "hairline-rule-agent-profile-dark",
+        "hairline-rule-billing-narrow",
+        "hairline-rule-billing-narrow-dark"
+      ],
+      "status": "implemented",
+      "evidence": []
+    },
+    {
+      "id": "session-list-title",
+      "family": "navigation",
+      "tokens": [
+        "okou-nav-recent-label",
+        "okou-nav-title",
+        "okou-nav-title-row"
+      ],
+      "consumers": [
+        "apps/platform/src/views/okou-page/sidebar-threads.tsx",
+        "apps/platform/src/views/okou-page/__tests__/sidebar.test.tsx"
+      ],
+      "cases": [
+        "session-list-title-light",
+        "session-list-title-dark",
+        "session-list-title-light-retina",
+        "session-list-title-dark-retina",
+        "session-list-title-narrow",
+        "session-list-title-narrow-dark"
+      ],
+      "status": "implemented",
+      "evidence": [],
+      "pullRequest": "https://github.com/vm0-ai/vm0/pull/33693",
+      "mergeCommit": null
     }
   ],
   "caseFiles": [
@@ -569,9 +714,14 @@
     "../e2e/playwright/style-migration/icon-mono-cases.json",
     "../e2e/playwright/style-migration/settings-select-cases.json",
     "../e2e/playwright/style-migration/badge-cases.json",
+    "../e2e/playwright/style-migration/nav-copy-cases.json",
     "../e2e/playwright/style-migration/chat-emoji-cases.json",
     "../e2e/playwright/style-migration/running-indicator-cases.json",
     "../e2e/playwright/style-migration/swatch-cases.json",
-    "../e2e/playwright/style-migration/shared-recipe-cases.json"
+    "../e2e/playwright/style-migration/shared-recipe-cases.json",
+    "../e2e/playwright/style-migration/mic-motion-cases.json",
+    "../e2e/playwright/style-migration/control-surface-cases.json",
+    "../e2e/playwright/style-migration/hairline-rule-cases.json",
+    "../e2e/playwright/style-migration/sidebar-thread-title-cases.json"
   ]
 }

@@ -942,9 +942,9 @@ function SortDropdown({
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
-          variant="outline"
+          variant="neutral"
           size="sm"
-          className="okou-btn-morandi h-9 shrink-0 gap-1.5 rounded-lg border"
+          className="h-9 shrink-0 gap-1.5 rounded-lg"
         >
           <ArrowUpDown size={15} className="" />
           {current?.label ??
@@ -989,9 +989,9 @@ function AgentFilterDropdown({
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
-          variant="outline"
+          variant="neutral"
           size="sm"
-          className="okou-btn-morandi h-9 shrink-0 gap-1.5 rounded-lg border"
+          className="h-9 shrink-0 gap-1.5 rounded-lg"
         >
           {selected ? (
             <AgentAvatarImg
@@ -1205,9 +1205,9 @@ export function WorkflowsPage() {
               <Button
                 asChild
                 type="button"
-                variant="outline"
+                variant="neutral"
                 size="sm"
-                className="okou-btn-morandi h-9 shrink-0 gap-2 rounded-lg border"
+                className="h-9 shrink-0 gap-2 rounded-lg"
               >
                 <Link pathname={ROUTES.officialWorkflows}>
                   <BadgeCheck size={14} />
@@ -1219,9 +1219,9 @@ export function WorkflowsPage() {
             ) : null}
             <Button
               type="button"
-              variant="outline"
+              variant="neutral"
               size="sm"
-              className="okou-btn-morandi h-9 shrink-0 gap-2 rounded-lg border"
+              className="h-9 shrink-0 gap-2 rounded-lg"
               onClick={() => {
                 openCreateWorkflowDialog();
               }}

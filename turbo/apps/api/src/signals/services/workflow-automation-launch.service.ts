@@ -31,7 +31,7 @@ import { createQueueFirstAgentRun$ } from "./agent-runs-create.service";
 import { workflowAutomationCanFire } from "./workflow-automation-access.service";
 import { loadComputerUseHostGrantForAutoSend } from "./chat-computer-use-host.service";
 import { shouldUsePiExecution } from "./pi-sandbox-config";
-import { validateReasoningEffortDispatch } from "./chat-reasoning-effort.service";
+import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import type { ChatAgentRunSourceAnnotation } from "./chat-user-message.service";
 import {
@@ -352,16 +352,6 @@ async function resolveModelContext(
     builtInModelRuntimeRoute: builtInModelRuntimeRoute ?? undefined,
     featureSwitchContext: threadModelContext.featureSwitchContext,
   });
-  const effortError = validateReasoningEffortDispatch(
-    threadModelContext.reasoningEffort,
-    piExecution,
-  );
-  if (effortError) {
-    return {
-      ok: false,
-      failure: { kind: "run_error", response: effortError },
-    };
-  }
   return {
     ok: true,
     modelPin: pin,
@@ -369,7 +359,14 @@ async function resolveModelContext(
     builtInModelRuntimeRoute: builtInModelRuntimeRoute ?? undefined,
     cliAgentType: piExecution ? "pi" : providerAdmission.cliAgentType,
     codexServiceTier: runCodexServiceTier,
-    reasoningEffort: threadModelContext.reasoningEffort,
+    reasoningEffort:
+      resolveReasoningEffortForDispatch({
+        selectedModel,
+        effort: threadModelContext.reasoningEffort,
+        runtimeProviderType:
+          builtInModelRuntimeRoute?.providerType ?? effectiveModelProvider,
+        piExecution,
+      }) ?? null,
     piExecution,
   };
 }

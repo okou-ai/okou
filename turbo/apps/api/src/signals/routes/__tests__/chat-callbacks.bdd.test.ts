@@ -8,12 +8,6 @@ import {
 
 import { HttpResponse } from "msw";
 import {
-  auxiliaryDiagnostics,
-  auxiliaryResults,
-  auxiliaryWarnings,
-} from "./helpers/auxiliary-generation";
-
-import {
   resolveChatEventRecommendedFollowups,
   type ChatEvent,
   type GenerationTemplateRequest,
@@ -78,52 +72,6 @@ const chatCallbacks = createChatCallbacksApi(context);
 const misc = createMiscRoutesApi(context);
 
 const USER_ARTIFACTS_BUCKET = "test-user-artifacts";
-const CHAT_CALLBACK_PRE_CREATE_TIMING_PREFIX =
-  "api_dispatch_pre_create_agent_chat_callback_";
-const FORBIDDEN_CHAT_CALLBACK_PRE_CREATE_TIMING_KEYS = [
-  "org_id",
-  "orgId",
-  "user_id",
-  "userId",
-  "agent_id",
-  "agentId",
-  "thread_id",
-  "threadId",
-  "chat_thread_id",
-  "chatThreadId",
-  "message_id",
-  "messageId",
-  "user_message_id",
-  "userMessageId",
-  "file_id",
-  "fileId",
-  "model_id",
-  "modelId",
-  "model",
-  "embedding_model",
-  "embeddingModel",
-  "embedding",
-  "goal_id",
-  "goalId",
-  "query",
-  "query_hash",
-  "queryHash",
-  "objective",
-  "objective_brief",
-  "objectiveBrief",
-  "prompt",
-  "vars",
-  "secrets",
-  "secret_names",
-  "environment",
-  "execution_context",
-  "url",
-  "presigned_url",
-  "presignedUrl",
-  "archive_url",
-  "archiveUrl",
-] as const;
-
 type UserMessage = Extract<
   ChatEvent,
   {
@@ -715,116 +663,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function sandboxOperationEvents(): readonly Record<string, unknown>[] {
-  return context.mocks.axiom.sdkIngest.mock.calls.flatMap((call) => {
-    const dataset = call[0];
-    const events = call[1];
-    if (dataset !== "vm0-sandbox-op-log-dev" || !Array.isArray(events)) {
-      return [];
-    }
-    return events.filter(isRecord);
-  });
-}
-
-function sandboxOperationEventsForRun(
-  runId: string,
-): readonly Record<string, unknown>[] {
-  return sandboxOperationEvents().filter((event) => {
-    return event.run_id === runId;
-  });
-}
-
-function firstAssistantEventsForRun(
-  runId: string,
-): readonly Record<string, unknown>[] {
-  return sandboxOperationEventsForRun(runId).filter((event) => {
-    return event.op_type === "api_to_first_assistant_message";
-  });
-}
-
-function chatCallbackPreCreateTimingEventsForRun(
-  runId: string,
-): readonly Record<string, unknown>[] {
-  return sandboxOperationEventsForRun(runId).filter((event) => {
-    return (
-      typeof event.op_type === "string" &&
-      event.op_type.startsWith(CHAT_CALLBACK_PRE_CREATE_TIMING_PREFIX)
-    );
-  });
-}
-
-function timingEventsForAction(
-  events: readonly Record<string, unknown>[],
-  actionType: string,
-): readonly Record<string, unknown>[] {
-  return events.filter((event) => {
-    return event.op_type === actionType;
-  });
-}
-
-function expectNoForbiddenChatCallbackPreCreateTimingKeys(
-  events: readonly Record<string, unknown>[],
-): void {
-  for (const event of events) {
-    for (const key of FORBIDDEN_CHAT_CALLBACK_PRE_CREATE_TIMING_KEYS) {
-      expect(event).not.toHaveProperty(key);
-    }
-  }
-}
-
-async function expectChatCallbackPreCreateTimingActions(
-  runId: string,
-  expectedActionTypes: readonly string[],
-): Promise<readonly Record<string, unknown>[]> {
-  await expect
-    .poll(() => {
-      const observed = new Set(
-        chatCallbackPreCreateTimingEventsForRun(runId).map((event) => {
-          return event.op_type;
-        }),
-      );
-      return expectedActionTypes.filter((actionType) => {
-        return !observed.has(actionType);
-      });
-    })
-    .toStrictEqual([]);
-  const events = chatCallbackPreCreateTimingEventsForRun(runId);
-  expectNoForbiddenChatCallbackPreCreateTimingKeys(events);
-  return events;
-}
-
-function expectNoChatCallbackPreCreateTimingActions(
-  events: readonly Record<string, unknown>[],
-  unexpectedActionTypes: readonly string[],
-): void {
-  const observed = new Set(
-    events.map((event) => {
-      return event.op_type;
-    }),
-  );
-  for (const actionType of unexpectedActionTypes) {
-    expect(observed).not.toContain(actionType);
-  }
-}
-
-async function expectAgentRunPreCreateSource(
-  runId: string,
-  source: string,
-): Promise<void> {
-  await expect
-    .poll(() => {
-      return sandboxOperationEventsForRun(runId);
-    })
-    .toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          op_type: "api_dispatch_pre_create_agent_run",
-          agent_run_pre_create_source: source,
-        }),
-      ]),
-    );
-}
-
 function deferredGate(): {
   readonly wait: () => Promise<void>;
   readonly release: () => void;
@@ -1133,7 +971,7 @@ describe("CHAT-02: completed chat callback", () => {
     await waitForRunStatus(actor, claimed.runId, "cancelled");
   }, 90_000);
 
-  it("starts queued chat startup timing at message admission", async () => {
+  it("starts the queued chat run's API clock at its dequeue", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
@@ -1150,7 +988,7 @@ describe("CHAT-02: completed chat callback", () => {
       clearMockNow();
     });
 
-    const queuedEventId = await queueChatEvent(actor, {
+    await queueChatEvent(actor, {
       agentId,
       threadId: first.threadId,
       prompt: queuedPrompt,
@@ -1185,66 +1023,8 @@ describe("CHAT-02: completed chat callback", () => {
     if (!claimed?.runId) {
       throw new Error("Expected the queued Web message to auto-send");
     }
-    const queuedMessage = userMessages(afterAutoSend.events).find((message) => {
-      return message.id === queuedEventId;
-    });
-    if (!queuedMessage) {
-      throw new Error("Expected the original queued Web message");
-    }
-    const queuedMessageCreatedAt = Date.parse(queuedMessage.createdAt);
-    const apiStartedAt = dequeuedAt;
-
-    const acknowledgedAt = dequeuedAt + 7000;
     const secondClaim = await claimChatRunJob(runnerGroup, claimed.runId);
-    expect(secondClaim.apiStartTime).toBe(apiStartedAt);
-    const timingEvents = await expectChatCallbackPreCreateTimingActions(
-      claimed.runId,
-      ["api_dispatch_pre_create_agent_chat_callback_auto_send_queue_age"],
-    );
-    expect(
-      timingEventsForAction(
-        timingEvents,
-        "api_dispatch_pre_create_agent_chat_callback_auto_send_queue_age",
-      ),
-    ).toStrictEqual([
-      expect.objectContaining({
-        duration_ms: dequeuedAt - queuedMessageCreatedAt,
-        op_type:
-          "api_dispatch_pre_create_agent_chat_callback_auto_send_queue_age",
-      }),
-    ]);
-    const secondHeaders = {
-      authorization: `Bearer ${secondClaim.sandboxToken}`,
-    };
-    await flushWaitUntilForTest();
-    context.mocks.ably.publish.mockClear();
-    mockNow(acknowledgedAt);
-    await webhooks.requestAgentEvents(
-      {
-        runId: claimed.runId,
-        events: [
-          {
-            type: "assistant",
-            sequenceNumber: 0,
-            message: {
-              id: "msg_bdd_queued_first_output",
-              content: [{ type: "text", text: "Queued run real output" }],
-            },
-          },
-        ],
-      },
-      secondHeaders,
-      [200],
-    );
-    await flushWaitUntilForTest();
-
-    expect(firstAssistantEventsForRun(claimed.runId)).toStrictEqual([
-      expect.objectContaining({
-        _time: new Date(acknowledgedAt).toISOString(),
-        duration_ms: acknowledgedAt - apiStartedAt,
-        run_id: claimed.runId,
-      }),
-    ]);
+    expect(secondClaim.apiStartTime).toBe(dequeuedAt);
 
     await api.requestCancelRun(actor, claimed.runId, [200]);
     await waitForRunStatus(actor, claimed.runId, "cancelled");
@@ -1444,15 +1224,6 @@ describe("CHAT-02: completed chat callback", () => {
     await flushWaitUntilForTest();
 
     expect(followupRequests).toBe(1);
-    expect(sandboxOperationEventsForRun(run.runId)).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          op_type: "last_event_to_complete",
-          duration_ms: expect.any(Number),
-          success: true,
-        }),
-      ]),
-    );
     const after = await chat.listThreadEvents(actor, run.threadId);
     const marker = lifecycleMarkers(after.events, run.runId, "completed")[0];
     if (!marker) {
@@ -1519,59 +1290,27 @@ describe("CHAT-02: completed chat callback", () => {
     ).toContainEqual(
       expect.objectContaining({ body: "Your task is complete" }),
     );
-    // The eager title runs at send time; the callback owns the other three.
-    const rateLimited = auxiliaryResults(context).filter((event) => {
-      return event.feature !== "chat_initial_thinking";
-    });
+    // Only the four are rejected, so the optional progress copy still lands:
+    // the degradations are scoped to the generations the provider refused.
     expect(
-      rateLimited
-        .map(({ feature }) => {
-          return feature;
-        })
-        .sort(),
-    ).toStrictEqual([
-      "chat_title",
-      "notification_summary",
-      "recommended_followups",
-      "run_summary",
-    ]);
-    expect(
-      rateLimited.every((event) => {
-        return event.outcome === "degraded" && event.reason === "rate_limited";
+      events.events.some((event) => {
+        return event.runEventId === "thinking:initial";
       }),
     ).toBeTruthy();
-    // Only the four are rejected, so the optional progress copy still proves
-    // the boundary reports a real success next to the degraded generations.
-    expect(auxiliaryResults(context, "chat_initial_thinking")).toStrictEqual([
-      expect.objectContaining({ outcome: "success", reason: "none" }),
-    ]);
-    expect(context.mocks.axiomLogging.warn.mock.calls).toStrictEqual([]);
-    expect(context.mocks.axiomLogging.error.mock.calls).toStrictEqual([]);
   });
 
   it.each([
-    // The provider reports usage even when the generated text interprets to
-    // nothing, and an expected omission keeps that detail on its counted
-    // event.
     {
       name: "an empty suggestion array",
       response: () => {
-        return HttpResponse.json({
-          choices: [{ finish_reason: "stop", message: { content: "[]" } }],
-          usage: {
-            completion_tokens: 63,
-            completion_tokens_details: { reasoning_tokens: 0 },
-          },
-        });
+        return "[]";
       },
-      tokens: { completion_tokens: 63, reasoning_tokens: 0 },
     },
     {
       name: "generated text that is not JSON",
       response: () => {
         return "I have no useful follow-ups for this conversation.";
       },
-      tokens: {},
     },
     {
       name: "generated JSON that is not an array",
@@ -1580,7 +1319,6 @@ describe("CHAT-02: completed chat callback", () => {
           followups: [{ prompt: "Run the failing case again", kind: "talk" }],
         });
       },
-      tokens: {},
     },
     {
       name: "an array whose every item fails validation",
@@ -1590,177 +1328,84 @@ describe("CHAT-02: completed chat callback", () => {
           { text: "Try the other branch", kind: "talk" },
         ]);
       },
-      tokens: {},
     },
-  ])(
-    "omits recommended follow-ups with no diagnostic at any level for $name",
-    async ({ response, tokens }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-      chatCallbacks.mockOpenRouterCompletions((body) => {
-        const system = body.messages[0]?.content ?? "";
-        if (
-          system.includes(
-            "You generate recommended follow-up messages for a chat.",
-          )
-        ) {
-          return response();
-        }
-        // A sibling whose interpreted output is empty in the same run proves
-        // the silence is scoped to this caller rather than shared.
-        if (system.includes("one short notification sentence")) {
-          return "---";
-        }
-        return "Generated summary";
-      });
+  ])("omits recommended follow-ups for $name", async ({ response }) => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
+    chatCallbacks.mockOpenRouterCompletions((body) => {
+      const system = body.messages[0]?.content ?? "";
+      if (
+        system.includes(
+          "You generate recommended follow-up messages for a chat.",
+        )
+      ) {
+        return response();
+      }
+      // A sibling whose interpreted output is empty in the same run proves
+      // each caller absorbs its own empty result.
+      if (system.includes("one short notification sentence")) {
+        return "---";
+      }
+      return "Generated summary";
+    });
 
-      const run = await startChatRun(actor, {
-        agentId,
-        prompt: "Keep the main answer",
-      });
-      await flushWaitUntilForTest();
-      await chatCallbacks.registerPushSubscription(actor);
-      chatCallbacks.enableVapid();
-      const sandboxHeaders = await claimChatRun(runnerGroup, run.runId);
-      chatCallbacks.mockChatOutputEvents([
-        assistantEvent(0, "The main answer survives"),
-      ]);
-      await completeChatRunOk(run.runId, sandboxHeaders, {
-        lastEventSequence: 0,
-      });
-      await flushWaitUntilForTest();
+    const run = await startChatRun(actor, {
+      agentId,
+      prompt: "Keep the main answer",
+    });
+    await flushWaitUntilForTest();
+    await chatCallbacks.registerPushSubscription(actor);
+    chatCallbacks.enableVapid();
+    const sandboxHeaders = await claimChatRun(runnerGroup, run.runId);
+    chatCallbacks.mockChatOutputEvents([
+      assistantEvent(0, "The main answer survives"),
+    ]);
+    await completeChatRunOk(run.runId, sandboxHeaders, {
+      lastEventSequence: 0,
+    });
+    await flushWaitUntilForTest();
 
-      const events = await chat.listThreadEvents(actor, run.threadId);
-      expect(events.events).toContainEqual(
-        expect.objectContaining({ content: "The main answer survives" }),
-      );
-      expect(
-        events.events.some((event) => {
-          return event.eventType === "output.followups";
-        }),
-      ).toBeFalsy();
-      // The omission stays counted, with its reason and token detail intact.
-      expect(auxiliaryResults(context, "recommended_followups")).toStrictEqual([
-        expect.objectContaining({
-          outcome: "degraded",
-          reason: "unusable_output",
-          ...tokens,
-        }),
-      ]);
-      expect(
-        auxiliaryDiagnostics(context, "recommended_followups"),
-      ).toStrictEqual([]);
-      expect(
-        auxiliaryDiagnostics(context, "notification_summary"),
-      ).toStrictEqual([
-        expect.objectContaining({ level: "warn", reason: "unusable_output" }),
-      ]);
-      expect(
-        context.mocks.webpush.sendNotification.mock.calls.map(pushPayload),
-      ).toContainEqual(
-        expect.objectContaining({ body: "Your task is complete" }),
-      );
-    },
-  );
+    const events = await chat.listThreadEvents(actor, run.threadId);
+    expect(events.events).toContainEqual(
+      expect.objectContaining({ content: "The main answer survives" }),
+    );
+    expect(
+      events.events.some((event) => {
+        return event.eventType === "output.followups";
+      }),
+    ).toBeFalsy();
+    // The sibling whose interpreted output is empty in the same run falls
+    // back to the fixed copy, so the omission is scoped to this caller.
+    expect(
+      context.mocks.webpush.sendNotification.mock.calls.map(pushPayload),
+    ).toContainEqual(
+      expect.objectContaining({ body: "Your task is complete" }),
+    );
+  });
+
+  // Never part of a request an external caller makes, so anything carrying it
+  // into the thread came from the provider response.
+  const privateProviderDetail = "private-openrouter-credential-detail";
 
   it.each([
-    { name: "rejected credentials", status: 401, reason: "auth" },
-    { name: "a rejected request", status: 400, reason: "invalid_request" },
-  ])(
-    "reports $name for recommended follow-ups exactly once at error level",
-    async ({ status, reason }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-      const privateProviderDetail = "private-openrouter-credential-detail";
-      chatCallbacks.mockOpenRouterCompletions((body) => {
-        const system = body.messages[0]?.content ?? "";
-        if (
-          system.includes(
-            "You generate recommended follow-up messages for a chat.",
-          )
-        ) {
-          return new HttpResponse(privateProviderDetail, { status });
-        }
-        return "Generated summary";
-      });
-
-      const run = await startChatRun(actor, {
-        agentId,
-        prompt: "Keep the main answer",
-      });
-      await flushWaitUntilForTest();
-      await chatCallbacks.registerPushSubscription(actor);
-      chatCallbacks.enableVapid();
-      const sandboxHeaders = await claimChatRun(runnerGroup, run.runId);
-      chatCallbacks.mockChatOutputEvents([
-        assistantEvent(0, "The main answer survives"),
-      ]);
-      await completeChatRunOk(run.runId, sandboxHeaders, {
-        lastEventSequence: 0,
-      });
-      await flushWaitUntilForTest();
-
-      const events = await chat.listThreadEvents(actor, run.threadId);
-      expect(events.events).toContainEqual(
-        expect.objectContaining({ content: "The main answer survives" }),
-      );
-      expect(
-        events.events.some((event) => {
-          return event.eventType === "output.followups";
-        }),
-      ).toBeFalsy();
-      expect(auxiliaryResults(context, "recommended_followups")).toStrictEqual([
-        expect.objectContaining({ outcome: "error", reason }),
-      ]);
-      expect(
-        auxiliaryDiagnostics(context, "recommended_followups"),
-      ).toStrictEqual([
-        expect.objectContaining({
-          level: "error",
-          reason,
-          errorKind: "openrouter_request",
-          status,
-        }),
-      ]);
-      // A real failure must not also reappear on the shared warning channel.
-      expect(auxiliaryWarnings(context)).toStrictEqual([]);
-      expect(JSON.stringify(auxiliaryDiagnostics(context))).not.toContain(
-        privateProviderDetail,
-      );
+    {
+      name: "rejected credentials",
+      response: () => {
+        return new HttpResponse(privateProviderDetail, { status: 401 });
+      },
     },
-  );
-
-  it.each([
     {
       // The generated text is well formed for the provider; it is the response
       // envelope around it that breaks its contract.
       name: "a response body that is not JSON",
       response: () => {
-        return new HttpResponse("<html>gateway</html>", {
+        return new HttpResponse(privateProviderDetail, {
           headers: { "content-type": "application/json" },
         });
       },
-      reason: "invalid_output",
     },
     {
-      name: "a response carrying no choices",
-      response: () => {
-        return HttpResponse.json({ id: "gen-1" });
-      },
-      reason: "invalid_output",
-    },
-    {
-      name: "a choice whose content is not a string",
-      response: () => {
-        return HttpResponse.json({
-          choices: [{ finish_reason: "stop", message: { content: 42 } }],
-        });
-      },
-      reason: "invalid_output",
-    },
-    {
-      // Nothing annotates this, so the reason stays literally unknown rather
-      // than being presented as a specific cause.
+      // Nothing annotates this, so nothing about it is presented as a cause.
       name: "a response body that fails while streaming",
       response: () => {
         return new HttpResponse(
@@ -1772,67 +1417,53 @@ describe("CHAT-02: completed chat callback", () => {
           { headers: { "content-type": "application/json" } },
         );
       },
-      reason: "unknown",
     },
-  ])(
-    "reports $name for recommended follow-ups exactly once at error level",
-    async ({ response, reason }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
-      chatCallbacks.mockOpenRouterCompletions((body) => {
-        const system = body.messages[0]?.content ?? "";
-        if (
-          system.includes(
-            "You generate recommended follow-up messages for a chat.",
-          )
-        ) {
-          return response();
-        }
-        return "Generated summary";
-      });
+  ])("omits recommended follow-ups after $name", async ({ response }) => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
+    chatCallbacks.mockOpenRouterCompletions((body) => {
+      const system = body.messages[0]?.content ?? "";
+      if (
+        system.includes(
+          "You generate recommended follow-up messages for a chat.",
+        )
+      ) {
+        return response();
+      }
+      return "Generated summary";
+    });
 
-      const run = await startChatRun(actor, {
-        agentId,
-        prompt: "Keep the main answer",
-      });
-      await flushWaitUntilForTest();
-      await chatCallbacks.registerPushSubscription(actor);
-      chatCallbacks.enableVapid();
-      const sandboxHeaders = await claimChatRun(runnerGroup, run.runId);
-      chatCallbacks.mockChatOutputEvents([
-        assistantEvent(0, "The main answer survives"),
-      ]);
-      await completeChatRunOk(run.runId, sandboxHeaders, {
-        lastEventSequence: 0,
-      });
-      await flushWaitUntilForTest();
+    const run = await startChatRun(actor, {
+      agentId,
+      prompt: "Keep the main answer",
+    });
+    await flushWaitUntilForTest();
+    await chatCallbacks.registerPushSubscription(actor);
+    chatCallbacks.enableVapid();
+    const sandboxHeaders = await claimChatRun(runnerGroup, run.runId);
+    chatCallbacks.mockChatOutputEvents([
+      assistantEvent(0, "The main answer survives"),
+    ]);
+    await completeChatRunOk(run.runId, sandboxHeaders, {
+      lastEventSequence: 0,
+    });
+    await flushWaitUntilForTest();
 
-      const events = await chat.listThreadEvents(actor, run.threadId);
-      expect(events.events).toContainEqual(
-        expect.objectContaining({ content: "The main answer survives" }),
-      );
-      expect(
-        events.events.some((event) => {
-          return event.eventType === "output.followups";
-        }),
-      ).toBeFalsy();
-      expect(auxiliaryResults(context, "recommended_followups")).toStrictEqual([
-        expect.objectContaining({ outcome: "error", reason }),
-      ]);
-      // A response that broke its contract, and an exception nothing
-      // classified, are failures rather than omissions: one error record, and
-      // no warning copy of it.
-      expect(
-        auxiliaryDiagnostics(context, "recommended_followups"),
-      ).toStrictEqual([expect.objectContaining({ level: "error", reason })]);
-      expect(auxiliaryWarnings(context)).toStrictEqual([]);
-      expect(JSON.stringify(auxiliaryDiagnostics(context))).not.toContain(
-        "gateway",
-      );
-    },
-  );
+    const events = await chat.listThreadEvents(actor, run.threadId);
+    expect(events.events).toContainEqual(
+      expect.objectContaining({ content: "The main answer survives" }),
+    );
+    expect(
+      events.events.some((event) => {
+        return event.eventType === "output.followups";
+      }),
+    ).toBeFalsy();
+    // The run keeps its own result, and nothing the provider sent reaches
+    // the thread.
+    expect(JSON.stringify(events.events)).not.toContain(privateProviderDetail);
+  });
 
-  it("keeps title and summary storage failures observable after successful generation", async () => {
+  it("absorbs title and summary storage failures without losing the round", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
     // PostgreSQL rejects NUL in text. This induces a real write failure using
@@ -1864,31 +1495,23 @@ describe("CHAT-02: completed chat callback", () => {
       lastEventSequence: 0,
     });
     await flushWaitUntilForTest();
+    // Generation succeeded for every feature; only the two unstorable writes
+    // failed, and each failure is confined to its own effect.
     await expect(
       readThreadTitleFromEvents(actor, run.threadId),
     ).resolves.toBeNull();
-    const warnings = context.mocks.axiomLogging.warn.mock.calls.map(
-      ([message]) => {
-        return message;
-      },
+    const events = await chat.listThreadEvents(actor, run.threadId);
+    expect(events.events).toContainEqual(
+      expect.objectContaining({ content: "The main answer survives" }),
     );
-    expect(warnings).toContain("Chat title persistence failed");
-    expect(warnings).toContain("Failed to save run summary");
-    expect(auxiliaryResults(context)).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ feature: "chat_title", outcome: "success" }),
-        expect.objectContaining({ feature: "run_summary", outcome: "success" }),
-      ]),
-    );
-    expect(auxiliaryWarnings(context)).toStrictEqual([]);
     expect(
-      auxiliaryResults(context).every((event) => {
-        return event.outcome === "success";
+      events.events.some((event) => {
+        return event.eventType === "output.followups";
       }),
     ).toBeTruthy();
   });
 
-  it("keeps push delivery errors observable after summary degradation", async () => {
+  it("keeps the completed output after a push delivery failure", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const run = await startChatRun(actor, { agentId, prompt: "Notify me" });
     await chatCallbacks.registerPushSubscription(actor);
@@ -1911,13 +1534,6 @@ describe("CHAT-02: completed chat callback", () => {
     ).toContainEqual(
       expect.objectContaining({ body: "Your task is complete" }),
     );
-    expect(auxiliaryWarnings(context)).toStrictEqual([]);
-    expect(context.mocks.axiomLogging.warn.mock.calls).toContainEqual([
-      "Failed to send push notification",
-      expect.objectContaining({
-        error: expect.objectContaining({ message: "Push delivery failed" }),
-      }),
-    ]);
     const events = await chat.listThreadEvents(actor, run.threadId);
     expect(events.events).toContainEqual(
       expect.objectContaining({ content: "Completed answer" }),
@@ -1974,25 +1590,17 @@ describe("CHAT-02: completed chat callback", () => {
     });
     await flushWaitUntilForTest();
 
+    // Every generation reached its caller, so the pinned request parameters
+    // below describe budgets that actually produced their effects.
+    await expect(readThreadTitleFromEvents(actor, run.threadId)).resolves.toBe(
+      "Budget Pinning",
+    );
+    const events = await chat.listThreadEvents(actor, run.threadId);
     expect(
-      auxiliaryResults(context)
-        .map(({ feature, outcome, reason }) => {
-          return { feature, outcome, reason };
-        })
-        .sort((a, b) => {
-          return a.feature.localeCompare(b.feature);
-        }),
-    ).toStrictEqual([
-      {
-        feature: "chat_initial_thinking",
-        outcome: "success",
-        reason: "none",
-      },
-      { feature: "chat_title", outcome: "success", reason: "none" },
-      { feature: "notification_summary", outcome: "success", reason: "none" },
-      { feature: "recommended_followups", outcome: "success", reason: "none" },
-      { feature: "run_summary", outcome: "success", reason: "none" },
-    ]);
+      events.events.some((event) => {
+        return event.eventType === "output.followups";
+      }),
+    ).toBeTruthy();
 
     // Reasoning tokens are drawn from the same budget as the answer, so a
     // budget sized for a non-reasoning model starves the answer entirely. This
@@ -2059,16 +1667,6 @@ describe("CHAT-02: completed chat callback", () => {
         );
       })
       .toBe(true);
-    // An exhausted shared budget is expected and non-actionable: counted, and
-    // never a production warning.
-    expect(auxiliaryResults(context)).toContainEqual(
-      expect.objectContaining({
-        feature: "notification_summary",
-        outcome: "degraded",
-        reason: "output_truncated",
-      }),
-    );
-    expect(auxiliaryWarnings(context)).toStrictEqual([]);
   });
 
   it("falls back to the fixed notification copy when the token-limited summary strips to nothing", async () => {
@@ -2157,14 +1755,6 @@ describe("CHAT-02: completed chat callback", () => {
     await expect(
       readThreadTitleFromEvents(actor, run.threadId),
     ).resolves.toBeNull();
-    expect(auxiliaryResults(context)).toContainEqual(
-      expect.objectContaining({
-        feature: "chat_title",
-        outcome: "degraded",
-        reason: "output_truncated",
-      }),
-    );
-    expect(auxiliaryWarnings(context)).toStrictEqual([]);
 
     await api.requestCancelRun(actor, run.runId, [200]);
     await waitForRunStatus(actor, run.runId, "cancelled");
@@ -2213,19 +1803,6 @@ describe("CHAT-02: completed chat callback", () => {
       throw new Error("Expected a completed lifecycle marker");
     }
     expect(marker).not.toHaveProperty("recommendedFollowups");
-    expect(auxiliaryResults(context)).toContainEqual(
-      expect.objectContaining({
-        feature: "recommended_followups",
-        outcome: "degraded",
-        reason: "output_truncated",
-      }),
-    );
-    // This caller rejects a truncated array, so the outcome comes from the
-    // recorded truncation reason rather than from the returned value. Either
-    // way it stays a counted degradation, and since this caller can now report
-    // at error, silence has to be proved across every level rather than on the
-    // warning channel alone.
-    expect(auxiliaryDiagnostics(context)).toStrictEqual([]);
   });
 
   it("auto-sends the queued message before completed-run LLM side effects finish", async () => {
@@ -2307,23 +1884,6 @@ describe("CHAT-02: completed chat callback", () => {
       throw new Error("Expected the queued message to auto-send");
     }
     expect(claimed.runId).not.toBe(first.runId);
-    await expectAgentRunPreCreateSource(
-      claimed.runId,
-      "chat_callback_auto_send",
-    );
-    await expectChatCallbackPreCreateTimingActions(claimed.runId, [
-      "api_dispatch_pre_create_agent_chat_callback_load_terminal",
-      "api_dispatch_pre_create_agent_chat_callback_prepare_completed",
-      "api_dispatch_pre_create_agent_chat_callback_load_db_output_state",
-      "api_dispatch_pre_create_agent_chat_callback_insert_lifecycle_marker",
-      "api_dispatch_pre_create_agent_chat_callback_load_followup_context",
-      "api_dispatch_pre_create_agent_chat_callback_auto_send_load_thread",
-      "api_dispatch_pre_create_agent_chat_callback_auto_send_lookup_queued_message",
-      "api_dispatch_pre_create_agent_chat_callback_auto_send_queue_age",
-      "api_dispatch_pre_create_agent_chat_callback_auto_send_build_input",
-      "api_dispatch_pre_create_agent_chat_callback_auto_send_create_run",
-      "api_dispatch_pre_create_agent_chat_callback_auto_send_publish_signals",
-    ]);
 
     context.mocks.ably.publish.mockClear();
     openRouterGate.release();
@@ -3146,25 +2706,7 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
     if (!claimed?.runId) {
       throw new Error("Expected queued message to auto-send");
     }
-    const timingEvents = await expectChatCallbackPreCreateTimingActions(
-      claimed.runId,
-      [
-        "api_dispatch_pre_create_agent_chat_callback_load_terminal",
-        "api_dispatch_pre_create_agent_chat_callback_prepare_completed",
-        "api_dispatch_pre_create_agent_chat_callback_load_db_output_state",
-        "api_dispatch_pre_create_agent_chat_callback_insert_lifecycle_marker",
-        "api_dispatch_pre_create_agent_chat_callback_load_followup_context",
-        "api_dispatch_pre_create_agent_chat_callback_auto_send_load_thread",
-        "api_dispatch_pre_create_agent_chat_callback_auto_send_lookup_queued_message",
-        "api_dispatch_pre_create_agent_chat_callback_auto_send_queue_age",
-        "api_dispatch_pre_create_agent_chat_callback_auto_send_build_input",
-        "api_dispatch_pre_create_agent_chat_callback_auto_send_create_run",
-        "api_dispatch_pre_create_agent_chat_callback_auto_send_publish_signals",
-      ],
-    );
-    expectNoChatCallbackPreCreateTimingActions(timingEvents, [
-      "api_dispatch_pre_create_agent_chat_callback_insert_assistant_items",
-    ]);
+    expect(claimed.runId).not.toBe(first.runId);
   }, 90_000);
 
   it("uses every acknowledged DB assistant event without Axiom repair", async () => {
@@ -3496,42 +3038,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
 
     const messages = await chat.listThreadEvents(actor, run.threadId);
     expect(eventBackedContents(messages.events, run.runId)).toHaveLength(0);
-    const backpressureLogs = context.mocks.axiomLogging.info.mock.calls.filter(
-      ([message]) => {
-        return (
-          message === "Required database run output projection backpressured"
-        );
-      },
-    );
-    expect(backpressureLogs).toHaveLength(1);
-    const fields = backpressureLogs[0]?.[1];
-    if (!isRecord(fields)) {
-      throw new Error("Expected structured projection backpressure fields");
-    }
-    expect(fields).toMatchObject({
-      runId: run.runId,
-      firstSequence: 0,
-      lastSequence: 0,
-      errorCode: "55P03",
-      retryable: true,
-    });
-    expect(Object.keys(fields).sort()).toStrictEqual([
-      "context",
-      "errorCode",
-      "firstSequence",
-      "lastSequence",
-      "retryable",
-      "runId",
-    ]);
-    expect(
-      context.mocks.axiomLogging.error.mock.calls.some(([message, fields]) => {
-        return (
-          message === "Required database run output projection failed" &&
-          isRecord(fields) &&
-          fields.runId === run.runId
-        );
-      }),
-    ).toBeFalsy();
     held.release();
     await held.done;
   }, 30_000);
@@ -3739,7 +3245,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
     expect(sequenceZeroRow.seqId).toBeGreaterThan(sequenceOneRow.seqId);
     expect(sequenceTwoRow.seqId).toBeGreaterThan(sequenceZeroRow.seqId + 2);
     expect(sequenceThreeRow.seqId).toBeGreaterThan(sequenceTwoRow.seqId);
-    expect(firstAssistantEventsForRun(run.runId)).toHaveLength(1);
   });
 
   it("completes no-output runs and preserves the newest result-only output across retries", async () => {
@@ -3797,7 +3302,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
     expect(chatOutputAxiomQueryCalls()).toHaveLength(0);
     expect(eventBackedContents(messages.events, silent.runId)).toHaveLength(0);
     await flushWaitUntilForTest();
-    expect(firstAssistantEventsForRun(silent.runId)).toStrictEqual([]);
 
     const resultOnly = await startChatRun(actor, {
       agentId,
@@ -3868,7 +3372,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
       }),
     ).toStrictEqual(["DB result fallback answer"]);
     await flushWaitUntilForTest();
-    expect(firstAssistantEventsForRun(resultOnly.runId)).toHaveLength(1);
   }, 90_000);
 
   it("excludes stored result output above the terminal event boundary", async () => {
@@ -3909,7 +3412,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
     );
     expect(eventBackedContents(messages.events, run.runId)).toHaveLength(0);
     await flushWaitUntilForTest();
-    expect(firstAssistantEventsForRun(run.runId)).toStrictEqual([]);
   }, 90_000);
 
   it("completes when no output materialization exists", async () => {
@@ -4779,11 +4281,6 @@ describe("CHAT-02: failed chat callbacks", () => {
       });
       if (params.failureReason === "reconnect_required") {
         expect(marker.failureReason).toBe("reconnect_required");
-        expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalledWith(
-          expect.anything(),
-          expect.objectContaining({ runId: run.runId }),
-        );
-        expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
         expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
         await misc.upsertPersonalModelProvider(
           fixture.actor,
@@ -4807,11 +4304,6 @@ describe("CHAT-02: failed chat callbacks", () => {
         await expect(
           api.readRun(fixture.actor, retry.runId),
         ).resolves.toMatchObject({ status: "completed" });
-      } else if (params.failureReason === undefined) {
-        expect(context.mocks.axiomLogging.warn).toHaveBeenCalledWith(
-          "Run failed",
-          expect.objectContaining({ runId: run.runId }),
-        );
       }
       return marker.error;
     }
@@ -5275,30 +4767,6 @@ describe("CHAT-02: auto-send after failures", () => {
       );
     }
     expect(claimed.runId).not.toBe(second.runId);
-    await expectAgentRunPreCreateSource(
-      claimed.runId,
-      "chat_callback_auto_send",
-    );
-    const timingEvents = await expectChatCallbackPreCreateTimingActions(
-      claimed.runId,
-      [
-        "api_dispatch_pre_create_agent_chat_callback_load_terminal",
-        "api_dispatch_pre_create_agent_chat_callback_prepare_failed",
-        "api_dispatch_pre_create_agent_chat_callback_auto_send_load_thread",
-        "api_dispatch_pre_create_agent_chat_callback_auto_send_lookup_queued_message",
-        "api_dispatch_pre_create_agent_chat_callback_auto_send_queue_age",
-        "api_dispatch_pre_create_agent_chat_callback_auto_send_load_agent",
-        "api_dispatch_pre_create_agent_chat_callback_auto_send_build_input",
-        "api_dispatch_pre_create_agent_chat_callback_auto_send_create_run",
-        "api_dispatch_pre_create_agent_chat_callback_auto_send_publish_signals",
-      ],
-    );
-    expectNoChatCallbackPreCreateTimingActions(timingEvents, [
-      "api_dispatch_pre_create_agent_chat_callback_prepare_completed",
-      "api_dispatch_pre_create_agent_chat_callback_load_db_output_state",
-      "api_dispatch_pre_create_agent_chat_callback_insert_lifecycle_marker",
-      "api_dispatch_pre_create_agent_chat_callback_load_followup_context",
-    ]);
     expect(claimed.userMessage?.parts).toContainEqual(
       expect.objectContaining({
         type: "file",

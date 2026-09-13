@@ -413,36 +413,6 @@ function names(workflows: readonly { readonly name: string }[]): string[] {
   });
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function sandboxOperationEventsForRun(
-  runId: string,
-): readonly Record<string, unknown>[] {
-  return context.mocks.axiom.sdkIngest.mock.calls.flatMap((call) => {
-    const dataset = call[0];
-    const events = call[1];
-    if (dataset !== "vm0-sandbox-op-log-dev" || !Array.isArray(events)) {
-      return [];
-    }
-    return events.filter((event): event is Record<string, unknown> => {
-      return isRecord(event) && event.run_id === runId;
-    });
-  });
-}
-
-function expectAgentRunPreCreateSource(runId: string, source: string): void {
-  expect(sandboxOperationEventsForRun(runId)).toStrictEqual(
-    expect.arrayContaining([
-      expect.objectContaining({
-        op_type: "api_dispatch_pre_create_agent_run",
-        agent_run_pre_create_source: source,
-      }),
-    ]),
-  );
-}
-
 describe("workflows", () => {
   it("creates private workflows by default and hides them from other org members", async () => {
     const owner = user();
@@ -556,36 +526,7 @@ describe("workflows", () => {
     if (!run.body.runId) {
       throw new Error("Expected an idle workflow invocation to create a run");
     }
-    expectAgentRunPreCreateSource(run.body.runId, "workflow_slash_command");
     expect(run.body.chatThreadId).toBe(prepared.body.chatThreadId);
-    const timingEvents = sandboxOperationEventsForRun(run.body.runId);
-    const actionTypes = timingEvents.map((event) => {
-      return event.op_type;
-    });
-    expect(actionTypes).toStrictEqual(
-      expect.arrayContaining([
-        "api_dispatch_pre_create_agent_workflow_slash_prepare_normal_send",
-        "api_dispatch_pre_create_agent_workflow_slash_load_thread_mapping",
-        "api_dispatch_pre_create_agent_web_chat_prepare_normal_send",
-        "api_dispatch_pre_create_agent_web_chat_prepare_normal_send_load_and_authorize_agent",
-      ]),
-    );
-    expect(actionTypes).not.toContain(
-      "api_dispatch_pre_create_agent_workflow_slash_ensure_thread",
-    );
-    expect(actionTypes).not.toContain(
-      "api_dispatch_pre_create_agent_entrypoint_gap",
-    );
-    const serializedTimingEvents = JSON.stringify(timingEvents);
-    for (const sensitiveValue of [
-      created.body.id,
-      agent.agentId,
-      actor.userId,
-      `/${created.body.name}`,
-      "workflow-openai-key",
-    ]) {
-      expect(serializedTimingEvents).not.toContain(sensitiveValue);
-    }
 
     const queued = await accept(
       detailClient().run({

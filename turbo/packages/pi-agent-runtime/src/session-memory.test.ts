@@ -264,7 +264,7 @@ describe("MemoryPiSession", () => {
     ).toBe("high");
   });
 
-  it("uses configured low thinking for a fresh API-first session without replacing its explicit entry", async () => {
+  it("applies each API run effort and preserves earlier thinking entries", async () => {
     const memory = MemoryPiSession.create({
       cwd: "/home/user/workspace",
       id: SESSION_ID,
@@ -318,7 +318,7 @@ describe("MemoryPiSession", () => {
       ownership: createPiApiFirstTurnOwnership(),
     });
 
-    expect(requestedReasoning).toStrictEqual(["low", "low"]);
+    expect(requestedReasoning).toStrictEqual(["low", "high"]);
     const thinkingEntries = memory
       .toJsonl()
       .trim()
@@ -334,6 +334,7 @@ describe("MemoryPiSession", () => {
       });
     expect(thinkingEntries).toStrictEqual([
       expect.objectContaining({ thinkingLevel: "low" }),
+      expect.objectContaining({ thinkingLevel: "high" }),
     ]);
   });
 
@@ -358,7 +359,7 @@ describe("MemoryPiSession", () => {
     });
 
     memory.prepareModelTurn(faux.getModel(), "high");
-    memory.prepareModelTurn(faux.getModel(), "low");
+    memory.prepareModelTurn(faux.getModel());
 
     expect(memory.buildSessionContext().thinkingLevel).toBe("high");
     expect(

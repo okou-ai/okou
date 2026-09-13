@@ -10,13 +10,13 @@ import { orgPlanCapabilities$ } from "./org-plan-capabilities.ts";
 
 export interface ModelPlanCapabilities {
   readonly supportByok: boolean;
-  readonly restrictedVm0Models: boolean;
+  readonly restrictedBuiltInModels: boolean;
 }
 
 export const DEFAULT_MODEL_PLAN_CAPABILITIES =
   Object.freeze<ModelPlanCapabilities>({
     supportByok: true,
-    restrictedVm0Models: false,
+    restrictedBuiltInModels: false,
   });
 
 export const modelPlanCapabilities$ = computed(
@@ -24,17 +24,17 @@ export const modelPlanCapabilities$ = computed(
     const capabilities = await get(orgPlanCapabilities$);
     return {
       supportByok: capabilities.supportByok,
-      restrictedVm0Models: capabilities.restrictedVm0Models,
+      restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
     };
   },
 );
 
 export function modelAllowedForPlan(
   model: string | null | undefined,
-  capabilities: Pick<ModelPlanCapabilities, "restrictedVm0Models">,
+  capabilities: Pick<ModelPlanCapabilities, "restrictedBuiltInModels">,
 ): boolean {
   return (
-    !capabilities.restrictedVm0Models ||
+    !capabilities.restrictedBuiltInModels ||
     !isLimitedFree1RestrictedRunModel(model)
   );
 }

@@ -52,6 +52,7 @@ export function createVoiceDraftCaptureSignals() {
       if (get(acquisition$)) {
         return false;
       }
+      // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
       const controller = createChildAbortController(parentSignal);
       const signal = controller.signal;
       set(acquisition$, controller);

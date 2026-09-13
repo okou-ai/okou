@@ -669,7 +669,7 @@ def test_tweet_create_truncated_stream_capture_stays_conservative(x_usage, tmp_p
     assert p["quantity"] == 1
 
 
-@pytest.mark.parametrize("request_encoding", ["gzip", "deflate", "br", "zstd", "x-vm0-test"])
+@pytest.mark.parametrize("request_encoding", ["gzip", "deflate", "br", "zstd", "x-okou-test"])
 def test_tweet_create_invalid_or_unsupported_encoding_stays_conservative(
     x_usage, tmp_path, real_flow, request_encoding
 ):

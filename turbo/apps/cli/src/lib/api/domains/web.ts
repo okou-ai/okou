@@ -1,3 +1,9 @@
+import {
+  introVideoRenderRequestSchema,
+  introVideoRenderResponseSchema,
+  type IntroVideoRenderRequest,
+  type IntroVideoRenderResponse,
+} from "@okouai/api-contracts/contracts/intro-video-render";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import { createWriteStream, readFileSync, statSync } from "node:fs";
 import { basename, extname } from "node:path";
@@ -1378,4 +1384,41 @@ export async function transcribeAudio(
   }
 
   return (await response.json()) as TranscribeAudioResult;
+}
+
+export async function createWebIntroVideoRender(
+  input: IntroVideoRenderRequest,
+): Promise<IntroVideoRenderResponse> {
+  const baseUrl = await getBaseUrl();
+  const token = await getActiveToken();
+  if (!token)
+    throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
+  const response = await fetch(new URL("/api/intro-video/renders", baseUrl), {
+    method: "POST",
+    headers: headersWithCliClientHeaders({
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    }),
+    body: JSON.stringify(introVideoRenderRequestSchema.parse(input)),
+  });
+  if (!response.ok) {
+    const { message, code } = await parseErrorBody(
+      response,
+      "Failed to submit cloud render; keep the original request ID",
+    );
+    throw new ApiRequestError(message, code, response.status);
+  }
+  return introVideoRenderResponseSchema.parse(await response.json());
+}
+
+export async function getWebIntroVideoRender(
+  id: string,
+): Promise<IntroVideoRenderResponse> {
+  const baseUrl = await getBaseUrl();
+  return introVideoRenderResponseSchema.parse(
+    await getIntroVideoCatalog(
+      new URL(`/api/intro-video/renders/${encodeURIComponent(id)}`, baseUrl),
+      "Failed to retrieve cloud render",
+    ),
+  );
 }

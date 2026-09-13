@@ -348,7 +348,9 @@ test("Preserve private and public attachments on tab return", async () => {
   const publicFileId = "f0000000-0000-4000-a000-000000000937";
   const publicFilename = "existing-image.png";
   const publicUrl = `https://cdn.vm7.io/artifacts/tests/${publicFilename}`;
-  const firstPublicResourceUrl = `https://storage.example.test/${publicFilename}?signature=first`;
+  const storageOrigin = `https://${"a".repeat(32)}.r2.cloudflarestorage.com`;
+  const firstPublicResourceUrl = `${storageOrigin}/uploads/${publicFilename}?X-Amz-Signature=first`;
+  const publicThumbnailUrl = `https://a.okou.io/cdn-cgi/image/width=800,height=720,fit=scale-down,format=auto,quality=85,metadata=none/${firstPublicResourceUrl}`;
   let publicResourceUrl = firstPublicResourceUrl;
   let resourceUrl = firstUrl;
   const visibility = context.mocks.browser.visibilityState("visible");
@@ -387,7 +389,7 @@ test("Preserve private and public attachments on tab return", async () => {
     host: "app.okou.ai",
   });
   const publicImage = await screen.findByAltText(publicFilename);
-  expect(publicImage).toHaveAttribute("src", firstPublicResourceUrl);
+  expect(publicImage).toHaveAttribute("src", publicThumbnailUrl);
   click(await screen.findByLabelText(`Preview ${filename}`));
   const dialog = await screen.findByTestId("attachment-lightbox");
   const frame = await within(dialog).findByTitle(`${filename} preview`);
@@ -398,7 +400,7 @@ test("Preserve private and public attachments on tab return", async () => {
     visibility.changeTo("hidden");
   });
   resourceUrl = refreshedUrl;
-  publicResourceUrl = `https://storage.example.test/${publicFilename}?signature=refreshed`;
+  publicResourceUrl = `${storageOrigin}/uploads/${publicFilename}?X-Amz-Signature=refreshed`;
   await act(() => {
     visibility.changeTo("visible");
   });
@@ -409,7 +411,7 @@ test("Preserve private and public attachments on tab return", async () => {
   });
   expect(screen.getByAltText(publicFilename)).toHaveAttribute(
     "src",
-    firstPublicResourceUrl,
+    publicThumbnailUrl,
   );
 });
 

@@ -160,7 +160,7 @@ const LAUNCH_GATED_DIRECT_OKOU_CASES: readonly LaunchGatedDirectOkouCase[] = [
   {
     connectorSlug: "cal-com",
     label: "Cal.com",
-    clientEnvPrefix: "CALCOM",
+    clientEnvPrefix: "CAL_COM",
     authorizationEndpoint: "https://app.cal.com/auth/oauth2/authorize",
     tokenUrl: "https://api.cal.com/v2/auth/oauth2/token",
     tokenResponse: {
@@ -1046,7 +1046,7 @@ async function completeAppOauthCallback(
         ...callbackQuery,
       },
     )}`,
-    { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+    { headers: { "x-okou-web-origin": "https://okou.ai" } },
   );
 
   expect(callback.status).toBe(307);
@@ -1230,7 +1230,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
             state,
           },
         )}`,
-        { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+        { headers: { "x-okou-web-origin": "https://okou.ai" } },
       );
       expect(callback.status).toBe(307);
       const location = new URL(callback.headers.get("location") ?? "");
@@ -1287,7 +1287,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
         code: "github-authorization-code",
         state,
       })}`,
-      { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+      { headers: { "x-okou-web-origin": "https://okou.ai" } },
     );
 
     expect(callback.status).toBe(307);
@@ -1323,7 +1323,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
             state,
           },
         )}`,
-        { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+        { headers: { "x-okou-web-origin": "https://okou.ai" } },
       );
       expect(callback.status).toBe(307);
       const location = new URL(callback.headers.get("location") ?? "");
@@ -1390,7 +1390,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
         code: "airtable-authorization-code",
         state,
       })}`,
-      { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+      { headers: { "x-okou-web-origin": "https://okou.ai" } },
     );
 
     expect(callback.status).toBe(307);
@@ -1451,7 +1451,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
         code: "gmail-authorization-code",
         state,
       })}`,
-      { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+      { headers: { "x-okou-web-origin": "https://okou.ai" } },
     );
 
     expect(callback.status).toBe(307);
@@ -1509,7 +1509,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
         code: "box-authorization-code",
         state,
       })}`,
-      { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+      { headers: { "x-okou-web-origin": "https://okou.ai" } },
     );
 
     expect(callback.status).toBe(307);
@@ -1566,7 +1566,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
         code: "hubspot-authorization-code",
         state,
       })}`,
-      { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+      { headers: { "x-okou-web-origin": "https://okou.ai" } },
     );
 
     expect(callback.status).toBe(307);
@@ -1632,7 +1632,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
         code: "meta-ads-authorization-code",
         state,
       })}`,
-      { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+      { headers: { "x-okou-web-origin": "https://okou.ai" } },
     );
 
     expect(callback.status).toBe(307);
@@ -1685,7 +1685,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
         auth_code: "tiktok-ads-authorization-code",
         state,
       })}`,
-      { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+      { headers: { "x-okou-web-origin": "https://okou.ai" } },
     );
 
     expect(callback.status).toBe(307);
@@ -2159,7 +2159,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
         code: "notion-authorization-code",
         state,
       })}`,
-      { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+      { headers: { "x-okou-web-origin": "https://okou.ai" } },
     );
 
     expect(callback.status).toBe(307);
@@ -2411,7 +2411,7 @@ describe("POST /api/connectors/:connectorSlug/oauth/start", () => {
         code: "cloudflare-authorization-code",
         state,
       })}`,
-      { headers: { "x-vm0-web-origin": "https://okou.ai" } },
+      { headers: { "x-okou-web-origin": "https://okou.ai" } },
     );
 
     expect(callback.status).toBe(307);

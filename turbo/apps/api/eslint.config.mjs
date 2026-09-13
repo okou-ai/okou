@@ -132,6 +132,27 @@ const apiTestExternalBehaviorMessage =
 const apiTestDirectDbImportMessage =
   "API tests must not import DB handles directly. Exercise setup and assertions through API endpoints; add a test route only when an external-behavior exception is justified.";
 
+const apiTestLoggerImportMessage =
+  "API tests must not observe the logger. Assert HTTP responses and effects instead; see docs/testing/testing-external-behavior.md.";
+
+const apiTestDiagnosticsMessage =
+  "API tests must not observe the logger or telemetry; assert HTTP responses and effects. See docs/testing/testing-external-behavior.md";
+
+const apiTestDiagnosticsSyntax = [
+  {
+    selector: 'MemberExpression[property.name="axiomLogging"]',
+    message: apiTestDiagnosticsMessage,
+  },
+  {
+    selector: 'MemberExpression[property.name="sdkIngest"]',
+    message: apiTestDiagnosticsMessage,
+  },
+  {
+    selector: 'MemberExpression[property.name="useRealTelemetry"]',
+    message: apiTestDiagnosticsMessage,
+  },
+];
+
 const productionRouteTestImportMessage =
   "Production source must not import test-only routes. Mount required test fixture routes explicitly from tests through setupApp().";
 
@@ -200,6 +221,8 @@ const apiTestServiceImportPatterns = [
   "src/signals/services/**/*",
 ];
 
+const apiTestLoggerImportPatterns = ["**/lib/log", "**/lib/log.js"];
+
 export default [
   {
     ignores: [".typecheck/**"],
@@ -253,37 +276,6 @@ export default [
       "api/no-logger-info": [
         "error",
         { allowedMessages: ["codex reset credit expiry outcomes"] },
-      ],
-    },
-  },
-  {
-    files: ["src/signals/services/chat-activity-summary.service.ts"],
-    rules: {
-      // Existing content-free operation records must survive Axiom's info default.
-      "api/no-logger-info": [
-        "error",
-        {
-          allowedMessages: [
-            "Activity summary cache",
-            "Activity summary attempt",
-            "Activity summary completion",
-          ],
-        },
-      ],
-    },
-  },
-  {
-    files: ["src/signals/services/run-activity-snapshot.service.ts"],
-    rules: {
-      // One record per relevant batch or cleanup; suppressed captures stay silent.
-      "api/no-logger-info": [
-        "error",
-        {
-          allowedMessages: [
-            "Activity snapshot capture",
-            "Activity snapshot cleanup",
-          ],
-        },
       ],
     },
   },
@@ -574,7 +566,9 @@ export default [
   {
     // Keep finite persisted/state-machine contract matrices as narrow
     // exceptions. Route tests cover constructible behavior, while these exact
-    // transition inputs are not available through production APIs.
+    // transition inputs are not available through production APIs. Being an
+    // exception to the service-directory ban is not an exception to the
+    // diagnostics gate, so these files carry those selectors too.
     files: [
       // Content hashes are a byte-identical cryptographic contract shared with
       // guest-agent; route behavior cannot pin the serializer's full corpus.
@@ -609,9 +603,17 @@ export default [
       // exact Agent Draft writer through both rollout targets.
       "src/signals/services/__tests__/agent-draft-write.service.test.ts",
       "src/signals/services/__tests__/workflow-automation-context.test.ts",
+      // The automatic welcome thread id is a permanent uuidv5 contract with
+      // externally computed literals; route tests own generated identities and
+      // cannot pin the namespace, input order and separator.
+      "src/signals/services/__tests__/welcome-chat-thread-id.test.ts",
     ],
     rules: {
-      "no-restricted-syntax": ["error", ...restrictedSyntax],
+      "no-restricted-syntax": [
+        "error",
+        ...restrictedSyntax,
+        ...apiTestDiagnosticsSyntax,
+      ],
     },
   },
   {
@@ -748,6 +750,15 @@ export default [
       // through the production API. This focused PostgreSQL test proves the
       // exact Agent Draft writer through both rollout targets.
       "src/signals/services/__tests__/agent-draft-write.service.test.ts",
+      // The automatic welcome thread id is a permanent uuidv5 contract: it
+      // decides, forever, whether a recipient already holds a welcome. Route
+      // tests own uniquely generated identities, so only fixed inputs with
+      // externally computed literals can pin the namespace, input order and
+      // separator.
+      "src/signals/services/__tests__/welcome-chat-thread-id.test.ts",
+      // The logger is the subject here, not a diagnostic: this suite covers the
+      // app factory's log wiring and flush ownership, which no route exposes.
+      "src/__tests__/app-factory.test.ts",
     ],
     rules: {
       "no-restricted-imports": [
@@ -772,8 +783,47 @@ export default [
               group: apiTestDirectDbImportPatterns,
               message: apiTestDirectDbImportMessage,
             },
+            {
+              group: apiTestLoggerImportPatterns,
+              message: apiTestLoggerImportMessage,
+            },
           ],
         },
+      ],
+    },
+  },
+  // Diagnostics gate: API tests must not reach the logger or telemetry stubs
+  // through `context.mocks`. This is the last `no-restricted-syntax` config for
+  // the files it matches, so it carries `restrictedSyntax` forward; files in
+  // `ignores` fall back to the shared test block above.
+  {
+    files: ["src/**/__tests__/**/*.ts", "src/**/*.test.ts"],
+    ignores: [
+      // Bootstrap-only module: it owns the process.env and vi.stubEnv usage
+      // that `restrictedSyntax` bans everywhere else.
+      "src/__tests__/env-stub.ts",
+      // Service-directory tests are answered by their own blocks above: the
+      // file is either banned outright or is a named exception that carries
+      // these selectors alongside the shared ones.
+      "src/signals/services/**/*.test.ts",
+      // The stub definition site installs the logger and telemetry mocks that
+      // this rule stops tests from reading; it asserts nothing itself.
+      "src/__tests__/mocks.ts",
+      // The logger is the subject of this suite, not a diagnostic.
+      "src/lib/__tests__/log.test.ts",
+      // The Axiom log transport is the subject of this suite.
+      "src/lib/__tests__/log-axiom-transport.test.ts",
+      // The telemetry SDK client is the subject of this suite.
+      "src/signals/external/__tests__/axiom.test.ts",
+      // The app factory's log wiring and flush ownership is the subject here,
+      // and no route exposes it.
+      "src/__tests__/app-factory.test.ts",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        ...restrictedSyntax,
+        ...apiTestDiagnosticsSyntax,
       ],
     },
   },

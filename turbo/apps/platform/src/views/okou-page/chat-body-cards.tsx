@@ -44,7 +44,6 @@ import {
   UNKNOWN_PERMISSION_GRANT,
   type FirewallPolicyValue,
 } from "@okouai/connectors/firewall-contracts";
-import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import { Button, Skeleton, cn } from "@okouai/ui";
 import {
   useGet,
@@ -85,6 +84,7 @@ type ChatImagePreviewLinkProps = {
   onPreview: () => void;
   placeholderClassName: string;
   resourceUrl$: ArtifactSignals["resourceUrl$"];
+  thumbnailUrl$: ArtifactSignals["thumbnailUrl$"];
   url: string;
 };
 
@@ -120,6 +120,7 @@ export function ChatImagePreviewLink({
   onPreview,
   placeholderClassName,
   resourceUrl$,
+  thumbnailUrl$,
   url,
 }: ChatImagePreviewLinkProps) {
   const imageStatus = useGet(load.status$);
@@ -127,13 +128,7 @@ export function ChatImagePreviewLink({
   const markFailed = useSet(load.failed$);
   const imageUrl = publicAttachmentUrl(url);
   const resourceUrl = useLastResolved(resourceUrl$) ?? null;
-  const previewImageUrl =
-    resourceUrl === null
-      ? null
-      : r2ImageTransformUrl(resourceUrl, {
-          width: 800,
-          height: 720,
-        });
+  const previewImageUrl = useLastResolved(thumbnailUrl$) ?? null;
 
   const showPlaceholder = imageStatus !== "loaded";
 
@@ -341,7 +336,12 @@ function ArtifactCardView({
   const openImageLightbox = useSet(openAttachmentImageLightbox$);
   const openVideoLightbox = useSet(openAttachmentVideoLightbox$);
   const openLightbox = (url: string): void => {
-    openImageLightbox({ threadId, url });
+    openImageLightbox({
+      threadId,
+      url,
+      filename: signals.filename,
+      preview: signals,
+    });
   };
   const previewImageLoadable = useLastLoadable(signals.previewImageUrl$);
   const previewImagePending = previewImageLoadable.state === "loading";
@@ -370,6 +370,7 @@ function ArtifactCardView({
         load={signals.previewImageLoad}
         placeholderClassName="h-full w-full"
         resourceUrl$={signals.resourceUrl$}
+        thumbnailUrl$={signals.thumbnailUrl$}
         url={signals.url}
       />,
     );

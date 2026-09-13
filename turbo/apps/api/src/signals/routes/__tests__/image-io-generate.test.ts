@@ -88,9 +88,6 @@ const FAL_INVALID_REQUEST_MESSAGE =
   "Could not generate images with the given prompts and images. Please try again with different inputs.";
 const FAL_INVALID_ASPECT_RATIO_MESSAGE =
   "Input should be 'auto', '21:9', '16:9', '3:2', '4:3', '5:4', '1:1', '4:5', '3:4', '2:3', '9:16', '4:1', '1:4', '8:1' or '1:8'";
-const FAL_FAILURE_LOG_MESSAGE =
-  "Fal built-in generation webhook reported failed generation";
-const OPENAI_FAILURE_LOG_MESSAGE = "OpenAI image generation request failed";
 const OPENAI_PRIVATE_PROVIDER_REQUEST_ID =
   "req_private0openai0request0identifier";
 const OPENAI_PRIVATE_PROVIDER_MESSAGE = `Invalid image file or mode for image 1, please check your image file. If you believe this is an error, contact us at help.openai.com and include the request ID ${OPENAI_PRIVATE_PROVIDER_REQUEST_ID}.`;
@@ -351,14 +348,6 @@ function readAcceptedGenerationId(
     },
   });
   return body.generationId;
-}
-
-function openAiFailureLogs(
-  loggingMock: typeof context.mocks.axiomLogging.info,
-): unknown[][] {
-  return loggingMock.mock.calls.filter(([message]) => {
-    return message === OPENAI_FAILURE_LOG_MESSAGE;
-  });
 }
 
 function readGenerationResult(body: unknown): unknown {
@@ -1007,9 +996,6 @@ describe("POST /api/image-io/generate", () => {
       editing: true,
       providerErrorCode: "invalid_image_file",
       moderationDetails: undefined,
-      failureKind: "input_media_invalid",
-      failureStage: "input",
-      retryPolicy: "after_input_change",
       publicError: {
         message: "An input image could not be read by the generation provider.",
         code: "GENERATION_INPUT_MEDIA_INVALID",
@@ -1021,9 +1007,6 @@ describe("POST /api/image-io/generate", () => {
       editing: false,
       providerErrorCode: "invalid_image_file",
       moderationDetails: undefined,
-      failureKind: "input_media_invalid",
-      failureStage: "input",
-      retryPolicy: "after_input_change",
       publicError: {
         message: "An input image could not be read by the generation provider.",
         code: "GENERATION_INPUT_MEDIA_INVALID",
@@ -1038,9 +1021,6 @@ describe("POST /api/image-io/generate", () => {
         moderation_stage: "input",
         categories: ["violence"],
       },
-      failureKind: "input_safety_rejected",
-      failureStage: "input",
-      retryPolicy: "after_input_change",
       publicError: {
         message:
           "The prompt or reference image was blocked by the safety filter.",
@@ -1053,9 +1033,6 @@ describe("POST /api/image-io/generate", () => {
       editing: false,
       providerErrorCode: "moderation_blocked",
       moderationDetails: { moderation_stage: "output", categories: ["sexual"] },
-      failureKind: "output_safety_blocked",
-      failureStage: "output",
-      retryPolicy: "manual_once",
       publicError: {
         message: "The generated image was blocked by the safety filter.",
         code: "GENERATION_OUTPUT_SAFETY_BLOCKED",
@@ -1067,9 +1044,6 @@ describe("POST /api/image-io/generate", () => {
       editing: false,
       providerErrorCode: "moderation_blocked",
       moderationDetails: {},
-      failureKind: "input_safety_rejected",
-      failureStage: "input",
-      retryPolicy: "after_input_change",
       publicError: {
         message:
           "The prompt or reference image was blocked by the safety filter.",
@@ -1083,9 +1057,6 @@ describe("POST /api/image-io/generate", () => {
       editing,
       providerErrorCode,
       moderationDetails,
-      failureKind,
-      failureStage,
-      retryPolicy,
       publicError,
     }) => {
       const fixture = await seedImageFixture({ credits: 1000 });
@@ -1145,45 +1116,14 @@ describe("POST /api/image-io/generate", () => {
       });
       await expect(orgCredits(fixture)).resolves.toBe(1000);
 
-      const debugLogs = openAiFailureLogs(context.mocks.axiomLogging.debug);
-      expect(debugLogs).toStrictEqual([
-        [
-          OPENAI_FAILURE_LOG_MESSAGE,
-          expect.objectContaining({
-            context: "ImageGeneration",
-            provider: "openai",
-            model,
-            providerStatus: 400,
-            providerErrorType: "image_generation_user_error",
-            providerErrorCode,
-            failureKind,
-            failureStage,
-            publicErrorCode: publicError.code,
-            retryPolicy,
-            billingDisposition: "not_charged",
-            expected: true,
-          }),
-        ],
-      ]);
-      for (const silentMock of [
-        context.mocks.axiomLogging.error,
-        context.mocks.axiomLogging.warn,
-        context.mocks.axiomLogging.info,
-      ]) {
-        expect(openAiFailureLogs(silentMock)).toHaveLength(0);
-      }
-
-      const publicAndLogSurfaces = JSON.stringify({
-        status: statusBody,
-        debugLogs,
-      });
+      const publicSurfaces = JSON.stringify(statusBody);
       for (const privateValue of [
         OPENAI_PRIVATE_PROVIDER_MESSAGE,
         OPENAI_PRIVATE_PROVIDER_REQUEST_ID,
         "a product illustration",
         MOCKUP_IMAGE_URL,
       ]) {
-        expect(publicAndLogSurfaces).not.toContain(privateValue);
+        expect(publicSurfaces).not.toContain(privateValue);
       }
     },
   );
@@ -1297,33 +1237,7 @@ describe("POST /api/image-io/generate", () => {
         },
       });
       await expect(orgCredits(fixture)).resolves.toBe(1000);
-
-      const errorLogs = openAiFailureLogs(context.mocks.axiomLogging.error);
-      expect(errorLogs).toStrictEqual([
-        [
-          OPENAI_FAILURE_LOG_MESSAGE,
-          expect.objectContaining({
-            context: "ImageGeneration",
-            provider: "openai",
-            providerStatus: upstreamStatus,
-            providerErrorType: "unknown",
-            providerErrorCode: "unknown",
-            failureKind: "unknown",
-            failureStage: "provider",
-            publicErrorCode: "OPENAI_IMAGE_REQUEST_FAILED",
-            retryPolicy: "retry_once",
-            billingDisposition: "not_charged",
-            expected: false,
-          }),
-        ],
-      ]);
-      for (const silentMock of [
-        context.mocks.axiomLogging.debug,
-        context.mocks.axiomLogging.info,
-      ]) {
-        expect(openAiFailureLogs(silentMock)).toHaveLength(0);
-      }
-      expect(JSON.stringify({ status: statusBody, errorLogs })).not.toContain(
+      expect(JSON.stringify(statusBody)).not.toContain(
         OPENAI_PRIVATE_PROVIDER_MESSAGE,
       );
     },
@@ -2085,11 +1999,9 @@ describe("POST /api/image-io/generate", () => {
     {
       detailShape: "a string detail",
       detail: FAL_OUTPUT_SAFETY_FILTER_MESSAGE,
-      providerErrorType: "unknown",
     },
     {
       detailShape: "Pydantic detail entries",
-      providerErrorType: "content_policy_violation",
       detail: [
         { type: "file_download_error", msg: "Unrelated provider diagnostic" },
         {
@@ -2105,7 +2017,7 @@ describe("POST /api/image-io/generate", () => {
     },
   ])(
     "maps Fal output safety failures from $detailShape without charging or retaining private diagnostics",
-    async ({ detail, providerErrorType }) => {
+    async ({ detail }) => {
       const fixture = await seedImageFixture({ credits: 1000 });
       const pricingFixture = await createScopedImagePricing({
         configured: GPT_IMAGE_1_PRICING,
@@ -2193,52 +2105,25 @@ describe("POST /api/image-io/generate", () => {
       // second terminal failure event.
       await postFalWebhookEnvelope(app, initialRequestUrl, webhookPayload);
       await flushWaitUntilForTest();
-      const infoFailureLogs = context.mocks.axiomLogging.info.mock.calls.filter(
-        ([message]) => {
-          return message === FAL_FAILURE_LOG_MESSAGE;
+      const failureEvents = context.mocks.ably.publish.mock.calls.filter(
+        ([eventName]) => {
+          return eventName === `built-in-generation:${generationId}`;
         },
       );
-      const warnFailureLogs = context.mocks.axiomLogging.warn.mock.calls.filter(
-        ([message]) => {
-          return message === FAL_FAILURE_LOG_MESSAGE;
-        },
+      expect(failureEvents).toHaveLength(1);
+      const repeatedStatusResponse = await app.request(
+        `/api/built-in-generations/${generationId}`,
+        { headers },
       );
-      expect(infoFailureLogs).toStrictEqual([
-        [
-          FAL_FAILURE_LOG_MESSAGE,
-          expect.objectContaining({
-            context: "BuiltInGenerationWebhooks",
-            provider: "fal",
-            generationId,
-            type: "image",
-            providerStatus: "ERROR",
-            providerHttpStatus: 422,
-            providerErrorType,
-            failureKind: "output_safety_blocked",
-            failureStage: "output",
-            classificationSource: "normalized_message_exact",
-            publicErrorCode: "GENERATION_OUTPUT_SAFETY_BLOCKED",
-            retryPolicy: "manual_once",
-            billingDisposition: "not_charged",
-            artifactRecorded: false,
-            usageRecorded: false,
-            admissionStatus: "failed",
-            expected: true,
-          }),
-        ],
-      ]);
-      expect(warnFailureLogs).toHaveLength(0);
-      expect(
-        context.mocks.axiomLogging.debug.mock.calls.filter(([message]) => {
-          return message === FAL_FAILURE_LOG_MESSAGE;
-        }),
-      ).toHaveLength(0);
+      expect(repeatedStatusResponse.status).toBe(200);
+      await expect(repeatedStatusResponse.json()).resolves.toMatchObject({
+        status: "failed",
+        error: expectedError,
+      });
 
-      const publicAndLogSurfaces = JSON.stringify({
+      const publicSurfaces = JSON.stringify({
         realtime: context.mocks.ably.publish.mock.calls,
         status: statusBody,
-        infoFailureLogs,
-        warnFailureLogs,
       });
       for (const privateValue of [
         "private-output-safety-prompt",
@@ -2247,7 +2132,7 @@ describe("POST /api/image-io/generate", () => {
         "private-fal-gateway-request-id",
         "Unexpected status code: 422",
       ]) {
-        expect(publicAndLogSurfaces).not.toContain(privateValue);
+        expect(publicSurfaces).not.toContain(privateValue);
       }
 
       // Three new starts prove that the failed job released its per-run active
@@ -2282,32 +2167,22 @@ describe("POST /api/image-io/generate", () => {
       providerErrorType: "content_policy_violation",
       providerMessage: FAL_INPUT_SAFETY_FILTER_MESSAGE,
       location: ["body", "prompt"],
-      providerHttpStatus: 422,
-      failureKind: "input_safety_rejected",
-      failureStage: "input",
-      retryPolicy: "after_input_change",
       publicError: {
         message:
           "The prompt or reference image was blocked by the safety filter.",
         code: "GENERATION_INPUT_SAFETY_REJECTED",
       },
-      expected: true,
     },
     {
       caseName: "input media download failure",
       providerErrorType: "file_download_error",
       providerMessage: FAL_INPUT_MEDIA_DOWNLOAD_MESSAGE,
       location: ["body", "input", "image_urls", 0],
-      providerHttpStatus: 422,
-      failureKind: "input_media_unreachable",
-      failureStage: "input",
-      retryPolicy: "after_input_change",
       publicError: {
         message:
           "An input image could not be downloaded by the generation provider.",
         code: "GENERATION_INPUT_MEDIA_UNREACHABLE",
       },
-      expected: true,
     },
     {
       caseName: "unsupported input media URL without a scheme",
@@ -2315,16 +2190,11 @@ describe("POST /api/image-io/generate", () => {
       providerMessage:
         "Value error, Invalid URL scheme ':' in image URL. Only http://, https://, and data: URLs are supported. Browser-only URLs like blob: cannot be used.",
       location: ["body", "image_urls"],
-      providerHttpStatus: 422,
-      failureKind: "input_media_unreachable",
-      failureStage: "input",
-      retryPolicy: "after_input_change",
       publicError: {
         message:
           "An input image could not be downloaded by the generation provider.",
         code: "GENERATION_INPUT_MEDIA_UNREACHABLE",
       },
-      expected: true,
     },
     {
       caseName: "unsupported local input media URL",
@@ -2332,135 +2202,85 @@ describe("POST /api/image-io/generate", () => {
       providerMessage:
         "Value error, Invalid URL scheme 'file:' in image URL. Only http://, https://, and data: URLs are supported. Browser-only URLs like blob: cannot be used.",
       location: ["body", "image_urls"],
-      providerHttpStatus: 422,
-      failureKind: "input_media_unreachable",
-      failureStage: "input",
-      retryPolicy: "after_input_change",
       publicError: {
         message:
           "An input image could not be downloaded by the generation provider.",
         code: "GENERATION_INPUT_MEDIA_UNREACHABLE",
       },
-      expected: true,
     },
     {
       caseName: "invalid input media",
       providerErrorType: "image_load_error",
       providerMessage: FAL_INPUT_MEDIA_LOAD_MESSAGE,
       location: ["body", "image_url"],
-      providerHttpStatus: 422,
-      failureKind: "input_media_invalid",
-      failureStage: "input",
-      retryPolicy: "after_input_change",
       publicError: {
         message: "An input image could not be read by the generation provider.",
         code: "GENERATION_INPUT_MEDIA_INVALID",
       },
-      expected: true,
     },
     {
       caseName: "invalid prompt and image combination",
       providerErrorType: "invalid_request",
       providerMessage: FAL_INVALID_REQUEST_MESSAGE,
       location: ["prompt"],
-      providerHttpStatus: 422,
-      failureKind: "invalid_parameters",
-      failureStage: "input",
-      retryPolicy: "after_input_change",
       publicError: {
         message: "The image generation request contains invalid parameters.",
         code: "GENERATION_INVALID_PARAMETERS",
       },
-      expected: true,
     },
     {
       caseName: "unsupported aspect ratio",
       providerErrorType: "literal_error",
       providerMessage: FAL_INVALID_ASPECT_RATIO_MESSAGE,
       location: ["body", "aspect_ratio"],
-      providerHttpStatus: 422,
-      failureKind: "invalid_parameters",
-      failureStage: "input",
-      retryPolicy: "after_input_change",
       publicError: {
         message: "The image generation request contains invalid parameters.",
         code: "GENERATION_INVALID_PARAMETERS",
       },
-      expected: true,
     },
     {
       caseName: "missing required input",
       providerErrorType: "missing",
       providerMessage: "Field required",
       location: ["body", "image_urls"],
-      providerHttpStatus: 422,
-      failureKind: "invalid_parameters",
-      failureStage: "input",
-      retryPolicy: "after_input_change",
       publicError: {
         message: "The image generation request contains invalid parameters.",
         code: "GENERATION_INVALID_PARAMETERS",
       },
-      expected: true,
     },
     {
       caseName: "prompt shorter than the provider minimum",
       providerErrorType: "string_too_short",
       providerMessage: "String should have at least 3 characters",
       location: ["body", "prompt"],
-      providerHttpStatus: 422,
-      failureKind: "invalid_parameters",
-      failureStage: "input",
-      retryPolicy: "after_input_change",
       publicError: {
         message: "The image generation request contains invalid parameters.",
         code: "GENERATION_INVALID_PARAMETERS",
       },
-      expected: true,
     },
     {
       caseName: "downstream provider unavailable",
       providerErrorType: "downstream_service_unavailable",
       providerMessage: "Downstream service unavailable",
       location: ["body"],
-      providerHttpStatus: 504,
-      failureKind: "provider_unavailable",
-      failureStage: "provider",
-      retryPolicy: "retry_once",
       publicError: {
         message: "The image generation provider is temporarily unavailable.",
         code: "GENERATION_PROVIDER_UNAVAILABLE",
       },
-      expected: false,
     },
     {
       caseName: "downstream provider error",
       providerErrorType: "downstream_service_error",
       providerMessage: "Downstream service error",
       location: ["body"],
-      providerHttpStatus: 500,
-      failureKind: "provider_unavailable",
-      failureStage: "provider",
-      retryPolicy: "retry_once",
       publicError: {
         message: "The image generation provider is temporarily unavailable.",
         code: "GENERATION_PROVIDER_UNAVAILABLE",
       },
-      expected: false,
     },
   ])(
     "maps Fal $caseName through realtime and status without recording artifacts or usage",
-    async ({
-      providerErrorType,
-      providerMessage,
-      location,
-      providerHttpStatus,
-      failureKind,
-      failureStage,
-      retryPolicy,
-      publicError,
-      expected,
-    }) => {
+    async ({ providerErrorType, providerMessage, location, publicError }) => {
       const fixture = await seedImageFixture({ credits: 1000 });
       const pricingFixture = await createScopedImagePricing({
         configured: GPT_IMAGE_1_PRICING,
@@ -2499,7 +2319,7 @@ describe("POST /api/image-io/generate", () => {
         request_id: "private-classified-fal-request-id",
         gateway_request_id: "private-classified-fal-gateway-request-id",
         status: "ERROR",
-        error: `Unexpected status code: ${String(providerHttpStatus)}`,
+        error: "Unexpected status code: 422",
         payload: {
           detail: [
             {
@@ -2539,55 +2359,9 @@ describe("POST /api/image-io/generate", () => {
         error: publicError,
       });
 
-      const expectedLoggingMock = expected
-        ? context.mocks.axiomLogging.info
-        : context.mocks.axiomLogging.warn;
-      const unexpectedLoggingMock = expected
-        ? context.mocks.axiomLogging.warn
-        : context.mocks.axiomLogging.info;
-      const failureLogs = expectedLoggingMock.mock.calls.filter(([message]) => {
-        return message === FAL_FAILURE_LOG_MESSAGE;
-      });
-      const unexpectedFailureLogs = unexpectedLoggingMock.mock.calls.filter(
-        ([message]) => {
-          return message === FAL_FAILURE_LOG_MESSAGE;
-        },
-      );
-      expect(failureLogs).toStrictEqual([
-        [
-          FAL_FAILURE_LOG_MESSAGE,
-          expect.objectContaining({
-            context: "BuiltInGenerationWebhooks",
-            provider: "fal",
-            generationId,
-            type: "image",
-            providerStatus: "ERROR",
-            providerHttpStatus,
-            providerErrorType,
-            failureKind,
-            failureStage,
-            classificationSource: "structured_detail_exact",
-            publicErrorCode: publicError.code,
-            retryPolicy,
-            billingDisposition: "not_charged",
-            artifactRecorded: false,
-            usageRecorded: false,
-            admissionStatus: "failed",
-            expected,
-          }),
-        ],
-      ]);
-      expect(unexpectedFailureLogs).toHaveLength(0);
-      expect(
-        context.mocks.axiomLogging.debug.mock.calls.filter(([message]) => {
-          return message === FAL_FAILURE_LOG_MESSAGE;
-        }),
-      ).toHaveLength(0);
-
-      const publicAndLogSurfaces = JSON.stringify({
+      const publicSurfaces = JSON.stringify({
         realtime: context.mocks.ably.publish.mock.calls,
         status: statusBody,
-        failureLogs,
       });
       for (const privateValue of [
         "private-classified-failure-prompt",
@@ -2596,7 +2370,7 @@ describe("POST /api/image-io/generate", () => {
         "private-classified-fal-gateway-request-id",
         providerMessage,
       ]) {
-        expect(publicAndLogSurfaces).not.toContain(privateValue);
+        expect(publicSurfaces).not.toContain(privateValue);
       }
 
       expect(context.mocks.s3.send).not.toHaveBeenCalled();
@@ -2627,8 +2401,6 @@ describe("POST /api/image-io/generate", () => {
           msg: "The generated image was blocked by the safety filter",
         },
       ],
-      providerErrorType: "content_policy_violation",
-      providerHttpStatus: 422,
     },
     {
       caseName: "changed provider text and location",
@@ -2641,8 +2413,6 @@ describe("POST /api/image-io/generate", () => {
         msg: "private-provider-message https://private.example/input",
         ctx: { credential: "private-provider-token" },
       },
-      providerErrorType: "file_download_error",
-      providerHttpStatus: 422,
     },
     {
       caseName: "downstream error with changed message",
@@ -2654,8 +2424,6 @@ describe("POST /api/image-io/generate", () => {
         loc: ["body"],
         msg: "private-provider-message",
       },
-      providerErrorType: "downstream_service_error",
-      providerHttpStatus: 500,
     },
     {
       caseName: "downstream error at an unrecognized location",
@@ -2667,8 +2435,6 @@ describe("POST /api/image-io/generate", () => {
         loc: ["body", "private-provider-location"],
         msg: "Downstream service error",
       },
-      providerErrorType: "downstream_service_error",
-      providerHttpStatus: 500,
     },
     {
       caseName: "missing messages and an unknown first type",
@@ -2679,8 +2445,6 @@ describe("POST /api/image-io/generate", () => {
         { type: "file_download_error:private-provider-token" },
         { type: "image_load_error" },
       ],
-      providerErrorType: "image_load_error",
-      providerHttpStatus: 422,
     },
     {
       caseName: "the documented legacy validation envelope",
@@ -2694,8 +2458,6 @@ describe("POST /api/image-io/generate", () => {
           msg: "field required",
         },
       ],
-      providerErrorType: "value_error.missing",
-      providerHttpStatus: 422,
     },
     {
       caseName: "an unknown type and out-of-range HTTP status",
@@ -2708,8 +2470,6 @@ describe("POST /api/image-io/generate", () => {
           msg: "private-provider-message",
         },
       ],
-      providerErrorType: "unknown",
-      providerHttpStatus: undefined,
     },
     {
       caseName: "empty diagnostics and a non-string error",
@@ -2717,8 +2477,6 @@ describe("POST /api/image-io/generate", () => {
       wrapper: "payload",
       error: { message: "private-provider-message" },
       detail: null,
-      providerErrorType: "unknown",
-      providerHttpStatus: undefined,
     },
     {
       caseName: "free-form detail and trailing error text",
@@ -2726,19 +2484,10 @@ describe("POST /api/image-io/generate", () => {
       wrapper: "payload",
       error: "Invalid status code: 422 private-provider-token",
       detail: "private-provider-message https://private.example/input",
-      providerErrorType: "unknown",
-      providerHttpStatus: undefined,
     },
   ])(
-    "retains safe Fal diagnostics for $caseName without changing the public fallback",
-    async ({
-      status,
-      wrapper,
-      error,
-      detail,
-      providerErrorType,
-      providerHttpStatus,
-    }) => {
+    "falls back to the generic Fal image failure for $caseName",
+    async ({ status, wrapper, error, detail }) => {
       const fixture = await seedImageFixture({ credits: 1000 });
       const pricingFixture = await createScopedImagePricing({
         configured: GPT_IMAGE_1_PRICING,
@@ -2806,52 +2555,9 @@ describe("POST /api/image-io/generate", () => {
         error: expectedError,
       });
 
-      const debugFailureLogs =
-        context.mocks.axiomLogging.debug.mock.calls.filter(([message]) => {
-          return message === FAL_FAILURE_LOG_MESSAGE;
-        });
-      const warnFailureLogs = context.mocks.axiomLogging.warn.mock.calls.filter(
-        ([message]) => {
-          return message === FAL_FAILURE_LOG_MESSAGE;
-        },
-      );
-      const infoFailureLogs = context.mocks.axiomLogging.info.mock.calls.filter(
-        ([message]) => {
-          return message === FAL_FAILURE_LOG_MESSAGE;
-        },
-      );
-      expect(debugFailureLogs).toHaveLength(0);
-      expect(infoFailureLogs).toHaveLength(0);
-      expect(warnFailureLogs).toStrictEqual([
-        [
-          FAL_FAILURE_LOG_MESSAGE,
-          expect.objectContaining({
-            context: "BuiltInGenerationWebhooks",
-            provider: "fal",
-            generationId,
-            type: "image",
-            providerStatus: status,
-            providerHttpStatus,
-            providerErrorType,
-            failureKind: "unknown",
-            failureStage: "unknown",
-            classificationSource: "fallback",
-            publicErrorCode: "GENERATION_FAILED",
-            retryPolicy: "retry_once",
-            billingDisposition: "not_charged",
-            artifactRecorded: false,
-            usageRecorded: false,
-            admissionStatus: "failed",
-            expected: false,
-          }),
-        ],
-      ]);
-      const publicAndLogSurfaces = JSON.stringify({
+      const publicSurfaces = JSON.stringify({
         realtime: context.mocks.ably.publish.mock.calls,
         status: statusBody,
-        debugFailureLogs,
-        infoFailureLogs,
-        warnFailureLogs,
       });
       for (const privateValue of [
         "private-unknown-failure-prompt",
@@ -2865,7 +2571,7 @@ describe("POST /api/image-io/generate", () => {
         "private-fal-request-id",
         "private-fal-gateway-request-id",
       ]) {
-        expect(publicAndLogSurfaces).not.toContain(privateValue);
+        expect(publicSurfaces).not.toContain(privateValue);
       }
       expect(context.mocks.s3.send).not.toHaveBeenCalled();
       await expect(orgCredits(fixture)).resolves.toBe(1000);
@@ -3217,7 +2923,7 @@ describe("POST /api/image-io/generate", () => {
     hostApi.captureHostedSitesS3();
     await upsertOrgPlanEntitlementFixture({
       orgId: fixture.orgId,
-      restrictedVm0Models: false,
+      restrictedBuiltInModels: false,
     });
     const site = `seedream-reference-${randomUUID().slice(0, 8)}`;
     const hostActor = {

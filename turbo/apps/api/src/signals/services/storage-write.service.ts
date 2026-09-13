@@ -40,6 +40,8 @@ import {
   recordPiMemoryPhase2Checkpoint,
 } from "./pi-memory-phase2-checkpoint.service";
 
+import { enqueuePiResourceVersionIndexes } from "./pi-resource-version-index.service";
+
 const ACTIVE_SANDBOX_STORAGE_RUN_STATUSES = ["pending", "running"] as const;
 
 interface StorageChanges {
@@ -1144,6 +1146,136 @@ async function recordAndSettleMaintenanceCheckpoint(
   await settlePiMemoryPhase2Checkpoint(tx, binding.runId, versionId);
 }
 
+async function commitStorageVersionInTransaction(
+  tx: Tx,
+  args: {
+    readonly input: CommitStorageForStorageInput;
+    readonly verification: VerifiedStorageCommit;
+  },
+  signal: AbortSignal,
+): Promise<CommitStorageResponse> {
+  const mounted = args.input.sandboxAuth
+    ? await lockMountedWritebackStorage(
+        {
+          tx,
+          auth: args.input.sandboxAuth,
+          storageId: args.input.storageId,
+        },
+        signal,
+      )
+    : undefined;
+  if (mounted && "status" in mounted) {
+    return mounted;
+  }
+
+  const [userStorage] = mounted
+    ? []
+    : await tx
+        .select(storageRowSelection())
+        .from(storages)
+        .where(eq(storages.id, args.input.storageId))
+        .limit(1);
+  signal.throwIfAborted();
+  const storage = mounted?.storage ?? userStorage;
+  if (!storage) {
+    return notFound("Storage not found");
+  }
+
+  if (args.input.sandboxAuth) {
+    const maintenanceGuard = await guardPiMemoryPhase2MaintenancePublication({
+      db: tx,
+      auth: args.input.sandboxAuth,
+      storageId: storage.id,
+      parentVersionId: args.input.parentVersionId,
+      versionId: args.input.versionId,
+      attestation: args.input.maintenanceAttestation,
+      allowCommittedReplay: true,
+    });
+    signal.throwIfAborted();
+    if (maintenanceGuard) {
+      return maintenanceGuard;
+    }
+  }
+
+  const [version] = await tx
+    .select()
+    .from(storageVersions)
+    .where(
+      and(
+        eq(storageVersions.storageId, storage.id),
+        eq(storageVersions.id, args.input.versionId),
+      ),
+    )
+    .limit(1);
+  signal.throwIfAborted();
+
+  const binding = maintenanceCheckpointBinding(args.input);
+  const replay = await committedMaintenanceResponse(
+    tx,
+    binding,
+    storage,
+    version,
+  );
+  if (replay) {
+    return replay;
+  }
+
+  if (mounted && !sandboxStorageRunIsActive(mounted.runStatus)) {
+    const alreadySucceeded = await terminalStorageCommitAlreadySucceeded({
+      tx,
+      storage,
+      version,
+      verification: args.verification,
+      input: args.input,
+    });
+    signal.throwIfAborted();
+    return alreadySucceeded && version
+      ? storageCommitSuccess({
+          storage,
+          versionId: args.input.versionId,
+          size: Number(version.size),
+          fileCount: version.fileCount,
+          deduplicated: true,
+        })
+      : notFound("Active agent run not found");
+  }
+
+  // A validated no-diff receipt acknowledges the mounted epoch. It must not
+  // restore that epoch as HEAD if another ordinary writer has since published.
+  if (
+    binding &&
+    args.input.versionId === binding.claimedBaseVersionId &&
+    version
+  ) {
+    await recordAndSettleMaintenanceCheckpoint(tx, binding, version.id);
+    return storageCommitSuccess({
+      storage,
+      versionId: version.id,
+      size: Number(version.size),
+      fileCount: version.fileCount,
+      deduplicated: true,
+    });
+  }
+  const response = await commitActiveStorageVersion(
+    {
+      tx,
+      storage,
+      version,
+      input: args.input,
+      verification: args.verification,
+    },
+    signal,
+  );
+  if (binding && response.status === 200) {
+    await recordAndSettleMaintenanceCheckpoint(
+      tx,
+      binding,
+      args.input.versionId,
+    );
+  }
+  return response;
+}
+
 async function commitVerifiedStorageVersion(
   args: {
     readonly db: Db;
@@ -1153,124 +1285,10 @@ async function commitVerifiedStorageVersion(
   signal: AbortSignal,
 ): Promise<CommitStorageResponse> {
   return await args.db.transaction(async (tx) => {
-    const mounted = args.input.sandboxAuth
-      ? await lockMountedWritebackStorage(
-          {
-            tx,
-            auth: args.input.sandboxAuth,
-            storageId: args.input.storageId,
-          },
-          signal,
-        )
-      : undefined;
-    if (mounted && "status" in mounted) {
-      return mounted;
-    }
-
-    const [userStorage] = mounted
-      ? []
-      : await tx
-          .select(storageRowSelection())
-          .from(storages)
-          .where(eq(storages.id, args.input.storageId))
-          .limit(1);
+    const response = await commitStorageVersionInTransaction(tx, args, signal);
     signal.throwIfAborted();
-    const storage = mounted?.storage ?? userStorage;
-    if (!storage) {
-      return notFound("Storage not found");
-    }
-
-    if (args.input.sandboxAuth) {
-      const maintenanceGuard = await guardPiMemoryPhase2MaintenancePublication({
-        db: tx,
-        auth: args.input.sandboxAuth,
-        storageId: storage.id,
-        parentVersionId: args.input.parentVersionId,
-        versionId: args.input.versionId,
-        attestation: args.input.maintenanceAttestation,
-        allowCommittedReplay: true,
-      });
-      signal.throwIfAborted();
-      if (maintenanceGuard) {
-        return maintenanceGuard;
-      }
-    }
-
-    const [version] = await tx
-      .select()
-      .from(storageVersions)
-      .where(
-        and(
-          eq(storageVersions.storageId, storage.id),
-          eq(storageVersions.id, args.input.versionId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-
-    const binding = maintenanceCheckpointBinding(args.input);
-    const replay = await committedMaintenanceResponse(
-      tx,
-      binding,
-      storage,
-      version,
-    );
-    if (replay) {
-      return replay;
-    }
-
-    if (mounted && !sandboxStorageRunIsActive(mounted.runStatus)) {
-      const alreadySucceeded = await terminalStorageCommitAlreadySucceeded({
-        tx,
-        storage,
-        version,
-        verification: args.verification,
-        input: args.input,
-      });
-      signal.throwIfAborted();
-      return alreadySucceeded && version
-        ? storageCommitSuccess({
-            storage,
-            versionId: args.input.versionId,
-            size: Number(version.size),
-            fileCount: version.fileCount,
-            deduplicated: true,
-          })
-        : notFound("Active agent run not found");
-    }
-
-    // A validated no-diff receipt acknowledges the mounted epoch. It must not
-    // restore that epoch as HEAD if another ordinary writer has since published.
-    if (
-      binding &&
-      args.input.versionId === binding.claimedBaseVersionId &&
-      version
-    ) {
-      await recordAndSettleMaintenanceCheckpoint(tx, binding, version.id);
-      return storageCommitSuccess({
-        storage,
-        versionId: version.id,
-        size: Number(version.size),
-        fileCount: version.fileCount,
-        deduplicated: true,
-      });
-    }
-    const response = await commitActiveStorageVersion(
-      {
-        tx,
-        storage,
-        version,
-        input: args.input,
-        verification: args.verification,
-      },
-      signal,
-    );
-    if (binding && response.status === 200) {
-      await recordAndSettleMaintenanceCheckpoint(
-        tx,
-        binding,
-        args.input.versionId,
-      );
+    if (response.status === 200) {
+      await enqueuePiResourceVersionIndexes(tx, [args.input.versionId], signal);
     }
     return response;
   });

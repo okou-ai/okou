@@ -9,6 +9,8 @@ const R2_IMAGE_TRANSFORM_HOSTS = new Set([
   "static.okou.io",
 ]);
 const R2_IMAGE_TRANSFORM_PREFIX = "/cdn-cgi/image/";
+const R2_IMAGE_TRANSFORM_INPUT_PATH =
+  /\.(?:avif|gif|heic|jpe?g|png|svg|webp)$/iu;
 
 // Output quality for Cloudflare Image Resizing. Tuned to stay crisp on
 // text-heavy presentation thumbnails while still shrinking payloads.
@@ -68,10 +70,24 @@ function parseAbsoluteUrl(url: string): URL | null {
 export function r2ImageTransformUrl(
   url: string,
   options: R2ImageTransformOptions,
+  remoteImageOrigin?: string,
 ): string {
   const parsed = parseAbsoluteUrl(url);
-  if (parsed === null) {
+  // Unsupported or unknown input formats keep their original URL. A browser
+  // can display formats such as BMP that Cloudflare cannot transform.
+  if (parsed === null || !R2_IMAGE_TRANSFORM_INPUT_PATH.test(parsed.pathname)) {
     return url;
+  }
+
+  if (
+    remoteImageOrigin &&
+    parsed.protocol === "https:" &&
+    parsed.hostname.endsWith(".r2.cloudflarestorage.com") &&
+    parsed.searchParams.has("X-Amz-Signature")
+  ) {
+    // The signature covers the source URL. Preserve its encoded path and query
+    // byte for byte instead of reconstructing it with URLSearchParams.
+    return `${remoteImageOrigin}${R2_IMAGE_TRANSFORM_PREFIX}${r2ImageTransformDirectives(options)}/${url}`;
   }
 
   if (

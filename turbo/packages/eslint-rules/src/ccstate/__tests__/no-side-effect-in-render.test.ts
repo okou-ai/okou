@@ -139,7 +139,7 @@ ruleTester.run("no-side-effect-in-render", rule, {
     {
       code: `
         function MyView() {
-          useSet(initSettingsForm$)({ name: "Zero" });
+          useSet(initSettingsForm$)({ name: "Nova" });
           return <div />;
         }
       `,

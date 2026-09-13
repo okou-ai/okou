@@ -69,6 +69,8 @@ const keepAliveLoop$ = command((_ctx, _signal: AbortSignal) => {
   return Promise.resolve(false);
 });
 
+const noopInvalidation$ = command((): void => {});
+
 const keepAlivePayloadLoop$ = command(
   (_ctx, _payload: unknown, _signal: AbortSignal) => {
     return Promise.resolve(false);
@@ -111,6 +113,7 @@ async function setupAuthAndRealtime(): Promise<void> {
 }
 
 function testSubscriber(): AbortController {
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   return createChildAbortController(context.signal);
 }
 
@@ -774,6 +777,89 @@ test("A persistent refresh error pauses until a new update", async () => {
   expect(runs).toBe(5);
 });
 
+test("Chat thread notifications invalidate their matching resources", async () => {
+  mockSignedInUser();
+  const threadId = "test-thread-invalidations";
+  const subscriber = testSubscriber();
+  const invalidated: string[] = [];
+  const recordInvalidation = (name: string) => {
+    return command((): void => {
+      invalidated.push(name);
+    });
+  };
+
+  await context.store.set(setupRealtime$, context.signal);
+  detach(
+    context.store.set(
+      subscribeChatThreadRealtime$,
+      {
+        threadId,
+        invalidations: {
+          threadDetail: [
+            recordInvalidation("thread-detail"),
+            recordInvalidation("connector-preference"),
+          ],
+          automations: [recordInvalidation("automations")],
+          artifacts: [recordInvalidation("artifacts")],
+        },
+        handlers: { onWorkflowsChanged$: keepAliveLoop$ },
+      },
+      subscriber.signal,
+    ),
+    Reason.Daemon,
+    "test chat thread realtime invalidations",
+  );
+
+  await waitFor(() => {
+    for (const topic of [
+      "chatThreadDetailChanged",
+      "chatThreadAutomationsChanged",
+      "chatThreadArtifactsChanged",
+      "chatThreadWorkflowsChanged",
+    ]) {
+      expect(
+        context.mocks.ably.hasSubscription(`${topic}:${threadId}`),
+      ).toBeTruthy();
+    }
+  });
+
+  const notifications = [
+    {
+      topic: `chatThreadDetailChanged:${threadId}`,
+      expected: ["thread-detail", "connector-preference"],
+    },
+    {
+      topic: `chatThreadAutomationsChanged:${threadId}`,
+      expected: ["thread-detail", "connector-preference", "automations"],
+    },
+    {
+      topic: `chatThreadArtifactsChanged:${threadId}`,
+      expected: [
+        "thread-detail",
+        "connector-preference",
+        "automations",
+        "artifacts",
+      ],
+    },
+    {
+      topic: `chatThreadArtifactsChanged:${threadId}`,
+      expected: [
+        "thread-detail",
+        "connector-preference",
+        "automations",
+        "artifacts",
+        "artifacts",
+      ],
+    },
+  ] as const;
+  for (const notification of notifications) {
+    context.mocks.ably.trigger(notification.topic);
+    await waitFor(() => {
+      expect(invalidated).toStrictEqual(notification.expected);
+    });
+  }
+});
+
 test("An initial refresh failure does not destroy live subscriptions", async () => {
   mockSignedInUser();
   const threadId = "test-thread-initialization-failure";
@@ -784,10 +870,12 @@ test("An initial refresh failure does not destroy live subscriptions", async () 
       subscribeChatThreadRealtime$,
       {
         threadId,
+        invalidations: {
+          threadDetail: [noopInvalidation$],
+          automations: [noopInvalidation$],
+          artifacts: [noopInvalidation$],
+        },
         handlers: {
-          onThreadDetailChanged$: keepAliveLoop$,
-          onAutomationsChanged$: keepAliveLoop$,
-          onArtifactsChanged$: keepAliveLoop$,
           onWorkflowsChanged$: keepAliveLoop$,
           onSubscribed$: failSubscriptionInitialization$,
         },

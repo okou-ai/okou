@@ -104,25 +104,6 @@ function renewGoogleFormsWatchScopeClient() {
   );
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function sandboxOperationEventsForRun(
-  runId: string,
-): readonly Record<string, unknown>[] {
-  return context.mocks.axiom.sdkIngest.mock.calls.flatMap((call) => {
-    const dataset = call[0];
-    const events = call[1];
-    if (dataset !== "vm0-sandbox-op-log-dev" || !Array.isArray(events)) {
-      return [];
-    }
-    return events.filter((event): event is Record<string, unknown> => {
-      return isRecord(event) && event.run_id === runId;
-    });
-  });
-}
-
 const WORKFLOW_NAME = "automation-workflow";
 const GMAIL_TOPIC_NAME = "projects/vm0-ai-488909/topics/gmail-events";
 const GMAIL_EMAIL = "workflow-user@example.com";
@@ -3325,9 +3306,6 @@ describe("okou workflow automations", () => {
     expect(watch.baselineCalls).toBe(2);
     expect(watch.watchCalls).toBe(1);
     expect(stop.calls).toBe(0);
-    const logged = JSON.stringify(context.mocks.axiomLogging.warn.mock.calls);
-    expect(logged).not.toContain(oldTarget);
-    expect(logged).not.toContain(newTarget);
   });
 
   it("rejects a Calendar reconfiguration superseded during watch registration", async () => {
@@ -4756,21 +4734,6 @@ describe("okou workflow automations", () => {
       renewed: 0,
       failed: 1,
     });
-    const actionRequiredWarnings =
-      context.mocks.axiomLogging.warn.mock.calls.filter(([message]) => {
-        return message === "Workflow watch requires user action";
-      });
-    expect(actionRequiredWarnings).toHaveLength(1);
-    const [, actionRequiredFields] = actionRequiredWarnings[0] ?? [];
-    expect(actionRequiredFields).toMatchObject({
-      provider: "google_calendar",
-      action: "suspend",
-      result: "action_required",
-      reason: "reconnect_required",
-      watchStateId: expect.any(String),
-      episodeStartedAt: expect.any(String),
-      targetType: "primary",
-    });
 
     const lateNotification = await createApp({
       signal: context.signal,
@@ -4814,43 +4777,6 @@ describe("okou workflow automations", () => {
     expect("warning" in recoveredSummary).toBeFalsy();
     expect(baselineCalls).toBe(3);
     expect(watchCalls).toBe(3);
-
-    await accept(
-      renewGoogleCalendarWatchScopeClient().renew({
-        body: {
-          org_id: scenario.fixture.orgId,
-          user_id: scenario.fixture.userId,
-        },
-      }),
-      [200],
-    );
-    const recoveryLogs = context.mocks.axiomLogging.debug.mock.calls.filter(
-      ([message]) => {
-        return message === "Workflow watch action-required episode recovered";
-      },
-    );
-    expect(recoveryLogs).toHaveLength(1);
-    const [, recoveryFields] = recoveryLogs[0] ?? [];
-    expect(recoveryFields).toMatchObject({
-      provider: "google_calendar",
-      action: "recover",
-      result: "ok",
-      reason: "reconnect_required",
-      watchStateId: isRecord(actionRequiredFields)
-        ? actionRequiredFields.watchStateId
-        : undefined,
-      episodeStartedAt: isRecord(actionRequiredFields)
-        ? actionRequiredFields.episodeStartedAt
-        : undefined,
-      targetType: "primary",
-    });
-    const transitionLogText = JSON.stringify([
-      actionRequiredWarnings[0],
-      recoveryLogs[0],
-    ]);
-    expect(transitionLogText).not.toContain(accessToken);
-    expect(transitionLogText).not.toContain(accountEmail);
-    expect(transitionLogText).not.toContain(initialChannel.token);
 
     await accept(
       automationsClient().disable({
@@ -4958,11 +4884,6 @@ describe("okou workflow automations", () => {
       expect("warning" in summary).toBeFalsy();
     }
     expect(exactTargetProbes).toBe(1);
-    expect(
-      context.mocks.axiomLogging.warn.mock.calls.filter(([message]) => {
-        return message === "Workflow watch requires user action";
-      }),
-    ).toHaveLength(0);
 
     await accept(
       automationsClient().disable({
@@ -5845,45 +5766,6 @@ describe("okou workflow automations", () => {
     if (!run.body.runId) {
       throw new Error("Expected an idle manual automation run to start");
     }
-    const timingEvents = sandboxOperationEventsForRun(run.body.runId);
-    expect(timingEvents).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          op_type: "api_dispatch_pre_create_agent_run",
-          trigger_source: "automation-schedule",
-          agent_run_origin: "workflow_automation",
-        }),
-      ]),
-    );
-    const actionTypes = new Set(
-      timingEvents.map((event) => {
-        return event.op_type;
-      }),
-    );
-    for (const actionType of [
-      "api_dispatch_pre_create_agent_workflow_automation_entrypoint_gap",
-      "api_dispatch_pre_create_agent_workflow_automation_check_active_run",
-      "api_dispatch_pre_create_agent_workflow_automation_resolve_model_context",
-      "api_dispatch_pre_create_agent_workflow_automation_build_run_input",
-      "api_dispatch_pre_create_agent_workflow_automation_create_run",
-    ]) {
-      expect(actionTypes).toContain(actionType);
-    }
-    expect(actionTypes).not.toContain(
-      "api_dispatch_pre_create_agent_entrypoint_gap",
-    );
-    expect(timingEvents).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          op_type:
-            "api_dispatch_pre_create_agent_workflow_automation_create_run",
-          trigger_source: "automation-schedule",
-          agent_run_origin: "workflow_automation",
-          span_kind: "nested",
-        }),
-      ]),
-    );
-    expect(JSON.stringify(timingEvents)).not.toContain(WORKFLOW_NAME);
 
     await runs.heartbeatRunner(runnerGroup);
     const claim = await runs.claimRunnerJob(run.body.runId);

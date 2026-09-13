@@ -34,7 +34,7 @@ function chatThreadSidebarLayout(
     transition:
       resizing || !animateEntry
         ? ""
-        : "transition-[flex-basis,width] duration-[240ms] ease",
+        : "transition-[flex-basis,width] duration-[240ms]",
   };
 }
 
@@ -123,7 +123,7 @@ export function ChatThreadSidebarShell({
         className={cn(
           "flex min-h-0 min-w-0 overflow-hidden",
           transition,
-          open && animateEntry && "animate-in fade-in duration-[180ms] ease",
+          open && animateEntry && "duration-[180ms]",
           open
             ? "flex-1 basis-0 xl:w-[var(--chat-thread-sidebar-width)] xl:flex-none xl:basis-[var(--chat-thread-sidebar-width)]"
             : "pointer-events-none w-0 flex-none basis-0",

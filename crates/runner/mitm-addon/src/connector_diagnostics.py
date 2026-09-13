@@ -72,6 +72,11 @@ responses keep the diagnostic status and metadata but have no body or
 ``Content-Encoding``, ``Content-Length``, and ``Transfer-Encoding`` headers and
 discards trailers before applying JSON framing.
 
+Authentication inspection has per-invocation header and query work budgets.
+An exhausted budget leaves authentication indeterminate and suppresses this
+optional diagnostic, preserving ordinary request and response handling. It
+does not reject requests or change their headers.
+
 This is an agent-visible compatibility contract. Consumers should branch on
 stable machine-readable fields such as ``error`` and ``reason`` rather than
 ``message``, tolerate additive unknown fields, and receive a coordinated
@@ -99,6 +104,11 @@ _HTTP_STATUS_FAILED_DEPENDENCY = 424
 
 MAX_CONNECTOR_DIAGNOSTIC_QUERY_CHARACTERS = 64 * 1024
 MAX_CONNECTOR_DIAGNOSTIC_QUERY_FIELDS = 8 * 1024
+MAX_CONNECTOR_DIAGNOSTIC_HEADER_FIELDS = 1024
+MAX_CONNECTOR_DIAGNOSTIC_HEADER_NAME_BYTES = 1024
+MAX_CONNECTOR_DIAGNOSTIC_HEADER_TOTAL_NAME_BYTES = 16 * 1024
+MAX_CONNECTOR_DIAGNOSTIC_HEADER_VALUE_BYTES = 16 * 1024
+MAX_CONNECTOR_DIAGNOSTIC_HEADER_TOTAL_VALUE_BYTES = 64 * 1024
 
 _CONNECTOR_DIAGNOSTIC_ELIGIBLE = "_connector_diagnostic_eligible"
 _CONNECTOR_DIAGNOSTIC_ACTIVE_FIREWALL_NAMES = "_connector_diagnostic_active_firewall_names"
@@ -121,9 +131,9 @@ _CONNECTOR_DIAGNOSTIC_OWNERSHIP_HINT_STATUS = "_connector_diagnostic_ownership_h
 _EMPTY_RESPONSE_STREAM_CHUNKS: tuple[bytes, ...] = ()
 _GENERIC_AUTH_HEADER_NAMES = frozenset(
     (
-        "authorization",
-        "x-api-key",
-        "api-key",
+        b"authorization",
+        b"x-api-key",
+        b"api-key",
     )
 )
 _GENERIC_AUTH_QUERY_PARAM_NAMES = frozenset(
@@ -676,12 +686,9 @@ def _request_may_have_auth_material(
     candidate: builtin_connector_diagnostics.ConnectorDiagnosticCandidate,
     original_url: str,
 ) -> bool:
-    """Return whether auth is present or bounded query inspection is inconclusive."""
-    configured_headers = {name.lower() for name in candidate.auth_header_names}
-    auth_headers = configured_headers | _GENERIC_AUTH_HEADER_NAMES
-    for name in auth_headers:
-        if _request_header_has_auth_material(flow, name):
-            return True
+    """Return whether auth is present or bounded header/query inspection is inconclusive."""
+    if _request_headers_may_have_auth_material(flow, candidate.auth_header_names):
+        return True
 
     configured_query_params = set(candidate.auth_query_param_names)
     normalized_configured_query_params = {name.lower() for name in candidate.auth_query_param_names}
@@ -727,17 +734,64 @@ def _request_may_have_auth_material(
     return False
 
 
-def _request_header_has_auth_material(flow: http.HTTPFlow, name: str) -> bool:
-    return any(
-        _header_value_has_auth_material(name, value) for value in flow.request.headers.get_all(name)
-    )
+def _request_headers_may_have_auth_material(
+    flow: http.HTTPFlow, configured_header_names: tuple[str, ...]
+) -> bool:
+    """Inspect raw fields once, suppressing optional diagnostics when a budget is exhausted.
+
+    Name/field limits apply independently to the configured lookup and request
+    scan. Values share one byte budget across relevant names and duplicates.
+    Check raw sizes before normalization or UTF-8/surrogateescape decoding;
+    never decode unrelated values or inspect fields after finding credentials.
+    These per-invocation limits do not reject or modify the request.
+    """
+    if len(configured_header_names) > MAX_CONNECTOR_DIAGNOSTIC_HEADER_FIELDS:
+        return True
+    auth_headers: set[bytes] = set(_GENERIC_AUTH_HEADER_NAMES)
+    configured_name_bytes = 0
+    for name in configured_header_names:
+        # Bound string work before encoding, then enforce the actual byte limit.
+        if len(name) > MAX_CONNECTOR_DIAGNOSTIC_HEADER_NAME_BYTES:
+            return True
+        raw_name = name.lower().encode("utf-8", "surrogateescape")
+        configured_name_bytes += len(raw_name)
+        if (
+            len(raw_name) > MAX_CONNECTOR_DIAGNOSTIC_HEADER_NAME_BYTES
+            or configured_name_bytes > MAX_CONNECTOR_DIAGNOSTIC_HEADER_TOTAL_NAME_BYTES
+        ):
+            return True
+        auth_headers.add(raw_name.lower())
+
+    name_bytes = 0
+    value_bytes = 0
+    for index, (raw_name, raw_value) in enumerate(flow.request.headers.fields):
+        name_bytes += len(raw_name)
+        if (
+            index >= MAX_CONNECTOR_DIAGNOSTIC_HEADER_FIELDS
+            or len(raw_name) > MAX_CONNECTOR_DIAGNOSTIC_HEADER_NAME_BYTES
+            or name_bytes > MAX_CONNECTOR_DIAGNOSTIC_HEADER_TOTAL_NAME_BYTES
+        ):
+            return True
+        normalized_name = raw_name.lower()
+        if normalized_name not in auth_headers:
+            continue
+        value_bytes += len(raw_value)
+        if (
+            len(raw_value) > MAX_CONNECTOR_DIAGNOSTIC_HEADER_VALUE_BYTES
+            or value_bytes > MAX_CONNECTOR_DIAGNOSTIC_HEADER_TOTAL_VALUE_BYTES
+        ):
+            return True
+        value = raw_value.decode("utf-8", "surrogateescape")
+        if _header_value_has_auth_material(normalized_name, value):
+            return True
+    return False
 
 
-def _header_value_has_auth_material(name: str, value: str) -> bool:
+def _header_value_has_auth_material(name: bytes, value: str) -> bool:
     stripped = value.strip()
     if not stripped:
         return False
-    if name.lower() not in ("authorization", "proxy-authorization"):
+    if name not in (b"authorization", b"proxy-authorization"):
         return True
 
     return _scheme_auth_value_has_credential(stripped)

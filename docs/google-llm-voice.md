@@ -11,14 +11,16 @@ OpenRouter/fal provider, and generic chat/image/LLM consumers retain their routi
 
 ## Configuration
 
-The public `voiceGoogleCloud` switch is **off by default**, including for
-staff. Enable it for a user in **Lab → Alpha** using the existing
-per-user feature-switch override. The existing `voiceInputV2` access switch must
-also be enabled. Both voice API routes resolve the authenticated user's override
-on every request; no browser/API contract or additional environment variable is
-needed. Off preserves the existing OpenRouter Gemini path and does not require
-Google credentials. On selects Google for all Gemini voice steps, including
-independent text polish. Failures never change the selected provider.
+The public `voiceGoogleCloud` switch is **on by default in staff organizations**
+and off by default elsewhere. Manage it in **Lab → Beta** using the existing
+per-user feature-switch override. An explicit off override still disables it
+for staff; resetting the override restores the organization default. The existing
+`voiceInputV2` access switch must also be enabled. Both voice API routes resolve
+the authenticated user's override on every request; no browser/API contract or
+additional environment variable is needed. Off preserves the existing OpenRouter
+Gemini path and does not require Google credentials. On selects Google for all
+Gemini voice steps, including independent text polish. Failures never change the
+selected provider.
 
 The active billed project is `vm0-ai-488909` (number `662642595011`). The separate
 project `vm0-ai` is deprecated. These values are GitHub Actions **Variables**:
@@ -146,10 +148,10 @@ recovery and caller cancellation do not produce terminal-error warnings.
 Follow [issue #33138](https://github.com/vm0-ai/vm0/issues/33138) for the verification
 record. Provisioned IAM and configured Variables establish prerequisites, not
 successful runtime authentication or model access. HTTP fixtures establish code
-behavior, not Google's live project capacity or audio limits.
+behavior, not Google's live project capacity or audio limits. Enabling the staff
+default does not establish these live acceptance criteria.
 
-Before production rollout, enable `voiceGoogleCloud` only for the preview test
-user and use the PR preview to verify the actual dev runtime
+Before expanding beyond staff, use the PR preview to verify the actual dev runtime
 identity and each model/location with non-sensitive audio, all three structured
 output schemas, plain-text polish, normal 75s browser PCM, and the existing valid
 WAV boundary up to 25 MiB including base64 expansion. Bound functional generation

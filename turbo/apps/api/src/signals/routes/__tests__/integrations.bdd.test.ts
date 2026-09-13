@@ -181,29 +181,6 @@ function slackInputMessageByText(
   );
 }
 
-function sandboxOperationEventsForRun(
-  runId: string,
-): readonly Record<string, unknown>[] {
-  return context.mocks.axiom.sdkIngest.mock.calls.flatMap((call) => {
-    const dataset = call[0];
-    const events = call[1];
-    if (dataset !== "vm0-sandbox-op-log-dev" || !Array.isArray(events)) {
-      return [];
-    }
-    return events.filter((event): event is Record<string, unknown> => {
-      return isRecord(event) && event.run_id === runId;
-    });
-  });
-}
-
-function firstAssistantEventsForRun(
-  runId: string,
-): readonly Record<string, unknown>[] {
-  return sandboxOperationEventsForRun(runId).filter((event) => {
-    return event.op_type === "api_to_first_assistant_message";
-  });
-}
-
 function slackBotOauthResponse(args: {
   readonly accessToken: string;
   readonly botUserId: string;
@@ -967,27 +944,17 @@ async function runFirstCanonicalSlackPiTurn(
     channel: scenario.channelId,
     channel_type: "channel",
   });
-  let runId: string | undefined;
-  await expect
-    .poll(async () => {
-      const state = await integrations.readSlackTestState(scenario.teamId);
-      runId = state.recent_runs.find((run) => {
-        return run.promptPreview?.includes(prompt) === true;
-      })?.id;
-      return runId;
-    })
-    .toStrictEqual(expect.any(String));
+  // Webhook acknowledgement precedes the tracked Pi turn and its callbacks.
+  await flushWaitUntilForTest();
+  const state = await integrations.readSlackTestState(scenario.teamId);
+  const runId = state.recent_runs.find((run) => {
+    return run.promptPreview?.includes(prompt) === true;
+  })?.id;
   if (!runId) {
     throw new Error("Expected the first canonical Slack Pi run");
   }
-  const completedRunId = runId;
-  await expect
-    .poll(async () => {
-      return (await runs.readRun(scenario.actor, completedRunId)).status;
-    })
-    .toBe("completed");
-  await flushWaitUntilForTest();
-  return { prompt, runId: completedRunId };
+  expect((await runs.readRun(scenario.actor, runId)).status).toBe("completed");
+  return { prompt, runId };
 }
 
 async function expectFirstSlackPiExecution(args: {
@@ -1114,11 +1081,6 @@ async function claimContinuedSlackPiTurn(args: {
     channel: args.scenario.channelId,
     channel_type: "channel",
   });
-  await expect
-    .poll(() => {
-      return args.providerRequests.length;
-    })
-    .toBe(2);
   const runId = await pollSlackRun(args.scenario.runnerGroup);
   const claim = await runs.claimRunnerJob(runId, {
     capabilities: { piModelConfigGenerations: [1, 2] },
@@ -1226,26 +1188,17 @@ async function runSuccessfulContinuedSlackPiTurn(args: {
     channel: args.scenario.channelId,
     channel_type: "channel",
   });
-  let runId: string | undefined;
-  await expect
-    .poll(async () => {
-      const state = await integrations.readSlackTestState(args.scenario.teamId);
-      runId = state.recent_runs.find((run) => {
-        return run.promptPreview?.includes(prompt) === true;
-      })?.id;
-      return runId;
-    })
-    .toStrictEqual(expect.any(String));
-  if (!runId) {
+  await flushWaitUntilForTest();
+  const state = await integrations.readSlackTestState(args.scenario.teamId);
+  const completedRunId = state.recent_runs.find((run) => {
+    return run.promptPreview?.includes(prompt) === true;
+  })?.id;
+  if (!completedRunId) {
     throw new Error("Expected the continued canonical Slack Pi run");
   }
-  const completedRunId = runId;
-  await expect
-    .poll(async () => {
-      return (await runs.readRun(args.scenario.actor, completedRunId)).status;
-    })
-    .toBe("completed");
-  await flushWaitUntilForTest();
+  expect((await runs.readRun(args.scenario.actor, completedRunId)).status).toBe(
+    "completed",
+  );
 
   expect(args.providerRequests).toHaveLength(3);
   const providerInput = JSON.stringify(args.providerRequests[2]?.body);
@@ -1266,7 +1219,6 @@ async function runSuccessfulContinuedSlackPiTurn(args: {
 async function expectSlackPiMemoryCandidate(args: {
   readonly scenario: CanonicalSlackPiScenario;
   readonly runId: string;
-  readonly outcome: "created" | "replaced";
 }) {
   // Stage 1 candidates intentionally have no production read API. Observe the
   // private identity only after real Slack ingress and completion own the run.
@@ -1301,15 +1253,6 @@ async function expectSlackPiMemoryCandidate(args: {
   expect(
     candidate.eligibleAt.getTime() - candidate.sourceCompletedAt.getTime(),
   ).toBe(60_000);
-  expect(sandboxOperationEventsForRun(args.runId)).toContainEqual(
-    expect.objectContaining({
-      op_type: "pi_memory_stage1_candidate_admission",
-      candidate_outcome: args.outcome,
-      memory_storage_id: candidate.memoryStorageId,
-      pi_session_id: args.scenario.chatThreadId,
-      source_history_hash: conversation.sourceHistoryHash,
-    }),
-  );
   await expect(
     countPiMemoryStage1CandidatesFixture({
       memoryStorageId: candidate.memoryStorageId,
@@ -1492,7 +1435,7 @@ describe("INT-01: Slack integration and Slack app routes", () => {
       {
         type: "app_mention",
         user: "UBDD_EVENT",
-        text: "@Zero retry",
+        text: "@Nova retry",
         ts: "1710000000.000200",
         channel: "CBDD_EVENT",
         channel_type: "channel",
@@ -2870,7 +2813,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
         }),
       );
     });
-    expect(firstAssistantEventsForRun(run1Id)).toHaveLength(1);
     await expect
       .poll(async () => {
         const callbacks = await callbackStore.set(
@@ -2983,7 +2925,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
         }),
       );
     });
-    expect(firstAssistantEventsForRun(run2Id)).toHaveLength(1);
     expect(
       (await chat.listThreadEvents(actor, canonicalChatThreadId)).events,
     ).toStrictEqual(
@@ -3021,7 +2962,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
       const firstCandidate = await expectSlackPiMemoryCandidate({
         scenario,
         runId: firstTurn.runId,
-        outcome: "created",
       });
       const continuedTurn = await claimContinuedSlackPiTurn({
         scenario,
@@ -3055,7 +2995,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
       const replacedCandidate = await expectSlackPiMemoryCandidate({
         scenario,
         runId: successfulContinuation.runId,
-        outcome: "replaced",
       });
       expect(replacedCandidate).toMatchObject({
         memoryStorageId: firstCandidate.memoryStorageId,
@@ -3305,7 +3244,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
         });
       }
 
-      expect(firstAssistantEventsForRun(deliveryRunId)).toHaveLength(1);
       expect(
         (await chat.listThreadEvents(actor, canonicalChatThreadId)).events,
       ).toStrictEqual(
@@ -4763,7 +4701,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       integrations.modelPickerSubmission({
         workspaceId: teamId,
         slackUserId,
-        selectedValue: "deepseek-v4-pro",
+        selectedValue: "deepseek-v4.1-flash",
         channelId: "C_BDD_PICK",
       }),
     );
@@ -4772,13 +4710,13 @@ describe("INT-01: Slack app deep webhook flows", () => {
       expect.objectContaining({
         channel: "C_BDD_PICK",
         user: slackUserId,
-        text: "Switched to *DeepSeek V4 Pro* for new Slack threads.",
+        text: "Switched to *DeepSeek V4.1 Flash* for new Slack threads.",
       }),
     );
     await expect(
       integrations.readUserModelPreference(actor),
     ).resolves.toMatchObject({
-      selectedModel: "deepseek-v4-pro",
+      selectedModel: "deepseek-v4.1-flash",
     });
 
     const replaceModel = await integrations.postSlackInteractive(
@@ -5329,12 +5267,11 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
   });
 
-  it("delivers canonical Slack callbacks for progress, audit footers, failures, and Slack errors", async () => {
+  it("delivers canonical Slack callbacks for progress, attribution footers, failures, and Slack errors", async () => {
     const actor = bdd.user();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
     integrations.configureSlackAppMocks();
-    mockEnv("APP_URL", "https://app.okou.ai");
     integrations.acceptSlackSessionHistoryDownloads();
     const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
@@ -5352,7 +5289,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await integrations.postSlackEvent(teamId, {
       type: "app_mention",
       user: slackUser1,
-      text: "summarize the audited thread",
+      text: "summarize the thread",
       ts: threadT1,
       channel: channelId,
     });
@@ -5402,16 +5339,19 @@ describe("INT-01: Slack app deep webhook flows", () => {
           channel: channelId,
           thread_ts: threadT1,
           text: "SLACK_BDD_OUTPUT",
+          blocks: [
+            { type: "markdown", text: "SLACK_BDD_OUTPUT" },
+            {
+              type: "context",
+              elements: [{ type: "mrkdwn", text: "Claude Sonnet 5" }],
+            },
+          ],
         }),
       );
     });
     expect(failedMessagePublishCount).toBeGreaterThan(0);
     expect(failedThreadListPublishCount).toBeGreaterThan(0);
     context.mocks.ably.publish.mockResolvedValue(undefined);
-    const auditedBlocks = slackPostMessageCallsJson();
-    expect(auditedBlocks).toContain("Audit");
-    expect(auditedBlocks).toContain(`https://app.okou.ai/activities/${run1Id}`);
-    expect(auditedBlocks).toContain("Claude Sonnet 5");
 
     await flushWaitUntilAndAssert(() => {
       expect(
@@ -7554,7 +7494,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
         agentId: "agt-bdd-agentphone",
         from: `sender-${randomUUID()}@example.test`,
         to: "+19039853128",
-        message: "group update without a Zero mention",
+        message: "group update without a Nova mention",
         conversationId: `group-${randomUUID()}`,
         isGroup: true,
         mentioned: false,

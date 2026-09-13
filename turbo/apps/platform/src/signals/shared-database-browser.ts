@@ -25,7 +25,7 @@ import type { SharedDatabaseWorkerUnavailableReason } from "../shared-database/p
 import { SingleConnectionSharedDatabaseBridge } from "../shared-database/single-connection-client.ts";
 import { SharedDatabaseWorkerLoadError } from "../shared-database/worker-load-error.ts";
 import { reportSharedWorkerFailure } from "./shared-worker-failure.ts";
-import { clerk$ } from "./auth.ts";
+import { clerk$, clerkUser$ } from "./auth.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 import { readClerkToken, waitForClerkSession } from "./clerk-token.ts";
 import { applyChatThreadReadCursorUpdated$ } from "./chat-thread-list-reload.ts";
@@ -173,11 +173,13 @@ const prepareSharedDatabaseBridge$ = command(
     signal.throwIfAborted();
     const session = await waitForClerkSession(clerk, signal);
     signal.throwIfAborted();
-    if (!session || !clerk.user || !clerk.organization) {
+    const user = await get(clerkUser$);
+    signal.throwIfAborted();
+    if (!session || !user || !clerk.organization) {
       return null;
     }
     const identity = {
-      userId: clerk.user.id,
+      userId: user.id,
       orgId: clerk.organization.id,
     };
     const diagnosticsEnabled =

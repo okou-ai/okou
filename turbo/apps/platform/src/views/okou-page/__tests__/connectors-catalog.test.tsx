@@ -222,8 +222,26 @@ test("Update connector visibility when availability changes", async () => {
 
 async function openConnectorFilterCatalog() {
   const researchId = "c0000000-0000-4000-a000-000000000010";
-  mockConnectors(context, [
+  const [github] = mockConnectors(context, [
     { connectorSlug: "github", externalUsername: "octocat" },
+  ]);
+  if (!github) {
+    throw new Error("Expected the connected GitHub account");
+  }
+  mockPublicConnectorStatus(context, [
+    publicStatusItem({
+      connectorSlug: "github",
+      label: "GitHub",
+      connection: github,
+      connected: true,
+      connectionStatus: "connected",
+      authMethods: [oauthMethod()],
+    }),
+    publicStatusItem({
+      connectorSlug: "asana",
+      label: "Asana",
+      authMethods: [oauthMethod()],
+    }),
   ]);
   context.mocks.data.agents([
     listAgent(researchId, "Research Agent", "preset:0"),

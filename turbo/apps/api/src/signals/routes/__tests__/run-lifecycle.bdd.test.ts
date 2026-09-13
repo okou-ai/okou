@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import {
   DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+  getBuiltInApiModel,
   getModelProviderFirewall,
   getProviderRuntimeModel,
   getBuiltInConcreteProviderType,
@@ -47,6 +48,7 @@ import { v5 as uuidv5 } from "uuid";
 
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
+import { mockAxiomSdkTelemetryFailure } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
@@ -72,8 +74,6 @@ import {
   corruptApiTestConnectorCatalogRuntimeProjectionDigest,
   corruptApiTestConnectorCatalogRuntimeProjectionPayload,
   deleteApiTestConnectorCatalogCompatibility,
-  deleteApiTestConnectorCatalogRuntimeProjectionRow,
-  expireApiTestConnectorCatalogRuntimeProjectionAuthority,
   invalidateApiTestConnectorCatalogCompatibility,
   installApiTestConnectorCatalog,
   readApiTestConnectorCatalogCompatibilityEvaluations,
@@ -81,7 +81,6 @@ import {
   replaceApiTestConnectorCatalogFilteredAuthMethods,
   replaceApiTestConnectorCatalogStoredBytes,
   setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook,
-  setApiTestConnectorCatalogRuntimeProjectionIdentityReplacements,
   setApiTestConnectorCatalogValidationAuthority,
 } from "../../../test-fixtures/connector-catalog";
 import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
@@ -188,6 +187,9 @@ import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandbo
 const context = testContext();
 const callbackStore = createStore();
 const fixtureStore = createStore();
+// `sandbox-op-log.ts` composes this name from AXIOM_DATASET_SUFFIX, which the
+// test environment stubs as "dev".
+const SANDBOX_OP_LOG_DATASET = "vm0-sandbox-op-log-dev";
 const ASSISTANT_EVENT_ID_NAMESPACE = "bfec4fb6-d5b8-43e4-a72a-9f58f87d7e01";
 const TEST_DATA_KEY = Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
 
@@ -237,9 +239,6 @@ function runnerPreference(job: RunnerJob | null | undefined) {
 const CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET = "okou web upload-file -f <path>";
 const MCP_CONNECTOR_PROMPT_HEADING = "# MCP Custom Connectors";
 const MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT = 20;
-const API_DISPATCH_ATOMIC_PERSISTENCE_ACTION_TYPES = [
-  "api_dispatch_persist_atomic_launch",
-] as const;
 
 function mcpConnectorPromptSection(prompt: string): string | undefined {
   const sectionStart = prompt.indexOf(MCP_CONNECTOR_PROMPT_HEADING);
@@ -264,36 +263,6 @@ const EXPECTED_AGENT_RUN_DISALLOWED_TOOLS = [
   "Skill(loop)",
   "Skill(loop *)",
 ] as const;
-const CLAIM_ROUTE_PARENT_TIMING_ACTION_TYPES = [
-  "claim_route_request_to_transition_start",
-  "claim_route_request_to_response_ready",
-] as const;
-const CLAIM_ROUTE_TOP_LEVEL_TIMING_ACTION_TYPES = [
-  "claim_route_request_prepare",
-  "claim_route_lookup_authorization",
-  "claim_route_context_parse",
-  "claim_route_response_assembly",
-  "claim_route_transition_running",
-] as const;
-const CLAIM_ROUTE_PREPARED_PATH_OMITTED_ACTION_TYPES = [
-  "claim_route_feature_switch_context",
-  "claim_route_secret_materialization",
-] as const;
-const CLAIM_ROUTE_RESPONSE_TIMING_ACTION_TYPES = [
-  "claim_route_response_resume_session",
-  "claim_route_response_network_policy_refresh",
-  "claim_route_response_network_policy_refresh_baseline_database",
-] as const;
-type ClaimRouteResponseTimingActionType =
-  (typeof CLAIM_ROUTE_RESPONSE_TIMING_ACTION_TYPES)[number];
-const CLAIM_ROUTE_TRANSITION_TIMING_ACTION_TYPES = [
-  "claim_route_transition_execute",
-] as const;
-const CLAIM_ROUTE_TIMING_ACTION_TYPES = [
-  ...CLAIM_ROUTE_PARENT_TIMING_ACTION_TYPES,
-  ...CLAIM_ROUTE_TOP_LEVEL_TIMING_ACTION_TYPES,
-  ...CLAIM_ROUTE_TRANSITION_TIMING_ACTION_TYPES,
-] as const;
 
 function assistantEventIdForRunEvent(
   runId: string,
@@ -301,315 +270,6 @@ function assistantEventIdForRunEvent(
 ): string {
   return uuidv5(`${runId}:${runEventId}`, ASSISTANT_EVENT_ID_NAMESPACE);
 }
-
-const RUNNER_POLL_TIMING_ACTION_TYPES = [
-  "runner_poll_pending_job_lookup",
-  "runner_poll_request_to_job_response",
-  "runner_queue_to_poll_response",
-] as const;
-const RUNNER_CLAIM_ABLY_TIMING_ACTION_TYPES = [
-  "direct_candidate_notification_to_enqueue",
-  "direct_candidate_inbox_wait",
-  "provider_discovery_to_main_loop",
-  "main_loop_to_local_admission",
-] as const;
-const RUNNER_CLAIM_POLL_TIMING_ACTION_TYPES = [
-  "runner_poll_due_to_job_discovered",
-  "runner_poll_http_request",
-] as const;
-const API_DISPATCH_PHASE_ACTION_TYPES = [
-  "api_dispatch_phase_pre_create",
-  "api_dispatch_phase_prepare_context",
-  "api_dispatch_phase_prepare_launch",
-  "api_dispatch_phase_queue_insert",
-] as const;
-const API_DISPATCH_TIMING_ACTION_TYPES = [
-  "api_dispatch_pre_create_agent_run",
-  ...API_DISPATCH_PHASE_ACTION_TYPES,
-  "api_dispatch_check_run_admission",
-  "api_dispatch_prepare_run_callbacks",
-  "api_dispatch_prepare_run_context",
-  "api_dispatch_prepare_context_feature_switches",
-  "api_dispatch_prepare_context_resolve_agent_execution",
-  "api_dispatch_prepare_context_load_persisted_environment",
-  "api_dispatch_prepare_context_build_resolved_body",
-  "api_dispatch_prepare_context_resolve_framework",
-  "api_dispatch_prepare_context_resolve_model_provider",
-  "api_dispatch_prepare_context_load_connector_contexts",
-  "api_dispatch_prepare_context_load_stored_connectors",
-  "api_dispatch_prepare_context_load_custom_connectors",
-  "api_dispatch_prepare_context_build_permission_manifest",
-  "api_dispatch_prepare_context_validate_environment",
-  "api_dispatch_prepare_context_load_user_timezone",
-  "api_dispatch_prepare_context_prepare_output_metadata",
-  "api_dispatch_insert_run_with_concurrency",
-  "api_dispatch_build_runner_job_payload",
-  ...API_DISPATCH_ATOMIC_PERSISTENCE_ACTION_TYPES,
-  "api_dispatch_admission_lock_wait",
-  "api_dispatch_admission_lock_held",
-  "api_dispatch_check_concurrency_limit",
-  "api_dispatch_prepare_storage_manifest",
-  "api_dispatch_prepare_storage_manifest_resolve_inputs",
-  "api_dispatch_prepare_storage_manifest_ensure_artifacts",
-  "api_dispatch_prepare_storage_manifest_ensure_artifact_lookup_storage",
-  "api_dispatch_prepare_storage_manifest_ensure_artifact_insert_storage",
-  "api_dispatch_prepare_storage_manifest_ensure_artifact_refetch_storage",
-  "api_dispatch_prepare_storage_manifest_ensure_artifact_skip_initialized",
-  "api_dispatch_prepare_storage_manifest_ensure_artifact_insert_initial_version",
-  "api_dispatch_prepare_storage_manifest_load_storage_index",
-  "api_dispatch_prepare_storage_manifest_build_entries",
-  "api_dispatch_prepare_storage_manifest_build_compose_entries",
-  "api_dispatch_prepare_storage_manifest_resolve_compose_versions",
-  "api_dispatch_prepare_storage_manifest_generate_compose_urls",
-  "api_dispatch_prepare_storage_manifest_build_additional_entries",
-  "api_dispatch_prepare_storage_manifest_resolve_additional_versions",
-  "api_dispatch_prepare_storage_manifest_generate_additional_urls",
-  "api_dispatch_prepare_storage_manifest_build_artifact_entries",
-  "api_dispatch_prepare_storage_manifest_resolve_artifact_versions",
-  "api_dispatch_prepare_storage_manifest_generate_artifact_urls",
-  "api_dispatch_prepare_storage_manifest_assemble",
-  "api_dispatch_build_stored_execution_context",
-] as const;
-const API_DISPATCH_CONNECTOR_CATALOG_ALWAYS_ACTION_TYPES = [
-  "api_dispatch_connector_catalog_load_runtime_snapshot",
-  "api_dispatch_connector_catalog_query_projection_identity",
-  "api_dispatch_connector_catalog_query_identity",
-] as const;
-const API_DISPATCH_CONNECTOR_CATALOG_MISS_ACTION_TYPES = [
-  "api_dispatch_connector_catalog_query_payload",
-  "api_dispatch_connector_catalog_decompress",
-  "api_dispatch_connector_catalog_verify_digest",
-  "api_dispatch_connector_catalog_decode_json",
-  "api_dispatch_connector_catalog_validate_compatibility",
-  "api_dispatch_connector_catalog_materialize_accepted_snapshot",
-  "api_dispatch_connector_catalog_materialize_runtime_snapshot",
-  "api_dispatch_connector_catalog_materialize_server_firewalls",
-] as const;
-const API_DISPATCH_CONNECTOR_CATALOG_PROJECTION_ROW_ACTION_TYPES = [
-  "api_dispatch_connector_catalog_query_projection_rows",
-  "api_dispatch_connector_catalog_fetch_projection_rows",
-  "api_dispatch_connector_catalog_validate_projection_rows",
-  "api_dispatch_connector_catalog_parse_projection_rows",
-  "api_dispatch_connector_catalog_verify_projection_row_digests",
-] as const;
-const API_DISPATCH_CONNECTOR_CATALOG_COMPLETE_VALIDATION_ACTION_TYPES = [
-  "api_dispatch_connector_catalog_validate_schema",
-  "api_dispatch_connector_catalog_validate_public_projection",
-  "api_dispatch_connector_catalog_validate_relationships",
-] as const;
-const API_DISPATCH_CONNECTOR_CATALOG_ACTION_TYPES = [
-  ...API_DISPATCH_CONNECTOR_CATALOG_ALWAYS_ACTION_TYPES,
-  ...API_DISPATCH_CONNECTOR_CATALOG_PROJECTION_ROW_ACTION_TYPES,
-  ...API_DISPATCH_CONNECTOR_CATALOG_MISS_ACTION_TYPES,
-] as const;
-const CONNECTOR_CATALOG_COUNT_BUCKETS = [
-  "0",
-  "1",
-  "2_4",
-  "5_8",
-  "9_16",
-  "17_plus",
-] as const;
-const CONNECTOR_CATALOG_RAW_SIZE_BUCKETS = [
-  "0_255_kib",
-  "256_511_kib",
-  "512_1023_kib",
-  "1_2_mib",
-  "2_4_mib",
-  "4_8_mib",
-  "8_16_mib",
-  "16_32_mib",
-  "32_64_mib",
-] as const;
-const CONNECTOR_CATALOG_COMPRESSED_SIZE_BUCKETS = [
-  ...CONNECTOR_CATALOG_RAW_SIZE_BUCKETS,
-  "64_128_mib",
-] as const;
-const CONNECTOR_CATALOG_RESOLVED_CONNECTOR_FRACTION_BUCKETS = [
-  "not_applicable",
-  "none",
-  "up_to_25_percent",
-  "26_50_percent",
-  "51_75_percent",
-  "76_99_percent",
-  "all",
-] as const;
-const API_PROCESS_AGE_BUCKETS = [
-  "0_1s",
-  "1_10s",
-  "10_60s",
-  "1_5m",
-  "5_15m",
-  "15m_plus",
-] as const;
-const API_PROCESS_DISPATCH_ORDINAL_BUCKETS = [
-  "first",
-  "2_4",
-  "5_16",
-  "17_64",
-  "65_plus",
-] as const;
-const API_DISPATCH_STORAGE_MANIFEST_ACTION_TYPES = [
-  "api_dispatch_prepare_storage_manifest_resolve_inputs",
-  "api_dispatch_prepare_storage_manifest_ensure_artifacts",
-  "api_dispatch_prepare_storage_manifest_ensure_artifact_lookup_storage",
-  "api_dispatch_prepare_storage_manifest_ensure_artifact_insert_storage",
-  "api_dispatch_prepare_storage_manifest_ensure_artifact_refetch_storage",
-  "api_dispatch_prepare_storage_manifest_ensure_artifact_skip_initialized",
-  "api_dispatch_prepare_storage_manifest_ensure_artifact_insert_initial_version",
-  "api_dispatch_prepare_storage_manifest_load_storage_index",
-  "api_dispatch_prepare_storage_manifest_build_entries",
-  "api_dispatch_prepare_storage_manifest_build_compose_entries",
-  "api_dispatch_prepare_storage_manifest_resolve_compose_versions",
-  "api_dispatch_prepare_storage_manifest_generate_compose_urls",
-  "api_dispatch_prepare_storage_manifest_build_additional_entries",
-  "api_dispatch_prepare_storage_manifest_resolve_additional_versions",
-  "api_dispatch_prepare_storage_manifest_generate_additional_urls",
-  "api_dispatch_prepare_storage_manifest_build_artifact_entries",
-  "api_dispatch_prepare_storage_manifest_resolve_artifact_versions",
-  "api_dispatch_prepare_storage_manifest_generate_artifact_urls",
-  "api_dispatch_prepare_storage_manifest_assemble",
-] as const;
-const API_DISPATCH_DIRECT_PRE_CREATE_ACTION_TYPES = [
-  "api_dispatch_pre_create_direct_parse_body",
-  "api_dispatch_pre_create_direct_prepare_args",
-] as const;
-const API_DISPATCH_AGENT_PRE_CREATE_ACTION_TYPES = [
-  "api_dispatch_pre_create_agent_parse_body",
-  "api_dispatch_pre_create_agent_prepare_args",
-  "api_dispatch_pre_create_agent_resolve_agent_id",
-  "api_dispatch_pre_create_agent_load_agent",
-  "api_dispatch_pre_create_agent_load_bootstrap_snapshot_rows",
-  "api_dispatch_pre_create_agent_materialize_bootstrap_context",
-  "api_dispatch_pre_create_agent_resolve_firewall_metadata",
-  "api_dispatch_pre_create_agent_build_create_run_args",
-] as const;
-const API_DISPATCH_AGENT_INTERNAL_ENTRYPOINT_ACTION_TYPES = [
-  "api_dispatch_pre_create_agent_entrypoint_gap",
-] as const;
-const API_DISPATCH_AGENT_WEB_CHAT_PRE_CREATE_ACTION_TYPES = [
-  "api_dispatch_pre_create_agent_web_chat_prepare_normal_send",
-  "api_dispatch_pre_create_agent_web_chat_resolve_client_message",
-  "api_dispatch_pre_create_agent_web_chat_validate_revocation",
-  "api_dispatch_pre_create_agent_web_chat_check_active_run",
-  "api_dispatch_pre_create_agent_web_chat_create_normal_run",
-  "api_dispatch_pre_create_agent_web_chat_resolve_model_pin",
-  "api_dispatch_pre_create_agent_web_chat_resolve_provider_admission",
-  "api_dispatch_pre_create_agent_web_chat_build_create_run_args",
-] as const;
-const API_DISPATCH_STORED_CONNECTOR_SNAPSHOT_ACTION_TYPES = [
-  "api_dispatch_prepare_context_load_stored_connector_snapshot_rows",
-  "api_dispatch_prepare_context_materialize_stored_connector_snapshot",
-  "api_dispatch_prepare_context_build_stored_connector_state",
-] as const;
-const API_DISPATCH_STORED_CONNECTOR_SUBSTEP_ACTION_TYPES = [
-  ...API_DISPATCH_STORED_CONNECTOR_SNAPSHOT_ACTION_TYPES,
-] as const;
-const API_DISPATCH_CUSTOM_CONNECTOR_SUBSTEP_ACTION_TYPES = [
-  "api_dispatch_prepare_context_load_custom_connector_rows",
-  "api_dispatch_prepare_context_load_custom_connector_value_rows",
-  "api_dispatch_prepare_context_build_custom_connector_firewalls",
-] as const;
-const API_DISPATCH_CUSTOM_CONNECTOR_BUILD_PHASE_ACTION_TYPES = [
-  "api_dispatch_prepare_context_render_custom_connector_auth_templates",
-  "api_dispatch_prepare_context_render_custom_connector_prefixes",
-  "api_dispatch_prepare_context_assemble_custom_connector_firewalls",
-] as const;
-const API_DISPATCH_CUSTOM_CONNECTOR_TIMING_ACTION_TYPES = [
-  ...API_DISPATCH_CUSTOM_CONNECTOR_SUBSTEP_ACTION_TYPES,
-  ...API_DISPATCH_CUSTOM_CONNECTOR_BUILD_PHASE_ACTION_TYPES,
-] as const;
-const CUSTOM_CONNECTOR_RUNTIME_BUCKET_DIMENSION_KEYS = [
-  "custom_connector_runtime_connector_count_bucket",
-  "custom_connector_runtime_configured_value_count_bucket",
-  "custom_connector_runtime_prefix_template_count_bucket",
-  "custom_connector_runtime_rendered_api_count_bucket",
-  "custom_connector_runtime_missing_required_count_bucket",
-  "custom_connector_runtime_no_auth_injection_count_bucket",
-  "custom_connector_runtime_invalid_prefix_count_bucket",
-] as const;
-const API_DISPATCH_PERMISSION_MANIFEST_SUBSTEP_ACTION_TYPES = [
-  "api_dispatch_prepare_context_load_builtin_permission_indexes",
-  "api_dispatch_prepare_context_apply_builtin_permission_policies",
-  "api_dispatch_prepare_context_apply_custom_permission_policies",
-  "api_dispatch_prepare_context_apply_model_provider_permission_policy",
-  "api_dispatch_prepare_context_merge_permission_manifest",
-] as const;
-const API_DISPATCH_RESOLVE_AGENT_EXECUTION_PATH_ACTION_TYPES = [
-  "api_dispatch_resolve_agent_execution_by_agent_id",
-  "api_dispatch_resolve_agent_execution_by_session_id",
-] as const;
-const API_DISPATCH_RESOLVE_AGENT_EXECUTION_SUBSTEP_ACTION_TYPES = [
-  "api_dispatch_resolve_agent_execution_lookup_agent",
-  "api_dispatch_resolve_agent_execution_lookup_session_snapshot",
-  "api_dispatch_resolve_agent_execution_resolve_session_history",
-] as const;
-const REPLACED_SESSION_RESOLUTION_ACTION_TYPES = [
-  "api_dispatch_resolve_agent_execution_lookup_session",
-  "api_dispatch_resolve_agent_execution_lookup_session_vars",
-] as const;
-const FORBIDDEN_API_DISPATCH_TIMING_KEYS = [
-  "org_id",
-  "user_id",
-  "connector",
-  "connector_name",
-  "agent_id",
-  "prompt",
-  "vars",
-  "secrets",
-  "secret_names",
-  "environment",
-  "execution_context",
-  "presigned_url",
-  "presignedUrl",
-  "archive_url",
-  "archiveUrl",
-  "manifest_url",
-  "manifestUrl",
-  "url",
-  "storage_name",
-  "storageName",
-  "artifact_name",
-  "artifactName",
-  "volume_name",
-  "volumeName",
-  "mount_path",
-  "mountPath",
-  "runner_id",
-  "runnerId",
-  "cli_agent_session_id",
-  "cliAgentSessionId",
-  "sandbox_token",
-  "sandboxToken",
-  "api_key",
-  "apiKey",
-] as const;
-const FORBIDDEN_CLAIM_ROUTE_TIMING_KEYS = [
-  "org_id",
-  "user_id",
-  "connector",
-  "connector_name",
-  "agent_id",
-  "prompt",
-  "vars",
-  "secrets",
-  "secret_names",
-  "environment",
-  "execution_context",
-  "stored_context",
-  "secret_value_environment_keys",
-  "secretValueEnvironmentKeys",
-  "sandbox_token",
-  "sandboxToken",
-  "presigned_url",
-  "response_body",
-] as const;
-const RUNNER_ATTRIBUTION_DIMENSION_KEYS = [
-  "runner_id",
-  "runner_heartbeat_generation",
-  "runner_hostname",
-  "runner_version",
-] as const;
 
 function modelProviderPlaceholder(
   type: ModelProviderType,
@@ -959,476 +619,6 @@ async function readConnectorDiagnosticRegistration(runId: string) {
   }
   return agentRunConnectorDiagnosticRegistrationPayloadSchema.parse(
     registration["payload"],
-  );
-}
-
-function runContextSnapshotsForRun(
-  runId: string,
-): readonly Record<string, unknown>[] {
-  const snapshots: Record<string, unknown>[] = [];
-  for (const [dataset, events] of context.mocks.axiom.ingest.mock.calls) {
-    if (dataset !== "run-context" || !Array.isArray(events)) {
-      continue;
-    }
-    for (const event of events) {
-      if (isRecord(event) && event.runId === runId) {
-        snapshots.push(event);
-      }
-    }
-  }
-  return snapshots;
-}
-
-function runContextSnapshotForRun(runId: string): Record<string, unknown> {
-  const snapshot = runContextSnapshotsForRun(runId)[0];
-  if (snapshot) {
-    return snapshot;
-  }
-  throw new Error(`Expected a run-context snapshot for ${runId}`);
-}
-
-function sandboxOperationEventsForRun(
-  runId: string,
-): readonly Record<string, unknown>[] {
-  return context.mocks.axiom.sdkIngest.mock.calls.flatMap((call) => {
-    const dataset = call[0];
-    const events = call[1];
-    if (dataset !== "vm0-sandbox-op-log-dev" || !Array.isArray(events)) {
-      return [];
-    }
-    return events.filter((event): event is Record<string, unknown> => {
-      return isRecord(event) && event.run_id === runId;
-    });
-  });
-}
-
-function sandboxOperationEventsForRunByAction(
-  runId: string,
-  actionType: string,
-): readonly Record<string, unknown>[] {
-  return sandboxOperationEventsForRun(runId).filter((event) => {
-    return event.op_type === actionType;
-  });
-}
-
-function sandboxOperationDurationForRun(
-  runId: string,
-  actionType: string,
-): number {
-  const event = sandboxOperationEventsForRun(runId).find((candidate) => {
-    return candidate.op_type === actionType;
-  });
-  if (!event || typeof event.duration_ms !== "number") {
-    throw new Error(`Missing ${actionType} duration for run ${runId}`);
-  }
-  return event.duration_ms;
-}
-
-function claimRouteTimingEventsForRun(
-  runId: string,
-): readonly Record<string, unknown>[] {
-  return sandboxOperationEventsForRun(runId).filter((event) => {
-    return (
-      typeof event.op_type === "string" &&
-      event.op_type.startsWith("claim_route_")
-    );
-  });
-}
-
-function apiDispatchTimingEventsForRun(
-  runId: string,
-): readonly Record<string, unknown>[] {
-  return sandboxOperationEventsForRun(runId).filter((event) => {
-    return (
-      typeof event.op_type === "string" &&
-      event.op_type.startsWith("api_dispatch_")
-    );
-  });
-}
-
-function apiDispatchActionTypes(
-  events: readonly Record<string, unknown>[],
-): Set<unknown> {
-  return new Set(
-    events.map((event) => {
-      return event.op_type;
-    }),
-  );
-}
-
-function expectApiDispatchActions(
-  events: readonly Record<string, unknown>[],
-  expectedActionTypes: readonly string[],
-): void {
-  const observedActionTypes = apiDispatchActionTypes(events);
-  for (const actionType of expectedActionTypes) {
-    expect(observedActionTypes).toContain(actionType);
-  }
-}
-
-function expectNoApiDispatchActions(
-  events: readonly Record<string, unknown>[],
-  unexpectedActionTypes: readonly string[],
-): void {
-  const observedActionTypes = apiDispatchActionTypes(events);
-  for (const actionType of unexpectedActionTypes) {
-    expect(observedActionTypes).not.toContain(actionType);
-  }
-}
-
-function expectProjectionRowReadActionCounts(
-  events: readonly Record<string, unknown>[],
-  expectedCount: number,
-): void {
-  for (const actionType of API_DISPATCH_CONNECTOR_CATALOG_PROJECTION_ROW_ACTION_TYPES) {
-    const matchingEvents = events.filter((event) => {
-      return event.op_type === actionType;
-    });
-    expect(matchingEvents).toHaveLength(expectedCount);
-    for (const event of matchingEvents) {
-      expect(event).toStrictEqual(
-        expect.objectContaining({
-          duration_ms: expect.any(Number),
-          span_kind: "nested",
-        }),
-      );
-      expect(Number(event.duration_ms)).toBeGreaterThanOrEqual(0);
-    }
-  }
-}
-
-function expectApiDispatchSpanKind(
-  events: readonly Record<string, unknown>[],
-  expectedActionTypes: readonly string[],
-  spanKind: string,
-): void {
-  for (const actionType of expectedActionTypes) {
-    const matchingEvents = events.filter((event) => {
-      return event.op_type === actionType;
-    });
-    expect(matchingEvents).toHaveLength(1);
-    expect(matchingEvents[0]).toStrictEqual(
-      expect.objectContaining({
-        span_kind: spanKind,
-      }),
-    );
-  }
-}
-
-function singleApiDispatchEvent(
-  events: readonly Record<string, unknown>[],
-  actionType: string,
-): Record<string, unknown> {
-  const matchingEvents = events.filter((event) => {
-    return event.op_type === actionType;
-  });
-  expect(matchingEvents).toHaveLength(1);
-  return matchingEvents[0]!;
-}
-
-function singleSandboxOperationEvent(
-  events: readonly Record<string, unknown>[],
-  actionType: string,
-): Record<string, unknown> {
-  const matchingEvents = events.filter((event) => {
-    return event.op_type === actionType;
-  });
-  expect(matchingEvents).toHaveLength(1);
-  return matchingEvents[0]!;
-}
-
-function expectClaimRouteResponseTimingActions(args: {
-  readonly runId: string;
-  readonly expectedActionTypes: readonly ClaimRouteResponseTimingActionType[];
-  readonly forbiddenValues: readonly string[];
-}): void {
-  const events = claimRouteTimingEventsForRun(args.runId);
-  const expectedActionTypes = new Set(args.expectedActionTypes);
-  const actionCounts = CLAIM_ROUTE_RESPONSE_TIMING_ACTION_TYPES.map(
-    (actionType) => {
-      return {
-        actionType,
-        count: events.filter((event) => {
-          return event.op_type === actionType;
-        }).length,
-      };
-    },
-  );
-  const expectedActionCounts = CLAIM_ROUTE_RESPONSE_TIMING_ACTION_TYPES.map(
-    (actionType) => {
-      return {
-        actionType,
-        count: expectedActionTypes.has(actionType) ? 1 : 0,
-      };
-    },
-  );
-  expect(actionCounts).toStrictEqual(expectedActionCounts);
-
-  for (const actionType of args.expectedActionTypes) {
-    const event = events.find((candidate) => {
-      return candidate.op_type === actionType;
-    });
-    if (!event) {
-      throw new Error(`Expected claim response timing for ${actionType}`);
-    }
-    expect(event).toStrictEqual(
-      expect.objectContaining({
-        source: "api",
-        op_type: actionType,
-        sandbox_type: "runner",
-        success: true,
-        run_id: args.runId,
-        span_kind: "nested",
-      }),
-    );
-    expect(event?.duration_ms).toStrictEqual(expect.any(Number));
-    expect(Number(event?.duration_ms)).toBeGreaterThanOrEqual(0);
-    expect(Object.hasOwn(event ?? {}, "policy_refresh_path")).toBe(
-      actionType === "claim_route_response_network_policy_refresh",
-    );
-    for (const forbiddenKey of FORBIDDEN_CLAIM_ROUTE_TIMING_KEYS) {
-      expect(event).not.toHaveProperty(forbiddenKey);
-    }
-    const serialized = JSON.stringify(event);
-    for (const forbiddenValue of args.forbiddenValues) {
-      expect(serialized).not.toContain(forbiddenValue);
-    }
-  }
-}
-
-function expectClaimNetworkPolicyRefreshPath(
-  runId: string,
-  path:
-    | "baseline"
-    | "baseline_empty"
-    | "no_builtin_targets"
-    | "full_missing_baseline"
-    | "full_invalid_baseline"
-    | "full_incompatible_baseline",
-): void {
-  expect(
-    singleSandboxOperationEvent(
-      claimRouteTimingEventsForRun(runId),
-      "claim_route_response_network_policy_refresh",
-    ),
-  ).toStrictEqual(
-    expect.objectContaining({
-      policy_refresh_path: path,
-    }),
-  );
-}
-
-function expectCustomConnectorRuntimePhaseTimingEvents(
-  events: readonly Record<string, unknown>[],
-): void {
-  expectApiDispatchSpanKind(
-    events,
-    API_DISPATCH_CUSTOM_CONNECTOR_BUILD_PHASE_ACTION_TYPES,
-    "nested",
-  );
-  for (const actionType of API_DISPATCH_CUSTOM_CONNECTOR_BUILD_PHASE_ACTION_TYPES) {
-    const event = singleApiDispatchEvent(events, actionType);
-    for (const key of CUSTOM_CONNECTOR_RUNTIME_BUCKET_DIMENSION_KEYS) {
-      expect(typeof event[key]).toBe("string");
-    }
-  }
-}
-
-function expectApiDispatchTimingEventsNotToLeak(
-  events: readonly Record<string, unknown>[],
-  forbiddenValues: readonly string[],
-): void {
-  for (const event of events) {
-    for (const forbiddenKey of FORBIDDEN_API_DISPATCH_TIMING_KEYS) {
-      expect(event).not.toHaveProperty(forbiddenKey);
-    }
-    const serialized = JSON.stringify(event);
-    for (const forbiddenValue of forbiddenValues) {
-      expect(serialized).not.toContain(forbiddenValue);
-    }
-  }
-}
-
-function expectApiProcessSnapshot(
-  events: readonly Record<string, unknown>[],
-): unknown {
-  const [firstEvent] = events;
-  if (!firstEvent) {
-    throw new Error("Expected API dispatch timing events");
-  }
-  const ageBucket = firstEvent.api_process_age_bucket;
-  const ordinalBucket = firstEvent.api_process_dispatch_ordinal_bucket;
-  expect(API_PROCESS_AGE_BUCKETS).toContain(ageBucket);
-  expect(API_PROCESS_DISPATCH_ORDINAL_BUCKETS).toContain(ordinalBucket);
-  for (const event of events) {
-    expect(event).toStrictEqual(
-      expect.objectContaining({
-        api_process_age_bucket: ageBucket,
-        api_process_dispatch_ordinal_bucket: ordinalBucket,
-      }),
-    );
-  }
-  return ordinalBucket;
-}
-
-function apiProcessDispatchOrdinalBucketRank(value: unknown): number {
-  const rank = API_PROCESS_DISPATCH_ORDINAL_BUCKETS.findIndex((bucket) => {
-    return bucket === value;
-  });
-  if (rank === -1) {
-    throw new Error(
-      `Unexpected API process dispatch ordinal: ${String(value)}`,
-    );
-  }
-  return rank;
-}
-
-function expectConnectorCatalogLoadTiming(args: {
-  readonly events: readonly Record<string, unknown>[];
-  readonly acceptedCacheOutcome: "hit" | "miss" | "in_flight";
-  readonly acceptedCacheMissReason:
-    | "process_empty"
-    | "catalog_identity_changed"
-    | "capability_identity_changed"
-    | undefined;
-  readonly runtimeCacheOutcome: "hit" | "miss";
-  readonly requestedConnectorCount: "known" | "not_applicable";
-  readonly requestedConnectorCountBucket?: (typeof CONNECTOR_CATALOG_COUNT_BUCKETS)[number];
-  readonly materializedConnectorCountBucket: (typeof CONNECTOR_CATALOG_COUNT_BUCKETS)[number];
-  readonly resolvedConnectorFraction: (typeof CONNECTOR_CATALOG_RESOLVED_CONNECTOR_FRACTION_BUCKETS)[number];
-  readonly validation:
-    | { readonly outcome: "attested" | "not_run" }
-    | {
-        readonly outcome: "full_fallback";
-        readonly fallbackReason:
-          | "missing_authority"
-          | "different_authority"
-          | "missing_compatibility";
-      };
-}): void {
-  const event = singleApiDispatchEvent(
-    args.events,
-    "api_dispatch_connector_catalog_load_runtime_snapshot",
-  );
-  expect(event).toStrictEqual(
-    expect.objectContaining({
-      span_kind: "nested",
-      connector_catalog_accepted_cache_outcome: args.acceptedCacheOutcome,
-      connector_catalog_runtime_cache_outcome: args.runtimeCacheOutcome,
-      connector_catalog_materialized_connector_count_bucket:
-        args.materializedConnectorCountBucket,
-      connector_catalog_validation_outcome: args.validation.outcome,
-    }),
-  );
-  expect([
-    Object.prototype.hasOwnProperty.call(
-      event,
-      "connector_catalog_accepted_cache_miss_reason",
-    ),
-    event.connector_catalog_accepted_cache_miss_reason,
-  ]).toStrictEqual(
-    args.acceptedCacheMissReason === undefined
-      ? [false, undefined]
-      : [true, args.acceptedCacheMissReason],
-  );
-  const expectedValidationDimensions =
-    args.validation.outcome === "full_fallback"
-      ? ["full_fallback", args.validation.fallbackReason]
-      : [args.validation.outcome, undefined];
-  expect([
-    event.connector_catalog_validation_outcome,
-    event.connector_catalog_validation_fallback_reason,
-  ]).toStrictEqual(expectedValidationDimensions);
-  expect(CONNECTOR_CATALOG_RAW_SIZE_BUCKETS).toContain(
-    event.connector_catalog_raw_size_bucket,
-  );
-  expect(CONNECTOR_CATALOG_COMPRESSED_SIZE_BUCKETS).toContain(
-    event.connector_catalog_compressed_size_bucket,
-  );
-  expect(CONNECTOR_CATALOG_COUNT_BUCKETS).toContain(
-    event.connector_catalog_connector_count_bucket,
-  );
-  const requestedCountBuckets =
-    args.requestedConnectorCountBucket === undefined
-      ? args.requestedConnectorCount === "known"
-        ? CONNECTOR_CATALOG_COUNT_BUCKETS
-        : ["not_applicable"]
-      : [args.requestedConnectorCountBucket];
-  expect(requestedCountBuckets).toContain(
-    event.connector_catalog_requested_connector_count_bucket,
-  );
-  expect(event.connector_catalog_resolved_connector_fraction_bucket).toBe(
-    args.resolvedConnectorFraction,
-  );
-}
-
-function expectDirectAblyClaimTimingEvents(args: {
-  readonly events: readonly Record<string, unknown>[];
-  readonly runId: string;
-  readonly runnerGroup: string;
-  readonly forbiddenValues: readonly string[];
-}): void {
-  for (const actionType of RUNNER_CLAIM_ABLY_TIMING_ACTION_TYPES) {
-    const event = singleSandboxOperationEvent(args.events, actionType);
-    expect(event).toStrictEqual(
-      expect.objectContaining({
-        source: "api",
-        sandbox_type: "runner",
-        run_id: args.runId,
-        success: true,
-        runner_group: args.runnerGroup,
-        profile: "vm0/default",
-        auth_type: "user",
-        discovery_source: "ably",
-      }),
-    );
-    expect(event).not.toHaveProperty("poll_reason");
-    expect(event).not.toHaveProperty("pre_local_admission_outcome");
-  }
-
-  expect(
-    singleSandboxOperationEvent(
-      args.events,
-      "direct_candidate_notification_to_enqueue",
-    ),
-  ).toStrictEqual(
-    expect.objectContaining({
-      duration_ms: 12,
-    }),
-  );
-  expect(
-    singleSandboxOperationEvent(args.events, "direct_candidate_inbox_wait"),
-  ).toStrictEqual(
-    expect.objectContaining({
-      duration_ms: 34,
-    }),
-  );
-  expect(
-    singleSandboxOperationEvent(args.events, "provider_discovery_to_main_loop"),
-  ).toStrictEqual(
-    expect.objectContaining({
-      duration_ms: 45,
-    }),
-  );
-  expect(
-    singleSandboxOperationEvent(args.events, "main_loop_to_local_admission"),
-  ).toStrictEqual(
-    expect.objectContaining({
-      duration_ms: 67,
-    }),
-  );
-
-  const ablyTimingActionTypes = new Set<string>(
-    RUNNER_CLAIM_ABLY_TIMING_ACTION_TYPES,
-  );
-  expectApiDispatchTimingEventsNotToLeak(
-    args.events.filter((event) => {
-      return (
-        typeof event.op_type === "string" &&
-        ablyTimingActionTypes.has(event.op_type)
-      );
-    }),
-    args.forbiddenValues,
   );
 }
 
@@ -1962,7 +1152,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     );
   });
 
-  it("emits api dispatch timing for exact-empty direct dispatch runs", async () => {
+  it("claims an exact-empty direct dispatch run without connector scope", async () => {
     const api = createRunsApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
     const prompt = "api dispatch timing should not leak prompt";
@@ -1974,217 +1164,12 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       prompt,
       modelProvider: "anthropic-api-key",
     });
-    expect(
-      sandboxOperationEventsForRunByAction(
-        created.runId,
-        "first_assistant_message_eligible",
-      ),
-    ).toStrictEqual([]);
 
-    const timingEvents = apiDispatchTimingEventsForRun(created.runId);
-    const processOrdinalBucket = expectApiProcessSnapshot(timingEvents);
-    expectApiDispatchActions(timingEvents, API_DISPATCH_TIMING_ACTION_TYPES);
-    expectApiDispatchSpanKind(
-      timingEvents,
-      [
-        "api_dispatch_prepare_context_select_connector_catalog",
-        "api_dispatch_prepare_context_resolve_thread_connector_selections",
-      ],
-      "nested",
-    );
-    expectApiDispatchSpanKind(
-      timingEvents,
-      API_DISPATCH_PHASE_ACTION_TYPES,
-      "top_level",
-    );
-    const phaseEvents = API_DISPATCH_PHASE_ACTION_TYPES.map((actionType) => {
-      return singleApiDispatchEvent(timingEvents, actionType);
-    });
-    for (const event of phaseEvents) {
-      expect(event.api_start_source).toBe("request");
-      expect(event.api_commit_sha).toBe(apiCommitSha);
-      expect(event.run_preparation_retry_count).toBe("0");
-      expect(event.duration_ms).toStrictEqual(expect.any(Number));
-      expect(Number(event.duration_ms)).toBeGreaterThanOrEqual(0);
-    }
     const apiStartedAtIso = await readRunApiStart(context, created.runId);
     if (apiStartedAtIso === null) {
       throw new Error("Expected the run to retain its API start time");
     }
-    let previousBoundaryAt = Date.parse(apiStartedAtIso);
-    for (const event of phaseEvents) {
-      const finishedAt = Date.parse(String(event._time));
-      expect(finishedAt - Number(event.duration_ms)).toBe(previousBoundaryAt);
-      previousBoundaryAt = finishedAt;
-    }
-    expectNoApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_CONNECTOR_CATALOG_ACTION_TYPES,
-    );
-    expectNoApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_STORED_CONNECTOR_SUBSTEP_ACTION_TYPES,
-    );
-    expectNoApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_CUSTOM_CONNECTOR_TIMING_ACTION_TYPES,
-    );
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_prepare_context_load_connector_contexts",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({ connector_scope_source: "empty" }),
-    );
-    expectNoApiDispatchActions(timingEvents, ["api_dispatch_check_org_tier"]);
-    expectApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_AGENT_PRE_CREATE_ACTION_TYPES,
-    );
-    expectApiDispatchSpanKind(
-      timingEvents,
-      API_DISPATCH_AGENT_PRE_CREATE_ACTION_TYPES,
-      "nested",
-    );
-    expectNoApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_DIRECT_PRE_CREATE_ACTION_TYPES,
-    );
-    expectNoApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_AGENT_INTERNAL_ENTRYPOINT_ACTION_TYPES,
-    );
-    expectNoApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_AGENT_WEB_CHAT_PRE_CREATE_ACTION_TYPES,
-    );
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_prepare_context_feature_switches",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        feature_switch_context_source: "preloaded",
-      }),
-    );
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_prepare_context_load_user_timezone",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        user_timezone_source: "preloaded",
-      }),
-    );
-    expectApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_PERMISSION_MANIFEST_SUBSTEP_ACTION_TYPES,
-    );
-    expectApiDispatchSpanKind(
-      timingEvents,
-      API_DISPATCH_STORAGE_MANIFEST_ACTION_TYPES,
-      "nested",
-    );
-    expectApiDispatchSpanKind(
-      timingEvents,
-      ["api_dispatch_check_run_admission"],
-      "top_level",
-    );
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_prepare_run_callbacks",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        span_kind: "nested",
-        run_callback_internal_count_bucket: "0",
-        run_callback_http_count_bucket: "0",
-      }),
-    );
-    expectApiDispatchActions(timingEvents, [
-      "api_dispatch_resolve_agent_execution_by_agent_id",
-      "api_dispatch_resolve_agent_execution_lookup_agent",
-    ]);
-    expectNoApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_RESOLVE_AGENT_EXECUTION_PATH_ACTION_TYPES.filter(
-        (actionType) => {
-          return (
-            actionType !== "api_dispatch_resolve_agent_execution_by_agent_id"
-          );
-        },
-      ),
-    );
-    expectNoApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_RESOLVE_AGENT_EXECUTION_SUBSTEP_ACTION_TYPES.filter(
-        (actionType) => {
-          return (
-            actionType !== "api_dispatch_resolve_agent_execution_lookup_agent"
-          );
-        },
-      ),
-    );
-    const observedActionTypes = apiDispatchActionTypes(timingEvents);
-    const preCreateEvents = timingEvents.filter((event) => {
-      return event.op_type === "api_dispatch_pre_create_agent_run";
-    });
-    expect(preCreateEvents).toHaveLength(1);
-    expect(preCreateEvents[0]).toStrictEqual(
-      expect.objectContaining({
-        span_kind: "top_level",
-      }),
-    );
-    expect(observedActionTypes).not.toContain(
-      "api_dispatch_check_built_in_credits",
-    );
-    expect(observedActionTypes).not.toContain("api_dispatch_notify_runner_job");
 
-    for (const actionType of API_DISPATCH_ATOMIC_PERSISTENCE_ACTION_TYPES) {
-      const events = timingEvents.filter((event) => {
-        return event.op_type === actionType;
-      });
-      expect(events).toHaveLength(1);
-      expect(events[0]).toStrictEqual(
-        expect.objectContaining({
-          span_kind: "nested",
-        }),
-      );
-    }
-    expectNoApiDispatchActions(timingEvents, [
-      "api_dispatch_insert_run_record",
-      "api_dispatch_persist_custom_connector_auth_refs",
-      "api_dispatch_persist_runner_job_queue",
-      "api_dispatch_insert_runner_job_queue",
-    ]);
-
-    for (const event of timingEvents) {
-      expect(event).toStrictEqual(
-        expect.objectContaining({
-          source: "api",
-          sandbox_type: "runner",
-          success: true,
-          run_id: created.runId,
-          runner_group: runnerGroup,
-          profile: "vm0/default",
-          dispatch_path: "direct",
-          trigger_source: "web",
-        }),
-      );
-      expect(event.duration_ms).toStrictEqual(expect.any(Number));
-      expect(Number(event.duration_ms)).toBeGreaterThanOrEqual(0);
-      expect(["top_level", "nested"]).toContain(event.span_kind);
-    }
-    expectApiDispatchTimingEventsNotToLeak(timingEvents, [
-      prompt,
-      agentId,
-      "test-oauth-secret",
-      "fixture-confidential-secret",
-    ]);
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(created.runId);
     expect(claim.appendSystemPrompt ?? "").toContain("Timezone: UTC");
@@ -2194,39 +1179,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     );
     expect(claim.connectorRuntimeTargets).toStrictEqual([]);
     expect(claim).not.toHaveProperty("connectorPermissionBaseline");
-    expectClaimNetworkPolicyRefreshPath(created.runId, "no_builtin_targets");
-
-    const warmPrompt = "repeated empty timing should not leak prompt";
-    const warmCreated = await api.createRun(actor, {
-      agentId,
-      prompt: warmPrompt,
-      modelProvider: "anthropic-api-key",
-    });
-    const warmTimingEvents = apiDispatchTimingEventsForRun(warmCreated.runId);
-    const warmProcessOrdinalBucket = expectApiProcessSnapshot(warmTimingEvents);
-    expect(
-      apiProcessDispatchOrdinalBucketRank(warmProcessOrdinalBucket),
-    ).toBeGreaterThanOrEqual(
-      apiProcessDispatchOrdinalBucketRank(processOrdinalBucket),
-    );
-    expectNoApiDispatchActions(
-      warmTimingEvents,
-      API_DISPATCH_CONNECTOR_CATALOG_ACTION_TYPES,
-    );
-    for (const event of warmTimingEvents) {
-      expect(event).toStrictEqual(
-        expect.objectContaining({
-          runner_group: runnerGroup,
-          run_id: warmCreated.runId,
-        }),
-      );
-    }
-    expectApiDispatchTimingEventsNotToLeak(warmTimingEvents, [
-      warmPrompt,
-      agentId,
-      "test-oauth-secret",
-      "fixture-confidential-secret",
-    ]);
   });
 
   it("fully validates a missing catalog authority before caching it", async () => {
@@ -2246,51 +1198,19 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const missingAuthorityPrompt =
       "legacy connector catalog validation authority";
     const unknownConnectorSlug = "catalog-timing-unknown";
-    const missingAuthorityRun = await api.createDirectRun(
-      missingAuthorityActor.actor,
-      {
-        ...agentBackedDirectRunBody({
-          agentId: missingAuthorityActor.agentId,
-          prompt: missingAuthorityPrompt,
-        }),
-        connectorScope: {
-          allowedConnectorSlugs: [unknownConnectorSlug, unknownConnectorSlug],
-          allowedCustomConnectorIds: [],
-        },
-      },
-    );
-    const missingAuthorityEvents = apiDispatchTimingEventsForRun(
-      missingAuthorityRun.runId,
-    );
-    expectApiDispatchActions(
-      missingAuthorityEvents,
-      API_DISPATCH_CONNECTOR_CATALOG_COMPLETE_VALIDATION_ACTION_TYPES,
-    );
-    expectConnectorCatalogLoadTiming({
-      events: missingAuthorityEvents,
-      acceptedCacheOutcome: "miss",
-      acceptedCacheMissReason: "process_empty",
-      runtimeCacheOutcome: "miss",
-      requestedConnectorCount: "known",
-      requestedConnectorCountBucket: "2_4",
-      materializedConnectorCountBucket: "0",
-      resolvedConnectorFraction: "none",
-      validation: {
-        outcome: "full_fallback",
-        fallbackReason: "missing_authority",
+    await api.createDirectRun(missingAuthorityActor.actor, {
+      ...agentBackedDirectRunBody({
+        agentId: missingAuthorityActor.agentId,
+        prompt: missingAuthorityPrompt,
+      }),
+      connectorScope: {
+        allowedConnectorSlugs: [unknownConnectorSlug, unknownConnectorSlug],
+        allowedCustomConnectorIds: [],
       },
     });
     await expect(
       readApiTestConnectorCatalogValidationAuthority(),
     ).resolves.toBeNull();
-    expectApiDispatchTimingEventsNotToLeak(missingAuthorityEvents, [
-      missingCatalogVersion,
-      missingAuthorityPrompt,
-      missingAuthorityActor.agentId,
-      unknownConnectorSlug,
-      "test-oauth-secret",
-      "fixture-confidential-secret",
-    ]);
   });
 
   it("derives missing catalog compatibility without persisting it", async () => {
@@ -2311,49 +1231,19 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
 
     const missingCompatibilityActor = await entitledRunActor();
     const missingCompatibilityPrompt = "missing connector compatibility";
-    const missingCompatibilityRun = await api.createDirectRun(
-      missingCompatibilityActor.actor,
-      {
-        ...agentBackedDirectRunBody({
-          agentId: missingCompatibilityActor.agentId,
-          prompt: missingCompatibilityPrompt,
-        }),
-        connectorScope: {
-          allowedConnectorSlugs: ["x"],
-          allowedCustomConnectorIds: [],
-        },
-      },
-    );
-    const missingCompatibilityEvents = apiDispatchTimingEventsForRun(
-      missingCompatibilityRun.runId,
-    );
-    expectApiDispatchActions(
-      missingCompatibilityEvents,
-      API_DISPATCH_CONNECTOR_CATALOG_COMPLETE_VALIDATION_ACTION_TYPES,
-    );
-    expectConnectorCatalogLoadTiming({
-      events: missingCompatibilityEvents,
-      acceptedCacheOutcome: "miss",
-      acceptedCacheMissReason: "catalog_identity_changed",
-      runtimeCacheOutcome: "miss",
-      requestedConnectorCount: "known",
-      materializedConnectorCountBucket: "1",
-      resolvedConnectorFraction: "up_to_25_percent",
-      validation: {
-        outcome: "full_fallback",
-        fallbackReason: "missing_compatibility",
+    await api.createDirectRun(missingCompatibilityActor.actor, {
+      ...agentBackedDirectRunBody({
+        agentId: missingCompatibilityActor.agentId,
+        prompt: missingCompatibilityPrompt,
+      }),
+      connectorScope: {
+        allowedConnectorSlugs: ["x"],
+        allowedCustomConnectorIds: [],
       },
     });
     await expect(
       readApiTestConnectorCatalogCompatibilityEvaluations(),
     ).resolves.toHaveLength(0);
-    expectApiDispatchTimingEventsNotToLeak(missingCompatibilityEvents, [
-      missingCompatibilityVersion,
-      missingCompatibilityPrompt,
-      missingCompatibilityActor.agentId,
-      "test-oauth-secret",
-      "fixture-confidential-secret",
-    ]);
   });
 
   it("fully validates a different catalog authority before caching it", async () => {
@@ -2429,37 +1319,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
         },
       },
     );
-    const differentAuthorityEvents = apiDispatchTimingEventsForRun(
-      differentAuthorityRun.runId,
-    );
-    expectApiDispatchActions(
-      differentAuthorityEvents,
-      API_DISPATCH_CONNECTOR_CATALOG_COMPLETE_VALIDATION_ACTION_TYPES,
-    );
-    expectConnectorCatalogLoadTiming({
-      events: differentAuthorityEvents,
-      acceptedCacheOutcome: "miss",
-      acceptedCacheMissReason: "catalog_identity_changed",
-      runtimeCacheOutcome: "miss",
-      requestedConnectorCount: "known",
-      materializedConnectorCountBucket: "1",
-      resolvedConnectorFraction: "up_to_25_percent",
-      validation: {
-        outcome: "full_fallback",
-        fallbackReason: "different_authority",
-      },
-    });
     await expect(
       readApiTestConnectorCatalogValidationAuthority(),
     ).resolves.toStrictEqual(differentValidationAuthority);
-    expectApiDispatchTimingEventsNotToLeak(differentAuthorityEvents, [
-      differentCatalogVersion,
-      differentValidationAuthority.validatorVersion,
-      differentAuthorityPrompt,
-      differentAuthorityActor.agentId,
-      "test-oauth-secret",
-      "fixture-confidential-secret",
-    ]);
     await api.heartbeatRunner(differentAuthorityActor.runnerGroup);
     const differentAuthorityClaim = await api.claimRunnerJob(
       differentAuthorityRun.runId,
@@ -2467,174 +1329,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(
       findFirewallEntry(differentAuthorityClaim.firewalls, "x"),
     ).toBeDefined();
-
-    const cachedActor = await entitledRunActor();
-    const cachedPrompt = "cached connector catalog fallback";
-    const cachedRun = await api.createDirectRun(cachedActor.actor, {
-      ...agentBackedDirectRunBody({
-        agentId: cachedActor.agentId,
-        prompt: cachedPrompt,
-      }),
-      connectorScope: {
-        allowedConnectorSlugs: ["x"],
-        allowedCustomConnectorIds: [],
-      },
-    });
-    const cachedEvents = apiDispatchTimingEventsForRun(cachedRun.runId);
-    expectApiDispatchActions(
-      cachedEvents,
-      API_DISPATCH_CONNECTOR_CATALOG_ALWAYS_ACTION_TYPES,
-    );
-    expectNoApiDispatchActions(
-      cachedEvents,
-      API_DISPATCH_CONNECTOR_CATALOG_MISS_ACTION_TYPES,
-    );
-    expectNoApiDispatchActions(
-      cachedEvents,
-      API_DISPATCH_CONNECTOR_CATALOG_COMPLETE_VALIDATION_ACTION_TYPES,
-    );
-    expectConnectorCatalogLoadTiming({
-      events: cachedEvents,
-      acceptedCacheOutcome: "hit",
-      acceptedCacheMissReason: undefined,
-      runtimeCacheOutcome: "hit",
-      requestedConnectorCount: "known",
-      materializedConnectorCountBucket: "0",
-      resolvedConnectorFraction: "up_to_25_percent",
-      validation: { outcome: "not_run" },
-    });
-    expectApiDispatchTimingEventsNotToLeak(cachedEvents, [
-      differentCatalogVersion,
-      differentValidationAuthority.validatorVersion,
-      cachedPrompt,
-      cachedActor.agentId,
-      "test-oauth-secret",
-      "fixture-confidential-secret",
-    ]);
-  });
-
-  it("deduplicates concurrent attested catalog loads", async () => {
-    const api = createRunsApi(context);
-    mockEnv(
-      "R2_USER_STORAGES_BUCKET_NAME",
-      "test-run-lifecycle-concurrent-attested-catalog",
-    );
-
-    const concurrentCatalogVersion = `api-test-concurrent-attested-${randomUUID()}`;
-    await installApiTestConnectorCatalog({
-      catalogVersion: concurrentCatalogVersion,
-    });
-    const concurrentActor = await entitledRunActor();
-    const firstConcurrentPrompt = "first concurrent attested catalog load";
-    const secondConcurrentPrompt = "second concurrent attested catalog load";
-    const [firstConcurrentRun, secondConcurrentRun] = await Promise.all([
-      api.createDirectRun(concurrentActor.actor, {
-        ...agentBackedDirectRunBody({
-          agentId: concurrentActor.agentId,
-          prompt: firstConcurrentPrompt,
-        }),
-        connectorScope: {
-          allowedConnectorSlugs: ["x"],
-          allowedCustomConnectorIds: [],
-        },
-      }),
-      api.createDirectRun(concurrentActor.actor, {
-        ...agentBackedDirectRunBody({
-          agentId: concurrentActor.agentId,
-          prompt: secondConcurrentPrompt,
-        }),
-        connectorScope: {
-          allowedConnectorSlugs: ["x"],
-          allowedCustomConnectorIds: [],
-        },
-      }),
-    ]);
-    const concurrentEvents = [
-      apiDispatchTimingEventsForRun(firstConcurrentRun.runId),
-      apiDispatchTimingEventsForRun(secondConcurrentRun.runId),
-    ];
-    const concurrentLoadEvents = concurrentEvents.map((events) => {
-      return singleApiDispatchEvent(
-        events,
-        "api_dispatch_connector_catalog_load_runtime_snapshot",
-      );
-    });
-    const concurrentAcceptedOutcomes = concurrentLoadEvents.map((event) => {
-      return event.connector_catalog_accepted_cache_outcome;
-    });
-    expect(
-      concurrentAcceptedOutcomes.filter((outcome) => {
-        return outcome === "miss";
-      }),
-    ).toHaveLength(1);
-    expect(
-      concurrentAcceptedOutcomes.filter((outcome) => {
-        return outcome === "hit" || outcome === "in_flight";
-      }),
-    ).toHaveLength(1);
-    const missLoadEvent = concurrentLoadEvents.find((event) => {
-      return event.connector_catalog_accepted_cache_outcome === "miss";
-    });
-    const reusedLoadEvent = concurrentLoadEvents.find((event) => {
-      return event.connector_catalog_accepted_cache_outcome !== "miss";
-    });
-    if (missLoadEvent === undefined || reusedLoadEvent === undefined) {
-      throw new Error("Expected one catalog miss and one reused catalog load");
-    }
-    expect(missLoadEvent.connector_catalog_accepted_cache_miss_reason).toBe(
-      "catalog_identity_changed",
-    );
-    expect(reusedLoadEvent).not.toHaveProperty(
-      "connector_catalog_accepted_cache_miss_reason",
-    );
-    expect(
-      concurrentLoadEvents.map((event) => {
-        return event.connector_catalog_validation_outcome;
-      }),
-    ).toHaveLength(2);
-    expect(
-      new Set(
-        concurrentLoadEvents.map((event) => {
-          return event.connector_catalog_validation_outcome;
-        }),
-      ),
-    ).toStrictEqual(new Set(["attested", "not_run"]));
-    expect(
-      new Set(
-        concurrentLoadEvents.map((event) => {
-          return event.connector_catalog_runtime_cache_outcome;
-        }),
-      ),
-    ).toStrictEqual(new Set(["miss", "hit"]));
-    expect(
-      new Set(
-        concurrentLoadEvents.map((event) => {
-          return event.connector_catalog_materialized_connector_count_bucket;
-        }),
-      ),
-    ).toStrictEqual(new Set(["0", "1"]));
-    for (const event of concurrentLoadEvents) {
-      expect(CONNECTOR_CATALOG_COMPRESSED_SIZE_BUCKETS).toContain(
-        event.connector_catalog_compressed_size_bucket,
-      );
-      expect(event.connector_catalog_resolved_connector_fraction_bucket).toBe(
-        "up_to_25_percent",
-      );
-    }
-    for (const events of concurrentEvents) {
-      expectNoApiDispatchActions(
-        events,
-        API_DISPATCH_CONNECTOR_CATALOG_COMPLETE_VALIDATION_ACTION_TYPES,
-      );
-      expectApiDispatchTimingEventsNotToLeak(events, [
-        concurrentCatalogVersion,
-        firstConcurrentPrompt,
-        secondConcurrentPrompt,
-        concurrentActor.agentId,
-        "test-oauth-secret",
-        "fixture-confidential-secret",
-      ]);
-    }
   });
 
   it("overlaps runtime catalog and provider reads while preserving cancellation", async () => {
@@ -2695,11 +1389,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       },
     });
     expect(providerDecryptStarted.settled()).toBeTruthy();
-    const timingEvents = apiDispatchTimingEventsForRun(run.runId);
-    expectApiDispatchActions(timingEvents, [
-      "api_dispatch_connector_catalog_load_runtime_snapshot",
-      "api_dispatch_prepare_context_resolve_model_provider",
-    ]);
 
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -2853,51 +1542,18 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       "x",
       "catalog-runtime-unknown",
     ]);
-    expectConnectorCatalogLoadTiming({
-      events: apiDispatchTimingEventsForRun(firstRun.runId),
-      acceptedCacheOutcome: "miss",
-      acceptedCacheMissReason: "catalog_identity_changed",
-      runtimeCacheOutcome: "miss",
-      requestedConnectorCount: "known",
-      requestedConnectorCountBucket: "2_4",
-      materializedConnectorCountBucket: "1",
-      resolvedConnectorFraction: "up_to_25_percent",
-      validation: { outcome: "attested" },
-    });
     await api.requestCancelRun(actor, firstRun.runId, [200]);
 
     const repeatedRun = await createScopedRun(
       "warm repeated scoped connector runtime",
       ["x", "x", "catalog-runtime-unknown"],
     );
-    expectConnectorCatalogLoadTiming({
-      events: apiDispatchTimingEventsForRun(repeatedRun.runId),
-      acceptedCacheOutcome: "hit",
-      acceptedCacheMissReason: undefined,
-      runtimeCacheOutcome: "hit",
-      requestedConnectorCount: "known",
-      requestedConnectorCountBucket: "2_4",
-      materializedConnectorCountBucket: "0",
-      resolvedConnectorFraction: "up_to_25_percent",
-      validation: { outcome: "not_run" },
-    });
     await api.requestCancelRun(actor, repeatedRun.runId, [200]);
 
     const additionalRun = await createScopedRun(
       "materialize another scoped connector",
       ["slack"],
     );
-    expectConnectorCatalogLoadTiming({
-      events: apiDispatchTimingEventsForRun(additionalRun.runId),
-      acceptedCacheOutcome: "hit",
-      acceptedCacheMissReason: undefined,
-      runtimeCacheOutcome: "miss",
-      requestedConnectorCount: "known",
-      requestedConnectorCountBucket: "1",
-      materializedConnectorCountBucket: "1",
-      resolvedConnectorFraction: "up_to_25_percent",
-      validation: { outcome: "not_run" },
-    });
     await api.requestCancelRun(actor, additionalRun.runId, [200]);
 
     const completeSearch = await connectors.searchConnectors(actor, "youtube");
@@ -2913,20 +1569,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       "materialize after catalog identity rotation",
       ["x"],
     );
-    expectConnectorCatalogLoadTiming({
-      events: apiDispatchTimingEventsForRun(rotatedRun.runId),
-      acceptedCacheOutcome: "miss",
-      acceptedCacheMissReason: "catalog_identity_changed",
-      runtimeCacheOutcome: "miss",
-      requestedConnectorCount: "known",
-      requestedConnectorCountBucket: "1",
-      materializedConnectorCountBucket: "1",
-      resolvedConnectorFraction: "up_to_25_percent",
-      validation: { outcome: "attested" },
-    });
     await api.requestCancelRun(actor, rotatedRun.runId, [200]);
 
-    const capabilityIdentityEnvName = "CALCOM_OAUTH_CLIENT_ID";
+    const capabilityIdentityEnvName = "CAL_COM_OAUTH_CLIENT_ID";
     const capabilityIdentityEnvValue = "api-test-calcom-oauth-client-id";
     mockOptionalEnv(capabilityIdentityEnvName, undefined);
     await installApiTestConnectorCatalog({
@@ -2938,29 +1583,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       capabilityRotatedPrompt,
       ["x"],
     );
-    const capabilityRotatedEvents = apiDispatchTimingEventsForRun(
-      capabilityRotatedRun.runId,
-    );
-    expectConnectorCatalogLoadTiming({
-      events: capabilityRotatedEvents,
-      acceptedCacheOutcome: "miss",
-      acceptedCacheMissReason: "capability_identity_changed",
-      runtimeCacheOutcome: "miss",
-      requestedConnectorCount: "known",
-      requestedConnectorCountBucket: "1",
-      materializedConnectorCountBucket: "1",
-      resolvedConnectorFraction: "up_to_25_percent",
-      validation: { outcome: "attested" },
-    });
-    expectApiDispatchTimingEventsNotToLeak(capabilityRotatedEvents, [
-      rotatedCatalogVersion,
-      capabilityRotatedPrompt,
-      agentId,
-      capabilityIdentityEnvName,
-      capabilityIdentityEnvValue,
-      "test-oauth-secret",
-      "fixture-confidential-secret",
-    ]);
     await api.requestCancelRun(actor, capabilityRotatedRun.runId, [200]);
 
     await fw.seedTestConnector(actor, {
@@ -2986,20 +1608,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       "omit a compatibility-filtered connector method",
       ["x"],
     );
-    const filteredEvents = apiDispatchTimingEventsForRun(filteredRun.runId);
-    expectProjectionRowReadActionCounts(filteredEvents, 1);
-    expect(
-      singleApiDispatchEvent(
-        filteredEvents,
-        "api_dispatch_connector_catalog_load_runtime_snapshot",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        connector_catalog_runtime_selection_source: "projection",
-        connector_catalog_projection_cache_outcome: "miss",
-        connector_catalog_projection_readiness: "ready",
-      }),
-    );
     await api.heartbeatRunner(runnerGroup);
     const filteredClaim = await api.claimRunnerJob(filteredRun.runId);
     expect(filteredClaim.environment ?? {}).not.toHaveProperty("X_TOKEN");
@@ -3010,263 +1618,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(filteredClaim.billableFirewalls).not.toContain("x");
     expect(filteredClaim.networkPolicies ?? {}).not.toHaveProperty("x");
     expect(filteredClaim).not.toHaveProperty("connectorPermissionBaseline");
-    expectClaimNetworkPolicyRefreshPath(
-      filteredRun.runId,
-      "no_builtin_targets",
-    );
     await api.requestCancelRun(actor, filteredRun.runId, [200]);
-  });
-
-  async function exactRuntimeProjection() {
-    const api = createRunsApi(context);
-    const fw = createFirewallApi(context);
-    mockEnv(
-      "R2_USER_STORAGES_BUCKET_NAME",
-      `test-run-lifecycle-runtime-projection-${randomUUID()}`,
-    );
-    const catalogVersion = `api-test-runtime-projection-${randomUUID()}`;
-    await installApiTestConnectorCatalog({
-      catalogVersion,
-      runtimeProjection: true,
-    });
-    await corruptApiTestConnectorCatalogRuntimeProjectionDigest("slack");
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-    await fw.seedTestConnector(actor, {
-      connectorSlug: "x",
-      authMethod: "oauth",
-      accessToken: "x-projection-access",
-      refreshToken: "x-projection-refresh",
-    });
-    const createProjectedRun = async (
-      prompt: string,
-      connectorSlugs = ["x", "runtime-projection-unknown", "x"],
-    ) => {
-      return await api.createDirectRun(actor, {
-        ...agentBackedDirectRunBody({ agentId, prompt }),
-        connectorScope: {
-          allowedConnectorSlugs: connectorSlugs,
-          allowedCustomConnectorIds: [],
-        },
-      });
-    };
-
-    return { api, actor, runnerGroup, catalogVersion, createProjectedRun };
-  }
-
-  it("deduplicates concurrent scoped runtime projection loads and reuses the warm result", async () => {
-    const { api, actor, runnerGroup, createProjectedRun } =
-      await exactRuntimeProjection();
-    const concurrentRuns = await Promise.all(
-      Array.from({ length: 2 }, async (_, index) => {
-        return await createProjectedRun(
-          `concurrent exact runtime projection ${index}`,
-        );
-      }),
-    );
-    const concurrentEvents = concurrentRuns.map((run) => {
-      return apiDispatchTimingEventsForRun(run.runId);
-    });
-    const concurrentLoads = concurrentEvents.map((events) => {
-      return singleApiDispatchEvent(
-        events,
-        "api_dispatch_connector_catalog_load_runtime_snapshot",
-      );
-    });
-    const cacheOutcomes = concurrentLoads.map((event) => {
-      return event.connector_catalog_projection_cache_outcome;
-    });
-    expect(
-      cacheOutcomes.filter((outcome) => {
-        return outcome === "miss";
-      }),
-    ).toHaveLength(1);
-    expect(
-      cacheOutcomes.filter((outcome) => {
-        return outcome === "hit" || outcome === "in_flight";
-      }),
-    ).toHaveLength(1);
-    expect(
-      concurrentLoads.filter((event) => {
-        return (
-          event.connector_catalog_projection_cache_observation === "reuse_1"
-        );
-      }),
-    ).toHaveLength(1);
-    for (const load of concurrentLoads) {
-      expect(load).toStrictEqual(
-        expect.objectContaining({
-          connector_catalog_runtime_selection_source: "projection",
-        }),
-      );
-    }
-    const missIndex = cacheOutcomes.indexOf("miss");
-    if (missIndex === -1) {
-      throw new Error("Expected one cold runtime projection load");
-    }
-    const missEvents = concurrentEvents[missIndex];
-    const missLoad = concurrentLoads[missIndex];
-    if (missEvents === undefined || missLoad === undefined) {
-      throw new Error("Expected timing for the cold runtime projection load");
-    }
-    expectApiDispatchActions(missEvents, [
-      "api_dispatch_connector_catalog_load_runtime_snapshot",
-      "api_dispatch_connector_catalog_query_projection_identity",
-      "api_dispatch_connector_catalog_query_projection_rows",
-      "api_dispatch_connector_catalog_fetch_projection_rows",
-      "api_dispatch_connector_catalog_validate_projection_rows",
-      "api_dispatch_connector_catalog_count_projection_rows",
-      "api_dispatch_connector_catalog_materialize_projection",
-    ]);
-    expectProjectionRowReadActionCounts(missEvents, 2);
-    for (const events of concurrentEvents) {
-      expectNoApiDispatchActions(events, [
-        "api_dispatch_connector_catalog_query_identity",
-        ...API_DISPATCH_CONNECTOR_CATALOG_MISS_ACTION_TYPES,
-      ]);
-    }
-    expect(missLoad).toStrictEqual(
-      expect.objectContaining({
-        connector_catalog_runtime_selection_source: "projection",
-        connector_catalog_projection_cache_outcome: "miss",
-        connector_catalog_projection_readiness: "ready",
-        connector_catalog_requested_connector_count_bucket: "2_4",
-        connector_catalog_metadata_connector_count_bucket: "0",
-        connector_catalog_materialized_connector_count_bucket: "1",
-      }),
-    );
-    expect(missLoad).not.toHaveProperty(
-      "connector_catalog_projection_fallback_reason",
-    );
-    expect(missLoad).not.toHaveProperty(
-      "connector_catalog_accepted_cache_outcome",
-    );
-    expectApiDispatchTimingEventsNotToLeak(missEvents, [
-      "runtime-projection-unknown",
-      "x-projection-access",
-      "x-projection-refresh",
-    ]);
-    const coldRun = concurrentRuns[missIndex];
-    if (coldRun === undefined) {
-      throw new Error("Expected the cold runtime projection run");
-    }
-    await api.heartbeatRunner(runnerGroup);
-    const coldClaim = await api.claimRunnerJob(coldRun.runId);
-    expect(findFirewallEntry(coldClaim.firewalls, "x")).toStrictEqual({
-      kind: "builtin",
-      name: "x",
-      sourceId: expect.any(String),
-    });
-    expectClaimNetworkPolicyRefreshPath(coldRun.runId, "baseline");
-    for (const run of concurrentRuns) {
-      await api.requestCancelRun(actor, run.runId, [200]);
-    }
-
-    const repeatedRun = await createProjectedRun(
-      "warm exact runtime projection",
-    );
-    const repeatedEvents = apiDispatchTimingEventsForRun(repeatedRun.runId);
-    expectApiDispatchActions(repeatedEvents, [
-      "api_dispatch_connector_catalog_load_runtime_snapshot",
-      "api_dispatch_connector_catalog_query_projection_identity",
-    ]);
-    expectNoApiDispatchActions(repeatedEvents, [
-      "api_dispatch_connector_catalog_query_projection_rows",
-      "api_dispatch_connector_catalog_fetch_projection_rows",
-      "api_dispatch_connector_catalog_validate_projection_rows",
-      "api_dispatch_connector_catalog_count_projection_rows",
-      "api_dispatch_connector_catalog_materialize_projection",
-      "api_dispatch_connector_catalog_query_identity",
-      ...API_DISPATCH_CONNECTOR_CATALOG_MISS_ACTION_TYPES,
-    ]);
-    expectProjectionRowReadActionCounts(repeatedEvents, 0);
-    expect(
-      singleApiDispatchEvent(
-        repeatedEvents,
-        "api_dispatch_connector_catalog_load_runtime_snapshot",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        connector_catalog_runtime_selection_source: "projection",
-        connector_catalog_projection_cache_outcome: "hit",
-        connector_catalog_projection_cache_observation: "reuse_1",
-      }),
-    );
-    await api.requestCancelRun(actor, repeatedRun.runId, [200]);
-  });
-
-  it("invalidates scoped runtime projection history when the catalog version changes", async () => {
-    const { api, actor, createProjectedRun } = await exactRuntimeProjection();
-    const initialRun = await createProjectedRun(
-      "warm the previous catalog identity",
-    );
-    await api.requestCancelRun(actor, initialRun.runId, [200]);
-
-    const rotatedVersion = `api-test-projection-observation-${randomUUID()}`;
-    await installApiTestConnectorCatalog({
-      catalogVersion: rotatedVersion,
-      runtimeProjection: true,
-    });
-    const rotatedRun = await createProjectedRun("observe catalog rotation", [
-      "x",
-    ]);
-    expect(
-      singleApiDispatchEvent(
-        apiDispatchTimingEventsForRun(rotatedRun.runId),
-        "api_dispatch_connector_catalog_load_runtime_snapshot",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        connector_catalog_projection_cache_observation: "identity_changed",
-        connector_catalog_projection_cache_outcome: "miss",
-      }),
-    );
-    await api.requestCancelRun(actor, rotatedRun.runId, [200]);
-
-    const resetRun = await createProjectedRun(
-      "do not reuse old identity history",
-    );
-    expect(
-      singleApiDispatchEvent(
-        apiDispatchTimingEventsForRun(resetRun.runId),
-        "api_dispatch_connector_catalog_load_runtime_snapshot",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        connector_catalog_projection_cache_observation: "not_in_recent_history",
-        connector_catalog_projection_cache_outcome: "miss",
-      }),
-    );
-    await api.requestCancelRun(actor, resetRun.runId, [200]);
-  });
-
-  it("invalidates a scoped runtime projection when capabilities change at the same catalog version", async () => {
-    const { api, actor, catalogVersion, createProjectedRun } =
-      await exactRuntimeProjection();
-    const initialRun = await createProjectedRun(
-      "warm the previous capability identity",
-    );
-    await api.requestCancelRun(actor, initialRun.runId, [200]);
-
-    mockOptionalEnv("CALCOM_OAUTH_CLIENT_ID", undefined);
-    await installApiTestConnectorCatalog({
-      catalogVersion,
-      runtimeProjection: true,
-    });
-    const capabilityRun = await createProjectedRun(
-      "observe capability rotation",
-    );
-    expect(
-      singleApiDispatchEvent(
-        apiDispatchTimingEventsForRun(capabilityRun.runId),
-        "api_dispatch_connector_catalog_load_runtime_snapshot",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        connector_catalog_projection_cache_observation: "identity_changed",
-        connector_catalog_projection_cache_outcome: "miss",
-      }),
-    );
-    await api.requestCancelRun(actor, capabilityRun.runId, [200]);
   });
 
   it("reuses current validator package authority", async () => {
@@ -3299,25 +1651,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
         allowedCustomConnectorIds: [],
       },
     });
-    const timingEvents = apiDispatchTimingEventsForRun(run.runId);
-    expectProjectionRowReadActionCounts(timingEvents, 1);
-    expectNoApiDispatchActions(timingEvents, [
-      "api_dispatch_connector_catalog_query_identity",
-      ...API_DISPATCH_CONNECTOR_CATALOG_MISS_ACTION_TYPES,
-      ...API_DISPATCH_CONNECTOR_CATALOG_COMPLETE_VALIDATION_ACTION_TYPES,
-    ]);
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_connector_catalog_load_runtime_snapshot",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        connector_catalog_runtime_selection_source: "projection",
-        connector_catalog_projection_cache_outcome: "miss",
-        connector_catalog_projection_readiness: "ready",
-      }),
-    );
 
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -3326,58 +1659,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       name: "x",
       sourceId: expect.any(String),
     });
-    expectClaimNetworkPolicyRefreshPath(run.runId, "baseline");
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
-  it("keeps missing projection compatibility on the full fallback", async () => {
-    const api = createRunsApi(context);
-    mockEnv(
-      "R2_USER_STORAGES_BUCKET_NAME",
-      `test-run-lifecycle-missing-projection-compatibility-${randomUUID()}`,
-    );
-    await installApiTestConnectorCatalog({
-      catalogVersion: `api-test-missing-projection-compatibility-${randomUUID()}`,
-      runtimeProjection: true,
-    });
-    await deleteApiTestConnectorCatalogCompatibility();
-    const { actor, agentId } = await entitledRunActor();
-
-    const run = await api.createDirectRun(actor, {
-      ...agentBackedDirectRunBody({
-        agentId,
-        prompt: "missing projection compatibility fallback",
-      }),
-      connectorScope: {
-        allowedConnectorSlugs: ["x"],
-        allowedCustomConnectorIds: [],
-      },
-    });
-    const timingEvents = apiDispatchTimingEventsForRun(run.runId);
-    expectProjectionRowReadActionCounts(timingEvents, 0);
-    expectApiDispatchActions(timingEvents, [
-      ...API_DISPATCH_CONNECTOR_CATALOG_MISS_ACTION_TYPES,
-      ...API_DISPATCH_CONNECTOR_CATALOG_COMPLETE_VALIDATION_ACTION_TYPES,
-    ]);
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_connector_catalog_load_runtime_snapshot",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        connector_catalog_runtime_selection_source: "full_fallback",
-        connector_catalog_projection_cache_outcome: "not_applicable",
-        connector_catalog_projection_readiness: "compatibility_not_ready",
-        connector_catalog_projection_fallback_reason: "compatibility_not_ready",
-      }),
-    );
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_connector_catalog_load_runtime_snapshot",
-      ),
-    ).not.toHaveProperty("connector_catalog_projection_cache_observation");
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
@@ -3416,187 +1697,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
         return run.prompt === rejectedPrompt;
       }),
     ).toHaveLength(0);
-  });
-
-  it("falls back for an incomplete projection and observes reconciliation", async () => {
-    const api = createRunsApi(context);
-    mockEnv(
-      "R2_USER_STORAGES_BUCKET_NAME",
-      `test-run-lifecycle-incomplete-runtime-projection-${randomUUID()}`,
-    );
-    const catalogVersion = `api-test-incomplete-runtime-projection-${randomUUID()}`;
-    await installApiTestConnectorCatalog({
-      catalogVersion,
-      runtimeProjection: true,
-    });
-    await deleteApiTestConnectorCatalogRuntimeProjectionRow("x");
-    const { actor, agentId } = await entitledRunActor();
-    const createProjectedRun = async (prompt: string) => {
-      return await api.createDirectRun(actor, {
-        ...agentBackedDirectRunBody({ agentId, prompt }),
-        connectorScope: {
-          allowedConnectorSlugs: ["x"],
-          allowedCustomConnectorIds: [],
-        },
-      });
-    };
-
-    const fallbackRun = await createProjectedRun(
-      "incomplete runtime projection",
-    );
-    const fallbackEvents = apiDispatchTimingEventsForRun(fallbackRun.runId);
-    expectProjectionRowReadActionCounts(fallbackEvents, 1);
-    expect(
-      singleApiDispatchEvent(
-        fallbackEvents,
-        "api_dispatch_connector_catalog_load_runtime_snapshot",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        connector_catalog_runtime_selection_source: "full_fallback",
-        connector_catalog_projection_cache_outcome: "miss",
-        connector_catalog_projection_readiness: "ready",
-        connector_catalog_projection_fallback_reason: "incomplete",
-      }),
-    );
-    await api.requestCancelRun(actor, fallbackRun.runId, [200]);
-
-    await installApiTestConnectorCatalog({
-      catalogVersion,
-      runtimeProjection: true,
-    });
-    const repairedRun = await createProjectedRun(
-      "reconciled runtime projection",
-    );
-    const repairedEvents = apiDispatchTimingEventsForRun(repairedRun.runId);
-    expectProjectionRowReadActionCounts(repairedEvents, 1);
-    expect(
-      singleApiDispatchEvent(
-        repairedEvents,
-        "api_dispatch_connector_catalog_load_runtime_snapshot",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        connector_catalog_runtime_selection_source: "projection",
-        connector_catalog_projection_cache_outcome: "miss",
-      }),
-    );
-    await api.requestCancelRun(actor, repairedRun.runId, [200]);
-  });
-
-  it("bounds repeated projection identity replacement with full fallback", async () => {
-    const api = createRunsApi(context);
-    mockEnv(
-      "R2_USER_STORAGES_BUCKET_NAME",
-      `test-run-lifecycle-unstable-runtime-projection-${randomUUID()}`,
-    );
-    await installApiTestConnectorCatalog({
-      catalogVersion: `api-test-unstable-runtime-projection-initial-${randomUUID()}`,
-      runtimeProjection: true,
-    });
-    setApiTestConnectorCatalogRuntimeProjectionIdentityReplacements([
-      `api-test-unstable-runtime-projection-first-${randomUUID()}`,
-      `api-test-unstable-runtime-projection-second-${randomUUID()}`,
-    ]);
-    onTestFinished(() => {
-      clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
-    });
-    const { actor, agentId } = await entitledRunActor();
-
-    const run = await api.createDirectRun(actor, {
-      ...agentBackedDirectRunBody({
-        agentId,
-        prompt: "bound repeated runtime projection identity replacement",
-      }),
-      connectorScope: {
-        allowedConnectorSlugs: ["x"],
-        allowedCustomConnectorIds: [],
-      },
-    });
-    clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
-    const timingEvents = apiDispatchTimingEventsForRun(run.runId);
-    expectProjectionRowReadActionCounts(timingEvents, 2);
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_connector_catalog_load_runtime_snapshot",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        connector_catalog_runtime_selection_source: "full_fallback",
-        connector_catalog_projection_cache_outcome: "miss",
-        connector_catalog_projection_readiness: "ready",
-        connector_catalog_projection_fallback_reason: "unstable",
-      }),
-    );
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
-
-  it("falls back when a selected projection row fails digest verification", async () => {
-    const api = createRunsApi(context);
-    mockEnv(
-      "R2_USER_STORAGES_BUCKET_NAME",
-      `test-run-lifecycle-digest-runtime-projection-${randomUUID()}`,
-    );
-    await installApiTestConnectorCatalog({
-      catalogVersion: `api-test-digest-runtime-projection-${randomUUID()}`,
-      runtimeProjection: true,
-    });
-    await corruptApiTestConnectorCatalogRuntimeProjectionDigest("x");
-    const { actor, agentId } = await entitledRunActor();
-    const run = await api.createDirectRun(actor, {
-      ...agentBackedDirectRunBody({
-        agentId,
-        prompt: "digest-mismatched runtime projection",
-      }),
-      connectorScope: {
-        allowedConnectorSlugs: ["x"],
-        allowedCustomConnectorIds: [],
-      },
-    });
-    const timingEvents = apiDispatchTimingEventsForRun(run.runId);
-    expectProjectionRowReadActionCounts(timingEvents, 1);
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_connector_catalog_load_runtime_snapshot",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        connector_catalog_runtime_selection_source: "full_fallback",
-        connector_catalog_projection_cache_outcome: "miss",
-        connector_catalog_projection_readiness: "ready",
-        connector_catalog_projection_fallback_reason: "digest_mismatch",
-      }),
-    );
-    await api.requestCancelRun(actor, run.runId, [200]);
-
-    const repeatedRun = await api.createDirectRun(actor, {
-      ...agentBackedDirectRunBody({
-        agentId,
-        prompt: "repeat digest-mismatched projection",
-      }),
-      connectorScope: {
-        allowedConnectorSlugs: ["x"],
-        allowedCustomConnectorIds: [],
-      },
-    });
-    const repeatedEvents = apiDispatchTimingEventsForRun(repeatedRun.runId);
-    expectProjectionRowReadActionCounts(repeatedEvents, 1);
-    expect(
-      singleApiDispatchEvent(
-        repeatedEvents,
-        "api_dispatch_connector_catalog_load_runtime_snapshot",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        connector_catalog_runtime_selection_source: "full_fallback",
-        connector_catalog_projection_cache_outcome: "miss",
-        connector_catalog_projection_cache_observation: "reuse_1",
-        connector_catalog_projection_fallback_reason: "digest_mismatch",
-      }),
-    );
-    await api.requestCancelRun(actor, repeatedRun.runId, [200]);
   });
 
   it.each([
@@ -3642,64 +1742,12 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
           allowedCustomConnectorIds: [],
         },
       });
-      const timingEvents = apiDispatchTimingEventsForRun(run.runId);
-      expectProjectionRowReadActionCounts(timingEvents, 1);
-      expect(
-        singleApiDispatchEvent(
-          timingEvents,
-          "api_dispatch_connector_catalog_load_runtime_snapshot",
-        ),
-      ).toStrictEqual(
-        expect.objectContaining({
-          connector_catalog_runtime_selection_source: "full_fallback",
-          connector_catalog_projection_cache_outcome: "miss",
-          connector_catalog_projection_readiness: "ready",
-          connector_catalog_projection_fallback_reason: "malformed",
-        }),
-      );
       await api.requestCancelRun(actor, run.runId, [200]);
+      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+        status: "cancelled",
+      });
     },
   );
-
-  it("falls back when projection validation authority is stale", async () => {
-    const api = createRunsApi(context);
-    mockEnv(
-      "R2_USER_STORAGES_BUCKET_NAME",
-      `test-run-lifecycle-stale-runtime-projection-${randomUUID()}`,
-    );
-    await installApiTestConnectorCatalog({
-      catalogVersion: `api-test-stale-runtime-projection-${randomUUID()}`,
-      runtimeProjection: true,
-    });
-    await expireApiTestConnectorCatalogRuntimeProjectionAuthority();
-    const { actor, agentId } = await entitledRunActor();
-    const run = await api.createDirectRun(actor, {
-      ...agentBackedDirectRunBody({
-        agentId,
-        prompt: "stale runtime projection authority",
-      }),
-      connectorScope: {
-        allowedConnectorSlugs: ["x"],
-        allowedCustomConnectorIds: [],
-      },
-    });
-    const timingEvents = apiDispatchTimingEventsForRun(run.runId);
-    expectProjectionRowReadActionCounts(timingEvents, 0);
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_connector_catalog_load_runtime_snapshot",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        connector_catalog_runtime_selection_source: "full_fallback",
-        connector_catalog_projection_cache_outcome: "not_applicable",
-        connector_catalog_projection_readiness: "not_ready",
-        connector_catalog_projection_fallback_reason: "not_ready",
-      }),
-    );
-    await api.requestCancelRun(actor, run.runId, [200]);
-  });
 
   it("keeps exact-empty create and claim independent from catalog availability", async () => {
     const api = createRunsApi(context);
@@ -3741,17 +1789,12 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       prompt: "run without connectors while the catalog is unavailable",
       modelProvider: "anthropic-api-key",
     });
-    expectNoApiDispatchActions(
-      apiDispatchTimingEventsForRun(emptyRun.runId),
-      API_DISPATCH_CONNECTOR_CATALOG_ACTION_TYPES,
-    );
     await api.heartbeatRunner(runnerGroup);
     const emptyClaim = await api.claimRunnerJob(emptyRun.runId);
     expect(emptyClaim.networkPolicies).toHaveProperty(
       "model-provider:anthropic-api-key",
     );
     expect(emptyClaim).not.toHaveProperty("connectorPermissionBaseline");
-    expectClaimNetworkPolicyRefreshPath(emptyRun.runId, "no_builtin_targets");
 
     const rejectedPrompt =
       "reject catalog-backed creation while the catalog is unavailable";
@@ -3775,7 +1818,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await api.requestCancelRun(actor, emptyRun.runId, [200]);
   });
 
-  it("retains direct plan admission and emits create timing", async () => {
+  it("retains direct plan admission", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const { actor, runnerGroup } = await entitledRunActor();
@@ -3791,94 +1834,12 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
         },
       },
     });
-    const directAgentId = compose.agentId;
 
     context.mocks.s3.send.mockClear();
     const created = await api.createDirectRun(actor, {
       agentId: compose.agentId,
       prompt,
     });
-
-    const timingEvents = apiDispatchTimingEventsForRun(created.runId);
-    expectApiDispatchActions(timingEvents, API_DISPATCH_TIMING_ACTION_TYPES);
-    expectNoApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_CONNECTOR_CATALOG_ACTION_TYPES,
-    );
-    expectNoApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_STORED_CONNECTOR_SUBSTEP_ACTION_TYPES,
-    );
-    expectNoApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_CUSTOM_CONNECTOR_TIMING_ACTION_TYPES,
-    );
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_prepare_context_load_connector_contexts",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({ connector_scope_source: "empty" }),
-    );
-    expectApiDispatchActions(timingEvents, ["api_dispatch_check_org_tier"]);
-    expectApiDispatchSpanKind(
-      timingEvents,
-      ["api_dispatch_check_org_tier"],
-      "top_level",
-    );
-    expectNoApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_DIRECT_PRE_CREATE_ACTION_TYPES,
-    );
-    expectApiDispatchSpanKind(
-      timingEvents,
-      API_DISPATCH_STORAGE_MANIFEST_ACTION_TYPES,
-      "nested",
-    );
-    expectNoApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_AGENT_PRE_CREATE_ACTION_TYPES,
-    );
-    expectNoApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_AGENT_INTERNAL_ENTRYPOINT_ACTION_TYPES,
-    );
-    expectNoApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_AGENT_WEB_CHAT_PRE_CREATE_ACTION_TYPES,
-    );
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_prepare_context_feature_switches",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        feature_switch_context_source: "database",
-      }),
-    );
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_prepare_context_load_user_timezone",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        user_timezone_source: "database",
-      }),
-    );
-    expectApiDispatchSpanKind(
-      timingEvents,
-      ["api_dispatch_pre_create_agent_run"],
-      "top_level",
-    );
-    expectApiDispatchTimingEventsNotToLeak(timingEvents, [
-      prompt,
-      directAgentId,
-      "test-oauth-secret",
-      "fixture-confidential-secret",
-    ]);
 
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(created.runId);
@@ -4136,7 +2097,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(sessionFailed.error).toBe(sessionError.message);
   });
 
-  it("emits bucketed storage manifest shape dimensions without leaking storage identifiers", async () => {
+  it("prepares the storage manifest without uploading empty artifact objects", async () => {
     const api = createRunsApi(context);
     const storages = createStoragesBddApi(context);
     const { actor } = await entitledRunActor();
@@ -4176,7 +2137,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
         },
       },
     });
-    const directAgentId = compose.agentId;
 
     const created = await api.createDirectRun(actor, {
       agentId: compose.agentId,
@@ -4190,7 +2150,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       ],
     });
 
-    const timingEvents = apiDispatchTimingEventsForRun(created.runId);
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped actor");
     }
@@ -4208,154 +2167,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       },
     ).length;
     expect(emptyArtifactPutCount).toBe(0);
-    expectNoApiDispatchActions(timingEvents, [
-      "api_dispatch_prepare_storage_manifest_ensure_artifact_upload_empty_objects",
-    ]);
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_prepare_storage_manifest",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        storage_manifest_requested_compose_count_bucket: "1",
-        storage_manifest_requested_additional_count_bucket: "1",
-        storage_manifest_requested_artifact_count_bucket: "1",
-        storage_manifest_deduped_artifact_count_bucket: "1",
-        storage_manifest_resolved_compose_count_bucket: "1",
-        storage_manifest_resolved_additional_count_bucket: "1",
-        storage_manifest_resolved_artifact_count_bucket: "1",
-        storage_manifest_final_storage_count_bucket: "1",
-        storage_manifest_final_artifact_count_bucket: "1",
-        storage_manifest_dropped_compose_count_bucket: "1",
-        storage_manifest_planned_presign_count_bucket: "1",
-        storage_manifest_duplicate_presign_candidate_count_bucket: "0",
-        storage_manifest_source_compose_volume_resolved_count_bucket: "1",
-        storage_manifest_source_compose_volume_planned_presign_count_bucket:
-          "0",
-        storage_manifest_source_compose_volume_non_system_presign_count_bucket:
-          "0",
-        storage_manifest_source_request_additional_volume_resolved_count_bucket:
-          "1",
-        storage_manifest_source_request_additional_volume_planned_presign_count_bucket:
-          "1",
-        storage_manifest_source_request_additional_volume_non_system_presign_count_bucket:
-          "1",
-        storage_manifest_source_artifact_resolved_count_bucket: "1",
-        storage_manifest_source_artifact_planned_presign_count_bucket: "0",
-        storage_manifest_source_artifact_non_system_presign_count_bucket: "0",
-        storage_manifest_artifact_ensure_already_initialized_count_bucket: "0",
-        storage_manifest_artifact_ensure_missing_storage_count_bucket: "1",
-        storage_manifest_artifact_ensure_created_storage_count_bucket: "1",
-        storage_manifest_artifact_ensure_lost_create_race_count_bucket: "0",
-        storage_manifest_artifact_ensure_missing_head_version_count_bucket: "1",
-        storage_manifest_artifact_ensure_initialized_empty_version_count_bucket:
-          "1",
-      }),
-    );
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_prepare_storage_manifest_ensure_artifacts",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        storage_manifest_artifact_ensure_already_initialized_count_bucket: "0",
-        storage_manifest_artifact_ensure_missing_storage_count_bucket: "1",
-        storage_manifest_artifact_ensure_created_storage_count_bucket: "1",
-        storage_manifest_artifact_ensure_lost_create_race_count_bucket: "0",
-        storage_manifest_artifact_ensure_missing_head_version_count_bucket: "1",
-        storage_manifest_artifact_ensure_initialized_empty_version_count_bucket:
-          "1",
-      }),
-    );
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_prepare_storage_manifest_build_entries",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        storage_manifest_resolved_compose_count_bucket: "1",
-        storage_manifest_resolved_additional_count_bucket: "1",
-        storage_manifest_resolved_artifact_count_bucket: "1",
-        storage_manifest_planned_presign_count_bucket: "1",
-        storage_manifest_duplicate_presign_candidate_count_bucket: "0",
-        storage_manifest_source_compose_volume_resolved_count_bucket: "1",
-        storage_manifest_source_request_additional_volume_resolved_count_bucket:
-          "1",
-        storage_manifest_source_artifact_resolved_count_bucket: "1",
-        storage_manifest_source_request_additional_volume_planned_presign_count_bucket:
-          "1",
-        storage_manifest_source_request_additional_volume_non_system_presign_count_bucket:
-          "1",
-        storage_manifest_source_artifact_planned_presign_count_bucket: "0",
-        storage_manifest_source_artifact_non_system_presign_count_bucket: "0",
-      }),
-    );
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_prepare_storage_manifest_generate_compose_urls",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        storage_manifest_compose_planned_presign_count_bucket: "0",
-        storage_manifest_source_compose_volume_planned_presign_count_bucket:
-          "0",
-        storage_manifest_source_compose_volume_non_system_presign_count_bucket:
-          "0",
-      }),
-    );
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_prepare_storage_manifest_generate_additional_urls",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        storage_manifest_additional_planned_presign_count_bucket: "1",
-        storage_manifest_source_request_additional_volume_planned_presign_count_bucket:
-          "1",
-        storage_manifest_source_request_additional_volume_non_system_presign_count_bucket:
-          "1",
-        storage_manifest_source_artifact_planned_presign_count_bucket: "0",
-      }),
-    );
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_prepare_storage_manifest_generate_artifact_urls",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        storage_manifest_artifact_planned_presign_count_bucket: "0",
-        storage_manifest_source_artifact_planned_presign_count_bucket: "0",
-        storage_manifest_source_artifact_non_system_presign_count_bucket: "0",
-        storage_manifest_source_request_additional_volume_planned_presign_count_bucket:
-          "0",
-      }),
-    );
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_prepare_storage_manifest_assemble",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        storage_manifest_final_storage_count_bucket: "1",
-        storage_manifest_final_artifact_count_bucket: "1",
-        storage_manifest_dropped_compose_count_bucket: "1",
-      }),
-    );
-    expectApiDispatchTimingEventsNotToLeak(timingEvents, [
-      prompt,
-      storageName,
-      mountPath,
-      prepared.versionId,
-      directAgentId,
-      "https://r2.example.com",
-    ]);
 
     const claim = await api.claimRunnerJob(created.runId);
     const memoryArtifact = expectCanonicalStorageManifest(
@@ -4373,10 +2184,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       throw new Error("Expected the claim manifest to include memory");
     }
     expect(memoryArtifact.archiveUrl).toBeUndefined();
-    expectApiDispatchTimingEventsNotToLeak(timingEvents, [
-      memoryArtifact.storageId,
-      memoryArtifact.versionId,
-    ]);
 
     const initialized = await api.createDirectRun(actor, {
       agentId: compose.agentId,
@@ -4389,56 +2196,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
         },
       ],
     });
-    const initializedTimingEvents = apiDispatchTimingEventsForRun(
-      initialized.runId,
-    );
-    expect(
-      singleApiDispatchEvent(
-        initializedTimingEvents,
-        "api_dispatch_prepare_storage_manifest",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        storage_manifest_artifact_ensure_already_initialized_count_bucket: "1",
-        storage_manifest_artifact_ensure_missing_storage_count_bucket: "0",
-        storage_manifest_artifact_ensure_created_storage_count_bucket: "0",
-        storage_manifest_artifact_ensure_lost_create_race_count_bucket: "0",
-        storage_manifest_artifact_ensure_missing_head_version_count_bucket: "0",
-        storage_manifest_artifact_ensure_initialized_empty_version_count_bucket:
-          "0",
-      }),
-    );
-    expect(
-      singleApiDispatchEvent(
-        initializedTimingEvents,
-        "api_dispatch_prepare_storage_manifest_ensure_artifacts",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        storage_manifest_artifact_ensure_already_initialized_count_bucket: "1",
-        storage_manifest_artifact_ensure_missing_storage_count_bucket: "0",
-        storage_manifest_artifact_ensure_created_storage_count_bucket: "0",
-        storage_manifest_artifact_ensure_lost_create_race_count_bucket: "0",
-        storage_manifest_artifact_ensure_missing_head_version_count_bucket: "0",
-        storage_manifest_artifact_ensure_initialized_empty_version_count_bucket:
-          "0",
-      }),
-    );
-    expectNoApiDispatchActions(initializedTimingEvents, [
-      "api_dispatch_prepare_storage_manifest_ensure_artifact_upload_empty_objects",
-    ]);
-    expect(
-      singleApiDispatchEvent(
-        initializedTimingEvents,
-        "api_dispatch_prepare_storage_manifest_ensure_artifact_insert_initial_version",
-      ).duration_ms,
-    ).toBe(0);
-    expectApiDispatchTimingEventsNotToLeak(initializedTimingEvents, [
-      storageName,
-      mountPath,
-      prepared.versionId,
-      directAgentId,
-    ]);
 
     await api.requestCancelRun(actor, created.runId, [200]);
     await api.requestCancelRun(actor, initialized.runId, [200]);
@@ -5121,9 +2878,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(created.status).toBe("pending");
     const claim = await api.claimRunnerJob(created.runId);
     expect(claim.prompt).toBe(prompt);
-    const snapshot = runContextSnapshotForRun(created.runId);
-    expect(snapshot).not.toHaveProperty("piModelConfigGeneration");
-    expect(snapshot).not.toHaveProperty("piModelConfigLegacyApi");
     expect(context.mocks.axiom.ingest).toHaveBeenCalledWith("run-context", [
       expect.objectContaining({
         runId: created.runId,
@@ -5138,11 +2892,9 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const api = createRunsApi(context);
     const { actor, agentId } = await entitledRunActor();
     const prompt = "sandbox telemetry should not block launch";
-    context.mocks.axiom.sdkIngest.mockImplementation((dataset) => {
-      if (dataset === "vm0-sandbox-op-log-dev") {
-        throw new Error("sandbox telemetry ingest failed");
-      }
-      return true;
+    mockAxiomSdkTelemetryFailure({
+      mode: "ingest",
+      datasets: [SANDBOX_OP_LOG_DATASET],
     });
 
     const created = await api.createRun(actor, {
@@ -5158,61 +2910,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await api.requestCancelRun(actor, created.runId, [200]);
   });
 
-  it("emits Agent resolution timing for direct Agent runs", async () => {
-    const api = createRunsApi(context);
-    const { actor } = await entitledRunActor();
-    const prompt = "Agent timing should not leak prompt";
-    const composeName = `bdd-version-timing-${randomUUID().slice(0, 8)}`;
-    const compose = await api.createDirectAgent(actor, {
-      version: "1",
-      agents: {
-        [composeName]: {
-          framework: "claude-code",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
-    });
-    const directAgentId = compose.agentId;
-
-    const created = await api.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt,
-    });
-
-    const timingEvents = apiDispatchTimingEventsForRun(created.runId);
-    expectApiDispatchActions(timingEvents, [
-      "api_dispatch_resolve_agent_execution_by_agent_id",
-      "api_dispatch_resolve_agent_execution_lookup_agent",
-    ]);
-    expectNoApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_RESOLVE_AGENT_EXECUTION_PATH_ACTION_TYPES.filter(
-        (actionType) => {
-          return (
-            actionType !== "api_dispatch_resolve_agent_execution_by_agent_id"
-          );
-        },
-      ),
-    );
-    expectNoApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_RESOLVE_AGENT_EXECUTION_SUBSTEP_ACTION_TYPES.filter(
-        (actionType) => {
-          return (
-            actionType !== "api_dispatch_resolve_agent_execution_lookup_agent"
-          );
-        },
-      ),
-    );
-    for (const event of timingEvents) {
-      expect(JSON.stringify(event)).not.toContain(prompt);
-      expect(JSON.stringify(event)).not.toContain(directAgentId);
-    }
-
-    await api.requestCancelRun(actor, created.runId, [200]);
-  });
-
-  it("emits Agent execution resolution timing for session continuation", async () => {
+  it("resumes the Agent execution session for a continued run", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId } = await entitledRunActor();
@@ -5247,32 +2945,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       modelProvider: "anthropic-api-key",
     });
     expect(resumed.sessionId).toBe(first.sessionId);
-    const sessionTimingEvents = apiDispatchTimingEventsForRun(resumed.runId);
-    expectApiDispatchActions(sessionTimingEvents, [
-      "api_dispatch_resolve_agent_execution_by_session_id",
-      "api_dispatch_resolve_agent_execution_lookup_session_snapshot",
-      "api_dispatch_resolve_agent_execution_resolve_session_history",
-    ]);
-    expectNoApiDispatchActions(
-      sessionTimingEvents,
-      REPLACED_SESSION_RESOLUTION_ACTION_TYPES,
-    );
-    expectNoApiDispatchActions(
-      sessionTimingEvents,
-      API_DISPATCH_RESOLVE_AGENT_EXECUTION_PATH_ACTION_TYPES.filter(
-        (actionType) => {
-          return (
-            actionType !== "api_dispatch_resolve_agent_execution_by_session_id"
-          );
-        },
-      ),
-    );
-    for (const event of sessionTimingEvents) {
-      const serialized = JSON.stringify(event);
-      expect(serialized).not.toContain(history);
-      expect(serialized).not.toContain(historyHash);
-      expect(serialized).not.toContain(first.sessionId);
-    }
     const resumedClaim = await api.claimRunnerJob(resumed.runId);
     expect(resumedClaim.resumeSession).toMatchObject({
       sessionId: `bdd-timing-cli-${first.runId}`,
@@ -5282,20 +2954,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
         url: expect.any(String),
       },
     });
-    expectClaimRouteResponseTimingActions({
-      runId: resumed.runId,
-      expectedActionTypes: [
-        "claim_route_response_resume_session",
-        "claim_route_response_network_policy_refresh",
-      ],
-      forbiddenValues: [
-        history,
-        historyHash,
-        first.sessionId,
-        resumedClaim.sandboxToken,
-      ],
-    });
-    expectClaimNetworkPolicyRefreshPath(resumed.runId, "no_builtin_targets");
 
     await api.requestCancelRun(actor, resumed.runId, [200]);
   });
@@ -5492,73 +3150,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(running.status).toBe("running");
     expect(running.startedAt).toBeDefined();
     await flushWaitUntilForTest();
-    const attributionDimensions = {
-      runner_id: winningClaim.candidate.runnerIdentity.runnerId,
-      runner_heartbeat_generation: String(
-        winningClaim.candidate.runnerIdentity.heartbeatGeneration,
-      ),
-      runner_hostname: winningClaim.candidate.runnerHostname,
-      runner_version: winningClaim.candidate.runnerVersion,
-    };
-    expect(
-      singleSandboxOperationEvent(
-        sandboxOperationEventsForRun(run.runId),
-        "claim_request_to_running",
-      ),
-    ).toStrictEqual(expect.objectContaining(attributionDimensions));
-    const preClaimTimingEvents = [
-      "direct_candidate_notification_to_enqueue",
-      "runner_poll_http_request",
-    ].map((actionType) => {
-      return singleSandboxOperationEvent(
-        sandboxOperationEventsForRun(run.runId),
-        actionType,
-      );
-    });
-    expect(
-      preClaimTimingEvents.some((event) => {
-        return RUNNER_ATTRIBUTION_DIMENSION_KEYS.some((key) => {
-          return Object.hasOwn(event, key);
-        });
-      }),
-    ).toBeFalsy();
-    const claimRouteTimingEvents = claimRouteTimingEventsForRun(run.runId);
-    const nestedClaimRouteTimingEvents = claimRouteTimingEvents.filter(
-      (event) => {
-        return event.span_kind === "nested";
-      },
-    );
-    expect(nestedClaimRouteTimingEvents.length).toBeGreaterThan(0);
-    expect(
-      nestedClaimRouteTimingEvents.every((event) => {
-        return Object.entries(attributionDimensions).every(([key, value]) => {
-          return event[key] === value;
-        });
-      }),
-    ).toBeTruthy();
-    expect(
-      claimRouteTimingEvents
-        .filter((event) => {
-          return event.span_kind !== "nested";
-        })
-        .some((event) => {
-          return RUNNER_ATTRIBUTION_DIMENSION_KEYS.some((key) => {
-            return Object.hasOwn(event, key);
-          });
-        }),
-    ).toBeFalsy();
-    for (const actionType of CLAIM_ROUTE_PARENT_TIMING_ACTION_TYPES) {
-      expect(
-        singleSandboxOperationEvent(
-          claimRouteTimingEventsForRun(run.runId),
-          actionType,
-        ),
-      ).toStrictEqual(
-        expect.objectContaining({
-          span_kind: "parent",
-        }),
-      );
-    }
 
     const laterClaim = await api.requestClaimRunnerJob(true, run.runId, [404]);
     expectApiError(laterClaim.body);
@@ -5906,12 +3497,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(resumed.sessionId).toBe(first.sessionId);
     const resumedClaim = await api.claimRunnerJob(resumed.runId);
     expect(resumedClaim.resumeSession).toBeNull();
-    expect(runContextSnapshotForRun(resumed.runId)).not.toHaveProperty(
-      "agentExecutionAuthority",
-    );
-    expect(runContextSnapshotForRun(resumed.runId)).not.toHaveProperty(
-      "environmentShadowClassification",
-    );
     await expect(
       readRunLaunchSnapshotFixture(context, resumed.runId),
     ).resolves.toStrictEqual({
@@ -6378,35 +3963,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       admittableProfiles: [],
       mode: "stopping",
     });
-
-    for (const { runId, resolution, tier } of [
-      {
-        runId: reusableOverWorkspace.run.runId,
-        resolution: "matching_reusable_sandbox",
-        tier: "reusableSandbox",
-      },
-      {
-        runId: capableWorkspaceHolder.run.runId,
-        resolution: "matching_workspace_cache",
-        tier: "workspaceCache",
-      },
-    ]) {
-      for (const actionType of [
-        "runner_notification_affinity_lookup",
-        "runner_poll_pending_job_lookup",
-      ]) {
-        const events = sandboxOperationEventsForRunByAction(runId, actionType);
-        expect(events).toHaveLength(1);
-        expect(events[0]).toStrictEqual(
-          expect.objectContaining({
-            runner_preference_resolution: resolution,
-            runner_preference_decision_kind: "preference",
-            runner_preference_tier: tier,
-            reuse_key_kind: "thread",
-          }),
-        );
-      }
-    }
   });
 
   it("selects reusable-sandbox preferences by profile and history generation", async () => {
@@ -6542,21 +4098,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(runnerPreference(sourcePoll.body.job)).toStrictEqual(
       finalizingPreference,
     );
-    for (const actionType of [
-      "runner_notification_affinity_lookup",
-      "runner_poll_pending_job_lookup",
-    ]) {
-      expect(
-        sandboxOperationEventsForRunByAction(successor.runId, actionType),
-      ).toContainEqual(
-        expect.objectContaining({
-          runner_preference_resolution: "finalizing_predecessor",
-          runner_preference_decision_kind: "preference",
-          runner_preference_tier: "finalizingPredecessor",
-          history_generation_run_id: first.runId,
-        }),
-      );
-    }
 
     mockNow(sourceCompletedAt + 1601);
     const genericPoll = await api.requestPollRunner(
@@ -6596,31 +4137,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       },
     );
     expect(claimed.status).toBe(200);
-    const successfulClaim = sandboxOperationEventsForRunByAction(
-      successor.runId,
-      "claim_request_to_running",
-    );
-    expect(successfulClaim).toHaveLength(1);
-    expect(successfulClaim[0]).toStrictEqual(
-      expect.objectContaining({
-        runner_preference_resolution: "finalizing_predecessor",
-        runner_preference_claim_state: "expired",
-        runner_preference_targeted_self: "true",
-      }),
-    );
-    for (const event of sandboxOperationEventsForRun(successor.runId)) {
-      if (event.op_type === "claim_request_to_running") {
-        continue;
-      }
-      if (
-        event.op_type === "runner_notification_affinity_lookup" ||
-        event.op_type === "runner_poll_pending_job_lookup"
-      ) {
-        continue;
-      }
-      expect(event).not.toHaveProperty("runner_preference_claim_state");
-      expect(event).not.toHaveProperty("runner_preference_targeted_self");
-    }
 
     await api.requestCancelRun(actor, successor.runId, [200]);
     await flushWaitUntilForTest();
@@ -6860,7 +4376,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     });
   });
 
-  it("preserves same-thread reuse-preference timing across queued admission", async () => {
+  it("preserves the same-thread reuse preference across queued admission", async () => {
     const {
       actor,
       reuseRunnerId,
@@ -6984,100 +4500,8 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     if (typeof protectedClaim.apiStartTime !== "number") {
       throw new Error("Expected the chat run to retain its API start time");
     }
-    const apiToRunnerQueueMs = sandboxOperationDurationForRun(
-      protectedFollowUp.runId,
-      "api_to_runner_queue",
-    );
-    const runnerQueueToClaimRequestMs = sandboxOperationDurationForRun(
-      protectedFollowUp.runId,
-      "runner_queue_to_claim_request",
-    );
-    const apiToClaimRequestMs = sandboxOperationDurationForRun(
-      protectedFollowUp.runId,
-      "api_to_claim_request",
-    );
     expect(protectedClaim.apiStartTime).toBeGreaterThanOrEqual(
       requestStartedAt,
-    );
-    expect(apiToRunnerQueueMs).toBe(
-      queueInsertedAt - protectedClaim.apiStartTime,
-    );
-    expect(runnerQueueToClaimRequestMs).toBe(0);
-    expect(apiToRunnerQueueMs + runnerQueueToClaimRequestMs).toBe(
-      apiToClaimRequestMs,
-    );
-    for (const actionType of [
-      "runner_notification_queue_to_entry",
-      "runner_notification_affinity_lookup",
-      "runner_notification_queue_to_publish_start",
-      "runner_notification_realtime_publish",
-    ]) {
-      const events = sandboxOperationEventsForRunByAction(
-        protectedFollowUp.runId,
-        actionType,
-      );
-      expect(events).toHaveLength(1);
-      expect(events[0]).toStrictEqual(
-        expect.objectContaining({
-          source: "api",
-          op_type: actionType,
-          sandbox_type: "runner",
-          duration_ms: 0,
-          success: true,
-          runner_group: runnerGroup,
-          profile: "vm0/default",
-          notification_target: "broadcast",
-          activation_origin: "direct",
-          same_thread_markers: "recorded",
-          runner_preference_resolution: "exact_history_generation",
-          reuse_key_kind: "thread",
-          history_generation_run_id: first.runId,
-        }),
-      );
-    }
-    for (const actionType of [
-      "runner_notification_queue_to_commit_return",
-      "runner_notification_queue_to_run_context_registered",
-      "runner_notification_queue_to_dispatch_timings_registered",
-      "runner_notification_queue_to_activation_scheduled",
-      "runner_notification_queue_to_activation_entry",
-      "runner_notification_queue_to_same_thread_markers_complete",
-      "runner_notification_queue_to_database_ready",
-    ]) {
-      const events = sandboxOperationEventsForRunByAction(
-        protectedFollowUp.runId,
-        actionType,
-      );
-      expect(events).toHaveLength(1);
-      expect(events[0]).toStrictEqual(
-        expect.objectContaining({
-          source: "api",
-          op_type: actionType,
-          sandbox_type: "runner",
-          duration_ms: 0,
-          success: true,
-          runner_group: runnerGroup,
-          profile: "vm0/default",
-          notification_target: "broadcast",
-          activation_origin: "direct",
-          same_thread_markers: "recorded",
-        }),
-      );
-      expect(events[0]).not.toHaveProperty("history_generation_run_id");
-    }
-    expect(
-      sandboxOperationEventsForRunByAction(
-        protectedFollowUp.runId,
-        "runner_notification_queue_to_promotion_side_effects_registered",
-      ),
-    ).toHaveLength(0);
-    expect(
-      sandboxOperationEventsForRunByAction(
-        protectedFollowUp.runId,
-        "api_to_claim_request",
-      ),
-    ).toContainEqual(
-      expect.objectContaining({ history_generation_run_id: first.runId }),
     );
     await api.requestCancelRun(actor, protectedFollowUp.runId, [200]);
     await webhooks.requestAgentComplete(
@@ -7158,28 +4582,10 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(expiredClaim.body.prompt).toBe(
       "continue after reuse-preference protection expires",
     );
-    expect(
-      sandboxOperationEventsForRunByAction(
-        expiredFollowUp.runId,
-        "claim_request_to_running",
-      ),
-    ).toContainEqual(
-      expect.objectContaining({
-        runner_preference_resolution: "expired",
-        runner_preference_claim_state: "absent",
-      }),
-    );
-    expect(
-      sandboxOperationEventsForRunByAction(
-        expiredFollowUp.runId,
-        "claim_request_to_running",
-      )[0],
-    ).not.toHaveProperty("runner_preference_targeted_self");
     await api.requestCancelRun(actor, expiredFollowUp.runId, [200]);
   });
 
-  it("keeps runner heartbeat snapshots ordered", async () => {
-    expect.hasAssertions();
+  async function setupOrderedHeartbeats() {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
@@ -7298,6 +4704,13 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       await flushWaitUntilForTest();
     }
 
+    return { api, runnerGroup, baseTime, heartbeat, expectReusePreference };
+  }
+
+  it("retains a newer heartbeat despite a lower sequence and unrelated runner", async () => {
+    expect.hasAssertions();
+    const { api, runnerGroup, baseTime, heartbeat, expectReusePreference } =
+      await setupOrderedHeartbeats();
     await heartbeat({
       generation: 1,
       sequence: 2,
@@ -7317,7 +4730,17 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     await api.heartbeatRunner(runnerGroup);
     mockNow(baseTime + 5000);
     await expectReusePreference("reusableSandbox");
+  });
 
+  it("does not refresh heartbeat expiry for a stale sequence", async () => {
+    expect.hasAssertions();
+    const { baseTime, heartbeat, expectReusePreference } =
+      await setupOrderedHeartbeats();
+    await heartbeat({
+      generation: 1,
+      sequence: 2,
+      resource: "reusableSandbox",
+    });
     mockNow(baseTime + 20_000);
     await heartbeat({
       generation: 1,
@@ -7326,7 +4749,11 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     });
     mockNow(baseTime + 31_000);
     await expectReusePreference(undefined);
+  });
 
+  it("retains the workspace cache when a heartbeat sequence is repeated", async () => {
+    expect.hasAssertions();
+    const { heartbeat, expectReusePreference } = await setupOrderedHeartbeats();
     await heartbeat({
       generation: 1,
       sequence: 3,
@@ -7338,7 +4765,16 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
       resource: undefined,
     });
     await expectReusePreference("workspaceCache");
+  });
 
+  it("keeps a new heartbeat generation ahead of an older high sequence", async () => {
+    expect.hasAssertions();
+    const { heartbeat, expectReusePreference } = await setupOrderedHeartbeats();
+    await heartbeat({
+      generation: 1,
+      sequence: 3,
+      resource: "workspaceCache",
+    });
     await heartbeat({
       generation: 2,
       sequence: 1,
@@ -7933,35 +5369,6 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     expect(promoted.status).toBe("pending");
     const drained = await waitForRunQueueLength(api, actor, 0);
     expect(drained.body.queue).toHaveLength(0);
-    const promotionTimingEvents = [
-      "api_dispatch_queue_promotion_lock_wait",
-      "api_dispatch_queue_promotion_lock_held",
-    ].flatMap((actionType) => {
-      const events = sandboxOperationEventsForRunByAction(
-        third.runId,
-        actionType,
-      );
-      expect(events).toStrictEqual([
-        expect.objectContaining({
-          source: "api",
-          op_type: actionType,
-          sandbox_type: "runner",
-          duration_ms: expect.any(Number),
-          success: true,
-          runner_group: runnerGroup,
-          profile: "vm0/default",
-          dispatch_path: "direct",
-          span_kind: "nested",
-          activation_origin: "promotion",
-        }),
-      ]);
-      expect(Number(events[0]?.duration_ms)).toBeGreaterThanOrEqual(0);
-      return events;
-    });
-    expectApiDispatchTimingEventsNotToLeak(promotionTimingEvents, [
-      "queued run three",
-      agentId,
-    ]);
     const promotedStorageState = await readRunnerJobStorageState(
       context,
       third.runId,
@@ -7990,98 +5397,6 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     expect(thirdClaim.secretValues).toContain(okouToken);
     expect(thirdClaim).not.toHaveProperty("secretValueEnvironmentKeys");
     expect(thirdClaim).not.toHaveProperty("runContextStorage");
-    expectClaimNetworkPolicyRefreshPath(third.runId, "no_builtin_targets");
-    const apiToRunnerQueueMs = sandboxOperationDurationForRun(
-      third.runId,
-      "api_to_runner_queue",
-    );
-    const runnerQueueToClaimRequestMs = sandboxOperationDurationForRun(
-      third.runId,
-      "runner_queue_to_claim_request",
-    );
-    const apiToClaimRequestMs = sandboxOperationDurationForRun(
-      third.runId,
-      "api_to_claim_request",
-    );
-    expect(apiToRunnerQueueMs).toBe(0);
-    expect(runnerQueueToClaimRequestMs).toBe(0);
-    expect(apiToRunnerQueueMs + runnerQueueToClaimRequestMs).toBe(
-      apiToClaimRequestMs,
-    );
-    for (const actionType of [
-      "runner_notification_queue_to_entry",
-      "runner_notification_affinity_lookup",
-      "runner_notification_queue_to_publish_start",
-      "runner_notification_realtime_publish",
-    ]) {
-      const events = sandboxOperationEventsForRunByAction(
-        third.runId,
-        actionType,
-      );
-      expect(events).toHaveLength(1);
-      expect(events[0]).toStrictEqual(
-        expect.objectContaining({
-          source: "api",
-          op_type: actionType,
-          sandbox_type: "runner",
-          duration_ms: 0,
-          success: true,
-          runner_group: runnerGroup,
-          profile: "vm0/default",
-          notification_target: "broadcast",
-          activation_origin: "promotion",
-          same_thread_markers: "not_applicable",
-          runner_preference_resolution: "no_reuse_key",
-          runner_preference_decision_kind: "noPreference",
-          runner_preference_no_preference_reason: "noReuseKey",
-          reuse_key_kind: "none",
-        }),
-      );
-      expect(events[0]).not.toHaveProperty("history_generation_run_id");
-    }
-    for (const actionType of [
-      "runner_notification_queue_to_commit_return",
-      "runner_notification_queue_to_promotion_side_effects_registered",
-      "runner_notification_queue_to_activation_scheduled",
-      "runner_notification_queue_to_activation_entry",
-      "runner_notification_queue_to_same_thread_markers_complete",
-      "runner_notification_queue_to_database_ready",
-    ]) {
-      const events = sandboxOperationEventsForRunByAction(
-        third.runId,
-        actionType,
-      );
-      expect(events).toHaveLength(1);
-      expect(events[0]).toStrictEqual(
-        expect.objectContaining({
-          source: "api",
-          op_type: actionType,
-          sandbox_type: "runner",
-          duration_ms: 0,
-          success: true,
-          runner_group: runnerGroup,
-          profile: "vm0/default",
-          notification_target: "broadcast",
-          activation_origin: "promotion",
-          same_thread_markers: "not_applicable",
-        }),
-      );
-      expect(events[0]).not.toHaveProperty("history_generation_run_id");
-    }
-    for (const actionType of [
-      "runner_notification_queue_to_run_context_registered",
-      "runner_notification_queue_to_dispatch_timings_registered",
-    ]) {
-      expect(
-        sandboxOperationEventsForRunByAction(third.runId, actionType),
-      ).toHaveLength(0);
-    }
-    expect(
-      sandboxOperationEventsForRunByAction(
-        third.runId,
-        "api_to_claim_request",
-      )[0],
-    ).not.toHaveProperty("history_generation_run_id");
     expect(kms.decryptCalls).toBe(decryptCountBeforeClaim);
 
     await api.requestCancelRun(actor, second.runId, [200]);
@@ -8171,17 +5486,11 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
       prompt: "active run before telemetry failure two",
       modelProvider: "anthropic-api-key",
     });
-    context.mocks.axiom.sdkIngest.mockImplementation((dataset, events) => {
-      if (
-        dataset === "vm0-sandbox-op-log-dev" &&
-        Array.isArray(events) &&
-        events.some((event) => {
-          return isRecord(event) && event.op_type === "enqueue_agent_run";
-        })
-      ) {
-        throw new Error("enqueue telemetry failed");
-      }
-      return true;
+    // Those two runs hold the concurrency limit, so the next launch is the
+    // first one whose enqueue telemetry is written after the failure starts.
+    mockAxiomSdkTelemetryFailure({
+      mode: "ingest",
+      datasets: [SANDBOX_OP_LOG_DATASET],
     });
 
     const queued = await api.createRun(actor, {
@@ -8194,12 +5503,6 @@ describe("RUN-01: admission boundaries beyond request validation", () => {
     const queue = await api.readRunQueue(actor);
     expect(queue.body.queue).toContainEqual(
       expect.objectContaining({ runId: queued.runId }),
-    );
-    expect(sandboxOperationEventsForRun(queued.runId)).toContainEqual(
-      expect.objectContaining({
-        op_type: "enqueue_agent_run",
-        run_id: queued.runId,
-      }),
     );
 
     await api.requestCancelRun(actor, queued.runId, [200]);
@@ -8422,7 +5725,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       orgId,
       status: "active",
       supportByok: true,
-      restrictedVm0Models: false,
+      restrictedBuiltInModels: false,
     });
     const completed = await bdd.completeOnboarding(actor);
     expect(completed.status).toBe(200);
@@ -8430,7 +5733,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       orgId,
       status: "active",
       supportByok: true,
-      restrictedVm0Models: false,
+      restrictedBuiltInModels: false,
     });
     await api.ensureOrgModelProvider(actor);
     const agent = await bdd.createAgent(actor, {
@@ -8448,7 +5751,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       orgId,
       status: "active",
       supportByok: true,
-      restrictedVm0Models: false,
+      restrictedBuiltInModels: false,
     });
 
     const run = await api.createRun(actor, {
@@ -8456,9 +5759,6 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       prompt: "staff entitlement BYOK run",
       modelProvider: "anthropic-api-key",
     });
-    expectNoApiDispatchActions(apiDispatchTimingEventsForRun(run.runId), [
-      "api_dispatch_check_org_tier",
-    ]);
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
     const appendSystemPrompt = claim.appendSystemPrompt ?? "";
@@ -8470,7 +5770,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       orgId,
       status: "suspended",
       supportByok: true,
-      restrictedVm0Models: false,
+      restrictedBuiltInModels: false,
     });
 
     const byokPrompt = `staff suspended BYOK ${randomUUID()}`;
@@ -8514,7 +5814,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     expect(queue.body.concurrency.active).toBe(0);
   });
 
-  it("defaults limited-free runs to DeepSeek V4 Pro and rejects paid models", async () => {
+  it("defaults limited-free runs to DeepSeek V4.1 Flash and rejects paid models", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
@@ -8565,7 +5865,20 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       await api.heartbeatRunner(runnerGroup);
       const claim = await api.claimRunnerJob(sent.body.runId);
       expect(claim.cliAgentType).toBe("codex");
-      expect(claim.environment).toMatchObject({ OPENAI_MODEL: model });
+      expect(claim.environment).toMatchObject({
+        OPENAI_MODEL: getBuiltInApiModel(model),
+      });
+      if (model === "deepseek-v4.1-flash") {
+        expect(claim.codexRuntimeConfig?.providerId).toBe("openrouter-codex");
+        expect(claim.codexRuntimeConfig?.modelCatalog?.models).toStrictEqual([
+          expect.objectContaining({
+            slug: "deepseek/deepseek-v4.1-flash",
+            context_window: 1_048_576,
+            input_modalities: ["text", "image"],
+            apply_patch_tool_type: null,
+          }),
+        ]);
+      }
       expect(claim.modelUsageProvider).toBe(model);
       await api.requestCancelRun(actor, sent.body.runId, [200]);
     }
@@ -8608,22 +5921,6 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       prompt: "built-in model provider",
       modelProvider: "built-in",
     });
-    const timingEvents = apiDispatchTimingEventsForRun(run.runId);
-    expectApiDispatchSpanKind(
-      timingEvents,
-      ["api_dispatch_check_run_admission"],
-      "top_level",
-    );
-    expectApiDispatchSpanKind(
-      timingEvents,
-      ["api_dispatch_check_built_in_credits"],
-      "nested",
-    );
-    expectApiDispatchSpanKind(
-      timingEvents,
-      ["api_dispatch_activate_usage_allowance_windows"],
-      "nested",
-    );
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
     await expectBuiltInModelRunRuntimeRoute(run.runId, selectedModel);
@@ -8851,6 +6148,68 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       await api.requestCancelRun(actor, sent.body.runId, [200]);
     },
   );
+
+  it("projects DeepSeek V4.1 Flash metadata for an OpenRouter workspace key", async () => {
+    const api = createRunsApi(context);
+    const chat = createChatFilesBddApi(context);
+    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const { providerId } = await api.createOrgModelProvider(actor, {
+      type: "openrouter-codex",
+      secret: "openrouter-deepseek-v4-1-flash-key",
+    });
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model: "deepseek-v4.1-flash",
+        isDefault: true,
+        defaultProviderType: "openrouter-codex",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
+
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        prompt: "use DeepSeek V4.1 Flash through OpenRouter",
+        model: "deepseek-v4.1-flash",
+      },
+      [201],
+    );
+    if (sent.status !== 201 || sent.body.runId === null) {
+      throw new Error("Expected DeepSeek V4.1 Flash to create a run");
+    }
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(sent.body.runId);
+
+    expect(claim.cliAgentType).toBe("codex");
+    expect(claim.environment).toMatchObject({
+      OPENAI_API_KEY: modelProviderPlaceholder(
+        "openrouter-codex",
+        "OPENROUTER_API_KEY",
+      ),
+      OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
+      OPENAI_MODEL: "deepseek/deepseek-v4.1-flash",
+    });
+    expect(claim.codexRuntimeConfig).toMatchObject({
+      providerId: "openrouter-codex",
+      baseUrl: "https://openrouter.ai/api/v1",
+      wireApi: "responses",
+      modelCatalog: {
+        models: [
+          expect.objectContaining({
+            slug: "deepseek/deepseek-v4.1-flash",
+            context_window: 1_048_576,
+            input_modalities: ["text", "image"],
+            apply_patch_tool_type: null,
+          }),
+        ],
+      },
+    });
+    expect(claim.modelUsageProvider).toBe("deepseek-v4.1-flash");
+
+    await api.requestCancelRun(actor, sent.body.runId, [200]);
+  });
 
   it("offers image recognition only for image-unsupported models", async () => {
     const api = createRunsApi(context);
@@ -9212,40 +6571,6 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       throw new Error("Expected the pinned chat send to create a run");
     }
 
-    const timingEvents = apiDispatchTimingEventsForRun(sent.body.runId);
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_prepare_storage_manifest_build_entries",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        storage_manifest_source_workflow_skill_resolved_count_bucket: "2_4",
-        storage_manifest_source_workflow_skill_planned_presign_count_bucket:
-          "2_4",
-        storage_manifest_source_workflow_skill_non_system_presign_count_bucket:
-          "2_4",
-      }),
-    );
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_prepare_storage_manifest_generate_additional_urls",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        storage_manifest_source_workflow_skill_planned_presign_count_bucket:
-          "2_4",
-        storage_manifest_source_workflow_skill_non_system_presign_count_bucket:
-          "2_4",
-      }),
-    );
-    expectApiDispatchTimingEventsNotToLeak(timingEvents, [
-      ...workflowNames,
-      agent.agentId,
-      thread.id,
-    ]);
-
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(sent.body.runId);
     expect(claim.cliAgentType).toBe("codex");
@@ -9468,19 +6793,6 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       prompt: "run without enabled stored connectors",
       modelProvider: "anthropic-api-key",
     });
-    const timingEvents = apiDispatchTimingEventsForRun(run.runId);
-    expectNoApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_CONNECTOR_CATALOG_ACTION_TYPES,
-    );
-    expectNoApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_STORED_CONNECTOR_SUBSTEP_ACTION_TYPES,
-    );
-    expectNoApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_CUSTOM_CONNECTOR_TIMING_ACTION_TYPES,
-    );
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
 
@@ -9490,7 +6802,6 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     expect(claim.billableFirewalls).not.toContain("x");
     expect(claim.networkPolicies ?? {}).not.toHaveProperty("x");
     expect(claim).not.toHaveProperty("connectorPermissionBaseline");
-    expectClaimNetworkPolicyRefreshPath(run.runId, "no_builtin_targets");
 
     await api.requestCancelRun(actor, run.runId, [200]);
     const cancelled = await api.readRun(actor, run.runId);
@@ -9531,57 +6842,6 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       prompt: "use the x connector",
       modelProvider: "anthropic-api-key",
     });
-    const timingEvents = apiDispatchTimingEventsForRun(run.runId);
-    expectApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_CONNECTOR_CATALOG_ALWAYS_ACTION_TYPES,
-    );
-    expectConnectorCatalogLoadTiming({
-      events: timingEvents,
-      acceptedCacheOutcome: "miss",
-      acceptedCacheMissReason: "catalog_identity_changed",
-      runtimeCacheOutcome: "miss",
-      requestedConnectorCount: "known",
-      requestedConnectorCountBucket: "1",
-      materializedConnectorCountBucket: "1",
-      resolvedConnectorFraction: "up_to_25_percent",
-      validation: { outcome: "attested" },
-    });
-    expectApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_STORED_CONNECTOR_SNAPSHOT_ACTION_TYPES,
-    );
-    const loadSnapshotEvent = singleApiDispatchEvent(
-      timingEvents,
-      "api_dispatch_prepare_context_load_stored_connector_snapshot_rows",
-    );
-    expect(loadSnapshotEvent).toStrictEqual(
-      expect.objectContaining({
-        connector_scope_source: "stored_agent",
-        stored_connector_candidate_count_bucket: "1",
-      }),
-    );
-    const materializeSnapshotEvent = singleApiDispatchEvent(
-      timingEvents,
-      "api_dispatch_prepare_context_materialize_stored_connector_snapshot",
-    );
-    expect(materializeSnapshotEvent).toStrictEqual(
-      expect.objectContaining({
-        connector_scope_source: "stored_agent",
-        stored_connector_candidate_count_bucket: "1",
-        stored_connector_count_bucket: "1",
-        stored_connector_secret_count_bucket: "1",
-      }),
-    );
-    expectNoApiDispatchActions(timingEvents, [
-      "api_dispatch_prepare_context_decrypt_stored_connector_secrets",
-    ]);
-    expectApiDispatchTimingEventsNotToLeak(timingEvents, [
-      "x-bdd-access",
-      "x-bdd-refresh",
-      "X_TOKEN",
-      "SLACK_TOKEN",
-    ]);
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
 
@@ -9616,7 +6876,6 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     expect(findFirewallEntry(claim.firewalls, "slack")).toBeUndefined();
     expect(claim.billableFirewalls).not.toContain("slack");
     expect(claim.networkPolicies ?? {}).not.toHaveProperty("slack");
-    expectClaimNetworkPolicyRefreshPath(run.runId, "baseline");
 
     // The stored access token is only readable through the firewall-auth
     // webhook with the claimed run's sandbox token.
@@ -9686,35 +6945,6 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       },
     });
     expect(kms.decryptCalls).toBe(0);
-
-    const timingEvents = apiDispatchTimingEventsForRun(run.runId);
-    expectApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_STORED_CONNECTOR_SNAPSHOT_ACTION_TYPES,
-    );
-    expectNoApiDispatchActions(timingEvents, [
-      "api_dispatch_prepare_context_decrypt_stored_connector_secrets",
-    ]);
-    const buildStoredConnectorStateEvent = singleApiDispatchEvent(
-      timingEvents,
-      "api_dispatch_prepare_context_build_stored_connector_state",
-    );
-    expect(buildStoredConnectorStateEvent).toStrictEqual(
-      expect.objectContaining({
-        connector_scope_source: "explicit",
-        stored_connector_count_bucket: "1",
-        stored_connector_secret_count_bucket: "0",
-      }),
-    );
-    expect(buildStoredConnectorStateEvent).not.toHaveProperty(
-      "agent_run_origin",
-    );
-    expectApiDispatchTimingEventsNotToLeak(timingEvents, [
-      "x-bdd-overridden-access",
-      "x-bdd-overridden-refresh",
-      "body-x-token",
-      "X_TOKEN",
-    ]);
 
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -9792,10 +7022,6 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       },
     });
     expect(kms.decryptCalls).toBe(0);
-    const timingEvents = apiDispatchTimingEventsForRun(run.runId);
-    expectNoApiDispatchActions(timingEvents, [
-      "api_dispatch_prepare_context_decrypt_stored_connector_secrets",
-    ]);
 
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
@@ -9926,36 +7152,6 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
         allowedCustomConnectorIds: [],
       },
     });
-    const timingEvents = apiDispatchTimingEventsForRun(incompatibleRun.runId);
-    expectApiDispatchActions(timingEvents, [
-      "api_dispatch_prepare_context_load_stored_connector_snapshot_rows",
-      "api_dispatch_prepare_context_materialize_stored_connector_snapshot",
-    ]);
-    expectNoApiDispatchActions(timingEvents, [
-      "api_dispatch_prepare_context_build_stored_connector_state",
-    ]);
-    const loadSnapshotEvent = singleApiDispatchEvent(
-      timingEvents,
-      "api_dispatch_prepare_context_load_stored_connector_snapshot_rows",
-    );
-    expect(loadSnapshotEvent).toStrictEqual(
-      expect.objectContaining({
-        connector_scope_source: "explicit",
-        stored_connector_candidate_count_bucket: "1",
-      }),
-    );
-    const materializeSnapshotEvent = singleApiDispatchEvent(
-      timingEvents,
-      "api_dispatch_prepare_context_materialize_stored_connector_snapshot",
-    );
-    expect(materializeSnapshotEvent).toStrictEqual(
-      expect.objectContaining({
-        connector_scope_source: "explicit",
-        stored_connector_candidate_count_bucket: "1",
-        stored_connector_count_bucket: "0",
-        stored_connector_secret_count_bucket: "0",
-      }),
-    );
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(incompatibleRun.runId);
     expect(findFirewallEntry(claim.firewalls, "test-oauth")).toBeUndefined();
@@ -10013,11 +7209,6 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       prompt: "use gitlab with the optional host",
       modelProvider: "anthropic-api-key",
     });
-    const timingEvents = apiDispatchTimingEventsForRun(withHost.runId);
-    expectApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_STORED_CONNECTOR_SNAPSHOT_ACTION_TYPES,
-    );
     const hostClaim = await api.claimRunnerJob(withHost.runId);
     expect(hostClaim.environment?.GITLAB_TOKEN).toBe(
       connectorPlaceholder("gitlab", "GITLAB_TOKEN"),
@@ -10940,14 +8131,6 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     ]);
     expect(kms.decryptCalls).toBe(decryptCountBeforeClaim);
     expect(claim).not.toHaveProperty("secretValueEnvironmentKeys");
-    const claimActionTypes = new Set(
-      claimRouteTimingEventsForRun(run.runId).map((event) => {
-        return event.op_type;
-      }),
-    );
-    for (const actionType of CLAIM_ROUTE_PREPARED_PATH_OMITTED_ACTION_TYPES) {
-      expect(claimActionTypes).not.toContain(actionType);
-    }
     expect(claim.firewalls ?? []).toStrictEqual([]);
     expect(claim.networkPolicies ?? {}).toStrictEqual({});
 
@@ -11035,21 +8218,6 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
     ]);
     expect(kms.decryptCalls).toBe(decryptCountBeforeInvalidClaim + 1);
     expect(claim).not.toHaveProperty("secretValueEnvironmentKeys");
-    const materializationEvent = singleSandboxOperationEvent(
-      claimRouteTimingEventsForRun(invalidRun.runId),
-      "claim_route_secret_materialization",
-    );
-    expect(materializationEvent).toStrictEqual(
-      expect.objectContaining({
-        fallback_reason: "invalid_keys",
-        span_kind: "top_level",
-      }),
-    );
-    expect(
-      claimRouteTimingEventsForRun(invalidRun.runId).some((event) => {
-        return event.op_type === "claim_route_feature_switch_context";
-      }),
-    ).toBeFalsy();
 
     await api.requestCancelRun(actor, invalidRun.runId, [200]);
   });
@@ -11437,21 +8605,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       prompt: "use the custom connector",
       modelProvider: "anthropic-api-key",
     });
-    const timingEvents = apiDispatchTimingEventsForRun(run.runId);
-    expectApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_CUSTOM_CONNECTOR_TIMING_ACTION_TYPES,
-    );
-    expectCustomConnectorRuntimePhaseTimingEvents(timingEvents);
-    expectApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_PERMISSION_MANIFEST_SUBSTEP_ACTION_TYPES,
-    );
-    expectApiDispatchTimingEventsNotToLeak(timingEvents, [
-      custom.id,
-      slug,
-      "custom-secret-value",
-    ]);
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
 
@@ -12636,29 +9789,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       prompt: "use the reconnected custom connector",
       modelProvider: "anthropic-api-key",
     });
-    const restoredTimingEvents = apiDispatchTimingEventsForRun(
-      restoredRun.runId,
-    );
-    expectApiDispatchActions(restoredTimingEvents, [
-      "api_dispatch_connector_catalog_load_runtime_snapshot",
-      "api_dispatch_connector_catalog_query_projection_identity",
-      "api_dispatch_connector_catalog_query_projection_rows",
-      "api_dispatch_connector_catalog_materialize_projection",
-    ]);
-    expect(
-      singleApiDispatchEvent(
-        restoredTimingEvents,
-        "api_dispatch_connector_catalog_load_runtime_snapshot",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        connector_catalog_runtime_selection_source: "projection",
-        connector_catalog_projection_cache_outcome: "miss",
-        connector_catalog_requested_connector_count_bucket: "0",
-        connector_catalog_metadata_connector_count_bucket: "1",
-        connector_catalog_materialized_connector_count_bucket: "0",
-      }),
-    );
     const restoredClaim = await api.claimRunnerJob(restoredRun.runId);
     const customApis = inlineFirewallApis(
       restoredClaim.firewalls,
@@ -12691,10 +9821,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       sourceId: expect.any(String),
     });
     expect(restoredClaim).not.toHaveProperty("connectorPermissionBaseline");
-    expectClaimNetworkPolicyRefreshPath(
-      restoredRun.runId,
-      "no_builtin_targets",
-    );
     const restoredSkillMount = expectCanonicalStorageManifest(
       restoredClaim.storageManifest,
     )?.storageMounts.find((storage) => {
@@ -12717,20 +9843,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         allowedCustomConnectorIds: [custom.id],
       },
     });
-    expect(
-      singleApiDispatchEvent(
-        apiDispatchTimingEventsForRun(directRun.runId),
-        "api_dispatch_connector_catalog_load_runtime_snapshot",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        connector_catalog_runtime_selection_source: "projection",
-        connector_catalog_projection_cache_outcome: "hit",
-        connector_catalog_requested_connector_count_bucket: "0",
-        connector_catalog_metadata_connector_count_bucket: "1",
-        connector_catalog_projection_cache_observation: "reuse_1",
-      }),
-    );
     const directClaim = await api.claimRunnerJob(directRun.runId);
     expect(
       inlineFirewallApis(directClaim.firewalls, internalName)[0]?.permissions,
@@ -13332,8 +10444,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     onTestFinished(() => {
       clearMockNow();
     });
-    context.mocks.axiomLogging.warn.mockClear();
-    context.mocks.axiomLogging.error.mockClear();
     context.mocks.sentry.captureException.mockClear();
     const reconnectRequired = await fw.requestFirewallAuth(
       { authorization: `Bearer ${claim.sandboxToken}` },
@@ -13420,8 +10530,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         return body.get("grant_type");
       }),
     ).toStrictEqual(["authorization_code", "refresh_token", "refresh_token"]);
-    expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
-    expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
     expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
     await expect(
       connectors.listCustomConnectorAccounts(actor, custom.id),
@@ -13729,21 +10837,8 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       modelProvider: "anthropic-api-key",
     });
     expect(kms.decryptCalls).toBe(0);
-    const timingEvents = apiDispatchTimingEventsForRun(run.runId);
-    expectApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_CUSTOM_CONNECTOR_TIMING_ACTION_TYPES,
-    );
-    expectCustomConnectorRuntimePhaseTimingEvents(timingEvents);
-    expectApiDispatchTimingEventsNotToLeak(timingEvents, [
-      saved.connector.id,
-      rand,
-      "runtime-proposal-secret",
-      "münich",
-    ]);
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
-    expectClaimNetworkPolicyRefreshPath(run.runId, "no_builtin_targets");
 
     const idPart = saved.connector.id.replaceAll("-", "");
     const internalName = `custom_connector_${idPart}`;
@@ -13774,43 +10869,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     );
     expect(customApi.auth?.query?.scope).toBe(
       `\${{ secrets.${scopeVariableKey} }}`,
-    );
-    const runContextSnapshot = runContextSnapshotForRun(run.runId);
-    expect(runContextSnapshot.firewalls).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          kind: "inline",
-          name: internalName,
-          customConnectorId: saved.connector.id,
-          sourceId: pinnedTarget.sourceId,
-          apis: expect.arrayContaining([
-            expect.objectContaining({
-              base: `https://xn--mnich-kva.${rand}.test/v1/`,
-              auth: {
-                headerEntries: [
-                  {
-                    name: "Authorization",
-                    value: `Bearer \${{ secrets.${secretKey} }}`,
-                  },
-                ],
-                queryEntries: [
-                  {
-                    name: "tenant",
-                    value: `\${{ secrets.${variableKey} }}`,
-                  },
-                  {
-                    name: "scope",
-                    value: `\${{ secrets.${scopeVariableKey} }}`,
-                  },
-                ],
-              },
-            }),
-          ]),
-        }),
-      ]),
-    );
-    expect(JSON.stringify(runContextSnapshot)).not.toContain(
-      "runtime-proposal-secret",
     );
 
     const authBody = {
@@ -14718,12 +11776,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       baseUrlVars: { ZENDESK_SUBDOMAIN: "xn--mnich-kva" },
       sourceId: expect.any(String),
     });
-    expect(runContextSnapshotForRun(run.runId).firewalls).toContainEqual({
-      kind: "builtin",
-      name: "zendesk",
-      baseUrlVars: { ZENDESK_SUBDOMAIN: "xn--mnich-kva" },
-      sourceId: expect.any(String),
-    });
     expect(claim.connectorRuntimeTargets).toContainEqual({
       kind: "builtin",
       connectorSlug: "zendesk",
@@ -14801,7 +11853,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     expect(expiredClaim.networkPolicies?.slack?.allow).not.toContain(
       "chat:write",
     );
-    expectClaimNetworkPolicyRefreshPath(expiringRun.runId, "baseline");
     await api.requestCancelRun(actor, expiringRun.runId, [200]);
 
     await api.applyUserPermissionGrant(actor, {
@@ -14828,7 +11879,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       "chat:write",
     );
     expect(revokedClaim).not.toHaveProperty("connectorPermissionBaseline");
-    expectClaimNetworkPolicyRefreshPath(revokedRun.runId, "baseline");
     await api.requestCancelRun(actor, revokedRun.runId, [200]);
   });
 
@@ -14852,7 +11902,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       "model-provider:anthropic-api-key",
     );
     expect(claim).not.toHaveProperty("connectorPermissionBaseline");
-    expectClaimNetworkPolicyRefreshPath(run.runId, "no_builtin_targets");
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
@@ -14930,22 +11979,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       );
       expect(claim.networkPolicies?.slack?.deny).toContain("chat:write");
       expect(claim).not.toHaveProperty("connectorPermissionBaseline");
-      expectClaimNetworkPolicyRefreshPath(run.runId, fallbackCase.path);
-      expectClaimRouteResponseTimingActions({
-        runId: run.runId,
-        expectedActionTypes:
-          fallbackCase.mode === "catalog-mismatch"
-            ? [
-                "claim_route_response_network_policy_refresh",
-                "claim_route_response_network_policy_refresh_baseline_database",
-              ]
-            : ["claim_route_response_network_policy_refresh"],
-        forbiddenValues: [
-          `fallback ${fallbackCase.mode}`,
-          "slack",
-          claim.sandboxToken,
-        ],
-      });
       await api.requestCancelRun(actor, run.runId, [200]);
     }
   });
@@ -15062,19 +12095,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
 
     const grantedContext = await claimSlackContext("granted permissions");
     const granted = grantedContext.policy;
-    expectClaimRouteResponseTimingActions({
-      runId: grantedContext.claim.runId,
-      expectedActionTypes: [
-        "claim_route_response_network_policy_refresh",
-        "claim_route_response_network_policy_refresh_baseline_database",
-      ],
-      forbiddenValues: [
-        "granted permissions",
-        "slack",
-        grantedContext.claim.sandboxToken,
-      ],
-    });
-    expectClaimNetworkPolicyRefreshPath(grantedContext.claim.runId, "baseline");
     expect(grantedContext.claim).not.toHaveProperty(
       "connectorPermissionBaseline",
     );
@@ -15386,7 +12406,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     await api.requestCancelRun(actor, firstPending.runId, [200]);
   });
 
-  it("records co-occurring resume and policy response timing", async () => {
+  it("resumes a session while refreshing its network policy", async () => {
     const api = createRunsApi(context);
     const fw = createFirewallApi(context);
     const webhooks = createWebhookCallbackApi(context);
@@ -15462,24 +12482,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
       "historyGenerationRunId",
     );
     expect(resumedClaim.networkPolicies?.slack).toBeDefined();
-    expectClaimRouteResponseTimingActions({
-      runId: resumed.runId,
-      expectedActionTypes: [
-        "claim_route_response_resume_session",
-        "claim_route_response_network_policy_refresh",
-        "claim_route_response_network_policy_refresh_baseline_database",
-      ],
-      forbiddenValues: [
-        firstPrompt,
-        resumedPrompt,
-        history,
-        historyHash,
-        first.sessionId,
-        "slack",
-        "xoxb-bdd-claim-response-timing",
-        resumedClaim.sandboxToken,
-      ],
-    });
 
     await api.requestCancelRun(actor, resumed.runId, [200]);
   });
@@ -15591,18 +12593,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
         allowedCustomConnectorIds: [],
       },
     });
-    const timingEvents = apiDispatchTimingEventsForRun(run.runId);
-    expectApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_STORED_CONNECTOR_SNAPSHOT_ACTION_TYPES,
-    );
-    expectApiDispatchActions(
-      timingEvents,
-      API_DISPATCH_PERMISSION_MANIFEST_SUBSTEP_ACTION_TYPES,
-    );
-    expectNoApiDispatchActions(timingEvents, [
-      "api_dispatch_prepare_context_decrypt_stored_connector_secrets",
-    ]);
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
     expect(claim.environment?.CLOUDFLARE_TOKEN).toBe(
@@ -15679,7 +12669,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     );
     const direct = await api.createDirectRun(actor, {
       agentId: directAgent.agentId,
-      prompt: "consume an application-owned Zero context",
+      prompt: "consume an application-owned Nova context",
       modelProviderType: "anthropic-api-key",
       vars: { CUSTOM_AGENT_ID: directAgent.agentId },
       secrets: { CUSTOM_API_TOKEN: directOkouToken },
@@ -15795,42 +12785,6 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       prompt: "summarize release",
       modelProvider: "anthropic-api-key",
     });
-    const timingEvents = apiDispatchTimingEventsForRun(run.runId);
-    expectApiDispatchActions(timingEvents, [
-      "api_dispatch_pre_create_agent_load_bootstrap_snapshot_rows",
-      "api_dispatch_pre_create_agent_materialize_bootstrap_context",
-      "api_dispatch_pre_create_agent_resolve_firewall_metadata",
-    ]);
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_pre_create_agent_load_bootstrap_snapshot_rows",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        agent_run_bootstrap_total_row_count_bucket: "5_8",
-        agent_run_bootstrap_workflow_candidate_count_bucket: "1",
-      }),
-    );
-    expect(
-      singleApiDispatchEvent(
-        timingEvents,
-        "api_dispatch_pre_create_agent_materialize_bootstrap_context",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        agent_run_bootstrap_total_row_count_bucket: "5_8",
-        agent_run_bootstrap_workflow_candidate_count_bucket: "1",
-        agent_run_bootstrap_workflow_winner_count_bucket: "1",
-      }),
-    );
-    expectApiDispatchTimingEventsNotToLeak(timingEvents, [
-      actor.email,
-      agent.agentId,
-      customConnector.id,
-      workflowName,
-      "chat:write",
-    ]);
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
 
@@ -15991,12 +12945,6 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     for (const key of Object.keys(claim.platformEnvironment)) {
       expect(claim.environment).not.toHaveProperty(key);
     }
-    const runContextSnapshot = runContextSnapshotForRun(run.runId);
-    expect(runContextSnapshot.secretNames).toContain("OKOU_TOKEN");
-    expect(runContextSnapshot.environmentEntries).toContainEqual({
-      name: "OKOU_TOKEN",
-      value: "***",
-    });
     expect(claim.environment?.APP_URL).toBeUndefined();
     expect(findFirewallEntry(claim.firewalls, "slack")).toStrictEqual({
       kind: "builtin",
@@ -16789,7 +13737,6 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
       [500],
     );
     expect(failedClaim.status).toBe(500);
-    expect(claimRouteTimingEventsForRun(resumed.runId)).toHaveLength(0);
 
     await api.requestCancelRun(actor, resumed.runId, [200]);
   });
@@ -16840,204 +13787,6 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
     }
     expect(claimed.body.prompt).toBe("user runner job one");
     expect(claimed.body.sandboxToken).not.toBe("");
-    expectClaimRouteResponseTimingActions({
-      runId: first.runId,
-      expectedActionTypes: ["claim_route_response_network_policy_refresh"],
-      forbiddenValues: [firstPrompt, claimed.body.sandboxToken, apiKey.token],
-    });
-    expectClaimNetworkPolicyRefreshPath(first.runId, "no_builtin_targets");
-    const claimRouteTimingEvents = claimRouteTimingEventsForRun(first.runId);
-    expect(claimRouteTimingEvents).toHaveLength(
-      CLAIM_ROUTE_TIMING_ACTION_TYPES.length + 1,
-    );
-    const observedClaimRouteActionTypes = new Set(
-      claimRouteTimingEvents.map((event) => {
-        return event.op_type;
-      }),
-    );
-    for (const actionType of CLAIM_ROUTE_TIMING_ACTION_TYPES) {
-      expect(observedClaimRouteActionTypes).toContain(actionType);
-    }
-    for (const actionType of CLAIM_ROUTE_PREPARED_PATH_OMITTED_ACTION_TYPES) {
-      expect(observedClaimRouteActionTypes).not.toContain(actionType);
-    }
-    for (const actionType of CLAIM_ROUTE_PARENT_TIMING_ACTION_TYPES) {
-      const events = claimRouteTimingEvents.filter((event) => {
-        return event.op_type === actionType;
-      });
-      expect(events).toHaveLength(1);
-      expect(events[0]).toStrictEqual(
-        expect.objectContaining({
-          span_kind: "parent",
-        }),
-      );
-    }
-    for (const actionType of CLAIM_ROUTE_TOP_LEVEL_TIMING_ACTION_TYPES) {
-      const events = claimRouteTimingEvents.filter((event) => {
-        return event.op_type === actionType;
-      });
-      expect(events).toHaveLength(1);
-      expect(events[0]).toStrictEqual(
-        expect.objectContaining({
-          span_kind: "top_level",
-        }),
-      );
-    }
-    for (const actionType of CLAIM_ROUTE_TRANSITION_TIMING_ACTION_TYPES) {
-      const events = claimRouteTimingEvents.filter((event) => {
-        return event.op_type === actionType;
-      });
-      expect(events).toHaveLength(1);
-      expect(events[0]).toStrictEqual(
-        expect.objectContaining({
-          span_kind: "nested",
-        }),
-      );
-    }
-    for (const event of claimRouteTimingEvents) {
-      expect(event).toStrictEqual(
-        expect.objectContaining({
-          source: "api",
-          sandbox_type: "runner",
-          success: true,
-          run_id: first.runId,
-          runner_group: runnerGroup,
-          profile: "vm0/default",
-          auth_type: "user",
-          discovery_source: "poll",
-          poll_reason: "deferred",
-        }),
-      );
-      expect(event.duration_ms).toStrictEqual(expect.any(Number));
-      expect(Number(event.duration_ms)).toBeGreaterThanOrEqual(0);
-      expect(["parent", "top_level", "nested"]).toContain(event.span_kind);
-      expect(event).not.toHaveProperty("fallback_reason");
-      for (const forbiddenKey of FORBIDDEN_CLAIM_ROUTE_TIMING_KEYS) {
-        expect(event).not.toHaveProperty(forbiddenKey);
-      }
-      const serialized = JSON.stringify(event);
-      expect(serialized).not.toContain(firstPrompt);
-      expect(serialized).not.toContain(claimed.body.sandboxToken);
-      expect(serialized).not.toContain(apiKey.token);
-    }
-    const timingEvents = sandboxOperationEventsForRun(first.runId);
-    expect(
-      timingEvents.find((event) => {
-        return event.op_type === "job_discovered_to_claim_request";
-      }),
-    ).toStrictEqual(
-      expect.objectContaining({
-        op_type: "job_discovered_to_claim_request",
-        sandbox_type: "runner",
-        run_id: first.runId,
-        duration_ms: 1234,
-        success: true,
-        profile: "vm0/default",
-        auth_type: "user",
-        discovery_source: "poll",
-        poll_reason: "deferred",
-      }),
-    );
-    expect(
-      timingEvents.find((event) => {
-        return event.op_type === "local_admission_to_claim_request";
-      }),
-    ).toStrictEqual(
-      expect.objectContaining({
-        op_type: "local_admission_to_claim_request",
-        sandbox_type: "runner",
-        run_id: first.runId,
-        duration_ms: 56,
-        success: true,
-        profile: "vm0/default",
-        auth_type: "user",
-        discovery_source: "poll",
-        poll_reason: "deferred",
-      }),
-    );
-    for (const actionType of RUNNER_POLL_TIMING_ACTION_TYPES) {
-      const events = timingEvents.filter((event) => {
-        return event.op_type === actionType;
-      });
-      expect(events).toHaveLength(1);
-      const event = events[0];
-      if (!event) {
-        throw new Error(`Missing ${actionType} timing event`);
-      }
-      expect(event).toStrictEqual(
-        expect.objectContaining({
-          source: "api",
-          sandbox_type: "runner",
-          run_id: first.runId,
-          success: true,
-          runner_group: runnerGroup,
-          profile: "vm0/default",
-          auth_type: "user",
-          poll_reason: "deferred",
-        }),
-      );
-      expect(event.duration_ms).toStrictEqual(expect.any(Number));
-      expect(Number(event.duration_ms)).toBeGreaterThanOrEqual(0);
-    }
-    for (const actionType of RUNNER_CLAIM_POLL_TIMING_ACTION_TYPES) {
-      const events = timingEvents.filter((event) => {
-        return event.op_type === actionType;
-      });
-      expect(events).toHaveLength(1);
-      const event = events[0];
-      if (!event) {
-        throw new Error(`Missing ${actionType} timing event`);
-      }
-      expect(event).toStrictEqual(
-        expect.objectContaining({
-          source: "api",
-          sandbox_type: "runner",
-          run_id: first.runId,
-          success: true,
-          runner_group: runnerGroup,
-          profile: "vm0/default",
-          auth_type: "user",
-          discovery_source: "poll",
-          poll_reason: "deferred",
-        }),
-      );
-    }
-    expect(
-      timingEvents.find((event) => {
-        return event.op_type === "runner_poll_due_to_job_discovered";
-      }),
-    ).toStrictEqual(
-      expect.objectContaining({
-        duration_ms: 789,
-      }),
-    );
-    expect(
-      timingEvents.find((event) => {
-        return event.op_type === "runner_poll_http_request";
-      }),
-    ).toStrictEqual(
-      expect.objectContaining({
-        duration_ms: 321,
-      }),
-    );
-    const newRunnerTimingActionTypes = new Set<string>([
-      ...RUNNER_POLL_TIMING_ACTION_TYPES,
-      ...RUNNER_CLAIM_POLL_TIMING_ACTION_TYPES,
-    ]);
-    for (const event of timingEvents.filter((timingEvent) => {
-      return (
-        typeof timingEvent.op_type === "string" &&
-        newRunnerTimingActionTypes.has(timingEvent.op_type)
-      );
-    })) {
-      for (const forbiddenKey of FORBIDDEN_API_DISPATCH_TIMING_KEYS) {
-        expect(event).not.toHaveProperty(forbiddenKey);
-      }
-      const serialized = JSON.stringify(event);
-      expect(serialized).not.toContain("user runner job one");
-      expect(serialized).not.toContain(claimed.body.sandboxToken);
-      expect(serialized).not.toContain(apiKey.token);
-    }
     const claimedRun = await api.readRun(actor, first.runId);
     expect(claimedRun.status).toBe("running");
 
@@ -17098,35 +13847,6 @@ describe("RUN-03: user-runner protocol and runner authentication", () => {
       throw new Error("Expected the direct Ably runner claim to succeed");
     }
     expect(directClaimed.body.prompt).toBe(secondPrompt);
-
-    expectDirectAblyClaimTimingEvents({
-      events: sandboxOperationEventsForRun(second.runId),
-      runId: second.runId,
-      runnerGroup,
-      forbiddenValues: [
-        secondPrompt,
-        directClaimed.body.sandboxToken,
-        apiKey.token,
-      ],
-    });
-    const directClaimEvents = sandboxOperationEventsForRun(second.runId);
-    expect(
-      singleSandboxOperationEvent(
-        directClaimEvents,
-        "claim_request_to_running",
-      ),
-    ).toStrictEqual(
-      expect.objectContaining({
-        runner_preference_resolution: "matching_workspace_cache",
-        runner_preference_claim_state: "active",
-      }),
-    );
-    expect(
-      singleSandboxOperationEvent(
-        directClaimEvents,
-        "claim_request_to_running",
-      ),
-    ).not.toHaveProperty("runner_preference_targeted_self");
 
     const tokenRequest = {
       keyName: "bdd-key",
@@ -17933,20 +14653,6 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
       agentId,
       prompt: "bdd cleanup wins before late event",
     });
-    const persistedEvents = sandboxOperationEventsForRunByAction(
-      runId,
-      "same_thread_runner_job_persisted",
-    );
-    expect(persistedEvents).toStrictEqual([
-      expect.objectContaining({
-        duration_ms: 0,
-        sandbox_type: "runner",
-        success: true,
-        run_id: runId,
-      }),
-    ]);
-    expect(persistedEvents[0]).not.toHaveProperty("chat_thread_id");
-    expect(persistedEvents[0]).not.toHaveProperty("predecessor_run_id");
 
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(runId);
@@ -18002,12 +14708,6 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
       })
       .toBe(1);
     await flushWaitUntilForTest();
-    expect(
-      sandboxOperationEventsForRunByAction(
-        runId,
-        "api_to_first_assistant_message",
-      ),
-    ).toHaveLength(1);
 
     const late = await webhooks.requestAgentEvents(
       {
@@ -18039,12 +14739,6 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
     expect(assistantTexts).toContain("cleanup-first assistant text");
     expect(assistantTexts).not.toContain("late streamed text");
     await flushWaitUntilForTest();
-    expect(
-      sandboxOperationEventsForRunByAction(
-        runId,
-        "api_to_first_assistant_message",
-      ),
-    ).toHaveLength(1);
   }, 90_000);
 
   it("persists assistant events into the linked thread and swallows optional consumer failures", async () => {
@@ -18071,22 +14765,6 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
     const acknowledgedAt = apiStartedAt + 4321;
     mockNow(apiStartedAt);
     await flushWaitUntilForTest();
-    expect(
-      sandboxOperationEventsForRunByAction(
-        runId,
-        "first_assistant_message_eligible",
-      ),
-    ).toStrictEqual([
-      {
-        _time: apiStartedAtIso,
-        source: "api",
-        op_type: "first_assistant_message_eligible",
-        sandbox_type: "runner",
-        duration_ms: 0,
-        success: true,
-        run_id: runId,
-      },
-    ]);
 
     const pending = await api.readRun(actor, runId);
     expect(pending.status).toBe("pending");
@@ -18128,22 +14806,6 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
       assistantEventIdForRunEvent(runId, "event:1"),
     );
     expect(firstAssistant?.content).toBe("Hello from BDD events");
-    expect(
-      sandboxOperationEventsForRunByAction(
-        runId,
-        "api_to_first_assistant_message",
-      ),
-    ).toStrictEqual([
-      {
-        _time: apiStartedAtIso,
-        source: "api",
-        op_type: "api_to_first_assistant_message",
-        sandbox_type: "runner",
-        duration_ms: 0,
-        success: true,
-        run_id: runId,
-      },
-    ]);
 
     mockNow(acknowledgedAt);
     const swallowed = await webhooks.requestAgentEvents(
@@ -18185,22 +14847,6 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
       `chatThreadMessageCreated:${threadId}`,
       null,
     );
-    expect(
-      sandboxOperationEventsForRunByAction(
-        runId,
-        "api_to_first_assistant_message",
-      ),
-    ).toStrictEqual([
-      {
-        _time: apiStartedAtIso,
-        source: "api",
-        op_type: "api_to_first_assistant_message",
-        sandbox_type: "runner",
-        duration_ms: 0,
-        success: true,
-        run_id: runId,
-      },
-    ]);
 
     // Codex item.completed batches persist non-blank reasoning and
     // agent_message text as separate transcript events.
@@ -18404,15 +15050,9 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
     const cancelled = await api.readRun(actor, runId);
     expect(cancelled.status).toBe("cancelled");
     await flushWaitUntilForTest();
-    expect(
-      sandboxOperationEventsForRunByAction(
-        runId,
-        "api_to_first_assistant_message",
-      ),
-    ).toHaveLength(1);
   });
 
-  it("records one metric when assistant publications acknowledge concurrently", async () => {
+  it("publishes one assistant event when acknowledgements race", async () => {
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
     const webhooks = createWebhookCallbackApi(context);
@@ -18517,18 +15157,6 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
         "Concurrent answer two",
       ]),
     );
-    expect(
-      sandboxOperationEventsForRunByAction(
-        runId,
-        "api_to_first_assistant_message",
-      ),
-    ).toStrictEqual([
-      expect.objectContaining({
-        _time: new Date(acknowledgedAt).toISOString(),
-        duration_ms: acknowledgedAt - apiStartedAt,
-        run_id: runId,
-      }),
-    ]);
     await api.requestCancelRun(actor, runId, [200]);
   });
 
@@ -18615,25 +15243,11 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
       `chatThreadMessageCreated:${threadId}`,
       null,
     );
-    expect(
-      sandboxOperationEventsForRunByAction(
-        runId,
-        "api_to_first_assistant_message",
-      ),
-    ).toStrictEqual([
-      expect.objectContaining({
-        _time: new Date(acknowledgedAt).toISOString(),
-        duration_ms: acknowledgedAt - apiStartedAt,
-        sandbox_type: "runner",
-        success: true,
-        run_id: runId,
-      }),
-    ]);
 
     await api.requestCancelRun(actor, runId, [200]);
   });
 
-  it("uses the promoted api start for both runner and assistant timing", async () => {
+  it("uses the promoted api start for the runner claim", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId, runnerGroup } = await entitledRunActor();
@@ -18660,55 +15274,11 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
     });
     expect((await api.readRun(actor, queued.runId)).status).toBe("queued");
     await expect(readRunApiStart(context, queued.runId)).resolves.toBeNull();
-    expect(
-      sandboxOperationEventsForRunByAction(
-        queued.runId,
-        "first_assistant_message_eligible",
-      ),
-    ).toStrictEqual([]);
-    expect(
-      sandboxOperationEventsForRunByAction(
-        queued.runId,
-        "same_thread_runner_job_persisted",
-      ),
-    ).toStrictEqual([]);
 
     mockNow(promotedAt);
     await api.requestCancelRun(actor, first.runId, [200]);
     await waitForRunStatus(api, actor, queued.runId, "pending");
     await flushWaitUntilForTest();
-    expect(
-      sandboxOperationEventsForRunByAction(
-        queued.runId,
-        "first_assistant_message_eligible",
-      ),
-    ).toStrictEqual([
-      {
-        _time: new Date(promotedAt).toISOString(),
-        source: "api",
-        op_type: "first_assistant_message_eligible",
-        sandbox_type: "runner",
-        duration_ms: 0,
-        success: true,
-        run_id: queued.runId,
-      },
-    ]);
-    expect(
-      sandboxOperationEventsForRunByAction(
-        queued.runId,
-        "same_thread_runner_job_persisted",
-      ),
-    ).toStrictEqual([
-      {
-        _time: new Date(promotedAt).toISOString(),
-        source: "api",
-        op_type: "same_thread_runner_job_persisted",
-        sandbox_type: "runner",
-        duration_ms: 0,
-        success: true,
-        run_id: queued.runId,
-      },
-    ]);
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(queued.runId);
     expect(claim.apiStartTime).toBe(promotedAt);
@@ -18735,24 +15305,11 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
     );
     await flushWaitUntilForTest();
 
-    expect(
-      sandboxOperationEventsForRunByAction(
-        queued.runId,
-        "api_to_first_assistant_message",
-      ),
-    ).toStrictEqual([
-      expect.objectContaining({
-        _time: new Date(acknowledgedAt).toISOString(),
-        duration_ms: acknowledgedAt - promotedAt,
-        run_id: queued.runId,
-      }),
-    ]);
-
     await api.requestCancelRun(actor, second.runId, [200]);
     await api.requestCancelRun(actor, queued.runId, [200]);
   });
 
-  it("publishes assistant content without timing a mixed-version run", async () => {
+  it("publishes assistant content for a mixed-version run", async () => {
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
     const webhooks = createWebhookCallbackApi(context);
@@ -18800,12 +15357,6 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
       `chatThreadMessageCreated:${threadId}`,
       null,
     );
-    expect(
-      sandboxOperationEventsForRunByAction(
-        runId,
-        "api_to_first_assistant_message",
-      ),
-    ).toStrictEqual([]);
 
     await api.requestCancelRun(actor, runId, [200]);
   });
@@ -19348,102 +15899,6 @@ describe("CHAIN-RUN: sandbox snapshot and telemetry reporting through run webhoo
     expect(failedTelemetryRequests).toBe(1);
     mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", "xaat-test-telemetry");
 
-    expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
-      "vm0-sandbox-op-log-dev",
-      [
-        expect.objectContaining({
-          op_type: "session_history_download",
-          run_id: created.runId,
-          success: false,
-          error: "download timed out",
-          encoding: "gzip",
-          session_history_raw_size_bucket: "64_256_kib",
-          session_history_encoded_size_bucket: "lt_64_kib",
-          session_history_compression_ratio_bucket: "lt_0_25",
-          session_history_ref_seen_recently: "true",
-          session_history_ref_download_inflight: "false",
-          session_history_content_length_state: "matches_expected",
-          session_history_content_encoding_state: "absent",
-          session_history_transfer_encoding_state: "chunked",
-          session_history_download_source: "configured_public_endpoint",
-          source: "sandbox",
-        }),
-      ],
-    );
-    expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
-      "vm0-sandbox-op-log-dev",
-      [
-        expect.objectContaining({
-          op_type: "api_to_spawn",
-          run_id: created.runId,
-          duration_ms: 125,
-          success: true,
-          runner_startup_path: "workspace",
-          sandbox_reuse_result: "poolMiss",
-          source: "sandbox",
-        }),
-      ],
-    );
-    expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
-      "vm0-sandbox-op-log-dev",
-      [
-        expect.objectContaining({
-          op_type: "session_history_prune",
-          run_id: created.runId,
-          duration_ms: 4,
-          success: true,
-          outcome: "ineligible",
-          reason: "source_within_guard",
-          source: "sandbox",
-        }),
-      ],
-    );
-    expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
-      "vm0-sandbox-op-log-dev",
-      [
-        expect.objectContaining({
-          op_type: "storage_cache_fresh_delivery_scan_suffix",
-          run_id: created.runId,
-          duration_ms: 0,
-          success: true,
-          outcome: "5_8",
-          reason: "3_4",
-          source: "sandbox",
-        }),
-      ],
-    );
-    const sessionHistoryDownloadEvents = sandboxOperationEventsForRunByAction(
-      created.runId,
-      "session_history_download",
-    );
-    expect(sessionHistoryDownloadEvents).toHaveLength(1);
-    expect(sessionHistoryDownloadEvents[0]).not.toHaveProperty(
-      "session_history_ref_hash",
-    );
-    expect(sessionHistoryDownloadEvents[0]).not.toHaveProperty(
-      "runner_startup_path",
-    );
-    expect(sessionHistoryDownloadEvents[0]).not.toHaveProperty(
-      "sandbox_reuse_result",
-    );
-    const freshDeliveryScanEvents = sandboxOperationEventsForRunByAction(
-      created.runId,
-      "storage_cache_fresh_delivery_scan_suffix",
-    );
-    expect(freshDeliveryScanEvents).toHaveLength(1);
-    expect(freshDeliveryScanEvents[0]).toMatchObject({
-      duration_ms: 0,
-      success: true,
-      outcome: "5_8",
-      reason: "3_4",
-    });
-    expect(freshDeliveryScanEvents[0]).not.toHaveProperty(
-      "runner_startup_path",
-    );
-    expect(freshDeliveryScanEvents[0]).not.toHaveProperty(
-      "sandbox_reuse_result",
-    );
-
     const artifactSnapshots = [
       {
         name: memoryArtifact.name,
@@ -19510,25 +15965,12 @@ describe("CHAIN-RUN: sandbox snapshot and telemetry reporting through run webhoo
     const settled = await api.readRun(actor, created.runId);
     expect(settled.status).toBe("completed");
     expect(settled.error ?? null).toBeNull();
-    expect(
-      sandboxOperationEventsForRunByAction(
-        created.runId,
-        "run_terminal_transition_committed",
-      ),
-    ).toStrictEqual([
-      expect.objectContaining({
-        duration_ms: 0,
-        sandbox_type: "runner",
-        success: true,
-        run_id: created.runId,
-      }),
-    ]);
   });
 });
 
 describe("RUN-03: sandbox completion reports against missing checkpoints and settled runs", () => {
-  describe("completion failure logs", () => {
-    const suppressedReasons = [
+  describe("completion failure reasons", () => {
+    const terminalFailureReasons = [
       "insufficient_credits",
       "invalid_api_key",
       "invalid_credentials",
@@ -19544,33 +15986,6 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       "reconnect_required",
       "usage_limit",
     ] as const satisfies readonly KnownRunFailureReason[];
-
-    function matchingLogCalls(
-      log: typeof context.mocks.axiomLogging.warn,
-      message: string,
-      runId: string,
-    ) {
-      return log.mock.calls.filter(([candidateMessage, fields]) => {
-        return (
-          candidateMessage === message &&
-          typeof fields === "object" &&
-          fields !== null &&
-          "runId" in fields &&
-          fields.runId === runId
-        );
-      });
-    }
-
-    function genericFailureLogCalls(runId: string) {
-      return [
-        context.mocks.axiomLogging.debug,
-        context.mocks.axiomLogging.info,
-        context.mocks.axiomLogging.warn,
-        context.mocks.axiomLogging.error,
-      ].flatMap((level) => {
-        return matchingLogCalls(level, "Run failed", runId);
-      });
-    }
 
     interface FailureCase {
       readonly failureReason?: RunFailureReasonToken;
@@ -19623,154 +16038,23 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       return { actor, runId: run.runId, error };
     }
 
-    it.each(suppressedReasons)(
-      "suppresses %s for a BYOK provider",
+    it.each(terminalFailureReasons)(
+      "persists %s as the terminal failure reason",
       async (failureReason) => {
         const { runId } = await completeFailure({ failureReason });
-        expect(genericFailureLogCalls(runId)).toHaveLength(0);
-      },
-    );
-
-    describe.each([
-      "input_too_large",
-      "execution_timeout",
-      "safety_policy_refusal",
-    ] as const)("globally suppresses %s", (failureReason) => {
-      it.each([
-        { name: "BYOK", modelProvider: "anthropic-api-key" },
-        { name: "built-in", modelProvider: "built-in" },
-        {
-          name: "legacy provider",
-          persistedModelProvider: "legacy-unknown-provider",
-        },
-      ] satisfies readonly (FailureCase & { readonly name: string })[])(
-        "suppresses the generic log for $name",
-        async (provider) => {
-          const { runId } = await completeFailure({
-            ...provider,
-            failureReason,
-          });
-          expect(genericFailureLogCalls(runId)).toHaveLength(0);
-        },
-      );
-    });
-
-    it.each([
-      {
-        name: "built-in rate limiting",
-        modelProvider: "built-in",
-        failureReason: "provider_rate_limited",
-      },
-      {
-        name: "rate limiting with a null provider",
-        failureReason: "provider_rate_limited",
-        persistedModelProvider: null,
-      },
-      {
-        name: "rate limiting with a legacy provider",
-        failureReason: "provider_rate_limited",
-        persistedModelProvider: "legacy-unknown-provider",
-      },
-      { name: "an absent failure reason" },
-      {
-        name: "session history limits",
-        failureReason: "session_history_limit",
-      },
-      { name: "unsupported models", failureReason: "unsupported_model" },
-    ] satisfies readonly (FailureCase & { readonly name: string })[])(
-      "keeps $name visible",
-      async (failure) => {
-        const control = await completeFailure(failure);
-        const warnings = matchingLogCalls(
-          context.mocks.axiomLogging.warn,
-          "Run failed",
-          control.runId,
-        );
-        expect(warnings).toHaveLength(1);
-        expect(warnings[0]?.[1]).toStrictEqual(
-          expect.objectContaining({
-            runId: control.runId,
-            exitCode: 1,
-            error: control.error,
-            context: "webhook:complete",
-          }),
+        await expect(readRunFailureReasonFixture(context, runId)).resolves.toBe(
+          failureReason,
         );
       },
     );
 
-    // The predicate reads only the terminal reason and the stored provider, so
-    // every built-in route reaches this record with the same two inputs no
-    // matter which framework produced the reason token.
-    it("reports capacity exhaustion on a built-in run as an error", async () => {
-      const control = await completeFailure({
-        modelProvider: "built-in",
-        failureReason: "provider_overloaded",
-      });
-      const errors = matchingLogCalls(
-        context.mocks.axiomLogging.error,
-        "Run failed",
-        control.runId,
-      );
-      expect(errors).toHaveLength(1);
-      expect(errors[0]?.[1]).toStrictEqual(
-        expect.objectContaining({
-          runId: control.runId,
-          exitCode: 1,
-          error: control.error,
-          failureReason: "provider_overloaded",
-          context: "webhook:complete",
-        }),
-      );
-      expect(genericFailureLogCalls(control.runId)).toHaveLength(1);
-    });
-
-    it.each([
-      { name: "a null provider", persistedModelProvider: null },
-      {
-        name: "a legacy provider",
-        persistedModelProvider: "legacy-unknown-provider",
-      },
-    ] satisfies readonly (FailureCase & { readonly name: string })[])(
-      "keeps capacity exhaustion on $name at warning severity",
-      async (provider) => {
-        const control = await completeFailure({
-          ...provider,
-          failureReason: "provider_overloaded",
-        });
-        expect(
-          matchingLogCalls(
-            context.mocks.axiomLogging.warn,
-            "Run failed",
-            control.runId,
-          ),
-        ).toHaveLength(1);
-        expect(genericFailureLogCalls(control.runId)).toHaveLength(1);
-      },
-    );
-
-    it("keeps built-in credit exhaustion on its own debug record", async () => {
-      const control = await completeFailure({
-        modelProvider: "built-in",
-        failureReason: "insufficient_credits",
-      });
-      expect(
-        matchingLogCalls(
-          context.mocks.axiomLogging.debug,
-          "Run stopped: insufficient credits",
-          control.runId,
-        ),
-      ).toHaveLength(1);
-      expect(genericFailureLogCalls(control.runId)).toHaveLength(0);
-    });
-
-    it("keeps one error when a duplicate repeats the capacity failure", async () => {
+    it("keeps the first failure when a duplicate repeats the capacity failure", async () => {
       const api = createRunsApi(context);
       const webhooks = createWebhookCallbackApi(context);
       const first = await completeFailure({
         modelProvider: "built-in",
         failureReason: "provider_overloaded",
       });
-      expect(genericFailureLogCalls(first.runId)).toHaveLength(1);
 
       await webhooks.requestAgentComplete(
         {
@@ -19788,14 +16072,6 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
         [200],
       );
 
-      expect(genericFailureLogCalls(first.runId)).toHaveLength(1);
-      expect(
-        matchingLogCalls(
-          context.mocks.axiomLogging.error,
-          "Run failed",
-          first.runId,
-        ),
-      ).toHaveLength(1);
       await expect(
         api.readRun(first.actor, first.runId),
       ).resolves.toMatchObject({ status: "failed", error: first.error });
@@ -19804,7 +16080,7 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       ).resolves.toBe("provider_overloaded");
     });
 
-    it("records one error when completions race the capacity failure", async () => {
+    it("settles one failure when completions race the capacity failure", async () => {
       const api = createRunsApi(context);
       const webhooks = createWebhookCallbackApi(context);
       await seedBuiltInDefaultModelKey();
@@ -19840,14 +16116,6 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       lifecycleGate.release();
       await Promise.all([lifecycleGate.done, completions]);
 
-      expect(genericFailureLogCalls(run.runId)).toHaveLength(1);
-      expect(
-        matchingLogCalls(
-          context.mocks.axiomLogging.error,
-          "Run failed",
-          run.runId,
-        ),
-      ).toHaveLength(1);
       await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
         status: "failed",
         error,
@@ -19857,63 +16125,21 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
       ).resolves.toBe("provider_overloaded");
     });
 
-    it("keeps the missing-checkpoint warning visible for a suppressible reason", async () => {
-      const api = createRunsApi(context);
-      const webhooks = createWebhookCallbackApi(context);
-      const { actor, agentId } = await entitledRunActor();
-      const missingCheckpoint = await api.createRun(actor, {
-        agentId,
-        prompt: "keep the missing-checkpoint warning visible",
-        modelProvider: "anthropic-api-key",
-      });
-      await webhooks.requestAgentComplete(
-        {
-          runId: missingCheckpoint.runId,
-          exitCode: 0,
-          failureReason: "provider_overloaded",
-        },
-        {
-          authorization: `Bearer ${api.sandboxTokenForRun(
-            actor,
-            missingCheckpoint.runId,
-          )}`,
-        },
-        [200],
-      );
-      expect(
-        matchingLogCalls(
-          context.mocks.axiomLogging.warn,
-          "Run failed because checkpoint was not found",
-          missingCheckpoint.runId,
-        ),
-      ).toHaveLength(1);
-      expect(genericFailureLogCalls(missingCheckpoint.runId)).toHaveLength(0);
-    });
-
     it.each([
       {
         firstReason: "provider_overloaded",
         lateReason: "unsupported_model",
-        warningCount: 0,
       },
       {
         firstReason: "unsupported_model",
         lateReason: "provider_overloaded",
-        warningCount: 1,
       },
     ] as const)(
-      "does not relog $firstReason when a duplicate reports $lateReason",
-      async ({ firstReason, lateReason, warningCount }) => {
+      "keeps $firstReason when a duplicate reports $lateReason",
+      async ({ firstReason, lateReason }) => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
         const first = await completeFailure({ failureReason: firstReason });
-        expect(
-          matchingLogCalls(
-            context.mocks.axiomLogging.warn,
-            "Run failed",
-            first.runId,
-          ),
-        ).toHaveLength(warningCount);
 
         await webhooks.requestAgentComplete(
           {
@@ -19930,13 +16156,6 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
           },
           [200],
         );
-        expect(
-          matchingLogCalls(
-            context.mocks.axiomLogging.warn,
-            "Run failed",
-            first.runId,
-          ),
-        ).toHaveLength(warningCount);
         await expect(
           api.readRun(first.actor, first.runId),
         ).resolves.toMatchObject({
@@ -20274,7 +16493,7 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     ).resolves.toBeNull();
   });
 
-  it("persists a future failure reason without suppressing its log", async () => {
+  it("persists a future failure reason", async () => {
     const api = createRunsApi(context);
     const webhooks = createWebhookCallbackApi(context);
     const { actor, agentId } = await entitledRunActor();
@@ -20321,28 +16540,6 @@ describe("RUN-03: sandbox completion reports against missing checkpoints and set
     });
     await expect(readRunFailureReasonFixture(context, run.runId)).resolves.toBe(
       "future_reason",
-    );
-
-    const warnings = context.mocks.axiomLogging.warn.mock.calls.filter(
-      ([message, fields]) => {
-        return (
-          message === "Run failed" &&
-          typeof fields === "object" &&
-          fields !== null &&
-          "runId" in fields &&
-          fields.runId === run.runId
-        );
-      },
-    );
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]?.[1]).toStrictEqual(
-      expect.objectContaining({
-        runId: run.runId,
-        exitCode: 1,
-        error: "future failure details",
-        failureReason: "future_reason",
-        context: "webhook:complete",
-      }),
     );
   });
 
@@ -21098,7 +17295,7 @@ describe("BILL-01: billing entitlement reconciliation cron", () => {
       canBuyConcurrency: false,
       autoRechargeAllowed: false,
       supportByok: false,
-      restrictedVm0Models: true,
+      restrictedBuiltInModels: true,
       videoGenerationAllowed: false,
       workflowWebhookAutomationAllowed: false,
       stripeSubscriptionId: granted.subscriptionId,

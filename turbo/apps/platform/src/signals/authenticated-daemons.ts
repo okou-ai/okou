@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { clerk$, setupClerk$ } from "./auth.ts";
+import { clerk$, clerkUser$, setupClerk$ } from "./auth.ts";
 import { setAuthenticatedIdentity$ } from "./auth-context.ts";
 import { subscribeEventDrivenChatThreads$ } from "./chat-page/chat-thread-event-sourcing.ts";
 import { setupUserPreferenceRealtime$ } from "./external/user-model-preference.ts";
@@ -45,17 +45,19 @@ const runAppRealtimeDaemons$ = command(
 export const runAuthenticatedRealtime$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
     await set(setupClerk$, signal);
+    const user = await get(clerkUser$);
+    signal.throwIfAborted();
     const clerk = await get(clerk$);
     signal.throwIfAborted();
-    if (!clerk.user || !clerk.organization) {
+    if (!user || !clerk.organization) {
       return;
     }
     set(
       setAuthenticatedIdentity$,
       Promise.resolve({
-        userId: clerk.user.id,
+        userId: user.id,
         orgId: clerk.organization.id,
-        email: clerk.user.primaryEmailAddress?.emailAddress,
+        email: user.primaryEmailAddress?.emailAddress,
       }),
     );
     set(setRealtimeDegradedNotifier$, () => {
@@ -73,9 +75,11 @@ export const runAuthenticatedRealtime$ = command(
 /** Complete finite authenticated data setup while the initial route loads. */
 export const setupAuthenticatedBootstrapData$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    const user = await get(clerkUser$);
+    signal.throwIfAborted();
     const clerk = await get(clerk$);
     signal.throwIfAborted();
-    if (!clerk.user || !clerk.organization) {
+    if (!user || !clerk.organization) {
       return;
     }
     await get(bridgeConnected$);

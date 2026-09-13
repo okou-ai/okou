@@ -16,14 +16,9 @@ export const welcomeChatThreadsContract = c.router({
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
-      409: z.object({
-        error: z.object({
-          code: z.enum(["CONFLICT", "DEFAULT_AGENT_NOT_READY"]),
-          message: z.string(),
-        }),
-      }),
+      409: apiErrorSchema,
       500: apiErrorSchema,
     },
-    summary: "Create or replay one explicit welcome thread action",
+    summary: "Create one welcome thread",
   },
 });

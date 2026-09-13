@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.6](https://github.com/vm0-ai/vm0/compare/sandbox-v0.22.5...sandbox-v0.22.6) (2026-09-12)
+
+
+### Bug Fixes
+
+* **ssh:** release guest park protection when rpc closes ([#33534](https://github.com/vm0-ai/vm0/issues/33534)) ([1fb21f7](https://github.com/vm0-ai/vm0/commit/1fb21f794131078cdfc87c970eaf7f2c5d9f1c6f))
+
 ## [0.22.5](https://github.com/vm0-ai/vm0/compare/sandbox-v0.22.4...sandbox-v0.22.5) (2026-09-10)
 
 

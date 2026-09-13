@@ -108,6 +108,7 @@ test.each([
     });
 
     await setupPage({
+      locale: "en-US",
       context,
       path,
       featureSwitches: { [FeatureSwitchKey.VoiceInputV2]: true },

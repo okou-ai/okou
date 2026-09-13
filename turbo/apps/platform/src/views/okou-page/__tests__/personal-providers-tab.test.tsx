@@ -140,7 +140,7 @@ function connectedPersonalClaudeCodeProvider(): ModelProviderResponse {
 
 function mockBillingCapabilities(modelCapabilities: {
   readonly supportByok: boolean;
-  readonly restrictedVm0Models: boolean;
+  readonly restrictedBuiltInModels: boolean;
 }): void {
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     const status: BillingStatusResponse = {
@@ -249,7 +249,7 @@ function mockBrowserTimeZone(timeZone: string): void {
   });
 }
 
-test("Review and explicitly switch personal subscription accounts", async () => {
+test("Review personal subscriptions through account identity", async () => {
   const user = userEvent.setup();
   mockBrowserTimeZone("America/New_York");
   mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);
@@ -287,11 +287,9 @@ test("Review and explicitly switch personal subscription accounts", async () => 
     subscriptionResetCredits: null,
   };
   context.mocks.data.personalModelProviders([accountA, accountB, accountC]);
-
   await openModelSettings("Models", {
     [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
   });
-
   const rowA = await screen.findByTestId(`oauth-account-${accountA.id}`);
   const rowB = await screen.findByTestId(`oauth-account-${accountB.id}`);
   const rowC = await screen.findByTestId(`oauth-account-${accountC.id}`);
@@ -318,18 +316,91 @@ test("Review and explicitly switch personal subscription accounts", async () => 
       return button.textContent?.trim() === "Add account";
     }),
   ).toHaveLength(2);
-
   const accountIdentity = within(rowA).getByText("account-a@example.com");
   await user.hover(accountIdentity);
   await expect(
     screen.findAllByText("Account A Organization"),
   ).resolves.not.toHaveLength(0);
+  click(within(rowA).getByLabelText("More options"));
+  expect(
+    queryAllByRoleFast("menuitem").some((item) => {
+      return item.textContent?.trim() === "Remove";
+    }),
+  ).toBeFalsy();
+  click(within(rowA).getByLabelText("More options"));
+});
 
+test("Review personal subscriptions through usage details", async () => {
+  const user = userEvent.setup();
+  mockBrowserTimeZone("America/New_York");
+  mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);
+  context.mocks.data.org({
+    id: "org_1",
+    name: "Test Org",
+    role: "member",
+  });
+  const accountA = {
+    ...connectedPersonalCodexAccount({
+      id: "00000000-0000-4000-a000-000000000311",
+      email: "account-a@example.com",
+      isActive: true,
+      createdAt: "2026-03-01T00:00:00Z",
+    }),
+    workspaceName: "Account A Organization",
+    subscriptionResetCreditsNextExpiresAt: "2030-01-04T00:48:00.000Z",
+  };
+  const accountB = {
+    ...connectedPersonalCodexAccount({
+      id: "00000000-0000-4000-a000-000000000312",
+      email: "account-b@example.com",
+      isActive: false,
+      createdAt: "2026-03-02T00:00:00Z",
+    }),
+    subscriptionResetCredits: 0,
+  };
+  const accountC = {
+    ...connectedPersonalCodexAccount({
+      id: "00000000-0000-4000-a000-000000000313",
+      email: "account-c@example.com",
+      isActive: false,
+      createdAt: "2026-03-03T00:00:00Z",
+    }),
+    subscriptionResetCredits: null,
+  };
+  context.mocks.data.personalModelProviders([accountA, accountB, accountC]);
+  await openModelSettings("Models", {
+    [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+  });
+  const rowA = await screen.findByTestId(`oauth-account-${accountA.id}`);
+  const rowB = await screen.findByTestId(`oauth-account-${accountB.id}`);
+  const rowC = await screen.findByTestId(`oauth-account-${accountC.id}`);
+  expect(within(rowA).getByText("account-a@example.com")).toBeInTheDocument();
+  expect(within(rowB).getByText("account-b@example.com")).toBeInTheDocument();
+  expect(within(rowA).getByText("2 resets left")).toBeVisible();
+  expect(within(rowB).getByText("0 resets left")).toBeVisible();
+  expect(within(rowC).getByText("Resets —")).toBeVisible();
+  expect(
+    within(rowC).getByLabelText("Resets left unavailable"),
+  ).toBeInTheDocument();
+  expect(within(rowA).queryByText("Active")).not.toBeInTheDocument();
+  expect(within(rowB).queryByText("Active")).not.toBeInTheDocument();
+  expect(within(rowB).queryByText("Use")).not.toBeInTheDocument();
+  expect(radioByName("Active", rowA)).toHaveAttribute("aria-checked", "true");
+  expect(radioByName("Use", rowB)).toHaveAttribute("aria-checked", "false");
+  const usageRings = within(rowA).getAllByRole("progressbar");
+  expect(usageRings).toHaveLength(2);
+  expect(usageRings[0]).toHaveAttribute("aria-valuenow", "82");
+  expect(usageRings[1]).toHaveAttribute("aria-valuenow", "55");
+  expect(within(rowA).queryByText("82% left")).not.toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button").filter((button) => {
+      return button.textContent?.trim() === "Add account";
+    }),
+  ).toHaveLength(2);
   await user.hover(within(rowA).getByLabelText("2 resets left"));
   await expect(
     screen.findAllByText("2 resets left · expires in 3d"),
   ).resolves.not.toHaveLength(0);
-
   usageRings[0].focus();
   await expect(screen.findAllByText("82% left")).resolves.not.toHaveLength(0);
   expect(
@@ -349,15 +420,74 @@ test("Review and explicitly switch personal subscription accounts", async () => 
       ).replace(/^resets /u, ""),
     ),
   ).resolves.not.toHaveLength(0);
+});
 
-  click(within(rowA).getByLabelText("More options"));
-  expect(
-    queryAllByRoleFast("menuitem").some((item) => {
-      return item.textContent?.trim() === "Remove";
+test("Review personal subscriptions through account switching", async () => {
+  mockBrowserTimeZone("America/New_York");
+  mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);
+  context.mocks.data.org({
+    id: "org_1",
+    name: "Test Org",
+    role: "member",
+  });
+  const accountA = {
+    ...connectedPersonalCodexAccount({
+      id: "00000000-0000-4000-a000-000000000311",
+      email: "account-a@example.com",
+      isActive: true,
+      createdAt: "2026-03-01T00:00:00Z",
     }),
-  ).toBeFalsy();
-  click(within(rowA).getByLabelText("More options"));
-
+    workspaceName: "Account A Organization",
+    subscriptionResetCreditsNextExpiresAt: "2030-01-04T00:48:00.000Z",
+  };
+  const accountB = {
+    ...connectedPersonalCodexAccount({
+      id: "00000000-0000-4000-a000-000000000312",
+      email: "account-b@example.com",
+      isActive: false,
+      createdAt: "2026-03-02T00:00:00Z",
+    }),
+    subscriptionResetCredits: 0,
+  };
+  const accountC = {
+    ...connectedPersonalCodexAccount({
+      id: "00000000-0000-4000-a000-000000000313",
+      email: "account-c@example.com",
+      isActive: false,
+      createdAt: "2026-03-03T00:00:00Z",
+    }),
+    subscriptionResetCredits: null,
+  };
+  context.mocks.data.personalModelProviders([accountA, accountB, accountC]);
+  await openModelSettings("Models", {
+    [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+  });
+  const rowA = await screen.findByTestId(`oauth-account-${accountA.id}`);
+  const rowB = await screen.findByTestId(`oauth-account-${accountB.id}`);
+  const rowC = await screen.findByTestId(`oauth-account-${accountC.id}`);
+  expect(within(rowA).getByText("account-a@example.com")).toBeInTheDocument();
+  expect(within(rowB).getByText("account-b@example.com")).toBeInTheDocument();
+  expect(within(rowA).getByText("2 resets left")).toBeVisible();
+  expect(within(rowB).getByText("0 resets left")).toBeVisible();
+  expect(within(rowC).getByText("Resets —")).toBeVisible();
+  expect(
+    within(rowC).getByLabelText("Resets left unavailable"),
+  ).toBeInTheDocument();
+  expect(within(rowA).queryByText("Active")).not.toBeInTheDocument();
+  expect(within(rowB).queryByText("Active")).not.toBeInTheDocument();
+  expect(within(rowB).queryByText("Use")).not.toBeInTheDocument();
+  expect(radioByName("Active", rowA)).toHaveAttribute("aria-checked", "true");
+  expect(radioByName("Use", rowB)).toHaveAttribute("aria-checked", "false");
+  const usageRings = within(rowA).getAllByRole("progressbar");
+  expect(usageRings).toHaveLength(2);
+  expect(usageRings[0]).toHaveAttribute("aria-valuenow", "82");
+  expect(usageRings[1]).toHaveAttribute("aria-valuenow", "55");
+  expect(within(rowA).queryByText("82% left")).not.toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button").filter((button) => {
+      return button.textContent?.trim() === "Add account";
+    }),
+  ).toHaveLength(2);
   click(radioByName("Use", rowB));
   await waitFor(() => {
     expect(radioByName("Active", rowB)).toHaveAttribute("aria-checked", "true");
@@ -373,7 +503,10 @@ test("Offer Pro when personal subscription providers are unavailable", async () 
     role: "admin",
   });
   context.mocks.data.personalModelProviders([]);
-  mockBillingCapabilities({ supportByok: false, restrictedVm0Models: false });
+  mockBillingCapabilities({
+    supportByok: false,
+    restrictedBuiltInModels: false,
+  });
 
   await openModelSettings("Models");
 

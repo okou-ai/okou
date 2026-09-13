@@ -1,6 +1,6 @@
 {
   "name": "@okouai/ui",
-  "version": "1.8.3",
+  "version": "1.8.4",
   "type": "module",
   "private": true,
   "exports": {
@@ -24,7 +24,7 @@
     "@testing-library/jest-dom": "^6.7.0",
     "@testing-library/react": "^16.1.0",
     "@testing-library/user-event": "^14.6.1",
-    "@types/node": "^24.3.0",
+    "@types/node": "^24.13.4",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^6.0.1",
@@ -37,7 +37,7 @@
     "tailwindcss": "^4.3.3",
     "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.0"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

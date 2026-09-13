@@ -176,7 +176,7 @@ const materializeArtifactRef$ = command(
       return withTextPreview(
         {
           url: input.url,
-          ...createAttachmentPreviewSignals(input.url),
+          ...(input.preview ?? createAttachmentPreviewSignals(input.url)),
           kind: classifyChatAttachment({
             contentType: input.contentType,
             filename: input.filename,

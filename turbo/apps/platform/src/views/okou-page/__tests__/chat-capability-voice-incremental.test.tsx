@@ -101,6 +101,7 @@ test("Keep recording after an incremental segment fails and finish in order", as
 });
 
 test("Resume a completed segment after reload without retranscribing its audio", async () => {
+  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   const page = createChildAbortController(context.signal);
   const capture = context.mocks.deferred<(samples: Float32Array) => void>();
   const started = context.mocks.deferred<void>();
@@ -149,6 +150,7 @@ test("Resume a completed segment after reload without retranscribing its audio",
     });
   });
   await setupPage({
+    locale: "en-US",
     context: { ...context, signal: page.signal },
     path: RUN_PATH,
     featureSwitches: flags,
@@ -166,6 +168,7 @@ test("Resume a completed segment after reload without retranscribing its audio",
   vi.mocked(window.history.replaceState).mockRestore();
   vi.mocked(window.history.back).mockRestore();
   await setupPage({
+    locale: "en-US",
     context: refreshedContext,
     path: RUN_PATH,
     featureSwitches: flags,

@@ -1,0 +1,552 @@
+{
+  "runId": "run-fixture",
+  "sessionId": "session-fixture",
+  "apiStartedAt": 100,
+  "apiObservedAt": 125,
+  "apiDurationMs": 25,
+  "cases": [
+    {
+      "name": "trim text and omit empty and thinking blocks",
+      "guestMessage": {
+        "role": "assistant",
+        "api": "openai-responses",
+        "provider": "openai",
+        "model": "fixture-model",
+        "timestamp": 42,
+        "usage": {
+          "input": 11,
+          "output": 7,
+          "cacheRead": 5,
+          "cacheWrite": 3,
+          "totalTokens": 26,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "responseId": "response-fixture",
+        "content": [
+          {
+            "type": "text",
+            "text": " \n hello \t"
+          },
+          {
+            "type": "text",
+            "text": "\n\t "
+          },
+          {
+            "type": "thinking",
+            "thinking": "private reasoning"
+          },
+          {
+            "type": "text",
+            "text": " world \n"
+          }
+        ]
+      },
+      "apiAssistant": {
+        "model": "fixture-model",
+        "timestamp": 42,
+        "usage": {
+          "input": 11,
+          "output": 7,
+          "cacheRead": 5,
+          "cacheWrite": 3
+        },
+        "stopReason": "stop",
+        "responseId": "response-fixture",
+        "content": [
+          {
+            "type": "text",
+            "text": " \n hello \t"
+          },
+          {
+            "type": "text",
+            "text": "\n\t "
+          },
+          {
+            "type": "text",
+            "text": " world \n"
+          }
+        ]
+      },
+      "expectedMessages": [
+        {
+          "id": "response-fixture",
+          "role": "assistant",
+          "model": "fixture-model",
+          "usage": {
+            "input_tokens": 11,
+            "output_tokens": 7,
+            "cache_read_input_tokens": 5,
+            "cache_creation_input_tokens": 3
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "hello"
+            }
+          ]
+        },
+        {
+          "id": "response-fixture",
+          "role": "assistant",
+          "model": "fixture-model",
+          "usage": {
+            "input_tokens": 11,
+            "output_tokens": 7,
+            "cache_read_input_tokens": 5,
+            "cache_creation_input_tokens": 3
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "world"
+            }
+          ]
+        }
+      ],
+      "apiResult": "hello\n\nworld",
+      "guestResult": "hello\n\nworld"
+    },
+    {
+      "name": "ordered tool blocks and fallback identity",
+      "guestMessage": {
+        "role": "assistant",
+        "api": "openai-responses",
+        "provider": "openai",
+        "model": "fixture-model",
+        "timestamp": 42,
+        "usage": {
+          "input": 11,
+          "output": 7,
+          "cacheRead": 5,
+          "cacheWrite": 3,
+          "totalTokens": 26,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "toolUse",
+        "content": [
+          {
+            "type": "text",
+            "text": " before "
+          },
+          {
+            "type": "toolCall",
+            "id": "call-read",
+            "name": "read",
+            "arguments": {
+              "path": "notes.txt"
+            }
+          },
+          {
+            "type": "text",
+            "text": "  "
+          },
+          {
+            "type": "toolCall",
+            "id": "call-bash",
+            "name": "bash",
+            "arguments": {
+              "command": "printf done"
+            }
+          }
+        ]
+      },
+      "apiAssistant": {
+        "model": "fixture-model",
+        "timestamp": 42,
+        "usage": {
+          "input": 11,
+          "output": 7,
+          "cacheRead": 5,
+          "cacheWrite": 3
+        },
+        "stopReason": "toolUse",
+        "content": [
+          {
+            "type": "text",
+            "text": " before "
+          },
+          {
+            "type": "toolCall",
+            "id": "call-read",
+            "name": "read",
+            "arguments": {
+              "path": "notes.txt"
+            }
+          },
+          {
+            "type": "text",
+            "text": "  "
+          },
+          {
+            "type": "toolCall",
+            "id": "call-bash",
+            "name": "bash",
+            "arguments": {
+              "command": "printf done"
+            }
+          }
+        ]
+      },
+      "expectedMessages": [
+        {
+          "id": "run-fixture:42:fixture-model",
+          "role": "assistant",
+          "model": "fixture-model",
+          "usage": {
+            "input_tokens": 11,
+            "output_tokens": 7,
+            "cache_read_input_tokens": 5,
+            "cache_creation_input_tokens": 3
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "before"
+            }
+          ]
+        },
+        {
+          "id": "run-fixture:42:fixture-model",
+          "role": "assistant",
+          "model": "fixture-model",
+          "usage": {
+            "input_tokens": 11,
+            "output_tokens": 7,
+            "cache_read_input_tokens": 5,
+            "cache_creation_input_tokens": 3
+          },
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "call-read",
+              "name": "read",
+              "input": {
+                "path": "notes.txt"
+              }
+            }
+          ]
+        },
+        {
+          "id": "run-fixture:42:fixture-model",
+          "role": "assistant",
+          "model": "fixture-model",
+          "usage": {
+            "input_tokens": 11,
+            "output_tokens": 7,
+            "cache_read_input_tokens": 5,
+            "cache_creation_input_tokens": 3
+          },
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "call-bash",
+              "name": "bash",
+              "input": {
+                "command": "printf done"
+              }
+            }
+          ]
+        }
+      ],
+      "apiResult": "before",
+      "guestResult": "before"
+    },
+    {
+      "name": "empty assistant retains adapter terminal defaults",
+      "guestMessage": {
+        "role": "assistant",
+        "api": "openai-responses",
+        "provider": "openai",
+        "model": "fixture-model",
+        "timestamp": 42,
+        "usage": {
+          "input": 11,
+          "output": 7,
+          "cacheRead": 5,
+          "cacheWrite": 3,
+          "totalTokens": 26,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "content": []
+      },
+      "apiAssistant": {
+        "model": "fixture-model",
+        "timestamp": 42,
+        "usage": {
+          "input": 11,
+          "output": 7,
+          "cacheRead": 5,
+          "cacheWrite": 3
+        },
+        "stopReason": "stop",
+        "content": []
+      },
+      "expectedMessages": [],
+      "apiResult": "",
+      "guestResult": "Pi model turn stop"
+    },
+    {
+      "name": "citation only retains empty content provenance",
+      "guestMessage": {
+        "role": "assistant",
+        "api": "openai-responses",
+        "provider": "openai",
+        "model": "fixture-model",
+        "timestamp": 42,
+        "usage": {
+          "input": 11,
+          "output": 7,
+          "cacheRead": 5,
+          "cacheWrite": 3,
+          "totalTokens": 26,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "responseId": "response-fixture",
+        "content": [
+          {
+            "type": "text",
+            "text": "<oai-mem-citation><citation_entries>memory.md:2-4|note=[used]</citation_entries><rollout_ids>019c6e27-e55b-73d1-87d8-4e01f1f75043</rollout_ids></oai-mem-citation>"
+          }
+        ]
+      },
+      "apiAssistant": {
+        "model": "fixture-model",
+        "timestamp": 42,
+        "usage": {
+          "input": 11,
+          "output": 7,
+          "cacheRead": 5,
+          "cacheWrite": 3
+        },
+        "stopReason": "stop",
+        "responseId": "response-fixture",
+        "content": [
+          {
+            "type": "text",
+            "text": ""
+          }
+        ],
+        "memoryCitation": {
+          "entries": [
+            {
+              "path": "memory.md",
+              "lineStart": 2,
+              "lineEnd": 4,
+              "note": "used"
+            }
+          ],
+          "rolloutIds": ["019c6e27-e55b-73d1-87d8-4e01f1f75043"]
+        }
+      },
+      "expectedMessages": [
+        {
+          "id": "response-fixture",
+          "role": "assistant",
+          "model": "fixture-model",
+          "usage": {
+            "input_tokens": 11,
+            "output_tokens": 7,
+            "cache_read_input_tokens": 5,
+            "cache_creation_input_tokens": 3
+          },
+          "content": [],
+          "memoryCitation": {
+            "entries": [
+              {
+                "path": "memory.md",
+                "lineStart": 2,
+                "lineEnd": 4,
+                "note": "used"
+              }
+            ],
+            "rolloutIds": ["019c6e27-e55b-73d1-87d8-4e01f1f75043"]
+          }
+        }
+      ],
+      "apiResult": "",
+      "guestResult": ""
+    },
+    {
+      "name": "split citation provenance belongs only to the final block",
+      "guestMessage": {
+        "role": "assistant",
+        "api": "openai-responses",
+        "provider": "openai",
+        "model": "fixture-model",
+        "timestamp": 42,
+        "usage": {
+          "input": 11,
+          "output": 7,
+          "cacheRead": 5,
+          "cacheWrite": 3,
+          "totalTokens": 26,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "responseId": "response-fixture",
+        "content": [
+          {
+            "type": "text",
+            "text": " before<oai-mem-cit"
+          },
+          {
+            "type": "toolCall",
+            "id": "call-read",
+            "name": "read",
+            "arguments": {
+              "path": "notes.txt"
+            }
+          },
+          {
+            "type": "text",
+            "text": "ation><citation_entries>memory.md:2-4|note=[used]</citation_entries><rollout_ids>019c6e27-e55b-73d1-87d8-4e01f1f75043</rollout_ids></oai-mem-citation>after "
+          }
+        ]
+      },
+      "apiAssistant": {
+        "model": "fixture-model",
+        "timestamp": 42,
+        "usage": {
+          "input": 11,
+          "output": 7,
+          "cacheRead": 5,
+          "cacheWrite": 3
+        },
+        "stopReason": "stop",
+        "responseId": "response-fixture",
+        "content": [
+          {
+            "type": "text",
+            "text": " before"
+          },
+          {
+            "type": "toolCall",
+            "id": "call-read",
+            "name": "read",
+            "arguments": {
+              "path": "notes.txt"
+            }
+          },
+          {
+            "type": "text",
+            "text": "after "
+          }
+        ],
+        "memoryCitation": {
+          "entries": [
+            {
+              "path": "memory.md",
+              "lineStart": 2,
+              "lineEnd": 4,
+              "note": "used"
+            }
+          ],
+          "rolloutIds": ["019c6e27-e55b-73d1-87d8-4e01f1f75043"]
+        }
+      },
+      "expectedMessages": [
+        {
+          "id": "response-fixture",
+          "role": "assistant",
+          "model": "fixture-model",
+          "usage": {
+            "input_tokens": 11,
+            "output_tokens": 7,
+            "cache_read_input_tokens": 5,
+            "cache_creation_input_tokens": 3
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "before"
+            }
+          ]
+        },
+        {
+          "id": "response-fixture",
+          "role": "assistant",
+          "model": "fixture-model",
+          "usage": {
+            "input_tokens": 11,
+            "output_tokens": 7,
+            "cache_read_input_tokens": 5,
+            "cache_creation_input_tokens": 3
+          },
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "call-read",
+              "name": "read",
+              "input": {
+                "path": "notes.txt"
+              }
+            }
+          ]
+        },
+        {
+          "id": "response-fixture",
+          "role": "assistant",
+          "model": "fixture-model",
+          "usage": {
+            "input_tokens": 11,
+            "output_tokens": 7,
+            "cache_read_input_tokens": 5,
+            "cache_creation_input_tokens": 3
+          },
+          "content": [
+            {
+              "type": "text",
+              "text": "after"
+            }
+          ],
+          "memoryCitation": {
+            "entries": [
+              {
+                "path": "memory.md",
+                "lineStart": 2,
+                "lineEnd": 4,
+                "note": "used"
+              }
+            ],
+            "rolloutIds": ["019c6e27-e55b-73d1-87d8-4e01f1f75043"]
+          }
+        }
+      ],
+      "apiResult": "before\n\nafter",
+      "guestResult": "before\n\nafter"
+    }
+  ]
+}

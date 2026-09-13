@@ -330,10 +330,22 @@ function publicOAuthConfig(
   return publicConfig;
 }
 
-export function mockCustomConnectorStory(context: TestContext): void {
+export function mockCustomConnectorStory(
+  context: TestContext,
+  initial: readonly {
+    readonly connector: CustomConnectorHttpResponse;
+    readonly account?: ConnectorAccountConnection;
+  }[] = [],
+): void {
   context.mocks.data.org({ id: "org_1", name: "Test Org", role: "admin" });
-  let connectors: CustomConnectorHttpResponse[] = [];
-  const accounts = new Map<string, ConnectorAccountConnection>();
+  let connectors = initial.map(({ connector }) => {
+    return connector;
+  });
+  const accounts = new Map<string, ConnectorAccountConnection>(
+    initial.flatMap(({ connector, account }) => {
+      return account ? [[connector.id, account] as const] : [];
+    }),
+  );
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors });
   });

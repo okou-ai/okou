@@ -78,6 +78,7 @@ export class SharedDatabaseMessagePortServer {
     workerSignal: AbortSignal,
   ) {
     workerSignal.throwIfAborted();
+    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
     this.connectionController = createChildAbortController(workerSignal);
     this.connectionSignal = this.connectionController.signal;
     L.debug("connection.connect", { connectionId: this.connectionId });

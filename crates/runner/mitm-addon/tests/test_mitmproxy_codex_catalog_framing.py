@@ -273,11 +273,11 @@ async def _catalog_http_stream(
     flow.metadata[metadata_keys.FIREWALL_ACTION] = "ALLOW"
     flow.metadata[metadata_keys.ORIGINAL_URL] = f"https://chatgpt.com{catalog_path}"
     if prefetch:
-        flow.request.headers["X-VM0-Codex-Model-Catalog-Prefetch"] = "1"
+        flow.request.headers["X-Okou-Codex-Model-Catalog-Prefetch"] = "1"
         codex_model_catalog_cache.capture_and_strip_prefetch_marker(flow)
     await codex_model_catalog_cache.prepare_request(flow, request_end_stream=True)
     assert flow.request.headers["Accept-Encoding"] == ("br" if prefetch else "identity")
-    assert "X-VM0-Codex-Model-Catalog-Prefetch" not in flow.request.headers
+    assert "X-Okou-Codex-Model-Catalog-Prefetch" not in flow.request.headers
     assert "If-None-Match" not in flow.request.headers
 
     stream.flow = flow

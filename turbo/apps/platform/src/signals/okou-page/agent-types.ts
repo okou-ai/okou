@@ -1,6 +1,5 @@
 export interface AgentDetail {
-  // Mirrors the bounded AgentResponse compatibility in #33251.
-  isDefaultAgent?: boolean;
+  isDefaultAgent: boolean;
   agentId: string;
   ownerId: string;
   description: string | null;

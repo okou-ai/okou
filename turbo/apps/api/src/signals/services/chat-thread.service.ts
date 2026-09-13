@@ -12,6 +12,7 @@ import {
   indicatorSchema,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
+import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import {
   modelProviderCredentialScopeSchema,
   modelProviderTypeSchema,
@@ -73,6 +74,7 @@ import {
   prepareChatThreadConnectorSelections,
   type PreparedChatThreadConnectorSelection,
 } from "./chat-thread-connector-selection.service";
+import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
 
 type ChatThreadRow = {
   readonly id: string;
@@ -686,6 +688,7 @@ interface CreateChatThreadArgs {
   readonly modelProviderType: string | null;
   readonly modelProviderCredentialScope: ModelProviderCredentialScope | null;
   readonly selectedModel: string | null;
+  readonly modelSettings?: ModelSettings;
   readonly codexServiceTier: CodexServiceTier | null;
   readonly selectedVideoModel: string | null;
   readonly selectedImageModel: ImageModelId | null;
@@ -697,6 +700,12 @@ export async function createChatThreadInTransaction(
   tx: Tx,
   args: CreateChatThreadArgs,
 ) {
+  const modelSettings =
+    args.modelSettings ??
+    (await loadNewChatThreadModelSettings(tx, {
+      orgId: args.orgId,
+      userId: args.userId,
+    }));
   const preparedConnectorSelections =
     await prepareChatThreadConnectorSelections(tx, {
       orgId: args.orgId,
@@ -724,6 +733,7 @@ export async function createChatThreadInTransaction(
         : modelProviderTypeSchema.parse(args.modelProviderType),
     modelProviderCredentialScope: args.modelProviderCredentialScope,
     selectedModel: args.selectedModel,
+    modelSettings,
     codexServiceTier: args.codexServiceTier,
     selectedVideoModel: args.selectedVideoModel,
     selectedImageModel: args.selectedImageModel,
@@ -752,6 +762,7 @@ export async function createChatThreadInTransaction(
     eventId: args.eventId,
     title: args.title ?? null,
     selectedModel: args.selectedModel,
+    modelSettings,
     serviceTier: chatThreadServiceTierFromCodex(args.codexServiceTier),
     computerUseHostId: null,
     cloudBrowserEnabled: false,
@@ -770,7 +781,7 @@ export const createChatThread$ = command(
         return result;
       }
       // Preserve ordinary creation's same-transaction, owner-and-agent-scoped
-      // replay. Welcome creation verifies its distinct seed provenance instead.
+      // replay. Welcome creation answers 404 on a conflict and never replays.
       if (args.clientThreadId === undefined) {
         return undefined;
       }

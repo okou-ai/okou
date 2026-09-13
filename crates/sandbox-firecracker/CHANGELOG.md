@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.41.9](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.41.8...sandbox-firecracker-v0.41.9) (2026-09-12)
+
+
+### Bug Fixes
+
+* **rust:** revalidate snapshot bind targets after concurrent cleanup ([#33634](https://github.com/vm0-ai/vm0/issues/33634)) ([929f1ae](https://github.com/vm0-ai/vm0/commit/929f1aece5d9c5c7892b7e16691849f3eb71b51c))
+* **sandbox:** wait for firecracker exit before recycling resources ([#33644](https://github.com/vm0-ai/vm0/issues/33644)) ([a9ead38](https://github.com/vm0-ai/vm0/commit/a9ead38e66ee83ac4538d96bb4f7f3dcb31f9672))
+
+## [0.41.8](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.41.7...sandbox-firecracker-v0.41.8) (2026-09-12)
+
 ## [0.41.7](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.41.6...sandbox-firecracker-v0.41.7) (2026-09-11)
 
 ## [0.41.6](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.41.5...sandbox-firecracker-v0.41.6) (2026-09-11)

@@ -16,5 +16,5 @@ const presentationOnboardingParams = new URLSearchParams({
   source_type: "direct",
 });
 
-export const PRESENTATION_ONBOARDING_PATH = `/onboarding?${presentationOnboardingParams.toString()}`;
+const PRESENTATION_ONBOARDING_PATH = `/onboarding?${presentationOnboardingParams.toString()}`;
 export const PRESENTATION_ONBOARDING_URL = `https://app.okou.ai${PRESENTATION_ONBOARDING_PATH}`;

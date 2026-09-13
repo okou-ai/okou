@@ -50,7 +50,10 @@ function setupModels(): void {
   });
   mockAgent();
   mockOrgModelRoutes("claude-fable-5-1");
-  mockBillingCapabilities({ supportByok: true, restrictedVm0Models: false });
+  mockBillingCapabilities({
+    supportByok: true,
+    restrictedBuiltInModels: false,
+  });
 }
 
 async function setupComposer(): Promise<HTMLElement> {

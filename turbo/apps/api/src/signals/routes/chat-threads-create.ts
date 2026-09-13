@@ -31,6 +31,11 @@ import {
 } from "../services/model-selection.service";
 import { chatThreadModelPinColumns } from "../services/chat-thread-model.service";
 import { chatThreadServiceTierFromCodex } from "../services/chat-thread-event.service";
+import { loadNewChatThreadModelSettings } from "../services/chat-thread-model-settings.service";
+import { resolveChatReasoningEffort } from "../services/chat-reasoning-effort.service";
+import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { RouteEntry } from "../route-entry";
 
 const createBody$ = bodyResultOf(chatThreadsContract.create);
@@ -207,6 +212,27 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return codexServiceTierError;
   }
 
+  const [modelSettings, featureSwitchContext] = await Promise.all([
+    loadNewChatThreadModelSettings(writeDb, {
+      orgId: auth.orgId,
+      userId: auth.userId,
+    }),
+    loadUserFeatureSwitchContext(writeDb, auth.orgId, auth.userId),
+  ]);
+  signal.throwIfAborted();
+  const effort = resolveChatReasoningEffort({
+    selectedModel: pin.selectedModel,
+    modelSettings,
+    requested: body.data.reasoningEffort,
+    enabled: isFeatureEnabled(
+      FeatureSwitchKey.ChatReasoningEffort,
+      featureSwitchContext,
+    ),
+  });
+  if ("status" in effort) {
+    return effort;
+  }
+
   const thread = await set(
     createChatThread$,
     {
@@ -217,6 +243,7 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       clientThreadId: body.data.clientThreadId,
       eventId: body.data.eventId,
       ...chatThreadModelPinColumns(pin),
+      modelSettings: effort.modelSettings,
       codexServiceTier,
       selectedVideoModel,
       selectedImageModel,

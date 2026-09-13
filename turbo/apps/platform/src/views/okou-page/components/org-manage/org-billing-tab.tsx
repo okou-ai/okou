@@ -1751,7 +1751,7 @@ function ConcurrencyBillingSection({
             ) : null}
           </p>
         </div>
-        <div className="h-0 okou-border-t mx-5" />
+        <div className="h-0 border-t border-t-gray-400 mx-5" />
         {subscriptions.length === 0 ? (
           <div className="px-5 py-4">
             <p className="text-sm font-medium text-foreground">
@@ -1770,7 +1770,9 @@ function ConcurrencyBillingSection({
             const canceled = subscription.cancelAtPeriodEnd;
             return (
               <div key={subscription.id}>
-                {index > 0 && <div className="h-0 okou-border-t mx-5" />}
+                {index > 0 && (
+                  <div className="h-0 border-t border-t-gray-400 mx-5" />
+                )}
                 <ConcurrencySubscriptionRow
                   canceled={canceled}
                   onAction={openConfirmDialog}
@@ -1785,7 +1787,7 @@ function ConcurrencyBillingSection({
         )}
         {subscriptions.length === 0 ? (
           <>
-            <div className="h-0 okou-border-t mx-5" />
+            <div className="h-0 border-t border-t-gray-400 mx-5" />
             <div className="flex justify-end px-5 py-4">
               <Button
                 type="button"
@@ -2409,7 +2411,7 @@ export function OrgBillingTab({
               </div>
               {isCancelling && changeDate && (
                 <>
-                  <div className="h-0 okou-border-t mx-5" />
+                  <div className="h-0 border-t border-t-gray-400 mx-5" />
                   <div className="px-5 py-3">
                     <p className="text-[13px] text-amber-600 dark:text-amber-400">
                       {cancellationNoticeText(currentTier, changeDate)}
@@ -2419,7 +2421,7 @@ export function OrgBillingTab({
               )}
               {isDowngrading && changeDate && (
                 <>
-                  <div className="h-0 okou-border-t mx-5" />
+                  <div className="h-0 border-t border-t-gray-400 mx-5" />
                   <div className="px-5 py-3">
                     <p className="text-[13px] text-amber-600 dark:text-amber-400">
                       {t(
@@ -2438,7 +2440,7 @@ export function OrgBillingTab({
               )}
               {canManageBilling && (
                 <>
-                  <div className="h-0 okou-border-t mx-5" />
+                  <div className="h-0 border-t border-t-gray-400 mx-5" />
                   <div className="flex items-center justify-between gap-4 px-5 py-4">
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-foreground">
@@ -2467,7 +2469,7 @@ export function OrgBillingTab({
                   </div>
                 </>
               )}
-              <div className="h-0 okou-border-t" />
+              <div className="h-0 border-t border-t-gray-400" />
               <button
                 type="button"
                 className="flex w-full items-center justify-between gap-4 px-5 py-3 text-left transition-colors bg-muted/20 hover:bg-state-hover"

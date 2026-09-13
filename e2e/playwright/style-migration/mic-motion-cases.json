@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "batch": "mic-motion",
+  "cases": [
+    {
+      "id": "mic-light",
+      "path": "/chats/:threadId",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "mic-dark",
+      "path": "/chats/:threadId",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "mic-light-retina",
+      "path": "/chats/:threadId",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 2
+    },
+    {
+      "id": "mic-dark-retina",
+      "path": "/chats/:threadId",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 2
+    }
+  ]
+}

@@ -8,6 +8,8 @@ import {
   and,
   asc,
   eq,
+  gt,
+  gte,
   inArray,
   isNull,
   lt,
@@ -22,9 +24,15 @@ import type { Db } from "../external/db";
 import { chatEventTypeIn } from "./chat-event-type.service";
 
 type ChatQueueReadDb = Pick<Db, "select">;
-type ChatQueueDistinctReadDb = Pick<Db, "select" | "selectDistinct">;
+type ChatQueueEventContextType = NonNullable<
+  (typeof chatEvents.$inferSelect)["contextType"]
+>;
 
 const queueEventRevoker = alias(chatEvents, "queue_event_revoker");
+
+export const CHAT_QUEUE_STALE_AFTER_MS = 5 * 60 * 1000;
+export const CHAT_QUEUE_STALE_RECHECK_WINDOW_MS = 10 * 60 * 1000;
+export const CHAT_QUEUE_SCAN_PAGE_SIZE = 1000;
 
 interface PendingChatQueueEvent {
   readonly id: string;
@@ -32,6 +40,144 @@ interface PendingChatQueueEvent {
   readonly eventType: "input.prompt" | "input.automation";
   readonly seqId: number;
   readonly createdAt: Date;
+}
+
+export interface ChatQueueEventScanCursor {
+  readonly createdAt: Date;
+  readonly id: string;
+}
+
+export interface ChatQueueEventScanCandidate extends ChatQueueEventScanCursor {
+  readonly chatThreadId: string;
+  readonly contextType: ChatQueueEventContextType | null;
+  readonly contextId: string | null;
+}
+
+export interface RecentStaleChatQueueWindow {
+  readonly createdAtOrAfter: Date;
+  readonly createdBefore: Date;
+}
+
+/**
+ * Bound best-effort queue repair to events that became stale recently. Each
+ * event remains eligible during a ten-minute recheck window after the
+ * five-minute grace period, while older event history is intentionally left to
+ * normal per-thread admission and callback paths.
+ */
+export function recentStaleChatQueueWindow(
+  currentTime: number,
+): RecentStaleChatQueueWindow {
+  const createdBefore = new Date(currentTime - CHAT_QUEUE_STALE_AFTER_MS);
+  return {
+    createdAtOrAfter: new Date(
+      createdBefore.getTime() - CHAT_QUEUE_STALE_RECHECK_WINDOW_MS,
+    ),
+    createdBefore,
+  };
+}
+
+export async function listChatQueueEventScanCandidatePage(
+  db: ChatQueueReadDb,
+  args: RecentStaleChatQueueWindow & {
+    readonly cursor?: ChatQueueEventScanCursor;
+    readonly limit: number;
+    readonly eventIds?: readonly string[];
+    readonly chatThreadIds?: readonly string[];
+    readonly contextTypes?: readonly ChatQueueEventContextType[];
+  },
+): Promise<readonly ChatQueueEventScanCandidate[]> {
+  if (
+    args.limit <= 0 ||
+    args.eventIds?.length === 0 ||
+    args.chatThreadIds?.length === 0 ||
+    args.contextTypes?.length === 0
+  ) {
+    return [];
+  }
+
+  return await db
+    .select({
+      id: chatEvents.id,
+      chatThreadId: chatEvents.chatThreadId,
+      contextType: chatEvents.contextType,
+      contextId: chatEvents.contextId,
+      createdAt: chatEvents.createdAt,
+    })
+    .from(chatEvents)
+    .where(
+      and(
+        gte(chatEvents.createdAt, args.createdAtOrAfter),
+        lt(chatEvents.createdAt, args.createdBefore),
+        chatEventTypeIn(["input.prompt", "input.automation"]),
+        isNull(chatEvents.runId),
+        args.cursor === undefined
+          ? undefined
+          : or(
+              gt(chatEvents.createdAt, args.cursor.createdAt),
+              and(
+                eq(chatEvents.createdAt, args.cursor.createdAt),
+                gt(chatEvents.id, args.cursor.id),
+              ),
+            ),
+        args.eventIds === undefined
+          ? undefined
+          : inArray(chatEvents.id, [...args.eventIds]),
+        args.chatThreadIds === undefined
+          ? undefined
+          : inArray(chatEvents.chatThreadId, [...args.chatThreadIds]),
+        args.contextTypes === undefined
+          ? undefined
+          : inArray(chatEvents.contextType, [...args.contextTypes]),
+      ),
+    )
+    .orderBy(asc(chatEvents.createdAt), asc(chatEvents.id))
+    .limit(Math.min(args.limit, CHAT_QUEUE_SCAN_PAGE_SIZE));
+}
+
+export async function revokedChatEventIds(
+  db: ChatQueueReadDb,
+  eventIds: readonly string[],
+): Promise<ReadonlySet<string>> {
+  if (eventIds.length === 0) {
+    return new Set();
+  }
+  const rows = await db
+    .select({ eventId: chatEvents.revokesEventId })
+    .from(chatEvents)
+    .where(inArray(chatEvents.revokesEventId, [...eventIds]));
+  return new Set(
+    rows.flatMap(({ eventId }) => {
+      return eventId === null ? [] : [eventId];
+    }),
+  );
+}
+
+async function openActiveInputDeliveryEventIds(
+  db: ChatQueueReadDb,
+  eventIds: readonly string[],
+): Promise<ReadonlySet<string>> {
+  if (eventIds.length === 0) {
+    return new Set();
+  }
+  const rows = await db
+    .select({ eventId: activeInputDeliveryItems.sourceEventId })
+    .from(activeInputDeliveryItems)
+    .innerJoin(
+      activeInputDeliveries,
+      eq(activeInputDeliveries.id, activeInputDeliveryItems.deliveryId),
+    )
+    .where(
+      and(
+        inArray(activeInputDeliveryItems.sourceEventId, [...eventIds]),
+        isNull(activeInputDeliveryItems.disposition),
+        eq(activeInputDeliveries.status, "open"),
+      ),
+    );
+  return new Set(
+    rows.map(({ eventId }) => {
+      return eventId;
+    }),
+  );
 }
 
 function unrevokedQueueEventCondition(db: ChatQueueReadDb) {
@@ -201,29 +347,62 @@ export async function lockChatQueueThread(
   return thread !== undefined;
 }
 
-/** Threads with stale runnable event-backed queue work for the safety sweep. */
+/** Threads with recently stale runnable queue work for the safety sweep. */
 export async function staleChatEventQueueThreadIds(
-  db: ChatQueueDistinctReadDb,
-  args: {
-    readonly staleBefore: Date;
+  db: ChatQueueReadDb,
+  args: RecentStaleChatQueueWindow & {
     readonly limit: number;
     readonly chatThreadIds?: readonly string[];
   },
+  signal: AbortSignal,
 ): Promise<readonly string[]> {
-  const rows = await db
-    .selectDistinct({ chatThreadId: chatEvents.chatThreadId })
-    .from(chatEvents)
-    .where(
-      and(
-        pendingChatQueueEventCondition(db),
-        lt(chatEvents.createdAt, args.staleBefore),
-        args.chatThreadIds === undefined
-          ? undefined
-          : inArray(chatEvents.chatThreadId, args.chatThreadIds),
-      ),
-    )
-    .limit(args.limit);
-  return rows.map((row) => {
-    return row.chatThreadId;
-  });
+  if (args.limit <= 0 || args.chatThreadIds?.length === 0) {
+    return [];
+  }
+
+  const chatThreadIds = new Set<string>();
+  let cursor: ChatQueueEventScanCursor | undefined;
+  while (chatThreadIds.size < args.limit) {
+    const candidates = await listChatQueueEventScanCandidatePage(db, {
+      createdAtOrAfter: args.createdAtOrAfter,
+      createdBefore: args.createdBefore,
+      cursor,
+      limit: CHAT_QUEUE_SCAN_PAGE_SIZE,
+      chatThreadIds: args.chatThreadIds,
+    });
+    signal.throwIfAborted();
+    if (candidates.length === 0) {
+      break;
+    }
+
+    const eventIds = candidates.map(({ id }) => {
+      return id;
+    });
+    const [revokedEventIds, activeDeliveryEventIds] = await Promise.all([
+      revokedChatEventIds(db, eventIds),
+      openActiveInputDeliveryEventIds(db, eventIds),
+    ]);
+    signal.throwIfAborted();
+    for (const candidate of candidates) {
+      if (
+        !revokedEventIds.has(candidate.id) &&
+        !activeDeliveryEventIds.has(candidate.id)
+      ) {
+        chatThreadIds.add(candidate.chatThreadId);
+        if (chatThreadIds.size === args.limit) {
+          break;
+        }
+      }
+    }
+
+    if (candidates.length < CHAT_QUEUE_SCAN_PAGE_SIZE) {
+      break;
+    }
+    const lastCandidate = candidates.at(-1);
+    if (!lastCandidate) {
+      break;
+    }
+    cursor = lastCandidate;
+  }
+  return [...chatThreadIds];
 }

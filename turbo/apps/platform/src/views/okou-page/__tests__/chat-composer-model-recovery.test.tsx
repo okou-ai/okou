@@ -97,7 +97,7 @@ function builtInPolicy(
 }
 
 function billingStatus(args: {
-  readonly restrictedVm0Models: boolean;
+  readonly restrictedBuiltInModels: boolean;
   readonly supportByok: boolean;
   readonly tier: "limited-free-1" | "pro";
 }): BillingStatusResponse {
@@ -105,7 +105,7 @@ function billingStatus(args: {
     showUsagePack: false,
     tier: args.tier,
     supportByok: args.supportByok,
-    restrictedVm0Models: args.restrictedVm0Models,
+    restrictedBuiltInModels: args.restrictedBuiltInModels,
     credits: 20_000,
     onboardingPaymentPending: false,
     subscriptionStatus: null,
@@ -522,7 +522,7 @@ test("Refresh model availability without losing useful options", async () => {
         billingStatus({
           tier: "pro",
           supportByok: true,
-          restrictedVm0Models: false,
+          restrictedBuiltInModels: false,
         }),
       );
     }
@@ -531,7 +531,7 @@ test("Refresh model availability without losing useful options", async () => {
       billingStatus({
         tier: "limited-free-1",
         supportByok: false,
-        restrictedVm0Models: true,
+        restrictedBuiltInModels: true,
       }),
     );
   });
@@ -596,7 +596,7 @@ test("Show the last resolved chat model after visiting Agents", async () => {
         billingStatus({
           tier: "pro",
           supportByok: true,
-          restrictedVm0Models: false,
+          restrictedBuiltInModels: false,
         }),
       );
     },

@@ -1,5 +1,62 @@
 # Changelog
 
+## [0.191.2](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.191.1...runner-rs-v0.191.2) (2026-09-13)
+
+
+### Refactoring
+
+* **runner:** accept both connector-intent header names ([#33707](https://github.com/vm0-ai/vm0/issues/33707)) ([33e83ae](https://github.com/vm0-ai/vm0/commit/33e83ae7126fba27731120dbde3df8fff993ec96))
+
+## [0.191.1](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.191.0...runner-rs-v0.191.1) (2026-09-12)
+
+
+### Performance Improvements
+
+* **runner:** reuse idle ssh connections within a run ([#33690](https://github.com/vm0-ai/vm0/issues/33690)) ([17e9259](https://github.com/vm0-ai/vm0/commit/17e9259583f7682ccbc69214bd5da9442a3b6a21))
+
+## [0.191.0](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.190.8...runner-rs-v0.191.0) (2026-09-12)
+
+
+### Features
+
+* **ssh:** add managed sessions within a run ([#33674](https://github.com/vm0-ai/vm0/issues/33674)) ([45c6643](https://github.com/vm0-ai/vm0/commit/45c6643695cfd76617ae72e5fb4b42a437cd9a70))
+
+
+### Bug Fixes
+
+* **runner:** own usage retry delivery through shutdown ([#33675](https://github.com/vm0-ai/vm0/issues/33675)) ([f2016a4](https://github.com/vm0-ai/vm0/commit/f2016a4f77d3c783f0bc847ddf4cfa9ff0da043a))
+* **ssh:** wait for private key decoding capacity ([#33646](https://github.com/vm0-ai/vm0/issues/33646)) ([8451ce0](https://github.com/vm0-ai/vm0/commit/8451ce0e82e70cfeb16bb83441892c4022e38014))
+
+
+### Refactoring
+
+* **runner:** rename sandbox-internal and preview-only x-vm0 headers ([#33663](https://github.com/vm0-ai/vm0/issues/33663)) ([9375cec](https://github.com/vm0-ai/vm0/commit/9375cec4abaa342c41b17cc54275f9cb59031b64))
+* **ssh:** scope admission to eight requests per run ([#33631](https://github.com/vm0-ai/vm0/issues/33631)) ([13d35da](https://github.com/vm0-ai/vm0/commit/13d35da64779aa788565f075242278f8eee5cda0))
+
+
+### Performance Improvements
+
+* **runner:** bound connector diagnostic auth-header inspection ([#33676](https://github.com/vm0-ai/vm0/issues/33676)) ([65501ea](https://github.com/vm0-ai/vm0/commit/65501eaee44650b3a2c613464776b24c3a5acc5d))
+
+## [0.190.8](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.190.7...runner-rs-v0.190.8) (2026-09-12)
+
+
+### Bug Fixes
+
+* **ssh:** release guest park protection when rpc closes ([#33534](https://github.com/vm0-ai/vm0/issues/33534)) ([1fb21f7](https://github.com/vm0-ai/vm0/commit/1fb21f794131078cdfc87c970eaf7f2c5d9f1c6f))
+
+
+### Refactoring
+
+* **runner:** share finalizing reservation activation ([#33550](https://github.com/vm0-ai/vm0/issues/33550)) ([94937b7](https://github.com/vm0-ai/vm0/commit/94937b79b1990bb2fe3a650ec8bf43e98a5c7533))
+
+
+### Performance Improvements
+
+* **runner:** refill doctor io slots independently of result order ([#33575](https://github.com/vm0-ai/vm0/issues/33575)) ([620dbb4](https://github.com/vm0-ai/vm0/commit/620dbb477e06fabb378e8b09c2d59484ade0d52e))
+
+## [0.190.7](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.190.6...runner-rs-v0.190.7) (2026-09-11)
+
 ## [0.190.6](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.190.5...runner-rs-v0.190.6) (2026-09-11)
 
 

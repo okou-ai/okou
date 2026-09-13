@@ -653,7 +653,7 @@ async def test_platform_api_test_paths_skip_auto_allow(
         path=path,
         request_headers=headers(
             ("Host", "api.okou.ai"),
-            ("x-vm0-test-endpoint-bypass", "preview-secret"),
+            ("x-okou-test-endpoint-bypass", "preview-secret"),
         ),
     )
     monkeypatch.setenv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret")

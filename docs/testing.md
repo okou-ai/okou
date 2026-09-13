@@ -8,7 +8,9 @@ changes should not break a test when that contract is preserved.
 ## Choose the Boundary
 
 - **Platform:** boot the real Router with `setupPage`, interact with the page,
-  and assert visible or accessible state, controls, navigation, and downloads.
+  and assert rendered content, controls, navigation, and downloads. Default to
+  `toBeInTheDocument()` for content presence; use `toBeVisible()` only when
+  visibility itself is the contract. See [App assertions](testing/app-testing.md#assertions).
 - **API:** call production endpoints for setup and verification. Assert HTTP
   responses, including status, headers, bodies, and effects observable through
   subsequent requests. Exercise auth, validation, serialization, permissions,
@@ -29,7 +31,9 @@ Prefer integration coverage through real entry points. Add tests for new
 behavior and regressions where they provide confidence beyond existing checks.
 Keep cases focused on meaningful business, security, cancellation, recovery,
 and compatibility contracts. Avoid duplicate cases that merely exercise a
-library, restate static configuration, or pin incidental implementation.
+library, restate static configuration, or pin incidental implementation. In API
+tests log records are incidental implementation: outside the logger's own suite
+and one redaction check, do not assert on log levels, messages, or fields.
 
 Use expensive deployed E2E runs for representative happy paths. Exercise error
 and edge cases in controlled integration tests. Follow each surface's guide

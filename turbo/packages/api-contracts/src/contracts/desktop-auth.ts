@@ -5,18 +5,22 @@ import { apiErrorSchema } from "./errors";
 const c = initContract();
 
 export const desktopAuthCallbackSchemes = [
-  "ai.vm0.zero.desktop",
-  "ai.vm0.zero.desktop.dev",
   "ai.okou.desktop",
   "ai.okou.desktop.dev",
 ] as const;
-export const defaultDesktopAuthCallbackScheme = desktopAuthCallbackSchemes[0];
 export const desktopAuthCallbackSchemeSchema = z.enum(
   desktopAuthCallbackSchemes,
 );
 export type DesktopAuthCallbackScheme = z.infer<
   typeof desktopAuthCallbackSchemeSchema
 >;
+/**
+ * Only a body-less caller reaches this default; every packaged Desktop build
+ * sends its own scheme. Name the production identity explicitly so reordering
+ * the accepted set cannot retarget the callback URL.
+ */
+export const defaultDesktopAuthCallbackScheme: DesktopAuthCallbackScheme =
+  "ai.okou.desktop";
 
 export const desktopAuthHandoffStatusSchema = z.enum([
   "pending",

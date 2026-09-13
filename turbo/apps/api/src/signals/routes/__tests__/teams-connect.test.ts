@@ -265,7 +265,7 @@ describe("GET /api/integrations/teams/connect", () => {
       tenantName: fixture.teamsTenantName,
       teamId: fixture.teamsTeamId,
       teamName: fixture.teamsTeamName,
-      botName: "Zero",
+      botName: "Nova",
       defaultAgentName: null,
       permissionMismatch: false,
       reinstallUrl: null,
@@ -351,7 +351,7 @@ describe("GET /api/integrations/teams/connect", () => {
       tenantName: fixture.teamsTenantName,
       teamId: fixture.teamsTeamId,
       teamName: fixture.teamsTeamName,
-      botName: "Zero",
+      botName: "Nova",
       defaultAgentName: null,
       environment: {
         requiredSecrets: [],
@@ -574,7 +574,7 @@ describe("POST /api/integrations/teams/connect", () => {
     expect(welcomeRequests[0]).toMatchObject({
       kind: "conversation",
       body: {
-        bot: { id: fixture.teamsBotId, name: "Zero" },
+        bot: { id: fixture.teamsBotId, name: "Nova" },
         members: [{ id: fixture.teamsUserId, name: "Ada Lovelace" }],
         isGroup: false,
         channelData: {
@@ -596,7 +596,7 @@ describe("POST /api/integrations/teams/connect", () => {
               body: [
                 {
                   type: "TextBlock",
-                  text: "You're connected to Okou! 🎉\nMention `@Zero` in any channel or send a DM to start chatting with your agent.",
+                  text: "You're connected to Okou! 🎉\nMention `@Nova` in any channel or send a DM to start chatting with your agent.",
                   wrap: true,
                 },
               ],

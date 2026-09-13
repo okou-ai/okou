@@ -86,7 +86,6 @@ import {
   lockModelProviderState,
 } from "./auth-state-lock.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
-import { isExpectedOAuthRefreshFailure } from "./connector-oauth-refresh-policy";
 import {
   loadRunCreditAdmissionState,
   resolveOrgCreditAvailability,
@@ -137,7 +136,6 @@ const LOW_BILLABLE_FIREWALL_LEASE_SECONDS = 5;
 const LOW_BILLABLE_FIREWALL_CREDIT_THRESHOLD = 1000;
 const FIREWALL_AUTH_REFRESH_TIMEOUT_MS = 30_000;
 const REFRESH_TIMEOUT_ERROR_CODE = "oauth_refresh_timeout";
-const MAX_OAUTH_REFRESH_LOG_FIELD_LENGTH = 128;
 const ACTIVE_FIREWALL_AUTH_RUN_STATUSES = ["pending", "running"] as const;
 const databaseTimestampMicrosRowSchema = z.object({
   now: pgInt8ToBigIntSchema,
@@ -887,36 +885,6 @@ function connectorReconnectReasonFromRefreshFailure(
     return "authorization_expired_or_revoked";
   }
   return null;
-}
-
-function oauthRefreshFailureLogFields(error: unknown): {
-  readonly oauthError?: string;
-  readonly oauthErrorSubtype?: string;
-  readonly oauthStatus?: number;
-} {
-  if (!isOAuthProviderHttpError(error)) {
-    return {};
-  }
-  return {
-    ...(error.oauthError
-      ? { oauthError: oauthRefreshFailureLogField(error.oauthError) }
-      : {}),
-    ...(error.oauthErrorSubtype
-      ? {
-          oauthErrorSubtype: oauthRefreshFailureLogField(
-            error.oauthErrorSubtype,
-          ),
-        }
-      : {}),
-    oauthStatus: error.status,
-  };
-}
-
-function oauthRefreshFailureLogField(value: string): string {
-  if (value.length <= MAX_OAUTH_REFRESH_LOG_FIELD_LENGTH) {
-    return value;
-  }
-  return `${value.slice(0, MAX_OAUTH_REFRESH_LOG_FIELD_LENGTH - 3)}...`;
 }
 
 function isFetchNetworkError(error: unknown): boolean {
@@ -2544,35 +2512,19 @@ async function markRefreshFailure(
 async function markRefreshTokenMissing(
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
-  missingInputNames: readonly string[],
-  shouldLogWarning: boolean,
 ): Promise<RefreshAccessTokenResult> {
-  if (shouldLogWarning) {
-    L.warn(
-      `${args.accessSourceKey} token refresh failed: required input missing`,
-      {
-        accessSourceKey: args.accessSourceKey,
-        orgId: args.orgId,
-        userId: args.userId,
-        ...(args.sourceType === "model-provider" && args.sourceId
-          ? { modelProviderAccountId: args.sourceId }
-          : {}),
-        errorCode: null,
-        failureReason: "reconnect_required",
-        missingInputNames,
-      },
-    );
-  }
   await markRefreshFailure(args, context, null, "reconnect_required", null);
   return refreshTokenMissingResult();
 }
 
+// Refresh-failure diagnostics follow one rule: a `reconnect_required` outcome
+// is already visible as persisted reconnect state, so it writes no log, and an
+// `upstream_provider` outcome writes one warn without provider message text.
 async function markAndReturnRefreshFailure(
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
   error: unknown,
   signal: AbortSignal,
-  shouldLogWarning: boolean,
 ): Promise<RefreshAccessTokenResult> {
   const connectorAccess = args.connectorAccessBySlug.get(args.accessSourceKey);
   if (
@@ -2590,48 +2542,16 @@ async function markAndReturnRefreshFailure(
       "reconnect_required",
       "credential_expired",
     );
-    L.debug("AWS Sign-In refresh token expired; reconnect required", {
-      accessSourceKey: args.accessSourceKey,
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorId: connectorAccess.connectorId,
-      errorCode: "invalid_grant",
-      failureReason: "reconnect_required",
-      providerErrorCode: "TOKEN_EXPIRED",
-      oauthStatus: error.status,
-    });
     return refreshFailedResult("reconnect_required");
   }
-  const message = error instanceof Error ? error.message : "Unknown error";
   const { errorCode, failureReason } = classifyRefreshFailure(error, signal);
-  const terminalCodexFailure =
-    args.sourceType === "model-provider" &&
-    args.accessSourceKey === "codex-oauth-token" &&
-    failureReason === "reconnect_required" &&
-    isTerminalChatgptRefreshErrorCode(errorCode);
-  const expectedConnectorFailure =
-    args.sourceType === "connector" &&
-    isExpectedOAuthRefreshFailure({
-      error,
-      connectorSlug: args.accessSourceKey,
-      authMethod: args.connectorAccessBySlug.get(args.accessSourceKey)
-        ?.authMethod,
-    });
-  if (shouldLogWarning && !terminalCodexFailure && !expectedConnectorFailure) {
-    const logMessage =
-      args.accessSourceKey === "codex-oauth-token"
-        ? `${args.accessSourceKey} token refresh failed`
-        : `${args.accessSourceKey} token refresh failed: ${message}`;
-    L.warn(logMessage, {
+  if (failureReason === "upstream_provider") {
+    L.warn(`${args.accessSourceKey} token refresh failed`, {
       accessSourceKey: args.accessSourceKey,
       orgId: args.orgId,
       userId: args.userId,
-      ...(args.sourceType === "model-provider" && args.sourceId
-        ? { modelProviderAccountId: args.sourceId }
-        : {}),
       errorCode,
       failureReason,
-      ...oauthRefreshFailureLogFields(error),
     });
   }
   await markRefreshFailure(
@@ -2921,18 +2841,8 @@ async function refreshLockedAccessToken(args: {
     });
   }
 
-  const missingInputNames = missingRefreshInputNames(lockedState);
-  if (missingInputNames.length > 0) {
-    L.debug(
-      `No ${args.refreshArgs.accessSourceKey} refresh inputs available, skipping`,
-      { missingInputNames },
-    );
-    return markRefreshTokenMissing(
-      args.refreshArgs,
-      args.prepared.context,
-      missingInputNames,
-      !lockedState.needsReconnect,
-    );
+  if (missingRefreshInputNames(lockedState).length > 0) {
+    return markRefreshTokenMissing(args.refreshArgs, args.prepared.context);
   }
 
   return refreshPreparedLockedAccessToken({
@@ -2968,7 +2878,6 @@ async function refreshPreparedLockedAccessToken(args: {
       prepared.context,
       refreshResult.error,
       refreshSignal,
-      !lockedState.needsReconnect,
     );
   }
 
@@ -2978,14 +2887,13 @@ async function refreshPreparedLockedAccessToken(args: {
     result: refreshResult.value,
   });
   if (!outputValidation.ok) {
-    if (!lockedState.needsReconnect) {
-      L.warn(outputValidation.message, {
-        accessSourceKey: refreshArgs.accessSourceKey,
-        orgId: refreshArgs.orgId,
-        userId: refreshArgs.userId,
-        sourceType: refreshArgs.sourceType,
-      });
-    }
+    L.warn(outputValidation.message, {
+      accessSourceKey: refreshArgs.accessSourceKey,
+      orgId: refreshArgs.orgId,
+      userId: refreshArgs.userId,
+      errorCode: null,
+      failureReason: "upstream_provider",
+    });
     await markRefreshFailure(
       refreshArgs,
       prepared.context,

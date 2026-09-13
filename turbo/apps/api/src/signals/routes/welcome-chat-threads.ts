@@ -27,8 +27,8 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
   if (result.status === 201) {
-    // Publish only after commit. Replays also repair a missed notification;
-    // ordinary history synchronization remains the authoritative recovery.
+    // Publish only after commit. A lost notification is recovered by the
+    // client's ordinary thread-list and history synchronization.
     await publishThreadListChanged(auth);
     signal.throwIfAborted();
     await publishChatThreadMessageCreatedSafely({

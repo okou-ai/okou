@@ -21,6 +21,10 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import { setOrgModelPolicyProviderTypeFixture } from "../../../test-fixtures/org-model-policies";
+import {
+  withBuiltInModelRuntimeRouteCandidateUnavailableForTest,
+  withBuiltInModelRuntimeRouteUnavailableForTest,
+} from "../../../test-fixtures/built-in-model-runtime-route";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createRouteMocks } from "./helpers/route-test";
 import {
@@ -28,6 +32,7 @@ import {
   type ApiTestUser,
 } from "./helpers/api-bdd-auth-org";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { modelPoliciesRoutes } from "../model-policies";
 import { modelProviderGatewayRoutes } from "../model-provider-gateways";
@@ -298,6 +303,45 @@ describe("GET/PUT /api/model-policies", () => {
     ).toBe(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL);
   });
 
+  it("advertises the current built-in provider for route-specific effort controls", async () => {
+    const fixture = seedFixture();
+    useSession(fixture);
+    const model = "deepseek-v4-flash";
+    await seedBuiltInModelCandidateKeys(context, model);
+    const client = apiClient();
+    const response = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: { policies: [makeBuiltInPolicy(model, true)] },
+      }),
+      [200],
+    );
+    expect(response.body.policies[0]?.runtimeProviderType).toBe("deepseek");
+    // Operator-managed key availability/cooldowns have no user mutation API.
+    // Scope the infrastructure state to this request without changing shared rows.
+    const fallback =
+      await withBuiltInModelRuntimeRouteCandidateUnavailableForTest(
+        {
+          selectedModel: model,
+          providerType: "deepseek",
+          upstreamModel: model,
+        },
+        async () => {
+          return await accept(client.list({ headers: authHeaders() }), [200]);
+        },
+      );
+    expect(fallback.body.policies[0]?.runtimeProviderType).toBe(
+      "openrouter-codex",
+    );
+    const unavailable = await withBuiltInModelRuntimeRouteUnavailableForTest(
+      model,
+      async () => {
+        return await accept(client.list({ headers: authHeaders() }), [200]);
+      },
+    );
+    expect(unavailable.body.policies[0]?.runtimeProviderType).toBeNull();
+  });
+
   it("preserves canonical built-in rows with legacy built-in route semantics", async () => {
     const fixture = await seedFixture();
     useSession(fixture);
@@ -383,7 +427,7 @@ describe("GET/PUT /api/model-policies", () => {
     ).toBe(LIMITED_FREE1_DEFAULT_RUN_MODEL);
   });
 
-  it.each(["deepseek-v4-flash", "gpt-5.6-luna"] as const)(
+  it.each(["deepseek-v4-pro", "deepseek-v4-flash", "gpt-5.6-luna"] as const)(
     "keeps an existing %s default for limited-free-1 workspaces",
     async (previousDefaultModel) => {
       const fixture = seedFixture();
@@ -1513,7 +1557,12 @@ describe("GET/PUT /api/model-policies", () => {
       client.list({ headers: authHeaders() }),
       [200],
     );
-    const updates = toUpdate(listResponse.body).map((policy) => {
+    const updates = [
+      ...toUpdate(listResponse.body).filter((policy) => {
+        return policy.model !== "deepseek-v4-pro";
+      }),
+      makeBuiltInPolicy("deepseek-v4-pro"),
+    ].map((policy) => {
       if (policy.model !== "deepseek-v4-pro") {
         return policy;
       }

@@ -7,7 +7,6 @@ import {
   type ChatThreadSnapshotProjection,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
   click,
@@ -116,19 +115,19 @@ function expectPaneTitle(
 }
 
 async function openNeighboringChatPanes(mainThread: "current" | "newest") {
-  const oldest = continuityThread(16, 1, "Oldest neighboring chat");
   const current = continuityThread(16, 2, "Current keyboard chat");
   const side = continuityThread(16, 3, "Side keyboard chat");
   const newest = continuityThread(16, 4, "Newest neighboring chat");
   const workspace = installContinuityWorkspace(context, {
     caseId: 16,
-    threads: [oldest, current, side, newest],
+    threads: [current, side, newest],
   });
 
   const main = mainThread === "current" ? current : newest;
   await setupPage({
     context,
     path: `/chats/${main.id}?sidebar=${side.id}`,
+    locale: "en-US",
     ...workspace.pageOptions,
   });
 
@@ -141,10 +140,12 @@ async function openNeighboringChatPanes(mainThread: "current" | "newest") {
 }
 
 test("Move to a newer chat from the main pane without changing the side pane", async () => {
+  const user = userEvent.setup({ delay: null });
   const { current, side, newest } = await openNeighboringChatPanes("current");
   const mainComposer = composerIn(current.id);
   mainComposer.focus();
-  await userEvent.keyboard("{Control>}{Shift>}{ArrowUp}{/Shift}{/Control}");
+  expect(mainComposer).toHaveFocus();
+  await user.keyboard("{Control>}{Shift>}{ArrowUp}{/Shift}{/Control}");
 
   await waitFor(() => {
     expect(threadContainer(newest.id)).toBeVisible();
@@ -161,6 +162,7 @@ test("Move to a newer chat from the main pane without changing the side pane", a
 });
 
 test("Move to an older chat from the side pane without changing the main pane", async () => {
+  const user = userEvent.setup({ delay: null });
   const { current, side, newest } = await openNeighboringChatPanes("newest");
   expect(continuitySidebarLink(newest.id)).toHaveAttribute(
     "aria-current",
@@ -168,7 +170,8 @@ test("Move to an older chat from the side pane without changing the main pane", 
   );
   const sideContainer = threadContainer(side.id);
   sideContainer.focus();
-  await userEvent.keyboard("{Control>}{Shift>}{ArrowDown}{/Shift}{/Control}");
+  expect(sideContainer).toHaveFocus();
+  await user.keyboard("{Control>}{Shift>}{ArrowDown}{/Shift}{/Control}");
 
   await waitFor(() => {
     expect(threadContainer(current.id)).toBeVisible();
@@ -195,7 +198,6 @@ test("Open the emoji picker for the focused chat", async () => {
     context,
     path: `/chats/${current.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.StableChatThreadNavigation]: true },
   });
 
   await waitFor(() => {
@@ -223,7 +225,6 @@ test("Add, replace, or remove the focused chat icon with shortcuts", async () =>
     context,
     path: `/chats/${current.id}?sidebar=${emojiOnlySide.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.StableChatThreadNavigation]: true },
   });
 
   await waitFor(() => {

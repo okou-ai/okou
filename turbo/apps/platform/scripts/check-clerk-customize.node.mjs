@@ -61,10 +61,9 @@ await test("rejects the legacy Clerk DOM adapter patterns", () => {
   );
 });
 
-await test("rejects stylesheet, inline-style, and Auth V2 dependencies", () => {
+await test("rejects stylesheets and inline styling", () => {
   const reasons = violationReasons(`
     import "./clerk.css";
-    import { AuthV2Shell } from "../auth-v2/auth-v2-shell.tsx";
     export function Layout() {
       return <div style={{ color: "red" }} dangerouslySetInnerHTML={{ __html: "" }} />;
     }
@@ -74,7 +73,6 @@ await test("rejects stylesheet, inline-style, and Auth V2 dependencies", () => {
     new Set(reasons),
     new Set([
       "imports a route-owned stylesheet",
-      "imports the independent Auth V2 implementation",
       "adds inline styles to the Clerk V1 implementation",
       "can inject raw styles or Clerk DOM markup",
     ]),

@@ -102,7 +102,7 @@ export function VoiceInputModelSettings() {
           onValueChange={handleChange}
         >
           <SelectTrigger
-            className="okou-btn-morandi"
+            variant="neutral"
             aria-label={t(($) => {
               return $.settings.preferences.debug.voiceInput.title;
             })}

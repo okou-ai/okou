@@ -163,8 +163,6 @@ describe("Google Analytics quiet refresh recovery", () => {
           );
         }),
       );
-      context.mocks.axiomLogging.warn.mockClear();
-      context.mocks.axiomLogging.error.mockClear();
       context.mocks.sentry.captureException.mockClear();
 
       const first = analytics.request(analytics.account.id, true);
@@ -227,8 +225,6 @@ describe("Google Analytics quiet refresh recovery", () => {
         headers: { Authorization: `Bearer analytics-access-${siblingCode}` },
       });
       expect(refreshCalls).toBe(callsBeforeRetries + 2);
-      expect(context.mocks.axiomLogging.warn).not.toHaveBeenCalled();
-      expect(context.mocks.axiomLogging.error).not.toHaveBeenCalled();
       expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
 
       // A later request can recover with the same refresh token, without OAuth.
@@ -367,7 +363,6 @@ describe("Google Analytics quiet refresh recovery", () => {
           );
         }),
       );
-      context.mocks.axiomLogging.warn.mockClear();
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const failed = await analytics.request(analytics.account.id, true);
         expect(failed.status).toBe(502);
@@ -378,10 +373,6 @@ describe("Google Analytics quiet refresh recovery", () => {
         expect(failed.body.error.failureReason).toBe(failureReason);
       }
       expect(refreshCalls).toBe(2);
-      expect(context.mocks.axiomLogging.warn).toHaveBeenCalledWith(
-        expect.stringContaining("google-analytics token refresh failed"),
-        expect.objectContaining({ oauthStatus: status, oauthError: error }),
-      );
       const accounts = await analytics.connectors.listBuiltinConnectorAccounts(
         analytics.actor,
         "google-analytics",

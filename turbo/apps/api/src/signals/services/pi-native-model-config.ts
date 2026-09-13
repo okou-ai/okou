@@ -1,13 +1,11 @@
+import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
+import { isPiNativeRoute } from "@okouai/core/pi-execution";
 import {
   getProviderRuntimeModel,
-  isActiveRunModel,
   isBuiltInModelProviderType,
-  isModelSupportedByProvider,
-  modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
   piModelConfigV4Schema,
-  piNativeCatalogModelSchema,
   type PiModelConfigV4,
 } from "@okouai/api-contracts/contracts/pi-native";
 
@@ -22,29 +20,6 @@ function parseNativeConfig(value: unknown): PiModelConfigV4 {
     );
   }
   return parsed.data;
-}
-
-export function isPiNativeModel(model: string | null | undefined): boolean {
-  return (
-    typeof model === "string" &&
-    isActiveRunModel(model) &&
-    piNativeCatalogModelSchema.safeParse(model).success
-  );
-}
-
-export function isPiNativeRoute(
-  type: string | null | undefined,
-  model: string | null | undefined,
-): boolean {
-  const provider = modelProviderTypeSchema.safeParse(type);
-  return (
-    isPiNativeModel(model) &&
-    typeof model === "string" &&
-    provider.success &&
-    provider.data !== "claude-code-oauth-token" &&
-    (provider.data === "custom-anthropic-messages" ||
-      isModelSupportedByProvider(model, provider.data))
-  );
 }
 
 export interface PiNativeModelProviderInput {

@@ -3,7 +3,7 @@ use super::super::support::{
     SpeculativeIdleSeedSpec, context_with_session, minimal_context, mock_run_config_with_api_url,
     mock_run_config_with_overrides_and_api_url, push_job, seed_idle_pool,
     seed_idle_pool_with_speculative_timezone, shutdown, test_profiles, test_runner_identity,
-    wait_cancel_handle, wait_discover_entered,
+    wait_budget_count, wait_cancel_handle, wait_cancel_token_removed, wait_discover_entered,
 };
 use crate::paths::RunnerPaths;
 use crate::workspace_image_cache::WorkspaceImageCache;
@@ -719,6 +719,155 @@ async fn published_exact_activation_failure_is_reported_as_activation_failed() {
     );
 
     drop(predecessor_guard);
+    shutdown(&env, run_handle).await;
+    telemetry_mock.assert_calls_async(1).await;
+}
+
+#[tokio::test]
+async fn finalizing_handoff_activation_failure_retains_lease_until_completion() {
+    assert_finalizing_activation_failure_retains_lease_until_completion(true).await;
+}
+
+#[tokio::test]
+async fn published_exact_finalizing_activation_failure_retains_lease_until_completion() {
+    assert_finalizing_activation_failure_retains_lease_until_completion(false).await;
+}
+
+async fn assert_finalizing_activation_failure_retains_lease_until_completion(direct_handoff: bool) {
+    use httpmock::prelude::*;
+
+    use crate::idle_pool::ParkResult;
+    use crate::idle_pool::test_support::ParkedIdleCandidateBuilder;
+
+    let server = MockServer::start_async().await;
+    let telemetry_mock = server
+        .mock_async(|when, then| {
+            when.method(POST)
+                .path("/api/webhooks/agent/telemetry")
+                .body_includes("runner_claim_finalizing_handoff")
+                .body_includes(r#""outcome":"activation_failed""#)
+                .body_includes(r#""reason":"exact_activation_failed""#);
+            then.status(200)
+                .header("content-type", "application/json")
+                .body(r#"{"success":true,"id":"ok"}"#);
+        })
+        .await;
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    overrides.push_unpark_result(Err(sandbox::SandboxError::IdleTransition {
+        transition: sandbox::SandboxIdleTransition::Unpark,
+        message: "simulated finalizing activation failure".into(),
+    }));
+    overrides.push_destroy_panic("simulated uncertain activation cleanup");
+    let (config, env) = mock_run_config_with_overrides_and_api_url(
+        test_profiles(),
+        2,
+        4096,
+        1,
+        Arc::clone(&overrides),
+        &server.base_url(),
+    );
+    let budget = Arc::clone(&config.capacity.budget);
+    let reuse_key = "thread:finalizing-failure-completion";
+    let predecessor_run_id = RunId::new_v4();
+    let predecessor = env.active_runs.register(
+        predecessor_run_id,
+        Some(reuse_key.to_owned()),
+        "vm0/default".into(),
+    );
+    let publisher = predecessor.reuse_publisher();
+    let lease = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
+    let factory: Arc<Box<dyn sandbox::SandboxFactory>> = Arc::new(Box::new(
+        sandbox_mock::MockSandboxFactory::with_overrides(Arc::clone(&overrides)),
+    ));
+    let candidate = ParkedIdleCandidateBuilder::new(reuse_key, lease)
+        .with_history_generation_run_id(predecessor_run_id)
+        .with_factory(factory)
+        .with_sandbox(Box::new(sandbox_mock::MockSandbox::with_overrides(
+            "finalizing-failure-completion",
+            Arc::clone(&overrides),
+        )))
+        .build();
+    env.handle.block_completions();
+    let run_handle = tokio::spawn(run(config));
+    wait_discover_entered(&env, Duration::from_secs(5)).await;
+
+    let run_id = RunId::new_v4();
+    let mut context = minimal_context(run_id);
+    context.reuse_key = Some(reuse_key.to_owned());
+    env.provider.set_claim_result(run_id, Some(context));
+    env.handle
+        .discover_tx
+        .send(
+            crate::provider::JobCandidate::new(run_id, "vm0/default".into())
+                .with_reuse_key(Some(reuse_key.to_owned()))
+                .with_history_generation_run_id(Some(predecessor_run_id))
+                .with_runner_preference_for_test(
+                    crate::provider::ActiveRunnerPreference::ranked_for_test(
+                        test_runner_identity(),
+                        crate::provider::RunnerPreferenceTier::FinalizingPredecessor,
+                        std::time::Instant::now() + Duration::from_secs(30),
+                    ),
+                ),
+        )
+        .unwrap();
+    wait_discover_entered(&env, Duration::from_secs(5)).await;
+    let cancellation = wait_cancel_handle(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
+
+    if direct_handoff {
+        assert!(
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                publisher.handoff_signal().wait_and_accept(),
+            )
+            .await
+            .expect("successor should request direct handoff")
+        );
+        assert!(matches!(
+            publisher.deliver_exact_handoff(candidate, predecessor_run_id),
+            active_runs::ActiveRunHandoffDeliveryResult::Delivered
+        ));
+    } else {
+        assert!(matches!(
+            env.idle_pool.lock().await.park(candidate),
+            ParkResult::Parked
+        ));
+        assert!(publisher.publish_exact_sandbox());
+    }
+
+    let completion = env
+        .handle
+        .wait_completion(run_id, Duration::from_secs(5))
+        .await
+        .expect("uncertain activation cleanup should complete without an executor");
+    assert_eq!(completion.sandbox_id, None);
+    assert_eq!(
+        completion.reuse_result,
+        Some(crate::types::SandboxReuseResult::UnparkFailed)
+    );
+    assert!(
+        completion
+            .error
+            .as_deref()
+            .is_some_and(|error| error.contains("cleanup was uncertain"))
+    );
+    assert_eq!(env.handle.completion_in_flight(), 1);
+    assert_eq!(budget.allocated(), (2, 4096, 1));
+    assert!(!env.active_runs.contains(run_id));
+    assert!(
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            cancellation.request_hard_cancellation()
+        )
+        .await
+        .expect("failure must release the transfer guard before completion returns")
+    );
+    assert!(overrides.start_agent_process_calls().is_empty());
+    assert_eq!(overrides.destroy_call_count(), 1);
+
+    env.handle.unblock_completions();
+    wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
+    wait_budget_count(&budget, 0, Duration::from_secs(5)).await;
+    drop(predecessor);
     shutdown(&env, run_handle).await;
     telemetry_mock.assert_calls_async(1).await;
 }

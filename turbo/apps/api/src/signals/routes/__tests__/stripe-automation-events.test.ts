@@ -599,84 +599,97 @@ describe("Stripe automation event webhook", () => {
     );
   });
 
-  it("fans out a normalized Live snapshot exactly once and reports health", async () => {
-    const receivedAt = Date.parse("2026-08-07T08:00:00.000Z");
-    mockNow(receivedAt);
-    const scenario = await setupScenario({
-      billingReasons: ["subscription_cycle"],
-    });
-    expect((await readStripeAutomation(scenario)).health).toStrictEqual({
-      lastMatchingEventReceivedAt: null,
-      lastDeliveryStatus: null,
-      lastDeliveryStatusAt: null,
-      warning: null,
-    });
-    const event = invoicePaidEvent({
-      eventId: "evt_workflow_once",
-      invoiceId: "in_workflow_once",
-    });
+  it.each(["normalized input", "delivery health"] as const)(
+    "deduplicates a Live Stripe snapshot while projecting %s",
+    async (projection) => {
+      const receivedAt = Date.parse("2026-08-07T08:00:00.000Z");
+      mockNow(receivedAt);
+      const scenario = await setupScenario({
+        billingReasons: ["subscription_cycle"],
+      });
+      if (projection === "delivery health") {
+        expect((await readStripeAutomation(scenario)).health).toStrictEqual({
+          lastMatchingEventReceivedAt: null,
+          lastDeliveryStatus: null,
+          lastDeliveryStatusAt: null,
+          warning: null,
+        });
+      }
 
-    await Promise.all([
-      postStripeAutomationEvent(event),
-      postStripeAutomationEvent(event),
-    ]);
+      const event = invoicePaidEvent({
+        eventId: "evt_workflow_once",
+        invoiceId: "in_workflow_once",
+      });
 
-    expect((await readStripeAutomation(scenario)).health).toStrictEqual({
-      lastMatchingEventReceivedAt: "2026-08-07T08:00:00.000Z",
-      lastDeliveryStatus: "pending",
-      lastDeliveryStatusAt: "2026-08-07T08:00:00.000Z",
-      warning: null,
-    });
-    const executionResults = await Promise.all([
-      executeAutomation(scenario),
-      executeAutomation(scenario),
-    ]);
-    expect(
-      executionResults
-        .map((result) => {
-          return result.body;
-        })
-        .sort((left, right) => {
-          return left.executed - right.executed;
-        }),
-    ).toStrictEqual([NO_EXECUTION, EXECUTED_EXECUTION]);
-    expect((await readStripeAutomation(scenario)).health).toMatchObject({
-      lastDeliveryStatus: "delivered",
-      warning: null,
-    });
-    mocks.clerk.session(scenario.actor.userId, scenario.actor.orgId);
-    const threadAutomations = await accept(
-      automationsClient().listForChatThread({
-        headers: authHeaders(),
-        params: { threadId: scenario.chatThreadId },
-      }),
-      [200],
-    );
-    expect(threadAutomations.body).toContainEqual(
-      expect.objectContaining({
-        id: scenario.automationId,
-        health: expect.objectContaining({
+      await Promise.all([
+        postStripeAutomationEvent(event),
+        postStripeAutomationEvent(event),
+      ]);
+
+      if (projection === "delivery health") {
+        expect((await readStripeAutomation(scenario)).health).toStrictEqual({
+          lastMatchingEventReceivedAt: "2026-08-07T08:00:00.000Z",
+          lastDeliveryStatus: "pending",
+          lastDeliveryStatusAt: "2026-08-07T08:00:00.000Z",
+          warning: null,
+        });
+      }
+
+      const executionResults = await Promise.all([
+        executeAutomation(scenario),
+        executeAutomation(scenario),
+      ]);
+      expect(
+        executionResults
+          .map((result) => {
+            return result.body;
+          })
+          .sort((left, right) => {
+            return left.executed - right.executed;
+          }),
+      ).toStrictEqual([NO_EXECUTION, EXECUTED_EXECUTION]);
+      if (projection === "delivery health") {
+        expect((await readStripeAutomation(scenario)).health).toMatchObject({
           lastDeliveryStatus: "delivered",
           warning: null,
-        }),
-      }),
-    );
+        });
+        mocks.clerk.session(scenario.actor.userId, scenario.actor.orgId);
+        const threadAutomations = await accept(
+          automationsClient().listForChatThread({
+            headers: authHeaders(),
+            params: { threadId: scenario.chatThreadId },
+          }),
+          [200],
+        );
+        expect(threadAutomations.body).toContainEqual(
+          expect.objectContaining({
+            id: scenario.automationId,
+            health: expect.objectContaining({
+              lastDeliveryStatus: "delivered",
+              warning: null,
+            }),
+          }),
+        );
 
-    mocks.clerk.session(scenario.actor.userId, scenario.actor.orgId);
-    const events = await workflows.readThreadEvents(scenario.chatThreadId);
-    const inputs = events.filter((eventRow) => {
-      return eventRow.eventType === "input.automation";
-    });
-    expect(inputs).toHaveLength(1);
-    const input = inputs[0];
-    if (!input) {
-      throw new Error("Expected one Stripe automation input event");
-    }
-    expect(chatEventDisplayText(input)).toBe(
-      'Stripe invoice "in_workflow_once" was paid.',
-    );
-    expect(context.mocks.stripe.invoices.list).not.toHaveBeenCalled();
-  });
+        return;
+      }
+
+      mocks.clerk.session(scenario.actor.userId, scenario.actor.orgId);
+      const events = await workflows.readThreadEvents(scenario.chatThreadId);
+      const inputs = events.filter((eventRow) => {
+        return eventRow.eventType === "input.automation";
+      });
+      expect(inputs).toHaveLength(1);
+      const input = inputs[0];
+      if (!input) {
+        throw new Error("Expected one Stripe automation input event");
+      }
+      expect(chatEventDisplayText(input)).toBe(
+        'Stripe invoice "in_workflow_once" was paid.',
+      );
+      expect(context.mocks.stripe.invoices.list).not.toHaveBeenCalled();
+    },
+  );
 
   it("uses the exact Stripe source without persisting a thread override", async () => {
     const scenario = await setupScenario();

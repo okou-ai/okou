@@ -2,6 +2,8 @@ import type {
   ChatThreadEvent,
   ChatThreadSnapshotProjection,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { withModelReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 
 export type ReplayChatThreadEvent = Omit<ChatThreadEvent, "seqId">;
 
@@ -10,6 +12,7 @@ export interface EventDrivenChatThread extends ChatThreadSnapshotProjection {
   readonly cloudBrowserEnabled: boolean;
   readonly selectedVideoModel: string | null;
   readonly selectedImageModel: string | null;
+  readonly modelSettings: ModelSettings;
 }
 
 function compareThreadOrder(
@@ -48,6 +51,7 @@ function isDeferrableUpdate(kind: ReplayChatThreadEvent["kind"]): boolean {
  */
 function updatedThreadFields(
   event: ReplayChatThreadEvent,
+  thread: EventDrivenChatThread,
 ): Partial<EventDrivenChatThread> | null {
   if (event.kind === "renamed") {
     return { title: event.title, renamedAt: event.createdAt };
@@ -61,9 +65,14 @@ function updatedThreadFields(
   if (event.kind === "model_selection_updated") {
     return {
       selectedModel: event.selectedModel,
-      ...(event.reasoningEffort === undefined
+      ...(event.modelSettingsPatch === undefined
         ? {}
-        : { reasoningEffort: event.reasoningEffort }),
+        : {
+            modelSettings: withModelReasoningEffort(
+              thread.modelSettings,
+              event.modelSettingsPatch,
+            ),
+          }),
     };
   }
   if (event.kind === "service_tier_updated") {
@@ -100,9 +109,7 @@ function applyEvent(
       pinnedAt: null,
       renamedAt: null,
       selectedModel: event.selectedModel,
-      ...(event.reasoningEffort === undefined
-        ? {}
-        : { reasoningEffort: event.reasoningEffort }),
+      modelSettings: event.modelSettings ?? {},
       serviceTier: event.serviceTier,
       computerUseHostId: event.computerUseHostId,
       cloudBrowserEnabled: event.cloudBrowserEnabled ?? false,
@@ -142,7 +149,7 @@ function applyEvent(
     return;
   }
 
-  const fields = updatedThreadFields(event);
+  const fields = updatedThreadFields(event, thread);
   if (fields === null) {
     threads.set(event.chatThreadId, {
       ...thread,
@@ -171,6 +178,7 @@ export function replayChatThreadEvents(
     threads.set(thread.id, {
       ...thread,
       selectedModel: thread.selectedModel ?? null,
+      modelSettings: thread.modelSettings ?? {},
       serviceTier: thread.serviceTier ?? null,
       computerUseHostId: thread.computerUseHostId ?? null,
       cloudBrowserEnabled: thread.cloudBrowserEnabled ?? false,
