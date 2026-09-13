@@ -1,5 +1,12 @@
 # Changelog
 
+## [9.325.1](https://github.com/vm0-ai/vm0/compare/cli-v9.325.0...cli-v9.325.1) (2026-09-13)
+
+
+### Refactoring
+
+* **cli:** send the canonical connector-intent header name ([#33761](https://github.com/vm0-ai/vm0/issues/33761)) ([fc5bd2e](https://github.com/vm0-ai/vm0/commit/fc5bd2e5e8cb630aa69afb8528618edc40b4e3f3))
+
 ## [9.325.0](https://github.com/vm0-ai/vm0/compare/cli-v9.324.5...cli-v9.325.0) (2026-09-13)
 
 
