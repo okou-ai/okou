@@ -244,7 +244,7 @@ async def test_broader_shared_owners_cannot_interrupt_active_request_authenticat
         path="/special/items/123",
         method="GET",
     )
-    flow.request.headers["X-VM0-Connector-Intent"] = "broad-a"
+    flow.request.headers["X-Okou-Connector-Intent"] = "broad-a"
     if requestheaders_first:
         flow.request.headers["Content-Length"] = str(mitm_addon.STREAM_BUFFER_LIMIT + 1)
 
@@ -262,4 +262,4 @@ async def test_broader_shared_owners_cannot_interrupt_active_request_authenticat
 
     assert flow.response is None
     assert flow.request.headers["Authorization"] == "Bearer active"
-    assert "X-VM0-Connector-Intent" not in flow.request.headers
+    assert "X-Okou-Connector-Intent" not in flow.request.headers

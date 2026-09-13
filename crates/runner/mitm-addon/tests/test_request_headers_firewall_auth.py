@@ -158,7 +158,7 @@ async def test_firewall_allow_header_auth_requestheaders_strips_connector_intent
         path="/repos/octocat/hello",
         request_headers=headers(
             ("Host", "api.github.com"),
-            ("X-VM0-Connector-Intent", "github"),
+            ("X-Okou-Connector-Intent", "github"),
             ("Content-Length", str(STREAM_BUFFER_LIMIT + 1)),
         ),
     )
@@ -172,7 +172,7 @@ async def test_firewall_allow_header_auth_requestheaders_strips_connector_intent
 
         assert callable(flow.request.stream)
         assert flow.request.headers["Authorization"] == "Bearer resolved"
-        assert "X-VM0-Connector-Intent" not in flow.request.headers
+        assert "X-Okou-Connector-Intent" not in flow.request.headers
 
         await mitm_addon.request(flow)
 
@@ -198,7 +198,7 @@ async def test_shared_route_intent_selects_requestheaders_auth_in_both_orders(
         path="/items/123",
         request_headers=headers(
             ("Host", "shared.example.com"),
-            ("X-VM0-Connector-Intent", "primary"),
+            ("X-Okou-Connector-Intent", "primary"),
             ("Content-Length", str(STREAM_BUFFER_LIMIT + 1)),
         ),
     )
@@ -212,7 +212,7 @@ async def test_shared_route_intent_selects_requestheaders_auth_in_both_orders(
 
         assert callable(flow.request.stream)
         assert flow.request.headers["Authorization"] == "Bearer resolved-primary"
-        assert "X-VM0-Connector-Intent" not in flow.request.headers
+        assert "X-Okou-Connector-Intent" not in flow.request.headers
         assert flow.metadata[metadata_keys.FIREWALL_NAME] == "primary"
         assert flow.metadata[metadata_keys.FIREWALL_PERMISSION] == "items-read"
 
