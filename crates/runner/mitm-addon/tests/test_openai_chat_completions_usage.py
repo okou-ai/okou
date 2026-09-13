@@ -150,11 +150,15 @@ def test_canonical_sse_deltas_skip_selective_extraction_across_framing_variants(
     ]
 
 
-def test_discarded_failure_event_emits_invalid_evidence_and_recovers():
+@pytest.mark.parametrize("include_usage", [True, False], ids=("usage", "observer-only"))
+def test_discarded_failure_event_emits_invalid_evidence_and_recovers(include_usage):
     observer = _RecordingFailureObserver()
+    parse_errors: list[tuple[str, str]] = []
     scanner, parsed_usage = (
         openai_chat_completions.create_openai_chat_completions_sse_usage_extractor(
-            failure_observer=observer
+            on_parse_error=lambda event, error: parse_errors.append((event, error)),
+            include_usage=include_usage,
+            failure_observer=observer,
         )
     )
 
@@ -171,6 +175,7 @@ def test_discarded_failure_event_emits_invalid_evidence_and_recovers():
     )
 
     assert parsed_usage == {}
+    assert parse_errors == ([("chunk", "sse event discarded")] if include_usage else [])
     assert observer.observed == [
         ModelHttpFailureEvidence(event_name="chunk"),
         ModelHttpFailureEvidence(
@@ -640,8 +645,10 @@ class TestOpenAIChatCompletionsUsage:
             )
             if entry.get("message") == "Model provider SSE usage extraction failed"
         ]
-        assert len(warnings) == 1
-        assert warnings[0]["error"] == "incomplete json"
+        assert [warning["error"] for warning in warnings] == [
+            "sse event discarded",
+            "incomplete json",
+        ]
 
     def test_malformed_sse_fails_closed_with_chat_protocol_diagnostic(
         self,
@@ -751,6 +758,82 @@ class TestOpenAIChatCompletionsUsage:
         assert warnings[0]["usage_protocol"] == "openai_chat_completions_sse"
         assert warnings[0]["event"] == "eventless"
         assert warnings[0]["error"] == "incomplete json"
+
+    @pytest.mark.parametrize("recover", [False, True], ids=("no-recovery", "recovery"))
+    @pytest.mark.parametrize("padding_size", [0, 1_025], ids=("buffered", "selective"))
+    @pytest.mark.parametrize("chunking", ["whole", "one-byte", "split", "control-boundary"])
+    def test_discarded_sse_invalidates_prior_usage_before_terminal_reporting(
+        self,
+        tmp_path,
+        real_flow,
+        recover,
+        padding_size,
+        chunking,
+    ):
+        flow = _chat_completions_flow(
+            tmp_path,
+            real_flow,
+            content_type="text/event-stream",
+        )
+        prefix = (
+            b"data: "
+            + _chat_payload(usage_payload={"prompt_tokens": 90, "completion_tokens": 40})
+            + b"\n\n"
+            + b'data: {"id":"chatcmpl_discarded","private":"do-not-log-'
+            + b"p" * padding_size
+            + b'","usage":{"prompt_tokens":30}\n'
+        )
+        stream = prefix + b"x" * 4_097 + b"\n\n"
+        if recover:
+            stream += (
+                b"data: "
+                + _chat_payload(usage_payload={"prompt_tokens": 7, "completion_tokens": 2})
+                + b"\n\n"
+            )
+        stream += b"data: [DONE]\n\n"
+
+        if chunking == "control-boundary":
+            boundary = len(prefix) + 4_096
+            chunks = [stream[:boundary], stream[boundary : boundary + 1], stream[boundary + 1 :]]
+        else:
+            chunk_size = {"whole": len(stream), "one-byte": 1, "split": 17}[chunking]
+            chunks = [
+                stream[offset : offset + chunk_size] for offset in range(0, len(stream), chunk_size)
+            ]
+
+        mitm_addon.responseheaders(flow)
+        callback = response_stream(flow)
+        for chunk in chunks:
+            assert callback(chunk) == chunk
+        assert callback(b"") == b""
+
+        webhook = _run_response(flow, self._usage_webhook_api)
+
+        if recover:
+            assert webhook.request_count == 1
+            events = webhook.usage_events()
+            assert len(events) == 2
+            assert {event["category"]: event["quantity"] for event in events} == {
+                "tokens.input": 7,
+                "tokens.output": 2,
+            }
+        else:
+            assert webhook.request_count == 0
+            assert webhook.usage_events() == []
+
+        warnings = [
+            entry
+            for entry in read_jsonl_entries_after_flush(
+                Path(flow.metadata[metadata_keys.SANDBOX_PROXY_LOG_PATH])
+            )
+            if entry.get("message") == "Model provider SSE usage extraction failed"
+        ]
+        assert len(warnings) == 1
+        assert warnings[0]["usage_protocol"] == "openai_chat_completions_sse"
+        assert warnings[0]["event"] == "eventless"
+        assert warnings[0]["error"] == "sse event discarded"
+        assert "do-not-log-" not in json.dumps(warnings)
+        assert "x" * 4_097 not in json.dumps(warnings)
 
     @pytest.mark.parametrize("nested_usage", [False, True], ids=("top-level", "choice"))
     def test_non_streaming_json_reports_usage_without_buffering(
