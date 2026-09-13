@@ -11,6 +11,19 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.893.5](https://github.com/vm0-ai/vm0/compare/app-v0.893.4...app-v0.893.5) (2026-09-13)
+
+
+### Bug Fixes
+
+* **app:** simplify thread sharing while preserving reading position ([#33751](https://github.com/vm0-ai/vm0/issues/33751)) ([4522708](https://github.com/vm0-ai/vm0/commit/4522708a19896ebcb27eeb48c322d9d4ee4c15ab))
+
+
+### Refactoring
+
+* **app:** remove obsolete clerk drawer styles ([#33746](https://github.com/vm0-ai/vm0/issues/33746)) ([a9952cd](https://github.com/vm0-ai/vm0/commit/a9952cd950694871bd0bf64c0613f92b849333b8))
+* **platform:** own the chat panel graph outside command execution ([#33583](https://github.com/vm0-ai/vm0/issues/33583)) ([3807171](https://github.com/vm0-ai/vm0/commit/38071713890d7b3b6049df033501e501946ea76f))
+
 ## [0.893.4](https://github.com/vm0-ai/vm0/compare/app-v0.893.3...app-v0.893.4) (2026-09-13)
 
 

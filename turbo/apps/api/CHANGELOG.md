@@ -8,6 +8,13 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.591.1](https://github.com/vm0-ai/vm0/compare/api-v1.591.0...api-v1.591.1) (2026-09-13)
+
+
+### Bug Fixes
+
+* **api:** store intro video render inputs in user storage ([#33757](https://github.com/vm0-ai/vm0/issues/33757)) ([2afc1eb](https://github.com/vm0-ai/vm0/commit/2afc1ebb789ca627a26f67175b5139e6944e90f8))
+
 ## [1.591.0](https://github.com/vm0-ai/vm0/compare/api-v1.590.3...api-v1.591.0) (2026-09-13)
 
 
