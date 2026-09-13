@@ -172,11 +172,7 @@ export const openArtifactInOpenSidebar$ = command(
     }
     // The owning thread already holds the page's only utility sidebar, so this
     // swaps its content without closing and reopening the pane.
-    set(
-      active.thread.sidebar.openAttachment$,
-      input,
-      get(pageSignal$),
-    );
+    set(active.thread.sidebar.openAttachment$, input, get(pageSignal$));
     return true;
   },
 );

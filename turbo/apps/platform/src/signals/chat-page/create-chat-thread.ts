@@ -2328,27 +2328,25 @@ function createMarkThreadReadIfNeeded({
   });
 }
 
-function createEventChangeEffects(
-  {
-    threadId,
-    chatEvents,
-    projections,
-    scroll,
-    syncVisibleEventTrees$,
-  }: {
-    readonly threadId: string;
-    readonly chatEvents: ChatEventSignals;
-    readonly projections: Pick<
-      ReturnType<typeof createPagedEventProjections>,
-      "rawEvents$" | "latestRunFinishCreatedAt$"
-    >;
-    readonly scroll: ChatThreadScrollSignals;
-    readonly syncVisibleEventTrees$: Command<
-      Promise<void>,
-      [boolean, AbortSignal]
-    >;
-  },
-) {
+function createEventChangeEffects({
+  threadId,
+  chatEvents,
+  projections,
+  scroll,
+  syncVisibleEventTrees$,
+}: {
+  readonly threadId: string;
+  readonly chatEvents: ChatEventSignals;
+  readonly projections: Pick<
+    ReturnType<typeof createPagedEventProjections>,
+    "rawEvents$" | "latestRunFinishCreatedAt$"
+  >;
+  readonly scroll: ChatThreadScrollSignals;
+  readonly syncVisibleEventTrees$: Command<
+    Promise<void>,
+    [boolean, AbortSignal]
+  >;
+}) {
   const sidebar = createThreadSidebarSignals(threadId);
   const locallyMarkedReadAt$ = state<string | undefined>(undefined);
   const markThreadReadIfNeeded$ = createMarkThreadReadIfNeeded({
@@ -3102,7 +3100,9 @@ function createRunTracking({
               cancellationRecovery.reload$,
               reloadConnectorAccountPreference$,
             ],
-            automations: [automationSignals.headerAutomations.reload$],
+            automations: [
+              automationSignals.headerAutomations.reloadAutomations$,
+            ],
             artifacts: [reloadArtifacts$],
           },
           handlers: {

@@ -346,11 +346,7 @@ export function createThreadSidebarSignals(
   );
 
   const openAttachment$ = command(
-    (
-      { set },
-      input: ArtifactRefInput,
-      ownerSignal: AbortSignal,
-    ): void => {
+    ({ set }, input: ArtifactRefInput, ownerSignal: AbortSignal): void => {
       const sessionSignal = set(startSession$, ownerSignal);
       set(publishTarget$, {
         type: "artifact",
