@@ -20,6 +20,7 @@ import {
   readyChat,
   RUN_PATH,
 } from "./chat-run-test-fixtures.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 type VoicePlan = "free" | "pro" | "team" | "custom";
 type WorkspaceRole = "admin" | "member";
@@ -29,6 +30,7 @@ function billingStatus(tier: VoicePlan): BillingStatusResponse {
   return {
     showUsagePack: false,
     tier,
+    ...billingPlanCapabilities(tier),
     credits: paid ? 20_000 : 500,
     onboardingPaymentPending: false,
     subscriptionStatus: paid ? "active" : null,

@@ -80,36 +80,33 @@ const usageAllowanceSchema = z.object({
 
 const billingStatusResponseSchema = z.object({
   tier: z.string(),
-  // Existing entitlement state; optional while older API targets can serve.
-  status: z.enum(["active", "suspended"]).optional(),
-  canBuyConcurrency: z.boolean().optional(),
+  status: z.enum(["active", "suspended"]),
+  canBuyConcurrency: z.boolean(),
   // The current API omits the amount when the configured Stripe Price is
   // unavailable.
   concurrencyUnitAmountCents: z.number().int().positive().optional(),
-  concurrencyPurchaseReviewAvailable: z.boolean().optional(),
-  canBuyCredits: z.boolean().optional(),
+  concurrencyPurchaseReviewAvailable: z.boolean(),
+  canBuyCredits: z.boolean(),
   showUsagePack: z.boolean(),
   // Outgoing Apps still consume this derived status alias. Current Apps ignore
   // it; there is no independent invitation capability. Cleanup: #32575.
   memberInvitationAllowed: z.boolean().optional(),
-  autoRechargeAllowed: z.boolean().optional(),
-  supportByok: z.boolean().optional(),
+  autoRechargeAllowed: z.boolean(),
+  supportByok: z.boolean(),
   restrictedBuiltInModels: z.boolean().optional(),
   // Retired brand alias of restrictedBuiltInModels, sent with an identical
   // value from the same source while Apps older than this release are still
   // installed. Remove once they are below the rollback floor: #33658 step 2.
   restrictedVm0Models: z.boolean().optional(),
-  videoGenerationAllowed: z.boolean().optional(),
-  workflowWebhookAutomationAllowed: z.boolean().optional(),
+  videoGenerationAllowed: z.boolean(),
+  workflowWebhookAutomationAllowed: z.boolean(),
   credits: z.number(),
   onboardingPaymentPending: z.boolean(),
   subscriptionStatus: z.string().nullable(),
   currentPeriodEnd: z.string().nullable(),
   cancelAtPeriodEnd: z.boolean(),
   scheduledChange: scheduledBillingChangeSchema.nullable(),
-  // Optional while older API deployments can still serve an already-loaded
-  // web/app client during rollout.
-  canRestorePlan: z.boolean().optional(),
+  canRestorePlan: z.boolean(),
   hasSubscription: z.boolean(),
   autoRecharge: autoRechargeSchema,
   creditExpiry: creditExpirySchema,

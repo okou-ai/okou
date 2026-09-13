@@ -28,6 +28,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const context = testContext();
 
@@ -85,6 +86,7 @@ function activeProBillingStatus(): BillingStatusResponse {
   return {
     showUsagePack: false,
     tier: "pro",
+    ...billingPlanCapabilities("pro"),
     credits: 25_000,
     onboardingPaymentPending: false,
     subscriptionStatus: "active",
@@ -101,6 +103,7 @@ function activeProBillingStatus(): BillingStatusResponse {
       {
         category: "plan",
         tier: "pro",
+        ...billingPlanCapabilities("pro"),
         label: "Pro credits",
         credits: 20_000,
       },
@@ -121,6 +124,7 @@ function activeTeamBillingStatus(): BillingStatusResponse {
   return {
     ...activeProBillingStatus(),
     tier: "team",
+    ...billingPlanCapabilities("team"),
     credits: 130_000,
     currentPeriodEnd: "2026-05-01T00:00:00Z",
     concurrencyLimit: 10,
@@ -128,6 +132,7 @@ function activeTeamBillingStatus(): BillingStatusResponse {
       {
         category: "plan",
         tier: "team",
+        ...billingPlanCapabilities("team"),
         label: "Team credits",
         credits: 120_000,
       },
@@ -144,6 +149,7 @@ function activeCustomBillingStatus(): BillingStatusResponse {
   return {
     ...activeProBillingStatus(),
     tier: "custom",
+    ...billingPlanCapabilities("custom"),
     credits: 0,
     subscriptionStatus: null,
     currentPeriodEnd: null,
@@ -157,6 +163,7 @@ function noActiveBillingStatus(): BillingStatusResponse {
   return {
     showUsagePack: false,
     tier: "pro-suspend",
+    ...billingPlanCapabilities("pro-suspend"),
     credits: 0,
     onboardingPaymentPending: false,
     subscriptionStatus: null,
@@ -1352,6 +1359,7 @@ test("Manage member packages on an Atom-granted plan", async () => {
 async function openLegacyTeamConversion(scheduled = false): Promise<void> {
   let migrationState: UsagePackMigrationStateResponse = {
     tier: "team",
+    ...billingPlanCapabilities("team"),
     targetTier: scheduled ? "team" : null,
     status: scheduled ? "scheduled" : "eligible",
     migrationId: scheduled ? "3ea4b7cf-d71e-45dc-8273-8bc8b9712490" : null,

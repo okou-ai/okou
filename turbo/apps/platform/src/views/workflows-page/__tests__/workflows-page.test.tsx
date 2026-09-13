@@ -52,6 +52,7 @@ import {
   createDefaultMockGithubIntegration,
   setMockGithubIntegration,
 } from "../../../mocks/handlers/api-integrations-github.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 vi.mock("signal-timers", async () => {
   return {
@@ -129,6 +130,7 @@ function billingStatus(
   return {
     showUsagePack: false,
     tier,
+    ...billingPlanCapabilities(tier),
     credits: 20_000,
     onboardingPaymentPending: false,
     subscriptionStatus: tier === "team" ? "active" : null,

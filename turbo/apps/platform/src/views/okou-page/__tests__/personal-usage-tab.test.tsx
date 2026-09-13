@@ -22,6 +22,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { emptyUsageImg } from "../platform-assets.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const context = testContext();
 
@@ -166,6 +167,7 @@ function mockBillingStatus(
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, {
       tier,
+      ...billingPlanCapabilities(tier),
       showUsagePack,
       supportByok: tier !== "limited-free-1",
       restrictedBuiltInModels: tier === "limited-free-1",
@@ -185,6 +187,7 @@ function mockBillingStatus(
         {
           category: "plan",
           tier: "pro",
+          ...billingPlanCapabilities("pro"),
           label: "Pro credits",
           credits: 10_000,
         },

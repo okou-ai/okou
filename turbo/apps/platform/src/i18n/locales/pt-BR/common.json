@@ -5932,12 +5932,7 @@
             "description": "Reative o plano do seu espaço de trabalho para convidar membros.",
             "title": "Reative o plano para convidar membros"
           },
-          "title": "Convidar membro",
-          "upgrade": {
-            "action": "Fazer upgrade para o Pro",
-            "description": "Os convites de membros estão disponíveis no plano Pro. Faça upgrade deste espaço de trabalho para convidar pessoas e gerenciar suas funções.",
-            "title": "Faça upgrade para convidar membros"
-          }
+          "title": "Convidar membro"
         },
         "joined": "Data de entrada",
         "joinRequests": "Solicitações de entrada",

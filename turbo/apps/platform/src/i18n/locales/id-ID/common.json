@@ -5857,12 +5857,7 @@
             "description": "Aktifkan kembali paket ruang kerja Anda untuk mengundang anggota.",
             "title": "Aktifkan kembali untuk mengundang anggota"
           },
-          "title": "Undang anggota",
-          "upgrade": {
-            "action": "Upgrade ke Pro",
-            "description": "Undangan anggota tersedia di paket Pro. Upgrade ruang kerja ini untuk mengundang orang dan mengelola peran mereka.",
-            "title": "Upgrade untuk mengundang anggota"
-          }
+          "title": "Undang anggota"
         },
         "joined": "Bergabung",
         "joinRequests": "Permintaan bergabung",

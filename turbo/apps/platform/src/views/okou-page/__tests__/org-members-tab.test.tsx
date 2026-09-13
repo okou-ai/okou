@@ -21,6 +21,7 @@ import {
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const context = testContext();
 
@@ -248,6 +249,7 @@ function mockMemberInviteEntitlement(
 ): void {
   const response: BillingStatusResponse = {
     tier: invitation?.tier ?? "pro",
+    ...billingPlanCapabilities(invitation?.tier ?? "pro"),
     showUsagePack,
     ...(invitation?.status === undefined ? {} : { status: invitation.status }),
     credits: 0,
@@ -276,6 +278,7 @@ function mockUsagePackManagement(
   context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
     return respond(200, {
       tier: "pro",
+      ...billingPlanCapabilities("pro"),
       currentPeriodEnd: "2026-09-01T00:00:00.000Z",
       allocations: [
         {
@@ -550,43 +553,6 @@ test.each(["free", "limited-free-1", "pro", "team"])(
         screen.getByText("legacy.invitee@example.com"),
       ).toBeInTheDocument();
     });
-  },
-);
-
-test.each(["free", "limited-free-1"])(
-  "Preserve the older API invitation restriction on %s",
-  async (tier) => {
-    mockMembersStory();
-    mockMemberInviteEntitlement(
-      false,
-      { tier },
-      {
-        memberInvitationAllowed: false,
-      },
-    );
-    mockUsagePackCatalog();
-
-    await setupPage({ context, path: "/?settings=people" });
-    await screen.findByRole("heading", { name: "People" });
-    click(buttonByText("Add member"));
-
-    const inviteDialog = await screen.findByRole("dialog", {
-      name: "Upgrade to invite members",
-    });
-    expect(
-      within(inviteDialog).getByText(
-        /Member invitations are available on the Pro plan/u,
-      ),
-    ).toBeVisible();
-    expect(
-      within(inviteDialog).queryByPlaceholderText("email@example.com"),
-    ).not.toBeInTheDocument();
-    expect(within(inviteDialog).queryByText("Role")).not.toBeInTheDocument();
-    click(buttonByText("Upgrade to Pro", inviteDialog));
-
-    await expect(
-      screen.findByRole("heading", { name: "Choose a plan" }),
-    ).resolves.toBeInTheDocument();
   },
 );
 

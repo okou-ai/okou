@@ -38,6 +38,7 @@ import {
   readyChat,
   RUN_PATH,
 } from "./chat-run-test-fixtures.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const FIXTURE_DATE = "2026-08-18T09:00:00.000Z";
 const ACTIVE_CODEX_ID = "f1000000-0000-4000-a000-000000000101";
@@ -104,6 +105,7 @@ function billingStatus(args: {
   return {
     showUsagePack: false,
     tier: args.tier,
+    ...billingPlanCapabilities(args.tier),
     supportByok: args.supportByok,
     restrictedBuiltInModels: args.restrictedBuiltInModels,
     credits: 20_000,

@@ -16,6 +16,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../__tests__/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const context = testContext();
 const MOCK_NOW = "2026-03-01T01:00:00Z";
@@ -43,6 +44,7 @@ function mockBillingStatus(
     return respond(200, {
       showUsagePack: false,
       tier: "pro",
+      ...billingPlanCapabilities("pro"),
       credits: 12_000,
       onboardingPaymentPending: false,
       subscriptionStatus: "active",
@@ -59,6 +61,7 @@ function mockBillingStatus(
         {
           category: "plan",
           tier: "pro",
+          ...billingPlanCapabilities("pro"),
           label: "Pro credits",
           credits: 8000,
         },

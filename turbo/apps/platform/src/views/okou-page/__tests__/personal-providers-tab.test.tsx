@@ -18,6 +18,7 @@ import {
 import { mockNow } from "../../../__tests__/time.ts";
 import type { SupportedLocale } from "../../../i18n/resources.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const context = testContext();
 
@@ -146,6 +147,7 @@ function mockBillingCapabilities(modelCapabilities: {
     const status: BillingStatusResponse = {
       showUsagePack: false,
       tier: "pro",
+      ...billingPlanCapabilities("pro"),
       ...modelCapabilities,
       credits: 20_000,
       onboardingPaymentPending: false,

@@ -30,6 +30,7 @@ import {
   normalizeMockChatEvents,
   type MockChatEventInput,
 } from "./chat-event-test-helpers.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 export const context = testContext();
 
@@ -200,6 +201,7 @@ function billingStatus(
   return {
     showUsagePack: false,
     tier,
+    ...billingPlanCapabilities(tier),
     ...modelCapabilities,
     credits: 20_000,
     onboardingPaymentPending: false,

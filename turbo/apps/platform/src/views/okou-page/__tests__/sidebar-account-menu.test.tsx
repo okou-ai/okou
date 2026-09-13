@@ -21,6 +21,7 @@ import {
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { mockNow } from "../../../__tests__/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const context = testContext();
 
@@ -254,6 +255,7 @@ function mockAdminBillingStatus(
       return respond(200, {
         showUsagePack: false,
         tier: "pro",
+        ...billingPlanCapabilities("pro"),
         credits,
         onboardingPaymentPending: false,
         subscriptionStatus: "active",
@@ -270,6 +272,7 @@ function mockAdminBillingStatus(
           {
             category: "plan",
             tier: "pro",
+            ...billingPlanCapabilities("pro"),
             label: "Pro credits",
             credits: 10_000,
           },
@@ -342,6 +345,7 @@ test("Show a member’s latest package credits in the account menu", async () =>
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, {
       tier: "pro",
+      ...billingPlanCapabilities("pro"),
       showUsagePack: true,
       credits: 12_500,
       onboardingPaymentPending: false,

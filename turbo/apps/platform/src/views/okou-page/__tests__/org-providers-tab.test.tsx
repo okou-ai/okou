@@ -25,6 +25,7 @@ import {
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const context = testContext();
 
@@ -204,6 +205,7 @@ function billingStatus(
   return {
     showUsagePack: false,
     tier,
+    ...billingPlanCapabilities(tier),
     ...modelCapabilities,
     credits: 20_000,
     onboardingPaymentPending: false,

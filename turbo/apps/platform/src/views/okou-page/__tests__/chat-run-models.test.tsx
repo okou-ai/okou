@@ -34,6 +34,7 @@ import {
   RUN_PATH,
   sendText,
 } from "./chat-run-test-fixtures.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const RUN_A = "a0000000-0000-4000-a000-000000000301";
 const RUN_B = "a0000000-0000-4000-a000-000000000302";
@@ -74,6 +75,7 @@ function limitedFreeBillingStatus(): BillingStatusResponse {
   return {
     showUsagePack: false,
     tier: "limited-free-1",
+    ...billingPlanCapabilities("limited-free-1"),
     supportByok: false,
     restrictedBuiltInModels: true,
     credits: 0,

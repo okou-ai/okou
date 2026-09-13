@@ -5863,12 +5863,7 @@
             "description": "Reactivate your workspace plan to invite members.",
             "title": "Reactivate to invite members"
           },
-          "title": "Invite member",
-          "upgrade": {
-            "action": "Upgrade to Pro",
-            "description": "Member invitations are available on the Pro plan. Upgrade this workspace to invite people and manage their roles.",
-            "title": "Upgrade to invite members"
-          }
+          "title": "Invite member"
         },
         "joined": "Joined",
         "joinRequests": "Join requests",

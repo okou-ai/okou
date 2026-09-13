@@ -22,6 +22,7 @@ import {
   startPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const context = testContext();
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
@@ -511,6 +512,7 @@ test("Refresh virtualization when the upgrade card appears and disappears", asyn
     return respond(200, {
       showUsagePack: false,
       tier,
+      ...billingPlanCapabilities(tier),
       credits: 10_000,
       onboardingPaymentPending: false,
       subscriptionStatus: "active",

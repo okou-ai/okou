@@ -5932,12 +5932,7 @@
             "description": "Reactiva el plan de tu espacio de trabajo para invitar a miembros.",
             "title": "Reactiva el plan para invitar a miembros"
           },
-          "title": "Invitar a un miembro",
-          "upgrade": {
-            "action": "Mejorar a Pro",
-            "description": "Las invitaciones a miembros están disponibles en el plan Pro. Mejora este espacio de trabajo para invitar a personas y administrar sus roles.",
-            "title": "Mejora para invitar a miembros"
-          }
+          "title": "Invitar a un miembro"
         },
         "joined": "Se unió",
         "joinRequests": "Solicitudes de acceso",

@@ -5932,12 +5932,7 @@
             "description": "Riattiva il piano della tua area di lavoro per invitare membri.",
             "title": "Riattiva il piano per invitare membri"
           },
-          "title": "Invita membro",
-          "upgrade": {
-            "action": "Passa a Pro",
-            "description": "Gli inviti dei membri sono disponibili con il piano Pro. Esegui l'upgrade di quest'area di lavoro per invitare persone e gestire i loro ruoli.",
-            "title": "Passa a Pro per invitare membri"
-          }
+          "title": "Invita membro"
         },
         "joined": "Iscritto",
         "joinRequests": "Richieste di adesione",

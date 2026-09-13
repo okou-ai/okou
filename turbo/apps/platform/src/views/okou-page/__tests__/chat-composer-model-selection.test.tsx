@@ -45,6 +45,7 @@ import {
 
 import { changeChatThreadList } from "../../../mocks/mock-helpers.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
 const POLICY_DATE = "2026-08-12T09:00:00.000Z";
 
@@ -158,6 +159,7 @@ function limitedFreeBillingStatus(): BillingStatusResponse {
   return {
     showUsagePack: false,
     tier: "limited-free-1",
+    ...billingPlanCapabilities("limited-free-1"),
     supportByok: false,
     restrictedBuiltInModels: true,
     credits: 0,
