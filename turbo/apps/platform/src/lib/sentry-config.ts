@@ -171,7 +171,8 @@ export function createPlatformSentryOptions(
       },
     },
 
-    // Disable tracing - only error tracking is needed
+    // Only error tracking is needed. Sentry enables Logs by default since 10.71.
+    enableLogs: false,
     tracesSampleRate: 0,
 
     // Preserve native fetch errors for application-level error handling.
