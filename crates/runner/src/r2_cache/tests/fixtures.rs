@@ -5,9 +5,7 @@ use std::{
 
 use super::super::{
     R2ImageCache,
-    archive::{
-        MAX_TEMPLATE_METADATA_BYTES, TEMPLATE_FILE, TemplateArchiveLimits, pack_template_to_writer,
-    },
+    archive::{TEMPLATE_FILE, TemplateArchiveLimits, pack_template_to_writer},
 };
 use aws_smithy_mocks::{Rule, RuleMode, mock, mock_client};
 
@@ -99,6 +97,10 @@ pub(super) async fn production_template_archive(path: &Path) -> Vec<u8> {
 }
 
 pub(super) fn sparse_template_archive() -> (Vec<u8>, Vec<u8>) {
+    sparse_template_archive_with_extensions(0)
+}
+
+pub(super) fn sparse_template_archive_with_extensions(extension_count: u64) -> (Vec<u8>, Vec<u8>) {
     const LOGICAL_BYTES: usize = 64 * 1024;
     const EXTENT_BYTES: usize = 512;
 
@@ -115,6 +117,7 @@ pub(super) fn sparse_template_archive() -> (Vec<u8>, Vec<u8>) {
     header.set_entry_type(tar::EntryType::GNUSparse);
     let gnu = header.as_gnu_mut().unwrap();
     gnu.set_real_size(LOGICAL_BYTES as u64);
+    gnu.set_is_extended(extension_count > 0);
     gnu.sparse[0].set_offset(0);
     gnu.sparse[0].set_length(EXTENT_BYTES as u64);
     gnu.sparse[1].set_offset((LOGICAL_BYTES - EXTENT_BYTES) as u64);
@@ -123,45 +126,17 @@ pub(super) fn sparse_template_archive() -> (Vec<u8>, Vec<u8>) {
 
     let mut raw = Vec::new();
     raw.extend_from_slice(header.as_bytes());
+    for index in 0..extension_count {
+        // Empty extensions grow metadata without growing the logical file or
+        // payload. Terminate the chain so exceeding the budget is the only fault.
+        let mut extension = tar::GnuExtSparseHeader::new();
+        extension.set_is_extended(index + 1 < extension_count);
+        raw.extend_from_slice(extension.as_bytes());
+    }
     raw.extend(std::iter::repeat_n(b'A', EXTENT_BYTES));
     raw.extend(std::iter::repeat_n(b'Z', EXTENT_BYTES));
     raw.extend_from_slice(&[0u8; 1024]);
     (zstd_bytes(&raw), expected)
-}
-
-pub(super) fn excessive_sparse_metadata_archive() -> (Vec<u8>, u64) {
-    const BLOCK_BYTES: u64 = 512;
-    const DESCRIPTORS_PER_EXTENSION: u64 = 21;
-
-    let extension_count = MAX_TEMPLATE_METADATA_BYTES / BLOCK_BYTES;
-    let logical_bytes = extension_count * DESCRIPTORS_PER_EXTENSION * BLOCK_BYTES;
-    let mut header = tar::Header::new_gnu();
-    header.set_path(TEMPLATE_FILE).unwrap();
-    header.set_mode(0o644);
-    header.set_uid(0);
-    header.set_gid(0);
-    header.set_size(logical_bytes);
-    header.set_entry_type(tar::EntryType::GNUSparse);
-    let gnu = header.as_gnu_mut().unwrap();
-    gnu.set_real_size(logical_bytes);
-    gnu.set_is_extended(true);
-    header.set_cksum();
-
-    let mut raw = Vec::with_capacity(usize::try_from((extension_count + 1) * BLOCK_BYTES).unwrap());
-    raw.extend_from_slice(header.as_bytes());
-    let mut offset = 0;
-    for _ in 0..extension_count {
-        let mut extension = tar::GnuExtSparseHeader::new();
-        for sparse in extension.sparse_mut() {
-            sparse.set_offset(offset);
-            sparse.set_length(BLOCK_BYTES);
-            offset += BLOCK_BYTES;
-        }
-        extension.set_is_extended(true);
-        raw.extend_from_slice(extension.as_bytes());
-    }
-
-    (zstd_bytes(&raw), logical_bytes)
 }
 
 pub(super) fn zstd_bytes(raw: &[u8]) -> Vec<u8> {
