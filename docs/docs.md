@@ -51,6 +51,9 @@ surface; the index does not replace their detailed rules.
   thread-scoped card signals, and rendering rich interactive cards.
 - [Pi native provider preparation](./pi-native-provider-preparation.md): additive
   native readers, transport/auth ownership, accounting and activation gates.
+- [Pi candidate reference accounting](./database/pi-memory-candidate-accounting.md):
+  API B trigger compatibility, parent cleanup, lock order, read-only audit and
+  the two-release retirement gate.
 - [Pi runtime architecture](./pi-runtime-architecture.md): launch, SDK/session,
   memory, accounting, retained compatibility, and patch ownership boundaries.
 - [Runner host configuration](./runner-host-configuration.md): configure and

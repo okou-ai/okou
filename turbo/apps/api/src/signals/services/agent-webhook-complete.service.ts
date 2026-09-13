@@ -57,6 +57,7 @@ import {
 } from "./agent-webhook-checkpoints.service";
 import {
   admitPiMemoryStage1Candidate,
+  lockPiMemoryCandidateStorage,
   type PiMemoryStage1Admission,
 } from "./pi-memory-stage1-candidate.service";
 import { isGptApiKeyPiProviderType } from "./pi-sandbox-config";
@@ -621,6 +622,15 @@ async function completeActiveAgentRunTransition(
   };
 }
 
+async function lockCompletionPiMemoryStorage(
+  tx: Tx,
+  run: RunRecord,
+): Promise<void> {
+  if (run.launchSnapshot?.framework === "pi") {
+    await lockPiMemoryCandidateStorage(tx, run);
+  }
+}
+
 async function completeAgentRunTransition(
   tx: Tx,
   input: CompleteAgentRunInput,
@@ -654,6 +664,8 @@ async function completeAgentRunTransition(
       },
     };
   }
+  await lockCompletionPiMemoryStorage(tx, run);
+  signal.throwIfAborted();
   if (checkpointInput) {
     if (!checkpointPreparation) {
       throw new Error("Included agent checkpoint was not prepared");

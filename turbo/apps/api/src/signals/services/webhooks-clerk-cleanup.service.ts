@@ -78,6 +78,7 @@ import {
   deleteClerkAgentLifecycleData,
 } from "./agent-lifecycle.service";
 import { deleteConnectorOwnerState } from "./connector-owner-cleanup.service";
+import { deleteStoragesWithPiMemoryCandidates } from "./pi-memory-stage1-candidate.service";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 
 const L = logger("WebhookClerkCleanup");
@@ -799,7 +800,9 @@ async function deleteOrgData(
   await db.delete(artifacts).where(eq(artifacts.orgId, orgId));
   await deleteClerkAgentLifecycleData(db, { kind: "organization", orgId });
   await deleteConnectorOwnerState(db, { kind: "organization", orgId }, signal);
-  await db.delete(storages).where(eq(storages.orgId, orgId));
+  await db.transaction(async (tx) => {
+    await deleteStoragesWithPiMemoryCandidates(tx, eq(storages.orgId, orgId));
+  });
   await db.delete(modelProviders).where(eq(modelProviders.orgId, orgId));
   await db
     .delete(modelProviderAuthSessions)
@@ -864,7 +867,9 @@ async function deleteUserData(
     );
   await db.delete(sharedThreads).where(eq(sharedThreads.userId, userId));
   await deleteClerkAgentLifecycleData(db, { kind: "user", userId });
-  await db.delete(storages).where(eq(storages.userId, userId));
+  await db.transaction(async (tx) => {
+    await deleteStoragesWithPiMemoryCandidates(tx, eq(storages.userId, userId));
+  });
   await db.delete(modelProviders).where(eq(modelProviders.userId, userId));
   await db
     .delete(modelProviderAuthSessions)

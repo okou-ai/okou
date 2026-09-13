@@ -24,6 +24,10 @@ import { bodyResultOf } from "../context/request";
 import { type Db, writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
+  insertPiMemoryStage1Candidates,
+  deleteStoragesWithPiMemoryCandidates,
+} from "../services/pi-memory-stage1-candidate.service";
+import {
   executePiMemoryStage1Work$,
   type PiMemoryStage1WorkerResult,
 } from "../services/pi-memory-stage1-worker.service";
@@ -191,17 +195,21 @@ async function seedCandidate(
     .onConflictDoNothing();
   signal.throwIfAborted();
   const completedAt = new Date(body.source_completed_at);
-  await db.insert(piMemoryStage1Candidates).values({
-    memoryStorageId: body.memory_storage_id,
-    orgId: body.org_id,
-    userId: body.user_id,
-    piSessionId: body.pi_session_id,
-    sourceRunId: randomUUID(),
-    sourceHistoryHash: body.source_history_hash,
-    sourceCompletedAt: completedAt,
-    eligibleAt: new Date(completedAt.getTime() + 1),
-    status: "pending",
-    retryCount: body.retry_count ?? 0,
+  await db.transaction(async (tx) => {
+    await insertPiMemoryStage1Candidates(tx, [
+      {
+        memoryStorageId: body.memory_storage_id,
+        orgId: body.org_id,
+        userId: body.user_id,
+        piSessionId: body.pi_session_id,
+        sourceRunId: randomUUID(),
+        sourceHistoryHash: body.source_history_hash,
+        sourceCompletedAt: completedAt,
+        eligibleAt: new Date(completedAt.getTime() + 1),
+        status: "pending",
+        retryCount: body.retry_count ?? 0,
+      },
+    ]);
   });
   signal.throwIfAborted();
   return actionOk({
@@ -372,7 +380,12 @@ async function cleanupFixture(
       .where(inArray(agentSessions.id, body.agent_session_ids));
     signal.throwIfAborted();
   }
-  await db.delete(storages).where(eq(storages.id, body.memory_storage_id));
+  await db.transaction(async (tx) => {
+    await deleteStoragesWithPiMemoryCandidates(
+      tx,
+      eq(storages.id, body.memory_storage_id),
+    );
+  });
   signal.throwIfAborted();
   await db
     .delete(usageEvent)
@@ -469,7 +482,12 @@ const action$ = command(async ({ get, set }, signal: AbortSignal) => {
       return await inspectUsage(db, body, signal);
     }
     case "delete-owner": {
-      await db.delete(storages).where(eq(storages.id, body.memory_storage_id));
+      await db.transaction(async (tx) => {
+        await deleteStoragesWithPiMemoryCandidates(
+          tx,
+          eq(storages.id, body.memory_storage_id),
+        );
+      });
       signal.throwIfAborted();
       return actionOk();
     }

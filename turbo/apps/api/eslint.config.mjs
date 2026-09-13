@@ -602,6 +602,8 @@ export default [
       // through the production API. This focused PostgreSQL test proves the
       // exact Agent Draft writer through both rollout targets.
       "src/signals/services/__tests__/agent-draft-write.service.test.ts",
+      // Trigger DDL, transaction snapshots and corrupt ledgers are not HTTP inputs.
+      "src/signals/services/__tests__/pi-memory-candidate-accounting.service.test.ts",
       "src/signals/services/__tests__/workflow-automation-context.test.ts",
       // The automatic welcome thread id is a permanent uuidv5 contract with
       // externally computed literals; route tests own generated identities and
@@ -750,6 +752,8 @@ export default [
       // through the production API. This focused PostgreSQL test proves the
       // exact Agent Draft writer through both rollout targets.
       "src/signals/services/__tests__/agent-draft-write.service.test.ts",
+      // Trigger DDL, transaction snapshots and corrupt ledgers are not HTTP inputs.
+      "src/signals/services/__tests__/pi-memory-candidate-accounting.service.test.ts",
       // The automatic welcome thread id is a permanent uuidv5 contract: it
       // decides, forever, whether a recipient already holds a welcome. Route
       // tests own uniquely generated identities, so only fixed inputs with

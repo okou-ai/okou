@@ -10,6 +10,10 @@ import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-can
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 
 import { db } from "../../../lib/db";
+import {
+  insertPiMemoryStage1Candidates,
+  deleteStoragesWithPiMemoryCandidates,
+} from "../pi-memory-stage1-candidate.service";
 
 const fixtureHashes = Symbol("fixtureHashes");
 
@@ -168,7 +172,12 @@ export async function createPhase2TestScope(
           ),
         );
     }
-    await db().delete(storages).where(eq(storages.id, scope.memoryStorageId));
+    await db().transaction(async (tx) => {
+      await deleteStoragesWithPiMemoryCandidates(
+        tx,
+        eq(storages.id, scope.memoryStorageId),
+      );
+    });
     const hashes = [...scope[fixtureHashes]];
     if (hashes.length > 0) {
       await db().delete(blobs).where(inArray(blobs.hash, hashes));
@@ -252,13 +261,14 @@ export async function insertPhase2Candidates(
     return input.sourceHistoryHash ?? candidateHash(scope, input.piSessionId);
   });
   await insertFixtureBlobs(scope, hashes);
-  await db()
-    .insert(piMemoryStage1Candidates)
-    .values(
+  await db().transaction(async (tx) => {
+    await insertPiMemoryStage1Candidates(
+      tx,
       inputs.map((input, index) => {
         return phase2CandidateRow(scope, input, hashes[index] as string, now);
       }),
     );
+  });
   return hashes;
 }
 

@@ -1,4 +1,6 @@
-import { and, eq, gt, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, sql, type SQL } from "drizzle-orm";
+
+import { z } from "zod";
 
 import { triggerSourceSchema } from "@okouai/api-contracts/contracts/logs";
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
@@ -11,10 +13,224 @@ import { conversations } from "@okouai/db/schema/conversation";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storages } from "@okouai/db/schema/storage";
 
+import { executeRawRows } from "../../lib/db-raw-rows";
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import { advancePiMemoryPhase2InputRevision } from "./pi-memory-phase2-job.service";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
+
+// API B / DB compatibility for #33748. Retire only after B is deployed,
+// pre-B writers have drained, and B is the supported rollback floor.
+async function usesExplicitCandidateReferences(tx: Tx): Promise<boolean> {
+  // ROW EXCLUSIVE is compatible with other writers and blocks trigger DDL.
+  // The catalog SELECT must be a separate READ COMMITTED statement AFTER the
+  // lock: a statement snapshot taken before a waiting lock could be stale.
+  await tx.execute(
+    sql`LOCK TABLE ${piMemoryStage1Candidates} IN ROW EXCLUSIVE MODE`,
+  );
+  const [settings] = await executeRawRows(
+    tx,
+    sql`SELECT current_setting('transaction_isolation') AS isolation,
+      current_setting('session_replication_role') AS replication_role`,
+    z.object({
+      isolation: z.literal("read committed"),
+      replication_role: z.literal("origin"),
+    }),
+  );
+  if (!settings) {
+    throw new Error("Missing Pi candidate transaction settings");
+  }
+  const triggers = await executeRawRows(
+    tx,
+    sql`SELECT t.tgname AS name,
+      (t.tgenabled = 'O' AND t.tgtype = 29 AND NOT t.tgdeferrable
+        AND NOT t.tginitdeferred AND t.tgqual IS NULL
+        AND t.tgnargs = 0 AND octet_length(t.tgargs) = 0
+        AND t.tgattr::text = a.attnum::text
+        AND p.proname = 'pi_memory_stage1_candidate_blob_ref_count'
+        AND p.pronamespace = c.relnamespace
+        AND p.proconfig IS NULL AND NOT p.prosecdef AND p.provolatile = 'v'
+        AND p.pronargs = 0 AND p.prorettype = 'trigger'::regtype
+        AND p.prolang = (SELECT oid FROM pg_language WHERE lanname = 'plpgsql')
+        AND md5(p.prosrc) = '576154890be37fff1ec9f9f4c318428c') AS valid
+      FROM pg_trigger t
+      JOIN pg_class c ON c.oid = t.tgrelid
+      JOIN pg_proc p ON p.oid = t.tgfoid
+      JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'source_history_hash'
+      WHERE t.tgrelid = 'pi_memory_stage1_candidates'::regclass
+        AND NOT t.tgisinternal`,
+    z.object({ name: z.string(), valid: z.boolean() }),
+  );
+  if (triggers.length === 0) {
+    return true;
+  }
+  if (
+    triggers.length !== 1 ||
+    triggers[0]?.name !== "pi_memory_stage1_candidate_blob_ref_count_trigger" ||
+    !triggers[0].valid
+  ) {
+    throw new Error("Unexpected Pi candidate reference trigger configuration");
+  }
+  return false;
+}
+
+// Completion can retain checkpoint blobs before admission. Lock an existing
+// owner before either operation to avoid a parent/blob cycle with cleanup.
+export async function lockPiMemoryCandidateStorage(
+  tx: Tx,
+  owner: { readonly orgId: string; readonly userId: string },
+): Promise<void> {
+  await tx
+    .select({ id: storages.id })
+    .from(storages)
+    .where(
+      and(
+        eq(storages.orgId, owner.orgId),
+        eq(storages.userId, owner.userId),
+        eq(storages.name, MEMORY_ARTIFACT_NAME),
+      ),
+    )
+    .for("no key update");
+}
+
+async function retainCandidateReference(tx: Tx, hash: string): Promise<void> {
+  const [retained] = await tx
+    .update(blobs)
+    .set({ refCount: sql`${blobs.refCount} + 1` })
+    .where(eq(blobs.hash, hash))
+    .returning({ hash: blobs.hash });
+  if (!retained) {
+    throw new Error("Pi memory candidate source blob does not exist");
+  }
+}
+
+async function releaseCandidateReferences(
+  tx: Tx,
+  hashes: readonly string[],
+): Promise<void> {
+  const counts = new Map<string, number>();
+  for (const hash of hashes) {
+    counts.set(hash, (counts.get(hash) ?? 0) + 1);
+  }
+  for (const [hash, count] of [...counts].sort(([a], [b]) => {
+    return a.localeCompare(b);
+  })) {
+    const [released] = await tx
+      .update(blobs)
+      .set({ refCount: sql`${blobs.refCount} - ${count}` })
+      .where(and(eq(blobs.hash, hash), gte(blobs.refCount, count)))
+      .returning({ hash: blobs.hash });
+    if (!released) {
+      throw new Error(
+        "Pi memory candidate source blob has no retained reference",
+      );
+    }
+  }
+}
+
+/** Supported insertion path for admission and controlled fixture/repair writers. */
+export async function insertPiMemoryStage1Candidates(
+  tx: Tx,
+  rows: readonly (typeof piMemoryStage1Candidates.$inferInsert)[],
+) {
+  if (rows.length === 0) {
+    return [];
+  }
+  const ids = [
+    ...new Set(
+      rows.map((row) => {
+        return row.memoryStorageId;
+      }),
+    ),
+  ];
+  await tx
+    .select({ id: storages.id })
+    .from(storages)
+    .where(inArray(storages.id, ids))
+    .orderBy(asc(storages.id))
+    .for("no key update");
+  const explicit = await usesExplicitCandidateReferences(tx);
+  return await insertCandidateRows(tx, rows, explicit);
+}
+
+async function insertCandidateRows(
+  tx: Tx,
+  rows: readonly (typeof piMemoryStage1Candidates.$inferInsert)[],
+  explicit: boolean,
+) {
+  const created = await tx
+    .insert(piMemoryStage1Candidates)
+    .values([...rows])
+    .onConflictDoNothing()
+    .returning({
+      memoryStorageId: piMemoryStage1Candidates.memoryStorageId,
+      piSessionId: piMemoryStage1Candidates.piSessionId,
+      sourceHistoryHash: piMemoryStage1Candidates.sourceHistoryHash,
+    });
+  if (explicit) {
+    for (const row of [...created].sort((a, b) => {
+      return a.sourceHistoryHash.localeCompare(b.sourceHistoryHash);
+    })) {
+      await retainCandidateReference(tx, row.sourceHistoryHash);
+    }
+  }
+  return created;
+}
+
+/** Lock parents before children, including standalone candidate retention cleanup. */
+export async function deletePiMemoryStage1Candidates(
+  tx: Tx,
+  storageIds: readonly string[],
+): Promise<number> {
+  if (storageIds.length === 0) {
+    return 0;
+  }
+  await tx
+    .select({ id: storages.id })
+    .from(storages)
+    .where(inArray(storages.id, [...storageIds]))
+    .orderBy(asc(storages.id))
+    .for("no key update");
+  const explicit = await usesExplicitCandidateReferences(tx);
+  const deleted = await tx
+    .delete(piMemoryStage1Candidates)
+    .where(inArray(piMemoryStage1Candidates.memoryStorageId, [...storageIds]))
+    .returning({ hash: piMemoryStage1Candidates.sourceHistoryHash });
+  if (explicit) {
+    await releaseCandidateReferences(
+      tx,
+      deleted.map((row) => {
+        return row.hash;
+      }),
+    );
+  }
+  return deleted.length;
+}
+
+/** The caller owns the transaction; never put external Clerk/S3 work in it. */
+export async function deleteStoragesWithPiMemoryCandidates(
+  tx: Tx,
+  condition: SQL,
+): Promise<number> {
+  const parents = await tx
+    .select({ id: storages.id })
+    .from(storages)
+    .where(condition)
+    .orderBy(asc(storages.id))
+    .for("update");
+  const ids = parents.map((row) => {
+    return row.id;
+  });
+  if (ids.length === 0) {
+    return 0;
+  }
+  await deletePiMemoryStage1Candidates(tx, ids);
+  const deleted = await tx
+    .delete(storages)
+    .where(inArray(storages.id, ids))
+    .returning({ id: storages.id });
+  return deleted.length;
+}
 
 export type PiMemoryStage1AdmissionSkipReason =
   | "generation_disabled"
@@ -131,6 +347,7 @@ async function resolveMemoryStorageId(
         eq(storages.name, MEMORY_ARTIFACT_NAME),
       ),
     )
+    .for("no key update")
     .limit(1);
   if (existing) {
     return existing.id;
@@ -162,11 +379,27 @@ async function resolveMemoryStorageId(
         eq(storages.name, MEMORY_ARTIFACT_NAME),
       ),
     )
+    .for("no key update")
     .limit(1);
   if (!winner) {
     throw new Error("Memory Storage create race produced no canonical row");
   }
   return winner.id;
+}
+
+async function readPiMemoryCandidateSource(tx: Tx, runId: string) {
+  const [source] = await tx
+    .select({
+      piSessionId: conversations.cliAgentSessionId,
+      sourceHistoryHash: conversations.cliAgentSessionHistoryHash,
+    })
+    .from(conversations)
+    .innerJoin(blobs, eq(conversations.cliAgentSessionHistoryHash, blobs.hash))
+    .where(
+      and(eq(conversations.runId, runId), eq(conversations.cliAgentType, "pi")),
+    )
+    .limit(1);
+  return source;
 }
 
 export async function admitPiMemoryStage1Candidate(
@@ -182,41 +415,31 @@ export async function admitPiMemoryStage1Candidate(
     return { outcome: "skipped", reason: "not_owned_chat_thread" };
   }
 
-  const [source] = await tx
-    .select({
-      piSessionId: conversations.cliAgentSessionId,
-      sourceHistoryHash: conversations.cliAgentSessionHistoryHash,
-    })
-    .from(conversations)
-    .innerJoin(blobs, eq(conversations.cliAgentSessionHistoryHash, blobs.hash))
-    .where(
-      and(
-        eq(conversations.runId, args.runId),
-        eq(conversations.cliAgentType, "pi"),
-      ),
-    )
-    .limit(1);
+  const source = await readPiMemoryCandidateSource(tx, args.runId);
   if (!source?.sourceHistoryHash) {
     return { outcome: "skipped", reason: "history_not_hash_backed" };
   }
 
   const memoryStorageId = await resolveMemoryStorageId(tx, args);
+  const explicit = await usesExplicitCandidateReferences(tx);
   const eligibleAt = new Date(args.completedAt.getTime() + args.idleDelayMs);
-  const [created] = await tx
-    .insert(piMemoryStage1Candidates)
-    .values({
-      memoryStorageId,
-      orgId: args.orgId,
-      userId: args.userId,
-      piSessionId: source.piSessionId,
-      sourceRunId: args.runId,
-      sourceHistoryHash: source.sourceHistoryHash,
-      sourceCompletedAt: args.completedAt,
-      eligibleAt,
-      status: "pending",
-    })
-    .onConflictDoNothing()
-    .returning({ memoryStorageId: piMemoryStage1Candidates.memoryStorageId });
+  const [created] = await insertCandidateRows(
+    tx,
+    [
+      {
+        memoryStorageId,
+        orgId: args.orgId,
+        userId: args.userId,
+        piSessionId: source.piSessionId,
+        sourceRunId: args.runId,
+        sourceHistoryHash: source.sourceHistoryHash,
+        sourceCompletedAt: args.completedAt,
+        eligibleAt,
+        status: "pending",
+      },
+    ],
+    explicit,
+  );
   if (created) {
     return {
       outcome: "created",
@@ -261,7 +484,7 @@ export async function admitPiMemoryStage1Candidate(
     };
   }
 
-  await tx
+  const [replaced] = await tx
     .update(piMemoryStage1Candidates)
     .set({
       sourceRunId: args.runId,
@@ -292,7 +515,17 @@ export async function admitPiMemoryStage1Candidate(
           current.sourceHistoryHash,
         ),
       ),
-    );
+    )
+    .returning({
+      sourceHistoryHash: piMemoryStage1Candidates.sourceHistoryHash,
+    });
+  if (!replaced) {
+    throw new Error("Locked Pi memory candidate lost its source replacement");
+  }
+  if (explicit) {
+    await retainCandidateReference(tx, replaced.sourceHistoryHash);
+    await releaseCandidateReferences(tx, [current.sourceHistoryHash]);
+  }
   return {
     outcome: "replaced",
     memoryStorageId,
@@ -331,6 +564,22 @@ export async function commitPiMemoryStage1Candidate(
   tx: Tx,
   args: CommitPiMemoryStage1CandidateArgs,
 ): Promise<boolean> {
+  // Phase 2 enqueue can take a parent FK lock after updating the candidate.
+  // Take it first so cleanup cannot hold the parent while waiting for this row.
+  const [owner] = await tx
+    .select({ id: storages.id })
+    .from(storages)
+    .where(
+      and(
+        eq(storages.id, args.memoryStorageId),
+        eq(storages.orgId, args.orgId),
+        eq(storages.userId, args.userId),
+      ),
+    )
+    .for("key share");
+  if (!owner) {
+    return false;
+  }
   const common = {
     leaseToken: null,
     leaseExpiresAt: null,

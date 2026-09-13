@@ -11,6 +11,7 @@ import { db } from "../lib/db";
 import { nowDate } from "../lib/time";
 import {
   admitPiMemoryStage1Candidate,
+  deleteStoragesWithPiMemoryCandidates,
   commitPiMemoryStage1Candidate,
   getPiMemoryStage1AdmissionPrerequisiteSkipReason,
   type AdmitPiMemoryStage1CandidateArgs,
@@ -315,10 +316,12 @@ export async function readmitPiMemoryStage1CandidateFixture(
 export async function deletePiMemoryStorageFixture(
   memoryStorageId: string,
 ): Promise<void> {
-  const [deleted] = await db()
-    .delete(storages)
-    .where(eq(storages.id, memoryStorageId))
-    .returning({ id: storages.id });
+  const deleted = await db().transaction(async (tx) => {
+    return await deleteStoragesWithPiMemoryCandidates(
+      tx,
+      eq(storages.id, memoryStorageId),
+    );
+  });
   if (!deleted) {
     throw new Error("Expected Pi memory Storage fixture to be deleted");
   }
