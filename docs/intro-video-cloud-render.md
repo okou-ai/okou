@@ -53,11 +53,46 @@ They do not expose the private project URL or platform key.
 
 ## Submission and recovery
 
-The API stores a digest-addressed immutable input snapshot in the distinct
-private artifacts bucket, alongside the job's exact provider payload. A signed
-input URL lasts 26 hours and is refreshed only before the first submission.
-Storage objects use the private bucket's retention policy; signed URL expiry
-is not object deletion. No per-job storage cleanup worker is introduced here.
+The API stores a digest-addressed immutable input snapshot in
+`R2_USER_STORAGES_BUCKET_NAME`, under
+`intro-video-render-inputs/<generationId>/<sha256>.zip`. The job records the
+actual bucket and key in its private `renderState.projectStorage`, alongside
+the exact provider payload. Queued jobs renew access to that recorded location
+even if the bucket selected for new jobs changes. A signed input URL lasts
+26 hours and is refreshed only before the first submission. Both the object
+write and signed download response use `Cache-Control: private, no-store`.
+
+New snapshots use the existing `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY`,
+with `R2_ACCOUNT_ID` or the configured S3 endpoint. Production currently selects
+`vm0-s3-user-storages-prod`. This bucket must be distinct from the public
+artifacts, hosted sites, and dedicated private artifacts buckets; the latter
+uses a different credential route. The API rejects these aliases before paid
+submission. New input snapshots do not require the dedicated
+`R2_PRIVATE_ARTIFACTS_*` configuration. Original uploads and final outputs still
+follow their existing artifact policy, including its configuration requirements.
+
+Keep the user-storage bucket inaccessible without authorization, including
+through R2 development domains and custom domains. The rendering provider
+receives a signed GET URL for one object, never storage credentials. Cache
+headers do not enforce bucket access control.
+
+Input retention is scoped to `intro-video-render-inputs/`; the shared bucket
+also contains persistent Agent, workflow, and session data. Signed URL expiry
+does not delete an object. Do not apply an age-only expiration rule to inputs:
+a job may wait days before its first submission, and `needs_attention` may
+still need provider reconciliation. Cleanup may remove only the recorded input
+of a provider-reconciled terminal job, at least 26 hours after completion, once
+no pending retrieval or recovery needs it. Retain queued, active, and unresolved
+jobs. No automatic per-job cleanup worker or bucket lifecycle configuration is
+installed by this change.
+
+Admitted jobs written before this storage change have no `projectStorage`.
+Before their first submission, recovery uses their original
+`R2_PRIVATE_ARTIFACTS_BUCKET_NAME` and digest-based key, then saves that location.
+Keep that bucket, its credentials, and its inputs available while those jobs
+drain. Already attempted submissions retain their exact original URL and body.
+Remove the legacy location reader only after all pre-cutover jobs have drained
+and the previous API is outside the rollback window.
 
 The provider idempotency key is `okou:hf:<generationId>`. After the first
 submission attempt, both the key and body remain fixed. HeyGen documents a
@@ -136,3 +171,15 @@ database, mocked provider/storage boundaries, and the actual CLI parser. A live
 acceptance test must use the deployed API and platform account: enable
 `IntroVideo`, submit a preserved-page project, resume the same ID, and verify
 one provider render, one ledger charge, and a playable permanent artifact.
+
+For the input-storage cutover, pause new creation during API traffic promotion
+and resume it on the updated API. Do not roll back to an API that reconstructs
+every input location from the dedicated private bucket while new user-storage
+jobs can still need their first submission. No database schema migration or
+CLI/template change is required for this cutover.
+
+Before production acceptance, verify authenticated write/read and denied
+anonymous access at the new prefix, including any configured public domains.
+Inspect bucket lifecycle rules against the retention requirements above and
+inventory unfinished pre-cutover jobs. Use one existing project for the cloud
+render smoke test; regenerating voice or presenter assets is unnecessary.

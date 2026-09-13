@@ -17,7 +17,7 @@ import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
 import { writeDb$ } from "../external/db";
-import { generatePresignedGetUrl } from "../external/s3";
+import { generatePrivatePresignedGetUrl } from "../external/s3";
 import { onRejection, settleIncludingAbort } from "../utils";
 import { storeGeneratedArtifactObject$ } from "./artifact-storage.service";
 import {
@@ -61,6 +61,9 @@ const REPLAY_WINDOW_MS = 23 * 60 * 60 * 1000;
 const stateSchema = z.object({
   phase: introVideoRenderPhaseSchema,
   projectDigest: z.string(),
+  projectStorage: z
+    .object({ bucket: z.string().min(1), key: z.string().min(1) })
+    .optional(),
   projectUrl: z.url(),
   callbackUrl: z.url(),
   submittedAt: z.iso.datetime().optional(),
@@ -180,7 +183,12 @@ export const createIntroVideoRenderJob$ = command(
       readonly userId: string;
       readonly orgId: string;
       readonly runId: string;
-      readonly project: { readonly digest: string; readonly url: string };
+      readonly project: {
+        readonly digest: string;
+        readonly bucket: string;
+        readonly key: string;
+        readonly url: string;
+      };
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -203,6 +211,10 @@ export const createIntroVideoRenderJob$ = command(
             renderState: {
               phase: "preparing",
               projectDigest: args.project.digest,
+              projectStorage: {
+                bucket: args.project.bucket,
+                key: args.project.key,
+              },
               projectUrl: args.project.url,
               callbackUrl: heyGenBuiltInGenerationWebhookUrl({
                 generationId: args.input.requestId,
@@ -319,6 +331,19 @@ const recordRenderIdentity$ = command(
   },
 );
 
+// Preserve admitted jobs written before input locations were persisted. Remove
+// after those jobs drain and the old API is outside the rollback window.
+function legacyRenderProjectStorage(generationId: string, digest: string) {
+  const bucket = env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME");
+  if (!bucket) {
+    throw new Error("Legacy private render input storage is not configured");
+  }
+  return {
+    bucket,
+    key: `intro-video-render-inputs/${generationId}/${digest}.zip`,
+  };
+}
+
 const submitClaimedRender$ = command(
   async (
     { get, set },
@@ -364,23 +389,20 @@ const submitClaimedRender$ = command(
       await set(markBuiltInGenerationRunning$, job.id, signal);
     }
     if (!state.submittedAt) {
-      const bucket = env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME");
-      if (!bucket) {
-        throw new Error("Private render input storage is not configured");
-      }
+      const projectStorage =
+        state.projectStorage ??
+        legacyRenderProjectStorage(job.id, state.projectDigest);
       // An admitted job may wait days before its first provider submission.
       // Renew only before that first attempt; all replays keep the exact body.
       const projectUrl = await get(
-        generatePresignedGetUrl(
-          bucket,
-          `intro-video-render-inputs/${job.id}/${state.projectDigest}.zip`,
+        generatePrivatePresignedGetUrl(
+          projectStorage.bucket,
+          projectStorage.key,
           26 * 60 * 60,
-          undefined,
-          true,
         ),
       );
       signal.throwIfAborted();
-      state = { ...state, projectUrl };
+      state = { ...state, projectStorage, projectUrl };
     }
     const submittedAt = state.submittedAt ?? nowDate().toISOString();
     await set(
@@ -390,6 +412,7 @@ const submitClaimedRender$ = command(
         phase: "submitting",
         submittedAt,
         projectUrl: state.projectUrl,
+        projectStorage: state.projectStorage,
         notice: "",
       },
       signal,

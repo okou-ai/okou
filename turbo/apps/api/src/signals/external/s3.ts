@@ -30,6 +30,7 @@ import {
 
 const PRIVATE_ARTIFACT_CACHE_CONTROL =
   "private, max-age=31536000, must-revalidate";
+const PRIVATE_NO_STORE_CACHE_CONTROL = "private, no-store";
 
 export interface S3Object {
   readonly key: string;
@@ -929,6 +930,21 @@ export function generatePresignedGetUrl(
   );
 }
 
+/** Private inputs must not remain cached after their signed access expires. */
+export function generatePrivatePresignedGetUrl(
+  bucket: string,
+  key: string,
+  expiresIn: number,
+): Computed<Promise<string>> {
+  return generatePresignedGetUrlWithClient(
+    s3ClientForBucket(bucket, true),
+    bucket,
+    key,
+    expiresIn,
+    { responseCacheControl: PRIVATE_NO_STORE_CACHE_CONTROL },
+  );
+}
+
 /** Use the same clock for the signature and its advertised expiration. */
 export function generateArtifactPreviewUrl(
   bucket: string,
@@ -1095,14 +1111,60 @@ export function putImmutableS3Object(
         readonly contentEncoding?: string;
       },
 ): Computed<Promise<void>> {
+  const writeOptions = isAbortSignal(options) ? { signal: options } : options;
+  return putImmutableS3ObjectWithOptions(
+    {
+      bucket,
+      key,
+      body,
+      contentType,
+      metadata: writeOptions?.metadata,
+      contentEncoding: writeOptions?.contentEncoding,
+      cacheControl: IMMUTABLE_CACHE_CONTROL,
+    },
+    writeOptions?.signal,
+  );
+}
+
+export function putPrivateImmutableS3Object(
+  bucket: string,
+  key: string,
+  body: string | Buffer,
+  contentType: string,
+  signal: AbortSignal,
+): Computed<Promise<void>> {
+  return putImmutableS3ObjectWithOptions(
+    {
+      bucket,
+      key,
+      body,
+      contentType,
+      cacheControl: PRIVATE_NO_STORE_CACHE_CONTROL,
+    },
+    signal,
+  );
+}
+
+function putImmutableS3ObjectWithOptions(
+  args: {
+    readonly bucket: string;
+    readonly key: string;
+    readonly body: string | Buffer;
+    readonly contentType: string;
+    readonly metadata?: Readonly<Record<string, string>>;
+    readonly contentEncoding?: string;
+    readonly cacheControl: string;
+  },
+  signal?: AbortSignal,
+): Computed<Promise<void>> {
   return computed(async (get): Promise<void> => {
-    const writeOptions = isAbortSignal(options) ? { signal: options } : options;
+    const { bucket, key, body, contentType } = args;
     const client = get(s3ClientForBucket(bucket));
     await get(
       publicArtifactWriteRegistration(
         bucket,
-        { key, contentType, metadata: writeOptions?.metadata },
-        writeOptions?.signal,
+        { key, contentType, metadata: args.metadata },
+        signal,
       ),
     );
     const uploaded = await settle(
@@ -1112,12 +1174,12 @@ export function putImmutableS3Object(
           Key: key,
           Body: body,
           ContentType: contentType,
-          ContentEncoding: writeOptions?.contentEncoding,
-          Metadata: writeOptions?.metadata,
-          CacheControl: IMMUTABLE_CACHE_CONTROL,
+          ContentEncoding: args.contentEncoding,
+          Metadata: args.metadata,
+          CacheControl: args.cacheControl,
           IfNoneMatch: "*",
         }),
-        writeOptions?.signal ? { abortSignal: writeOptions.signal } : undefined,
+        signal ? { abortSignal: signal } : undefined,
       ),
     );
     if (!uploaded.ok && !isS3PreconditionFailedError(uploaded.error)) {

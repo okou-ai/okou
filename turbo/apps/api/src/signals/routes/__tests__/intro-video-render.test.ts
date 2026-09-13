@@ -12,6 +12,7 @@ import {
   HeadObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
+  type GetObjectCommandInput,
   type PutObjectCommandInput,
 } from "@aws-sdk/client-s3";
 import {
@@ -29,6 +30,7 @@ import { mockEnv } from "../../../lib/env";
 import { now, nowDate, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createUsagePricingFixture } from "../../../test-fixtures/system-config-seeds";
+import { removeIntroVideoRenderProjectStorageFixture } from "../../../test-fixtures/built-in-generation";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { billingStatusRoutes } from "../billing-status";
 import { introVideoRenderRoutes } from "../intro-video-render";
@@ -159,17 +161,44 @@ async function balance(f: Fixture) {
 function mockStorage() {
   const objects = new Map<
     string,
-    { bytes: Buffer; contentType: string; metadata: Record<string, string> }
+    {
+      bytes: Buffer;
+      contentType: string;
+      metadata: Record<string, string>;
+    }
   >();
   const uploads = new Map<string, PutObjectCommandInput>();
+  const downloads = new Map<string, GetObjectCommandInput>();
   context.mocks.s3.getSignedUrl.mockImplementation((_client, command) => {
-    const url = apiTestS3PresignedUrl(command);
-    if (command instanceof PutObjectCommand) {
-      uploads.set(url, command.input);
+    const url = new URL(apiTestS3PresignedUrl(command));
+    if (command instanceof GetObjectCommand) {
+      url.searchParams.set("signed-at", nowDate().toISOString());
+      downloads.set(url.toString(), command.input);
     }
-    return Promise.resolve(url);
+    if (command instanceof PutObjectCommand) {
+      uploads.set(url.toString(), command.input);
+    }
+    return Promise.resolve(url.toString());
   });
   server.use(
+    http.get("https://r2.example.com/storage/archive.tar.gz", ({ request }) => {
+      const download = downloads.get(request.url);
+      if (!download) {
+        return new HttpResponse(null, { status: 403 });
+      }
+      const object = objects.get(`${download.Bucket}/${download.Key}`);
+      if (!object) {
+        return new HttpResponse(null, { status: 404 });
+      }
+      return new HttpResponse(new Uint8Array(object.bytes), {
+        headers: {
+          "content-type": object.contentType,
+          ...(download.ResponseCacheControl
+            ? { "cache-control": download.ResponseCacheControl }
+            : {}),
+        },
+      });
+    }),
     http.put("*", async ({ request }) => {
       const upload = uploads.get(request.url);
       if (!upload) {
@@ -244,6 +273,23 @@ function mockStorage() {
     }
     return Promise.resolve({});
   });
+  return {
+    moveRenderInput(generationId: string, bucket: string) {
+      const prefix = `test-user-storages/intro-video-render-inputs/${generationId}/`;
+      const entry = [...objects].find(([key]) => {
+        return key.startsWith(prefix);
+      });
+      if (!entry) {
+        throw new Error("Expected one render input snapshot");
+      }
+      const [key, object] = entry;
+      objects.set(
+        `${bucket}/${key.slice("test-user-storages/".length)}`,
+        object,
+      );
+      objects.delete(key);
+    },
+  };
 }
 
 async function upload(f: Fixture, bytes?: Buffer) {
@@ -293,6 +339,31 @@ async function upload(f: Fixture, bytes?: Buffer) {
       aspectRatio: "16:9",
     },
   });
+}
+
+async function queueRender(f: Fixture) {
+  const input = await upload(f);
+  for (let index = 0; index < 3; index++) {
+    expect(
+      (await submit(f, { ...input, requestId: randomUUID() })).status,
+    ).toBe(202);
+  }
+  expect((await submit(f, input)).status).toBe(202);
+  expect((await getRender(f, input.requestId)).phase).toBe("preparing");
+  return input;
+}
+
+function providerProjectUrl(body: Record<string, unknown>): URL {
+  const project = body.project;
+  if (
+    typeof project !== "object" ||
+    !project ||
+    !("url" in project) ||
+    typeof project.url !== "string"
+  ) {
+    throw new Error("Expected a provider project URL");
+  }
+  return new URL(project.url);
 }
 
 function provider() {
@@ -409,6 +480,113 @@ describe("managed Intro Video cloud rendering", () => {
     expect(cloud.requests).toHaveLength(0);
   });
 
+  it("renders from user storage without private-artifact credentials and prevents input caching", async () => {
+    const f = await fixture();
+    const input = await upload(f);
+    mockEnv("R2_PRIVATE_ARTIFACTS_BUCKET_NAME", undefined);
+    mockEnv("R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID", undefined);
+    mockEnv("R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY", undefined);
+    const cloud = provider();
+    expect((await submit(f, input)).status).toBe(202);
+    expect(cloud.requests).toHaveLength(1);
+    const projectUrl = providerProjectUrl(cloud.requests[0].body);
+    expect(projectUrl.searchParams.get("object")).toMatch(
+      new RegExp(
+        `^test-user-storages/intro-video-render-inputs/${input.requestId}/[a-f0-9]{64}\\.zip$`,
+      ),
+    );
+    const snapshot = await fetch(projectUrl);
+    expect(snapshot.status).toBe(200);
+    expect(snapshot.headers.get("cache-control")).toBe("private, no-store");
+    const archive = new AdmZip(Buffer.from(await snapshot.arrayBuffer()));
+    expect(archive.readAsText("index.html")).toContain("Original slides");
+    const write = context.mocks.s3.send.mock.calls
+      .map(([command]) => command)
+      .find((command): command is PutObjectCommand => {
+        return (
+          command instanceof PutObjectCommand &&
+          command.input.Key?.startsWith(
+            `intro-video-render-inputs/${input.requestId}/`,
+          ) === true
+        );
+      });
+    expect(write?.input).toMatchObject({
+      Bucket: "test-user-storages",
+      CacheControl: "private, no-store",
+      IfNoneMatch: "*",
+    });
+    const response = await getRender(f, input.requestId);
+    expect(JSON.stringify(response)).not.toContain(projectUrl.toString());
+    cloud.status = "completed";
+    expect((await getRender(f, input.requestId)).status).toBe("completed");
+  });
+
+  it.each([
+    "test-user-artifacts",
+    "test-hosted-sites",
+    "test-private-artifacts",
+  ])(
+    "rejects render input storage aliased to %s before paid submission",
+    async (bucket) => {
+      const f = await fixture();
+      const input = await upload(f);
+      const cloud = provider();
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", bucket);
+      const response = await submit(f, input);
+      expect(response.status).toBe(503);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: "RENDER_NOT_CONFIGURED" },
+      });
+      expect(cloud.requests).toHaveLength(0);
+    },
+  );
+
+  it("resumes queued input from its saved bucket after storage configuration changes", async () => {
+    const f = await fixture();
+    const cloud = provider();
+    const input = await queueRender(f);
+    expect(cloud.requests).toHaveLength(3);
+    mockEnv("R2_USER_STORAGES_BUCKET_NAME", "next-user-storages");
+    await withMockNowForTest(new Date(now() + 31 * 60 * 1000), async () => {
+      expect((await submit(f, input)).status).toBe(202);
+      expect(cloud.requests).toHaveLength(4);
+      const projectUrl = providerProjectUrl(cloud.requests[3].body);
+      expect(projectUrl.searchParams.get("object")).toContain(
+        `test-user-storages/intro-video-render-inputs/${input.requestId}/`,
+      );
+      expect(projectUrl.searchParams.get("signed-at")).toBe(
+        nowDate().toISOString(),
+      );
+      expect((await fetch(projectUrl)).status).toBe(200);
+      expect((await getRender(f, input.requestId)).providerRenderId).toBe(
+        "hfr_test",
+      );
+    });
+  });
+
+  it("resumes historical queued input from the original private bucket", async () => {
+    const storage = mockStorage();
+    const f = await fixture();
+    const cloud = provider();
+    const input = await queueRender(f);
+    // Only a pre-cutover writer can omit the input locator. Reproduce that
+    // historical persisted state, then exercise recovery through the real API.
+    storage.moveRenderInput(input.requestId, "test-private-artifacts");
+    await removeIntroVideoRenderProjectStorageFixture(input.requestId);
+    await withMockNowForTest(new Date(now() + 31 * 60 * 1000), async () => {
+      expect((await submit(f, input)).status).toBe(202);
+      expect(cloud.requests).toHaveLength(4);
+      const projectUrl = providerProjectUrl(cloud.requests[3].body);
+      expect(projectUrl.searchParams.get("object")).toContain(
+        `test-private-artifacts/intro-video-render-inputs/${input.requestId}/`,
+      );
+      expect((await fetch(projectUrl)).status).toBe(200);
+      expect((await getRender(f, input.requestId)).providerRenderId).toBe(
+        "hfr_test",
+      );
+    });
+  });
+
   it("rejects foreign files and invalid projects before creating paid work", async () => {
     const f = await fixture();
     const other = await fixture();
@@ -510,7 +688,11 @@ describe("managed Intro Video cloud rendering", () => {
     );
     expect(cloud.requests).toHaveLength(1);
     cloud.loseResponse = false;
-    expect((await submit(f, input)).status).toBe(202);
+    mockEnv("R2_USER_STORAGES_BUCKET_NAME", "next-user-storages");
+    mockEnv("R2_PRIVATE_ARTIFACTS_BUCKET_NAME", undefined);
+    await withMockNowForTest(new Date(now() + 10 * 60 * 1000), async () => {
+      expect((await submit(f, input)).status).toBe(202);
+    });
     expect(cloud.requests[1]).toStrictEqual(cloud.requests[0]);
     expect((await getRender(f, input.requestId)).providerRenderId).toBe(
       "hfr_test",

@@ -14,6 +14,7 @@ import {
 import { introVideoRenderPricing$ } from "../services/intro-video-render-pricing.service";
 import {
   IntroVideoProjectError,
+  introVideoRenderInputBucket,
   prepareIntroVideoRenderProject$,
 } from "../services/intro-video-render-project.service";
 import {
@@ -51,12 +52,7 @@ function conflict() {
 }
 
 function renderStorageConfigured(): boolean {
-  const privateBucket = env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME");
-  return (
-    !!env("HEYGEN_API_KEY") &&
-    !!privateBucket &&
-    privateBucket !== env("R2_USER_ARTIFACTS_BUCKET_NAME")
-  );
+  return !!env("HEYGEN_API_KEY") && introVideoRenderInputBucket() !== null;
 }
 
 const postRender$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -98,7 +94,7 @@ const postRender$ = command(async ({ get, set }, signal: AbortSignal) => {
         status: 503 as const,
         body: errorBody(
           "RENDER_NOT_CONFIGURED",
-          "Platform HeyGen rendering, private input storage, and cloud render pricing must be configured.",
+          "Platform HeyGen rendering, user storage for private render inputs, and cloud render pricing must be configured.",
         ),
       };
     }

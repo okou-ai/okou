@@ -13,8 +13,8 @@ import { settleIncludingAbort } from "../utils";
 import { env } from "../../lib/env";
 import {
   downloadS3BufferWithMaxBytes,
-  generatePresignedGetUrl,
-  putImmutableS3Object,
+  generatePrivatePresignedGetUrl,
+  putPrivateImmutableS3Object,
 } from "../external/s3";
 import { uploadedArtifactObject } from "./uploaded-artifact.service";
 
@@ -136,6 +136,15 @@ async function validateProject(
   }
 }
 
+export function introVideoRenderInputBucket(): string | null {
+  const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+  return bucket === env("R2_USER_ARTIFACTS_BUCKET_NAME") ||
+    bucket === env("R2_HOSTED_SITES_BUCKET_NAME") ||
+    bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME")
+    ? null
+    : bucket;
+}
+
 export const prepareIntroVideoRenderProject$ = command(
   async (
     { get },
@@ -192,19 +201,27 @@ export const prepareIntroVideoRenderProject$ = command(
     signal.throwIfAborted();
     await validateProject(bytes, args.composition, args.aspectRatio, signal);
     const digest = createHash("sha256").update(bytes).digest("hex");
-    const bucket = env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME");
-    if (!bucket || bucket === env("R2_USER_ARTIFACTS_BUCKET_NAME")) {
-      throw new Error("Private render input storage is not configured");
+    const bucket = introVideoRenderInputBucket();
+    if (!bucket) {
+      throw new Error(
+        "User storage for private render inputs is not configured",
+      );
     }
     const key = `intro-video-render-inputs/${args.generationId}/${digest}.zip`;
     await get(
-      putImmutableS3Object(bucket, key, bytes, "application/zip", signal),
+      putPrivateImmutableS3Object(
+        bucket,
+        key,
+        bytes,
+        "application/zip",
+        signal,
+      ),
     );
     signal.throwIfAborted();
     const url = await get(
-      generatePresignedGetUrl(bucket, key, 26 * 60 * 60, undefined, true),
+      generatePrivatePresignedGetUrl(bucket, key, 26 * 60 * 60),
     );
     signal.throwIfAborted();
-    return { digest, key, url };
+    return { digest, bucket, key, url };
   },
 );
