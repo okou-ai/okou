@@ -710,12 +710,9 @@ test.each([null, "Close", "Escape", "backdrop"] as const)(
       dismissal ? 0 : 1,
     );
     authorization.resolve();
-    // Sonner inserts the text before its enter effect makes the toast visible.
-    await waitFor(() => {
-      expect(
-        screen.getByText("Google Analytics connected and authorized for Scout"),
-      ).toBeVisible();
-    });
+    await expect(
+      screen.findByText("Google Analytics connected and authorized for Scout"),
+    ).resolves.toBeInTheDocument();
     await waitFor(() => {
       expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(0);
     });
