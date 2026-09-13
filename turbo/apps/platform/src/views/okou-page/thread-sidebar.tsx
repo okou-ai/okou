@@ -7,10 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import {
-  artifactRefFromUrl,
-  openThreadArtifacts$,
-} from "../../signals/chat-page/thread-sidebar-coordinator.ts";
+import { openThreadArtifacts$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import type {
   ThreadSidebarArtifactSource,
@@ -205,10 +202,13 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
           <ArtifactCatalogGrid
             artifacts={artifacts}
             onOpen={(artifactId) => {
-              open({
-                type: "artifact",
-                source: { kind: "catalog", artifactId },
-              });
+              open(
+                {
+                  type: "artifact",
+                  source: { kind: "catalog", artifactId },
+                },
+                pageSignal,
+              );
             }}
           />
         )}
@@ -269,8 +269,9 @@ function ThreadArtifactDetail({
   const fullscreen = useGet(sidebar.fullscreen$);
   const toggleFullscreen = useSet(sidebar.toggleFullscreen$);
   const close = useSet(sidebar.close$);
-  const open = useSet(sidebar.open$);
+  const openAttachment = useSet(sidebar.openAttachment$);
   const backToArtifacts = useOpenThreadArtifacts(thread);
+  const pageSignal = useGet(pageSignal$);
   const detailLoadable = useLastLoadable(
     sidebar.artifactCatalog.selectedArtifactDetail$,
   );
@@ -280,10 +281,7 @@ function ThreadArtifactDetail({
     toggle: toggleFullscreen,
   };
   const navigateImage = (url: string) => {
-    open({
-      type: "artifact",
-      source: { kind: "attachment", ref: artifactRefFromUrl(url) },
-    });
+    openAttachment(url, pageSignal);
   };
 
   if (source.kind === "attachment") {

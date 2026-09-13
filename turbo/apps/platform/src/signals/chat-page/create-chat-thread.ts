@@ -2348,9 +2348,8 @@ function createEventChangeEffects(
       [boolean, AbortSignal]
     >;
   },
-  owner: Computed<AbortSignal>,
 ) {
-  const sidebar = createThreadSidebarSignals(threadId, owner);
+  const sidebar = createThreadSidebarSignals(threadId);
   const locallyMarkedReadAt$ = state<string | undefined>(undefined);
   const markThreadReadIfNeeded$ = createMarkThreadReadIfNeeded({
     threadId,
@@ -2381,7 +2380,7 @@ function createEventChangeEffects(
       if (!set(sidebar.claimAutoOpenCandidate$, candidateKey)) {
         return;
       }
-      set(sidebar.open$, { type: "browser" });
+      set(sidebar.open$, { type: "browser" }, signal);
     },
   );
   const updateEventPresentation$ = command(
@@ -2611,16 +2610,13 @@ function createChatThreadMessagePipeline(
     chatEvents.chatEvents$,
     initialEventsReadyView$,
   );
-  const effects = createEventChangeEffects(
-    {
-      threadId,
-      chatEvents,
-      projections,
-      scroll,
-      syncVisibleEventTrees$,
-    },
-    owner,
-  );
+  const effects = createEventChangeEffects({
+    threadId,
+    chatEvents,
+    projections,
+    scroll,
+    syncVisibleEventTrees$,
+  });
   const lifecycle = createChatEventPresentationLifecycle({
     chatEvents,
     eventChangeHandler: effects.eventChangeHandler,

@@ -144,12 +144,17 @@ test("Opening another Mermaid diagram replaces the current artifact split view",
   ).toBeNull();
 });
 
-test("Closing a Mermaid artifact split view preserves both inline diagrams and sources", async () => {
-  const { sidebar } = await openMermaidSplitView();
+test("Closing a Mermaid artifact split view releases its blob and preserves the inline diagrams", async () => {
+  const { sidebar, firstSidebarSource } = await openMermaidSplitView();
+  if (!firstSidebarSource) {
+    throw new Error("Expected the sidebar diagram to have a blob URL");
+  }
+  const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL");
   const sidebarRemoved = waitForElementToBeRemoved(sidebar);
   click(getButtonByName("Close artifact", sidebar));
 
   await sidebarRemoved;
+  expect(revokeObjectUrl).toHaveBeenCalledWith(firstSidebarSource);
   expect(screen.getAllByRole("img", { name: "Diagram" })).toHaveLength(2);
   expect(screen.getAllByText("Diagram source")).toHaveLength(2);
 });
