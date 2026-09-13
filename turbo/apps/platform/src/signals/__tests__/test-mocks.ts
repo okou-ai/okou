@@ -236,7 +236,9 @@ interface ClerkMock {
   readonly loads: readonly (MockedClerkLoadOptions | undefined)[];
   readonly localizationRequests: ClerkLocalizationLocale[];
   readonly resourceRequests: ClerkResourceRequest[];
-  /** Hosted UI script requests; only v1 comparison routes should add one. */
+  /**
+   * Hosted UI script requests; only auth pages and account switching add one.
+   */
   readonly uiRequests: string[];
   /** Clerk `status` handlers the SDK still holds, so leaks stay observable. */
   readonly statusListenerCount: () => number;
