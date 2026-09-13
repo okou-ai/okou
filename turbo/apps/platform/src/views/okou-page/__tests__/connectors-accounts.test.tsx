@@ -1261,6 +1261,11 @@ test("Debounce rapid connector account searches to the latest query", async () =
 test("Ignore a stale connector account response after clearing the search", async () => {
   const { manager, input, staleReady, staleStarted, clearStarted } =
     await openSearchableConnectorAccounts();
+  fireEvent.input(input, { target: { value: "Work 2" } });
+  await waitFor(() => {
+    expect(within(manager).getByText("Work 2")).toBeInTheDocument();
+    expect(within(manager).queryByText("Work 1")).not.toBeInTheDocument();
+  });
   fireEvent.input(input, { target: { value: "Stale" } });
   await staleStarted.promise;
   fireEvent.input(input, { target: { value: "" } });
