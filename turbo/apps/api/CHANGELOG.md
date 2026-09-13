@@ -8,6 +8,30 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.591.2](https://github.com/vm0-ai/vm0/compare/api-v1.591.1...api-v1.591.2) (2026-09-13)
+
+
+### Refactoring
+
+* **api:** prepare explicit pi candidate blob accounting ([#33774](https://github.com/vm0-ai/vm0/issues/33774)) ([cfdc9cd](https://github.com/vm0-ai/vm0/commit/cfdc9cd3c36cede429281e6f97ddf35a9ead2bef))
+* **runner:** remove legacy connector-intent header tolerance ([#33767](https://github.com/vm0-ai/vm0/issues/33767)) ([fbde4b7](https://github.com/vm0-ai/vm0/commit/fbde4b7330555badff700092cfa231cf3ee70c6b))
+* **voice:** remove google cloud routing switch ([#33769](https://github.com/vm0-ai/vm0/issues/33769)) ([5745bbb](https://github.com/vm0-ai/vm0/commit/5745bbb60f5dee5ef875b70ba823755cba27348f))
+
+
+### Performance Improvements
+
+* **api:** overlap pi launch preparation with storage url materialization ([#33773](https://github.com/vm0-ai/vm0/issues/33773)) ([c8e2fac](https://github.com/vm0-ai/vm0/commit/c8e2facf15f8c24100b9baed6dc81033d1830d13))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.433.1
+    * @okouai/core bumped to 8.660.3
+    * @okouai/db bumped to 1.255.1
+    * @okouai/pi-agent-runtime bumped to 1.27.3
+
 ## [1.591.1](https://github.com/vm0-ai/vm0/compare/api-v1.591.0...api-v1.591.1) (2026-09-13)
 
 

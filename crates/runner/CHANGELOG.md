@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.191.3](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.191.2...runner-rs-v0.191.3) (2026-09-13)
+
+
+### Bug Fixes
+
+* **python:** invalidate chat usage after sse event discard ([#33771](https://github.com/vm0-ai/vm0/issues/33771)) ([26953c4](https://github.com/vm0-ai/vm0/commit/26953c471ebfba8e1857832cc4f36360c1e647ae))
+* **runner:** include origin port in firewall auth proxy tunnels ([#33770](https://github.com/vm0-ai/vm0/issues/33770)) ([66e1b39](https://github.com/vm0-ai/vm0/commit/66e1b39831a3e89473d5a7edf0ba518d625fc5fb))
+
+
+### Refactoring
+
+* **runner:** remove legacy connector-intent header tolerance ([#33767](https://github.com/vm0-ai/vm0/issues/33767)) ([fbde4b7](https://github.com/vm0-ai/vm0/commit/fbde4b7330555badff700092cfa231cf3ee70c6b))
+
 ## [0.191.2](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.191.1...runner-rs-v0.191.2) (2026-09-13)
 
 

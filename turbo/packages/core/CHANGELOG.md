@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.660.3](https://github.com/vm0-ai/vm0/compare/core-v8.660.2...core-v8.660.3) (2026-09-13)
+
+
+### Refactoring
+
+* **voice:** remove google cloud routing switch ([#33769](https://github.com/vm0-ai/vm0/issues/33769)) ([5745bbb](https://github.com/vm0-ai/vm0/commit/5745bbb60f5dee5ef875b70ba823755cba27348f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.433.1
+
 ## [8.660.2](https://github.com/vm0-ai/vm0/compare/core-v8.660.1...core-v8.660.2) (2026-09-13)
 
 
