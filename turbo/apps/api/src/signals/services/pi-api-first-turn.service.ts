@@ -31,6 +31,10 @@ import {
   inspectPiSessionJsonl,
   PiApiFirstTurnCompactionRequiredError,
   runPiApiFirstTurn,
+  measurePiPreparation,
+  measurePiPreparationSync,
+  startPiPreparationObservation,
+  type PiPreparationObserver,
   type PiApiFirstTurnOwnership,
   type PiApiFirstTurnResult,
   UnsupportedPiResourceSnapshotError,
@@ -109,6 +113,7 @@ import {
   type PiApiFirstTurnActivation,
 } from "./pi-api-first-turn-config";
 import { recordPiApiFirstTurnUsage } from "./pi-api-first-turn-usage.service";
+import { piPreparationObserver } from "./pi-preparation-timing.service";
 import {
   PiResourceSnapshotPreparationError,
   preparePiResourceSnapshot,
@@ -117,6 +122,7 @@ import {
 import { lockPiApiFirstTurnLifecycle } from "./pi-api-first-turn-lifecycle.service";
 import {
   awaitWithSignal,
+  onRejection,
   safeSync,
   settle,
   settleIncludingAbort,
@@ -1155,6 +1161,7 @@ function validateApiModelTurnOutcome(turn: PiApiFirstTurnResult): void {
 }
 
 interface ExecuteApiModelTurnArgs {
+  readonly onPreparationTiming: PiPreparationObserver;
   readonly activation: PiApiFirstTurnActivation;
   readonly context: ApiFirstTurnModelContext;
   readonly commitIdentity: ApiFirstTurnCommitIdentity;
@@ -1163,6 +1170,42 @@ interface ExecuteApiModelTurnArgs {
   readonly sessionJsonl: string;
   readonly sessionId: string;
   readonly ownership: PiApiFirstTurnOwnership;
+}
+
+async function acquireApiProviderOwnership(
+  args: ExecuteApiModelTurnArgs,
+  markProviderRequestMayHaveStarted: () => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const finish = startPiPreparationObservation(
+    args.onPreparationTiming,
+    "provider_boundary",
+    signal,
+  );
+  await onRejection(
+    withApiFirstTurnLifecycle(args.context, async (tx) => {
+      signal.throwIfAborted();
+      const state = validateApiFirstTurnApiCommit(
+        args.context,
+        await readApiFirstTurnLifecycleState(tx, args.activation.runId),
+        args.commitIdentity,
+        "Pi API first turn lost eligibility before provider ownership",
+      );
+      if (state.activeDeliveryId) {
+        throw new PiApiFirstTurnActiveInputBeforeProviderError();
+      }
+      signal.throwIfAborted();
+      markProviderRequestMayHaveStarted();
+    }),
+    (error) => {
+      finish(
+        error instanceof PiApiFirstTurnCanonicalCancellationError
+          ? "cancelled"
+          : "error",
+      );
+    },
+  );
+  finish("success");
 }
 
 async function executeApiModelTurn(
@@ -1197,6 +1240,7 @@ async function executeApiModelTurn(
       model: args.model,
       resourceSnapshot: args.resourceSnapshot,
       ownership: args.ownership,
+      onPreparationTiming: args.onPreparationTiming,
       onMemoryRecallOutcome(outcome) {
         L.debug("Pi memory recall outcome", {
           runId: args.activation.runId,
@@ -1204,20 +1248,11 @@ async function executeApiModelTurn(
         });
       },
       providerRequestBoundary: async (markProviderRequestMayHaveStarted) => {
-        await withApiFirstTurnLifecycle(args.context, async (tx) => {
-          modelSignal.throwIfAborted();
-          const state = validateApiFirstTurnApiCommit(
-            args.context,
-            await readApiFirstTurnLifecycleState(tx, args.activation.runId),
-            args.commitIdentity,
-            "Pi API first turn lost eligibility before provider ownership",
-          );
-          if (state.activeDeliveryId) {
-            throw new PiApiFirstTurnActiveInputBeforeProviderError();
-          }
-          modelSignal.throwIfAborted();
-          markProviderRequestMayHaveStarted();
-        });
+        await acquireApiProviderOwnership(
+          args,
+          markProviderRequestMayHaveStarted,
+          modelSignal,
+        );
       },
     },
     modelSignal,
@@ -1526,42 +1561,72 @@ const prepareApiFirstTurn$ = command(async function prepareApiFirstTurn(
       "Pi slash-prefixed input requires native AgentSession processing",
     );
   }
-  const resourceSnapshot = await set(
-    loadApiFirstTurnResource$,
-    args,
-    executionContext,
-    launchConfig.resourceSnapshotDigest,
-    signal,
-  );
-  signal.throwIfAborted();
-  const modelContext: ApiFirstTurnModelContext = {
-    ...args,
-    route: normalizePiExecutionRoute(executionContext.piModelConfig),
-  };
-  const model = await apiFirstTurnModelConfig(
-    modelContext,
-    executionContext,
-    signal,
-  );
-  signal.throwIfAborted();
-  const loadedSession = await set(
-    loadResumeSessionJsonl$,
-    {
-      db: args.db,
-      resumeSession: executionContext.resumeSession,
+  const onPreparationTiming = piPreparationObserver(args.activation.runId);
+  const resourceSnapshot = await measurePiPreparation(
+    onPreparationTiming,
+    "resource_snapshot",
+    () => {
+      return set(
+        loadApiFirstTurnResource$,
+        args,
+        executionContext,
+        launchConfig.resourceSnapshotDigest,
+        signal,
+      );
     },
     signal,
   );
-  validateResumeSession({
-    loaded: loadedSession,
-    expectedBaseSession: launchConfig.baseSession,
-    sessionId,
-  });
-  const sessionJsonl = materializeApiFirstTurnH0({
-    apiStartTime: executionContext.apiStartTime,
-    loadedSession,
-    sessionId,
-  });
+  signal.throwIfAborted();
+  const { modelContext, model } = await measurePiPreparation(
+    onPreparationTiming,
+    "credentials_route",
+    async () => {
+      const modelContext: ApiFirstTurnModelContext = {
+        ...args,
+        route: normalizePiExecutionRoute(executionContext.piModelConfig),
+      };
+      const model = await apiFirstTurnModelConfig(
+        modelContext,
+        executionContext,
+        signal,
+      );
+      return { modelContext, model };
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+  const loadedSession = await measurePiPreparation(
+    onPreparationTiming,
+    "h0_load",
+    () => {
+      return set(
+        loadResumeSessionJsonl$,
+        {
+          db: args.db,
+          resumeSession: executionContext.resumeSession,
+        },
+        signal,
+      );
+    },
+    signal,
+  );
+  const sessionJsonl = measurePiPreparationSync(
+    onPreparationTiming,
+    "h0_validate_materialize",
+    () => {
+      validateResumeSession({
+        loaded: loadedSession,
+        expectedBaseSession: launchConfig.baseSession,
+        sessionId,
+      });
+      return materializeApiFirstTurnH0({
+        apiStartTime: executionContext.apiStartTime,
+        loadedSession,
+        sessionId,
+      });
+    },
+    signal,
+  );
   const { startedAt, turn } = await executeApiModelTurn(
     {
       activation: args.activation,
@@ -1572,6 +1637,7 @@ const prepareApiFirstTurn$ = command(async function prepareApiFirstTurn(
       sessionJsonl,
       sessionId,
       ownership,
+      onPreparationTiming,
     },
     signal,
   );

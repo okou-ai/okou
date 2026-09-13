@@ -3,6 +3,10 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { projectPiMemoryCitationSegments } from "@okouai/api-contracts/contracts/pi-memory-citations";
 
 import { piAgentStreamForConfig } from "./model";
+import {
+  measurePiPreparation,
+  measurePiPreparationSync,
+} from "./preparation-timing";
 import { assertPiApiFirstTurnCompactionSafe } from "./compaction-preflight";
 import { MemoryPiSession, runPiFirstModelTurn } from "./session-memory";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
@@ -110,28 +114,48 @@ export async function runPiApiFirstTurn(
   args: PiApiFirstTurnArgs,
   signal?: AbortSignal,
 ): Promise<PiApiFirstTurnResult> {
-  const memorySession = args.sessionJsonl
-    ? MemoryPiSession.fromJsonl(args.sessionJsonl)
-    : MemoryPiSession.create({ cwd: args.cwd, id: args.sessionId });
-  if (memorySession.getSessionId() !== args.sessionId) {
-    throw new Error(
-      "Pi resume session id does not match the launch session id",
-    );
-  }
+  const memorySession = measurePiPreparationSync(
+    args.onPreparationTiming,
+    "history",
+    () => {
+      const memorySession = args.sessionJsonl
+        ? MemoryPiSession.fromJsonl(args.sessionJsonl)
+        : MemoryPiSession.create({ cwd: args.cwd, id: args.sessionId });
+      if (memorySession.getSessionId() !== args.sessionId) {
+        throw new Error(
+          "Pi resume session id does not match the launch session id",
+        );
+      }
+
+      return memorySession;
+    },
+    signal,
+  );
 
   let shell: Awaited<ReturnType<typeof createPiAgentSessionForRuntime>>;
   try {
-    shell = await createPiAgentSessionForRuntime({
-      cwd: args.cwd,
-      agentDir: args.agentDir,
-      sessionManager: SessionManager.inMemory(args.cwd, {
-        id: args.sessionId,
-      }),
-      model: args.model,
-      appendSystemPrompt: args.appendSystemPrompt,
-      resourceSnapshot: args.resourceSnapshot,
-      onMemoryRecallOutcome: args.onMemoryRecallOutcome,
-    });
+    shell = await measurePiPreparation(
+      args.onPreparationTiming,
+      "runtime_initialize",
+      () => {
+        return createPiAgentSessionForRuntime(
+          {
+            cwd: args.cwd,
+            agentDir: args.agentDir,
+            sessionManager: SessionManager.inMemory(args.cwd, {
+              id: args.sessionId,
+            }),
+            model: args.model,
+            appendSystemPrompt: args.appendSystemPrompt,
+            resourceSnapshot: args.resourceSnapshot,
+            onMemoryRecallOutcome: args.onMemoryRecallOutcome,
+            onPreparationTiming: args.onPreparationTiming,
+          },
+          signal,
+        );
+      },
+      signal,
+    );
   } catch (error) {
     throw new UnsupportedPiResourceSnapshotError(
       "Pi could not load the preheated resource snapshot",
@@ -139,11 +163,18 @@ export async function runPiApiFirstTurn(
     );
   }
   try {
-    assertPiApiFirstTurnCompactionSafe({
-      model: shell.model,
-      session: memorySession,
-      settings: shell.services.settingsManager.getCompactionSettings(),
-    });
+    measurePiPreparationSync(
+      args.onPreparationTiming,
+      "compaction_preflight",
+      () => {
+        return assertPiApiFirstTurnCompactionSafe({
+          model: shell.model,
+          session: memorySession,
+          settings: shell.services.settingsManager.getCompactionSettings(),
+        });
+      },
+      signal,
+    );
     let observedServiceTier: PiObservedServiceTier;
     const turn = await runPiFirstModelTurn({
       model: shell.model,
@@ -169,6 +200,7 @@ export async function runPiApiFirstTurn(
       },
       ownership: args.ownership,
       providerRequestBoundary: args.providerRequestBoundary,
+      onPreparationTiming: args.onPreparationTiming,
     });
     return {
       assistantMessage: projectPiApiAssistantMessage(

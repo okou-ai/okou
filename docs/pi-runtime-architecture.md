@@ -20,6 +20,8 @@ rollout rules.
 - [Native provider preparation](./pi-native-provider-preparation.md): native
   transport, credential/billing ownership, and the original activation gates.
   Current admission remains owned by the API source, not that preparation ledger.
+- [Preparation timing](./pi-preparation-timing.md): bounded initialization and
+  launch observations, transaction/activation boundaries, and transport correlation.
 - [Memory/citation provenance](../turbo/packages/pi-agent-runtime/src/memory-recall-upstream.md)
   and [delimiter boundary](./citation-delimiter-literals.md): canonical parser,
   derived text, historical reads, and upstream attribution.
