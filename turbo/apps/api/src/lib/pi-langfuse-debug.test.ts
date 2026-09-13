@@ -11,7 +11,7 @@ import {
   resolvePiLangfuseDebugConfig,
 } from "./pi-langfuse-debug";
 
-const STAFF_ORG_ID = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
+const ORG_ID = "org_external";
 const USER_ID = "user_pi_langfuse_debug";
 
 function configureDebugProject(): void {
@@ -25,44 +25,39 @@ afterEach(() => {
 });
 
 describe("Pi Langfuse debug configuration", () => {
-  it("requires a staff user and per-user feature switch", () => {
+  it("uses only the default-off per-user trace switch", () => {
     configureDebugProject();
 
-    expect(
-      resolvePiLangfuseDebugConfig({
+    for (const context of [
+      {
         userId: USER_ID,
-        orgId: STAFF_ORG_ID,
-        overrides: { [FeatureSwitchKey.PiLangfuseDebug]: true },
-      }),
-    ).toStrictEqual({
-      publicKey: "pk-lf-debug",
-      secretKey: "sk-lf-debug",
-      baseUrl: "https://langfuse.example",
-    });
+        orgId: ORG_ID,
+        overrides: { [FeatureSwitchKey.LangfuseTrace]: true },
+      },
+      {
+        userId: "another-user",
+        orgId: "another-external-org",
+        overrides: { [FeatureSwitchKey.LangfuseTrace]: true },
+      },
+    ]) {
+      expect(resolvePiLangfuseDebugConfig(context)).toStrictEqual({
+        publicKey: "pk-lf-debug",
+        secretKey: "sk-lf-debug",
+        baseUrl: "https://langfuse.example",
+      });
+    }
 
     expect(
       resolvePiLangfuseDebugConfig({
-        userId: "another-user",
-        orgId: STAFF_ORG_ID,
-        overrides: { [FeatureSwitchKey.PiLangfuseDebug]: true },
-      }),
-    ).toStrictEqual({
-      publicKey: "pk-lf-debug",
-      secretKey: "sk-lf-debug",
-      baseUrl: "https://langfuse.example",
-    });
-    expect(
-      resolvePiLangfuseDebugConfig({
         userId: USER_ID,
-        orgId: "org_external",
-        overrides: { [FeatureSwitchKey.PiLangfuseDebug]: true },
+        orgId: ORG_ID,
       }),
     ).toBeUndefined();
     expect(
       resolvePiLangfuseDebugConfig({
         userId: USER_ID,
-        orgId: STAFF_ORG_ID,
-        overrides: { [FeatureSwitchKey.PiLangfuseDebug]: false },
+        orgId: ORG_ID,
+        overrides: { [FeatureSwitchKey.LangfuseTrace]: false },
       }),
     ).toBeUndefined();
   });
@@ -74,8 +69,8 @@ describe("Pi Langfuse debug configuration", () => {
     expect(
       resolvePiLangfuseDebugConfig({
         userId: USER_ID,
-        orgId: STAFF_ORG_ID,
-        overrides: { [FeatureSwitchKey.PiLangfuseDebug]: true },
+        orgId: ORG_ID,
+        overrides: { [FeatureSwitchKey.LangfuseTrace]: true },
       }),
     ).toBeUndefined();
 
@@ -83,8 +78,8 @@ describe("Pi Langfuse debug configuration", () => {
     expect(
       resolvePiLangfuseDebugConfig({
         userId: USER_ID,
-        orgId: STAFF_ORG_ID,
-        overrides: { [FeatureSwitchKey.PiLangfuseDebug]: true },
+        orgId: ORG_ID,
+        overrides: { [FeatureSwitchKey.LangfuseTrace]: true },
       }),
     ).toStrictEqual({
       publicKey: "pk-lf-debug",
@@ -96,8 +91,8 @@ describe("Pi Langfuse debug configuration", () => {
     expect(
       resolvePiLangfuseDebugConfig({
         userId: USER_ID,
-        orgId: STAFF_ORG_ID,
-        overrides: { [FeatureSwitchKey.PiLangfuseDebug]: true },
+        orgId: ORG_ID,
+        overrides: { [FeatureSwitchKey.LangfuseTrace]: true },
       }),
     ).toBeUndefined();
   });
@@ -106,8 +101,8 @@ describe("Pi Langfuse debug configuration", () => {
     configureDebugProject();
     const config = resolvePiLangfuseDebugConfig({
       userId: USER_ID,
-      orgId: STAFF_ORG_ID,
-      overrides: { [FeatureSwitchKey.PiLangfuseDebug]: true },
+      orgId: ORG_ID,
+      overrides: { [FeatureSwitchKey.LangfuseTrace]: true },
     });
     expect(config).toBeDefined();
     if (!config) {
@@ -140,8 +135,8 @@ describe("Pi Langfuse debug configuration", () => {
     configureDebugProject();
     const config = resolvePiLangfuseDebugConfig({
       userId: USER_ID,
-      orgId: STAFF_ORG_ID,
-      overrides: { [FeatureSwitchKey.PiLangfuseDebug]: true },
+      orgId: ORG_ID,
+      overrides: { [FeatureSwitchKey.LangfuseTrace]: true },
     });
     if (!config) {
       throw new Error("Expected the debug project configuration");

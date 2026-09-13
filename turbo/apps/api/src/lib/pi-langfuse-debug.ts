@@ -5,7 +5,6 @@ import {
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isStaffOrg } from "@okouai/core/staff-org";
 
 import { safeUrlParse } from "../signals/utils";
 import { optionalEnv } from "./env";
@@ -63,18 +62,11 @@ export function readPiLangfuseServerConfig():
   return { publicKey, secretKey, baseUrl };
 }
 
-function isEligiblePiLangfuseDebugUser(context: FeatureSwitchContext): boolean {
-  return Boolean(context.userId) && isStaffOrg(context.orgId);
-}
-
 /** Resolve the immutable per-run decision from its captured feature context. */
 export function resolvePiLangfuseDebugConfig(
   context: FeatureSwitchContext,
 ): PiLangfuseServerConfig | undefined {
-  if (
-    !isEligiblePiLangfuseDebugUser(context) ||
-    !getAllFeatureStates(context)[FeatureSwitchKey.PiLangfuseDebug]
-  ) {
+  if (!getAllFeatureStates(context)[FeatureSwitchKey.LangfuseTrace]) {
     return undefined;
   }
   return readPiLangfuseServerConfig();

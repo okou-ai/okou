@@ -23,6 +23,7 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.ChatPreference).toBe("chatPreference");
     expect(FeatureSwitchKey.OkouDebug).toBe("_debug");
     expect(FeatureSwitchKey.RealAgentInPreview).toBe("_realAgentInPreview");
+    expect(FeatureSwitchKey.LangfuseTrace).toBe("_langfuseTrace");
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
     expect(FeatureSwitchKey.SshAccess).toBe("sshAccess");
     expect(FeatureSwitchKey.AgentMessageMath).toBe("agentMessageMath");
@@ -117,6 +118,26 @@ describe("isFeatureEnabled", () => {
       }),
     ).toBe(false);
     expect(isFeatureEnabled(FeatureSwitchKey.WelcomeThread, {})).toBe(false);
+  });
+
+  it("should default Langfuse tracing off for every org and accept user overrides", () => {
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.LangfuseTrace, {
+        orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+      }),
+    ).toBe(false);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.LangfuseTrace, {
+        orgId: "org_nonexistent",
+      }),
+    ).toBe(false);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.LangfuseTrace, {
+        userId: "any-user",
+        orgId: "org_nonexistent",
+        overrides: { [FeatureSwitchKey.LangfuseTrace]: true },
+      }),
+    ).toBe(true);
   });
 
   it("should apply user overrides to the staff-default Official Workflows switch", () => {
