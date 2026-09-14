@@ -30,8 +30,6 @@ const RUN_ID = "d0000000-0000-4000-a000-000000000841";
 const NEXT_RUN_ID = "d0000000-0000-4000-a000-000000000842";
 const PREPARATION = "Preparing the launch checklist";
 const ACTIVITY = "Checking the release evidence";
-const LEGACY_FALLBACK =
-  /^(Brewing up a response|Piecing things together|Spinning up|On it|Assembling the pieces|Sketching the details|Mapping it out|Wiring it together|Shaping the response|Tuning in)\.\.\.$/;
 const featureSwitches = Object.freeze({
   [FeatureSwitchKey.ThreadActivitySummary]: true,
 });
