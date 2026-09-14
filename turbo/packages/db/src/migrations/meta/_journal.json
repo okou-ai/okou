@@ -281,6 +281,13 @@
       "when": 1789356747970,
       "tag": "1117_morning_brief_enrollment_installation",
       "breakpoints": true
+    },
+    {
+      "idx": 1118,
+      "version": "7",
+      "when": 1789364159054,
+      "tag": "1118_impact_marketing_invitation_snapshot",
+      "breakpoints": true
     }
   ]
 }

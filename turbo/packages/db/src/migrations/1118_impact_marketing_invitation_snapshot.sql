@@ -1,0 +1,1 @@
+ALTER TABLE "usage_pack_invitation_purchases" ADD COLUMN "impact_capture_id" text;

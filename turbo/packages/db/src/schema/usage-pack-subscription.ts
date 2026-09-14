@@ -485,6 +485,7 @@ export const usagePackInvitationPurchases = pgTable(
     normalizedEmail: text("normalized_email").notNull(),
     role: varchar("role", { length: 20 }).$type<"admin" | "member">().notNull(),
     inviterUserId: text("inviter_user_id").notNull(),
+    impactCaptureId: text("impact_capture_id"),
     impactClickId: text("impact_click_id"),
     impactClickAt: timestamp("impact_click_at"),
     usagePackUsd: integer("usage_pack_usd").notNull(),

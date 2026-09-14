@@ -1,4 +1,9 @@
 import {
+  featureSwitchHydrated$,
+  featureSwitchState$,
+} from "../external/feature-switch-state.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
   IMPACT_ATTRIBUTION_COOKIE,
   parseImpactAttribution,
   parseEncodedImpactAttribution,
@@ -12,6 +17,13 @@ const impactStorage = sessionStorageSignals("okou.impactAttribution");
 
 export const recordImpactAttribution$ = command(
   ({ get, set }): ImpactAttribution | undefined => {
+    if (!get(featureSwitchHydrated$)) {
+      return undefined;
+    }
+    if (get(featureSwitchState$)[FeatureSwitchKey.ImpactMarketingAttribution]) {
+      set(impactStorage.clear$);
+      return undefined;
+    }
     const stored = parseEncodedImpactAttribution(
       get(impactStorage.get$),
       now(),

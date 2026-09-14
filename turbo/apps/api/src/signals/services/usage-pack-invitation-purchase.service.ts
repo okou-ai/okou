@@ -456,6 +456,7 @@ async function insertPendingInvitationPurchase(
         normalizedEmail: args.email,
         role: args.role,
         inviterUserId: args.inviterUserId,
+        impactCaptureId: impact.impact_capture_id ?? null,
         impactClickId: impact.impact_click_id ?? null,
         impactClickAt: impact.impact_click_at
           ? new Date(impact.impact_click_at)
@@ -1608,6 +1609,9 @@ async function createInvitationPurchaseInvoice(
         ...checkoutMetadata(purchase.id),
         ...(purchase.impactClickId && purchase.impactClickAt
           ? {
+              ...(purchase.impactCaptureId
+                ? { impact_capture_id: purchase.impactCaptureId }
+                : {}),
               impact_click_id: purchase.impactClickId,
               impact_click_at: purchase.impactClickAt.toISOString(),
             }

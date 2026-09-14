@@ -1,3 +1,7 @@
+import {
+  marketingImpactEnabled,
+  readMarketingImpact,
+} from "../../lib/impact-marketing";
 import { command } from "ccstate";
 import { eq, isNull, lt, or, sql } from "drizzle-orm";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -63,6 +67,9 @@ export async function readOrgImpactMetadata(
   orgId: string,
   signal: AbortSignal,
 ): Promise<Record<string, string>> {
+  if (marketingImpactEnabled()) {
+    return readMarketingImpact(orgId, signal);
+  }
   const [row] = await db
     .select({
       clickId: orgMetadata.impactClickId,
@@ -94,6 +101,9 @@ export const impactStripeMetadata$ = command(
     }
     if (clerkAttributionDisabled()) {
       return {};
+    }
+    if (marketingImpactEnabled()) {
+      return readMarketingImpact(orgId, signal);
     }
     const result = await settle(
       get(clerk$).users.getUserList(
@@ -196,7 +206,7 @@ export const syncImpactStripeCustomer$ = command(
       },
       nowDate().getTime(),
     );
-    if (impact) {
+    if (impact && !marketingImpactEnabled()) {
       await set(persistOrgImpactAttribution$, orgId, impact, signal);
     }
     if (!optionalEnv("STRIPE_SECRET_KEY")) {
@@ -214,7 +224,9 @@ export const syncImpactStripeCustomer$ = command(
         .limit(1);
       signal.throwIfAborted();
       if (row?.stripeCustomerId) {
-        const current = await readOrgImpactMetadata(tx, orgId, signal);
+        const current = marketingImpactEnabled()
+          ? metadata
+          : await readOrgImpactMetadata(tx, orgId, signal);
         await updateImpactCustomer(row.stripeCustomerId, current, signal);
       }
     });

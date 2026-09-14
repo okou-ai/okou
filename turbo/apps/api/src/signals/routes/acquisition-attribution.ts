@@ -1,3 +1,4 @@
+import { marketingImpactEnabled } from "../../lib/impact-marketing";
 import {
   legacyGoogleAdsAttribution,
   normalizeGoogleAdsAttribution,
@@ -119,37 +120,39 @@ const recordSignupInner$ = command(
     const privateMetadata = isRecord(user.privateMetadata)
       ? user.privateMetadata
       : {};
-    const impact = parseImpactAttribution(
-      bodyResult.data.impactAttribution,
-      nowDate().getTime(),
-    );
-    const previousImpact = parseImpactAttribution(
-      privateMetadata[IMPACT_ATTRIBUTION_METADATA_KEY],
-      nowDate().getTime(),
-    );
-    if (
-      impact &&
-      (!previousImpact || impact.capturedAt > previousImpact.capturedAt)
-    ) {
-      await clerk.users.updateUserMetadata(auth.userId, {
-        privateMetadata: { [IMPACT_ATTRIBUTION_METADATA_KEY]: impact },
-      });
-      signal.throwIfAborted();
-      privateMetadata[IMPACT_ATTRIBUTION_METADATA_KEY] = impact;
-    }
-    const currentImpact = parseImpactAttribution(
-      privateMetadata[IMPACT_ATTRIBUTION_METADATA_KEY],
-      nowDate().getTime(),
-    );
-    if (impact && currentImpact) {
-      await set(
-        syncImpactStripeCustomer$,
-        {
-          impact_click_id: currentImpact.clickId,
-          impact_click_at: currentImpact.capturedAt,
-        },
-        signal,
+    if (!marketingImpactEnabled()) {
+      const impact = parseImpactAttribution(
+        bodyResult.data.impactAttribution,
+        nowDate().getTime(),
       );
+      const previousImpact = parseImpactAttribution(
+        privateMetadata[IMPACT_ATTRIBUTION_METADATA_KEY],
+        nowDate().getTime(),
+      );
+      if (
+        impact &&
+        (!previousImpact || impact.capturedAt > previousImpact.capturedAt)
+      ) {
+        await clerk.users.updateUserMetadata(auth.userId, {
+          privateMetadata: { [IMPACT_ATTRIBUTION_METADATA_KEY]: impact },
+        });
+        signal.throwIfAborted();
+        privateMetadata[IMPACT_ATTRIBUTION_METADATA_KEY] = impact;
+      }
+      const currentImpact = parseImpactAttribution(
+        privateMetadata[IMPACT_ATTRIBUTION_METADATA_KEY],
+        nowDate().getTime(),
+      );
+      if (impact && currentImpact) {
+        await set(
+          syncImpactStripeCustomer$,
+          {
+            impact_click_id: currentImpact.clickId,
+            impact_click_at: currentImpact.capturedAt,
+          },
+          signal,
+        );
+      }
     }
     const existingAttribution = parseStoredSignupAttribution(
       privateMetadata[SIGNUP_ATTRIBUTION_KEY],

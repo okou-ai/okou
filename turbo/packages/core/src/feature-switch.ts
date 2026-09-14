@@ -483,6 +483,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ImpactMarketingAttribution]: {
+    maintainer: "yuma@okou.ai",
+    description:
+      "Bind Impact attribution through the consent-gated Marketing iframe.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ComposerSlashTemplatePanel]: {
     maintainer: "tongx@okou.ai",
     description:
