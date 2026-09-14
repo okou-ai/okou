@@ -176,20 +176,6 @@ pub mod runners {
             Codex,
         }
 
-        /// OpenAI-compatible transports supported by Pi.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-        pub enum PiModelConfigApi {
-            /// OpenAI Chat Completions transport.
-            #[serde(rename = "openai-completions")]
-            OpenaiCompletions,
-            /// OpenAI Responses transport.
-            #[serde(rename = "openai-responses")]
-            OpenaiResponses,
-            /// ChatGPT Codex Responses transport.
-            #[serde(rename = "openai-codex-responses")]
-            OpenaiCodexResponses,
-        }
-
         /// Thinking levels supported by Pi sessions.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum PiModelConfigThinkingLevel {
@@ -261,9 +247,6 @@ pub mod runners {
             /// Optional native Pi catalog model used only for trusted capabilities and limits.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub catalog_model: Option<String>,
-            /// Cross-version transport input. Current writers emit OpenAI Responses; readers normalize absent or legacy values until the previous API rollback, runner/Sandbox drain, and pre-cutover context gates in #31085 pass.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub api: Option<PiModelConfigApi>,
             /// Explicit Pi thinking level. Legacy payloads omit this field and retain Pi's medium default.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub thinking_level: Option<PiModelConfigThinkingLevel>,
