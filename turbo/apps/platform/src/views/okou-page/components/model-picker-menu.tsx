@@ -237,7 +237,9 @@ function ModelPickerOverview({
           summary={
             [
               selectedOption?.fastAvailable ? speedLabel : undefined,
-              formatChatEffort(value?.selectedModel, savedEffort),
+              savedEffort === undefined
+                ? undefined
+                : formatChatEffort(value?.selectedModel, savedEffort),
             ]
               .filter(Boolean)
               .join(" · ") || undefined

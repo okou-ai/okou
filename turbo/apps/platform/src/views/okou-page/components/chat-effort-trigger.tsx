@@ -62,7 +62,7 @@ export function ChatEffortTrigger({
     <>
       <Popover>
         <PopoverTrigger
-          aria-label={`${label}, ${displayValue ?? effort}`}
+          aria-label={`${label}, ${displayValue}`}
           className={cn(triggerClassName, "flex items-center gap-1.5")}
         >
           {fast ? (

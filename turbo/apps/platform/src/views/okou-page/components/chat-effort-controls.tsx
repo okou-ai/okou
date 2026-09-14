@@ -34,11 +34,12 @@ export function useChatEffort(
   };
 }
 
-export function formatChatEffort(
-  model: string | undefined,
-  effort: string | null | undefined,
-) {
-  return model?.startsWith("claude-") && effort
+/**
+ * Claude names its levels as words and Codex names them as identifiers, so only
+ * the Claude vocabulary is title-cased.
+ */
+export function formatChatEffort(model: string | undefined, effort: string) {
+  return model?.startsWith("claude-")
     ? effort.charAt(0).toUpperCase() + effort.slice(1)
     : effort;
 }
@@ -80,7 +81,7 @@ export function ChatEffortSettings({
           value={index}
           disabled={disabled}
           label={label}
-          valueText={displayValue ?? value}
+          valueText={displayValue}
           onValueChange={(next) => {
             const effort = efforts[next];
             if (effort !== undefined) {
