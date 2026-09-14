@@ -14,7 +14,7 @@ import {
   embedImageLoadSignals,
 } from "../../../../signals/image-load.ts";
 import {
-  createMermaidDiagramSignals,
+  createMermaidDiagramRegistry,
   embedMermaidSignals,
 } from "../../../../signals/mermaid-diagram.ts";
 import { testContext } from "../../../../signals/__tests__/test-helpers.ts";
@@ -31,6 +31,11 @@ import { Markdown, MarkdownEventBody } from "../../rich-markdown.tsx";
 // ---------------------------------------------------------------------------
 
 const context = testContext();
+
+// The parse pass registers each diagram source with the surface's registry,
+// which only hands back the signals to embed; layout happens later, when the
+// render window prepares what it shows. These benches cover the parse pass.
+const mermaidDiagrams = createMermaidDiagramRegistry();
 
 function progressMessage(index: number): string {
   return [
@@ -103,7 +108,7 @@ const THREAD_TAIL = THREAD.slice(-10);
 function prepareTree(source: string): Root {
   const tree = parseMarkdownTree(source, { mermaid: true });
   embedMermaidSignals(tree, (code) => {
-    return createMermaidDiagramSignals(code, context.signal);
+    return context.store.set(mermaidDiagrams.register$, code);
   });
   embedImageLoadSignals(tree, createImageLoadSignals);
   return tree;
@@ -225,7 +230,7 @@ function ensurePass(
       mermaid: true,
     });
     embedMermaidSignals(tree, (code) => {
-      return createMermaidDiagramSignals(code, context.signal);
+      return context.store.set(mermaidDiagrams.register$, code);
     });
     embedImageLoadSignals(tree, createImageLoadSignals);
     next ??= new Map(cache);
