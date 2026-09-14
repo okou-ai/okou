@@ -8061,7 +8061,7 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it("exposes only the owner's traced runs in chat details after tracing is disabled", async () => {
+  it("exposes the owner's run trace URL after tracing is disabled", async () => {
     const { actor, agentId } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
@@ -8104,12 +8104,10 @@ describe("CHAT-02: model-first provider policies", () => {
         [FeatureSwitchKey.LangfuseTrace]: false,
       },
     );
-    const traceUrls = {
-      [traced.runId]: `https://langfuse.example/trace/${traced.runId.replaceAll("-", "")}`,
-    };
-    expect(
-      (await chat.readThread(actor, traced.threadId)).langfuseTraceUrls,
-    ).toStrictEqual(traceUrls);
+    const traceUrl = `https://langfuse.example/trace/${traced.runId.replaceAll("-", "")}`;
+    expect((await api.readRun(actor, traced.runId)).langfuseTraceUrl).toBe(
+      traceUrl,
+    );
     const untraced = await sendChatRun(
       actor,
       {
@@ -8122,15 +8120,18 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     await waitForRunStatus(actor, untraced.runId, "completed");
     await flushWaitUntilForTest();
-    expect(
-      (await chat.readThread(actor, traced.threadId)).langfuseTraceUrls,
-    ).toStrictEqual(traceUrls);
-    const peer = { ...actor, userId: `${actor.userId}_peer` };
-    await chat.requestReadThread(peer, traced.threadId, [404]);
-    mockOptionalEnv("LANGFUSE_BASE_URL", "javascript:alert(1)");
     await expect(
-      chat.readThread(actor, traced.threadId),
-    ).resolves.not.toHaveProperty("langfuseTraceUrls");
+      api.readRun(actor, untraced.runId),
+    ).resolves.not.toHaveProperty("langfuseTraceUrl");
+    expect((await api.readRun(actor, traced.runId)).langfuseTraceUrl).toBe(
+      traceUrl,
+    );
+    const peer = { ...actor, userId: `${actor.userId}_peer` };
+    await api.requestReadRun(peer, traced.runId, [404]);
+    mockOptionalEnv("LANGFUSE_BASE_URL", "javascript:alert(1)");
+    await expect(api.readRun(actor, traced.runId)).resolves.not.toHaveProperty(
+      "langfuseTraceUrl",
+    );
   });
 
   it("persists Langfuse trace admission after runner claim", async () => {

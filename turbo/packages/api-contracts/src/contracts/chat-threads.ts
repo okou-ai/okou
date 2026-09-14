@@ -1040,8 +1040,6 @@ const chatThreadDetailSchema = z.object({
   lastReadAt: z.string().nullable(),
   /** A cancelled run is still preserving its resumable session. */
   cancellationRecoveryPending: z.boolean(),
-  /** Omitted by older APIs and when no run in this thread was traced. */
-  langfuseTraceUrls: z.record(z.string(), z.url()).optional(),
 });
 
 const chatThreadMetadataSchema = z.object({

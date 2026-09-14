@@ -1,4 +1,4 @@
-import { command, computed, state, type Command, type Computed } from "ccstate";
+import { command, computed, state, type Command } from "ccstate";
 import {
   chatThreadByIdContract,
   chatThreadDraftContract,
@@ -32,7 +32,6 @@ import {
   type ThreadMeta,
 } from "./chat-thread-event-sourcing.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
-import type { ChatEvent } from "./chat-event-types.ts";
 
 interface ChatThreadRealtimeInvalidations {
   readonly threadDetail: RealtimeInvalidationCommands;
@@ -364,47 +363,25 @@ export const subscribeChatThreadRealtime$ = command(
   },
 );
 
-export function createChatThreadDetailSignals(
-  threadId: string,
-  chatEvents$: Computed<ChatEvent[]>,
-) {
+export function createCancellationRecoverySignals(threadId: string) {
   const threadDetailReloadCounter$ = state(0);
   const optimisticCreateUnsettled$ =
     optimisticChatThreadCreateUnsettled(threadId);
-  const runIdsKey$ = computed((get) => {
-    return [
-      ...new Set(
-        get(chatEvents$).flatMap((event) => {
-          return event.runId ?? [];
-        }),
-      ),
-    ]
-      .sort()
-      .join(",");
-  });
 
-  const detail$ = computed(async (get) => {
+  const cancellationRecoveryPending$ = computed(async (get) => {
     if (get(optimisticCreateUnsettled$)) {
-      return undefined;
+      return false;
     }
     get(threadDetailReloadCounter$);
-    get(runIdsKey$);
     const client = get(apiClient$)(chatThreadByIdContract);
     const result = await accept(
       client.get({ params: { id: threadId } }),
       [200, 404],
     );
     if (result.status === 404) {
-      return undefined;
+      return false;
     }
-    return result.body;
-  });
-
-  const cancellationRecoveryPending$ = computed(async (get) => {
-    return (await get(detail$))?.cancellationRecoveryPending ?? false;
-  });
-  const langfuseTraceUrls$ = computed(async (get) => {
-    return (await get(detail$))?.langfuseTraceUrls ?? {};
+    return result.body.cancellationRecoveryPending;
   });
 
   const reload$ = command(({ set }) => {
@@ -413,7 +390,7 @@ export function createChatThreadDetailSignals(
     });
   });
 
-  return { cancellationRecoveryPending$, langfuseTraceUrls$, reload$ };
+  return { pending$: cancellationRecoveryPending$, reload$ };
 }
 
 export function createRemoteChatThreadDraft(threadId: string) {

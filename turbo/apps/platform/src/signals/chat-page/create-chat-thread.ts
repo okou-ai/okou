@@ -124,7 +124,7 @@ import {
 } from "./chat-event-state.ts";
 import { logger } from "../log.ts";
 import {
-  createChatThreadDetailSignals,
+  createCancellationRecoverySignals,
   createRemoteChatThreadDraft,
   patchChatThreadComputerUseHost$,
   patchChatThreadDraft$,
@@ -227,6 +227,10 @@ import {
 import { createChatThreadFeedbackSignals } from "./chat-thread-feedback.ts";
 import { createChatThreadSharingSignals } from "./chat-thread-sharing.ts";
 import { createChatThreadPinSignals } from "./chat-thread-pin.ts";
+import {
+  createRunDetailSignalsRegistry,
+  type RunDetailSignals,
+} from "./run-detail.ts";
 import { createChatConversationLocatorSignals } from "./chat-conversation-locator.ts";
 import {
   createChatEventSignals,
@@ -1104,6 +1108,7 @@ function createRenderedChatGroups(
 
 interface RegisteredChatEvent {
   readonly event: ChatEvent;
+  readonly runDetail: RunDetailSignals | undefined;
   readonly userMessageRenderDocument: UserMessageRenderDocument | undefined;
 }
 
@@ -2170,6 +2175,7 @@ function createPagedEventResources({
     previewImageUrlsByUrl$,
   );
   const agentReferenceSignals = createAgentReferenceSignalsRegistry();
+  const runDetailSignals = createRunDetailSignalsRegistry();
   const connectorCardSignals = createConnectorCardSignalsRegistry();
   const connectorAccountActionCardSignals =
     createConnectorAccountActionCardSignalsRegistry(connector);
@@ -2185,6 +2191,9 @@ function createPagedEventResources({
     ({ set }, event: ChatEvent): RegisteredChatEvent => {
       return {
         event,
+        runDetail: event.runId
+          ? set(runDetailSignals.register$, event.runId)
+          : undefined,
         userMessageRenderDocument: set(
           registerUserMessageRenderDocument$,
           event,
@@ -2219,6 +2228,13 @@ function createPagedEventResources({
   });
 
   const registeredEvents$ = state<RegisteredChatEvent[]>([]);
+  const runDetails$ = computed((get) => {
+    return new Map(
+      get(registeredEvents$).flatMap(({ runDetail }) => {
+        return runDetail ? [[runDetail.runId, runDetail] as const] : [];
+      }),
+    );
+  });
   // Tree parsing is not part of the sync: the render window decides which
   // events need trees, so the ensure step runs at the window's write points.
   const syncRegisteredEvents$ = command(
@@ -2248,6 +2264,7 @@ function createPagedEventResources({
     diagramCodesForEvents$,
     ensureDiagrams$: mermaidDiagrams.ensureDiagrams$,
     publicSignals: {
+      runDetails$,
       browserSessionSignals,
       subscribeBrowserSessions$: browserSessionSignals.subscribe$,
       retryRichEventTree$,
@@ -2706,7 +2723,7 @@ interface RunTrackingDeps {
   subscribeThinkingSummaries$: ThreadActivitySummarySignals["subscribe$"];
   thinkingSummarySubscription: ThreadActivitySummarySignals["subscription"];
   automationSignals: Pick<ChatPanelSignals, "headerAutomations">;
-  threadDetail: ReturnType<typeof createChatThreadDetailSignals>;
+  cancellationRecovery: ReturnType<typeof createCancellationRecoverySignals>;
   reloadConnectorAccounts$: Command<void, []>;
   reloadConnectorAccountPreference$: Command<void, []>;
 }
@@ -3067,23 +3084,23 @@ function createOnSubscribedCommand({
   threadId,
   catchUpChatEvents$,
   reloadArtifacts$,
-  threadDetail,
+  cancellationRecovery,
   reloadConnectorAccounts$,
 }: Pick<
   RunTrackingDeps,
   | "threadId"
   | "catchUpChatEvents$"
   | "reloadArtifacts$"
-  | "threadDetail"
+  | "cancellationRecovery"
   | "reloadConnectorAccounts$"
 >): Command<Promise<void>, [AbortSignal]> {
   return command(async ({ get, set }, signal: AbortSignal) => {
     L.debug("subscribeChatThread$ catchup start", { threadId });
-    set(threadDetail.reload$);
+    set(cancellationRecovery.reload$);
     set(reloadArtifacts$);
     set(reloadConnectorAccounts$);
     await Promise.all([
-      get(threadDetail.cancellationRecoveryPending$),
+      get(cancellationRecovery.pending$),
       set(reloadMountedComposerWorkflows$, signal),
       set(catchUpChatEvents$, signal),
     ]);
@@ -3108,7 +3125,7 @@ function createRunTracking({
   subscribeThinkingSummaries$,
   thinkingSummarySubscription,
   automationSignals,
-  threadDetail,
+  cancellationRecovery,
   reloadConnectorAccounts$,
   reloadConnectorAccountPreference$,
 }: RunTrackingDeps) {
@@ -3116,7 +3133,7 @@ function createRunTracking({
     threadId,
     catchUpChatEvents$,
     reloadArtifacts$,
-    threadDetail,
+    cancellationRecovery,
     reloadConnectorAccounts$,
   });
 
@@ -3134,7 +3151,7 @@ function createRunTracking({
           threadId,
           invalidations: {
             threadDetail: [
-              threadDetail.reload$,
+              cancellationRecovery.reload$,
               reloadConnectorAccountPreference$,
             ],
             automations: [
@@ -3727,6 +3744,7 @@ function createThinkingIndicatorSignals(
 
 function publicChatThreadEventSignals(events: MessageListSignals) {
   return {
+    runDetails$: events.runDetails$,
     latestRunFinishCreatedAt$: events.latestRunFinishCreatedAt$,
     latestAssistantTextCreatedAt$: events.latestAssistantTextCreatedAt$,
     visibleRenderedChatGroups$: events.visibleRenderedChatGroups$,
@@ -3993,10 +4011,7 @@ export function createThreadComposerSignals(
   } = {},
 ): ComposerSignals {
   const threadMeta$ = createThreadMeta(threadId);
-  const threadDetail = createChatThreadDetailSignals(
-    threadId,
-    chatEvents.chatEvents$,
-  );
+  const cancellationRecovery = createCancellationRecoverySignals(threadId);
   return createThreadComposerSignalsWithContext(
     threadId,
     chatEvents,
@@ -4004,7 +4019,7 @@ export function createThreadComposerSignals(
       threadMeta$,
       threadDraft$: createRemoteChatThreadDraft(threadId),
       agentId,
-      cancellationRecoveryPending$: threadDetail.cancellationRecoveryPending$,
+      cancellationRecoveryPending$: cancellationRecovery.pending$,
       forward: options.forward,
       onOptimisticSend: options.onOptimisticSend,
     },
@@ -4033,10 +4048,7 @@ export function createChatPanelSignals(
   );
   const container = createChatThreadContainerSignals();
   const threadOwned = createThreadOwnedSignals(threadId);
-  const threadDetail = createChatThreadDetailSignals(
-    threadId,
-    chatEvents.chatEvents$,
-  );
+  const cancellationRecovery = createCancellationRecoverySignals(threadId);
   const composer = createThreadComposerSignalsWithContext(
     threadId,
     chatEvents,
@@ -4044,7 +4056,7 @@ export function createChatPanelSignals(
       threadMeta$,
       threadDraft$,
       agentId,
-      cancellationRecoveryPending$: threadDetail.cancellationRecoveryPending$,
+      cancellationRecoveryPending$: cancellationRecovery.pending$,
     },
     draft,
   );
@@ -4080,7 +4092,7 @@ export function createChatPanelSignals(
     subscribeThinkingSummaries$: activity.subscribe$,
     thinkingSummarySubscription: activity.subscription,
     automationSignals: threadOwned,
-    threadDetail,
+    cancellationRecovery,
     reloadConnectorAccounts$: composer.connector.accounts.reload$,
     reloadConnectorAccountPreference$:
       composer.connector.accounts.reloadPreference$,
@@ -4117,7 +4129,6 @@ export function createChatPanelSignals(
     ...publicChatThreadEventSignals(messages),
     subscribeChatThread$: runTracking.subscribeChatThread$,
     ...createThinkingIndicatorSignals(activity, messages),
-    langfuseTraceUrls$: threadDetail.langfuseTraceUrls$,
     artifacts$: messages.artifacts$,
     reloadArtifacts$: messages.reloadArtifacts$,
   };

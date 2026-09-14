@@ -33,6 +33,7 @@ import type { ChatThreadSharingSignals } from "./chat-thread-sharing.ts";
 import type { ChatThreadPinSignals } from "./chat-thread-pin.ts";
 import type { ChatForwardContext } from "./chat-forward.ts";
 import type { ChatConversationLocatorSignals } from "./chat-conversation-locator.ts";
+import type { RunDetailSignals } from "./run-detail.ts";
 
 type RecommendedFollowup = ChatRecommendedFollowup;
 
@@ -65,6 +66,7 @@ export interface EventImageGroupProjection {
  * source consumed by other features such as the composer.
  */
 export interface MessageListSignals {
+  readonly runDetails$: Computed<ReadonlyMap<string, RunDetailSignals>>;
   readonly setup$: Command<Promise<void>, [AbortSignal]>;
   readonly catchUp$: Command<Promise<void>, [AbortSignal]>;
   readonly scroll: ReturnType<typeof createChatThreadScrollSignals>;
@@ -132,12 +134,12 @@ export interface QueueMessageOptions {
 }
 
 export interface ChatPanelSignals {
+  readonly runDetails$: Computed<ReadonlyMap<string, RunDetailSignals>>;
   readonly threadId: string;
   readonly agentId: string;
   // -- Data signals ----------------------------------------------------------
   readonly threadDraft$: Computed<Promise<ChatThreadDraft | null>>;
   readonly threadMeta$: Computed<ThreadMeta | null>;
-  readonly langfuseTraceUrls$: Computed<Promise<Record<string, string>>>;
   readonly threadTitle$: Computed<string | null>;
   readonly threadTitleEmoji$: Computed<string | null>;
   readonly threadTitleText$: Computed<string>;

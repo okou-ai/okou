@@ -243,6 +243,7 @@ import type {
 } from "../../signals/chat-page/chat-event-types.ts";
 import type { ChatRunModelSelection } from "../../signals/chat-page/chat-event-state.ts";
 import type { AgentReferenceSignals } from "../../signals/chat-page/agent-reference-signals.ts";
+import type { RunDetailSignals } from "../../signals/chat-page/run-detail.ts";
 import type { AssistantErrorRecovery } from "../../signals/chat-page/assistant-error-recovery.ts";
 import { userMessageFileAttachments } from "../../signals/chat-page/user-message-files.ts";
 import type {
@@ -7586,8 +7587,14 @@ function RelatedArtifactsDialog({
   );
 }
 
-function RunLangfuseLink({ url }: { readonly url: string }) {
+function RunLangfuseLink({ signals }: { readonly signals: RunDetailSignals }) {
   const { t } = useTranslation();
+  const detail = useLoadable(signals.detail$);
+  const url =
+    detail.state === "hasData" ? detail.data?.langfuseTraceUrl : undefined;
+  if (!url) {
+    return null;
+  }
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
@@ -7621,9 +7628,21 @@ function RunLangfuseLink({ url }: { readonly url: string }) {
   );
 }
 
+function RunLangfuseAction({
+  thread,
+  runId,
+}: {
+  readonly thread: ChatPanelSignals;
+  readonly runId: string;
+}) {
+  const runDetails = useGet(thread.runDetails$);
+  const signals = runDetails.get(runId);
+  return signals ? <RunLangfuseLink signals={signals} /> : null;
+}
+
 function PagedGroupPrimaryActions({
   firstRunId,
-  langfuseTraceUrl,
+  thread,
   hasContent,
   usage,
   copied,
@@ -7631,7 +7650,7 @@ function PagedGroupPrimaryActions({
   relatedArtifacts,
 }: {
   firstRunId: string | undefined;
-  langfuseTraceUrl: string | undefined;
+  thread: ChatPanelSignals;
   hasContent: boolean;
   usage: ChatEventUsagePayload | undefined;
   copied: boolean;
@@ -7641,7 +7660,7 @@ function PagedGroupPrimaryActions({
   const { t } = useTranslation();
   const showActivityLogs = useGet(featureSwitch$)[FeatureSwitchKey.OkouDebug];
   const hasLeadingIconAction = Boolean(
-    (showActivityLogs && firstRunId) || langfuseTraceUrl || hasContent,
+    (showActivityLogs && firstRunId) || hasContent,
   );
   return (
     <div
@@ -7686,7 +7705,9 @@ function PagedGroupPrimaryActions({
           </Tooltip>
         </TooltipProvider>
       )}
-      {langfuseTraceUrl && <RunLangfuseLink url={langfuseTraceUrl} />}
+      {showActivityLogs && firstRunId && (
+        <RunLangfuseAction thread={thread} runId={firstRunId} />
+      )}
       {hasContent && (
         <TooltipProvider delayDuration={300}>
           <Tooltip>
@@ -7743,7 +7764,6 @@ function PagedGroupActions({
   const copied = copiedId === group.beginEventId;
   const copyEvent = useSet(thread.copyEvent$);
   const sharingPhase = useGet(thread.sharing.phase$);
-  const langfuseTraceUrls = useLastResolved(thread.langfuseTraceUrls$);
   if (sharingPhase !== "idle") {
     return null;
   }
@@ -7772,9 +7792,7 @@ function PagedGroupActions({
     <div className={CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_CLASS}>
       <PagedGroupPrimaryActions
         firstRunId={firstRunId}
-        langfuseTraceUrl={
-          firstRunId ? langfuseTraceUrls?.[firstRunId] : undefined
-        }
+        thread={thread}
         hasContent={hasContent}
         usage={usage}
         copied={copied}

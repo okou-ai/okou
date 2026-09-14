@@ -1,7 +1,7 @@
-import { chatThreadByIdContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { runsByIdContract } from "@okouai/api-contracts/contracts/run-routes";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import {
   queryAllByRoleFast,
@@ -20,16 +20,24 @@ import { publishRunUpdate } from "./chat-run-test-fixtures.ts";
 
 const TRACE_URL = `https://langfuse.example/trace/${FIRST_CAPABILITY_RUN_ID.replaceAll("-", "")}`;
 const TRACE_LABEL = "View Langfuse trace";
+const RUN_DETAIL = Object.freeze({
+  status: "completed" as const,
+  prompt: "Prepare the response",
+  appendSystemPrompt: null,
+  createdAt: "2026-03-10T00:00:00Z",
+});
 
 test("Link only the traced run beside Activity even after tracing is switched off", async () => {
   installCapabilityChat({
     events: completedConversation("Traced response", "Untraced response"),
   });
-  context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
+  context.mocks.api(runsByIdContract.getById, ({ params, respond }) => {
     return respond(200, {
-      lastReadAt: null,
-      cancellationRecoveryPending: false,
-      langfuseTraceUrls: { [FIRST_CAPABILITY_RUN_ID]: TRACE_URL },
+      ...RUN_DETAIL,
+      runId: params.id,
+      ...(params.id === FIRST_CAPABILITY_RUN_ID
+        ? { langfuseTraceUrl: TRACE_URL }
+        : {}),
     });
   });
 
@@ -63,22 +71,29 @@ test("Link only the traced run beside Activity even after tracing is switched of
   expect(screen.getByText("Untraced response")).toBeInTheDocument();
 });
 
-test("Keep older API responses usable and reveal a trace after a thread update", async () => {
+test("Keep older API responses usable and load a new run without refetching history", async () => {
   const events = completedConversation("Finished response");
   installCapabilityChat({ events });
-  const detail: { langfuseTraceUrls?: Record<string, string> } = {};
-  context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
+  const requests = vi.fn<(runId: string) => void>();
+  const nextTraceUrl = `https://langfuse.example/trace/${SECOND_CAPABILITY_RUN_ID.replaceAll("-", "")}`;
+  context.mocks.api(runsByIdContract.getById, ({ params, respond }) => {
+    requests(params.id);
     return respond(200, {
-      lastReadAt: null,
-      cancellationRecoveryPending: false,
-      ...detail,
+      ...RUN_DETAIL,
+      runId: params.id,
+      ...(params.id === SECOND_CAPABILITY_RUN_ID
+        ? { langfuseTraceUrl: nextTraceUrl }
+        : {}),
     });
   });
 
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.LangfuseTrace]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.OkouDebug]: true,
+      [FeatureSwitchKey.LangfuseTrace]: true,
+    },
   });
   await readyChat();
   await expect(
@@ -87,8 +102,6 @@ test("Keep older API responses usable and reveal a trace after a thread update",
   expect(screen.getAllByLabelText("Copy message").length).toBeGreaterThan(0);
   expect(screen.queryByLabelText(TRACE_LABEL)).not.toBeInTheDocument();
 
-  const nextTraceUrl = `https://langfuse.example/trace/${SECOND_CAPABILITY_RUN_ID.replaceAll("-", "")}`;
-  detail.langfuseTraceUrls = { [SECOND_CAPABILITY_RUN_ID]: nextTraceUrl };
   events.push(
     ...completedConversation("Finished response", "New traced response").slice(
       2,
@@ -101,5 +114,77 @@ test("Keep older API responses usable and reveal a trace after a thread update",
   ).resolves.toBeInTheDocument();
   const trace = await screen.findByLabelText(TRACE_LABEL);
   expect(trace).toHaveAttribute("href", nextTraceUrl);
+  expect(requests.mock.calls).toStrictEqual([
+    [FIRST_CAPABILITY_RUN_ID],
+    [SECOND_CAPABILITY_RUN_ID],
+  ]);
+});
+
+test("Do not request run details or show tracing actions outside debug mode", async () => {
+  installCapabilityChat({ events: completedConversation("Ordinary response") });
+  const requests = vi.fn<(runId: string) => void>();
+  context.mocks.api(runsByIdContract.getById, ({ params, respond }) => {
+    requests(params.id);
+    return respond(200, {
+      ...RUN_DETAIL,
+      runId: params.id,
+      langfuseTraceUrl: TRACE_URL,
+    });
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.OkouDebug]: false,
+      [FeatureSwitchKey.LangfuseTrace]: true,
+    },
+  });
+  await readyChat();
+
+  await expect(
+    screen.findByText("Ordinary response"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getAllByLabelText("Copy message").length).toBeGreaterThan(0);
+  expect(screen.queryByLabelText(TRACE_LABEL)).not.toBeInTheDocument();
   expect(screen.queryByLabelText("View run logs")).not.toBeInTheDocument();
+  expect(requests).not.toHaveBeenCalled();
+});
+
+test("Keep the response and Activity usable while run details are loading", async () => {
+  installCapabilityChat({
+    events: completedConversation("Available response"),
+  });
+  const responseGate = context.mocks.deferred<void>();
+  context.mocks.api(runsByIdContract.getById, async ({ params, respond }) => {
+    await responseGate.promise;
+    return respond(200, {
+      ...RUN_DETAIL,
+      runId: params.id,
+      langfuseTraceUrl: TRACE_URL,
+    });
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
+  });
+  await readyChat();
+
+  await expect(
+    screen.findByText("Available response"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByLabelText("View run logs")).toHaveAttribute(
+    "href",
+    `/activities/${FIRST_CAPABILITY_RUN_ID}`,
+  );
+  expect(screen.getAllByLabelText("Copy message").length).toBeGreaterThan(0);
+  expect(screen.queryByLabelText(TRACE_LABEL)).not.toBeInTheDocument();
+
+  responseGate.resolve(undefined);
+  await expect(screen.findByLabelText(TRACE_LABEL)).resolves.toHaveAttribute(
+    "href",
+    TRACE_URL,
+  );
 });
