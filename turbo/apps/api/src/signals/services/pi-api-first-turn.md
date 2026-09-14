@@ -103,7 +103,10 @@ The public coordinator still reads canonical `triggerSource` before adopting an
 early handle or starting a promoted attempt. Adoption checks the entire captured
 activation, including final prompt, resource/memory/H0 identity, account, route,
 effort/tier and original deadlines. An early failure keeps its original typed
-classification only after successful identity validation. Final lifecycle,
+classification only after successful identity validation. Prepared credentials
+do not retain a revoked provider grant: execution revalidates managed credential
+sources using the captured account identity, without refreshing or replacing the
+prepared values. These reads remain outside the lifecycle lock. Final lifecycle,
 cancellation and active-input checks still precede provider transport. The
 43-second model/initialization boundary (45 seconds minus commit budget),
 45-second API budget and 55-second coordination cap stay anchored to the captured

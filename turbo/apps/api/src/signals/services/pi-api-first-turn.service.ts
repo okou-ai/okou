@@ -1115,6 +1115,52 @@ async function recordApiFirstTurnUsage(
   });
 }
 
+/** Early credential materialization does not retain a revoked provider grant. */
+async function validateApiFirstTurnCredentialSources(
+  args: ApiFirstTurnModelContext,
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
+  const executionContext = args.activation.executionContext;
+  for (const binding of args.route.credentialBindings) {
+    const providerKey =
+      executionContext.secretConnectorMap?.[binding.secretName];
+    const metadata =
+      executionContext.secretConnectorMetadataMap?.[binding.secretName];
+    if (!providerKey || metadata?.sourceType !== "model-provider") {
+      continue;
+    }
+    const resolved = await settle(
+      resolveModelProviderRuntimeSecretForApi({
+        db: args.db,
+        orgId: args.activation.orgId,
+        userId: args.activation.userId,
+        key: binding.secretName,
+        providerKey,
+        metadata,
+        featureSwitchContext: {
+          userId: args.activation.userId,
+          orgId: args.activation.orgId,
+        },
+      }),
+    );
+    signal.throwIfAborted();
+    if (!resolved.ok) {
+      throw piApiFirstTurnError(
+        "PI_API_MODEL_CREDENTIAL_INVALID",
+        "Pi API first-turn model credential lookup failed",
+        resolved.error,
+      );
+    }
+    if (!resolved.value?.trim()) {
+      throw piApiFirstTurnError(
+        "PI_API_MODEL_CREDENTIAL_INVALID",
+        "Pi API first-turn model credential is unavailable",
+      );
+    }
+  }
+}
+
 async function observeDiscardedProviderResult(
   operation: Promise<PiApiFirstTurnResult>,
   args: ApiFirstTurnModelContext,
@@ -1220,6 +1266,10 @@ async function executeApiModelTurn(
   readonly startedAt: number;
   readonly turn: PiApiFirstTurnResult;
 }> {
+  // Use the captured source, never the active account. Revalidation neither
+  // refreshes credentials nor changes the prepared runtime, and stays outside
+  // the lifecycle lock that owns the final provider transition.
+  await validateApiFirstTurnCredentialSources(args.context, signal);
   const modelDeadline =
     apiFirstTurnApiDeadlineAt(args.activation.executionContext) -
     MODEL_COMMIT_BUDGET_MS;

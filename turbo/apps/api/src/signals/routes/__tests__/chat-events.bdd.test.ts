@@ -20814,7 +20814,13 @@ describe("CHAT-02: run-level model overrides", () => {
     });
     await entered.promise;
     expect(requests).toHaveLength(0);
-    expect(captured.oauth.oauthToken).toHaveLength(1);
+    // Credential refresh overlaps the blocked resource read. Wait for that
+    // actual HTTP request before changing the active account selection.
+    await expect
+      .poll(() => {
+        return captured.oauth.oauthToken.length;
+      })
+      .toBe(2);
     await authDeviceSupport.activatePersonalModelProviderAccount(
       actor,
       other.accountSourceId,
