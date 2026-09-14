@@ -5,25 +5,12 @@ import {
 } from "@okouai/api-contracts/contracts/social";
 import { InvalidArgumentError } from "commander";
 
-export const SOCIAL_PLATFORMS = [
-  "linkedin",
-  "twitter",
-  "facebook",
-  "instagram",
-  "tiktok",
-  "youtube",
-] as const;
-
-export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number];
-
-export type SocialOperation =
-  | "comments"
-  | "download"
-  | "inspect"
-  | "posts"
-  | "search"
-  | "summarize"
-  | "transcript";
+import {
+  socialPlatformSchema,
+  SOCIAL_INSTAGRAM_POST_KINDS,
+  type SocialPlatform,
+  type SocialOperation,
+} from "@okouai/api-contracts/contracts/social-discovery";
 
 type SocialTargetKind =
   | "channel"
@@ -76,86 +63,6 @@ export interface SocialIntent {
   readonly requestMetadata: SocialRequestMetadata;
   readonly request: SocialKitRequest;
 }
-
-export interface SocialCapability {
-  readonly platform: SocialPlatform;
-  readonly operations: readonly SocialOperation[];
-  readonly notes?: readonly string[];
-}
-
-const SUMMARY_FIELDS_NOTE =
-  'Summarize accepts --fields JSON or --fields-file PATH, e.g. {"audience":"Who this video helps"}, plus optional --prompt guidance (not strict JSON Schema)';
-
-export const SOCIAL_CAPABILITIES: readonly SocialCapability[] = [
-  {
-    platform: "linkedin",
-    operations: ["inspect", "posts", "transcript"],
-    notes: ["Inspect supports member profiles, companies, and posts"],
-  },
-  {
-    platform: "twitter",
-    operations: ["inspect", "posts", "transcript"],
-    notes: ["Inspect supports profiles, posts, and threads"],
-  },
-  {
-    platform: "facebook",
-    operations: ["comments", "download", "inspect", "summarize", "transcript"],
-    notes: [SUMMARY_FIELDS_NOTE],
-  },
-  {
-    platform: "instagram",
-    operations: [
-      "comments",
-      "download",
-      "inspect",
-      "posts",
-      "search",
-      "summarize",
-      "transcript",
-    ],
-    notes: [
-      "Posts supports posts and reels",
-      "Search supports keywords and hashtags (up to 100 trimmed characters)",
-      "Search returns one anonymous batch of up to 12 reels; additional pages and exhaustive results are unavailable",
-      "Inspect preserves unavailable views as null, distinct from zero",
-      "Inspect --require-views requires verified video views for posts/reels; unavailable views fail without a charge and are not retried automatically",
-      SUMMARY_FIELDS_NOTE,
-    ],
-  },
-  {
-    platform: "tiktok",
-    operations: [
-      "comments",
-      "download",
-      "inspect",
-      "posts",
-      "search",
-      "summarize",
-      "transcript",
-    ],
-    notes: ["Search supports keywords and hashtags", SUMMARY_FIELDS_NOTE],
-  },
-  {
-    platform: "youtube",
-    operations: [
-      "comments",
-      "download",
-      "inspect",
-      "posts",
-      "search",
-      "summarize",
-      "transcript",
-    ],
-    notes: [
-      "Posts supports channels and playlists",
-      "Posts --full-details requests exact dates and descriptions (slower; --limit at most 30)",
-      "Unavailable publication dates and descriptions remain null, empty, or missing",
-      "Transcript and summarize support --refresh to bypass extraction caches, including cached caption absence; captions may still be unavailable",
-      "Summary-result caching is separate and unchanged by --refresh",
-      SUMMARY_FIELDS_NOTE,
-    ],
-  },
-] as const;
 
 interface InspectOptions {
   readonly requireViews?: boolean;
@@ -598,7 +505,7 @@ export function parseSocialTarget(input: string): SocialUrlTarget {
 export function parseSocialPlatform(value: string): SocialPlatform {
   const lower = value.toLowerCase();
   const normalized = lower === "x" ? "twitter" : lower;
-  const platform = SOCIAL_PLATFORMS.find((candidate) => {
+  const platform = socialPlatformSchema.options.find((candidate) => {
     return candidate === normalized;
   });
   if (!platform) {
@@ -849,8 +756,9 @@ export function postsIntent(
       }
       if (
         options.kind !== undefined &&
-        options.kind !== "posts" &&
-        options.kind !== "reels"
+        !SOCIAL_INSTAGRAM_POST_KINDS.some((kind) => {
+          return kind === options.kind;
+        })
       ) {
         return unsupported("Instagram --kind must be posts or reels");
       }

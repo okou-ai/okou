@@ -19,6 +19,10 @@ import {
   type SocialKitErrorResponse,
 } from "@okouai/api-contracts/contracts/social";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
+import type {
+  SocialPlatform,
+  SocialStatusResponse,
+} from "@okouai/api-contracts/contracts/social-discovery";
 
 import { ApiRequestError, getClientConfig } from "../core/client-factory";
 
@@ -49,6 +53,25 @@ export class SocialApiRequestError extends ApiRequestError {
     super(message, code, status);
     this.name = "SocialApiRequestError";
   }
+}
+
+export async function getSocialStatus(
+  platform?: SocialPlatform,
+): Promise<SocialStatusResponse> {
+  const config = await getClientConfig();
+  const client = initClient(socialContract, config);
+  const result = await client.status({
+    headers: {},
+    query: platform ? { platform } : {},
+    fetchOptions: { signal: AbortSignal.timeout(20_000) },
+  });
+  if (result.status === 200) {
+    return result.body;
+  }
+  handlePublicSocialError(
+    result,
+    "Social status is unavailable; use okou social capabilities for offline discovery",
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -36,6 +36,8 @@ surface; the index does not replace their detailed rules.
   listing, scoped recovery hints, pagination, and CLI/API compatibility.
 - [Social errors and download recovery](./social-errors.md): stable error
   reasons, retry advice, same-task recovery, and compatible persisted errors.
+- [Social discovery and service status](./social-discovery.md): offline
+  capabilities, live health normalization, freshness and rollout boundaries.
 - [Billing attribution foundation](./database/billing-attribution.md): immutable
   billing identity, writer inventory, bounded backfill and activation boundaries.
 - [Database trigger retirement](./database-trigger-retirement.md): explicit API
