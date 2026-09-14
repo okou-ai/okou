@@ -78,9 +78,11 @@ const runImpactHandoff$ = command(
           signal,
         );
         frame.src = proof.iframeUrl;
-        await ready;
+        loaded = await ready;
         signal.throwIfAborted();
-        loaded = true;
+        if (!loaded) {
+          continue;
+        }
       }
       const complete = waitForMessage(
         frame,
