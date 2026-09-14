@@ -101,13 +101,20 @@ test.each([
   ["organization", "Share to organization", organizationUrl],
   ["public", "Share to Public", publicUrl],
 ] as const)(
-  "the %s action is available before sharing status loads and stays busy until its link is ready",
+  "the %s action shows a loading toast until its link is copied, then a success toast",
   async (audience, label, url) => {
     const statusReady = context.mocks.deferred<ArtifactShareStatus>();
+    const clipboardStarted = context.mocks.deferred<string>();
+    const clipboardReady = context.mocks.deferred<void>();
     context.mocks.api(artifactSharesContract.status, async ({ respond }) => {
       return respond(200, await statusReady.promise);
     });
-    const clipboard = context.mocks.browser.clipboardWriteText();
+    vi.spyOn(navigator.clipboard, "writeText").mockImplementation(
+      async (text) => {
+        clipboardStarted.resolve(text);
+        await clipboardReady.promise;
+      },
+    );
     await openArtifact();
     await openShareMenu();
     expect(action("menuitem", "Share to organization")).not.toHaveAttribute(
@@ -120,11 +127,13 @@ test.each([
     );
 
     click(action("menuitem", label));
-    await waitFor(() => {
-      return expect(action("button", "Share")).toBeDisabled();
-    });
+    const loadingToast = await screen.findByText("Sharing…");
+    expect(loadingToast.closest("[data-sonner-toast]")).toHaveAttribute(
+      "data-type",
+      "loading",
+    );
+    expect(action("button", "Share")).toBeDisabled();
     expect(action("button", "Share")).toHaveAttribute("aria-busy", "true");
-    expect(clipboard.writes).toStrictEqual([]);
 
     statusReady.resolve({
       shareId,
@@ -135,9 +144,18 @@ test.each([
       candidateVersion: 2,
       url,
     });
-    await waitFor(() => {
-      return expect(clipboard.writes).toStrictEqual([url]);
-    });
+    await expect(clipboardStarted.promise).resolves.toBe(url);
+    expect(screen.getByText("Sharing…")).toBeInTheDocument();
+    expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
+    expect(action("button", "Share")).toBeDisabled();
+
+    clipboardReady.resolve();
+    const successToast = await screen.findByText("Link copied");
+    expect(successToast.closest("[data-sonner-toast]")).toHaveAttribute(
+      "data-type",
+      "success",
+    );
+    expect(screen.queryByText("Sharing…")).not.toBeInTheDocument();
     expect(action("button", "Share")).toBeEnabled();
     expect(action("button", "Share")).not.toHaveAttribute("aria-busy", "true");
   },
@@ -145,7 +163,9 @@ test.each([
 
 test("a denied sharing check reports the error and allows retrying the selection", async () => {
   let allowed = false;
-  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+  const statusReady = context.mocks.deferred<void>();
+  context.mocks.api(artifactSharesContract.status, async ({ respond }) => {
+    await statusReady.promise;
     if (!allowed) {
       return respond(403, {
         error: { code: "FORBIDDEN", message: "Sharing access unavailable" },
@@ -165,12 +185,17 @@ test("a denied sharing check reports the error and allows retrying the selection
   await openArtifact();
   await openShareMenu();
   click(action("menuitem", "Share to organization"));
+  await expect(screen.findByText("Sharing…")).resolves.toBeInTheDocument();
+  statusReady.resolve();
   await expect(
     screen.findByText("Sharing access unavailable"),
   ).resolves.toBeInTheDocument();
   expect(clipboard.writes).toStrictEqual([]);
   await waitFor(() => {
     return expect(action("button", "Share")).toBeEnabled();
+  });
+  await waitFor(() => {
+    return expect(screen.queryByText("Sharing…")).not.toBeInTheDocument();
   });
 
   allowed = true;
@@ -179,6 +204,35 @@ test("a denied sharing check reports the error and allows retrying the selection
   await waitFor(() => {
     return expect(clipboard.writes).toStrictEqual([organizationUrl]);
   });
+  await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
+});
+
+test("a blocked clipboard replaces the loading toast with a copy error", async () => {
+  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+    return respond(200, {
+      shareId,
+      audience: "organization",
+      organization: { id: "original-org", name: "Original organization" },
+      selectedTarget: { kind: "html", id: deploymentId },
+      selectedVersion: 2,
+      candidateVersion: 2,
+      url: organizationUrl,
+    });
+  });
+  vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(
+    new DOMException("Clipboard blocked", "NotAllowedError"),
+  );
+  await openArtifact();
+  await openShareMenu();
+  click(action("menuitem", "Share to organization"));
+  const errorToast = await screen.findByText("Failed to copy link");
+  expect(errorToast.closest("[data-sonner-toast]")).toHaveAttribute(
+    "data-type",
+    "error",
+  );
+  expect(screen.queryByText("Sharing…")).not.toBeInTheDocument();
+  expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
+  expect(action("button", "Share")).toBeEnabled();
 });
 
 test("the two share actions create and copy links, then only copy the existing audience", async () => {

@@ -9,11 +9,20 @@ import {
   type ArtifactShareTarget,
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import { privateHostedDeploymentId } from "@okouai/core/private-hosted-artifact";
+import { toast } from "@okouai/ui/components/ui/sonner";
+import { i18n } from "../i18n/index.ts";
 import { accept } from "../lib/accept.ts";
+import { copyAttachmentLinkToClipboard } from "../views/okou-page/attachment-url.ts";
 import { apiClient$ } from "./api-client.ts";
 import { resolveApiBase } from "./api-base.ts";
 import { isAuthenticatedAttachmentUrl } from "./attachment-resource-url.ts";
 import { pageVersion$ } from "./page-signal.ts";
+import { onRejection } from "./utils.ts";
+
+interface ArtifactShareSelection {
+  readonly url: string;
+  readonly audience: Exclude<ArtifactShareStatus["audience"], "private">;
+}
 
 function artifactSharingTarget(url: string): ArtifactShareTarget | null {
   const id = privateHostedDeploymentId(url, resolveApiBase());
@@ -52,15 +61,8 @@ const resolveSharingTarget$ = command(
   },
 );
 
-export const shareArtifact$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly url: string;
-      readonly audience: Exclude<ArtifactShareStatus["audience"], "private">;
-    },
-    signal: AbortSignal,
-  ) => {
+const artifactShareUrl$ = command(
+  async ({ get, set }, args: ArtifactShareSelection, signal: AbortSignal) => {
     signal.throwIfAborted();
     const pageVersion = get(pageVersion$);
     const target = await set(resolveSharingTarget$, args.url, signal);
@@ -99,5 +101,36 @@ export const shareArtifact$ = command(
       return null;
     }
     return response.body.url;
+  },
+);
+
+export const shareArtifact$ = command(
+  async ({ set }, selection: ArtifactShareSelection, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const toastId = toast.loading(
+      i18n.t(($) => {
+        return $.artifacts.toasts.sharing;
+      }),
+    );
+    const dismissLoadingToast = () => {
+      toast.dismiss(toastId);
+      signal.removeEventListener("abort", dismissLoadingToast);
+    };
+    signal.addEventListener("abort", dismissLoadingToast, { once: true });
+    const shareUrl = await onRejection(
+      set(artifactShareUrl$, selection, signal),
+      dismissLoadingToast,
+    );
+    signal.throwIfAborted();
+    if (!shareUrl) {
+      dismissLoadingToast();
+      return;
+    }
+    await onRejection(
+      copyAttachmentLinkToClipboard(shareUrl, toastId, signal),
+      dismissLoadingToast,
+    );
+    signal.throwIfAborted();
+    signal.removeEventListener("abort", dismissLoadingToast);
   },
 );

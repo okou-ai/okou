@@ -1008,7 +1008,8 @@
     "toasts": {
       "copyLinkFailed": "Failed to copy link",
       "downloadFailed": "Download failed",
-      "linkCopied": "Link copied"
+      "linkCopied": "Link copied",
+      "sharing": "Sharing…"
     }
   },
   "auth": {

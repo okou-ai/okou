@@ -1027,7 +1027,8 @@
     "toasts": {
       "copyLinkFailed": "No se pudo copiar el enlace",
       "downloadFailed": "Descarga fallida",
-      "linkCopied": "Enlace copiado"
+      "linkCopied": "Enlace copiado",
+      "sharing": "Compartiendo…"
     }
   },
   "auth": {

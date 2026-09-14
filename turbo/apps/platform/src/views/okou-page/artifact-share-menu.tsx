@@ -1,6 +1,6 @@
 import { useGet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Share2, Users, Globe, Loader2 } from "lucide-react";
+import { Share2, Users, Globe } from "lucide-react";
 import {
   Button,
   DropdownMenu,
@@ -12,7 +12,6 @@ import { useTranslation } from "react-i18next";
 import { shareArtifact$ } from "../../signals/artifact-sharing.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { copyAttachmentLinkToClipboard } from "./attachment-url.ts";
 
 export function ArtifactShareMenu({
   url,
@@ -30,14 +29,6 @@ export function ArtifactShareMenu({
   const [sharing, share] = useLoadableSet(shareArtifact$);
   const sharingPending = sharing.state === "loading";
 
-  const shareAndCopy = async (audience: "organization" | "public") => {
-    const shareUrl = await share({ url, audience }, signal);
-    signal.throwIfAborted();
-    if (shareUrl) {
-      await copyAttachmentLinkToClipboard(shareUrl);
-    }
-  };
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -51,18 +42,14 @@ export function ArtifactShareMenu({
         }
         render={<Button variant="quiet" size="icon-sm" className={className} />}
       >
-        {sharingPending ? (
-          <Loader2 size={iconSize} className="animate-spin" />
-        ) : (
-          <Share2 size={iconSize} />
-        )}
+        <Share2 size={iconSize} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuItem
           disabled={sharingPending}
           onClick={() => {
             detach(
-              shareAndCopy("organization"),
+              share({ url, audience: "organization" }, signal),
               Reason.DomCallback,
               "share artifact to organization",
             );
@@ -77,7 +64,7 @@ export function ArtifactShareMenu({
           disabled={sharingPending}
           onClick={() => {
             detach(
-              shareAndCopy("public"),
+              share({ url, audience: "public" }, signal),
               Reason.DomCallback,
               "share artifact to public",
             );

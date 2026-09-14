@@ -1008,7 +1008,8 @@
     "toasts": {
       "copyLinkFailed": "लिंक कॉपी करने में विफल",
       "downloadFailed": "डाउनलोड विफल रहा",
-      "linkCopied": "लिंक कॉपी किया गया"
+      "linkCopied": "लिंक कॉपी किया गया",
+      "sharing": "साझा किया जा रहा है…"
     }
   },
   "auth": {

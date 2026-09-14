@@ -1008,7 +1008,8 @@
     "toasts": {
       "copyLinkFailed": "Link konnte nicht kopiert werden",
       "downloadFailed": "Der Download ist fehlgeschlagen",
-      "linkCopied": "Link kopiert"
+      "linkCopied": "Link kopiert",
+      "sharing": "Wird geteilt…"
     }
   },
   "auth": {
