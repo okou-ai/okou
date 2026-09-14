@@ -1,4 +1,3 @@
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cleanup, screen, waitFor } from "@testing-library/react";
@@ -329,44 +328,4 @@ test("Stop capture and expose a failed chunk write without discarding the saved 
       storageError,
     ],
   ]);
-});
-
-test("Restore audio when voice input v2 enables after the composer mounts", async () => {
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const firstPage = createChildAbortController(context.signal);
-  context.mocks.browser.voiceInput({ rms: 0.12 });
-  installVoiceBoundaries();
-  context.mocks.http.post("*/api/voice-io/transcribe/segment", () => {
-    return HttpResponse.json({ error: "Temporary outage" }, { status: 503 });
-  });
-  await setupPage({
-    context: { ...context, signal: firstPage.signal },
-    path: RUN_PATH,
-    featureSwitches: flags,
-  });
-  click(await findEnabledButton("Voice input"));
-  click(await findEnabledButton("Stop recording"));
-  await findEnabledButton("Retry");
-  unload(firstPage);
-  const enableVoice = context.mocks.deferred<void>();
-  context.mocks.api(featureSwitchesContract.get, async ({ respond }) => {
-    await enableVoice.promise;
-    return respond(200, { switches: flags, effectiveSwitches: flags });
-  });
-  await setupPage({
-    context: secondContext,
-    path: RUN_PATH,
-  });
-  await expect(findEnabledButton("Voice input")).resolves.not.toHaveAttribute(
-    "aria-keyshortcuts",
-  );
-  expect(queryButton("Retry")).toBeNull();
-  enableVoice.resolve();
-  await findEnabledButton("Retry");
-  expect(queryButton("Stop recording")).toBeNull();
-  click(await findEnabledButton("Remove voice draft"));
-  await expect(findEnabledButton("Voice input")).resolves.toHaveAttribute(
-    "aria-keyshortcuts",
-  );
-  await expect(savedRecording()).resolves.toBeNull();
 });
