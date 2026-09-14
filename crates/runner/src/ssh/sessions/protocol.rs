@@ -34,6 +34,9 @@ pub(super) struct Read {
     #[serde(deserialize_with = "hyphenated_uuid")]
     pub(super) session_id: Uuid,
     pub(super) cursor: u64,
+    pub(super) wait_ms: u64,
+    pub(super) max_bytes: usize,
+    pub(super) max_chunks: usize,
 }
 
 #[derive(Deserialize)]
@@ -130,6 +133,7 @@ pub(super) enum Response {
     },
     Read {
         session: Info,
+        wait_expired: bool,
         #[serde(flatten)]
         output: buffer::Read,
     },

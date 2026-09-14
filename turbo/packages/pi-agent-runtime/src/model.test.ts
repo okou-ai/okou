@@ -106,65 +106,48 @@ async function retryableCodexProvider() {
 }
 
 describe("Pi agent model adapter", () => {
-  it.each([
-    undefined,
-    "openai-responses",
-    "openai-completions",
-    "openai-codex-responses",
-  ] as const)(
-    "sends legacy api %s only to public Responses with the selected credential",
-    async (api) => {
-      const provider = await retryableCodexProvider();
-      try {
-        const config = await materializePiAgentModelConfig({
-          config: {
-            provider: "openai",
-            baseUrl: provider.baseUrl,
-            model: "gpt-5.6-terra",
-            api,
-            apiKeyEnv: "OPENAI_API_KEY",
-            credentialSecretName: "OPENAI_API_KEY",
-          },
-          target: "direct",
-          resolveCredential: () => {
-            return "selected-public-key";
-          },
-        });
-        const model = resolvePiAgentModel(config);
-        if (!model) throw new Error("Expected a public model");
-        const result = await piAgentStreamForConfig(config)(
-          model,
-          {
-            messages: [{ role: "user", content: "hello", timestamp: 1 }],
-          },
-          { apiKey: config.apiKey },
-        ).result();
-        expect(result.stopReason).toBe("error");
-        expect(provider.requests).toHaveLength(1);
-        expect(provider.requests[0]).toMatchObject({
-          url: "/responses",
-          headers: { authorization: "Bearer selected-public-key" },
-          body: { model: "gpt-5.6-terra", stream: true, store: false },
-        });
-        expect(provider.requests[0]?.headers).not.toHaveProperty(
-          "chatgpt-account-id",
-        );
-      } finally {
-        await provider.close();
-      }
-    },
-  );
+  it("sends canonical Gen1 to public Responses with the selected credential", async () => {
+    const provider = await retryableCodexProvider();
+    try {
+      const config = await materializePiAgentModelConfig({
+        config: {
+          provider: "openai",
+          baseUrl: provider.baseUrl,
+          model: "gpt-5.6-terra",
+          apiKeyEnv: "OPENAI_API_KEY",
+          credentialSecretName: "OPENAI_API_KEY",
+        },
+        target: "direct",
+        resolveCredential: () => {
+          return "selected-public-key";
+        },
+      });
+      const model = resolvePiAgentModel(config);
+      if (!model) throw new Error("Expected a public model");
+      const result = await piAgentStreamForConfig(config)(
+        model,
+        {
+          messages: [{ role: "user", content: "hello", timestamp: 1 }],
+        },
+        { apiKey: config.apiKey },
+      ).result();
+      expect(result.stopReason).toBe("error");
+      expect(provider.requests).toHaveLength(1);
+      expect(provider.requests[0]).toMatchObject({
+        url: "/responses",
+        headers: { authorization: "Bearer selected-public-key" },
+        body: { model: "gpt-5.6-terra", stream: true, store: false },
+      });
+      expect(provider.requests[0]?.headers).not.toHaveProperty(
+        "chatgpt-account-id",
+      );
+    } finally {
+      await provider.close();
+    }
+  });
 
-  it.each([
-    undefined,
-    "openai-completions",
-    "openai-responses",
-    "openai-codex-responses",
-  ] as const)("normalizes legacy api %s to Responses", (api) => {
-    const model = resolvePiAgentModel({
-      ...OPENAI_TERRA,
-      ...(api === undefined ? {} : { api }),
-    });
+  it("projects public Responses catalog capabilities onto the SDK model", () => {
+    const model = resolvePiAgentModel(OPENAI_TERRA);
 
     expect(model).toMatchObject({
       id: "gpt-5.6-terra",
@@ -237,7 +220,6 @@ describe("Pi agent model adapter", () => {
       const materialized = await materializePiAgentModelConfig({
         config: piModelConfigSchema.parse({
           ...config,
-          api: "openai-completions",
           apiKeyEnv: "OPENAI_API_KEY",
           credentialSecretName: "OPENAI_API_KEY",
         }),

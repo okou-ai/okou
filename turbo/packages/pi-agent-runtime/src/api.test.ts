@@ -432,11 +432,6 @@ describe("Pi API facade", () => {
         let sessionJsonl: string | undefined;
         const runTurn = async (
           serviceTier: "priority" | "fast" | undefined,
-          api:
-            | "openai-completions"
-            | "openai-codex-responses"
-            | "openai-responses"
-            | undefined,
           thinkingLevel: "low" | "high" = "low",
         ) => {
           const result = await runPiApiFirstTurn({
@@ -483,7 +478,6 @@ describe("Pi API facade", () => {
                       provider: "openai",
                       baseUrl: `http://127.0.0.1:${address.port}/v1`,
                       model: "gpt-5.6-terra",
-                      ...(api === undefined ? {} : { api }),
                       apiKeyEnv: "OPENAI_API_KEY",
                       credentialSecretName: "OPENAI_API_KEY",
                       thinkingLevel,
@@ -500,23 +494,20 @@ describe("Pi API facade", () => {
           sessionJsonl = result.sessionJsonl;
           return result;
         };
-        const standardResult = await runTurn(undefined, "openai-completions");
+        const standardResult = await runTurn(undefined);
         const priorityResult = await runTurn(
           route === "native" ? "fast" : "priority",
-          "openai-codex-responses",
           "high",
         );
-        const standardReturnResult = await runTurn(undefined, undefined);
-        const publicResult = await runTurn(undefined, "openai-responses");
+        const standardReturnResult = await runTurn(undefined);
 
-        expect(providerRequests).toHaveLength(4);
+        expect(providerRequests).toHaveLength(3);
         if (route === "native") {
           expect(
             providerRequests.map((request) => {
               return request.accountId;
             }),
           ).toEqual([
-            "exact-account-id",
             "exact-account-id",
             "exact-account-id",
             "exact-account-id",
@@ -544,8 +535,7 @@ describe("Pi API facade", () => {
           },
         });
         expect(providerRequests[2]?.body).not.toHaveProperty("service_tier");
-        expect(providerRequests[3]?.body).not.toHaveProperty("service_tier");
-        expect(publicResult.assistantMessage.content).toStrictEqual([
+        expect(standardReturnResult.assistantMessage.content).toStrictEqual([
           { type: "text", text: "Terra API-first answer" },
         ]);
         expect(

@@ -43,6 +43,14 @@ Color-theme presets in the App stylesheet share their anchor and companion color
 
 When `GradientColorThemes` is enabled on the document, each preset's HSL primary value supplies both its anchor color and the shared `--primary` token. Primary actions, including portaled dialog buttons, immediately use that fill and the preset's contrast-checked `--primary-foreground` in Light/Dark. Hover and pressed fills blend the anchor toward its companion using the existing filled-state alpha tokens. Disabled buttons retain the shared opacity treatment. Removing the document's color-theme attributes restores the shared Amber primary tokens.
 
+Auxiliary controls and previews revealed by hover or keyboard focus change
+opacity immediately. Do not add opacity transitions to message actions,
+sidebar controls, card overlays, or similar contextual affordances; temporary
+compositing layers can cause nearby content to flicker in Safari. Preserve
+their layout, focus visibility, touch behavior, and pointer-event rules. When
+other properties still animate, name those properties instead of using
+`transition-all`. This does not remove loading or popup lifecycle animations.
+
 ## Token and variant governance
 
 New tokens must represent a reusable semantic decision, have a documented consumer contract, and define their light and dark theme behavior in the canonical stylesheet. Shared tokens and variants belong to `@okouai/ui`; App-only tokens belong to the App token layer. A new alias for one component's hard-coded values is not a token contract.
@@ -424,6 +432,41 @@ alongside their existing `border-0`. That still paints, because Tailwind emits
 `border-width` before `border-top-width` inside the utilities layer; previously
 the legacy rule won only by sitting outside every layer. Tests continue to
 select both separators through `data-slot`.
+
+### The all-round hairline
+
+`okou-border` is the four-sided sibling of the rule above: one declaration,
+`border: 0.7px solid hsl(var(--gray-400))`, carried by settings cards,
+diagnostic panels, org-management tables, the queue drawer's plan cards, the
+instructions editor's bubble menu and a handful of pills and chips. Twenty-eight
+of its consumption sites now write `border border-surface-border`; the two that
+already spelled a bare `border` add only the colour.
+
+`--color-surface-border` is `hsl(var(--gray-400))`, the same runtime variable the
+retired rule read, so every Dark and gradient-palette override still applies
+without a per-theme branch. It is the registered name for this decision — the
+page-surface and badge tables above already point at it — which is why these
+consumers take it rather than the raw `border-gray-400` ramp stop the horizontal
+rules kept. `border-border` would be wrong here: `--border` is `--gray-300`, one
+stop lighter.
+
+The width joins the shared hairline exactly as `okou-btn-morandi` and
+`okou-border-t` did. Measured in Blink, `0.7px`, `0.5px` and `1px` all resolve to
+a used width of `1px` and paint 1, 2 and 3 device pixels at device scale factors
+1, 2 and 3 respectively — the same count for all three — so dropping the
+hard-coded `0.7px` is invisible there and layout is unchanged. WebKit may draw
+the true hairline on a high-density display, which is the product behaviour the
+shared token already describes.
+
+The selector itself stays for now. `buy-credits-section.tsx` reaches for it from
+a function that returns a class string rather than from a `className` attribute,
+so neither the legacy baseline nor `no-unknown-classes` counts it, and that one
+consumer is not mechanically drainable: the retired rule is unlayered, so its
+`border` shorthand outranks the sibling `hover:border-muted-foreground/30` on the
+same element and that hover colour never paints. Replacing only the legacy class
+activates it. Deciding between keeping a hover the tile has never had and
+deleting a utility the consumer spells is a visual decision, not an equivalence,
+and it is reviewed separately.
 
 ### Page layouts
 

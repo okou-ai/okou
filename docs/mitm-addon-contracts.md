@@ -69,6 +69,27 @@ record already embedded in a malformed line or serialize independently
 interleaved short-write sequences. The existing Runner uploader continues to
 skip malformed physical lines and upload independently parseable records.
 
+## Header-phase credential-resolution failures
+
+If credential resolution fails while preparing a request for authenticated
+streaming, the addon terminates that upload from `requestheaders()`. The pinned
+mitmproxy runtime closes an HTTP/1 connection or resets the affected HTTP/2
+stream before sending `100 Continue` or consuming the request body. It makes no
+upstream request and does not retry credential resolution for that flow.
+
+These uploads receive a transport termination instead of a JSON error after
+body completion. The existing firewall action, error classification, and proxy
+diagnostic remain available; the error hook records a connection failure with
+status `0` and releases terminal resources. The unsent local error response is
+discarded so it cannot appear as a captured response. Auth failures first
+resolved in the normal buffered request hook keep their structured responses.
+Successful authenticated streaming retains its bounded capture behavior.
+
+This changes only the addon lifecycle. Runner/API and network-log schemas stay
+unchanged, and old Runner instances keep their previous behavior until replaced.
+`test_mitmproxy_header_auth_failure_framing.py` covers incomplete Content-Length,
+chunked, and HTTP/2 uploads, including body data queued during the headers hook.
+
 ## Model-provider failure reporting shutdown
 
 Failure reports are best-effort diagnostics with four reporter-owned daemon

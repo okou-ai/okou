@@ -232,7 +232,9 @@ test("Completed Mermaid diagrams remain accessible and inspectable", async () =>
   }
   expect(screen.getAllByText("Diagram source")).toHaveLength(2);
   const sourceBlocks = Array.from(
-    document.querySelectorAll<HTMLElement>(".mermaid-diagram-source code"),
+    document.querySelectorAll<HTMLElement>(
+      '[data-slot="mermaid-diagram-source"] code',
+    ),
   );
   expect(sourceBlocks).toHaveLength(2);
   expect(

@@ -10,6 +10,7 @@ mod observations;
 mod passwords;
 mod pooling;
 mod proof;
+mod reading;
 mod sessions;
 mod telemetry;
 

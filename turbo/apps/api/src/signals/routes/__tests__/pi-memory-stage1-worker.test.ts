@@ -64,6 +64,18 @@ interface ProviderInvocation {
   readonly url: string;
 }
 
+interface ProviderUsage {
+  readonly input_tokens: number;
+  readonly output_tokens: number;
+  readonly cached_tokens: number;
+  readonly cache_write_tokens: number;
+}
+
+interface ProviderReply {
+  readonly text: string;
+  readonly usage?: ProviderUsage;
+}
+
 type SessionHistoryEncoding =
   | typeof SESSION_HISTORY_ENCODING_GZIP
   | typeof SESSION_HISTORY_ENCODING_IDENTITY
@@ -130,8 +142,14 @@ function failNextObjectRead(key: string): void {
 function responsesSse(
   text: string,
   sequence: number,
-  responseId = `resp_pi_memory_stage1_${sequence.toString()}`,
+  usage: ProviderUsage = {
+    input_tokens: 12,
+    output_tokens: 8,
+    cached_tokens: 2,
+    cache_write_tokens: 3,
+  },
 ): string {
+  const responseId = `resp_pi_memory_stage1_${sequence.toString()}`;
   const messageId = `msg_pi_memory_stage1_${sequence.toString()}`;
   return [
     {
@@ -188,13 +206,13 @@ function responsesSse(
           },
         ],
         usage: {
-          input_tokens: 12,
-          output_tokens: 8,
+          input_tokens: usage.input_tokens,
+          output_tokens: usage.output_tokens,
           input_tokens_details: {
-            cached_tokens: 2,
-            cache_write_tokens: 3,
+            cached_tokens: usage.cached_tokens,
+            cache_write_tokens: usage.cache_write_tokens,
           },
-          total_tokens: 20,
+          total_tokens: usage.input_tokens + usage.output_tokens,
         },
       },
     },
@@ -216,7 +234,10 @@ function defaultProviderOutput(): string {
 function installProvider(
   responder: (
     invocation: ProviderInvocation,
-  ) => Promise<string> | string = defaultProviderOutput,
+  ) =>
+    | Promise<string | ProviderReply>
+    | string
+    | ProviderReply = defaultProviderOutput,
 ) {
   let sequence = 0;
   const calls: ProviderInvocation[] = [];
@@ -231,10 +252,15 @@ function installProvider(
           request: (await request.json()) as unknown,
         };
         calls.push(invocation);
-        const text = await responder(invocation);
-        return new HttpResponse(responsesSse(text, invocation.sequence), {
-          headers: { "content-type": "text/event-stream" },
-        });
+        const reply = await responder(invocation);
+        const { text, usage } =
+          typeof reply === "string" ? { text: reply, usage: undefined } : reply;
+        return new HttpResponse(
+          responsesSse(text, invocation.sequence, usage),
+          {
+            headers: { "content-type": "text/event-stream" },
+          },
+        );
       },
     ),
   );
@@ -481,6 +507,20 @@ async function inspectUsage(storage: ReturnType<typeof createStorageFixture>) {
   return (await storage.action({ action: "inspect-usage" })).usage ?? [];
 }
 
+async function inspectUsageCategories(
+  storage: ReturnType<typeof createStorageFixture>,
+): Promise<string[]> {
+  const usage = await inspectUsage(storage);
+  for (const row of usage) {
+    expect(row).toMatchObject({ run_id: null, provider: "gpt-5.6-luna" });
+  }
+  return usage
+    .map((row) => {
+      return row.category;
+    })
+    .sort();
+}
+
 function stage1Headers(secret = CRON_SECRET) {
   return { authorization: `Bearer ${secret}` };
 }
@@ -504,7 +544,7 @@ beforeEach(async () => {
   mockEnv("CRON_SECRET", CRON_SECRET);
   context.sessionHistoryBlobs.clear();
   installS3Objects();
-  await seedBuiltInModelKey(context, "gpt-5.6-terra");
+  await seedBuiltInModelKey(context, "gpt-5.6-luna");
 });
 
 describe("Pi memory Stage 1 worker", () => {
@@ -583,7 +623,7 @@ describe("Pi memory Stage 1 worker", () => {
   });
 
   it("selects the OpenRouter region from each work owner's switch in one batch", async () => {
-    const selectedModel = "gpt-5.6-terra";
+    const selectedModel = "gpt-5.6-luna";
     await seedBuiltInModelCandidateKeys(context, selectedModel);
     const primary = await resolveBuiltInModelRouteFixture(
       context,
@@ -639,7 +679,7 @@ describe("Pi memory Stage 1 worker", () => {
       });
       expect(invocation?.url).toBe(`https://${host}/api/v1/responses`);
       expect(invocation?.request).toMatchObject({
-        model: "openai/gpt-5.6-terra",
+        model: "openai/gpt-5.6-luna",
       });
     }
   });
@@ -764,8 +804,8 @@ describe("Pi memory Stage 1 worker", () => {
       expect(serialized).not.toContain(INPUT_SECRET);
       expect(serialized).not.toContain(fixtures[0]?.pi_session_id);
       expect(invocation.request).toMatchObject({
-        model: "gpt-5.6-terra",
-        reasoning: { effort: "max" },
+        model: "gpt-5.6-luna",
+        reasoning: { effort: "low" },
         text: {
           format: {
             type: "json_schema",
@@ -790,17 +830,63 @@ describe("Pi memory Stage 1 worker", () => {
       expect.arrayContaining([
         expect.objectContaining({
           run_id: null,
-          provider: "gpt-5.6-terra",
+          provider: "gpt-5.6-luna",
           category: "tokens.input",
         }),
         expect.objectContaining({
           run_id: null,
-          provider: "gpt-5.6-terra",
+          provider: "gpt-5.6-luna",
           category: "tokens.output",
         }),
       ]),
     );
     await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+  });
+
+  it("bills the luna long-context tier from the 272,001 total-input boundary", async () => {
+    const below = createStorageFixture();
+    const atBoundary = createStorageFixture();
+    const belowId = randomUUID();
+    const atBoundaryId = randomUUID();
+    await below.seed({
+      piSessionId: belowId,
+      raw: settledHistory(belowId, "total input below the boundary"),
+    });
+    await atBoundary.seed({
+      piSessionId: atBoundaryId,
+      raw: settledHistory(atBoundaryId, "total input at the boundary"),
+    });
+    // Responses usage includes cache reads and cache creation in `input_tokens`;
+    // the adapter separates them and the usage service recombines the total.
+    installProvider(({ request }) => {
+      const boundary = JSON.stringify(request).includes("at the boundary");
+      return {
+        text: defaultProviderOutput(),
+        usage: {
+          input_tokens: boundary ? 272_001 : 272_000,
+          output_tokens: 8,
+          cached_tokens: 1,
+          cache_write_tokens: 1,
+        },
+      };
+    });
+
+    await expect(runScoped(below)).resolves.toMatchObject({ succeeded: 1 });
+    await expect(runScoped(atBoundary)).resolves.toMatchObject({
+      succeeded: 1,
+    });
+    await expect(inspectUsageCategories(below)).resolves.toStrictEqual([
+      "tokens.cache_creation",
+      "tokens.cache_read",
+      "tokens.input",
+      "tokens.output",
+    ]);
+    await expect(inspectUsageCategories(atBoundary)).resolves.toStrictEqual([
+      "tokens.cache_creation.long_context",
+      "tokens.cache_read.long_context",
+      "tokens.input.long_context",
+      "tokens.output.long_context",
+    ]);
   });
 
   it("isolates malformed and cyclic sources permanently before the provider", async () => {

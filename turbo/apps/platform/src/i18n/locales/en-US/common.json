@@ -2808,6 +2808,8 @@
       "removeWorkflow": "Remove workflow template {{title}}",
       "videoOptions": "Video options",
       "videoOptionsAudio": "Generate audio",
+      "videoOptionsAudioOff": "Audio off",
+      "videoOptionsAudioOn": "Audio on",
       "videoOptionsDuration": "Duration",
       "videoOptionsLabel": "Video options {{spec}}",
       "videoOptionsModel": "Model",

@@ -27,8 +27,13 @@ def read_runner_flush_request(
             description="runner flush request marker",
         ) as opened_file:
             marker_bytes = opened_file.read_bytes(MAX_RUNNER_FLUSH_REQUEST_BYTES)
+    except OSError:
+        return None
+
+    try:
         marker: object = json.loads(marker_bytes.decode("utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+    except ValueError:
+        # Includes invalid UTF-8/JSON and the decoder's integer conversion limit.
         return None
 
     if not isinstance(marker, dict):

@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.662.0](https://github.com/vm0-ai/vm0/compare/core-v8.661.1...core-v8.662.0) (2026-09-14)
+
+
+### Features
+
+* **pi-memory:** add the pimemory feature switch gating admission, workers and recall ([#33927](https://github.com/vm0-ai/vm0/issues/33927)) ([121fb21](https://github.com/vm0-ai/vm0/commit/121fb21295cc188a89cd0534b66c34f851a5b885))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.435.1
+
 ## [8.661.1](https://github.com/vm0-ai/vm0/compare/core-v8.661.0...core-v8.661.1) (2026-09-14)
 
 

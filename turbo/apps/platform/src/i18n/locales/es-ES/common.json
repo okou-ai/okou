@@ -2854,6 +2854,8 @@
       "removeWorkflow": "Eliminar la plantilla de flujo de trabajo {{title}}",
       "videoOptions": "Opciones de vídeo",
       "videoOptionsAudio": "Generar audio",
+      "videoOptionsAudioOff": "Audio desactivado",
+      "videoOptionsAudioOn": "Audio activado",
       "videoOptionsDuration": "Duración",
       "videoOptionsLabel": "Opciones de vídeo {{spec}}",
       "videoOptionsModel": "Modelo",

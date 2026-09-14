@@ -8,6 +8,7 @@ import { writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { getStripeClient } from "../external/stripe-client";
 import { stripePreviewMetadata } from "./stripe-preview-metadata.service";
+import { writeOrgMetadataWithDefaultPlanEntitlement } from "./org-plan-entitlements.service";
 import {
   impactStripeMetadata$,
   updateImpactCustomer,
@@ -70,17 +71,25 @@ export const getOrCreateStripeCustomer$ = command(
       const customer = await stripe.customers.create({ metadata });
       signal.throwIfAborted();
 
-      await tx
-        .insert(orgMetadataCanonicalWrites)
-        .values({
-          orgId: args.orgId,
-          stripeCustomerId: customer.id,
-          credits: 0,
-        })
-        .onConflictDoUpdate({
-          target: orgMetadataCanonicalWrites.orgId,
-          set: { stripeCustomerId: customer.id, updatedAt: nowDate() },
-        });
+      await writeOrgMetadataWithDefaultPlanEntitlement(
+        tx,
+        args.orgId,
+        async (writeTx) => {
+          return await writeTx
+            .insert(orgMetadataCanonicalWrites)
+            .values({
+              orgId: args.orgId,
+              stripeCustomerId: customer.id,
+              credits: 0,
+            })
+            .onConflictDoUpdate({
+              target: orgMetadataCanonicalWrites.orgId,
+              set: { stripeCustomerId: customer.id, updatedAt: nowDate() },
+            })
+            .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
+        },
+      );
+
       signal.throwIfAborted();
 
       return customer.id;

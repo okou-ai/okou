@@ -62,7 +62,7 @@ socket but cannot guarantee the remote process stopped.
 ## Managed sessions within one Run
 
 #33464 adds `ssh.session.start/list/read/status/write/signal/close` as opaque
-version-1 RPC methods. Each request is still short and owns its guest stream
+version-1 RPC methods. Each request is bounded and owns its guest stream
 only until its response. Each active session exclusively owns a verified,
 authenticated SSH transport, which may be reused after an earlier channel ended.
 
@@ -85,13 +85,38 @@ socket work retains its original session permit until actual cleanup. These host
 resources never own guest I/O or a guest park reservation. Run end invalidates
 all IDs; a later Run cannot reattach to an earlier session.
 
-`read` takes `sessionId` and a nonnegative byte `cursor`. It immediately returns
-tagged standard-base64 chunks, a `next_cursor`, and session status including
+`read` requires `sessionId`, a nonnegative byte `cursor`, `waitMs` (0–30000),
+`maxBytes` (1–8192), and `maxChunks` (1–32). It returns tagged standard-base64
+chunks, `wait_expired`, a `next_cursor`, and session status including
 `oldest_cursor` and `end_cursor`. Reads do not consume data. Output retention is
 bounded by 1 MiB and 256 chunks of at most 4 KiB per session. Old chunks are
 discarded; reading behind the retained prefix returns `lost: {from, to}`. A read
-returns at most 8 KiB and 32 chunks, fitting one existing 24 KiB RPC frame.
+returns up to the requested byte/chunk bounds, fitting one existing 24 KiB RPC frame.
 Stdout and stderr share one cursor; their observed interleaving is preserved.
+
+Ready output, a lost prefix, or a terminal state returns immediately. Otherwise
+the request waits for output/terminal notification until its wait deadline.
+`wait_expired` is true only for a positive wait expiring without such progress;
+it is not a remote failure. A notification future is registered before reading
+the locked snapshot and publishers wake all readers after updating it. No data
+lock survives an await. Retained terminal output is not subjected to the expired
+process deadline again. Run cancellation, entry retirement and access
+invalidation interrupt waiting under the existing RPC scope.
+
+Two nonblocking per-Run permits bound quiet waiting readers, leaving other short
+operation slots available for status, input, signals and close. Extra waiters
+fail with `resource_exhausted`. These waits retain their guest stream and park
+reservation only for the bounded request, never for the SSH session lifetime.
+Generic guest half-close is not a cancellation protocol: an abandoned quiet
+reader can retain these resources until its wait expires (at most 30 seconds
+plus bounded terminal reserve). It does not stop the remote process.
+
+The CLI aggregates verified pages within its own byte/chunk/request/time budgets;
+only the first page may wait. Its `lost` array, `stop_reason`, continuation and
+nullable last observation are CLI-owned, not generic RPC framing. See
+[session reading](ssh-access.md#long-commands-and-persistent-shells).
+The staff-gated read contract replaces the old parameter defaults and payload;
+there is no old-reader fallback or mixed-version reader rollout for this change.
 
 `write` accepts `sessionId`, canonical `dataBase64` (at most 16 KiB decoded) and
 optional `eof`. Empty input requires EOF. One bounded eight-item queue serializes

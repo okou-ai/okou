@@ -696,7 +696,7 @@ describe("Pi memory Phase 2 consolidation engine", () => {
     expect(sessions).toStrictEqual([
       {
         toolNames: PI_MEMORY_PHASE2_TOOL_NAMES,
-        thinkingLevel: "max",
+        thinkingLevel: "medium",
         sessionFile: undefined,
         extensions: 0,
         skills: 0,
@@ -716,7 +716,7 @@ describe("Pi memory Phase 2 consolidation engine", () => {
       expect(request.url).toBe("/v1/responses");
       expect(request.body).toMatchObject({
         model: "MODEL_ALIAS_SECRET_31243",
-        reasoning: { effort: "max" },
+        reasoning: { effort: "medium" },
       });
       expect(
         (request.body.tools as Array<{ readonly name: string }>).map((tool) => {
@@ -1298,7 +1298,7 @@ describe("Pi memory Phase 2 consolidation engine", () => {
     if (!next) {
       throw new Error("Missing the Phase 2 request after the reported context");
     }
-    expect(next.body).toMatchObject({ reasoning: { effort: "max" } });
+    expect(next.body).toMatchObject({ reasoning: { effort: "medium" } });
     const budget = next.body.max_output_tokens;
     if (typeof budget !== "number") {
       throw new Error("Phase 2 request did not serialize an output ceiling");

@@ -84,8 +84,8 @@ type RunContextAxiomFirewall =
   | RunContextBuiltinFirewall
   | RunContextAxiomInlineFirewall;
 
-// Pi observations are creation-time only: missing historical fields mean
-// unobserved, not absent legacy api. They never enter RunContextResponse.
+// Pi generation observations are creation-time only. Historical snapshots may
+// also carry retired field classifications; neither enters RunContextResponse.
 export type RunContextAxiomSnapshot = Omit<
   RunContextResponse,
   "vars" | "environment" | "firewalls" | "networkPolicies" | "featureFlags"

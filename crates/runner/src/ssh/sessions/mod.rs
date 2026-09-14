@@ -3,6 +3,7 @@
 mod buffer;
 mod process;
 mod protocol;
+mod read;
 
 use std::{
     collections::HashMap,
@@ -14,7 +15,7 @@ use base64::Engine;
 use runner_rpc_proto::{ErrorCode, ResponseWriter};
 use serde::{Deserialize, de::DeserializeOwned};
 use tokio::{
-    sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot},
+    sync::{Notify, OwnedSemaphorePermit, Semaphore, mpsc, oneshot},
     time::Instant,
 };
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
@@ -41,6 +42,7 @@ pub(super) struct Manager {
     pub(super) pool: Arc<super::pool::Pool>,
     cancel: CancellationToken,
     capacity: Arc<Semaphore>,
+    waiting_readers: Semaphore,
     entries: Mutex<HashMap<Uuid, Arc<Entry>>>,
     tasks: TaskTracker,
 }
@@ -53,6 +55,7 @@ struct Entry {
     lease: Arc<OwnedSemaphorePermit>,
     commands: mpsc::Sender<Command>,
     data: Mutex<Data>,
+    changed: Notify,
 }
 
 struct Data {
@@ -118,6 +121,7 @@ impl Manager {
             pool: super::pool::Pool::new(run, cancel.clone()),
             cancel,
             capacity: Arc::new(Semaphore::new(CAPACITY)),
+            waiting_readers: Semaphore::new(2),
             entries: Mutex::new(HashMap::new()),
             tasks: TaskTracker::new(),
         })
@@ -183,6 +187,7 @@ impl Manager {
                 access,
                 lease: Arc::new(permit),
                 commands,
+                changed: Notify::new(),
                 data: Mutex::new(Data {
                     state: State::Starting,
                     effects: Effects::NotStarted,
@@ -270,23 +275,7 @@ impl Manager {
             }
             "ssh.session.read" => {
                 let params: protocol::Read = parse(raw)?;
-                let Some(entry) = self.get(params.session_id) else {
-                    return Ok(Response::failed(
-                        FailureReason::Unavailable,
-                        Effects::NotStarted,
-                    ));
-                };
-                let data = entry.data.lock().unwrap_or_else(|p| p.into_inner());
-                if params.cursor > data.output.end {
-                    return Err(ErrorCode::InvalidRequest);
-                }
-                Ok(Response::Read {
-                    session: entry.info(&data),
-                    output: data
-                        .output
-                        .read(params.cursor)
-                        .map_err(|_| ErrorCode::Protocol)?,
-                })
+                self.read(params).await
             }
             "ssh.session.status" => {
                 let params: protocol::Id = parse(raw)?;
