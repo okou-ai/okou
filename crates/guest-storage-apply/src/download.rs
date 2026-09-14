@@ -24,9 +24,20 @@ pub(crate) struct DownloadTask {
     mount_path: String,
     normalized_mount_path: PathBuf,
     telemetry: DownloadTaskTelemetry,
+    files: Option<Vec<guest_contracts::storage_files::StorageFile>>,
 }
 
 impl DownloadTask {
+    pub(crate) fn mount_path(&self) -> &str {
+        &self.mount_path
+    }
+
+    pub(crate) fn set_files(&mut self, files: Vec<guest_contracts::storage_files::StorageFile>) {
+        self.files = Some(files);
+        self.telemetry.decoded();
+        self.label.push_str(" delivery=decoded_files");
+    }
+
     pub(crate) fn storage(
         label: String,
         url: String,
@@ -42,6 +53,7 @@ impl DownloadTask {
             mount_path,
             normalized_mount_path,
             telemetry,
+            files: None,
         }
     }
 
@@ -54,6 +66,7 @@ impl DownloadTask {
             mount_path,
             normalized_mount_path,
             telemetry,
+            files: None,
         }
     }
 
@@ -444,6 +457,11 @@ fn panic_message(payload: &(dyn Any + Send)) -> String {
 
 /// Download and extract one archive. Files written before an error remain in place.
 fn run_download_attempt(download: &mut StartedDownload) -> Result<(), DownloadError> {
+    if let Some(files) = &download.task.task.files {
+        return crate::files::materialize(files, download.task.effective_mount_path()).map_err(
+            |error| DownloadError::new(format!("Decoded storage write failed: {error}")),
+        );
+    }
     download_and_extract(
         &download.task.task.url,
         download.task.effective_mount_path(),

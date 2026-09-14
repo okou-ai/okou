@@ -57,6 +57,8 @@
 //! - `outcome` identifies the URL kind and compressed-size classification,
 //!   independently of task success or failure. A remote task uses `remote_*`,
 //!   a local `file://` task uses `file_*`, and any other URL uses `other_unknown`.
+//!   Direct decoded materialization uses `decoded_files` and emits no remote
+//!   attribution rows, regardless of the original archive URL in its manifest.
 //!   The size suffixes are `zero`,
 //!   `lt_64_kib`, `64_kib_to_256_kib`, `256_kib_to_1_mib`, `1_mib_to_4_mib`,
 //!   `4_mib_to_16_mib`, `16_mib_to_64_mib`, and `64_mib_plus`; an unavailable
@@ -124,6 +126,9 @@ pub(crate) struct DownloadTaskTelemetry {
 }
 
 impl DownloadTaskTelemetry {
+    pub(crate) fn decoded(&mut self) {
+        self.url_kind = DownloadUrlKind::Decoded;
+    }
     pub(crate) fn storage(url: &str, mount_path: &Path, has_instructions_target: bool) -> Self {
         Self {
             archive_kind: ArchiveKind::Storage,
@@ -193,7 +198,7 @@ impl DownloadRunTelemetry {
             match task.url_kind {
                 DownloadUrlKind::Remote => remote_url_count += 1,
                 DownloadUrlKind::File => file_url_count += 1,
-                DownloadUrlKind::Other => {}
+                DownloadUrlKind::Other | DownloadUrlKind::Decoded => {}
             }
             match task.task_kind {
                 DownloadTaskKind::FrameworkHomeInstructions => {
@@ -413,6 +418,7 @@ impl DownloadTaskKind {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DownloadUrlKind {
+    Decoded,
     Remote,
     File,
     Other,
@@ -444,6 +450,7 @@ impl DownloadUrlKind {
                 .map(CompressedBytesBucket::remote_outcome)
                 .unwrap_or("remote_unknown"),
             Self::Other => "other_unknown",
+            Self::Decoded => "decoded_files",
         }
     }
 }

@@ -289,7 +289,7 @@ async fn fresh_archive_download_overlaps_blocked_sandbox_create() {
     let config = test_executor_config(dir.path()).await;
     let factory = Arc::new(CreateGateFactory::new());
     let server = httpmock::MockServer::start_async().await;
-    let body = b"fresh archive".to_vec();
+    let body = storage_archive(b"fresh archive");
     let full_get = server
         .mock_async(|when, then| {
             when.method(httpmock::Method::GET)
@@ -357,12 +357,7 @@ async fn fresh_archive_download_overlaps_blocked_sandbox_create() {
         .expect("run task should not panic");
     assert_eq!(outcome.unwrap().exit_code(), 0);
     full_get.assert_calls_async(1).await;
-    assert_telemetry_action(
-        &telemetry,
-        "storage_cache_fresh_delivery_staged",
-        true,
-        None,
-    );
+    assert_telemetry_action(&telemetry, "storage_cache_decoded", true, None);
 }
 
 #[tokio::test]
@@ -900,7 +895,7 @@ async fn dns_readiness_retry_keeps_one_fresh_archive_owner() {
     )));
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let server = httpmock::MockServer::start_async().await;
-    let body = b"fresh archive across DNS retry".to_vec();
+    let body = storage_archive(b"fresh archive across DNS retry");
     let full_get = server
         .mock_async(|when, then| {
             when.method(httpmock::Method::GET)

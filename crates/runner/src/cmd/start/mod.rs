@@ -971,6 +971,7 @@ async fn run_start_with_home(
         session_history_cpu: SessionHistoryCpuPool::for_host_cpus(host_cpus),
         session_history_probe: SessionHistoryProbe::default(),
         fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission::new(),
+        decoded_cache: crate::storage_cache::decoded::DecodedCache::new(),
         background_fill,
         pre_spawn_admission,
         storage_baseline_observer: Default::default(),
@@ -2791,6 +2792,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     teardown.phase_complete("destroy_tasks_drain", phase);
     let phase = teardown.phase_start("background_fill_shutdown");
     exec_config.background_fill.shutdown().await;
+    exec_config.decoded_cache.shutdown().await;
     teardown.phase_complete("background_fill_shutdown", phase);
     let phase = teardown.phase_start("finish_mitm_restart");
     if let Err(error) = finish_mitm_restart_before_shutdown(&mut mitm, &mut mitm_retry).await {

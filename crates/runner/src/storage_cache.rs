@@ -60,6 +60,8 @@ use crate::paths::{HomePaths, short_digest, touch_mtime};
 use crate::storage_plan::{ArchiveHandle, StoragePlan};
 use crate::telemetry::{JobTelemetry, SandboxOpRecord, SandboxOpReporter};
 
+pub(crate) mod decoded;
+
 /// Archive sizes strictly larger than this are passthrough.
 const CACHE_MAX_SIZE: u64 = 8 * 1024 * 1024;
 const BODY_BUFFER_FALLBACK_CAPACITY: usize = 64 * 1024;
@@ -1136,6 +1138,8 @@ struct GuestStageRecorder<'a> {
     guest_writes: &'a GuestWriteLocks,
     telemetry: &'a mut JobTelemetry,
     metrics: &'a mut StorageCacheStageMetrics,
+    decoded: Option<&'a decoded::DecodedCache>,
+    plan: &'a mut StoragePlan,
 }
 
 struct ProcessedGroupTask {
@@ -1144,10 +1148,98 @@ struct ProcessedGroupTask {
     processed: RunnerResult<ProcessedGroup>,
 }
 
+impl GuestStageRecorder<'_> {
+    async fn try_reuse_decoded(&mut self, group: &CacheTargetGroup) -> RunnerResult<bool> {
+        let Some(cache) = self.decoded else {
+            return Ok(false);
+        };
+        let Some(target) = group.targets.first() else {
+            return Ok(false);
+        };
+        let started = Instant::now();
+        let result = cache.get_ready(&target.name, &target.version).await;
+        self.telemetry.record(
+            "storage_cache_decode_lookup",
+            started.elapsed(),
+            result.is_ok(),
+            None,
+        );
+        let Some(files) = result.map_err(|error| {
+            RunnerError::Internal(format!("lookup decoded storage cache: {error}"))
+        })?
+        else {
+            return Ok(false);
+        };
+        // Check mounts only on a ready hit. Misses retain their existing decode
+        // admission check after reading the archive, without doing it twice.
+        let Some(mounts) = self.decoded_mounts(group) else {
+            return Ok(false);
+        };
+        Ok(self.add_decoded(mounts, files))
+    }
+
+    fn decoded_mounts(&self, group: &CacheTargetGroup) -> Option<Vec<String>> {
+        group
+            .targets
+            .iter()
+            .map(|target| self.plan.decoded_mount(target.handle).map(str::to_owned))
+            .collect()
+    }
+
+    async fn try_decode(&mut self, group: &CacheTargetGroup, bytes: Bytes) -> RunnerResult<bool> {
+        let Some(cache) = self.decoded else {
+            return Ok(false);
+        };
+        let Some(mounts) = self.decoded_mounts(group) else {
+            return Ok(false);
+        };
+        let Some(target) = group.targets.first() else {
+            return Ok(false);
+        };
+        let started = Instant::now();
+        let result = cache.resolve(&target.name, &target.version, bytes).await;
+        self.telemetry.record(
+            "storage_cache_decode_resolve",
+            started.elapsed(),
+            result.is_ok(),
+            None,
+        );
+        let Some(files) = result
+            .map_err(|error| RunnerError::Internal(format!("decode storage cache: {error}")))?
+        else {
+            return Ok(false);
+        };
+        Ok(self.add_decoded(mounts, files))
+    }
+
+    fn add_decoded(&mut self, mounts: Vec<String>, files: Arc<decoded::CachedFiles>) -> bool {
+        let added = mounts
+            .iter()
+            .map(|mount| {
+                8 + mount.len()
+                    + files
+                        .files
+                        .iter()
+                        .map(|file| 20 + file.path.len() + file.content.len())
+                        .sum::<usize>()
+            })
+            .sum::<usize>();
+        if self.plan.decoded_bytes() + added + 4 > guest_contracts::storage_files::MAX_PAYLOAD_BYTES
+        {
+            return false;
+        }
+        for mount in mounts {
+            self.plan.add_decoded(mount, Arc::clone(&files));
+        }
+        true
+    }
+}
+
 type ProcessedGroupTaskResult = ProcessedGroupTask;
 
 enum TargetOutcome {
     Hit,
+    Decoded,
     MissPassthrough { reason: &'static str },
     LockBusyPassthrough,
 }
@@ -1461,6 +1553,8 @@ async fn stage_fresh_archives(
     telemetry: &mut JobTelemetry,
     guest_writes: &GuestWriteLocks,
     stage_metrics: &mut StorageCacheStageMetrics,
+    plan: &mut StoragePlan,
+    decoded: Option<&decoded::DecodedCache>,
 ) -> RunnerResult<Vec<(CacheTargetGroup, TargetOutcome)>> {
     let mut outcomes = Vec::with_capacity(resolved.len());
     let mut batch = FreshGuestStageBatch::default();
@@ -1469,9 +1563,15 @@ async fn stage_fresh_archives(
         guest_writes,
         telemetry,
         metrics: stage_metrics,
+        plan,
+        decoded,
     };
     for FreshArchiveResolved { group, archive } in resolved {
         let FreshArchivePublished { bytes, permit } = archive;
+        if stage.try_decode(&group, bytes.clone()).await? {
+            outcomes.push((group, TargetOutcome::Decoded));
+            continue;
+        }
         let target = group.targets.first().ok_or_else(|| {
             RunnerError::Internal("empty runner-owned archive target group".to_string())
         })?;
@@ -1523,6 +1623,10 @@ async fn stage_processed_group(
         stage_write,
     } = processed;
     if let Some(stage_write) = stage_write {
+        if stage.try_decode(&group, stage_write.bytes.clone()).await? {
+            outcomes.push((group, TargetOutcome::Decoded));
+            return Ok(());
+        }
         push_guest_stage_write(stage_batch, stage_write, stage).await?;
     }
     outcomes.push((group, outcome));
@@ -1583,7 +1687,7 @@ pub async fn populate_cache(
     home: &HomePaths,
     telemetry: &mut JobTelemetry,
 ) -> RunnerResult<Option<DeferredBackgroundFill>> {
-    populate_cache_with_fresh_delivery(plan, sandbox, home, telemetry, None).await
+    populate_cache_with_fresh_delivery(plan, sandbox, home, telemetry, None, None).await
 }
 
 pub(crate) async fn populate_cache_with_fresh_delivery(
@@ -1592,8 +1696,23 @@ pub(crate) async fn populate_cache_with_fresh_delivery(
     home: &HomePaths,
     telemetry: &mut JobTelemetry,
     fresh_delivery: Option<&mut FreshArchiveDelivery>,
+    decoded: Option<&decoded::DecodedCache>,
 ) -> RunnerResult<Option<DeferredBackgroundFill>> {
     let targets = collect_targets(plan);
+    // Large manifests retain their existing file transport. Decide before any
+    // archive staging is omitted, so binary encoding cannot strand a mount.
+    let decoded = if decoded.is_some()
+        && serde_json::to_vec(&plan.clone().into_guest_manifest())
+            .map_err(|error| RunnerError::Internal(format!("manifest JSON: {error}")))?
+            .len()
+            // Reserve for every remaining URL becoming a bounded staged URL.
+            .saturating_add(plan.entry_count().saturating_mul(192))
+            <= guest_contracts::storage_files::MAX_MANIFEST_BYTES
+    {
+        decoded
+    } else {
+        None
+    };
     if targets.is_empty() && fresh_delivery.is_none() {
         return Ok(None);
     }
@@ -1608,6 +1727,8 @@ pub(crate) async fn populate_cache_with_fresh_delivery(
             telemetry,
             &guest_writes,
             &mut stage_metrics,
+            plan,
+            decoded,
         )
         .await?
     } else {
@@ -1634,9 +1755,22 @@ pub(crate) async fn populate_cache_with_fresh_delivery(
             guest_writes: &guest_writes,
             telemetry,
             metrics: &mut stage_metrics,
+            plan,
+            decoded,
         };
 
         for group in target_groups {
+            match stage.try_reuse_decoded(&group).await {
+                Ok(true) => {
+                    outcomes.push((group, TargetOutcome::Decoded));
+                    continue;
+                }
+                Ok(false) => {}
+                Err(error) => {
+                    abort_pending_processed_groups(&mut groups).await;
+                    return Err(error);
+                }
+            }
             while groups.len() >= CONCURRENCY {
                 let Some(task) = join_next_processed_group(&mut groups).await? else {
                     break;
@@ -3020,6 +3154,9 @@ fn apply_outcome(
     telemetry: &mut JobTelemetry,
 ) {
     match outcome {
+        TargetOutcome::Decoded => {
+            telemetry.record("storage_cache_decoded", Duration::ZERO, true, None)
+        }
         TargetOutcome::Hit => {
             rewrite_url(plan, target);
             telemetry.record("storage_cache_hit", Duration::ZERO, true, None);
@@ -3085,7 +3222,7 @@ fn add_passthrough_summary(
     target_count: usize,
 ) {
     match outcome {
-        TargetOutcome::Hit => summary.hit_targets += target_count,
+        TargetOutcome::Hit | TargetOutcome::Decoded => summary.hit_targets += target_count,
         TargetOutcome::MissPassthrough { .. } => summary.miss_targets += target_count,
         TargetOutcome::LockBusyPassthrough => summary.lock_busy_targets += target_count,
     }
@@ -3416,8 +3553,15 @@ mod tests {
         let cancel = CancellationToken::new();
         let mut delivery =
             prepare_fresh_archive_delivery(plan, home, &admission, &cancel, telemetry).await?;
-        populate_cache_with_fresh_delivery(plan, sandbox, home, telemetry, Some(&mut delivery))
-            .await
+        populate_cache_with_fresh_delivery(
+            plan,
+            sandbox,
+            home,
+            telemetry,
+            Some(&mut delivery),
+            None,
+        )
+        .await
     }
 
     fn assert_background_op(records: &[SandboxOpRecord], action_type: &str, success: bool) {
@@ -3589,6 +3733,186 @@ mod tests {
 
     fn write_storage_lock(home: &HomePaths, name: &str, version: &str) {
         drop(lock::open_lock_file(&home.storage_lock(name, version)).unwrap());
+    }
+
+    #[tokio::test]
+    async fn decoded_hit_materializes_after_disk_eviction_while_archive_lock_is_busy() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let sandbox = MockSandbox::new("decoded-hit");
+        let cache = decoded::DecodedCache::new();
+        let mount = temp.path().join("guest-mount");
+        let entry = storage_entry(
+            mount.to_str().unwrap().into(),
+            "https://storage.example/immutable.tar.gz".into(),
+            "name",
+            "v1",
+        );
+        write_cached_archive(&home, "name", "v1", &tarball_bytes());
+        let mut fill = plan_from_entries(vec![entry.clone()], Vec::new(), None);
+        assert!(
+            populate_cache_with_fresh_delivery(
+                &mut fill,
+                &sandbox,
+                &home,
+                &mut new_telemetry(),
+                None,
+                Some(&cache),
+            )
+            .await
+            .unwrap()
+            .is_none()
+        );
+        assert_eq!(fill.take_decoded().len(), 1);
+
+        // A process-owned decoded entry survives compressed-cache GC. Holding
+        // the real archive lock proves the hit does not depend on disk access.
+        std::fs::remove_file(home.storage_cache_dir("name", "v1").join("archive.tar.gz")).unwrap();
+        let writer = lock::acquire(home.storage_lock("name", "v1"))
+            .await
+            .unwrap();
+        let mut hit = plan_from_entries(vec![entry.clone()], Vec::new(), None);
+        assert!(
+            populate_cache_with_fresh_delivery(
+                &mut hit,
+                &sandbox,
+                &home,
+                &mut new_telemetry(),
+                None,
+                Some(&cache),
+            )
+            .await
+            .unwrap()
+            .is_none()
+        );
+        let files = hit.take_decoded();
+        assert_eq!(files.len(), 1);
+        cache.shutdown().await;
+        let manifest = serde_json::to_vec(&hit.into_guest_manifest()).unwrap();
+        let input = guest_contracts::storage_files::encode_input(
+            &manifest,
+            &[(files[0].0.as_str(), &files[0].1.files)],
+        )
+        .unwrap();
+        assert!(guest_storage_apply::run_storage_files_bytes(&input));
+        assert_eq!(
+            std::fs::read(mount.join("file.txt")).unwrap(),
+            b"storage cache test file\n"
+        );
+        assert_eq!(
+            std::fs::metadata(mount.join("file.txt"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o644
+        );
+        drop(writer);
+    }
+
+    #[tokio::test]
+    async fn decoded_lookup_misses_do_not_alias_names_or_versions() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let sandbox = MockSandbox::new("decoded-identity");
+        let cache = decoded::DecodedCache::new();
+        write_cached_archive(&home, "name", "v1", &tarball_bytes());
+        let mut fill = fresh_storage_plan("https://storage.example/a".into(), "name", "v1");
+        populate_cache_with_fresh_delivery(
+            &mut fill,
+            &sandbox,
+            &home,
+            &mut new_telemetry(),
+            None,
+            Some(&cache),
+        )
+        .await
+        .unwrap();
+        for (name, version) in [("name", "v2"), ("other", "v1")] {
+            let url = "https://storage.example/selected";
+            let mut plan = fresh_storage_plan(url.into(), name, version);
+            let deferred = populate_cache_with_fresh_delivery(
+                &mut plan,
+                &sandbox,
+                &home,
+                &mut new_telemetry(),
+                None,
+                Some(&cache),
+            )
+            .await
+            .unwrap();
+            assert!(deferred.is_some());
+            assert!(plan.take_decoded().is_empty());
+            assert_eq!(storage_archive_url(&plan, 0), Some(url));
+        }
+        cache.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn ready_decoded_files_preserve_mount_and_manifest_admission() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let sandbox = MockSandbox::new("decoded-admission");
+        let cache = decoded::DecodedCache::new();
+        write_cached_archive(&home, "name", "v1", &tarball_bytes());
+        let url = "https://storage.example/a";
+        let mut fill = fresh_storage_plan(url.into(), "name", "v1");
+        populate_cache_with_fresh_delivery(
+            &mut fill,
+            &sandbox,
+            &home,
+            &mut new_telemetry(),
+            None,
+            Some(&cache),
+        )
+        .await
+        .unwrap();
+        let long_url = format!(
+            "{url}?{}",
+            "a".repeat(guest_contracts::storage_files::MAX_MANIFEST_BYTES)
+        );
+        let mut instruction = storage_entry("/mnt/instructions".into(), url.into(), "name", "v1");
+        instruction.instructions_target_filename = Some("AGENTS.md".into());
+        let plans = [
+            plan_from_entries(
+                vec![storage_entry(
+                    "/mnt/parent".into(),
+                    url.into(),
+                    "name",
+                    "v1",
+                )],
+                vec![artifact_entry(
+                    "/mnt/parent/child".into(),
+                    url.into(),
+                    "name",
+                    "v1",
+                )],
+                None,
+            ),
+            plan_from_entries(vec![instruction], Vec::new(), None),
+            fresh_storage_plan(long_url, "name", "v1"),
+        ];
+        for mut plan in plans {
+            populate_cache_with_fresh_delivery(
+                &mut plan,
+                &sandbox,
+                &home,
+                &mut new_telemetry(),
+                None,
+                Some(&cache),
+            )
+            .await
+            .unwrap();
+            assert!(plan.take_decoded().is_empty());
+            assert!(
+                storage_archive_url(&plan, 0)
+                    .unwrap()
+                    .starts_with("file://")
+            );
+        }
+        cache.shutdown().await;
     }
 
     struct SamePathConcurrentWriteDetectingSandbox {
@@ -4215,6 +4539,7 @@ mod tests {
                     &home,
                     &mut telemetry,
                     Some(&mut delivery),
+                    None,
                 )
                 .await
             }
@@ -4788,6 +5113,7 @@ mod tests {
             &home,
             &mut telemetry,
             Some(&mut delivery),
+            None,
         )
         .await
         .unwrap();

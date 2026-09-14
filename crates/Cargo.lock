@@ -1823,6 +1823,7 @@ dependencies = [
 name = "guest-control-proto"
 version = "0.21.2"
 dependencies = [
+ "guest-contracts",
  "proptest",
 ]
 
@@ -1846,6 +1847,7 @@ dependencies = [
 name = "guest-control-tests"
 version = "0.11.11"
 dependencies = [
+ "guest-contracts",
  "guest-control-client",
  "guest-control-proto",
  "guest-control-server",
