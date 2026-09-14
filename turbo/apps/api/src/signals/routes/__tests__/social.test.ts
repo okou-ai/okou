@@ -21,6 +21,7 @@ import {
   type SocialKitRequest,
 } from "@okouai/api-contracts/contracts/social";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
@@ -51,6 +52,7 @@ import {
 } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { reconcileSocialKitDownloadsForTest } from "./helpers/runtime-state";
 
 const context = testContext();
@@ -187,6 +189,19 @@ async function setActorCredits(
 async function fundActor(actor: ApiTestUser): Promise<void> {
   await bootstrapOnboarding(actor);
   await setActorCredits(actor, 10_000);
+}
+
+async function enableDownloadDiscovery(actor: ApiTestUser): Promise<void> {
+  if (!actor.orgId) {
+    throw new Error("Download discovery requires an organization");
+  }
+  await updateFeatureSwitchesForUser(
+    context,
+    { ...actor, orgId: actor.orgId },
+    {
+      [FeatureSwitchKey.SocialDownloadDiscovery]: true,
+    },
+  );
 }
 
 async function credits(actor: ApiTestUser): Promise<number> {
@@ -2073,6 +2088,7 @@ describe("managed SocialKit route", () => {
     configureProvider();
     const pricing = await setupConfiguredPricing();
     await fundActor(actor);
+    await enableDownloadDiscovery(actor);
     const beforeCredits = await credits(actor);
     mockNow(Date.UTC(2000, 0, 1));
     const payload = new TextEncoder().encode("downloaded social video");
@@ -2210,6 +2226,20 @@ describe("managed SocialKit route", () => {
       },
     });
     expect(beforeCredits - creditsAfterCompletion).toBe(6);
+    const discovered = await accept(
+      socialClient.listDownloads({
+        headers: authenticate(actor),
+        query: { status: "completed" },
+      }),
+      [200],
+    );
+    expect(discovered.body.downloads).toMatchObject([
+      {
+        ...completed.body,
+        request: { url: "https://youtu.be/public-video" },
+        resumeCommand: `okou social download --resume ${created.body.downloadId}`,
+      },
+    ]);
     await expect(credits(actor)).resolves.toBe(creditsAfterCompletion);
     expect(
       context.mocks.s3.send.mock.calls.filter(([command]) => {
@@ -3087,6 +3117,7 @@ describe("managed SocialKit route", () => {
     configureProvider();
     const pricing = await setupConfiguredPricing();
     await fundActor(actor);
+    await enableDownloadDiscovery(actor);
     const beforeCredits = await credits(actor);
     const payload = new TextEncoder().encode("retryable social video");
     const providerJobId = `provider-retry-${randomUUID()}`;
@@ -3196,6 +3227,23 @@ describe("managed SocialKit route", () => {
     );
     const creditsAfterFailure = await credits(actor);
 
+    const discovered = await accept(
+      socialClient.listDownloads({
+        headers: authenticate(actor),
+        query: { status: "artifact_failed" },
+      }),
+      [200],
+    );
+    expect(discovered.body.downloads).toMatchObject([
+      {
+        downloadId: created.body.downloadId,
+        status: "artifact_failed",
+        request: { url: "https://youtu.be/public-video" },
+        resumeCommand: `okou social download --resume ${created.body.downloadId}`,
+        billing: { quantity: 2, creditsCharged: 6 },
+      },
+    ]);
+
     expect(failed.body).toMatchObject({
       status: "artifact_failed",
       billing: { quantity: 2, creditsCharged: 6 },
@@ -3225,6 +3273,9 @@ describe("managed SocialKit route", () => {
 
     expectApiError(blocked.body);
     expect(blocked.body.error.code).toBe("DOWNLOAD_IN_PROGRESS");
+    expect(blocked.body.error.recovery?.downloadId).toBe(
+      created.body.downloadId,
+    );
     expect(providerStarts).toBe(1);
 
     mockNow(now() + 61_000);

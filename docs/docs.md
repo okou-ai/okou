@@ -30,6 +30,9 @@ surface; the index does not replace their detailed rules.
 
 ## Specialized Guidance
 
+- [Social download discovery](./social-download-discovery.md): bounded task
+  listing, scoped recovery hints, pagination, and CLI/API compatibility.
+
 - [Billing attribution foundation](./database/billing-attribution.md): immutable
   billing identity, writer inventory, bounded backfill and activation boundaries.
 - [Database trigger retirement](./database-trigger-retirement.md): explicit API

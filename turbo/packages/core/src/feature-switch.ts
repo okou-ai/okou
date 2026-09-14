@@ -363,6 +363,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Translate selected assistant text into a remembered target language.",
     enabled: false,
   },
+  [FeatureSwitchKey.SocialDownloadDiscovery]: {
+    maintainer: "liangyou@okou.ai",
+    description:
+      "Discover saved social downloads and recover accessible active tasks after losing their IDs.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.VoiceInputV2]: {
     maintainer: "ethan@okou.ai",
     description:

@@ -67,6 +67,7 @@ export enum FeatureSwitchKey {
   OpenRouterUsRouting = "openRouterUsRouting",
   IntroVideo = "introVideo",
   ChatTranslation = "chatTranslation",
+  SocialDownloadDiscovery = "socialDownloadDiscovery",
   VoiceInputV2 = "voiceInputV2",
   ComposerCreateCommands = "composerCreateCommands",
   ComposerTaskChips = "composerTaskChips",

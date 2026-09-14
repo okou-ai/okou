@@ -171,6 +171,11 @@ describe("okou social command", () => {
       command.setOptionValue("quality", undefined);
       command.setOptionValue("format", undefined);
       command.setOptionValue("resume", undefined);
+      command.setOptionValue("cursor", undefined);
+      command.setOptionValue("status", undefined);
+      if (command.name() === "downloads") {
+        command.setOptionValue("limit", 20);
+      }
     }
   });
 
@@ -193,6 +198,254 @@ describe("okou social command", () => {
   function output(): string {
     return mockConsoleLog.mock.calls.flat().join("\n");
   }
+
+  it("discovers a lost task ID and retrieves its artifact through existing resume", async () => {
+    const task = completedDownload();
+    server.use(
+      http.get("http://localhost:3000/api/social/downloads", ({ request }) => {
+        expect(new URL(request.url).searchParams.get("limit")).toBe("20");
+        return HttpResponse.json({
+          downloads: [
+            {
+              ...task,
+              providerName: "SocialKit",
+              request: {
+                platform: "youtube",
+                url: "https://youtu.be/video123",
+                maxDuration: 600,
+                quality: "720p",
+                format: "mp4",
+              },
+              resumeCommand: `okou social download --resume ${task.downloadId}`,
+            },
+          ],
+          nextCursor: null,
+        });
+      }),
+      http.get(
+        "http://localhost:3000/api/social/downloads/:downloadId",
+        ({ params }) => {
+          expect(params.downloadId).toBe(task.downloadId);
+          return HttpResponse.json(task);
+        },
+      ),
+    );
+    await socialCommand.parseAsync(["node", "okou", "downloads", "--json"]);
+    expect(JSON.parse(output()) as unknown).toMatchObject({
+      downloads: [
+        {
+          downloadId: task.downloadId,
+          request: { url: "https://youtu.be/video123" },
+          artifact: task.artifact,
+        },
+      ],
+      nextCommand: null,
+    });
+    expect(output()).not.toContain("providerName");
+    mockConsoleLog.mockClear();
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "download",
+      "--resume",
+      task.downloadId,
+      "--json",
+    ]);
+    expect(output()).toContain(task.artifact.url);
+  });
+
+  it("lists only one requested page and preserves filter and cursor in continuation guidance", async () => {
+    const task = failedDownload("artifact_failed");
+    const cursor = "fc168c40-dd27-4e4a-b588-628bac29070b";
+    server.use(
+      http.get("http://localhost:3000/api/social/downloads", ({ request }) => {
+        const params = new URL(request.url).searchParams;
+        expect(Object.fromEntries(params)).toStrictEqual({
+          limit: "1",
+          cursor,
+          status: "active",
+        });
+        return HttpResponse.json({
+          downloads: [
+            {
+              ...task,
+              request: {
+                platform: "youtube",
+                url: "https://youtu.be/video123",
+                maxDuration: 600,
+                quality: "720p",
+                format: "mp4",
+              },
+              resumeCommand: `okou social download --resume ${task.downloadId}`,
+            },
+          ],
+          nextCursor: task.downloadId,
+        });
+      }),
+    );
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "downloads",
+      "--limit",
+      "1",
+      "--cursor",
+      cursor,
+      "--status",
+      "active",
+      "--json",
+    ]);
+    expect(JSON.parse(output()) as unknown).toMatchObject({
+      downloads: [
+        { status: "artifact_failed", error: { billed: true, retryable: true } },
+      ],
+      nextCommand: `okou social downloads --limit 1 --cursor ${task.downloadId} --status active --json`,
+    });
+  });
+
+  it("prints empty discovery guidance without starting a download", async () => {
+    server.use(
+      http.get("http://localhost:3000/api/social/downloads", () => {
+        return HttpResponse.json({ downloads: [], nextCursor: null });
+      }),
+    );
+    await socialCommand.parseAsync(["node", "okou", "downloads", "--json"]);
+    expect(JSON.parse(output()) as unknown).toMatchObject({
+      downloads: [],
+      nextCursor: null,
+      nextCommand: null,
+      message: expect.stringContaining("okou social download --help"),
+    });
+  });
+
+  it.each([
+    ["--limit", "101"],
+    ["--status", "unknown"],
+  ])(
+    "rejects invalid discovery input %s %s before HTTP",
+    async (flag, value) => {
+      await expect(
+        socialCommand.parseAsync([
+          "node",
+          "okou",
+          "downloads",
+          flag,
+          value,
+          "--json",
+        ]),
+      ).rejects.toThrow("process.exit called");
+      expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+        error: { code: "INVALID_INPUT" },
+      });
+    },
+  );
+
+  it.each([false, true])(
+    "preserves actionable download conflicts with json=%s without resuming automatically",
+    async (json) => {
+      const recovery = {
+        downloadId: completedDownload().downloadId,
+        resumeCommand: `okou social download --resume ${completedDownload().downloadId}`,
+      };
+      server.use(
+        http.post("http://localhost:3000/api/social/downloads", () => {
+          return HttpResponse.json(
+            {
+              error: {
+                code: "DOWNLOAD_IN_PROGRESS",
+                message: "Another social media download is already in progress",
+                recovery,
+              },
+            },
+            { status: 409 },
+          );
+        }),
+      );
+      await expect(
+        socialCommand.parseAsync([
+          "node",
+          "okou",
+          "download",
+          "https://youtu.be/video123",
+          "--max-duration",
+          "60",
+          ...(json ? ["--json"] : []),
+        ]),
+      ).rejects.toThrow("process.exit called");
+      if (json) {
+        expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+          error: {
+            code: "DOWNLOAD_IN_PROGRESS",
+            httpStatus: 409,
+            retryable: false,
+          },
+          recovery,
+        });
+      } else {
+        expect(errorOutput()).toContain(recovery.downloadId);
+        expect(errorOutput()).toContain(recovery.resumeCommand);
+      }
+    },
+  );
+
+  it("accepts a generic create conflict without inventing recovery details", async () => {
+    server.use(
+      http.post("http://localhost:3000/api/social/downloads", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "DOWNLOAD_IN_PROGRESS",
+              message: "Another social media download is already in progress",
+            },
+          },
+          { status: 409 },
+        );
+      }),
+    );
+    await expect(
+      socialCommand.parseAsync([
+        "node",
+        "okou",
+        "download",
+        "https://youtu.be/video123",
+        "--max-duration",
+        "60",
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(JSON.parse(errorOutput()) as unknown).toStrictEqual({
+      status: "error",
+      error: {
+        kind: "request_failed",
+        code: "DOWNLOAD_IN_PROGRESS",
+        message: "Another social media download is already in progress",
+        httpStatus: 409,
+        retryable: false,
+      },
+    });
+  });
+
+  it.each([403, 404, 503])(
+    "reports discovery HTTP %s without substituting another operation",
+    async (status) => {
+      server.use(
+        http.get("http://localhost:3000/api/social/downloads", () => {
+          return HttpResponse.json(
+            {
+              error: { code: "UNAVAILABLE", message: "Discovery unavailable" },
+            },
+            { status },
+          );
+        }),
+      );
+      await expect(
+        socialCommand.parseAsync(["node", "okou", "downloads", "--json"]),
+      ).rejects.toThrow("process.exit called");
+      expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+        error: { httpStatus: status, message: "Discovery unavailable" },
+      });
+    },
+  );
 
   function errorOutput(): string {
     return mockConsoleError.mock.calls.flat().map(String).join("\n");
