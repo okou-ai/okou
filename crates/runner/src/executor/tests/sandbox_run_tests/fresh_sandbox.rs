@@ -1754,10 +1754,10 @@ async fn execute_inner_with_storage_manifest() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let factory = MockSandboxFactory::new();
-    let server = MockServer::start_async().await;
+    let server = httpmock::MockServer::start_async().await;
     let full_get = server
         .mock_async(|when, then| {
-            when.method(GET)
+            when.method(httpmock::Method::GET)
                 .path("/data.tar.gz")
                 .header_missing("range");
             then.status(200).body(b"storage archive");
