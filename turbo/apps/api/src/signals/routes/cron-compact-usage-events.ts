@@ -11,7 +11,7 @@ const compactUsageEventsRoute$ = command(
       return cronUnauthorized();
     }
 
-    const result = await set(compactUsageEvents$, signal);
+    const result = await set(compactUsageEvents$, undefined, signal);
     signal.throwIfAborted();
     return {
       status: 200 as const,

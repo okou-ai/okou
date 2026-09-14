@@ -4,7 +4,7 @@ import { orgConcurrencyEntitlements } from "@okouai/db/schema/org-concurrency-en
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/schema/org-plan-entitlement";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { usagePackSubscriptions } from "@okouai/db/schema/usage-pack-subscription";
 import {
   orgUsageAllowanceEntitlements,

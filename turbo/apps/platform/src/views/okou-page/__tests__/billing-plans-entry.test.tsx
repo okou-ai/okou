@@ -31,6 +31,7 @@ function prepareUpgradeFlow(): void {
   ]);
   context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
     return respond(200, {
+      supportsFreeMembers: true,
       usagePacks: [
         {
           usagePackUsd: 20,

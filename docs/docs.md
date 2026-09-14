@@ -30,6 +30,8 @@ surface; the index does not replace their detailed rules.
 
 ## Specialized Guidance
 
+- [Billing attribution foundation](./database/billing-attribution.md): immutable
+  billing identity, writer inventory, bounded backfill and activation boundaries.
 - [Account telemetry and recovery erasure](./account-erasure-evidence.md):
   dated sink/copy inventory, provider capability gaps, and the parent-worker
   design in [ADR 0004](./adr/0004-account-telemetry-recovery-erasure.md).

@@ -3,6 +3,7 @@
 mod authority;
 mod cache;
 mod engine;
+mod files;
 mod io;
 mod keys;
 mod network;
@@ -233,14 +234,34 @@ impl SshRuntime {
         let _cancel_on_drop = scope.cancelled.clone().drop_guard();
         let started = Instant::now();
         let request = scope.wait(runner_rpc_proto::read_request(&mut input)).await;
-        let mut writer = ResponseWriter::new(input);
         let request = match request {
             Ok(Ok(request)) => request,
             _ => {
+                let mut writer = ResponseWriter::new(input);
                 send_generic(&scope, &mut writer, ErrorCode::InvalidRequest).await;
                 return;
             }
         };
+        if matches!(
+            request.method.as_str(),
+            "ssh.file.upload" | "ssh.file.download"
+        ) {
+            files::dispatch(
+                &self,
+                &sessions,
+                files::Dispatch {
+                    input,
+                    lease,
+                    run,
+                    scope,
+                    started,
+                    request,
+                },
+            )
+            .await;
+            return;
+        }
+        let mut writer = ResponseWriter::new(input);
         if request.method != "ssh.exec" && !request.method.starts_with("ssh.session.") {
             send_generic(&scope, &mut writer, ErrorCode::UnknownMethod).await;
             return;

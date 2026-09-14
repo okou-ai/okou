@@ -182,7 +182,7 @@ function accountMenuTrigger(userName = "Alex Rivera"): HTMLElement {
   }
 
   const minimalSidebar = document.querySelector(
-    "aside.okou-nav:not(.okou-nav-rail)",
+    '[data-slot="sidebar-expanded"]',
   );
   if (!(minimalSidebar instanceof HTMLElement)) {
     throw new Error("Account menu container not found");

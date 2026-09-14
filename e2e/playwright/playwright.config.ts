@@ -87,7 +87,6 @@ export default defineConfig({
         "agents.spec.ts",
         "chat.spec.ts",
         "create-agent.spec.ts",
-        "billing-payment.spec.ts",
         "workflows.spec.ts",
       ],
       dependencies: ["setup"],

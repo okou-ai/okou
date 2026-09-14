@@ -115,6 +115,7 @@ test("A confirmed usage-pack purchase reports the paid conversion", async () => 
   );
   context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
     return respond(200, {
+      supportsFreeMembers: true,
       usagePacks: [
         {
           usagePackUsd: 20,

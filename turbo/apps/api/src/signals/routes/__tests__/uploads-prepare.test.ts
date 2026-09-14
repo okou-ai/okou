@@ -281,6 +281,44 @@ describe("POST /api/uploads/prepare", () => {
     });
   });
 
+  it.each([
+    ['Text/Markdown; Charset="UTF-8"', "text/markdown; charset=utf-8"],
+    ["Text/Plain; Charset=UTF-8", "text/plain; charset=utf-8"],
+    ["text/plain; charset=GB18030", "text/plain; charset=gb18030"],
+    ["text/markdown", "text/markdown"],
+    ["text/markdown; charset=unsupported-label", "text/markdown"],
+    ["image/png; charset=utf-8", "image/png"],
+  ])(
+    "prepares %s with compatible upload metadata",
+    async (contentType, expected) => {
+      mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+      let registration: unknown;
+      context.mocks.s3.send.mockImplementation((command) => {
+        if (command instanceof PutObjectCommand) {
+          registration = JSON.parse(String(command.input.Body));
+        }
+        return Promise.resolve({});
+      });
+      const response = await accept(
+        setupApp({ context, routes: uploadsTestRoutes })(
+          uploadsContract,
+        ).prepare({
+          body: { filename: "artifact.bin", contentType, size: 32 },
+          headers: { authorization: "Bearer clerk-session" },
+        }),
+        [200],
+      );
+      expect(response.body.contentType).toBe(expected);
+      expect(registration).toMatchObject({
+        kind: "legacy-file",
+        contentType: expected,
+      });
+      expect(context.mocks.s3.getSignedUrl.mock.calls[0]?.[1]).toMatchObject({
+        input: { ContentType: expected },
+      });
+    },
+  );
+
   it("returns presigned upload URL and final CDN URL with full body shape", async () => {
     const userId = `user_${randomUUID()}`;
     const orgId = `org_${randomUUID()}`;
@@ -498,34 +536,6 @@ describe("POST /api/uploads/prepare", () => {
     );
 
     expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
-  });
-
-  it("normalizes parameterized content types before signing", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: uploadsTestRoutes })(
-      uploadsContract,
-    );
-    const response = await client.prepare({
-      body: {
-        filename: "notes.txt",
-        contentType: "Text/Plain; Charset=UTF-8",
-        size: 13,
-      },
-      headers: { authorization: "Bearer clerk-session" },
-    });
-    expect(response.status).toBe(200);
-    if (response.status !== 200) {
-      return;
-    }
-    expect(response.body.contentType).toBe("text/plain");
-
-    const command = context.mocks.s3.getSignedUrl.mock.calls[0]?.[1] as {
-      input: { ContentType: string };
-    };
-    expect(command.input.ContentType).toBe("text/plain");
   });
 
   it("uses the public S3 endpoint for externally consumed upload URLs", async () => {

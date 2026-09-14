@@ -2,6 +2,7 @@
 // Sentry must be initialized before any other imports
 import "./instrument.js";
 import { Command } from "commander";
+import { instrumentCommand } from "./sentry-command.js";
 import { configureGlobalProxyFromEnv } from "./lib/network/proxy.js";
 import {
   decodeSandboxTokenPayload,
@@ -643,6 +644,7 @@ export function buildHelpText(
  * @param commands - override default commands (used in tests)
  */
 export function registerCommands(prog: Command, commands?: Command[]): void {
+  instrumentCommand(prog);
   const token = getOkouToken();
   const payload = token ? decodeSandboxTokenPayload(token) : undefined;
 

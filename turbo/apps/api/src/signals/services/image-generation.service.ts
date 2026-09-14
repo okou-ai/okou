@@ -2610,6 +2610,8 @@ export const recordGeneratedImage$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly runId: string | undefined;
+      readonly billingRunId: string | null;
+      readonly billingContext: string;
       readonly publicBrand: PublicBrand;
       readonly privateArtifacts: boolean;
       readonly pricing: ImagePricing;
@@ -2671,6 +2673,8 @@ export const recordGeneratedImage$ = command(
         usageRows.map((row) => {
           return {
             runId: params.runId ?? null,
+            billingRunId: params.billingRunId,
+            billingContext: params.billingContext,
             idempotencyKey: builtInGenerationUsageIdempotencyKey({
               ...params.usageIdempotency,
               category: row.category,
