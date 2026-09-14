@@ -3340,8 +3340,6 @@ test("Manage paid concurrency while the Team plan is ending", async () => {
         cancelAtPeriodEnd: false,
         canReduce: true,
         canChangeInApp: true,
-        scheduledQuantity: null,
-        scheduledChangeAt: null,
       },
     ],
   };
@@ -3485,8 +3483,6 @@ test("Cancel and restore a paid concurrency subscription", async () => {
         cancelAtPeriodEnd: false,
         canReduce: true,
         canChangeInApp: true,
-        scheduledQuantity: null,
-        scheduledChangeAt: null,
       },
     ],
   };
@@ -3607,8 +3603,6 @@ test("Increase an active paid concurrency subscription", async () => {
         cancelAtPeriodEnd: false,
         canReduce: true,
         canChangeInApp: true,
-        scheduledQuantity: null,
-        scheduledChangeAt: null,
       },
     ],
   };
@@ -3992,8 +3986,6 @@ test("Keep paid concurrency within supported quantity limits", async () => {
           cancelAtPeriodEnd: false,
           canReduce: true,
           canChangeInApp: true,
-          scheduledQuantity: null,
-          scheduledChangeAt: null,
         },
       ],
     });
@@ -4047,8 +4039,6 @@ test("Lock concurrency actions while a price review is loading", async () => {
           cancelAtPeriodEnd: false,
           canReduce: true,
           canChangeInApp: true,
-          scheduledQuantity: null,
-          scheduledChangeAt: null,
         },
       ],
     });

@@ -58,8 +58,11 @@ const concurrencySubscriptionSchema = z.object({
   // It stays optional so a new app reaching a draining older API still parses
   // the response; no client branches on its absence since #26152.
   canChangeInApp: z.boolean().optional(),
-  scheduledQuantity: z.number().int().positive().nullable(),
-  scheduledChangeAt: z.string().nullable(),
+  // The API omits both fields whenever no concurrency change is scheduled
+  // (billing-status.service.ts spreads them only for a scheduled change), so
+  // they are genuinely optional rather than a rollout tolerance.
+  scheduledQuantity: z.number().int().positive().nullable().optional(),
+  scheduledChangeAt: z.string().nullable().optional(),
 });
 
 const usageAllowanceWindowSchema = z.object({

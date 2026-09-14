@@ -971,7 +971,10 @@ function ConcurrencySubscriptionRow({
   planEnding: boolean;
   subscription: ConcurrencySubscription;
 }) {
-  const restoreAvailable = canceled || subscription.scheduledQuantity !== null;
+  const restoreAvailable =
+    canceled ||
+    (subscription.scheduledQuantity !== null &&
+      subscription.scheduledQuantity !== undefined);
   const action = restoreAvailable ? "restore" : "change";
   const ending = canceled || planEnding;
   const openConcurrencyAction = (
@@ -1005,6 +1008,7 @@ function ConcurrencySubscriptionRow({
           {concurrencySubscriptionPeriodLabel(subscription, ending, planEndAt)}
         </p>
         {subscription.scheduledQuantity !== null &&
+        subscription.scheduledQuantity !== undefined &&
         subscription.scheduledChangeAt ? (
           <p className="mt-0.5 text-[13px] text-amber-600 dark:text-amber-400">
             {i18n.t(
