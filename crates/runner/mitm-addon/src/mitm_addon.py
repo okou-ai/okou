@@ -1073,6 +1073,16 @@ async def _try_firewall_request_stream_from_headers(
         restore_request_state()
         _restore_request_headers_probe_metadata(flow, metadata_snapshot)
         raise
+    if result is FirewallHeaderPhaseAuthResult.REJECTED:
+        restore_request_state()
+        # A local response waits for body EOF. Preserve auth diagnostics, but
+        # kill before mitmproxy sends 100 Continue or consumes the rejected body.
+        flow.response = None
+        release_aws_sigv4_request_inspection(flow)
+        request_classification.pop_cached_classification(flow)
+        flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+        flow.kill()
+        return
     if result is not FirewallHeaderPhaseAuthResult.APPLIED:
         fall_back()
         return
@@ -1705,7 +1715,6 @@ def _release_terminal_flow_state(
         codex_output_timing.release_flow_state(flow)
     request_classification.pop_cached_classification(flow)
     flow.metadata.pop(_FIREWALL_AUTH_APPLIED_IN_REQUESTHEADERS, None)
-    flow.metadata.pop(metadata_keys.FIREWALL_AUTH_PROBE_FAILURE, None)
     release_aws_sigv4_request_inspection(flow)
     flow.metadata.pop(metadata_keys.WEBSOCKET_UPGRADE_REQUEST, None)
     flow.metadata.pop(metadata_keys.RESPONSE_ENCODING_NEGOTIATION, None)
