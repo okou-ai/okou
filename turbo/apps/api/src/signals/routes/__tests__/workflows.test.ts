@@ -2798,21 +2798,65 @@ describe("workflow owner profile cancellation and capacity", () => {
       const { owner, workflow, agent } = await ownerProfileFixture();
       // Construct the large fixture through production APIs before exercising
       // cache behavior. The measured TTL starts after fixture creation.
-      const others: { owner: ApiTestUser; workflowId: string }[] = [];
-      // This suite's Clerk session fixture represents one actor at a time.
-      for (let index = 0; index < 512; index += 1) {
-        const another = user({ orgId: owner.orgId });
-        const created = await createWorkflow(another, {
-          agentId: agent.agentId,
-          name: `bounded-${index}`,
-          visibility: "public",
-        });
-        if (created.body.ownerUserId !== another.userId) {
-          throw new Error("Workflow capacity fixture used an unexpected owner");
-        }
-        others.push({ owner: another, workflowId: created.body.id });
-      }
-      profiles = [{ owner, workflowId: workflow.id }, ...others];
+      // Independent agents avoid serializing all writes on one agent row lock.
+      const agents = [
+        agent,
+        ...(await Promise.all(
+          Array.from({ length: 5 }, () => {
+            return createAgent(owner, { visibility: "public" });
+          }),
+        )),
+      ];
+      const actors = new Map<string, ApiTestUser>();
+      context.mocks.clerk.authenticateRequest.mockImplementation(
+        (request: unknown) => {
+          if (!(request instanceof Request)) {
+            throw new Error("Expected a Clerk authentication request");
+          }
+          const actor = actors.get(request.headers.get("authorization") ?? "");
+          if (!actor) {
+            throw new Error("Unknown workflow capacity fixture actor");
+          }
+          return Promise.resolve({
+            isAuthenticated: true,
+            toAuth: () => {
+              return actor;
+            },
+          });
+        },
+      );
+      const client = collectionClient();
+      const lanes = await Promise.all(
+        agents.map(async (agent, lane) => {
+          const others: { owner: ApiTestUser; workflowId: string }[] = [];
+          for (let index = lane; index < 512; index += agents.length) {
+            const another = user({ orgId: owner.orgId });
+            const authorization = `Bearer ${another.userId}`;
+            // Bind auth to the request, rather than changing one shared session
+            // while other fixture requests are still in flight.
+            actors.set(authorization, another);
+            const created = await accept(
+              client.create({
+                headers: { authorization },
+                body: {
+                  agentId: agent.agentId,
+                  name: `bounded-${lane}-${index}`,
+                  visibility: "public",
+                },
+              }),
+              [201],
+            );
+            if (created.body.ownerUserId !== another.userId) {
+              throw new Error(
+                "Workflow capacity fixture used an unexpected owner",
+              );
+            }
+            others.push({ owner: another, workflowId: created.body.id });
+          }
+          return others;
+        }),
+      );
+      profiles = [{ owner, workflowId: workflow.id }, ...lanes.flat()];
       mockNow(now() + 16 * 60 * 1000);
     });
 
@@ -2821,15 +2865,19 @@ describe("workflow owner profile cancellation and capacity", () => {
       if (!first) {
         throw new Error("Missing capacity fixture");
       }
+      const client = detailClient();
+      const headers = authHeaders(first.owner);
+      function read(workflowId: string) {
+        return client.ownerProfile({ headers, params: { workflowId } });
+      }
       context.mocks.clerk.users.getUser.mockRejectedValue(
         new WorkflowProfileClerkError(404),
       );
-      await accept(readOwnerProfile(first.owner, first.workflowId), [200]);
+      await accept(read(first.workflowId), [200]);
       await Promise.all(
         profiles.slice(1).map(async ({ workflowId }) => {
           expect(
-            (await accept(readOwnerProfile(first.owner, workflowId), [200]))
-              .body.displayName,
+            (await accept(read(workflowId), [200])).body.displayName,
           ).toBeNull();
         }),
       );
@@ -2837,8 +2885,7 @@ describe("workflow owner profile cancellation and capacity", () => {
         ownerProfileUser(first.owner.userId),
       );
       expect(
-        (await accept(readOwnerProfile(first.owner, first.workflowId), [200]))
-          .body.displayName,
+        (await accept(read(first.workflowId), [200])).body.displayName,
       ).toBe("Workflow Author");
     });
   });
