@@ -6780,6 +6780,9 @@
       "noWorkflows": "Keine Workflows",
       "open": "Öffnen Sie {{title}}",
       "openRecovery": "Wiederherstellung für {{title}} öffnen",
+      "ownerLoading": "Autor wird geladen…",
+      "ownerRetry": "Autor nicht verfügbar. Zum Wiederholen erneut öffnen.",
+      "ownerUnavailable": "Autor nicht verfügbar",
       "runsAs": "Läuft als",
       "runsAsAria": "Läuft als {{agent}}",
       "section": {

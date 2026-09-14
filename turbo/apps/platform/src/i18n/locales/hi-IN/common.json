@@ -6780,6 +6780,9 @@
       "noWorkflows": "कोई वर्कफ़्लो नहीं",
       "open": "{{title}} खोलें",
       "openRecovery": "{{title}} की रिकवरी खोलें",
+      "ownerLoading": "लेखक लोड हो रहा है…",
+      "ownerRetry": "लेखक उपलब्ध नहीं है। फिर से कोशिश करने के लिए दोबारा खोलें।",
+      "ownerUnavailable": "लेखक उपलब्ध नहीं है",
       "runsAs": "के रूप में चलता है",
       "runsAsAria": "{{agent}} के रूप में चलता है",
       "section": {

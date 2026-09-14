@@ -2,11 +2,16 @@
 import type { ReactNode } from "react";
 import {
   useGet,
+  useLoadable,
   useLastLoadable,
   useLastResolved,
   useSet,
 } from "ccstate-react";
-import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
+import { useLoadableSet } from "ccstate-react/experimental";
+import type {
+  WorkflowOwnerProfile,
+  WorkflowSummary,
+} from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   ArrowUpDown,
@@ -37,6 +42,12 @@ import {
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { detach, Reason } from "../../signals/utils.ts";
+import {
+  loadWorkflowOwnerProfile$,
+  workflowOwnerProfileIdentity$,
+} from "../../signals/workflows-page/workflow-owner-profile.ts";
 import { i18n } from "../../i18n/index.ts";
 import { nowDate } from "../../lib/time.ts";
 import { openCreateWorkflowDialog$ } from "../../signals/automation-page/workflow-automation-dialog.ts";
@@ -91,10 +102,6 @@ function workflowAutomationEntryMap(
     grouped.set(entry.workflow.id, workflowEntries);
   }
   return grouped;
-}
-
-function ownerLabel(workflow: WorkflowSummary): string {
-  return workflow.ownerUserDisplayName?.trim() || workflow.ownerUserId;
 }
 
 function automationDotClass(entry: WorkflowAutomationEntry): string {
@@ -172,13 +179,18 @@ function AgentAvatar({ workflow }: { readonly workflow: WorkflowSummary }) {
   );
 }
 
-function MemberAvatar({ workflow }: { readonly workflow: WorkflowSummary }) {
-  const label = ownerLabel(workflow);
-  if (workflow.ownerUserImageUrl) {
+function MemberAvatar({
+  label,
+  imageUrl,
+}: {
+  readonly label: string;
+  readonly imageUrl?: string | null;
+}) {
+  if (imageUrl) {
     return (
       <span className="h-6 w-6 shrink-0 overflow-hidden rounded-full border border-border/60 bg-gray-50">
         <img
-          src={workflow.ownerUserImageUrl}
+          src={imageUrl}
           alt={label}
           className="h-full w-full object-cover"
         />
@@ -391,10 +403,14 @@ function ConnectorCell({
   );
 }
 
-export function WorkflowHoverContent({
+function WorkflowHoverContent({
   workflow,
+  profile,
+  failed,
 }: {
   readonly workflow: WorkflowSummary;
+  readonly profile?: WorkflowOwnerProfile;
+  readonly failed: boolean;
 }) {
   useTranslation();
   const title = workflowTitle(workflow);
@@ -411,8 +427,31 @@ export function WorkflowHoverContent({
               return $.workflows.list.createdBy;
             })}
           </span>
-          <MemberAvatar workflow={workflow} />
-          <span className="truncate">{ownerLabel(workflow)}</span>
+          {profile?.displayName || profile?.imageUrl ? (
+            <>
+              <MemberAvatar
+                label={profile.displayName?.trim() || workflow.ownerUserId}
+                imageUrl={profile.imageUrl}
+              />
+              <span className="truncate">
+                {profile.displayName?.trim() || workflow.ownerUserId}
+              </span>
+            </>
+          ) : (
+            <span role="status" className="text-muted-foreground">
+              {failed
+                ? i18n.t(($) => {
+                    return $.workflows.list.ownerRetry;
+                  })
+                : profile
+                  ? i18n.t(($) => {
+                      return $.workflows.list.ownerUnavailable;
+                    })
+                  : i18n.t(($) => {
+                      return $.workflows.list.ownerLoading;
+                    })}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <span className="w-16 shrink-0 text-muted-foreground">
@@ -425,6 +464,57 @@ export function WorkflowHoverContent({
         </div>
       </div>
     </div>
+  );
+}
+
+/** Both title surfaces use the tooltip's actual pointer/keyboard open event. */
+export function WorkflowTooltip({
+  workflow,
+  children,
+}: {
+  readonly workflow: WorkflowSummary;
+  readonly children: ReactNode;
+}) {
+  const scope = useLoadable(workflowOwnerProfileIdentity$);
+  const pageSignal = useGet(pageSignal$);
+  const [result, load] = useLoadableSet(loadWorkflowOwnerProfile$);
+  const profile =
+    scope.state === "hasData" &&
+    result.state === "hasData" &&
+    result.data.scopeKey === scope.data &&
+    result.data.workflowId === workflow.id
+      ? result.data.profile
+      : undefined;
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip
+        onOpenChange={(open) => {
+          if (open) {
+            detach(load(workflow.id, pageSignal), Reason.DomCallback);
+          }
+        }}
+      >
+        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        <TooltipContent
+          role="tooltip"
+          side="bottom"
+          align="start"
+          className="rounded-lg border border-[hsl(var(--gray-400))] p-3"
+          style={{
+            backgroundColor: "hsl(var(--card))",
+            color: "hsl(var(--card-foreground))",
+            boxShadow:
+              "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
+          }}
+        >
+          <WorkflowHoverContent
+            workflow={workflow}
+            profile={profile}
+            failed={result.state === "hasError"}
+          />
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
@@ -456,62 +546,45 @@ function WorkflowRow({
   const title = workflowTitle(workflow);
   return (
     <article className="flex items-center gap-3 px-5 py-3.5 text-left text-foreground transition-colors hover:bg-state-hover">
-      <TooltipProvider delayDuration={200}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Link
-              pathname={ROUTES.workflowDetailAutomations}
-              options={{ pathParams: { workflowId: workflow.id } }}
-              aria-label={i18n.t(
-                ($) => {
-                  return $.workflows.list.open;
-                },
-                { title },
-              )}
-              className="flex min-w-0 flex-1 items-center gap-3 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
-            >
-              <WorkflowRowIcon entries={entries} />
-              <span className="flex min-w-0 items-center gap-2">
-                <span className="min-w-0 truncate text-sm font-medium underline decoration-dotted decoration-foreground/40 decoration-[1px] underline-offset-2">
-                  {title}
-                </span>
-                {workflow.official ? (
-                  <span
-                    className={cn(
-                      "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
-                      workflow.official.definitionLifecycle === "retired"
-                        ? "bg-amber-50 text-amber-700"
-                        : "bg-blue-50 text-blue-700",
-                    )}
-                  >
-                    <BadgeCheck size={11} />
-                    {workflow.official.definitionLifecycle === "retired"
-                      ? i18n.t(($) => {
-                          return $.workflows.official.retiredBadge;
-                        })
-                      : i18n.t(($) => {
-                          return $.workflows.official.badge;
-                        })}
-                  </span>
-                ) : null}
+      <WorkflowTooltip workflow={workflow}>
+        <Link
+          pathname={ROUTES.workflowDetailAutomations}
+          options={{ pathParams: { workflowId: workflow.id } }}
+          aria-label={i18n.t(
+            ($) => {
+              return $.workflows.list.open;
+            },
+            { title },
+          )}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+        >
+          <WorkflowRowIcon entries={entries} />
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 truncate text-sm font-medium underline decoration-dotted decoration-foreground/40 decoration-[1px] underline-offset-2">
+              {title}
+            </span>
+            {workflow.official ? (
+              <span
+                className={cn(
+                  "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium",
+                  workflow.official.definitionLifecycle === "retired"
+                    ? "bg-amber-50 text-amber-700"
+                    : "bg-blue-50 text-blue-700",
+                )}
+              >
+                <BadgeCheck size={11} />
+                {workflow.official.definitionLifecycle === "retired"
+                  ? i18n.t(($) => {
+                      return $.workflows.official.retiredBadge;
+                    })
+                  : i18n.t(($) => {
+                      return $.workflows.official.badge;
+                    })}
               </span>
-            </Link>
-          </TooltipTrigger>
-          <TooltipContent
-            side="bottom"
-            align="start"
-            className="rounded-lg border border-[hsl(var(--gray-400))] p-3"
-            style={{
-              backgroundColor: "hsl(var(--card))",
-              color: "hsl(var(--card-foreground))",
-              boxShadow:
-                "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
-            }}
-          >
-            <WorkflowHoverContent workflow={workflow} />
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+            ) : null}
+          </span>
+        </Link>
+      </WorkflowTooltip>
       <ConnectorCell entries={entries} displayTimezone={displayTimezone} />
       <VisibilityIcon workflow={workflow} />
       <AgentAvatar workflow={workflow} />

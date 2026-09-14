@@ -6763,6 +6763,9 @@
       "noWorkflows": "ワークフローなし",
       "open": "{{title}} を開く",
       "openRecovery": "{{title}} の復旧を開く",
+      "ownerLoading": "作成者を読み込み中…",
+      "ownerRetry": "作成者情報を取得できません。再度開いてお試しください。",
+      "ownerUnavailable": "作成者情報を取得できません",
       "runsAs": "として実行",
       "runsAsAria": "{{agent}} として実行",
       "section": {

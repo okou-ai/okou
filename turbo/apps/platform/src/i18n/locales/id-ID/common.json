@@ -6763,6 +6763,9 @@
       "noWorkflows": "Tidak ada alur kerja",
       "open": "Buka {{title}}",
       "openRecovery": "Buka pemulihan {{title}}",
+      "ownerLoading": "Memuat penulis…",
+      "ownerRetry": "Penulis tidak tersedia. Buka kembali untuk mencoba lagi.",
+      "ownerUnavailable": "Penulis tidak tersedia",
       "runsAs": "Dijalankan sebagai",
       "runsAsAria": "Dijalankan sebagai {{agent}}",
       "section": {

@@ -6851,6 +6851,9 @@
       "noWorkflows": "Nessun flusso di lavoro",
       "open": "Apri {{title}}",
       "openRecovery": "Apri il ripristino di {{title}}",
+      "ownerLoading": "Caricamento autore…",
+      "ownerRetry": "Autore non disponibile. Riapri per riprovare.",
+      "ownerUnavailable": "Autore non disponibile",
       "runsAs": "Eseguito come",
       "runsAsAria": "Eseguito come {{agent}}",
       "section": {

@@ -1,5 +1,11 @@
 import { mockOAuthCompletions } from "../../okou-page/__tests__/connector-page-test-helpers.ts";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import * as timers from "signal-timers";
 import { mockNow } from "../../../lib/time.ts";
@@ -878,8 +884,6 @@ function summary(workflow: WorkflowDetailResponse): WorkflowSummary {
     description: workflow.description,
     visibility: workflow.visibility,
     ownerUserId: workflow.ownerUserId,
-    ownerUserDisplayName: "Test User",
-    ownerUserImageUrl: null,
     createdAt: workflow.createdAt,
     canManage: workflow.canManage,
     canPublish: workflow.canPublish,
@@ -966,6 +970,9 @@ function mockWorkflowApis(
     return null;
   };
 
+  context.mocks.api(workflowsDetailContract.ownerProfile, ({ respond }) => {
+    return respond(200, { displayName: "Test User", imageUrl: null });
+  });
   context.mocks.api(workflowsCollectionContract.list, ({ query, respond }) => {
     const visible = query.agentId
       ? workflows.filter((workflow) => {
@@ -5606,4 +5613,417 @@ test("Upload a supplementary workflow file", async () => {
     path: "config/settings.json",
     content: '{ "risk": "low", "tone": "direct" }',
   });
+});
+
+test("Load workflow authors only after a title tooltip opens and reuse on reopen", async () => {
+  const user = userEvent.setup();
+  mockWorkflowApis([salesResearch()]);
+  const response = context.mocks.deferred<void>();
+  let requests = 0;
+  context.mocks.api(
+    workflowsDetailContract.ownerProfile,
+    async ({ respond }) => {
+      requests += 1;
+      await response.promise;
+      return respond(200, {
+        displayName: "Lazy Author",
+        imageUrl: "https://example.com/lazy-author.png",
+      });
+    },
+  );
+  await setupPage({ context, path: "/workflows" });
+  await screen.findByText("Sales Research");
+  expect(screen.getByText("Sales Research")).toBeInTheDocument();
+  expect(requests).toBe(0);
+  const title = linkByAriaLabel("Open Sales Research");
+  await user.hover(title);
+  const tooltip = await screen.findByRole("tooltip");
+  expect(within(tooltip).getByText("Created by")).toBeInTheDocument();
+  expect(within(tooltip).getByText("Runs as")).toBeInTheDocument();
+  expect(within(tooltip).getByText("Sales Research")).toBeInTheDocument();
+  await expect(
+    within(tooltip).findByText("Loading author…"),
+  ).resolves.toBeInTheDocument();
+  response.resolve();
+  await expect(
+    within(tooltip).findByText("Lazy Author"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(tooltip).getByRole("img", { name: "Lazy Author" }),
+  ).toHaveAttribute("src", "https://example.com/lazy-author.png");
+  await user.unhover(title);
+  await waitFor(() => {
+    return expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+  await user.hover(title);
+  await expect(
+    within(await screen.findByRole("tooltip")).findByText("Lazy Author"),
+  ).resolves.toBeInTheDocument();
+  expect(requests).toBe(1);
+});
+
+test("Load detail author on keyboard focus without delaying the detail page", async () => {
+  const user = userEvent.setup();
+  mockWorkflowApis([salesResearch()]);
+  let requests = 0;
+  context.mocks.api(workflowsDetailContract.ownerProfile, ({ respond }) => {
+    requests += 1;
+    return respond(200, { displayName: "Keyboard Author", imageUrl: null });
+  });
+  await setupPage({
+    context,
+    path: `/workflows/${SALES_WORKFLOW_ID}/automations`,
+  });
+  const heading = await screen.findByRole("heading", {
+    name: "Sales Research",
+  });
+  expect(requests).toBe(0);
+  expect(heading).toHaveAttribute("tabindex", "0");
+  await user.keyboard("{Tab}");
+  screen.getByRole("heading", { name: "Sales Research" }).focus();
+  const tooltip = await screen.findByRole("tooltip");
+  await expect(
+    within(tooltip).findByText("Keyboard Author"),
+  ).resolves.toBeInTheDocument();
+  expect(within(tooltip).getByText("Runs as")).toBeInTheDocument();
+  expect(requests).toBe(1);
+});
+
+test.each([404, 429, 503] as const)(
+  "Recover the author row after an API %s without affecting workflow content",
+  async (status) => {
+    const user = userEvent.setup();
+    mockWorkflowApis([salesResearch()]);
+    let healthy = false;
+    context.mocks.api(workflowsDetailContract.ownerProfile, ({ respond }) => {
+      return healthy
+        ? respond(200, { displayName: "Recovered Author", imageUrl: null })
+        : respond(status, {
+            error: {
+              code: "NOT_AVAILABLE",
+              message: "Author lookup unavailable",
+            },
+          });
+    });
+    await setupPage({ context, path: "/workflows" });
+    await screen.findByText("Sales Research");
+    await user.hover(linkByAriaLabel("Open Sales Research"));
+    const tooltip = await screen.findByRole("tooltip");
+    await expect(
+      within(tooltip).findByText("Author unavailable. Reopen to retry."),
+    ).resolves.toBeInTheDocument();
+    expect(within(tooltip).getByText("Runs as")).toBeInTheDocument();
+    healthy = true;
+    await user.unhover(linkByAriaLabel("Open Sales Research"));
+    await waitFor(() => {
+      return expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    });
+    await user.hover(linkByAriaLabel("Open Sales Research"));
+    await expect(
+      within(await screen.findByRole("tooltip")).findByText("Recovered Author"),
+    ).resolves.toBeInTheDocument();
+  },
+);
+
+test("Expire a missing author result and recover on a later open", async () => {
+  const user = userEvent.setup();
+  const startedAt = new Date("2026-09-14T08:00:00Z").getTime();
+  mockNow(startedAt, context.signal);
+  mockWorkflowApis([salesResearch()]);
+  let available = false;
+  context.mocks.api(workflowsDetailContract.ownerProfile, ({ respond }) => {
+    return respond(200, {
+      displayName: available ? "Returned Author" : null,
+      imageUrl: null,
+    });
+  });
+  await setupPage({ context, path: "/workflows" });
+  await screen.findByText("Sales Research");
+  const title = linkByAriaLabel("Open Sales Research");
+  await user.hover(title);
+  await expect(
+    within(await screen.findByRole("tooltip")).findByText("Author unavailable"),
+  ).resolves.toBeInTheDocument();
+  available = true;
+  await user.unhover(title);
+  await waitFor(() => {
+    return expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+  await user.hover(title);
+  await expect(
+    within(await screen.findByRole("tooltip")).findByText("Author unavailable"),
+  ).resolves.toBeInTheDocument();
+  await user.unhover(title);
+  await waitFor(() => {
+    return expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+  mockNow(startedAt + 60_000, context.signal);
+  await user.hover(title);
+  await expect(
+    within(await screen.findByRole("tooltip")).findByText("Returned Author"),
+  ).resolves.toBeInTheDocument();
+});
+
+test("Keep reopened consumers and out-of-order workflow author responses isolated", async () => {
+  const user = userEvent.setup();
+  const second = {
+    ...salesResearch(),
+    id: OTHER_WORKFLOW_ID,
+    name: "second-workflow",
+    displayName: "Second Workflow",
+  };
+  mockWorkflowApis([salesResearch(), second]);
+  const firstResponse = context.mocks.deferred<void>();
+  let firstRequests = 0;
+  context.mocks.api(
+    workflowsDetailContract.ownerProfile,
+    async ({ params, respond }) => {
+      if (params.workflowId === SALES_WORKFLOW_ID) {
+        firstRequests += 1;
+        await firstResponse.promise;
+        return respond(200, { displayName: "First Author", imageUrl: null });
+      }
+      return respond(200, { displayName: "Second Author", imageUrl: null });
+    },
+  );
+  await setupPage({ context, path: "/workflows" });
+  await screen.findByText("Sales Research");
+  const firstTitle = linkByAriaLabel("Open Sales Research");
+  await user.hover(firstTitle);
+  await expect(
+    screen.findByText("Loading author…"),
+  ).resolves.toBeInTheDocument();
+  await user.unhover(firstTitle);
+  await waitFor(() => {
+    return expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+  await user.hover(firstTitle);
+  await expect(
+    screen.findByText("Loading author…"),
+  ).resolves.toBeInTheDocument();
+  await user.unhover(firstTitle);
+  await waitFor(() => {
+    return expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+  await user.hover(linkByAriaLabel("Open Second Workflow"));
+  const tooltip = await screen.findByRole("tooltip");
+  await expect(
+    within(tooltip).findByText("Second Author"),
+  ).resolves.toBeInTheDocument();
+  firstResponse.resolve();
+  await user.unhover(linkByAriaLabel("Open Second Workflow"));
+  await waitFor(() => {
+    return expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+  await user.hover(firstTitle);
+  await expect(
+    within(await screen.findByRole("tooltip")).findByText("First Author"),
+  ).resolves.toBeInTheDocument();
+  expect(firstRequests).toBe(1);
+});
+
+test("Do not request an author when a pointer pass never opens its tooltip", async () => {
+  const user = userEvent.setup();
+  mockWorkflowApis([salesResearch()]);
+  let requests = 0;
+  context.mocks.api(workflowsDetailContract.ownerProfile, ({ respond }) => {
+    requests += 1;
+    return respond(200, { displayName: "Unused Author", imageUrl: null });
+  });
+  await setupPage({ context, path: "/workflows" });
+  await screen.findByText("Sales Research");
+  const title = linkByAriaLabel("Open Sales Research");
+  await user.hover(title);
+  await user.unhover(title);
+  await user.hover(
+    within(articleByText("Sales Research")).getByLabelText("Public"),
+  );
+  await expect(
+    screen.findByText("Public", {
+      selector: '[data-slot="tooltip-content"]',
+    }),
+  ).resolves.toBeInTheDocument();
+  expect(requests).toBe(0);
+});
+
+test("Discard cached author data on account change and abort the old account's pending request", async () => {
+  const user = userEvent.setup();
+  const clerk = context.mocks.clerk();
+  const firstResponse = context.mocks.deferred<void>();
+  const started = context.mocks.deferred<AbortSignal>();
+  mockWorkflowApis([salesResearch()]);
+  let changed = false;
+  context.mocks.api(
+    workflowsDetailContract.ownerProfile,
+    async ({ request, respond }) => {
+      if (!changed) {
+        started.resolve(request.signal);
+        await firstResponse.promise;
+        return respond(200, {
+          displayName: "Previous Account Author",
+          imageUrl: null,
+        });
+      }
+      return respond(200, {
+        displayName: "Current Account Author",
+        imageUrl: null,
+      });
+    },
+  );
+  await setupPage({ context, path: "/workflows" });
+  await screen.findByText("Sales Research");
+  await user.hover(linkByAriaLabel("Open Sales Research"));
+  await expect(
+    screen.findByText("Loading author…"),
+  ).resolves.toBeInTheDocument();
+  const previousRequest = await started.promise;
+  changed = true;
+  act(() => {
+    clerk.user(
+      { id: UPDATED_USER_ID, fullName: "New Account" },
+      { token: "new-session" },
+    );
+    clerk.stateChanged();
+  });
+  await waitFor(() => {
+    return expect(previousRequest.aborted).toBeTruthy();
+  });
+  firstResponse.resolve();
+  await user.unhover(linkByAriaLabel("Open Sales Research"));
+  await waitFor(() => {
+    return expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+  await user.hover(linkByAriaLabel("Open Sales Research"));
+  const tooltip = await screen.findByRole("tooltip");
+  await expect(
+    within(tooltip).findByText("Current Account Author"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText("Previous Account Author")).not.toBeInTheDocument();
+});
+
+test("Release author requests on workflow navigation", async () => {
+  const user = userEvent.setup();
+  mockWorkflowApis([salesResearch()]);
+  const response = context.mocks.deferred<void>();
+  const started = context.mocks.deferred<AbortSignal>();
+  context.mocks.api(
+    workflowsDetailContract.ownerProfile,
+    async ({ request, respond }) => {
+      started.resolve(request.signal);
+      await response.promise;
+      return respond(200, {
+        displayName: "Previous Page Author",
+        imageUrl: null,
+      });
+    },
+  );
+  await setupPage({ context, path: "/workflows" });
+  await screen.findByText("Sales Research");
+  const title = linkByAriaLabel("Open Sales Research");
+  await user.hover(title);
+  await expect(
+    screen.findByText("Loading author…"),
+  ).resolves.toBeInTheDocument();
+  const requestSignal = await started.promise;
+  click(title);
+  await screen.findByRole("heading", { name: "Sales Research" });
+  expect(requestSignal.aborted).toBeTruthy();
+  response.resolve();
+  expect(screen.queryByText("Previous Page Author")).not.toBeInTheDocument();
+});
+
+test("Bound the page's author cache and refresh expired successful profiles", async () => {
+  const user = userEvent.setup();
+  const startedAt = new Date("2026-09-14T08:00:00Z").getTime();
+  mockNow(startedAt, context.signal);
+  const workflows = Array.from({ length: 33 }, (_, index) => {
+    return {
+      ...salesResearch(),
+      id: `d0000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
+      name: `bounded-${index}`,
+      displayName: `Bounded Workflow ${index}`,
+      automations: [],
+    };
+  });
+  mockWorkflowApis(workflows);
+  let revision = "Initial";
+  context.mocks.api(
+    workflowsDetailContract.ownerProfile,
+    ({ params, respond }) => {
+      return respond(200, {
+        displayName: `${revision} ${params.workflowId}`,
+        imageUrl: null,
+      });
+    },
+  );
+  await setupPage({ context, path: "/workflows" });
+  await screen.findByText("Bounded Workflow 32");
+  await user.keyboard("{Tab}");
+  for (const workflow of workflows) {
+    act(() => {
+      return linkByAriaLabel(`Open ${workflow.displayName}`).focus();
+    });
+    await expect(
+      screen.findByText(`Initial ${workflow.id}`),
+    ).resolves.toBeInTheDocument();
+    await user.keyboard("{Escape}");
+  }
+  revision = "Evicted";
+  act(() => {
+    return linkByAriaLabel("Open Bounded Workflow 0").focus();
+  });
+  await expect(
+    screen.findByText(`Evicted ${workflows[0]?.id}`),
+  ).resolves.toBeInTheDocument();
+  await user.keyboard("{Escape}");
+  revision = "Expired";
+  mockNow(startedAt + 15 * 60 * 1000, context.signal);
+  act(() => {
+    return linkByAriaLabel("Open Bounded Workflow 32").focus();
+  });
+  await expect(
+    screen.findByText(`Expired ${workflows[32]?.id}`),
+  ).resolves.toBeInTheDocument();
+});
+
+test("Clear the author cache when the active organization changes", async () => {
+  const user = userEvent.setup();
+  const clerk = context.mocks.clerk();
+  mockWorkflowApis([salesResearch()]);
+  let organizationChanged = false;
+  context.mocks.api(workflowsDetailContract.ownerProfile, ({ respond }) => {
+    return respond(200, {
+      displayName: organizationChanged
+        ? "New Organization Author"
+        : "Old Organization Author",
+      imageUrl: null,
+    });
+  });
+  await setupPage({ context, path: "/workflows" });
+  await screen.findByText("Sales Research");
+  await user.hover(linkByAriaLabel("Open Sales Research"));
+  await expect(
+    screen.findByText("Old Organization Author"),
+  ).resolves.toBeInTheDocument();
+  organizationChanged = true;
+  act(() => {
+    clerk.organization({
+      activeOrg: { id: "org_profile_other", name: "Other Organization" },
+      memberships: [{ id: "org_profile_other" }],
+    });
+    clerk.stateChanged();
+  });
+  await waitFor(() => {
+    return expect(
+      screen.queryByText("Old Organization Author"),
+    ).not.toBeInTheDocument();
+  });
+  await user.unhover(linkByAriaLabel("Open Sales Research"));
+  await waitFor(() => {
+    return expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+  await user.hover(linkByAriaLabel("Open Sales Research"));
+  await expect(
+    screen.findByText("New Organization Author"),
+  ).resolves.toBeInTheDocument();
 });

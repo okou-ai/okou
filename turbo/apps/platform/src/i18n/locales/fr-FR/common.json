@@ -6851,6 +6851,9 @@
       "noWorkflows": "Aucun workflow",
       "open": "Ouvrir {{title}}",
       "openRecovery": "Ouvrir la récupération de {{title}}",
+      "ownerLoading": "Chargement de l’auteur…",
+      "ownerRetry": "Auteur indisponible. Rouvrez pour réessayer.",
+      "ownerUnavailable": "Auteur indisponible",
       "runsAs": "S'exécute en tant que",
       "runsAsAria": "S'exécute en tant que {{agent}}",
       "section": {
