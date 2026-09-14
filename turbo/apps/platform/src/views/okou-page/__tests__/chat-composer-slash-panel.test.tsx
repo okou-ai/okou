@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { workflowsCollectionContract } from "@okouai/api-contracts";
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
@@ -11,8 +12,10 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
+import { mockTemplateChat } from "./chat-composer-template-gallery-test-helpers.ts";
 import {
   AGENT_ID,
+  THREAD_ID,
   context,
   expectInlineTemplateInComposer,
   findComposerEditor,
@@ -195,4 +198,86 @@ test("Choosing a cover in the pane attaches that template without opening the pi
   await user.click(slashButton(first.title));
   await expectInlineTemplateInComposer(first.title);
   expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+const IMPORT_PROMPT =
+  "Analyse this deck and save its visual language as a reusable presentation template.";
+
+function uploadedFilePart(message: UserMessageDocument) {
+  const part = message.parts.find((candidate) => {
+    return candidate.type === "file";
+  });
+  if (!part || part.type !== "file") {
+    throw new Error("Imported message has no uploaded file");
+  }
+  return part;
+}
+
+test("Only the Presentation pane offers the deck import, and it leads the covers", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu(true);
+  const pane = detailPane();
+  if (!pane) {
+    throw new Error("Expected the detail pane");
+  }
+  const grid = pane.querySelector(
+    '[data-slot="slash-template-import"]',
+  )?.parentElement;
+  expect(grid?.firstElementChild).toHaveAttribute(
+    "data-slot",
+    "slash-template-import",
+  );
+  expect(within(pane).getByLabelText("Import your own deck")).toHaveAttribute(
+    "accept",
+    ".pptx,.ppt,.pdf",
+  );
+
+  // A deck is a presentation, so no other category carries the control.
+  await user.hover(slashButton("Website"));
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "website");
+  });
+  expect(
+    document.querySelector('[data-slot="slash-template-import"]'),
+  ).toBeNull();
+});
+
+test("Importing a deck from the panel sends it for analysis", async () => {
+  const capture = mockTemplateChat();
+  context.mocks.upload.success({
+    id: "81000000-0000-4000-a000-000000000031",
+    filename: "panel-deck.pptx",
+    contentType:
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    size: 5,
+    url: "https://cdn.example.test/panel-deck.pptx",
+  });
+  const user = userEvent.setup();
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: {
+      [FeatureSwitchKey.ComposerCreateCommands]: true,
+      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
+    },
+  });
+  const editor = await findComposerEditor();
+  await fill(editor, "Draft /");
+  await screen.findByTestId("slash-workflow-menu");
+
+  await user.upload(
+    screen.getByLabelText("Import your own deck"),
+    new File(["deck"], "panel-deck.pptx", {
+      type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    }),
+  );
+
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  expect(uploadedFilePart(capture.sentMessages[0]!).filenameSnapshot).toBe(
+    "panel-deck.pptx",
+  );
+  expect(capture.runPrompts).toStrictEqual([IMPORT_PROMPT]);
 });
