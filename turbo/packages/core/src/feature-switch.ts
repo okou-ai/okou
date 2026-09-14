@@ -186,11 +186,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Ramp spend management connector",
     enabled: false,
   },
-  [FeatureSwitchKey.MailchimpConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Mailchimp email marketing connector",
-    enabled: true,
-  },
   [FeatureSwitchKey.ResendConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Resend email service connector",

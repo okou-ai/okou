@@ -24,7 +24,6 @@ const FEATURE_SWITCH_BY_AUTH_METHOD = Object.freeze<
   "expensify\0api-token": FeatureSwitchKey.ExpensifyConnector,
   "figma\0oauth": FeatureSwitchKey.FigmaConnector,
   "garmin-connect\0oauth": FeatureSwitchKey.GarminConnectConnector,
-  "mailchimp\0oauth": FeatureSwitchKey.MailchimpConnector,
   "mercury\0oauth": FeatureSwitchKey.MercuryConnector,
   "neon\0oauth": FeatureSwitchKey.NeonConnector,
   "netsuite\0api-token": FeatureSwitchKey.NetSuiteConnector,

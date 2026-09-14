@@ -28,7 +28,6 @@ export enum FeatureSwitchKey {
   CloseConnector = "closeConnector",
   PayPalConnector = "payPalConnector",
   RampConnector = "rampConnector",
-  MailchimpConnector = "mailchimpConnector",
   ResendConnector = "resendConnector",
   SpotifyConnector = "spotifyConnector",
   StripeMarketplaceOAuthConnector = "stripeMarketplaceOAuthConnector",
