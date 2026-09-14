@@ -617,7 +617,7 @@ export const bootstrap$ = command(
     set(setApiClientRuntime$, {
       getToken: async (requestSignal) => {
         const resolvedClerk = await clerk;
-        requestSignal.throwIfAborted();
+        requestSignal?.throwIfAborted();
         return await readClerkToken(resolvedClerk, requestSignal);
       },
       apiBaseUrl,

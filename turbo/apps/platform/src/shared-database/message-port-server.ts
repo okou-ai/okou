@@ -206,7 +206,9 @@ export class SharedDatabaseMessagePortServer {
         "Shared database tab registration is required before query",
       );
     }
-    const signal = AbortSignal.any([callerSignal, registeredSignal]);
+    const signal = callerSignal
+      ? AbortSignal.any([callerSignal, registeredSignal])
+      : registeredSignal;
     signal.throwIfAborted();
     const deferred = createDeferredPromise<string | null>(signal);
     const requestId = crypto.randomUUID();
