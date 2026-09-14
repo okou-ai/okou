@@ -258,16 +258,11 @@ describe("auth tokens", () => {
     },
   );
 
-  it("gates Slack read capability without changing Slack write access", () => {
-    const disabled = generateOkouToken("user_slack", "run_slack", "org_slack", {
-      [FeatureSwitchKey.SlackRead]: false,
-    });
-    const enabled = generateOkouToken("user_slack", "run_slack", "org_slack", {
-      [FeatureSwitchKey.SlackRead]: true,
-    });
-    expect(verifyOkouToken(disabled)?.capabilities).not.toContain("slack:read");
-    expect(verifyOkouToken(disabled)?.capabilities).toContain("slack:write");
-    expect(verifyOkouToken(enabled)?.capabilities).toContain("slack:read");
+  it("includes Slack read and write capabilities in okou-scoped tokens", () => {
+    const token = generateOkouToken("user_slack", "run_slack", "org_slack");
+
+    expect(verifyOkouToken(token)?.capabilities).toContain("slack:read");
+    expect(verifyOkouToken(token)?.capabilities).toContain("slack:write");
   });
 
   it("grants social capability by default", () => {

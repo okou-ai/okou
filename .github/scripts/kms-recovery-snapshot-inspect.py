@@ -24,7 +24,7 @@ WORKFLOW = (
     "vm0-ai/vm0/.github/workflows/kms-recovery-snapshot-inspect.yml@refs/heads/main"
 )
 PREFIX = "kms-recovery-32264-"
-DEADLINE = time.monotonic() + 20 * 60
+DEADLINE = time.monotonic() + 90 * 60
 
 
 class InspectionError(Exception):
@@ -263,12 +263,16 @@ def inspect_database(database, endpoint, branch_id, target_environment, record_s
             "PGOPTIONS": "-c default_transaction_read_only=on -c statement_timeout=120000 -c lock_timeout=5000",
         }
     )
-    seconds = min(900, int(DEADLINE - time.monotonic()))
+    # Large retained databases exceeded the former cumulative 15-minute limit.
+    # Keep each SQL statement bounded and leave time for target verification.
+    seconds = min(60 * 60, int(DEADLINE - time.monotonic()))
     require(seconds > 0, "inspection_time_budget_exhausted")
     record_stage(database_hash, "marker_scan")
     try:
         result = subprocess.run(
             [
+                "stdbuf",
+                "-oL",
                 "psql",
                 "-X",
                 "-qAt",
@@ -346,8 +350,6 @@ def main():
         )
         verification = os.environ.get("VERIFY_TARGET_CIPHERTEXT", "false")
         require(verification in {"true", "false"}, "invalid_target_verification_option")
-        if verification == "true":
-            DEADLINE = time.monotonic() + 90 * 60
         require(
             os.environ.get("NEON_PROJECT_ID") == PROJECT
             and os.environ.get("NEON_API_KEY"),

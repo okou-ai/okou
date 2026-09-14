@@ -432,13 +432,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.SlackRead]: {
-    maintainer: "linghan@okou.ai",
-    description:
-      "List Slack channels and read channel and bot DM history through the Okou CLI.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.CustomConnectorMcp]: {
     maintainer: "liangyou@okou.ai",
     description:

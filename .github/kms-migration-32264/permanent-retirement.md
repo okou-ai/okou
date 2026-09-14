@@ -111,14 +111,20 @@ invalid/unknown/uninspected values, and zero database updates. Only aggregate
 verification counters and manifest hashes are retained. If a verifier fails,
 cleanup still runs and no cryptographic success is claimed. `kmsCallsMade: null`
 means a started verification failed before its call count could be established.
-Target mode has a 90-minute inspection budget and separately reserved cleanup
-time; the default marker-only mode keeps its 20-minute inspection budget.
+Both modes have a 90-minute inspection budget and separately reserved cleanup
+time. Each database marker scan is capped at 60 minutes or the remaining overall
+budget, whichever is smaller. A full first-database scan therefore leaves up to
+30 minutes for target verification; no phase extends the overall deadline.
 
 When a database scan fails, `databaseScanFailure` retains the PostgreSQL
-SQLSTATE when available, the process exit code, the number of completed tables,
-and the last started table or binary-column scan's relation OID and size.
-For table chunks it also retains the starting and exclusive ending block.
-If the separate 900-second `psql` process deadline expires, the failure is
+SQLSTATE when available, the process exit code, planned and completed table
+counts, completed chunk count, the last completed chunk, and the last returned
+table or binary-column progress record. For table chunks it also retains the
+starting and exclusive ending block. A separate `lastStartedBatch` record names
+the dispatched batch's relation OID, block range and server timestamp. Results
+inside a batch can be buffered, so `lastStartedScan` alone is not the current
+query or an exact failure location.
+If the bounded `psql` process deadline expires, the failure is
 `snapshot_database_scan_process_timeout`. The report keeps that deadline and
 validated progress from complete output lines; a truncated final JSON or UTF-8
 fragment is discarded. The process exit code remains unknown, and partial
@@ -131,12 +137,20 @@ of zero dependencies. Inspect the failure and verify preview cleanup before
 dispatching another isolated check; do not increase timeouts or repeat restores
 without diagnosing the actual cause.
 
+The September 14 runs 34816611497 and 34824009475 exhausted the former cumulative
+900-second limit with identical last-returned progress, including after batching.
+That evidence establishes a process-budget failure, not a measured CPU, storage
+or network cause. The 60-minute scan budget accommodates the retained database
+within the existing maximum inspection window; it is not a throughput guarantee.
+
 The marker scan sends at most 64 of its 128-page chunks in one database request.
 Each chunk still has its own 120-second statement limit, progress record and
 aggregate result. The decoder requires every chunk in order under the same
-read-only repeatable-read transaction. This reduces client/database round trips
-while retaining the 900-second process deadline and the overall inspection and
-cleanup budgets; batching does not turn an incomplete scan into a success.
+read-only repeatable-read transaction. One separate request reports each batch
+before its chunk statements, and `stdbuf -oL` flushes the client's aggregate
+output to its capture pipe. This keeps useful progress visible when the next
+batch is still running. Batching does not turn an incomplete scan into a success;
+the statement, overall inspection and independent cleanup limits remain enforced.
 
 The provider contract is documented in
 [Neon's snapshot restore API](https://neon.com/docs/reference/api/snapshots/restore-snapshot).

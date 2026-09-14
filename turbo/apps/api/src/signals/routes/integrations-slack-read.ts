@@ -1,8 +1,6 @@
 import { command, computed } from "ccstate";
 import { integrationsSlackReadContract } from "@okouai/api-contracts/contracts/integrations-slack-read";
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
   isSlackApiClientError,
@@ -15,22 +13,12 @@ import { OFFICIAL_SLACK_APP_NAME } from "../../lib/slack-official-app";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { queryOf } from "../context/request";
-import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { slackUserInstallation } from "../services/slack-data.service";
 import type { RouteEntry } from "../route-entry";
 import { settle } from "../utils";
 
 const readInstallation$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const featureContext = await get(
-    userFeatureSwitchContext(auth.orgId, auth.userId),
-  );
-  if (!isFeatureEnabled(FeatureSwitchKey.SlackRead, featureContext)) {
-    return createErrorResponse(
-      "FORBIDDEN",
-      "Slack history and channel discovery are not enabled",
-    );
-  }
   const installation = await get(
     slackUserInstallation({ orgId: auth.orgId, userId: auth.userId }),
   );
