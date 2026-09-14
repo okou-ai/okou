@@ -1,6 +1,7 @@
 mod admission;
 mod cache;
 mod credentials;
+mod files;
 mod framing;
 mod harness;
 mod key_wait;

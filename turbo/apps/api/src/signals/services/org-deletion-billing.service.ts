@@ -1,6 +1,6 @@
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/schema/org-plan-entitlement";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgUsageAllowanceEntitlements } from "@okouai/db/schema/org-usage-allowance";
 import { usagePackSubscriptions } from "@okouai/db/schema/usage-pack-subscription";
 import { eq } from "drizzle-orm";

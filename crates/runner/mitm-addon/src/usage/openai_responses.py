@@ -450,11 +450,6 @@ def _observed_responses_event_type(result: TopLevelStringFieldProbeResult) -> st
     return result.value if result.status == "found" and result.value is not None else None
 
 
-def _classify_responses_event_type(body: bytes) -> _ResponsesEventTypeClassification:
-    result = _probe_responses_event_type(body)
-    return _classify_responses_event_type_result(result)
-
-
 def _classify_responses_event_type_result(
     result: TopLevelStringFieldProbeResult,
 ) -> _ResponsesEventTypeClassification:
@@ -758,6 +753,7 @@ class _OpenAIResponsesSseUsageHandler:
         self._extractor: JsonSelectiveExtractor | None = None
         self._eventless_prefix: bytearray | None = None
         self._named_event_prefix: bytearray | None = None
+        self._named_event_name: str | None = None
         self._data_event_type: _ResponsesEventTypeClassification | None = None
         self._discard_eventless_event = False
         self._discard_named_event = False
@@ -781,6 +777,7 @@ class _OpenAIResponsesSseUsageHandler:
         if event_name is None:
             self._eventless_prefix = bytearray()
             return
+        self._named_event_name = event_name
         self._named_event_prefix = bytearray()
 
     def on_data(self, chunk: bytes) -> None:
@@ -804,24 +801,21 @@ class _OpenAIResponsesSseUsageHandler:
             self._eventless_prefix = None
             probe = _probe_responses_event_type(prefix)
             event_type = _classify_responses_event_type_result(probe)
-            observed_event_name = (
-                _observed_responses_event_type(probe)
-                if self._failure_observer is not None
-                and event_type == _RESPONSES_EVENT_KNOWN_NON_USAGE
-                else None
-            )
-            if event_type != _RESPONSES_EVENT_KNOWN_NON_USAGE or (
-                self._failure_observer is not None
-                and self._failure_observer.needs_sse_event(observed_event_name)
+            if self._should_capture_event_data(
+                event_name=None,
+                data_event_type=event_type,
+                data_event_name=_observed_responses_event_type(probe),
             ):
                 self._start_full_extractor_from_prefix(prefix, event_type)
         if self._named_event_prefix is not None and self._data_event_type is None:
             prefix = bytes(self._named_event_prefix)
             self._named_event_prefix = None
-            event_type = _classify_responses_event_type(prefix)
-            if event_type != _RESPONSES_EVENT_KNOWN_NON_USAGE or (
-                self._failure_observer is not None
-                and self._failure_observer.needs_sse_event(event_name)
+            probe = _probe_responses_event_type(prefix)
+            event_type = _classify_responses_event_type_result(probe)
+            if self._should_capture_event_data(
+                event_name=event_name,
+                data_event_type=event_type,
+                data_event_name=_observed_responses_event_type(probe),
             ):
                 self._start_full_extractor_from_prefix(prefix, event_type)
         extractor = self._extractor
@@ -874,9 +868,27 @@ class _OpenAIResponsesSseUsageHandler:
         self._extractor = None
         self._eventless_prefix = None
         self._named_event_prefix = None
+        self._named_event_name = None
         self._data_event_type = None
         self._discard_eventless_event = False
         self._discard_named_event = False
+
+    def _should_capture_event_data(
+        self,
+        *,
+        event_name: str | None,
+        data_event_type: _ResponsesEventTypeClassification,
+        data_event_name: str | None,
+    ) -> bool:
+        # Named frames must retain evidence requested for their SSE identity,
+        # even when the payload claims to be an ordinary non-usage event.
+        # Only eventless capture uses the payload identity for failure filtering.
+        return data_event_type != _RESPONSES_EVENT_KNOWN_NON_USAGE or (
+            self._failure_observer is not None
+            and self._failure_observer.needs_sse_event(
+                event_name if event_name is not None else data_event_name
+            )
+        )
 
     def _start_full_extractor(self, *, include_type: bool = True) -> JsonSelectiveExtractor:
         usage_fields = (
@@ -934,10 +946,10 @@ class _OpenAIResponsesSseUsageHandler:
         self._eventless_prefix = None
         probe = _probe_responses_event_type(prefix_bytes)
         event_type = _classify_responses_event_type_result(probe)
-        observed_event_name = _observed_responses_event_type(probe)
-        if event_type == _RESPONSES_EVENT_KNOWN_NON_USAGE and not (
-            self._failure_observer is not None
-            and self._failure_observer.needs_sse_event(observed_event_name)
+        if not self._should_capture_event_data(
+            event_name=None,
+            data_event_type=event_type,
+            data_event_name=_observed_responses_event_type(probe),
         ):
             self._discard_eventless_event = True
             return
@@ -963,9 +975,10 @@ class _OpenAIResponsesSseUsageHandler:
         self._named_event_prefix = None
         probe = _probe_responses_event_type(prefix_bytes)
         event_type = _classify_responses_event_type_result(probe)
-        if event_type == _RESPONSES_EVENT_KNOWN_NON_USAGE and not (
-            self._failure_observer is not None
-            and self._failure_observer.needs_sse_event(_observed_responses_event_type(probe))
+        if not self._should_capture_event_data(
+            event_name=self._named_event_name,
+            data_event_type=event_type,
+            data_event_name=_observed_responses_event_type(probe),
         ):
             self._discard_named_event = True
             return

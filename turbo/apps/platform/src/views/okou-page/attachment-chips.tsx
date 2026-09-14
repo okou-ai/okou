@@ -1732,7 +1732,7 @@ function ComposerImagePreviewButton({
       <span className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover/image-preview:bg-black/30">
         <Image
           size={18}
-          className="text-white opacity-0 drop-shadow transition-opacity group-hover/image-preview:opacity-100"
+          className="text-white opacity-0 drop-shadow group-hover/image-preview:opacity-100"
         />
       </span>
       {markCount > 0 && (

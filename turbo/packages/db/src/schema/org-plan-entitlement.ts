@@ -2,91 +2,11 @@ import {
   boolean,
   check,
   index,
-  integer,
-  jsonb,
   pgTable,
-  text,
-  timestamp,
   uniqueIndex,
-  varchar,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import type { OrgPlanEntitlementSourceMetadata } from "../jsonb-contracts/org-plan-entitlement";
-
-function orgPlanEntitlementColumnsBeforeModelRestriction() {
-  return {
-    orgId: text("org_id").primaryKey(),
-    planKey: text("plan_key").notNull(),
-    planRank: integer("plan_rank").notNull(),
-    source: varchar("source", { length: 50 }).notNull(),
-    status: varchar("status", { length: 30 }).notNull().default("active"),
-    baseConcurrencyLimit: integer("base_concurrency_limit")
-      .notNull()
-      .default(0),
-    canBuyConcurrency: boolean("can_buy_concurrency").notNull().default(false),
-    canBuyCredits: boolean("can_buy_credits").notNull().default(false),
-    // Rollout compatibility only; remove after the serving/rollback gate in #32575.
-    legacyMemberInviteUsagePackRequired: boolean(
-      "member_invite_usage_pack_required",
-    )
-      .notNull()
-      .default(false),
-    showUsagePack: boolean("show_usage_pack").notNull().default(false),
-    autoRechargeAllowed: boolean("auto_recharge_allowed")
-      .notNull()
-      .default(false),
-    supportByok: boolean("support_byok").notNull().default(false),
-  };
-}
-
-function orgPlanEntitlementColumnsAfterModelRestriction() {
-  return {
-    videoGenerationAllowed: boolean("video_generation_allowed")
-      .notNull()
-      .default(false),
-    workflowWebhookTriggerAllowed: boolean("workflow_webhook_trigger_allowed")
-      .notNull()
-      .default(false),
-    audioLifetimeLimit: integer("audio_lifetime_limit"),
-    audioDailyRateLimit: integer("audio_daily_rate_limit").notNull().default(0),
-    audioDailyDurationSeconds: integer("audio_daily_duration_seconds")
-      .notNull()
-      .default(0),
-    stripeSubscriptionId: text("stripe_subscription_id"),
-    stripeProductId: text("stripe_product_id"),
-    stripePriceId: text("stripe_price_id"),
-    currentPeriodStart: timestamp("current_period_start"),
-    currentPeriodEnd: timestamp("current_period_end"),
-    cancelAt: timestamp("cancel_at"),
-    expiresAt: timestamp("expires_at"),
-    metadataVersion: text("metadata_version").notNull().default("1"),
-    metadataHash: text("metadata_hash"),
-    sourceMetadata: jsonb("source_metadata")
-      .$type<OrgPlanEntitlementSourceMetadata>()
-      .notNull()
-      .default({}),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  };
-}
-
-function canonicalModelRestrictionColumn() {
-  return boolean("restricted_built_in_models").notNull();
-}
-
-/**
- * Canonical insert projection for the org plan capability snapshot.
- *
- * Drizzle emits every mapped column in an INSERT target list, so active writes
- * use this projection to exclude the legacy compatibility column.
- */
-export function orgPlanEntitlementCanonicalColumns() {
-  return {
-    ...orgPlanEntitlementColumnsBeforeModelRestriction(),
-    restrictedBuiltInModels: canonicalModelRestrictionColumn(),
-    ...orgPlanEntitlementColumnsAfterModelRestriction(),
-  };
-}
+import { orgPlanEntitlementColumns } from "../columns/org-plan-entitlement";
 
 /**
  * Current org plan capability snapshot.
@@ -97,11 +17,15 @@ export function orgPlanEntitlementCanonicalColumns() {
 export const orgPlanEntitlements = pgTable(
   "org_plan_entitlements",
   {
-    ...orgPlanEntitlementColumnsBeforeModelRestriction(),
-    ...orgPlanEntitlementColumnsAfterModelRestriction(),
-    restrictedBuiltInModels: canonicalModelRestrictionColumn(),
-    // Physical compatibility for outgoing API statements only. Current readers
-    // use status and canonical inserts omit this column. Cleanup: #32575.
+    ...orgPlanEntitlementColumns(),
+    // Migration-only declarations. Runtime code uses runtime/org-plan-entitlement.
+    // Keep the physical columns until that API is serving and every supported
+    // rollback target excludes them from generated SQL. Cleanup: #32575.
+    legacyMemberInviteUsagePackRequired: boolean(
+      "member_invite_usage_pack_required",
+    )
+      .notNull()
+      .default(false),
     legacyMemberInvitationAllowed: boolean("member_invitation_allowed")
       .notNull()
       .default(false),

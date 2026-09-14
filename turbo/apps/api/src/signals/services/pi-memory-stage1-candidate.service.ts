@@ -2,7 +2,10 @@ import { and, asc, eq, gt, gte, inArray, sql, type SQL } from "drizzle-orm";
 
 import { z } from "zod";
 
-import { triggerSourceSchema } from "@okouai/api-contracts/contracts/logs";
+import {
+  PI_MEMORY_TRIGGER_SOURCE_CLASSES,
+  triggerSourceSchema,
+} from "@okouai/api-contracts/contracts/logs";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
@@ -239,6 +242,7 @@ export type PiMemoryStage1AdmissionSkipReason =
   | "generation_disabled"
   | "history_not_hash_backed"
   | "missing_chat_thread"
+  | "non_interactive_source"
   | "not_completed"
   | "not_pi"
   | "not_owned_chat_thread"
@@ -291,8 +295,15 @@ export function getPiMemoryStage1AdmissionPrerequisiteSkipReason(
   if (!triggerSource.success) {
     return "invalid_source";
   }
-  if (triggerSource.data === "test") {
+  // The source class is decided before the Chat Thread check so a threadless
+  // maintenance run or a thread-bound automation run reports its real reason
+  // rather than a misleading missing_chat_thread.
+  const sourceClass = PI_MEMORY_TRIGGER_SOURCE_CLASSES[triggerSource.data];
+  if (sourceClass === "synthetic") {
     return "synthetic_source";
+  }
+  if (sourceClass === "non_interactive") {
+    return "non_interactive_source";
   }
   if (args.chatThreadId === null) {
     return "missing_chat_thread";

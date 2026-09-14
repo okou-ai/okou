@@ -77,7 +77,7 @@ import * as feishuChatThreadRouteSchema from "./schema/feishu-chat-thread-route"
 import * as feishuChatIngressSchema from "./schema/feishu-chat-ingress";
 import * as feishuUserAgentPreferenceSchema from "./schema/feishu-user-agent-preference";
 import * as orgSchema from "./schema/org-metadata";
-import * as orgPlanEntitlementSchema from "./schema/org-plan-entitlement";
+import * as orgPlanEntitlementSchema from "./runtime/org-plan-entitlement";
 import * as orgConcurrencyEntitlementSchema from "./schema/org-concurrency-entitlement";
 import * as orgConcurrencySubscriptionSchema from "./schema/org-concurrency-subscription";
 import * as orgUsageAllowanceSchema from "./schema/org-usage-allowance";

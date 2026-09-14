@@ -187,6 +187,10 @@ impl SecretMasker {
     }
 
     /// Recursively mask secrets in JSON object keys and string values (in-place).
+    ///
+    /// Keys whose cascading redactions exceed a linear scan budget are replaced
+    /// in full with `***`. Colliding masked keys receive unique secret-free names
+    /// so that every value and unmatched key is preserved.
     pub fn mask_value(&self, val: &mut Value) {
         if self.matcher.is_none() && self.url_encoded_matcher.is_none() {
             return;
@@ -384,14 +388,26 @@ impl SecretMasker {
     }
 
     fn fully_masked_key(&self, key: &str) -> Option<String> {
+        // Include the first scan in a budget of four times the original length.
+        // Charging each haystack before scanning bounds aggregate searching and
+        // copying for a fixed matcher, even when a pass removes only two bytes.
+        let mut remaining = key.len().saturating_mul(4) - key.len();
         let mut masked = self.masked_string(key)?;
-        // Production patterns are longer than "***", so each pass shortens
-        // the key and the loop terminates after removing cascading matches.
-        while let Some(remasked) = self.masked_string(&masked) {
+        loop {
+            let Some(budget) = remaining.checked_sub(masked.len()) else {
+                // Never return an unchecked intermediate key. This whole-key
+                // marker is shorter than every accepted production secret;
+                // unique_masked_key still preserves entries when it collides.
+                return Some("***".to_string());
+            };
+            remaining = budget;
+            let Some(remasked) = self.masked_string(&masked) else {
+                return Some(masked);
+            };
+            // Production patterns are longer than "***", so each pass shrinks.
             debug_assert!(remasked.len() < masked.len());
             masked = remasked;
         }
-        Some(masked)
     }
 
     fn unique_masked_key(

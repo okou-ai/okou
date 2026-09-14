@@ -513,6 +513,10 @@ impl PooledNbdCowDevice {
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
 
     use crate::{BLOCK_SIZE, DEFAULT_FLUSH_THRESHOLD, cow, cow_io, pool};
     use tokio_util::sync::CancellationToken;
@@ -520,6 +524,8 @@ mod tests {
     use super::*;
 
     const TEST_DEVICE_INDEX: u32 = 1_000_000;
+    const TEST_TIMEOUT: Duration = Duration::from_secs(1);
+    const TEST_COW_DATA: [u8; BLOCK_SIZE] = [0x5a; BLOCK_SIZE];
 
     fn create_test_base_image(path: &Path) {
         let file = std::fs::File::create(path).expect("create base image");
@@ -537,6 +543,10 @@ mod tests {
 
     impl PooledDestroyHarness {
         fn new() -> Self {
+            Self::with_cow_setup(|_| ()).0
+        }
+
+        fn with_cow_setup<T>(setup: impl FnOnce(&mut cow::CowLayer) -> T) -> (Self, T) {
             let tmp = tempfile::tempdir().expect("tempdir");
             let base = tmp.path().join("base.img");
             let cow_file = tmp.path().join("cow.img");
@@ -548,7 +558,7 @@ mod tests {
             std::fs::write(&cow_file, b"cow").expect("write cow file");
 
             let pool = pool::DevicePoolHandle::new(pool::DevicePoolConfig::default());
-            let cow = cow::CowLayer::new(
+            let mut cow = cow::CowLayer::new(
                 &base,
                 &cow_file,
                 BLOCK_SIZE as u64,
@@ -556,6 +566,7 @@ mod tests {
                 DEFAULT_FLUSH_THRESHOLD,
             )
             .expect("create cow layer");
+            let setup_result = setup(&mut cow);
             let device = PooledNbdCowDevice {
                 device: NbdCowDevice {
                     device_index: TEST_DEVICE_INDEX,
@@ -574,14 +585,17 @@ mod tests {
                 pool: pool.clone(),
             };
 
-            Self {
-                _tmp: tmp,
-                cow_file,
-                bitmap_file,
-                bitmap_tmp_path,
-                pool,
-                device,
-            }
+            (
+                Self {
+                    _tmp: tmp,
+                    cow_file,
+                    bitmap_file,
+                    bitmap_tmp_path,
+                    pool,
+                    device,
+                },
+                setup_result,
+            )
         }
 
         fn write_bitmap_sidecar(&self) {
@@ -592,16 +606,11 @@ mod tests {
             std::fs::create_dir(&self.bitmap_tmp_path).expect("create bitmap tmp dir");
         }
 
-        fn create_transient_bitmap_tmp_symlink(&self) {
-            std::os::unix::fs::symlink(
-                self.bitmap_file
-                    .parent()
-                    .expect("bitmap path parent")
-                    .join("missing-parent")
-                    .join("bitmap.tmp"),
-                &self.bitmap_tmp_path,
-            )
-            .expect("create broken bitmap tmp symlink");
+        fn with_transient_bitmap_failure() -> (Self, Arc<AtomicUsize>) {
+            Self::with_cow_setup(|cow| {
+                cow.write(0, &TEST_COW_DATA).expect("buffer COW data");
+                cow.fail_first_bitmap_rename()
+            })
         }
 
         fn replace_cow_file_with_directory(&self) {
@@ -852,8 +861,54 @@ mod tests {
 
     #[tokio::test]
     async fn destroy_keep_cow_retries_after_first_error_and_returns_preserved_paths() {
-        let harness = PooledDestroyHarness::new();
-        harness.create_transient_bitmap_tmp_symlink();
+        let (harness, rename_attempts) = PooledDestroyHarness::with_transient_bitmap_failure();
+        let PooledDestroyHarness {
+            _tmp: tmp,
+            cow_file,
+            bitmap_file,
+            bitmap_tmp_path,
+            pool,
+            device,
+        } = harness;
+
+        let result = tokio::time::timeout(
+            TEST_TIMEOUT,
+            device.destroy_keep_cow_with_retries(DestroyRetryPolicy {
+                attempts: 2,
+                delay: std::time::Duration::ZERO,
+            }),
+        )
+        .await;
+        tokio::time::timeout(TEST_TIMEOUT, pool.cleanup())
+            .await
+            .expect("pool cleanup should complete");
+        let kept = result
+            .expect("destroy keep cow should complete")
+            .expect("destroy keep cow should retry after the first rename failure");
+
+        assert_eq!(rename_attempts.load(Ordering::Relaxed), 2);
+        assert_eq!(kept.cow_file, cow_file);
+        assert_eq!(kept.bitmap_file, bitmap_file);
+        assert_eq!(std::fs::read(&kept.cow_file).unwrap(), TEST_COW_DATA);
+        assert!(kept.bitmap_file.exists());
+        assert!(!bitmap_tmp_path.exists());
+
+        let restored = cow::CowLayer::new(
+            &tmp.path().join("base.img"),
+            &kept.cow_file,
+            BLOCK_SIZE as u64,
+            BLOCK_SIZE,
+            DEFAULT_FLUSH_THRESHOLD,
+        )
+        .expect("restore the preserved COW and bitmap");
+        let mut restored_data = [0; BLOCK_SIZE];
+        restored.read(0, &mut restored_data).unwrap();
+        assert_eq!(restored_data, TEST_COW_DATA);
+    }
+
+    #[tokio::test]
+    async fn destroy_keep_cow_single_attempt_returns_transient_bitmap_error() {
+        let (harness, rename_attempts) = PooledDestroyHarness::with_transient_bitmap_failure();
         let PooledDestroyHarness {
             _tmp,
             cow_file,
@@ -863,19 +918,28 @@ mod tests {
             device,
         } = harness;
 
-        let kept = device
-            .destroy_keep_cow_with_retries(DestroyRetryPolicy {
-                attempts: 2,
+        let result = tokio::time::timeout(
+            TEST_TIMEOUT,
+            device.destroy_keep_cow_with_retries(DestroyRetryPolicy {
+                attempts: 1,
                 delay: std::time::Duration::ZERO,
-            })
+            }),
+        )
+        .await;
+        tokio::time::timeout(TEST_TIMEOUT, pool.cleanup())
             .await
-            .expect("destroy keep cow should retry after tmp-file failure");
+            .expect("pool cleanup should complete");
+        let error = result
+            .expect("destroy keep cow should complete")
+            .expect_err("one attempt cannot recover from the injected rename failure");
+        let error::NbdCowError::Io(error) = error else {
+            panic!("expected the original rename I/O error, got {error:?}");
+        };
 
-        assert_eq!(kept.cow_file, cow_file);
-        assert_eq!(kept.bitmap_file, bitmap_file);
-        assert!(kept.cow_file.exists());
-        assert!(kept.bitmap_file.exists());
+        assert_eq!(error.raw_os_error(), Some(libc::EIO));
+        assert_eq!(rename_attempts.load(Ordering::Relaxed), 1);
+        assert_eq!(std::fs::read(&cow_file).unwrap(), TEST_COW_DATA);
+        assert!(!bitmap_file.exists());
         assert!(!bitmap_tmp_path.exists());
-        pool.cleanup().await;
     }
 }

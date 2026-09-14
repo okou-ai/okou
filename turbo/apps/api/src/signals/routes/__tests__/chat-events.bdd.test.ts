@@ -45,7 +45,10 @@ import {
   type UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { cronExtractPiMemoryStage1Contract } from "@okouai/api-contracts/contracts/cron";
-import { triggerSourceSchema } from "@okouai/api-contracts/contracts/logs";
+import {
+  type TriggerSource,
+  triggerSourceSchema,
+} from "@okouai/api-contracts/contracts/logs";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
 import { MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS } from "@okouai/api-contracts/contracts/model-price-tiers";
 import {
@@ -2878,7 +2881,7 @@ async function expectThreadPiTerminal(
 
 describe("thread-bound Pi Automation and Goal execution", () => {
   it.each(["schedule", "event"] as const)(
-    "rotates the %s Automation session into Pi and shares owned learning with user turns",
+    "rotates the %s Automation session into Pi and learns only from its user turns",
     async (source) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor(
         {},
@@ -3069,10 +3072,17 @@ describe("thread-bound Pi Automation and Goal execution", () => {
         legacyBinding.agent_session_id,
       );
       const piHistory = await readPiConversationIdentityFixture(piRunId);
-      await expectExactPrivatePiMemoryAdmission({
-        orgId,
-        userId: actor.userId,
-        runId: piRunId,
+      // An Automation completion never produces memory (EPIC #33892
+      // Decision 3): its owned Chat Thread is skipped as a non-interactive
+      // source rather than a missing thread, and no candidate row is written.
+      await expect(
+        readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
+      ).resolves.toBeNull();
+      await expect(
+        readmitPiMemoryStage1CandidateFixture(piRunId),
+      ).resolves.toStrictEqual({
+        outcome: "skipped",
+        reason: "non_interactive_source",
       });
       const runState = await runStateStore.set(
         readAgentRunState$,
@@ -3098,7 +3108,6 @@ describe("thread-bound Pi Automation and Goal execution", () => {
       );
       await expectThreadPiTerminal(actor, threadId, piRunId);
       expect(requests).toHaveLength(0);
-      await extractOwnedThreadPiMemory(actor, piRunId);
 
       mockNow(now() + 1000);
       const user = await sendChatRun(
@@ -3115,12 +3124,12 @@ describe("thread-bound Pi Automation and Goal execution", () => {
       expect(userHistory.sourceHistoryHash).not.toBe(
         piHistory.sourceHistoryHash,
       );
-      await expect(
-        readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
-      ).resolves.toMatchObject({
-        piSessionId: piHistory.piSessionId,
-        sourceRunId: user.runId,
-        sourceHistoryHash: userHistory.sourceHistoryHash,
+      // The user's turn in the same rotated session is this owner's first
+      // admitted learning source, and its extraction succeeds.
+      await expectExactPrivatePiMemoryAdmission({
+        orgId,
+        userId: actor.userId,
+        runId: user.runId,
       });
       expect(requests).toHaveLength(1);
       expect(requests[0]).toMatchObject({ model: "gpt-5.6-terra" });
@@ -3130,6 +3139,7 @@ describe("thread-bound Pi Automation and Goal execution", () => {
         cacheRead: 0,
         cacheCreation: 0,
       });
+      await extractOwnedThreadPiMemory(actor, user.runId);
       clearMockNow();
     },
     90_000,
@@ -9391,13 +9401,13 @@ describe("CHAT-02: model-first provider policies", () => {
     });
   }, 90_000);
 
-  it("admits an exact Pi history from an agent-authenticated same-owner chat send", async () => {
+  it("keeps an agent-authenticated same-owner Pi history out of memory", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     await bdd.updateAgentMetadata(actor, agentId, { visibility: "public" });
     const source = await sendChatRun(actor, {
       agentId,
-      prompt: "delegate an eligible Pi memory turn",
+      prompt: "delegate a non-interactive Pi turn",
       model: "claude-sonnet-5",
     });
     const sourceClaim = await claimChatRun(runnerGroup, source.runId);
@@ -9463,10 +9473,14 @@ describe("CHAT-02: model-first provider policies", () => {
       source,
       targetThreadId: targetThread.id,
     });
-    await expectExactPrivatePiMemoryAdmission({
-      orgId,
-      userId: actor.userId,
-      runId: delegatedRunId,
+    await expect(
+      readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
+    ).resolves.toBeNull();
+    await expect(
+      readmitPiMemoryStage1CandidateFixture(delegatedRunId),
+    ).resolves.toStrictEqual({
+      outcome: "skipped",
+      reason: "non_interactive_source",
     });
     await expectAgentTokenThreadOwnershipBoundaries({
       agentId,
@@ -9496,7 +9510,7 @@ describe("CHAT-02: model-first provider policies", () => {
         generationEnabled: false,
       }),
     ).toBe("generation_disabled");
-    // Every product source must still own a Chat Thread. The actual
+    // Every interactive source must still own a Chat Thread. The actual
     // threadless Phase 2 maintenance route is covered by the boundary test.
     expect(
       piMemoryStage1AdmissionPrerequisiteSkipReasonFixture({
@@ -9505,15 +9519,29 @@ describe("CHAT-02: model-first provider policies", () => {
     ).toBe("missing_chat_thread");
     expect(
       piMemoryStage1AdmissionPrerequisiteSkipReasonFixture({
-        triggerSource: "agent",
+        triggerSource: "web",
       }),
     ).toBeNull();
+    expect(
+      piMemoryStage1AdmissionPrerequisiteSkipReasonFixture({
+        triggerSource: "web",
+        chatThreadId: null,
+      }),
+    ).toBe("missing_chat_thread");
+    // A non-interactive source is reported as such before the Chat Thread
+    // check: the threadless Phase 2 maintenance run and a thread-bound
+    // Automation run both skip for their real reason.
     expect(
       piMemoryStage1AdmissionPrerequisiteSkipReasonFixture({
         triggerSource: "agent",
         chatThreadId: null,
       }),
-    ).toBe("missing_chat_thread");
+    ).toBe("non_interactive_source");
+    expect(
+      piMemoryStage1AdmissionPrerequisiteSkipReasonFixture({
+        triggerSource: "automation-schedule",
+      }),
+    ).toBe("non_interactive_source");
     expect(
       piMemoryStage1AdmissionPrerequisiteSkipReasonFixture({
         triggerSource: null,
@@ -9524,10 +9552,31 @@ describe("CHAT-02: model-first provider policies", () => {
         triggerSource: "unknown",
       }),
     ).toBe("invalid_source");
+    // Every trigger source is classified explicitly: only human-interactive
+    // surfaces proceed to memory extraction (EPIC #33892 Decisions 2 and 3).
+    const prerequisiteByTriggerSource = {
+      web: null,
+      slack: null,
+      teams: null,
+      feishu: null,
+      email: null,
+      telegram: null,
+      agentphone: null,
+      github: null,
+      test: "synthetic_source",
+      agent: "non_interactive_source",
+      webhook: "non_interactive_source",
+      "automation-schedule": "non_interactive_source",
+      "automation-event": "non_interactive_source",
+      goal: "non_interactive_source",
+    } as const satisfies Record<
+      TriggerSource,
+      ReturnType<typeof piMemoryStage1AdmissionPrerequisiteSkipReasonFixture>
+    >;
     for (const triggerSource of triggerSourceSchema.options) {
       expect(
         piMemoryStage1AdmissionPrerequisiteSkipReasonFixture({ triggerSource }),
-      ).toBe(triggerSource === "test" ? "synthetic_source" : null);
+      ).toBe(prerequisiteByTriggerSource[triggerSource]);
     }
     const usagePricingResolution = await createGptUsagePricingResolution();
     mockEnv("PI_MEMORY_STAGE1_IDLE_DELAY_MS", 60_000);
@@ -29277,7 +29326,7 @@ describe("shared native Pi route activation", () => {
     90_000,
   );
   it.each(["schedule", "event"] as const)(
-    "uses the shared native %s Automation handoff, completion and owned memory path",
+    "uses the shared native %s Automation handoff and completion without owned memory",
     async (source) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor(
         {},
@@ -29384,10 +29433,19 @@ describe("shared native Pi route activation", () => {
         usagePricingResolution: pricing,
       });
       await expectThreadPiTerminal(actor, threadId, runId);
-      await expectExactPrivatePiMemoryAdmission({
-        orgId: requireOrgId(actor),
-        userId: actor.userId,
-        runId,
+      // With PiMemory on, the native Automation completion is still skipped
+      // as a non-interactive source and writes no owned memory candidate.
+      await expect(
+        readPiMemoryStage1CandidateFixture({
+          orgId: requireOrgId(actor),
+          userId: actor.userId,
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        readmitPiMemoryStage1CandidateFixture(runId),
+      ).resolves.toStrictEqual({
+        outcome: "skipped",
+        reason: "non_interactive_source",
       });
       await expectNoBuiltInModelUsage(runId);
     },

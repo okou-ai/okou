@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::{Cursor, Read};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::thread;
@@ -8,8 +9,8 @@ use guest_contracts::process_containment::{
 };
 use guest_control_proto::{
     self, ExecControlPolicy, ExecControlStatus, ExecLifecyclePolicy, ExecOutputPolicy,
-    ExecStartEncodeRequest, ExecTermination, ExecTimeoutPolicy, MSG_EXEC_RESULT,
-    MSG_OPERATIONS_QUIESCED,
+    ExecStartEncodeRequest, ExecTermination, ExecTimeoutPolicy, MSG_EXEC_AGENT_READY,
+    MSG_EXEC_OUTPUT, MSG_EXEC_RESULT, MSG_OPERATIONS_QUIESCED,
 };
 
 use super::exec_helpers::*;
@@ -181,6 +182,67 @@ fn controlled_agent_spawn_failure_returns_start_failed_and_releases_registration
 
 #[test]
 fn supervised_exec_control_forwards_to_bootstrap_sink() {
+    assert_bootstrap_sink_forwarding(AgentStartupOrder::AsReceived, 1024);
+}
+
+#[test]
+fn supervised_exec_control_forwards_to_bootstrap_sink_with_output_before_ready() {
+    assert_bootstrap_sink_forwarding(AgentStartupOrder::OutputFirst, 7);
+}
+
+#[test]
+fn supervised_exec_control_forwards_to_bootstrap_sink_with_ready_before_output() {
+    assert_bootstrap_sink_forwarding(AgentStartupOrder::ReadyFirst, 7);
+}
+
+enum AgentStartupOrder {
+    AsReceived,
+    OutputFirst,
+    ReadyFirst,
+}
+
+fn read_bootstrap_startup(
+    stream: &mut impl Read,
+    seq: u32,
+    endpoint: &[u8],
+    order: AgentStartupOrder,
+) -> guest_control_proto::ExecAgentReadyTiming {
+    let first_type = match order {
+        AgentStartupOrder::AsReceived => {
+            return read_exec_agent_ready_and_stdout(stream, seq, endpoint);
+        }
+        AgentStartupOrder::OutputFirst => MSG_EXEC_OUTPUT,
+        AgentStartupOrder::ReadyFirst => MSG_EXEC_AGENT_READY,
+    };
+
+    // Replay real connection frames in each legal order without changing the
+    // producer's scheduling. Keep every frame and the relative order of stdout.
+    let mut frames = Vec::new();
+    let mut saw_ready = false;
+    let mut saw_output = false;
+    while !saw_ready || !saw_output {
+        assert!(frames.len() < endpoint.len() + 1, "too many startup frames");
+        let msg = read_message(stream);
+        match msg.msg_type {
+            MSG_EXEC_AGENT_READY => saw_ready = true,
+            MSG_EXEC_OUTPUT => saw_output = true,
+            other => panic!("unexpected startup frame: 0x{other:02X}"),
+        }
+        frames.push(msg);
+    }
+    frames.sort_by_key(|msg| msg.msg_type != first_type);
+    let bytes: Vec<u8> = frames
+        .into_iter()
+        .flat_map(|msg| guest_control_proto::encode(msg.msg_type, msg.seq, &msg.payload).unwrap())
+        .collect();
+    let mut replay = Cursor::new(bytes).chain(stream);
+    let ready = read_exec_agent_ready_and_stdout(&mut replay, seq, endpoint);
+    let (replayed, _) = replay.into_inner();
+    assert_eq!(replayed.position() as usize, replayed.get_ref().len());
+    ready
+}
+
+fn assert_bootstrap_sink_forwarding(order: AgentStartupOrder, chunk_limit_bytes: u32) {
     let pid_path = unique_pid_path("supervised-exec-bootstrap-sink");
     let agent_path = unique_tmp_path("supervised-exec-bootstrap-agent", ".sh");
     fs::write(
@@ -199,7 +261,7 @@ sleep 60
     fs::set_permissions(agent_path.as_str(), permissions).unwrap();
     let mut child_guard = ProcessGroupFileGuard::new(pid_path.as_str());
     let target_seq = 203;
-    let control_nonce = unique_exec_control_nonce(u64::from(target_seq));
+    let control_nonce = *uuid::Uuid::new_v4().as_bytes();
     let endpoint = process_control_ipc::endpoint_name(target_seq, &control_nonce);
     let (handle, mut host_stream) =
         start_guest_connection_with_guest_agent_program(PathBuf::from(agent_path.as_str()));
@@ -232,7 +294,7 @@ sleep 60
             stdout: ExecOutputPolicy::CaptureAndStream {
                 capture_limit_bytes: 1024,
                 stream_limit_bytes: 1024,
-                chunk_limit_bytes: 1024,
+                chunk_limit_bytes,
             },
             stderr: ExecOutputPolicy::Capture { limit_bytes: 1024 },
             expected_exit_codes: &[],
@@ -244,13 +306,9 @@ sleep 60
         },
     );
     assert!(read_exec_started(&mut host_stream, target_seq) > 0);
-    let ready = read_exec_agent_ready(&mut host_stream, target_seq);
+    let ready = read_bootstrap_startup(&mut host_stream, target_seq, endpoint.as_bytes(), order);
     assert!(ready.shell_spawn_us > 0);
     let pid = child_guard.read_pid();
-    assert_eq!(
-        read_exec_stdout_output(&mut host_stream, target_seq),
-        endpoint.as_bytes()
-    );
 
     let client_endpoint = endpoint.clone();
     let client = thread::spawn(move || {
@@ -283,9 +341,11 @@ sleep 60
     client.join().unwrap();
 
     send_exec_cancel(&mut host_stream, target_seq);
-    let (_chunks, result) = read_exec_result(&mut host_stream, target_seq);
+    let (chunks, result) = read_exec_result(&mut host_stream, target_seq);
+    assert!(chunks.is_empty(), "unexpected output after the endpoint");
     assert_eq!(result.termination, ExecTermination::Cancelled);
     assert_eq!(result.stdout, Some(endpoint.into_bytes()));
+    assert!(!result.stdout_truncated);
     wait_for_pid_exit(pid, "supervised exec bootstrap sink cleanup");
     child_guard.disarm();
 

@@ -12,7 +12,7 @@ from mitmproxy import http
 import body_decoding
 import flow_metadata_keys as metadata_keys
 import request_streaming
-import response_streaming
+import stream_capture
 from body_limits import BODY_CAPTURE_LIMIT
 
 _REDACTED_HEADER_VALUE = "***"
@@ -576,7 +576,7 @@ def add_capture_fields(
 
     # Response headers
     if flow.response:
-        stream_body = response_streaming.captured_response_stream_body(flow)
+        stream_body = stream_capture.captured_response_stream_body(flow)
         stream_truncated = False
         if stream_body is not None:
             stream_truncated = stream_body.truncated

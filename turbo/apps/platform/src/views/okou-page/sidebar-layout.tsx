@@ -327,7 +327,7 @@ function MobileTopBar() {
                 <Link
                   pathname={breadcrumb.sectionPath}
                   options={breadcrumb.sectionOptions}
-                  className="hover:opacity-70 transition-opacity no-underline text-inherit"
+                  className="hover:opacity-70 no-underline text-inherit"
                 >
                   {breadcrumb.section}
                 </Link>

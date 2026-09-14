@@ -157,10 +157,11 @@ process control/placement IPC, not this cross-VM transport.
 ## Opt-in binary streaming foundation
 
 #33856 (under #33847) adds `/usr/local/bin/runner-rpc-client --stream` for
-future binary consumers. It does **not** enable SSH upload/download: #33857 owns
-those methods, SFTP and CLI file semantics. The current production dispatcher
-still rejects those unknown methods before resolving authority. Existing exec,
-session and no-argument helper contracts are unchanged.
+bounded binary consumers. #33857 adds `ssh.file.upload` / `ssh.file.download`,
+Runner-owned SFTP and [CLI file semantics](ssh-access.md#file-upload-and-download).
+Only validated file methods extend the Runner request lifetime; unknown methods
+are rejected before resolving authority. Existing exec, session and no-argument
+helper contracts are unchanged.
 
 Streaming stdin starts with one length-delimited, ordinary version-1 Request
 frame, followed by binary frames. The helper rejects caller-supplied

@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "1.255.3",
+  "version": "1.255.4",
   "private": true,
   "type": "module",
   "exports": {
@@ -27,10 +27,6 @@
     "./operations/org-metadata-canonical-write": {
       "import": "./src/operations/org-metadata-canonical-write.ts",
       "types": "./src/operations/org-metadata-canonical-write.ts"
-    },
-    "./operations/org-plan-entitlement-canonical-write": {
-      "import": "./src/operations/org-plan-entitlement-canonical-write.ts",
-      "types": "./src/operations/org-plan-entitlement-canonical-write.ts"
     },
     "./types": {
       "import": "./src/types.ts",

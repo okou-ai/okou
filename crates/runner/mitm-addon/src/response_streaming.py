@@ -31,7 +31,7 @@ import model_websocket_usage
 import runtime_url_parsing
 import stream_capture
 import usage
-from body_limits import LARGE_RESPONSE_DECOMPRESS_LIMIT, STREAM_BUFFER_LIMIT
+from body_limits import STREAM_BUFFER_LIMIT
 from logging_utils import log_proxy_entry
 from usage.underbilling import log_usage_underbilling
 
@@ -395,23 +395,19 @@ def _configure_response_inspection_stream(
                 if decode_session is not None:
                     decode_error = decode_session.finish_error()
                 else:
-                    stream_body = captured_response_stream_body(flow)
+                    stream_body = stream_capture.captured_response_stream_body(flow)
                     if stream_body is None:
                         raise RuntimeError(
                             "buffered model JSON finalizer requires a response stream buffer"
                         )
-                    if stream_body.truncated:
-                        decode_error = body_decoding.INCOMPLETE_COMPRESSED_BODY
-                    elif stream_body.buffer:
-                        decoded_body, decode_error = body_decoding.decompress_json_usage_body(
-                            bytes(stream_body.buffer),
-                            response.headers,
-                            max_output=LARGE_RESPONSE_DECOMPRESS_LIMIT,
-                        )
-                        if decode_error is None:
+                    decoded_body, decode_error = body_decoding.decode_captured_json_usage_body(
+                        stream_body, response.headers
+                    )
+                    if decode_error is None:
+                        if stream_body.buffer:
                             extractor.feed(decoded_body)
-                    else:
-                        finished = True
+                        else:
+                            finished = True
                 if not finished and decode_error is None:
                     inspection = extractor.finish()
                     if failure_observer is not None:
@@ -634,25 +630,6 @@ def streamed_response_size(flow: http.HTTPFlow) -> int | None:
     if state is None:
         return None
     return int(state["total_bytes"])
-
-
-def captured_response_stream_body(flow: http.HTTPFlow) -> stream_capture.CapturedStreamBody | None:
-    """Return buffered response body bytes and truncation state.
-
-    ``configure_response_stream()`` writes ``STREAM_BUFFER`` and
-    ``STREAM_BUFFER_STATE`` together. This read helper keeps the metadata
-    invariant next to the writer for capture logging and terminal inspection.
-    """
-    stream_buf = flow.metadata.get(metadata_keys.STREAM_BUFFER)
-    stream_state = flow.metadata.get(metadata_keys.STREAM_BUFFER_STATE)
-    return stream_capture.captured_stream_body(
-        stream_buf,
-        stream_state,
-        body_kind="response",
-        buffer_key=metadata_keys.STREAM_BUFFER,
-        state_key=metadata_keys.STREAM_BUFFER_STATE,
-        writer="response_streaming.configure_response_stream()",
-    )
 
 
 def finalize_model_json_usage(flow: http.HTTPFlow, proxy_log_path: str) -> None:

@@ -51,6 +51,7 @@ describe("okou web upload-file command", () => {
   beforeEach(() => {
     chalk.level = 0;
     uploadFileCommand.setOptionValue("json", undefined);
+    uploadFileCommand.setOptionValue("contentType", undefined);
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
 
@@ -65,6 +66,177 @@ describe("okou web upload-file command", () => {
   });
 
   describe("successful upload", () => {
+    it.each([
+      {
+        createPath: () => {
+          return join(tmpDir, "report.md");
+        },
+        contentType: "text/markdown; charset=utf-8",
+      },
+      {
+        createPath: () => {
+          return join(tmpDir, "note.txt");
+        },
+        contentType: "text/plain; charset=utf-8",
+      },
+      {
+        createPath: () => {
+          return join(tmpDir, "table.csv");
+        },
+        contentType: "text/csv; charset=utf-8",
+      },
+      {
+        createPath: () => {
+          return join(tmpDir, "table.tsv");
+        },
+        contentType: "text/tab-separated-values; charset=utf-8",
+      },
+    ])(
+      "delivers $contentType with original bytes",
+      async ({ createPath, contentType }) => {
+        const filePath = createPath();
+        const filename = basename(filePath);
+        const bytes = Buffer.from("中文 / 日本語 / 한글 / emoji 😀\n", "utf8");
+        writeFileSync(filePath, bytes);
+        const file = {
+          id: "00000000-0000-4000-8000-000000000028",
+          filename,
+          contentType,
+          size: bytes.length,
+          url: `https://cdn.example.test/${filename}`,
+        };
+        let uploadedBytes: ArrayBuffer | undefined;
+
+        server.use(
+          http.post(PREPARE_URL, async ({ request }) => {
+            expect(await request.json()).toMatchObject({
+              filename,
+              contentType,
+              size: bytes.length,
+              purpose: "artifact",
+            });
+            return HttpResponse.json({ ...file, uploadUrl: PUT_URL });
+          }),
+          http.put(PUT_URL, async ({ request }) => {
+            expect(request.headers.get("content-type")).toBe(contentType);
+            uploadedBytes = await request.arrayBuffer();
+            return new HttpResponse(null, { status: 200 });
+          }),
+          http.post(COMPLETE_URL, async ({ request }) => {
+            expect(await request.json()).toEqual({ id: file.id, contentType });
+            return HttpResponse.json(file);
+          }),
+        );
+
+        await uploadFileCommand.parseAsync([
+          "node",
+          "cli",
+          "-f",
+          filePath,
+          "--json",
+        ]);
+
+        expect(uploadedBytes).toEqual(new Uint8Array(bytes).buffer);
+        expect(
+          JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
+        ).toMatchObject(file);
+      },
+    );
+
+    it("preserves an explicitly declared non-UTF-8 text artifact", async () => {
+      const filePath = join(tmpDir, "legacy.txt");
+      const bytes = Buffer.from([0xd6, 0xd0, 0xce, 0xc4]);
+      writeFileSync(filePath, bytes);
+      const file = {
+        id: "00000000-0000-4000-8000-000000000029",
+        filename: "legacy.txt",
+        contentType: "text/plain; charset=gb18030",
+        size: bytes.length,
+        url: "https://cdn.example.test/legacy.txt",
+      };
+      server.use(
+        http.post(PREPARE_URL, async ({ request }) => {
+          expect(await request.json()).toMatchObject({
+            contentType: file.contentType,
+          });
+          return HttpResponse.json({ ...file, uploadUrl: PUT_URL });
+        }),
+        http.put(PUT_URL, async ({ request }) => {
+          expect(request.headers.get("content-type")).toBe(file.contentType);
+          expect(await request.arrayBuffer()).toEqual(
+            new Uint8Array(bytes).buffer,
+          );
+          return new HttpResponse(null, { status: 200 });
+        }),
+        http.post(COMPLETE_URL, () => {
+          return HttpResponse.json(file);
+        }),
+      );
+
+      await uploadFileCommand.parseAsync([
+        "node",
+        "cli",
+        "-f",
+        filePath,
+        "--content-type",
+        file.contentType,
+        "--json",
+      ]);
+
+      expect(
+        JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
+      ).toMatchObject(file);
+    });
+
+    it("uses the content type signed by an older API that strips charset parameters", async () => {
+      const filePath = join(tmpDir, "report.md");
+      const bytes = Buffer.from("# 中文版 😀\n", "utf8");
+      writeFileSync(filePath, bytes);
+      const file = {
+        id: "00000000-0000-4000-8000-000000000031",
+        filename: "report.md",
+        contentType: "text/markdown",
+        size: bytes.length,
+        url: "https://cdn.example.test/report.md",
+      };
+      let uploadedBytes: ArrayBuffer | undefined;
+      server.use(
+        http.post(PREPARE_URL, async ({ request }) => {
+          expect(await request.json()).toMatchObject({
+            contentType: "text/markdown; charset=utf-8",
+          });
+          return HttpResponse.json({ ...file, uploadUrl: PUT_URL });
+        }),
+        http.put(PUT_URL, async ({ request }) => {
+          expect(request.headers.get("content-type")).toBe(file.contentType);
+          uploadedBytes = await request.arrayBuffer();
+          return new HttpResponse(null, { status: 200 });
+        }),
+        http.post(COMPLETE_URL, async ({ request }) => {
+          expect(await request.json()).toEqual({
+            id: file.id,
+            contentType: file.contentType,
+          });
+          return HttpResponse.json(file);
+        }),
+      );
+
+      await uploadFileCommand.parseAsync([
+        "node",
+        "cli",
+        "-f",
+        filePath,
+        "--content-type",
+        "text/markdown",
+        "--json",
+      ]);
+
+      expect(uploadedBytes).toEqual(new Uint8Array(bytes).buffer);
+      expect(
+        JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
+      ).toMatchObject(file);
+    });
+
     it("should prepare + PUT + complete and print artifact presentation context", async () => {
       const filePath = join(tmpDir, "report.pdf");
       writeFileSync(filePath, Buffer.from("%PDF-1.4 fake"));
@@ -487,7 +659,10 @@ describe("okou web upload-file command", () => {
         },
         { filename: "data.xml", contentType: "application/xml" },
         { filename: "config.yaml", contentType: "application/yaml" },
-        { filename: "table.tsv", contentType: "text/tab-separated-values" },
+        {
+          filename: "table.tsv",
+          contentType: "text/tab-separated-values; charset=utf-8",
+        },
         {
           filename: "events.parquet",
           contentType: "application/vnd.apache.parquet",
@@ -569,6 +744,32 @@ describe("okou web upload-file command", () => {
   });
 
   describe("validation errors", () => {
+    it("rejects non-UTF-8 generated text before storing mislabeled bytes", async () => {
+      const filePath = join(tmpDir, "report.md");
+      writeFileSync(filePath, Buffer.from([0xd6, 0xd0, 0xce, 0xc4]));
+      server.use(
+        http.post(PREPARE_URL, () => {
+          return HttpResponse.json({
+            id: "00000000-0000-4000-8000-000000000030",
+            filename: "report.md",
+            contentType: "text/markdown; charset=utf-8",
+            size: 4,
+            uploadUrl: PUT_URL,
+            url: "https://cdn.example.test/report.md",
+          });
+        }),
+      );
+
+      await expect(
+        uploadFileCommand.parseAsync(["node", "cli", "-f", filePath]),
+      ).rejects.toThrow("process.exit called");
+
+      expect(mockConsoleError).toHaveBeenCalledWith(
+        expect.stringContaining("Text artifacts must use UTF-8"),
+      );
+      expect(mockConsoleLog).not.toHaveBeenCalled();
+    });
+
     it("should throw when the file does not exist", async () => {
       await expect(async () => {
         await uploadFileCommand.parseAsync([
