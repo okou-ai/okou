@@ -3,8 +3,6 @@
   "legacyClassTokens": [
     "language-mermaid",
     "okou-app",
-    "okou-chat-card",
-    "okou-chat-frame",
     "okou-chat-skeleton-reveal",
     "okou-composer",
     "okou-desktop-titlebar-drag-region",
@@ -419,34 +417,6 @@
         "selector": ".okou-app",
         "property": "--color-sidebar-rail",
         "value": " hsl(var(--sidebar-rail))",
-        "important": false
-      },
-      {
-        "atRules": ["@layer components"],
-        "selector": ".okou-app .okou-chat-card,.okou-app .okou-chat-frame",
-        "property": "border",
-        "value": "1px solid hsl(var(--gray-400))",
-        "important": false
-      },
-      {
-        "atRules": ["@layer components"],
-        "selector": ".okou-app .okou-chat-card,.okou-app .okou-chat-frame",
-        "property": "border-radius",
-        "value": "var(--okou-chat-card-radius)",
-        "important": false
-      },
-      {
-        "atRules": ["@layer components"],
-        "selector": ".okou-app .okou-chat-card,.okou-app .okou-chat-frame",
-        "property": "box-shadow",
-        "value": "var(--okou-chat-card-shadow)",
-        "important": false
-      },
-      {
-        "atRules": ["@layer components"],
-        "selector": ".okou-app .okou-chat-card",
-        "property": "background-color",
-        "value": "hsl(var(--card))",
         "important": false
       },
       {
@@ -2416,19 +2386,6 @@
       "okou-app": 1,
       "okou-workspace-bg": 1
     },
-    "apps/platform/src/views/okou-page/attachment-chips.tsx": {
-      "okou-chat-card": 4,
-      "okou-chat-frame": 1
-    },
-    "apps/platform/src/views/okou-page/banking-action-card.tsx": {
-      "okou-chat-card": 3
-    },
-    "apps/platform/src/views/okou-page/browser-session-card.tsx": {
-      "okou-chat-card": 3
-    },
-    "apps/platform/src/views/okou-page/chat-body-cards.tsx": {
-      "okou-chat-card": 4
-    },
     "apps/platform/src/views/okou-page/chat-composer.tsx": {
       "okou-app": 1
     },
@@ -2436,7 +2393,6 @@
       "okou-app": 1
     },
     "apps/platform/src/views/okou-page/chat-thread-page.tsx": {
-      "okou-chat-card": 2,
       "okou-chat-skeleton-reveal": 1,
       "okou-shimmer-text": 1,
       "okou-thinking-enter": 3,
@@ -2455,9 +2411,6 @@
     "apps/platform/src/views/okou-page/connect-page-shell.tsx": {
       "okou-app": 1,
       "okou-workspace-bg": 1
-    },
-    "apps/platform/src/views/okou-page/connector-account-action-card.tsx": {
-      "okou-chat-card": 1
     },
     "apps/platform/src/views/okou-page/directed-shared.tsx": {
       "okou-app": 1

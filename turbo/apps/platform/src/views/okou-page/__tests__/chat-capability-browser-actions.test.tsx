@@ -1,7 +1,3 @@
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
 import {
   browserContract,
   type BrowserSession,
@@ -39,24 +35,17 @@ const SUSPENDED_SCREENSHOT_URL =
   "https://images.example.test/browser-suspended.png";
 const ACTIVE_BROWSER_URL = "https://browser.example.test/live/initial";
 const RESUMED_BROWSER_URL = "https://browser.example.test/live/resumed";
-const appStyles = readFileSync(
-  resolve(dirname(fileURLToPath(import.meta.url)), "../../css/index.css"),
-  "utf8",
-);
 
+/**
+ * The chat card surface is Tailwind utilities on the element itself, so the
+ * App's utility output is the whole style source; nothing has to be lifted out
+ * of the stylesheet. Colors are not observable here — happy-dom resolves
+ * neither `var()` nor `@layer`, which is why these checks stay on the border
+ * geometry the card's arbitrary width owns.
+ */
 async function createRenderedAppStyles(
   signal: AbortSignal,
 ): Promise<(element: HTMLElement) => void> {
-  const sharedCardRule = appStyles.match(
-    /\.okou-app \.okou-chat-card,\s*\.okou-app \.okou-chat-frame\s*\{[^}]+\}/u,
-  )?.[0];
-  if (!sharedCardRule) {
-    throw new Error("The shared chat card style rule was not found");
-  }
-  const renderedSharedCardRule = sharedCardRule.replace(
-    "hsl(var(--gray-400))",
-    "rgb(128, 128, 128)",
-  );
   const compiler = await compile("@tailwind utilities;");
   const styleElement = document.createElement("style");
   document.head.append(styleElement);
@@ -69,10 +58,7 @@ async function createRenderedAppStyles(
   );
 
   return (element) => {
-    styleElement.textContent = [
-      renderedSharedCardRule,
-      compiler.build([...element.classList]),
-    ].join("\n");
+    styleElement.textContent = compiler.build([...element.classList]);
   };
 }
 

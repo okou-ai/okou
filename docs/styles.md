@@ -814,6 +814,52 @@ The hovered fill carries `:not(:active)` because Tailwind decides the order the 
 
 Measured against `main` with the App's own Tailwind compiler in Chromium over CDP, on the ancestor chain captured from the real chat thread page: 28 states — both fence shapes at rest, fence-hovered, control-hovered and pressed, in Light and Dark, on a fine and a coarse pointer — report zero changed pixels and zero computed-style or geometry differences. Negative controls that drop the control's padding, shift its offset by one spacing step and drop the reveal variant report 7,818, 3,579 and 9,164 changed pixels, so the zeros are not degenerate.
 
+### Chat transcript cards — partially drained
+
+`ChatCard` in `turbo/apps/platform/src/views/okou-page/components/chat-card.tsx`
+owns the surface shared by transcript notice cards, action cards and media
+frames. It follows `Badge`'s `useRender` shape, so a caller picks the host
+element with `render` and gets no wrapper. `filled={false}` is the same recipe
+without the fill, for a frame that owns its own background. It is App-owned
+rather than shared, because its radius and shadow read the App-only
+`--okou-chat-card-*` variables declared on `.okou-app`.
+
+The border is deliberately `border-[1px] border-gray-400` rather than the shared
+`border` hairline and a semantic border token. The retired rule pinned a whole
+pixel because fractional borders visibly repaint when card contents resolve, so
+a card flickers at its edge as an image or an iframe lands. This migration
+preserves that; unifying the transcript's border width and colour with the rest
+of the product is a separate visual decision.
+
+The retired rule sat in `@layer components` so a caller's composed `border-*`,
+`bg-*` or `hover:*` utility could still outrank it — the browser session card's
+hover and selected borders are the only consumers that ever needed it. A
+component removes that arrangement rather than reproducing it: `cn()` merges the
+base with the caller's `className`, so a conflicting base utility is dropped
+instead of being outranked, and no layer ordering is involved. Measured on a
+reconstructed ancestor chain, the card's resting, hover, selected and
+selected-hover borders are identical before and after, and a control that drops
+the hover override moves 5,236 pixels, so the override is load-bearing rather
+than inert.
+
+`shadow-(--okou-chat-card-shadow)` composes Tailwind's `--tw-shadow` chain, so
+the serialized `box-shadow` carries four fully transparent placeholders the
+retired shorthand did not. The painted result is identical; a comparison should
+normalize those placeholders away rather than treat the string as the contract.
+
+The five remaining consumers are in `attachment-chips.tsx` and are **not**
+migrated. They render only inside the artifact preview dialog, and
+`DialogContent` portals to `document.body`, so the `.okou-app` ancestor that
+`.okou-app .okou-chat-card` requires is never present: measured on the rendered
+page, `artifact-dialog-document-frame.closest(".okou-app")` is `null` and the
+rule paints nothing there. Adopting `ChatCard` would add a border, radius,
+shadow and fill the artifact preview does not have today, and deleting the inert
+class names instead would freeze its current treatment-free appearance. Both are
+visual decisions, so the class names and all four declarations are left exactly
+as found and the batch stays `blocked` in the migration manifest.
+`okou-chat-frame` has only that one consumer and cannot drain until this is
+resolved.
+
 ## Exception boundary
 
 Only two exception kinds exist:

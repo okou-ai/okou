@@ -15,6 +15,7 @@ import type {
 } from "../../signals/chat-page/connector-account-action-block.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { ChatCard } from "./components/chat-card.tsx";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { CustomConnectorIcon } from "./components/settings/custom-connector-icon.tsx";
 
@@ -26,9 +27,9 @@ export function ConnectorAccountActionCard({
   // Keep the frame mounted while async states replace their content. WebKit can
   // clamp the chat's scroll position if the card collapses during a DOM commit.
   return (
-    <div className="okou-chat-card h-[136px] w-full sm:h-[88px]">
+    <ChatCard className="h-[136px] w-full sm:h-[88px]">
       <ConnectorAccountActionCardContent signals={signals} />
-    </div>
+    </ChatCard>
   );
 }
 

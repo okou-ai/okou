@@ -301,6 +301,7 @@ import {
   chatThreadContainerElement$,
   setChatKeyboardScrollRoot$,
 } from "../../signals/chat-page/chat-keyboard.ts";
+import { ChatCard } from "./components/chat-card.tsx";
 import { PersonalClaudeCodeDeviceAuthDialog } from "./components/settings/claude-code-device-auth-dialog.tsx";
 import { PersonalCodexDeviceAuthDialog } from "./components/settings/codex-device-auth-dialog.tsx";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
@@ -4926,7 +4927,7 @@ function InsufficientCreditsCard() {
   };
 
   return (
-    <div className="okou-chat-card max-w-md px-3 py-3">
+    <ChatCard className="max-w-md px-3 py-3">
       <p className="text-[0.9375rem] font-medium text-foreground">{headline}</p>
       <p className="mt-1 text-sm text-muted-foreground">{helper}</p>
       {!canShowBillingAction ? null : shouldStartProCheckout ? (
@@ -4952,7 +4953,7 @@ function InsufficientCreditsCard() {
           handleCreditClick={handleCreditClick}
         />
       )}
-    </div>
+    </ChatCard>
   );
 }
 
@@ -5096,10 +5097,10 @@ function AssistantErrorCard({
   testId?: string;
 }) {
   return (
-    <div
+    <ChatCard
       role="status"
       data-testid={testId}
-      className="okou-chat-card grid min-h-[88px] w-full grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2.5 gap-y-3 px-3.5 py-3 text-foreground @[640px]:grid-cols-[auto_minmax(0,1fr)_auto] @[640px]:content-center"
+      className="grid min-h-[88px] w-full grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2.5 gap-y-3 px-3.5 py-3 text-foreground @[640px]:grid-cols-[auto_minmax(0,1fr)_auto] @[640px]:content-center"
     >
       <Icon
         size={16}
@@ -5112,7 +5113,7 @@ function AssistantErrorCard({
         </div>
       </div>
       {actions}
-    </div>
+    </ChatCard>
   );
 }
 

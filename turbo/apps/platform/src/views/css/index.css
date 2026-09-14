@@ -715,12 +715,23 @@ body {
    `okou-chat-frame` is the same recipe without the fill, for the frames that
    own their background (a video stage is black, not white).
 
-   These live in `@layer components` on purpose. Unlayered rules outrank every
-   Tailwind utility regardless of specificity, which would silently kill any
-   `border-*`, `bg-*`, or `hover:*` a caller composes onto the same element —
-   the selected and hover states of the browser session card, for instance.
-   Inside `components`, the utilities layer still wins, so this stays a base
-   that callers can override. */
+   Every transcript consumer has moved to the `ChatCard` component in
+   `views/okou-page/components/chat-card.tsx`. **This rule now paints nothing.**
+   Its five remaining class usages are all inside the artifact preview dialog in
+   `attachment-chips.tsx`, and that dialog is portaled to `document.body`, so
+   the `.okou-app` ancestor this selector requires is never present. Measured on
+   the rendered page, `artifact-dialog-document-frame.closest(".okou-app")` is
+   `null`. Whether those frames should gain the card treatment, or drop the
+   inert class names, is a design decision tracked as `blocked` in
+   `style-migration-manifest.json`; until it is made, the declarations stay
+   exactly as they are rather than being resolved either way by this change.
+
+   The `@layer components` placement was for the transcript consumers: unlayered
+   rules outrank every Tailwind utility regardless of specificity, which would
+   have killed the `border-*`, `bg-*` and `hover:*` utilities the browser
+   session card composes onto the same element. The component supersedes that
+   arrangement — `cn()` drops a conflicting base utility instead of losing to
+   it — so the layer is now only preserving the rule as found. */
 @layer components {
   .okou-app .okou-chat-card,
   .okou-app .okou-chat-frame {

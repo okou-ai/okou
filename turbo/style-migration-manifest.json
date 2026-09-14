@@ -852,6 +852,30 @@
       "evidence": [],
       "pullRequest": "https://github.com/vm0-ai/vm0/pull/34059",
       "mergeCommit": null
+    },
+    {
+      "id": "chat-transcript-card",
+      "family": "chat-and-content",
+      "tokens": ["okou-chat-card", "okou-chat-frame"],
+      "consumers": [
+        "apps/platform/src/views/okou-page/banking-action-card.tsx",
+        "apps/platform/src/views/okou-page/browser-session-card.tsx",
+        "apps/platform/src/views/okou-page/chat-body-cards.tsx",
+        "apps/platform/src/views/okou-page/chat-thread-page.tsx",
+        "apps/platform/src/views/okou-page/connector-account-action-card.tsx",
+        "apps/platform/src/views/okou-page/attachment-chips.tsx"
+      ],
+      "cases": [
+        "chat-transcript-card-light",
+        "chat-transcript-card-dark",
+        "chat-transcript-card-light-retina",
+        "chat-transcript-card-dark-retina",
+        "chat-transcript-card-narrow",
+        "chat-transcript-card-narrow-dark"
+      ],
+      "status": "blocked",
+      "blockedReason": "Partially drained. The 13 transcript consumption sites moved to the shared ChatCard component in views/okou-page/components/chat-card.tsx, which reproduces the retired recipe as Tailwind utilities and lets cn() drop a conflicting base utility instead of relying on @layer components to lose to it. A local Chromium equivalence harness over the reconstructed ancestor chain reports 0 changed pixels and 0 computed-style or geometry differences across 80 states, with negative controls resolving on the same channel. The remaining 5 sites are all in attachment-chips.tsx and are blocked on a design decision: they render only inside the artifact preview dialog, which DialogContent portals to document.body, so the .okou-app ancestor that .okou-app .okou-chat-card requires is never present and the rule paints nothing there. Measured on the rendered page, artifact-dialog-document-frame.closest('.okou-app') is null. Adopting ChatCard at those sites would add a border, radius, shadow and card fill that the artifact preview does not have today; deleting the inert class names instead would freeze the current treatment-free appearance. Both are visual product decisions, so the class names, the CSS rule and its four declarations are left exactly as found. okou-chat-frame has only that one consumer, so it cannot drain until this is resolved.",
+      "evidence": []
     }
   ],
   "caseFiles": [
@@ -874,6 +898,7 @@
     "../e2e/playwright/style-migration/okou-border-hairline-cases.json",
     "../e2e/playwright/style-migration/external-contract-audit-cases.json",
     "../e2e/playwright/style-migration/chat-bubble-cases.json",
-    "../e2e/playwright/style-migration/code-fence-copy-cases.json"
+    "../e2e/playwright/style-migration/code-fence-copy-cases.json",
+    "../e2e/playwright/style-migration/chat-card-cases.json"
   ]
 }
