@@ -26,6 +26,7 @@ import { PI_LANGFUSE_MAX_CAPTURED_CHARS } from "./pi-langfuse-debug";
 import { singleton } from "./singleton";
 
 const LANGFUSE_TRACE_NAME = "Pi Agent Run";
+const PI_LANGFUSE_API_INSTRUMENTATION_SOURCE = "vm0-api-custom";
 
 function traceTags(): string[] {
   return ["pi", "api-first", "internal-debug"];
@@ -164,6 +165,7 @@ function stampObservation(
   observation.otelSpan.setAttributes({
     ...traceAttributes(args),
     "vm0.pi.telemetry.schema_version": 1,
+    "vm0.pi.instrumentation_source": PI_LANGFUSE_API_INSTRUMENTATION_SOURCE,
     ...args.attributes,
   });
 }
@@ -199,6 +201,7 @@ export function recordPiLangfuseRunEndToEnd(
             level: args.terminalStatus === "failed" ? "ERROR" : undefined,
             metadata: {
               source: "vm0-api",
+              instrumentation_source: PI_LANGFUSE_API_INSTRUMENTATION_SOURCE,
               run_id: args.runId,
               api_started_at: apiStartedAt.toISOString(),
               terminal_committed_at: terminalCommittedAt.toISOString(),
@@ -354,6 +357,7 @@ function startApiTrace(
       {
         metadata: {
           source: "vm0-api",
+          instrumentation_source: PI_LANGFUSE_API_INSTRUMENTATION_SOURCE,
           run_id: args.runId,
           session_id: args.sessionId,
           prompt_chars: args.prompt.length,
@@ -399,6 +403,7 @@ function startGeneration(
         model: args.model,
         metadata: {
           provider: args.provider,
+          instrumentation_source: PI_LANGFUSE_API_INSTRUMENTATION_SOURCE,
           prompt_chars: args.prompt.length,
           user_text_meta: input.meta,
           content_capture: "official-plugin-parity",
@@ -528,6 +533,7 @@ export function startPiLangfuseOwnershipTransfer(
       {
         metadata: {
           source: "vm0-api",
+          instrumentation_source: PI_LANGFUSE_API_INSTRUMENTATION_SOURCE,
           run_id: traceContext.runId,
           target: "sandbox",
         },

@@ -105,7 +105,7 @@ function requireFinishedSpan(
   return span;
 }
 
-function expectOfficialPluginPayload(
+function expectOfficialPluginParityPayload(
   generation: FinishedSpan,
   axiomGeneration: FinishedSpan,
 ): void {
@@ -133,6 +133,13 @@ function expectOfficialPluginPayload(
     expect(axiomGeneration.attributes[attribute]).toBe(
       generation.attributes[attribute],
     );
+  }
+  for (const exportedGeneration of [generation, axiomGeneration]) {
+    expect(exportedGeneration.attributes).toMatchObject({
+      "vm0.pi.instrumentation_source": "vm0-api-custom",
+      "langfuse.observation.metadata.instrumentation_source": "vm0-api-custom",
+      "langfuse.observation.metadata.content_capture": "official-plugin-parity",
+    });
   }
 }
 
@@ -269,7 +276,7 @@ describe("Pi API-first Langfuse tracing", () => {
       "gen_ai.provider.name": "provider-1",
       "gen_ai.request.model": "model-1",
     });
-    expectOfficialPluginPayload(
+    expectOfficialPluginParityPayload(
       generation,
       requireFinishedSpan(axiomExporter, "API LLM Call"),
     );
