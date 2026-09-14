@@ -1011,6 +1011,10 @@
       "downloadFailed": "Der Download ist fehlgeschlagen",
       "linkCopied": "Link kopiert",
       "sharing": "Wird geteilt…"
+    },
+    "viewer": {
+      "continuePrompt": "Hilf mir, mit diesem Artefakt zu arbeiten: {{url}}",
+      "continueWithBrand": "Mit {{brandName}} fortfahren"
     }
   },
   "auth": {
@@ -3138,9 +3142,11 @@
       "scope": {
         "aria": "Connector-Bereich",
         "attention": "Benötigt Aufmerksamkeit",
+        "connected": "Verbunden",
+        "custom": "Eigene",
         "discover": "Entdecken",
-        "mine": "Deine Konnektoren",
-        "searchMine": "Ihre Integrationen finden"
+        "searchConnected": "Verbundene Integrationen finden",
+        "searchCustom": "Eigene Integrationen finden"
       },
       "search": "Finden Sie Integrationen",
       "shelf": {

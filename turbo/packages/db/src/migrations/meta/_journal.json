@@ -320,8 +320,15 @@
     {
       "idx": 1123,
       "version": "7",
-      "when": 1789386003344,
-      "tag": "1123_pi_memory_stage1_daily_batches",
+      "when": 1789385598617,
+      "tag": "1123_drop_morning_brief_default_eligibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 1124,
+      "version": "7",
+      "when": 1789387459288,
+      "tag": "1124_pi_memory_stage1_daily_batches",
       "breakpoints": true
     }
   ]

@@ -1030,6 +1030,10 @@
       "downloadFailed": "Download non riuscito",
       "linkCopied": "Collegamento copiato",
       "sharing": "Condivisione in corso…"
+    },
+    "viewer": {
+      "continuePrompt": "Aiutami a lavorare con questo artefatto: {{url}}",
+      "continueWithBrand": "Continua con {{brandName}}"
     }
   },
   "auth": {
@@ -3188,9 +3192,11 @@
       "scope": {
         "aria": "Ambito dei connettori",
         "attention": "Richiede attenzione",
+        "connected": "Connesso",
+        "custom": "Personalizzati",
         "discover": "Esplora",
-        "mine": "I tuoi connettori",
-        "searchMine": "Trova i tuoi connettori"
+        "searchConnected": "Trova i connettori collegati",
+        "searchCustom": "Trova i connettori personalizzati"
       },
       "search": "Trova connettori",
       "shelf": {

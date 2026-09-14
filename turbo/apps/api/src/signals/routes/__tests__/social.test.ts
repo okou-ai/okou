@@ -394,6 +394,126 @@ describe("managed SocialKit route", () => {
     expect(providerRequests).toBe(1);
   });
 
+  it.each(["youtube_transcript", "youtube_summarize"] as const)(
+    "serializes %s extraction refresh independently of result caching",
+    async (tool) => {
+      const actor = createBddApi(context).user();
+      configureProvider();
+      const pricing = await setupConfiguredPricing();
+      await fundActor(actor);
+      const requests: Record<string, string>[] = [];
+      server.use(
+        http.get(
+          `${SOCIALKIT_BASE}/youtube/${tool === "youtube_transcript" ? "transcript" : "summarize"}`,
+          ({ request }) => {
+            requests.push(
+              Object.fromEntries(new URL(request.url).searchParams),
+            );
+            return HttpResponse.json(
+              providerResponse(
+                tool === "youtube_transcript"
+                  ? { transcript: "Current captions" }
+                  : { summary: "Current summary" },
+              ),
+            );
+          },
+        ),
+      );
+
+      const url = "https://youtu.be/video123";
+      const inputs = [
+        { url },
+        { url, no_cache: false },
+        { url, no_cache: true },
+        { url, no_cache: true, cache: false },
+        { url, no_cache: true, cache: true, cache_ttl: 3600 },
+      ];
+      for (const input of inputs) {
+        const response = await accept(
+          client(pricing.resolution)(socialContract).request({
+            headers: authenticate(actor),
+            body: { tool, input },
+          }),
+          [200],
+        );
+        expect(response.body).toMatchObject({
+          tool,
+          result:
+            tool === "youtube_transcript"
+              ? { transcript: "Current captions" }
+              : { summary: "Current summary" },
+        });
+      }
+
+      expect(requests).toStrictEqual([
+        { url },
+        { url, no_cache: "false" },
+        { url, no_cache: "true" },
+        { url, no_cache: "true", cache: "false" },
+        { url, no_cache: "true", cache: "true", cache_ttl: "3600" },
+      ]);
+    },
+  );
+
+  it("rejects unsupported extraction refresh before a provider request", async () => {
+    const actor = createBddApi(context).user();
+    configureProvider();
+    let providerRequests = 0;
+    server.use(
+      providerHandler("GET", "/instagram/summarize", () => {
+        providerRequests += 1;
+        return HttpResponse.json(providerResponse({ summary: "Unexpected" }));
+      }),
+    );
+
+    const response = await rawSocialRequest(actor, {
+      tool: "instagram_summarize",
+      input: { url: "https://instagram.com/reel/example", no_cache: true },
+    });
+
+    expect(response.status).toBe(400);
+    expect(providerRequests).toBe(0);
+  });
+
+  it("preserves structured caption absence after refreshing extraction", async () => {
+    const actor = createBddApi(context).user();
+    configureProvider();
+    const pricing = await setupConfiguredPricing();
+    await fundActor(actor);
+    const beforeCredits = await credits(actor);
+    const refreshParameters: (string | null)[] = [];
+    server.use(
+      http.get(`${SOCIALKIT_BASE}/youtube/transcript`, ({ request }) => {
+        refreshParameters.push(
+          new URL(request.url).searchParams.get("no_cache"),
+        );
+        return HttpResponse.json(
+          { message: "No transcript available for this video" },
+          { status: 404 },
+        );
+      }),
+    );
+
+    const response = await rawSocialRequest(
+      actor,
+      {
+        tool: "youtube_transcript",
+        input: { url: "https://youtu.be/video123", no_cache: true },
+      },
+      { usagePricingResolution: pricing.resolution },
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: SOCIALKIT_TRANSCRIPT_ERROR_CODES.TRANSCRIPT_UNAVAILABLE,
+        reason: "transcript_unavailable",
+      },
+    });
+    expect(refreshParameters).toStrictEqual(["true"]);
+    await expect(credits(actor)).resolves.toBe(beforeCredits);
+  });
+
   it("applies reviewed TikTok limits while preserving raw session results", async () => {
     const actor = createBddApi(context).user();
     configureProvider();

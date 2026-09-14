@@ -1160,7 +1160,14 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     name: "youtube_transcript",
     description: "Extract the transcript from a public YouTube video.",
     path: "/youtube/transcript",
-    inputSchema: urlInput(),
+    inputSchema: urlInput().extend({
+      no_cache: z
+        .boolean()
+        .optional()
+        .describe(
+          "Bypass YouTube extraction caches, including cached caption absence; captions may still be unavailable",
+        ),
+    }),
     resultSchema: videoTranscriptResultSchema,
     availability: "transcript",
   }),
@@ -1248,7 +1255,14 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     name: "youtube_summarize",
     description: "Summarize a public YouTube video.",
     path: "/youtube/summarize",
-    inputSchema: summaryInputSchema,
+    inputSchema: summaryInputSchema.extend({
+      no_cache: z
+        .boolean()
+        .optional()
+        .describe(
+          "Bypass YouTube extraction caches, not the summary-result cache; combine with cache=false for a fresh summary. Captions may still be unavailable",
+        ),
+    }),
     resultSchema: summaryResultSchema,
   }),
 ] as const;

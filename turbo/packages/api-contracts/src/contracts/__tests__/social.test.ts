@@ -42,6 +42,43 @@ describe("managed SocialKit contract", () => {
     );
   });
 
+  it.each(["youtube_transcript", "youtube_summarize"] as const)(
+    "preserves opt-in extraction refresh independently of result caching for %s",
+    (tool) => {
+      const url = "https://youtu.be/example";
+      for (const input of [
+        { url },
+        { url, no_cache: true },
+        { url, no_cache: false },
+        { url, no_cache: true, cache: false },
+        { url, no_cache: true, cache: true, cache_ttl: 3600 },
+      ]) {
+        expect(socialKitRequestSchema.parse({ tool, input })).toStrictEqual({
+          tool,
+          input,
+        });
+      }
+      expect(
+        socialKitRequestSchema.safeParse({
+          tool,
+          input: { url, no_cache: "true" },
+        }).success,
+      ).toBe(false);
+    },
+  );
+
+  it.each(["instagram_transcript", "instagram_summarize", "youtube_stats"])(
+    "rejects extraction refresh for unsupported tool %s",
+    (tool) => {
+      expect(
+        socialKitRequestSchema.safeParse({
+          tool,
+          input: { url: "https://example.com/video", no_cache: true },
+        }).success,
+      ).toBe(false);
+    },
+  );
+
   it("publishes one typed input and output schema per reviewed tool", () => {
     const catalog = managedSocialKitToolCatalog();
 

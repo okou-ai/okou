@@ -1030,6 +1030,10 @@
       "downloadFailed": "Descarga fallida",
       "linkCopied": "Enlace copiado",
       "sharing": "Compartiendo…"
+    },
+    "viewer": {
+      "continuePrompt": "Ayúdame a trabajar con este artefacto: {{url}}",
+      "continueWithBrand": "Continuar con {{brandName}}"
     }
   },
   "auth": {
@@ -3188,9 +3192,11 @@
       "scope": {
         "aria": "Ámbito de conectores",
         "attention": "Requiere atención",
+        "connected": "Conectados",
+        "custom": "Personalizados",
         "discover": "Descubrir",
-        "mine": "Tus conectores",
-        "searchMine": "Buscar tus conectores"
+        "searchConnected": "Buscar conectores conectados",
+        "searchCustom": "Buscar conectores personalizados"
       },
       "search": "Buscar conectores",
       "shelf": {

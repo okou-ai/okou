@@ -1010,6 +1010,10 @@
       "downloadFailed": "다운로드 실패",
       "linkCopied": "링크 복사됨",
       "sharing": "공유 중…"
+    },
+    "viewer": {
+      "continuePrompt": "이 결과물로 작업할 수 있도록 도와주세요: {{url}}",
+      "continueWithBrand": "{{brandName}}에서 계속하기"
     }
   },
   "auth": {
@@ -3125,9 +3129,11 @@
       "scope": {
         "aria": "커넥터 범위",
         "attention": "확인이 필요함",
+        "connected": "연결됨",
+        "custom": "사용자 지정",
         "discover": "둘러보기",
-        "mine": "내 커넥터",
-        "searchMine": "내 커넥터 찾기"
+        "searchConnected": "연결된 커넥터 찾기",
+        "searchCustom": "사용자 지정 커넥터 찾기"
       },
       "search": "커넥터 찾기",
       "shelf": {

@@ -108,3 +108,71 @@ The purchase, OAuth, hosting, and privacy work packages remain tracked in
 #33747. In particular, [the privacy implementation rollback](marketing-privacy-choices.md)
 retains shipped privacy data and triggers while the replacement design is
 reconsidered. Entitlement preparation does not resume that withdrawn feature.
+
+## Custom connector OAuth preparation
+
+`custom-connector-oauth-write.service.ts` owns
+`writeCustomConnectorOAuthState(tx, identities, write)`. Production creation,
+update and repair complete mode/config writes inside this operation and the
+caller's transaction. The operation
+locks existing parent connectors in ascending `(id, org_id)` order before the
+callback writes either table. Newly created parents are protected by their
+insert and ordinary primary/foreign keys.
+
+After the callback completes, it reads each surviving parent's final mode and
+config together: `oauth` requires one config, and `none`, `manual`, and
+`automatic` require none. The config primary key already enforces at most one
+row. A failure must escape the owning transaction so all definition, config,
+and companion writes roll back. Do not catch an invariant failure and commit,
+or change a checked mode/config later in that transaction. Legal intermediate
+states remain possible, including changing the mode before inserting or
+removing its config.
+
+### OAuth writer inventory
+
+Paths below are relative to `turbo/apps/api/src/signals/`.
+
+| Writer                                                                                      | Transaction and behavior                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `services/custom-connector.service.ts`                                                      | Create and update complete skill storage, definition and OAuth config writes in the existing transaction. Update retains its optimistic version/timestamp check and parent row lock before the shared operation. Existing automatic OAuth registration cleanup and post-commit runtime publication keep their owners. |
+| `services/feishu-custom-connector.service.ts`                                               | Both Feishu and Lark creation/repair use the shared operation. Lock order remains installation advisory lock, installation row, then parent connector; the final installation association stays in the same transaction.                                                                                              |
+| Generic deletion, Feishu/Lark removal, `services/connector-owner-cleanup.service.ts`        | Parent deletion atomically removes its OAuth config through the ordinary composite foreign key's `ON DELETE CASCADE`. This remains a database constraint; there is no business-trigger cleanup effect to replace.                                                                                                     |
+| `routes/test-connector-credential-storage-state.ts`                                         | The automatic OAuth and runtime batch fixtures insert new `automatic` or `manual` parents without an organization OAuth config. These are consistent by construction and do not rely on either trigger.                                                                                                               |
+| `routes/test-runtime-state.ts`, `routes/test-custom-connector-skill-version-association.ts` | Existing fixtures change only injection templates or skill references, preserving mode and config ownership.                                                                                                                                                                                                          |
+| Numbered `013-kms-account-rotation` script                                                  | Re-encrypts an existing config secret without changing its mode, connector key or organization key. It preserves the relationship and is a historical migration, not a mode/config repair entry point.                                                                                                                |
+
+Member OAuth tokens, connector accounts, and automatic OAuth DCR registrations
+are distinct from the organization OAuth application config. Their existing
+credential and authorization operations remain authoritative.
+
+### OAuth repair and compatibility contract
+
+A repair or config-key move must pass **both old and new** `(connectorId, orgId)`
+identities to one shared operation, before taking individual parent/config
+locks. Complete both final pairs inside the callback. The final check covers
+both keys even when a config moves across organizations; the ordinary composite
+foreign key still rejects a mismatched organization. There is no public API for
+moving configs. New repair/backfill writers must use this transaction contract,
+rather than issue standalone SQL that relied on deferred triggers.
+
+Both `trg_org_custom_connectors_oauth_mode` and
+`trg_org_custom_connector_oauth_configs_mode`, and their functions, remain
+installed in this preparation PR. They only validate, so they can coexist with
+the explicit API operation without duplicate side effects. No schema or
+migration changes are needed. Outgoing generic and Feishu/Lark writers already
+lock the parent before config changes and can coexist with the prepared writer.
+
+The compatibility suite uses private schemas with the shipped checks, unique
+keys, composite config foreign key, and either retained or absent OAuth
+triggers. It covers all modes, replacement/retry, invalid final states, caller
+rollback, old/new config keys, cascaded deletion, ownership constraints, and
+actual blocked concurrent prepared/outgoing writers. It never disables shared
+triggers. Product behavior remains covered by generic connector, Feishu and
+Lark API route suites.
+
+Before a later migration drops the two triggers/functions, record the prepared
+serving and background artifacts, oldest supported rollback artifact, and a
+fresh writer inventory in #33747. Removal requires all of those writers to use
+the explicit contract. A merged preparation PR alone does not establish the
+serving/rollback gate, and rolling back an API artifact does not restore dropped
+triggers.

@@ -60,6 +60,7 @@ export interface SocialRequestMetadata {
   readonly limit?: number;
   readonly maxDuration?: number;
   readonly quality?: string;
+  readonly refresh?: boolean;
   readonly resume?: boolean;
   readonly sort?: string;
   readonly thread?: boolean;
@@ -140,6 +141,8 @@ export const SOCIAL_CAPABILITIES: readonly SocialCapability[] = [
       "Posts supports channels and playlists",
       "Posts --full-details requests exact dates and descriptions (slower; --limit at most 30)",
       "Unavailable publication dates and descriptions remain null, empty, or missing",
+      "Transcript and summarize support --refresh to bypass extraction caches, including cached caption absence; captions may still be unavailable",
+      "Summary-result caching is separate and unchanged by --refresh",
     ],
   },
 ] as const;
@@ -166,6 +169,14 @@ interface SearchOptions {
 interface CommentsOptions {
   readonly limit: number;
   readonly sort?: string;
+}
+
+interface TranscriptOptions {
+  readonly refresh?: boolean;
+}
+
+interface SummarizeOptions extends TranscriptOptions {
+  readonly prompt?: string;
 }
 
 function socialRequest(
@@ -1045,8 +1056,14 @@ export function commentsIntent(
   }
 }
 
-export function transcriptIntent(target: SocialUrlTarget): SocialIntent {
+export function transcriptIntent(
+  target: SocialUrlTarget,
+  options: TranscriptOptions,
+): SocialIntent {
   contentTarget(target, "transcript");
+  if (options.refresh && target.platform !== "youtube") {
+    return unsupported("--refresh is supported only for YouTube videos");
+  }
   let tool: ManagedSocialKitToolName;
   switch (target.platform) {
     case "linkedin": {
@@ -1078,16 +1095,22 @@ export function transcriptIntent(target: SocialUrlTarget): SocialIntent {
     "transcript",
     target,
     tool,
-    { url: target.canonicalUrl },
-    {},
+    {
+      url: target.canonicalUrl,
+      ...(options.refresh ? { no_cache: true } : {}),
+    },
+    options.refresh ? { refresh: true } : {},
   );
 }
 
 export function summarizeIntent(
   target: SocialUrlTarget,
-  prompt?: string,
+  options: SummarizeOptions,
 ): SocialIntent {
   contentTarget(target, "summarize");
+  if (options.refresh && target.platform !== "youtube") {
+    return unsupported("--refresh is supported only for YouTube videos");
+  }
   if (target.platform === "linkedin" || target.platform === "twitter") {
     return unsupported(
       `${target.platform} summaries are not currently supported`,
@@ -1118,9 +1141,15 @@ export function summarizeIntent(
     tool,
     {
       url: target.canonicalUrl,
-      ...(prompt === undefined ? {} : { custom_prompt: prompt }),
+      ...(options.prompt === undefined
+        ? {}
+        : { custom_prompt: options.prompt }),
+      ...(options.refresh ? { no_cache: true } : {}),
     },
-    { customPrompt: prompt !== undefined },
+    {
+      customPrompt: options.prompt !== undefined,
+      ...(options.refresh ? { refresh: true } : {}),
+    },
   );
 }
 

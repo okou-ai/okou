@@ -1011,6 +1011,10 @@
       "downloadFailed": "Download failed",
       "linkCopied": "Link copied",
       "sharing": "Sharing…"
+    },
+    "viewer": {
+      "continuePrompt": "Help me work with this artifact: {{url}}",
+      "continueWithBrand": "Continue with {{brandName}}"
     }
   },
   "auth": {
@@ -3130,9 +3134,11 @@
       "scope": {
         "aria": "Connector scope",
         "attention": "Needs attention",
+        "connected": "Connected",
+        "custom": "Custom",
         "discover": "Discover",
-        "mine": "Your connectors",
-        "searchMine": "Find your connectors"
+        "searchConnected": "Find connected connectors",
+        "searchCustom": "Find custom connectors"
       },
       "search": "Find connectors",
       "shelf": {
