@@ -2126,6 +2126,7 @@
       "createFailed": "Could not create the shared conversation. Try again.",
       "deselectGroup": "Deselect message group",
       "linkCopied": "Link copied",
+      "publicDescription": "Selected messages and their attachments will be public.",
       "selectedCount_one": "{{count}} selected",
       "selectedCount_other": "{{count}} selected",
       "selectGroup": "Select message group",

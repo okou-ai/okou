@@ -2118,6 +2118,7 @@
       "createFailed": "공유된 대화를 만들지 못했습니다. 다시 시도하세요.",
       "deselectGroup": "메시지 그룹 선택 해제",
       "linkCopied": "링크가 복사되었습니다",
+      "publicDescription": "선택한 메시지와 첨부 파일이 공개됩니다.",
       "selectedCount_other": "{{count}}개 선택됨",
       "selectGroup": "메시지 그룹 선택",
       "shareLink": "공유된 대화 링크",

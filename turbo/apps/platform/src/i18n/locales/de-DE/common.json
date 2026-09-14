@@ -2126,6 +2126,7 @@
       "createFailed": "Die geteilte Unterhaltung konnte nicht erstellt werden. Versuche es erneut.",
       "deselectGroup": "Nachrichtengruppe abwählen",
       "linkCopied": "Link kopiert",
+      "publicDescription": "Ausgewählte Nachrichten und ihre Anhänge werden öffentlich.",
       "selectedCount_one": "{{count}} ausgewählt",
       "selectedCount_other": "{{count}} ausgewählt",
       "selectGroup": "Nachrichtengruppe auswählen",

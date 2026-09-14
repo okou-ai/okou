@@ -3843,6 +3843,11 @@ function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
                   { count: selectedCount },
                 )}
               </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t(($) => {
+                  return $.chat.sharing.publicDescription;
+                })}
+              </p>
               {createLoadable.state === "hasError" ? (
                 <p className="mt-0.5 text-xs text-destructive">
                   {t(($) => {

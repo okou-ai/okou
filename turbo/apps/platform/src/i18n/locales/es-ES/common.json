@@ -2171,6 +2171,7 @@
       "createFailed": "No se pudo crear la conversación compartida. Inténtalo de nuevo.",
       "deselectGroup": "Deseleccionar grupo de mensajes",
       "linkCopied": "Enlace copiado",
+      "publicDescription": "Los mensajes seleccionados y sus archivos adjuntos serán públicos.",
       "selectedCount_one": "{{count}} seleccionado",
       "selectedCount_many": "{{count}} seleccionados",
       "selectedCount_other": "{{count}} seleccionados",

@@ -2118,6 +2118,7 @@
       "createFailed": "共有された会話を作成できませんでした。もう一度お試しください。",
       "deselectGroup": "メッセージグループの選択を解除",
       "linkCopied": "リンクをコピーしました",
+      "publicDescription": "選択したメッセージと添付ファイルが公開されます。",
       "selectedCount_other": "{{count}}件選択中",
       "selectGroup": "メッセージグループを選択",
       "shareLink": "共有された会話のリンク",

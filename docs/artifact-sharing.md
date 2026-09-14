@@ -146,9 +146,15 @@ all-cookie-blocked browser behavior require the corresponding dev deployment.
 
 Retain follow-ups for private snapshot/expired-grant retention and lifecycle
 cleanup, direct connector outputs, arbitrary hosted-asset ingestion by providers,
-and the remaining derivative/consumer audit from #32492. Shared-thread consumers
-keep their existing independent artifact authorization; sharing a thread does
-not publish its private attachments. This change adds no organization-recipient
+and the remaining derivative/consumer audit from #32492. Sharing selected user
+messages copies their attached files into immutable public objects under
+`artifacts/shared-threads/<shareId>/`. The snapshot stores their filenames,
+content types, sizes and public URLs; annotated images publish their rendered
+annotation copy. Every source is resolved for the sharing owner and original
+organization before publication. Copy or registration failures reject creation;
+there is no partial snapshot, retry or failed-copy reclamation. The source
+artifact's access policy is unchanged. Other artifact references in shared-thread
+content retain their independent authorization. This change adds no organization-recipient
 Drive export or editing authority.
 
 ## Local verification for slice 4

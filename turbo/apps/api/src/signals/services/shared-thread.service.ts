@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { SharedMessage } from "@okouai/api-contracts/contracts/shared-threads";
 import { visiblePiMemoryCitationText } from "@okouai/api-contracts/contracts/pi-memory-citations";
 import { isRetiredGoalArchiveText } from "@okouai/api-contracts/contracts/retired-goal-archive";
@@ -20,6 +21,11 @@ import {
 } from "../../lib/shared-thread-artifact";
 import { db$, writeDb$, type Db } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
+import {
+  prepareSharedThreadMessageAttachments$,
+  publishSharedThreadAttachments$,
+  type SharedThreadAttachmentCopy,
+} from "./shared-thread-attachments.service";
 import { visibleChatEventCondition } from "./chat-event-shared.service";
 import { generateSharedThreadTitle } from "./chat-title.service";
 import { projectUserMessageForPublicShare } from "./chat-user-message.service";
@@ -42,11 +48,13 @@ interface CreateSharedThreadArgs {
   readonly threadId: string;
   readonly eventIds: readonly string[];
   readonly publicBrand: PublicBrand;
+  readonly canReadAttachments: boolean;
 }
 
 type CreateSharedThreadResult =
   | { readonly kind: "created"; readonly id: string }
   | { readonly kind: "thread-not-found" }
+  | { readonly kind: "attachments-forbidden" }
   | { readonly kind: "no-shareable-messages" }
   | { readonly kind: "too-large" };
 
@@ -203,6 +211,27 @@ function loadSharedThreadSourceRows(
   });
 }
 
+async function ownsSharedThreadSource(
+  database: Db,
+  args: CreateSharedThreadArgs,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const [thread] = await database
+    .select({ id: chatThreads.id })
+    .from(chatThreads)
+    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+    .where(
+      and(
+        eq(chatThreads.id, args.threadId),
+        eq(chatThreads.userId, args.userId),
+        eq(agents.orgId, args.orgId),
+      ),
+    )
+    .limit(1);
+  signal.throwIfAborted();
+  return thread !== undefined;
+}
+
 export const createSharedThread$ = command(
   async (
     { get, set },
@@ -210,20 +239,7 @@ export const createSharedThread$ = command(
     signal: AbortSignal,
   ): Promise<CreateSharedThreadResult> => {
     const database = set(writeDb$);
-    const [thread] = await database
-      .select({ id: chatThreads.id })
-      .from(chatThreads)
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-      .where(
-        and(
-          eq(chatThreads.id, args.threadId),
-          eq(chatThreads.userId, args.userId),
-          eq(agents.orgId, args.orgId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!thread) {
+    if (!(await ownsSharedThreadSource(database, args, signal))) {
       return { kind: "thread-not-found" };
     }
 
@@ -242,15 +258,40 @@ export const createSharedThread$ = command(
 
     const runIndices = new Map<string, number>();
     const runGroupIndices = new Map<string, number>();
+    const shareId = randomUUID();
+    const attachmentCopies = new Map<string, SharedThreadAttachmentCopy>();
     const messages: SharedMessage[] = [];
     for (const row of rows) {
+      if (
+        !args.canReadAttachments &&
+        row.userMessage?.parts.some((part) => {
+          return part.type === "file";
+        })
+      ) {
+        return { kind: "attachments-forbidden" };
+      }
       const content =
         row.eventType === "output.message"
           ? row.content
           : row.userMessage
             ? projectUserMessageForPublicShare(row.userMessage)
             : row.content;
-      if (content === null || content.length === 0) {
+      const attachments = await set(
+        prepareSharedThreadMessageAttachments$,
+        {
+          userId: args.userId,
+          orgId: args.orgId,
+          publicBrand: args.publicBrand,
+          shareId,
+          document: row.eventType === "output.message" ? null : row.userMessage,
+          copies: attachmentCopies,
+        },
+        signal,
+      );
+      if (
+        content === null ||
+        (content.length === 0 && attachments.length === 0)
+      ) {
         continue;
       }
       const runIndex = localIndex(row.runId, runIndices);
@@ -259,6 +300,7 @@ export const createSharedThread$ = command(
         messageIndex: messages.length,
         role: row.eventType === "output.message" ? "assistant" : "user",
         content,
+        ...(attachments.length === 0 ? {} : { attachments }),
         ...(runIndex === undefined ? {} : { runIndex }),
         ...(runGroupIndex === undefined ? {} : { runGroupIndex }),
       });
@@ -277,11 +319,17 @@ export const createSharedThread$ = command(
 
     const title = await generateSharedThreadTitle(messages, signal);
     signal.throwIfAborted();
+    await set(
+      publishSharedThreadAttachments$,
+      attachmentCopies.values(),
+      signal,
+    );
     const createdAt = nowDate();
     const id = await database.transaction(async (transaction) => {
       const [sharedThread] = await transaction
         .insert(sharedThreads)
         .values({
+          id: shareId,
           userId: args.userId,
           sourceChatThreadId: args.threadId,
           title,

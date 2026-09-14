@@ -2126,6 +2126,7 @@
       "createFailed": "साझा बातचीत नहीं बनाई जा सकी। फिर से कोशिश करें।",
       "deselectGroup": "संदेश समूह का चयन हटाएँ",
       "linkCopied": "लिंक कॉपी हो गया",
+      "publicDescription": "चुने गए संदेश और उनके अटैचमेंट सार्वजनिक होंगे।",
       "selectedCount_one": "{{count}} चुना गया",
       "selectedCount_other": "{{count}} चुने गए",
       "selectGroup": "संदेश समूह चुनें",

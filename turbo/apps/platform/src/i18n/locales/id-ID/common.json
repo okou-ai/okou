@@ -2118,6 +2118,7 @@
       "createFailed": "Percakapan yang dibagikan tidak dapat dibuat. Coba lagi.",
       "deselectGroup": "Batalkan pilihan grup pesan",
       "linkCopied": "Tautan disalin",
+      "publicDescription": "Pesan yang dipilih dan lampirannya akan menjadi publik.",
       "selectedCount_other": "{{count}} dipilih",
       "selectGroup": "Pilih grup pesan",
       "shareLink": "Tautan percakapan yang dibagikan",

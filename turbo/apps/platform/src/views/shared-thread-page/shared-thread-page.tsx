@@ -36,6 +36,7 @@ import {
   CHAT_THREAD_USER_MESSAGE_ROW_CLASS,
 } from "../okou-page/chat-message-surface.tsx";
 import { AvatarFromUrl } from "../okou-page/sidebar-shared.tsx";
+import { SharedMessageAttachments } from "./shared-message-attachments.tsx";
 
 /**
  * A shared message with an optional prepared plain tree. Rich bodies leave the
@@ -176,8 +177,17 @@ function SharedUserGroup({ group }: { readonly group: SharedMessageGroup }) {
               <div className="hidden @[900px]:block @[900px]:h-9 @[900px]:w-9 @[900px]:shrink-0" />
               <div className="flex w-full flex-col items-end">
                 <ChatUserMessageBubble>
-                  <div className="whitespace-pre-wrap px-4 py-3">
-                    {message.content}
+                  <div className="flex flex-col gap-3 px-4 py-3">
+                    {message.attachments && message.attachments.length > 0 ? (
+                      <SharedMessageAttachments
+                        attachments={message.attachments}
+                      />
+                    ) : null}
+                    {message.content.length > 0 ? (
+                      <div className="whitespace-pre-wrap">
+                        {message.content}
+                      </div>
+                    ) : null}
                   </div>
                 </ChatUserMessageBubble>
                 <div
