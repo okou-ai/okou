@@ -5466,7 +5466,17 @@
         "chatModels": "채팅 모델",
         "effort": "추론 강도",
         "fast": "빠름",
-        "fastImpact": "모델 속도 1.5× · 크레딧 사용량 2.5×",
+        "fastImpact": {
+          "apiCost": "API 토큰 비용 2×",
+          "chatGptUsage": "ChatGPT 사용량 2.5×",
+          "fasterResponses": "더 빠른 모델 응답",
+          "modelSpeed": "모델 속도 {{multiplier}}×",
+          "okouCredits": "Okou 모델 크레딧 사용량 2×",
+          "providerSpeed": "속도는 제공업체에 따라 다름",
+          "providerUsage": "사용량은 제공업체에 따라 다름",
+          "solApiSpeed": "모델 속도 최대 2.5×",
+          "summary": "{{speed}} · {{usage}}"
+        },
         "generationPriceTiers": {
           "higher": "생성당 비용 높음",
           "highest": "생성당 비용 가장 높음",

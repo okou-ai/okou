@@ -5466,7 +5466,17 @@
         "chatModels": "チャットモデル",
         "effort": "推論の強度",
         "fast": "速い",
-        "fastImpact": "モデル速度 1.5× · クレジット消費 2.5×",
+        "fastImpact": {
+          "apiCost": "APIトークン料金 2×",
+          "chatGptUsage": "ChatGPT使用量 2.5×",
+          "fasterResponses": "モデルの応答が高速化",
+          "modelSpeed": "モデル速度 {{multiplier}}×",
+          "okouCredits": "Okouモデルクレジット消費 2×",
+          "providerSpeed": "速度はプロバイダーに依存",
+          "providerUsage": "使用量はプロバイダーに依存",
+          "solApiSpeed": "モデル速度 最大2.5×",
+          "summary": "{{speed}} · {{usage}}"
+        },
         "generationPriceTiers": {
           "higher": "1 回の生成あたりのコストは高め",
           "highest": "1 回の生成あたりのコストが最も高い",

@@ -5466,7 +5466,17 @@
         "chatModels": "Model chat",
         "effort": "Upaya penalaran",
         "fast": "Cepat",
-        "fastImpact": "Kecepatan model 1,5× · penggunaan kredit 2,5×",
+        "fastImpact": {
+          "apiCost": "2× biaya token API",
+          "chatGptUsage": "2,5× penggunaan ChatGPT",
+          "fasterResponses": "Respons model lebih cepat",
+          "modelSpeed": "{{multiplier}}× kecepatan model",
+          "okouCredits": "2× kredit model Okou",
+          "providerSpeed": "Kecepatan bergantung pada penyedia",
+          "providerUsage": "Penggunaan bergantung pada penyedia",
+          "solApiSpeed": "Hingga 2,5× kecepatan model",
+          "summary": "{{speed}} · {{usage}}"
+        },
         "generationPriceTiers": {
           "higher": "Biaya lebih tinggi per generasi",
           "highest": "Biaya tertinggi per generasi",

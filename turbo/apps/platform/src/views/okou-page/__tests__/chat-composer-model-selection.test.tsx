@@ -195,21 +195,41 @@ async function openCodexExecutionChat(): Promise<void> {
 
 test("Show and dismiss Fast Codex speed and credit guidance on hover", async () => {
   const user = userEvent.setup({ delay: null });
-  await openCodexExecutionChat();
-  await user.click(await modelPicker("GPT 5.6 Sol"));
+  installNewChat(["gpt-6-astra", "gpt-5.6-sol"], "gpt-6-astra");
+  context.mocks.data.orgModelPolicies([
+    modelPolicy("gpt-6-astra", 1, {
+      default: true,
+      providerType: "codex-oauth-token",
+    }),
+    modelPolicy("gpt-5.6-sol", 2),
+  ]);
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.CodexFastMode]: true,
+      [FeatureSwitchKey.ChatPreference]: true,
+    },
+  });
+  await readyComposer();
+  await user.click(await modelPicker("GPT 6 Astra"));
   const fastOption = await screen.findByRole("option", {
-    name: "GPT 5.6 Sol Fast",
+    name: "GPT 6 Astra Fast",
   });
   await user.hover(fastOption);
   await expect(
-    screen.findByText("Fast · 1.5× model speed · 2.5× credit usage"),
+    screen.findByText("Fast · 2× model speed · 2.5× ChatGPT usage"),
   ).resolves.toBeVisible();
   await user.unhover(fastOption);
   await waitFor(() => {
     expect(
-      screen.queryByText("Fast · 1.5× model speed · 2.5× credit usage"),
+      screen.queryByText("Fast · 2× model speed · 2.5× ChatGPT usage"),
     ).not.toBeInTheDocument();
   });
+  await user.hover(screen.getByRole("option", { name: "GPT 5.6 Sol Fast" }));
+  await expect(
+    screen.findByText("Fast · Up to 2.5× model speed · 2× Okou model credits"),
+  ).resolves.toBeVisible();
 });
 
 test("Choose Fast then Standard Codex execution before changing models", async () => {
@@ -573,7 +593,12 @@ test("Switch chat models immediately and adjust Fast from settings", async () =>
     buttonNamed("Change Chat model, GPT 5.6 Luna", updated),
   ).toHaveTextContent("Standard");
   click(buttonNamed("Adjust GPT 5.6 Luna settings", updated));
-  await screen.findByRole("region", { name: "Chat settings" });
+  const settings = await screen.findByRole("region", {
+    name: "Chat settings",
+  });
+  expect(settings).toHaveTextContent(
+    "Faster model responses · 2× Okou model credits",
+  );
   click(screen.getByRole("switch", { name: "Fast" }));
   await expect(findButton("GPT 5.6 Luna Fast")).resolves.toBeVisible();
   expect(screen.getByRole("switch", { name: "Fast" })).toBeChecked();

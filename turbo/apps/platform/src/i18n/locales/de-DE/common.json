@@ -5479,7 +5479,17 @@
         "chatModels": "Chatmodelle",
         "effort": "Denkaufwand",
         "fast": "Schnell",
-        "fastImpact": "1,5× Modellgeschwindigkeit · 2,5× Credit-Nutzung",
+        "fastImpact": {
+          "apiCost": "2× API-Tokenkosten",
+          "chatGptUsage": "2,5× ChatGPT-Verbrauch",
+          "fasterResponses": "Schnellere Modellantworten",
+          "modelSpeed": "{{multiplier}}× Modellgeschwindigkeit",
+          "okouCredits": "2× Okou-Modell-Credits",
+          "providerSpeed": "Geschwindigkeit hängt vom Anbieter ab",
+          "providerUsage": "Verbrauch hängt vom Anbieter ab",
+          "solApiSpeed": "Bis zu 2,5× Modellgeschwindigkeit",
+          "summary": "{{speed}} · {{usage}}"
+        },
         "generationPriceTiers": {
           "higher": "Höhere Kosten pro Generierung",
           "highest": "Höchste Kosten pro Generierung",
