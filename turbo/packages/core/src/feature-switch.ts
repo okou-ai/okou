@@ -181,11 +181,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Webflow site management connector",
     enabled: false,
   },
-  [FeatureSwitchKey.PosthogConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the PostHog analytics connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.PayPalConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the PayPal payments connector",
