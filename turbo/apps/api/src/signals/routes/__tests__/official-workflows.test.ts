@@ -2105,7 +2105,6 @@ async function setupMorningBriefDelivery() {
   runs.acceptTelemetryIngest();
   onTestFinished(async () => {
     installCatalogStorageFixture();
-    await bdd.deleteAgent(actor, workflow.agentId);
     await cleanupCatalog();
   });
   return { actor, headers, workflow, automation, runnerGroup };
