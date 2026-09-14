@@ -2,11 +2,11 @@ import { expect, test } from "vitest";
 
 import {
   emitMockedClerkEvent,
+  installMockedClerkBootstrap,
   mockClerkSessionTransitioning,
   mockUser,
 } from "../../__tests__/mock-auth.ts";
 import { clerkUser$, setupClerkUser$ } from "../auth.ts";
-import { setRootSignal$ } from "../root-signal.ts";
 import { resetSignal } from "../utils.ts";
 import { testContext } from "./test-helpers.ts";
 
@@ -14,7 +14,7 @@ const context = testContext();
 
 async function startClerkUser(signal = context.signal): Promise<void> {
   context.mocks.clerk().loaded(true);
-  context.store.set(setRootSignal$, context.signal);
+  installMockedClerkBootstrap(context.signal);
   await context.store.set(setupClerkUser$, signal);
 }
 
@@ -101,7 +101,7 @@ test("A repeated emit for the same user keeps the settled promise identity", asy
 test("An owner claims the signal before it resolves the Clerk runtime", async () => {
   signIn("user-a");
   context.mocks.clerk().loaded(true);
-  context.store.set(setRootSignal$, context.signal);
+  installMockedClerkBootstrap(context.signal);
 
   // Readers in the same synchronous pass as the owner must see a promise the
   // owner can still resolve, not the sentinel that nothing settles.

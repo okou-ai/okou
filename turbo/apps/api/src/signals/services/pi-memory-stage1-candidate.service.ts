@@ -3,6 +3,8 @@ import { and, asc, eq, gt, gte, inArray, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 
 import { triggerSourceSchema } from "@okouai/api-contracts/contracts/logs";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -16,6 +18,7 @@ import { storages } from "@okouai/db/schema/storage";
 import { executeRawRows } from "../../lib/db-raw-rows";
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
+import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { advancePiMemoryPhase2InputRevision } from "./pi-memory-phase2-job.service";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
 
@@ -239,6 +242,7 @@ export type PiMemoryStage1AdmissionSkipReason =
   | "not_completed"
   | "not_pi"
   | "not_owned_chat_thread"
+  | "pi_memory_disabled"
   | "invalid_source"
   | "synthetic_source"
   | "stale_source";
@@ -387,6 +391,34 @@ async function resolveMemoryStorageId(
   return winner.id;
 }
 
+/**
+ * Ordered gates before any source read or candidate write: static
+ * prerequisites, then Chat Thread ownership, then the owning Run's PiMemory
+ * switch. The owner's identity decides the switch, never the caller; off means
+ * the source is not read and no candidate is written or replaced.
+ */
+async function getPiMemoryStage1AdmissionSkipReason(
+  tx: Tx,
+  args: AdmitPiMemoryStage1CandidateArgs,
+): Promise<PiMemoryStage1AdmissionSkipReason | null> {
+  const prerequisiteSkipReason =
+    getPiMemoryStage1AdmissionPrerequisiteSkipReason(args);
+  if (prerequisiteSkipReason !== null) {
+    return prerequisiteSkipReason;
+  }
+  if (!(await ownsProductChatThread(tx, args))) {
+    return "not_owned_chat_thread";
+  }
+  const featureSwitchContext = await loadUserFeatureSwitchContext(
+    tx,
+    args.orgId,
+    args.userId,
+  );
+  return isFeatureEnabled(FeatureSwitchKey.PiMemory, featureSwitchContext)
+    ? null
+    : "pi_memory_disabled";
+}
+
 async function readPiMemoryCandidateSource(tx: Tx, runId: string) {
   const [source] = await tx
     .select({
@@ -406,13 +438,9 @@ export async function admitPiMemoryStage1Candidate(
   tx: Tx,
   args: AdmitPiMemoryStage1CandidateArgs,
 ): Promise<PiMemoryStage1Admission> {
-  const prerequisiteSkipReason =
-    getPiMemoryStage1AdmissionPrerequisiteSkipReason(args);
-  if (prerequisiteSkipReason !== null) {
-    return { outcome: "skipped", reason: prerequisiteSkipReason };
-  }
-  if (!(await ownsProductChatThread(tx, args))) {
-    return { outcome: "skipped", reason: "not_owned_chat_thread" };
+  const skipReason = await getPiMemoryStage1AdmissionSkipReason(tx, args);
+  if (skipReason !== null) {
+    return { outcome: "skipped", reason: skipReason };
   }
 
   const source = await readPiMemoryCandidateSource(tx, args.runId);

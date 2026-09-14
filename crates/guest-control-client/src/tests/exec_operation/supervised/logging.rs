@@ -58,6 +58,14 @@ async fn expected_timeout_keeps_output_overflow_warning() {
         .unwrap();
     assert_eq!(terminal.level, Level::WARN);
     assert_eq!(
+        terminal.fields.get("process_class").map(String::as_str),
+        Some("contained_workload")
+    );
+    assert_eq!(
+        terminal.fields.get("operation_kind").map(String::as_str),
+        Some("start_process")
+    );
+    assert_eq!(
         terminal.fields.get("terminal_reason").map(String::as_str),
         Some("notable")
     );
@@ -106,5 +114,9 @@ async fn expected_workload_timeout_setting_does_not_demote_agent_timeout() {
     assert_eq!(
         terminal.fields.get("process_class").map(String::as_str),
         Some("controlled_agent")
+    );
+    assert_eq!(
+        terminal.fields.get("operation_kind").map(String::as_str),
+        Some("start_agent_process")
     );
 }

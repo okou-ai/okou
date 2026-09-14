@@ -3,7 +3,12 @@ import userEvent from "@testing-library/user-event";
 import { toast } from "@okouai/ui/components/ui/sonner";
 
 import type { TestContext } from "../signals/__tests__/test-helpers";
-import type { mockOrganization, mockUser } from "./mock-auth";
+import {
+  installMockedClerkBootstrap,
+  type mockOrganization,
+  type mockUser,
+} from "./mock-auth";
+import { loadClerkJSScript } from "../test/mocks/clerk-resource.ts";
 import { bootstrap$ } from "../signals/bootstrap";
 import { setupRouter } from "../views/main";
 import {
@@ -87,11 +92,6 @@ interface SetupPageOptions {
   readonly context: TestContext;
   readonly path: string;
   readonly host?: string;
-  /**
-   * Pass `null` to omit the Clerk bootstrap object entirely, which is what a
-   * page that never ran the inline bootstrap produces.
-   */
-  readonly clerkBootstrap?: null;
   readonly locale?: SupportedLocale;
   readonly auth?: SetupPageAuth;
   readonly debugLoggers?: string[];
@@ -163,38 +163,35 @@ function initialPageUrl(path: string, host: string): URL {
   return new URL(path, `${protocol}://${host}`);
 }
 
-// Mirrors the inline Clerk bootstrap in index.html, which publishes the load
-// options before the app module runs.
-function installClerkBootstrap(
-  pageUrl: URL,
-  requestedBootstrap: null | undefined,
-  signal: AbortSignal,
-): void {
+// Mirrors the inline Clerk bootstrap in index.html, which owns the single
+// browser runtime before the app module runs.
+function installClerkBootstrap(pageUrl: URL, signal: AbortSignal): void {
   // A test that installs its own bootstrap owns the whole object.
-  if (requestedBootstrap === null || window.__okouClerkBootstrap) {
+  if (window.__okouClerkBootstrap) {
     return;
   }
   const authOrigin = pageUrl.origin;
-  window.__okouClerkBootstrap = {
+  const publishableKey = resolvePlatformRuntimeConfig().clerkPublishableKey;
+  installMockedClerkBootstrap(signal, {
+    coreReady: loadClerkJSScript({ publishableKey }),
     loadOptions: {
       afterSignOutUrl: new URL("/sign-in", authOrigin).toString(),
+      routerPush(url, metadata) {
+        const navigate = window.__okouClerkRouter?.push;
+        return navigate
+          ? navigate(url, metadata)
+          : metadata?.windowNavigate(url);
+      },
+      routerReplace(url, metadata) {
+        const navigate = window.__okouClerkRouter?.replace;
+        return navigate
+          ? navigate(url, metadata)
+          : metadata?.windowNavigate(url);
+      },
       signInUrl: new URL("/sign-in", authOrigin).toString(),
       signUpUrl: new URL("/sign-up", authOrigin).toString(),
     },
-    // The page selects the publishable key by hostname. Read the same source
-    // the app reads so the two never disagree for a preview host.
-    publishableKey: resolvePlatformRuntimeConfig().clerkPublishableKey,
-    resolveClerkUI: () => {
-      return;
-    },
-  };
-  signal.addEventListener(
-    "abort",
-    () => {
-      Reflect.deleteProperty(window, "__okouClerkBootstrap");
-    },
-    { once: true },
-  );
+  });
 }
 
 function resolveAuth(options: SetupPageOptions): {
@@ -249,11 +246,8 @@ async function setupPageAsync(
   mocks.browser.url(initialUrl.toString());
   // Browser navigation and Clerk outlive the app during an account switch.
   createPushStateMock(options.context.signal, initialUrl);
-  installClerkBootstrap(
-    initialUrl,
-    options.clerkBootstrap,
-    options.context.signal,
-  );
+  const clerk = mocks.clerk();
+  installClerkBootstrap(initialUrl, options.context.signal);
 
   if (options.debugLoggers) {
     store.set(
@@ -263,7 +257,6 @@ async function setupPageAsync(
   }
 
   const auth = resolveAuth(options);
-  const clerk = mocks.clerk();
   const activeOrgId = auth.organization.activeOrg?.id ?? null;
   const featureSwitchOverrides = { ...options.featureSwitches };
   if (options.featureSwitches) {

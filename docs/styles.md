@@ -390,6 +390,33 @@ activates it. Deciding between keeping a hover the tile has never had and
 deleting a utility the consumer spells is a visual decision, not an equivalence,
 and it is reviewed separately.
 
+### Page layouts
+
+Choose the existing layout that owns the page structure. Route setup selects
+`pageLayout$`; the Router's `LayoutHost` supplies `SidebarLayout` or
+`StandaloneLayout`, and the page supplies the content inside it.
+
+| Component                                         | Use it for                                                                                               | Placement                                    |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `SidebarLayout`                                   | Workspace pages with navigation and a workspace pane                                                     | Selected by the router's `sidebar` layout    |
+| `StandaloneLayout`                                | Independent flows with shared theme and dialogs, such as authorization, browser sessions, and redemption | Selected by the router's `standalone` layout |
+| `OnboardingShell`                                 | Step-based onboarding with progress, account controls, and an optional footer                            | The onboarding page's outer layout           |
+| `PageShell` in `okou-page/connect-page-shell.tsx` | Connector sign-in, authorization, and status content in a centered card                                  | The connection page's outer layout           |
+| `DirectedCardShell`                               | Connector-specific title, icon, description, and actions in a centered handoff card                      | Content inside `StandaloneLayout`            |
+| `DetailPageShell`                                 | A detail page's flex and scroll container                                                                | Content inside an existing workspace layout  |
+
+Pages rendered inside a shared layout reuse that layout's outer container.
+Independent pages that already own their structure, such as `ExportPage`, keep
+their native root element.
+
+Viewport sizing stays on the existing native roots through
+`box-border h-full max-h-full min-h-full overflow-hidden`. Page roots reserve
+the bottom safe-area inset with `pb-(--sab)`; `SidebarLayout` uses `pb-0` so its
+scrollports reach the viewport edge and its content/composer owns the inset.
+Document sizing, top and horizontal insets, and PWA keyboard handling remain
+owned by the existing global environment rules. The `okou-viewport-shell` and
+`okou-managed-bottom-safe-area` selectors and their consumers have been removed.
+
 ### Table header rules and the global scrollbar treatment
 
 The `table-wrapper` selector and its injected stylesheet have been removed. It

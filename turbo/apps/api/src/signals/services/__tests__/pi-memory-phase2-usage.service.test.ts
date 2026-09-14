@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { webhookUsageEventContract } from "@okouai/api-contracts/contracts/webhooks";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -23,6 +24,10 @@ import {
   createUsagePricingFixture,
 } from "../../../test-fixtures/system-config-seeds";
 import { generateSandboxToken } from "../../auth/tokens";
+import {
+  deleteFeatureSwitchesForUser,
+  updateFeatureSwitchesForUser,
+} from "../../routes/__tests__/helpers/feature-switches";
 import { seedBuiltInModelKey } from "../../routes/__tests__/helpers/runtime-state";
 import { testCronCleanupSandboxesStateRoutes } from "../../routes/test-cron-cleanup-sandboxes-state";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
@@ -41,6 +46,19 @@ const context = testContext();
 
 async function dispatchMaintenance() {
   const scope = await createPhase2TestScope("usage", { emptyBase: true });
+  // PiMemory is off for everyone by default; the dispatcher only runs for
+  // owners whose explicit override enables it.
+  await updateFeatureSwitchesForUser(
+    context,
+    { orgId: scope.orgId, userId: scope.userId },
+    { [FeatureSwitchKey.PiMemory]: true },
+  );
+  onTestFinished(async () => {
+    await deleteFeatureSwitchesForUser(context, {
+      orgId: scope.orgId,
+      userId: scope.userId,
+    });
+  });
   await seedOrgMetadata({ orgId: scope.orgId, tier: "pro", credits: 100_000 });
   await seedBuiltInModelKey(context, "gpt-5.6-terra");
   await insertPhase2Candidates(scope, [

@@ -365,22 +365,31 @@ def _validate_resolved_auth_header_pair(header_name: str, header_value: str) -> 
 
 
 def resolved_auth_header_pairs(headers) -> list[tuple[str, str]]:
-    """Validate and filter resolved auth headers before outbound injection.
+    """Validate, filter, and canonicalize resolved auth headers for injection.
 
     Each resolved header name and value is validated before any pair is
     returned; invalid pairs raise ``InvalidResolvedAuthHeaderError``. Accepted
     names are ASCII and accepted values map one-to-one to wire bytes through
-    Latin-1. Transport, authority, and framing headers are then dropped. This
-    helper does not merge with or replace client headers; callers that combine
-    resolved and client headers own that policy.
+    Latin-1. Transport, authority, and framing headers are then dropped using
+    all Connection nominations. Case-equivalent names retain the first spelling
+    and position, with the last value winning. This helper does not merge with
+    or replace client headers; callers that combine resolved and client headers
+    own that policy.
     """
     pairs = header_pairs(headers)
     for name, value in pairs:
         _validate_resolved_auth_header_pair(name, value)
-    return _filter_header_pairs(
+    filtered_pairs = _filter_header_pairs(
         pairs,
         extra_excluded={"host", "content-length", "transfer-encoding"},
     )
+    resolved_pairs_by_name: dict[str, tuple[str, str]] = {}
+    for name, value in filtered_pairs:
+        normalized_name = name.lower()
+        existing_pair = resolved_pairs_by_name.get(normalized_name)
+        first_name = existing_pair[0] if existing_pair is not None else name
+        resolved_pairs_by_name[normalized_name] = (first_name, value)
+    return list(resolved_pairs_by_name.values())
 
 
 def trusted_request_header_pairs(headers) -> list[tuple[str, str]]:
