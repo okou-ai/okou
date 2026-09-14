@@ -1008,7 +1008,8 @@
     "toasts": {
       "copyLinkFailed": "Gagal menyalin tautan",
       "downloadFailed": "Gagal mengunduh",
-      "linkCopied": "Tautan disalin"
+      "linkCopied": "Tautan disalin",
+      "sharing": "Membagikan…"
     }
   },
   "auth": {

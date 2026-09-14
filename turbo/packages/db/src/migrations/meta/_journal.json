@@ -306,8 +306,15 @@
     {
       "idx": 1121,
       "version": "7",
-      "when": 1789378813670,
-      "tag": "1121_pi_memory_stage1_daily_batches",
+      "when": 1789378963892,
+      "tag": "1121_retire_pi_candidate_reference_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 1122,
+      "version": "7",
+      "when": 1789382888815,
+      "tag": "1122_pi_memory_stage1_daily_batches",
       "breakpoints": true
     }
   ]

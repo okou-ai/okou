@@ -1008,7 +1008,8 @@
     "toasts": {
       "copyLinkFailed": "リンクのコピーに失敗しました",
       "downloadFailed": "ダウンロードに失敗しました",
-      "linkCopied": "リンクがコピーされました"
+      "linkCopied": "リンクがコピーされました",
+      "sharing": "共有中…"
     }
   },
   "auth": {

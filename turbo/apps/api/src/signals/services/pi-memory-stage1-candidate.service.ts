@@ -1,8 +1,6 @@
 import { advancePiMemoryStage1Watermark } from "./pi-memory-stage1-watermark.service";
 import { and, asc, eq, gt, gte, inArray, sql, type SQL } from "drizzle-orm";
 
-import { z } from "zod";
-
 import {
   PI_MEMORY_TRIGGER_SOURCE_CLASSES,
   triggerSourceSchema,
@@ -19,67 +17,11 @@ import { conversations } from "@okouai/db/schema/conversation";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storages } from "@okouai/db/schema/storage";
 
-import { executeRawRows } from "../../lib/db-raw-rows";
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { advancePiMemoryPhase2InputRevision } from "./pi-memory-phase2-job.service";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
-
-// API B / DB compatibility for #33748. Retire only after B is deployed,
-// pre-B writers have drained, and B is the supported rollback floor.
-async function usesExplicitCandidateReferences(tx: Tx): Promise<boolean> {
-  // ROW EXCLUSIVE is compatible with other writers and blocks trigger DDL.
-  // The catalog SELECT must be a separate READ COMMITTED statement AFTER the
-  // lock: a statement snapshot taken before a waiting lock could be stale.
-  await tx.execute(
-    sql`LOCK TABLE ${piMemoryStage1Candidates} IN ROW EXCLUSIVE MODE`,
-  );
-  const [settings] = await executeRawRows(
-    tx,
-    sql`SELECT current_setting('transaction_isolation') AS isolation,
-      current_setting('session_replication_role') AS replication_role`,
-    z.object({
-      isolation: z.literal("read committed"),
-      replication_role: z.literal("origin"),
-    }),
-  );
-  if (!settings) {
-    throw new Error("Missing Pi candidate transaction settings");
-  }
-  const triggers = await executeRawRows(
-    tx,
-    sql`SELECT t.tgname AS name,
-      (t.tgenabled = 'O' AND t.tgtype = 29 AND NOT t.tgdeferrable
-        AND NOT t.tginitdeferred AND t.tgqual IS NULL
-        AND t.tgnargs = 0 AND octet_length(t.tgargs) = 0
-        AND t.tgattr::text = a.attnum::text
-        AND p.proname = 'pi_memory_stage1_candidate_blob_ref_count'
-        AND p.pronamespace = c.relnamespace
-        AND p.proconfig IS NULL AND NOT p.prosecdef AND p.provolatile = 'v'
-        AND p.pronargs = 0 AND p.prorettype = 'trigger'::regtype
-        AND p.prolang = (SELECT oid FROM pg_language WHERE lanname = 'plpgsql')
-        AND md5(p.prosrc) = '576154890be37fff1ec9f9f4c318428c') AS valid
-      FROM pg_trigger t
-      JOIN pg_class c ON c.oid = t.tgrelid
-      JOIN pg_proc p ON p.oid = t.tgfoid
-      JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'source_history_hash'
-      WHERE t.tgrelid = 'pi_memory_stage1_candidates'::regclass
-        AND NOT t.tgisinternal`,
-    z.object({ name: z.string(), valid: z.boolean() }),
-  );
-  if (triggers.length === 0) {
-    return true;
-  }
-  if (
-    triggers.length !== 1 ||
-    triggers[0]?.name !== "pi_memory_stage1_candidate_blob_ref_count_trigger" ||
-    !triggers[0].valid
-  ) {
-    throw new Error("Unexpected Pi candidate reference trigger configuration");
-  }
-  return false;
-}
 
 // Completion can retain checkpoint blobs before admission. Lock an existing
 // owner before either operation to avoid a parent/blob cycle with cleanup.
@@ -156,14 +98,12 @@ export async function insertPiMemoryStage1Candidates(
     .where(inArray(storages.id, ids))
     .orderBy(asc(storages.id))
     .for("no key update");
-  const explicit = await usesExplicitCandidateReferences(tx);
-  return await insertCandidateRows(tx, rows, explicit);
+  return await insertCandidateRows(tx, rows);
 }
 
 async function insertCandidateRows(
   tx: Tx,
   rows: readonly (typeof piMemoryStage1Candidates.$inferInsert)[],
-  explicit: boolean,
 ) {
   const created = await tx
     .insert(piMemoryStage1Candidates)
@@ -174,12 +114,10 @@ async function insertCandidateRows(
       piSessionId: piMemoryStage1Candidates.piSessionId,
       sourceHistoryHash: piMemoryStage1Candidates.sourceHistoryHash,
     });
-  if (explicit) {
-    for (const row of [...created].sort((a, b) => {
-      return a.sourceHistoryHash.localeCompare(b.sourceHistoryHash);
-    })) {
-      await retainCandidateReference(tx, row.sourceHistoryHash);
-    }
+  for (const row of [...created].sort((a, b) => {
+    return a.sourceHistoryHash.localeCompare(b.sourceHistoryHash);
+  })) {
+    await retainCandidateReference(tx, row.sourceHistoryHash);
   }
   return created;
 }
@@ -198,19 +136,16 @@ export async function deletePiMemoryStage1Candidates(
     .where(inArray(storages.id, [...storageIds]))
     .orderBy(asc(storages.id))
     .for("no key update");
-  const explicit = await usesExplicitCandidateReferences(tx);
   const deleted = await tx
     .delete(piMemoryStage1Candidates)
     .where(inArray(piMemoryStage1Candidates.memoryStorageId, [...storageIds]))
     .returning({ hash: piMemoryStage1Candidates.sourceHistoryHash });
-  if (explicit) {
-    await releaseCandidateReferences(
-      tx,
-      deleted.map((row) => {
-        return row.hash;
-      }),
-    );
-  }
+  await releaseCandidateReferences(
+    tx,
+    deleted.map((row) => {
+      return row.hash;
+    }),
+  );
   return deleted.length;
 }
 
@@ -461,25 +396,20 @@ export async function admitPiMemoryStage1Candidate(
   }
 
   const memoryStorageId = await resolveMemoryStorageId(tx, args);
-  const explicit = await usesExplicitCandidateReferences(tx);
   const eligibleAt = new Date(args.completedAt.getTime() + args.idleDelayMs);
-  const [created] = await insertCandidateRows(
-    tx,
-    [
-      {
-        memoryStorageId,
-        orgId: args.orgId,
-        userId: args.userId,
-        piSessionId: source.piSessionId,
-        sourceRunId: args.runId,
-        sourceHistoryHash: source.sourceHistoryHash,
-        sourceCompletedAt: args.completedAt,
-        eligibleAt,
-        status: "pending",
-      },
-    ],
-    explicit,
-  );
+  const [created] = await insertCandidateRows(tx, [
+    {
+      memoryStorageId,
+      orgId: args.orgId,
+      userId: args.userId,
+      piSessionId: source.piSessionId,
+      sourceRunId: args.runId,
+      sourceHistoryHash: source.sourceHistoryHash,
+      sourceCompletedAt: args.completedAt,
+      eligibleAt,
+      status: "pending",
+    },
+  ]);
   if (created) {
     return {
       outcome: "created",
@@ -562,10 +492,8 @@ export async function admitPiMemoryStage1Candidate(
   if (!replaced) {
     throw new Error("Locked Pi memory candidate lost its source replacement");
   }
-  if (explicit) {
-    await retainCandidateReference(tx, replaced.sourceHistoryHash);
-    await releaseCandidateReferences(tx, [current.sourceHistoryHash]);
-  }
+  await retainCandidateReference(tx, replaced.sourceHistoryHash);
+  await releaseCandidateReferences(tx, [current.sourceHistoryHash]);
   return {
     outcome: "replaced",
     memoryStorageId,

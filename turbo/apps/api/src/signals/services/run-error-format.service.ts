@@ -233,7 +233,8 @@ export const formatRunErrorForRunOwner$ = command(
         signal,
       );
       signal.throwIfAborted();
-      canManageOrgModelProviders = membership?.role === "admin";
+      canManageOrgModelProviders =
+        membership.kind === "member" && membership.role === "admin";
     }
 
     return await get(

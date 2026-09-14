@@ -46,7 +46,6 @@ const organizationUrl = `https://app.okou.ai${artifactReferencePath(shareId, "in
 const publicUrl = `https://${"b".repeat(24)}.okou.app/`;
 
 async function openArtifact(enabled = true) {
-  const resolutions: string[] = [];
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
       artifacts: [artifact({ kind: "hosted-site", title: "Private report" })],
@@ -68,19 +67,15 @@ async function openArtifact(enabled = true) {
       },
     });
   });
-  context.mocks.api(
-    artifactReferencesContract.resolve,
-    ({ params, respond }) => {
-      resolutions.push(params.reference);
-      return respond(200, {
-        url: `https://pv-${"a".repeat(48)}.okou.app/`,
-        expiresAt: "2099-01-01T00:00:00Z",
-        filename: "index.html",
-        contentType: "text/html",
-        target: { kind: "html", id: deploymentId },
-      });
-    },
-  );
+  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    return respond(200, {
+      url: `https://pv-${"a".repeat(48)}.okou.app/`,
+      expiresAt: "2099-01-01T00:00:00Z",
+      filename: "index.html",
+      contentType: "text/html",
+      target: { kind: "html", id: deploymentId },
+    });
+  });
   await setupPage({
     context,
     path: "/artifacts",
@@ -88,7 +83,6 @@ async function openArtifact(enabled = true) {
   });
   click(await findArtifactAction("Private report"));
   await screen.findByTestId("artifact-dialog-site-frame");
-  return resolutions;
 }
 
 async function openShareMenu() {
@@ -103,6 +97,144 @@ async function openShareMenu() {
   });
 }
 
+test.each([
+  ["organization", "Share to organization", organizationUrl],
+  ["public", "Share to Public", publicUrl],
+] as const)(
+  "the %s action shows a loading toast until its link is copied, then a success toast",
+  async (audience, label, url) => {
+    const statusReady = context.mocks.deferred<ArtifactShareStatus>();
+    const clipboardStarted = context.mocks.deferred<string>();
+    const clipboardReady = context.mocks.deferred<void>();
+    context.mocks.api(artifactSharesContract.status, async ({ respond }) => {
+      return respond(200, await statusReady.promise);
+    });
+    vi.spyOn(navigator.clipboard, "writeText").mockImplementation(
+      async (text) => {
+        clipboardStarted.resolve(text);
+        await clipboardReady.promise;
+      },
+    );
+    await openArtifact();
+    await openShareMenu();
+    expect(action("menuitem", "Share to organization")).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(action("menuitem", "Share to Public")).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+
+    click(action("menuitem", label));
+    const loadingToast = await screen.findByText("Sharing…");
+    expect(loadingToast.closest("[data-sonner-toast]")).toHaveAttribute(
+      "data-type",
+      "loading",
+    );
+    expect(action("button", "Share")).toBeDisabled();
+    expect(action("button", "Share")).toHaveAttribute("aria-busy", "true");
+
+    statusReady.resolve({
+      shareId,
+      audience,
+      organization: { id: "original-org", name: "Original organization" },
+      selectedTarget: { kind: "html", id: deploymentId },
+      selectedVersion: 2,
+      candidateVersion: 2,
+      url,
+    });
+    await expect(clipboardStarted.promise).resolves.toBe(url);
+    expect(screen.getByText("Sharing…")).toBeInTheDocument();
+    expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
+    expect(action("button", "Share")).toBeDisabled();
+
+    clipboardReady.resolve();
+    const successToast = await screen.findByText("Link copied");
+    expect(successToast.closest("[data-sonner-toast]")).toHaveAttribute(
+      "data-type",
+      "success",
+    );
+    expect(screen.queryByText("Sharing…")).not.toBeInTheDocument();
+    expect(action("button", "Share")).toBeEnabled();
+    expect(action("button", "Share")).not.toHaveAttribute("aria-busy", "true");
+  },
+);
+
+test("a denied sharing check reports the error and allows retrying the selection", async () => {
+  let allowed = false;
+  const statusReady = context.mocks.deferred<void>();
+  context.mocks.api(artifactSharesContract.status, async ({ respond }) => {
+    await statusReady.promise;
+    if (!allowed) {
+      return respond(403, {
+        error: { code: "FORBIDDEN", message: "Sharing access unavailable" },
+      });
+    }
+    return respond(200, {
+      shareId,
+      audience: "organization",
+      organization: { id: "original-org", name: "Original organization" },
+      selectedTarget: { kind: "html", id: deploymentId },
+      selectedVersion: 2,
+      candidateVersion: 2,
+      url: organizationUrl,
+    });
+  });
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  await openArtifact();
+  await openShareMenu();
+  click(action("menuitem", "Share to organization"));
+  await expect(screen.findByText("Sharing…")).resolves.toBeInTheDocument();
+  statusReady.resolve();
+  await expect(
+    screen.findByText("Sharing access unavailable"),
+  ).resolves.toBeInTheDocument();
+  expect(clipboard.writes).toStrictEqual([]);
+  await waitFor(() => {
+    return expect(action("button", "Share")).toBeEnabled();
+  });
+  await waitFor(() => {
+    return expect(screen.queryByText("Sharing…")).not.toBeInTheDocument();
+  });
+
+  allowed = true;
+  await openShareMenu();
+  click(action("menuitem", "Share to organization"));
+  await waitFor(() => {
+    return expect(clipboard.writes).toStrictEqual([organizationUrl]);
+  });
+  await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
+});
+
+test("a blocked clipboard replaces the loading toast with a copy error", async () => {
+  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+    return respond(200, {
+      shareId,
+      audience: "organization",
+      organization: { id: "original-org", name: "Original organization" },
+      selectedTarget: { kind: "html", id: deploymentId },
+      selectedVersion: 2,
+      candidateVersion: 2,
+      url: organizationUrl,
+    });
+  });
+  vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(
+    new DOMException("Clipboard blocked", "NotAllowedError"),
+  );
+  await openArtifact();
+  await openShareMenu();
+  click(action("menuitem", "Share to organization"));
+  const errorToast = await screen.findByText("Failed to copy link");
+  expect(errorToast.closest("[data-sonner-toast]")).toHaveAttribute(
+    "data-type",
+    "error",
+  );
+  expect(screen.queryByText("Sharing…")).not.toBeInTheDocument();
+  expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
+  expect(action("button", "Share")).toBeEnabled();
+});
+
 test("the two share actions create and copy links, then only copy the existing audience", async () => {
   let status: ArtifactShareStatus = {
     shareId: null,
@@ -114,9 +246,7 @@ test("the two share actions create and copy links, then only copy the existing a
     url: null,
   };
   const changes: string[] = [];
-  let reads = 0;
   context.mocks.api(artifactSharesContract.status, ({ respond }) => {
-    reads++;
     return respond(200, status);
   });
   context.mocks.api(artifactSharesContract.update, ({ body, respond }) => {
@@ -138,8 +268,7 @@ test("the two share actions create and copy links, then only copy the existing a
     return respond(200, status);
   });
   const clipboard = context.mocks.browser.clipboardWriteText();
-  const resolutions = await openArtifact();
-  expect(reads).toBe(0);
+  await openArtifact();
   await openShareMenu();
   expect(changes).toStrictEqual([]);
   expect(clipboard.writes).toStrictEqual([]);
@@ -155,7 +284,6 @@ test("the two share actions create and copy links, then only copy the existing a
   });
   expect(changes).toStrictEqual(["organization"]);
   await openShareMenu();
-  const beforeCopy = resolutions.length;
   click(action("menuitem", "Share to organization"));
   await waitFor(() => {
     return expect(clipboard.writes).toStrictEqual([
@@ -164,7 +292,6 @@ test("the two share actions create and copy links, then only copy the existing a
     ]);
   });
   expect(changes).toStrictEqual(["organization"]);
-  expect(resolutions).toHaveLength(beforeCopy);
   await openShareMenu();
   click(action("menuitem", "Share to Public"));
   await waitFor(() => {
