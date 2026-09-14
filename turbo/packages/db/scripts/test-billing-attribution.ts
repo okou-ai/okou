@@ -15,6 +15,7 @@ const client = new Client({ connectionString: databaseUrl });
 await client.connect();
 const scopedUrl = new URL(databaseUrl);
 scopedUrl.searchParams.set("options", `-c search_path=${schema}`);
+scopedUrl.searchParams.set("application_name", `${schema}_operator`);
 async function migrate(name: string) {
   await client.query(
     await readFile(
@@ -45,6 +46,123 @@ async function cli(args: string[]) {
 async function rejects(query: string, args: unknown[] = []) {
   await assert.rejects(client.query(query, args), { code: "23514" });
 }
+async function concurrentFirstUsage(): Promise<void> {
+  const identity = randomUUID();
+  const lockId = 33851;
+  const writerUrl = new URL(scopedUrl);
+  writerUrl.searchParams.set("application_name", `${schema}_writer`);
+  const writer = new Client({ connectionString: writerUrl.toString() });
+  await writer.connect();
+  let work:
+    | Promise<PromiseSettledResult<Record<string, unknown>>[]>
+    | undefined;
+  try {
+    await client.query("SET session_replication_role = replica");
+    await client.query(
+      "INSERT INTO agent_runs VALUES ($1, 'org', 'user', '2026-08-08', 'web', 'private')",
+      [identity],
+    );
+    await client.query("SET session_replication_role = origin");
+    await client.query(`CREATE FUNCTION pause_billing_capture() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF current_setting('application_name') = '${schema}_operator' THEN
+          PERFORM pg_advisory_xact_lock(pg_backend_pid(), ${lockId});
+        END IF;
+        RETURN NEW;
+      END $$;
+      CREATE TRIGGER pause_billing_capture BEFORE INSERT ON billing_run_attribution
+      FOR EACH ROW EXECUTE FUNCTION pause_billing_capture();`);
+    // Pause the real CLI after acquiring its source row lock, before attribution
+    // insertion. An independently owned usage writer must still commit its FK.
+    // The operator's backend PID is discovered before releasing its global lock.
+    await client.query(
+      "SELECT pg_advisory_lock(hashtext('vm0'), hashtext('usage_event_compaction'))",
+    );
+    work = Promise.allSettled([
+      cli([
+        "--migrate",
+        "--ack-writer-drain",
+        "--job-id",
+        randomUUID(),
+        "--run-from",
+        identity,
+        "--run-through",
+        identity,
+        "--max-rows",
+        "1",
+        "--max-ms",
+        "10000",
+      ]),
+    ]);
+    const deadline = Date.now() + 5000;
+    let operatorPid: number | undefined;
+    while (Date.now() < deadline) {
+      const rows = await client.query(
+        "SELECT pid FROM pg_stat_activity WHERE application_name=$1 AND wait_event='advisory'",
+        [`${schema}_operator`],
+      );
+      if (rows.rows.length > 0) {
+        operatorPid = rows.rows[0].pid;
+        break;
+      }
+      await new Promise((resolve) => {
+        setTimeout(resolve, 10);
+      });
+    }
+    assert.ok(operatorPid, "operator must reach the actual compaction lock");
+    await client.query("SELECT pg_advisory_lock($1, $2)", [
+      operatorPid,
+      lockId,
+    ]);
+    await client.query(
+      "SELECT pg_advisory_unlock(hashtext('vm0'), hashtext('usage_event_compaction'))",
+    );
+    let captureWaiting = false;
+    while (Date.now() < deadline) {
+      const rows = await client.query(
+        "SELECT 1 FROM pg_locks WHERE pid=$1 AND locktype='advisory' AND objid=$2 AND NOT granted",
+        [operatorPid, lockId],
+      );
+      if (rows.rows.length > 0) {
+        captureWaiting = true;
+        break;
+      }
+      await new Promise((resolve) => {
+        setTimeout(resolve, 10);
+      });
+    }
+    assert.ok(captureWaiting, "operator must hold its source lock at capture");
+    await writer.query("SET statement_timeout = '1s'");
+    await writer.query(
+      "INSERT INTO usage_event(run_id, org_id, user_id, quantity) VALUES ($1, 'org', 'user', 19)",
+      [identity],
+    );
+    await client.query("SELECT pg_advisory_unlock($1, $2)", [
+      operatorPid,
+      lockId,
+    ]);
+    const [outcome] = await work;
+    assert.ok(outcome);
+    assert.equal(outcome.status, "fulfilled");
+    assert.deepEqual(
+      (
+        await client.query(
+          "SELECT billing_run_id, quantity::text FROM usage_event WHERE run_id=$1",
+          [identity],
+        )
+      ).rows,
+      [{ billing_run_id: identity, quantity: "19" }],
+    );
+  } finally {
+    await client.query("SELECT pg_advisory_unlock_all()");
+    if (work) await work;
+    await client.query(
+      "DROP TRIGGER IF EXISTS pause_billing_capture ON billing_run_attribution; DROP FUNCTION IF EXISTS pause_billing_capture()",
+    );
+    await writer.end();
+  }
+}
+
 const run = randomUUID();
 const rollupRun = randomUUID();
 const pending = randomUUID();
@@ -464,6 +582,7 @@ try {
       },
     ],
   );
+  await concurrentFirstUsage();
   console.log(
     "Billing attribution: atomic capture, immutable conflicts, deletion isolation, runless provenance, bounded restart and exact monetary preservation passed",
   );

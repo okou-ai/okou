@@ -135,7 +135,9 @@ batch rolls back metadata and cursor together; rerun the same job ID.
 
 The phases are live runs, generation jobs, raw usage, then hourly usage, ordered
 by primary key. Each committed batch holds the existing compaction advisory
-lock before locking its checkpoint/source rows. No `SKIP LOCKED` cursor can skip
+lock before locking its checkpoint/source rows. Live runs use `FOR NO KEY UPDATE`
+so first-usage FK key-share checks remain compatible; other source phases retain
+`FOR UPDATE`. No `SKIP LOCKED` cursor can skip
 held rows. New run and usage writers capture their own attribution. Normal
 compaction moving a legacy raw row to a new hourly ID captures its live source
 atomically; unresolvable NULL rows stay unknown. A fresh complete inventory after

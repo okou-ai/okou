@@ -274,9 +274,12 @@ try {
         }
         const limit = Math.min(batchSize, maxRows - scannedThisInvocation);
         await timeout();
+        // FK checks by concurrent usage writers take KEY SHARE on the run.
+        // NO KEY UPDATE protects its source fields without blocking that check.
+        const sourceLock = current === "runs" ? "NO KEY UPDATE" : "UPDATE";
         const idsResult = await client.query(
           `SELECT t.id FROM ${tables[current]} t WHERE ${predicate(current)}
-          AND ($5::uuid IS NULL OR t.id > $5::uuid) ORDER BY t.id LIMIT $6 FOR UPDATE OF t`,
+          AND ($5::uuid IS NULL OR t.id > $5::uuid) ORDER BY t.id LIMIT $6 FOR ${sourceLock} OF t`,
           [...scope, nullableText(checkpoint.cursor), limit],
         );
         const ids = idsResult.rows.map((value: unknown) => {
@@ -306,7 +309,7 @@ try {
                       AND (r.org_id <> t.org_id OR r.user_id <> t.user_id OR r.created_at <> a.run_started_at OR billing_usage_source(r.trigger_source) <> a.source))`,
                   [ids],
                 );
-          populated = result.rowCount ?? 0;
+          populated = integer(result.rowCount);
         }
         await timeout();
         const countResult = await client.query(

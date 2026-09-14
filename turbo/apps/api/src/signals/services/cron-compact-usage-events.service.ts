@@ -84,9 +84,10 @@ const compactionRowSchema = z.object({
 // idx_usage_event_processed_org_user index. Eligible rows are always non-null.
 const oldestProcessedEventOrder = sql`${asc(event.processedAt)} NULLS FIRST`;
 
-function eligibleRawPredicate(cutoff: string): SQL {
+function eligibleRawPredicate(cutoff: string, orgId?: string): SQL {
   return sql`${and(
     eq(event.status, sql`'processed'`),
+    orgId === undefined ? undefined : eq(event.orgId, orgId),
     isNotNull(event.processedAt),
     lt(event.processedAt, sql`${cutoff}::timestamp`),
     isNull(event.billingError),
@@ -143,6 +144,7 @@ function physicalGrainOrder(alias: string): SQL {
 function candidateCtes(args: {
   readonly cutoff: string;
   readonly rawSeedLimit: number;
+  readonly orgId: string | undefined;
 }): SQL {
   return sql`
     raw_seed AS MATERIALIZED (
@@ -161,7 +163,7 @@ function candidateCtes(args: {
       FROM ${usageEvent} ${event}
       LEFT JOIN ${usageAllowanceAllocations} ${allocation}
         ON ${eq(allocation.usageEventId, event.id)}
-      WHERE ${eligibleRawPredicate(args.cutoff)}
+      WHERE ${eligibleRawPredicate(args.cutoff, args.orgId)}
       ORDER BY ${oldestProcessedEventOrder}
       LIMIT ${args.rawSeedLimit}
       FOR UPDATE OF event
@@ -512,6 +514,7 @@ function compactionSummarySelect(): SQL {
 function compactUsageEventsSql(args: {
   readonly cutoff: string;
   readonly rawSeedLimit: number;
+  readonly orgId: string | undefined;
 }): SQL {
   return sql`
     WITH
@@ -548,6 +551,7 @@ async function loadHoldProbe(
   db: Pick<Db, "execute">,
   cutoff: string,
   rawSeedLimit: number,
+  orgId: string | undefined,
 ): Promise<z.output<typeof holdProbeRowSchema>> {
   const rows = await executeRawRows(
     db,
@@ -557,6 +561,7 @@ async function loadHoldProbe(
         FROM ${usageEvent} ${event}
         WHERE ${and(
           eq(event.status, sql`'processed'`),
+          orgId === undefined ? undefined : eq(event.orgId, orgId),
           isNotNull(event.processedAt),
           lt(event.processedAt, sql`${cutoff}::timestamp`),
         )}
@@ -583,17 +588,19 @@ async function loadHoldProbe(
 async function hasRemainingRawUsage(
   db: Pick<Db, "select">,
   cutoff: string,
+  orgId: string | undefined,
 ): Promise<boolean> {
   const [remaining] = await db
     .select({ id: event.id })
     .from(event)
-    .where(eligibleRawPredicate(cutoff))
+    .where(eligibleRawPredicate(cutoff, orgId))
     .limit(1);
   return remaining !== undefined;
 }
 
 async function compactUsageEventBatch(
   db: UsageEventCompactionDb,
+  orgId: string | undefined,
   signal: AbortSignal,
 ): Promise<Omit<UsageEventCompactionStats, "durationMs">> {
   const rawSeedLimit = USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT;
@@ -605,10 +612,10 @@ async function compactUsageEventBatch(
 
     const cutoffDate = await loadCompactionCutoff(tx);
     const cutoff = timestampWithoutTimeZone(cutoffDate);
-    const holdProbe = await loadHoldProbe(tx, cutoff, rawSeedLimit);
+    const holdProbe = await loadHoldProbe(tx, cutoff, rawSeedLimit, orgId);
     const rows = await executeRawRows(
       tx,
-      compactUsageEventsSql({ cutoff, rawSeedLimit }),
+      compactUsageEventsSql({ cutoff, rawSeedLimit, orgId }),
       compactionRowSchema,
     );
     const compaction = rows[0];
@@ -628,7 +635,7 @@ async function compactUsageEventBatch(
       throw new Error("Usage event compaction reconciliation failed");
     }
     signal.throwIfAborted();
-    const hasMoreRaw = await hasRemainingRawUsage(tx, cutoff);
+    const hasMoreRaw = await hasRemainingRawUsage(tx, cutoff, orgId);
     signal.throwIfAborted();
 
     return {
@@ -654,9 +661,13 @@ async function compactUsageEventBatch(
 }
 
 export const compactUsageEvents$ = command(
-  async ({ set }, signal: AbortSignal): Promise<UsageEventCompactionStats> => {
+  async (
+    { set },
+    orgId: string | undefined,
+    signal: AbortSignal,
+  ): Promise<UsageEventCompactionStats> => {
     const startedAt = performance.now();
-    const result = await compactUsageEventBatch(set(writeDb$), signal);
+    const result = await compactUsageEventBatch(set(writeDb$), orgId, signal);
     const stats = {
       ...result,
       durationMs: Math.round(performance.now() - startedAt),
