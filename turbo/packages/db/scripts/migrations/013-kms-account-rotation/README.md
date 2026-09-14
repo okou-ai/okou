@@ -145,6 +145,15 @@ requires a fresh scan.
 verification certificate; run a fresh full `--verify` after migration. Reports
 contain field names, counts, known source/target ARNs and opaque cursor IDs only.
 Provider and SQL error messages are suppressed because they may include data.
+Failure reports also include `failureDetails` with a fixed stage and an
+allowlisted error code. Connection failures retain an incomplete checkpoint;
+provider messages, SQL text, and plaintext are never recorded. The snapshot
+inspection wrapper retains validated marker records before target verification,
+then records the child exit/timeout and only bound aggregate report fields on
+failure. It exposes cursor presence, never the cursor value. Partial counts and
+a failed child report do not establish cryptographic recovery or retirement
+clearance.
+
 An unknown key, invalid envelope, unsupported schema, or KMS failure prevents
 successful migration/verification. No automatic retry overwrites a changed row.
 
