@@ -10,6 +10,7 @@ import {
   type SocialKitDownloadListResponse,
   type SocialKitDownloadRequest,
   type SocialKitDownloadResponse,
+  type SocialKitErrorResponse,
 } from "@okouai/api-contracts/contracts/social";
 import { socialKitDownloadJobs } from "@okouai/db/schema/socialkit-download-job";
 import { command } from "ccstate";
@@ -48,6 +49,7 @@ import {
 } from "./managed-usage.service";
 import { recordWebUploadedFile$ } from "./run-uploaded-files.service";
 import { validateScrapeTargetUrl } from "./scrape-target-policy";
+import { normalizeSocialKitError } from "./socialkit-error";
 
 const SOCIALKIT_API_BASE = "https://api.socialkit.dev";
 const SOCIALKIT_PROVIDER_TIMEOUT_MS = 240_000;
@@ -96,13 +98,18 @@ const INVALID_PROVIDER_RESPONSE_ERROR = {
 } satisfies DownloadJobError;
 
 interface SocialKitDownloadErrorResponse {
-  readonly status: 409 | 502 | 503;
-  readonly body: {
-    readonly error: {
-      readonly message: string;
-      readonly code: string;
-    };
-  };
+  readonly status: 400 | 404 | 409 | 422 | 429 | 502 | 503;
+  readonly body: SocialKitErrorResponse;
+}
+
+class ProviderRequestError extends Error {
+  readonly details: DownloadJobError;
+
+  constructor(readonly normalized: ReturnType<typeof normalizeSocialKitError>) {
+    super(normalized.error.message);
+    this.name = "ProviderRequestError";
+    this.details = { ...normalized.error, provider: normalized.evidence };
+  }
 }
 
 type CreateSocialKitDownloadResponse =
@@ -155,7 +162,7 @@ const providerFailedSchema = z.object({
     .max(MAX_PROVIDER_FAILURE_CODE_CHARS)
     .regex(PROVIDER_FAILURE_CODE_PATTERN),
   error: z.string().trim().min(1).max(MAX_PROVIDER_FAILURE_MESSAGE_CHARS),
-  retryable: z.boolean(),
+  retryable: z.unknown().optional(),
 });
 
 const providerThumbnailSchema = z
@@ -226,9 +233,20 @@ function responseForJob(job: DownloadJob): SocialKitDownloadResponse {
     artifact: job.artifact,
     error: job.error
       ? {
-          ...job.error,
+          code: job.error.code,
+          message: job.error.message,
+          ...(job.error.reason === undefined
+            ? {}
+            : { reason: job.error.reason }),
+          ...(job.error.retryAfterSeconds === undefined
+            ? {}
+            : { retryAfterSeconds: job.error.retryAfterSeconds }),
+          ...(job.error.resubmitRetryable === undefined
+            ? {}
+            : { resubmitRetryable: job.error.resubmitRetryable }),
           retryable:
-            job.status === "processing" || job.status === "artifact_failed",
+            (job.status === "processing" || job.status === "artifact_failed") &&
+            (job.error.retryable ?? true),
           billed,
         }
       : null,
@@ -280,14 +298,26 @@ function providerFailureError(
   accessKey: string,
 ): DownloadJobError | null {
   const parsed = providerFailedSchema.safeParse(value);
-  if (!parsed.success) {
+  const normalized = normalizeSocialKitError(200, value, { accessKey });
+  if (
+    !parsed.success &&
+    normalized.evidence.errorCode === undefined &&
+    normalized.evidence.retryable === undefined
+  ) {
     return null;
   }
   return {
-    code: `SOCIALKIT_PROVIDER_${parsed.data.errorCode}`,
+    code:
+      parsed.success && normalized.evidence.errorCode
+        ? `SOCIALKIT_PROVIDER_${normalized.evidence.errorCode}`
+        : PROVIDER_DOWNLOAD_FAILED_ERROR.code,
     message:
-      safeProviderFailureMessage(parsed.data.error, accessKey) ??
-      PROVIDER_DOWNLOAD_FAILED_ERROR.message,
+      (parsed.success
+        ? safeProviderFailureMessage(parsed.data.error, accessKey)
+        : null) ?? PROVIDER_DOWNLOAD_FAILED_ERROR.message,
+    reason: normalized.error.reason,
+    resubmitRetryable: normalized.error.retryable,
+    provider: normalized.evidence,
   };
 }
 
@@ -339,8 +369,11 @@ async function startProviderJob(
     signal,
   );
   if (!result.response.ok) {
-    throw new Error(
-      `SocialKit download start failed (${result.response.status})`,
+    throw new ProviderRequestError(
+      normalizeSocialKitError(result.response.status, result.body, {
+        accessKey,
+        headers: result.response.headers,
+      }),
     );
   }
   return providerStartSchema.parse(result.body).jobId;
@@ -372,8 +405,11 @@ async function pollProviderJob(
     if (result.response.status === 404) {
       return { status: "failed", error: null };
     }
-    throw new Error(
-      `SocialKit download status failed (${result.response.status})`,
+    throw new ProviderRequestError(
+      normalizeSocialKitError(result.response.status, result.body, {
+        accessKey,
+        headers: result.response.headers,
+      }),
     );
   }
   if (
@@ -840,6 +876,7 @@ function readyMetadataIsValid(
 async function deferClaimedJob(
   writeDb: Db,
   job: DownloadJob,
+  error: DownloadJobError | undefined,
   signal: AbortSignal,
 ): Promise<void> {
   const [current] = await writeDb
@@ -857,7 +894,7 @@ async function deferClaimedJob(
     .update(socialKitDownloadJobs)
     .set({
       status: billed ? "artifact_failed" : "processing",
-      error: {
+      error: error ?? {
         code: billed
           ? "ARTIFACT_MATERIALIZATION_FAILED"
           : "SOCIALKIT_RECONCILIATION_FAILED",
@@ -866,7 +903,7 @@ async function deferClaimedJob(
           : "The SocialKit download could not be reconciled yet",
       },
       retryCount: sql`${socialKitDownloadJobs.retryCount} + 1`,
-      claimExpiresAt: sql`now() + LEAST(30, ${socialKitDownloadJobs.retryCount} + 1) * interval '1 minute'`,
+      claimExpiresAt: sql`now() + GREATEST(LEAST(30, ${socialKitDownloadJobs.retryCount} + 1) * 60, ${error?.retryAfterSeconds ?? 0}) * interval '1 second'`,
       updatedAt: nowDate(),
     })
     .where(
@@ -883,7 +920,10 @@ async function startAndPersistProviderJob(
   created: DownloadJob,
   accessKey: string,
   request: SocialKitDownloadRequest,
-): Promise<DownloadJob | null> {
+): Promise<
+  | { readonly job: DownloadJob }
+  | { readonly failure: SocialKitDownloadErrorResponse }
+> {
   const started = await settleIncludingAbort(
     startProviderJob(
       accessKey,
@@ -892,19 +932,40 @@ async function startAndPersistProviderJob(
     ),
   );
   if (!started.ok) {
+    const normalized =
+      started.error instanceof ProviderRequestError
+        ? started.error.normalized
+        : undefined;
+    const failure: SocialKitDownloadErrorResponse = normalized
+      ? { status: normalized.status, body: { error: normalized.error } }
+      : {
+          status: 502,
+          body: {
+            error: {
+              code: "SOCIALKIT_DOWNLOAD_START_FAILED",
+              message: "SocialKit could not start the download",
+              retryable: false,
+            },
+          },
+        };
     await writeDb
       .update(socialKitDownloadJobs)
       .set({
         status: "provider_failed",
         error: {
-          code: "SOCIALKIT_DOWNLOAD_START_FAILED",
-          message: "SocialKit could not start the download",
+          ...failure.body.error,
+          ...(normalized
+            ? {
+                provider: normalized.evidence,
+                resubmitRetryable: normalized.error.retryable,
+              }
+            : {}),
         },
         updatedAt: nowDate(),
         completedAt: nowDate(),
       })
       .where(eq(socialKitDownloadJobs.id, created.id));
-    return null;
+    return { failure };
   }
 
   const [processing] = await writeDb
@@ -924,7 +985,7 @@ async function startAndPersistProviderJob(
   if (!processing) {
     throw new Error("Failed to persist SocialKit provider job");
   }
-  return processing;
+  return { job: processing };
 }
 
 export const createSocialKitDownload$ = command(
@@ -989,15 +1050,11 @@ export const createSocialKitDownload$ = command(
       args.body,
     );
     signal.throwIfAborted();
-    if (!processing) {
-      return errorResponse(
-        502,
-        "SocialKit could not start the download",
-        "SOCIALKIT_DOWNLOAD_START_FAILED",
-      );
+    if ("failure" in processing) {
+      return processing.failure;
     }
 
-    return { status: 202, body: responseForJob(processing) };
+    return { status: 202, body: responseForJob(processing.job) };
   },
 );
 
@@ -1446,7 +1503,7 @@ async function recordProviderFailure(
   error: DownloadJobError,
 ): Promise<void> {
   if (job.creditsCharged !== null) {
-    await deferClaimedJob(writeDb, job, signal);
+    await deferClaimedJob(writeDb, job, undefined, signal);
     return;
   }
   await writeDb
@@ -1490,13 +1547,14 @@ export const reconcileSocialKitDownload$ = command(
           deferClaimedJob(
             writeDb,
             job,
+            undefined,
             AbortSignal.timeout(CLAIM_CLEANUP_TIMEOUT_MS),
           ),
         );
       }
       signal.throwIfAborted();
       if (!recovered.ok) {
-        await deferClaimedJob(writeDb, job, signal);
+        await deferClaimedJob(writeDb, job, undefined, signal);
         signal.throwIfAborted();
         return true;
       }
@@ -1509,14 +1567,21 @@ export const reconcileSocialKitDownload$ = command(
         );
         signal.throwIfAborted();
         if (!poll.ok) {
-          await deferClaimedJob(writeDb, job, signal);
+          await deferClaimedJob(
+            writeDb,
+            job,
+            poll.error instanceof ProviderRequestError
+              ? poll.error.details
+              : undefined,
+            signal,
+          );
           return true;
         }
         if (poll.value.status === "processing") {
           if (job.creditsCharged === null) {
             await recordProcessingPoll(writeDb, job);
           } else {
-            await deferClaimedJob(writeDb, job, signal);
+            await deferClaimedJob(writeDb, job, undefined, signal);
           }
           signal.throwIfAborted();
           return true;
@@ -1560,7 +1625,7 @@ export const reconcileSocialKitDownload$ = command(
         );
         signal.throwIfAborted();
         if (!completed.ok) {
-          await deferClaimedJob(writeDb, job, signal);
+          await deferClaimedJob(writeDb, job, undefined, signal);
           return true;
         }
         return true;
@@ -1573,6 +1638,7 @@ export const reconcileSocialKitDownload$ = command(
           deferClaimedJob(
             writeDb,
             job,
+            undefined,
             AbortSignal.timeout(CLAIM_CLEANUP_TIMEOUT_MS),
           ),
         );

@@ -25,4 +25,15 @@ export interface SocialKitDownloadArtifactResult {
 export interface SocialKitDownloadError {
   readonly code: string;
   readonly message: string;
+  // Optional because existing snapshots and local artifact errors omit provider advice.
+  readonly reason?: string;
+  readonly retryAfterSeconds?: number;
+  readonly retryable?: boolean;
+  readonly resubmitRetryable?: boolean;
+  readonly provider?: {
+    readonly httpStatus: number;
+    readonly errorCode?: string;
+    readonly code?: string;
+    readonly retryable?: boolean;
+  };
 }

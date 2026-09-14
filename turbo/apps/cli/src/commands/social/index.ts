@@ -14,6 +14,7 @@ import {
   type SocialKitRequest,
   type SocialKitResponse,
   type SocialKitCollectionSourceLimit,
+  type SocialErrorReason,
 } from "@okouai/api-contracts/contracts/social";
 import chalk from "chalk";
 import { Command, InvalidArgumentError } from "commander";
@@ -24,6 +25,7 @@ import {
   getSocialKitDownload,
   listSocialKitDownloads,
   SocialDownloadConflictError,
+  SocialApiRequestError,
 } from "../../lib/api/domains/social";
 import { ApiRequestError } from "../../lib/api/core/client-factory";
 import { getOkouToken } from "../../lib/okou-env";
@@ -145,6 +147,9 @@ interface SocialErrorDetails {
   readonly retryable: boolean;
   readonly httpStatus?: number;
   readonly billed?: boolean;
+  readonly reason?: SocialErrorReason;
+  readonly retryAfterSeconds?: number;
+  readonly resubmitRetryable?: boolean;
 }
 
 interface SocialOutputBase {
@@ -200,6 +205,21 @@ class SocialDownloadError extends Error {
   ) {
     super(details.message);
     this.name = "SocialDownloadError";
+  }
+}
+
+class SocialDownloadPollError extends Error {
+  constructor(
+    readonly downloadId: string,
+    cause: unknown,
+  ) {
+    super(
+      cause instanceof Error
+        ? cause.message
+        : "Download status could not be retrieved",
+      { cause },
+    );
+    this.name = "SocialDownloadPollError";
   }
 }
 
@@ -262,6 +282,9 @@ function successfulOutput(
 }
 
 function apiErrorKind(error: ApiRequestError): string {
+  if (error instanceof SocialApiRequestError && error.details.reason) {
+    return error.details.reason;
+  }
   if (error.code === "UNAUTHORIZED") {
     return "authentication";
   }
@@ -281,9 +304,26 @@ function apiErrorKind(error: ApiRequestError): string {
 }
 
 function rootError(error: unknown): unknown {
-  return error instanceof SocialCollectionError && error.cause
+  return (error instanceof SocialCollectionError ||
+    error instanceof SocialDownloadPollError) &&
+    error.cause
     ? error.cause
     : error;
+}
+
+function apiErrorRetryable(error: ApiRequestError): boolean {
+  if (
+    error instanceof SocialApiRequestError &&
+    error.details.retryable !== undefined
+  ) {
+    return error.details.retryable;
+  }
+  // Older supported API responses and local errors omit optional retry advice.
+  return (
+    error.status >= 500 ||
+    error.status === 429 ||
+    error.code.includes("RATE_LIMIT")
+  );
 }
 
 function structuredError(error: unknown): {
@@ -291,8 +331,21 @@ function structuredError(error: unknown): {
   readonly error: SocialErrorDetails;
   readonly progress?: CollectionProgress;
   readonly download?: SocialKitDownloadResponse;
+  readonly recovery?: {
+    readonly downloadId: string;
+    readonly resumeCommand: string;
+  };
 } {
   const root = rootError(error);
+  const recovery =
+    error instanceof SocialDownloadPollError
+      ? {
+          downloadId: error.downloadId,
+          resumeCommand: resumeDownloadCommand(error.downloadId),
+        }
+      : root instanceof SocialDownloadConflictError
+        ? root.recovery
+        : undefined;
   const progress =
     error instanceof SocialCollectionError ? error.progress : undefined;
   if (root instanceof ApiRequestError) {
@@ -303,12 +356,11 @@ function structuredError(error: unknown): {
         code: root.code,
         message: root.message,
         httpStatus: root.status,
-        retryable: root.status >= 500 || root.code.includes("RATE_LIMIT"),
+        ...(root instanceof SocialApiRequestError ? root.details : {}),
+        retryable: apiErrorRetryable(root),
       },
       ...(progress ? { progress } : {}),
-      ...(root instanceof SocialDownloadConflictError
-        ? { recovery: root.recovery }
-        : {}),
+      ...(recovery ? { recovery } : {}),
     };
   }
   if (root instanceof SocialDownloadError) {
@@ -320,8 +372,26 @@ function structuredError(error: unknown): {
         message: root.message,
         retryable: root.details.retryable,
         billed: root.details.billed,
+        ...(root.details.reason === undefined
+          ? {}
+          : { reason: root.details.reason }),
+        ...(root.details.retryAfterSeconds === undefined
+          ? {}
+          : { retryAfterSeconds: root.details.retryAfterSeconds }),
+        ...(root.details.resubmitRetryable === undefined
+          ? {}
+          : { resubmitRetryable: root.details.resubmitRetryable }),
       },
       download: root.response,
+      ...(root.response.status === "processing" ||
+      root.response.status === "artifact_failed"
+        ? {
+            recovery: {
+              downloadId: root.response.downloadId,
+              resumeCommand: resumeDownloadCommand(root.response.downloadId),
+            },
+          }
+        : {}),
     };
   }
   return {
@@ -333,6 +403,7 @@ function structuredError(error: unknown): {
       retryable: false,
     },
     ...(progress ? { progress } : {}),
+    ...(recovery ? { recovery } : {}),
   };
 }
 
@@ -374,7 +445,24 @@ function configureStructuredParserErrors(command: Command): void {
   }
 }
 
+function socialErrorGuidance(details: {
+  readonly reason?: string;
+  readonly retryAfterSeconds?: number;
+}): string[] {
+  const lines: string[] = [];
+  if (details.reason) {
+    lines.push(`Reason: ${details.reason}`);
+  }
+  if (details.retryAfterSeconds !== undefined) {
+    lines.push(`Retry after: ${details.retryAfterSeconds} seconds`);
+  }
+  return lines;
+}
+
 function humanError(error: unknown): string {
+  if (error instanceof SocialDownloadPollError) {
+    return `${humanError(error.cause)}\n  Download ID: ${error.downloadId}\n  Resume: ${resumeDownloadCommand(error.downloadId)}`;
+  }
   const root = rootError(error);
   if (root instanceof ApiRequestError) {
     if (root.code === "UNAUTHORIZED") {
@@ -382,9 +470,16 @@ function humanError(error: unknown): string {
         ? "Authentication failed. OKOU_TOKEN is invalid or expired."
         : "Not authenticated. Set OKOU_TOKEN to a valid run token.";
     }
-    return root instanceof SocialDownloadConflictError
-      ? `${root.status}: ${root.message}\n  Download ID: ${root.recovery.downloadId}\n  Resume: ${root.recovery.resumeCommand}`
-      : `${root.status}: ${root.message}`;
+    if (root instanceof SocialDownloadConflictError) {
+      return `${root.status}: ${root.message}\n  Download ID: ${root.recovery.downloadId}\n  Resume: ${root.recovery.resumeCommand}`;
+    }
+    const details = [`${root.status}: ${root.message}`];
+    if (root instanceof SocialApiRequestError) {
+      details.push(...socialErrorGuidance(root.details));
+      if (root.details.retryable !== undefined)
+        details.push(`Retryable: ${root.details.retryable ? "yes" : "no"}`);
+    }
+    return details.join("\n  ");
   }
   if (root instanceof SocialDownloadError) {
     const response = root.response;
@@ -396,7 +491,17 @@ function humanError(error: unknown): string {
       `Retryable: ${root.details.retryable ? "yes" : "no"}`,
       `Billed: ${root.details.billed ? "yes" : "no"}`,
     ];
-    if (response.status === "artifact_failed") {
+    details.push(...socialErrorGuidance(root.details));
+    if (root.details.resubmitRetryable !== undefined)
+      details.push(
+        `New submission may succeed later: ${root.details.resubmitRetryable ? "yes" : "no"}`,
+      );
+    if (response.status === "provider_failed")
+      details.push("This download is terminal; stop polling it.");
+    if (
+      response.status === "artifact_failed" ||
+      response.status === "processing"
+    ) {
       details.push(`Resume: ${resumeDownloadCommand(response.downloadId)}`);
     }
     return details.join("\n  ");
@@ -1005,6 +1110,9 @@ async function waitForDownload(
     if (current.status === "provider_failed") {
       throw socialDownloadError(current);
     }
+    if (current.status === "processing" && current.error) {
+      throw socialDownloadError(current);
+    }
     if (current.status === "artifact_failed" && !retryArtifactFailures) {
       throw socialDownloadError(current);
     }
@@ -1013,12 +1121,24 @@ async function waitForDownload(
     } else {
       await sleep(2_000, undefined, { signal });
     }
-    current = await getSocialKitDownload(current.downloadId, signal);
+    current = await pollDownload(current.downloadId, signal);
   }
   signal.throwIfAborted();
   throw new Error(
     `Okou Social download ${current.downloadId} is still running; resume with: ${resumeDownloadCommand(current.downloadId)}`,
   );
+}
+
+async function pollDownload(
+  downloadId: string,
+  signal: AbortSignal,
+): Promise<SocialKitDownloadResponse> {
+  try {
+    return await getSocialKitDownload(downloadId, signal);
+  } catch (error) {
+    signal.throwIfAborted();
+    throw new SocialDownloadPollError(downloadId, error);
+  }
 }
 
 function downloadOutput(
@@ -1427,7 +1547,7 @@ const downloadCommand = new Command()
           options.json === true,
           async (signal) => {
             const response = await waitForDownload(
-              await getSocialKitDownload(downloadId, signal),
+              await pollDownload(downloadId, signal),
               true,
               options.json === true,
               signal,

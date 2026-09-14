@@ -2133,6 +2133,8 @@ describe("okou social command", () => {
     ["aggregate HTTP failure", "--json", "http"],
     ["stream HTTP failure", "--stream", "http"],
     ["default HTTP failure", "", "http"],
+    ["aggregate structured HTTP failure", "--json", "structured"],
+    ["stream structured HTTP failure", "--stream", "structured"],
     ["aggregate malformed response", "--json", "malformed"],
     ["stream malformed response", "--stream", "malformed"],
     ["aggregate missing metadata", "--json", "metadata"],
@@ -2163,7 +2165,7 @@ describe("okou social command", () => {
               ),
             );
           }
-          if (failure !== "http") {
+          if (failure === "malformed" || failure === "metadata") {
             return HttpResponse.json(
               socialResponse(
                 "instagram_comments",
@@ -2181,6 +2183,13 @@ describe("okou social command", () => {
               error: {
                 code: "SOCIALKIT_UPSTREAM_ERROR",
                 message: "SocialKit request failed",
+                ...(failure === "structured"
+                  ? {
+                      reason: "upstream_failure",
+                      retryable: false,
+                      retryAfterSeconds: 120,
+                    }
+                  : {}),
               },
             },
             { status: 502 },
@@ -2222,7 +2231,15 @@ describe("okou social command", () => {
             code: "SOCIAL_UPSTREAM_ERROR",
             retryable: true,
           }
-        : { kind: "internal", code: "INTERNAL", retryable: false };
+        : failure === "structured"
+          ? {
+              kind: "upstream_failure",
+              code: "SOCIAL_UPSTREAM_ERROR",
+              reason: "upstream_failure",
+              retryable: false,
+              retryAfterSeconds: 120,
+            }
+          : { kind: "internal", code: "INTERNAL", retryable: false };
     expect(terminal).toMatchObject({
       kind: streaming ? "summary" : "result",
       status: "partial",
@@ -2611,6 +2628,127 @@ describe("okou social command", () => {
       collection: { pages: 2 },
     });
     expect(records[2]).not.toHaveProperty("data");
+  });
+
+  it.each([
+    {
+      reason: "content_restricted",
+      status: 422,
+      retryable: false,
+      expected: false,
+    },
+    { reason: "no_transcript", status: 404, retryable: false, expected: false },
+    {
+      reason: "transcript_not_ready",
+      status: 404,
+      retryable: false,
+      expected: false,
+    },
+    {
+      reason: "content_unavailable",
+      status: 404,
+      retryable: false,
+      expected: false,
+    },
+    {
+      reason: "provider_quota_exhausted",
+      status: 503,
+      retryable: false,
+      expected: false,
+    },
+    {
+      reason: "upstream_failure",
+      status: 502,
+      retryable: false,
+      expected: false,
+    },
+    {
+      reason: "upstream_failure",
+      status: 502,
+      retryable: true,
+      expected: true,
+    },
+    { reason: "rate_limited", status: 429, retryable: true, expected: true },
+    { reason: "future_reason", status: 503, retryable: false, expected: false },
+    {
+      reason: "upstream_failure",
+      status: 503,
+      retryable: "false",
+      expected: true,
+    },
+  ])(
+    "prints $reason / $retryable without broad retry guesses",
+    async (testCase) => {
+      let requests = 0;
+      server.use(
+        http.post("http://localhost:3000/api/social/request", () => {
+          requests += 1;
+          return HttpResponse.json(
+            {
+              error: {
+                code: "SOCIAL_FAILURE",
+                message: "The social request failed",
+                reason: testCase.reason,
+                retryable: testCase.retryable,
+                retryAfterSeconds: 24,
+              },
+            },
+            { status: testCase.status },
+          );
+        }),
+      );
+      await expect(
+        socialCommand.parseAsync([
+          "node",
+          "okou",
+          "transcript",
+          "https://youtu.be/example",
+          "--json",
+        ]),
+      ).rejects.toThrow("process.exit called");
+      expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+        error: {
+          kind:
+            testCase.reason === "future_reason"
+              ? "provider_temporary"
+              : testCase.reason,
+          retryable: testCase.expected,
+          retryAfterSeconds: 24,
+        },
+      });
+      expect(requests).toBe(1);
+    },
+  );
+
+  it("explains retry delay and quota ownership in human output", async () => {
+    server.use(
+      http.post("http://localhost:3000/api/social/request", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "SOCIAL_QUOTA_EXHAUSTED",
+              message:
+                "The social data service has insufficient provider credits",
+              reason: "provider_quota_exhausted",
+              retryable: false,
+              retryAfterSeconds: 120,
+            },
+          },
+          { status: 503 },
+        );
+      }),
+    );
+    await expect(
+      socialCommand.parseAsync([
+        "node",
+        "okou",
+        "transcript",
+        "https://youtu.be/example",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(errorOutput()).toContain("provider_quota_exhausted");
+    expect(errorOutput()).toContain("Retryable: no");
+    expect(errorOutput()).toContain("Retry after: 120 seconds");
   });
 
   it("emits structured API failures and exits non-zero", async () => {
@@ -3055,6 +3193,134 @@ describe("okou social command", () => {
           billed: status === "artifact_failed",
         },
         download: { status },
+      });
+    },
+  );
+
+  it.each([true, false])(
+    "stops terminal polling when resubmission retryability is %s",
+    async (resubmitRetryable) => {
+      const terminal = failedDownload("provider_failed");
+      let polls = 0;
+      server.use(
+        http.get(
+          "http://localhost:3000/api/social/downloads/:downloadId",
+          () => {
+            polls += 1;
+            return HttpResponse.json({
+              ...terminal,
+              error: {
+                ...terminal.error,
+                reason: "upstream_failure",
+                resubmitRetryable,
+              },
+            });
+          },
+        ),
+      );
+      await expect(
+        socialCommand.parseAsync([
+          "node",
+          "okou",
+          "download",
+          "--resume",
+          terminal.downloadId,
+          "--json",
+        ]),
+      ).rejects.toThrow("process.exit called");
+      expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+        error: { retryable: false, resubmitRetryable },
+        download: {
+          downloadId: terminal.downloadId,
+          status: "provider_failed",
+        },
+      });
+      expect(polls).toBe(1);
+    },
+  );
+
+  it("stops on recoverable quota polling errors and keeps same-task guidance", async () => {
+    const initial = failedDownload("provider_failed");
+    let polls = 0;
+    server.use(
+      http.get("http://localhost:3000/api/social/downloads/:downloadId", () => {
+        polls += 1;
+        return HttpResponse.json({
+          ...initial,
+          status: "processing",
+          completedAt: null,
+          error: {
+            code: "SOCIAL_QUOTA_EXHAUSTED",
+            message: "Social service capacity must be restored",
+            reason: "provider_quota_exhausted",
+            retryable: false,
+            billed: false,
+            retryAfterSeconds: 120,
+          },
+        });
+      }),
+    );
+    await expect(
+      socialCommand.parseAsync([
+        "node",
+        "okou",
+        "download",
+        "--resume",
+        initial.downloadId,
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+      error: {
+        reason: "provider_quota_exhausted",
+        retryable: false,
+        retryAfterSeconds: 120,
+      },
+      recovery: {
+        downloadId: initial.downloadId,
+        resumeCommand: `okou social download --resume ${initial.downloadId}`,
+      },
+    });
+    expect(polls).toBe(1);
+  });
+
+  it.each(["api", "network"])(
+    "keeps a known download ID after a %s polling failure",
+    async (failure) => {
+      const downloadId = completedDownload().downloadId;
+      server.use(
+        http.get(
+          "http://localhost:3000/api/social/downloads/:downloadId",
+          () => {
+            return failure === "network"
+              ? HttpResponse.error()
+              : HttpResponse.json(
+                  {
+                    error: {
+                      code: "TEMPORARY",
+                      message: "Service temporarily unavailable",
+                    },
+                  },
+                  { status: 500 },
+                );
+          },
+        ),
+      );
+      await expect(
+        socialCommand.parseAsync([
+          "node",
+          "okou",
+          "download",
+          "--resume",
+          downloadId,
+          "--json",
+        ]),
+      ).rejects.toThrow("process.exit called");
+      expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+        recovery: {
+          downloadId,
+          resumeCommand: `okou social download --resume ${downloadId}`,
+        },
       });
     },
   );

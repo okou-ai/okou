@@ -48,9 +48,33 @@ export {
 
 const c = initContract();
 
+export const socialErrorReasonSchema = z.enum([
+  ...socialKitTranscriptErrorReasonSchema.options,
+  "content_restricted",
+  "content_unavailable",
+  "no_transcript",
+  "transcript_not_ready",
+  "media_not_ready",
+  "upstream_failure",
+  "rate_limited",
+  "provider_quota_exhausted",
+  "provider_authentication",
+  "invalid_input",
+]);
+
+export type SocialErrorReason = z.infer<typeof socialErrorReasonSchema>;
+
+export const socialRetryAfterSecondsSchema = z
+  .number()
+  .int()
+  .min(0)
+  .max(2_147_483_647);
+
 export const socialKitErrorSchema = apiErrorSchema.extend({
   error: apiErrorSchema.shape.error.extend({
-    reason: socialKitTranscriptErrorReasonSchema.optional(),
+    reason: socialErrorReasonSchema.optional(),
+    retryable: z.boolean().optional(),
+    retryAfterSeconds: socialRetryAfterSecondsSchema.optional(),
   }),
 });
 
@@ -204,6 +228,10 @@ export const socialKitDownloadResponseSchema = z.object({
       message: z.string(),
       retryable: z.boolean(),
       billed: z.boolean(),
+      reason: socialErrorReasonSchema.optional(),
+      retryAfterSeconds: socialRetryAfterSecondsSchema.optional(),
+      // A terminal job cannot resume; this advice applies to a new submission.
+      resubmitRetryable: z.boolean().optional(),
     })
     .nullable(),
   createdAt: z.iso.datetime(),
@@ -556,6 +584,8 @@ export const socialContract = c.router({
       402: socialKitErrorSchema,
       403: socialKitErrorSchema,
       404: socialKitErrorSchema,
+      422: socialKitErrorSchema,
+      429: socialKitErrorSchema,
       502: socialKitErrorSchema,
       503: socialKitErrorSchema,
     },
@@ -568,14 +598,17 @@ export const socialContract = c.router({
     body: socialKitDownloadRequestSchema,
     responses: {
       202: socialKitDownloadResponseSchema,
-      400: apiErrorSchema,
+      400: socialKitErrorSchema,
       401: apiErrorSchema,
       402: apiErrorSchema,
       403: apiErrorSchema,
+      404: socialKitErrorSchema,
       409: socialKitDownloadConflictSchema,
+      422: socialKitErrorSchema,
+      429: socialKitErrorSchema,
       500: apiErrorSchema,
-      502: apiErrorSchema,
-      503: apiErrorSchema,
+      502: socialKitErrorSchema,
+      503: socialKitErrorSchema,
     },
     summary: "Start an Okou Social artifact download",
   },

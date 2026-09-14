@@ -3,6 +3,8 @@ import {
   projectPublicSocialResponse,
   socialContract,
   socialKitErrorSchema,
+  socialErrorReasonSchema,
+  socialRetryAfterSecondsSchema,
   publicSocialErrorCode,
   publicSocialErrorMessage,
   redactSocialProviderIdentity,
@@ -14,14 +16,11 @@ import {
   type SocialKitDownloadResponse,
   type SocialKitRequest,
   type SocialKitResponse,
+  type SocialKitErrorResponse,
 } from "@okouai/api-contracts/contracts/social";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 
-import {
-  ApiRequestError,
-  getClientConfig,
-  handleError,
-} from "../core/client-factory";
+import { ApiRequestError, getClientConfig } from "../core/client-factory";
 
 const SOCIALKIT_API_TIMEOUT_MS = 280_000;
 
@@ -34,6 +33,21 @@ export class SocialDownloadConflictError extends ApiRequestError {
     },
   ) {
     super(message, "DOWNLOAD_IN_PROGRESS", 409);
+  }
+}
+
+export class SocialApiRequestError extends ApiRequestError {
+  constructor(
+    message: string,
+    code: string,
+    status: number,
+    readonly details: Pick<
+      SocialKitErrorResponse["error"],
+      "reason" | "retryable" | "retryAfterSeconds"
+    >,
+  ) {
+    super(message, code, status);
+    this.name = "SocialApiRequestError";
   }
 }
 
@@ -75,19 +89,22 @@ function handlePublicSocialError(
     : typeof rawErrorRecord?.message === "string"
       ? rawErrorRecord.message
       : defaultMessage;
-  const reason = parsed.success ? parsed.data.error.reason : undefined;
-  handleError(
+  // Parse optional additions independently: an unknown reason must not erase explicit false.
+  const reason = socialErrorReasonSchema.safeParse(rawErrorRecord?.reason);
+  const delay = socialRetryAfterSecondsSchema.safeParse(
+    rawErrorRecord?.retryAfterSeconds,
+  );
+  throw new SocialApiRequestError(
+    publicSocialErrorMessage(message),
+    publicSocialErrorCode(code),
+    result.status,
     {
-      status: result.status,
-      body: {
-        error: {
-          ...(reason ? { reason } : {}),
-          code: publicSocialErrorCode(code),
-          message: publicSocialErrorMessage(message),
-        },
-      },
+      ...(reason.success ? { reason: reason.data } : {}),
+      ...(typeof rawErrorRecord?.retryable === "boolean"
+        ? { retryable: rawErrorRecord.retryable }
+        : {}),
+      ...(delay.success ? { retryAfterSeconds: delay.data } : {}),
     },
-    defaultMessage,
   );
 }
 
