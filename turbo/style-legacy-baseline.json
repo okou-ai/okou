@@ -1,7 +1,6 @@
 {
   "version": 1,
   "legacyClassTokens": [
-    "copied",
     "language-mermaid",
     "okou-app",
     "okou-blocks",
@@ -752,20 +751,6 @@
         "selector": ".okou-chat-bubble-assistant .wmde-markdown hr",
         "property": "display",
         "value": "none",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown pre:hover .copied:active,.wmde-markdown pre .copied.active",
-        "property": "background",
-        "value": "hsl(var(--gray-400))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown pre:hover .copied:active,.wmde-markdown pre .copied.active",
-        "property": "color",
-        "value": "hsl(var(--foreground))",
         "important": false
       },
       {
@@ -2593,11 +2578,9 @@
       "wmde-markdown-color": 1
     },
     "apps/platform/src/views/components/mermaid-diagram.tsx": {
-      "copied": 1,
       "language-mermaid": 1
     },
     "apps/platform/src/views/components/rich-markdown.tsx": {
-      "copied": 1,
       "okou-markdown-card": 2
     },
     "apps/platform/src/views/export-page/export-page.tsx": {

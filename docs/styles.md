@@ -645,6 +645,59 @@ Sonner's palette rather than the App's popover tokens. Draining `toaster` is
 blocked behind that choice, because whichever repair wins rewrites the same class
 string.
 
+### The Markdown code-fence copy control
+
+The `copied` contract has been retired. Its three App rules, its two
+`third-party-dom-adapter` allowlist entries and both of its consumption sites
+are gone, and `CodeBlockCopyButton` now owns the treatment for both fence
+shapes: the one the Markdown pipeline marks on every fenced block, and the one
+the Mermaid view renders when a diagram's source does not parse.
+
+`copied` is the borrowed-name case above, one step further along: the name is
+genuinely the vendor's, and the pinned `@uiw/react-markdown-preview` stylesheet
+really does define it, which is why two of its three App rules were allowlisted
+as adapters for that renderer's generated DOM. The element is still ours. The
+App mounts no part of that renderer — it imports only the stylesheet, and parses
+and renders Markdown itself — so every element that ever carried the class was
+first-party markup spelling `className="copied"` to borrow the vendored sheet's
+absolutely positioned, hover-revealed copy affordance. Authorship of the
+element, not authorship of the name or of the rule, is what the boundary asks
+about, so this was legacy debt and the two entries are retired with the rules.
+
+The replacement therefore reproduces the vendored declarations as well as the
+App's own overrides, because both were load-bearing and only the App's half
+could be deleted:
+
+| Retired declaration                                | Owner  | Replacement                               |
+| -------------------------------------------------- | ------ | ----------------------------------------- |
+| `visibility: hidden`                               | vendor | `invisible`                               |
+| `pre:hover` → `visibility: visible`                | vendor | `[pre:hover_&]:visible`                   |
+| `display: flex`                                    | vendor | `flex`                                    |
+| `position: absolute; top: 6px; right: 6px`         | vendor | `absolute top-1.5 right-1.5`              |
+| `cursor: pointer`                                  | vendor | `cursor-pointer`                          |
+| `padding: 6px`                                     | vendor | `p-1.5`                                   |
+| `font-size: 12px`                                  | vendor | `text-[12px]`                             |
+| `transition: all 0.3s`                             | vendor | `transition-all duration-300 ease-[ease]` |
+| `border-radius: 6px`                               | App    | `rounded-md`                              |
+| `background: hsl(var(--gray-200))`                 | App    | `bg-gray-200`                             |
+| `color: hsl(var(--muted-foreground))`              | App    | `text-muted-foreground`                   |
+| `pre:hover .copied:hover` → gray-300 / foreground  | App    | `[pre:hover_&:hover:not(:active)]:…`      |
+| `pre:hover .copied:active` → gray-400 / foreground | App    | `[pre:hover_&:active]:…`                  |
+
+Four of those need stating.
+
+`rounded-md` is exactly the retired 6px: `--radius-md` is `calc(var(--radius) - 2px)` over a `0.5rem` radius. `p-1.5` replaces the shared control's own `p-2` through `cn()`, which is not a change of value — the unlayered vendored `padding: 6px` already outranked that utility, so 6px is what the control has always painted.
+
+`text-[12px]` names the size rather than taking `text-xs`, for the reason the badge batch records: an arbitrary font-size utility emits `font-size` alone, and `text-xs` would add a paired line height the retired declaration never set. `ease-[ease]` is needed for the same kind of reason — `transition-all` supplies Tailwind's own `--default-transition-timing-function`, while `transition: all 0.3s` left the timing function at its `ease` initial value.
+
+The reveal and both interaction fills spell `pre:hover &` rather than reaching for `group-hover:`. The retired rules were unlayered and ungated, so they also fired on a coarse pointer where a tap leaves a sticky hover; the arbitrary variants generate the same unconditional descendant selector. Spelling the ancestor also raises specificity above the shared control's own `hover:` fill, so the two stop racing inside one Tailwind layer.
+
+The hovered fill carries `:not(:active)` because Tailwind decides the order the retired rules decided by source position. Both retired rules had equal specificity and the pressed one came second, so it won while both matched; Tailwind sorts the pressed variant first, so the hovered fill steps aside by selector instead.
+
+`.wmde-markdown pre .copied.active` was dead and is gone with the rest. `CopyButton` never adds an `active` class — it swaps icons from React state — so that branch of the selector list never matched. The vendored sheet's own `.copied.active` rules remain, pinned and inert, because nothing carries the class any more. The `--color-copied-active-bg` overrides the App declared for them are removed with it.
+
+Measured against `main` with the App's own Tailwind compiler in Chromium over CDP, on the ancestor chain captured from the real chat thread page: 28 states — both fence shapes at rest, fence-hovered, control-hovered and pressed, in Light and Dark, on a fine and a coarse pointer — report zero changed pixels and zero computed-style or geometry differences. Negative controls that drop the control's padding, shift its offset by one spacing step and drop the reveal variant report 7,818, 3,579 and 9,164 changed pixels, so the zeros are not degenerate.
+
 ## Exception boundary
 
 Only two exception kinds exist:

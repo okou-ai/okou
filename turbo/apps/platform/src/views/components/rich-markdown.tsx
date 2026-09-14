@@ -1,6 +1,5 @@
 import { withChatScrollLayout } from "./chat-scroll-layout.tsx";
 import "../css/vendor/uiw-react-markdown-preview-5.2.0.css";
-import { CopyButton } from "@okouai/ui";
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import type { Element, Root } from "hast";
 import { toJsxRuntime } from "hast-util-to-jsx-runtime";
@@ -23,6 +22,7 @@ import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import { isImageUrl, isSafeMediaUrl } from "../../lib/media-url.ts";
 import { MarkdownCardView } from "../okou-page/chat-body-cards.tsx";
+import { CodeBlockCopyButton } from "./code-block-copy-button.tsx";
 import { MarkdownColorPreview } from "./markdown-color-preview.tsx";
 import { MarkdownFrame } from "./markdown-frame.tsx";
 import { MathFormulaView } from "./math-formula.tsx";
@@ -389,15 +389,7 @@ function MarkdownDivRenderer(props: MarkdownDivProps) {
     );
   }
   if (typeof data?.copyCode === "string") {
-    return (
-      <CopyButton
-        type="button"
-        text={data.copyCode}
-        showTooltip={false}
-        className="copied"
-        data-code={data.copyCode}
-      />
-    );
+    return <CodeBlockCopyButton code={data.copyCode} />;
   }
   if (data?.mermaidSignals) {
     return <MermaidDiagramView signals={data.mermaidSignals} />;

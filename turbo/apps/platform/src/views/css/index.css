@@ -738,7 +738,6 @@ body {
   --color-success-emphasis: #2a7a4b;
   --color-done-fg: #6a5acd;
   --color-done-emphasis: #6a5acd;
-  --color-copied-active-bg: hsl(var(--gray-400));
 
   /* Syntax — muted earth tones on cool-neutral background */
   --color-prettylights-syntax-comment: hsl(var(--gray-600));
@@ -791,7 +790,6 @@ body {
   --color-success-emphasis: #7dba97;
   --color-done-fg: #b8a0d8;
   --color-done-emphasis: #b8a0d8;
-  --color-copied-active-bg: hsl(var(--gray-400));
 
   /* Syntax — softer tones for dark backgrounds */
   --color-prettylights-syntax-comment: hsl(var(--gray-600));
@@ -1067,24 +1065,6 @@ body {
 /* Code block scrollbar */
 .wmde-markdown pre > code::-webkit-scrollbar-thumb {
   background: hsl(var(--gray-400));
-}
-
-/* --- Code Block Copy Button --------------------------------------------- */
-.wmde-markdown pre .copied {
-  background: hsl(var(--gray-200));
-  color: hsl(var(--muted-foreground));
-  border-radius: 6px;
-}
-
-.wmde-markdown pre:hover .copied:hover {
-  background: hsl(var(--gray-300));
-  color: hsl(var(--foreground));
-}
-
-.wmde-markdown pre:hover .copied:active,
-.wmde-markdown pre .copied.active {
-  background: hsl(var(--gray-400));
-  color: hsl(var(--foreground));
 }
 
 /* --- KBD ---------------------------------------------------------------- */
