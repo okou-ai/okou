@@ -19,6 +19,7 @@ export interface FeishuQueuedLaunchMaterial {
   readonly connectorSourceId: string;
   readonly feishuDelivery: FeishuDeliveryTarget;
   readonly userInfoExtras: {
+    readonly feishuPlatform: FeishuPlatform;
     readonly feishuDisplayName?: string;
     readonly feishuOpenId: string;
   };
@@ -213,6 +214,7 @@ export async function loadFeishuQueuedLaunchMaterial(
       files: [...context.messageFiles],
     },
     userInfoExtras: {
+      feishuPlatform: context.platform,
       ...(context.feishuDisplayName
         ? { feishuDisplayName: context.feishuDisplayName }
         : {}),

@@ -26,6 +26,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function parseCard(
   input: string | undefined,
+  providerName: string,
 ): Record<string, unknown> | undefined {
   if (!input) {
     return undefined;
@@ -35,12 +36,12 @@ function parseCard(
     parsed = JSON.parse(input);
   } catch {
     throw new Error("Invalid JSON for --card flag", {
-      cause: new Error("Provide a valid Feishu card JSON object"),
+      cause: new Error(`Provide a valid ${providerName} card JSON object`),
     });
   }
   if (!isRecord(parsed)) {
     throw new Error("Invalid JSON for --card", {
-      cause: new Error("Provide a Feishu card JSON object"),
+      cause: new Error(`Provide a ${providerName} card JSON object`),
     });
   }
   return parsed;
@@ -99,7 +100,7 @@ Notes:
             // stdin is not readable; fall through to normal input validation.
           }
         }
-        const card = parseCard(options.card);
+        const card = parseCard(options.card, providerName);
         if (Boolean(text) === Boolean(card)) {
           throw new Error("Exactly one of --text or --card must be provided");
         }

@@ -549,6 +549,11 @@ export function buildHelpText(
       payload,
     ),
     ...commandExampleIfVisible(
+      "lark",
+      "  Send Lark?            okou lark message send --help",
+      payload,
+    ),
+    ...commandExampleIfVisible(
       "mail",
       "  Link Gmail draft?     okou mail link --help",
       payload,

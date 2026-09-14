@@ -1118,6 +1118,40 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(stored.appendSystemPrompt ?? "").toContain(toolHint);
   });
 
+  it("advertises Lark messaging only while the organization rollout is enabled", async () => {
+    const api = createRunsApi(context);
+    const connectors = createConnectorBddApi(context);
+    const { actor, agentId } = await entitledRunActor();
+    const disabled = await api.createRun(actor, {
+      agentId,
+      prompt: "send a message",
+      modelProvider: "anthropic-api-key",
+    });
+    const disabledRun = await api.readRun(actor, disabled.runId);
+    expect(disabledRun.appendSystemPrompt).not.toContain("okou lark");
+    expect(disabledRun.appendSystemPrompt).toContain(
+      "okou feishu message send --help",
+    );
+    await api.requestCancelRun(actor, disabled.runId, [200]);
+
+    await connectors.updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.LarkIntegration]: true,
+    });
+    const enabled = await api.createRun(actor, {
+      agentId,
+      prompt: "send a message",
+      modelProvider: "anthropic-api-key",
+    });
+    const enabledRun = await api.readRun(actor, enabled.runId);
+    expect(enabledRun.appendSystemPrompt).toContain(
+      "Lark messages: when the task explicitly asks to send or post to Lark",
+    );
+    expect(enabledRun.appendSystemPrompt).toContain(
+      "Lark: `okou lark message send --help` for chats, DMs, and replies.",
+    );
+    await api.requestCancelRun(actor, enabled.runId, [200]);
+  });
+
   it("asks chat runs for a generic progressive artifact preview only while its switch is on", async () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);

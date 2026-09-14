@@ -11,8 +11,8 @@ import type { FeishuResourceType } from "@okouai/api-contracts/contracts/integra
 import { downloadFeishuFile } from "../../lib/api/domains/integrations-feishu";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 
-function defaultOutPath(fileKey: string): string {
-  return join(tmpdir(), `feishu-${basename(fileKey).slice(0, 80)}`);
+function defaultOutPath(fileKey: string, platform: FeishuPlatform): string {
+  return join(tmpdir(), `${platform}-${basename(fileKey).slice(0, 80)}`);
 }
 
 function parseResourceType(value: string): FeishuResourceType {
@@ -34,7 +34,10 @@ export function createFeishuDownloadCommand(platform: FeishuPlatform) {
       "Resource type from the block: file or image",
     )
     .option("-i, --installation <id>", `${providerName} installation ID`)
-    .option("-o, --out <path>", "Output path (default: /tmp/feishu-<file-key>)")
+    .option(
+      "-o, --out <path>",
+      `Output path (default: /tmp/${platform}-<file-key>)`,
+    )
     .addHelpText(
       "after",
       `
@@ -45,7 +48,7 @@ Examples:
 
 Output:
   Prints a JSON object to stdout on success:
-    {"path":"/tmp/feishu-file_xxx","mimetype":"application/pdf","size":12345}
+    {"path":"/tmp/${platform}-file_xxx","mimetype":"application/pdf","size":12345}
 
 Notes:
   - Use the message ID, file key, and type exactly as shown in a [${providerName} file] block
@@ -63,7 +66,7 @@ Notes:
             readonly out?: string;
           },
         ) => {
-          const outPath = options.out ?? defaultOutPath(fileKey);
+          const outPath = options.out ?? defaultOutPath(fileKey, platform);
           const result = await downloadFeishuFile(
             messageId,
             fileKey,

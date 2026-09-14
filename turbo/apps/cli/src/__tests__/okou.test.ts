@@ -1,7 +1,12 @@
 import { Command } from "commander";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { program, registerCommands, registerRequestedCommand } from "../okou";
+import {
+  buildHelpText,
+  program,
+  registerCommands,
+  registerRequestedCommand,
+} from "../okou";
 
 function buildOkouToken(capabilities: readonly string[]): string {
   const header = Buffer.from(JSON.stringify({ alg: "HS256" })).toString(
@@ -155,6 +160,9 @@ describe("Okou CLI lazy command loading", () => {
       const cli = new Command("okou");
       registerCommands(cli);
       expect(cli.helpInformation().includes("lark")).toBe(
+        capabilities.includes("lark:write"),
+      );
+      expect(buildHelpText().includes("okou lark message send --help")).toBe(
         capabilities.includes("lark:write"),
       );
     },

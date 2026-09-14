@@ -414,10 +414,11 @@ export async function replyFeishuAgentUnavailable(
   },
   signal: AbortSignal,
 ): Promise<void> {
+  const providerName = FEISHU_PLATFORMS[args.message.platform ?? "feishu"].name;
   const text =
     args.status === "not_accessible"
-      ? "The configured agent is not available to your Feishu account. Use `/switch` to choose an accessible agent."
-      : "The configured Feishu agent could not be found. Ask an admin to select another agent.";
+      ? `The configured agent is not available to your ${providerName} account. Use \`/switch\` to choose an accessible agent.`
+      : `The configured ${providerName} agent could not be found. Ask an admin to select another agent.`;
   await replyNotice(
     {
       db: args.db,

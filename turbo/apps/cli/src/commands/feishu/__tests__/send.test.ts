@@ -207,6 +207,11 @@ describe.each(["feishu", "lark"] as const)(
       expect(mockConsoleError).toHaveBeenCalledWith(
         expect.stringContaining("Invalid JSON for --card flag"),
       );
+      expect(mockConsoleError).toHaveBeenCalledWith(
+        expect.stringContaining(
+          `Provide a valid ${platform === "lark" ? "Lark" : "Feishu"} card JSON object`,
+        ),
+      );
     });
 
     it("surfaces API errors", async () => {

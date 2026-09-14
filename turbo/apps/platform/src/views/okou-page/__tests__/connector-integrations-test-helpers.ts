@@ -132,6 +132,7 @@ export function setupIntegrationsPage(
   context: TestContext,
   options: {
     readonly feishu?: boolean;
+    readonly lark?: boolean;
   } = {},
 ): Promise<void> {
   return setupPage({
@@ -139,14 +140,22 @@ export function setupIntegrationsPage(
     path: "/works",
     featureSwitches: {
       [FeatureSwitchKey.FeishuIntegration]: options.feishu ?? false,
+      [FeatureSwitchKey.LarkIntegration]: options.lark ?? false,
     },
   });
 }
 
-export function setupFeishuSettingsPage(context: TestContext): Promise<void> {
+export function setupFeishuSettingsPage(
+  context: TestContext,
+  platform: "feishu" | "lark" = "feishu",
+): Promise<void> {
   return setupPage({
     context,
-    path: "/settings/feishu",
-    featureSwitches: { [FeatureSwitchKey.FeishuIntegration]: true },
+    path: `/settings/${platform}`,
+    featureSwitches: {
+      [platform === "lark"
+        ? FeatureSwitchKey.LarkIntegration
+        : FeatureSwitchKey.FeishuIntegration]: true,
+    },
   });
 }

@@ -659,7 +659,9 @@ const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
     .limit(1);
   signal.throwIfAborted();
   if (!installation) {
-    return jsonErrorResponse("Feishu bot not found");
+    return jsonErrorResponse(
+      `${FEISHU_PLATFORMS[callbackPlatform(state.redirectUri)].name} bot not found`,
+    );
   }
   if (!(await isFeishuInstallationEnabled(db, installation))) {
     return jsonErrorResponse("Lark integration is not enabled");
@@ -683,7 +685,9 @@ const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
   if (!connectorId) {
-    return jsonErrorResponse("Feishu connector not found");
+    return jsonErrorResponse(
+      `${FEISHU_PLATFORMS[installation.platform].name} connector not found`,
+    );
   }
   const account = await resolveFeishuAccountMutation(db, {
     installationId: state.installationId,
@@ -741,7 +745,7 @@ const completeLegacyFeishuOAuth$ = command(
     signal.throwIfAborted();
     if (!config || config.orgId !== state.orgId) {
       return completionErrorResponse(
-        "Feishu bot not found.",
+        `${FEISHU_PLATFORMS[platform].name} bot not found.`,
         query.responseMode,
         platform,
       );
@@ -771,7 +775,7 @@ const completeLegacyFeishuOAuth$ = command(
     );
     if (!connectorId) {
       return completionErrorResponse(
-        "Feishu connector not found.",
+        `${FEISHU_PLATFORMS[platform].name} connector not found.`,
         query.responseMode,
         platform,
       );
@@ -785,7 +789,7 @@ const completeLegacyFeishuOAuth$ = command(
     signal.throwIfAborted();
     if (!isFeishuCustomOAuthConnector(connector)) {
       return completionErrorResponse(
-        "Feishu connector is unavailable.",
+        `${FEISHU_PLATFORMS[platform].name} connector is unavailable.`,
         query.responseMode,
         platform,
       );
@@ -918,7 +922,7 @@ const completeClaimedCustomFeishuOAuth$ = command(
     signal.throwIfAborted();
     if (!credentials) {
       return completionErrorResponse(
-        "Could not read Feishu OAuth client credentials.",
+        `Could not read ${FEISHU_PLATFORMS[platform].name} OAuth client credentials.`,
         query.responseMode,
         platform,
       );

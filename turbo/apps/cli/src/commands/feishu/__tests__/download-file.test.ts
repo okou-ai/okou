@@ -91,6 +91,31 @@ describe.each(["feishu", "lark"] as const)(
       });
     });
 
+    it("uses the provider name for the default download path", async () => {
+      vi.stubEnv("TMPDIR", tempDir);
+      const payload = Buffer.from("downloaded bytes");
+      server.use(
+        http.get(DOWNLOAD_URL.replace("/feishu/", `/${platform}/`), () => {
+          return new HttpResponse(payload, {
+            headers: { "content-type": "application/pdf" },
+          });
+        }),
+      );
+      await createFeishuDownloadCommand(platform).parseAsync([
+        "node",
+        "okou",
+        "om_message",
+        "file_key",
+        "--type",
+        "file",
+      ]);
+      const outPath = join(tempDir, `${platform}-file_key`);
+      expect(readFileSync(outPath)).toStrictEqual(payload);
+      expect(
+        JSON.parse(mockConsoleLog.mock.calls.flat().join("\n")),
+      ).toMatchObject({ path: outPath });
+    });
+
     it("surfaces Feishu download API errors", async () => {
       server.use(
         http.get(DOWNLOAD_URL.replace("/feishu/", `/${platform}/`), () => {
