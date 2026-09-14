@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.328.2](https://github.com/vm0-ai/vm0/compare/cli-v9.328.1...cli-v9.328.2) (2026-09-14)
+
+
+### Bug Fixes
+
+* preserve structured social errors and download retry guidance ([#34072](https://github.com/vm0-ai/vm0/issues/34072)) ([add4b57](https://github.com/vm0-ai/vm0/commit/add4b57c3a8d4282a4b04563f7aeb5b845e17d2a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.438.2
+    * @okouai/core bumped to 8.663.2
+    * @okouai/pi-agent-runtime bumped to 1.29.1
+
 ## [9.328.1](https://github.com/vm0-ai/vm0/compare/cli-v9.328.0...cli-v9.328.1) (2026-09-14)
 
 

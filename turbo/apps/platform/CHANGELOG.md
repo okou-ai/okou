@@ -11,6 +11,21 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.895.1](https://github.com/vm0-ai/vm0/compare/app-v0.895.0...app-v0.895.1) (2026-09-14)
+
+
+### Refactoring
+
+* **app:** make the selected task chip one control ([#34116](https://github.com/vm0-ai/vm0/issues/34116)) ([cf2fd84](https://github.com/vm0-ai/vm0/commit/cf2fd84684f74d6439802e59d6fcd37ed4e52059))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.438.2
+    * @okouai/core bumped to 8.663.2
+
 ## [0.895.0](https://github.com/vm0-ai/vm0/compare/app-v0.894.0...app-v0.895.0) (2026-09-14)
 
 
