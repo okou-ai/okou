@@ -7,6 +7,7 @@
 )]
 
 mod exec;
+mod exec_control;
 mod file_write_status;
 mod shutdown;
 mod storage_manifest;
