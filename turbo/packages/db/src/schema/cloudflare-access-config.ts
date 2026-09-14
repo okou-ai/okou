@@ -1,6 +1,5 @@
 import { sql } from "drizzle-orm";
 import {
-  boolean,
   check,
   index,
   integer,
@@ -19,7 +18,6 @@ export const cloudflareAccessConfigs = pgTable(
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
     name: varchar("name", { length: 128 }).notNull(),
-    enabled: boolean("enabled").default(true).notNull(),
     encryptedClientId: text("encrypted_client_id").notNull(),
     encryptedClientSecret: text("encrypted_client_secret").notNull(),
     revision: integer("revision").default(1).notNull(),

@@ -158,12 +158,14 @@ behind `cloudflareAccess` and requires `sshAccess`; no new management UI or
 working Access transport is delivered by this slice.
 
 The canonical `/api/ssh/cloudflare-access/configs` endpoints create, list, rename,
-replace credentials, enable/disable and delete configurations. Client ID and
+replace credentials and delete configurations. Client ID and
 Client Secret are write-only. Reads return metadata and referencing host IDs/names;
 updates/deletion require the expected edit revision, and referenced deletion is
-rejected. Names may change without invalidating Runs. Effective token or enabled
-changes advance a separate authority generation and all referencing SSH host
-generations.
+rejected. Names may change without invalidating Runs. Token replacement advances
+a separate authority generation and all referencing SSH host generations.
+Configurations have no separate enabled state; the saved host binding selects
+Access, the existing SSH Agent grant authorizes use, and the feature switch
+controls rollout. Switching to Direct is not a way to disable a protected host.
 
 An SSH host explicitly selects a same-owner configuration, published DNS hostname
 and port 443. The origin SSH port belongs to Cloudflare, not this binding. Sharing

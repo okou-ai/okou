@@ -192,7 +192,7 @@ URL, wildcard, alternate recipient list or Direct fallback exists.
 
 SSH has one canonical contract, without a version/profile selector or duplicate
 legacy DTO. Protected authority requires the existing SSH checks plus the current
-Access feature and enabled same-owner configuration. The existing SSH grant is
+Access feature and bound same-owner configuration. The existing SSH grant is
 the only Agent permission for either transport; configuration creation or edits
 never grant SSH. Direct handoffs retain their actual key/password variants.
 
@@ -210,11 +210,11 @@ Pin and observation retain host-first locking and recheck protected authority
 through the non-null configuration with a share lock, while retaining the
 existing SSH-grant lock. Owner mutations use the
 owner advisory lock, ordered affected-host locks, then configuration locks.
-SSH-grant edits retain their existing Agent-lock boundary. Token replacement and
-enable/disable advance both config generation and every referencing host
-generation atomically. Metadata rename advances only config revision. Host pins
-survive rotation, rebinding and every transition involving Access; explicit
-reset clears protected trust. Direct-to-Direct endpoint edits retain their
+SSH-grant edits retain their existing Agent-lock boundary. Token replacement
+advances both config generation and every referencing host generation atomically.
+Metadata rename advances only config revision. Configurations have no separate
+enabled state. Host pins survive rotation, rebinding and every transition
+involving Access; explicit reset clears protected trust. Direct-to-Direct endpoint edits retain their
 existing behavior.
 
 Access mutations publish identifier-only invalidations for captured affected

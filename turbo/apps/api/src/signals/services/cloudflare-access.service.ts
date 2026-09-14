@@ -27,7 +27,6 @@ type Transaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 const metadata = Object.freeze({
   id: cloudflareAccessConfigs.id,
   name: cloudflareAccessConfigs.name,
-  enabled: cloudflareAccessConfigs.enabled,
   revision: cloudflareAccessConfigs.revision,
   generation: cloudflareAccessConfigs.generation,
   createdAt: cloudflareAccessConfigs.createdAt,
@@ -233,9 +232,7 @@ export async function updateCloudflareAccessConfig(args: {
     if (config.revision !== args.body.expectedRevision) {
       return cloudflareAccessFailure("conflict");
     }
-    const effective =
-      encrypted !== undefined ||
-      (args.body.enabled !== undefined && args.body.enabled !== config.enabled);
+    const effective = encrypted !== undefined;
     if (
       config.revision === 2_147_483_647 ||
       (effective &&
@@ -250,7 +247,6 @@ export async function updateCloudflareAccessConfig(args: {
       .update(cloudflareAccessConfigs)
       .set({
         name: args.body.name,
-        enabled: args.body.enabled,
         ...encrypted,
         revision: config.revision + 1,
         generation: config.generation + (effective ? 1 : 0),

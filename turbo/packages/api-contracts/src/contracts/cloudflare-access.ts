@@ -22,7 +22,6 @@ export const cloudflareAccessConfigSchema = z
   .object({
     id: z.uuid(),
     name: z.string(),
-    enabled: z.boolean(),
     revision,
     generation: revision,
     createdAt: z.string().datetime(),
@@ -72,17 +71,12 @@ export const cloudflareAccessContract = c.router({
       .object({
         expectedRevision: revision,
         name: name.optional(),
-        enabled: z.boolean().optional(),
         credentials: cloudflareAccessCredentialsSchema.optional(),
       })
       .strict()
       .refine(
         (body) => {
-          return (
-            body.name !== undefined ||
-            body.enabled !== undefined ||
-            body.credentials !== undefined
-          );
+          return body.name !== undefined || body.credentials !== undefined;
         },
         { message: "At least one Cloudflare Access field must be updated" },
       ),

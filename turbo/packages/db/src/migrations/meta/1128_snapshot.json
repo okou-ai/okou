@@ -1,5 +1,5 @@
 {
-  "id": "072205ab-b7c3-4acd-9753-5f80ace12c0a",
+  "id": "e9c7e041-ac33-4e7e-82b6-06a417f46d35",
   "prevId": "9a88f04a-dc8e-41fe-bf2a-f3d1cca74c5d",
   "version": "7",
   "dialect": "postgresql",
@@ -8839,13 +8839,6 @@
           "type": "varchar(128)",
           "primaryKey": false,
           "notNull": true
-        },
-        "enabled": {
-          "name": "enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
         },
         "encrypted_client_id": {
           "name": "encrypted_client_id",

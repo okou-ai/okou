@@ -113,7 +113,6 @@ function runSshHostRows(
       fingerprint: sshConnections.learnedHostKeyFingerprint,
       accessId: sshConnections.cloudflareAccessId,
       accessConfigId: cloudflareAccessConfigs.id,
-      accessEnabled: cloudflareAccessConfigs.enabled,
     })
     .from(agentRuns)
     .innerJoin(
@@ -202,7 +201,7 @@ export async function listRunSshHosts(
         if (row.accessConfigId === null) {
           throw new Error("SSH Cloudflare Access configuration is missing");
         }
-        if (!accessEnabled || !row.accessEnabled) {
+        if (!accessEnabled) {
           return [];
         }
       }

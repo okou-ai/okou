@@ -1027,13 +1027,13 @@ The Access feature switch controls rollout; it does not add an Agent permission.
 Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
 
-| State                                                              | Required behavior                                                                      |
-| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| Existing Direct data after the additive migration                  | Hosts, credentials, pins, grants and observations remain unchanged; bindings are null. |
-| Current API and S1 Runner with protected handoff                   | Runner returns unavailable without dialing Direct SSH or forwarding the token.         |
-| Current API with an unauthorized or disabled protected host        | Private authority is unavailable; guest inventory omits that host.                     |
-| Pre-Access API with protected rows                                 | Forbidden: the old reader can interpret the row as Direct.                             |
-| Protected writes before the native carrier and real-Run acceptance | Forbidden outside controlled local tests.                                              |
+| State                                                                 | Required behavior                                                                      |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Existing Direct data after the additive migration                     | Hosts, credentials, pins, grants and observations remain unchanged; bindings are null. |
+| Current API and S1 Runner with protected handoff                      | Runner returns unavailable without dialing Direct SSH or forwarding the token.         |
+| Current API with an unauthorized protected host or Access feature off | Private authority is unavailable; guest inventory omits that host.                     |
+| Pre-Access API with protected rows                                    | Forbidden: the old reader can interpret the row as Direct.                             |
+| Protected writes before the native carrier and real-Run acceptance    | Forbidden outside controlled local tests.                                              |
 
 Feature disable does not make a protected row safe for a pre-Access reader.
 Do not deploy such a reader after protected writes exist; no automatic deletion

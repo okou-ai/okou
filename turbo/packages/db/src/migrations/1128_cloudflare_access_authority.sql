@@ -3,7 +3,6 @@ CREATE TABLE "cloudflare_access_configs" (
 	"org_id" text NOT NULL,
 	"user_id" text NOT NULL,
 	"name" varchar(128) NOT NULL,
-	"enabled" boolean DEFAULT true NOT NULL,
 	"encrypted_client_id" text NOT NULL,
 	"encrypted_client_secret" text NOT NULL,
 	"revision" integer DEFAULT 1 NOT NULL,

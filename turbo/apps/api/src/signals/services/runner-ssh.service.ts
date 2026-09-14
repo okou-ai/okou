@@ -56,7 +56,6 @@ function currentConnectionQuery(
       accessId: sshConnections.cloudflareAccessId,
       access: {
         id: cloudflareAccessConfigs.id,
-        enabled: cloudflareAccessConfigs.enabled,
         generation: cloudflareAccessConfigs.generation,
         encryptedClientId: cloudflareAccessConfigs.encryptedClientId,
         encryptedClientSecret: cloudflareAccessConfigs.encryptedClientSecret,
@@ -156,10 +155,7 @@ async function currentConnection(
   if (row.access === null) {
     throw new Error("SSH Cloudflare Access configuration is missing");
   }
-  if (
-    !isFeatureEnabled(FeatureSwitchKey.CloudflareAccess, featureContext) ||
-    !row.access.enabled
-  ) {
+  if (!isFeatureEnabled(FeatureSwitchKey.CloudflareAccess, featureContext)) {
     return null;
   }
   if (lockAuthority) {
@@ -173,7 +169,6 @@ async function currentConnection(
           eq(cloudflareAccessConfigs.id, row.accessId),
           eq(cloudflareAccessConfigs.orgId, row.orgId),
           eq(cloudflareAccessConfigs.userId, row.userId),
-          eq(cloudflareAccessConfigs.enabled, true),
           eq(cloudflareAccessConfigs.generation, row.access.generation),
         ),
       )

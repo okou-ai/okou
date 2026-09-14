@@ -222,7 +222,7 @@ describe("Cloudflare Access owner configuration", () => {
       configs().update({
         headers,
         params: { configId: c.id },
-        body: { expectedRevision: 1, name: "Renamed", enabled: false },
+        body: { expectedRevision: 1, name: "Renamed" },
       }),
       [200],
     );
@@ -322,7 +322,7 @@ describe("Cloudflare Access owner configuration", () => {
       configs().update({
         headers,
         params,
-        body: { expectedRevision: 1, enabled: false },
+        body: { expectedRevision: 1, name: "Stale rename" },
       }),
       [409],
     );
@@ -433,8 +433,6 @@ describe("Cloudflare Access owner configuration", () => {
     let revision = f.config.revision;
     for (const body of [
       { name: "Renamed" },
-      { enabled: false },
-      { enabled: true },
       { credentials: { ...token, clientSecret: "rotated-canary" } },
     ]) {
       const updated = await accept(
@@ -715,7 +713,7 @@ describe("protected SSH authority", () => {
     ).toStrictEqual({ outcome: "unavailable" });
   });
 
-  it("commits disable even when realtime publication fails", async () => {
+  it("commits token replacement even when realtime publication fails", async () => {
     const f = await fixture();
     context.mocks.ably.publish.mockRejectedValue(
       new Error("Realtime unavailable"),
@@ -724,16 +722,22 @@ describe("protected SSH authority", () => {
       configs().update({
         headers,
         params: { configId: f.config.id },
-        body: { expectedRevision: 1, enabled: false },
+        body: {
+          expectedRevision: 1,
+          credentials: { ...token, clientSecret: "rotated-canary" },
+        },
       }),
       [200],
     );
     expect(result.body).toMatchObject({
-      enabled: false,
       revision: 2,
       generation: 2,
     });
-    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
+    await expect(resolve(f)).resolves.toMatchObject({
+      outcome: "resolved_access",
+      generation: 2,
+      access: { generation: 2, clientSecret: "rotated-canary" },
+    });
   });
 
   it("serializes concurrent token replacements and deletion against host binding", async () => {
@@ -978,35 +982,11 @@ describe("protected SSH authority", () => {
     },
   );
 
-  it("keeps Direct management and execution available when Access is disabled", async () => {
+  it("keeps Direct management and execution available when the Access feature is disabled", async () => {
     const f = await fixture();
     const direct = await host();
-    await accept(
-      configs().update({
-        headers,
-        params: { configId: f.config.id },
-        body: { expectedRevision: 1, enabled: false },
-      }),
-      [200],
-    );
-    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
     const inventory = setupApp({ context, routes: sshAccessRoutes })(
       sshHostsContract,
-    );
-    expect(
-      (
-        await accept(inventory.list({ headers: f.guestHeaders }), [200])
-      ).body.hosts.map((h) => {
-        return h.id;
-      }),
-    ).toStrictEqual([direct.id]);
-    await accept(
-      configs().update({
-        headers,
-        params: { configId: f.config.id },
-        body: { expectedRevision: 2, enabled: true },
-      }),
-      [200],
     );
     await expect(resolve(f)).resolves.toMatchObject({
       outcome: "resolved_access",
