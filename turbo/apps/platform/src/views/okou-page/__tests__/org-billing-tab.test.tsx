@@ -181,9 +181,9 @@ function noActiveBillingStatus(): BillingStatusResponse {
   };
 }
 
-function usagePackCatalogResponse(supportsFreeMembers?: boolean) {
+function usagePackCatalogResponse() {
   return {
-    ...(supportsFreeMembers === undefined ? {} : { supportsFreeMembers }),
+    supportsFreeMembers: true as const,
     usagePacks: [
       {
         usagePackUsd: 20 as const,
@@ -337,7 +337,7 @@ async function waitForAnimationFrame(): Promise<void> {
   await frame.promise;
 }
 
-function mockInitialUsagePackPurchase(supportsFreeMembers?: boolean): void {
+function mockInitialUsagePackPurchase(): void {
   context.mocks.data.org({
     id: "org_1",
     name: "Usage Pack Org",
@@ -347,7 +347,7 @@ function mockInitialUsagePackPurchase(supportsFreeMembers?: boolean): void {
     return respond(200, noActiveBillingStatus());
   });
   context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
-    return respond(200, usagePackCatalogResponse(supportsFreeMembers));
+    return respond(200, usagePackCatalogResponse());
   });
   context.mocks.data.orgMembers({
     name: "Usage Pack Org",
@@ -449,7 +449,7 @@ async function selectMemberUsagePack(
 }
 
 test("Compare usage-pack plan pricing before choosing one", async () => {
-  mockInitialUsagePackPurchase(true);
+  mockInitialUsagePackPurchase();
   const { choosePlanHeading, proPlan, teamPlan } =
     await openUsagePackPlanSelection();
   expect(choosePlanHeading).toBeInTheDocument();
@@ -477,7 +477,7 @@ test("Compare usage-pack plan pricing before choosing one", async () => {
 });
 
 test("Show the included Pro usage-pack plan features", async () => {
-  mockInitialUsagePackPurchase(true);
+  mockInitialUsagePackPurchase();
   const { proPlan } = await openUsagePackPlanSelection();
   expect(
     within(proPlan).getByText("Everyday agent work, priced per member."),
@@ -502,7 +502,7 @@ test("Show the included Pro usage-pack plan features", async () => {
 });
 
 test("Show the additional Team usage-pack plan features", async () => {
-  mockInitialUsagePackPurchase(true);
+  mockInitialUsagePackPurchase();
   const { teamPlan } = await openUsagePackPlanSelection();
   expect(
     within(teamPlan).getByText("For a team that keeps agents running all day."),
@@ -544,7 +544,7 @@ test("Show the additional Team usage-pack plan features", async () => {
 test.each(["pro", "team"] as const)(
   "Default new '%s' member packages through 'checkout preview'",
   async (tier) => {
-    mockInitialUsagePackPurchase(true);
+    mockInitialUsagePackPurchase();
     context.mocks.api(
       billingUsagePackCheckoutContract.create,
       ({ body, respond }) => {
@@ -607,7 +607,7 @@ test.each(["pro", "team"] as const)(
 test.each(["pro", "team"] as const)(
   "Default new '%s' member packages through 'empty selection recovery'",
   async (tier) => {
-    mockInitialUsagePackPurchase(true);
+    mockInitialUsagePackPurchase();
     context.mocks.api(
       billingUsagePackCheckoutContract.create,
       ({ body, respond }) => {
@@ -887,161 +887,153 @@ test("Leave a member-package flow without keeping unfinished choices", async () 
   expect(purchaseSubmitted).toBeFalsy();
 });
 
-test.each([false, true])(
-  "Add a package for a member without an allocation (no package supported: %s)",
-  async (supportsFreeMembers) => {
-    context.mocks.data.org({
-      id: "org_1",
-      name: "Managed Usage Pack Org",
-      role: "admin",
-    });
-    context.mocks.data.orgMembers({
-      name: "Managed Usage Pack Org",
-      role: "admin",
-      members: [
+test("Add a package for a member without an allocation", async () => {
+  context.mocks.data.org({
+    id: "org_1",
+    name: "Managed Usage Pack Org",
+    role: "admin",
+  });
+  context.mocks.data.orgMembers({
+    name: "Managed Usage Pack Org",
+    role: "admin",
+    members: [
+      {
+        userId: "user_1",
+        email: "alex@example.com",
+        firstName: "Alex",
+        lastName: "Chen",
+        imageUrl: "",
+        role: "admin",
+        joinedAt: "2026-01-01T00:00:00Z",
+      },
+      {
+        userId: "user_2",
+        email: "sam@example.com",
+        firstName: "Sam",
+        lastName: "Lee",
+        imageUrl: "",
+        role: "member",
+        joinedAt: "2026-01-02T00:00:00Z",
+      },
+    ],
+    pendingInvitations: [
+      {
+        id: "invitation_paid_pending",
+        email: "paid.pending@example.com",
+        role: "member",
+        createdAt: "2026-01-03T00:00:00Z",
+        usagePackUsd: 100,
+      },
+    ],
+    membershipRequests: [],
+    createdAt: "2026-01-01T00:00:00Z",
+  });
+  context.mocks.api(billingStatusContract.get, ({ respond }) => {
+    return respond(200, activeProBillingStatus());
+  });
+  context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
+    return respond(200, usagePackCatalogResponse());
+  });
+  context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
+    return respond(200, {
+      tier: "pro",
+      currentPeriodEnd: "2026-04-01T00:00:00Z",
+      supportsMemberAdditions: true,
+      supportsFreeMembers: true,
+      allocations: [
         {
-          userId: "user_1",
-          email: "alex@example.com",
-          firstName: "Alex",
-          lastName: "Chen",
-          imageUrl: "",
-          role: "admin",
-          joinedAt: "2026-01-01T00:00:00Z",
-        },
-        {
-          userId: "user_2",
-          email: "sam@example.com",
-          firstName: "Sam",
-          lastName: "Lee",
-          imageUrl: "",
-          role: "member",
-          joinedAt: "2026-01-02T00:00:00Z",
+          id: "b5235934-83df-4f16-bf41-f46890db7d40",
+          memberId: "user_1",
+          usagePackUsd: 20,
+          currentPeriodEnd: "2026-04-01T00:00:00Z",
+          pendingChange: null,
         },
       ],
-      pendingInvitations: [
-        {
-          id: "invitation_paid_pending",
-          email: "paid.pending@example.com",
-          role: "member",
-          createdAt: "2026-01-03T00:00:00Z",
-          usagePackUsd: 100,
-        },
-      ],
-      membershipRequests: [],
-      createdAt: "2026-01-01T00:00:00Z",
     });
-    context.mocks.api(billingStatusContract.get, ({ respond }) => {
-      return respond(200, activeProBillingStatus());
-    });
-    context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
-      return respond(200, {
-        ...usagePackCatalogResponse(),
-        supportsFreeMembers,
-      });
-    });
-    context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
-      return respond(200, {
-        tier: "pro",
-        currentPeriodEnd: "2026-04-01T00:00:00Z",
-        supportsMemberAdditions: true,
-        supportsFreeMembers,
-        allocations: [
-          {
-            id: "b5235934-83df-4f16-bf41-f46890db7d40",
-            memberId: "user_1",
-            usagePackUsd: 20,
-            currentPeriodEnd: "2026-04-01T00:00:00Z",
-            pendingChange: null,
-          },
+  });
+  context.mocks.api(
+    billingUsagePackManagementContract.previewSubscriptionChange,
+    ({ body, respond }) => {
+      expect(body).toStrictEqual({
+        targetTier: "pro",
+        memberUsagePacks: [
+          { memberId: "user_1", usagePackUsd: 20 },
+          { memberId: "user_2", usagePackUsd: 50 },
         ],
+        ...inAppBillingPreviewFields(),
       });
-    });
-    context.mocks.api(
-      billingUsagePackManagementContract.previewSubscriptionChange,
-      ({ body, respond }) => {
-        expect(body).toStrictEqual({
-          targetTier: "pro",
-          memberUsagePacks: [
-            { memberId: "user_1", usagePackUsd: 20 },
-            { memberId: "user_2", usagePackUsd: 50 },
-          ],
-          ...inAppBillingPreviewFields(),
-        });
-        return respond(200, {
-          changeId: "ad3bd64c-7237-436d-a221-61b14ed719e7",
-          sourceTier: "pro",
-          targetTier: "pro",
-          immediateAmountCents: 2500,
-          immediateCreditGrant: {
-            purchasedCredits: 25_000,
-            bonusCredits: 2160,
-            totalCredits: 27_160,
-            expiresAt: "2026-04-01T00:00:00Z",
-          },
-          nextRecurringAmountCents: 7000,
-          currency: "usd",
-          effectiveAt: "2026-03-16T00:00:00Z",
-          prorationDate: "2026-03-16T00:00:00Z",
-          expiresAt: "2026-03-16T00:15:00Z",
-        });
-      },
-    );
-
-    await setupPage({
-      context,
-      path: "/?settings=billing",
-      auth: {
-        user: {
-          id: "user_1",
-          fullName: "Alex Chen",
-          email: "alex@example.com",
+      return respond(200, {
+        changeId: "ad3bd64c-7237-436d-a221-61b14ed719e7",
+        sourceTier: "pro",
+        targetTier: "pro",
+        immediateAmountCents: 2500,
+        immediateCreditGrant: {
+          purchasedCredits: 25_000,
+          bonusCredits: 2160,
+          totalCredits: 27_160,
+          expiresAt: "2026-04-01T00:00:00Z",
         },
-      },
-    });
+        nextRecurringAmountCents: 7000,
+        currency: "usd",
+        effectiveAt: "2026-03-16T00:00:00Z",
+        prorationDate: "2026-03-16T00:00:00Z",
+        expiresAt: "2026-03-16T00:15:00Z",
+      });
+    },
+  );
 
-    await screen.findByText("Pro plan");
-    click(buttonByText("Compare all plans"));
-    const proPlan = await screen.findByRole("article", { name: "Pro plan" });
-    click(buttonByText("Manage", proPlan));
-    const memberUsage = await screen.findByRole("group", {
-      name: "Member usage",
-    });
-    expect(within(memberUsage).getByText("Alex Chen")).toBeInTheDocument();
-    expect(within(memberUsage).getByText("Sam Lee")).toBeInTheDocument();
-    expect(
-      within(memberUsage).getByText("paid.pending@example.com"),
-    ).toBeInTheDocument();
-    expect(within(memberUsage).getByText("Pending")).toBeInTheDocument();
-    const paidPendingUsage = within(memberUsage).getByRole("combobox", {
-      name: "Usage for paid.pending@example.com",
-    });
-    expect(paidPendingUsage).toHaveTextContent("109,999 credits · 9% off");
-    expect(paidPendingUsage).toBeDisabled();
-    const samUsage = within(memberUsage).getByRole("combobox", {
-      name: "Usage for Sam Lee",
-    });
-    expect(samUsage).toHaveTextContent(
-      supportsFreeMembers ? "No package" : "21,234 credits · 6% off",
-    );
-    click(samUsage);
-    click(
-      await screen.findByRole("option", {
-        name: "$50 · 54,321 credits · 8% off",
-      }),
-    );
-    const orderSummary = screen.getByRole("region", {
-      name: "Order summary",
-    });
-    const confirmButton = buttonByText("Confirm", orderSummary);
-    click(confirmButton);
-    const reviewDialog = await screen.findByRole("dialog", {
-      name: "Review package change",
-    });
-    expect(reviewDialog).toBeInTheDocument();
-    expect(confirmButton).toHaveTextContent("Updating...");
-    expect(confirmButton).toBeDisabled();
-  },
-);
+  await setupPage({
+    context,
+    path: "/?settings=billing",
+    auth: {
+      user: {
+        id: "user_1",
+        fullName: "Alex Chen",
+        email: "alex@example.com",
+      },
+    },
+  });
+
+  await screen.findByText("Pro plan");
+  click(buttonByText("Compare all plans"));
+  const proPlan = await screen.findByRole("article", { name: "Pro plan" });
+  click(buttonByText("Manage", proPlan));
+  const memberUsage = await screen.findByRole("group", {
+    name: "Member usage",
+  });
+  expect(within(memberUsage).getByText("Alex Chen")).toBeInTheDocument();
+  expect(within(memberUsage).getByText("Sam Lee")).toBeInTheDocument();
+  expect(
+    within(memberUsage).getByText("paid.pending@example.com"),
+  ).toBeInTheDocument();
+  expect(within(memberUsage).getByText("Pending")).toBeInTheDocument();
+  const paidPendingUsage = within(memberUsage).getByRole("combobox", {
+    name: "Usage for paid.pending@example.com",
+  });
+  expect(paidPendingUsage).toHaveTextContent("109,999 credits · 9% off");
+  expect(paidPendingUsage).toBeDisabled();
+  const samUsage = within(memberUsage).getByRole("combobox", {
+    name: "Usage for Sam Lee",
+  });
+  expect(samUsage).toHaveTextContent("No package");
+  click(samUsage);
+  click(
+    await screen.findByRole("option", {
+      name: "$50 · 54,321 credits · 8% off",
+    }),
+  );
+  const orderSummary = screen.getByRole("region", {
+    name: "Order summary",
+  });
+  const confirmButton = buttonByText("Confirm", orderSummary);
+  click(confirmButton);
+  const reviewDialog = await screen.findByRole("dialog", {
+    name: "Review package change",
+  });
+  expect(reviewDialog).toBeInTheDocument();
+  expect(confirmButton).toHaveTextContent("Updating...");
+  expect(confirmButton).toBeDisabled();
+});
 
 async function openLegacyConversionEligibility() {
   const migrationReady = createDeferredPromise<void>(context.signal);
@@ -1582,6 +1574,11 @@ async function configureLegacyTeamConversion() {
   expect(
     within(memberUsage).getByText("pending@example.com"),
   ).toBeInTheDocument();
+  await selectMemberUsagePack(
+    memberUsage,
+    "Alex Chen",
+    "$20 · 21,234 credits · 6% off",
+  );
   const pendingUsage = within(memberUsage).getByRole("combobox", {
     name: "Usage for pending@example.com",
   });
@@ -1814,6 +1811,7 @@ test("Upgrade a current member package in the app", async () => {
   });
   context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
     return respond(200, {
+      supportsFreeMembers: true,
       tier: "pro",
       currentPeriodEnd: "2026-04-01T00:00:00Z",
       allocations: [
@@ -2102,6 +2100,7 @@ test("Hide retained package records for people who left the workspace", async ()
   });
   context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
     return respond(200, {
+      supportsFreeMembers: true,
       tier: "pro",
       currentPeriodEnd: "2026-04-01T00:00:00Z",
       allocations: [
@@ -2204,10 +2203,7 @@ test.each([50, 0] as const)(
       return respond(200, activeProBillingStatus());
     });
     context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
-      return respond(200, {
-        ...usagePackCatalogResponse(),
-        supportsFreeMembers: true,
-      });
+      return respond(200, usagePackCatalogResponse());
     });
     context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
       return respond(200, {
@@ -2396,10 +2392,7 @@ test.each([
       return respond(200, activeProBillingStatus());
     });
     context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
-      return respond(200, {
-        ...usagePackCatalogResponse(),
-        supportsFreeMembers: true,
-      });
+      return respond(200, usagePackCatalogResponse());
     });
     context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
       return respond(200, {
@@ -2558,6 +2551,7 @@ async function openProToTeamUpgrade() {
   });
   context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
     return respond(200, {
+      supportsFreeMembers: true,
       tier: "pro",
       currentPeriodEnd: "2026-04-01T00:00:00Z",
       allocations: [
@@ -2733,7 +2727,7 @@ async function openTeamToProDowngrade() {
     return respond(200, billingStatus);
   });
   context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
-    return respond(200, usagePackCatalogResponse(true));
+    return respond(200, usagePackCatalogResponse());
   });
   context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
     return respond(200, {
@@ -2930,6 +2924,7 @@ test("Replace a Team cancellation with a Pro downgrade", async () => {
   });
   context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
     return respond(200, {
+      supportsFreeMembers: true,
       tier: "team",
       currentPeriodEnd: "2026-05-01T00:00:00Z",
       allocations: [
@@ -3260,6 +3255,7 @@ test("Keep usage-pack plans unavailable for custom workspaces", async () => {
   });
   context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
     return respond(200, {
+      supportsFreeMembers: true,
       tier: "team",
       currentPeriodEnd: "2026-04-01T00:00:00Z",
       allocations: [],

@@ -28,10 +28,6 @@
       "import": "./src/operations/org-metadata-canonical-write.ts",
       "types": "./src/operations/org-metadata-canonical-write.ts"
     },
-    "./operations/org-plan-entitlement-canonical-write": {
-      "import": "./src/operations/org-plan-entitlement-canonical-write.ts",
-      "types": "./src/operations/org-plan-entitlement-canonical-write.ts"
-    },
     "./types": {
       "import": "./src/types.ts",
       "types": "./src/types.ts"

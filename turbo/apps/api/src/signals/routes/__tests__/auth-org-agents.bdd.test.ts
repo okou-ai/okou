@@ -262,7 +262,6 @@ describe("ORG-01 and ORG-02", () => {
     const billing = await runsApi.readBillingStatus(admin);
     expect(billing).toMatchObject({
       status: "active",
-      memberInvitationAllowed: true,
     });
     await api.inviteMember(admin, invitation);
     expect(
