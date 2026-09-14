@@ -131,6 +131,13 @@ of zero dependencies. Inspect the failure and verify preview cleanup before
 dispatching another isolated check; do not increase timeouts or repeat restores
 without diagnosing the actual cause.
 
+The marker scan sends at most 64 of its 128-page chunks in one database request.
+Each chunk still has its own 120-second statement limit, progress record and
+aggregate result. The decoder requires every chunk in order under the same
+read-only repeatable-read transaction. This reduces client/database round trips
+while retaining the 900-second process deadline and the overall inspection and
+cleanup budgets; batching does not turn an incomplete scan into a success.
+
 The provider contract is documented in
 [Neon's snapshot restore API](https://neon.com/docs/reference/api/snapshots/restore-snapshot).
 Run `bash .github/scripts/tests/kms-recovery-snapshot-inspect-test.sh` for the

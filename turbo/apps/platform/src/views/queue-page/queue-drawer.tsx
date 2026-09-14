@@ -202,7 +202,7 @@ function CurrentPlanStatus({
   };
 
   return (
-    <div className="shrink-0 rounded-[var(--okou-card-radius)] okou-border p-5">
+    <div className="shrink-0 rounded-[var(--okou-card-radius)] border border-surface-border p-5">
       <p className={`mb-3 text-sm font-mono font-semibold ${tierColor}`}>
         {tierLabel}
       </p>
@@ -294,7 +294,7 @@ function UpgradeCard({
     maximumFractionDigits: 0,
   });
   return (
-    <div className="flex-1 flex flex-col rounded-[var(--okou-card-radius)] okou-border p-5">
+    <div className="flex-1 flex flex-col rounded-[var(--okou-card-radius)] border border-surface-border p-5">
       <div className="flex items-start justify-between mb-2">
         <h3 className={`text-sm font-mono font-semibold ${tierColor}`}>
           {upgrade.targetLabel}
@@ -489,7 +489,7 @@ function ConcurrencyPurchaseCard({
     unitAmountCents,
   );
   return (
-    <div className="flex-1 flex flex-col rounded-[var(--okou-card-radius)] okou-border p-5">
+    <div className="flex-1 flex flex-col rounded-[var(--okou-card-radius)] border border-surface-border p-5">
       <div className="flex items-start justify-between mb-2">
         <h3 className={`text-sm font-mono font-semibold ${tierColor}`}>
           {t(($) => {

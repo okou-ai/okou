@@ -747,6 +747,52 @@
       "mergeCommit": null
     },
     {
+      "id": "okou-border-hairline",
+      "family": "local-controls",
+      "tokens": ["okou-border"],
+      "consumers": [
+        "apps/platform/src/views/okou-page/agent-chat-page.tsx",
+        "apps/platform/src/views/okou-page/components/org-manage/org-billing-tab.tsx",
+        "apps/platform/src/views/okou-page/components/org-manage/org-members-tab.tsx",
+        "apps/platform/src/views/okou-page/components/org-manage/org-usage-tab.tsx",
+        "apps/platform/src/views/okou-page/components/settings/build-info-block.tsx",
+        "apps/platform/src/views/okou-page/components/settings/built-in-model-cooldown-diagnostics-block.tsx",
+        "apps/platform/src/views/okou-page/components/settings/color-theme-settings.tsx",
+        "apps/platform/src/views/okou-page/components/settings/connection-diagnostics-block.tsx",
+        "apps/platform/src/views/okou-page/components/settings/connector-catalog-diagnostics-block.tsx",
+        "apps/platform/src/views/okou-page/components/settings/indexeddb-diagnostics-block.tsx",
+        "apps/platform/src/views/okou-page/components/settings/permission-policy-toggle.tsx",
+        "apps/platform/src/views/okou-page/components/settings/permissions-dialog.tsx",
+        "apps/platform/src/views/okou-page/components/settings/preference-card-row.tsx",
+        "apps/platform/src/views/okou-page/components/settings/sections/account-section.tsx",
+        "apps/platform/src/views/okou-page/components/settings/sections/credit-balance-section.tsx",
+        "apps/platform/src/views/okou-page/components/settings/sections/debug-section.tsx",
+        "apps/platform/src/views/okou-page/components/settings/worker-connection-diagnostics-block.tsx",
+        "apps/platform/src/views/okou-page/tiptap-instructions-editor.tsx",
+        "apps/platform/src/views/queue-page/queue-drawer.tsx"
+      ],
+      "cases": [
+        "okou-border-hairline-preference-light",
+        "okou-border-hairline-preference-dark",
+        "okou-border-hairline-debug-light",
+        "okou-border-hairline-debug-dark",
+        "okou-border-hairline-billing-light",
+        "okou-border-hairline-billing-dark",
+        "okou-border-hairline-people-light",
+        "okou-border-hairline-people-dark",
+        "okou-border-hairline-usage-light",
+        "okou-border-hairline-usage-dark",
+        "okou-border-hairline-agent-profile-light",
+        "okou-border-hairline-agent-profile-dark",
+        "okou-border-hairline-chat-queue-light",
+        "okou-border-hairline-chat-queue-dark",
+        "okou-border-hairline-debug-narrow",
+        "okou-border-hairline-debug-narrow-dark"
+      ],
+      "status": "implemented",
+      "evidence": []
+    },
+    {
       "id": "queue-drawer-check-icon",
       "family": "external-contract-audit",
       "tokens": ["lucide"],
@@ -802,6 +848,7 @@
     "../e2e/playwright/style-migration/sidebar-thread-title-cases.json",
     "../e2e/playwright/style-migration/desktop-titlebar-cases.json",
     "../e2e/playwright/style-migration/nav-chrome-cases.json",
+    "../e2e/playwright/style-migration/okou-border-hairline-cases.json",
     "../e2e/playwright/style-migration/external-contract-audit-cases.json"
   ]
 }

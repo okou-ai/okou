@@ -286,7 +286,7 @@ function PolicyPill({
 }) {
   const { t } = useTranslation();
   return (
-    <span className="inline-flex shrink-0 rounded-md overflow-hidden text-xs font-medium okou-border">
+    <span className="inline-flex shrink-0 rounded-md overflow-hidden text-xs font-medium border border-surface-border">
       {POLICY_OPTIONS.map((option, idx) => {
         return (
           <button
@@ -593,7 +593,7 @@ function PermissionAllowDurationDropdown({
             },
             { permission },
           )}
-          className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-md border px-2 text-[11px] font-medium okou-border transition-colors ${
+          className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-md border px-2 text-[11px] font-medium border-surface-border transition-colors ${
             saving
               ? "cursor-default text-muted-foreground/50"
               : "cursor-pointer text-muted-foreground hover:bg-state-hover hover:text-foreground"
@@ -632,7 +632,7 @@ function PermissionAllowDurationDropdown({
 
 function PermissionAllowDurationStatic({ label }: { label: string }) {
   return (
-    <span className="inline-flex h-6 max-w-[150px] shrink-0 items-center gap-1.5 rounded-md border okou-border bg-muted/40 px-2 text-[11px] font-medium text-muted-foreground">
+    <span className="inline-flex h-6 max-w-[150px] shrink-0 items-center gap-1.5 rounded-md border border-surface-border bg-muted/40 px-2 text-[11px] font-medium text-muted-foreground">
       <Clock size={12} className="shrink-0" />
       <span className="truncate">{label}</span>
     </span>

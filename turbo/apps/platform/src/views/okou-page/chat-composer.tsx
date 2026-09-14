@@ -4319,10 +4319,12 @@ function resolveTemplatePickerCategory(
 function TemplatePickerCategoryNav({
   selectedCategory,
   introVideoEnabled,
+  creativeVideoOnly,
   onChange,
 }: {
   selectedCategory: string;
   introVideoEnabled: boolean;
+  creativeVideoOnly: boolean;
   onChange: (value: string) => void;
 }) {
   const { t } = useTranslation();
@@ -4387,6 +4389,9 @@ function TemplatePickerCategoryNav({
       Icon: Route,
     },
   ];
+  const visibleCategories = categoryOptions.filter(({ value }) => {
+    return !creativeVideoOnly || value === "video";
+  });
 
   return (
     <>
@@ -4401,7 +4406,7 @@ function TemplatePickerCategoryNav({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {categoryOptions.map(({ value, label, Icon }) => {
+            {visibleCategories.map(({ value, label, Icon }) => {
               return (
                 <SelectItem key={value} value={value}>
                   <span className="flex items-center gap-2">
@@ -4426,7 +4431,7 @@ function TemplatePickerCategoryNav({
             data-template-picker-sidebar=""
             className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-3"
           >
-            {categoryOptions.map(({ value, label, Icon }, categoryIndex) => {
+            {visibleCategories.map(({ value, label, Icon }, categoryIndex) => {
               const selected = value === selectedCategory;
               return (
                 <button
@@ -4441,15 +4446,16 @@ function TemplatePickerCategoryNav({
                   onKeyDown={(event) => {
                     let nextIndex: number | null = null;
                     if (event.key === "ArrowDown") {
-                      nextIndex = (categoryIndex + 1) % categoryOptions.length;
+                      nextIndex =
+                        (categoryIndex + 1) % visibleCategories.length;
                     } else if (event.key === "ArrowUp") {
                       nextIndex =
-                        (categoryIndex - 1 + categoryOptions.length) %
-                        categoryOptions.length;
+                        (categoryIndex - 1 + visibleCategories.length) %
+                        visibleCategories.length;
                     } else if (event.key === "Home") {
                       nextIndex = 0;
                     } else if (event.key === "End") {
-                      nextIndex = categoryOptions.length - 1;
+                      nextIndex = visibleCategories.length - 1;
                     }
                     if (nextIndex === null) {
                       return;
@@ -4459,7 +4465,7 @@ function TemplatePickerCategoryNav({
                       ?.querySelectorAll<HTMLElement>("[role=tab]")
                       .item(nextIndex);
                     nextTab?.focus();
-                    onChange(categoryOptions[nextIndex]?.value ?? value);
+                    onChange(visibleCategories[nextIndex]?.value ?? value);
                   }}
                   className={cn(
                     "group flex h-9 w-full shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-sm leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
@@ -5983,6 +5989,8 @@ function TemplatePickerDialog({
   const openBillingPlans = useSet(openSettingsBillingPlans$);
   const openSettings = useSet(setSettingsDialogOpen$);
   const category = useGet(signals.template.templatePickerCategory$);
+  const creativeVideo = useGet(signals.create.creativeVideo$);
+  const creativeVideoOnly = creativeVideo && category === "video";
   const setCategory = useSet(signals.template.setTemplatePickerCategory$);
   const search = useGet(signals.template.templatePickerSearch$);
   const setSearch = useSet(signals.template.setTemplatePickerSearch$);
@@ -6369,6 +6377,7 @@ function TemplatePickerDialog({
               <TemplatePickerCategoryNav
                 selectedCategory={selectedCategory}
                 introVideoEnabled={introVideoEnabled}
+                creativeVideoOnly={creativeVideoOnly}
                 onChange={handleCategoryChange}
               />
               <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -6797,7 +6806,12 @@ function TemplatePickerButton({
     useGet(featureSwitch$)[FeatureSwitchKey.IntroVideo] === true;
   const referenceValue = useGet(signals.template.templatePickerReferenceValue$);
   const createMode = useGet(signals.create.mode$);
-  const templateMode = createMode === "image" ? "illustration" : createMode;
+  const creativeVideo = useGet(signals.create.creativeVideo$);
+  const templateMode = creativeVideo
+    ? "video"
+    : createMode === "image"
+      ? "illustration"
+      : createMode;
   const templateLabel =
     templateMode === "illustration"
       ? t(($) => {
@@ -10005,10 +10019,11 @@ function ComposerExistingMediaModelPickerSlot({
 
 function ComposerModelPickerSlot({ signals }: { signals: ComposerSignals }) {
   const createMode = useGet(signals.create.mode$);
+  const creativeVideo = useGet(signals.create.creativeVideo$);
   if (createMode === "image" && signals.imageModel) {
     return <ComposerCreateImageModelPicker model={signals.imageModel} />;
   }
-  if (createMode === "video" && signals.videoModel) {
+  if (creativeVideo && signals.videoModel) {
     return (
       <ComposerCreateVideoModelPicker
         model={signals.videoModel}
@@ -10837,9 +10852,10 @@ function ComposerFooter({
   actions: ComposerActions;
   connectorActions: ComposerConnectorActions;
 }) {
-  const createMode = useGet(signals.create.mode$);
-  const narrowVideoGap =
-    createMode === "video" ? "@max-[344px]/composer:gap-0" : undefined;
+  const creativeVideo = useGet(signals.create.creativeVideo$);
+  const narrowVideoGap = creativeVideo
+    ? "@max-[344px]/composer:gap-0"
+    : undefined;
   const voiceInputV2Enabled = useGet(voiceInputV2Enabled$);
   const voiceDraft = useResolved(signals.voice.state$);
   const capture = useGet(signals.voice.capture$);
@@ -10866,10 +10882,13 @@ function ComposerFooter({
   return withChatScrollLayout(
     <div
       className={cn(
-        "flex shrink-0 items-center justify-between gap-1 sm:gap-2",
+        "shrink-0 items-center justify-between gap-1 sm:gap-2",
+        creativeVideo && !activeVoiceDraftStatus
+          ? "grid grid-cols-[minmax(0,1fr)_auto] @min-[640px]/composer:flex"
+          : "flex",
         activeVoiceDraftStatus ? "px-2 pb-3 pt-3" : "px-4 pb-4 pt-1",
         narrowVideoGap,
-        createMode === "video" && "@max-[344px]/composer:px-3",
+        creativeVideo && "@max-[344px]/composer:px-3",
       )}
     >
       {activeVoiceDraftStatus ? (
@@ -10882,24 +10901,23 @@ function ComposerFooter({
         />
       ) : (
         <>
-          <div
-            className={cn(
-              "flex min-w-0 items-center gap-1 text-muted-foreground sm:gap-1.5",
-              narrowVideoGap,
-            )}
-          >
-            <ComposerAttachButton signals={signals} />
-            <ComposerTemplatePickerSlot signals={signals} />
-            <ComposerWorkflowPromptSlot signals={signals} />
-            <ComposerConnectorsSlot
-              signals={signals}
-              actions={connectorActions}
-            />
-            {/* Sits with the other input-scoped controls rather than beside
-                the model picker: it configures the message being written,
-                not which model the composer points at. */}
+          <div className="contents @min-[640px]/composer:flex @min-[640px]/composer:min-w-0 @min-[640px]/composer:items-center @min-[640px]/composer:gap-1.5">
+            <div
+              className={cn(
+                "flex min-w-0 items-center gap-1 text-muted-foreground sm:gap-1.5",
+                narrowVideoGap,
+              )}
+            >
+              <ComposerAttachButton signals={signals} />
+              <ComposerTemplatePickerSlot signals={signals} />
+              <ComposerWorkflowPromptSlot signals={signals} />
+              <ComposerConnectorsSlot
+                signals={signals}
+                actions={connectorActions}
+              />
+              <ComposerPresentationOptions signals={signals} />
+            </div>
             <ComposerVideoOptionsChip signals={signals} />
-            <ComposerPresentationOptions signals={signals} />
           </div>
           <div
             className={cn(

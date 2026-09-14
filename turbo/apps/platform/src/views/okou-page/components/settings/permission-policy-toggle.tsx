@@ -54,7 +54,7 @@ export function PermissionPolicyToggle({
 }) {
   const { t } = useTranslation();
   return (
-    <span className="inline-flex shrink-0 overflow-hidden rounded-md text-xs font-medium okou-border">
+    <span className="inline-flex shrink-0 overflow-hidden rounded-md text-xs font-medium border border-surface-border">
       <button
         type="button"
         disabled={disabled}

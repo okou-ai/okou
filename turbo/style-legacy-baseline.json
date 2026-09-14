@@ -5,7 +5,6 @@
     "language-mermaid",
     "okou-app",
     "okou-blocks",
-    "okou-border",
     "okou-chat-bubble-assistant",
     "okou-chat-bubble-user",
     "okou-chat-card",
@@ -2605,9 +2604,6 @@
       "okou-app": 1,
       "okou-workspace-bg": 1
     },
-    "apps/platform/src/views/okou-page/agent-chat-page.tsx": {
-      "okou-border": 1
-    },
     "apps/platform/src/views/okou-page/attachment-chips.tsx": {
       "okou-chat-card": 4,
       "okou-chat-frame": 1
@@ -2642,57 +2638,13 @@
       "okou-thinking-spinner-frame": 1
     },
     "apps/platform/src/views/okou-page/components/org-manage/org-billing-tab.tsx": {
-      "okou-app": 1,
-      "okou-border": 3
-    },
-    "apps/platform/src/views/okou-page/components/org-manage/org-members-tab.tsx": {
-      "okou-border": 1
-    },
-    "apps/platform/src/views/okou-page/components/org-manage/org-usage-tab.tsx": {
-      "okou-border": 3
-    },
-    "apps/platform/src/views/okou-page/components/settings/build-info-block.tsx": {
-      "okou-border": 1
-    },
-    "apps/platform/src/views/okou-page/components/settings/built-in-model-cooldown-diagnostics-block.tsx": {
-      "okou-border": 1
-    },
-    "apps/platform/src/views/okou-page/components/settings/color-theme-settings.tsx": {
-      "okou-border": 1
-    },
-    "apps/platform/src/views/okou-page/components/settings/connection-diagnostics-block.tsx": {
-      "okou-border": 1
-    },
-    "apps/platform/src/views/okou-page/components/settings/connector-catalog-diagnostics-block.tsx": {
-      "okou-border": 1
-    },
-    "apps/platform/src/views/okou-page/components/settings/indexeddb-diagnostics-block.tsx": {
-      "okou-border": 1
-    },
-    "apps/platform/src/views/okou-page/components/settings/permission-policy-toggle.tsx": {
-      "okou-border": 1
-    },
-    "apps/platform/src/views/okou-page/components/settings/permissions-dialog.tsx": {
-      "okou-border": 3
-    },
-    "apps/platform/src/views/okou-page/components/settings/preference-card-row.tsx": {
-      "okou-border": 1
-    },
-    "apps/platform/src/views/okou-page/components/settings/sections/account-section.tsx": {
-      "okou-border": 1
+      "okou-app": 1
     },
     "apps/platform/src/views/okou-page/components/settings/sections/credit-balance-section.tsx": {
-      "okou-app": 1,
-      "okou-border": 2
-    },
-    "apps/platform/src/views/okou-page/components/settings/sections/debug-section.tsx": {
-      "okou-border": 1
+      "okou-app": 1
     },
     "apps/platform/src/views/okou-page/components/settings/settings-dialog.tsx": {
       "okou-app": 1
-    },
-    "apps/platform/src/views/okou-page/components/settings/worker-connection-diagnostics-block.tsx": {
-      "okou-border": 1
     },
     "apps/platform/src/views/okou-page/connect-page-shell.tsx": {
       "okou-app": 1,
@@ -2725,9 +2677,6 @@
       "okou-mobile-fixed-safe-area": 1,
       "okou-mobile-sidebar": 1,
       "okou-sidebar-header": 1
-    },
-    "apps/platform/src/views/okou-page/tiptap-instructions-editor.tsx": {
-      "okou-border": 1
     },
     "apps/platform/src/views/okou-page/unsaved-bar.tsx": {
       "okou-app": 1
@@ -2767,9 +2716,6 @@
       "owf-diagram-okou-icon": 1,
       "owf-diagram-vertical-control": 1,
       "owf-diagram-wrap": 1
-    },
-    "apps/platform/src/views/queue-page/queue-drawer.tsx": {
-      "okou-border": 3
     },
     "apps/platform/src/views/shared-thread-page/shared-thread-page.tsx": {
       "okou-app": 1,
