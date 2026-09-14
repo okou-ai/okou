@@ -27,6 +27,8 @@ import {
   type ConnectorGrantSource,
 } from "./source";
 
+import { ConnectorCatalogRelationshipError } from "./relationship-error";
+
 const MODEL_PROVIDER_FIREWALL_PREFIX = "model-provider:";
 
 function compareStrings(left: string, right: string): number {
@@ -132,12 +134,16 @@ function validateConnectorSemantics(artifact: ConnectorCatalogArtifact): void {
 
   for (const connector of artifact.connectors) {
     if (connector.slug.startsWith(MODEL_PROVIDER_FIREWALL_PREFIX)) {
-      throw new Error(
+      throw new ConnectorCatalogRelationshipError(
+        "reserved-connector-ownership",
         `Connector catalog uses reserved ownership: ${connector.slug}`,
       );
     }
     if (!categoryIds.has(connector.category)) {
-      throw new Error(`Unknown category for connector ${connector.slug}`);
+      throw new ConnectorCatalogRelationshipError(
+        "unknown-category",
+        `Unknown category for connector ${connector.slug}`,
+      );
     }
     const source = connectorSourceSchema.parse({
       label: connector.label,
@@ -167,7 +173,8 @@ function validateConnectorSemantics(artifact: ConnectorCatalogArtifact): void {
     if (connector.skill.kind === "bundled") {
       const storageOwner = skillStorageOwners.get(connector.skill.storageName);
       if (storageOwner !== undefined) {
-        throw new Error(
+        throw new ConnectorCatalogRelationshipError(
+          "duplicate-skill-storage-owner",
           `Connector skill storage ${connector.skill.storageName} is claimed by ${storageOwner} and ${connector.slug}`,
         );
       }
@@ -175,7 +182,8 @@ function validateConnectorSemantics(artifact: ConnectorCatalogArtifact): void {
 
       const versionOwner = skillVersionOwners.get(connector.skill.versionId);
       if (versionOwner !== undefined) {
-        throw new Error(
+        throw new ConnectorCatalogRelationshipError(
+          "duplicate-skill-version-owner",
           `Connector skill version ${connector.skill.versionId} is claimed by ${versionOwner} and ${connector.slug}`,
         );
       }
@@ -186,7 +194,8 @@ function validateConnectorSemantics(artifact: ConnectorCatalogArtifact): void {
       for (const secretName of method.storage.secrets) {
         const owner = secretOwners.get(secretName);
         if (owner !== undefined && owner !== connector.slug) {
-          throw new Error(
+          throw new ConnectorCatalogRelationshipError(
+            "duplicate-storage-secret-owner",
             `Connector storage secret ${secretName} is claimed by ${owner} and ${connector.slug}`,
           );
         }
@@ -195,7 +204,8 @@ function validateConnectorSemantics(artifact: ConnectorCatalogArtifact): void {
       for (const variableName of method.storage.variables) {
         const owner = variableOwners.get(variableName);
         if (owner !== undefined && owner !== connector.slug) {
-          throw new Error(
+          throw new ConnectorCatalogRelationshipError(
+            "duplicate-storage-variable-owner",
             `Connector storage variable ${variableName} is claimed by ${owner} and ${connector.slug}`,
           );
         }
@@ -234,7 +244,8 @@ function validateFirewallBindings(args: {
     return !knownEnvironmentNames.has(name);
   });
   if (unknown.length > 0) {
-    throw new Error(
+    throw new ConnectorCatalogRelationshipError(
+      "unknown-firewall-binding",
       `Firewall references unknown connector bindings: ${sortedUniqueStrings(unknown).join(", ")}`,
     );
   }
@@ -254,7 +265,8 @@ function validateBaseUrlTemplates(
       templates.has(api.base) &&
       !isDeepStrictEqual(templates.get(api.base), api.hostPolicy)
     ) {
-      throw new Error(
+      throw new ConnectorCatalogRelationshipError(
+        "conflicting-firewall-host-policies",
         `Firewall base URL host policies conflict: ${connectorSlug} (${api.base})`,
       );
     }
@@ -340,7 +352,10 @@ function validateFirewallSemantics(artifact: ConnectorCatalogArtifact): void {
     }
     const firewall = connectorCatalogFirewallConfig(connector);
     if (firewall === null) {
-      throw new Error("Generated connector firewall is unavailable");
+      throw new ConnectorCatalogRelationshipError(
+        "missing-generated-firewall",
+        "Generated connector firewall is unavailable",
+      );
     }
     validateFirewallGeneratorResult({
       firewall,
@@ -355,7 +370,10 @@ function validateFirewallSemantics(artifact: ConnectorCatalogArtifact): void {
     for (const rawHost of routing.fixedHosts) {
       const host = normalizeFirewallFixedHost(rawHost);
       if (!host) {
-        throw new Error(`Firewall fixed host is invalid: ${connector.slug}`);
+        throw new ConnectorCatalogRelationshipError(
+          "invalid-firewall-fixed-host",
+          `Firewall fixed host is invalid: ${connector.slug}`,
+        );
       }
     }
   }

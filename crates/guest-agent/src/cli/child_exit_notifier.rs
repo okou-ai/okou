@@ -73,7 +73,7 @@ pub(super) async fn wait_for_child_exit_without_reaping(child_id: u32) -> io::Re
 }
 
 #[cfg(unix)]
-fn child_exited_without_reaping(child_id: u32) -> io::Result<bool> {
+pub(super) fn child_exited_without_reaping(child_id: u32) -> io::Result<bool> {
     let child_pid = libc::pid_t::try_from(child_id).map_err(|_| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -115,7 +115,7 @@ fn child_exited_without_reaping(child_id: u32) -> io::Result<bool> {
 }
 
 #[cfg(not(unix))]
-fn child_exited_without_reaping(_child_id: u32) -> io::Result<bool> {
+pub(super) fn child_exited_without_reaping(_child_id: u32) -> io::Result<bool> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "non-reaping child exit observation is unavailable",

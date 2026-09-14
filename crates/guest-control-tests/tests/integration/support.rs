@@ -109,11 +109,19 @@ fn path_with_suffix(path: &Path, suffix: &str) -> std::path::PathBuf {
 }
 
 /// Spawn a guest agent in a background OS thread that connects to the given socket path.
-fn start_guest(socket_path: &str) -> JoinHandle<io::Result<()>> {
+fn start_guest(
+    socket_path: &str,
+    guest_agent_program: Option<std::path::PathBuf>,
+) -> JoinHandle<io::Result<()>> {
     let path = socket_path.to_owned();
     thread::spawn(move || {
         let stream = guest_control_server::connect_unix(&path)?;
-        guest_control_server::handle_connection(stream)
+        match guest_agent_program {
+            Some(program) => guest_control_server::handle_connection_with_test_guest_agent_program(
+                stream, program,
+            ),
+            None => guest_control_server::handle_connection(stream),
+        }
     })
 }
 
@@ -232,6 +240,14 @@ pub(crate) struct Harness {
 
 impl Harness {
     pub(crate) async fn new() -> Self {
+        Self::new_with_program(None).await
+    }
+
+    pub(crate) async fn new_with_guest_agent_program(program: std::path::PathBuf) -> Self {
+        Self::new_with_program(Some(program)).await
+    }
+
+    async fn new_with_program(guest_agent_program: Option<std::path::PathBuf>) -> Self {
         install_write_file_helper();
 
         let dir_guard = create_temp_dir("guest-control-tests");
@@ -251,7 +267,7 @@ impl Harness {
             panic!("host listener did not become ready: {err}");
         }
 
-        let mut guest = Some(start_guest(&listener_path));
+        let mut guest = Some(start_guest(&listener_path, guest_agent_program));
         let host = match host_task.await {
             Ok(Ok(host)) => host,
             Ok(Err(err)) => {

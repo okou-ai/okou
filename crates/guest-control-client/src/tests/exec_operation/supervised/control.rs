@@ -277,6 +277,76 @@ async fn supervised_exec_control_sub_millisecond_timeout_rounds_up_to_one_ms() {
         .unwrap();
 }
 
+async fn retains_reply_after_guest_budget(timeout: Duration, status: ExecControlStatus) {
+    let StartedControlSupervisedExec {
+        host,
+        mut guest,
+        start,
+        handle,
+        control_handle,
+        control_nonce,
+    } = start_control_supervised_exec_fixture("control-reply-allowance").await;
+    let start_seq = start.seq();
+    let control_task = tokio::spawn(async move {
+        control_handle
+            .control_owned_with_write_observer(
+                "reply".to_owned(),
+                b"payload".to_vec(),
+                timeout,
+                crate::FrameWriteObserver::default(),
+            )
+            .await
+    });
+    let control = read_guest_message(&mut guest).await;
+    let request = guest_control_proto::decode_exec_control(&control.payload).unwrap();
+    let guest_budget = Duration::from_millis(u64::from(request.request_timeout_ms));
+    // Model a reply in transit after the Guest's work budget, not an extension
+    // of that budget. The response owner must remain alive for this interval.
+    tokio::time::sleep(guest_budget + Duration::from_millis(50)).await;
+    send_exec_control_result(
+        &mut guest,
+        control.seq,
+        start_seq,
+        control_nonce,
+        "reply",
+        status,
+        "",
+    )
+    .await;
+    let outcome = control_task.await.unwrap();
+    finish_supervised_exec_success(&mut guest, start_seq, handle)
+        .await
+        .unwrap();
+
+    match status {
+        ExecControlStatus::Delivered => assert!(matches!(
+            outcome.unwrap(),
+            crate::ExecControlOutcome::Delivered(_)
+        )),
+        _ => assert!(matches!(
+            outcome.unwrap(),
+            crate::ExecControlOutcome::GuestStatus(result) if result.status == status
+        )),
+    }
+    assert_connection_accepts_exec_operation(&host, &mut guest).await;
+}
+
+#[tokio::test]
+async fn supervised_exec_control_retains_guest_deadline_reply() {
+    for timeout in [
+        Duration::ZERO,
+        Duration::from_nanos(1),
+        Duration::from_millis(25),
+    ] {
+        retains_reply_after_guest_budget(timeout, ExecControlStatus::SinkTimeout).await;
+    }
+}
+
+#[tokio::test]
+async fn supervised_exec_control_retains_delivered_reply_in_transit() {
+    retains_reply_after_guest_budget(Duration::from_millis(25), ExecControlStatus::Delivered).await;
+}
+
 #[tokio::test]
 async fn supervised_exec_control_large_timeout_saturates_request_timeout_ms() {
     let StartedControlSupervisedExec {
@@ -293,11 +363,7 @@ async fn supervised_exec_control_large_timeout_saturates_request_timeout_ms() {
     let control_task = tokio::spawn({
         async move {
             control_handle
-                .control(
-                    "large-timeout",
-                    b"payload",
-                    Duration::from_millis(u64::from(u32::MAX) + 1),
-                )
+                .control("large-timeout", b"payload", Duration::MAX)
                 .await
         }
     });

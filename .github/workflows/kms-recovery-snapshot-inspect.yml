@@ -16,6 +16,11 @@ on:
         required: true
         type: string
         default: "2026-02-16T05:57:00Z"
+      verify_target_ciphertext:
+        description: "Verify a target-era recovery point with a session restricted to target-key decryption"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -28,18 +33,35 @@ jobs:
   inspect:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 110
     environment: production
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        if: inputs.verify_target_ciphertext
+        with:
+          node-version: 22
+      - name: Install the reviewed read-only verification tool
+        if: inputs.verify_target_ciphertext
+        timeout-minutes: 10
+        working-directory: turbo
+        run: |
+          corepack enable pnpm
+          pnpm install --frozen-lockfile --ignore-scripts --filter @okouai/db...
+          command -v aws
       - name: Restore an isolated preview, inspect aggregate markers, and remove the preview
         env:
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           SNAPSHOT_SHA256: ${{ inputs.snapshot_sha256 }}
           EXPECTED_CREATED_AT: ${{ inputs.expected_created_at }}
+          VERIFY_TARGET_CIPHERTEXT: ${{ inputs.verify_target_ciphertext }}
+          KMS_MIGRATION_ROLE_ARN: ${{ vars.KMS_MIGRATION_ROLE_ARN }}
         run: python3 .github/scripts/kms-recovery-snapshot-inspect.py
       - name: Retain sanitized recovery evidence
         if: always()

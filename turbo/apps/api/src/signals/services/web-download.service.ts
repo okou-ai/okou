@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
 import { computed, type Computed } from "ccstate";
 
+import { recordWebDownloadFailure$, request$ } from "../context/hono";
 import { downloadS3Buffer } from "../external/s3";
 import { uploadedArtifactObject } from "./uploaded-artifact.service";
 
@@ -27,7 +29,27 @@ export function webDownloadFile(
       return null;
     }
 
-    const buffer = await get(downloadS3Buffer(object.bucket, object.key));
+    const request = get(request$);
+    const recordFailure = get(recordWebDownloadFailure$);
+    const buffer = await get(
+      downloadS3Buffer(object.bucket, object.key, {
+        onFailure: (diagnostics) => {
+          recordFailure({
+            ...diagnostics,
+            storageScope: object.isPrivate
+              ? "private_artifact"
+              : "user_artifact",
+            objectFingerprint: createHash("sha256")
+              .update(object.bucket)
+              .update("\0")
+              .update(object.key)
+              .digest("hex"),
+            objectSize: object.size,
+            requestAborted: request.raw.signal.aborted,
+          });
+        },
+      }),
+    );
 
     return {
       buffer,

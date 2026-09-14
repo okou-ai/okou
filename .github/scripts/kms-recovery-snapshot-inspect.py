@@ -11,6 +11,12 @@ import subprocess
 import time
 import urllib.parse
 
+from kms_recovery_verify import (
+    RecoveryVerificationError,
+    target_session,
+    verify_database,
+)
+
 PROJECT = "hidden-lab-39609750"
 BASE = f"https://console.neon.tech/api/v2/projects/{PROJECT}"
 WORKFLOW = (
@@ -206,7 +212,7 @@ def validate_preview(branch, name, snapshot_id, existing_ids):
     return branch_id
 
 
-def inspect_database(database, endpoint, branch_id):
+def inspect_database(database, endpoint, branch_id, target_environment=None):
     name, owner = database.get("name"), database.get("owner_name")
     require(database.get("branch_id") == branch_id, "database_branch_mismatch")
     require(
@@ -238,7 +244,7 @@ def inspect_database(database, endpoint, branch_id):
         "isolated_connection_identity_mismatch",
     )
     environment = {
-        k: v for k, v in os.environ.items() if not k.startswith(("PG", "NEON_"))
+        k: v for k, v in os.environ.items() if k in {"PATH", "HOME", "LANG", "LC_ALL"}
     }
     environment.update(
         {
@@ -299,7 +305,12 @@ def inspect_database(database, endpoint, branch_id):
             require(type(value) is int and value >= 0, "invalid_scan_counter")
             item[field] = value
         safe.append(item)
-    return {"databaseNameSha256": digest(name), "readOnly": True, "records": safe}
+    scanned = {"databaseNameSha256": digest(name), "readOnly": True, "records": safe}
+    if target_environment is not None:
+        scanned["targetVerification"] = verify_database(
+            parsed, target_environment, DEADLINE
+        )
+    return scanned
 
 
 def main():
@@ -333,6 +344,7 @@ def main():
     before_snapshots = None
     existing_ids = set()
     snapshot_id = None
+    target_environment = None
     checkpoint()
     try:
         require(
@@ -342,6 +354,10 @@ def main():
             and os.environ.get("GITHUB_WORKFLOW_REF") == WORKFLOW,
             "unprotected_invocation",
         )
+        verification = os.environ.get("VERIFY_TARGET_CIPHERTEXT", "false")
+        require(verification in {"true", "false"}, "invalid_target_verification_option")
+        if verification == "true":
+            DEADLINE = time.monotonic() + 90 * 60
         require(
             os.environ.get("NEON_PROJECT_ID") == PROJECT
             and os.environ.get("NEON_API_KEY"),
@@ -384,6 +400,9 @@ def main():
             "snapshot_identity_mismatch",
         )
         snapshot_id = snapshot["id"]
+        if verification == "true":
+            target_environment, report["targetSession"] = target_session()
+            checkpoint()
         report.update(
             {
                 "snapshotIdSha256": expected_hash,
@@ -420,8 +439,23 @@ def main():
             "preview_endpoint_listing_mismatch",
         )
         report["previewEndpointCountBeforeCreate"] = len(endpoints)
+        report["previewEndpointTypeCountsBeforeCreate"] = {
+            kind: sum(e.get("type") == kind for e in endpoints)
+            for kind in ("read_write", "read_only")
+        }
         checkpoint()
-        if not endpoints:
+        endpoint_ids = [identifier(e.get("id"), "ep-") for e in endpoints]
+        require(
+            len(endpoint_ids) == len(set(endpoint_ids)), "duplicate_preview_endpoint_id"
+        )
+        require(
+            all(e.get("type") in {"read_write", "read_only"} for e in endpoints),
+            "unknown_preview_endpoint_type",
+        )
+        # Snapshot restore can copy both the primary and read replicas. Pin the
+        # unique primary; counting every compute incorrectly rejects that case.
+        primaries = [e for e in endpoints if e["type"] == "read_write"]
+        if not primaries:
             created = api(
                 "/endpoints",
                 "POST",
@@ -436,7 +470,8 @@ def main():
                 },
             )
             require(
-                created["endpoint"].get("branch_id") == preview_id,
+                created["endpoint"].get("branch_id") == preview_id
+                and created["endpoint"].get("type") == "read_write",
                 "created_endpoint_branch_mismatch",
             )
             endpoint_id = identifier(created["endpoint"].get("id"), "ep-")
@@ -447,19 +482,23 @@ def main():
             report["createdPreviewEndpointId"] = endpoint_id
             checkpoint()
             wait_operations(created)
-            endpoints = [created["endpoint"]]
-        require(len(endpoints) == 1, "preview_endpoint_not_unique")
-        endpoint_id = identifier(endpoints[0].get("id"), "ep-")
+            primaries = [created["endpoint"]]
+        require(len(primaries) == 1, "preview_primary_endpoint_not_unique")
+        endpoint_id = identifier(primaries[0].get("id"), "ep-")
         endpoint = api(f"/endpoints/{endpoint_id}")["endpoint"]
         require(
             endpoint.get("id") == endpoint_id
             and endpoint.get("branch_id") == preview_id
+            and endpoint.get("type") == "read_write"
             and isinstance(endpoint.get("host"), str)
             and endpoint["host"].startswith(endpoint["id"] + ".")
             and endpoint["host"].endswith(".neon.tech")
             and endpoint["id"] not in {e["id"] for e in before_endpoints},
             "preview_endpoint_identity_mismatch",
         )
+        report["selectedPreviewEndpointId"] = endpoint_id
+        report["selectedPreviewEndpointType"] = endpoint["type"]
+        checkpoint()
         databases = api(f"/branches/{preview_id}/databases")["databases"]
         require(
             isinstance(databases, list)
@@ -468,11 +507,27 @@ def main():
             "invalid_database_listing",
         )
         for database in databases:
-            report["databases"].append(inspect_database(database, endpoint, preview_id))
+            if target_environment is not None:
+                if report["kmsCallsMade"] is False:
+                    report["kmsCallsMade"] = None
+                report["targetVerificationStarted"] = True
+                checkpoint()
+            report["databases"].append(
+                inspect_database(database, endpoint, preview_id, target_environment)
+            )
+            if target_environment is not None:
+                report["kmsCallsMade"] = any(
+                    item["targetVerification"]["totals"]["verified"] > 0
+                    for item in report["databases"]
+                )
             checkpoint()
+        if target_environment is not None:
+            report["cryptographicVerification"] = True
+            report["nestedPayloadInspection"] = True
         report["collectionComplete"] = True
     except (
         InspectionError,
+        RecoveryVerificationError,
         KeyError,
         ValueError,
         TypeError,
@@ -480,10 +535,12 @@ def main():
         subprocess.TimeoutExpired,
     ) as error:
         report["failure"] = (
-            str(error) if isinstance(error, InspectionError) else "inspection_failed"
+            str(error)
+            if isinstance(error, (InspectionError, RecoveryVerificationError))
+            else "inspection_failed"
         )
     finally:
-        # Reserve cleanup and preservation read-back time inside the 30-minute job.
+        # Reserve cleanup and preservation read-back time inside the job budget.
         DEADLINE = time.monotonic() + 5 * 60
         if preview_id is not None:
             try:

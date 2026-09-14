@@ -382,6 +382,49 @@ Document sizing, top and horizontal insets, and PWA keyboard handling remain
 owned by the existing global environment rules. The `okou-viewport-shell` and
 `okou-managed-bottom-safe-area` selectors and their consumers have been removed.
 
+### Table header rules and the global scrollbar treatment
+
+The `table-wrapper` selector and its injected stylesheet have been removed. It
+was the last `jsx-style` injection in `@okouai/ui`: a `dangerouslySetInnerHTML`
+`<style>` element that `Table` rendered on every mount, carrying eight rules at
+one consumption site.
+
+Five of those eight rules were the scrollbar treatment — `scrollbar-width`,
+`scrollbar-color`, and the three `::-webkit-scrollbar*` rules. The App stylesheet
+already applies exactly those declarations to `*`, with identical values, so the
+wrapper's copies were duplicates of a rule that already covered them. They are
+not respelled as utilities; removing them is enough. `@okouai/ui` is consumed
+only by the App, which imports that stylesheet, so no consumer loses the
+treatment. Reach for the scrollbar utilities only where a surface wants
+something other than the global treatment, as `DialogBody` does.
+
+The `tbody tr:last-child` rule was also redundant: `TableRow` already spells
+`last:!border-b-0`, and a layered important declaration outranks an unlayered
+one, so the row utility was already deciding that border.
+
+The two load-bearing rules were the header separator and its suppression on the
+header row. `TableHeader` now writes `border-b border-b-border
+[&_tr]:border-b-0`. The retired rule hard-coded `1px`, and the replacement takes
+the shared hairline instead of naming a width, the same way the retired
+`okou-border-t` and `okou-btn-morandi` borders did.
+
+Here that is not even a hairline trade. Tailwind's Preflight sets
+`border-collapse: collapse` on tables, and a collapsed border resolves to a whole
+CSS pixel: measured in Chromium, a `<thead>` with the 0.5px
+`--default-border-width` and one with a literal `1px` both report a computed
+`border-bottom-width` of `1px`, both leave the table 92.5px tall, and both paint
+one device row at device scale 1 and two at device scale 2. The hairline's
+half-ink behaviour described above applies to separate borders, not to a
+collapsed table edge.
+
+`[&_tr]:border-b-0` is currently redundant for the same collapsing reason: the
+header row's own `border-b` loses to the row-group border at the same boundary,
+and dropping the utility changes no pixels. It is kept because the retired rule
+declared it, so a header row that later carries a wider border keeps today's
+appearance. Leaving the separator to `TableRow` instead is not equivalent — a row
+border never wins that boundary, so the header rule simply disappears and every
+body row shifts up.
+
 ## Exception boundary
 
 Only two exception kinds exist:

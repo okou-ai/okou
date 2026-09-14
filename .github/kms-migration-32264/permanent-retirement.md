@@ -49,9 +49,13 @@ It never calls the finalize endpoint. Existing inspection previews block a new
 run, including after an uncertain request.
 
 The new branch must have the exact snapshot provenance and must not be an
-existing, default, or protected branch. If needed, one 0.25-CU preview compute is
-created with 60-second idle suspend. Connection discovery pins both the branch
-and endpoint; production endpoints and pooled connections are rejected.
+existing, default, or protected branch. Snapshot restore may return a primary
+compute and read replicas. The workflow selects the unique `read_write` primary
+and records endpoint type counts; multiple primaries and duplicate identities
+are rejected. If no primary exists, one 0.25-CU preview primary is created with
+60-second idle suspend. Connection discovery pins the branch, endpoint and type;
+production endpoints and pooled connections are rejected. Database transactions
+remain read-only regardless of the compute type.
 
 The workflow reads every database returned for the preview in PostgreSQL
 read-only, repeatable-read transactions. It scans physical user tables, partition
@@ -70,10 +74,36 @@ name before cleanup, and never blindly retry a restore.
 
 This operation creates a temporary recovery copy and compute. It does not write
 production data, modify existing snapshots, change credentials or deployments,
-call KMS, finalize a restore, or schedule key deletion. `collectionComplete`
-only means the declared scan completed. It does not authenticate ciphertext,
+finalize a restore, or schedule key deletion. The default marker-only mode does
+not call KMS. `collectionComplete` only means the declared scan completed.
+The marker-only scan does not authenticate ciphertext,
 inspect plaintext nested inside encryption, decode arbitrary opaque formats, or
 prove application-level recovery. `retirementCleared` is always false.
+
+For a retained target-era snapshot, enable `verify_target_ciphertext`. The same
+preview isolation and cleanup checks run, followed by the existing migration
+CLI's **read-only `--verify`** mode against each preview database. Its reviewed
+storage manifest and queue payload decoder check the listed stored fields and
+nested queue ciphertext. This mode does not run old-key canaries, `--migrate`, or production
+verification.
+
+The workflow assumes the existing GitHub migration role through OIDC with an
+inline session policy: allow only target-key `kms:Decrypt` with the stored-secret
+encryption context, explicitly deny KMS on every other key, and explicitly deny
+all other actions except caller-identity lookup. This does not modify the role,
+key grants, static credentials, or deployments. Source-key ciphertext cannot be
+silently decrypted using the role's broader migration grants; encountering it
+makes the verification fail. Such an attempted decrypt can still appear as a
+denied inspection request in CloudTrail and must be attributed accordingly.
+
+Success requires a complete, unresumed report bound to the preview connection,
+nonzero ciphertext count, every row verified on target, zero source/nested source,
+invalid/unknown/uninspected values, and zero database updates. Only aggregate
+verification counters and manifest hashes are retained. If a verifier fails,
+cleanup still runs and no cryptographic success is claimed. `kmsCallsMade: null`
+means a started verification failed before its call count could be established.
+Target mode has a 90-minute inspection budget and separately reserved cleanup
+time; the default marker-only mode keeps its 20-minute inspection budget.
 
 The provider contract is documented in
 [Neon's snapshot restore API](https://neon.com/docs/reference/api/snapshots/restore-snapshot).
