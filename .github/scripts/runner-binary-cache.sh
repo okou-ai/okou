@@ -210,11 +210,10 @@ artifact_name() {
   emit "artifact-name" "$(reusable_artifact_name "$EXPECTED_TARGET" "$EXPECTED_BINARY_INPUT_DIGEST")"
 }
 
-publish_soft_failure() {
+publish_failure() {
   local reason=$1 message=$2
-  echo "::warning::Runner binary cache publication skipped (${reason}): ${message}"
-  emit "published" "false"
-  emit "publish-reason" "$reason"
+  echo "::error::Runner binary publication failed (${reason}): ${message}" >&2
+  exit 1
 }
 
 fetch_verified_r2_runner() {
@@ -353,16 +352,13 @@ publish() {
 
   if [ -z "${R2_ACCOUNT_ID:-}" ] || [ -z "${R2_BUCKET_NAME:-}" ] ||
     [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
-    publish_soft_failure "missing-r2-config" "required R2 configuration is unavailable"
-    return 0
+    publish_failure "missing-r2-config" "required R2 configuration is unavailable"
   fi
   if ! command -v aws >/dev/null; then
-    publish_soft_failure "aws-unavailable" "AWS CLI is unavailable"
-    return 0
+    publish_failure "aws-unavailable" "AWS CLI is unavailable"
   fi
   if ! command -v zstd >/dev/null; then
-    publish_soft_failure "zstd-unavailable" "zstd is unavailable"
-    return 0
+    publish_failure "zstd-unavailable" "zstd is unavailable"
   fi
 
   local temp_root compressed retained decompressed error_log
@@ -375,14 +371,12 @@ publish() {
   trap 'rm -rf "$PUBLISH_TEMP_ROOT"' EXIT
 
   if ! zstd -q -3 -T0 -f -o "$compressed" "$RUNNER_PATH"; then
-    publish_soft_failure "compression-failed" "runner compression failed"
-    return 0
+    publish_failure "compression-failed" "runner compression failed"
   fi
   local compressed_size
   compressed_size=$(stat -c '%s' "$compressed")
   if [ "$compressed_size" -le 0 ] || [ "$compressed_size" -gt "$RUNNER_BINARY_MAX_COMPRESSED_BYTES" ]; then
-    publish_soft_failure "compressed-size-invalid" "compressed runner is outside the configured bound"
-    return 0
+    publish_failure "compressed-size-invalid" "compressed runner is outside the configured bound"
   fi
 
   local object_key endpoint put_status
@@ -397,10 +391,10 @@ publish() {
     --content-type application/zstd \
     --cache-control 'private, max-age=259200' \
     --if-none-match '*' \
+    --cli-connect-timeout 5 --cli-read-timeout 30 \
     >/dev/null 2>"$error_log" || put_status=$?
   if [ "$put_status" -ne 0 ] && ! grep -Eq 'PreconditionFailed|precondition|412' "$error_log"; then
-    publish_soft_failure "put-failed" "R2 rejected the runner object upload"
-    return 0
+    publish_failure "put-failed" "R2 rejected the runner object upload"
   fi
 
   local retained_size publish_reason
@@ -413,8 +407,7 @@ publish() {
       content-mismatch) publish_reason="retained-content-mismatch" ;;
       *) publish_reason="$R2_VERIFICATION_REASON" ;;
     esac
-    publish_soft_failure "$publish_reason" "$R2_VERIFICATION_MESSAGE"
-    return 0
+    publish_failure "$publish_reason" "$R2_VERIFICATION_MESSAGE"
   fi
   retained_size="$R2_VERIFIED_OBJECT_SIZE"
 
