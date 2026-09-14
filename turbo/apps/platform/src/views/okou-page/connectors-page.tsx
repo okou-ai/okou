@@ -2034,14 +2034,12 @@ export function ConnectorsPage() {
         className="flex-1 px-4 sm:px-6 pt-3 pb-[max(4rem,var(--sab))]"
       >
         <div className="relative mx-auto w-full max-w-[900px]">
-          {!shelfEnabled &&
-            activeTab === "builtin" &&
-            filteredCatalogItemsLoadable.state === "hasData" && (
-              <ConnectorCategoryMenu
-                activeCategoryId={activeCategoryId}
-                groups={grouped}
-              />
-            )}
+          {categoryTrackingEnabled && (
+            <ConnectorCategoryMenu
+              activeCategoryId={activeCategoryId}
+              groups={grouped}
+            />
+          )}
 
           <div className="min-w-0 flex w-full max-w-[900px] flex-col gap-6">
             {shelfEnabled ? (
