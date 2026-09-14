@@ -313,8 +313,15 @@
     {
       "idx": 1122,
       "version": "7",
-      "when": 1789382819025,
-      "tag": "1122_account_erasure_foundation",
+      "when": 1789382751019,
+      "tag": "1122_personal_subscription_disconnect",
+      "breakpoints": true
+    },
+    {
+      "idx": 1123,
+      "version": "7",
+      "when": 1789385378607,
+      "tag": "1123_account_erasure_foundation",
       "breakpoints": true
     }
   ]

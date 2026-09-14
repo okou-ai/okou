@@ -43,7 +43,6 @@
       "stripeMarketplaceOAuthConnector": false,
       "_debug": false,
       "banking": false,
-      "slackRead": false,
       "_lab": false,
       "stripeInvoicePaidWorkflowAutomations": false,
       "officialWorkflows": false,

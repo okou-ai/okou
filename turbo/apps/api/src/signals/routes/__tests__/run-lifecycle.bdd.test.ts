@@ -13237,32 +13237,21 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, gatedOn.runId, [200]);
   });
 
-  it("advertises Slack bot reads only while the feature is enabled", async () => {
+  it("advertises Slack bot reads for an ordinary organization", async () => {
     const api = createRunsApi(context);
-    const connectors = createConnectorBddApi(context);
     const { actor, agentId } = await entitledRunActor();
 
-    for (const enabled of [false, true]) {
-      await connectors.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.SlackRead]: enabled,
-      });
-      const run = await api.createRun(actor, {
-        agentId,
-        prompt: "read the channel's recent messages",
-        modelProvider: "anthropic-api-key",
-      });
-      const prompt =
-        (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
-      if (enabled) {
-        expect(prompt).toContain("okou slack channel list --help");
-        expect(prompt).toContain("okou slack message history --help");
-      } else {
-        expect(prompt).not.toContain("okou slack message history --help");
-        expect(prompt).not.toContain("okou slack channel list --help");
-      }
-      expect(prompt).toContain("okou slack message send --help");
-      await api.requestCancelRun(actor, run.runId, [200]);
-    }
+    const run = await api.createRun(actor, {
+      agentId,
+      prompt: "read the channel's recent messages",
+      modelProvider: "anthropic-api-key",
+    });
+    const prompt =
+      (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
+    expect(prompt).toContain("okou slack channel list --help");
+    expect(prompt).toContain("okou slack message history --help");
+    expect(prompt).toContain("okou slack message send --help");
+    await api.requestCancelRun(actor, run.runId, [200]);
   });
 
   it.each([true, false])(
