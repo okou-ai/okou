@@ -530,13 +530,19 @@ async function serveGrantedArtifactDelivery(
   if (policy instanceof Response) return policy;
   if (!policy || policy.target.kind !== record.targetKind)
     return privateResponse(notFoundResponse());
-  return await serveAuthorizedArtifact(
+  const response = await serveAuthorizedArtifact(
     request,
     env,
     fileHost ? "/" : pathname,
     policy,
     execution,
   );
+  if (record.kind === "thread-resource" && response.ok)
+    response.headers.set(
+      "Cache-Control",
+      "private, max-age=31536000, immutable",
+    );
+  return response;
 }
 
 async function serveArtifactDelivery(
@@ -1058,8 +1064,8 @@ async function serveAuthorizedArtifact(
   cacheUrl.pathname = `/__artifact-content/${policy.publicBrand}/${target.kind === "html" ? target.snapshotId : encodeURIComponent(target.key)}${pathname}`;
   cacheUrl.search = `?html=${acceptsHtml(request)}`;
   const key = new Request(cacheUrl);
-  // Cache only bytes on this Worker's own host. Browser/CDN caches outside
-  // this Worker must re-enter authorization; public responses are no-store.
+  // Cache bytes separately from authorization. Delivery applies its browser
+  // cache policy after this lookup; every network request checks the grant.
   const cache = (caches as CacheStorage & { readonly default: Cache }).default;
   const rangedFile = target.kind === "file" && request.headers.has("Range");
   const cached = rangedFile ? undefined : await cache.match(key);

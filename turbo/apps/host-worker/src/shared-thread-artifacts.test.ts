@@ -134,13 +134,18 @@ test("one conversation grant delivers fixed file bytes, ranges, and complete sit
   const f = fixture();
   const file = await fetchWorker(new Request(f.fileUrl), f.env);
   expect(file.status).toBe(200);
-  expect(file.headers.get("cache-control")).toBe("private, no-store");
+  expect(file.headers.get("cache-control")).toBe(
+    "private, max-age=31536000, immutable",
+  );
   expect(await file.text()).toBe("0123456789");
   const range = await fetchWorker(
     new Request(f.fileUrl, { headers: { Range: "bytes=2-5" } }),
     f.env,
   );
   expect(range.status).toBe(206);
+  expect(range.headers.get("cache-control")).toBe(
+    "private, max-age=31536000, immutable",
+  );
   expect(range.headers.get("content-range")).toBe("bytes 2-5/10");
   expect(await range.text()).toBe("2345");
   expect(await (await fetchWorker(new Request(f.siteUrl), f.env)).text()).toBe(
@@ -163,11 +168,18 @@ test("one conversation grant delivers fixed file bytes, ranges, and complete sit
   ).toBe("<h1>Snapshot one</h1>");
 });
 
-test("revoking the parent denies every warm resource, including ranges and HTML subresources", async () => {
+test("revoking the parent denies network requests with warm Worker caches, including ranges and HTML subresources", async () => {
   const f = fixture();
   const urls = [f.fileUrl, f.siteUrl, `${f.siteUrl}assets/style.css`];
-  for (const url of urls)
-    expect((await fetchWorker(new Request(url), f.env)).status).toBe(200);
+  for (const url of urls) {
+    for (const method of ["GET", "GET", "HEAD"]) {
+      const response = await fetchWorker(new Request(url, { method }), f.env);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("cache-control")).toBe(
+        "private, max-age=31536000, immutable",
+      );
+    }
+  }
   f.objects.set(
     f.policyKey,
     JSON.stringify({ ...f.policy, status: "revoked" }),
@@ -189,6 +201,22 @@ test("revoking the parent denies every warm resource, including ranges and HTML 
     (await fetchWorker(new Request(f.fileUrl, { method: "HEAD" }), f.env))
       .status,
   ).toBe(404);
+});
+
+test("unavailable snapshot content and invalid ranges are not cached by browsers", async () => {
+  const f = fixture();
+  const missing = await fetchWorker(
+    new Request(`${f.siteUrl}assets/missing.css`),
+    f.env,
+  );
+  expect(missing.status).toBe(404);
+  expect(missing.headers.get("cache-control")).toBe("private, no-store");
+  const range = await fetchWorker(
+    new Request(f.fileUrl, { headers: { Range: "bytes=100-200" } }),
+    f.env,
+  );
+  expect(range.status).toBe(416);
+  expect(range.headers.get("cache-control")).toBe("private, no-store");
 });
 
 test.each([

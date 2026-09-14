@@ -35,10 +35,14 @@ The authoritative R2 policy is
 original organization, resource targets and `preparing`, `active` or `revoked`
 state. The database records the same ownership identity on `shared_threads`.
 Aliases use the new `thread-resource` delivery-record kind. The Worker reads the
-parent policy before every file, Range, HEAD or site-subresource request,
-including content-cache hits. It uses the existing immutable content cache and
-returns private/no-store responses. No request-time API or database call is
-added to Worker delivery, and image-transform requests cannot bypass revocation.
+parent policy before every network request for files, Range, HEAD or site
+subresources, including Worker content-cache hits. Successful snapshot responses
+return `Cache-Control: private, max-age=31536000, immutable`, allowing browsers to
+reuse their local copies for one year. Browser cache hits do not contact the
+Worker or recheck the grant. Error responses remain `private, no-store`; the
+Worker's internal content-cache lifetime remains 24 hours. No request-time API
+or database call is added to Worker delivery, and image-transform requests remain
+blocked to prevent independently cached derivatives.
 
 ## Publication and removal
 
@@ -57,7 +61,9 @@ deleting snapshot bytes and the shared-thread catalog entry. User and organizati
 deletion webhooks revoke in the foreground before acknowledging success; storage
 failures return a retryable error. Background cleanup removes copied bytes.
 Revoked policies and aliases remain tombstones. Existing snapshots remain
-readable and revocable after switch rollback. Already downloaded bytes and
+readable and revocable after switch rollback. Revocation denies subsequent
+network requests, including Worker content-cache hits. Previously cached browser
+copies can remain readable for their one-year lifetime; downloaded bytes and
 requests authorized before revocation cannot be recalled.
 
 ## Deployment
