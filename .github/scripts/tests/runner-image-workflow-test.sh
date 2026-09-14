@@ -13,6 +13,27 @@ fail() {
 command -v yq >/dev/null || fail "yq is required"
 workflow_json=$(yq -o=json '.' "$WORKFLOW")
 
+# Exercise the workflow's input detector with a transport-only Git change.
+test_root=$(mktemp -d)
+trap 'rm -rf "$test_root"' EXIT
+fixture_git() {
+  git -C "$test_root" -c user.name=Fixture -c user.email=fixture@example.com \
+    -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"
+}
+fixture_git init --quiet
+fixture_git commit --quiet --allow-empty -m baseline
+base_ref=$(fixture_git rev-parse HEAD)
+mkdir -p "${test_root}/.github/scripts"
+cp "${SCRIPT_DIR}/runner-image-context.sh" "${SCRIPT_DIR}/runner-image-target.sh" \
+  "${SCRIPT_DIR}/runner-binary-transport.sh" "${test_root}/.github/scripts/"
+fixture_git add .github/scripts/runner-binary-transport.sh
+fixture_git commit --quiet -m transport
+image_input_step=$(jq -r '.jobs.prepare.steps[] | select(.id == "image-inputs") | .run' <<<"$workflow_json")
+image_input_step=${image_input_step//"\${{ steps.crates.outputs.runner-changed }}"/false}
+image_inputs=$(cd "$test_root" && BASE_REF="$base_ref" GITHUB_OUTPUT='' bash -c "$image_input_step")
+grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
+  fail "transport-only changes must be recognized as runner image inputs"
+
 jq -e '
   .jobs.prepare.outputs["turbo-runner-consumer-needed"] ==
     "${{ steps.needed.outputs.turbo-runner-consumer-needed }}" and
