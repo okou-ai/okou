@@ -39,6 +39,7 @@ import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
 } from "./test-endpoint-helpers";
+import { ensureOrgMetadataPlanEntitlement } from "../services/org-plan-entitlements.service";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -185,64 +186,73 @@ async function insertOrganizationFixtures(
   times: FixtureTimes,
   mode: FixtureMode,
 ): Promise<void> {
-  await tx.insert(orgMetadataCanonicalWrites).values(
-    fixtures.map((fixture) => {
-      switch (fixture.kind) {
-        case "plan-subscription": {
-          if (mode === "unbound") {
+  const metadataRows = await tx
+    .insert(orgMetadataCanonicalWrites)
+    .values(
+      fixtures.map((fixture) => {
+        switch (fixture.kind) {
+          case "plan-subscription": {
+            if (mode === "unbound") {
+              return {
+                orgId: fixture.orgId,
+                tier: "limited-free-1",
+                stripeCustomerId: `cus_${fixture.orgId}`,
+                subscriptionStatus: "missing",
+                updatedAt: times.old,
+              };
+            }
             return {
               orgId: fixture.orgId,
-              tier: "limited-free-1",
-              stripeCustomerId: `cus_${fixture.orgId}`,
-              subscriptionStatus: "missing",
+              tier: "pro",
+              stripeSubscriptionId: fixture.stripeSubscriptionId,
+              subscriptionStatus: mode === "active" ? "active" : "past_due",
+              currentPeriodEnd: mode === "active" ? times.future : times.old,
               updatedAt: times.old,
             };
           }
-          return {
-            orgId: fixture.orgId,
-            tier: "pro",
-            stripeSubscriptionId: fixture.stripeSubscriptionId,
-            subscriptionStatus: mode === "active" ? "active" : "past_due",
-            currentPeriodEnd: mode === "active" ? times.future : times.old,
-            updatedAt: times.old,
-          };
-        }
-        case "atom-grant": {
-          if (mode === "unbound") {
+          case "atom-grant": {
+            if (mode === "unbound") {
+              return {
+                orgId: fixture.orgId,
+                tier: "limited-free-1",
+                credits: 0,
+                stripeCustomerId: `cus_${fixture.orgId}`,
+                subscriptionStatus: "missing",
+                updatedAt: times.old,
+              };
+            }
             return {
               orgId: fixture.orgId,
-              tier: "limited-free-1",
-              credits: 0,
-              stripeCustomerId: `cus_${fixture.orgId}`,
-              subscriptionStatus: "missing",
+              tier: "team",
+              credits: 100,
+              subscriptionStatus: "atom_grant",
+              currentPeriodEnd: times.old,
               updatedAt: times.old,
             };
           }
-          return {
-            orgId: fixture.orgId,
-            tier: "team",
-            credits: 100,
-            subscriptionStatus: "atom_grant",
-            currentPeriodEnd: times.old,
-            updatedAt: times.old,
-          };
+          case "concurrency":
+          case "usage-allowance":
+          case "usage-pack-subscription":
+          case "usage-pack-subscription-change":
+          case "usage-pack-allocation-change":
+          case "usage-pack-refund":
+          case "usage-pack-migration":
+          case "usage-pack-invitation": {
+            return { orgId: fixture.orgId, updatedAt: times.old };
+          }
         }
-        case "concurrency":
-        case "usage-allowance":
-        case "usage-pack-subscription":
-        case "usage-pack-subscription-change":
-        case "usage-pack-allocation-change":
-        case "usage-pack-refund":
-        case "usage-pack-migration":
-        case "usage-pack-invitation": {
-          return { orgId: fixture.orgId, updatedAt: times.old };
-        }
-      }
-      throw new Error(
-        `Unsupported billing reconciliation fixture ${fixture.kind}`,
-      );
-    }),
-  );
+        throw new Error(
+          `Unsupported billing reconciliation fixture ${fixture.kind}`,
+        );
+      }),
+    )
+    .returning({
+      orgId: orgMetadataCanonicalWrites.orgId,
+      tier: orgMetadataCanonicalWrites.tier,
+    });
+  for (const metadata of metadataRows) {
+    await ensureOrgMetadataPlanEntitlement(tx, metadata);
+  }
 }
 
 async function insertCoreBillingFixtures(

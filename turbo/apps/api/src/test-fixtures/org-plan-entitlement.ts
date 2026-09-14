@@ -5,13 +5,13 @@
  * capabilities, so integration tests use this narrow boundary to verify those
  * reads and persisted webhook side effects.
  */
-import { orgPlanEntitlementsCanonicalWrites } from "@okouai/db/operations/org-plan-entitlement-canonical-write";
 import { orgPlanEntitlements } from "@okouai/db/schema/org-plan-entitlement";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { createStore } from "ccstate";
 import { eq } from "drizzle-orm";
 
 import { writeDb$ } from "../signals/external/db";
+import { runtimeStatusForEntitlement } from "../signals/services/org-plan-entitlement-read.service";
 
 interface OrgPlanEntitlementFixtureState {
   readonly orgId: string;
@@ -58,6 +58,8 @@ export async function upsertOrgPlanEntitlementFixture(values: {
     planRank: 0,
     source: "test_fixture",
     status: values.status ?? "active",
+    legacyMemberInvitationAllowed:
+      runtimeStatusForEntitlement(values.status ?? "active") === "active",
     baseConcurrencyLimit: values.baseConcurrencyLimit ?? 0,
     canBuyConcurrency: values.canBuyConcurrency,
     canBuyCredits: values.canBuyCredits,
@@ -70,7 +72,7 @@ export async function upsertOrgPlanEntitlementFixture(values: {
   };
   await createStore()
     .set(writeDb$)
-    .insert(orgPlanEntitlementsCanonicalWrites)
+    .insert(orgPlanEntitlements)
     .values({
       ...row,
       // Preserve the fixture's prior insert behavior without relying on a
@@ -78,12 +80,13 @@ export async function upsertOrgPlanEntitlementFixture(values: {
       restrictedBuiltInModels: row.restrictedBuiltInModels ?? true,
     })
     .onConflictDoUpdate({
-      target: orgPlanEntitlementsCanonicalWrites.orgId,
+      target: orgPlanEntitlements.orgId,
       set: {
         planKey: row.planKey,
         planRank: row.planRank,
         source: row.source,
         status: row.status,
+        legacyMemberInvitationAllowed: row.legacyMemberInvitationAllowed,
         baseConcurrencyLimit: row.baseConcurrencyLimit,
         ...(row.canBuyConcurrency === undefined
           ? {}

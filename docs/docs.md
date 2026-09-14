@@ -30,6 +30,8 @@ surface; the index does not replace their detailed rules.
 
 ## Specialized Guidance
 
+- [Database trigger retirement](./database-trigger-retirement.md): explicit API
+  entitlement writers, repair paths, and the serving/rollback removal gate.
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
   validation reasons, cached rejection records, retained snapshots and recovered
   publication-order evidence.

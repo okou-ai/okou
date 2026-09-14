@@ -29,6 +29,7 @@ import {
   lockOrgCredits,
 } from "./usage-allowance.service";
 import type { Tx } from "../../lib/db-types";
+import { writeOrgMetadataWithDefaultPlanEntitlement } from "./org-plan-entitlements.service";
 
 const L = logger("CreditUsage");
 
@@ -39,21 +40,28 @@ async function deductOrgCredits(
   orgId: string,
   amount: number,
 ): Promise<void> {
-  await tx
-    .insert(orgMetadataCanonicalWrites)
-    .values({
-      orgId,
-      credits: -amount,
-      createdAt: sql`now()`,
-      updatedAt: sql`now()`,
-    })
-    .onConflictDoUpdate({
-      target: orgMetadataCanonicalWrites.orgId,
-      set: {
-        credits: sql`${orgMetadata.credits} - ${amount}`,
-        updatedAt: sql`now()`,
-      },
-    });
+  await writeOrgMetadataWithDefaultPlanEntitlement(
+    tx,
+    orgId,
+    async (writeTx) => {
+      return await writeTx
+        .insert(orgMetadataCanonicalWrites)
+        .values({
+          orgId,
+          credits: -amount,
+          createdAt: sql`now()`,
+          updatedAt: sql`now()`,
+        })
+        .onConflictDoUpdate({
+          target: orgMetadataCanonicalWrites.orgId,
+          set: {
+            credits: sql`${orgMetadata.credits} - ${amount}`,
+            updatedAt: sql`now()`,
+          },
+        })
+        .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
+    },
+  );
 }
 
 async function getOrgCredits(tx: WriteTx, orgId: string): Promise<number> {

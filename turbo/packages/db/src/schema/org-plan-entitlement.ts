@@ -100,8 +100,9 @@ export const orgPlanEntitlements = pgTable(
     ...orgPlanEntitlementColumnsBeforeModelRestriction(),
     ...orgPlanEntitlementColumnsAfterModelRestriction(),
     restrictedBuiltInModels: canonicalModelRestrictionColumn(),
-    // Physical compatibility for outgoing API statements only. Current readers
-    // use status and canonical inserts omit this column. Cleanup: #32575.
+    // Compatibility for outgoing/rollback readers. Current admission uses
+    // status; the API mirrors it explicitly after canonical writes (#33747).
+    // Canonical inserts omit this column. Column retirement: #32575.
     legacyMemberInvitationAllowed: boolean("member_invitation_allowed")
       .notNull()
       .default(false),

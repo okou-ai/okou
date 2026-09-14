@@ -1,10 +1,15 @@
-import type { OrgTier } from "@okouai/api-contracts/contracts/orgs";
+import {
+  orgTierSchema,
+  type OrgTier,
+} from "@okouai/api-contracts/contracts/orgs";
 import type { OrgPlanEntitlementSourceMetadata } from "@okouai/db/jsonb-contracts/org-plan-entitlement";
 import { orgPlanEntitlementsCanonicalWrites } from "@okouai/db/operations/org-plan-entitlement-canonical-write";
 import { orgPlanEntitlements } from "@okouai/db/schema/org-plan-entitlement";
+import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { eq } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { ORG_PLAN_ENTITLEMENT_TIER_VALUES } from "./org-plan-entitlement-tier-values";
+import { runtimeStatusForEntitlement } from "./org-plan-entitlement-read.service";
 import type { Tx } from "../../lib/db-types";
 
 type WriteTx = Tx;
@@ -83,20 +88,16 @@ export async function writeOrgMetadataWithPlanEntitlements<Row>(
   return rows;
 }
 
-export async function upsertOrgPlanEntitlement(
-  tx: WriteTx,
+function orgPlanEntitlementValues(
   args: UpsertOrgPlanEntitlementArgs,
-): Promise<void> {
+  stripeSubscriptionSnapshot: ResolvedStripeSubscriptionSnapshot,
+) {
   const limits = ORG_PLAN_ENTITLEMENT_TIER_VALUES[args.tier];
   const updatedAt = nowDate();
-  const stripeSubscriptionSnapshot = await resolveStripeSubscriptionSnapshot(
-    tx,
-    args,
-  );
   const showUsagePack =
     (args.tier === "pro" || args.tier === "team") &&
     args.showUsagePack === true;
-  const values = {
+  return {
     orgId: args.orgId,
     planKey: args.tier,
     planRank: limits.planRank,
@@ -126,6 +127,91 @@ export async function upsertOrgPlanEntitlement(
     sourceMetadata: stripeSubscriptionSnapshot.sourceMetadata,
     updatedAt,
   };
+}
+
+async function writeLegacyInvitationStatus(
+  tx: WriteTx,
+  values: { readonly orgId: string; readonly status: string },
+): Promise<void> {
+  // Keep outgoing/rollback readers working after #33747 removes the trigger.
+  // The preceding entitlement insert/upsert owns this row lock until commit.
+  await tx
+    .update(orgPlanEntitlements)
+    .set({
+      legacyMemberInvitationAllowed:
+        runtimeStatusForEntitlement(values.status) === "active",
+    })
+    .where(eq(orgPlanEntitlements.orgId, values.orgId));
+}
+
+/**
+ * Complete a metadata write in its transaction without replacing an existing
+ * entitlement. Use the returned metadata tier, including database defaults and
+ * conflict updates, rather than the attempted insert's tier.
+ */
+export async function ensureOrgMetadataPlanEntitlement(
+  tx: WriteTx,
+  metadata: { readonly orgId: string; readonly tier: string },
+): Promise<void> {
+  const tier = orgTierSchema.safeParse(metadata.tier);
+  // The legacy trigger's plan lookup also leaves unknown tiers untouched.
+  if (!tier.success) {
+    return;
+  }
+  const values = orgPlanEntitlementValues(
+    {
+      orgId: metadata.orgId,
+      tier: tier.data,
+      source: "org_metadata_migration",
+    },
+    { stripeSubscriptionId: null, sourceMetadata: {} },
+  );
+  const [inserted] = await tx
+    .insert(orgPlanEntitlementsCanonicalWrites)
+    .values(values)
+    .onConflictDoNothing({ target: orgPlanEntitlementsCanonicalWrites.orgId })
+    .returning({ orgId: orgPlanEntitlementsCanonicalWrites.orgId });
+  if (inserted) {
+    await writeLegacyInvitationStatus(tx, values);
+  }
+}
+
+/**
+ * Preserve the INSERT-only bootstrap effect for metadata upserts. Lock an
+ * existing row before the write so an ordinary update cannot silently repair a
+ * missing entitlement or race a deletion. Concurrent creators still converge
+ * on the organization-key constraints.
+ */
+export async function writeOrgMetadataWithDefaultPlanEntitlement<
+  Row extends { readonly orgId: string; readonly tier: string },
+>(
+  tx: WriteTx,
+  orgId: string,
+  writeOrgMetadata: (tx: WriteTx) => Promise<Row[]>,
+): Promise<Row[]> {
+  const [existing] = await tx
+    .select({ orgId: orgMetadata.orgId })
+    .from(orgMetadata)
+    .where(eq(orgMetadata.orgId, orgId))
+    .for("update");
+  const rows = await writeOrgMetadata(tx);
+  if (!existing) {
+    for (const row of rows) {
+      await ensureOrgMetadataPlanEntitlement(tx, row);
+    }
+  }
+  return rows;
+}
+
+export async function upsertOrgPlanEntitlement(
+  tx: WriteTx,
+  args: UpsertOrgPlanEntitlementArgs,
+): Promise<void> {
+  const stripeSubscriptionSnapshot = await resolveStripeSubscriptionSnapshot(
+    tx,
+    args,
+  );
+  const values = orgPlanEntitlementValues(args, stripeSubscriptionSnapshot);
   await tx
     .insert(orgPlanEntitlementsCanonicalWrites)
     .values(values)
@@ -139,8 +225,8 @@ export async function upsertOrgPlanEntitlement(
         baseConcurrencyLimit: values.baseConcurrencyLimit,
         canBuyConcurrency: values.canBuyConcurrency,
         canBuyCredits: values.canBuyCredits,
-        legacyMemberInviteUsagePackRequired: showUsagePack,
-        showUsagePack,
+        legacyMemberInviteUsagePackRequired: values.showUsagePack,
+        showUsagePack: values.showUsagePack,
         autoRechargeAllowed: values.autoRechargeAllowed,
         supportByok: values.supportByok,
         restrictedBuiltInModels: values.restrictedBuiltInModels,
@@ -158,9 +244,10 @@ export async function upsertOrgPlanEntitlement(
         expiresAt: values.expiresAt,
         metadataHash: null,
         sourceMetadata: values.sourceMetadata,
-        updatedAt,
+        updatedAt: values.updatedAt,
       },
     });
+  await writeLegacyInvitationStatus(tx, values);
 }
 
 export async function orgPlanEntitlementOrgIdForStripeSubscription(

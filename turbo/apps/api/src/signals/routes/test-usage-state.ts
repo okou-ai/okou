@@ -49,6 +49,7 @@ import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
 } from "./test-endpoint-helpers";
+import { ensureOrgMetadataPlanEntitlement } from "../services/org-plan-entitlements.service";
 
 const actionBody$ = bodyResultOf(testUsageStateContract.action);
 
@@ -155,10 +156,21 @@ async function seedUsageStateFixture(db: Db): Promise<UsageStateFixture> {
     orgId: `org_${randomUUID()}`,
     userId: `user_${randomUUID()}`,
   };
-  await db.insert(orgMetadataCanonicalWrites).values({
-    orgId: fixture.orgId,
-    tier: "free",
-    credits: 10_000,
+  await db.transaction(async (tx) => {
+    const metadataRows = await tx
+      .insert(orgMetadataCanonicalWrites)
+      .values({
+        orgId: fixture.orgId,
+        tier: "free",
+        credits: 10_000,
+      })
+      .returning({
+        orgId: orgMetadataCanonicalWrites.orgId,
+        tier: orgMetadataCanonicalWrites.tier,
+      });
+    for (const metadata of metadataRows) {
+      await ensureOrgMetadataPlanEntitlement(tx, metadata);
+    }
   });
   return fixture;
 }
