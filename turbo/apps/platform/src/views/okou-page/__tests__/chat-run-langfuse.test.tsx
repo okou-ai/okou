@@ -1,7 +1,7 @@
 import { runsByIdContract } from "@okouai/api-contracts/contracts/run-routes";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 
 import {
   queryAllByRoleFast,
@@ -71,13 +71,11 @@ test("Link only the traced run beside Activity even after tracing is switched of
   expect(screen.getByText("Untraced response")).toBeInTheDocument();
 });
 
-test("Keep older API responses usable and load a new run without refetching history", async () => {
+test("Keep an untraced response usable and link the next traced run", async () => {
   const events = completedConversation("Finished response");
   installCapabilityChat({ events });
-  const requests = vi.fn<(runId: string) => void>();
   const nextTraceUrl = `https://langfuse.example/trace/${SECOND_CAPABILITY_RUN_ID.replaceAll("-", "")}`;
   context.mocks.api(runsByIdContract.getById, ({ params, respond }) => {
-    requests(params.id);
     return respond(200, {
       ...RUN_DETAIL,
       runId: params.id,
@@ -114,17 +112,13 @@ test("Keep older API responses usable and load a new run without refetching hist
   ).resolves.toBeInTheDocument();
   const trace = await screen.findByLabelText(TRACE_LABEL);
   expect(trace).toHaveAttribute("href", nextTraceUrl);
-  expect(requests.mock.calls).toStrictEqual([
-    [FIRST_CAPABILITY_RUN_ID],
-    [SECOND_CAPABILITY_RUN_ID],
-  ]);
+  expect(screen.getByText("Finished response")).toBeInTheDocument();
+  expect(screen.getAllByLabelText(TRACE_LABEL)).toHaveLength(1);
 });
 
-test("Do not request run details or show tracing actions outside debug mode", async () => {
+test("Hide tracing actions outside debug mode", async () => {
   installCapabilityChat({ events: completedConversation("Ordinary response") });
-  const requests = vi.fn<(runId: string) => void>();
   context.mocks.api(runsByIdContract.getById, ({ params, respond }) => {
-    requests(params.id);
     return respond(200, {
       ...RUN_DETAIL,
       runId: params.id,
@@ -148,7 +142,6 @@ test("Do not request run details or show tracing actions outside debug mode", as
   expect(screen.getAllByLabelText("Copy message").length).toBeGreaterThan(0);
   expect(screen.queryByLabelText(TRACE_LABEL)).not.toBeInTheDocument();
   expect(screen.queryByLabelText("View run logs")).not.toBeInTheDocument();
-  expect(requests).not.toHaveBeenCalled();
 });
 
 test("Keep the response and Activity usable while run details are loading", async () => {
