@@ -38,9 +38,11 @@ pub(crate) use state::Operations;
 pub(crate) const DEFAULT_EXEC_CAPTURE_LIMIT_BYTES: u32 = 1024 * 1024;
 pub(crate) const SMALL_EXEC_CAPTURE_LIMIT_BYTES: u32 = 64 * 1024;
 const DEFAULT_EXEC_STREAM_CAPACITY: usize = 32;
-// Provides 64 MiB of headroom at the guest drainer's 8 KiB read granularity.
-// Larger bounded copies rely on concurrent draining and fail explicitly if
-// the queue overflows rather than reserving unbounded memory.
+// Bounds queued output events, not bytes. The guest drainer reads up to 64 KiB
+// and splits each read at the requested chunk limit. Short reads or smaller
+// chunk limits can exhaust slots with fewer bytes, so this is not guaranteed
+// byte headroom. Each stream's total byte limit is enforced separately.
+// Bounded copies rely on concurrent draining and fail explicitly on overflow.
 pub(crate) const MAX_EXEC_STREAM_CAPACITY: usize = sandbox::ProcessOutputMode::MAX_QUEUE_CAPACITY;
 const EXEC_OPERATION_LABEL_LOG_PREFIX_MAX_BYTES: usize = 100;
 const EXEC_OPERATION_CLOSE_ACTIVE_LOG_LIMIT: usize = 16;
