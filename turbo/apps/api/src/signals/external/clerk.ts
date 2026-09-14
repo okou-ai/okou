@@ -78,6 +78,11 @@ export type ClerkOrganizationInvitationStatus =
   | "expired";
 
 export interface ClerkUsersApi {
+  getUser(
+    userId: string,
+    context?: ClerkReadContext,
+    signal?: AbortSignal,
+  ): Promise<ClerkUser>;
   getUserList(
     params?: {
       userId?: string[];
@@ -363,6 +368,15 @@ const clerkClient = singleton((): ClerkClient => {
   const sdk = clerkSdk();
   return {
     users: {
+      getUser: (userId, context, signal) => {
+        return clerkRead(
+          () => {
+            return sdk.users.getUser(userId);
+          },
+          context,
+          signal,
+        );
+      },
       getUserList: (params, context, signal) => {
         return clerkRead(
           () => {

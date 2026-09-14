@@ -1,5 +1,27 @@
 # Changelog
 
+## [9.327.0](https://github.com/vm0-ai/vm0/compare/cli-v9.326.2...cli-v9.327.0) (2026-09-14)
+
+
+### Features
+
+* **cli:** expose youtube full details in social posts ([#34055](https://github.com/vm0-ai/vm0/issues/34055)) ([041ceb0](https://github.com/vm0-ai/vm0/commit/041ceb08e3780e47bb3df4a1a1cfcfb9272e8162))
+* **social:** discover saved downloads and recover active conflicts ([#34066](https://github.com/vm0-ai/vm0/issues/34066)) ([bdececa](https://github.com/vm0-ai/vm0/commit/bdececa84c38692b1f32eacbb1a0735321e734af))
+
+
+### Bug Fixes
+
+* **cli:** preserve social collection results after page failures ([#34054](https://github.com/vm0-ai/vm0/issues/34054)) ([b45560a](https://github.com/vm0-ai/vm0/commit/b45560a369f29b0c0819f9a5715fa1842e905f06))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.437.0
+    * @okouai/core bumped to 8.662.2
+    * @okouai/pi-agent-runtime bumped to 1.28.1
+
 ## [9.326.2](https://github.com/vm0-ai/vm0/compare/cli-v9.326.1...cli-v9.326.2) (2026-09-14)
 
 

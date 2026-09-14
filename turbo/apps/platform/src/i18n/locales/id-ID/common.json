@@ -1010,6 +1010,10 @@
       "downloadFailed": "Gagal mengunduh",
       "linkCopied": "Tautan disalin",
       "sharing": "Membagikan…"
+    },
+    "viewer": {
+      "continuePrompt": "Bantu saya mengerjakan artefak ini: {{url}}",
+      "continueWithBrand": "Lanjutkan dengan {{brandName}}"
     }
   },
   "auth": {
@@ -3125,9 +3129,11 @@
       "scope": {
         "aria": "Cakupan konektor",
         "attention": "Perlu perhatian",
+        "connected": "Terhubung",
+        "custom": "Kustom",
         "discover": "Jelajahi",
-        "mine": "Konektor Anda",
-        "searchMine": "Cari konektor Anda"
+        "searchConnected": "Cari konektor yang terhubung",
+        "searchCustom": "Cari konektor kustom"
       },
       "search": "Cari konektor",
       "shelf": {
@@ -6905,6 +6911,9 @@
       "noWorkflows": "Tidak ada alur kerja",
       "open": "Buka {{title}}",
       "openRecovery": "Buka pemulihan {{title}}",
+      "ownerLoading": "Memuat penulis…",
+      "ownerRetry": "Penulis tidak tersedia. Buka kembali untuk mencoba lagi.",
+      "ownerUnavailable": "Penulis tidak tersedia",
       "runsAs": "Dijalankan sebagai",
       "runsAsAria": "Dijalankan sebagai {{agent}}",
       "section": {

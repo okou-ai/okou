@@ -1011,6 +1011,10 @@
       "downloadFailed": "डाउनलोड विफल रहा",
       "linkCopied": "लिंक कॉपी किया गया",
       "sharing": "साझा किया जा रहा है…"
+    },
+    "viewer": {
+      "continuePrompt": "इस आर्टिफ़ैक्ट पर काम करने में मेरी मदद करें: {{url}}",
+      "continueWithBrand": "{{brandName}} के साथ जारी रखें"
     }
   },
   "auth": {
@@ -3138,9 +3142,11 @@
       "scope": {
         "aria": "कनेक्टर दायरा",
         "attention": "ध्यान देने की आवश्यकता",
+        "connected": "जुड़े हुए",
+        "custom": "कस्टम",
         "discover": "खोजें",
-        "mine": "आपके कनेक्टर",
-        "searchMine": "अपने कनेक्टर खोजें"
+        "searchConnected": "कनेक्टेड कनेक्टर खोजें",
+        "searchCustom": "कस्टम कनेक्टर खोजें"
       },
       "search": "कनेक्टर खोजें",
       "shelf": {
@@ -6922,6 +6928,9 @@
       "noWorkflows": "कोई वर्कफ़्लो नहीं",
       "open": "{{title}} खोलें",
       "openRecovery": "{{title}} की रिकवरी खोलें",
+      "ownerLoading": "लेखक लोड हो रहा है…",
+      "ownerRetry": "लेखक उपलब्ध नहीं है। फिर से कोशिश करने के लिए दोबारा खोलें।",
+      "ownerUnavailable": "लेखक उपलब्ध नहीं है",
       "runsAs": "के रूप में चलता है",
       "runsAsAria": "{{agent}} के रूप में चलता है",
       "section": {

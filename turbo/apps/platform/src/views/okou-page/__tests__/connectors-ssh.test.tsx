@@ -155,7 +155,7 @@ test("The SSH directory distinguishes unavailable diagnostics from failed hosts"
 });
 
 test.each([0, 2])(
-  "SSH with %i hosts appears before custom connectors and respects its category filter",
+  "SSH with %i hosts ends the catalog and respects its category filter",
   async (configuredCount) => {
     mockCatalog();
     mockPublicConnectorStatus(
@@ -198,14 +198,9 @@ test.each([0, 2])(
       },
     });
     await screen.findByTestId("connector-shelf-communication-collaboration");
-    const remoteAccess = await screen.findByRole("heading", {
-      name: "Remote access",
-    });
-    const custom = await screen.findByText("Acme Search");
-    expect(
-      remoteAccess.compareDocumentPosition(custom) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    await screen.findByRole("heading", { name: "Remote access" });
+    // Custom is a scope of its own, so the catalog ends with Remote access.
+    expect(screen.queryByText("Acme Search")).toBeNull();
     expect(getConnectorAction("link", "Manage SSH hosts")).toHaveAttribute(
       "href",
       configuredCount === 0 ? "/connectors/ssh?add=1" : "/connectors/ssh",

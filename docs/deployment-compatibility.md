@@ -195,6 +195,38 @@ raises the frontend compatibility floor, rolling the frontend below that floor
 also requires rolling back the backend floor. Rolling the backend back to the
 dual-protocol preparation release remains safe for canonical clients.
 
+### Instagram search collection limits
+
+Instagram Reels Search exposes one anonymous batch of up to 12 results. The
+request accepts only page 1 and a query of at most 100 characters after trimming.
+Keyword, hashtag and encoded leading-hash inputs share normalization. The CLI's
+request preserves case because Unicode case folding can expand a validated
+100-character input; the provider performs its documented lowercase conversion.
+The CLI's `--limit` truncates returned items locally; it does not request more
+source coverage or forward the OpenAPI's unbounded `limit` parameter.
+
+Search responses retain the existing `provider_limited` collection state and
+`provider_ceiling` reason, adding optional
+`sourceLimit: { kind: "single_batch", maxItems: 12 }`. Empty and short batches,
+including `hasMore: false`, do not establish exhaustive search. The provider's
+`count` describes the batch and is not a reported global total.
+
+Retained CLI response schemas accept these existing discriminants and ignore
+the new optional field. Current CLI public projection also applies the fixed
+source limit to older API responses, including `complete` and page-2 `more`
+metadata, so it never follows the unsupported continuation. Aggregate and
+streamed terminal output preserve the source limit; `callerLimited` independently
+records whether the fetched batch was trimmed. `status: complete` still means
+the caller's requested count was satisfied, while collection state describes
+source completeness. Unsatisfied source-limited requests remain partial.
+
+No response variant is retired and no CLI drain, schema migration, or release
+floor change is required. Rolling back the API retains request compatibility
+for the current CLI; it does not restore pagination in that CLI.
+Remove the old-API metadata projection and its compatibility-only tests after
+every serving API and retained rollback target emits the canonical source limit;
+[issue #34053](https://github.com/vm0-ai/vm0/issues/34053) owns that removal gate.
+
 ### Pi Gen1 wire-field retirement
 
 [#33966](https://github.com/vm0-ai/vm0/issues/33966) removes only the optional

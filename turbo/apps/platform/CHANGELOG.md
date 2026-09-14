@@ -11,6 +11,29 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.893.12](https://github.com/vm0-ai/vm0/compare/app-v0.893.11...app-v0.893.12) (2026-09-14)
+
+
+### Bug Fixes
+
+* **app:** handle artifact sharing on selection with toast feedback ([#34048](https://github.com/vm0-ai/vm0/issues/34048)) ([86d00b2](https://github.com/vm0-ai/vm0/commit/86d00b27446ecb0eaa204d11074cd96b9de9a8fd))
+
+
+### Refactoring
+
+* **app:** drop the category description in the slash template pane ([#34043](https://github.com/vm0-ai/vm0/issues/34043)) ([9756082](https://github.com/vm0-ai/vm0/commit/9756082f319752a35fc25a75b6849c9f0837a8ee))
+* remove agentMessageMath feature switch ([#34051](https://github.com/vm0-ai/vm0/issues/34051)) ([66cd8df](https://github.com/vm0-ai/vm0/commit/66cd8df66d3e3231a71bebb00fe8e21fb8b2c1ba))
+* remove composer workflow fuzzy search feature switch ([#34033](https://github.com/vm0-ai/vm0/issues/34033)) ([b812218](https://github.com/vm0-ai/vm0/commit/b8122187980a96ad51e376bca047f5e49479035a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.437.0
+    * @okouai/core bumped to 8.662.2
+    * @okouai/ui bumped to 1.8.6
+
 ## [0.893.11](https://github.com/vm0-ai/vm0/compare/app-v0.893.10...app-v0.893.11) (2026-09-14)
 
 

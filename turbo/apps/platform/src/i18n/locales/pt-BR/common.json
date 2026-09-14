@@ -1030,6 +1030,10 @@
       "downloadFailed": "Falha no download",
       "linkCopied": "Link copiado",
       "sharing": "Compartilhando…"
+    },
+    "viewer": {
+      "continuePrompt": "Ajude-me a trabalhar com este artefato: {{url}}",
+      "continueWithBrand": "Continuar com {{brandName}}"
     }
   },
   "auth": {
@@ -3188,9 +3192,11 @@
       "scope": {
         "aria": "Escopo dos conectores",
         "attention": "Requer atenção",
+        "connected": "Conectados",
+        "custom": "Personalizados",
         "discover": "Descobrir",
-        "mine": "Seus conectores",
-        "searchMine": "Buscar seus conectores"
+        "searchConnected": "Buscar conectores conectados",
+        "searchCustom": "Buscar conectores personalizados"
       },
       "search": "Buscar conectores",
       "shelf": {
@@ -6993,6 +6999,9 @@
       "noWorkflows": "Nenhum fluxo de trabalho",
       "open": "Abrir {{title}}",
       "openRecovery": "Abrir recuperação de {{title}}",
+      "ownerLoading": "Carregando autor…",
+      "ownerRetry": "Autor indisponível. Reabra para tentar novamente.",
+      "ownerUnavailable": "Autor indisponível",
       "runsAs": "Executado como",
       "runsAsAria": "Executado como {{agent}}",
       "section": {
