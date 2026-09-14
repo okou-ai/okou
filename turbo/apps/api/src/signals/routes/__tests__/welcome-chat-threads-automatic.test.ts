@@ -118,6 +118,59 @@ describe("automatic welcome thread delivery", () => {
     ]);
   });
 
+  it("delivers a separate welcome to each member of a workspace", async () => {
+    const admin = await establishedWorkspace();
+    const firstMember = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
+    const secondMember = bdd.user({
+      orgId: admin.orgId,
+      orgRole: "org:member",
+    });
+    await enable(firstMember);
+    await enable(secondMember);
+
+    await deliverMembershipCreated(firstMember);
+    await deliverMembershipCreated(secondMember);
+
+    const firstThreadId = await onlyCreatedThreadId(firstMember);
+    const secondThreadId = await onlyCreatedThreadId(secondMember);
+    expect(secondThreadId).not.toBe(firstThreadId);
+    await expect(
+      welcomeEvents(firstMember, firstThreadId),
+    ).resolves.toHaveLength(1);
+    await expect(
+      welcomeEvents(secondMember, secondThreadId),
+    ).resolves.toHaveLength(1);
+  });
+
+  it("delivers a separate welcome to the same member in each workspace", async () => {
+    const firstAdmin = await establishedWorkspace();
+    const secondAdmin = await establishedWorkspace();
+    const firstMembership = bdd.user({
+      orgId: firstAdmin.orgId,
+      orgRole: "org:member",
+    });
+    const secondMembership = bdd.user({
+      userId: firstMembership.userId,
+      orgId: secondAdmin.orgId,
+      orgRole: "org:member",
+    });
+    await enable(firstMembership);
+    await enable(secondMembership);
+
+    await deliverMembershipCreated(firstMembership);
+    await deliverMembershipCreated(secondMembership);
+
+    const firstThreadId = await onlyCreatedThreadId(firstMembership);
+    const secondThreadId = await onlyCreatedThreadId(secondMembership);
+    expect(secondThreadId).not.toBe(firstThreadId);
+    await expect(
+      welcomeEvents(firstMembership, firstThreadId),
+    ).resolves.toHaveLength(1);
+    await expect(
+      welcomeEvents(secondMembership, secondThreadId),
+    ).resolves.toHaveLength(1);
+  });
+
   it.each([
     {
       registration: "organization.created",
