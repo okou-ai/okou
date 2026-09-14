@@ -105,11 +105,7 @@ existing shadow comparison and optional small GitHub manifest publication.
 Fresh publication and download are required: missing configuration, storage
 failures, invalid manifests, or binary hash/size mismatches fail the job. Cache-hit
 downloads remain required as well. Compilation stays in the existing compile
-job; only its transfer step receives R2 credentials. Runner binary PUT, HEAD,
-and GET requests use the existing `curl` with SigV4 against the private R2 S3
-API, without installing AWS CLI. Requests have bounded retries and deadlines;
-conditional PUT conflicts still require reading back and validating the retained
-binary before publishing readiness.
+job; only its transfer step receives R2 credentials.
 
 Fresh reference keys omit the attempt number so a consumer-only rerun can read
 an earlier successful producer. The manifest retains the producer attempt.

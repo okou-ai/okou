@@ -5,7 +5,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 . "${SCRIPT_DIR}/runner-image-target.sh"
 . "${SCRIPT_DIR}/runner-guest-binaries.sh"
-. "${SCRIPT_DIR}/runner-binary-r2.sh"
 . "${REPO_ROOT}/.github/scripts/runner-binary-build/contract.env"
 
 RUNNER_BINARY_MAX_SIZE_BYTES=$((128 * 1024 * 1024))
@@ -224,25 +223,29 @@ fetch_verified_r2_runner() {
   local expected_runner_sha=$4
   local compressed_path=$5
   local runner_path=$6
-  local observed_object_size downloaded_size decompressed_size actual_sha
+  local endpoint head_json observed_object_size downloaded_size decompressed_size actual_sha
   local get_status=0 decompress_status=0
-  local head_headers="${compressed_path}.headers"
+  local aws_error_log="${compressed_path}.aws.err"
   local zstd_error_log="${compressed_path}.zstd.err"
 
   R2_VERIFICATION_REASON=""
   R2_VERIFICATION_MESSAGE=""
   R2_VERIFIED_OBJECT_SIZE=""
-  if ! runner_binary_r2_head "$object_key" "$head_headers"; then
+  endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+
+  if ! head_json=$(aws s3api head-object \
+    --endpoint-url "$endpoint" \
+    --bucket "$R2_BUCKET_NAME" \
+    --key "$object_key" \
+    --output json \
+    --cli-connect-timeout 5 \
+    --cli-read-timeout 30 2>"$aws_error_log"); then
     R2_VERIFICATION_REASON="head-failed"
     R2_VERIFICATION_MESSAGE="the R2 object could not be inspected"
     return 1
   fi
-  observed_object_size=$(awk '
-    /^HTTP\// { size = "" }
-    tolower($1) == "content-length:" { size = $2; sub(/\r$/, "", size) }
-    END { print size }
-  ' "$head_headers")
-  if [[ ! "$observed_object_size" =~ ^[0-9]+$ ]]; then
+  if ! observed_object_size=$(jq -er '.ContentLength | select(type == "number" and floor == .)' \
+    <<<"$head_json" 2>/dev/null); then
     R2_VERIFICATION_REASON="head-malformed"
     R2_VERIFICATION_MESSAGE="the R2 object metadata was malformed"
     return 1
@@ -259,8 +262,15 @@ fetch_verified_r2_runner() {
     return 1
   fi
 
-  runner_binary_r2_get "$object_key" "$compressed_path" \
-    "$RUNNER_BINARY_MAX_COMPRESSED_BYTES" || get_status=$?
+  aws s3api get-object \
+    --endpoint-url "$endpoint" \
+    --bucket "$R2_BUCKET_NAME" \
+    --key "$object_key" \
+    --range "bytes=0-${RUNNER_BINARY_MAX_COMPRESSED_BYTES}" \
+    --cli-connect-timeout 5 \
+    --cli-read-timeout 30 \
+    "$compressed_path" \
+    >/dev/null 2>"$aws_error_log" || get_status=$?
   if [ "$get_status" -ne 0 ]; then
     R2_VERIFICATION_REASON="get-failed"
     R2_VERIFICATION_MESSAGE="the R2 object could not be downloaded"
@@ -344,18 +354,19 @@ publish() {
     [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
     publish_failure "missing-r2-config" "required R2 configuration is unavailable"
   fi
-  if ! command -v curl >/dev/null; then
-    publish_failure "curl-unavailable" "curl is unavailable"
+  if ! command -v aws >/dev/null; then
+    publish_failure "aws-unavailable" "AWS CLI is unavailable"
   fi
   if ! command -v zstd >/dev/null; then
     publish_failure "zstd-unavailable" "zstd is unavailable"
   fi
 
-  local temp_root compressed retained decompressed
+  local temp_root compressed retained decompressed error_log
   temp_root=$(mktemp -d "${RUNNER_TEMP:-${OUTPUT_DIR}}/runner-binary-publish.XXXXXX")
   compressed="${temp_root}/runner.zst"
   retained="${temp_root}/retained.zst"
   decompressed="${temp_root}/retained-runner"
+  error_log="${temp_root}/aws.err"
   PUBLISH_TEMP_ROOT="$temp_root"
   trap 'rm -rf "$PUBLISH_TEMP_ROOT"' EXIT
 
@@ -368,13 +379,23 @@ publish() {
     publish_failure "compressed-size-invalid" "compressed runner is outside the configured bound"
   fi
 
-  local object_key put_status
+  local object_key endpoint put_status
   object_key="runner-binaries/${FRESH_TARGET}/${FRESH_RUNNER_SHA}.zst"
-  if ! runner_binary_r2_put "$object_key" "$compressed" \
-    application/zstd 'private, max-age=259200' true; then
+  endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+  put_status=0
+  aws s3api put-object \
+    --endpoint-url "$endpoint" \
+    --bucket "$R2_BUCKET_NAME" \
+    --key "$object_key" \
+    --body "$compressed" \
+    --content-type application/zstd \
+    --cache-control 'private, max-age=259200' \
+    --if-none-match '*' \
+    --cli-connect-timeout 5 --cli-read-timeout 30 \
+    >/dev/null 2>"$error_log" || put_status=$?
+  if [ "$put_status" -ne 0 ] && ! grep -Eq 'PreconditionFailed|precondition|412' "$error_log"; then
     publish_failure "put-failed" "R2 rejected the runner object upload"
   fi
-  put_status="$RUNNER_BINARY_R2_HTTP_STATUS"
 
   local retained_size publish_reason
   if ! fetch_verified_r2_runner \
@@ -446,7 +467,7 @@ publish() {
     "$0" manifest-validate >/dev/null
 
   emit "published" "true"
-  emit "publish-reason" "$([ "$put_status" = 200 ] && echo uploaded || echo existing-validated)"
+  emit "publish-reason" "$([ "$put_status" -eq 0 ] && echo uploaded || echo existing-validated)"
   emit "manifest-path" "${OUTPUT_DIR}/manifest.json"
   emit "object-key" "$object_key"
   emit "object-size-bytes" "$retained_size"
@@ -867,7 +888,7 @@ validate_cache_request() {
 r2_available() {
   [ -n "${R2_ACCOUNT_ID:-}" ] && [ -n "${R2_BUCKET_NAME:-}" ] &&
     [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ] &&
-    command -v curl >/dev/null
+    command -v aws >/dev/null
 }
 
 cache_temp_directory() {
@@ -952,7 +973,10 @@ resolve_reference() {
     fi
     local object_key
     object_key=$(jq -r '.objectKey' <<<"$CACHE_REFERENCE")
-    if ! runner_binary_r2_head "$object_key" "${candidate_dir}/r2.headers"; then
+    if ! aws s3api head-object \
+      --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
+      --bucket "$R2_BUCKET_NAME" --key "$object_key" \
+      --cli-connect-timeout 5 --cli-read-timeout 30 >/dev/null 2>&1; then
       reason=r2-unavailable
       continue
     fi
@@ -984,10 +1008,12 @@ download_reference() {
   transport="${RUNNER_CACHE_TEMP_ROOT}/transport"
   mkdir -p "$transport"
   runner="${transport}/runner"
-  if ! runner_binary_r2_get "$object_key" "$compressed" "$RUNNER_BINARY_MAX_COMPRESSED_BYTES"; then
-    echo "cached runner R2 download failed" >&2
-    exit 1
-  fi
+  timeout --kill-after=5s 60s aws s3api get-object \
+    --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
+    --bucket "$R2_BUCKET_NAME" --key "$object_key" \
+    --range "bytes=0-${RUNNER_BINARY_MAX_COMPRESSED_BYTES}" \
+    --cli-connect-timeout 5 --cli-read-timeout 30 \
+    "$compressed" >/dev/null
   zstd -q -d -c "$compressed" |
     head -c "$((RUNNER_BINARY_MAX_SIZE_BYTES + 1))" > "$runner"
   runner_size=$(stat -c '%s' "$runner")

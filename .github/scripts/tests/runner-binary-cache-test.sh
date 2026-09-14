@@ -5,8 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 CACHE="${SCRIPT_DIR}/runner-binary-cache.sh"
 TMPDIR="$(mktemp -d)"
-. "${SCRIPT_DIR}/tests/fixtures/runner-binary-r2.sh"
-trap 'runner_binary_r2_fixture_stop; rm -rf "$TMPDIR"' EXIT
+trap 'rm -rf "$TMPDIR"' EXIT
 
 fail() {
   echo "FAIL: $1" >&2
@@ -106,12 +105,66 @@ assert_fails "fresh metadata verifies runner bytes" \
   "$CACHE" fresh-validate
 
 mkdir -p "${TMPDIR}/bin" "${TMPDIR}/store" "${TMPDIR}/runner-temp"
-runner_binary_r2_fixture_start "${TMPDIR}" single
+cat > "${TMPDIR}/bin/aws" <<'BASH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$AWS_LOG"
+[ "$1" = "s3api" ] || exit 2
+operation=$2
+shift 2
+body=""
+destination=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --body) body=$2; shift 2 ;;
+    --endpoint-url|--bucket|--key|--content-type|--cache-control|--if-none-match|--output|--range|--cli-connect-timeout|--cli-read-timeout)
+      shift 2
+      ;;
+    --*) shift ;;
+    *) destination=$1; shift ;;
+  esac
+done
+object="${AWS_STORE}/object.zst"
+case "$operation" in
+  put-object)
+    if [ "${AWS_MODE:-success}" = "put-fail" ]; then
+      echo 'request failed X-Amz-Signature=supersecret' >&2
+      exit 9
+    fi
+    if [ -f "$object" ]; then
+      echo 'PreconditionFailed: 412' >&2
+      exit 1
+    fi
+    cp "$body" "$object"
+    printf '{}\n'
+    ;;
+  head-object)
+    [ -f "$object" ] || exit 1
+    case "${AWS_MODE:-success}" in
+      head-fail) exit 6 ;;
+      malformed-head) printf 'not-json\n' ;;
+      oversized-head) printf '{"ContentLength":67108865}\n' ;;
+      size-mismatch) printf '{"ContentLength":1}\n' ;;
+      *) printf '{"ContentLength":%s}\n' "$(stat -c '%s' "$object")" ;;
+    esac
+    ;;
+  get-object)
+    [ "${AWS_MODE:-success}" != "get-fail" ] || exit 7
+    [ -f "$object" ] || exit 1
+    cp "$object" "$destination"
+    printf '{}\n'
+    ;;
+  *) exit 2 ;;
+esac
+BASH
+chmod +x "${TMPDIR}/bin/aws"
 
 run_publish() {
   local output_dir=$1 mode=${2:-success}
   PATH="${TMPDIR}/bin:${PATH}" \
-  R2_TEST_MODE="$mode" \
+  AWS_LOG="${TMPDIR}/aws.log" \
+  AWS_MODE="$mode" \
+  AWS_STORE="${TMPDIR}/store" \
   AWS_ACCESS_KEY_ID=test-access \
   AWS_SECRET_ACCESS_KEY=test-secret \
   R2_ACCOUNT_ID=test-account \
@@ -132,7 +185,7 @@ run_publish() {
     "$CACHE" publish
 }
 
-: > "${TMPDIR}/r2.log"
+: > "${TMPDIR}/aws.log"
 publish_output="${TMPDIR}/publish.output"
 publish_out=$(GITHUB_OUTPUT="$publish_output" run_publish "${TMPDIR}/published")
 assert_contains "$publish_out" "published=true"
@@ -142,6 +195,14 @@ assert_output_keys "$publish_output" \
 [ -f "${TMPDIR}/published/manifest.json" ] || fail "expected reusable manifest"
 zstd -q -d -c "${TMPDIR}/store/object.zst" > "${TMPDIR}/stored-runner"
 cmp -s "$runner" "${TMPDIR}/stored-runner" || fail "R2 object must contain the fresh runner"
+if ! grep -F 's3api head-object' "${TMPDIR}/aws.log" |
+  grep -qF -- '--cli-connect-timeout 5 --cli-read-timeout 30'; then
+  fail "R2 HEAD validation must use bounded AWS timeouts"
+fi
+if ! grep -F 's3api get-object' "${TMPDIR}/aws.log" |
+  grep -qF -- '--cli-connect-timeout 5 --cli-read-timeout 30'; then
+  fail "R2 GET validation must use bounded AWS timeouts"
+fi
 
 MANIFEST_PATH="${TMPDIR}/published/manifest.json" \
 EXPECTED_TARGET="$target" \
@@ -250,7 +311,7 @@ assert_publish_failure() {
   assert_contains "$output" "publication failed (${reason})"
   [ ! -e "${directory}/manifest.json" ] || fail "failed publication must not advertise a manifest"
   if grep -q 'supersecret' <<<"$output"; then
-    fail "publication diagnostics leaked HTTP error query material"
+    fail "publication diagnostics leaked AWS error query material"
   fi
 }
 assert_publish_failure "${TMPDIR}/corrupt" success decompression-invalid

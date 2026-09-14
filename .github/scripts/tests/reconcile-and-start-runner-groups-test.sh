@@ -4,8 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 script="${repo_root}/.github/scripts/reconcile-and-start-runner-groups.sh"
 tmp_dir=$(mktemp -d)
-. "${repo_root}/.github/scripts/tests/fixtures/runner-binary-r2.sh"
-trap 'runner_binary_r2_fixture_stop; rm -rf "$tmp_dir"' EXIT
+trap 'rm -rf "$tmp_dir"' EXIT
 mkdir -p "${tmp_dir}/bin"
 
 fail() {
@@ -137,11 +136,20 @@ else
   exit 2
 fi
 SH
-chmod +x "${tmp_dir}/bin/gh"
-runner_binary_r2_fixture_start "$tmp_dir" single
+cat >"${tmp_dir}/bin/aws" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+[ "$1" = s3api ] || exit 2
+case "$2" in
+  head-object) printf '{}\n' ;;
+  get-object) cp "${MOCK_CACHE_ROOT}/cached-runner.zst" "${*: -1}" ;;
+  *) exit 2 ;;
+esac
+SH
+chmod +x "${tmp_dir}/bin/gh" "${tmp_dir}/bin/aws"
 
 printf '#!/usr/bin/env bash\nprintf "cached runner fixture\\n"\n' >"${tmp_dir}/cached-runner"
-zstd -q -3 -o "${tmp_dir}/store/object.zst" "${tmp_dir}/cached-runner"
+zstd -q -3 -o "${tmp_dir}/cached-runner.zst" "${tmp_dir}/cached-runner"
 cached_sha=$(sha256sum "${tmp_dir}/cached-runner" | awk '{print $1}')
 guests=$(jq -c --arg sha "$cached_sha" \
   'map({key: .binary, value: $sha}) | from_entries' \
