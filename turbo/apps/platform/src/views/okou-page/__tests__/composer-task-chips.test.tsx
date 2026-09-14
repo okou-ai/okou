@@ -608,6 +608,9 @@ test("Uploaded presentation suggestions use the existing template reference", as
   await waitFor(() => {
     expect(editor).toHaveTextContent("My brand deck");
   });
+  await waitFor(() => {
+    expect(button("Send")).toBeEnabled();
+  });
   click(button("Send"));
   await waitFor(() => {
     expect(capture.selectedTemplates).toHaveLength(1);
