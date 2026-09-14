@@ -229,6 +229,10 @@ separate `tests-0.tsbuildinfo` / `tests-1.tsbuildinfo`. References do not inheri
 through `extends`. Unchanged configs are not rewritten; additions, deletions and
 renames regenerate membership without maintaining lists by hand.
 
+The Node fixture suite uses the `.node-test.mjs` suffix so Vitest does not
+collect `node:test` registrations as an empty Vitest suite. It still runs on
+every boundary check through the explicit `node --test` command.
+
 The boundary gate runs small Node temporary-file regression tests, prepares the
 test configs, then checks the seven actual root sets against the complete API
 manifest. It also checks production JSON ownership across core and routes,
