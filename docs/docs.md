@@ -30,6 +30,9 @@ surface; the index does not replace their detailed rules.
 
 ## Specialized Guidance
 
+- [Billing attribution foundation](./database/billing-attribution.md): immutable
+  billing identity, writer inventory, bounded backfill and activation boundaries.
+
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
   validation reasons, cached rejection records, retained snapshots and recovered
   publication-order evidence.

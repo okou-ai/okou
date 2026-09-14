@@ -611,6 +611,71 @@ describe("usage event compaction cron", () => {
     });
   });
 
+  it("preserves different billing identities after their live runs are removed", async () => {
+    const fixture = await seedFixture();
+    const first = await seedRunContext(fixture);
+    const second = await seedRunContext(fixture);
+    const processedAt = new Date("0750-01-01T00:15:00.000Z");
+    for (const run of [first, second]) {
+      await store.set(
+        insertUsageEvent$,
+        {
+          ...fixture,
+          runId: run.runId,
+          status: "processed",
+          quantity: 2,
+          creditsCharged: 3,
+          processedAt,
+        },
+        context.signal,
+      );
+      await store.set(
+        materializeHourlyUsage$,
+        { ...fixture, runId: run.runId },
+        context.signal,
+      );
+      await store.set(
+        insertUsageEvent$,
+        {
+          ...fixture,
+          runId: run.runId,
+          status: "processed",
+          quantity: 5,
+          creditsCharged: 7,
+          processedAt,
+        },
+        context.signal,
+      );
+      await store.set(deleteRun$, run.runId, context.signal);
+    }
+    await seedZeroUsageEvents(fixture, {
+      processedAt,
+      count: RAW_SEED_LIMIT - 2,
+    });
+    const result = await compactUsage();
+    expect(result.body).toMatchObject({
+      rawRowsDeleted: RAW_SEED_LIMIT,
+      hourlyRowsDeleted: 2,
+      hourlyRowsInserted: 3,
+      quantity: "14",
+      creditsCharged: "20",
+      reconciled: true,
+    });
+    // Two original runs stay distinct; unlinked legacy events remain a third
+    // truthful grain rather than being assigned to either deleted run.
+    await expect(readStorage(fixture)).resolves.toStrictEqual({
+      raw: 0,
+      processedRaw: 0,
+      hourly: 3,
+    });
+    const retry = await compactUsage();
+    expect(retry.body).toMatchObject({
+      rawRowsDeleted: 0,
+      hourlyRowsInserted: 0,
+      reconciled: true,
+    });
+  });
+
   it("serializes overlapping invocations without duplicating facts", async () => {
     const fixture = await seedFixture();
     for (let index = 0; index < 10; index += 1) {

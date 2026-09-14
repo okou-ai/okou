@@ -1,3 +1,4 @@
+import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
 import * as runActivitySnapshotSchema from "./schema/run-activity-snapshot";
 import * as artifactShareSchema from "./schema/artifact-share";
 import * as userSchema from "./schema/user";
@@ -200,6 +201,7 @@ export const schema = {
   ...modelProviderAuthSessionSchema,
   ...connectorOauthDeviceAuthorizationSessionSchema,
   ...connectorOauthStateSchema,
+  ...billingRunAttributionSchema,
   ...usageEventSchema,
   ...usageEventHourlyRollupSchema,
   ...usagePackCreditGrantSchema,

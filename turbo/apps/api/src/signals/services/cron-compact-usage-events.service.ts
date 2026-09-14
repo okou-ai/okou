@@ -93,6 +93,19 @@ function eligibleRawPredicate(cutoff: string): SQL {
   )}`;
 }
 
+function billingGrainColumns(alias: string): SQL {
+  const source = sql.identifier(alias);
+  return sql`${source}.billing_run_id, ${source}.billing_anchor_at, ${source}.billing_context`;
+}
+
+function billingGrainPredicate(source: typeof event | typeof hourly) {
+  return and(
+    sql`${source.billingRunId} IS NOT DISTINCT FROM grain.billing_run_id`,
+    sql`${source.billingAnchorAt} IS NOT DISTINCT FROM grain.billing_anchor_at`,
+    eq(source.billingContext, sql`grain.billing_context`),
+  );
+}
+
 function physicalGrainColumns(alias: string): SQL {
   const source = sql.identifier(alias);
   return sql`
@@ -100,6 +113,7 @@ function physicalGrainColumns(alias: string): SQL {
     ${source}.org_id,
     ${source}.user_id,
     ${source}.run_id,
+    ${billingGrainColumns(alias)},
     ${source}.kind,
     ${source}.provider,
     ${source}.category,
@@ -115,6 +129,9 @@ function physicalGrainOrder(alias: string): SQL {
     ${source}.org_id ASC,
     ${source}.user_id ASC,
     ${source}.run_id ASC NULLS FIRST,
+    ${source}.billing_run_id ASC NULLS FIRST,
+    ${source}.billing_anchor_at ASC NULLS FIRST,
+    ${source}.billing_context ASC,
     ${source}.kind ASC,
     ${source}.provider ASC,
     ${source}.category ASC,
@@ -135,6 +152,7 @@ function candidateCtes(args: {
         event.org_id,
         event.user_id,
         event.run_id,
+        ${billingGrainColumns("event")},
         event.kind,
         event.provider,
         event.category,
@@ -169,6 +187,7 @@ function lockedSourceCtes(cutoff: string): SQL {
         event.org_id,
         event.user_id,
         event.run_id,
+        ${billingGrainColumns("event")},
         event.kind,
         event.provider,
         event.category,
@@ -184,6 +203,7 @@ function lockedSourceCtes(cutoff: string): SQL {
           eq(event.orgId, sql`grain.org_id`),
           eq(event.userId, sql`grain.user_id`),
           sql`${event.runId} IS NOT DISTINCT FROM grain.run_id`,
+          billingGrainPredicate(event),
           eq(event.kind, sql`grain.kind`),
           eq(event.provider, sql`grain.provider`),
           eq(event.category, sql`grain.category`),
@@ -213,6 +233,7 @@ function lockedSourceCtes(cutoff: string): SQL {
         event.org_id,
         event.user_id,
         event.run_id,
+        ${billingGrainColumns("event")},
         event.kind,
         event.provider,
         event.category,
@@ -232,6 +253,7 @@ function lockedSourceCtes(cutoff: string): SQL {
         hourly.org_id,
         hourly.user_id,
         hourly.run_id,
+        ${billingGrainColumns("hourly")},
         hourly.kind,
         hourly.provider,
         hourly.category,
@@ -247,6 +269,7 @@ function lockedSourceCtes(cutoff: string): SQL {
           eq(hourly.orgId, sql`grain.org_id`),
           eq(hourly.userId, sql`grain.user_id`),
           sql`${hourly.runId} IS NOT DISTINCT FROM grain.run_id`,
+          billingGrainPredicate(hourly),
           eq(hourly.kind, sql`grain.kind`),
           eq(hourly.provider, sql`grain.provider`),
           eq(hourly.category, sql`grain.category`),
@@ -298,6 +321,9 @@ function mutationCtes(): SQL {
         org_id,
         user_id,
         run_id,
+        billing_run_id,
+        billing_anchor_at,
+        billing_context,
         kind,
         provider,
         category,
@@ -318,6 +344,9 @@ function mutationCtes(): SQL {
         org_id,
         user_id,
         run_id,
+        billing_run_id,
+        billing_anchor_at,
+        billing_context,
         kind,
         provider,
         category,
