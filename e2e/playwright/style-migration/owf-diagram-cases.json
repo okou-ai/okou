@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "batch": "owf-diagram-geometry",
+  "cases": [
+    {
+      "id": "owf-diagram-light",
+      "path": "/onboarding/workflow-picker",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "owf-diagram-dark",
+      "path": "/onboarding/workflow-picker",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "owf-diagram-light-retina",
+      "path": "/onboarding/workflow-picker",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 2
+    },
+    {
+      "id": "owf-diagram-dark-retina",
+      "path": "/onboarding/workflow-picker",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 2
+    },
+    {
+      "id": "owf-diagram-narrow",
+      "path": "/onboarding/workflow-picker",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "deviceScaleFactor": 2,
+      "hasTouch": true,
+      "isMobile": true
+    },
+    {
+      "id": "owf-diagram-narrow-dark",
+      "path": "/onboarding/workflow-picker",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "deviceScaleFactor": 2,
+      "hasTouch": true,
+      "isMobile": true
+    }
+  ]
+}
