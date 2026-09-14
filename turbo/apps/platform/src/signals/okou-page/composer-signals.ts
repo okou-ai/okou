@@ -764,8 +764,8 @@ function createComposerChatEventSignals(chatEvents$: Computed<ChatEvent[]>) {
 
 /**
  * Resolved at send rather than held settled, so the parameters follow a video
- * model the user changed after setting them. Nothing is sent when the run
- * would use that model's defaults anyway.
+ * model the user changed after setting them. Creative Video sends every
+ * displayed parameter, including the model's defaults.
  */
 function createVideoRunOptionsSignal(
   videoModel: ComposerVideoModelSignals | undefined,
@@ -776,9 +776,6 @@ function createVideoRunOptionsSignal(
       return undefined;
     }
     const patch = get(videoOptions.videoRunOptions$);
-    if (Object.keys(patch).length === 0) {
-      return undefined;
-    }
     const model = await get(videoModel.effectiveVideoModel$);
     signal.throwIfAborted();
     return videoRunOptionsForSend(patch, model);

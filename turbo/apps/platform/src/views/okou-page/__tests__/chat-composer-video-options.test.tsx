@@ -259,11 +259,39 @@ test.each([false, true])(
           selection: { stylePresetId: template.id },
         },
       });
-      expect(submissions[0]?.runOptions).toBeUndefined();
-      expect(submissions[0]?.userMessage?.parts).not.toContainEqual(
-        expect.objectContaining({ type: "additional_info" }),
-      );
     });
+    expect(
+      submissions[0]?.userMessage?.parts.find((part) => {
+        return part.type === "additional_info";
+      }),
+    ).toStrictEqual(
+      enabled
+        ? {
+            type: "additional_info",
+            text: [
+              "# Video Generation Defaults",
+              "The user set these for videos generated in this run:",
+              "- Aspect ratio: 16:9",
+              "- Duration: 8s",
+              "- Resolution: 720p",
+              "- Audio: on",
+              "Where this run's message asks for something else, the message wins, for that parameter only.",
+            ].join("\n"),
+          }
+        : undefined,
+    );
+    expect(submissions[0]?.runOptions).toStrictEqual(
+      enabled
+        ? undefined
+        : {
+            video: {
+              aspectRatio: "16:9",
+              duration: "8s",
+              resolution: "720p",
+              generateAudio: true,
+            },
+          },
+    );
   },
 );
 
@@ -309,20 +337,90 @@ test.each([false, true])(
               "# Video Generation Defaults",
               "The user set these for videos generated in this run:",
               "- Aspect ratio: 9:16",
+              "- Duration: 8s",
+              "- Resolution: 720p",
+              "- Audio: on",
               "Where this run's message asks for something else, the message wins, for that parameter only.",
             ].join("\n"),
           }
         : undefined,
     );
     expect(submissions[0]?.runOptions).toStrictEqual(
-      enabled ? undefined : { video: { aspectRatio: "9:16" } },
+      enabled
+        ? undefined
+        : {
+            video: {
+              aspectRatio: "9:16",
+              duration: "8s",
+              resolution: "720p",
+              generateAudio: true,
+            },
+          },
     );
     await expect(screen.findByText(prompt)).resolves.toBeVisible();
   },
 );
 
-test("Selecting a video model alone keeps Creative Video settings hidden", async () => {
-  installVideoSubmissionCapture();
+test.each(["task", "command"] as const)(
+  "Submit the current model's defaults without a template through the video %s",
+  async (entry) => {
+    const submissions = installVideoSubmissionCapture();
+    await setupPage({
+      locale: "en-US",
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      featureSwitches: {
+        [FeatureSwitchKey.ComposerCreateCommands]: entry === "command",
+        [FeatureSwitchKey.ComposerTaskChips]: entry === "task",
+      },
+    });
+    const prompt = "Generate a video without a template.";
+    const editor = await enterText(prompt);
+    if (entry === "task") {
+      click(
+        fastControl(
+          "button",
+          "Video",
+          screen.getByRole("group", { name: "Choose a task" }),
+        ),
+      );
+    } else {
+      await fill(editor, "/create video");
+      await userEvent.setup({ delay: null }).keyboard("{Enter}");
+      await enterText(prompt);
+    }
+    click(await screen.findByRole("combobox", { name: "Video models" }));
+    click(await screen.findByRole("option", { name: "MiniMax H3" }));
+    await waitFor(() => {
+      expect(
+        screen.getByRole("combobox", { name: "Resolution" }),
+      ).toHaveTextContent("2k");
+    });
+    await sendCurrent(editor, prompt);
+    await waitFor(() => {
+      expect(submissions).toHaveLength(1);
+    });
+    expect(videoTemplatePart(submissions[0]!)).toBeUndefined();
+    expect(submissions[0]?.runOptions).toBeUndefined();
+    expect(submissions[0]?.userMessage?.parts).toContainEqual({
+      type: "additional_info",
+      text: [
+        "# Video Generation Defaults",
+        "The user set these for videos generated in this run:",
+        "- Aspect ratio: 16:9",
+        "- Duration: 8s",
+        "- Resolution: 2k",
+        "- Audio: on",
+        "Where this run's message asks for something else, the message wins, for that parameter only.",
+        "",
+        "Create a video.",
+      ].join("\n"),
+    });
+  },
+);
+
+test("Selecting a video model alone keeps Creative Video settings hidden and unsent", async () => {
+  const submissions = installVideoSubmissionCapture();
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
@@ -334,6 +432,16 @@ test("Selecting a video model alone keeps Creative Video settings hidden", async
       return button.getAttribute("aria-label")?.startsWith("Video options ");
     }),
   ).toBeFalsy();
+  const prompt = "Explain how video models differ.";
+  const editor = await enterText(prompt);
+  await sendCurrent(editor, prompt);
+  await waitFor(() => {
+    expect(submissions).toHaveLength(1);
+  });
+  expect(submissions[0]?.runOptions).toBeUndefined();
+  expect(submissions[0]?.userMessage?.parts).not.toContainEqual(
+    expect.objectContaining({ type: "additional_info" }),
+  );
 });
 
 test("Changing a Creative Video style retains settings without reopening the panel", async () => {
