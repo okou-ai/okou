@@ -1010,6 +1010,13 @@
       "downloadFailed": "ダウンロードに失敗しました",
       "linkCopied": "リンクがコピーされました",
       "sharing": "共有中…"
+    },
+    "viewer": {
+      "continuePrompt": "この成果物を使った作業を手伝ってください: {{url}}",
+      "continueWithBrand": "{{brandName}} で続ける",
+      "fileDetails": "ファイルの詳細",
+      "filename": "ファイル名",
+      "fileType": "ファイルの種類"
     }
   },
   "auth": {

@@ -380,6 +380,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Use private storage and authenticated previews for CLI artifact uploads and managed generation.",
     enabled: false,
   },
+  [FeatureSwitchKey.ArtifactViewer]: {
+    maintainer: "yuma@okou.ai",
+    description:
+      "Open artifact links in the Okou viewer with preview, download, and copy-link actions.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ProgressiveArtifactPreview]: {
     maintainer: "bingjie@okou.ai",
     description:

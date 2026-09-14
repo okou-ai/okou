@@ -1011,6 +1011,13 @@
       "downloadFailed": "डाउनलोड विफल रहा",
       "linkCopied": "लिंक कॉपी किया गया",
       "sharing": "साझा किया जा रहा है…"
+    },
+    "viewer": {
+      "continuePrompt": "इस आर्टिफ़ैक्ट पर काम करने में मेरी मदद करें: {{url}}",
+      "continueWithBrand": "{{brandName}} के साथ जारी रखें",
+      "fileDetails": "फ़ाइल का विवरण",
+      "filename": "फ़ाइल का नाम",
+      "fileType": "फ़ाइल का प्रकार"
     }
   },
   "auth": {

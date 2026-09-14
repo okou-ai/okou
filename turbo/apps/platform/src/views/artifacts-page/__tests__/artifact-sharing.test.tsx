@@ -383,6 +383,7 @@ test.each([
       context,
       path: `${path}#slide-2`,
       host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.ArtifactViewer]: false },
     });
     await waitFor(() => {
       return expect(redirect).toHaveBeenCalledWith(`${temporary}#slide-2`);

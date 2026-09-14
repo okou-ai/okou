@@ -1030,6 +1030,13 @@
       "downloadFailed": "Falha no download",
       "linkCopied": "Link copiado",
       "sharing": "Compartilhando…"
+    },
+    "viewer": {
+      "continuePrompt": "Ajude-me a trabalhar com este artefato: {{url}}",
+      "continueWithBrand": "Continuar com {{brandName}}",
+      "fileDetails": "Detalhes do arquivo",
+      "filename": "Nome do arquivo",
+      "fileType": "Tipo de arquivo"
     }
   },
   "auth": {

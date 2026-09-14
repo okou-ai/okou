@@ -1011,6 +1011,13 @@
       "downloadFailed": "Download failed",
       "linkCopied": "Link copied",
       "sharing": "Sharing…"
+    },
+    "viewer": {
+      "continuePrompt": "Help me work with this artifact: {{url}}",
+      "continueWithBrand": "Continue with {{brandName}}",
+      "fileDetails": "File details",
+      "filename": "File name",
+      "fileType": "File type"
     }
   },
   "auth": {

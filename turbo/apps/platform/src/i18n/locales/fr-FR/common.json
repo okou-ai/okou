@@ -1030,6 +1030,13 @@
       "downloadFailed": "Échec du téléchargement",
       "linkCopied": "Lien copié",
       "sharing": "Partage en cours…"
+    },
+    "viewer": {
+      "continuePrompt": "Aide-moi à travailler avec cet artefact : {{url}}",
+      "continueWithBrand": "Continuer avec {{brandName}}",
+      "fileDetails": "Détails du fichier",
+      "filename": "Nom du fichier",
+      "fileType": "Type de fichier"
     }
   },
   "auth": {

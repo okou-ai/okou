@@ -1010,6 +1010,13 @@
       "downloadFailed": "다운로드 실패",
       "linkCopied": "링크 복사됨",
       "sharing": "공유 중…"
+    },
+    "viewer": {
+      "continuePrompt": "이 결과물로 작업할 수 있도록 도와주세요: {{url}}",
+      "continueWithBrand": "{{brandName}}에서 계속하기",
+      "fileDetails": "파일 정보",
+      "filename": "파일 이름",
+      "fileType": "파일 형식"
     }
   },
   "auth": {
