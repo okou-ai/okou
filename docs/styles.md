@@ -355,15 +355,27 @@ alongside their existing `border-0`. That still paints, because Tailwind emits
 the legacy rule won only by sitting outside every layer. Tests continue to
 select both separators through `data-slot`.
 
-### Page viewport shells
+### App page roots
 
-`ViewportShell` in `views/components/viewport-shell.tsx` renders the page's existing `div` and owns
-border-box sizing, full parent height constraints, overflow clipping, and the
-bottom safe-area inset through Tailwind utilities. It forwards native div props,
-including refs and theme attributes, without adding a wrapper. The documented
-`data-slot="viewport-shell"` identifies this boundary without carrying styles.
+Use `AppPageRoot` from `views/components/app-page-root.tsx` when building the
+outermost container of a full-page app layout mounted under `#root`. It fills the
+available app height and leaves scrolling to the inner content.
 
-The default `bottomSafeArea="shell"` reserves `--sab` below the page content.
+- Independent page layouts, such as export and connector handoffs, use it as
+  their outermost container.
+- Shared layouts, such as `SidebarLayout` and `OnboardingShell`, use it once.
+  Pages rendered inside those layouts supply their content without another
+  `AppPageRoot`.
+- Cards, sections, dialogs, and nested scrollports keep their own layout
+  primitives; they do not own the app page root.
+
+The component renders the page's existing `div` and forwards native div props,
+including refs and theme attributes, without adding a wrapper. Tailwind
+utilities own border-box sizing, full parent height constraints, overflow
+clipping, and the bottom safe-area inset. The documented
+`data-slot="app-page-root"` identifies this boundary without carrying styles.
+
+The default `bottomSafeArea="root"` reserves `--sab` below the page content.
 Sidebar layouts use `bottomSafeArea="content"` so their scrollports reach the
 viewport edge and their content and composer own the inset. Document sizing,
 top and horizontal insets, and PWA keyboard handling remain owned by the existing

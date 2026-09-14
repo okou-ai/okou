@@ -13,7 +13,7 @@ import { AccountDropdown } from "../okou-page/sidebar-account";
 import { OrgSwitcher, OrgSwitcherCompact } from "../okou-page/org-switcher.tsx";
 import { SettingsDialogMount } from "../okou-page/components/settings/settings-dialog.tsx";
 import { handleAccountAction$ } from "../../signals/okou-page/nav.ts";
-import { ViewportShell } from "../components/viewport-shell.tsx";
+import { AppPageRoot } from "../components/app-page-root.tsx";
 
 /**
  * Onboarding uses a softer, larger surface than the rest of the app: a wider
@@ -194,7 +194,7 @@ export function OnboardingShell({
   readonly preview?: ReactNode;
 }) {
   return (
-    <ViewportShell className="okou-app relative w-full bg-background text-foreground">
+    <AppPageRoot className="okou-app relative w-full bg-background text-foreground">
       <SettingsDialogMount />
       <div className="fixed left-4 top-4 z-20 hidden w-60 sm:left-6 sm:top-6 sm:block">
         <OrgSwitcher />
@@ -233,6 +233,6 @@ export function OnboardingShell({
           </footer>
         ) : null}
       </section>
-    </ViewportShell>
+    </AppPageRoot>
   );
 }
