@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.89.9](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.8...guest-agent-v0.89.9) (2026-09-14)
+
+
+### Bug Fixes
+
+* keep citation text private after short fence runs ([#33970](https://github.com/vm0-ai/vm0/issues/33970)) ([5781768](https://github.com/vm0-ai/vm0/commit/578176828ff6728a6febbd880a4dbf21e03e5188))
+
+
+### Performance Improvements
+
+* **guest-agent:** bound cascading json key masking ([#33942](https://github.com/vm0-ai/vm0/issues/33942)) ([abd1dc5](https://github.com/vm0-ai/vm0/commit/abd1dc5e8601481b46038688f959ae1f44e78658))
+
 ## [0.89.8](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.7...guest-agent-v0.89.8) (2026-09-14)
 
 

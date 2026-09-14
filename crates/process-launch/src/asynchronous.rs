@@ -45,6 +45,37 @@ impl From<tokio::process::Child> for Child {
     }
 }
 
+impl TryFrom<crate::Child> for Child {
+    type Error = io::Error;
+
+    /// Adopt an owned child into pidfd-backed Tokio ownership.
+    ///
+    /// The child must be unreaped and lead its own process group. Requires a
+    /// current Tokio runtime with I/O enabled. Registration or pipe-conversion
+    /// failure (including unwinding) kills and reaps the child before returning.
+    fn try_from(child: crate::Child) -> io::Result<Self> {
+        if child.is_reaped() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "cannot adopt an already reaped child",
+            ));
+        }
+        let mut guard = SpawnGuard(Some(child));
+        let child = guard.0.as_mut().ok_or_else(missing_child)?;
+        let pidfd = AsyncFd::new(open_pidfd(child.id())?)?;
+        let stdin = child.stdin.take().map(ChildStdin::from_std).transpose()?;
+        let stdout = child.stdout.take().map(ChildStdout::from_std).transpose()?;
+        let stderr = child.stderr.take().map(ChildStderr::from_std).transpose()?;
+        let child = guard.0.take().ok_or_else(missing_child)?;
+        Ok(Self {
+            backend: Some(Backend::Direct { child, pidfd }),
+            stdin,
+            stdout,
+            stderr,
+        })
+    }
+}
+
 /// Wait for cancellable admission, then create and adopt a direct child.
 ///
 /// A single five-second budget covers queueing through exec acknowledgement.
@@ -83,23 +114,9 @@ async fn spawn_with_admission(
                     "process launch admission timed out",
                 )
             })?;
-    // Retain cleanup ownership through errors AND unwinding while registering
-    // with the runtime (for example, a runtime without an I/O driver).
     let pending =
         crate::spawn::spawn_with_admission(command, cgroup, options, permit, Some(deadline))?;
-    let mut guard = SpawnGuard(Some(acknowledge_exec(pending, deadline).await?));
-    let child = guard.0.as_mut().ok_or_else(missing_child)?;
-    let pidfd = AsyncFd::new(open_pidfd(child.id())?)?;
-    let stdin = child.stdin.take().map(ChildStdin::from_std).transpose()?;
-    let stdout = child.stdout.take().map(ChildStdout::from_std).transpose()?;
-    let stderr = child.stderr.take().map(ChildStderr::from_std).transpose()?;
-    let child = guard.0.take().ok_or_else(missing_child)?;
-    Ok(Child {
-        backend: Some(Backend::Direct { child, pidfd }),
-        stdin,
-        stdout,
-        stderr,
-    })
+    Child::try_from(acknowledge_exec(pending, deadline).await?)
 }
 
 async fn acknowledge_exec(
@@ -180,6 +197,23 @@ impl Child {
         }
     }
 
+    /// Borrow notification of exit without reaping or closing stdin.
+    ///
+    /// Direct children reuse their registered pidfd without opening, duplicating,
+    /// or registering another descriptor. Standard Tokio children and already
+    /// reaped children return `None`; callers retain their explicit wait policy.
+    /// The future is cancellation-safe and may be recreated after cancellation
+    /// or completion. The child remains the sole reaper and must still be waited
+    /// on after any cleanup that requires its unreaped process-group identity.
+    pub fn exit_notification(&self) -> Option<impl Future<Output = io::Result<()>> + '_> {
+        match self.backend.as_ref()? {
+            Backend::Direct { child, pidfd } if !child.is_reaped() => {
+                Some(observe_exit(pidfd, child.id()))
+            }
+            _ => None,
+        }
+    }
+
     /// Cancellation-safe: readiness never consumes the exit status.
     pub async fn wait(&mut self) -> io::Result<ExitStatus> {
         drop(self.stdin.take());
@@ -213,6 +247,36 @@ impl Child {
 
     fn backend_mut(&mut self) -> io::Result<&mut Backend> {
         self.backend.as_mut().ok_or_else(missing_child)
+    }
+}
+
+async fn observe_exit(pidfd: &AsyncFd<OwnedFd>, pid: u32) -> io::Result<()> {
+    loop {
+        let mut ready = pidfd.readable().await?;
+        // SAFETY: waitid initializes this plain C output structure. WNOWAIT
+        // observes only our unreaped child and does not consume its exit status.
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        let result = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                pid,
+                &mut info,
+                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+            )
+        };
+        if result < 0 {
+            let error = io::Error::last_os_error();
+            if error.kind() == io::ErrorKind::Interrupted {
+                continue;
+            }
+            return Err(error);
+        }
+        // SAFETY: a successful waitid initializes the child-status fields.
+        if unsafe { info.si_pid() } != 0 {
+            return Ok(());
+        }
+        // Tokio readiness may be spurious; only actual exit permits cleanup.
+        ready.clear_ready();
     }
 }
 
@@ -286,6 +350,99 @@ mod tests {
     use std::pin::Pin;
     use std::task::Poll;
     use std::time::Duration;
+
+    #[tokio::test]
+    async fn exit_notification_can_be_cancelled_and_repeated_before_wait() {
+        use tokio::io::AsyncWriteExt;
+
+        let process = std::process::Command::new("/bin/sh")
+            .args([
+                "-c",
+                "read -r line && test \"$line\" = go && exit 23; exit 42",
+            ])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let mut child = Child::try_from(crate::Child::from(process)).unwrap();
+        let pid = child.id().unwrap();
+        let mut notification = Box::pin(child.exit_notification().unwrap());
+        poll_fn(|cx| {
+            assert!(notification.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+        drop(notification);
+
+        // Cancellation must leave stdin usable and the child owned by its caller.
+        child
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(b"go\n")
+            .await
+            .unwrap();
+        for _ in 0..2 {
+            tokio::time::timeout(Duration::from_secs(2), child.exit_notification().unwrap())
+                .await
+                .unwrap()
+                .unwrap();
+        }
+        assert_eq!(child.id(), Some(pid));
+        // SAFETY: waitid observes this exact child without consuming its status.
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        assert_eq!(
+            unsafe {
+                libc::waitid(
+                    libc::P_PID,
+                    pid,
+                    &mut info,
+                    libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+                )
+            },
+            0
+        );
+        // SAFETY: successful waitid initialized the child status fields.
+        assert_eq!(unsafe { info.si_pid() }, pid as i32);
+        assert_eq!(unsafe { info.si_status() }, 23);
+
+        let status = child.wait().await.unwrap();
+        assert_eq!(status.code(), Some(23));
+        assert_eq!(child.wait().await.unwrap(), status);
+        assert!(child.exit_notification().is_none());
+        assert_reaped(pid);
+    }
+
+    #[tokio::test]
+    async fn standard_child_keeps_its_explicit_wait_policy() {
+        let process = tokio::process::Command::new("/bin/sh")
+            .args(["-c", "exit 17"])
+            .spawn()
+            .unwrap();
+        let mut child = Child::from(process);
+        assert!(child.exit_notification().is_none());
+        assert_eq!(child.wait().await.unwrap().code(), Some(17));
+    }
+
+    #[test]
+    fn adoption_registration_panic_reaps_the_owned_child() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let process = std::process::Command::new("/bin/sleep")
+            .arg("60")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pid = process.id();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            runtime.block_on(async { Child::try_from(crate::Child::from(process)) })
+        }));
+        assert!(result.is_err());
+        assert_reaped(pid);
+    }
 
     fn pending_child() -> (crate::spawn::PendingChild, File, u32) {
         let (reader, writer) = std::io::pipe().unwrap();

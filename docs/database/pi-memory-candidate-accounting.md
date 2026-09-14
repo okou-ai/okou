@@ -1,171 +1,201 @@
-# Pi candidate reference accounting preparation
+# Pi candidate reference accounting
 
-Preparation issue [#33765](https://github.com/vm0-ai/vm0/issues/33765) is the
-first release of [#33748](https://github.com/vm0-ai/vm0/issues/33748). The
-production trigger and function from `1078_baseline.sql` remain unchanged.
-No migration or data rewrite accompanies API B.
+Scope: [#33748](https://github.com/vm0-ai/vm0/issues/33748), preparation
+[#33765 / #33774](https://github.com/vm0-ai/vm0/pull/33774), and retirement
+[#33975](https://github.com/vm0-ai/vm0/issues/33975). Historical migrations remain
+unchanged. The current schema has no candidate accounting trigger or function;
+API C always accounts explicitly in the candidate lifecycle transaction.
 
-## Accounting and locks
+## Ownership and ordinary locking
 
-The canonical API service is
-`turbo/apps/api/src/signals/services/pi-memory-stage1-candidate.service.ts`.
-Insert and source replacement retain only returned rows. Replacement retains
-the new source and guardedly releases the locked previous source. Deletion
-uses actual `DELETE RETURNING` hashes, aggregates multiplicity and rejects a
-missing blob or insufficient count. All calls are awaited inside the caller's
-transaction. Conversation ownership remains additive; candidate counts never
-replace `blobs.ref_count`. A failed release rolls back the row mutation and
-any preceding retains/releases, including every parent in a bulk deletion.
+An actual inserted candidate retains its source once. A returned replacement
+retains the new source and releases the locked old source once. An unchanged
+source, exact retry, conflict or stale-source no-op changes no references.
+Deletion releases only returned candidates, grouping equal hashes and updating
+blobs in stable hash order with an adequate-count predicate. Missing blobs and
+insufficient counts fail the whole transaction; partial retains, releases and
+parent deletion roll back together. Other owners' references are preserved.
 
-Lock order for ordinary candidate operations is:
+The canonical order remains **storage → candidate → blob**. Completion locks
+an existing memory storage before checkpoint persistence and admission. Insert,
+standalone cleanup and parent cleanup lock storage IDs in stable order.
+Worker result commit locks its parent before its candidate and Phase 2 enqueue;
+owner, hash, status, lease token and expiry fencing remain intact. The candidate
+FK and transactional retain protect against premature blob GC, whose ordinary
+write must recheck the count. Conversation multi-hash ordering and clamped
+release semantics are outside this change.
 
-1. Existing completion run lifecycle/chat/run locks, when entered from completion.
-2. Storage rows in ascending ID order. Admission uses `FOR NO KEY UPDATE`;
-   parent deletion uses `FOR UPDATE`; worker result commit uses `FOR KEY SHARE`.
-3. Candidate relation `ROW EXCLUSIVE`, then catalog inspection, then candidate rows.
-4. Companion blob writes; bulk explicit releases use ascending hashes.
+C removes only B's temporary relation-lock/catalog decision and its accounting
+branches. Ordinary DML still acquires its PostgreSQL relation locks; storage,
+candidate row, worker and GC locks remain. Admission still checks persisted Pi
+launch eligibility and the live owning user's `PiMemory` gate before reading
+the source or writing a candidate.
 
-Combined completion retains its existing checkpoint-before-admission order:
-after the existing lifecycle/chat/run locks it locks the memory storage, then
-writes checkpoint blobs, then enters candidate admission. Taking the storage
-lock **before** either blob or candidate work prevents the new parent/blob
-cycle with cleanup. It does not claim to reorder every checkpoint blob owner. If no storage exists, there can be no existing child
-reference to release; admission creates the storage in its transaction. It does
-not create memory storage for failed or otherwise ineligible completions.
-Phase 2 already locks storage before candidates/jobs. Worker result commit
-locks its parent before changing a candidate and enqueuing a Phase 2 job; the
-latter can acquire a parent FK lock. Hash, owner, lease token, status and lease
-expiry checks remain intact. Worker claiming/status-only updates do not change
-source references.
+## Writer and cleanup inventory
 
-`ROW EXCLUSIVE` permits unrelated DML and conflicts with the relation lock
-required by `DROP TRIGGER` and trigger enable/disable DDL. PostgreSQL retains
-it until transaction end. Detection is a **separate statement after** that
-lock has been granted, under **READ COMMITTED**. Consequently a waiting B
-transaction sees committed trigger removal even if an earlier statement ran
-before the DDL committed. Repeatable Read and Serializable are rejected before
-mutation because an older transaction snapshot is not this contract. No
-process-global catalog cache or globally exclusive writer lock exists.
+Re-audited on September 14 against `main@394a3c3615d2b2485646f50f718f6cb28fb48c71`,
+then integrated `main@2cda87987eef35c4ae8fe75bad7c0b2dad1fff0d` after #33915 merged. Its billing migrations and
+permanent inventory are preserved. Retirement is now migration 1121 after
+Drizzle regeneration on `main@eb5e83ff1f4c9f65a3f56de5dae362ceedce26be` preserves #33911's Lark migration 1120.
+The integration retains `main@737e752d859154f921d599412c5754ff262078e1`
+and #33974: only human-interactive sources may enter admission, before the
+existing live PiMemory gate and explicit C accounting.
 
-Detection accepts either no user trigger or exactly the original enabled
-AFTER ROW INSERT/DELETE/UPDATE-OF-source trigger and original function source
-fingerprint. Renamed, disabled, extra, filtered or altered accounting triggers
-fail closed. Replication-role overrides are unsupported. A standalone function
-replacement is outside the migration contract: later retirement must drop the
-trigger before its function in one transaction, and must not replace the
-function underneath B. `1078_baseline.sql` is the fingerprint authority.
+| Path                                                                             | Ownership contract                                                                                                                                                                                                          |
+| -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent-webhook-complete.service.ts`                                              | Sole production admission caller; completion transaction uses the canonical service after persisted launch eligibility.                                                                                                     |
+| `pi-memory-stage1-candidate.service.ts`                                          | Admission, source replacement, returned-row retain/release, standalone candidate deletion, and parent storage deletion.                                                                                                     |
+| `webhooks-clerk-cleanup.service.ts`                                              | User/org cleanup calls `deleteStoragesWithPiMemoryCandidates` inside the storage/candidate/reference transaction; external work stays outside.                                                                              |
+| `webhooks-clerk.ts`                                                              | Cleanup remains asynchronous after HTTP 200. Failure needs investigation/provider redelivery; this is not a durable retry mechanism.                                                                                        |
+| Stage 1 worker; Phase 2 job, maintenance and usage services                      | Status, output, lease, selection and usage updates only; no new source ownership. Existing fencing/parent locks remain.                                                                                                     |
+| Candidate fixtures, Phase 2 fixture, `test-pi-memory-stage1-state.ts`            | Candidate insertion and parent deletion use the same canonical service. The Phase 2 cascade test also uses canonical parent deletion and checks the surviving reference; other fixture writes change status/selection only. |
+| Workflow deletion, agent-instruction storage, registry sync and development seed | Their raw storage deletion targets custom-skill, instruction or system volumes, not canonical user-owned `memory`.                                                                                                          |
+| Test system-storage/cache/catalog/usage cleanup                                  | Owns explicitly constructed system/usage fixtures, not a supported candidate repair writer.                                                                                                                                 |
+| External migrations `006`, `007`, `008`, `015`                                   | Permanent historical records. `006` targets retired tables, `007`/`008` own skill volumes, and `015` builds version indexes. None is a current candidate repair command.                                                    |
+| DB validators                                                                    | Historical baseline supplies the original function fingerprint. The transition validator replays the guarded migration; permanent schema inventory requires its absence.                                                    |
 
-The candidate-to-blob FK and transactional retain protect the source against
-concurrent deletion; GC must recheck the count under its normal write lock.
-No external object deletion based on an unlocked stale count is authorized by
-this change. Existing conversation checkpoint writes also touch blobs; this
-slice does not redesign their multi-hash ordering or clamped release policy.
-PostgreSQL still aborts a transaction on a deadlock; no failed transaction may
-be reported as a successful cleanup or as an automatically retried webhook.
+Use `insertPiMemoryStage1Candidates` for controlled fixture/repair insertion,
+`deletePiMemoryStage1Candidates` for standalone retention, and
+`deleteStoragesWithPiMemoryCandidates` for parent deletion. The caller owns the
+transaction. No independent active production candidate backfill/repair writer
+was found. Raw candidate source changes, raw memory-parent cascades and pre-B
+repair tools are unsupported. For an actually deleted Clerk owner, redeliver its
+provider deletion event to the current API. Do not infer permission to repair
+production rows from this inventory.
 
-## Writer and deletion inventory
+Open overlaps at authoring were #33969 (Pi background model/worker tests) and
+#33974 (candidate admission source gating). #33929, #33915, #33911 and #33756
+also proposed new migration numbers; #33915 touches schema inventory. These
+are inventory, not merge-order dependencies. #33915 merged during this work;
+its new migration numbers initially required retirement number 1120. #33974
+also merged; its source classification and route coverage are preserved. The
+protected queue then detected an actual metadata conflict after #33911 consumed 1120. Integrating canonical main and regenerating retirement as 1121 preserves
+that migration and leaves the guarded retirement SQL byte-for-byte unchanged.
 
-Audited against `main@0213a6a523703137096396fd97ee266442b02252` on 2026-09-13.
+## Historical B and the two-release boundary
 
-| Path                                                                       | Ownership and supported behavior                                                                                                                                                                                                                                                                                                                                                            |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent-webhook-complete.service.ts`                                        | Sole production admission caller; persisted Pi launch snapshot gates admission. Uses the canonical service in its completion transaction.                                                                                                                                                                                                                                                   |
-| Candidate admission service                                                | Actual insert, retry, stale-source rejection and fenced replacement. `insertPiMemoryStage1Candidates` also supports controlled fixture/repair insertion; never issue raw candidate writes to change ownership.                                                                                                                                                                              |
-| `webhooks-clerk-cleanup.service.ts`                                        | User and organization storage removal use `deleteStoragesWithPiMemoryCandidates` in a transaction containing only the storage/candidate/reference subset. Existing external cleanup stays outside.                                                                                                                                                                                          |
-| `webhooks-clerk.ts`                                                        | Deletion cleanup runs asynchronously after HTTP 200. An invariant failure needs operator investigation/redelivery; it is not a durable retry mechanism.                                                                                                                                                                                                                                     |
-| `workflow-delete.service.ts`                                               | Only `custom-skill@...` storages owned by `__org__`; canonical memory admission requires the user-owned `memory` namespace.                                                                                                                                                                                                                                                                 |
-| `agent-instructions-storage-transaction.service.ts`                        | Only `agent-instructions@...` org volumes; cannot be a canonical candidate parent.                                                                                                                                                                                                                                                                                                          |
-| `cron-sync-skills.service.ts`, development seed                            | Registry/system skill volumes, never user memory storage.                                                                                                                                                                                                                                                                                                                                   |
-| Phase 1 worker / Phase 2 job, maintenance and usage writers                | Update status, output, lease, selection and usage fields; do not insert/delete candidates or replace the source. Parent FK locking is preserved.                                                                                                                                                                                                                                            |
-| Candidate test fixtures, Phase 2 fixture, `test-pi-memory-stage1-state.ts` | Insertion and parent cleanup now use the canonical service, including the worker test's delete-owner action.                                                                                                                                                                                                                                                                                |
-| Numbered external migrations `006`, `007`, `008`, `015`                    | Permanent records remain unchanged. `006` targets retired `agent_composes`/`zero_agents` tables and is not a current repair command. For an actually deleted Clerk org, use provider redelivery of `organization.deleted` to the current webhook, with current API cleanup. `007`/`008` own custom-skill org volumes; `015` builds version indexes and does not change candidate ownership. |
-| DB baseline consistency tests                                              | Intentionally exercise the unchanged historical trigger in isolated databases. Retirement must update current-schema expectations, preserving the historical record.                                                                                                                                                                                                                        |
+The controller's [September 14 acceptance](https://github.com/vm0-ai/vm0/issues/33748#issuecomment-5660335068)
+authorizes retirement authoring and protected merge. It records B at API 1.593.0,
+artifact `0207460d4cdacbbbfaa67cd06999b80e1273a804`, deployment `6431060420`.
+The accepted preparation merge is `cfdc9cd3c36cede429281e6f97ddf35a9ead2bef`.
+Those are dated controller receipts, not fresh production verification by this
+implementation. Release 1 is complete and must not be repeated.
 
-Standalone candidate retention deletion uses `deletePiMemoryStage1Candidates`;
-it locks parents and accounts only returned children. Parent deletion must use
-`deleteStoragesWithPiMemoryCandidates`, never a raw cascade on user memory.
-There is no active production candidate backfill/repair writer in this census.
-Any future repair must use this service and preserve total conversation refs.
+B obtains a DML-compatible `ROW EXCLUSIVE` candidate relation lock, then checks
+settings and catalog in independent READ COMMITTED statements. A B writer
+waiting for retirement therefore sees the committed drop and accounts once;
+a rollback leaves original-trigger accounting. B rejects unexpected trigger
+configurations, non-origin replication and other isolation levels. Its original
+function is never replaced underneath it. The test-only B insertion/decision
+fixture preserves this supported transition without importing detection into C.
 
-At dispatch, open PRs had no overlap with these ownership files and no competing
-migration in this slice (which adds none). Overlap is inventory, not a reason
-to wait for another author's merge.
+| API and schema          | Supported behavior                                                              |
+| ----------------------- | ------------------------------------------------------------------------------- |
+| B + original trigger    | Trigger owns references.                                                        |
+| B + migrated schema     | B explicitly owns references; covers migration before C promotion and rollback. |
+| C + migrated schema     | C explicitly owns references.                                                   |
+| C + original trigger    | Unsupported: do not promote before migration commits.                           |
+| Pre-B + migrated schema | Unsupported: no serving, continuation, direct repair or rollback eligibility.   |
 
-## Content-free production verification
+Before release 2, the controller refreshes actual serving ancestry, canonical
+API/Runner origin, eligible pre-B runs/queues and B rollback target. The accepted
+B cutoff is `2026-09-14T01:11:38Z`; deployment success or quiet logs alone do not
+prove drain. A separate release-only owner executes the authorized second
+release after independent merge acceptance. Existing production-clone smoke
+runs before real migration, which must commit before C traffic promotion.
+A failed migration blocks C. If migration commits but C promotion fails, retain
+or restore the verified B artifact; API rollback does not restore schema.
 
-Use the checked-in, read-only diagnostic:
+## Atomic retirement guard and receipt
+
+Migration `1121_retire_pi_candidate_reference_trigger` is ordinary transactional
+SQL under the unchanged runner's **1s lock / 10s statement** limits. Its journal
+entry commits in the same transaction. It performs these operations:
+
+1. A standalone statement acquires candidate `ACCESS EXCLUSIVE`. The following
+   statement begins only after that lock is granted, with a new READ COMMITTED
+   snapshot. Non-origin replication and unsupported isolation abort.
+2. One SQL census checks catalog, every candidate's blob/storage existence,
+   matching org/user, user-owned `memory` namespace, and exact candidate plus
+   current-conversation ownership of each candidate hash. Related tables are
+   read through MVCC only; there are no extra table or row locks.
+3. The catalog must contain exactly one enabled original user trigger and one
+   original public function: name, event/UPDATE column, absence of arguments,
+   filters/deferral, signature, language, security/configuration/volatility and
+   source MD5 `576154890be37fff1ec9f9f4c318428c` from `1078_baseline.sql`.
+   Missing, renamed, extra, disabled or changed configuration aborts.
+4. Valid balanced ownership passes. The sole allowed excess is the residual
+   below. All missing/invalid ownership, shortfalls, negative counts and other
+   excess fail with content-free errors. No reference count is changed.
+5. Drop the named trigger, then its function, without `CASCADE` or `IF EXISTS`.
+   Assert no candidate user trigger or named public function remains.
+6. Emit `pi_candidate_retirement_v1` through PostgreSQL NOTICE and the existing
+   postgres.js migration logging path. The JSON includes version, observation
+   time/server version, integrity/reconciliation totals, separate residual
+   count, expected pre-drop catalog counts and `post_drop_absent: true`.
+   It contains no hashes, owner/run/row IDs or content.
+
+The NOTICE deliberately says `transaction_status: pending_commit`. **A NOTICE
+alone is not success.** Pair it with the successful real-production migration
+job's subsequent `Migrations complete` (after the runner awaits atomic commit)
+and journal frontier when accessible. Preserve separate clone and production
+receipts. A post-drop statement or journal failure rolls back catalog/data;
+an earlier NOTICE from that failed transaction proves no successful drop.
+
+### Old-source deleted-run residual
+
+[#33973](https://github.com/vm0-ai/vm0/issues/33973) separately tracks the
+conversation deletion gap. A candidate hash may retain one excess reference
+only if **all** of these are true in the audit snapshot:
+
+- Exactly one candidate and an existing blob with `ref_count = 2`.
+- Zero current conversations anywhere reference that hash.
+- The candidate's source run is absent from `agent_runs`.
+- Both candidate creation and source completion precede the fixed UTC B cutoff
+  `2026-09-14T01:11:38Z` (the persisted timestamp columns store UTC).
+- Storage existence, namespace and org/user ownership are valid.
+
+Ten such hashes were observed by the controller. Ten is not a tolerance or
+allowlist; classification is entirely by the conjunction above. It explains a
+state pattern without reconstructing deletion history or dating the excess.
+The migration preserves the ledger; subsequent candidate deletion releases
+only one reference. One candidate plus one conversation at count two, or two
+candidates at count two, are ordinarily balanced and pass. Negative fixtures
+with additional owners retain a real excess (for example count three).
+
+## Read-only diagnostic and verification
+
+An authorized operator can run:
 
 ```sh
 psql -X --set ON_ERROR_STOP=1 --dbname "$DATABASE_URL" \
   --file turbo/packages/db/scripts/audit-pi-memory-candidate-references.sql
 ```
 
-Run it only inside an already-authorized database operator environment with
-its existing production **read-only** connection. Do not copy a credential to
-chat or an agent sandbox, echo the URL, or enable shell tracing. This is a
-standard `psql` invocation, not a new endpoint or a change to masking. The
-script takes one Repeatable Read READ ONLY snapshot, uses 30-second statement
-and 3-second lock limits, emits one JSON aggregate row and rolls back. A timeout
-is incomplete evidence; do not infer zero rows. The operation scans candidate,
-conversation and blob metadata; its runtime depends on their current size.
+This takes one Repeatable Read READ ONLY snapshot with 30s statement / 3s lock
+limits, emits one aggregate row and rolls back. It uses the same candidate
+integrity/reconciliation predicates and reports the catalog for either schema.
+Before retirement, catalog counts should be 1/1/1; after retirement 0/0/0.
+It does not reconcile unrelated global blob ownership or repair any data.
+A timeout is incomplete evidence. Do not copy credentials into chat/runtime.
 
-The current agent-accessible MaskDB inventory, refreshed at 2026-09-13 16:07:58
-UTC, exposes `blobs`, `conversations` and `storages` but does not expose
-`pi_memory_stage1_candidates` or the required catalogs. Its single-table DSL
-cannot execute this audit. Therefore the controller still needs an authorized
-operator to execute this exact read-only file and return the aggregate receipt,
-or separately approved aggregate-only diagnostic access. This PR does not grant
-that access, expand masking, export credentials or expose a public API. Absence
-of the receipt blocks retirement acceptance, not implementation of API B.
+MaskDB does not expose `pg_catalog` or a snapshot shared across requests.
+The controller's separate gateway observations are not this census. Exact
+catalog and ownership checks are mandatory inside the migration; no new
+endpoint, policy request or impossible separate catalog receipt is required.
 
-Before promoting B, verify `user_triggers = expected_triggers = 1` so its
-strict compatibility decision recognizes the installed accounting owner. Repeat
-the audit after B is deployed. Expected before retirement: no missing
-candidate blob/owner, no unexpected namespace, no negative count and no count
-below candidate or known conversation-plus-candidate ownership. Inspect counts
-above known owners and the full-ledger difference separately: initial blob
-registration and historical conversation deletion can produce pre-existing
-residual counts. They are **not** proof of candidate leaks and must not be
-silently reset. Compare pre/post receipts and investigate any unexplained drift;
-a clean count floor alone is not full ledger reconciliation. The diagnostic
-exports neither source hashes nor candidate/owner identifiers or content.
+Run `pnpm -F @okouai/db test:pi-candidate-trigger-retirement` for real migration
+rollback, invalid configuration/ownership, residual and balance cases, fresh
+post-lock snapshots, default timeouts and migration-log receipt delivery.
+The validator uses synthetic metadata at **1,315 candidates / 310,578 blobs /
+274,989 conversations** and reports elapsed time. It is included in
+`test:migration-consistency`. That measurement does not substitute for the
+release pipeline's production-clone smoke; clone timeout/drift blocks release
+without relaxing guards or changing global timeouts.
 
-Record the exact deployed API artifact, query timestamp/version and full JSON
-receipt. Separately examine bounded production logs for admission, replacement,
-completion, worker fencing, Clerk cleanup errors, deadlocks, invalid releases
-and catalog-configuration failures. Logs establish runtime activity and errors;
-event counts cannot establish stock or reconcile references. No production
-acceptance is claimed by local test results.
-
-## Two releases and rollback
-
-| API/schema combination   | Supported state                                                                                                    |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| Pre-B + original trigger | Existing production, while release 1 rolls out.                                                                    |
-| B + original trigger     | Trigger owns counts; B must never double count.                                                                    |
-| B + trigger absent       | B owns counts, including Clerk parent cleanup. Covers release 2 migration-before-promotion and supported rollback. |
-| Pre-B + trigger absent   | Unsupported. Must be excluded before retirement.                                                                   |
-| C + trigger absent       | Later focused retirement removes detection and uses explicit writes only.                                          |
-
-The controller independently accepts the preparation merge, releases B through
-a separate release owner, verifies the deployed artifact and persisted/runtime
-evidence, and records B as the supported rollback target. It must establish
-that pre-B serving writers and background continuations are no longer eligible.
-The PiLoop switch, nominal release duration, a quiet log window and a successful
-deployment alone do not establish drain. API rollback does not restore schema.
-
-Only after that gate passes may the controller create the retirement issue
-against then-current main. Recheck current writers/locks, supported isolation,
-trigger/function identity, statement/lock timeouts, DDL ordering and rollback
-eligibility there. The later migration drops only this trigger and its function,
-with no data reset. B must remain available during the migrated-schema window.
-Do not mix an unrelated multi-table lock order into the drop transaction. If
-an audit finds drift, stop retirement and design a narrowly scoped repair.
-
-## Measured scale and limits
-
-The controller's 2026-09-13 15:06:47 UTC MaskDB census found 18 running runs,
-8 Pi. Complete Axiom results for `[14:03:45Z, 15:03:45Z)` contained 68 created
-and 20 replaced candidate events. These are frozen activity measurements, not
-candidate stock, current concurrency, reference consistency or a drain proof.
-The preparation implementation does not pause or clear production data.
+Targeted API accounting, completion/admission, worker and Clerk tests cover C's
+reference semantics, parent cleanup, feature gate, fencing and GC. B transition
+coverage remains until the conditions in `turbo/packages/db/MIGRATIONS.md`
+allow its retirement. Production acceptance belongs to the controller: capture
+the real migration receipt/commit, actual C artifact and bounded data/log
+observations before closing #33748.

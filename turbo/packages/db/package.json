@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "1.255.4",
+  "version": "1.255.5",
   "private": true,
   "type": "module",
   "exports": {
@@ -50,7 +50,7 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "db:reset": "tsx scripts/reset-db.ts",
-    "test:migration-consistency": "pnpm test:migration-runner && pnpm test:kms-rotation && pnpm test:pi-memory-checkpoint-settlement && pnpm test:pi-memory-citations && pnpm test:show-usage-pack-migration && pnpm test:member-invitation-retirement && pnpm test:reusable-ssh-credentials && pnpm test:morning-brief-enrollment-installation && pnpm test:billing-attribution && tsx scripts/test-migration-consistency-schema.ts",
+    "test:migration-consistency": "pnpm test:migration-runner && pnpm test:kms-rotation && pnpm test:pi-memory-checkpoint-settlement && pnpm test:pi-memory-citations && pnpm test:show-usage-pack-migration && pnpm test:member-invitation-retirement && pnpm test:reusable-ssh-credentials && pnpm test:morning-brief-enrollment-installation && pnpm test:billing-attribution && pnpm test:pi-candidate-trigger-retirement && tsx scripts/test-migration-consistency-schema.ts",
     "test:kms-rotation": "tsx scripts/migrations/013-kms-account-rotation/test.ts && tsx scripts/migrations/013-kms-account-rotation/test-business.ts",
     "test:show-usage-pack-migration": "tsx scripts/test-show-usage-pack-migration.ts",
     "test:migration-runner": "tsx scripts/test-migration-runner-timeouts.ts",
@@ -61,7 +61,8 @@
     "test:reusable-ssh-credentials": "tsx scripts/test-reusable-ssh-credentials.ts",
     "test:morning-brief-enrollment-installation": "tsx scripts/test-morning-brief-enrollment-installation.ts",
     "test:billing-attribution": "tsx scripts/test-billing-attribution.ts",
-    "billing:attribution": "tsx scripts/billing-attribution.ts"
+    "billing:attribution": "tsx scripts/billing-attribution.ts",
+    "test:pi-candidate-trigger-retirement": "tsx scripts/test-pi-candidate-trigger-retirement.ts"
   },
   "dependencies": {
     "@aws-sdk/client-kms": "^3.1127.0",

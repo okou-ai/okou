@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.326.2](https://github.com/vm0-ai/vm0/compare/cli-v9.326.1...cli-v9.326.2) (2026-09-14)
+
+
+### Refactoring
+
+* **pi:** retire the drained legacy api wire field ([#33980](https://github.com/vm0-ai/vm0/issues/33980)) ([edbbe29](https://github.com/vm0-ai/vm0/commit/edbbe29ae11760122eb444d73883ff4e88ee5b2a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.436.0
+    * @okouai/core bumped to 8.662.1
+    * @okouai/pi-agent-runtime bumped to 1.28.0
+
 ## [9.326.1](https://github.com/vm0-ai/vm0/compare/cli-v9.326.0...cli-v9.326.1) (2026-09-14)
 
 

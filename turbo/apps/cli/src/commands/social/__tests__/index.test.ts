@@ -158,6 +158,7 @@ describe("okou social command", () => {
     for (const command of socialCommand.commands) {
       command.setOptionValue("json", undefined);
       command.setOptionValue("thread", undefined);
+      command.setOptionValue("fullDetails", undefined);
       command.setOptionValue("kind", undefined);
       command.setOptionValue("limit", 10);
       command.setOptionValue("stream", undefined);
@@ -379,9 +380,205 @@ describe("okou social command", () => {
           ? 30
           : 100,
     );
+    expect(requestBody).not.toHaveProperty("input.full_details");
     expect(outputRequest()).toStrictEqual(
       kind === undefined ? { limit: 250 } : { limit: 250, kind },
     );
+  });
+
+  it.each([
+    {
+      source: "channel",
+      url: "https://www.youtube.com/@example",
+      limit: undefined,
+    },
+    {
+      source: "channel",
+      url: "https://www.youtube.com/@example",
+      limit: 1,
+    },
+    {
+      source: "playlist",
+      url: "https://www.youtube.com/playlist?list=example",
+      limit: 30,
+    },
+  ])(
+    "requests full details for a $source with limit $limit",
+    async ({ source, url, limit }) => {
+      let requestBody: unknown;
+      const results = [
+        {
+          videoId: "older-video",
+          title: "An older video",
+          publishedTime: "12 years ago",
+          publishedAt: "2014-01-01T12:00:00.000Z",
+          description: "The complete older video description",
+        },
+      ];
+      server.use(
+        http.post(
+          "http://localhost:3000/api/social/request",
+          async ({ request }) => {
+            requestBody = await request.json();
+            return HttpResponse.json(
+              socialResponse(
+                "youtube_videos",
+                { state: "complete", itemsReturned: results.length },
+                { type: source, url, results },
+              ),
+            );
+          },
+        ),
+      );
+      const args = ["node", "okou", "posts", url, "--full-details", "--json"];
+      if (limit !== undefined) {
+        args.push("--limit", String(limit));
+      }
+
+      await socialCommand.parseAsync(args);
+
+      expect(requestBody).toStrictEqual({
+        tool: "youtube_videos",
+        input: { url, limit: limit ?? 10, full_details: true },
+      });
+      expect(JSON.parse(output()) as unknown).toMatchObject({
+        status: "complete",
+        request: { limit: limit ?? 10, fullDetails: true },
+        data: { items: results, context: { type: source, url } },
+      });
+    },
+  );
+
+  it.each([false, true])(
+    "preserves unavailable YouTube metadata with full details %s",
+    async (fullDetails) => {
+      const results = [
+        { videoId: "unavailable", publishedAt: null, description: "" },
+        { videoId: "missing" },
+      ];
+      server.use(
+        http.post("http://localhost:3000/api/social/request", () => {
+          return HttpResponse.json(
+            socialResponse(
+              "youtube_videos",
+              { state: "complete", itemsReturned: results.length },
+              { type: "playlist", results },
+            ),
+          );
+        }),
+      );
+      const args = [
+        "node",
+        "okou",
+        "posts",
+        "https://youtube.com/playlist?list=example",
+        "--json",
+      ];
+      if (fullDetails) {
+        args.push("--full-details");
+      }
+
+      await socialCommand.parseAsync(args);
+
+      const result = JSON.parse(output()) as { readonly data: unknown };
+      expect(result.data).toStrictEqual({
+        items: results,
+        context: { type: "playlist" },
+      });
+    },
+  );
+
+  it("includes full-details intent in streamed pages and the summary", async () => {
+    server.use(
+      http.post("http://localhost:3000/api/social/request", () => {
+        return HttpResponse.json(
+          socialResponse(
+            "youtube_videos",
+            { state: "complete", itemsReturned: 1 },
+            { results: [{ videoId: "example", publishedAt: null }] },
+          ),
+        );
+      }),
+    );
+
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "posts",
+      "https://youtube.com/playlist?list=example",
+      "--full-details",
+      "--stream",
+    ]);
+
+    const records: unknown = output()
+      .split("\n")
+      .map((line) => {
+        return JSON.parse(line) as unknown;
+      });
+    expect(records).toEqual([
+      expect.objectContaining({
+        kind: "page",
+        request: { limit: 10, fullDetails: true },
+      }),
+      expect.objectContaining({
+        kind: "summary",
+        request: { limit: 10, fullDetails: true },
+      }),
+    ]);
+  });
+
+  it.each([31, 250])(
+    "rejects full details with limit %s before HTTP",
+    async (limit) => {
+      let apiRequests = 0;
+      server.use(
+        http.post("http://localhost:3000/api/social/request", () => {
+          apiRequests += 1;
+          return HttpResponse.json(socialResponse("youtube_videos", null, {}));
+        }),
+      );
+
+      await expect(
+        socialCommand.parseAsync([
+          "node",
+          "okou",
+          "posts",
+          "https://youtube.com/@example",
+          "--full-details",
+          "--limit",
+          String(limit),
+          "--json",
+        ]),
+      ).rejects.toThrow("process.exit called");
+
+      expect(apiRequests).toBe(0);
+      expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+        status: "error",
+        error: {
+          kind: "invalid_input",
+          code: "INVALID_INPUT",
+          message:
+            "--full-details supports at most 30 videos; use --limit 30 or less, or omit --full-details for the fast listing",
+        },
+      });
+    },
+  );
+
+  it("discovers YouTube full-details constraints without HTTP", async () => {
+    vi.stubEnv("OKOU_TOKEN", "");
+
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "capabilities",
+      "youtube",
+      "--json",
+    ]);
+
+    expect(output()).toContain("channels and playlists");
+    expect(output()).toContain("--full-details");
+    expect(output()).toContain("slower; --limit at most 30");
+    expect(output()).toContain("null, empty, or missing");
   });
 
   it.each([
@@ -748,21 +945,29 @@ describe("okou social command", () => {
       }),
     );
 
-    await expect(
-      socialCommand.parseAsync([
-        "node",
-        "okou",
-        "search",
-        "launch",
-        "--platform",
-        "tiktok",
-        "--limit",
-        "10",
-        "--json",
-      ]),
-    ).rejects.toThrow("process.exit called");
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "search",
+      "launch",
+      "--platform",
+      "tiktok",
+      "--limit",
+      "10",
+      "--json",
+    ]);
 
     expect(requests).toBe(2);
+    expect(JSON.parse(output()) as unknown).toMatchObject({
+      kind: "result",
+      status: "partial",
+      data: { items: [{ id: "video-1" }, { id: "video-2" }] },
+      collection: { state: "failed", pages: 2, itemsReturned: 2 },
+      billing: { quantity: 2, creditsCharged: 6 },
+    });
+    expect(JSON.parse(output()) as unknown).not.toHaveProperty(
+      "collection.nextInput",
+    );
     expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
       status: "error",
       error: {
@@ -772,66 +977,437 @@ describe("okou social command", () => {
       },
       progress: { pages: 2, itemsReturned: 2 },
     });
+    expect(process.exitCode).toBe(1);
+    expect(mockExit).not.toHaveBeenCalled();
   });
 
-  it("reports progress when a later collection page fails", async () => {
-    let requests = 0;
+  it.each([
+    ["aggregate HTTP failure", "--json", "http"],
+    ["stream HTTP failure", "--stream", "http"],
+    ["default HTTP failure", "", "http"],
+    ["aggregate malformed response", "--json", "malformed"],
+    ["stream malformed response", "--stream", "malformed"],
+    ["aggregate missing metadata", "--json", "metadata"],
+    ["stream missing metadata", "--stream", "metadata"],
+  ])("preserves accepted results after %s", async (_name, format, failure) => {
+    const requests: unknown[] = [];
     server.use(
-      http.post("http://localhost:3000/api/social/request", () => {
-        requests += 1;
-        if (requests === 1) {
+      http.post(
+        "http://localhost:3000/api/social/request",
+        async ({ request }) => {
+          requests.push(await request.json());
+          if (requests.length === 1) {
+            return HttpResponse.json(
+              socialResponse(
+                "instagram_comments",
+                {
+                  state: "more",
+                  itemsReturned: 2,
+                  reportedTotal: 12,
+                  nextInput: { cursor: "next" },
+                },
+                {
+                  comments: [{ id: "one" }, { id: "two" }],
+                  hasMore: true,
+                  commentCount: 12,
+                },
+                2,
+              ),
+            );
+          }
+          if (failure !== "http") {
+            return HttpResponse.json(
+              socialResponse(
+                "instagram_comments",
+                failure === "metadata"
+                  ? null
+                  : { state: "complete", itemsReturned: 1 },
+                {
+                  comments: failure === "malformed" ? null : [{ id: "third" }],
+                },
+              ),
+            );
+          }
+          return HttpResponse.json(
+            {
+              error: {
+                code: "SOCIALKIT_UPSTREAM_ERROR",
+                message: "SocialKit request failed",
+              },
+            },
+            { status: 502 },
+          );
+        },
+      ),
+    );
+
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "comments",
+      "https://instagram.com/p/example",
+      "--limit",
+      "10",
+      ...(format ? [format] : []),
+    ]);
+
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toHaveProperty("input.cursor", "next");
+    expect(requests[1]).toHaveProperty("input.limit", 8);
+    const records = mockConsoleLog.mock.calls.map(([value]) => {
+      return JSON.parse(String(value)) as Readonly<Record<string, unknown>>;
+    });
+    const streaming = format === "--stream";
+    expect(records).toHaveLength(streaming ? 2 : 1);
+    const terminal = records.at(-1);
+    const progress = {
+      pages: 1,
+      itemsReturned: 2,
+      itemsObserved: 2,
+      billingQuantity: 2,
+      creditsCharged: 6,
+    };
+    const error =
+      failure === "http"
+        ? {
+            kind: "provider_temporary",
+            code: "SOCIAL_UPSTREAM_ERROR",
+            retryable: true,
+          }
+        : { kind: "internal", code: "INTERNAL", retryable: false };
+    expect(terminal).toMatchObject({
+      kind: streaming ? "summary" : "result",
+      status: "partial",
+      collection: {
+        state: "failed",
+        pages: 1,
+        itemsReturned: 2,
+        itemsObserved: 2,
+        requestedItems: 10,
+        reportedTotal: 12,
+        nextInput: { cursor: "next" },
+      },
+      billing: { quantity: 2, creditsCharged: 6 },
+      error,
+      progress,
+    });
+    expect(records[0]).toHaveProperty("data.items", [
+      { id: "one" },
+      { id: "two" },
+    ]);
+    expect(records[0]).toHaveProperty("data.context.commentCount", 12);
+    if (streaming) {
+      expect(records[0]).toMatchObject({ kind: "page", page: 1 });
+      expect(terminal).not.toHaveProperty("data");
+    }
+    if (format) {
+      expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+        status: "error",
+        error,
+        progress,
+      });
+    } else {
+      expect(errorOutput()).toContain("502:");
+    }
+    expect(process.exitCode).toBe(1);
+    expect(mockExit).not.toHaveBeenCalled();
+  });
+
+  it.each(["--json", "--stream"])(
+    "emits one terminal outcome for a first-page failure with %s",
+    async (format) => {
+      let requests = 0;
+      server.use(
+        http.post("http://localhost:3000/api/social/request", () => {
+          requests += 1;
+          return HttpResponse.json(
+            {
+              error: { code: "SOCIAL_UPSTREAM_ERROR", message: "Unavailable" },
+            },
+            { status: 502 },
+          );
+        }),
+      );
+
+      await socialCommand.parseAsync([
+        "node",
+        "okou",
+        "comments",
+        "https://instagram.com/p/example",
+        format,
+      ]);
+
+      const records = mockConsoleLog.mock.calls.map(([value]) => {
+        return JSON.parse(String(value)) as Readonly<Record<string, unknown>>;
+      });
+      expect(records).toHaveLength(1);
+      expect(records[0]).toMatchObject({
+        kind: format === "--stream" ? "summary" : "result",
+        status: "error",
+        collection: {
+          state: "failed",
+          pages: 0,
+          itemsReturned: 0,
+          itemsObserved: 0,
+          requestedItems: 10,
+        },
+        billing: null,
+        progress: {
+          pages: 0,
+          itemsReturned: 0,
+          itemsObserved: 0,
+          billingQuantity: 0,
+          creditsCharged: 0,
+        },
+        error: { code: "SOCIAL_UPSTREAM_ERROR", httpStatus: 502 },
+      });
+      expect(records[0]).not.toHaveProperty("collection.nextInput");
+      if (format === "--stream") {
+        expect(records[0]).not.toHaveProperty("data");
+      } else {
+        expect(records[0]).toHaveProperty("data.items", []);
+      }
+      expect(requests).toBe(1);
+      expect(process.exitCode).toBe(1);
+      expect(mockExit).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["empty", "--json", 0],
+    ["empty", "--stream", 0],
+    ["complete", "--json", 2],
+    ["complete", "--stream", 2],
+  ] as const)(
+    "emits one terminal outcome for %s results with %s",
+    async (_name, format, count) => {
+      const items = Array.from({ length: count }, (_, index) => {
+        return { id: String(index) };
+      });
+      server.use(
+        http.post("http://localhost:3000/api/social/request", () => {
           return HttpResponse.json(
             socialResponse(
               "instagram_comments",
-              {
-                state: "more",
-                itemsReturned: 2,
-                nextInput: { cursor: "next" },
-              },
-              { comments: [{ id: "one" }, { id: "two" }], hasMore: true },
-              2,
+              { state: "complete", itemsReturned: items.length },
+              { comments: items, hasMore: false },
             ),
           );
-        }
-        return HttpResponse.json(
-          {
-            error: {
-              code: "SOCIALKIT_UPSTREAM_ERROR",
-              message: "SocialKit request failed",
-            },
-          },
-          { status: 502 },
-        );
-      }),
-    );
+        }),
+      );
 
-    await expect(
-      socialCommand.parseAsync([
+      await socialCommand.parseAsync([
+        "node",
+        "okou",
+        "comments",
+        "https://instagram.com/p/example",
+        format,
+      ]);
+
+      const records = mockConsoleLog.mock.calls.map(([value]) => {
+        return JSON.parse(String(value)) as Readonly<Record<string, unknown>>;
+      });
+      expect(records).toHaveLength(format === "--stream" ? 2 : 1);
+      expect(records[0]).toHaveProperty("data.items", items);
+      expect(records.at(-1)).toMatchObject({
+        kind: format === "--stream" ? "summary" : "result",
+        status: "complete",
+        collection: {
+          state: "complete",
+          pages: 1,
+          itemsReturned: items.length,
+        },
+        billing: { quantity: 1, creditsCharged: 3 },
+      });
+      expect(records.at(-1)).not.toHaveProperty("error");
+      if (format === "--stream") {
+        expect(records.at(-1)).not.toHaveProperty("data");
+      }
+      expect(errorOutput()).toBe("");
+      expect(process.exitCode ?? 0).toBe(0);
+      expect(mockExit).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([2, 3])(
+    "preserves only validated page continuation after page %i is offered",
+    async (nextPage) => {
+      const requests: unknown[] = [];
+      server.use(
+        http.post(
+          "http://localhost:3000/api/social/request",
+          async ({ request }) => {
+            requests.push(await request.json());
+            if (requests.length === 1) {
+              return HttpResponse.json(
+                socialResponse(
+                  "instagram_reels_search",
+                  {
+                    state: "more",
+                    itemsReturned: 1,
+                    nextInput: { page: nextPage },
+                  },
+                  { items: [{ id: "one" }], hasMore: true },
+                ),
+              );
+            }
+            return HttpResponse.json(
+              {
+                error: {
+                  code: "SOCIAL_UPSTREAM_ERROR",
+                  message: "Unavailable",
+                },
+              },
+              { status: 502 },
+            );
+          },
+        ),
+      );
+
+      await socialCommand.parseAsync([
+        "node",
+        "okou",
+        "search",
+        "launch",
+        "--platform",
+        "instagram",
+        "--json",
+      ]);
+
+      const result = JSON.parse(output()) as unknown;
+      expect(result).toMatchObject({
+        status: "partial",
+        data: { items: [{ id: "one" }] },
+        collection: { state: "failed", pages: 1, itemsReturned: 1 },
+        billing: { quantity: 1, creditsCharged: 3 },
+      });
+      if (nextPage === 2) {
+        expect(requests).toHaveLength(2);
+        expect(requests[1]).toHaveProperty("input", {
+          query: "launch",
+          page: 2,
+        });
+        expect(result).toHaveProperty("collection.nextInput", { page: 2 });
+      } else {
+        expect(requests).toHaveLength(1);
+        expect(result).not.toHaveProperty("collection.nextInput");
+        expect(result).toHaveProperty(
+          "error.message",
+          "Okou Social produced an invalid continuation request",
+        );
+      }
+      expect(process.exitCode).toBe(1);
+    },
+  );
+
+  it.each(["more", "provider_limited"] as const)(
+    "streams one terminal outcome when %s limits collection",
+    async (state) => {
+      let requests = 0;
+      server.use(
+        http.post("http://localhost:3000/api/social/request", () => {
+          requests += 1;
+          return HttpResponse.json(
+            socialResponse(
+              "instagram_comments",
+              state === "more"
+                ? { state, itemsReturned: 3, nextInput: { cursor: "next" } }
+                : { state, itemsReturned: 3, reason: "provider_ceiling" },
+              {
+                comments: [{ id: "one" }, { id: "two" }, { id: "three" }],
+                hasMore: true,
+              },
+            ),
+          );
+        }),
+      );
+
+      await socialCommand.parseAsync([
         "node",
         "okou",
         "comments",
         "https://instagram.com/p/example",
         "--limit",
-        "10",
-        "--json",
-      ]),
-    ).rejects.toThrow("process.exit called");
+        state === "more" ? "2" : "10",
+        "--stream",
+      ]);
 
-    expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
-      status: "error",
-      error: {
-        kind: "provider_temporary",
-        code: "SOCIAL_UPSTREAM_ERROR",
-        retryable: true,
-      },
-      progress: {
-        pages: 1,
-        itemsReturned: 2,
-        itemsObserved: 2,
-        billingQuantity: 2,
-        creditsCharged: 6,
-      },
+      const records = mockConsoleLog.mock.calls.map(([value]) => {
+        return JSON.parse(String(value)) as Readonly<Record<string, unknown>>;
+      });
+      expect(records).toHaveLength(2);
+      expect(records[0]).toHaveProperty(
+        "data.items",
+        state === "more"
+          ? [{ id: "one" }, { id: "two" }]
+          : [{ id: "one" }, { id: "two" }, { id: "three" }],
+      );
+      expect(records[1]).toMatchObject({
+        kind: "summary",
+        status: state === "more" ? "complete" : "partial",
+        collection: {
+          state: state === "more" ? "caller_limited" : "provider_limited",
+          pages: 1,
+          itemsReturned: state === "more" ? 2 : 3,
+          itemsObserved: 3,
+        },
+        billing: { quantity: 1, creditsCharged: 3 },
+      });
+      expect(records[1]).not.toHaveProperty("data");
+      expect(records[1]).not.toHaveProperty("error");
+      expect(requests).toBe(1);
+      expect(process.exitCode ?? 0).toBe(state === "more" ? 0 : 2);
+    },
+  );
+
+  it("retains the pending cursor in the safety-ceiling summary", async () => {
+    let requests = 0;
+    server.use(
+      http.post("http://localhost:3000/api/social/request", () => {
+        requests += 1;
+        return HttpResponse.json(
+          socialResponse(
+            "instagram_comments",
+            {
+              state: "more",
+              itemsReturned: 1,
+              nextInput: { cursor: `after-${requests}` },
+            },
+            { comments: [{ id: String(requests) }], hasMore: true },
+          ),
+        );
+      }),
+    );
+
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "comments",
+      "https://instagram.com/p/example",
+      "--limit",
+      "101",
+      "--stream",
+    ]);
+
+    const records = mockConsoleLog.mock.calls.map(([value]) => {
+      return JSON.parse(String(value)) as Readonly<Record<string, unknown>>;
     });
+    expect(requests).toBe(100);
+    expect(records).toHaveLength(101);
+    expect(records.at(-1)).toMatchObject({
+      kind: "summary",
+      status: "partial",
+      collection: {
+        state: "provider_limited",
+        reason: "safety_page_ceiling",
+        pages: 100,
+        itemsReturned: 100,
+        nextInput: { cursor: "after-100" },
+      },
+      billing: { quantity: 100, creditsCharged: 300 },
+    });
+    expect(records.at(-1)).not.toHaveProperty("data");
+    expect(process.exitCode).toBe(2);
   });
 
   it("streams only when explicitly requested", async () => {
@@ -937,6 +1513,17 @@ describe("okou social command", () => {
     ],
     ["missing required option", ["search", "launch", "--json"]],
     ["invalid argument value", ["capabilities", "unsupported", "--json"]],
+    [
+      "nonpositive full-details limit",
+      [
+        "posts",
+        "https://youtube.com/@example",
+        "--full-details",
+        "--limit",
+        "0",
+        "--json",
+      ],
+    ],
     ["invalid resume ID", ["download", "--resume", "not-a-uuid", "--json"]],
     [
       "streaming option value",
@@ -1045,6 +1632,13 @@ describe("okou social command", () => {
   it.each([
     ["inspect", "https://instagram.com/p/example", "--thread"],
     ["posts", "https://x.com/example", "--kind", "reels"],
+    ["posts", "https://x.com/example", "--full-details"],
+    ["posts", "https://instagram.com/example", "--full-details"],
+    ["posts", "https://tiktok.com/@example", "--full-details"],
+    ["posts", "https://facebook.com/example", "--full-details"],
+    ["posts", "https://linkedin.com/company/example", "--full-details"],
+    ["posts", "https://youtube.com/watch?v=example", "--full-details"],
+    ["posts", "https://youtu.be/example", "--full-details"],
     [
       "search",
       "launch",
@@ -1493,6 +2087,11 @@ describe("okou social command", () => {
     expect(help).toContain("inspect");
     expect(help).toContain("comments");
     expect(postsHelp).toContain("Maximum total items to return");
+    expect(postsHelp).toContain("--full-details");
+    expect(postsHelp).toContain("YouTube channel/playlist");
+    expect(postsHelp).toContain("slower; --limit at most 30");
+    expect(renderedHelp).toContain("--full-details --limit 30 --json");
+    expect(renderedHelp).toContain("null, empty, or missing");
     expect(renderedHelp).toContain(
       "Provider credentials remain on the Okou API server",
     );

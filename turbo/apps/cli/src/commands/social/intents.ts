@@ -54,6 +54,7 @@ export interface SocialRequestMetadata {
   readonly customPrompt?: boolean;
   readonly date?: string;
   readonly format?: string;
+  readonly fullDetails?: boolean;
   readonly hashtag?: boolean;
   readonly kind?: string;
   readonly limit?: number;
@@ -131,7 +132,11 @@ export const SOCIAL_CAPABILITIES: readonly SocialCapability[] = [
       "summarize",
       "transcript",
     ],
-    notes: ["Posts supports channels and playlists"],
+    notes: [
+      "Posts supports channels and playlists",
+      "Posts --full-details requests exact dates and descriptions (slower; --limit at most 30)",
+      "Unavailable publication dates and descriptions remain null, empty, or missing",
+    ],
   },
 ] as const;
 
@@ -140,6 +145,7 @@ interface InspectOptions {
 }
 
 interface PostsOptions {
+  readonly fullDetails?: boolean;
   readonly kind?: string;
   readonly limit: number;
 }
@@ -704,10 +710,43 @@ export function inspectIntent(
   );
 }
 
+function youtubePostsIntent(
+  target: SocialUrlTarget,
+  options: PostsOptions,
+): SocialIntent {
+  if (target.targetKind !== "channel" && target.targetKind !== "playlist") {
+    return unsupported("YouTube posts requires a channel or playlist URL");
+  }
+  if (options.fullDetails === true && options.limit > 30) {
+    return unsupported(
+      "--full-details supports at most 30 videos; use --limit 30 or less, or omit --full-details for the fast listing",
+    );
+  }
+  return urlIntent(
+    "posts",
+    target,
+    "youtube_videos",
+    {
+      url: target.canonicalUrl,
+      limit: Math.min(options.limit, 100),
+      ...(options.fullDetails === true ? { full_details: true } : {}),
+    },
+    {
+      limit: options.limit,
+      ...(options.fullDetails === true ? { fullDetails: true } : {}),
+    },
+  );
+}
+
 export function postsIntent(
   target: SocialUrlTarget,
   options: PostsOptions,
 ): SocialIntent {
+  if (options.fullDetails === true && target.platform !== "youtube") {
+    return unsupported(
+      "--full-details is supported only for YouTube channels and playlists",
+    );
+  }
   if (options.kind !== undefined && target.platform !== "instagram") {
     return unsupported("--kind is supported only for Instagram profiles");
   }
@@ -786,19 +825,7 @@ export function postsIntent(
       );
     }
     case "youtube": {
-      if (target.targetKind !== "channel" && target.targetKind !== "playlist") {
-        return unsupported("YouTube posts requires a channel or playlist URL");
-      }
-      return urlIntent(
-        "posts",
-        target,
-        "youtube_videos",
-        {
-          url: target.canonicalUrl,
-          limit: Math.min(options.limit, 100),
-        },
-        requestMetadata,
-      );
+      return youtubePostsIntent(target, options);
     }
   }
 }

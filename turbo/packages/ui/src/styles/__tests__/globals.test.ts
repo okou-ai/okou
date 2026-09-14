@@ -217,7 +217,7 @@ describe("global Lucide defaults", () => {
       'svg[class*="lucide"][stroke-width="2"]:not([data-stroke])';
 
     expect(readRuleBody(globalCss, selector)).toMatch(
-      /stroke-width:\s*var\(--icon-stroke-width\);/,
+      /stroke-width:\s*var\(--stroke-width-icon\);/,
     );
   });
 

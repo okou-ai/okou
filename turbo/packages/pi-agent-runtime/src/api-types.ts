@@ -165,6 +165,26 @@ export interface PiApiFirstTurnArgs {
   ) => Promise<void>;
 }
 
+/** Preparation has no provider ownership or durable publication authority. */
+export type PiApiTurnPreparationArgs = Omit<
+  PiApiFirstTurnArgs,
+  "ownership" | "providerRequestBoundary"
+>;
+
+export type PiApiTurnExecutionArgs = Pick<
+  PiApiFirstTurnArgs,
+  "ownership" | "providerRequestBoundary"
+>;
+
+/** A private, single-use session; never serialize or cache across attempts. */
+export interface PreparedPiApiTurn {
+  readonly execute: (
+    args: PiApiTurnExecutionArgs,
+    signal?: AbortSignal,
+  ) => Promise<PiApiFirstTurnResult>;
+  readonly dispose: () => void;
+}
+
 export interface PiApiFirstTurnResult {
   readonly assistantMessage: PiApiAssistantMessage;
   readonly handoffRequired: boolean;
