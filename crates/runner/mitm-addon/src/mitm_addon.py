@@ -125,7 +125,6 @@ _HTTP_STATUS_ERROR_MIN = 400  # inclusive: start of 4xx/5xx error range
 # Consumer: request() and terminal cleanup.
 # Release: auth marker is popped by terminal cleanup.
 # _REQUEST_HEADERS_TERMINATED is a flow-local sentinel for request() early exit.
-_HTTP_STATUS_REQUEST_HEADER_FIELDS_TOO_LARGE = 431
 # Match the existing 64 KiB HTTP/2/SigV4 minimum per-field accounting budget.
 _MAX_REQUEST_HEADER_FIELDS = 2048
 _MAX_REQUEST_HEADER_NAME_BYTES = 4096
@@ -759,15 +758,15 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
         flow.kill()
         return None
     if any(len(name) > _MAX_REQUEST_HEADER_NAME_BYTES for name, _value in request_header_fields):
-        # Mitmproxy performs an Expect lookup after this hook, so rejected names
-        # must be gone before control returns while ordinary protocol fields stay.
+        # A local response waits for body completion. Drop rejected names and
+        # kill before mitmproxy's Expect lookup or request-body buffering.
         flow.request.headers.fields = tuple(
             (name, value)
             for name, value in request_header_fields
             if len(name) <= _MAX_REQUEST_HEADER_NAME_BYTES
         )
-        flow.response = http.Response.make(_HTTP_STATUS_REQUEST_HEADER_FIELDS_TOO_LARGE)
         flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+        flow.kill()
         return None
 
     codex_model_catalog_cache.capture_and_strip_prefetch_marker(flow)
