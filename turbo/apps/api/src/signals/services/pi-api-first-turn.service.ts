@@ -570,13 +570,9 @@ type ApiFirstTurnLaunchConfig =
 function piApiFirstTurnOutcomeTelemetry(
   executionContext: ApiFirstTurnExecutionContext,
 ) {
-  // Observe the original wire vocabulary for the reader drain in #31085.
-  // Execution uses the normalized route, including Gen1 public Responses.
   const config = executionContext.piModelConfig;
   const dialect =
-    "schemaVersion" in config
-      ? config.dialect
-      : (config.api ?? "openai-responses");
+    "schemaVersion" in config ? config.dialect : "openai-responses";
   const providerTypes = new Set(
     ("schemaVersion" in config ? config.credentialBindings : [])
       .map((binding) => {

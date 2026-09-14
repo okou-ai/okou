@@ -275,9 +275,6 @@ export const rustTypeBindings = [
           catalogModel: [
             "Optional native Pi catalog model used only for trusted capabilities and limits.",
           ],
-          api: [
-            "Cross-version transport input. Current writers emit OpenAI Responses; readers normalize absent or legacy values until the previous API rollback, runner/Sandbox drain, and pre-cutover context gates in #31085 pass.",
-          ],
           thinkingLevel: [
             "Explicit Pi thinking level. Legacy payloads omit this field and retain Pi's medium default.",
           ],
@@ -313,15 +310,6 @@ export const rustTypeBindings = [
           openrouter: ["OpenRouter provider."],
           "vercel-ai-gateway": ["Vercel AI Gateway provider."],
           codex: ["Codex provider."],
-        },
-      },
-      {
-        rustTypeName: "PiModelConfigApi",
-        rustDoc: ["OpenAI-compatible transports supported by Pi."],
-        variants: {
-          "openai-completions": ["OpenAI Chat Completions transport."],
-          "openai-responses": ["OpenAI Responses transport."],
-          "openai-codex-responses": ["ChatGPT Codex Responses transport."],
         },
       },
       {

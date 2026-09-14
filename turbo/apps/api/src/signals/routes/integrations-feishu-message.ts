@@ -1,6 +1,11 @@
+import { feishuRequestPlatform$ } from "../context/feishu-platform";
+import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
 import { command } from "ccstate";
 import { and, eq, isNotNull } from "drizzle-orm";
-import { integrationsFeishuMessageContract } from "@okouai/api-contracts/contracts/integrations";
+import {
+  integrationsFeishuMessageContract,
+  integrationsLarkMessageContract,
+} from "@okouai/api-contracts/contracts/integrations";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 
@@ -18,7 +23,7 @@ import type { RouteEntry } from "../route-entry";
 import { settle } from "../utils";
 
 function apiError(
-  status: 400 | 404 | 502,
+  status: 400 | 403 | 404 | 502,
   code: "BAD_REQUEST" | "FEISHU_ERROR" | "NOT_FOUND",
   message: string,
 ) {
@@ -38,6 +43,7 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
     return bodyResult.response;
   }
   const body = bodyResult.data;
+  const platformName = FEISHU_PLATFORMS[get(feishuRequestPlatform$)].name;
   const db = set(writeDb$);
   const installations = await db
     .select({ id: feishuOrgInstallations.id })
@@ -45,6 +51,7 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
     .where(
       and(
         eq(feishuOrgInstallations.orgId, auth.orgId),
+        eq(feishuOrgInstallations.platform, get(feishuRequestPlatform$)),
         isNotNull(feishuOrgInstallations.setupCompletedAt),
         ...(body.installationId
           ? [eq(feishuOrgInstallations.id, body.installationId)]
@@ -59,15 +66,15 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
       404,
       "NOT_FOUND",
       body.installationId
-        ? "Feishu installation not found"
-        : "No Feishu installation found for this organization",
+        ? `${platformName} installation not found`
+        : `No ${platformName} installation found for this organization`,
     );
   }
   if (!body.installationId && installations.length > 1) {
     return apiError(
       400,
       "BAD_REQUEST",
-      "Multiple Feishu installations are available. Specify installationId.",
+      `Multiple ${platformName} installations are available. Specify installationId.`,
     );
   }
 
@@ -88,7 +95,7 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
       return apiError(
         404,
         "NOT_FOUND",
-        "No Feishu connection found for the current user",
+        `No ${platformName} connection found for the current user`,
       );
     }
     userOpenId = connection.openId;
@@ -122,7 +129,11 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
       signal,
     );
   } else {
-    return apiError(400, "BAD_REQUEST", "A Feishu message target is required");
+    return apiError(
+      400,
+      "BAD_REQUEST",
+      `A ${platformName} message target is required`,
+    );
   }
   const sent = await settle(delivery, signal);
   if (!sent.ok) {
@@ -130,7 +141,7 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
       return apiError(
         sent.error.routeStatus,
         "FEISHU_ERROR",
-        `Feishu API error: ${sent.error.message}`,
+        `${platformName} API error: ${sent.error.message}`,
       );
     }
     throw sent.error;
@@ -153,6 +164,17 @@ export const integrationsFeishuMessageRoutes: readonly RouteEntry[] = [
         requireOrganization: true,
         missingOrganizationStatus: 401,
         requiredCapability: "feishu:write",
+      },
+      sendMessage$,
+    ),
+  },
+  {
+    route: integrationsLarkMessageContract.sendMessage,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        requiredCapability: "lark:write",
       },
       sendMessage$,
     ),

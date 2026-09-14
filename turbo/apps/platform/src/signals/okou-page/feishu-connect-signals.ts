@@ -1,3 +1,5 @@
+import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
+import { feishuPlatform$ } from "./feishu.ts";
 import { command, computed } from "ccstate";
 import { feishuBrowserConnectContract } from "@okouai/api-contracts/contracts/feishu-browser-connect";
 
@@ -50,7 +52,9 @@ export const connectFeishuAccount$ = command(
   async ({ get }, signal: AbortSignal) => {
     const params = get(feishuConnectParams$);
     if (!params) {
-      throw new Error("Invalid Feishu connect link");
+      throw new Error(
+        `Invalid ${FEISHU_PLATFORMS[get(feishuPlatform$)].name} connect link`,
+      );
     }
 
     const client = get(apiClient$)(feishuBrowserConnectContract);

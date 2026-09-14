@@ -7,6 +7,7 @@ import type {
 import { decode, encode } from "gpt-tokenizer/encoding/o200k_base";
 import { projectPiMemoryCitationSegments } from "@okouai/api-contracts/contracts/pi-memory-citations";
 
+import { PI_MEMORY_STAGE1_REASONING } from "./memory-background-config";
 import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
 import { MemoryPiSession } from "./session-memory";
 import {
@@ -397,7 +398,7 @@ export async function runPiMemoryStage1Extraction(
   const message = await consumeAssistantMessage(
     piAgentStreamForConfig(args.model)(model, context, {
       apiKey: args.model.apiKey,
-      reasoning: "max",
+      reasoning: PI_MEMORY_STAGE1_REASONING,
       samplingParams: {
         max_output_tokens: 32_768,
         text: {

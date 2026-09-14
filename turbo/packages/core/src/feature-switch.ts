@@ -100,12 +100,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Canva design connector",
     enabled: false,
   },
-  [FeatureSwitchKey.CalendlyOAuthConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable Calendly OAuth connections",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.CopperConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Copper CRM connector",
@@ -185,11 +179,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "yuma@okou.ai",
     description: "Enable the Ramp spend management connector",
     enabled: false,
-  },
-  [FeatureSwitchKey.MailchimpConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Mailchimp email marketing connector",
-    enabled: true,
   },
   [FeatureSwitchKey.ResendConnector]: {
     maintainer: "yuma@okou.ai",
@@ -441,6 +430,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Allow personal Codex and Claude Code subscriptions to store and manually switch between multiple accounts.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.LarkIntegration]: {
+    maintainer: "linghan@okou.ai",
+    description: "Enable Lark bot setup, account connections, and messaging.",
+    enabled: false,
   },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "linghan@okou.ai",

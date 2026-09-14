@@ -27,6 +27,7 @@ const SANDBOX_TOKEN_TTL_SECONDS = 3 * 60 * 60;
 
 const CONDITIONAL_CAPABILITIES = [
   ["banking:read", FeatureSwitchKey.Banking],
+  ["lark:write", FeatureSwitchKey.LarkIntegration],
   ["slack:read", FeatureSwitchKey.SlackRead],
   ["ssh:read", FeatureSwitchKey.SshAccess],
   ["ssh:write", FeatureSwitchKey.SshAccess],

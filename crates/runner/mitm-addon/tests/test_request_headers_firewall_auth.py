@@ -4,14 +4,17 @@ import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from mitmproxy import http
 
 import auth
+import firewall_auth_cache
 import firewall_auth_client as auth_client
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 import request_classification
 import upstream_destination_binding
 from body_limits import STREAM_BUFFER_LIMIT
+from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.request_handler_helpers import (
     _shared_route_sandbox,
     _single_firewall_sandbox,
@@ -46,7 +49,11 @@ async def test_capture_enabled_firewall_allow_header_auth_installs_request_strea
         host="api.github.com",
         method="POST",
         path="/repos/octocat/hello",
-        request_headers=headers(("Host", "api.github.com"), *request_header_pairs),
+        request_headers=headers(
+            ("Host", "api.github.com"),
+            ("Content-Type", "text/plain"),
+            *request_header_pairs,
+        ),
     )
 
     with (
@@ -63,11 +70,25 @@ async def test_capture_enabled_firewall_allow_header_auth_installs_request_strea
         assert flow.metadata[metadata_keys.FIREWALL_BASE] == "https://api.github.com"
         assert flow.metadata[metadata_keys.FIREWALL_NAME] == "github"
 
+        stream = flow.request.stream
+        assert callable(stream)
+        body = b"x" * (STREAM_BUFFER_LIMIT + 1)
+        assert stream(body) == body
+        assert stream(b"") == b""
         await mitm_addon.request(flow)
 
-    auth_fetch.assert_awaited_once()
-    assert request_classification.REQUEST_CLASSIFICATION_METADATA_KEY not in flow.metadata
-    assert flow.metadata[metadata_keys.REQUEST_STREAM_COMPLETE] is True
+        auth_fetch.assert_awaited_once()
+        assert request_classification.REQUEST_CLASSIFICATION_METADATA_KEY not in flow.metadata
+        assert flow.metadata[metadata_keys.REQUEST_STREAM_COMPLETE] is True
+        flow.response = http.Response.make(200, b"ok")
+        mitm_addon.response(flow)
+
+    entries = read_jsonl_entries_after_flush(tmp_path / "net.jsonl")
+    assert len(entries) == 1
+    assert entries[0]["status"] == 200
+    assert entries[0]["request_size"] == len(body)
+    assert entries[0]["request_body"] == "x" * STREAM_BUFFER_LIMIT
+    assert entries[0]["request_body_truncated"] is True
 
 
 @pytest.mark.parametrize("request_method", ["trace", "track"])
@@ -288,15 +309,50 @@ def test_capture_enabled_firewall_allow_small_bounded_body_does_not_install_requ
 
 
 @pytest.mark.parametrize(
-    "auth_error",
+    ("auth_error", "expected_error", "expected_action"),
     [
-        auth_client.ConnectorNotConfiguredError("not linked"),
-        RuntimeError("auth backend unavailable"),
+        pytest.param(
+            auth_client.ConnectorNotConfiguredError("not linked"),
+            "connector_not_configured",
+            "BLOCK",
+            id="connector-not-configured",
+        ),
+        pytest.param(
+            RuntimeError("auth backend unavailable"),
+            "auth_failed",
+            "ALLOW",
+            id="generic-auth-error",
+        ),
+        pytest.param(
+            auth_client.InsufficientCreditsError("insufficient credits"),
+            "insufficient_credits",
+            "BLOCK",
+            id="insufficient-credits",
+        ),
+        pytest.param(
+            firewall_auth_cache.FirewallAuthFetchSaturatedError("auth saturated"),
+            auth.FIREWALL_AUTH_FETCH_SATURATED_ERROR,
+            "ALLOW",
+            id="auth-saturated",
+        ),
+        pytest.param(
+            firewall_auth_cache.InvalidBillableAuthExpiryError("invalid expiry"),
+            "invalid_auth_expiry",
+            "ALLOW",
+            id="invalid-auth-expiry",
+        ),
+        pytest.param(
+            auth_client.FirewallAuthApiError(
+                status=403, code="FORBIDDEN", message="auth forbidden"
+            ),
+            "FORBIDDEN",
+            "BLOCK",
+            id="structured-api-error",
+        ),
     ],
-    ids=["connector-not-configured", "generic-auth-error"],
 )
-async def test_firewall_allow_header_auth_failure_falls_back_to_request_hook(
-    tmp_path, real_flow, mitm_ctx, headers, auth_error
+async def test_firewall_allow_header_auth_failure_terminates_upload(
+    tmp_path, real_flow, mitm_ctx, headers, auth_error, expected_error, expected_action
 ):
     reg_path = _write_github_firewall_registry(
         tmp_path,
@@ -324,22 +380,16 @@ async def test_firewall_allow_header_auth_failure_falls_back_to_request_hook(
 
         _assert_no_request_stream(flow)
         assert flow.response is None
-        assert metadata_keys.FIREWALL_BASE not in flow.metadata
+        assert flow.error is not None
+        assert flow.live is False
+        assert flow.metadata[metadata_keys.FIREWALL_BASE] == "https://api.github.com"
 
         await mitm_addon.request(flow)
 
     assert get_headers.await_count == 1
-    assert flow.response is not None
-    expected_status = (
-        424 if isinstance(auth_error, auth_client.ConnectorNotConfiguredError) else 502
-    )
-    assert flow.response.status_code == expected_status
-    expected_error = (
-        "connector_not_configured"
-        if isinstance(auth_error, auth_client.ConnectorNotConfiguredError)
-        else "auth_failed"
-    )
+    assert flow.response is None
     assert flow.metadata[metadata_keys.FIREWALL_ERROR] == expected_error
+    assert flow.metadata[metadata_keys.FIREWALL_ACTION] == expected_action
     assert flow.server_conn.id in upstream_destination_binding.binding_snapshot_for_tests()
 
 

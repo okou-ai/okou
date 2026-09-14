@@ -28,6 +28,7 @@ import {
   settle,
   setLoop,
   throwIfAbort,
+  waitForOperation,
   withCleanup,
 } from "./utils.ts";
 import { logger } from "./log.ts";
@@ -118,6 +119,7 @@ interface RealtimeSubscriptionChannel {
     topic: string | null,
     callback: ChannelCallback,
     onResync: ChannelResyncCallback,
+    signal: AbortSignal,
   ) => Promise<unknown>;
   readonly unsubscribe: (
     topic: string | null,
@@ -188,7 +190,7 @@ export const setSharedWorkerRealtimeBridge$ = command(
   },
 );
 
-const internalRealtimeSession$ = state<RealtimeSession | null>(null);
+const realtimeInitialization$ = state<Promise<RealtimeSession> | null>(null);
 interface PendingAblySubscription {
   readonly scope: RealtimeChannelScope;
   topic: string | null;
@@ -343,10 +345,9 @@ async function subscribeChannel(
     }
   };
 
-  await onRejection(
-    channel.subscribe(topic, callback, handleResync),
-    unsubscribeChannel,
-  );
+  await onRejection(() => {
+    return channel.subscribe(topic, callback, handleResync, signal);
+  }, unsubscribeChannel);
   signal.throwIfAborted();
   live = true;
   await withCleanup(run(), unsubscribeChannel);
@@ -736,7 +737,7 @@ function createRealtimeSubscriptionChannel(
     { once: true },
   );
   return {
-    subscribe: async (topic, callback, onResync) => {
+    subscribe: async (topic, callback, onResync, subscriptionSignal) => {
       const subscription: ActiveChannelSubscription = {
         topic,
         ablyCallback: (message) => {
@@ -751,11 +752,16 @@ function createRealtimeSubscriptionChannel(
             // Registering the listener cannot fail on a transport condition;
             // waiting for `attached` is what makes the subscription live.
             async () => {
-              await subscribeToRealtimeChannel(channel, subscription);
-              await whenChannelAttached(channel, signal);
+              await waitForOperation(
+                subscribeToRealtimeChannel(channel, subscription),
+                subscriptionSignal,
+              );
+              await whenChannelAttached(channel, subscriptionSignal);
             },
             () => {
-              subscriptions.delete(callback);
+              if (subscriptions.get(callback) === subscription) {
+                subscriptions.delete(callback);
+              }
               unsubscribeFromRealtimeChannel(channel, subscription);
             },
           );
@@ -850,8 +856,14 @@ function whenChannelAttached(
   channel: RealtimeChannel,
   signal: AbortSignal,
 ): Promise<void> {
+  signal.throwIfAborted();
   if (channel.state === "attached") {
     return Promise.resolve();
+  }
+  if (channel.state === "failed") {
+    return Promise.reject(
+      channel.errorReason ?? new Error("Realtime channel attach failed"),
+    );
   }
   const deferred = createDeferredPromise<void>(signal);
   const handleStateChange = (stateChange: ChannelStateChange): void => {
@@ -1019,11 +1031,8 @@ const connectRealtimeClient$ = command(
  * Initialize the Ably realtime client and its user and active-org channels.
  * Call once during app bootstrap, after Clerk auth is ready.
  */
-export const setupRealtime$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    if (get(sharedWorkerRealtimeBridgeState$)) {
-      return;
-    }
+const initializeRealtime$ = command(
+  async ({ get, set }, signal: AbortSignal): Promise<RealtimeSession> => {
     const rejectPendingSubscriptions = (reason?: unknown) => {
       const pendingSubscriptions = get(pendingAblySubscriptions$);
       if (pendingSubscriptions.length === 0) {
@@ -1040,7 +1049,6 @@ export const setupRealtime$ = command(
     signal.addEventListener(
       "abort",
       () => {
-        set(internalRealtimeSession$, null);
         rejectPendingSubscriptions(signal.reason);
       },
       { once: true },
@@ -1059,10 +1067,10 @@ export const setupRealtime$ = command(
       user: createRealtimeSubscriptionChannel(connected.channels.user, signal),
       org: createRealtimeSubscriptionChannel(connected.channels.org, signal),
     };
-    set(internalRealtimeSession$, {
+    const session: RealtimeSession = {
       ably: connected.ably,
       channels,
-    });
+    };
 
     const pendingSubscriptions = get(pendingAblySubscriptions$);
     if (pendingSubscriptions.length > 0) {
@@ -1098,6 +1106,19 @@ export const setupRealtime$ = command(
     }
 
     L.debug(`Realtime connected for user:${connected.ably.auth.clientId}`);
+    return session;
+  },
+);
+
+export const setupRealtime$ = command(
+  async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    if (get(sharedWorkerRealtimeBridgeState$)) {
+      return;
+    }
+    const initialization = set(initializeRealtime$, signal);
+    // Preserve the actual outcome for subscribers arriving after startup fails.
+    set(realtimeInitialization$, initialization);
+    await initialization;
   },
 );
 
@@ -1115,8 +1136,10 @@ const realtimeChannel$ = command(
       return new SharedWorkerRealtimeChannel(sharedWorkerBridge, scope);
     }
 
-    const session = get(internalRealtimeSession$);
-    if (session) {
+    const initialization = get(realtimeInitialization$);
+    if (initialization) {
+      const session = await waitForOperation(initialization, signal);
+      signal.throwIfAborted();
       return session.channels[scope];
     }
 
@@ -1139,7 +1162,13 @@ const realtimeChannel$ = command(
       return [...prev, pendingSubscription];
     });
 
-    const connectedChannel = await channelDeferred.promise;
+    const connectedChannel = await withCleanup(channelDeferred.promise, () => {
+      set(pendingAblySubscriptions$, (pending) => {
+        return pending.filter((entry) => {
+          return entry !== pendingSubscription;
+        });
+      });
+    });
     signal.throwIfAborted();
     return connectedChannel;
   },

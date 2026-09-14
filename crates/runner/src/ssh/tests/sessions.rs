@@ -146,7 +146,13 @@ async fn signal_submission_and_observed_signal_exit_are_separate_outcomes() {
     }
 }
 
-fn envelope(method: &str, params: Value) -> String {
+pub(super) fn envelope(method: &str, mut params: Value) -> String {
+    if method == "read" {
+        let params = params.as_object_mut().unwrap();
+        params.entry("waitMs").or_insert(json!(0));
+        params.entry("maxBytes").or_insert(json!(8192));
+        params.entry("maxChunks").or_insert(json!(32));
+    }
     json!({"version":1,"method":format!("ssh.session.{method}"),"remaining_ms":60000,"params":params}).to_string()
 }
 
