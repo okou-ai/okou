@@ -2,7 +2,7 @@ const ASSET_BASE =
   "https://static.vm0.io/vm0/welcome-thread/2026-09-14-4128f97d2754";
 
 const GUIDE_BASE =
-  "https://static.vm0.io/vm0/welcome-thread/2026-09-14-7affa2f4a9b7/guide";
+  "https://static.vm0.io/vm0/welcome-thread/2026-09-14-286162fbf7a7/guide";
 
 export const WELCOME_THREAD_ASSETS = Object.freeze({
   teamLearningDiagramUrl: `${ASSET_BASE}/team-learning-loop.png`,

@@ -40,7 +40,7 @@ const MODEL = "claude-sonnet-5";
 const WELCOME_ASSET_BASE =
   "https://static.vm0.io/vm0/welcome-thread/2026-09-14-4128f97d2754";
 const WELCOME_GUIDE_BASE =
-  "https://static.vm0.io/vm0/welcome-thread/2026-09-14-7affa2f4a9b7/guide";
+  "https://static.vm0.io/vm0/welcome-thread/2026-09-14-286162fbf7a7/guide";
 
 function headers(actor: ApiTestUser) {
   createRouteMocks(context).clerk.session(
