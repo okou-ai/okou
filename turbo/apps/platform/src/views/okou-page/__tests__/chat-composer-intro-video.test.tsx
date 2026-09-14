@@ -455,6 +455,9 @@ test("A saved intro video draft cannot send outside the rollout and remains edit
     featureSwitches: { [FeatureSwitchKey.IntroVideo]: false },
   });
   await expectInlineTemplate("Intro video");
+  await waitFor(() => {
+    expect(control("Send")).toBeEnabled();
+  });
   const message = await screen.findByRole("textbox", { name: "Message" });
   const user = userEvent.setup({ delay: null });
   await user.click(message);

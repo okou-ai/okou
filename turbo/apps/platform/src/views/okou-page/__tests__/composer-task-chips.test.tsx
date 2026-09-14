@@ -884,6 +884,9 @@ test("Reply tracking prepares a custom workflow request without an unrelated tem
   expect(editor).toHaveTextContent("Help me watch one Gmail conversation");
   expect(editor).toHaveTextContent("reply");
   expect(capture.sentMessages).toHaveLength(0);
+  await waitFor(() => {
+    expect(button("Send")).toBeEnabled();
+  });
   click(button("Send"));
   await waitFor(() => {
     expect(capture.sentMessages).toHaveLength(1);
