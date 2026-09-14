@@ -5740,7 +5740,6 @@
         "emailOff": "Email nonaktif. Ringkasan tetap muncul di Chat.",
         "emailWhenReady": "Anda akan menerima email saat ringkasan siap.",
         "loading": "Memuat pengaturan Morning Brief...",
-        "missingDataSource": "Hubungkan Gmail, Google Kalender, GitHub, atau Slack untuk mulai menerima ringkasan.",
         "missingDefaultAgent": "Pilih Agent default yang dapat digunakan sebelum mengaktifkan Morning Brief.",
         "missingTimezone": "Tetapkan zona waktu yang valid sebelum mengaktifkan Morning Brief.",
         "multipleInstallations": "Ada beberapa instalasi Morning Brief. Selesaikan konflik sebelum mengubah preferensi ini.",

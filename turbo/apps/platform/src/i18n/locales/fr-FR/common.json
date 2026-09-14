@@ -5815,7 +5815,6 @@
         "emailOff": "Les e-mails sont désactivés. Votre synthèse apparaîtra toujours dans Chat.",
         "emailWhenReady": "Vous recevrez un e-mail lorsque votre synthèse sera prête.",
         "loading": "Chargement des paramètres de Morning Brief...",
-        "missingDataSource": "Connectez Gmail, Google Agenda, GitHub ou Slack pour commencer à recevoir votre briefing.",
         "missingDefaultAgent": "Choisissez un Agent par défaut utilisable avant d'activer Morning Brief.",
         "missingTimezone": "Définissez un fuseau horaire valide avant d'activer Morning Brief.",
         "multipleInstallations": "Plusieurs installations de Morning Brief existent. Résolvez le conflit avant de modifier cette préférence.",

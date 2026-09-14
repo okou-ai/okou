@@ -315,7 +315,7 @@ test("shows pending Morning Brief enrollment, accepts cancellation, and receives
     status: "preparing",
     nextRunAt: null,
     timezone: "Asia/Shanghai",
-    unavailableReason: "missing-data-source",
+    unavailableReason: null,
   };
   context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
     return respond(200, preference);
@@ -335,7 +335,7 @@ test("shows pending Morning Brief enrollment, accepts cancellation, and receives
   const card = await screen.findByTestId("morning-brief-preference");
   await expect(
     within(card).findByText(
-      "Connect Gmail, Google Calendar, GitHub, or Slack to start receiving your brief.",
+      "Preparing your first Morning Brief. You can turn it off at any time.",
     ),
   ).resolves.toBeVisible();
   const toggle = within(card).getByRole("switch", { name: "Morning brief" });
@@ -356,7 +356,6 @@ test("shows pending Morning Brief enrollment, accepts cancellation, and receives
   preference = {
     ...preference,
     status: "enabled",
-    unavailableReason: null,
     nextRunAt: "2030-01-02T23:00:00.000Z",
   };
   await waitFor(() => {
@@ -370,7 +369,60 @@ test("shows pending Morning Brief enrollment, accepts cancellation, and receives
   });
   expect(
     within(card).queryByText(
-      "Connect Gmail, Google Calendar, GitHub, or Slack to start receiving your brief.",
+      "Preparing your first Morning Brief. You can turn it off at any time.",
     ),
   ).toBeNull();
+});
+
+test("keeps the Morning Brief toggle disabled while an unavailable reason is reported", async () => {
+  let preference: MorningBriefPreferenceResponse = {
+    enabled: false,
+    status: "paused",
+    nextRunAt: null,
+    timezone: "Asia/Shanghai",
+    unavailableReason: "missing-default-agent",
+  };
+  const updated: boolean[] = [];
+  context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
+    return respond(200, preference);
+  });
+  context.mocks.api(
+    morningBriefPreferenceContract.update,
+    ({ body, respond }) => {
+      updated.push(body.enabled);
+      preference = {
+        ...preference,
+        enabled: body.enabled,
+        status: "preparing",
+      };
+      return respond(200, preference);
+    },
+  );
+  await setupPage({ context, path: "/agents?settings=preference" });
+  const card = await screen.findByTestId("morning-brief-preference");
+  await expect(
+    within(card).findByText(
+      "Choose a usable default Agent before enabling Morning Brief.",
+    ),
+  ).resolves.toBeVisible();
+  expect(
+    within(card).getByRole("switch", { name: "Morning brief" }),
+  ).toHaveAttribute("aria-disabled", "true");
+
+  preference = { ...preference, unavailableReason: null };
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscription("morningBriefChanged"),
+    ).toBeTruthy();
+  });
+  context.mocks.ably.trigger("morningBriefChanged");
+  await waitFor(() => {
+    expect(
+      within(card).getByRole("switch", { name: "Morning brief" }),
+    ).toBeEnabled();
+  });
+  click(within(card).getByRole("switch", { name: "Morning brief" }));
+  await waitFor(() => {
+    expect(updated).toStrictEqual([true]);
+  });
 });

@@ -5815,7 +5815,6 @@
         "emailOff": "O e-mail está desativado. Seu resumo continuará aparecendo no Chat.",
         "emailWhenReady": "Você receberá um e-mail quando seu resumo estiver pronto.",
         "loading": "Carregando as configurações do Morning Brief...",
-        "missingDataSource": "Conecte Gmail, Google Agenda, GitHub ou Slack para começar a receber seu resumo.",
         "missingDefaultAgent": "Escolha um Agent padrão utilizável antes de ativar o Morning Brief.",
         "missingTimezone": "Defina um fuso horário válido antes de ativar o Morning Brief.",
         "multipleInstallations": "Existem várias instalações do Morning Brief. Resolva o conflito antes de alterar esta preferência.",

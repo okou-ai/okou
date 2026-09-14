@@ -22,7 +22,6 @@ import { nowDate } from "../../lib/time";
 import { calculateNextRun } from "./time-automation";
 import {
   completeMorningBriefEnrollment,
-  hasMorningBriefDataSource,
   loadMorningBriefEnrollment,
   morningBriefEnrollmentWhere,
   recordMorningBriefChoice,
@@ -85,7 +84,6 @@ export type EnsureMorningBriefDefaultEnabledResult =
         | "feature-disabled"
         | "missing-timezone"
         | "missing-default-agent"
-        | "missing-data-source"
         | "user-disabled"
         | "membership-unavailable";
     }
@@ -143,13 +141,7 @@ async function loadUnavailableReason(
   if (agentId === null) {
     return "missing-default-agent";
   }
-  return (await hasMorningBriefDataSource(db, {
-    orgId: args.orgId,
-    userId: args.member.userId,
-    agentId,
-  }))
-    ? null
-    : "missing-data-source";
+  return null;
 }
 
 async function loadDefaultAgentId(

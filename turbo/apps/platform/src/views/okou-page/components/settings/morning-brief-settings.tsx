@@ -102,10 +102,6 @@ function MorningBriefStatus({
         : t(($) => {
             return $.settings.preferences.morningBrief.conflict;
           });
-  } else if (unavailable === "missing-data-source") {
-    status = t(($) => {
-      return $.settings.preferences.morningBrief.missingDataSource;
-    });
   } else if (unavailable === "missing-timezone") {
     status = t(($) => {
       return $.settings.preferences.morningBrief.missingTimezone;
@@ -187,6 +183,19 @@ function MorningBriefDeliveryStatus({
             })}
       </span>
     </div>
+  );
+}
+
+/**
+ * Enabling while a reason is reported returns the unchanged preference, so the
+ * switch would silently spring back. The reason copy explains what to fix.
+ */
+function isToggleDisabled(
+  preference: MorningBriefPreferenceResponse | undefined,
+  busy: boolean,
+): boolean {
+  return (
+    busy || preference === undefined || preference.unavailableReason !== null
   );
 }
 
@@ -287,13 +296,10 @@ export function MorningBriefSettings() {
             })}
             checked={enabled}
             onCheckedChange={handleToggle}
-            disabled={
-              loading ||
-              mutating ||
-              loadFailed ||
-              conflicted ||
-              preference === undefined
-            }
+            disabled={isToggleDisabled(
+              preference,
+              loading || mutating || loadFailed || conflicted,
+            )}
           />
         </div>
       </PreferenceCardRow>

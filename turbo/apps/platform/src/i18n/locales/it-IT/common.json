@@ -5815,7 +5815,6 @@
         "emailOff": "L’email è disattivata. Il riepilogo continuerà ad apparire in Chat.",
         "emailWhenReady": "Riceverai un’email quando il riepilogo sarà pronto.",
         "loading": "Caricamento delle impostazioni di Morning Brief...",
-        "missingDataSource": "Collega Gmail, Google Calendar, GitHub o Slack per iniziare a ricevere il riepilogo.",
         "missingDefaultAgent": "Scegli un Agent predefinito utilizzabile prima di attivare Morning Brief.",
         "missingTimezone": "Imposta un fuso orario valido prima di attivare Morning Brief.",
         "multipleInstallations": "Esistono più installazioni di Morning Brief. Risolvi il conflitto prima di modificare questa preferenza.",

@@ -2524,19 +2524,40 @@ async function prepareBriefMember({
 }
 
 describe("Morning Brief default onboarding", () => {
-  it("waits for a connected source, then retries through the cron worker without another visit", async () => {
+  it("installs without any connected source and stays single across concurrent cron ticks", async () => {
     const { actor } = await prepareBriefMember();
     await initializeBriefMember(actor, "Asia/Shanghai");
     expect((await readBriefPreference(actor)).body).toMatchObject({
       enabled: true,
-      status: "preparing",
-      unavailableReason: "missing-data-source",
-      nextRunAt: null,
+      status: "enabled",
+      timezone: "Asia/Shanghai",
+      unavailableReason: null,
     });
-    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
-    await connectBriefSource(actor);
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
     await Promise.all([tickBriefEnrollment(actor), tickBriefEnrollment(actor)]);
-    expect((await readBriefPreference(actor)).body).toMatchObject({
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
+  });
+
+  it("installs from the preference toggle without any connected source", async () => {
+    const { actor } = await prepareBriefMember();
+    const headers = authHeaders(actor);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    await initializeBriefMember(actor, "Asia/Shanghai");
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
+    const reenabled = await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect(reenabled.body).toMatchObject({
       enabled: true,
       status: "enabled",
       timezone: "Asia/Shanghai",
@@ -2547,7 +2568,6 @@ describe("Morning Brief default onboarding", () => {
 
   it("preserves a cancellation before installation across late and duplicate membership events", async () => {
     const { actor, createdAt } = await prepareBriefMember();
-    await initializeBriefMember(actor, "Asia/Shanghai");
     await accept(
       morningBriefPreferenceClient().update({
         headers: authHeaders(actor),
@@ -2555,6 +2575,7 @@ describe("Morning Brief default onboarding", () => {
       }),
       [200],
     );
+    await initializeBriefMember(actor, "Asia/Shanghai");
     await connectBriefSource(actor);
     await deliverClerkOrganizationMembershipCreated(actor, createdAt);
     await tickBriefEnrollment(actor);
@@ -2712,6 +2733,13 @@ describe("Morning Brief default onboarding", () => {
       actor: bdd.user({ userId: first.actor.userId, email: first.actor.email }),
     });
     mockBriefMemberships([first, second]);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(second.actor),
+        body: { enabled: false },
+      }),
+      [200],
+    );
     await initializeBriefMember(first.actor, "Asia/Shanghai");
     await initializeBriefMember(second.actor, "America/Los_Angeles");
     await connectBriefSource(first.actor);
@@ -2721,16 +2749,10 @@ describe("Morning Brief default onboarding", () => {
       timezone: "Asia/Shanghai",
     });
     expect((await readBriefPreference(second.actor)).body).toMatchObject({
-      status: "preparing",
-      unavailableReason: "missing-data-source",
+      status: "paused",
+      enabled: false,
+      timezone: "America/Los_Angeles",
     });
-    await accept(
-      morningBriefPreferenceClient().update({
-        headers: authHeaders(second.actor),
-        body: { enabled: false },
-      }),
-      [200],
-    );
     await connectBriefSource(second.actor);
     await initializeBriefMember(second.actor);
     expect((await readBriefPreference(second.actor)).body).toMatchObject({
@@ -2748,7 +2770,7 @@ describe("Morning Brief default onboarding", () => {
 
   it("cancels pending enrollment when membership is removed, including a late created event", async () => {
     const { actor, createdAt } = await prepareBriefMember();
-    await initializeBriefMember(actor, "Asia/Shanghai");
+    await initializeBriefMember(actor);
     webhooks.configureClerkWebhookSecret();
     webhooks.verifyNextClerkWebhook({
       type: "organizationMembership.deleted",
