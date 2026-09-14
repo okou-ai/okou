@@ -309,6 +309,13 @@
       "when": 1789378963892,
       "tag": "1121_retire_pi_candidate_reference_trigger",
       "breakpoints": true
+    },
+    {
+      "idx": 1122,
+      "version": "7",
+      "when": 1789384075261,
+      "tag": "1122_drop_morning_brief_default_eligibility",
+      "breakpoints": true
     }
   ]
 }
