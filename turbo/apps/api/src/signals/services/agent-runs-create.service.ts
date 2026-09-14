@@ -1,3 +1,7 @@
+import {
+  FEISHU_PLATFORMS,
+  type FeishuPlatform,
+} from "@okouai/core/feishu-platform";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { isUnsupportedRunAdmission } from "./run-admission-input";
 import { PLAN_UPGRADE_CLI_HINT } from "@okouai/api-contracts/contracts/errors";
@@ -161,6 +165,7 @@ interface CreateAgentRunCommandArgs {
     UserInfo,
     | "slackDisplayName"
     | "slackUserId"
+    | "feishuPlatform"
     | "feishuDisplayName"
     | "feishuOpenId"
     | "teamsUserDisplayName"
@@ -350,6 +355,8 @@ function buildProgressiveArtifactPreviewPrompt(args: {
 
 function buildIntegrationToolsPrompt(
   triggerSource: TriggerSource,
+  feishuPlatform: FeishuPlatform | undefined,
+  larkEnabled: boolean,
 ): readonly string[] {
   const localFileContext = [
     `Prefer the workspace directory (\`${CANONICAL_WORKING_DIR}\`) for file operations and project work.`,
@@ -371,7 +378,7 @@ function buildIntegrationToolsPrompt(
     case "agent": {
       return [
         "- Web chat files: use `okou web download-file -h` when a web chat message includes a `[Web file]` block. `okou web upload-file -h` can share a local file back to the web chat user when file delivery is needed.",
-        "- Cross-integration messages from web chat: if the user explicitly asks you to send or post through another integration, use the integration CLI and ask for the destination when it is missing. Feishu: `okou feishu message send --help` for chats, DMs, and replies. Microsoft Teams: `okou teams message send --help` for conversations and thread replies. Telegram: `okou telegram bot list` to choose the bot, then `okou telegram message send --help` for chats, replies, and forum topics. AgentPhone/SMS: `okou phone message --help`. GitHub does not currently have a dedicated Okou message-send command, so do not invent `okou github message` commands.",
+        `- Cross-integration messages from web chat: if the user explicitly asks you to send or post through another integration, use the integration CLI and ask for the destination when it is missing. Feishu: \`okou feishu message send --help\` for chats, DMs, and replies.${larkEnabled ? " Lark: `okou lark message send --help` for chats, DMs, and replies." : ""} Microsoft Teams: \`okou teams message send --help\` for conversations and thread replies. Telegram: \`okou telegram bot list\` to choose the bot, then \`okou telegram message send --help\` for chats, replies, and forum topics. AgentPhone/SMS: \`okou phone message --help\`. GitHub does not currently have a dedicated Okou message-send command, so do not invent \`okou github message\` commands.`,
         "- Email from web chat: use the Gmail skill and `GMAIL_TOKEN` to create the draft directly in Gmail. Before composing, list `GET /gmail/v1/users/me/settings/sendAs`; select the entry matching the message's From address, or the `isDefault` entry when no From address is specified. Include a `multipart/alternative` body with plain-text and HTML versions. Keep each plain-text paragraph on one logical line, never hard-wrap prose to a fixed column width, and use HTML paragraph elements so Gmail wraps the message naturally. If the selected entry has a non-empty HTML `signature`, append that signature exactly once to the HTML body and include a readable text equivalent in the plain-text body. For attachments, upload a valid RFC822 multipart message through Gmail's draft media-upload endpoint. Never call `messages.send` or `drafts.send`. After Gmail returns the draft ID, run `okou mail link <gmail-draft-id>` and return the link from the command to the user.",
         "- Email draft revisions: a linked draft stays editable until the user sends it. When the user asks to change the sender, add or remove attachments, or rewrite the content, update that same Gmail draft in place with `PUT /gmail/v1/users/me/drafts/<gmail-draft-id>` and reuse the existing link instead of creating a second draft. When you hand a draft over, tell the user they can ask you for those changes.",
         "- Email send handoff: after `okou mail link` returns the review URL, share it and end the turn so the user can review and send the draft. Do not add a mail callback prompt.",
@@ -389,8 +396,10 @@ function buildIntegrationToolsPrompt(
       ];
     }
     case "feishu": {
+      const platform = feishuPlatform ?? "feishu";
+      const providerName = FEISHU_PLATFORMS[platform].name;
       return [
-        "- Feishu messaging and files: use `okou feishu --help`. Normal replies are automatically sent to the originating conversation, so Feishu commands are for a different chat, DM, reply target, or explicit extra message/file. Use `okou feishu message send --help` for extra messages, `okou feishu download-file -h` for `[Feishu file]` blocks, and `okou feishu upload-file -h` when file delivery is needed. The current installation, chat, message, and sender IDs are in the integration context. Specify `--installation` when the organization has multiple Feishu bots.",
+        `- ${providerName} messaging and files: use \`okou ${platform} --help\`. Normal replies are automatically sent to the originating conversation, so ${providerName} commands are for a different chat, DM, reply target, or explicit extra message/file. Use \`okou ${platform} message send --help\` for extra messages, \`okou ${platform} download-file -h\` for \`[${providerName} file]\` blocks, and \`okou ${platform} upload-file -h\` when file delivery is needed. The current installation, chat, message, and sender IDs are in the integration context. Specify \`--installation\` when the organization has multiple ${providerName} bots.`,
         ...localFileContextLines,
       ];
     }
@@ -428,11 +437,13 @@ function buildIntegrationToolsPrompt(
 }
 
 function buildAgentToolsPrompt(args: {
+  readonly feishuPlatform: FeishuPlatform | undefined;
   readonly sshEnabled: boolean;
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly bankingEnabled: boolean;
   readonly slackReadEnabled: boolean;
+  readonly larkEnabled: boolean;
   readonly introVideoEnabled: boolean;
 }): string {
   const okouCliCommand = `npx --yes --package="\${CLI_PKG_URL}" okou`;
@@ -494,7 +505,16 @@ function buildAgentToolsPrompt(args: {
         ]
       : []),
     "- Feishu messages: when the task explicitly asks to send or post to Feishu, use `okou feishu message send --help` for chats, DMs, and replies.",
-    ...buildIntegrationToolsPrompt(args.triggerSource),
+    ...(args.larkEnabled
+      ? [
+          "- Lark messages: when the task explicitly asks to send or post to Lark, use `okou lark message send --help` for chats, DMs, and replies.",
+        ]
+      : []),
+    ...buildIntegrationToolsPrompt(
+      args.triggerSource,
+      args.feishuPlatform,
+      args.larkEnabled,
+    ),
     "- Maps, geocoding, directions, and places: use `okou maps --help`.",
     "- Current weather, forecasts, and recent history: use `okou weather --help`.",
     "- Presentation page images: use `okou presentation screenshot --input <deck.ppt|deck.pptx|deck.pdf|page.html|layouts-dir|url> --out <dir>` to render any presentation source to ordered `page-001.png` files at one fixed page size. PPT, PPTX, and PDF are rasterised through LibreOffice and Poppler; HTML pages, layout directories, and URLs are captured through a browser, one image per slide. It only writes local image files: it uploads nothing, publishes nothing, and is unrelated to `okou presentation-template publish`, so it is the right tool whenever page images are the goal, including deck-to-video work, review, and analysis. Prefer it over `pdftoppm`, `soffice`, or hand-driven `agent-browser` screenshot calls, because a screenshot of a page the browser never painted looks like a successful screenshot. Run `okou presentation screenshot --help` for the current interface.",
@@ -539,11 +559,15 @@ function buildCurrentUserPrompt(userInfo: UserInfo): string {
   if (userInfo.slackUserId) {
     lines.push(`Slack user ID: ${userInfo.slackUserId}`);
   }
+  const feishuProviderName =
+    FEISHU_PLATFORMS[userInfo.feishuPlatform ?? "feishu"].name;
   if (userInfo.feishuDisplayName) {
-    lines.push(`Feishu display name: ${userInfo.feishuDisplayName}`);
+    lines.push(
+      `${feishuProviderName} display name: ${userInfo.feishuDisplayName}`,
+    );
   }
   if (userInfo.feishuOpenId) {
-    lines.push(`Feishu open ID: ${userInfo.feishuOpenId}`);
+    lines.push(`${feishuProviderName} open ID: ${userInfo.feishuOpenId}`);
   }
   if (userInfo.teamsUserDisplayName) {
     lines.push(`Teams display name: ${userInfo.teamsUserDisplayName}`);
@@ -580,6 +604,7 @@ function buildAppendSystemPrompt(args: {
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly bankingEnabled: boolean;
   readonly slackReadEnabled: boolean;
+  readonly larkEnabled: boolean;
   readonly introVideoEnabled: boolean;
   readonly progressiveArtifactPreviewEnabled: boolean;
 }): string {
@@ -588,11 +613,13 @@ function buildAppendSystemPrompt(args: {
     identity,
     buildExecutionTimeLimitPrompt(),
     buildAgentToolsPrompt({
+      feishuPlatform: args.userInfo.feishuPlatform,
       sshEnabled: args.sshEnabled,
       triggerSource: args.triggerSource,
       cloudBrowserEnabled: args.cloudBrowserEnabled,
       bankingEnabled: args.bankingEnabled,
       slackReadEnabled: args.slackReadEnabled,
+      larkEnabled: args.larkEnabled,
       introVideoEnabled: args.introVideoEnabled,
     }),
     buildProgressiveArtifactPreviewPrompt({
@@ -772,6 +799,7 @@ function createRunBody(args: {
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly bankingEnabled: boolean;
   readonly slackReadEnabled: boolean;
+  readonly larkEnabled: boolean;
   readonly introVideoEnabled: boolean;
   readonly progressiveArtifactPreviewEnabled: boolean;
 }) {
@@ -784,6 +812,7 @@ function createRunBody(args: {
     cloudBrowserEnabled: args.cloudBrowserEnabled,
     bankingEnabled: args.bankingEnabled,
     slackReadEnabled: args.slackReadEnabled,
+    larkEnabled: args.larkEnabled,
     introVideoEnabled: args.introVideoEnabled,
     progressiveArtifactPreviewEnabled: args.progressiveArtifactPreviewEnabled,
   });
@@ -994,6 +1023,10 @@ function buildCreateAgentRunArgs(args: {
       ),
       slackReadEnabled: isFeatureEnabled(
         FeatureSwitchKey.SlackRead,
+        args.featureSwitchContext,
+      ),
+      larkEnabled: isFeatureEnabled(
+        FeatureSwitchKey.LarkIntegration,
         args.featureSwitchContext,
       ),
       introVideoEnabled,

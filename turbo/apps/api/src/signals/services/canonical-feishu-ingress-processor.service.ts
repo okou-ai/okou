@@ -24,7 +24,10 @@ import {
 import { settle } from "../utils";
 import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
-import { buildFeishuChatOpenUrl } from "./feishu-config";
+import {
+  isFeishuInstallationEnabled,
+  buildFeishuChatOpenUrl,
+} from "./feishu-config";
 import { ensureFeishuChatThreadRoute } from "./feishu-chat-ingress.service";
 import { resolveFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
 import {
@@ -141,6 +144,7 @@ async function loadClaimedIngress(db: Db, ingressId: string) {
       orgId: feishuOrgInstallations.orgId,
       ownerUserId: feishuOrgInstallations.ownerUserId,
       appId: feishuOrgInstallations.appId,
+      platform: feishuOrgInstallations.platform,
       defaultAgentId: feishuOrgInstallations.defaultAgentId,
       botName: feishuOrgInstallations.botName,
       messageReceivedAt: feishuOrgInstallations.messageReceivedAt,
@@ -187,7 +191,7 @@ function parseMatchingMessage(
       "Canonical Feishu ingress payload does not match installation",
     );
   }
-  return message;
+  return { ...message, platform: ingress.platform };
 }
 
 async function loadConnection(
@@ -382,7 +386,10 @@ async function persistCanonicalFeishuIngress(
   signal.throwIfAborted();
 
   await args.db.transaction(async (tx) => {
-    const chatOpenUrl = buildFeishuChatOpenUrl(args.message.chatId);
+    const chatOpenUrl = buildFeishuChatOpenUrl(
+      args.message.chatId,
+      args.message.platform,
+    );
     const inserted = await insertChatEvent(
       tx,
       {
@@ -529,6 +536,9 @@ async function loadFeishuIngressDispatchContext(
   if (!ingress) {
     throw new Error("Canonical Feishu ingress is unavailable");
   }
+  if (!(await isFeishuInstallationEnabled(db, ingress))) {
+    throw new Error("Lark integration is not enabled");
+  }
   const message = parseMatchingMessage(ingress);
   const publicBrand = resolveFeishuIngressPublicBrand(ingress);
   if (ingress.defaultAgentId === null) {
@@ -536,6 +546,7 @@ async function loadFeishuIngressDispatchContext(
   }
   const installation: FeishuDispatchInstallation = {
     orgId: ingress.orgId,
+    platform: ingress.platform,
     ownerUserId: ingress.ownerUserId,
     defaultAgentId: ingress.defaultAgentId,
     botName: ingress.botName,

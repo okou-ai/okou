@@ -1,32 +1,7 @@
 import { builtInGenerationJobs } from "@okouai/db/schema/built-in-generation-job";
-import { and, eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import { db } from "../lib/db";
-
-/** The current API cannot write the historical render state without a locator. */
-export async function removeIntroVideoRenderProjectStorageFixture(
-  generationId: string,
-): Promise<void> {
-  const updated = await db()
-    .update(builtInGenerationJobs)
-    .set({
-      request: sql`${builtInGenerationJobs.request} #- '{renderState,projectStorage}'`,
-    })
-    .where(
-      and(
-        eq(builtInGenerationJobs.id, generationId),
-        sql`${builtInGenerationJobs.request}->'__builtInGeneration'->>'providerTask' = 'intro-video-render'`,
-        sql`${builtInGenerationJobs.request}->'renderState' ? 'projectStorage'`,
-        sql`${builtInGenerationJobs.request}->'renderState'->>'submittedAt' IS NULL`,
-      ),
-    )
-    .returning({ id: builtInGenerationJobs.id });
-  if (updated.length !== 1) {
-    throw new Error(
-      "Expected one unsubmitted render with a stored input location",
-    );
-  }
-}
 
 /** Reproduce an active generation job persisted before publicBrand existed. */
 export async function removeBuiltInGenerationPublicBrandFixture(

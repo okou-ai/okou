@@ -134,6 +134,10 @@ Tests scope badges through `data-slot="badge"`, which carries no styles. The ico
 
 Line height belongs to the badge because a font-size utility with an arbitrary value carries no paired line height. A badge that declared only `text-[11px]` therefore took its box from whatever `line-height` an ancestor happened to set: the same badge measured 22px, 26px, or 34px tall across four ancestors. It reuses the page-surface border tokens rather than declaring badge-specific aliases, so one hairline decision keeps one owner.
 
+Merge the badge's line height **after** caller classes. `tailwind-merge` removes an earlier line-height utility when a later font-size utility appears: `text-xs` replaces it with its paired line height, while `text-[10px]` leaves line height inherited. The badge keeps `leading-snug` last so both named and arbitrary font sizes retain the same unitless ratio. Callers choose the font size, not a separate line height.
+
+Control typography is a joint decision about font size, line height, height, and padding. Keep that decision in the shared component; fixed-height buttons and segments retain their own size scales. A line-height ratio is not a promise to center every label's ink: capitals, descenders, and fallback fonts have different extents. Verify stable baselines, descender clearance, icon alignment, and long-label wrapping in a browser across representative Latin and Chinese labels. Do not shift individual labels or impose a font-metric threshold on every control to make one word look centered.
+
 The `okou-badge`, `okou-pill`, and `okou-border-r` selectors and their consumers have been removed. `okou-pill` was scoped to `.okou-app` and set the muted foreground; its only consumer now spells that foreground itself. `okou-border-r` was a single settings-dialog divider and became `border-r border-r-gray-300` on that nav, keeping its lighter Gray 300 stroke while its width joins the shared hairline token.
 
 ### Icon controls and dialog bodies
@@ -584,6 +588,62 @@ product decisions, and each one also constrains `okou-app` and
 `okou-workspace-bg`, which share this family and the same dead attribute.
 Resolve that before draining the last two tokens.
 
+### Third-party attribution of borrowed class names
+
+A class that looks like a vendor's is not automatically that vendor's. The
+exception boundary follows who authors the element, not who the name resembles.
+
+The queue drawer's check icon was a hand-written SVG in
+`queue-page/queue-drawer.tsx` that spelled `lucide` in its own `className`.
+Lucide never rendered it; the class was there to opt into the first-party
+`svg[class*="lucide"][stroke-width="2"]:not([data-stroke])` rule that normalizes
+the vendor's default stroke. A first-party element borrowing a vendor
+fingerprint to reach a first-party rule is legacy debt, not an adapter, so it
+takes a utility instead, and the icon stroke token moves into the namespace that
+already owns that decision. Tailwind resolves `stroke-*` against `--stroke-width-*`
+before it falls back to a bare number, so renaming `--icon-stroke-width` to
+`--stroke-width-icon` turns the token into the plain named utility `stroke-icon`,
+which emits the same `stroke-width: var(--stroke-width-icon)` the retired rule
+matched into. That is the shape the emoji spans ended at with
+`font-family-emoji`: a registered token read through its own namespace, not a
+custom property threaded through an arbitrary or data-type-hinted utility. Bare
+`stroke-2` keeps working, because the namespace lookup only precedes the numeric
+fallback. The element's own `strokeWidth="2"` presentation attribute stays,
+because CSS outranks it either way and the retired rule keyed on it. Both lucide
+rules remain for the real `lucide-react` DOM, including the allowlisted
+`svg.lucide-ellipsis circle` entry.
+
+`toaster` in `components/ui/sonner.tsx` is the mirror case. Sonner neither
+defines nor requires that class; the component invents it, hands it to Sonner's
+`className` prop, and then anchors its own `group-[.toaster]:` variants on it.
+Sonner's actual contract is the `[data-sonner-toaster]` attribute it puts on its
+own list element. There is also no mechanism to authorize this kind of
+dependency: `turbo/style-allowlist.json` holds CSS selectors, style injections
+and vendored files, so a legacy class named in a component's `className` can only
+be drained or left in the shrink-only baseline — never allowlisted.
+
+### Toast styling is decided by cascade layers, not specificity
+
+Sonner injects its stylesheet into `document.head` at module load, unlayered.
+Unlayered rules outrank every layer, so a `@layer utilities` declaration loses to
+`[data-sonner-toast][data-styled="true"]` no matter how specific the variant is.
+That is why the toast class string carries `!` on most of its utilities, and it
+is why the four that lack it — `bg-popover`, `text-foreground`, `border-border`
+and `shadow-lg` — have never applied. Measured on the real Sonner runtime, a dark
+toast computes `rgb(255, 255, 255)` on `rgb(23, 23, 23)` while `--color-popover`
+is `hsl(20 2.9% 20.2%)`: the panel stays light in Dark. The component also passes
+no `theme` prop, so Sonner itself is permanently in its `light` palette. The
+`description`, `actionButton` and `cancelButton` entries are inert for the same
+reason.
+
+Restoring those declarations is a visual decision, not an equivalence repair, and
+it is tracked separately. Marking the four important does fix Dark, but it also
+moves the Light foreground, border and shadow, and — because `!important` beats
+Sonner's unlayered `:focus-visible` rule — it replaces the toast's focus ring
+with the resting shadow. Adopting Sonner's supported `theme` prop instead takes
+Sonner's palette rather than the App's popover tokens. Draining `toaster` is
+blocked behind that choice, because whichever repair wins rewrites the same class
+string.
 ### The standalone PWA fixed cover
 
 The `okou-pwa-fixed-cover` selector and its consumers have been removed. It was

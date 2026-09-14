@@ -21,18 +21,23 @@ import {
 } from "./shared-database-bridge-state.ts";
 import { setupMorningBriefRealtime$ } from "./okou-page/settings/morning-brief-preference.ts";
 import { initializeUserTimezone$ } from "./okou-page/settings/user-preferences.ts";
+import type { SharedDatabaseBridge } from "../shared-database/bridge.ts";
+import { waitForOperation } from "./utils.ts";
 
 const runAppRealtimeDaemons$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    await get(bridgeConnected$);
+  async (
+    { set },
+    initialization: Promise<SharedDatabaseBridge | null>,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const bridge = await waitForOperation(initialization, signal);
     signal.throwIfAborted();
-    set(setSharedWorkerRealtimeBridge$, get(installedSharedDatabaseBridge$));
-    await set(setupRealtime$, signal);
-    signal.throwIfAborted();
+    if (!bridge) {
+      return;
+    }
     await Promise.all([
       set(subscribePermissionUpdate$, signal),
       set(setupBillingRealtime$, signal),
-      set(subscribePresentationTemplatesChanged$, signal),
       set(setupUserPreferenceRealtime$, signal),
       set(setupMorningBriefRealtime$, signal),
       set(subscribeCustomConnectorListChanged$, signal),
@@ -41,16 +46,20 @@ const runAppRealtimeDaemons$ = command(
   },
 );
 
-/** Run user-scoped application realtime services for the root lifecycle. */
-export const runAuthenticatedRealtime$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    await set(setupClerk$, signal);
-    const user = await get(clerkUser$);
+const initializeAuthenticatedRealtime$ = command(
+  async (
+    { get, set },
+    signal: AbortSignal,
+  ): Promise<SharedDatabaseBridge | null> => {
+    const [, user] = await waitForOperation(
+      Promise.all([set(setupClerk$, signal), get(clerkUser$)]),
+      signal,
+    );
     signal.throwIfAborted();
     const clerk = await get(clerk$);
     signal.throwIfAborted();
     if (!user || !clerk.organization) {
-      return;
+      return null;
     }
     set(
       setAuthenticatedIdentity$,
@@ -68,7 +77,31 @@ export const runAuthenticatedRealtime$ = command(
       );
     });
 
-    await set(runAppRealtimeDaemons$, signal);
+    await get(bridgeConnected$);
+    signal.throwIfAborted();
+    const bridge = get(installedSharedDatabaseBridge$);
+    set(setSharedWorkerRealtimeBridge$, bridge);
+    await set(setupRealtime$, signal);
+    signal.throwIfAborted();
+    return bridge;
+  },
+);
+
+/** Run user-scoped application realtime services for the root lifecycle. */
+export const runAuthenticatedRealtime$ = command(
+  async ({ set }, signal: AbortSignal): Promise<void> => {
+    const initialization = set(initializeAuthenticatedRealtime$, signal);
+    // Install the catalog's operation before authentication or bridge setup can
+    // settle, so every startup failure reaches its consumers.
+    const templates = set(
+      subscribePresentationTemplatesChanged$,
+      initialization,
+      signal,
+    );
+    await Promise.all([
+      templates,
+      set(runAppRealtimeDaemons$, initialization, signal),
+    ]);
   },
 );
 

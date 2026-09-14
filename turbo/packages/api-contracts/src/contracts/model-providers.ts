@@ -54,6 +54,10 @@ const DEEPSEEK_V4_1_FLASH_MODEL_CATALOG = {
 const DEEPSEEK_MODEL_CATALOG = {
   ...DEEPSEEK_V4_FLASH_MODEL_CATALOG,
   models: [
+    {
+      ...deepseekV41FlashCatalogModel,
+      slug: "deepseek-flash",
+    },
     deepseekV4FlashCatalogModel,
     {
       ...deepseekV4FlashCatalogModel,
@@ -351,6 +355,7 @@ export const BUILT_IN_MODEL_TO_PROVIDER = {
   },
   "deepseek-v4.1-flash": {
     candidates: [
+      { concreteType: "deepseek", apiModel: "deepseek-flash" },
       {
         concreteType: "openrouter-codex",
         apiModel: "deepseek/deepseek-v4.1-flash",
@@ -677,7 +682,11 @@ export const MODEL_PROVIDER_TYPES = {
       OPENAI_BASE_URL: "https://api.deepseek.com/",
       OPENAI_MODEL: "$model",
     } satisfies ModelProviderEnvBindings,
-    models: ["deepseek-v4-flash", "deepseek-v4-pro"] as string[],
+    models: [
+      "deepseek-flash",
+      "deepseek-v4-flash",
+      "deepseek-v4-pro",
+    ] as string[],
     defaultModel: "deepseek-v4-flash",
   },
   "vercel-ai-gateway": {

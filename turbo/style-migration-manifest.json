@@ -27,7 +27,10 @@
       "owner": "bingjiez666",
       "phase": 2,
       "replacement": "Shared surface tokens and typed variants, migrated by consumer before deleting the legacy definitions.",
-      "tokens": ["dialog-scrollable", "okou-card"]
+      "tokens": [
+        "dialog-scrollable",
+        "okou-card"
+      ]
     },
     {
       "id": "navigation",
@@ -157,12 +160,18 @@
     {
       "id": "settings-choice-controls",
       "family": "local-controls",
-      "tokens": ["okou-chip"],
+      "tokens": [
+        "okou-chip"
+      ],
       "consumers": [
         "apps/platform/src/views/okou-page/components/settings/sections/preference-section.tsx",
         "apps/platform/src/views/okou-page/components/settings/sections/chat-section.tsx"
       ],
-      "cases": ["preferences-light", "preferences-dark", "preferences-mobile"],
+      "cases": [
+        "preferences-light",
+        "preferences-dark",
+        "preferences-mobile"
+      ],
       "status": "merged",
       "evidence": [
         {
@@ -184,9 +193,17 @@
     {
       "id": "agent-tone-choices",
       "family": "local-controls",
-      "tokens": ["okou-chip"],
-      "consumers": ["apps/platform/src/views/okou-page/settings-tab.tsx"],
-      "cases": ["tone-light", "tone-dark", "tone-mobile"],
+      "tokens": [
+        "okou-chip"
+      ],
+      "consumers": [
+        "apps/platform/src/views/okou-page/settings-tab.tsx"
+      ],
+      "cases": [
+        "tone-light",
+        "tone-dark",
+        "tone-mobile"
+      ],
       "status": "merged",
       "evidence": [
         {
@@ -278,8 +295,13 @@
     {
       "id": "tone-preview-surfaces",
       "family": "local-controls",
-      "tokens": ["okou-bubble-cool", "okou-border"],
-      "consumers": ["apps/platform/src/views/okou-page/settings-tab.tsx"],
+      "tokens": [
+        "okou-bubble-cool",
+        "okou-border"
+      ],
+      "consumers": [
+        "apps/platform/src/views/okou-page/settings-tab.tsx"
+      ],
       "cases": [
         "tone-preview-light",
         "tone-preview-dark",
@@ -311,7 +333,9 @@
     {
       "id": "monochrome-icon-filter",
       "family": "local-controls",
-      "tokens": ["okou-icon-mono"],
+      "tokens": [
+        "okou-icon-mono"
+      ],
       "consumers": [
         "apps/platform/src/views/okou-page/components/settings/provider-icons.tsx",
         "apps/platform/src/views/okou-page/components/settings/connector-icons.tsx"
@@ -358,7 +382,9 @@
     {
       "id": "settings-select-surfaces",
       "family": "local-controls",
-      "tokens": ["okou-btn-morandi"],
+      "tokens": [
+        "okou-btn-morandi"
+      ],
       "consumers": [
         "apps/platform/src/views/okou-page/components/settings/language-settings.tsx",
         "apps/platform/src/views/okou-page/components/settings/timezone-settings.tsx"
@@ -395,8 +421,12 @@
     {
       "id": "chat-emoji-font",
       "family": "local-controls",
-      "tokens": ["okou-emoji"],
-      "consumers": ["apps/platform/src/views/okou-page/chat-thread-page.tsx"],
+      "tokens": [
+        "okou-emoji"
+      ],
+      "consumers": [
+        "apps/platform/src/views/okou-page/chat-thread-page.tsx"
+      ],
       "cases": [
         "chat-emoji-light",
         "chat-emoji-dark",
@@ -435,7 +465,11 @@
     {
       "id": "hairline-badge-surfaces",
       "family": "local-controls",
-      "tokens": ["okou-badge", "okou-pill", "okou-border-r"],
+      "tokens": [
+        "okou-badge",
+        "okou-pill",
+        "okou-border-r"
+      ],
       "consumers": [
         "apps/platform/src/views/okou-page/components/settings/build-info-block.tsx",
         "apps/platform/src/views/okou-page/components/settings/built-in-model-cooldown-diagnostics-block.tsx",
@@ -471,7 +505,9 @@
         "running-indicator-center",
         "running-indicator-ripple"
       ],
-      "consumers": ["packages/ui/src/components/ui/running-indicator.tsx"],
+      "consumers": [
+        "packages/ui/src/components/ui/running-indicator.tsx"
+      ],
       "cases": [
         "running-indicator-light",
         "running-indicator-dark",
@@ -484,7 +520,9 @@
     {
       "id": "color-theme-swatch",
       "family": "local-controls",
-      "tokens": ["okou-color-theme-swatch"],
+      "tokens": [
+        "okou-color-theme-swatch"
+      ],
       "consumers": [
         "apps/platform/src/views/okou-page/components/settings/color-theme-settings.tsx"
       ],
@@ -526,7 +564,9 @@
     {
       "id": "icon-button-affordance",
       "family": "navigation",
-      "tokens": ["icon-button"],
+      "tokens": [
+        "icon-button"
+      ],
       "consumers": [
         "packages/ui/src/components/ui/dialog.tsx",
         "packages/ui/src/components/ui/sheet.tsx",
@@ -545,7 +585,9 @@
     {
       "id": "dialog-scroll-surface",
       "family": "page-surfaces",
-      "tokens": ["dialog-scrollable"],
+      "tokens": [
+        "dialog-scrollable"
+      ],
       "consumers": [
         "packages/ui/src/components/ui/dialog.tsx",
         "apps/platform/src/views/okou-page/components/org-manage/org-billing-tab.tsx",
@@ -564,9 +606,19 @@
     {
       "id": "mic-motion",
       "family": "motion-and-injection",
-      "tokens": ["mic-starting-spinner", "mic-volume-icon-meter"],
-      "consumers": ["apps/platform/src/views/okou-page/chat-composer.tsx"],
-      "cases": ["mic-light", "mic-dark", "mic-light-retina", "mic-dark-retina"],
+      "tokens": [
+        "mic-starting-spinner",
+        "mic-volume-icon-meter"
+      ],
+      "consumers": [
+        "apps/platform/src/views/okou-page/chat-composer.tsx"
+      ],
+      "cases": [
+        "mic-light",
+        "mic-dark",
+        "mic-light-retina",
+        "mic-dark-retina"
+      ],
       "status": "verified",
       "evidence": [
         {
@@ -588,7 +640,9 @@
     {
       "id": "neutral-control-surface",
       "family": "local-controls",
-      "tokens": ["okou-btn-morandi"],
+      "tokens": [
+        "okou-btn-morandi"
+      ],
       "consumers": [
         "apps/platform/src/views/agents-page/agents-page-tabs.tsx",
         "apps/platform/src/views/export-page/export-page.tsx",
@@ -645,7 +699,9 @@
     {
       "id": "hairline-rule",
       "family": "local-controls",
-      "tokens": ["okou-border-t"],
+      "tokens": [
+        "okou-border-t"
+      ],
       "consumers": [
         "apps/platform/src/views/okou-page/billing-dialog.tsx",
         "apps/platform/src/views/okou-page/components/org-manage/buy-credits-section.tsx",
@@ -709,8 +765,13 @@
     {
       "id": "desktop-titlebar",
       "family": "platform-shell",
-      "tokens": ["okou-desktop-titlebar-drag-region", "okou-sidebar-header"],
-      "consumers": ["apps/platform/src/views/okou-page/sidebar.tsx"],
+      "tokens": [
+        "okou-desktop-titlebar-drag-region",
+        "okou-sidebar-header"
+      ],
+      "consumers": [
+        "apps/platform/src/views/okou-page/sidebar.tsx"
+      ],
       "cases": [
         "desktop-titlebar-rail-light",
         "desktop-titlebar-rail-dark",
@@ -728,7 +789,9 @@
     {
       "id": "nav-chrome",
       "family": "navigation",
-      "tokens": ["okou-nav"],
+      "tokens": [
+        "okou-nav"
+      ],
       "consumers": [
         "apps/platform/src/views/okou-page/sidebar.tsx",
         "apps/platform/src/views/okou-page/__tests__/sidebar-account-menu.test.tsx"
@@ -749,7 +812,9 @@
     {
       "id": "okou-border-hairline",
       "family": "local-controls",
-      "tokens": ["okou-border"],
+      "tokens": [
+        "okou-border"
+      ],
       "consumers": [
         "apps/platform/src/views/okou-page/agent-chat-page.tsx",
         "apps/platform/src/views/okou-page/components/org-manage/org-billing-tab.tsx",
@@ -793,9 +858,56 @@
       "evidence": []
     },
     {
+      "id": "queue-drawer-check-icon",
+      "family": "external-contract-audit",
+      "tokens": [
+        "lucide"
+      ],
+      "consumers": [
+        "apps/platform/src/views/queue-page/queue-drawer.tsx"
+      ],
+      "cases": [
+        "queue-drawer-check-icon-light",
+        "queue-drawer-check-icon-dark",
+        "queue-drawer-check-icon-light-retina",
+        "queue-drawer-check-icon-dark-retina",
+        "queue-drawer-check-icon-narrow",
+        "queue-drawer-check-icon-narrow-dark"
+      ],
+      "status": "implemented",
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
+    },
+    {
+      "id": "toast-surface-contract",
+      "family": "external-contract-audit",
+      "tokens": [
+        "toaster"
+      ],
+      "consumers": [
+        "packages/ui/src/components/ui/sonner.tsx"
+      ],
+      "cases": [
+        "toast-surface-light",
+        "toast-surface-dark",
+        "toast-surface-light-retina",
+        "toast-surface-dark-retina",
+        "toast-surface-narrow",
+        "toast-surface-narrow-dark"
+      ],
+      "status": "blocked",
+      "blockedReason": "The audit shows `toaster` is a first-party marker class, not an upstream contract, so it is drainable rather than allowlistable. Draining it is blocked on a product decision, not on mechanics. The same class string carries a confirmed defect: sonner injects its stylesheet unlayered into document.head, so the four un-prefixed variants (bg-popover, text-foreground, border-border, shadow-lg) never apply and dark-theme toasts render as a white panel. Repairing that defect rewrites this class string, and the two obvious repairs disagree visually: making the four important also changes the online-visible Light theme and removes sonner's :focus-visible ring, while adopting sonner's supported `theme` prop takes sonner's palette rather than the App's popover tokens. Choose the repair first; the drain then lands with it.",
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
+    },
+    {
       "id": "pwa-safe-area-cover",
       "family": "platform-shell",
-      "tokens": ["okou-pwa-fixed-cover"],
+      "tokens": [
+        "okou-pwa-fixed-cover"
+      ],
       "consumers": [
         "apps/platform/src/views/okou-page/sidebar-layout.tsx",
         "apps/platform/src/views/okou-page/attachment-chips.tsx"
@@ -819,8 +931,13 @@
     {
       "id": "mobile-drawer-safe-area",
       "family": "platform-shell",
-      "tokens": ["okou-mobile-fixed-safe-area", "okou-mobile-sidebar"],
-      "consumers": ["apps/platform/src/views/okou-page/sidebar.tsx"],
+      "tokens": [
+        "okou-mobile-fixed-safe-area",
+        "okou-mobile-sidebar"
+      ],
+      "consumers": [
+        "apps/platform/src/views/okou-page/sidebar.tsx"
+      ],
       "cases": [
         "pwa-safe-area-cover-shell-light",
         "pwa-safe-area-cover-shell-dark",
@@ -853,6 +970,7 @@
     "../e2e/playwright/style-migration/desktop-titlebar-cases.json",
     "../e2e/playwright/style-migration/nav-chrome-cases.json",
     "../e2e/playwright/style-migration/okou-border-hairline-cases.json",
+    "../e2e/playwright/style-migration/external-contract-audit-cases.json",
     "../e2e/playwright/style-migration/pwa-safe-area-cover-cases.json"
   ]
 }

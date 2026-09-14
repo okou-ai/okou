@@ -217,6 +217,19 @@ export async function withCleanup<T>(
     await cleanup();
   }
 }
+
+/** Stop waiting for a shared operation without cancelling its other owners. */
+export function waitForOperation<T>(
+  operation: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  const cancelled = createDeferredPromise<never>(signal);
+  return withCleanup(Promise.race([operation, cancelled.promise]), () => {
+    if (!cancelled.settled()) {
+      cancelled.reject(new DOMException("Operation settled", "AbortError"));
+    }
+  });
+}
 // ---------------------------------------------------------------------------
 // Bounded async load retry
 // ---------------------------------------------------------------------------

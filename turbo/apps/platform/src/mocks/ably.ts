@@ -93,10 +93,12 @@ const MOCK_UNREACHABLE_MESSAGE = "Unable to connect (network unreachable)";
 let capturedAuthCallback: AuthCallback | null = null;
 let tokenBodies: AuthCallbackToken[] = [];
 let nextSubscribeError: Error | null = null;
-let nextSubscribeGate: {
+interface SubscribeGate {
   readonly started: ReturnType<typeof createDeferredPromise<void>>;
   readonly release: ReturnType<typeof createDeferredPromise<void>>;
-} | null = null;
+}
+let nextSubscribeGate: SubscribeGate | null = null;
+const channelSubscribeGates = new Map<string, SubscribeGate>();
 const realtimeInstances = new Set<Realtime>();
 const chatDatabaseEventListeners = new Set<ChatDatabaseEventListener>();
 const userRealtimeEventListeners = new Set<UserRealtimeEventListener>();
@@ -138,7 +140,10 @@ class FakeChannel {
   attachOnSubscribe = true;
   private readonly stateListeners = new Set<ChannelStateListener>();
 
-  constructor(private readonly connectionState: () => MockConnectionState) {}
+  constructor(
+    private readonly connectionState: () => MockConnectionState,
+    private readonly name: string,
+  ) {}
 
   trigger(topic: string, data?: unknown): void {
     const message = { name: topic, data };
@@ -245,8 +250,14 @@ class FakeChannel {
       callbacks.add(callback);
     }
 
-    const subscribeGate = nextSubscribeGate;
-    nextSubscribeGate = null;
+    const gateKey = JSON.stringify([this.name, topicOrCallback]);
+    const subscribeGate =
+      channelSubscribeGates.get(gateKey) ?? nextSubscribeGate;
+    if (channelSubscribeGates.has(gateKey)) {
+      channelSubscribeGates.delete(gateKey);
+    } else {
+      nextSubscribeGate = null;
+    }
     await Promise.resolve();
     if (subscribeGate) {
       subscribeGate.started.resolve(undefined);
@@ -493,7 +504,7 @@ export class Realtime {
     }
     const channel = new FakeChannel(() => {
       return this.connection.state;
-    });
+    }, name);
     this.channelsByName.set(name, channel);
     return channel;
   }
@@ -828,6 +839,34 @@ export function rejectAblySubscribe(
   return observed.promise;
 }
 
+/** Delay one external channel/topic registration without blocking other scopes. */
+export function deferAblySubscribeOnChannel(
+  channelName: string,
+  topic: string,
+  signal: AbortSignal,
+): {
+  readonly started: Promise<void>;
+  readonly attach: () => void;
+  readonly fail: (error: Error) => void;
+} {
+  const key = JSON.stringify([channelName, topic]);
+  if (channelSubscribeGates.has(key)) {
+    throw new Error("This Ably subscription is already deferred");
+  }
+  const started = createDeferredPromise<void>(signal);
+  const release = createDeferredPromise<void>(signal);
+  channelSubscribeGates.set(key, { started, release });
+  return {
+    started: started.promise,
+    attach: () => {
+      release.resolve();
+    },
+    fail: (error) => {
+      release.reject(error);
+    },
+  };
+}
+
 /** Track a topic subscribed through the in-process direct worker bridge. */
 export function registerDirectRealtimeSubscription(
   channelName: string,
@@ -934,6 +973,7 @@ export function resetAblySubscriptions(): void {
   tokenBodies = [];
   nextSubscribeError = null;
   nextSubscribeGate = null;
+  channelSubscribeGates.clear();
   subscribeErrors.clear();
 }
 

@@ -16,6 +16,7 @@ import brotli  # type: ignore[import-untyped]
 import zstandard
 from mitmproxy import http
 
+import content_encoding
 from body_limits import (
     DEFAULT_BODY_DECODE_LIMIT,
     LARGE_RESPONSE_DECOMPRESS_LIMIT,
@@ -45,10 +46,6 @@ INCOMPLETE_COMPRESSED_BODY = "incomplete compressed body"
 DECODED_BODY_LIMIT_EXCEEDED = "decoded body limit exceeded"
 COMPRESSED_FRAME_LIMIT_EXCEEDED = "compressed frame limit exceeded"
 _CONTENT_ENCODING_HEADER_LIMIT_EXCEEDED = "content encoding header inspection limit exceeded"
-_CONTENT_ENCODING_NAME = b"content-encoding"
-_MAX_CONTENT_ENCODING_FIELDS = 8 * 1024
-_MAX_CONTENT_ENCODING_VALUE_BYTES = 8 * 1024
-_HEADER_VALUE_SEPARATOR = ", "
 _STREAM_ZLIB_WBITS_BY_ENCODING = {
     "gzip": 16 + zlib.MAX_WBITS,
     "deflate": zlib.MAX_WBITS,
@@ -276,35 +273,6 @@ def stream_decodable_content_encodings() -> tuple[str, ...]:
     return _STREAM_DECODABLE_CONTENT_ENCODINGS
 
 
-def _content_encoding(headers: http.Headers) -> str | None:
-    """Read a bounded folded encoding, or None when header inspection is exhausted.
-
-    Missing fields return an empty encoding. Check raw field count, name length,
-    and aggregate value bytes before normalization or conversion. In-budget
-    values retain mitmproxy's UTF-8/surrogateescape and comma-folding semantics.
-    """
-    fields = headers.fields
-    if len(fields) > _MAX_CONTENT_ENCODING_FIELDS:
-        return None
-
-    values: list[bytes] = []
-    value_bytes = 0
-    for name, value in fields:
-        if len(name) != len(_CONTENT_ENCODING_NAME) or name.lower() != _CONTENT_ENCODING_NAME:
-            continue
-        value_bytes += len(value)
-        if values:
-            value_bytes += len(_HEADER_VALUE_SEPARATOR)
-        if value_bytes > _MAX_CONTENT_ENCODING_VALUE_BYTES:
-            return None
-        values.append(value)
-    return (
-        _HEADER_VALUE_SEPARATOR.join(value.decode("utf-8", "surrogateescape") for value in values)
-        .strip()
-        .lower()
-    )
-
-
 def _stream_decode_skip_reason(encoding: str | None) -> str | None:
     if encoding is None:
         return _CONTENT_ENCODING_HEADER_LIMIT_EXCEEDED
@@ -317,7 +285,7 @@ def _stream_decode_skip_reason(encoding: str | None) -> str | None:
 
 def stream_decode_skip_reason(headers: http.Headers) -> str | None:
     """Return a fixed reason when usage streams cannot decode the response."""
-    encoding = _content_encoding(headers)
+    encoding = content_encoding.read_folded(headers)
     return _stream_decode_skip_reason(encoding)
 
 
@@ -328,7 +296,7 @@ def can_stream_decode_usage(headers: http.Headers) -> bool:
 
 def can_decode_json_usage_body(headers: http.Headers) -> bool:
     """Return whether bounded terminal JSON usage decoding supports the response."""
-    encoding = _content_encoding(headers)
+    encoding = content_encoding.read_folded(headers)
     return encoding is not None and (
         not encoding or encoding == "identity" or encoding in _SUPPORTED_ONE_SHOT_BODY_ENCODINGS
     )
@@ -373,7 +341,7 @@ def create_stream_decode_session(
     """
     if max_decoded_chunk <= 0:
         raise ValueError("max_decoded_chunk must be positive")
-    encoding = _content_encoding(headers)
+    encoding = content_encoding.read_folded(headers)
     if _stream_decode_skip_reason(encoding) is not None:
         return None
     if not encoding or encoding == "identity":
@@ -523,7 +491,7 @@ def decode_response_body_for_network_log_capture(
     retained streaming buffers, which can preserve original wire bytes or
     partial decoded output after a decode problem.
     """
-    encoding = _content_encoding(headers)
+    encoding = content_encoding.read_folded(headers)
     if encoding is None:
         return None
     if not encoding or encoding == "identity":
@@ -624,7 +592,7 @@ def _decode_body_bounded(
     Valid empty compressed frames return ``b""``. ``max_output`` caps decoded
     output and may return a truncated decoded prefix without marking failure.
     """
-    encoding = _content_encoding(headers)
+    encoding = content_encoding.read_folded(headers)
     if not encoding or encoding == "identity":
         return _BodyDecodeResult(data, False)
     try:
@@ -816,7 +784,7 @@ def decode_request_body_for_network_log_capture(
     intentionally separate from billing inspection, which has a stricter
     fail-closed policy.
     """
-    encoding = _content_encoding(headers)
+    encoding = content_encoding.read_folded(headers)
     if encoding is None:
         return None
     if not encoding or encoding == "identity":
@@ -865,7 +833,7 @@ def decompress_json_usage_body(
     rejects bodies that exceed its per-body frame budget.
 
     """
-    encoding = _content_encoding(headers)
+    encoding = content_encoding.read_folded(headers)
     if encoding is None:
         return b"", _CONTENT_ENCODING_HEADER_LIMIT_EXCEEDED
     if encoding in _SUPPORTED_ONE_SHOT_BODY_ENCODINGS:

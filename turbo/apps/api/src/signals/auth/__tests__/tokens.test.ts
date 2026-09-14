@@ -233,22 +233,30 @@ describe("auth tokens", () => {
     expect(verifyOkouToken(token)?.capabilities).toContain("chat-event:write");
   });
 
-  it("gates banking capability behind the banking feature switch", () => {
-    const defaultToken = generateOkouToken("user_okou", "run_okou", "org_okou");
-    const enabledToken = generateOkouToken(
-      "user_okou",
-      "run_okou",
-      "org_okou",
-      { [FeatureSwitchKey.Banking]: true },
-    );
+  it.each([
+    [FeatureSwitchKey.Banking, "banking:read"],
+    [FeatureSwitchKey.LarkIntegration, "lark:write"],
+  ] as const)(
+    "gates %s capability behind its feature switch",
+    (feature, capability) => {
+      const defaultToken = generateOkouToken(
+        "user_okou",
+        "run_okou",
+        "org_okou",
+      );
+      const enabledToken = generateOkouToken(
+        "user_okou",
+        "run_okou",
+        "org_okou",
+        { [feature]: true },
+      );
 
-    expect(verifyOkouToken(defaultToken)?.capabilities).not.toContain(
-      "banking:read",
-    );
-    expect(verifyOkouToken(enabledToken)?.capabilities).toContain(
-      "banking:read",
-    );
-  });
+      expect(verifyOkouToken(defaultToken)?.capabilities).not.toContain(
+        capability,
+      );
+      expect(verifyOkouToken(enabledToken)?.capabilities).toContain(capability);
+    },
+  );
 
   it("gates Slack read capability without changing Slack write access", () => {
     const disabled = generateOkouToken("user_slack", "run_slack", "org_slack", {

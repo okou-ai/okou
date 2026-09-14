@@ -1118,6 +1118,40 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(stored.appendSystemPrompt ?? "").toContain(toolHint);
   });
 
+  it("advertises Lark messaging only while the organization rollout is enabled", async () => {
+    const api = createRunsApi(context);
+    const connectors = createConnectorBddApi(context);
+    const { actor, agentId } = await entitledRunActor();
+    const disabled = await api.createRun(actor, {
+      agentId,
+      prompt: "send a message",
+      modelProvider: "anthropic-api-key",
+    });
+    const disabledRun = await api.readRun(actor, disabled.runId);
+    expect(disabledRun.appendSystemPrompt).not.toContain("okou lark");
+    expect(disabledRun.appendSystemPrompt).toContain(
+      "okou feishu message send --help",
+    );
+    await api.requestCancelRun(actor, disabled.runId, [200]);
+
+    await connectors.updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.LarkIntegration]: true,
+    });
+    const enabled = await api.createRun(actor, {
+      agentId,
+      prompt: "send a message",
+      modelProvider: "anthropic-api-key",
+    });
+    const enabledRun = await api.readRun(actor, enabled.runId);
+    expect(enabledRun.appendSystemPrompt).toContain(
+      "Lark messages: when the task explicitly asks to send or post to Lark",
+    );
+    expect(enabledRun.appendSystemPrompt).toContain(
+      "Lark: `okou lark message send --help` for chats, DMs, and replies.",
+    );
+    await api.requestCancelRun(actor, enabled.runId, [200]);
+  });
+
   it("asks chat runs for a generic progressive artifact preview only while its switch is on", async () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
@@ -5869,15 +5903,19 @@ describe("RUN-02: model provider selection and built-in admission", () => {
         OPENAI_MODEL: getBuiltInApiModel(model),
       });
       if (model === "deepseek-v4.1-flash") {
-        expect(claim.codexRuntimeConfig?.providerId).toBe("openrouter-codex");
-        expect(claim.codexRuntimeConfig?.modelCatalog?.models).toStrictEqual([
+        expect(claim.environment).toMatchObject({
+          OPENAI_BASE_URL: "https://api.deepseek.com/",
+          OPENAI_MODEL: "deepseek-flash",
+        });
+        expect(claim.codexRuntimeConfig?.providerId).toBe("deepseek");
+        expect(claim.codexRuntimeConfig?.modelCatalog?.models).toContainEqual(
           expect.objectContaining({
-            slug: "deepseek/deepseek-v4.1-flash",
+            slug: "deepseek-flash",
             context_window: 1_048_576,
             input_modalities: ["text", "image"],
-            apply_patch_tool_type: null,
+            apply_patch_tool_type: "freeform",
           }),
-        ]);
+        );
       }
       expect(claim.modelUsageProvider).toBe(model);
       await api.requestCancelRun(actor, sent.body.runId, [200]);
@@ -5928,7 +5966,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     const claim = await api.claimRunnerJob(run.runId);
     await expectBuiltInModelRunRuntimeRoute(run.runId, selectedModel);
     expect(claim.environment).toMatchObject({
-      OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
+      OPENAI_BASE_URL: "https://api.deepseek.com/",
     });
 
     expect(

@@ -38,7 +38,6 @@
       "closeConnector": false,
       "payPalConnector": false,
       "rampConnector": false,
-      "mailchimpConnector": false,
       "resendConnector": false,
       "spotifyConnector": false,
       "stripeMarketplaceOAuthConnector": false,
