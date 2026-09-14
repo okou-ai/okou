@@ -22,6 +22,7 @@ import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
+import { NEVER_RESOLVED_PROMISE } from "../../../signals/utils.ts";
 import { catalogConnectorFixture } from "../../team-page/__tests__/team-page-test-helpers.ts";
 import {
   getAction,
@@ -1398,6 +1399,11 @@ test("Leaving SSH while its token is pending cancels the old mutation", async ()
   });
   await page();
   await screen.findByText("0 hosts configured");
+  const agentsLink = getAction(
+    "link",
+    "Agents",
+    screen.getByRole("navigation", { name: "Sidebar" }),
+  );
   click(getAction("button", "Add host"));
   const dialog = await screen.findByRole("dialog");
   await fill(within(dialog).getByLabelText("Display name"), "Cancelled host");
@@ -1412,12 +1418,9 @@ test("Leaving SSH while its token is pending cancels the old mutation", async ()
   await fill(within(dialog).getByLabelText("SSH username"), "cancelled");
   await fill(within(dialog).getByLabelText("Private key"), "cancelled-key");
 
-  const token = new Promise<string>(() => {
-    // Remain pending so only the page-owned request signal can settle the save.
-  });
   const tokenRequestCount = mockedClerk.sessionGetToken.mock.calls.length;
   mockedClerk.sessionGetToken.mockImplementationOnce(() => {
-    return token;
+    return NEVER_RESOLVED_PROMISE;
   });
   click(getAction("button", "Save", dialog));
   await waitFor(() => {
@@ -1427,13 +1430,7 @@ test("Leaving SSH while its token is pending cancels the old mutation", async ()
   });
   expect(getAction("button", "Saving...", dialog)).toBeDisabled();
 
-  click(
-    getAction(
-      "link",
-      "Agents",
-      screen.getByRole("navigation", { name: "Sidebar" }),
-    ),
-  );
+  click(agentsLink);
   await screen.findByRole("heading", { name: "Agents" });
   expect(requests).toStrictEqual([]);
 });
