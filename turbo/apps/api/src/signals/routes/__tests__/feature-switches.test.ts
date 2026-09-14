@@ -79,7 +79,7 @@ describe("/api/feature-switches", () => {
     ).toBeFalsy();
   });
 
-  it("defaults the compact model menu to Bingjie and the staff org while excluding other orgs", async () => {
+  it("defaults model selection refactoring to Bingjie and the staff org while excluding other orgs", async () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };
     clerk.session(
@@ -89,52 +89,67 @@ describe("/api/feature-switches", () => {
     );
     const owner = await accept(client().get({ headers }), [200]);
     expect(
-      owner.body.effectiveSwitches[FeatureSwitchKey.ModelPickerMenu],
+      owner.body.effectiveSwitches[FeatureSwitchKey.RefactorModelSelect],
     ).toBeTruthy();
 
     const staffUserId = `user_${randomUUID()}`;
     clerk.session(staffUserId, "org_3ANttyrbWYJk6JKRSTRLEsbsDLe", "org:member");
     const staff = await accept(client().get({ headers }), [200]);
     expect(
-      staff.body.effectiveSwitches[FeatureSwitchKey.ModelPickerMenu],
+      staff.body.effectiveSwitches[FeatureSwitchKey.RefactorModelSelect],
     ).toBeTruthy();
 
     clerk.session(staffUserId, `org_${randomUUID()}`, "org:member");
     const nonStaffOrg = await accept(client().get({ headers }), [200]);
     expect(
-      nonStaffOrg.body.effectiveSwitches[FeatureSwitchKey.ModelPickerMenu],
+      nonStaffOrg.body.effectiveSwitches[FeatureSwitchKey.RefactorModelSelect],
     ).toBeFalsy();
   });
 
-  it("persists and activates a user override for a non-staff org", async () => {
-    createRouteMocks(context).clerk.session(
-      "user_nonstaff_feature_switch_test",
-      "org_nonstaff_feature_switch_test",
-      "org:member",
-    );
-    const headers = { authorization: "Bearer clerk-session" };
+  it.each([true, false])(
+    "persists the unified model selection override as %s and ignores the retired switches",
+    async (enabled) => {
+      createRouteMocks(context).clerk.session(
+        `user_${randomUUID()}`,
+        `org_${randomUUID()}`,
+        "org:member",
+      );
+      const headers = { authorization: "Bearer clerk-session" };
 
-    const updated = await accept(
-      client().update({
-        headers,
-        body: {
-          switches: {
-            [FeatureSwitchKey.Dummy]: true,
+      const updated = await accept(
+        client().update({
+          headers,
+          body: {
+            switches: {
+              [FeatureSwitchKey.RefactorModelSelect]: enabled,
+              modelPickerMenu: !enabled,
+              chatReasoningEffort: !enabled,
+            },
           },
-        },
-      }),
-      [200],
-    );
+        }),
+        [200],
+      );
 
-    expect(updated.body.switches).toStrictEqual({
-      [FeatureSwitchKey.Dummy]: true,
-    });
-    expect(updated.body.effectiveSwitches[FeatureSwitchKey.Dummy]).toBeTruthy();
+      expect(updated.body.switches).toStrictEqual({
+        [FeatureSwitchKey.RefactorModelSelect]: enabled,
+      });
+      expect(
+        updated.body.effectiveSwitches[FeatureSwitchKey.RefactorModelSelect],
+      ).toBe(enabled);
 
-    const current = await accept(client().get({ headers }), [200]);
-    expect(current.body.switches).toStrictEqual({
-      [FeatureSwitchKey.Dummy]: true,
-    });
-    expect(current.body.effectiveSwitches[FeatureSwitchKey.Dummy]).toBeTruthy();
-  });
+      const current = await accept(client().get({ headers }), [200]);
+      expect(current.body.switches).toStrictEqual({
+        [FeatureSwitchKey.RefactorModelSelect]: enabled,
+      });
+      expect(
+        current.body.effectiveSwitches[FeatureSwitchKey.RefactorModelSelect],
+      ).toBe(enabled);
+      expect(current.body.effectiveSwitches).not.toHaveProperty(
+        "modelPickerMenu",
+      );
+      expect(current.body.effectiveSwitches).not.toHaveProperty(
+        "chatReasoningEffort",
+      );
+    },
+  );
 });

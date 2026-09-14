@@ -93,17 +93,13 @@ export const composerImageAnnotationEnabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.ComposerImageAnnotation] ?? false;
 });
 
-export const modelPickerMenuEnabled$ = computed((get): boolean => {
-  return get(featureSwitch$)[FeatureSwitchKey.ModelPickerMenu] ?? false;
+export const refactorModelSelectEnabled$ = computed((get): boolean => {
+  return get(featureSwitch$)[FeatureSwitchKey.RefactorModelSelect] ?? false;
 });
 
 /** The flyout replaces the drill-in menu's pages with two detached panels. */
 export const modelPickerFlyoutEnabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.ModelPickerFlyout] ?? false;
-});
-
-export const chatReasoningEffortEnabled$ = computed((get): boolean => {
-  return get(featureSwitch$)[FeatureSwitchKey.ChatReasoningEffort];
 });
 
 export const codexFastModeEnabled$ = computed((get): boolean => {

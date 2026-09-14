@@ -263,10 +263,10 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ModelPickerMenu]: {
+  [FeatureSwitchKey.RefactorModelSelect]: {
     maintainer: "bingjie@okou.ai",
     description:
-      "Show a compact overview of chat, image, and video models with nested model lists and Fast settings.",
+      "Use the compact chat, image, and video model picker with Fast mode and chat reasoning effort controls.",
     enabled: false,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
@@ -291,15 +291,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Send preview chat runs through real agent CLIs instead of preview mock runners.",
     enabled: false,
-  },
-  [FeatureSwitchKey.ChatReasoningEffort]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Choose model reasoning effort for Codex, Claude Code, and Pi chats.",
-    enabled: false,
-    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
-    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.PiLoop]: {
     maintainer: "lancy@okou.ai",

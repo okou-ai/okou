@@ -17,7 +17,7 @@ export function preferredChatReasoningEffort(
   selection: ModelProviderSelection | null | undefined,
   switches: Partial<Record<FeatureSwitchKey, boolean>>,
 ): ReasoningEffort | undefined {
-  if (!switches[FeatureSwitchKey.ChatReasoningEffort]) {
+  if (!switches[FeatureSwitchKey.RefactorModelSelect]) {
     return undefined;
   }
   return modelReasoningEffort(
@@ -36,7 +36,7 @@ export function availableChatReasoningEfforts(
     !selection ||
     !policy ||
     policy.routeStatus !== "valid" ||
-    !switches[FeatureSwitchKey.ChatReasoningEffort]
+    !switches[FeatureSwitchKey.RefactorModelSelect]
   ) {
     return [];
   }
@@ -55,7 +55,7 @@ export function availableChatReasoningEfforts(
     codexServiceTier: selection.codexServiceTier ?? undefined,
     piEnabled: switches[FeatureSwitchKey.PiLoop] === true,
     codexFastModeEnabled: Boolean(
-      switches[FeatureSwitchKey.ModelPickerMenu] ||
+      switches[FeatureSwitchKey.RefactorModelSelect] ||
       switches[FeatureSwitchKey.CodexFastMode],
     ),
   });

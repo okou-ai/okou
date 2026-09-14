@@ -89,7 +89,7 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { debounceCommand } from "../command-scheduling.ts";
 import {
-  chatReasoningEffortEnabled$,
+  refactorModelSelectEnabled$,
   codexFastModeEnabled$,
   featureSwitch$,
 } from "../external/feature-switch.ts";
@@ -466,7 +466,7 @@ function createModelSelection(
   );
 
   const modelSettings$ = computed((get) => {
-    return get(chatReasoningEffortEnabled$)
+    return get(refactorModelSelectEnabled$)
       ? (get(threadMeta$)?.modelSettings ?? {})
       : {};
   });

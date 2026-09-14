@@ -130,7 +130,7 @@ const updateUserModelPreferenceInner$ = command(
       enabled:
         featureSwitchContext !== undefined &&
         isFeatureEnabled(
-          FeatureSwitchKey.ChatReasoningEffort,
+          FeatureSwitchKey.RefactorModelSelect,
           featureSwitchContext,
         ),
     });

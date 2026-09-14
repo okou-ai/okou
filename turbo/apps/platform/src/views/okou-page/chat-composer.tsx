@@ -272,7 +272,7 @@ import {
 import {
   codexFastModeEnabled$,
   modelPickerFlyoutEnabled$,
-  modelPickerMenuEnabled$,
+  refactorModelSelectEnabled$,
   customConnectorMcpEnabled$,
   featureSwitch$,
 } from "../../signals/external/feature-switch.ts";
@@ -9699,7 +9699,7 @@ function ComposerRunModelPickerControl({
   mediaModelPanel: MediaModelPanelState | undefined;
 }) {
   const { t } = useTranslation();
-  const modelMenuEnabled = useGet(modelPickerMenuEnabled$);
+  const modelMenuEnabled = useGet(refactorModelSelectEnabled$);
   // The flyout needs the room a phone does not have; narrow viewports keep the
   // menu's pages until the sheet layout lands.
   const modelFlyoutEnabled = useGet(modelPickerFlyoutEnabled$) && desktopLayout;

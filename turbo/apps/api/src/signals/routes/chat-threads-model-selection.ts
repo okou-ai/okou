@@ -104,7 +104,7 @@ const updateModelSelectionInner$ = command(
         modelSettings: modelSettingsSchema.parse(current.modelSettings),
         requested: body.data.reasoningEffort,
         enabled: isFeatureEnabled(
-          FeatureSwitchKey.ChatReasoningEffort,
+          FeatureSwitchKey.RefactorModelSelect,
           context,
         ),
       });
