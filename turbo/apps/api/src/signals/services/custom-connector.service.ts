@@ -93,6 +93,7 @@ import {
   writeConnectorConnectionMetadata,
 } from "./connector-connection-write.service";
 import type { Tx } from "../../lib/db-types";
+import { writeCustomConnectorOAuthState } from "./custom-connector-oauth-write.service";
 
 const L = logger("CustomConnectorService");
 
@@ -1822,53 +1823,60 @@ async function persistCustomConnectorCreate(
         return prefixConflict;
       }
     }
-    if (args.preparedSkill) {
-      await commitPreparedCustomConnectorSkillStorage(
-        { db: tx, volume: args.preparedSkill },
-        signal,
-      );
-    }
-    const [row] = await tx
-      .insert(orgCustomConnectors)
-      .values({
-        id: args.connectorId,
-        orgId: args.orgId,
-        slug: args.slug,
-        displayName: args.definition.displayName,
-        ...protocolColumns(args.definition),
-        fields: [...args.definition.fields],
-        headerInjections: [...args.definition.headerInjections],
-        queryInjections: [...args.definition.queryInjections],
-        authMode: args.definition.authMode,
-        skillMarkdown: args.definition.skillMarkdown,
-        skillStorageVersionId: args.preparedSkill?.version.versionId ?? null,
-        storageVersion: args.storageVersion,
-        createdBy: args.userId,
-      })
-      .returning(customConnectorDefinitionSelection());
-    if (!row) {
-      throw new Error("Expected insert to return a row");
-    }
-    let oauthConfig: CustomConnectorOAuthConfigRow | null = null;
-    if (
-      args.oauthConfigUpdate.kind === "upsert" &&
-      args.encryptedClientSecret
-    ) {
-      const [insertedOAuthConfig] = await tx
-        .insert(orgCustomConnectorOauthConfigs)
-        .values({
-          connectorId: row.id,
-          orgId: args.orgId,
-          ...args.oauthConfigUpdate.config,
-          encryptedClientSecret: args.encryptedClientSecret,
-        })
-        .returning();
-      if (!insertedOAuthConfig) {
-        throw new Error("Expected OAuth config insert to return a row");
-      }
-      oauthConfig = insertedOAuthConfig;
-    }
-    return { row, oauthConfig };
+    return await writeCustomConnectorOAuthState(
+      tx,
+      [{ connectorId: args.connectorId, orgId: args.orgId }],
+      async () => {
+        if (args.preparedSkill) {
+          await commitPreparedCustomConnectorSkillStorage(
+            { db: tx, volume: args.preparedSkill },
+            signal,
+          );
+        }
+        const [row] = await tx
+          .insert(orgCustomConnectors)
+          .values({
+            id: args.connectorId,
+            orgId: args.orgId,
+            slug: args.slug,
+            displayName: args.definition.displayName,
+            ...protocolColumns(args.definition),
+            fields: [...args.definition.fields],
+            headerInjections: [...args.definition.headerInjections],
+            queryInjections: [...args.definition.queryInjections],
+            authMode: args.definition.authMode,
+            skillMarkdown: args.definition.skillMarkdown,
+            skillStorageVersionId:
+              args.preparedSkill?.version.versionId ?? null,
+            storageVersion: args.storageVersion,
+            createdBy: args.userId,
+          })
+          .returning(customConnectorDefinitionSelection());
+        if (!row) {
+          throw new Error("Expected insert to return a row");
+        }
+        let oauthConfig: CustomConnectorOAuthConfigRow | null = null;
+        if (
+          args.oauthConfigUpdate.kind === "upsert" &&
+          args.encryptedClientSecret
+        ) {
+          const [insertedOAuthConfig] = await tx
+            .insert(orgCustomConnectorOauthConfigs)
+            .values({
+              connectorId: row.id,
+              orgId: args.orgId,
+              ...args.oauthConfigUpdate.config,
+              encryptedClientSecret: args.encryptedClientSecret,
+            })
+            .returning();
+          if (!insertedOAuthConfig) {
+            throw new Error("Expected OAuth config insert to return a row");
+          }
+          oauthConfig = insertedOAuthConfig;
+        }
+        return { row, oauthConfig };
+      },
+    );
   });
 }
 
@@ -2082,6 +2090,48 @@ async function deleteReplacedAutomaticOAuthData(
     );
 }
 
+async function persistCustomConnectorOAuthConfigUpdate(
+  tx: Tx,
+  args: PersistCustomConnectorUpdateArgs,
+): Promise<CustomConnectorOAuthConfigRow | null> {
+  let storedOAuthConfig: CustomConnectorOAuthConfigRow | null = null;
+  if (args.oauthConfigUpdate.kind === "none") {
+    await tx
+      .delete(orgCustomConnectorOauthConfigs)
+      .where(
+        and(
+          eq(orgCustomConnectorOauthConfigs.connectorId, args.id),
+          eq(orgCustomConnectorOauthConfigs.orgId, args.orgId),
+        ),
+      );
+  } else if (args.oauthConfigUpdate.kind === "preserve") {
+    storedOAuthConfig = args.oauthConfigUpdate.config;
+  } else {
+    if (!args.encryptedClientSecret) {
+      throw new Error("Expected encrypted OAuth client secret");
+    }
+    const [upserted] = await tx
+      .insert(orgCustomConnectorOauthConfigs)
+      .values({
+        connectorId: args.id,
+        orgId: args.orgId,
+        ...args.oauthConfigUpdate.config,
+        encryptedClientSecret: args.encryptedClientSecret,
+      })
+      .onConflictDoUpdate({
+        target: orgCustomConnectorOauthConfigs.connectorId,
+        set: {
+          ...args.oauthConfigUpdate.config,
+          encryptedClientSecret: args.encryptedClientSecret,
+          updatedAt: nowDate(),
+        },
+      })
+      .returning();
+    storedOAuthConfig = upserted ?? null;
+  }
+  return storedOAuthConfig;
+}
+
 async function persistCustomConnectorUpdate(
   db: Db,
   args: PersistCustomConnectorUpdateArgs,
@@ -2139,74 +2189,50 @@ async function persistCustomConnectorUpdate(
           )
         : null;
     }
-    if (args.preparedSkill) {
-      await commitPreparedCustomConnectorSkillStorage(
-        { db: tx, volume: args.preparedSkill },
-        signal,
-      );
-    }
-    await deleteReplacedAutomaticOAuthData(tx, args);
-    const kindColumns = protocolColumns(args.definition);
-    const [updated] = await tx
-      .update(orgCustomConnectors)
-      .set({
-        displayName: args.definition.displayName,
-        ...kindColumns,
-        fields: [...args.definition.fields],
-        headerInjections: [...args.definition.headerInjections],
-        queryInjections: [...args.definition.queryInjections],
-        authMode: args.definition.authMode,
-        skillMarkdown: args.definition.skillMarkdown,
-        skillStorageVersionId: args.preparedSkill?.version.versionId ?? null,
-        storageVersion: args.storageVersion,
-        updatedAt: nowDate(),
-      })
-      .where(
-        and(
-          eq(orgCustomConnectors.id, args.id),
-          eq(orgCustomConnectors.orgId, args.orgId),
-        ),
-      )
-      .returning(customConnectorDefinitionSelection());
-    if (!updated) {
-      throw new Error("Expected locked custom connector to be updated");
-    }
-    let storedOAuthConfig: CustomConnectorOAuthConfigRow | null = null;
-    if (args.oauthConfigUpdate.kind === "none") {
-      await tx
-        .delete(orgCustomConnectorOauthConfigs)
-        .where(
-          and(
-            eq(orgCustomConnectorOauthConfigs.connectorId, args.id),
-            eq(orgCustomConnectorOauthConfigs.orgId, args.orgId),
-          ),
-        );
-    } else if (args.oauthConfigUpdate.kind === "preserve") {
-      storedOAuthConfig = args.oauthConfigUpdate.config;
-    } else {
-      if (!args.encryptedClientSecret) {
-        throw new Error("Expected encrypted OAuth client secret");
-      }
-      const [upserted] = await tx
-        .insert(orgCustomConnectorOauthConfigs)
-        .values({
-          connectorId: args.id,
-          orgId: args.orgId,
-          ...args.oauthConfigUpdate.config,
-          encryptedClientSecret: args.encryptedClientSecret,
-        })
-        .onConflictDoUpdate({
-          target: orgCustomConnectorOauthConfigs.connectorId,
-          set: {
-            ...args.oauthConfigUpdate.config,
-            encryptedClientSecret: args.encryptedClientSecret,
+    return await writeCustomConnectorOAuthState(
+      tx,
+      [{ connectorId: args.id, orgId: args.orgId }],
+      async () => {
+        if (args.preparedSkill) {
+          await commitPreparedCustomConnectorSkillStorage(
+            { db: tx, volume: args.preparedSkill },
+            signal,
+          );
+        }
+        await deleteReplacedAutomaticOAuthData(tx, args);
+        const kindColumns = protocolColumns(args.definition);
+        const [updated] = await tx
+          .update(orgCustomConnectors)
+          .set({
+            displayName: args.definition.displayName,
+            ...kindColumns,
+            fields: [...args.definition.fields],
+            headerInjections: [...args.definition.headerInjections],
+            queryInjections: [...args.definition.queryInjections],
+            authMode: args.definition.authMode,
+            skillMarkdown: args.definition.skillMarkdown,
+            skillStorageVersionId:
+              args.preparedSkill?.version.versionId ?? null,
+            storageVersion: args.storageVersion,
             updatedAt: nowDate(),
-          },
-        })
-        .returning();
-      storedOAuthConfig = upserted ?? null;
-    }
-    return { row: updated, oauthConfig: storedOAuthConfig };
+          })
+          .where(
+            and(
+              eq(orgCustomConnectors.id, args.id),
+              eq(orgCustomConnectors.orgId, args.orgId),
+            ),
+          )
+          .returning(customConnectorDefinitionSelection());
+        if (!updated) {
+          throw new Error("Expected locked custom connector to be updated");
+        }
+        const storedOAuthConfig = await persistCustomConnectorOAuthConfigUpdate(
+          tx,
+          args,
+        );
+        return { row: updated, oauthConfig: storedOAuthConfig };
+      },
+    );
   });
 }
 

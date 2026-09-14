@@ -43,6 +43,14 @@ Color-theme presets in the App stylesheet share their anchor and companion color
 
 When `GradientColorThemes` is enabled on the document, each preset's HSL primary value supplies both its anchor color and the shared `--primary` token. Primary actions, including portaled dialog buttons, immediately use that fill and the preset's contrast-checked `--primary-foreground` in Light/Dark. Hover and pressed fills blend the anchor toward its companion using the existing filled-state alpha tokens. Disabled buttons retain the shared opacity treatment. Removing the document's color-theme attributes restores the shared Amber primary tokens.
 
+Auxiliary controls and previews revealed by hover or keyboard focus change
+opacity immediately. Do not add opacity transitions to message actions,
+sidebar controls, card overlays, or similar contextual affordances; temporary
+compositing layers can cause nearby content to flicker in Safari. Preserve
+their layout, focus visibility, touch behavior, and pointer-event rules. When
+other properties still animate, name those properties instead of using
+`transition-all`. This does not remove loading or popup lifecycle animations.
+
 ## Token and variant governance
 
 New tokens must represent a reusable semantic decision, have a documented consumer contract, and define their light and dark theme behavior in the canonical stylesheet. Shared tokens and variants belong to `@okouai/ui`; App-only tokens belong to the App token layer. A new alias for one component's hard-coded values is not a token contract.
@@ -125,6 +133,10 @@ The badge owns geometry and nothing else. Typography and foreground stay with th
 Tests scope badges through `data-slot="badge"`, which carries no styles. The icon rule and that slot follow shadcn's badge, which this package's components come from; the rest of shadcn's badge does not fit, because it bakes in `text-xs font-medium` that the diagnostic chips inherit from their row instead, and `whitespace-nowrap overflow-hidden` that would stop the long key/value chips from wrapping.
 
 Line height belongs to the badge because a font-size utility with an arbitrary value carries no paired line height. A badge that declared only `text-[11px]` therefore took its box from whatever `line-height` an ancestor happened to set: the same badge measured 22px, 26px, or 34px tall across four ancestors. It reuses the page-surface border tokens rather than declaring badge-specific aliases, so one hairline decision keeps one owner.
+
+Merge the badge's line height **after** caller classes. `tailwind-merge` removes an earlier line-height utility when a later font-size utility appears: `text-xs` replaces it with its paired line height, while `text-[10px]` leaves line height inherited. The badge keeps `leading-snug` last so both named and arbitrary font sizes retain the same unitless ratio. Callers choose the font size, not a separate line height.
+
+Control typography is a joint decision about font size, line height, height, and padding. Keep that decision in the shared component; fixed-height buttons and segments retain their own size scales. A line-height ratio is not a promise to center every label's ink: capitals, descenders, and fallback fonts have different extents. Verify stable baselines, descender clearance, icon alignment, and long-label wrapping in a browser across representative Latin and Chinese labels. Do not shift individual labels or impose a font-metric threshold on every control to make one word look centered.
 
 The `okou-badge`, `okou-pill`, and `okou-border-r` selectors and their consumers have been removed. `okou-pill` was scoped to `.okou-app` and set the muted foreground; its only consumer now spells that foreground itself. `okou-border-r` was a single settings-dialog divider and became `border-r border-r-gray-300` on that nav, keeping its lighter Gray 300 stroke while its width joins the shared hairline token.
 
@@ -329,6 +341,76 @@ override, and the guard is the better behaviour.
 Sidebar thread titles carry `data-slot="sidebar-thread-title"` so tests select
 them through a documented slot instead of the styling class.
 
+### Nav chrome under the gradient color themes
+
+The `okou-nav` selector and its consumers have been removed. It carried five
+declarations across four rules, and it was the scoping ancestor the rail fill
+needed: `.okou-app[data-gradient-color-themes] .okou-nav.okou-nav-rail` painted
+the rail's background, so deleting the class alone would have unscoped that
+compound selector and dropped the rail tint under every gradient palette.
+
+Three of the five declarations were inert. `.okou-nav` re-declared
+`--color-sidebar-border` as `hsl(var(--gray-200))`, which is already the App
+`@theme` default, and the gradient and dark rules re-declared `--color-sidebar`
+as `hsl(var(--sidebar))`, which both `:root` and `.okou-app` already set to the
+same substituted value. `--sidebar` and `--gray-200` are only ever assigned at
+document scope, so re-anchoring them on a descendant could not change what the
+nav resolved. Removing all three is measured below as zero change, including
+for descendants that read the inherited tokens.
+
+The two live declarations were gradient-only, and they collapse to the variable
+layer the same way the nav copy above does:
+
+```css
+:root[data-gradient-color-themes][data-color-theme] {
+  --nav-rail: hsl(var(--okou-color-theme-hue) 36% 93.5%);
+  --nav-border: hsl(var(--border) / 0.5);
+}
+```
+
+```css
+--color-nav-border: var(--nav-border, var(--color-sidebar-border));
+--color-nav-rail: var(--nav-rail, var(--color-sidebar-rail));
+```
+
+The rail composes `border-nav-border bg-nav-rail` and the expanded drawer
+composes `border-nav-border`. With the gradient themes on, the raw values exist
+and both resolve to them; everywhere else they are unset and each consumer falls
+back to the shared sidebar token it already read. `--okou-nav-rail` is renamed
+to `--nav-rail` rather than kept beside it, because the retired rule was its
+only reader.
+
+This narrows a contract on purpose. The retired rules overrode an _inherited_
+token on the whole nav subtree, so any descendant spelling
+`border-sidebar-border` silently took the gradient alpha; the replacement is an
+explicit utility that a consumer opts into. The three nav elements are the only
+consumers of `border-sidebar-border`, `bg-sidebar` and `bg-sidebar-rail` in
+Platform and UI today, so nothing changes now, and a future nav descendant that
+wants the gradient stroke asks for `border-nav-border` by name.
+
+`.okou-nav-rail` stays on the rail element and now carries no declarations. It
+is neither in the legacy baseline nor in a batch, so retiring it belongs to
+whichever change closes that gap, not to this one. The expanded drawer carries
+`data-slot="sidebar-expanded"` so the account-menu test selects it through a
+documented slot instead of `aside.okou-nav:not(.okou-nav-rail)`.
+
+`GradientColorThemes` is `enabled: false` with no organization allowlist, so the
+default palette is the online-visible path and every gradient palette is a
+superset behind the switch.
+
+Measured against `main` with the App's own Tailwind compiler in Chromium over
+CDP, across 36 captures — the default palette plus all eight gradient palettes,
+each in Light and Dark, at desktop 1280x900 DPR 1 and narrow 700x900 DPR 2:
+zero changed pixels and zero changed rendered properties on every capture,
+online-visible path included. A second fixture adds descendants that read the
+inherited sidebar tokens; there the only difference is the intended one, the
+`border-sidebar-border` probe losing its gradient alpha inside the nav, and the
+`bg-sidebar`, `bg-sidebar-rail` and `text-sidebar-foreground` probes are
+unchanged, which is what establishes that the three inert declarations were
+inert. Negative controls that drop the rail fill, shift the border alpha by
+0.05, and shift the rail lightness by 0.5% all report changes, so the zeros are
+not degenerate.
+
 ### Horizontal hairline rules
 
 The `okou-border-t` selector and its consumers have been removed. It was one
@@ -354,6 +436,68 @@ alongside their existing `border-0`. That still paints, because Tailwind emits
 `border-width` before `border-top-width` inside the utilities layer; previously
 the legacy rule won only by sitting outside every layer. Tests continue to
 select both separators through `data-slot`.
+
+### The all-round hairline
+
+`okou-border` is the four-sided sibling of the rule above: one declaration,
+`border: 0.7px solid hsl(var(--gray-400))`, carried by settings cards,
+diagnostic panels, org-management tables, the queue drawer's plan cards, the
+instructions editor's bubble menu and a handful of pills and chips. Twenty-eight
+of its consumption sites now write `border border-surface-border`; the two that
+already spelled a bare `border` add only the colour.
+
+`--color-surface-border` is `hsl(var(--gray-400))`, the same runtime variable the
+retired rule read, so every Dark and gradient-palette override still applies
+without a per-theme branch. It is the registered name for this decision — the
+page-surface and badge tables above already point at it — which is why these
+consumers take it rather than the raw `border-gray-400` ramp stop the horizontal
+rules kept. `border-border` would be wrong here: `--border` is `--gray-300`, one
+stop lighter.
+
+The width joins the shared hairline exactly as `okou-btn-morandi` and
+`okou-border-t` did. Measured in Blink, `0.7px`, `0.5px` and `1px` all resolve to
+a used width of `1px` and paint 1, 2 and 3 device pixels at device scale factors
+1, 2 and 3 respectively — the same count for all three — so dropping the
+hard-coded `0.7px` is invisible there and layout is unchanged. WebKit may draw
+the true hairline on a high-density display, which is the product behaviour the
+shared token already describes.
+
+The selector itself stays for now. `buy-credits-section.tsx` reaches for it from
+a function that returns a class string rather than from a `className` attribute,
+so neither the legacy baseline nor `no-unknown-classes` counts it, and that one
+consumer is not mechanically drainable: the retired rule is unlayered, so its
+`border` shorthand outranks the sibling `hover:border-muted-foreground/30` on the
+same element and that hover colour never paints. Replacing only the legacy class
+activates it. Deciding between keeping a hover the tile has never had and
+deleting a utility the consumer spells is a visual decision, not an equivalence,
+and it is reviewed separately.
+
+### Page layouts
+
+Choose the existing layout that owns the page structure. Route setup selects
+`pageLayout$`; the Router's `LayoutHost` supplies `SidebarLayout` or
+`StandaloneLayout`, and the page supplies the content inside it.
+
+| Component                                         | Use it for                                                                                               | Placement                                    |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `SidebarLayout`                                   | Workspace pages with navigation and a workspace pane                                                     | Selected by the router's `sidebar` layout    |
+| `StandaloneLayout`                                | Independent flows with shared theme and dialogs, such as authorization, browser sessions, and redemption | Selected by the router's `standalone` layout |
+| `OnboardingShell`                                 | Step-based onboarding with progress, account controls, and an optional footer                            | The onboarding page's outer layout           |
+| `PageShell` in `okou-page/connect-page-shell.tsx` | Connector sign-in, authorization, and status content in a centered card                                  | The connection page's outer layout           |
+| `DirectedCardShell`                               | Connector-specific title, icon, description, and actions in a centered handoff card                      | Content inside `StandaloneLayout`            |
+| `DetailPageShell`                                 | A detail page's flex and scroll container                                                                | Content inside an existing workspace layout  |
+
+Pages rendered inside a shared layout reuse that layout's outer container.
+Independent pages that already own their structure, such as `ExportPage`, keep
+their native root element.
+
+Viewport sizing stays on the existing native roots through
+`box-border h-full max-h-full min-h-full overflow-hidden`. Page roots reserve
+the bottom safe-area inset with `pb-(--sab)`; `SidebarLayout` uses `pb-0` so its
+scrollports reach the viewport edge and its content/composer owns the inset.
+Document sizing, top and horizontal insets, and PWA keyboard handling remain
+owned by the existing global environment rules. The `okou-viewport-shell` and
+`okou-managed-bottom-safe-area` selectors and their consumers have been removed.
 
 ### Table header rules and the global scrollbar treatment
 
@@ -397,6 +541,101 @@ declared it, so a header row that later carries a wider border keeps today's
 appearance. Leaving the separator to `TableRow` instead is not equivalent — a row
 border never wins that boundary, so the header rule simply disappears and every
 body row shifts up.
+
+### Chat message bubbles
+
+The `okou-chat-bubble-user` and `okou-chat-bubble-assistant` selectors and their
+consumers have been removed. Between them they carried seven declarations over
+four rules: the user bubble's fill and foreground, the assistant bubble's
+transparent fill and `border: none`, the 8px block spacing the Markdown body
+inside either bubble used instead of the App's 6px default, and the assistant
+bubble's suppressed horizontal rules.
+
+The two fills are ordinary utilities. The user bubble writes `bg-gray-200
+text-foreground` — `--color-gray-200` and `--color-foreground` are the
+registered names for `hsl(var(--gray-200))` and `hsl(var(--foreground))`, the
+same runtime variables the retired rule read, so every Dark and
+gradient-palette override still applies. The assistant bubble writes
+`bg-transparent border-none border-current`. The colour utility is there because
+`border: none` is a shorthand: it reset `border-color` to `currentcolor`, while
+`border-none` sets only the style. The width is 0 either way, so this is
+invisible today; it is kept because the retired rule decided it, so an assistant
+body that later carries a border keeps the treatment it has now.
+
+The Markdown block treatment is different in kind, because it applies to
+elements the Markdown library renders. `MarkdownEventBody` takes a `chatBubble`
+prop and composes the whole treatment onto the frame it already owns:
+
+```
+[&_:is(p,[data-slot=markdown-card])]:my-2! [&>*:first-child]:mt-0!
+[&>*:last-child]:mb-0! [&_blockquote>*:first-child]:mt-0!
+[&_blockquote>*:last-child]:mb-0! [&_hr]:hidden
+```
+
+Every margin there is important, and the four resets exist only because of it.
+The competitor for the paragraphs and cards is the App's own unlayered
+`.wmde-markdown p, .wmde-markdown .okou-markdown-card` rule, which a utility in
+`@layer utilities` cannot outrank without one; a layered important declaration
+does. But that same promotion would also beat the two competitors the retired
+rule _lost_ to — the vendored `.wmde-markdown > *:first-child` /
+`> *:last-child` resets, which are themselves important, and the vendored
+`blockquote > :first-child` / `:last-child` pair, which ties the retired rule on
+specificity and wins on source order because the Markdown chunk's stylesheet
+loads after the App's. Restating those four at the same tier is what keeps the
+edge paragraphs flush. `[&_hr]:hidden` needs no important, because nothing
+unlayered declares `display` on a Markdown rule.
+
+The card slot is addressed through `data-slot="markdown-card"` rather than its
+`okou-markdown-card` class, for the same reason the desktop titlebar block below
+cannot be respelled: naming a legacy class inside an arbitrary variant registers
+a new dependency on it, and that token belongs to a later batch. The slot
+carries no styles. `data-slot="chat-user-message"` likewise replaces the
+attachment-preview test's `.okou-chat-bubble-user` query.
+
+This narrows a contract on purpose, the way the nav chrome above does. The
+retired rules applied to _any_ Markdown frame that happened to sit inside a
+bubble; the replacement applies to the three call sites that ask for it — the
+chat transcript's Agent message, and the shared thread's rendered and
+rich-content Agent messages. Those are every Markdown frame inside a bubble
+today, so nothing changes now, and a future in-bubble frame asks for the
+treatment by name.
+
+Two of the four retired rules were already partly dead.
+`.okou-chat-bubble-user .wmde-markdown p` and its `.okou-markdown-card` sibling
+never matched: a user bubble's body renders spans and reference chips through
+`UserMessagePartView`, the shared thread's renders plain text, and the
+automation and goal bubbles render plain text, so no Markdown frame has ever
+existed inside one. Both bubble names also remain in the
+`.okou-app[data-desktop-shell] :where(…)` selection exception, which nothing in
+the repository can activate for the reason the titlebar section below records;
+that block belongs to the `okou-app` batch and is deliberately untouched here,
+so the two class names stay inside it while no element carries them.
+
+Measured against `main` with the App's own Tailwind compiler (the 4.2.2 engine
+the Vite plugin bundles) in Chromium over CDP, across 28 captures — the default
+palette in Light and Dark at desktop 1280x1400 device scale 1 and 2 and narrow
+700x1400 device scale 2, each with and without the fine-pointer hover flags,
+plus all eight gradient palettes in Light and Dark at the desktop geometry:
+zero changed pixels and zero computed-style or geometry differences on every
+capture. `GradientColorThemes` is `enabled: false` with no organization
+allowlist, so the default palette is the online-visible result and the palette
+states are a superset. The fixture
+rebuilds the real ancestor chain down to the bubble and reproduces the Markdown
+frame's element, a first/middle/last paragraph, a loose list item, a blockquote,
+both card forms, a horizontal rule, and the single `<p class="m-0">` the plain
+Markdown path renders. The capture is taller than a real viewport on purpose:
+the chat pane scrolls inside an absolutely positioned container, so the document
+never grows and a page-height capture would compare only the first turn.
+
+Six negative controls establish that those zeros are not degenerate. Dropping
+the paragraph/card spacing changes 214,329 pixels on desktop Light and 10,227,660
+over all 28 captures; dropping the first-child reset changes 108,927 and
+5,131,289; dropping the rule suppression changes 211,552 and 10,147,418;
+dropping the user bubble's fill changes 32,890 and 1,690,648. The remaining two
+are invisible by construction and are caught by the observation channel alone:
+dropping the blockquote reset changes one observed margin per capture at zero
+pixels, and dropping `border-current` changes three observed border colours per
+capture at zero pixels.
 
 ### Desktop titlebar drag region — partially drained
 
@@ -443,6 +682,118 @@ Dropping `.okou-app` from the condition, deleting the block with its two
 product decisions, and each one also constrains `okou-app` and
 `okou-workspace-bg`, which share this family and the same dead attribute.
 Resolve that before draining the last two tokens.
+
+### Third-party attribution of borrowed class names
+
+A class that looks like a vendor's is not automatically that vendor's. The
+exception boundary follows who authors the element, not who the name resembles.
+
+The queue drawer's check icon was a hand-written SVG in
+`queue-page/queue-drawer.tsx` that spelled `lucide` in its own `className`.
+Lucide never rendered it; the class was there to opt into the first-party
+`svg[class*="lucide"][stroke-width="2"]:not([data-stroke])` rule that normalizes
+the vendor's default stroke. A first-party element borrowing a vendor
+fingerprint to reach a first-party rule is legacy debt, not an adapter, so it
+takes a utility instead, and the icon stroke token moves into the namespace that
+already owns that decision. Tailwind resolves `stroke-*` against `--stroke-width-*`
+before it falls back to a bare number, so renaming `--icon-stroke-width` to
+`--stroke-width-icon` turns the token into the plain named utility `stroke-icon`,
+which emits the same `stroke-width: var(--stroke-width-icon)` the retired rule
+matched into. That is the shape the emoji spans ended at with
+`font-family-emoji`: a registered token read through its own namespace, not a
+custom property threaded through an arbitrary or data-type-hinted utility. Bare
+`stroke-2` keeps working, because the namespace lookup only precedes the numeric
+fallback. The element's own `strokeWidth="2"` presentation attribute stays,
+because CSS outranks it either way and the retired rule keyed on it. Both lucide
+rules remain for the real `lucide-react` DOM, including the allowlisted
+`svg.lucide-ellipsis circle` entry.
+
+`toaster` in `components/ui/sonner.tsx` is the mirror case. Sonner neither
+defines nor requires that class; the component invents it, hands it to Sonner's
+`className` prop, and then anchors its own `group-[.toaster]:` variants on it.
+Sonner's actual contract is the `[data-sonner-toaster]` attribute it puts on its
+own list element. There is also no mechanism to authorize this kind of
+dependency: `turbo/style-allowlist.json` holds CSS selectors, style injections
+and vendored files, so a legacy class named in a component's `className` can only
+be drained or left in the shrink-only baseline — never allowlisted.
+
+### Toast styling is decided by cascade layers, not specificity
+
+Sonner injects its stylesheet into `document.head` at module load, unlayered.
+Unlayered rules outrank every layer, so a `@layer utilities` declaration loses to
+`[data-sonner-toast][data-styled="true"]` no matter how specific the variant is.
+That is why the toast class string carries `!` on most of its utilities, and it
+is why the four that lack it — `bg-popover`, `text-foreground`, `border-border`
+and `shadow-lg` — have never applied. Measured on the real Sonner runtime, a dark
+toast computes `rgb(255, 255, 255)` on `rgb(23, 23, 23)` while `--color-popover`
+is `hsl(20 2.9% 20.2%)`: the panel stays light in Dark. The component also passes
+no `theme` prop, so Sonner itself is permanently in its `light` palette. The
+`description`, `actionButton` and `cancelButton` entries are inert for the same
+reason.
+
+Restoring those declarations is a visual decision, not an equivalence repair, and
+it is tracked separately. Marking the four important does fix Dark, but it also
+moves the Light foreground, border and shadow, and — because `!important` beats
+Sonner's unlayered `:focus-visible` rule — it replaces the toast's focus ring
+with the resting shadow. Adopting Sonner's supported `theme` prop instead takes
+Sonner's palette rather than the App's popover tokens. Draining `toaster` is
+blocked behind that choice, because whichever repair wins rewrites the same class
+string.
+
+### The Markdown code-fence copy control
+
+The `copied` contract has been retired. Its three App rules, its two
+`third-party-dom-adapter` allowlist entries and both of its consumption sites
+are gone, and `CodeBlockCopyButton` now owns the treatment for both fence
+shapes: the one the Markdown pipeline marks on every fenced block, and the one
+the Mermaid view renders when a diagram's source does not parse.
+
+`copied` is the borrowed-name case above, one step further along: the name is
+genuinely the vendor's, and the pinned `@uiw/react-markdown-preview` stylesheet
+really does define it, which is why two of its three App rules were allowlisted
+as adapters for that renderer's generated DOM. The element is still ours. The
+App mounts no part of that renderer — it imports only the stylesheet, and parses
+and renders Markdown itself — so every element that ever carried the class was
+first-party markup spelling `className="copied"` to borrow the vendored sheet's
+absolutely positioned, hover-revealed copy affordance. Authorship of the
+element, not authorship of the name or of the rule, is what the boundary asks
+about, so this was legacy debt and the two entries are retired with the rules.
+
+The replacement therefore reproduces the vendored declarations as well as the
+App's own overrides, because both were load-bearing and only the App's half
+could be deleted:
+
+| Retired declaration                                | Owner  | Replacement                                                               |
+| -------------------------------------------------- | ------ | ------------------------------------------------------------------------- |
+| `visibility: hidden`                               | vendor | `invisible`                                                               |
+| `pre:hover` → `visibility: visible`                | vendor | `[pre:hover_&]:visible`                                                   |
+| `display: flex`                                    | vendor | `flex`                                                                    |
+| `position: absolute; top: 6px; right: 6px`         | vendor | `absolute top-1.5 right-1.5`                                              |
+| `cursor: pointer`                                  | vendor | `cursor-pointer`                                                          |
+| `padding: 6px`                                     | vendor | `p-1.5`                                                                   |
+| `font-size: 12px`                                  | vendor | `text-[12px]`                                                             |
+| `transition: all 0.3s`                             | vendor | `transition-[visibility,background-color,color] duration-300 ease-[ease]` |
+| `border-radius: 6px`                               | App    | `rounded-md`                                                              |
+| `background: hsl(var(--gray-200))`                 | App    | `bg-gray-200`                                                             |
+| `color: hsl(var(--muted-foreground))`              | App    | `text-muted-foreground`                                                   |
+| `pre:hover .copied:hover` → gray-300 / foreground  | App    | `[pre:hover_&:hover:not(:active)]:…`                                      |
+| `pre:hover .copied:active` → gray-400 / foreground | App    | `[pre:hover_&:active]:…`                                                  |
+
+Four of those need stating.
+
+`rounded-md` is exactly the retired 6px: `--radius-md` is `calc(var(--radius) - 2px)` over a `0.5rem` radius. `p-1.5` replaces the shared control's own `p-2` through `cn()`, which is not a change of value — the unlayered vendored `padding: 6px` already outranked that utility, so 6px is what the control has always painted.
+
+`text-[12px]` names the size rather than taking `text-xs`, for the reason the badge batch records: an arbitrary font-size utility emits `font-size` alone, and `text-xs` would add a paired line height the retired declaration never set. `ease-[ease]` is needed for the same kind of reason — a Tailwind transition utility supplies Tailwind's own `--default-transition-timing-function`, while `transition: all 0.3s` left the timing function at its `ease` initial value.
+
+The transition is the one declaration deliberately not reproduced verbatim. This is an auxiliary control revealed by hover, so the rule above applies: name the properties that animate rather than taking `all`. Only `visibility`, `background-color` and `color` ever change on this control, and `visibility` has to stay in the list, because with it the control remains painted for the transition's duration after the pointer leaves and without it the control vanishes instantly. Measured, narrowing the list changes zero pixels in all 28 states and changes exactly one observation, `transition-property`, on the control itself.
+
+The reveal and both interaction fills spell `pre:hover &` rather than reaching for `group-hover:`. The retired rules were unlayered and ungated, so they also fired on a coarse pointer where a tap leaves a sticky hover; the arbitrary variants generate the same unconditional descendant selector. Spelling the ancestor also raises specificity above the shared control's own `hover:` fill, so the two stop racing inside one Tailwind layer.
+
+The hovered fill carries `:not(:active)` because Tailwind decides the order the retired rules decided by source position. Both retired rules had equal specificity and the pressed one came second, so it won while both matched; Tailwind sorts the pressed variant first, so the hovered fill steps aside by selector instead.
+
+`.wmde-markdown pre .copied.active` was dead and is gone with the rest. `CopyButton` never adds an `active` class — it swaps icons from React state — so that branch of the selector list never matched. The vendored sheet's own `.copied.active` rules remain, pinned and inert, because nothing carries the class any more. The `--color-copied-active-bg` overrides the App declared for them are removed with it.
+
+Measured against `main` with the App's own Tailwind compiler in Chromium over CDP, on the ancestor chain captured from the real chat thread page: 28 states — both fence shapes at rest, fence-hovered, control-hovered and pressed, in Light and Dark, on a fine and a coarse pointer — report zero changed pixels and zero computed-style or geometry differences. Negative controls that drop the control's padding, shift its offset by one spacing step and drop the reveal variant report 7,818, 3,579 and 9,164 changed pixels, so the zeros are not degenerate.
 
 ## Exception boundary
 

@@ -1392,6 +1392,60 @@ mod tests {
     }
 
     #[test]
+    fn short_fence_runs_keep_citations_out_of_assistant_and_terminal_text() {
+        use super::super::pi_memory_citation::{CLOSE, OPEN};
+
+        for (fence, short) in [("```", "``"), ("~~~~", "~~~")] {
+            let (responses, _rx) = response_channel();
+            let mut projection = PiRpcProjection::new("run", "session");
+            let prefix = format!("before\n{fence}\n");
+            let assistant = projection
+                .project(
+                    json!({
+                        "type": "message_end",
+                        "message": {
+                            "role": "assistant",
+                            "content": [
+                                { "type": "text", "text": format!("{prefix}{OPEN}\n{short}") },
+                                { "type": "text", "text": format!("\n{fence}\n<citation_entries>private-synthetic.md:1-1|note=[synthetic note]</citation_entries>{CLOSE}after") },
+                            ],
+                            "model": "model",
+                            "timestamp": 1,
+                            "usage": {},
+                            "stopReason": "stop",
+                        }
+                    }),
+                    &responses,
+                    0,
+                )
+                .expect("message should project")
+                .expect("assistant should emit");
+            assert_eq!(
+                assistant["message"]["content"],
+                json!([
+                    { "type": "text", "text": format!("before\n{fence}") },
+                    { "type": "text", "text": "after" },
+                ])
+            );
+            assert_eq!(
+                assistant["message"]["memoryCitation"]["entries"],
+                json!([{
+                    "path": "private-synthetic.md",
+                    "lineStart": 1,
+                    "lineEnd": 1,
+                    "note": "synthetic note",
+                }])
+            );
+
+            let result = projection
+                .project(json!({ "type": "agent_settled" }), &responses, 0)
+                .expect("settled event should project")
+                .expect("settled event should emit");
+            assert_eq!(result["result"], format!("before\n{fence}\n\nafter"));
+        }
+    }
+
+    #[test]
     fn citation_only_projection_keeps_provenance_without_fallback_text() {
         let (responses, _rx) = response_channel();
         let mut projection = PiRpcProjection::new("run", "session");

@@ -7,6 +7,9 @@ import {
   publicSocialErrorMessage,
   redactSocialProviderIdentity,
   socialKitRequestSchema,
+  socialKitDownloadConflictSchema,
+  type SocialKitDownloadListQuery,
+  type SocialKitDownloadListResponse,
   type SocialKitDownloadRequest,
   type SocialKitDownloadResponse,
   type SocialKitRequest,
@@ -14,20 +17,34 @@ import {
 } from "@okouai/api-contracts/contracts/social";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 
-import { getClientConfig, handleError } from "../core/client-factory";
+import {
+  ApiRequestError,
+  getClientConfig,
+  handleError,
+} from "../core/client-factory";
 
 const SOCIALKIT_API_TIMEOUT_MS = 280_000;
+
+export class SocialDownloadConflictError extends ApiRequestError {
+  constructor(
+    message: string,
+    readonly recovery: {
+      readonly downloadId: string;
+      readonly resumeCommand: string;
+    },
+  ) {
+    super(message, "DOWNLOAD_IN_PROGRESS", 409);
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function publicSocialDownloadResponse(
-  response: SocialKitDownloadResponse,
-): SocialKitDownloadResponse {
-  const publicResponse = redactSocialProviderIdentity(
-    response,
-  ) as SocialKitDownloadResponse;
+function publicSocialDownloadResponse<T extends SocialKitDownloadResponse>(
+  response: T,
+): T {
+  const publicResponse = redactSocialProviderIdentity(response) as T;
   if (!publicResponse.error) {
     return publicResponse;
   }
@@ -103,7 +120,10 @@ export async function callSocialKit(
   const config = await getClientConfig();
   const client = initClient(socialContract, config);
   const result = await client.request({
-    headers: {},
+    headers:
+      body.tool === "instagram_stats"
+        ? { "x-okou-instagram-views": "nullable" }
+        : {},
     body: effectivePublicSocialRequest(body),
     fetchOptions: { signal: AbortSignal.timeout(SOCIALKIT_API_TIMEOUT_MS) },
   });
@@ -130,7 +150,40 @@ export async function createSocialKitDownload(
   if (result.status === 202) {
     return publicSocialDownloadResponse(result.body);
   }
+  if (result.status === 409) {
+    const conflict = socialKitDownloadConflictSchema.parse(result.body);
+    if (
+      conflict.error.code === "DOWNLOAD_IN_PROGRESS" &&
+      conflict.error.recovery
+    ) {
+      throw new SocialDownloadConflictError(
+        publicSocialErrorMessage(conflict.error.message),
+        conflict.error.recovery,
+      );
+    }
+  }
   handlePublicSocialError(result, "Okou Social download failed to start");
+}
+
+export async function listSocialKitDownloads(
+  query: SocialKitDownloadListQuery,
+): Promise<SocialKitDownloadListResponse> {
+  const config = await getClientConfig();
+  const client = initClient(socialContract, config);
+  const result = await client.listDownloads({
+    headers: {},
+    query,
+    fetchOptions: { signal: AbortSignal.timeout(SOCIALKIT_API_TIMEOUT_MS) },
+  });
+  if (result.status === 200) {
+    return {
+      ...result.body,
+      downloads: result.body.downloads.map((download) => {
+        return publicSocialDownloadResponse(download);
+      }),
+    };
+  }
+  handlePublicSocialError(result, "Okou Social download discovery failed");
 }
 
 export async function getSocialKitDownload(

@@ -55,6 +55,7 @@ const resultSchema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("read"),
       session: info,
+      wait_expired: z.boolean(),
       chunks: z
         .array(
           z
@@ -96,6 +97,11 @@ type Result = z.infer<typeof resultSchema>;
 type Outcome =
   | Result
   | (Omit<z.infer<typeof rpcErrorSchema>, "type"> & { type: "rpc_error" });
+export type SessionReadPage = Extract<Result, { type: "read" }>;
+export type SessionReadFailure = Extract<
+  Outcome,
+  { type: "failed" | "rpc_error" }
+>;
 type Method =
   | "start"
   | "list"
@@ -219,6 +225,22 @@ class SessionResponse {
       (next < result.session.end_cursor && bytes === 0)
     )
       throw new SshProtocolError();
+    this.validateReadBudget(result, bytes);
+  }
+
+  private validateReadBudget(result: SessionReadPage, bytes: number) {
+    const { maxBytes, maxChunks, waitMs } = this.params;
+    const terminal = ["finished", "failed"].includes(result.session.state.type);
+    if (
+      typeof maxBytes !== "number" ||
+      typeof maxChunks !== "number" ||
+      typeof waitMs !== "number" ||
+      bytes > maxBytes ||
+      result.chunks.length > maxChunks ||
+      result.wait_expired !==
+        (waitMs > 0 && bytes === 0 && !result.lost && !terminal)
+    )
+      throw new SshProtocolError();
   }
 
   finish(code: number | null, termination: NodeJS.Signals | null) {
@@ -247,10 +269,13 @@ class SessionResponse {
 export async function sessionRpc(
   method: Method,
   params: Readonly<Record<string, unknown>>,
+  signal?: AbortSignal,
 ) {
   return invokeSshRpc(
     `ssh.session.${method}`,
     params,
     new SessionResponse(method, params),
+    true,
+    signal,
   );
 }

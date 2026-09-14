@@ -144,18 +144,23 @@ describe("POST /api/test/runtime-state/action", () => {
     });
   });
 
-  it.each(["deepseek-v4-flash", "deepseek-v4-pro"] as const)(
-    "disables Codex apply patch for the built-in %s OpenRouter fallback",
+  it.each([
+    "deepseek-v4.1-flash",
+    "deepseek-v4-flash",
+    "deepseek-v4-pro",
+  ] as const)(
+    "uses OpenRouter during a built-in %s native cooldown",
     async (selectedModel) => {
       await seedBuiltInModelCandidateKeys(context, selectedModel);
       const startedAt = Date.UTC(2026, 7, 23, 0, 0, 0);
-      const primaryCooldownUntil = new Date(startedAt + 60 * 1000);
+      const primaryCooldownUntil = new Date(startedAt + 5 * 60 * 1000);
       const primary = await withMockNowForTest(startedAt, async () => {
         return await resolveBuiltInModelRouteFixture(context, selectedModel);
       });
       if (!primary) {
         throw new Error(`Expected a primary route for ${selectedModel}`);
       }
+      expect(primary.provider_type).toBe("deepseek");
       await setBuiltInCandidateCooldownFixture(
         context,
         selectedModel,
@@ -225,6 +230,35 @@ describe("POST /api/test/runtime-state/action", () => {
         selectedModel,
         modelRuntimeProvider: fallback.provider_type,
         modelRuntimeModel: fallback.upstream_model,
+      });
+
+      await setBuiltInCandidateCooldownFixture(
+        context,
+        selectedModel,
+        fallback,
+        primaryCooldownUntil,
+      );
+      await withMockNowForTest(startedAt, async () => {
+        const rejected = await chat.requestSendEvent(
+          actor,
+          {
+            agentId: agent.agentId,
+            prompt: "reject while both built-in routes are cooling down",
+            model: selectedModel,
+          },
+          [503],
+        );
+        expectApiError(rejected.body);
+        expect(rejected.body.error.code).toBe("MODEL_PROVIDER_UNAVAILABLE");
+      });
+
+      await withMockNowForTest(primaryCooldownUntil.getTime(), async () => {
+        await expect(
+          resolveBuiltInModelRouteFixture(context, selectedModel),
+        ).resolves.toMatchObject({
+          provider_type: primary.provider_type,
+          upstream_model: primary.upstream_model,
+        });
       });
     },
   );

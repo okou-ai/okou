@@ -559,7 +559,7 @@ export function PinnedAgentListSection({
           {t(($) => {
             return $.sidebar.pinned;
           })}
-          <span className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <span className="shrink-0 opacity-0 group-hover:opacity-100">
             <ChevronRight
               className={`opacity-35 ${collapsed ? "" : "rotate-90"}`}
               size={12}

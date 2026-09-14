@@ -195,6 +195,7 @@ export interface WorkflowComposerSignals {
   readonly focus$: Command<void, []>;
   readonly hasInput$: Computed<boolean>;
   readonly hasTemplateAttachment$: Computed<boolean>;
+  readonly templateRequests$: Computed<readonly GenerationTemplateRequest[]>;
   readonly activeSlashRange$: Computed<SlashWorkflowRange | null>;
   readonly activeChatThreadSuggestionRange$: Computed<ChatThreadSuggestionRange | null>;
   readonly chatThreadSuggestions$: Computed<
@@ -205,6 +206,8 @@ export interface WorkflowComposerSignals {
   readonly reloadWorkflows$: Command<Promise<void>, [AbortSignal]>;
   readonly selectedSuggestionIndex$: Computed<number>;
   readonly setSelectedSuggestionIndex$: Command<void, [number]>;
+  readonly previewSuggestionIndex$: Computed<number>;
+  readonly previewSuggestion$: Command<void, [number | null]>;
   readonly closeSuggestionMenu$: Command<void, []>;
   readonly insertWorkflow$: Command<void, [ComposerSlashWorkflow]>;
   readonly insertAgent$: Command<void, [ComposerAgentSuggestion]>;
@@ -1996,10 +1999,12 @@ interface MountEditorOptions {
   legacyTemplateAttachment: ReturnType<
     typeof createLegacyTemplateAttachmentControls
   >;
+  templateSelection: ReturnType<typeof createTemplateSelectionSignals>;
   openTemplatePicker$: WorkflowComposerSignals["openTemplatePicker$"];
   caretIndex$: State<number>;
   editorFocusedState$: State<boolean>;
   selectedSuggestionIndexState$: State<number>;
+  previewSuggestionIndexState$: State<number | null>;
   feedback: ComposerFeedbackModel;
   compositionGate: CompositionGate;
   syncWorkflowNames$: WorkflowNamesSyncCommand;
@@ -2066,10 +2071,12 @@ function createMountEditorCommand({
   draft,
   runtime,
   legacyTemplateAttachment,
+  templateSelection,
   openTemplatePicker$,
   caretIndex$,
   editorFocusedState$,
   selectedSuggestionIndexState$,
+  previewSuggestionIndexState$,
   feedback,
   compositionGate,
   syncWorkflowNames$,
@@ -2083,6 +2090,7 @@ function createMountEditorCommand({
       };
       runtime.update = (updatedEditor) => {
         set(legacyTemplateAttachment.sync$);
+        set(templateSelection.sync$);
         runtime.replaceFeedbackItems(
           feedbackItemsFromWorkflowComposer(updatedEditor),
         );
@@ -2092,19 +2100,23 @@ function createMountEditorCommand({
           createEditorDocumentSnapshot(updatedEditor.state.doc),
         );
         set(selectedSuggestionIndexState$, 0);
+        set(previewSuggestionIndexState$, null);
         set(caretIndex$, updatedEditor.state.selection.head);
         compositionGate.notifySettled();
         // Forward TipTap updates through the React-owned DOM boundary.
         element.dispatchEvent(new Event("input", { bubbles: true }));
       };
       runtime.selectionUpdate = (updatedEditor) => {
+        set(previewSuggestionIndexState$, null);
         set(caretIndex$, updatedEditor.state.selection.head);
       };
       runtime.focus = (focusedEditor) => {
+        set(previewSuggestionIndexState$, null);
         set(editorFocusedState$, true);
         set(caretIndex$, focusedEditor.state.selection.head);
       };
       runtime.blur = () => {
+        set(previewSuggestionIndexState$, null);
         set(editorFocusedState$, false);
       };
       runtime.replaceFeedbackItems = (items) => {
@@ -2133,6 +2145,7 @@ function createMountEditorCommand({
         createEditorDocumentSnapshot(editor.state.doc),
       );
       set(legacyTemplateAttachment.sync$);
+      set(templateSelection.sync$);
       editor.mount(element);
       mountLocalizationListener(editor, runtime, signal);
       mountCompositionListeners(editor, compositionGate, signal);
@@ -2144,6 +2157,7 @@ function createMountEditorCommand({
           setEditorDocument(snapshot) {
             set(draft.setEditorDocument$, snapshot);
             set(legacyTemplateAttachment.sync$);
+            set(templateSelection.sync$);
           },
         }),
       );
@@ -2162,6 +2176,7 @@ function createMountEditorCommand({
         resetMountedWorkflowRuntime(runtime);
         set(legacyTemplateAttachment.reset$);
         set(draft.setInputSyncTarget$, null);
+        set(previewSuggestionIndexState$, null);
         set(editorFocusedState$, false);
         editor.unmount();
       });
@@ -2664,6 +2679,45 @@ function createLegacyTemplateAttachmentControls(
   return { active$, sync$, remove$, reset$ };
 }
 
+/** Track template nodes without publishing a new document on each keystroke. */
+function createTemplateSelectionSignals(
+  editor: Editor,
+  draft: DraftSignals,
+  legacyActive$: Computed<boolean>,
+) {
+  const nodes$ = state<readonly ProseMirrorNode[]>([]);
+  const sync$ = command(({ get, set }) => {
+    const nodes: ProseMirrorNode[] = [];
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === INLINE_TEMPLATE_NODE_NAME) {
+        nodes.push(node);
+      }
+    });
+    const previous = get(nodes$);
+    if (
+      nodes.length !== previous.length ||
+      nodes.some((node, index) => {
+        return node !== previous[index];
+      })
+    ) {
+      set(nodes$, nodes);
+    }
+  });
+  const requests$ = computed((get) => {
+    const requests = get(nodes$).flatMap((node) => {
+      const parsed = generationTemplateRequestSchema.safeParse(
+        node.attrs.template,
+      );
+      return parsed.success ? [parsed.data] : [];
+    });
+    const legacy = get(legacyActive$)
+      ? get(draft.generationTemplate$)
+      : undefined;
+    return legacy ? [...requests, legacy] : requests;
+  });
+  return { requests$, sync$ };
+}
+
 function createActiveSuggestionRange<T>(
   editor: Editor,
   caretIndex$: State<number>,
@@ -2680,6 +2734,21 @@ function createActiveSuggestionRange<T>(
   });
 }
 
+function createTemplateSignals(
+  editor: Editor,
+  draft: DraftSignals,
+  openDialog$: OpenTemplatePickerDialogCommand,
+) {
+  const commands = createTemplateCommands(editor, draft, openDialog$);
+  const legacy = createLegacyTemplateAttachmentControls(editor, draft);
+  const selection = createTemplateSelectionSignals(
+    editor,
+    draft,
+    legacy.active$,
+  );
+  return { commands, legacy, selection };
+}
+
 export function createWorkflowComposerSignals<
   T extends AgentIdValue = Promise<string | null>,
 >(
@@ -2692,6 +2761,9 @@ export function createWorkflowComposerSignals<
   const caretIndex$ = state(-1);
   const editorFocusedState$ = state(false);
   const selectedSuggestionIndexState$ = state(0);
+  // A pointer preview is independent of keyboard selection. Null means the
+  // preview follows the keyboard again, including when the menu reopens.
+  const previewSuggestionIndexState$ = state<number | null>(null);
   const runtime = createWorkflowComposerRuntime();
   const agentMentionAvatarRuntime = createAgentMentionAvatarRuntime();
   const templatePreview = createTemplatePreviewRuntime();
@@ -2708,11 +2780,7 @@ export function createWorkflowComposerSignals<
   const syncAgentMentionAvatars$ = createSyncAgentMentionAvatarsCommand(
     agentMentionAvatarRuntime,
   );
-  const templateCommands = createTemplateCommands(editor, draft, openDialog$);
-  const legacyTemplateAttachment = createLegacyTemplateAttachmentControls(
-    editor,
-    draft,
-  );
+  const templates = createTemplateSignals(editor, draft, openDialog$);
   const selectedSuggestionIndex$ = computed((get) => {
     return get(selectedSuggestionIndexState$);
   });
@@ -2734,8 +2802,18 @@ export function createWorkflowComposerSignals<
   );
   const setSelectedSuggestionIndex$ = command(({ set }, index: number) => {
     set(selectedSuggestionIndexState$, index);
+    set(previewSuggestionIndexState$, null);
+  });
+  const previewSuggestionIndex$ = computed((get) => {
+    return (
+      get(previewSuggestionIndexState$) ?? get(selectedSuggestionIndexState$)
+    );
+  });
+  const previewSuggestion$ = command(({ set }, index: number | null) => {
+    set(previewSuggestionIndexState$, index);
   });
   const closeSuggestionMenu$ = command(({ set }) => {
+    set(previewSuggestionIndexState$, null);
     set(caretIndex$, -1);
   });
   const focus$ = command(() => {
@@ -2745,11 +2823,13 @@ export function createWorkflowComposerSignals<
     editor,
     draft,
     runtime,
-    legacyTemplateAttachment,
-    openTemplatePicker$: templateCommands.openTemplatePicker$,
+    legacyTemplateAttachment: templates.legacy,
+    templateSelection: templates.selection,
+    openTemplatePicker$: templates.commands.openTemplatePicker$,
     caretIndex$,
     editorFocusedState$,
     selectedSuggestionIndexState$,
+    previewSuggestionIndexState$,
     feedback,
     compositionGate,
     syncWorkflowNames$,
@@ -2777,7 +2857,8 @@ export function createWorkflowComposerSignals<
     setContainerRef$,
     focus$,
     hasInput$,
-    hasTemplateAttachment$: legacyTemplateAttachment.active$,
+    hasTemplateAttachment$: templates.legacy.active$,
+    templateRequests$: templates.selection.requests$,
     activeSlashRange$,
     activeChatThreadSuggestionRange$,
     chatThreadSuggestions$,
@@ -2786,10 +2867,12 @@ export function createWorkflowComposerSignals<
     reloadWorkflows$: reloadMountedComposerWorkflows$,
     selectedSuggestionIndex$,
     setSelectedSuggestionIndex$,
+    previewSuggestionIndex$,
+    previewSuggestion$,
     closeSuggestionMenu$,
     ...suggestionInsertionCommands,
     ...textCommands,
-    ...templateCommands,
+    ...templates.commands,
     insertUserMessage$,
     readInputForSubmission$,
     feedback: feedback.signals,

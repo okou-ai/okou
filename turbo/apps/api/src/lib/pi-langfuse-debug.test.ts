@@ -5,6 +5,7 @@ import { clearMockedEnv, mockOptionalEnv } from "./env";
 import {
   createPiLangfuseCredentialMask,
   isPiLangfuseDebugRunEnvironment,
+  piLangfuseDebugCredentialsFromEnvironment,
   piLangfuseDebugPlatformEnvironment,
   piLangfuseDebugSecretEnvironment,
   piLangfuseDebugUserId,
@@ -122,15 +123,23 @@ describe("Pi Langfuse debug configuration", () => {
       PI_LANGFUSE_MAX_CHARS: "20000",
     });
     expect(platformEnvironment).not.toHaveProperty("PI_LANGFUSE_CONTINUATION");
+    expect(platformEnvironment).not.toHaveProperty("LANGFUSE_PUBLIC_KEY");
+    expect(platformEnvironment).not.toHaveProperty("LANGFUSE_SECRET_KEY");
     expect(isPiLangfuseDebugRunEnvironment(platformEnvironment)).toBe(true);
     expect(isPiLangfuseDebugRunEnvironment({})).toBe(false);
     expect(platformEnvironment.LANGFUSE_USER_ID).not.toContain(USER_ID);
-    expect(piLangfuseDebugSecretEnvironment(config)).toStrictEqual({
+    const credentials = piLangfuseDebugSecretEnvironment(config);
+    expect(credentials).toStrictEqual({
       LANGFUSE_PUBLIC_KEY: "pk-lf-debug",
       LANGFUSE_SECRET_KEY: "sk-lf-debug",
     });
+    expect(
+      piLangfuseDebugCredentialsFromEnvironment(credentials),
+    ).toStrictEqual(credentials);
   });
+});
 
+describe("Pi Langfuse credential masking", () => {
   it("masks credentials recursively without looping on cycles", () => {
     configureDebugProject();
     const config = resolvePiLangfuseDebugConfig({

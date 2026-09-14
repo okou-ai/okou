@@ -78,7 +78,6 @@
         "mic-volume-icon-meter",
         "motion-safe:animate-in",
         "motion-safe:fade-in",
-        "okou-blocks",
         "okou-chat-skeleton-reveal",
         "okou-realtime-cloud-flow",
         "okou-realtime-status-reconnecting",
@@ -724,6 +723,159 @@
       "evidence": [],
       "pullRequest": "https://github.com/vm0-ai/vm0/pull/33838",
       "mergeCommit": null
+    },
+    {
+      "id": "nav-chrome",
+      "family": "navigation",
+      "tokens": ["okou-nav"],
+      "consumers": [
+        "apps/platform/src/views/okou-page/sidebar.tsx",
+        "apps/platform/src/views/okou-page/__tests__/sidebar-account-menu.test.tsx"
+      ],
+      "cases": [
+        "nav-chrome-light",
+        "nav-chrome-dark",
+        "nav-chrome-light-retina",
+        "nav-chrome-dark-retina",
+        "nav-chrome-narrow",
+        "nav-chrome-narrow-dark"
+      ],
+      "status": "implemented",
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
+    },
+    {
+      "id": "okou-border-hairline",
+      "family": "local-controls",
+      "tokens": ["okou-border"],
+      "consumers": [
+        "apps/platform/src/views/okou-page/agent-chat-page.tsx",
+        "apps/platform/src/views/okou-page/components/org-manage/org-billing-tab.tsx",
+        "apps/platform/src/views/okou-page/components/org-manage/org-members-tab.tsx",
+        "apps/platform/src/views/okou-page/components/org-manage/org-usage-tab.tsx",
+        "apps/platform/src/views/okou-page/components/settings/build-info-block.tsx",
+        "apps/platform/src/views/okou-page/components/settings/built-in-model-cooldown-diagnostics-block.tsx",
+        "apps/platform/src/views/okou-page/components/settings/color-theme-settings.tsx",
+        "apps/platform/src/views/okou-page/components/settings/connection-diagnostics-block.tsx",
+        "apps/platform/src/views/okou-page/components/settings/connector-catalog-diagnostics-block.tsx",
+        "apps/platform/src/views/okou-page/components/settings/indexeddb-diagnostics-block.tsx",
+        "apps/platform/src/views/okou-page/components/settings/permission-policy-toggle.tsx",
+        "apps/platform/src/views/okou-page/components/settings/permissions-dialog.tsx",
+        "apps/platform/src/views/okou-page/components/settings/preference-card-row.tsx",
+        "apps/platform/src/views/okou-page/components/settings/sections/account-section.tsx",
+        "apps/platform/src/views/okou-page/components/settings/sections/credit-balance-section.tsx",
+        "apps/platform/src/views/okou-page/components/settings/sections/debug-section.tsx",
+        "apps/platform/src/views/okou-page/components/settings/worker-connection-diagnostics-block.tsx",
+        "apps/platform/src/views/okou-page/tiptap-instructions-editor.tsx",
+        "apps/platform/src/views/queue-page/queue-drawer.tsx"
+      ],
+      "cases": [
+        "okou-border-hairline-preference-light",
+        "okou-border-hairline-preference-dark",
+        "okou-border-hairline-debug-light",
+        "okou-border-hairline-debug-dark",
+        "okou-border-hairline-billing-light",
+        "okou-border-hairline-billing-dark",
+        "okou-border-hairline-people-light",
+        "okou-border-hairline-people-dark",
+        "okou-border-hairline-usage-light",
+        "okou-border-hairline-usage-dark",
+        "okou-border-hairline-agent-profile-light",
+        "okou-border-hairline-agent-profile-dark",
+        "okou-border-hairline-chat-queue-light",
+        "okou-border-hairline-chat-queue-dark",
+        "okou-border-hairline-debug-narrow",
+        "okou-border-hairline-debug-narrow-dark"
+      ],
+      "status": "implemented",
+      "evidence": []
+    },
+    {
+      "id": "queue-drawer-check-icon",
+      "family": "external-contract-audit",
+      "tokens": ["lucide"],
+      "consumers": ["apps/platform/src/views/queue-page/queue-drawer.tsx"],
+      "cases": [
+        "queue-drawer-check-icon-light",
+        "queue-drawer-check-icon-dark",
+        "queue-drawer-check-icon-light-retina",
+        "queue-drawer-check-icon-dark-retina",
+        "queue-drawer-check-icon-narrow",
+        "queue-drawer-check-icon-narrow-dark"
+      ],
+      "status": "implemented",
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
+    },
+    {
+      "id": "toast-surface-contract",
+      "family": "external-contract-audit",
+      "tokens": ["toaster"],
+      "consumers": ["packages/ui/src/components/ui/sonner.tsx"],
+      "cases": [
+        "toast-surface-light",
+        "toast-surface-dark",
+        "toast-surface-light-retina",
+        "toast-surface-dark-retina",
+        "toast-surface-narrow",
+        "toast-surface-narrow-dark"
+      ],
+      "status": "blocked",
+      "blockedReason": "The audit shows `toaster` is a first-party marker class, not an upstream contract, so it is drainable rather than allowlistable. Draining it is blocked on a product decision, not on mechanics. The same class string carries a confirmed defect: sonner injects its stylesheet unlayered into document.head, so the four un-prefixed variants (bg-popover, text-foreground, border-border, shadow-lg) never apply and dark-theme toasts render as a white panel. Repairing that defect rewrites this class string, and the two obvious repairs disagree visually: making the four important also changes the online-visible Light theme and removes sonner's :focus-visible ring, while adopting sonner's supported `theme` prop takes sonner's palette rather than the App's popover tokens. Choose the repair first; the drain then lands with it.",
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
+    },
+    {
+      "id": "chat-message-bubbles",
+      "family": "chat-and-content",
+      "tokens": ["okou-chat-bubble-assistant", "okou-chat-bubble-user"],
+      "consumers": [
+        "apps/platform/src/views/okou-page/chat-message-surface.tsx",
+        "apps/platform/src/views/okou-page/chat-thread-page.tsx",
+        "apps/platform/src/views/okou-page/settings-tab.tsx",
+        "apps/platform/src/views/components/markdown.tsx",
+        "apps/platform/src/views/components/rich-markdown.tsx",
+        "apps/platform/src/views/shared-thread-page/shared-thread-page.tsx",
+        "apps/platform/src/views/okou-page/__tests__/chat-attachment-message-previews.test.tsx"
+      ],
+      "cases": [
+        "chat-bubble-light",
+        "chat-bubble-dark",
+        "chat-bubble-light-retina",
+        "chat-bubble-dark-retina",
+        "chat-bubble-narrow",
+        "chat-bubble-narrow-dark",
+        "chat-bubble-agent-profile-light",
+        "chat-bubble-agent-profile-dark"
+      ],
+      "status": "implemented",
+      "evidence": [],
+      "pullRequest": "https://github.com/vm0-ai/vm0/pull/34076",
+      "mergeCommit": null
+    },
+    {
+      "id": "code-fence-copy-control",
+      "family": "external-contract-audit",
+      "tokens": ["copied"],
+      "consumers": [
+        "apps/platform/src/views/components/rich-markdown.tsx",
+        "apps/platform/src/views/components/mermaid-diagram.tsx"
+      ],
+      "cases": [
+        "code-fence-copy-light",
+        "code-fence-copy-dark",
+        "code-fence-copy-light-retina",
+        "code-fence-copy-dark-retina",
+        "code-fence-copy-narrow",
+        "code-fence-copy-narrow-dark"
+      ],
+      "status": "implemented",
+      "evidence": [],
+      "pullRequest": "https://github.com/vm0-ai/vm0/pull/34059",
+      "mergeCommit": null
     }
   ],
   "caseFiles": [
@@ -742,6 +894,11 @@
     "../e2e/playwright/style-migration/control-surface-cases.json",
     "../e2e/playwright/style-migration/hairline-rule-cases.json",
     "../e2e/playwright/style-migration/sidebar-thread-title-cases.json",
-    "../e2e/playwright/style-migration/desktop-titlebar-cases.json"
+    "../e2e/playwright/style-migration/desktop-titlebar-cases.json",
+    "../e2e/playwright/style-migration/nav-chrome-cases.json",
+    "../e2e/playwright/style-migration/okou-border-hairline-cases.json",
+    "../e2e/playwright/style-migration/external-contract-audit-cases.json",
+    "../e2e/playwright/style-migration/chat-bubble-cases.json",
+    "../e2e/playwright/style-migration/code-fence-copy-cases.json"
   ]
 }

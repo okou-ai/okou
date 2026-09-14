@@ -570,6 +570,12 @@ export default [
     // exception to the service-directory ban is not an exception to the
     // diagnostics gate, so these files carry those selectors too.
     files: [
+      // B1 deliberately has no production deletion/selector endpoint. This
+      // exact codec suite verifies its minimum-data KMS envelope boundary.
+      "src/signals/services/__tests__/account-erasure-selector.test.ts",
+      // The dormant persistence boundary has no HTTP ingress. Real PostgreSQL
+      // sessions exercise first closure, lease recovery, and selector retirement.
+      "src/signals/services/__tests__/account-erasure.service.test.ts",
       // Content hashes are a byte-identical cryptographic contract shared with
       // guest-agent; route behavior cannot pin the serializer's full corpus.
       "src/signals/services/__tests__/storage-content-hash.service.test.ts",
@@ -602,8 +608,19 @@ export default [
       // through the production API. This focused PostgreSQL test proves the
       // exact Agent Draft writer through both rollout targets.
       "src/signals/services/__tests__/agent-draft-write.service.test.ts",
+      // Trigger presence is a deployment boundary, not an HTTP input. Private
+      // schemas exercise the entitlement writer, rollback, and actual locks.
+      "src/signals/services/__tests__/org-plan-entitlements.service.test.ts",
+      // OAuth trigger presence, config-key movement and row-lock interleavings
+      // require isolated PostgreSQL schemas outside the product API boundary.
+      "src/signals/services/__tests__/custom-connector-oauth-write.service.test.ts",
+      // Hosting trigger coexistence, ownership locks and allocation rollback
+      // require isolated PostgreSQL schemas; route suites cover product APIs.
+      "src/signals/services/__tests__/hosted-site-scope.service.test.ts",
       // Trigger DDL, transaction snapshots and corrupt ledgers are not HTTP inputs.
       "src/signals/services/__tests__/pi-memory-candidate-accounting.service.test.ts",
+      // #34044 requires real transactions, UTC clock, deletion and old-writer races.
+      "src/signals/services/__tests__/pi-memory-stage1-schedule.service.test.ts",
       "src/signals/services/__tests__/workflow-automation-context.test.ts",
       // The automatic welcome thread id is a permanent uuidv5 contract with
       // externally computed literals; route tests own generated identities and
@@ -744,6 +761,8 @@ export default [
       "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
       "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-job.test-fixture.ts",
+      // No production endpoint can construct B1's dormant jobs or DB races.
+      "src/signals/services/__tests__/account-erasure.service.test.ts",
       // Preview job-ref aliases are process environment state, and both Stripe
       // metadata entry points must share one value-free resolution matrix that
       // cannot be observed completely through a single production API route.
@@ -752,8 +771,19 @@ export default [
       // through the production API. This focused PostgreSQL test proves the
       // exact Agent Draft writer through both rollout targets.
       "src/signals/services/__tests__/agent-draft-write.service.test.ts",
+      // Trigger presence is a deployment boundary, not an HTTP input. Private
+      // schemas exercise the entitlement writer, rollback, and actual locks.
+      "src/signals/services/__tests__/org-plan-entitlements.service.test.ts",
+      // OAuth trigger presence, config-key movement and row-lock interleavings
+      // require isolated PostgreSQL schemas outside the product API boundary.
+      "src/signals/services/__tests__/custom-connector-oauth-write.service.test.ts",
+      // Hosting trigger coexistence, ownership locks and allocation rollback
+      // require isolated PostgreSQL schemas; route suites cover product APIs.
+      "src/signals/services/__tests__/hosted-site-scope.service.test.ts",
       // Trigger DDL, transaction snapshots and corrupt ledgers are not HTTP inputs.
       "src/signals/services/__tests__/pi-memory-candidate-accounting.service.test.ts",
+      // #34044 requires real transactions, UTC clock, deletion and old-writer races.
+      "src/signals/services/__tests__/pi-memory-stage1-schedule.service.test.ts",
       // The automatic welcome thread id is a permanent uuidv5 contract: it
       // decides, forever, whether a recipient already holds a welcome. Route
       // tests own uniquely generated identities, so only fixed inputs with

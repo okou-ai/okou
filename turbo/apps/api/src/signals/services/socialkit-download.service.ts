@@ -6,12 +6,15 @@ import {
   socialKitDownloadPlatformSchema,
   socialKitDownloadQualitySchema,
   socialKitDownloadResponseSchema,
+  type SocialKitDownloadListQuery,
+  type SocialKitDownloadListResponse,
   type SocialKitDownloadRequest,
   type SocialKitDownloadResponse,
 } from "@okouai/api-contracts/contracts/social";
 import { socialKitDownloadJobs } from "@okouai/db/schema/socialkit-download-job";
 import { command } from "ccstate";
-import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
 import { env } from "../../lib/env";
@@ -1021,6 +1024,78 @@ export const getSocialKitDownload$ = command(
       );
     signal.throwIfAborted();
     return job ? responseForJob(job) : null;
+  },
+);
+
+export const listSocialKitDownloads$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly query: SocialKitDownloadListQuery;
+    },
+    signal: AbortSignal,
+  ): Promise<SocialKitDownloadListResponse> => {
+    const db = set(writeDb$);
+    const { limit, cursor, status } = args.query;
+    const anchor = alias(socialKitDownloadJobs, "download_cursor");
+    const rows = await db
+      .select()
+      .from(socialKitDownloadJobs)
+      .where(
+        and(
+          eq(socialKitDownloadJobs.orgId, args.orgId),
+          eq(socialKitDownloadJobs.userId, args.userId),
+          status === "active"
+            ? inArray(socialKitDownloadJobs.status, [
+                "submitting",
+                ...ACTIVE_STATUSES,
+              ])
+            : status === undefined
+              ? undefined
+              : eq(
+                  socialKitDownloadJobs.status,
+                  status === "queued" ? "submitting" : status,
+                ),
+          cursor === undefined
+            ? undefined
+            : lt(
+                sql`(${socialKitDownloadJobs.createdAt}, ${socialKitDownloadJobs.id})`,
+                db
+                  .select({ createdAt: anchor.createdAt, id: anchor.id })
+                  .from(anchor)
+                  .where(
+                    and(
+                      eq(anchor.id, cursor),
+                      eq(anchor.orgId, args.orgId),
+                      eq(anchor.userId, args.userId),
+                    ),
+                  ),
+              ),
+        ),
+      )
+      .orderBy(
+        desc(socialKitDownloadJobs.createdAt),
+        desc(socialKitDownloadJobs.id),
+      )
+      .limit(limit + 1);
+    signal.throwIfAborted();
+    const page = rows.slice(0, limit);
+    const last = page.at(-1);
+    return {
+      downloads: page.map((job) => {
+        return {
+          ...responseForJob(job),
+          request: job.request,
+          resumeCommand:
+            job.status === "provider_failed"
+              ? null
+              : `okou social download --resume ${job.id}`,
+        };
+      }),
+      nextCursor: rows.length > limit && last ? last.id : null,
+    };
   },
 );
 

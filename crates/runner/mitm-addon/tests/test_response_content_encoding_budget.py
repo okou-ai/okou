@@ -8,9 +8,15 @@ import pytest
 import zstandard
 from mitmproxy import http
 
+import billing_body
 import body_decoding
 import flow_metadata_keys as metadata_keys
 import mitm_addon
+from tests.content_encoding_cases import (
+    BUDGET_CASES,
+    encoding_budget_fields,
+    encoding_inspections,
+)
 from tests.flow_helpers import response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.model_provider_response_helpers import (
@@ -29,6 +35,21 @@ _VALUE_LIMIT = 8 * 1024
 _BUDGET_REASON = "content encoding header inspection limit exceeded"
 
 
+@pytest.mark.parametrize("encoding", ["identity", "gzip"])
+@pytest.mark.parametrize(("budget", "size", "in_budget"), BUDGET_CASES)
+def test_request_capture_shares_raw_encoding_budgets(encoding, budget, size, *, in_budget):
+    body = b'{"text":"hello world"}'
+    wire_body = gzip.compress(body) if encoding == "gzip" else body
+    fields = encoding_budget_fields((), encoding, budget, size)
+
+    captured = body_decoding.decode_request_body_for_network_log_capture(
+        wire_body, http.Headers(fields)
+    )
+
+    assert captured == (body if in_budget and budget != "aggregate" else None)
+    assert bool(encoding_inspections(fields)) is in_budget
+
+
 class _UnnormalizedName(bytes):
     def lower(self) -> bytes:
         raise AssertionError("normalized a raw name before checking its budget")
@@ -43,6 +64,26 @@ class _UninspectedValue(bytes):
 
     def lower(self) -> bytes:
         raise AssertionError("normalized a raw value before checking its budget")
+
+
+def test_billing_reader_skips_oversized_unrelated_names():
+    body = b'{"text":"hello world"}'
+    headers = http.Headers(
+        (
+            (_UnnormalizedName(b"X" * (1024 * 1024)), _UninspectedValue(b"ignored")),
+            (b"Content-Encoding", b"identity"),
+        )
+    )
+
+    assert billing_body.decode_request_body_for_billing(body, headers) == body
+
+
+def test_billing_reader_checks_field_count_before_normalizing_names():
+    headers = http.Headers(
+        ((_UnnormalizedName(b"X-Unrelated"), _UninspectedValue(b"ignored")),) * (_FIELD_LIMIT + 1)
+    )
+
+    assert billing_body.decode_request_body_for_billing(b'{"text":"hello world"}', headers) is None
 
 
 def _model_flow(real_flow, tmp_path, fields) -> http.HTTPFlow:

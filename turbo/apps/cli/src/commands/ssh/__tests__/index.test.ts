@@ -91,51 +91,6 @@ describe("okou ssh session", () => {
     expect(result()).toMatchObject({ type: "submitted", effects: "unknown" });
   });
 
-  it("accepts bounded output with an explicit lost range and continuation cursor", async () => {
-    const read = {
-      type: "read",
-      session: { ...session, oldest_cursor: 10, end_cursor: 12 },
-      chunks: [{ cursor: 10, stream: "stderr", data: "AP8=" }],
-      next_cursor: 12,
-      lost: { from: 0, to: 10 },
-    };
-    reply(read);
-    await invoke("read", sessionId);
-    expect(result()).toEqual(read);
-    expect(JSON.parse(helper.requests[0]!)).toMatchObject({
-      method: "ssh.session.read",
-      params: { sessionId, cursor: 0 },
-    });
-  });
-
-  it.each([
-    { chunks: [{ cursor: 1, stream: "stdout", data: "YQ==" }], next_cursor: 2 },
-    { chunks: [{ cursor: 0, stream: "stdout", data: "YQ" }], next_cursor: 1 },
-    { chunks: [], next_cursor: 1 },
-    { chunks: [{ cursor: 0, stream: "stdout", data: "YQ==" }], next_cursor: 0 },
-    {
-      chunks: [{ cursor: 0, stream: "stdout", data: "YQ==" }],
-      next_cursor: 1,
-      lost: { from: 0, to: 1 },
-    },
-  ])(
-    "rejects inconsistent cursor or binary output without replay %#",
-    async (output) => {
-      reply({
-        type: "read",
-        session: { ...session, end_cursor: 1 },
-        ...output,
-      });
-      await invoke("read", sessionId);
-      expect(result()).toMatchObject({
-        type: "failed",
-        failure_reason: "protocol",
-        effects: "unknown",
-      });
-      expect(spawn).toHaveBeenCalledTimes(1);
-    },
-  );
-
   it("returns setup failures through status without inventing remote exit evidence", async () => {
     reply({
       type: "status",
@@ -228,61 +183,6 @@ describe("okou ssh session", () => {
       session_id: sessionId,
       effects: "unknown",
     });
-  });
-
-  it("preserves binary read output and waits for backpressure before reporting the next cursor", async () => {
-    const bytes = Buffer.from([0, 255, 10]);
-    reply({
-      type: "read",
-      session: { ...session, oldest_cursor: 10, end_cursor: 13 },
-      chunks: [
-        { cursor: 10, stream: "stdout", data: bytes.toString("base64") },
-      ],
-      next_cursor: 13,
-      lost: { from: 0, to: 10 },
-    });
-    const writes: Buffer[] = [];
-    let completeWrite: (() => void) | undefined;
-    const stdout = vi
-      .spyOn(process.stdout, "write")
-      .mockImplementation((chunk, encodingOrCallback, callback) => {
-        writes.push(Buffer.from(chunk));
-        const done =
-          typeof encodingOrCallback === "function"
-            ? encodingOrCallback
-            : callback;
-        completeWrite = () => {
-          done?.();
-        };
-        return false;
-      });
-    let settled = false;
-    try {
-      const work = sshCommand
-        .parseAsync(["session", "read", sessionId], { from: "user" })
-        .then(() => {
-          settled = true;
-        });
-      await vi.waitFor(() => {
-        expect(writes).toHaveLength(1);
-      });
-      expect(settled).toBe(false);
-      expect(errors).toHaveBeenCalledWith(
-        "Output bytes 0–10 were discarded from the bounded buffer.",
-      );
-      expect(errors).not.toHaveBeenCalledWith(
-        expect.stringContaining("next_cursor"),
-      );
-      completeWrite?.();
-      await work;
-      expect(Buffer.concat(writes)).toEqual(bytes);
-      expect(errors).toHaveBeenCalledWith("next_cursor=13; state=running");
-      expect(output).not.toHaveBeenCalled();
-      expect(process.exitCode).toBe(0);
-    } finally {
-      completeWrite?.();
-      stdout.mockRestore();
-    }
   });
 });
 

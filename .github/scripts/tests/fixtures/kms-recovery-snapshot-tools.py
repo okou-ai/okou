@@ -215,7 +215,10 @@ if Path(sys.argv[0]).name == "psql":
                 "readOnly": True,
                 "isolation": "repeatable read",
                 "supportsTidRangeScan": True,
-                "plannedTables": 1,
+                "plannedTables": 2
+                if scenario
+                in {"sql-timeout", "sql-process-timeout", "invalid-scan-progress"}
+                else 1,
                 "largeObjects": 0,
                 "foreignTables": 0,
             }
@@ -234,6 +237,19 @@ if Path(sys.argv[0]).name == "psql":
     print(
         json.dumps(
             {
+                "kind": "batch-start",
+                "relationOid": 123,
+                "firstBlock": 1 if scenario == "invalid-batch-range" else 0,
+                "endBlock": 1,
+                "startedAt": "fixture-private-password"
+                if scenario == "invalid-batch-time"
+                else "2026-09-14T08:41:00+00:00",
+            }
+        )
+    )
+    print(
+        json.dumps(
+            {
                 "kind": "table-chunk",
                 "relationOid": 123,
                 "firstBlock": 0,
@@ -245,18 +261,46 @@ if Path(sys.argv[0]).name == "psql":
             }
         )
     )
-    if scenario in {"sql-timeout", "invalid-scan-progress"}:
+    if scenario in {"sql-timeout", "sql-process-timeout", "invalid-scan-progress"}:
+        print(
+            json.dumps(
+                {
+                    "kind": "table-plan",
+                    "relationOid": 456,
+                    "blocks": 10000,
+                    "heapAccessMethod": True,
+                }
+            )
+        )
+        print(
+            json.dumps(
+                {
+                    "kind": "batch-start",
+                    "relationOid": 456,
+                    "firstBlock": 0,
+                    "endBlock": 8192,
+                    "startedAt": "2026-09-14T08:42:00+00:00",
+                }
+            )
+        )
         print(
             json.dumps(
                 {
                     "kind": "scan-start",
                     "phase": "table",
-                    "relationOid": 456 if scenario == "sql-timeout" else True,
+                    "relationOid": True if scenario == "invalid-scan-progress" else 456,
                     "relationBytes": 5368709120,
+                    **(
+                        {"firstBlock": 256, "endBlock": 384}
+                        if scenario == "sql-process-timeout"
+                        else {}
+                    ),
                     "private": "fixture-private-password",
                 }
             )
         )
+        if scenario == "sql-process-timeout":
+            raise SystemExit(0)
         sys.stderr.write(
             "psql:inventory.sql:42: ERROR:  57014\nDETAIL: fixture-private-password\n"
         )

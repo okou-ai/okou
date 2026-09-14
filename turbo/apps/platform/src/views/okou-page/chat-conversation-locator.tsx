@@ -29,7 +29,7 @@ function LocatorPreviewCard({ thread }: { thread: ChatPanelSignals }) {
       data-conversation-locator-preview
       aria-hidden="true"
       className={cn(
-        "pointer-events-none fixed left-0 top-0 z-50 w-[340px] rounded-xl border border-border bg-background px-4 py-3.5 shadow-lg transition-opacity duration-150",
+        "pointer-events-none fixed left-0 top-0 z-50 w-[340px] rounded-xl border border-border bg-background px-4 py-3.5 shadow-lg",
         preview ? "opacity-100" : "opacity-0",
       )}
     >
@@ -78,7 +78,7 @@ function ConversationLocatorRail({ thread }: { thread: ChatPanelSignals }) {
           // Hidden on narrow viewports: the rail needs a gutter the phone
           // layout does not have, and those threads are short enough to scroll.
           // Keep the hit area inside the message content's 24px left gutter.
-          "absolute inset-y-0 left-0 z-10 hidden w-6 cursor-pointer transition-opacity duration-300 md:block",
+          "absolute inset-y-0 left-0 z-10 hidden w-6 cursor-pointer md:block",
           !layout.visible && "pointer-events-none opacity-0",
           layout.visible && (engaged ? "opacity-100" : "opacity-[0.68]"),
         )}

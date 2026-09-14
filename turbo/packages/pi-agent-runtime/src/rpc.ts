@@ -26,6 +26,14 @@ export type PiSandboxOwnershipTransferMode =
   | "pending-tool-continuation"
   | "settled-session-continuation";
 
+export interface PiLangfuseRuntimeConfig {
+  readonly publicKey: string;
+  readonly secretKey: string;
+  readonly baseUrl?: string;
+  readonly userId?: string;
+  readonly environment?: string;
+}
+
 const LANGFUSE_RUNTIME_ENVIRONMENT = {
   traceId: "LANGFUSE_PI_PARENT_TRACE_ID",
   spanId: "LANGFUSE_PI_PARENT_SPAN_ID",
@@ -34,18 +42,44 @@ const LANGFUSE_RUNTIME_ENVIRONMENT = {
   continuation: "PI_LANGFUSE_CONTINUATION",
 } as const;
 
+const LANGFUSE_CONFIG_ENVIRONMENT = {
+  publicKey: "LANGFUSE_PUBLIC_KEY",
+  secretKey: "LANGFUSE_SECRET_KEY",
+  baseUrl: "LANGFUSE_BASE_URL",
+  userId: "LANGFUSE_USER_ID",
+  environment: "LANGFUSE_TRACING_ENVIRONMENT",
+} as const;
+
 export function installLangfuseRuntimeEnvironment(
   parent: PiLangfuseParent | undefined,
   ownershipTransferMode: PiSandboxOwnershipTransferMode,
+  config?: PiLangfuseRuntimeConfig,
 ): () => void {
   const enabled = process.env.OKOU_PI_LANGFUSE_DEBUG_ENABLED === "true";
+  const managedNames = [
+    ...Object.values(LANGFUSE_RUNTIME_ENVIRONMENT),
+    ...(config ? Object.values(LANGFUSE_CONFIG_ENVIRONMENT) : []),
+  ];
   const previous = Object.fromEntries(
-    Object.values(LANGFUSE_RUNTIME_ENVIRONMENT).map((name) => {
+    managedNames.map((name) => {
       return [name, process.env[name]];
     }),
   );
-  for (const name of Object.values(LANGFUSE_RUNTIME_ENVIRONMENT)) {
+  for (const name of managedNames) {
     delete process.env[name];
+  }
+  if (enabled && config) {
+    process.env[LANGFUSE_CONFIG_ENVIRONMENT.publicKey] = config.publicKey;
+    process.env[LANGFUSE_CONFIG_ENVIRONMENT.secretKey] = config.secretKey;
+    if (config.baseUrl) {
+      process.env[LANGFUSE_CONFIG_ENVIRONMENT.baseUrl] = config.baseUrl;
+    }
+    if (config.userId) {
+      process.env[LANGFUSE_CONFIG_ENVIRONMENT.userId] = config.userId;
+    }
+    if (config.environment) {
+      process.env[LANGFUSE_CONFIG_ENVIRONMENT.environment] = config.environment;
+    }
   }
   if (enabled && parent) {
     process.env[LANGFUSE_RUNTIME_ENVIRONMENT.traceId] = parent.traceId;
@@ -58,7 +92,7 @@ export function installLangfuseRuntimeEnvironment(
   }
 
   return () => {
-    for (const name of Object.values(LANGFUSE_RUNTIME_ENVIRONMENT)) {
+    for (const name of managedNames) {
       const value = previous[name];
       if (value === undefined) {
         delete process.env[name];
@@ -168,16 +202,20 @@ export async function runPiOfficialRpcMode(args: {
   readonly sessionFile: string;
   readonly ownershipTransferMode: PiSandboxOwnershipTransferMode;
   readonly langfuseParent?: PiLangfuseParent;
+  readonly langfuseConfig?: PiLangfuseRuntimeConfig;
 }): Promise<never> {
+  const enableLangfuseObservability =
+    process.env.OKOU_PI_LANGFUSE_DEBUG_ENABLED === "true" &&
+    args.langfuseConfig !== undefined;
   const restoreLangfuseEnvironment = installLangfuseRuntimeEnvironment(
     args.langfuseParent,
     args.ownershipTransferMode,
+    args.langfuseConfig,
   );
   try {
     const createRuntime = createRuntimeFactory({
       ...args,
-      enableLangfuseObservability:
-        process.env.OKOU_PI_LANGFUSE_DEBUG_ENABLED === "true",
+      enableLangfuseObservability,
     });
     const sessionManager = resolveSessionManager(args);
     const runtime = await createAgentSessionRuntime(createRuntime, {

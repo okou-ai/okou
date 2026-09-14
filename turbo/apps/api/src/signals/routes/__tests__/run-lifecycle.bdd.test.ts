@@ -1118,6 +1118,40 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(stored.appendSystemPrompt ?? "").toContain(toolHint);
   });
 
+  it("advertises Lark messaging only while the organization rollout is enabled", async () => {
+    const api = createRunsApi(context);
+    const connectors = createConnectorBddApi(context);
+    const { actor, agentId } = await entitledRunActor();
+    const disabled = await api.createRun(actor, {
+      agentId,
+      prompt: "send a message",
+      modelProvider: "anthropic-api-key",
+    });
+    const disabledRun = await api.readRun(actor, disabled.runId);
+    expect(disabledRun.appendSystemPrompt).not.toContain("okou lark");
+    expect(disabledRun.appendSystemPrompt).toContain(
+      "okou feishu message send --help",
+    );
+    await api.requestCancelRun(actor, disabled.runId, [200]);
+
+    await connectors.updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.LarkIntegration]: true,
+    });
+    const enabled = await api.createRun(actor, {
+      agentId,
+      prompt: "send a message",
+      modelProvider: "anthropic-api-key",
+    });
+    const enabledRun = await api.readRun(actor, enabled.runId);
+    expect(enabledRun.appendSystemPrompt).toContain(
+      "Lark messages: when the task explicitly asks to send or post to Lark",
+    );
+    expect(enabledRun.appendSystemPrompt).toContain(
+      "Lark: `okou lark message send --help` for chats, DMs, and replies.",
+    );
+    await api.requestCancelRun(actor, enabled.runId, [200]);
+  });
+
   it("asks chat runs for a generic progressive artifact preview only while its switch is on", async () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
@@ -5869,15 +5903,19 @@ describe("RUN-02: model provider selection and built-in admission", () => {
         OPENAI_MODEL: getBuiltInApiModel(model),
       });
       if (model === "deepseek-v4.1-flash") {
-        expect(claim.codexRuntimeConfig?.providerId).toBe("openrouter-codex");
-        expect(claim.codexRuntimeConfig?.modelCatalog?.models).toStrictEqual([
+        expect(claim.environment).toMatchObject({
+          OPENAI_BASE_URL: "https://api.deepseek.com/",
+          OPENAI_MODEL: "deepseek-flash",
+        });
+        expect(claim.codexRuntimeConfig?.providerId).toBe("deepseek");
+        expect(claim.codexRuntimeConfig?.modelCatalog?.models).toContainEqual(
           expect.objectContaining({
-            slug: "deepseek/deepseek-v4.1-flash",
+            slug: "deepseek-flash",
             context_window: 1_048_576,
             input_modalities: ["text", "image"],
-            apply_patch_tool_type: null,
+            apply_patch_tool_type: "freeform",
           }),
-        ]);
+        );
       }
       expect(claim.modelUsageProvider).toBe(model);
       await api.requestCancelRun(actor, sent.body.runId, [200]);
@@ -5928,7 +5966,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     const claim = await api.claimRunnerJob(run.runId);
     await expectBuiltInModelRunRuntimeRoute(run.runId, selectedModel);
     expect(claim.environment).toMatchObject({
-      OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
+      OPENAI_BASE_URL: "https://api.deepseek.com/",
     });
 
     expect(
@@ -13199,32 +13237,21 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, gatedOn.runId, [200]);
   });
 
-  it("advertises Slack bot reads only while the feature is enabled", async () => {
+  it("advertises Slack bot reads for an ordinary organization", async () => {
     const api = createRunsApi(context);
-    const connectors = createConnectorBddApi(context);
     const { actor, agentId } = await entitledRunActor();
 
-    for (const enabled of [false, true]) {
-      await connectors.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.SlackRead]: enabled,
-      });
-      const run = await api.createRun(actor, {
-        agentId,
-        prompt: "read the channel's recent messages",
-        modelProvider: "anthropic-api-key",
-      });
-      const prompt =
-        (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
-      if (enabled) {
-        expect(prompt).toContain("okou slack channel list --help");
-        expect(prompt).toContain("okou slack message history --help");
-      } else {
-        expect(prompt).not.toContain("okou slack message history --help");
-        expect(prompt).not.toContain("okou slack channel list --help");
-      }
-      expect(prompt).toContain("okou slack message send --help");
-      await api.requestCancelRun(actor, run.runId, [200]);
-    }
+    const run = await api.createRun(actor, {
+      agentId,
+      prompt: "read the channel's recent messages",
+      modelProvider: "anthropic-api-key",
+    });
+    const prompt =
+      (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
+    expect(prompt).toContain("okou slack channel list --help");
+    expect(prompt).toContain("okou slack message history --help");
+    expect(prompt).toContain("okou slack message send --help");
+    await api.requestCancelRun(actor, run.runId, [200]);
   });
 
   it.each([true, false])(
@@ -13246,6 +13273,29 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       if (enabled) {
         expect(prompt).toContain("okou ssh host list --json");
         expect(prompt).toContain("failure_reason and effects, not error text");
+        expect(prompt).toContain(
+          "okou ssh upload <connection-id> <local-file> <remote-file> --json",
+        );
+        expect(prompt).toContain(
+          "okou ssh download <connection-id> <remote-file> <local-file> --json",
+        );
+        expect(prompt).toContain("1 GiB (1,073,741,824 bytes) per file");
+        expect(prompt).toContain(
+          "15 minutes total per helper invocation, including setup and I/O waits",
+        );
+        expect(prompt).toContain(
+          "2 simultaneous transfers per Run, shared by uploads and downloads",
+        );
+        expect(prompt).toContain("No option overrides these limits");
+        expect(prompt).toContain("okou ssh session read <session-id>");
+        expect(prompt).toContain("Read waits up to 10 seconds for progress");
+        expect(prompt).toContain("--wait 0");
+        expect(prompt).toContain(
+          "35 seconds collecting, 256 chunks and 64 page requests",
+        );
+        expect(prompt).toContain(
+          "CLI exit 0 means the read succeeded, not that the remote process succeeded",
+        );
       } else {
         expect(prompt).not.toContain("okou ssh");
       }

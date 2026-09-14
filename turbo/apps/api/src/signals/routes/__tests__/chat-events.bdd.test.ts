@@ -45,7 +45,10 @@ import {
   type UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { cronExtractPiMemoryStage1Contract } from "@okouai/api-contracts/contracts/cron";
-import { triggerSourceSchema } from "@okouai/api-contracts/contracts/logs";
+import {
+  type TriggerSource,
+  triggerSourceSchema,
+} from "@okouai/api-contracts/contracts/logs";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
 import { MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS } from "@okouai/api-contracts/contracts/model-price-tiers";
 import {
@@ -106,7 +109,6 @@ import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createApp } from "../../../app-factory";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
@@ -123,6 +125,7 @@ import {
 } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
+  readQueuedLangfuseContextFixture,
   readRunLangfuseTraceEnabledFixture,
   readRunModelRuntimeRouteFixture,
   readSessionHistoryBlobRefCountFixture,
@@ -179,6 +182,7 @@ import {
   readmitPiMemoryStage1CandidateFixture,
   readPiConversationIdentityFixture,
   readPiMemoryStage1CandidateFixture,
+  readPiMemoryStage1DayFixture,
   setSyntheticPiMemoryStage1SelectionFixture,
 } from "../../../test-fixtures/pi-memory-stage1-candidates";
 import {
@@ -1148,6 +1152,7 @@ interface ChatRunCompletionOptions {
 function frameworkMatchingCompletionOptions(
   threadId: string,
   cliAgentType: "claude-code" | "codex" | "pi",
+  userNote?: string,
 ): ChatRunCompletionOptions {
   if (cliAgentType !== "pi") {
     return { cliAgentType };
@@ -1156,6 +1161,9 @@ function frameworkMatchingCompletionOptions(
     cwd: "/home/user/workspace",
     id: threadId,
   });
+  if (userNote !== undefined) {
+    session.appendMessage({ role: "user", content: userNote, timestamp: 1 });
+  }
   session.appendMessage({
     role: "assistant",
     content: [{ type: "text", text: "BDD Pi completion checkpoint" }],
@@ -1171,7 +1179,7 @@ function frameworkMatchingCompletionOptions(
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     },
     stopReason: "stop",
-    timestamp: 1,
+    timestamp: userNote === undefined ? 1 : 2,
   });
   return {
     cliAgentType,
@@ -2547,9 +2555,14 @@ async function requestSendEventRaw(
     readonly hasTextContent: boolean;
   },
   signal: AbortSignal = context.signal,
+  usagePricingResolution?: UsagePricingFixture["resolution"],
 ): Promise<{ readonly status: number; readonly body: unknown }> {
   const headers = sessionHeaders(actor);
-  const app = createApp({ signal, routes: TEST_APP_ROUTES });
+  const app = createAppWithRoutes({
+    signal,
+    routes: TEST_APP_ROUTES,
+    usagePricingResolution,
+  });
   const response = await app.request("/api/chat/events", {
     method: "POST",
     headers: { ...headers, "content-type": "application/json" },
@@ -2691,9 +2704,15 @@ async function expectExactPrivatePiMemoryAdmission(args: {
   readonly userId: string;
 }): Promise<void> {
   // Stage 1 candidates intentionally have no production read API. After the
-  // real send and completion paths run, this focused fixture proves the exact
-  // private admission identity without controlling the behavior under test.
+  // real send and completion paths run, verify completion did not enqueue and
+  // explicitly exercise the canonical writer's exact checkpoint ownership.
   const conversation = await readPiConversationIdentityFixture(args.runId);
+  const beforeAdmission = await readPiMemoryStage1CandidateFixture({
+    orgId: args.orgId,
+    userId: args.userId,
+  });
+  expect(beforeAdmission?.sourceRunId).not.toBe(args.runId);
+  await readmitPiMemoryStage1CandidateFixture(args.runId);
   const candidate = await readPiMemoryStage1CandidateFixture({
     orgId: args.orgId,
     userId: args.userId,
@@ -2712,7 +2731,7 @@ async function expectExactPrivatePiMemoryAdmission(args: {
   });
   expect(
     candidate.eligibleAt.getTime() - candidate.sourceCompletedAt.getTime(),
-  ).toBe(60_000);
+  ).toBe(0);
   await expect(
     readmitPiMemoryStage1CandidateFixture(args.runId),
   ).resolves.toMatchObject({ outcome: "exact_retry" });
@@ -2732,7 +2751,11 @@ async function expectExactPrivatePiMemoryAdmission(args: {
   }
 }
 
-async function extractOwnedThreadPiMemory(actor: ApiTestUser, runId: string) {
+async function extractOwnedThreadPiMemory(
+  actor: ApiTestUser,
+  runId: string,
+  agentId: string,
+) {
   mockEnv("PI_MEMORY_BACKGROUND_WORKERS_ENABLED", "true");
   const scope = { orgId: requireOrgId(actor), userId: actor.userId };
   const candidate = await readPiMemoryStage1CandidateFixture(scope);
@@ -2761,7 +2784,44 @@ async function extractOwnedThreadPiMemory(actor: ApiTestUser, runId: string) {
       { once: true },
     ),
   );
-  mockNow(candidate.eligibleAt.getTime() + 1000);
+  // A later UTC day needs its own committed startup; a real queued Pi launch
+  // exercises the common admission hook without making a foreground model call.
+  const nextDay = new Date(candidate.sourceCompletedAt);
+  nextDay.setUTCHours(24, 0, 0, 0);
+  mockNow(
+    Math.max(
+      nextDay.getTime(),
+      candidate.sourceCompletedAt.getTime() + 7 * 3_600_000,
+    ),
+  );
+  mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+  await updateFeatureSwitchesForUser(context, scope, {
+    [FeatureSwitchKey.PiMemory]: false,
+    [FeatureSwitchKey.PiLoop]: false,
+  });
+  const anchor = await sendChatRun(actor, {
+    agentId,
+    prompt: "hold daily startup admission",
+    model: "gpt-5.6-terra",
+  });
+  await flushWaitUntilForTest();
+  await updateFeatureSwitchesForUser(context, scope, {
+    [FeatureSwitchKey.PiMemory]: true,
+    [FeatureSwitchKey.PiLoop]: true,
+  });
+  const startup = await sendChatRun(actor, {
+    agentId,
+    prompt: "request the daily Pi batch",
+    model: "gpt-5.6-terra",
+  });
+  await waitForRunStatus(actor, startup.runId, "queued");
+  await expect(
+    readPiMemoryStage1DayFixture(actor.userId),
+  ).resolves.toMatchObject({
+    day: nowDate().toISOString().slice(0, 10),
+    triggerThreadId: startup.threadId,
+    consumedAt: null,
+  });
   const extracted = await accept(
     setupApp({
       context,
@@ -2787,6 +2847,8 @@ async function extractOwnedThreadPiMemory(actor: ApiTestUser, runId: string) {
     status: "succeeded",
     rawMemory: "The owner prefers concise progress reports.",
   });
+  await api.requestCancelRun(actor, startup.runId, [200]);
+  await api.requestCancelRun(actor, anchor.runId, [200]);
 }
 
 function threadPiAutomationsClient(
@@ -2875,7 +2937,7 @@ async function expectThreadPiTerminal(
 
 describe("thread-bound Pi Automation and Goal execution", () => {
   it.each(["schedule", "event"] as const)(
-    "rotates the %s Automation session into Pi and shares owned learning with user turns",
+    "rotates the %s Automation session into Pi and learns only from its user turns",
     async (source) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor(
         {},
@@ -2966,9 +3028,10 @@ describe("thread-bound Pi Automation and Goal execution", () => {
         { ...actor, orgId },
         {
           [FeatureSwitchKey.PiLoop]: true,
+          [FeatureSwitchKey.PiMemory]: true,
         },
       );
-      mockEnv("PI_MEMORY_STAGE1_IDLE_DELAY_MS", 60_000);
+
       mockPiResourceArchiveDownloads();
       const checkpointObjects = mockPiCheckpointObjectStore();
       const requests: unknown[] = [];
@@ -3065,10 +3128,17 @@ describe("thread-bound Pi Automation and Goal execution", () => {
         legacyBinding.agent_session_id,
       );
       const piHistory = await readPiConversationIdentityFixture(piRunId);
-      await expectExactPrivatePiMemoryAdmission({
-        orgId,
-        userId: actor.userId,
-        runId: piRunId,
+      // An Automation completion never produces memory (EPIC #33892
+      // Decision 3): its owned Chat Thread is skipped as a non-interactive
+      // source rather than a missing thread, and no candidate row is written.
+      await expect(
+        readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
+      ).resolves.toBeNull();
+      await expect(
+        readmitPiMemoryStage1CandidateFixture(piRunId),
+      ).resolves.toStrictEqual({
+        outcome: "skipped",
+        reason: "non_interactive_source",
       });
       const runState = await runStateStore.set(
         readAgentRunState$,
@@ -3094,7 +3164,6 @@ describe("thread-bound Pi Automation and Goal execution", () => {
       );
       await expectThreadPiTerminal(actor, threadId, piRunId);
       expect(requests).toHaveLength(0);
-      await extractOwnedThreadPiMemory(actor, piRunId);
 
       mockNow(now() + 1000);
       const user = await sendChatRun(
@@ -3111,12 +3180,12 @@ describe("thread-bound Pi Automation and Goal execution", () => {
       expect(userHistory.sourceHistoryHash).not.toBe(
         piHistory.sourceHistoryHash,
       );
-      await expect(
-        readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
-      ).resolves.toMatchObject({
-        piSessionId: piHistory.piSessionId,
-        sourceRunId: user.runId,
-        sourceHistoryHash: userHistory.sourceHistoryHash,
+      // The user's turn in the same rotated session is this owner's first
+      // admitted learning source, and its extraction succeeds.
+      await expectExactPrivatePiMemoryAdmission({
+        orgId,
+        userId: actor.userId,
+        runId: user.runId,
       });
       expect(requests).toHaveLength(1);
       expect(requests[0]).toMatchObject({ model: "gpt-5.6-terra" });
@@ -3126,6 +3195,7 @@ describe("thread-bound Pi Automation and Goal execution", () => {
         cacheRead: 0,
         cacheCreation: 0,
       });
+      await extractOwnedThreadPiMemory(actor, user.runId, agentId);
       clearMockNow();
     },
     90_000,
@@ -8037,9 +8107,38 @@ describe("CHAT-02: model-first provider policies", () => {
     await expect(
       readRunLangfuseTraceEnabledFixture(run.runId),
     ).resolves.toBeTruthy();
+    const queuedContext = await readQueuedLangfuseContextFixture({
+      runId: run.runId,
+      userId: actor.userId,
+      orgId,
+    });
+    expect(queuedContext.platformEnvironment).toMatchObject({
+      OKOU_PI_LANGFUSE_DEBUG_ENABLED: "true",
+      LANGFUSE_TRACING_ENABLED: "true",
+    });
+    expect(queuedContext.platformEnvironment).not.toHaveProperty(
+      "LANGFUSE_PUBLIC_KEY",
+    );
+    expect(queuedContext.platformEnvironment).not.toHaveProperty(
+      "LANGFUSE_SECRET_KEY",
+    );
+    expect(queuedContext.encryptedSecrets).toMatchObject({
+      LANGFUSE_PUBLIC_KEY: "pk-lf-bdd-trace-admission",
+      LANGFUSE_SECRET_KEY: "sk-lf-bdd-trace-admission",
+    });
 
     const claimed = await claimChatRun(runnerGroup, run.runId);
     expect(claimed.claim.cliAgentType).toBe("pi");
+    expect(claimed.claim.platformEnvironment).toMatchObject({
+      LANGFUSE_PUBLIC_KEY: "pk-lf-bdd-trace-admission",
+      LANGFUSE_SECRET_KEY: "sk-lf-bdd-trace-admission",
+    });
+    expect(claimed.claim.secretValues).toStrictEqual(
+      expect.arrayContaining([
+        "pk-lf-bdd-trace-admission",
+        "sk-lf-bdd-trace-admission",
+      ]),
+    );
     await expect(
       readRunLangfuseTraceEnabledFixture(run.runId),
     ).resolves.toBeTruthy();
@@ -8071,6 +8170,7 @@ describe("CHAT-02: model-first provider policies", () => {
       { ...actor, orgId },
       {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
       },
     );
     mockPiResourceArchiveDownloads();
@@ -8112,10 +8212,7 @@ describe("CHAT-02: model-first provider policies", () => {
         orgId,
         userId: actor.userId,
       }),
-    ).resolves.toMatchObject({
-      sourceRunId: first.runId,
-      status: "pending",
-    });
+    ).resolves.toBeNull();
     const firstDeveloperPrompt = piResponsesDeveloperPrompt(
       modelRequestBodies[0],
     );
@@ -8219,7 +8316,10 @@ describe("CHAT-02: model-first provider policies", () => {
           ...actor,
           orgId: requireOrgId(actor),
         },
-        { [FeatureSwitchKey.PiLoop]: true },
+        {
+          [FeatureSwitchKey.PiLoop]: true,
+          [FeatureSwitchKey.PiMemory]: true,
+        },
       );
       await bdd.updateAgentInstructions(
         actor,
@@ -8491,7 +8591,10 @@ describe("CHAT-02: model-first provider policies", () => {
         ...actor,
         orgId: requireOrgId(actor),
       },
-      { [FeatureSwitchKey.PiLoop]: true },
+      {
+        [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
+      },
     );
     mockPiResourceArchiveDownloads();
     const objects = mockPiCheckpointObjectStore();
@@ -8771,6 +8874,7 @@ describe("CHAT-02: model-first provider policies", () => {
       { ...actor, orgId },
       {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
       },
     );
     mockPiResourceArchiveDownloads(true);
@@ -8829,6 +8933,7 @@ describe("CHAT-02: model-first provider policies", () => {
       { ...actor, orgId },
       {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
       },
     );
     mockPiResourceArchiveDownloads();
@@ -8907,6 +9012,108 @@ describe("CHAT-02: model-first provider policies", () => {
     await Promise.all([
       cancelChatRun(actor, frozenMiss.runId, frozenMissClaim.sandboxHeaders),
       cancelChatRun(actor, newSession.runId, newSessionClaim.sandboxHeaders),
+    ]);
+  }, 90_000);
+
+  it("injects no memory recall into a Pi launch while the owner's PiMemory is off", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const orgId = requireOrgId(actor);
+    const summary =
+      "# Gated summary\n\nOnly an owner with PiMemory on may see this.";
+    const memory = await commitMemoryVersion(context, actor, [
+      { path: "memory_summary.md", content: summary },
+    ]);
+    await seedReadyMemorySummaryProjection(context, actor, memory, summary);
+    const usagePricingResolution = await createGptUsagePricingResolution();
+    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      { [FeatureSwitchKey.PiLoop]: true },
+    );
+    mockPiResourceArchiveDownloads();
+    const checkpointObjects = mockPiCheckpointObjectStore();
+    const requestBodies: string[] = [];
+    server.use(
+      http.post("https://api.openai.com/v1/responses", async ({ request }) => {
+        requestBodies.push(await request.text());
+        return new HttpResponse(
+          piResponsesToolSse({
+            callId: `call_pi_memory_gate_${requestBodies.length}`,
+            name: "read",
+            arguments: { path: "/home/user/workspace/AGENTS.md" },
+            sequence: requestBodies.length,
+          }),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      }),
+    );
+    async function launchPiRun(prompt: string) {
+      const run = await sendChatRun(
+        actor,
+        { agentId, prompt, model: "gpt-5.6-terra" },
+        usagePricingResolution,
+      );
+      const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`;
+      await expect
+        .poll(() => {
+          return checkpointObjects.has(manifestKey);
+        })
+        .toBe(true);
+      return run;
+    }
+
+    // Off: the ready projection is never read, and the mount stays pinned.
+    const gated = await launchPiRun("launch Pi with PiMemory off");
+    expect(piResponsesDeveloperPrompt(requestBodies[0])).not.toContain(summary);
+    const gatedClaim = await claimChatRun(runnerGroup, gated.runId);
+    expect(gatedClaim.claim.piLaunchConfig).toMatchObject({
+      memoryRecall: {
+        status: "no-content",
+        memoryStorageId: memory.storageId,
+        storageVersionId: memory.versionId,
+      },
+    });
+    expect(
+      expectCanonicalStorageManifest(
+        gatedClaim.claim.storageManifest,
+      )?.storageMounts.filter((mount) => {
+        return mount.name === "memory" || mount.mountPath === PI_MEMORY_ROOT;
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({
+        name: "memory",
+        storageId: memory.storageId,
+        versionId: memory.versionId,
+        mountPath: PI_MEMORY_ROOT,
+        writeback: true,
+        archiveUrl: expect.any(String),
+      }),
+    ]);
+
+    // On for this owner only: the same projection is recalled as before.
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      { [FeatureSwitchKey.PiMemory]: true },
+    );
+    const enabled = await launchPiRun("launch Pi with PiMemory on");
+    expect(
+      occurrences(piResponsesDeveloperPrompt(requestBodies[1]), summary),
+    ).toBe(1);
+    const enabledClaim = await claimChatRun(runnerGroup, enabled.runId);
+    expect(enabledClaim.claim.piLaunchConfig).toMatchObject({
+      memoryRecall: {
+        status: "ready",
+        memoryStorageId: memory.storageId,
+        storageVersionId: memory.versionId,
+        content: summary,
+      },
+    });
+
+    await Promise.all([
+      cancelChatRun(actor, gated.runId, gatedClaim.sandboxHeaders),
+      cancelChatRun(actor, enabled.runId, enabledClaim.sandboxHeaders),
     ]);
   }, 90_000);
 
@@ -9015,8 +9222,7 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it("decodes persisted launch snapshots at webhook completion before Stage 1 admission", async () => {
-    mockEnv("PI_MEMORY_STAGE1_IDLE_DELAY_MS", 60_000);
+  it("keeps completion scheduling-free and decodes historical snapshots in canonical admission", async () => {
     const rejectedSnapshots = [
       ["historical null", null],
       [
@@ -9084,7 +9290,10 @@ describe("CHAT-02: model-first provider policies", () => {
       await updateFeatureSwitchesForUser(
         context,
         { ...actor, orgId },
-        { [FeatureSwitchKey.PiLoop]: true },
+        {
+          [FeatureSwitchKey.PiLoop]: true,
+          [FeatureSwitchKey.PiMemory]: true,
+        },
       );
       await setRunLaunchSnapshotFixture(run.runId, snapshot);
       const completionOptions = frameworkMatchingCompletionOptions(
@@ -9116,7 +9325,10 @@ describe("CHAT-02: model-first provider policies", () => {
       await updateFeatureSwitchesForUser(
         context,
         { ...actor, orgId },
-        { [FeatureSwitchKey.PiLoop]: true },
+        {
+          [FeatureSwitchKey.PiLoop]: true,
+          [FeatureSwitchKey.PiMemory]: true,
+        },
       );
       await setRunLaunchSnapshotFixture(run.runId, snapshot);
       const completionOptions = frameworkMatchingCompletionOptions(
@@ -9129,6 +9341,10 @@ describe("CHAT-02: model-first provider policies", () => {
         completionOptions,
       );
       await flushWaitUntilForTest();
+      await expect(
+        readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
+      ).resolves.toBeNull();
+      await readmitPiMemoryStage1CandidateFixture(run.runId);
       const candidate = await readPiMemoryStage1CandidateFixture({
         orgId,
         userId: actor.userId,
@@ -9153,7 +9369,7 @@ describe("CHAT-02: model-first provider policies", () => {
         name,
         sourceRunId: run.runId,
         sourceHistoryHash: expectedHistoryHash,
-        eligibilityDelayMs: 60_000,
+        eligibilityDelayMs: 0,
       });
 
       await completeChatRunOk(
@@ -9218,13 +9434,121 @@ describe("CHAT-02: model-first provider policies", () => {
     }
   }, 90_000);
 
-  it("admits an exact Pi history from an agent-authenticated same-owner chat send", async () => {
+  it("leaves completion scheduling-free while canonical admission honors PiMemory", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const orgId = requireOrgId(actor);
+    const scope = { orgId, userId: actor.userId };
+    async function completePiRun(threadId: string | undefined, note: string) {
+      const run = await sendChatRun(actor, {
+        agentId,
+        ...(threadId === undefined ? {} : { threadId }),
+        prompt: note,
+      });
+      const claimed = await claimChatRun(runnerGroup, run.runId);
+      await setRunLaunchSnapshotFixture(run.runId, {
+        schemaVersion: 3,
+        framework: "pi",
+        runnerProfile: DEFAULT_PROFILE,
+      });
+      const completionOptions = frameworkMatchingCompletionOptions(
+        run.threadId,
+        "pi",
+        note,
+      );
+      if (completionOptions.sessionHistory === undefined) {
+        throw new Error("Expected a settled Pi session history");
+      }
+      await completeChatRunOk(
+        run.runId,
+        claimed.sandboxHeaders,
+        completionOptions,
+      );
+      await flushWaitUntilForTest();
+      return {
+        ...run,
+        sourceHistoryHash: createHash("sha256")
+          .update(completionOptions.sessionHistory)
+          .digest("hex"),
+      };
+    }
+
+    // Off for everyone by default: no candidate is written, and readmitting
+    // the same completed Run stays skipped before any write.
+    const off = await completePiRun(undefined, "complete Pi with PiMemory off");
+    await expect(readPiMemoryStage1CandidateFixture(scope)).resolves.toBeNull();
+    await expect(
+      readmitPiMemoryStage1CandidateFixture(off.runId),
+    ).resolves.toStrictEqual({
+      outcome: "skipped",
+      reason: "pi_memory_disabled",
+    });
+    await expect(readPiMemoryStage1CandidateFixture(scope)).resolves.toBeNull();
+
+    // Completion remains scheduling-free; explicitly exercise the canonical writer.
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      { [FeatureSwitchKey.PiMemory]: true },
+    );
+    const on = await completePiRun(
+      off.threadId,
+      "complete Pi with PiMemory on",
+    );
+    await expect(readPiMemoryStage1CandidateFixture(scope)).resolves.toBeNull();
+    await readmitPiMemoryStage1CandidateFixture(on.runId);
+    const admitted = await readPiMemoryStage1CandidateFixture(scope);
+    if (!admitted) {
+      throw new Error("Expected the enabled owner's completion to be admitted");
+    }
+    expect(admitted).toMatchObject({
+      memoryStorageName: "memory",
+      piSessionId: off.threadId,
+      sourceRunId: on.runId,
+      sourceHistoryHash: on.sourceHistoryHash,
+      status: "pending",
+    });
+    expect(
+      admitted.eligibleAt.getTime() - admitted.sourceCompletedAt.getTime(),
+    ).toBe(0);
+    await expect(
+      readmitPiMemoryStage1CandidateFixture(on.runId),
+    ).resolves.toMatchObject({ outcome: "exact_retry" });
+
+    // Turning the override off again replaces nothing, even for a newer
+    // exact history of the same session.
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      { [FeatureSwitchKey.PiMemory]: false },
+    );
+    const offAgain = await completePiRun(
+      off.threadId,
+      "complete Pi after PiMemory turned off again",
+    );
+    expect(offAgain.sourceHistoryHash).not.toBe(on.sourceHistoryHash);
+    await expect(
+      readmitPiMemoryStage1CandidateFixture(offAgain.runId),
+    ).resolves.toStrictEqual({
+      outcome: "skipped",
+      reason: "pi_memory_disabled",
+    });
+    await expect(
+      readPiMemoryStage1CandidateFixture(scope),
+    ).resolves.toMatchObject({
+      sourceRunId: on.runId,
+      sourceHistoryHash: on.sourceHistoryHash,
+      status: "pending",
+      updatedAt: admitted.updatedAt,
+    });
+  }, 90_000);
+
+  it("keeps an agent-authenticated same-owner Pi history out of memory", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     await bdd.updateAgentMetadata(actor, agentId, { visibility: "public" });
     const source = await sendChatRun(actor, {
       agentId,
-      prompt: "delegate an eligible Pi memory turn",
+      prompt: "delegate a non-interactive Pi turn",
       model: "claude-sonnet-5",
     });
     const sourceClaim = await claimChatRun(runnerGroup, source.runId);
@@ -9232,12 +9556,15 @@ describe("CHAT-02: model-first provider policies", () => {
     const targetThread = await chat.createThread(actor, { agentId });
 
     const usagePricingResolution = await createGptUsagePricingResolution();
-    mockEnv("PI_MEMORY_STAGE1_IDLE_DELAY_MS", 60_000);
+
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
-      { [FeatureSwitchKey.PiLoop]: true },
+      {
+        [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
+      },
     );
     mockPiResourceArchiveDownloads();
     mockPiCheckpointObjectStore();
@@ -9287,10 +9614,14 @@ describe("CHAT-02: model-first provider policies", () => {
       source,
       targetThreadId: targetThread.id,
     });
-    await expectExactPrivatePiMemoryAdmission({
-      orgId,
-      userId: actor.userId,
-      runId: delegatedRunId,
+    await expect(
+      readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
+    ).resolves.toBeNull();
+    await expect(
+      readmitPiMemoryStage1CandidateFixture(delegatedRunId),
+    ).resolves.toStrictEqual({
+      outcome: "skipped",
+      reason: "non_interactive_source",
     });
     await expectAgentTokenThreadOwnershipBoundaries({
       agentId,
@@ -9301,7 +9632,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await cancelChatRun(actor, source.runId, sourceClaim.sandboxHeaders);
   }, 90_000);
 
-  it("admits exact owned Pi histories with immutable launch policy and stale-lease fencing", async () => {
+  it("keeps Pi checkpoints intact without completion admission and fences canonical writes", async () => {
     const { actor, agentId } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     expect(piMemoryStage1AdmissionPrerequisiteSkipReasonFixture()).toBeNull();
@@ -9320,7 +9651,7 @@ describe("CHAT-02: model-first provider policies", () => {
         generationEnabled: false,
       }),
     ).toBe("generation_disabled");
-    // Every product source must still own a Chat Thread. The actual
+    // Every interactive source must still own a Chat Thread. The actual
     // threadless Phase 2 maintenance route is covered by the boundary test.
     expect(
       piMemoryStage1AdmissionPrerequisiteSkipReasonFixture({
@@ -9329,15 +9660,29 @@ describe("CHAT-02: model-first provider policies", () => {
     ).toBe("missing_chat_thread");
     expect(
       piMemoryStage1AdmissionPrerequisiteSkipReasonFixture({
-        triggerSource: "agent",
+        triggerSource: "web",
       }),
     ).toBeNull();
+    expect(
+      piMemoryStage1AdmissionPrerequisiteSkipReasonFixture({
+        triggerSource: "web",
+        chatThreadId: null,
+      }),
+    ).toBe("missing_chat_thread");
+    // A non-interactive source is reported as such before the Chat Thread
+    // check: the threadless Phase 2 maintenance run and a thread-bound
+    // Automation run both skip for their real reason.
     expect(
       piMemoryStage1AdmissionPrerequisiteSkipReasonFixture({
         triggerSource: "agent",
         chatThreadId: null,
       }),
-    ).toBe("missing_chat_thread");
+    ).toBe("non_interactive_source");
+    expect(
+      piMemoryStage1AdmissionPrerequisiteSkipReasonFixture({
+        triggerSource: "automation-schedule",
+      }),
+    ).toBe("non_interactive_source");
     expect(
       piMemoryStage1AdmissionPrerequisiteSkipReasonFixture({
         triggerSource: null,
@@ -9348,19 +9693,41 @@ describe("CHAT-02: model-first provider policies", () => {
         triggerSource: "unknown",
       }),
     ).toBe("invalid_source");
+    // Every trigger source is classified explicitly: only human-interactive
+    // surfaces proceed to memory extraction (EPIC #33892 Decisions 2 and 3).
+    const prerequisiteByTriggerSource = {
+      web: null,
+      slack: null,
+      teams: null,
+      feishu: null,
+      email: null,
+      telegram: null,
+      agentphone: null,
+      github: null,
+      test: "synthetic_source",
+      agent: "non_interactive_source",
+      webhook: "non_interactive_source",
+      "automation-schedule": "non_interactive_source",
+      "automation-event": "non_interactive_source",
+      goal: "non_interactive_source",
+    } as const satisfies Record<
+      TriggerSource,
+      ReturnType<typeof piMemoryStage1AdmissionPrerequisiteSkipReasonFixture>
+    >;
     for (const triggerSource of triggerSourceSchema.options) {
       expect(
         piMemoryStage1AdmissionPrerequisiteSkipReasonFixture({ triggerSource }),
-      ).toBe(triggerSource === "test" ? "synthetic_source" : null);
+      ).toBe(prerequisiteByTriggerSource[triggerSource]);
     }
     const usagePricingResolution = await createGptUsagePricingResolution();
-    mockEnv("PI_MEMORY_STAGE1_IDLE_DELAY_MS", 60_000);
+
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
       {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
       },
     );
     mockPiResourceArchiveDownloads();
@@ -9420,6 +9787,14 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     await firstProviderEntered.promise;
     await expect(
+      readPiMemoryStage1DayFixture(actor.userId),
+    ).resolves.toMatchObject({
+      triggerThreadId: first.threadId,
+      day: nowDate().toISOString().slice(0, 10),
+      consumedAt: null,
+    });
+
+    await expect(
       readRunLaunchSnapshotFixture(context, first.runId),
     ).resolves.toMatchObject({
       launch_snapshot: {
@@ -9446,6 +9821,10 @@ describe("CHAT-02: model-first provider policies", () => {
       },
     });
 
+    await expect(
+      readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
+    ).resolves.toBeNull();
+    await readmitPiMemoryStage1CandidateFixture(first.runId);
     const firstConversation = await readPiConversationIdentityFixture(
       first.runId,
     );
@@ -9471,7 +9850,7 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(
       firstCandidate.eligibleAt.getTime() -
         firstCandidate.sourceCompletedAt.getTime(),
-    ).toBe(60_000);
+    ).toBe(0);
     await expect(
       readSessionHistoryBlobRefCountFixture(firstCandidate.sourceHistoryHash),
     ).resolves.toBe(2);
@@ -9504,6 +9883,10 @@ describe("CHAT-02: model-first provider policies", () => {
     await waitForRunStatus(actor, second.runId, "completed", 10_000);
     await flushWaitUntilForTest();
 
+    await expect(
+      readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
+    ).resolves.toMatchObject({ sourceRunId: first.runId });
+    await readmitPiMemoryStage1CandidateFixture(second.runId);
     const secondConversation = await readPiConversationIdentityFixture(
       second.runId,
     );
@@ -9629,6 +10012,10 @@ describe("CHAT-02: model-first provider policies", () => {
     await waitForRunStatus(actor, third.runId, "completed", 10_000);
     await flushWaitUntilForTest();
 
+    await expect(
+      readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
+    ).resolves.toMatchObject({ sourceRunId: second.runId });
+    await readmitPiMemoryStage1CandidateFixture(third.runId);
     const thirdConversation = await readPiConversationIdentityFixture(
       third.runId,
     );
@@ -12688,6 +13075,439 @@ describe("CHAT-02: model-first provider policies", () => {
     ]);
   }, 90_000);
 
+  it.each(["pending", "cancelled", "queued"] as const)(
+    "keeps %s admission responsive while API preparation is blocked",
+    async (outcome) => {
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      await api.heartbeatRunner(runnerGroup);
+      let anchor: Awaited<ReturnType<typeof sendChatRun>> | undefined;
+      if (outcome === "queued") {
+        mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+        anchor = await sendChatRun(actor, {
+          agentId,
+          prompt: "hold admission capacity",
+          model: "claude-sonnet-5",
+        });
+      }
+      await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId: requireOrgId(actor) },
+        { [FeatureSwitchKey.PiLoop]: true },
+      );
+      const usagePricingResolution = await createGptUsagePricingResolution();
+      const checkpointObjects = mockPiCheckpointObjectStore();
+      const instructions = await publishPendingPiInstructions(actor, agentId);
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      onTestFinished(() => {
+        if (!release.settled()) {
+          release.resolve(undefined);
+        }
+      });
+      const requests: string[] = [];
+      server.use(
+        http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, async ({ request }) => {
+          if (!entered.settled()) {
+            entered.resolve(undefined);
+          }
+          await release.promise;
+          const key = new URL(request.url).searchParams.get("object");
+          if (!key) {
+            throw new Error("Expected exact resource identity");
+          }
+          return new HttpResponse(piS3Object(key));
+        }),
+        http.post(
+          "https://api.openai.com/v1/responses",
+          async ({ request }) => {
+            requests.push(await request.text());
+            return nativeCodexSseResponse(
+              piResponsesTextSse("prepared admission answer", requests.length),
+            );
+          },
+        ),
+      );
+      const send = sendChatRun(
+        actor,
+        {
+          agentId,
+          prompt: "keep the complete admission independent",
+          model: "gpt-5.6-terra",
+        },
+        usagePricingResolution,
+      );
+      await entered.promise;
+      const run = await send;
+      expect(requests).toHaveLength(0);
+      expectNoPiApiFirstTurnArtifacts(run.runId, checkpointObjects);
+      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+        status: outcome === "queued" ? "queued" : "pending",
+      });
+      if (outcome !== "queued") {
+        // Ably is the real Runner notification transport boundary.
+        expect(context.mocks.ably.publish.mock.calls).toContainEqual([
+          "job",
+          expect.objectContaining({ runId: run.runId }),
+        ]);
+      }
+      if (outcome !== "pending") {
+        await cancelChatRun(actor, run.runId);
+      }
+      release.resolve(undefined);
+      if (outcome === "pending") {
+        await waitForRunStatus(actor, run.runId, "completed", 10_000);
+        expect(requests).toHaveLength(1);
+        expect(piResponsesDeveloperPrompt(requests[0])).toContain(instructions);
+        const events = (await chat.listThreadEvents(actor, run.threadId))
+          .events;
+        expect(eventBackedContents(events, run.runId)).toStrictEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ content: "prepared admission answer" }),
+          ]),
+        );
+      } else {
+        await flushWaitUntilForTest();
+        expect(requests).toHaveLength(0);
+        expectNoPiApiFirstTurnArtifacts(run.runId, checkpointObjects);
+      }
+      if (anchor) {
+        await cancelChatRun(actor, anchor.runId);
+      }
+    },
+    30_000,
+  );
+
+  it.each(["connected", "disconnected", "rolled-back"] as const)(
+    "owns completed SDK preparation across %s admission without pre-commit effects",
+    async (caller) => {
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      await api.heartbeatRunner(runnerGroup);
+      await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId: requireOrgId(actor) },
+        { [FeatureSwitchKey.PiLoop]: true },
+      );
+      const usagePricingResolution = await createGptUsagePricingResolution();
+      const checkpointObjects = mockPiCheckpointObjectStore();
+      const instructions = await publishPendingPiInstructions(actor, agentId);
+      const thread = await chat.createThread(actor, { agentId });
+      const sdk = await context.mocks.piSdk.controlInitialization(
+        { sessionId: thread.id, instructions, holdInitialization: false },
+        context.signal,
+      );
+      // No production API can hold the admission transaction open. This existing
+      // infrastructure fixture owns a real PostgreSQL lock for this organization.
+      const lock = await holdOrgAdmissionLockFixture({
+        orgId: requireOrgId(actor),
+        signal: context.signal,
+      });
+      onTestFinished(async () => {
+        lock.release();
+        await lock.done;
+      });
+      const resourceRead = createDeferredPromise<void>(context.signal);
+      const requests: string[] = [];
+      server.use(
+        http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, ({ request }) => {
+          if (!resourceRead.settled()) {
+            resourceRead.resolve(undefined);
+          }
+          const key = new URL(request.url).searchParams.get("object");
+          if (!key) {
+            throw new Error("Expected exact resource identity");
+          }
+          return new HttpResponse(piS3Object(key));
+        }),
+        http.post(
+          "https://api.openai.com/v1/responses",
+          async ({ request }) => {
+            requests.push(await request.text());
+            return nativeCodexSseResponse(
+              piResponsesTextSse("committed once", requests.length),
+            );
+          },
+        ),
+      );
+      const controller = new AbortController();
+      const prompt = "prepare while admission owns the database lock";
+      const send = requestSendEventRaw(
+        actor,
+        {
+          agentId,
+          threadId: thread.id,
+          prompt,
+          clientEventId: randomUUID(),
+          userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
+          hasTextContent: true,
+          model: "gpt-5.6-terra",
+        },
+        controller.signal,
+        usagePricingResolution,
+      );
+      await expect.poll(lock.waiterCount).toBe(1);
+      await resourceRead.promise;
+      await sdk.ready;
+      expect(requests).toHaveLength(0);
+      expect(
+        [...checkpointObjects.keys()].filter((key) => {
+          return key.includes("/pi-api-first-turn/");
+        }),
+      ).toStrictEqual([]);
+      const events = (await chat.listThreadEvents(actor, thread.id)).events;
+      expect(
+        events.filter((event) => {
+          return (
+            event.eventType.startsWith("output.") ||
+            event.eventType === "run.completed"
+          );
+        }),
+      ).toStrictEqual([]);
+      if (caller === "disconnected") {
+        controller.abort(new Error("caller disconnected during admission"));
+      }
+      if (caller === "rolled-back") {
+        await expect(lock.cancelBlockedQueries()).resolves.toBe(1);
+      }
+      const response = caller === "rolled-back" ? await send : undefined;
+      lock.release();
+      await lock.done;
+      const completedResponse = response ?? (await send);
+      if (caller === "connected") {
+        expect(completedResponse.status).toBe(201);
+      }
+      const runs = await api.listAgentRuns(actor, {
+        status: "pending,running,completed,failed,cancelled",
+        limit: 100,
+      });
+      const run = runs.runs.find((candidate) => {
+        return candidate.prompt === prompt;
+      });
+      if (caller === "rolled-back") {
+        expect(completedResponse.status).toBe(500);
+        expect(run).toBeUndefined();
+        await sdk.disposed;
+        await flushWaitUntilForTest();
+        expect(sdk.disposeCount()).toBe(1);
+        expect(requests).toHaveLength(0);
+        expect(
+          [...checkpointObjects.keys()].filter((key) => {
+            return key.includes("/pi-api-first-turn/");
+          }),
+        ).toStrictEqual([]);
+        return;
+      }
+      if (!run) {
+        throw new Error("Expected the committed run to survive its caller");
+      }
+      await waitForRunStatus(actor, run.id, "completed", 10_000);
+      expect(context.mocks.ably.publish.mock.calls).toContainEqual([
+        "job",
+        expect.objectContaining({ runId: run.id }),
+      ]);
+      expect(requests).toHaveLength(1);
+      expect(sdk.disposeCount()).toBe(1);
+    },
+    30_000,
+  );
+
+  it("returns queued admission before a late SDK initializer finishes and releases its session once", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    await api.heartbeatRunner(runnerGroup);
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    const anchor = await sendChatRun(actor, {
+      agentId,
+      prompt: "hold capacity for late initialization",
+      model: "claude-sonnet-5",
+    });
+    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: requireOrgId(actor) },
+      { [FeatureSwitchKey.PiLoop]: true },
+    );
+    const usagePricingResolution = await createGptUsagePricingResolution();
+    const checkpointObjects = mockPiCheckpointObjectStore();
+    const instructions = await publishPendingPiInstructions(actor, agentId);
+    const thread = await chat.createThread(actor, { agentId });
+    const sdk = await context.mocks.piSdk.controlInitialization(
+      { sessionId: thread.id, instructions, holdInitialization: true },
+      context.signal,
+    );
+    // Infrastructure must hold admission until the real SDK initializer has
+    // started; no production endpoint can schedule that late-result boundary.
+    const lock = await holdOrgAdmissionLockFixture({
+      orgId: requireOrgId(actor),
+      signal: context.signal,
+    });
+    onTestFinished(async () => {
+      lock.release();
+      await lock.done;
+    });
+    const requests: string[] = [];
+    server.use(
+      http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, ({ request }) => {
+        const key = new URL(request.url).searchParams.get("object");
+        if (!key) {
+          throw new Error("Expected exact resource identity");
+        }
+        return new HttpResponse(piS3Object(key));
+      }),
+      http.post("https://api.openai.com/v1/responses", async ({ request }) => {
+        requests.push(await request.text());
+        return nativeCodexSseResponse(
+          piResponsesTextSse("unexpected speculative answer", requests.length),
+        );
+      }),
+    );
+    const send = sendChatRun(
+      actor,
+      {
+        agentId,
+        threadId: thread.id,
+        prompt: "queue without waiting for SDK completion",
+        model: "gpt-5.6-terra",
+      },
+      usagePricingResolution,
+    );
+    await sdk.entered;
+    lock.release();
+    await lock.done;
+    const run = await send;
+    await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+      status: "queued",
+    });
+    expect(sdk.disposeCount()).toBe(0);
+    expect(requests).toHaveLength(0);
+    expectNoPiApiFirstTurnArtifacts(run.runId, checkpointObjects);
+    sdk.release();
+    await sdk.disposed;
+    await flushWaitUntilForTest();
+    expect(sdk.disposeCount()).toBe(1);
+    expect(requests).toHaveLength(0);
+    expectNoPiApiFirstTurnArtifacts(run.runId, checkpointObjects);
+    await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+      status: "queued",
+    });
+    await cancelChatRun(actor, run.runId);
+    await cancelChatRun(actor, anchor.runId);
+  }, 30_000);
+
+  it("retains a pre-commit SDK initialization failure for canonical Sandbox handoff", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    await api.heartbeatRunner(runnerGroup);
+    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: requireOrgId(actor) },
+      { [FeatureSwitchKey.PiLoop]: true },
+    );
+    const usagePricingResolution = await createGptUsagePricingResolution();
+    const checkpointObjects = mockPiCheckpointObjectStore();
+    const instructions = await publishPendingPiInstructions(actor, agentId);
+    const thread = await chat.createThread(actor, { agentId });
+    const initializationFailure = new Error(
+      "Pi SDK initialization fixture failure",
+    );
+    const sdk = await context.mocks.piSdk.controlInitialization(
+      {
+        sessionId: thread.id,
+        instructions,
+        holdInitialization: false,
+        initializationFailure,
+      },
+      context.signal,
+    );
+    // This real lock separates the external SDK failure from the durable
+    // admission result without observing the private preparation handle.
+    const lock = await holdOrgAdmissionLockFixture({
+      orgId: requireOrgId(actor),
+      signal: context.signal,
+    });
+    onTestFinished(async () => {
+      lock.release();
+      await lock.done;
+    });
+    mockPiResourceArchiveDownloads();
+    let providerCalls = 0;
+    server.use(
+      http.post("https://api.openai.com/v1/responses", () => {
+        providerCalls += 1;
+        return nativeCodexSseResponse(
+          piResponsesTextSse("unexpected speculative answer", providerCalls),
+        );
+      }),
+    );
+    const prompt = "retain the original SDK preparation failure";
+    const send = sendChatRun(
+      actor,
+      { agentId, threadId: thread.id, prompt, model: "gpt-5.6-terra" },
+      usagePricingResolution,
+    );
+    await expect.poll(lock.waiterCount).toBe(1);
+    await expect(sdk.failed).resolves.toBe(initializationFailure);
+    expect(sdk.initializationCount()).toBe(1);
+    expect(providerCalls).toBe(0);
+    expect(
+      [...checkpointObjects.keys()].filter((key) => {
+        return key.includes("/pi-api-first-turn/");
+      }),
+    ).toStrictEqual([]);
+    const beforeCommit = (await chat.listThreadEvents(actor, thread.id)).events;
+    expect(
+      beforeCommit.filter((event) => {
+        return (
+          event.eventType.startsWith("output.") ||
+          isChatRunTerminalEventType(event.eventType)
+        );
+      }),
+    ).toStrictEqual([]);
+
+    lock.release();
+    await lock.done;
+    const run = await send;
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.publish.mock.calls).toContainEqual([
+      "job",
+      expect.objectContaining({ runId: run.runId }),
+    ]);
+    // The existing PI_API_PREHEAT_FAILED classification permits this H0
+    // transfer; an untyped model failure would instead fail the durable run.
+    const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`;
+    const manifest = piApiFirstTurnManifestSchema.parse(
+      JSON.parse(checkpointObjects.get(manifestKey)?.toString("utf8") ?? "{}"),
+    );
+    expect(manifest).toMatchObject({
+      outcome: "ownership-transfer",
+      mode: "sandbox-first",
+      baseSession: { sessionId: thread.id, sha256: null },
+      session: { sessionId: thread.id },
+      sandboxEventSequenceStart: 1,
+    });
+    const sessionKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/session.jsonl`;
+    const h0 = MemoryPiSession.fromJsonl(
+      checkpointObjects.get(sessionKey)?.toString("utf8") ?? "",
+    );
+    expect(h0.buildSessionContext().messages).toHaveLength(0);
+    expect(providerCalls).toBe(0);
+    expect(sdk.initializationCount()).toBe(1);
+    expect(sdk.disposeCount()).toBe(0);
+    await expectNoBuiltInModelUsage(run.runId);
+    await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+      status: "pending",
+    });
+    const events = (await chat.listThreadEvents(actor, thread.id)).events;
+    expect(eventBackedContents(events, run.runId)).toStrictEqual([]);
+    const claimed = await claimChatRun(runnerGroup, run.runId);
+    expect(claimed.claim).toMatchObject({
+      cliAgentType: "pi",
+      piSessionId: thread.id,
+      prompt,
+    });
+    await cancelChatRun(actor, run.runId);
+  }, 30_000);
+
   it("uses newly published Pi instruction indexes with resource archives unavailable", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     mockPiCheckpointObjectStore();
@@ -12909,6 +13729,9 @@ describe("CHAT-02: model-first provider policies", () => {
       usagePricingResolution,
     });
     await resourceEntered.promise;
+    // Speculative queued preparation can read resources before promotion; the
+    // durable pending status is the Runner claim boundary.
+    await waitForRunStatus(actor, run.runId, "pending", 5000);
     const claimed = await claimChatRun(runnerGroup, run.runId);
     const activeInputEventId = randomUUID();
     await chat.requestSendEvent(
@@ -13357,6 +14180,9 @@ describe("CHAT-02: model-first provider policies", () => {
 
     await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
     await resourceEntered.promise;
+    // Speculative queued preparation can read resources before promotion; the
+    // durable pending status is the Runner claim boundary.
+    await waitForRunStatus(actor, run.runId, "pending", 5000);
     const claimed = await claimChatRun(runnerGroup, run.runId);
     await waitForRunStatus(actor, run.runId, "running", 5000);
     const activeInput = "apply this accepted steer once";
@@ -16733,6 +17559,7 @@ describe("CHAT-02: model-first provider policies", () => {
       { ...actor, orgId },
       {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
         [FeatureSwitchKey.ThreadActivitySummary]: enabled,
         [FeatureSwitchKey.CodexFastMode]: true,
       },
@@ -17249,11 +18076,10 @@ describe("CHAT-02: model-first provider policies", () => {
         orgId,
         userId: actor.userId,
       }),
-    ).resolves.toMatchObject({
-      piSessionId: sandboxConversation.piSessionId,
-      sourceRunId: run.runId,
-      sourceHistoryHash: sandboxConversation.sourceHistoryHash,
-      status: "pending",
+    ).resolves.toBeNull();
+    expect(sandboxConversation).toMatchObject({
+      piSessionId: run.threadId,
+      sourceHistoryHash: h2Hash,
     });
 
     const idempotentH2 = await webhooks.requestAgentCheckpoint(
@@ -20130,6 +20956,105 @@ describe("CHAT-02: run-level model overrides", () => {
     90_000,
   );
 
+  it.each(["deleted", "reconnect-required"] as const)(
+    "rejects a prepared subscription when its captured account becomes %s",
+    async (revocation) => {
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const captured = await configureSubscriptionPiModel(actor, {
+        accountId: "prepared-subscription-account",
+        accessTokenExpiresAt: Math.floor(now() / 1000) + 7200,
+      });
+      const instructions = await publishPendingPiInstructions(actor, agentId);
+      const thread = await chat.createThread(actor, { agentId });
+      const sdk = await context.mocks.piSdk.controlInitialization(
+        { sessionId: thread.id, instructions, holdInitialization: true },
+        context.signal,
+      );
+      mockPiResourceArchiveDownloads();
+      const objects = mockPiCheckpointObjectStore();
+      const requests: string[] = [];
+      server.use(
+        http.post(
+          "https://chatgpt.com/backend-api/codex/responses",
+          ({ request }) => {
+            requests.push(request.url);
+            return nativeCodexSseResponse(
+              piResponsesTextSse("unexpected revoked account", 1),
+            );
+          },
+        ),
+      );
+      const run = await sendChatRun(actor, {
+        agentId,
+        threadId: thread.id,
+        model: "gpt-5.6-terra",
+        prompt: "retain subscription revocation at execution",
+        runOptions: { codexServiceTier: "fast" },
+      });
+      // Credentials have been materialized before this real SDK boundary.
+      await sdk.entered;
+      expect(requests).toHaveLength(0);
+      if (revocation === "deleted") {
+        await authDeviceSupport.deletePersonalModelProviderAccount(
+          actor,
+          captured.accountSourceId,
+        );
+      } else {
+        const { claim, sandboxHeaders } = await claimChatRun(
+          runnerGroup,
+          run.runId,
+        );
+        const firewall = createFirewallApi(context);
+        firewall.mockCodexTokenRefresh(() => {
+          return HttpResponse.json(
+            {
+              error: {
+                code: "refresh_token_invalidated",
+                message: "revoked account",
+              },
+            },
+            { status: 401 },
+          );
+        });
+        const rejected = await firewall.requestFirewallAuth(
+          sandboxHeaders,
+          {
+            encryptedSecrets: z.string().parse(claim.encryptedSecrets),
+            authHeaders: {
+              Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
+              "ChatGPT-Account-ID": secretTemplate("CHATGPT_ACCOUNT_ID"),
+            },
+            secretConnectorMap: claim.secretConnectorMap ?? undefined,
+            secretConnectorMetadataMap:
+              claim.secretConnectorMetadataMap ?? undefined,
+            forceRefresh: true,
+          },
+          [502],
+        );
+        expect(rejected.body).toMatchObject({
+          error: { failureReason: "reconnect_required" },
+        });
+      }
+      sdk.release();
+      await waitForRunStatus(actor, run.runId, "failed");
+      await flushWaitUntilForTest();
+      expect(requests).toHaveLength(0);
+      expect(sdk.disposeCount()).toBe(1);
+      expectNoPiApiFirstTurnArtifacts(run.runId, objects);
+      await expectNoBuiltInModelUsage(run.runId);
+      expect(
+        (await chat.listThreadEvents(actor, thread.id)).events,
+      ).toContainEqual(
+        expect.objectContaining({
+          eventType: "run.failed",
+          runId: run.runId,
+          failureReason: "reconnect_required",
+        }),
+      );
+    },
+    30_000,
+  );
+
   it("refreshes the captured subscription Fast account while another account becomes active", async () => {
     const { actor, agentId } = await entitledChatActor();
     await publishPendingPiInstructions(actor, agentId);
@@ -20193,7 +21118,13 @@ describe("CHAT-02: run-level model overrides", () => {
     });
     await entered.promise;
     expect(requests).toHaveLength(0);
-    expect(captured.oauth.oauthToken).toHaveLength(1);
+    // Credential refresh overlaps the blocked resource read. Wait for that
+    // actual HTTP request before changing the active account selection.
+    await expect
+      .poll(() => {
+        return captured.oauth.oauthToken.length;
+      })
+      .toBe(2);
     await authDeviceSupport.activatePersonalModelProviderAccount(
       actor,
       other.accountSourceId,
@@ -20960,256 +21891,433 @@ describe("CHAT-02: run-level model overrides", () => {
     await cancelChatRun(primary.actor, primarySecond.runId);
   }, 90_000);
 
-  it("does not repeat preparation after a competing run changes the binding", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    if (!actor.orgId) {
-      throw new Error("Expected an org-scoped actor for binding admission");
-    }
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
+  it.each(["sandbox", "pi"] as const)(
+    "does not repeat preparation after a competing run changes the binding for %s",
+    async (framework) => {
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      if (!actor.orgId) {
+        throw new Error("Expected an org-scoped actor for binding admission");
+      }
+      chatCallbacks.failIfChatCallbackRouteIsFetched();
 
-    const established = await sendChatRun(actor, {
-      agentId,
-      prompt: "establish the binding before competing sends",
-    });
-    const establishedClaim = await claimChatRun(runnerGroup, established.runId);
-    chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(established.runId, establishedClaim.sandboxHeaders);
-    await flushWaitUntilForTest();
+      const established = await sendChatRun(actor, {
+        agentId,
+        prompt: "establish the binding before competing sends",
+      });
+      const establishedClaim = await claimChatRun(
+        runnerGroup,
+        established.runId,
+      );
+      chatCallbacks.mockChatOutputEvents([]);
+      await completeChatRunOk(
+        established.runId,
+        establishedClaim.sandboxHeaders,
+      );
+      await flushWaitUntilForTest();
 
-    const admissionLock = await holdOrgAdmissionLockFixture({
-      orgId: actor.orgId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
+      const providerRequests: string[] = [];
+      const checkpointObjects =
+        framework === "pi" ? mockPiCheckpointObjectStore() : undefined;
+      let sdk:
+        | Awaited<ReturnType<typeof context.mocks.piSdk.controlInitialization>>
+        | undefined;
+      let usagePricingResolution: UsagePricingFixture["resolution"] | undefined;
+      if (framework === "pi") {
+        await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+        await updateFeatureSwitchesForUser(
+          context,
+          { ...actor, orgId: actor.orgId },
+          { [FeatureSwitchKey.PiLoop]: true },
+        );
+        usagePricingResolution = await createGptUsagePricingResolution();
+        const instructions = await publishPendingPiInstructions(actor, agentId);
+        // Only the external SDK can delay initialization across both admissions.
+        sdk = await context.mocks.piSdk.controlInitialization(
+          {
+            sessionId: established.threadId,
+            instructions,
+            holdInitialization: true,
+          },
+          context.signal,
+        );
+        server.use(
+          http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, ({ request }) => {
+            const key = new URL(request.url).searchParams.get("object");
+            if (!key) {
+              throw new Error("Expected exact resource identity");
+            }
+            return new HttpResponse(piS3Object(key));
+          }),
+          http.post(
+            "https://api.openai.com/v1/responses",
+            async ({ request }) => {
+              providerRequests.push(await request.text());
+              return nativeCodexSseResponse(
+                piResponsesTextSse(
+                  "winning binding answer",
+                  providerRequests.length,
+                ),
+              );
+            },
+          ),
+        );
+      }
+
+      const admissionLock = await holdOrgAdmissionLockFixture({
+        orgId: actor.orgId,
+        signal: context.signal,
+      });
+      onTestFinished(async () => {
+        admissionLock.release();
+        await admissionLock.done;
+      });
+
+      const firstEventId = randomUUID();
+      const secondEventId = randomUUID();
+      const firstRequest = {
+        eventId: firstEventId,
+        prompt: "first competing binding send",
+        response: chat.requestSendEvent(
+          actor,
+          {
+            agentId,
+            threadId: established.threadId,
+            prompt: "first competing binding send",
+            clientEventId: firstEventId,
+            ...(framework === "pi" ? { model: "gpt-5.6-terra" } : {}),
+          },
+          [201],
+          { usagePricingResolution },
+        ),
+      } as const;
+      // Make the queue head the first admission-lock waiter so the second
+      // prepared request observes the binding committed by the first.
+      await expect.poll(admissionLock.waiterCount).toBe(1);
+
+      const secondRequest = {
+        eventId: secondEventId,
+        prompt: "second competing binding send",
+        response: chat.requestSendEvent(
+          actor,
+          {
+            agentId,
+            threadId: established.threadId,
+            prompt: "second competing binding send",
+            clientEventId: secondEventId,
+            ...(framework === "pi" ? { model: "gpt-5.6-terra" } : {}),
+          },
+          [201],
+          { usagePricingResolution },
+        ),
+      } as const;
+      const requests = [firstRequest, secondRequest] as const;
+
+      await expect
+        .poll(async () => {
+          const messages = await chat.listThreadEvents(
+            actor,
+            established.threadId,
+          );
+          return requests.every(({ eventId }) => {
+            return messages.events.some((event) => {
+              return event.id === eventId;
+            });
+          });
+        })
+        .toBe(true);
+      await expect.poll(admissionLock.waiterCount).toBe(2);
+      if (sdk) {
+        await expect.poll(sdk.initializationCount).toBe(2);
+      }
+
       admissionLock.release();
+      const responses = await Promise.all(
+        requests.map(({ response }) => {
+          return response;
+        }),
+      );
       await admissionLock.done;
-    });
 
-    const firstEventId = randomUUID();
-    const secondEventId = randomUUID();
-    const firstRequest = {
-      eventId: firstEventId,
-      prompt: "first competing binding send",
-      response: chat.requestSendEvent(
+      const winners = responses.flatMap((response, index) => {
+        if (response.status !== 201 || response.body.runId === null) {
+          return [];
+        }
+        return [
+          {
+            eventId: requests[index]!.eventId,
+            runId: response.body.runId,
+          },
+        ];
+      });
+      expect(winners).toHaveLength(1);
+      const winner = winners[0];
+      if (!winner) {
+        throw new Error("Expected one competing send to create a run");
+      }
+      const loser = requests.find(({ eventId }) => {
+        return eventId !== winner.eventId;
+      });
+      if (!loser) {
+        throw new Error("Expected one competing send to lose admission");
+      }
+      expect(
+        responses.filter((response) => {
+          return response.status === 201 && response.body.runId === null;
+        }),
+      ).toHaveLength(1);
+
+      const messages = await chat.listThreadEvents(actor, established.threadId);
+      expect(
+        userMessages(messages.events).filter((message) => {
+          return (
+            message.revokesEventId === winner.eventId &&
+            message.runId === winner.runId
+          );
+        }),
+      ).toHaveLength(1);
+      expect(
+        userMessages(messages.events).filter((message) => {
+          return (
+            message.revokesEventId === loser.eventId &&
+            message.runId !== undefined
+          );
+        }),
+      ).toHaveLength(0);
+      const queuedLoser = userMessages(messages.events).find((message) => {
+        return message.id === loser.eventId;
+      });
+      if (!queuedLoser) {
+        throw new Error("Expected the losing message to remain queued");
+      }
+      expect(queuedLoser.runId).toBeUndefined();
+      expect(chatEventDisplayText(queuedLoser)).toBe(loser.prompt);
+      await expect(
+        readThreadSessionBinding(context, established.threadId),
+      ).resolves.toMatchObject({
+        agent_session_run_id: winner.runId,
+      });
+      if (sdk && checkpointObjects) {
+        expect(providerRequests).toHaveLength(0);
+        expectNoPiApiFirstTurnArtifacts(winner.runId, checkpointObjects);
+        expect(
+          messages.events.filter((event) => {
+            return (
+              event.eventType.startsWith("output.") &&
+              "runId" in event &&
+              event.runId !== established.runId
+            );
+          }),
+        ).toStrictEqual([]);
+      }
+
+      await chat.requestSendEvent(
         actor,
         {
           agentId,
           threadId: established.threadId,
-          prompt: "first competing binding send",
-          clientEventId: firstEventId,
+          revokesEventId: loser.eventId,
+          clientEventId: randomUUID(),
         },
         [201],
-      ),
-    } as const;
-    // Make the queue head the first admission-lock waiter so the second
-    // prepared request observes the binding committed by the first.
-    await expect.poll(admissionLock.waiterCount).toBe(1);
-
-    const secondRequest = {
-      eventId: secondEventId,
-      prompt: "second competing binding send",
-      response: chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          threadId: established.threadId,
-          prompt: "second competing binding send",
-          clientEventId: secondEventId,
-        },
-        [201],
-      ),
-    } as const;
-    const requests = [firstRequest, secondRequest] as const;
-
-    await expect
-      .poll(async () => {
-        const messages = await chat.listThreadEvents(
+      );
+      if (sdk) {
+        // Revoke the losing queued message before the winning API can complete,
+        // so queue draining cannot conceal a duplicate provider attempt.
+        sdk.release();
+        await waitForRunStatus(actor, winner.runId, "completed", 10_000);
+        await flushWaitUntilForTest();
+        expect(providerRequests).toHaveLength(1);
+        expect(sdk.initializationCount()).toBe(2);
+        expect(sdk.disposeCount()).toBe(2);
+        const completed = await chat.listThreadEvents(
           actor,
           established.threadId,
         );
-        return requests.every(({ eventId }) => {
-          return messages.events.some((event) => {
-            return event.id === eventId;
-          });
-        });
-      })
-      .toBe(true);
-    await expect.poll(admissionLock.waiterCount).toBe(2);
-
-    admissionLock.release();
-    const responses = await Promise.all(
-      requests.map(({ response }) => {
-        return response;
-      }),
-    );
-    await admissionLock.done;
-
-    const winners = responses.flatMap((response, index) => {
-      if (response.status !== 201 || response.body.runId === null) {
-        return [];
+        expect(
+          eventBackedContents(completed.events, winner.runId),
+        ).toStrictEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ content: "winning binding answer" }),
+          ]),
+        );
+      } else {
+        await cancelChatRun(actor, winner.runId);
       }
-      return [
-        {
-          eventId: requests[index]!.eventId,
-          runId: response.body.runId,
-        },
-      ];
-    });
-    expect(winners).toHaveLength(1);
-    const winner = winners[0];
-    if (!winner) {
-      throw new Error("Expected one competing send to create a run");
-    }
-    const loser = requests.find(({ eventId }) => {
-      return eventId !== winner.eventId;
-    });
-    if (!loser) {
-      throw new Error("Expected one competing send to lose admission");
-    }
-    expect(
-      responses.filter((response) => {
-        return response.status === 201 && response.body.runId === null;
-      }),
-    ).toHaveLength(1);
+    },
+    90_000,
+  );
 
-    const messages = await chat.listThreadEvents(actor, established.threadId);
-    expect(
-      userMessages(messages.events).filter((message) => {
-        return (
-          message.revokesEventId === winner.eventId &&
-          message.runId === winner.runId
-        );
-      }),
-    ).toHaveLength(1);
-    expect(
-      userMessages(messages.events).filter((message) => {
-        return (
-          message.revokesEventId === loser.eventId &&
-          message.runId !== undefined
-        );
-      }),
-    ).toHaveLength(0);
-    const queuedLoser = userMessages(messages.events).find((message) => {
-      return message.id === loser.eventId;
-    });
-    if (!queuedLoser) {
-      throw new Error("Expected the losing message to remain queued");
-    }
-    expect(queuedLoser.runId).toBeUndefined();
-    expect(chatEventDisplayText(queuedLoser)).toBe(loser.prompt);
-    await expect(
-      readThreadSessionBinding(context, established.threadId),
-    ).resolves.toMatchObject({
-      agent_session_run_id: winner.runId,
-    });
+  it.each(["sandbox", "pi"] as const)(
+    "retries preparation when the canonical binding changes for %s",
+    async (framework) => {
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      if (!actor.orgId) {
+        throw new Error("Expected an org-scoped actor for binding validation");
+      }
+      chatCallbacks.failIfChatCallbackRouteIsFetched();
 
-    await chat.requestSendEvent(
-      actor,
-      {
+      const first = await sendChatRun(actor, {
         agentId,
-        threadId: established.threadId,
-        revokesEventId: loser.eventId,
-        clientEventId: randomUUID(),
-      },
-      [201],
-    );
-    await cancelChatRun(actor, winner.runId);
-  }, 90_000);
+        prompt: "establish the binding snapshot",
+      });
+      const firstClaim = await claimChatRun(runnerGroup, first.runId);
+      chatCallbacks.mockChatOutputEvents([]);
+      await completeChatRunOk(first.runId, firstClaim.sandboxHeaders);
+      await flushWaitUntilForTest();
+      const firstBinding = await readThreadSessionBinding(
+        context,
+        first.threadId,
+      );
+      if (!firstBinding.agent_session_id) {
+        throw new Error("Expected the first run to establish a session");
+      }
 
-  it("retries preparation when the canonical binding changes", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    if (!actor.orgId) {
-      throw new Error("Expected an org-scoped actor for binding validation");
-    }
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
+      const providerRequests: string[] = [];
+      const checkpointObjects =
+        framework === "pi" ? mockPiCheckpointObjectStore() : undefined;
+      let sdk:
+        | Awaited<ReturnType<typeof context.mocks.piSdk.controlInitialization>>
+        | undefined;
+      let usagePricingResolution: UsagePricingFixture["resolution"] | undefined;
+      if (framework === "pi") {
+        await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+        await updateFeatureSwitchesForUser(
+          context,
+          { ...actor, orgId: actor.orgId },
+          { [FeatureSwitchKey.PiLoop]: true },
+        );
+        usagePricingResolution = await createGptUsagePricingResolution();
+        const instructions = await publishPendingPiInstructions(actor, agentId);
+        sdk = await context.mocks.piSdk.controlInitialization(
+          { sessionId: first.threadId, instructions, holdInitialization: true },
+          context.signal,
+        );
+        server.use(
+          http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, ({ request }) => {
+            const key = new URL(request.url).searchParams.get("object");
+            if (!key) {
+              throw new Error("Expected exact resource identity");
+            }
+            return new HttpResponse(piS3Object(key));
+          }),
+          http.post(
+            "https://api.openai.com/v1/responses",
+            async ({ request }) => {
+              providerRequests.push(await request.text());
+              return nativeCodexSseResponse(
+                piResponsesTextSse(
+                  "retried binding answer",
+                  providerRequests.length,
+                ),
+              );
+            },
+          ),
+        );
+      }
 
-    const first = await sendChatRun(actor, {
-      agentId,
-      prompt: "establish the binding snapshot",
-    });
-    const firstClaim = await claimChatRun(runnerGroup, first.runId);
-    chatCallbacks.mockChatOutputEvents([]);
-    await completeChatRunOk(first.runId, firstClaim.sandboxHeaders);
-    await flushWaitUntilForTest();
-    const firstBinding = await readThreadSessionBinding(
-      context,
-      first.threadId,
-    );
-    if (!firstBinding.agent_session_id) {
-      throw new Error("Expected the first run to establish a session");
-    }
+      const admissionLock = await holdOrgAdmissionLockFixture({
+        orgId: actor.orgId,
+        signal: context.signal,
+      });
+      onTestFinished(async () => {
+        admissionLock.release();
+        await admissionLock.done;
+      });
+      const messageId = randomUUID();
+      const secondPromise = sendChatRun(
+        actor,
+        {
+          agentId,
+          threadId: first.threadId,
+          prompt: "retry after the binding changes",
+          clientEventId: messageId,
+          ...(framework === "pi" ? { model: "gpt-5.6-terra" } : {}),
+        },
+        usagePricingResolution,
+      );
+      // The queue-first insert must complete before a fixture owns the parent
+      // thread row; otherwise its FK check would block before session resolution.
+      await expect
+        .poll(async () => {
+          const messages = await chat.listThreadEvents(actor, first.threadId);
+          return messages.events.some((message) => {
+            return message.id === messageId;
+          });
+        })
+        .toBe(true);
+      if (sdk) {
+        await sdk.entered;
+      }
 
-    const admissionLock = await holdOrgAdmissionLockFixture({
-      orgId: actor.orgId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
+      const bindingClear = await holdThreadSessionBindingClearFixture({
+        threadId: first.threadId,
+        signal: context.signal,
+      });
+      onTestFinished(async () => {
+        bindingClear.release();
+        await bindingClear.done;
+      });
       admissionLock.release();
       await admissionLock.done;
-    });
-    const messageId = randomUUID();
-    const secondPromise = sendChatRun(actor, {
-      agentId,
-      threadId: first.threadId,
-      prompt: "retry after the binding changes",
-      clientEventId: messageId,
-    });
-    // The queue-first insert must complete before a fixture owns the parent
-    // thread row; otherwise its FK check would block before session resolution.
-    await expect
-      .poll(async () => {
-        const messages = await chat.listThreadEvents(actor, first.threadId);
-        return messages.events.some((message) => {
-          return message.id === messageId;
-        });
-      })
-      .toBe(true);
-
-    const bindingClear = await holdThreadSessionBindingClearFixture({
-      threadId: first.threadId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
+      // Unlike the shared org advisory key, this row lock can only be reached
+      // after the target preparation has captured its binding snapshot.
+      await expect
+        .poll(bindingClear.blockedWaiterCount)
+        .toBeGreaterThanOrEqual(1);
       bindingClear.release();
       await bindingClear.done;
-    });
-    admissionLock.release();
-    await admissionLock.done;
-    // Unlike the shared org advisory key, this row lock can only be reached
-    // after the target preparation has captured its binding snapshot.
-    await expect
-      .poll(bindingClear.blockedWaiterCount)
-      .toBeGreaterThanOrEqual(1);
-    bindingClear.release();
-    await bindingClear.done;
-    const second = await secondPromise;
+      const second = await secondPromise;
+      if (sdk) {
+        await expect.poll(sdk.initializationCount).toBe(2);
+      }
 
-    const secondBinding = await readThreadSessionBinding(
-      context,
-      first.threadId,
-    );
-    expect(secondBinding).toMatchObject({
-      agent_session_id: expect.any(String),
-      agent_session_run_id: second.runId,
-      run_session_id: secondBinding.agent_session_id,
-    });
-    expect(secondBinding.agent_session_id).not.toBe(
-      firstBinding.agent_session_id,
-    );
-    const secondClaim = await claimChatRun(runnerGroup, second.runId);
-    await expect(
-      readRunLaunchSnapshotFixture(context, second.runId),
-    ).resolves.toStrictEqual({
-      exists: true,
-      launch_snapshot: {
-        schemaVersion: 3,
-        framework: secondClaim.claim.cliAgentType,
-        runnerProfile: DEFAULT_PROFILE,
-      },
-    });
-    expect(secondClaim.claim.resumeSession).toBeNull();
-    await cancelChatRun(actor, second.runId);
-  }, 90_000);
+      const secondBinding = await readThreadSessionBinding(
+        context,
+        first.threadId,
+      );
+      expect(secondBinding).toMatchObject({
+        agent_session_id: expect.any(String),
+        agent_session_run_id: second.runId,
+        run_session_id: secondBinding.agent_session_id,
+      });
+      expect(secondBinding.agent_session_id).not.toBe(
+        firstBinding.agent_session_id,
+      );
+      const secondClaim = await claimChatRun(runnerGroup, second.runId);
+      await expect(
+        readRunLaunchSnapshotFixture(context, second.runId),
+      ).resolves.toStrictEqual({
+        exists: true,
+        launch_snapshot: {
+          schemaVersion: 3,
+          framework: secondClaim.claim.cliAgentType,
+          runnerProfile: DEFAULT_PROFILE,
+        },
+      });
+      expect(secondClaim.claim.resumeSession).toBeNull();
+      if (sdk && checkpointObjects) {
+        expect(providerRequests).toHaveLength(0);
+        expectNoPiApiFirstTurnArtifacts(second.runId, checkpointObjects);
+        sdk.release();
+        await waitForRunStatus(actor, second.runId, "completed", 10_000);
+        await flushWaitUntilForTest();
+        expect(providerRequests).toHaveLength(1);
+        expect(sdk.initializationCount()).toBe(2);
+        expect(sdk.disposeCount()).toBe(2);
+        const completed = await chat.listThreadEvents(actor, first.threadId);
+        expect(
+          eventBackedContents(completed.events, second.runId),
+        ).toStrictEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ content: "retried binding answer" }),
+          ]),
+        );
+      } else {
+        await cancelChatRun(actor, second.runId);
+      }
+    },
+    90_000,
+  );
 
   it("replays only each prior run's final answer when a model family rotates the session", async () => {
     const { actor, agentId, runnerGroup, providerId } =
@@ -27904,7 +29012,7 @@ describe("CHAT-02: run image model snapshot", () => {
 function configureNativeCliArtifact(): string {
   const commit = "a".repeat(40);
   const url = `https://static.okou.io/okou-cli/${commit}/package.tgz`;
-  mockEnv("PI_MEMORY_STAGE1_IDLE_DELAY_MS", 60_000);
+
   mockEnv("GIT_COMMIT_SHA", commit);
   mockEnv("CLI_PKG_URL", url);
   return url;
@@ -28331,6 +29439,7 @@ describe("shared native Pi route activation", () => {
       await configureBuiltInPiModel(actor, model);
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
         [FeatureSwitchKey.ChatReasoningEffort]: true,
       });
       const pricing = await createPiApiFirstTurnUsagePricingResolution(model);
@@ -28484,6 +29593,7 @@ describe("shared native Pi route activation", () => {
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
       });
       mockPiResourceArchiveDownloads();
       const objects = mockPiCheckpointObjectStore();
@@ -28705,6 +29815,7 @@ describe("shared native Pi route activation", () => {
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
       });
       mockPiResourceArchiveDownloads();
       const objects = mockPiCheckpointObjectStore();
@@ -29096,7 +30207,7 @@ describe("shared native Pi route activation", () => {
     90_000,
   );
   it.each(["schedule", "event"] as const)(
-    "uses the shared native %s Automation handoff, completion and owned memory path",
+    "uses the shared native %s Automation handoff and completion without owned memory",
     async (source) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor(
         {},
@@ -29119,6 +30230,7 @@ describe("shared native Pi route activation", () => {
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
       });
       const pricing = await createPiApiFirstTurnUsagePricingResolution(model);
       const workflows = createWorkflowsBddApi(context);
@@ -29202,10 +30314,19 @@ describe("shared native Pi route activation", () => {
         usagePricingResolution: pricing,
       });
       await expectThreadPiTerminal(actor, threadId, runId);
-      await expectExactPrivatePiMemoryAdmission({
-        orgId: requireOrgId(actor),
-        userId: actor.userId,
-        runId,
+      // With PiMemory on, the native Automation completion is still skipped
+      // as a non-interactive source and writes no owned memory candidate.
+      await expect(
+        readPiMemoryStage1CandidateFixture({
+          orgId: requireOrgId(actor),
+          userId: actor.userId,
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        readmitPiMemoryStage1CandidateFixture(runId),
+      ).resolves.toStrictEqual({
+        outcome: "skipped",
+        reason: "non_interactive_source",
       });
       await expectNoBuiltInModelUsage(runId);
     },

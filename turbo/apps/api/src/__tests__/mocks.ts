@@ -10,8 +10,10 @@ import type {
 import type { LookupFunction } from "node:net";
 import { computed } from "ccstate";
 import { ws } from "msw";
-import { vi, type Mock } from "vitest";
+import { onTestFinished, vi, type Mock } from "vitest";
 import { z } from "zod";
+
+import { createDeferredPromise } from "../signals/utils";
 
 import { mockStripeClient } from "../signals/external/stripe-client";
 
@@ -95,6 +97,9 @@ type PinnedRequestCallback = (
 ) => void;
 
 export interface ApiTestMocks {
+  readonly piSdk: {
+    readonly controlInitialization: typeof controlPiSdkInitialization;
+  };
   readonly abortSignal: {
     readonly timeout: AbortSignalTimeoutMock;
   };
@@ -145,6 +150,7 @@ export interface ApiTestMocks {
       readonly updateOrganizationLogo: AsyncMock;
     };
     readonly users: {
+      readonly getUser: AsyncMock;
       readonly getUserList: AsyncMock;
       readonly getOrganizationMembershipList: AsyncMock;
       readonly updateUserMetadata: AsyncMock;
@@ -388,6 +394,7 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
       updateOrganizationLogo: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     },
     users: {
+      getUser: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       getUserList: vi
         .fn<(...args: unknown[]) => Promise<unknown>>()
         .mockResolvedValue({ data: [] }),
@@ -541,6 +548,11 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
   };
 
   return {
+    piSdk: {
+      controlInitialization: async (input, signal) => {
+        return await controlPiSdkInitialization(input, signal);
+      },
+    },
     abortSignal: {
       timeout: vi.fn<(milliseconds: number) => AbortSignal | undefined>(),
     },
@@ -1374,6 +1386,134 @@ export function mockAxiomSdkTelemetryFailure(
   });
 }
 
+/**
+ * Only the SDK can delay session initialization after resource loading. The
+ * fixture calls its real methods and matches a unique session/instruction pair;
+ * route tests still create runs and inspect outcomes through production APIs.
+ */
+async function controlPiSdkInitialization(
+  input: {
+    readonly sessionId: string;
+    readonly instructions: string;
+    readonly holdInitialization: boolean;
+    readonly initializationFailure?: Error;
+  },
+  signal: AbortSignal,
+) {
+  const { AgentSession, DefaultResourceLoader, SettingsManager } =
+    await import("@earendil-works/pi-coding-agent");
+  type AgentSessionInstance = InstanceType<typeof AgentSession>;
+  type ResourceLoaderInstance = InstanceType<typeof DefaultResourceLoader>;
+  type SettingsManagerInstance = ReturnType<typeof SettingsManager.inMemory>;
+  const entered = createDeferredPromise<void>(signal);
+  const ready = createDeferredPromise<void>(signal);
+  const disposed = createDeferredPromise<void>(signal);
+  const failed = createDeferredPromise<Error>(signal);
+  const release = createDeferredPromise<void>(signal);
+  let sessionSettings: SettingsManagerInstance | undefined;
+  let initializationCount = 0;
+  let disposeCount = 0;
+  const originalReload = DefaultResourceLoader.prototype.reload;
+  const originalThinkingLevel:
+    | ((this: AgentSessionInstance) => AgentSessionInstance["thinkingLevel"])
+    | undefined = Object.getOwnPropertyDescriptor(
+    AgentSession.prototype,
+    "thinkingLevel",
+  )?.get;
+  if (!originalThinkingLevel) {
+    throw new Error("Expected the official Pi session thinking-level getter");
+  }
+  const originalCompactionSettings =
+    SettingsManager.prototype.getCompactionSettings;
+  const originalDispose = AgentSession.prototype.dispose;
+  const thinkingSpy = vi.spyOn(AgentSession.prototype, "thinkingLevel", "get");
+
+  const reloadSpy = vi
+    .spyOn(DefaultResourceLoader.prototype, "reload")
+    .mockImplementation(async function (this: ResourceLoaderInstance, options) {
+      await originalReload.call(this, options);
+      if (
+        this.getAgentsFiles().agentsFiles.some((file) => {
+          return file.content === input.instructions;
+        })
+      ) {
+        initializationCount += 1;
+        if (!entered.settled()) {
+          entered.resolve(undefined);
+        }
+        // The production attempt cannot abort this test-owned SDK gate. Its
+        // late session must still be released when the test permits completion.
+        await release.promise;
+        if (input.initializationFailure) {
+          if (!failed.settled()) {
+            failed.resolve(input.initializationFailure);
+          }
+          throw input.initializationFailure;
+        }
+      }
+    });
+  thinkingSpy.mockImplementation(function (this: AgentSessionInstance) {
+    if (this.sessionId === input.sessionId) {
+      sessionSettings = this.settingsManager;
+    }
+    return originalThinkingLevel.call(this);
+  });
+  const compactionSpy = vi
+    .spyOn(SettingsManager.prototype, "getCompactionSettings")
+    .mockImplementation(function (this: SettingsManagerInstance) {
+      const settings = originalCompactionSettings.call(this);
+      if (this === sessionSettings) {
+        // The created SDK session has been finalized; this is the final
+        // synchronous preflight before the prepared turn is returned.
+        if (!ready.settled()) {
+          ready.resolve(undefined);
+        }
+      }
+      return settings;
+    });
+  const disposeSpy = vi
+    .spyOn(AgentSession.prototype, "dispose")
+    .mockImplementation(function (this: AgentSessionInstance) {
+      originalDispose.call(this);
+      if (this.sessionId === input.sessionId) {
+        disposeCount += 1;
+        if (!disposed.settled()) {
+          disposed.resolve(undefined);
+        }
+      }
+    });
+
+  const releaseInitialization = () => {
+    if (!release.settled()) {
+      release.resolve(undefined);
+    }
+  };
+  if (!input.holdInitialization) {
+    releaseInitialization();
+  }
+  onTestFinished(() => {
+    releaseInitialization();
+    reloadSpy.mockRestore();
+    thinkingSpy.mockRestore();
+    compactionSpy.mockRestore();
+    disposeSpy.mockRestore();
+  });
+
+  return {
+    entered: entered.promise,
+    ready: ready.promise,
+    disposed: disposed.promise,
+    failed: failed.promise,
+    release: releaseInitialization,
+    initializationCount: () => {
+      return initializationCount;
+    },
+    disposeCount: () => {
+      return disposeCount;
+    },
+  };
+}
+
 export function getApiTestMocks(): ApiTestMocks {
   return apiTestMocks;
 }
@@ -1442,6 +1582,7 @@ export function resetApiTestMocks(): void {
   apiTestMocks.clerk.organizations.updateOrganization.mockReset();
   apiTestMocks.clerk.organizations.updateOrganizationMembership.mockReset();
   apiTestMocks.clerk.organizations.updateOrganizationLogo.mockReset();
+  apiTestMocks.clerk.users.getUser.mockReset();
   apiTestMocks.clerk.users.getUserList.mockReset();
   apiTestMocks.clerk.users.getUserList.mockResolvedValue({ data: [] });
   apiTestMocks.clerk.users.getOrganizationMembershipList.mockReset();

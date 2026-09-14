@@ -353,6 +353,7 @@
       "feishu": "Feishu",
       "github": "GitHub",
       "goal": "목표",
+      "lark": "Lark",
       "slack": "Slack",
       "teams": "Teams",
       "telegram": "Telegram",
@@ -1007,7 +1008,12 @@
     "toasts": {
       "copyLinkFailed": "링크 복사 실패",
       "downloadFailed": "다운로드 실패",
-      "linkCopied": "링크 복사됨"
+      "linkCopied": "링크 복사됨",
+      "sharing": "공유 중…"
+    },
+    "viewer": {
+      "continuePrompt": "이 결과물로 작업할 수 있도록 도와주세요: {{url}}",
+      "continueWithBrand": "{{brandName}}에서 계속하기"
     }
   },
   "auth": {
@@ -1741,14 +1747,9 @@
       "selectModel": "모델 선택",
       "slashPanel": {
         "browseAll": "모든 템플릿 보기",
-        "illustrationDescription": "선택한 스타일로 이미지 한 장을 만듭니다",
         "make": "만들기",
-        "slidesDescription": "바로 발표할 수 있는 HTML 슬라이드",
         "templateCount_other": "템플릿 {{count}}개",
-        "useTemplate": "템플릿 {{title}} 사용",
-        "videoDescription": "텍스트로 영상을 만들며 매개변수는 선택한 모델을 따릅니다",
-        "websiteDescription": "게시할 수 있는 정적 사이트",
-        "workflowDescription": "작성 창에서 실행할 수 있는 저장된 워크플로"
+        "useTemplate": "템플릿 {{title}} 사용"
       },
       "temporarilySwitchTo": "임시로 전환할 모델",
       "threadSuggestions": "채팅 스레드",
@@ -1992,9 +1993,11 @@
       "agentphone": "AgentPhone",
       "feishu": "Feishu",
       "github": "GitHub",
+      "lark": "Lark",
       "openChat": "오픈 채팅",
       "openFeishuChat": "Feishu에서 원본 채팅 열기",
       "openGithubMessage": "GitHub에서 원본 이슈 또는 풀 리퀘스트 열기",
+      "openLarkChat": "Lark에서 원본 채팅 열기",
       "openMessage": "메시지 열기",
       "openSlackMessage": "Slack에서 원본 메시지 열기",
       "openTeamsMessage": "Microsoft Teams에서 원본 메시지 열기",
@@ -2789,6 +2792,11 @@
         "website": "웹사이트",
         "workflow": "워크플로"
       },
+      "importedEmpty": "아직 업로드한 템플릿이 없습니다.",
+      "importedLoadFailed": "업로드한 템플릿을 불러오지 못했습니다.",
+      "importedLoading": "업로드한 템플릿 로딩 중…",
+      "importedUnavailable": "업로드한 템플릿을 일시적으로 사용할 수 없습니다.",
+      "previewRefreshFailed": "템플릿 미리보기를 새로 고치지 못했습니다.",
       "previewTemplate": "템플릿 미리보기 {{title}}",
       "previewVideo": "비디오 템플릿 미리보기 {{title}}",
       "previewWebsite": "웹사이트 템플릿 미리보기 {{title}}",
@@ -2797,8 +2805,11 @@
       "removeVideo": "비디오 템플릿 삭제 {{title}}",
       "removeWebsite": "웹사이트 템플릿 삭제 {{title}}",
       "removeWorkflow": "워크플로 템플릿 삭제 {{title}}",
+      "retry": "다시 시도",
       "videoOptions": "동영상 옵션",
       "videoOptionsAudio": "오디오 생성",
+      "videoOptionsAudioOff": "오디오 꺼짐",
+      "videoOptionsAudioOn": "오디오 켜짐",
       "videoOptionsDuration": "길이",
       "videoOptionsLabel": "동영상 옵션 {{spec}}",
       "videoOptionsModel": "모델",
@@ -3118,9 +3129,11 @@
       "scope": {
         "aria": "커넥터 범위",
         "attention": "확인이 필요함",
+        "connected": "연결됨",
+        "custom": "사용자 지정",
         "discover": "둘러보기",
-        "mine": "내 커넥터",
-        "searchMine": "내 커넥터 찾기"
+        "searchConnected": "연결된 커넥터 찾기",
+        "searchCustom": "사용자 지정 커넥터 찾기"
       },
       "search": "커넥터 찾기",
       "shelf": {
@@ -3404,6 +3417,9 @@
         "wrongOrganizationDescription": "활성 조직이 이 GitHub 설치와 일치하지 않습니다. 올바른 조직으로 전환한 후 링크를 다시 여세요.",
         "wrongOrganizationTitle": "조직 전환"
       },
+      "lark": {
+        "connectTitle": "Lark 연결"
+      },
       "slack": {
         "connectDescription": "이 Slack 워크스페이스에 계정을 연결하여 Slack에서 직접 에이전트와 상호작용하세요.",
         "connectTitle": "Slack에 연결하기",
@@ -3658,6 +3674,12 @@
           "verifying": "확인 중…",
           "waiting": "콜백을 기다리는 중"
         },
+        "toasts": {
+          "botInstalled": "Feishu 봇이 성공적으로 설치되었습니다",
+          "botUninstalled": "Feishu 봇이 제거되었습니다",
+          "connected": "Feishu가 성공적으로 연결되었습니다",
+          "disconnected": "Feishu 연결 해제됨"
+        },
         "tokens": {
           "descriptionAfter": ", 방금 생성한 앱을 선택하고 구성 페이지를 엽니다. 이벤트 구성 → 암호화 전략을 열고 암호화 키와 검증 토큰을 복사하세요.",
           "descriptionBefore": "열기 ",
@@ -3669,6 +3691,136 @@
         "uninstallDescription": "이 작업은 워크스페이스에서 {{bot}}을(를) 제거하고 이를 사용하는 모든 {{brandName}} 계정의 연결을 해제합니다. 이 작업은 취소할 수 없습니다.",
         "uninstallTargetFallback": "이 봇",
         "uninstallTitle": "Feishu 봇을 제거하시겠습니까?"
+      },
+      "lark": {
+        "addBot": "봇 추가",
+        "addDialogDescription": "기업 맞춤 앱을 생성하고 봇을 활성화한 후 Lark 개발자 콘솔에서 이 단계를 완료하세요.",
+        "addDialogTitle": "Lark 봇 추가",
+        "agentDescription": "이 봇으로 전송된 메시지를 처리할 에이전트를 선택하세요.",
+        "backToIntegrations": "통합으로 돌아가기",
+        "botFallback": "Lark 봇",
+        "botIconAlt": "{{bot}} 봇 아이콘",
+        "bots": "Lark 봇",
+        "callbackStatusVerified": "콜백 확인됨",
+        "callbackStatusWaiting": "콜백 대기 중",
+        "configured": "구성됨",
+        "copied": "{{label}} 복사됨",
+        "copy": "복사",
+        "create": {
+          "descriptionAfter": ", 원하는 이름과 아이콘으로 기업 맞춤 앱을 생성한 다음 봇 기능을 추가하세요.",
+          "descriptionBefore": "에서 ",
+          "downloadIcon": "선택 사항인 {{brandName}} 아이콘 다운로드",
+          "iconAlt": "선택 사항인 {{brandName}} 앱 아이콘",
+          "iconHint": ", 또는 원하는 아이콘을 사용하세요.",
+          "iconTitle": "선택 사항인 {{brandName}} 앱 아이콘",
+          "imageAlt": "앱 이름, 아이콘, 생성 버튼이 강조된 Feishu 앱 생성 양식",
+          "title": "기업 맞춤 앱 생성"
+        },
+        "credentials": {
+          "appId": "앱 ID",
+          "appSecret": "앱 비밀키",
+          "description": "자격 증명 및 기본 정보에서 앱 ID와 앱 비밀키를 복사하세요.",
+          "imageAlt": "앱 ID와 앱 비밀키 위치를 보여주는 Feishu 앱 생성 결과",
+          "title": "앱 자격 증명 추가"
+        },
+        "defaultAgent": "기본 에이전트",
+        "defaultAgentAria": "{{appId}}의 기본 에이전트",
+        "developerConsole": "Lark 개발자 콘솔",
+        "dialogAdminRequired": "조직 관리자가 앱을 구성해야 합니다. 설정 완료 후 Lark 봇 목록에서 자신의 계정을 연결할 수 있습니다.",
+        "documentTitle": "Lark",
+        "emptyAdmin": "Lark 메시지를 에이전트로 라우팅하려면 맞춤 앱을 추가하세요.",
+        "emptyMember": "조직 관리자에게 Lark 봇 추가를 요청하세요.",
+        "emptyTitle": "아직 Lark 봇이 없습니다",
+        "events": {
+          "callbackLabel": "콜백 URL",
+          "continue": "Lark가 콜백 URL을 확인하고 메시지 이벤트가 구독된 후 계속 진행하세요.",
+          "description": "이벤트 구성을 엽니다. 구독 모드에서 '개발자 서버에 알림 전송'을 선택하세요. 그런 다음 콜백 구성을 열고 콜백 URL을 붙여넣습니다. Lark가 확인하면 '메시지 수신 v1' 이벤트를 추가하세요.",
+          "requestAlt": "요청 URL 필드가 강조된 Feishu 이벤트 구성 화면",
+          "requestLabel": "콜백 요청 URL 추가",
+          "subscriptionAlt": "구독 모드 편집 컨트롤이 강조된 Feishu 이벤트 구성 화면",
+          "subscriptionLabel": "이벤트 구독 모드 선택",
+          "title": "이벤트 전달 구성"
+        },
+        "faq": {
+          "approvalAnswer": "사용 가능 범위가 모든 구성원으로 설정된 경우 Lark 관리자가 릴리스를 승인해야 합니다. Lark는 관리자의 다이렉트 메시지로 승인 요청을 보내며, 관리자가 검토를 완료할 때까지 앱은 대기 상태로 유지됩니다.",
+          "approvalQuestion": "앱 게시가 승인을 기다리는 이유는 무엇인가요?",
+          "challengeAnswer": "이는 일반적으로 토큰 단계에서 저장한 암호화 키 또는 검증 토큰이 올바르지 않음을 의미합니다. 토큰 단계로 돌아가 이벤트 구성 → 암호화 전략에서 두 값을 다시 입력하고 저장한 후 요청 URL을 다시 시도하세요.",
+          "challengeQuestion": "Lark가 \"챌린지 코드에 응답이 없습니다\"를 표시하는 이유는 무엇인가요?",
+          "title": "설정 FAQ"
+        },
+        "guideReference": "스크린샷은 참고용 Feishu 콘솔입니다. Lark 개발자 콘솔에서 이 단계를 진행하세요.",
+        "loadError": "Lark 설정을 불러올 수 없습니다.",
+        "manage": "관리",
+        "manageDialogTitle": "Lark 봇 관리",
+        "moreOptions": "{{bot}}에 대한 추가 옵션",
+        "pageDescription": "이 워크스페이스의 봇 라우팅 관리",
+        "permissions": {
+          "description": "Lark 개발자 콘솔에서 '권한 및 범위'를 열고 '일괄 가져오기/내보내기 > 가져오기'를 선택한 다음 아래 JSON을 붙여넣으세요. 관리형 커넥터에 필요한 모든 범위가 사용자 ID로 가져와집니다. 이는 연동이 작동하는 데 필요한 최소 권한입니다.",
+          "hint": "가져온 사용자 ID 권한을 모두 유지한 후 OAuth 동의 화면에서 권한을 부여할 수 있도록 새 앱 버전을 생성하고 게시하세요. 권한을 하나라도 제거하면 연동이 작동하지 않으며 Lark 관리자의 승인이 필요할 수 있습니다.",
+          "label": "사용자 토큰 범위 JSON",
+          "menuAlt": "일괄 범위 가져오기/내보내기 메뉴가 강조 표시된 Feishu 권한 및 범위 페이지",
+          "menuLabel": "일괄 범위 가져오기/내보내기 열기",
+          "reviewAlt": "가져온 JSON과 검토 버튼이 강조 표시된 Feishu 일괄 범위 가져오기/내보내기 대화 상자",
+          "reviewLabel": "JSON을 붙여넣고 새 범위 검토",
+          "title": "사용자 토큰 범위 가져오기"
+        },
+        "publish": {
+          "allMembersAlt": "모든 구성원이 선택된 Feishu 사용 가능 설정",
+          "allMembersLabel": "앱을 모든 구성원이 사용할 수 있도록 설정",
+          "createVersionAlt": "생성 버튼이 강조된 Feishu 버전 관리 페이지",
+          "createVersionLabel": "앱 버전 생성",
+          "description": "앱 버전을 생성 및 게시한 후 사용 가능 범위 설정을 편집하여 모든 구성원을 선택하세요. 권한을 부여한 조직 구성원만 앱을 사용할 수 있습니다.",
+          "editAvailabilityAlt": "사용 가능 설정 편집 작업이 강조된 Feishu 버전 상세 페이지",
+          "editAvailabilityLabel": "사용 가능 설정 편집",
+          "title": "앱 게시"
+        },
+        "redirect": {
+          "descriptionAfter": ", 개발 구성 → 보안 설정을 열고 아래 URL을 리디렉션 URL에 추가하여 워크스페이스 구성원이 Lark 계정을 {{brandName}}에 연결할 수 있도록 하세요.",
+          "descriptionBefore": "에서 ",
+          "imageAlt": "OAuth 리디렉션 URL을 추가할 위치를 보여주는 Feishu 보안 설정 페이지",
+          "label": "OAuth 리디렉션 URL",
+          "title": "OAuth 리디렉션 URL 구성"
+        },
+        "reviewGuide": "검토 가이드",
+        "reviewGuideDescription": "이 Lark 봇의 완료된 설정 단계를 검토하세요.",
+        "reviewGuideTitle": "Lark 검토 가이드",
+        "routeDescription": "Lark 메시지를 에이전트로 라우팅",
+        "selectAgent": "에이전트 선택",
+        "setupIncomplete": "설정 완료되지 않음",
+        "steps": {
+          "back": "뒤로",
+          "checking": "확인 중…",
+          "close": "닫기",
+          "create": "생성",
+          "credentials": "자격 증명",
+          "done": "완료",
+          "events": "이벤트",
+          "next": "다음",
+          "permissions": "범위",
+          "publish": "게시",
+          "redirect": "리디렉션",
+          "tokens": "토큰",
+          "verify": "확인 및 계속",
+          "verifying": "확인 중…",
+          "waiting": "콜백을 기다리는 중"
+        },
+        "toasts": {
+          "botInstalled": "Lark 봇이 성공적으로 설치되었습니다",
+          "botUninstalled": "Lark 봇이 제거되었습니다",
+          "connected": "Lark가 성공적으로 연결되었습니다",
+          "disconnected": "Lark 연결 해제됨"
+        },
+        "tokens": {
+          "descriptionAfter": ", 방금 생성한 앱을 선택하고 구성 페이지를 엽니다. 이벤트 구성 → 암호화 전략을 열고 암호화 키와 검증 토큰을 복사하세요.",
+          "descriptionBefore": "열기 ",
+          "encryptKey": "암호화 키",
+          "imageAlt": "암호화 키와 검증 토큰이 표시된 Feishu 암호화 전략 화면",
+          "title": "이벤트 검증 토큰 추가",
+          "verificationToken": "검증 토큰"
+        },
+        "uninstallDescription": "이 작업은 워크스페이스에서 {{bot}}을(를) 제거하고 이를 사용하는 모든 {{brandName}} 계정의 연결을 해제합니다. 이 작업은 취소할 수 없습니다.",
+        "uninstallTargetFallback": "이 봇",
+        "uninstallTitle": "Lark 봇을 제거하시겠습니까?"
       },
       "telegram": {
         "addBot": "봇 추가",
@@ -3748,10 +3900,6 @@
       "toasts": {
         "agentphoneConnected": "AgentPhone 연결됨",
         "agentphoneDisconnected": "AgentPhone 연결 해제됨",
-        "feishuBotInstalled": "Feishu 봇이 성공적으로 설치되었습니다",
-        "feishuBotUninstalled": "Feishu 봇이 제거되었습니다",
-        "feishuConnected": "Feishu가 성공적으로 연결되었습니다",
-        "feishuDisconnected": "Feishu 연결 해제됨",
         "slackConnected": "Slack이 성공적으로 연결되었습니다",
         "slackDisconnected": "Slack 연결 해제됨",
         "slackInstalled": "Slack이 성공적으로 설치되었습니다",
@@ -5464,7 +5612,7 @@
         "categoryImage": "이미지",
         "categoryVideo": "동영상",
         "chatModels": "채팅 모델",
-        "effort": "추론 강도",
+        "effort": "강도",
         "fast": "빠름",
         "fastImpact": {
           "apiCost": "API 토큰 비용 2×",
@@ -6763,6 +6911,9 @@
       "noWorkflows": "워크플로가 없습니다",
       "open": "{{title}} 열기",
       "openRecovery": "{{title}} 복구 열기",
+      "ownerLoading": "작성자 불러오는 중…",
+      "ownerRetry": "작성자 정보를 사용할 수 없습니다. 다시 열어 재시도하세요.",
+      "ownerUnavailable": "작성자 정보를 사용할 수 없습니다",
       "runsAs": "다음 에이전트로 실행됨",
       "runsAsAria": "{{agent}}로 실행됨",
       "section": {

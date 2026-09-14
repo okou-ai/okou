@@ -1,5 +1,6 @@
 import {
   createAttachmentPreviewSignals,
+  createAttachmentPreviewSession,
   type AttachmentPreviewSignals,
 } from "../attachment-resource-url.ts";
 import { command, computed, state } from "ccstate";
@@ -325,8 +326,9 @@ export const openImageLightbox$ = command(
     set(internalLightboxDialogFullscreen$, false);
     set(internalLightboxState$, {
       ...imageLightboxState(resource ? { ...input, url: resource.url } : input),
-      ...(input.preview ??
-        createAttachmentPreviewSignals(resource?.url ?? input.url)),
+      ...(input.preview
+        ? createAttachmentPreviewSession(input.preview)
+        : createAttachmentPreviewSignals(resource?.url ?? input.url)),
     });
   },
 );
@@ -355,7 +357,9 @@ export const navigateImageLightbox$ = command(
     set(internalLightboxState$, {
       kind: "image",
       ...value,
-      ...(value.preview ?? createAttachmentPreviewSignals(value.url)),
+      ...(value.preview
+        ? createAttachmentPreviewSession(value.preview)
+        : createAttachmentPreviewSignals(value.url)),
     });
   },
 );

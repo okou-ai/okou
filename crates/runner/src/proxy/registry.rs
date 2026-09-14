@@ -728,14 +728,28 @@ impl ProxyRegistryHandle {
     /// Fail-close all matching connector runtime targets in one registry
     /// transaction. `None` means the sandbox disappeared or now belongs to another
     /// run; otherwise each outcome corresponds to the same-index target.
+    #[cfg(test)]
     pub(crate) async fn fail_closed_connector_runtime_targets_if_run_matches(
         &self,
         source_ip: &str,
         run_id: &str,
         targets: &[ConnectorRuntimeTarget],
     ) -> RunnerResult<Option<Vec<ConnectorRuntimeFailCloseOutcome>>> {
-        let _guard = lock::acquire(self.lock_path.clone()).await?;
-        let mut registry = read_registry(&self.registry_path).await?;
+        self.connector_runtime_registry_transaction()
+            .await?
+            .fail_closed_targets_if_run_matches(source_ip, run_id, targets)
+            .await
+    }
+}
+
+impl ConnectorRuntimeRegistryTransaction<'_> {
+    pub(crate) async fn fail_closed_targets_if_run_matches(
+        self,
+        source_ip: &str,
+        run_id: &str,
+        targets: &[ConnectorRuntimeTarget],
+    ) -> RunnerResult<Option<Vec<ConnectorRuntimeFailCloseOutcome>>> {
+        let mut registry = read_registry(self.registry_path).await?;
         let Some(sandbox) = registry.sandboxes.get_mut(source_ip) else {
             return Ok(None);
         };
@@ -770,7 +784,7 @@ impl ProxyRegistryHandle {
         }
 
         registry.updated_at = chrono::Utc::now().timestamp_millis();
-        write_registry_consuming_fail_closed_capacity(&self.registry_path, &registry).await?;
+        write_registry_consuming_fail_closed_capacity(self.registry_path, &registry).await?;
         info!(
             source_ip,
             run_id,
@@ -784,9 +798,7 @@ impl ProxyRegistryHandle {
         );
         Ok(Some(outcomes))
     }
-}
 
-impl ConnectorRuntimeRegistryTransaction<'_> {
     pub(crate) async fn apply_updates_if_run_matches(
         self,
         source_ip: &str,

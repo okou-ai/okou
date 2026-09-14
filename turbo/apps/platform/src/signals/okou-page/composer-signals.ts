@@ -96,6 +96,8 @@ type ComposerSuggestionSignals = Pick<
   | "chatThreadSuggestions$"
   | "selectedSuggestionIndex$"
   | "setSelectedSuggestionIndex$"
+  | "previewSuggestionIndex$"
+  | "previewSuggestion$"
   | "closeSuggestionMenu$"
   | "insertAgent$"
   | "insertChatThread$"
@@ -367,6 +369,8 @@ function composerSuggestionSignals(
     chatThreadSuggestions$: composer.chatThreadSuggestions$,
     selectedSuggestionIndex$: composer.selectedSuggestionIndex$,
     setSelectedSuggestionIndex$: composer.setSelectedSuggestionIndex$,
+    previewSuggestionIndex$: composer.previewSuggestionIndex$,
+    previewSuggestion$: composer.previewSuggestion$,
     closeSuggestionMenu$: composer.closeSuggestionMenu$,
     insertAgent$: composer.insertAgent$,
     insertChatThread$: composer.insertChatThread$,
@@ -764,8 +768,8 @@ function createComposerChatEventSignals(chatEvents$: Computed<ChatEvent[]>) {
 
 /**
  * Resolved at send rather than held settled, so the parameters follow a video
- * model the user changed after setting them. Nothing is sent when the run
- * would use that model's defaults anyway.
+ * model the user changed after setting them. Creative Video sends every
+ * displayed parameter, including the model's defaults.
  */
 function createVideoRunOptionsSignal(
   videoModel: ComposerVideoModelSignals | undefined,
@@ -776,9 +780,6 @@ function createVideoRunOptionsSignal(
       return undefined;
     }
     const patch = get(videoOptions.videoRunOptions$);
-    if (Object.keys(patch).length === 0) {
-      return undefined;
-    }
     const model = await get(videoModel.effectiveVideoModel$);
     signal.throwIfAborted();
     return videoRunOptionsForSend(patch, model);
@@ -896,10 +897,9 @@ function createSubmitCurrentInput({
         return false;
       }
       const mode = get(create.mode$);
-      const videoRunOptions =
-        mode !== null && mode !== "video"
-          ? undefined
-          : await set(readVideoRunOptions$, signal);
+      const videoRunOptions = get(create.creativeVideo$)
+        ? await set(readVideoRunOptions$, signal)
+        : undefined;
       signal.throwIfAborted();
       // Keep the new persisted part within the existing Create rollout.
       const additionalInfo = get(create.enabled$)
@@ -920,7 +920,7 @@ function createSubmitCurrentInput({
             additionalInfo,
           )
         : submission.editorDocument;
-      return await set(
+      const submitted = await set(
         options.submitMessage$,
         action,
         {
@@ -931,6 +931,10 @@ function createSubmitCurrentInput({
         },
         signal,
       );
+      if (submitted) {
+        set(videoOptions.resetVideoRunOptions$);
+      }
+      return submitted;
     },
   );
 }

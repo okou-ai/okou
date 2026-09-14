@@ -353,6 +353,7 @@
       "feishu": "Feishu",
       "github": "GitHub",
       "goal": "Goal",
+      "lark": "Lark",
       "slack": "Slack",
       "teams": "Teams",
       "telegram": "Telegram",
@@ -1008,7 +1009,12 @@
     "toasts": {
       "copyLinkFailed": "Failed to copy link",
       "downloadFailed": "Download failed",
-      "linkCopied": "Link copied"
+      "linkCopied": "Link copied",
+      "sharing": "Sharing…"
+    },
+    "viewer": {
+      "continuePrompt": "Help me work with this artifact: {{url}}",
+      "continueWithBrand": "Continue with {{brandName}}"
     }
   },
   "auth": {
@@ -1744,15 +1750,10 @@
       "selectModel": "Select model",
       "slashPanel": {
         "browseAll": "Browse all templates",
-        "illustrationDescription": "A single image, in the style you pick",
         "make": "Make",
-        "slidesDescription": "An HTML slide deck you can present",
         "templateCount_one": "{{count}} template",
         "templateCount_other": "{{count}} templates",
-        "useTemplate": "Use template {{title}}",
-        "videoDescription": "Text to video, with parameters from the chosen model",
-        "websiteDescription": "A static site you can publish",
-        "workflowDescription": "A saved workflow you can run from the composer"
+        "useTemplate": "Use template {{title}}"
       },
       "temporarilySwitchTo": "Temporarily switch to",
       "threadSuggestions": "Chat threads",
@@ -2000,9 +2001,11 @@
       "agentphone": "AgentPhone",
       "feishu": "Feishu",
       "github": "GitHub",
+      "lark": "Lark",
       "openChat": "Open chat",
       "openFeishuChat": "Open original chat in Feishu",
       "openGithubMessage": "Open original issue or pull request in GitHub",
+      "openLarkChat": "Open original chat in Lark",
       "openMessage": "Open message",
       "openSlackMessage": "Open original message in Slack",
       "openTeamsMessage": "Open original message in Microsoft Teams",
@@ -2798,6 +2801,11 @@
         "website": "Website",
         "workflow": "Workflow"
       },
+      "importedEmpty": "No uploaded templates yet.",
+      "importedLoadFailed": "Couldn't load uploaded templates.",
+      "importedLoading": "Loading uploaded templates…",
+      "importedUnavailable": "Uploaded templates are temporarily unavailable.",
+      "previewRefreshFailed": "Couldn't refresh template previews.",
       "previewTemplate": "Preview template {{title}}",
       "previewVideo": "Preview video template {{title}}",
       "previewWebsite": "Preview website template {{title}}",
@@ -2806,8 +2814,11 @@
       "removeVideo": "Remove video template {{title}}",
       "removeWebsite": "Remove website template {{title}}",
       "removeWorkflow": "Remove workflow template {{title}}",
+      "retry": "Retry",
       "videoOptions": "Video options",
       "videoOptionsAudio": "Generate audio",
+      "videoOptionsAudioOff": "Audio off",
+      "videoOptionsAudioOn": "Audio on",
       "videoOptionsDuration": "Duration",
       "videoOptionsLabel": "Video options {{spec}}",
       "videoOptionsModel": "Model",
@@ -3123,9 +3134,11 @@
       "scope": {
         "aria": "Connector scope",
         "attention": "Needs attention",
+        "connected": "Connected",
+        "custom": "Custom",
         "discover": "Discover",
-        "mine": "Your connectors",
-        "searchMine": "Find your connectors"
+        "searchConnected": "Find connected connectors",
+        "searchCustom": "Find custom connectors"
       },
       "search": "Find connectors",
       "shelf": {
@@ -3409,6 +3422,9 @@
         "wrongOrganizationDescription": "Your active organization doesn't match this GitHub installation. Switch to the correct organization and open the link again.",
         "wrongOrganizationTitle": "Switch organization"
       },
+      "lark": {
+        "connectTitle": "Connect to Lark"
+      },
       "slack": {
         "connectDescription": "Link your account to this Slack workspace so you can interact with your agent directly from Slack.",
         "connectTitle": "Connect to Slack",
@@ -3663,6 +3679,12 @@
           "verifying": "Verifying…",
           "waiting": "Waiting for callback"
         },
+        "toasts": {
+          "botInstalled": "Feishu bot installed successfully",
+          "botUninstalled": "Feishu bot uninstalled",
+          "connected": "Feishu connected successfully",
+          "disconnected": "Disconnected from Feishu"
+        },
         "tokens": {
           "descriptionAfter": ", select the app you just created, and enter its configuration page. Open Event Configuration → Encryption Strategy, then copy the Encrypt Key and Verification Token.",
           "descriptionBefore": "Open the ",
@@ -3674,6 +3696,136 @@
         "uninstallDescription": "This uninstalls {{bot}} from the workspace and disconnects every {{brandName}} account using it. This action cannot be undone.",
         "uninstallTargetFallback": "this bot",
         "uninstallTitle": "Uninstall Feishu bot?"
+      },
+      "lark": {
+        "addBot": "Add bot",
+        "addDialogDescription": "Create an enterprise custom app, enable its bot, and complete these steps in the Lark developer console.",
+        "addDialogTitle": "Add a Lark bot",
+        "agentDescription": "Choose the agent that should handle messages sent to this bot.",
+        "backToIntegrations": "Back to integrations",
+        "botFallback": "Lark bot",
+        "botIconAlt": "{{bot}} bot icon",
+        "bots": "Lark bots",
+        "callbackStatusVerified": "Callback verified",
+        "callbackStatusWaiting": "Waiting for callback",
+        "configured": "Configured",
+        "copied": "{{label}} copied",
+        "copy": "Copy",
+        "create": {
+          "descriptionAfter": ", create an enterprise custom app using the name and icon you want, then add the Bot capability.",
+          "descriptionBefore": "In the ",
+          "downloadIcon": "Download the optional {{brandName}} icon",
+          "iconAlt": "Optional {{brandName}} app icon",
+          "iconHint": ", or use any icon you prefer.",
+          "iconTitle": "Optional {{brandName}} app icon",
+          "imageAlt": "Feishu app creation form with the app name, icon, and Create button highlighted",
+          "title": "Create an enterprise custom app"
+        },
+        "credentials": {
+          "appId": "App ID",
+          "appSecret": "App Secret",
+          "description": "Copy the App ID and App Secret from Credentials & Basic Information.",
+          "imageAlt": "Feishu app creation result showing where to find the App ID and App Secret",
+          "title": "Add the app credentials"
+        },
+        "defaultAgent": "Default agent",
+        "defaultAgentAria": "Default agent for {{appId}}",
+        "developerConsole": "Lark developer console",
+        "dialogAdminRequired": "An organization admin must configure the app. You can connect your own account from the Lark bot list after setup is complete.",
+        "documentTitle": "Lark",
+        "emptyAdmin": "Add a custom app to route Lark messages to an agent.",
+        "emptyMember": "Ask an organization admin to add a Lark bot.",
+        "emptyTitle": "No Lark bots yet",
+        "events": {
+          "callbackLabel": "Callback URL",
+          "continue": "Continue after Lark verifies the callback URL and the message event is subscribed.",
+          "description": "Open Event Configuration. Under Subscription mode, select “Send notifications to developer's server”. Then open Callback Configuration and paste the callback URL. After Lark verifies it, add the “Receive message v1” event.",
+          "requestAlt": "Feishu Event Configuration screen with the Request URL field highlighted",
+          "requestLabel": "Add the callback request URL",
+          "subscriptionAlt": "Feishu Event Configuration screen with the subscription mode edit control highlighted",
+          "subscriptionLabel": "Select the event subscription mode",
+          "title": "Configure event delivery"
+        },
+        "faq": {
+          "approvalAnswer": "If availability is set to All members, a Lark administrator must approve the release. Lark sends the approval request to an administrator in a direct message, and the app remains pending until an administrator completes the review.",
+          "approvalQuestion": "Why is publishing the app waiting for approval?",
+          "challengeAnswer": "This usually means the Encrypt Key or Verification Token saved during the Tokens step is incorrect. Return to the Tokens step, enter both values from Event Configuration → Encryption Strategy again, save them, and retry the Request URL.",
+          "challengeQuestion": "Why does Lark show \"Challenge code didn't get a response\"?",
+          "title": "Setup FAQ"
+        },
+        "guideReference": "The screenshots use the Feishu console as a reference. Follow these steps in the Lark Developer Console.",
+        "loadError": "Couldn't load Lark settings.",
+        "manage": "Manage",
+        "manageDialogTitle": "Manage Lark bot",
+        "moreOptions": "More options for {{bot}}",
+        "pageDescription": "Manage bot routing for this workspace",
+        "permissions": {
+          "description": "In the Lark developer console, open Permissions & Scopes, choose Batch Import/Export > Import, and paste the JSON below. It imports every managed connector scope under User identity. These are the minimum permissions required for the integration to work.",
+          "hint": "Keep every imported User identity permission, then create and publish a new app version so the OAuth consent screen can grant them. Removing any permission prevents the integration from working, and Lark administrator approval may be required.",
+          "label": "User token scope JSON",
+          "menuAlt": "Feishu Permissions & Scopes page with the Batch import/export scopes menu highlighted",
+          "menuLabel": "Open Batch import/export scopes",
+          "reviewAlt": "Feishu Batch import/export scopes dialog with the imported JSON and review button highlighted",
+          "reviewLabel": "Paste the JSON and review new scopes",
+          "title": "Import user token scopes"
+        },
+        "publish": {
+          "allMembersAlt": "Feishu availability settings with All members selected",
+          "allMembersLabel": "Make the app available to all members",
+          "createVersionAlt": "Feishu Version Management page with the Create a version button highlighted",
+          "createVersionLabel": "Create an app version",
+          "description": "Create and publish an app version, then edit its availability settings and select All members. The app can only be used by other members of your organization after you grant them access.",
+          "editAvailabilityAlt": "Feishu version details page with the availability settings edit action highlighted",
+          "editAvailabilityLabel": "Edit the availability settings",
+          "title": "Publish the app"
+        },
+        "redirect": {
+          "descriptionAfter": ", open Development Configuration → Security Settings. Add the URL below under Redirect URLs so workspace members can connect their Lark account to {{brandName}}.",
+          "descriptionBefore": "In the ",
+          "imageAlt": "Feishu Security Settings page showing where to add an OAuth redirect URL",
+          "label": "OAuth redirect URL",
+          "title": "Configure the OAuth redirect URL"
+        },
+        "reviewGuide": "Review guide",
+        "reviewGuideDescription": "Review the completed setup steps for this Lark bot.",
+        "reviewGuideTitle": "Lark review guide",
+        "routeDescription": "Route Lark messages to agents",
+        "selectAgent": "Select an agent",
+        "setupIncomplete": "Setup incomplete",
+        "steps": {
+          "back": "Back",
+          "checking": "Checking…",
+          "close": "Close",
+          "create": "Create",
+          "credentials": "Credentials",
+          "done": "Done",
+          "events": "Events",
+          "next": "Next",
+          "permissions": "Scopes",
+          "publish": "Publish",
+          "redirect": "Redirect",
+          "tokens": "Tokens",
+          "verify": "Verify and continue",
+          "verifying": "Verifying…",
+          "waiting": "Waiting for callback"
+        },
+        "toasts": {
+          "botInstalled": "Lark bot installed successfully",
+          "botUninstalled": "Lark bot uninstalled",
+          "connected": "Lark connected successfully",
+          "disconnected": "Disconnected from Lark"
+        },
+        "tokens": {
+          "descriptionAfter": ", select the app you just created, and enter its configuration page. Open Event Configuration → Encryption Strategy, then copy the Encrypt Key and Verification Token.",
+          "descriptionBefore": "Open the ",
+          "encryptKey": "Encrypt Key",
+          "imageAlt": "Feishu Encryption Strategy screen showing the Encrypt Key and Verification Token",
+          "title": "Add the event verification tokens",
+          "verificationToken": "Verification Token"
+        },
+        "uninstallDescription": "This uninstalls {{bot}} from the workspace and disconnects every {{brandName}} account using it. This action cannot be undone.",
+        "uninstallTargetFallback": "this bot",
+        "uninstallTitle": "Uninstall Lark bot?"
       },
       "telegram": {
         "addBot": "Add bot",
@@ -3753,10 +3905,6 @@
       "toasts": {
         "agentphoneConnected": "AgentPhone connected",
         "agentphoneDisconnected": "AgentPhone disconnected",
-        "feishuBotInstalled": "Feishu bot installed successfully",
-        "feishuBotUninstalled": "Feishu bot uninstalled",
-        "feishuConnected": "Feishu connected successfully",
-        "feishuDisconnected": "Disconnected from Feishu",
         "slackConnected": "Slack connected successfully",
         "slackDisconnected": "Disconnected from Slack",
         "slackInstalled": "Slack installed successfully",
@@ -5469,7 +5617,7 @@
         "categoryImage": "Image",
         "categoryVideo": "Video",
         "chatModels": "Chat models",
-        "effort": "Reasoning effort",
+        "effort": "Effort",
         "fast": "Fast",
         "fastImpact": {
           "apiCost": "2× API token cost",
@@ -6772,6 +6920,9 @@
       "noWorkflows": "No workflows",
       "open": "Open {{title}}",
       "openRecovery": "Open {{title}} recovery",
+      "ownerLoading": "Loading author…",
+      "ownerRetry": "Author unavailable. Reopen to retry.",
+      "ownerUnavailable": "Author unavailable",
       "runsAs": "Runs as",
       "runsAsAria": "Runs as {{agent}}",
       "section": {

@@ -1,6 +1,7 @@
 mod admission;
 mod cache;
 mod credentials;
+mod files;
 mod framing;
 mod harness;
 mod key_wait;
@@ -9,6 +10,7 @@ mod observations;
 mod passwords;
 mod pooling;
 mod proof;
+mod reading;
 mod sessions;
 mod telemetry;
 

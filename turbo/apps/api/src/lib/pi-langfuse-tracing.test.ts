@@ -283,6 +283,39 @@ describe("Pi API-first Langfuse tracing", () => {
   });
 });
 
+describe("Pi API-first Langfuse abort ownership", () => {
+  it("closes a returned trace context when its execution signal aborts", async () => {
+    const { exporter, provider } = installMemoryExporter();
+    const controller = new AbortController();
+    const result = await tracePiApiFirstTurn(
+      {
+        enabled: true,
+        runId: RUN_ID,
+        sessionId: SESSION_ID,
+        userId: "user-1",
+        prompt: "abort after the provider returns",
+        model: "model-1",
+        provider: "provider-1",
+        execute() {
+          return Promise.resolve(turnResult(false));
+        },
+      },
+      controller.signal,
+    );
+    expect(result.traceContext).toBeDefined();
+
+    controller.abort(new Error("commit owner aborted"));
+    await provider.forceFlush();
+
+    expect(
+      requireFinishedSpan(exporter, "API First Turn").attributes,
+    ).toMatchObject({
+      "langfuse.observation.level": "ERROR",
+      "langfuse.observation.metadata.post_provider_error_name": "Error",
+    });
+  });
+});
+
 describe("Pi API-first Langfuse payloads", () => {
   it("redacts and bounds shared API generation payloads", async () => {
     const { axiomExporter, exporter, provider } = installMemoryExporter();
@@ -336,6 +369,61 @@ describe("Pi API-first Langfuse payloads", () => {
       expect(output.content).toContain("[redacted-langfuse-secret]");
       expect(input.content).not.toContain(inputSecret);
       expect(output.content).not.toContain(outputSecret);
+    }
+  });
+
+  it("applies the payload ceiling after secret redaction expands content", async () => {
+    const { axiomExporter, exporter, provider } = installMemoryExporter();
+    const expandingInput = "pk-lf-xxxx ".repeat(
+      Math.floor(PI_LANGFUSE_MAX_CAPTURED_CHARS / 11),
+    );
+    const expandingOutput = "sk-lf-yyyy ".repeat(
+      Math.floor(PI_LANGFUSE_MAX_CAPTURED_CHARS / 11),
+    );
+    expect(expandingInput.length).toBeLessThanOrEqual(
+      PI_LANGFUSE_MAX_CAPTURED_CHARS,
+    );
+    expect(expandingOutput.length).toBeLessThanOrEqual(
+      PI_LANGFUSE_MAX_CAPTURED_CHARS,
+    );
+    const expected = turnResult(false);
+    const result = await tracePiApiFirstTurn({
+      enabled: true,
+      runId: RUN_ID,
+      sessionId: SESSION_ID,
+      userId: "user-1",
+      prompt: expandingInput,
+      model: "model-1",
+      provider: "provider-1",
+      execute() {
+        return Promise.resolve({
+          ...expected,
+          assistantMessage: {
+            ...expected.assistantMessage,
+            content: [{ type: "text", text: expandingOutput }],
+          },
+        });
+      },
+    });
+    result.traceContext?.end();
+    await provider.forceFlush();
+
+    for (const exported of [exporter, axiomExporter]) {
+      const generation = requireFinishedSpan(exported, "API LLM Call");
+      const input = JSON.parse(
+        String(
+          generation.attributes[LangfuseOtelSpanAttributes.OBSERVATION_INPUT],
+        ),
+      ) as { content: string };
+      const output = JSON.parse(
+        String(
+          generation.attributes[LangfuseOtelSpanAttributes.OBSERVATION_OUTPUT],
+        ),
+      ) as { content: string };
+      expect(input.content).toHaveLength(PI_LANGFUSE_MAX_CAPTURED_CHARS);
+      expect(output.content).toHaveLength(PI_LANGFUSE_MAX_CAPTURED_CHARS);
+      expect(input.content).not.toContain("pk-lf-xxxx");
+      expect(output.content).not.toContain("sk-lf-yyyy");
     }
   });
 });

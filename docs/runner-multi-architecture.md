@@ -94,11 +94,26 @@ binary directly from the trusted R2 cache. GitHub cache metadata is a lookup
 index, not a second source of provenance validation for R2 objects. Cached
 binaries are not re-uploaded as a combined GitHub artifact.
 
-Targets without an available cache reference use the normal compile job and
-compiled GitHub artifact. After prepare selects a cache hit, its download is
-required: an unavailable object or failed download fails the image-build job.
-Compilation stays in the existing compile job. Publishing freshly compiled
-binaries to R2 remains optional.
+Targets without an available cache reference use the normal compile job, which
+uploads the binary directly to the existing content-addressed R2 cache. Only
+after verifying that object does it publish a small R2 manifest scoped to the
+repository, workflow run, target, and input digest. Image-build and cache-index
+jobs download the fresh binary from R2; neither transfers binary payloads through
+GitHub artifacts or uploads the binary again. The cache-index job retains the
+existing shadow comparison and optional small GitHub manifest publication.
+
+Fresh publication and download are required: missing configuration, storage
+failures, invalid manifests, or binary hash/size mismatches fail the job. Cache-hit
+downloads remain required as well. Compilation stays in the existing compile
+job; only its transfer step receives R2 credentials.
+
+Fresh reference keys omit the attempt number so a consumer-only rerun can read
+an earlier successful producer. The manifest retains the producer attempt.
+References live under `runner-binaries/transports/` and contain only metadata;
+binary objects keep their existing keys and cache schema. This workflow does not
+delete the small run references or configure bucket expiration. Cache-Control is
+not an object-retention policy. Small image manifests also continue to use GitHub
+artifacts; this is a binary-transport change, not complete artifact-service removal.
 
 Crates host-bound tests resolve the same sanitized matrix and run architecture
 specific checks, including NBD COW tests, on matching metal. Jobs that need an

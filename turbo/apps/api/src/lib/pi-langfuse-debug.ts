@@ -92,8 +92,6 @@ export function piLangfuseDebugPlatformEnvironment(args: {
   return {
     [PI_LANGFUSE_DEBUG_ENABLED_ENV]: "true",
     [LANGFUSE_TRACING_ENABLED_ENV]: "true",
-    [LANGFUSE_PUBLIC_KEY_ENV]: args.config.publicKey,
-    [LANGFUSE_SECRET_KEY_ENV]: args.config.secretKey,
     [LANGFUSE_BASE_URL_ENV]: args.config.baseUrl,
     [LANGFUSE_TRACING_ENVIRONMENT_ENV]: DEBUG_TRACING_ENVIRONMENT,
     [LANGFUSE_MEDIA_UPLOAD_ENABLED_ENV]: "false",
@@ -102,13 +100,28 @@ export function piLangfuseDebugPlatformEnvironment(args: {
   };
 }
 
-/** Keep injected credentials in the existing masking and encrypted-secret set. */
+/** Keep injected credentials in the encrypted claim-time secret set. */
 export function piLangfuseDebugSecretEnvironment(
   config: PiLangfuseServerConfig,
 ): Readonly<Record<string, string>> {
   return {
     [LANGFUSE_PUBLIC_KEY_ENV]: config.publicKey,
     [LANGFUSE_SECRET_KEY_ENV]: config.secretKey,
+  };
+}
+
+/** Select only a complete Langfuse credential pair at a trusted boundary. */
+export function piLangfuseDebugCredentialsFromEnvironment(
+  environment: Readonly<Record<string, string>>,
+): Readonly<Record<string, string>> | undefined {
+  const publicKey = environment[LANGFUSE_PUBLIC_KEY_ENV]?.trim();
+  const secretKey = environment[LANGFUSE_SECRET_KEY_ENV]?.trim();
+  if (!publicKey || !secretKey) {
+    return undefined;
+  }
+  return {
+    [LANGFUSE_PUBLIC_KEY_ENV]: publicKey,
+    [LANGFUSE_SECRET_KEY_ENV]: secretKey,
   };
 }
 

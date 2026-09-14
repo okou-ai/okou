@@ -1,3 +1,10 @@
+import { piMemoryStage1Selections } from "@okouai/db/schema/pi-memory-stage1-schedule";
+import {
+  consumePiMemoryStage1Days,
+  validatePiMemoryStage1Selection,
+  piMemoryStage1UtcDay,
+  type PiMemoryStage1Selection,
+} from "./pi-memory-stage1-schedule.service";
 import { createHash, randomUUID } from "node:crypto";
 
 import {
@@ -10,13 +17,12 @@ import { getOpenRouterBaseUrl } from "@okouai/api-contracts/contracts/openrouter
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { blobs } from "@okouai/db/schema/blob";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
-import { conversations } from "@okouai/db/schema/conversation";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storages } from "@okouai/db/schema/storage";
 import {
+  PI_MEMORY_STAGE1_MODEL,
   PiMemoryStage1ProviderError,
   projectPiMemoryStage1History,
   redactPiMemoryStage1Secrets,
@@ -26,7 +32,16 @@ import {
   type PiMemoryStage1ProviderResult,
 } from "@okouai/pi-agent-runtime/api";
 import { command } from "ccstate";
-import { and, asc, eq, inArray, lte, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  getTableColumns,
+  gt,
+  inArray,
+  lte,
+  or,
+} from "drizzle-orm";
 import { z } from "zod";
 
 import { env } from "../../lib/env";
@@ -59,14 +74,12 @@ import {
 
 const log = logger("PiMemoryStage1Worker");
 
-const PI_MEMORY_STAGE1_MODEL = "gpt-5.6-terra";
 const PI_MEMORY_STAGE1_SCAN_LIMIT = 5000;
 const PI_MEMORY_STAGE1_CLAIM_LIMIT = 8;
 const PI_MEMORY_STAGE1_PROVIDER_CONCURRENCY = 8;
 const PI_MEMORY_STAGE1_LEASE_MS = 60 * 60 * 1000;
-const PI_MEMORY_STAGE1_MAX_SOURCE_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const PI_MEMORY_STAGE1_MAX_ATTEMPTS = 5;
-const PI_MEMORY_STAGE1_MAX_RETRY_DELAY_MS = 60 * 60 * 1000;
+const PI_MEMORY_STAGE1_RETRY_DELAY_MS = 60 * 60 * 1000;
 const PI_MEMORY_STAGE1_FALLBACK_TOKEN_LIMIT = 150_000;
 const PI_MEMORY_STAGE1_PROJECTED_HISTORY_MAX_BYTES = 8 * 1024 * 1024;
 
@@ -105,10 +118,12 @@ interface ClaimedPiMemoryStage1Work {
   readonly blobEncodedSize: number;
   readonly leaseToken: string;
   readonly attemptCount: number;
+  readonly selection: PiMemoryStage1Selection;
 }
 
 interface ClaimResult {
   readonly scanned: number;
+  readonly staleDiscarded: number;
   readonly sourceActive: number;
   readonly sourceExpired: number;
   readonly terminalFailure: number;
@@ -162,6 +177,16 @@ class RetryableWorkError extends Error {
   }
 }
 
+/** Terminal, non-retryable: the owner has PiMemory off, so the work is moot. */
+class DisabledWorkError extends Error {
+  readonly errorClass = "pi_memory_disabled";
+
+  constructor() {
+    super("Pi memory is disabled for the Stage 1 work owner");
+    this.name = "DisabledWorkError";
+  }
+}
+
 function scopeCondition(scope: PiMemoryStage1Scope | undefined) {
   return scope
     ? and(
@@ -191,27 +216,6 @@ function dueCondition(currentTime: Date) {
       lte(piMemoryStage1Candidates.leaseExpiresAt, currentTime),
     ),
   );
-}
-
-async function sourceSessionIsActive(
-  db: Db,
-  source: Pick<ClaimedPiMemoryStage1Work, "orgId" | "piSessionId" | "userId">,
-): Promise<boolean> {
-  const [active] = await db
-    .select({ runId: agentRuns.id })
-    .from(conversations)
-    .innerJoin(agentRuns, eq(agentRuns.id, conversations.runId))
-    .where(
-      and(
-        eq(conversations.cliAgentType, "pi"),
-        eq(conversations.cliAgentSessionId, source.piSessionId),
-        eq(agentRuns.orgId, source.orgId),
-        eq(agentRuns.userId, source.userId),
-        inArray(agentRuns.status, ["pending", "running"]),
-      ),
-    )
-    .limit(1);
-  return active !== undefined;
 }
 
 async function markLockedTerminal(
@@ -255,6 +259,7 @@ async function selectDueCandidateRows(
 ) {
   return await db
     .select({
+      selection: getTableColumns(piMemoryStage1Selections),
       memoryStorageId: piMemoryStage1Candidates.memoryStorageId,
       piSessionId: piMemoryStage1Candidates.piSessionId,
       orgId: piMemoryStage1Candidates.orgId,
@@ -268,6 +273,37 @@ async function selectDueCandidateRows(
       blobEncodedSize: blobs.encodedSize,
     })
     .from(piMemoryStage1Candidates)
+    .innerJoin(
+      piMemoryStage1Selections,
+      and(
+        eq(
+          piMemoryStage1Selections.memoryStorageId,
+          piMemoryStage1Candidates.memoryStorageId,
+        ),
+        eq(
+          piMemoryStage1Selections.piSessionId,
+          piMemoryStage1Candidates.piSessionId,
+        ),
+        eq(piMemoryStage1Selections.orgId, piMemoryStage1Candidates.orgId),
+        eq(piMemoryStage1Selections.userId, piMemoryStage1Candidates.userId),
+        eq(
+          piMemoryStage1Selections.sourceRunId,
+          piMemoryStage1Candidates.sourceRunId,
+        ),
+        eq(
+          piMemoryStage1Selections.sourceHistoryHash,
+          piMemoryStage1Candidates.sourceHistoryHash,
+        ),
+        eq(
+          piMemoryStage1Selections.sourceCompletedAt,
+          piMemoryStage1Candidates.sourceCompletedAt,
+        ),
+        eq(
+          piMemoryStage1Selections.day,
+          piMemoryStage1UtcDay(input.currentTime),
+        ),
+      ),
+    )
     .innerJoin(
       storages,
       and(
@@ -287,42 +323,68 @@ async function selectDueCandidateRows(
       asc(piMemoryStage1Candidates.memoryStorageId),
       asc(piMemoryStage1Candidates.piSessionId),
     )
-    .limit(input.scope?.piSessionId ? 1 : PI_MEMORY_STAGE1_SCAN_LIMIT)
-    .for("update", {
-      of: piMemoryStage1Candidates,
-      skipLocked: true,
-    });
+    .limit(input.scope?.piSessionId ? 1 : PI_MEMORY_STAGE1_SCAN_LIMIT);
 }
 
-async function claimPiMemoryStage1Work(
+export async function claimPiMemoryStage1Work(
   db: Db,
   input: PiMemoryStage1WorkerInput,
 ): Promise<ClaimResult> {
-  return await db.transaction(async (tx) => {
-    const rows = await selectDueCandidateRows(tx, input);
-
-    let sourceActive = 0;
-    let sourceExpired = 0;
-    let terminalFailure = 0;
-    const claimed: ClaimedPiMemoryStage1Work[] = [];
-    const oldestAllowed = new Date(
-      input.currentTime.getTime() - PI_MEMORY_STAGE1_MAX_SOURCE_AGE_MS,
-    );
-    for (const row of rows) {
-      if (claimed.length >= PI_MEMORY_STAGE1_CLAIM_LIMIT) {
-        break;
+  await consumePiMemoryStage1Days(
+    db,
+    input.currentTime,
+    input.scope?.memoryStorageIds,
+  );
+  const rows = await selectDueCandidateRows(db, input);
+  let staleDiscarded = 0;
+  let terminalFailure = 0;
+  const claimed: ClaimedPiMemoryStage1Work[] = [];
+  for (const row of rows) {
+    if (claimed.length >= PI_MEMORY_STAGE1_CLAIM_LIMIT) {
+      break;
+    }
+    await db.transaction(async (tx) => {
+      if (
+        !(await validatePiMemoryStage1Selection(
+          tx,
+          row.selection,
+          input.currentTime,
+        ))
+      ) {
+        staleDiscarded += 1;
+        log.debug("Pi memory Stage 1 claim skipped", {
+          userId: row.userId,
+          day: row.selection.day,
+          chatThreadId: row.selection.chatThreadId,
+          outcome: "stale_selection",
+        });
+        return;
       }
-      if (row.sourceCompletedAt < oldestAllowed) {
-        if (
-          await markLockedTerminal(tx, row, input.currentTime, "source_expired")
-        ) {
-          sourceExpired += 1;
-          terminalFailure += 1;
-        }
-        continue;
+      const [current] = await tx
+        .select()
+        .from(piMemoryStage1Candidates)
+        .where(
+          and(
+            eq(piMemoryStage1Candidates.memoryStorageId, row.memoryStorageId),
+            eq(piMemoryStage1Candidates.piSessionId, row.piSessionId),
+            eq(piMemoryStage1Candidates.sourceRunId, row.selection.sourceRunId),
+            eq(
+              piMemoryStage1Candidates.sourceHistoryHash,
+              row.sourceHistoryHash,
+            ),
+            eq(
+              piMemoryStage1Candidates.sourceCompletedAt,
+              row.selection.sourceCompletedAt,
+            ),
+            dueCondition(input.currentTime),
+          ),
+        )
+        .for("update", { skipLocked: true });
+      if (!current) {
+        return;
       }
       const reclaimedFailureCount =
-        row.status === "leased" ? row.retryCount + 1 : row.retryCount;
+        current.retryCount + (current.status === "leased" ? 1 : 0);
       if (reclaimedFailureCount >= PI_MEMORY_STAGE1_MAX_ATTEMPTS) {
         if (
           await markLockedTerminal(
@@ -334,15 +396,10 @@ async function claimPiMemoryStage1Work(
         ) {
           terminalFailure += 1;
         }
-        continue;
+        return;
       }
-      if (await sourceSessionIsActive(tx, row)) {
-        sourceActive += 1;
-        continue;
-      }
-
       const leaseToken = randomUUID();
-      const [updated] = await tx
+      await tx
         .update(piMemoryStage1Candidates)
         .set({
           status: "leased",
@@ -359,39 +416,23 @@ async function claimPiMemoryStage1Work(
           and(
             eq(piMemoryStage1Candidates.memoryStorageId, row.memoryStorageId),
             eq(piMemoryStage1Candidates.piSessionId, row.piSessionId),
-            eq(
-              piMemoryStage1Candidates.sourceHistoryHash,
-              row.sourceHistoryHash,
-            ),
           ),
-        )
-        .returning({
-          memoryStorageId: piMemoryStage1Candidates.memoryStorageId,
-        });
-      if (updated) {
-        claimed.push({
-          memoryStorageId: row.memoryStorageId,
-          piSessionId: row.piSessionId,
-          orgId: row.orgId,
-          userId: row.userId,
-          sourceHistoryHash: row.sourceHistoryHash,
-          sourceCompletedAt: row.sourceCompletedAt,
-          blobEncoding: row.blobEncoding,
-          blobRawSize: row.blobRawSize,
-          blobEncodedSize: row.blobEncodedSize,
-          leaseToken,
-          attemptCount: reclaimedFailureCount + 1,
-        });
-      }
-    }
-    return {
-      scanned: rows.length,
-      sourceActive,
-      sourceExpired,
-      terminalFailure,
-      claimed,
-    };
-  });
+        );
+      claimed.push({
+        ...row,
+        leaseToken,
+        attemptCount: reclaimedFailureCount + 1,
+      });
+    });
+  }
+  return {
+    scanned: rows.length,
+    sourceActive: 0,
+    staleDiscarded,
+    sourceExpired: 0,
+    terminalFailure,
+    claimed,
+  };
 }
 
 function validatedBlobEncoding(
@@ -514,13 +555,6 @@ const loadAndProjectHistory$ = command(
   },
 );
 
-function retryDelay(attemptCount: number): number {
-  return Math.min(
-    PI_MEMORY_STAGE1_MAX_RETRY_DELAY_MS,
-    1000 * 2 ** Math.min(Math.max(attemptCount - 1, 0), 12),
-  );
-}
-
 async function commitWorkResult(
   db: Db,
   work: ClaimedPiMemoryStage1Work,
@@ -547,7 +581,7 @@ async function commitWorkResult(
             kind: result.kind,
             errorClass: result.errorClass,
             retryAt: new Date(
-              committedAt.getTime() + retryDelay(work.attemptCount),
+              committedAt.getTime() + PI_MEMORY_STAGE1_RETRY_DELAY_MS,
             ),
           }
       : result;
@@ -561,6 +595,7 @@ async function commitWorkResult(
       leaseToken: work.leaseToken,
       committedAt,
       result: candidateResult,
+      selectedSource: work.selection,
     });
   });
 }
@@ -625,6 +660,9 @@ function logOutcome(args: {
     piSessionId: args.work.piSessionId,
     sourceHistoryHash: args.work.sourceHistoryHash,
     attemptCount: args.work.attemptCount,
+    day: args.work.selection.day,
+    chatThreadId: args.work.selection.chatThreadId,
+    sourceRunId: args.work.selection.sourceRunId,
     outcome: args.outcome,
     durationMs: Math.max(0, Math.round(args.durationMs)),
     inputTokens: args.inputTokens ?? 0,
@@ -639,9 +677,12 @@ async function failWork(
   error: unknown,
   startedAt: number,
 ): Promise<WorkOutcome> {
-  const permanent = error instanceof PermanentSourceError;
+  const permanent =
+    error instanceof PermanentSourceError || error instanceof DisabledWorkError;
   const errorClass =
-    error instanceof PermanentSourceError || error instanceof RetryableWorkError
+    error instanceof PermanentSourceError ||
+    error instanceof RetryableWorkError ||
+    error instanceof DisabledWorkError
       ? error.errorClass
       : error instanceof DOMException && error.name === "AbortError"
         ? "abort"
@@ -714,7 +755,6 @@ function providerConfig(args: {
     model: args.route.upstreamModel,
     dialect: "openai-responses" as const,
     transport: "sse" as const,
-    thinkingLevel: "max" as const,
   };
 }
 
@@ -774,6 +814,32 @@ async function extractPreparedWork(
   );
 }
 
+async function partitionWorkByPiMemorySwitch(
+  db: Db,
+  claimed: readonly ClaimedPiMemoryStage1Work[],
+  signal: AbortSignal,
+): Promise<{
+  readonly enabled: readonly ClaimedPiMemoryStage1Work[];
+  readonly disabled: readonly ClaimedPiMemoryStage1Work[];
+}> {
+  const enabled: ClaimedPiMemoryStage1Work[] = [];
+  const disabled: ClaimedPiMemoryStage1Work[] = [];
+  for (const work of claimed) {
+    // Each candidate's own owner decides, never the cron caller.
+    const context = await loadUserFeatureSwitchContext(
+      db,
+      work.orgId,
+      work.userId,
+    );
+    signal.throwIfAborted();
+    (isFeatureEnabled(FeatureSwitchKey.PiMemory, context)
+      ? enabled
+      : disabled
+    ).push(work);
+  }
+  return { enabled, disabled };
+}
+
 async function processPreparedWork(
   args: {
     readonly db: Db;
@@ -782,6 +848,46 @@ async function processPreparedWork(
   },
   signal: AbortSignal,
 ): Promise<WorkOutcome> {
+  const currentTime = nowDate();
+  const valid = await args.db.transaction(async (tx) => {
+    const work = args.prepared.work;
+    if (
+      !(await validatePiMemoryStage1Selection(tx, work.selection, currentTime))
+    ) {
+      return false;
+    }
+    const [fenced] = await tx
+      .select({ token: piMemoryStage1Candidates.leaseToken })
+      .from(piMemoryStage1Candidates)
+      .where(
+        and(
+          eq(piMemoryStage1Candidates.memoryStorageId, work.memoryStorageId),
+          eq(piMemoryStage1Candidates.piSessionId, work.piSessionId),
+          eq(
+            piMemoryStage1Candidates.sourceHistoryHash,
+            work.sourceHistoryHash,
+          ),
+          eq(piMemoryStage1Candidates.sourceRunId, work.selection.sourceRunId),
+          eq(piMemoryStage1Candidates.status, "leased"),
+          eq(piMemoryStage1Candidates.leaseToken, work.leaseToken),
+          gt(piMemoryStage1Candidates.leaseExpiresAt, nowDate()),
+        ),
+      );
+    return !!fenced;
+  });
+  signal.throwIfAborted();
+  if (
+    !valid ||
+    args.prepared.work.selection.day !== piMemoryStage1UtcDay(nowDate())
+  ) {
+    logOutcome({
+      work: args.prepared.work,
+      outcome: "stale_discarded",
+      durationMs: 0,
+      errorClass: "stale_selection",
+    });
+    return { kind: "stale_discarded" };
+  }
   const startedAt = performance.now();
   const requestId = randomUUID();
   const provider = await settleIncludingAbort(
@@ -922,10 +1028,47 @@ export const executePiMemoryStage1Work$ = command(
       terminalFailure: claim.terminalFailure,
       sourceExpired: claim.sourceExpired,
       sourceActive: claim.sourceActive,
-      staleDiscarded: 0,
+      staleDiscarded: claim.staleDiscarded,
     };
     if (claim.claimed.length === 0) {
       return logBatchResult({ ...base, claimed: 0 }, startedAt);
+    }
+
+    // Switch-off work settles terminal before any provider route, download,
+    // or provider call, so it consumes no attempt and is never re-leased.
+    const gated = await settleIncludingAbort(
+      partitionWorkByPiMemorySwitch(db, claim.claimed, signal),
+    );
+    if (signal.aborted) {
+      await retryOwnedWorkAfterAbort(db, owned, signal.reason);
+      signal.throwIfAborted();
+    }
+    if (!gated.ok) {
+      const outcomes = await Promise.all(
+        claim.claimed.map(async (work) => {
+          return await failWork(db, work, gated.error, performance.now());
+        }),
+      );
+      signal.throwIfAborted();
+      owned.clear();
+      return logBatchResult(
+        countOutcomes(base, outcomes, claim.claimed.length),
+        startedAt,
+      );
+    }
+    const outcomes: WorkOutcome[] = [];
+    for (const work of gated.value.disabled) {
+      outcomes.push(
+        await failWork(db, work, new DisabledWorkError(), performance.now()),
+      );
+      owned.delete(work);
+    }
+    const enabledWork = gated.value.enabled;
+    if (enabledWork.length === 0) {
+      return logBatchResult(
+        countOutcomes(base, outcomes, claim.claimed.length),
+        startedAt,
+      );
     }
 
     const resolvedModel = await settleIncludingAbort(
@@ -936,15 +1079,17 @@ export const executePiMemoryStage1Work$ = command(
       signal.throwIfAborted();
     }
     if (!resolvedModel.ok) {
-      const outcomes = await Promise.all(
-        claim.claimed.map(async (work) => {
-          return await failWork(
-            db,
-            work,
-            resolvedModel.error,
-            performance.now(),
-          );
-        }),
+      outcomes.push(
+        ...(await Promise.all(
+          enabledWork.map(async (work) => {
+            return await failWork(
+              db,
+              work,
+              resolvedModel.error,
+              performance.now(),
+            );
+          }),
+        )),
       );
       signal.throwIfAborted();
       owned.clear();
@@ -957,11 +1102,10 @@ export const executePiMemoryStage1Work$ = command(
 
     const contextWindow = resolvePiMemoryStage1ContextWindow(model);
     const prepared: PreparedWork[] = [];
-    const outcomes: WorkOutcome[] = [];
     // Deliberately serial: at most one encoded + decoded 128 MiB history is
     // resident. Provider concurrency is independent and begins only after raw
     // buffers have fallen out of scope.
-    for (const work of claim.claimed) {
+    for (const work of enabledWork) {
       const workStartedAt = performance.now();
       const loaded = await settleIncludingAbort(
         set(loadAndProjectHistory$, { work, contextWindow }, signal),

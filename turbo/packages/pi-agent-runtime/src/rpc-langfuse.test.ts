@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import { installLangfuseRuntimeEnvironment } from "./rpc";
@@ -16,6 +18,11 @@ const MANAGED_ENVIRONMENT = [
   "LANGFUSE_PI_PARENT_SESSION_ID",
   "LANGFUSE_PI_PARENT_DEPTH",
   "PI_LANGFUSE_CONTINUATION",
+  "LANGFUSE_PUBLIC_KEY",
+  "LANGFUSE_SECRET_KEY",
+  "LANGFUSE_BASE_URL",
+  "LANGFUSE_USER_ID",
+  "LANGFUSE_TRACING_ENVIRONMENT",
 ] as const;
 
 function withRestoredEnvironment(exercise: () => void): void {
@@ -86,6 +93,39 @@ describe("Pi Langfuse RPC environment boundary", () => {
 
       restore();
       expect(process.env.LANGFUSE_PI_PARENT_TRACE_ID).toBe("a".repeat(32));
+    });
+  });
+
+  it("installs private credentials after exec without exposing them through procfs", () => {
+    withRestoredEnvironment(() => {
+      process.env.OKOU_PI_LANGFUSE_DEBUG_ENABLED = "true";
+      const publicKey = "pk-lf-runtime-only-pr33756";
+      const secretKey = "sk-lf-runtime-only-pr33756";
+      const previousPublicKey = process.env.LANGFUSE_PUBLIC_KEY;
+      const previousSecretKey = process.env.LANGFUSE_SECRET_KEY;
+
+      const restore = installLangfuseRuntimeEnvironment(
+        PARENT,
+        "pending-tool-continuation",
+        {
+          publicKey,
+          secretKey,
+          baseUrl: "https://us.cloud.langfuse.com",
+          userId: "anonymous-user",
+          environment: "internal-debug",
+        },
+      );
+      expect(process.env.LANGFUSE_PUBLIC_KEY).toBe(publicKey);
+      expect(process.env.LANGFUSE_SECRET_KEY).toBe(secretKey);
+      if (process.platform === "linux") {
+        const initialEnvironment = readFileSync("/proc/self/environ", "utf8");
+        expect(initialEnvironment).not.toContain(publicKey);
+        expect(initialEnvironment).not.toContain(secretKey);
+      }
+
+      restore();
+      expect(process.env.LANGFUSE_PUBLIC_KEY).toBe(previousPublicKey);
+      expect(process.env.LANGFUSE_SECRET_KEY).toBe(previousSecretKey);
     });
   });
 

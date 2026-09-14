@@ -1,5 +1,49 @@
 # Changelog
 
+## [8.662.2](https://github.com/vm0-ai/vm0/compare/core-v8.662.1...core-v8.662.2) (2026-09-14)
+
+
+### Refactoring
+
+* remove agentMessageMath feature switch ([#34051](https://github.com/vm0-ai/vm0/issues/34051)) ([66cd8df](https://github.com/vm0-ai/vm0/commit/66cd8df66d3e3231a71bebb00fe8e21fb8b2c1ba))
+* remove composer workflow fuzzy search feature switch ([#34033](https://github.com/vm0-ai/vm0/issues/34033)) ([b812218](https://github.com/vm0-ai/vm0/commit/b8122187980a96ad51e376bca047f5e49479035a))
+* remove slack read feature switch ([#34060](https://github.com/vm0-ai/vm0/issues/34060)) ([b2337d3](https://github.com/vm0-ai/vm0/commit/b2337d3807cf8b85ae86f0e3de2ce6520bea5b22))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.437.0
+
+## [8.662.1](https://github.com/vm0-ai/vm0/compare/core-v8.662.0...core-v8.662.1) (2026-09-14)
+
+
+### Bug Fixes
+
+* **app:** scope video controls to creative video drafts ([#33934](https://github.com/vm0-ai/vm0/issues/33934)) ([dc5ccdf](https://github.com/vm0-ai/vm0/commit/dc5ccdf653935b778d77fe120d62f3e20cc2b4e5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.436.0
+
+## [8.662.0](https://github.com/vm0-ai/vm0/compare/core-v8.661.1...core-v8.662.0) (2026-09-14)
+
+
+### Features
+
+* **pi-memory:** add the pimemory feature switch gating admission, workers and recall ([#33927](https://github.com/vm0-ai/vm0/issues/33927)) ([121fb21](https://github.com/vm0-ai/vm0/commit/121fb21295cc188a89cd0534b66c34f851a5b885))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.435.1
+
 ## [8.661.1](https://github.com/vm0-ai/vm0/compare/core-v8.661.0...core-v8.661.1) (2026-09-14)
 
 

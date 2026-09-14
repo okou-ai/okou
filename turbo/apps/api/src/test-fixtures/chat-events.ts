@@ -1817,6 +1817,7 @@ export async function holdOrgAdmissionLockFixture(args: {
   readonly release: () => void;
   readonly done: Promise<void>;
   readonly waiterCount: () => Promise<number>;
+  readonly cancelBlockedQueries: () => Promise<number>;
 }> {
   const started = createDeferredPromise<number>(args.signal);
   const released = createDeferredPromise<void>(args.signal);
@@ -1865,6 +1866,21 @@ export async function holdOrgAdmissionLockFixture(args: {
         waiterCountRowSchema,
       );
       return rows[0]?.waiterCount ?? 0;
+    },
+    // Force a real admission rollback, scoped to this fixture's held lock.
+    cancelBlockedQueries: async () => {
+      const rows = await executeRawRows(
+        db(),
+        sql`
+          SELECT pg_cancel_backend(activity.pid) AS cancelled
+          FROM pg_stat_activity AS activity
+          WHERE ${holderPid} = ANY(pg_blocking_pids(activity.pid))
+        `,
+        z.object({ cancelled: z.boolean() }),
+      );
+      return rows.filter((row) => {
+        return row.cancelled;
+      }).length;
     },
   };
 }

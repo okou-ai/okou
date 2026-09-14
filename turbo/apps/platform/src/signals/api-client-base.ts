@@ -23,6 +23,7 @@ interface AuthedClientOptions {
   readonly baseUrl: string;
   readonly clientVersion: string;
   readonly getToken: (signal?: AbortSignal) => Promise<string | null>;
+  readonly getTokenGuard?: () => () => void;
   readonly getVercelProtectionBypass: () => string | undefined;
   readonly onForceUpgrade?: () => void;
   readonly validateResponse?: boolean;
@@ -144,7 +145,10 @@ export function createAuthedContractClient<T extends AppRouter>(
       const response =
         bootstrapResponse ??
         (await (async () => {
+          const validateToken = options.getTokenGuard?.();
           const token = await options.getToken(signal);
+          signal?.throwIfAborted();
+          validateToken?.();
           const measurement = startClientTelemetryMeasurement();
           const requestTelemetry = {
             event_name: "http.request",

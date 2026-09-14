@@ -1,7 +1,9 @@
 """Decode snapshot aggregates and retain only bounded PostgreSQL diagnostics."""
 
+import datetime as dt
 import json
 import re
+import subprocess
 
 
 class ScanReportError(Exception):
@@ -24,19 +26,53 @@ def counter(record, field):
 
 
 def scan_records(result, database_hash):
+    timed_out = isinstance(result, subprocess.TimeoutExpired)
+    output = result.stdout or ""
+    if timed_out:
+        # A killed process can end halfway through JSON or a UTF-8 character.
+        # Only complete lines may contribute diagnostic progress, never coverage.
+        newline = b"\n" if isinstance(output, bytes) else "\n"
+        output = output[: output.rfind(newline) + 1]
+    if isinstance(output, bytes):
+        output = output.decode("utf-8")
     safe, headers, last_scan = [], [], None
+    last_batch, last_chunk, completed_chunks = None, None, 0
     plans = {}
     row_fields = {"rows", "rowsWithEnvelopeMarker", "rowsWithSourceReference"}
     fields = {
         "database": {"largeObjects", "foreignTables", "plannedTables"},
         "binary": {"relationOid", "columnNumber", "nonNullValues"},
     }
-    for line in result.stdout.splitlines():
+    for line in output.splitlines():
         if not line:
             continue
         record = json.loads(line)
         require(isinstance(record, dict), "invalid_scan_record")
         kind = record.get("kind")
+        if kind == "batch-start":
+            oid = counter(record, "relationOid")
+            first, end = counter(record, "firstBlock"), counter(record, "endBlock")
+            require(
+                oid in plans
+                and first == plans[oid]["nextBlock"]
+                and first % (128 * 64) == 0
+                and end == min(first + 128 * 64, plans[oid]["blocks"]),
+                "invalid_scan_batch",
+            )
+            started = record.get("startedAt")
+            require(isinstance(started, str), "invalid_batch_timestamp")
+            try:
+                moment = dt.datetime.fromisoformat(started)
+            except ValueError:
+                raise ScanReportError("invalid_batch_timestamp") from None
+            require(moment.tzinfo is not None, "invalid_batch_timestamp")
+            last_batch = {
+                "relationOid": oid,
+                "firstBlock": first,
+                "endBlock": end,
+                "startedAt": moment.isoformat(),
+            }
+            continue
         if kind == "table-plan":
             oid, blocks = counter(record, "relationOid"), counter(record, "blocks")
             require(oid not in plans and blocks > 0, "invalid_table_plan")
@@ -73,6 +109,13 @@ def scan_records(result, database_hash):
             for field, value in counts.items():
                 plan["aggregate"][field] += value
             plan["nextBlock"] = end
+            completed_chunks += 1
+            last_chunk = {
+                "relationOid": oid,
+                "firstBlock": first,
+                "endBlock": end,
+                "rows": counts["rows"],
+            }
             if end == plan["blocks"]:
                 safe.append(plan["aggregate"])
             continue
@@ -98,18 +141,30 @@ def scan_records(result, database_hash):
         for field in fields[kind]:
             item[field] = counter(record, field)
         safe.append(item)
-    if result.returncode != 0:
+    if timed_out or result.returncode != 0:
         # VERBOSITY=sqlstate produces a code-only ERROR line. Arbitrary stderr,
         # including connection errors, provider messages and SQL, is discarded.
-        states = re.findall(r"ERROR:\s+([0-9A-Z]{5})\s*$", result.stderr, re.MULTILINE)
+        stderr = result.stderr or ""
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        states = re.findall(r"ERROR:\s+([0-9A-Z]{5})\s*$", stderr, re.MULTILINE)
         raise ScanReportError(
-            "snapshot_database_scan_failed",
+            "snapshot_database_scan_process_timeout"
+            if timed_out
+            else "snapshot_database_scan_failed",
             {
                 "databaseNameSha256": database_hash,
-                "psqlExitCode": result.returncode,
+                "psqlExitCode": None if timed_out else result.returncode,
                 "sqlState": states[0] if len(states) == 1 else None,
                 "completedTables": sum(r["kind"] == "table" for r in safe),
+                "plannedTables": headers[0]["plannedTables"]
+                if len(headers) == 1
+                else None,
+                "completedChunks": completed_chunks,
+                "lastCompletedChunk": last_chunk,
+                "lastStartedBatch": last_batch,
                 "lastStartedScan": last_scan,
+                **({"processTimeoutSeconds": result.timeout} if timed_out else {}),
             },
         )
     require(

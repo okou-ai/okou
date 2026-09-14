@@ -353,6 +353,7 @@
       "feishu": "Feishu",
       "github": "GitHub",
       "goal": "Ziel",
+      "lark": "Lark",
       "slack": "Slack",
       "teams": "Teams",
       "telegram": "Telegram",
@@ -1008,7 +1009,12 @@
     "toasts": {
       "copyLinkFailed": "Link konnte nicht kopiert werden",
       "downloadFailed": "Der Download ist fehlgeschlagen",
-      "linkCopied": "Link kopiert"
+      "linkCopied": "Link kopiert",
+      "sharing": "Wird geteilt…"
+    },
+    "viewer": {
+      "continuePrompt": "Hilf mir, mit diesem Artefakt zu arbeiten: {{url}}",
+      "continueWithBrand": "Mit {{brandName}} fortfahren"
     }
   },
   "auth": {
@@ -1744,15 +1750,10 @@
       "selectModel": "Modell auswählen",
       "slashPanel": {
         "browseAll": "Alle Vorlagen durchsuchen",
-        "illustrationDescription": "Ein einzelnes Bild im gewählten Stil",
         "make": "Erstellen",
-        "slidesDescription": "Eine HTML-Präsentation, die du direkt zeigen kannst",
         "templateCount_one": "{{count}} Vorlage",
         "templateCount_other": "{{count}} Vorlagen",
-        "useTemplate": "Vorlage {{title}} verwenden",
-        "videoDescription": "Text zu Video, mit den Parametern des gewählten Modells",
-        "websiteDescription": "Eine statische Website, die du veröffentlichen kannst",
-        "workflowDescription": "Ein gespeicherter Workflow, den du im Composer starten kannst"
+        "useTemplate": "Vorlage {{title}} verwenden"
       },
       "temporarilySwitchTo": "Vorübergehend wechseln zu",
       "threadSuggestions": "Chat-Threads",
@@ -2000,9 +2001,11 @@
       "agentphone": "AgentPhone",
       "feishu": "Feishu",
       "github": "GitHub",
+      "lark": "Lark",
       "openChat": "Chat öffnen",
       "openFeishuChat": "Öffnen Sie den Original-Chat in Feishu",
       "openGithubMessage": "Ursprünglichen Issue oder Pull Request in GitHub öffnen",
+      "openLarkChat": "Öffnen Sie den Original-Chat in Lark",
       "openMessage": "Nachricht öffnen",
       "openSlackMessage": "Originalnachricht in Slack öffnen",
       "openTeamsMessage": "Originalnachricht in Microsoft Teams öffnen",
@@ -2798,6 +2801,11 @@
         "website": "Webseite",
         "workflow": "Workflow"
       },
+      "importedEmpty": "Noch keine hochgeladenen Vorlagen.",
+      "importedLoadFailed": "Hochgeladene Vorlagen konnten nicht geladen werden.",
+      "importedLoading": "Hochgeladene Vorlagen werden geladen…",
+      "importedUnavailable": "Hochgeladene Vorlagen sind vorübergehend nicht verfügbar.",
+      "previewRefreshFailed": "Vorlagenvorschauen konnten nicht aktualisiert werden.",
       "previewTemplate": "Vorschauvorlage {{title}}",
       "previewVideo": "Vorschau der Videovorlage {{title}}",
       "previewWebsite": "Vorschau der Website-Vorlage {{title}}",
@@ -2806,8 +2814,11 @@
       "removeVideo": "Videovorlage {{title}} entfernen",
       "removeWebsite": "Website-Vorlage {{title}} entfernen",
       "removeWorkflow": "Workflow-Vorlage {{title}} entfernen",
+      "retry": "Erneut versuchen",
       "videoOptions": "Videooptionen",
       "videoOptionsAudio": "Audio erzeugen",
+      "videoOptionsAudioOff": "Audio aus",
+      "videoOptionsAudioOn": "Audio an",
       "videoOptionsDuration": "Dauer",
       "videoOptionsLabel": "Videooptionen {{spec}}",
       "videoOptionsModel": "Modell",
@@ -3131,9 +3142,11 @@
       "scope": {
         "aria": "Connector-Bereich",
         "attention": "Benötigt Aufmerksamkeit",
+        "connected": "Verbunden",
+        "custom": "Eigene",
         "discover": "Entdecken",
-        "mine": "Deine Konnektoren",
-        "searchMine": "Ihre Integrationen finden"
+        "searchConnected": "Verbundene Integrationen finden",
+        "searchCustom": "Eigene Integrationen finden"
       },
       "search": "Finden Sie Integrationen",
       "shelf": {
@@ -3417,6 +3430,9 @@
         "wrongOrganizationDescription": "Ihre aktive Organisation stimmt nicht mit dieser GitHub-Installation überein. Wechseln Sie zur richtigen Organisation und öffnen Sie den Link erneut.",
         "wrongOrganizationTitle": "Organisation wechseln"
       },
+      "lark": {
+        "connectTitle": "Mit Lark verbinden"
+      },
       "slack": {
         "connectDescription": "Verknüpfen Sie Ihr Konto mit diesem Slack-Arbeitsbereich, damit Sie direkt über Slack mit Ihrem Agenten interagieren können.",
         "connectTitle": "Stellen Sie eine Verbindung zu Slack her",
@@ -3671,6 +3687,12 @@
           "verifying": "Überprüfen…",
           "waiting": "Warte auf Rückruf"
         },
+        "toasts": {
+          "botInstalled": "Der Feishu-Bot wurde erfolgreich installiert",
+          "botUninstalled": "Feishu-Bot deinstalliert",
+          "connected": "Feishu hat erfolgreich eine Verbindung hergestellt",
+          "disconnected": "Von Feishu getrennt"
+        },
         "tokens": {
           "descriptionAfter": ", wählen Sie die soeben erstellte App aus und rufen Sie deren Konfigurationsseite auf. Öffnen Sie Ereigniskonfiguration → Verschlüsselungsstrategie und kopieren Sie dann den Verschlüsselungsschlüssel und das Verifizierungstoken.",
           "descriptionBefore": "Öffnen Sie die ",
@@ -3682,6 +3704,136 @@
         "uninstallDescription": "Dadurch wird {{bot}} aus dem Arbeitsbereich deinstalliert und jedes {{brandName}}-Konto, das es verwendet, wird getrennt. Diese Aktion kann nicht rückgängig gemacht werden.",
         "uninstallTargetFallback": "dieser Bot",
         "uninstallTitle": "Feishu-Bot deinstallieren?"
+      },
+      "lark": {
+        "addBot": "Bot hinzufügen",
+        "addDialogDescription": "Erstellen Sie eine benutzerdefinierte Unternehmensanwendung, aktivieren Sie ihren Bot und führen Sie diese Schritte in der Lark-Entwicklerkonsole aus.",
+        "addDialogTitle": "Fügen Sie einen Lark-Bot hinzu",
+        "agentDescription": "Wählen Sie den Agenten aus, der an diesen Bot gesendete Nachrichten verarbeiten soll.",
+        "backToIntegrations": "Zurück zu Integrationen",
+        "botFallback": "Lark-Bot",
+        "botIconAlt": "{{bot}} Bot-Symbol",
+        "bots": "Lark-Bots",
+        "callbackStatusVerified": "Rückruf bestätigt",
+        "callbackStatusWaiting": "Warte auf Rückruf",
+        "configured": "Konfiguriert",
+        "copied": "{{label}} kopiert",
+        "copy": "Kopieren",
+        "create": {
+          "descriptionAfter": ", erstellen Sie eine benutzerdefinierte Unternehmensanwendung mit dem gewünschten Namen und Symbol und fügen Sie dann die Bot-Funktion hinzu.",
+          "descriptionBefore": "Im ",
+          "downloadIcon": "Laden Sie optional das {{brandName}}-Symbol herunter",
+          "iconAlt": "Optionales {{brandName}}-App-Symbol",
+          "iconHint": ", oder verwenden Sie ein beliebiges Symbol Ihrer Wahl.",
+          "iconTitle": "Optionales {{brandName}}-App-Symbol",
+          "imageAlt": "Feishu-App-Erstellungsformular mit hervorgehobenem App-Namen, Symbol und Schaltfläche „Erstellen“.",
+          "title": "Erstellen Sie eine benutzerdefinierte Unternehmensanwendung"
+        },
+        "credentials": {
+          "appId": "App-ID",
+          "appSecret": "App-Secret",
+          "description": "Kopieren Sie die App-ID und das App-Secret aus den Anmeldeinformationen und Basisinformationen.",
+          "imageAlt": "Ergebnis der Feishu-App-Erstellung mit der Position von App-ID und App-Secret",
+          "title": "Fügen Sie die App-Anmeldeinformationen hinzu"
+        },
+        "defaultAgent": "Standardagent",
+        "defaultAgentAria": "Standardagent für {{appId}}",
+        "developerConsole": "Lark-Entwicklerkonsole",
+        "dialogAdminRequired": "Ein Organisationsadministrator muss die App konfigurieren. Sie können Ihr eigenes Konto über die Lark-Bot-Liste verbinden, nachdem die Einrichtung abgeschlossen ist.",
+        "documentTitle": "Lark",
+        "emptyAdmin": "Fügen Sie eine benutzerdefinierte App hinzu, um Lark-Nachrichten an einen Agenten weiterzuleiten.",
+        "emptyMember": "Bitten Sie einen Organisationsadministrator, einen Lark-Bot hinzuzufügen.",
+        "emptyTitle": "Noch keine Lark-Bots",
+        "events": {
+          "callbackLabel": "Rückruf-URL",
+          "continue": "Fahren Sie fort, nachdem Lark die Rückruf-URL überprüft und das Nachrichtenereignis abonniert hat.",
+          "description": "Öffnen Sie die Ereigniskonfiguration. Wählen Sie im Abonnementmodus „Benachrichtigungen an den Server des Entwicklers senden“ aus. Öffnen Sie dann die Rückrufkonfiguration und fügen Sie die Rückruf-URL ein. Nachdem Lark es überprüft hat, fügen Sie das Ereignis „Nachricht v1 empfangen“ hinzu.",
+          "requestAlt": "Bildschirm „Feishu-Ereigniskonfiguration“ mit hervorgehobenem Feld „Anfrage-URL“.",
+          "requestLabel": "Fügen Sie die URL der Rückrufanforderung hinzu",
+          "subscriptionAlt": "Bildschirm „Feishu-Ereigniskonfiguration“ mit hervorgehobenem Bearbeitungssteuerelement für den Abonnementmodus",
+          "subscriptionLabel": "Wählen Sie den Ereignisabonnementmodus",
+          "title": "Konfigurieren Sie die Ereigniszustellung"
+        },
+        "faq": {
+          "approvalAnswer": "Wenn die Verfügbarkeit auf „Alle Mitglieder“ eingestellt ist, muss ein Lark-Administrator die Veröffentlichung genehmigen. Lark sendet die Genehmigungsanfrage in einer Direktnachricht an einen Administrator und die App bleibt ausstehend, bis ein Administrator die Überprüfung abschließt.",
+          "approvalQuestion": "Warum wartet die Veröffentlichung der App auf die Genehmigung?",
+          "challengeAnswer": "Dies bedeutet normalerweise, dass der im Schritt „Tokens“ gespeicherte Verschlüsselungsschlüssel oder Verifizierungstoken falsch ist. Kehren Sie zum Schritt „Tokens“ zurück, geben Sie beide Werte aus „Ereigniskonfiguration“ → „Verschlüsselungsstrategie“ erneut ein, speichern Sie sie und versuchen Sie es erneut mit der Anforderungs-URL.",
+          "challengeQuestion": "Warum zeigt Lark an, dass der Challenge-Code keine Antwort erhalten hat?",
+          "title": "Häufig gestellte Fragen zur Einrichtung"
+        },
+        "guideReference": "Die Screenshots zeigen die Feishu-Konsole als Referenz. Führe diese Schritte in der Lark Developer Console aus.",
+        "loadError": "Die Lark-Einstellungen konnten nicht geladen werden.",
+        "manage": "Verwalten",
+        "manageDialogTitle": "Verwalten Sie den Lark-Bot",
+        "moreOptions": "Weitere Optionen für {{bot}}",
+        "pageDescription": "Verwalten Sie das Bot-Routing für diesen Arbeitsbereich",
+        "permissions": {
+          "description": "Öffnen Sie in der Lark-Entwicklerkonsole „Berechtigungen & Bereiche“, wählen Sie „Stapelimport/-export > Importieren“ und fügen Sie das folgende JSON ein. Dadurch werden alle Bereiche des verwalteten Connectors unter der Benutzeridentität importiert. Dies sind die Mindestberechtigungen, die für die Funktion der Integration erforderlich sind.",
+          "hint": "Behalten Sie alle importierten Berechtigungen der Benutzeridentität bei. Erstellen und veröffentlichen Sie anschließend eine neue App-Version, damit der OAuth-Zustimmungsbildschirm sie gewähren kann. Wenn Sie eine Berechtigung entfernen, funktioniert die Integration nicht mehr, und möglicherweise ist die Genehmigung eines Lark-Administrators erforderlich.",
+          "label": "JSON für Benutzertoken-Bereiche",
+          "menuAlt": "Feishu-Seite „Berechtigungen & Bereiche“ mit hervorgehobenem Menü „Stapelimport/-export von Bereichen“",
+          "menuLabel": "Stapelimport/-export von Bereichen öffnen",
+          "reviewAlt": "Feishu-Dialog „Stapelimport/-export von Bereichen“ mit importiertem JSON und hervorgehobener Prüfschaltfläche",
+          "reviewLabel": "JSON einfügen und neue Bereiche prüfen",
+          "title": "Benutzertoken-Bereiche importieren"
+        },
+        "publish": {
+          "allMembersAlt": "Feishu-Verfügbarkeitseinstellungen mit ausgewählter Option „Alle Mitglieder“.",
+          "allMembersLabel": "Stellen Sie die App allen Mitgliedern zur Verfügung",
+          "createVersionAlt": "Feishu-Versionsverwaltungsseite mit hervorgehobener Schaltfläche „Version erstellen“.",
+          "createVersionLabel": "Erstellen Sie eine App-Version",
+          "description": "Erstellen und veröffentlichen Sie eine App-Version, bearbeiten Sie dann deren Verfügbarkeitseinstellungen und wählen Sie „Alle Mitglieder“ aus. Die App kann von anderen Mitgliedern Ihrer Organisation nur verwendet werden, nachdem Sie ihnen Zugriff gewährt haben.",
+          "editAvailabilityAlt": "Feishu-Versionsdetailseite mit hervorgehobener Aktion zum Bearbeiten der Verfügbarkeitseinstellungen",
+          "editAvailabilityLabel": "Bearbeiten Sie die Verfügbarkeitseinstellungen",
+          "title": "Veröffentlichen Sie die App"
+        },
+        "redirect": {
+          "descriptionAfter": ", öffnen Sie Entwicklungskonfiguration → Sicherheitseinstellungen. Fügen Sie die URL unten unter „Umleitungs-URLs“ hinzu, damit Mitglieder des Arbeitsbereichs ihr Lark-Konto mit {{brandName}} verbinden können.",
+          "descriptionBefore": "Im ",
+          "imageAlt": "Seite mit den Feishu-Sicherheitseinstellungen, die zeigt, wo eine OAuth-Umleitungs-URL hinzugefügt werden kann",
+          "label": "OAuth-Umleitungs-URL",
+          "title": "Konfigurieren Sie die OAuth-Umleitungs-URL"
+        },
+        "reviewGuide": "Review-Leitfaden",
+        "reviewGuideDescription": "Sehen Sie sich die abgeschlossenen Einrichtungsschritte für diesen Lark-Bot an.",
+        "reviewGuideTitle": "Lark-Review-Leitfaden",
+        "routeDescription": "Leiten Sie Lark-Nachrichten an Agenten weiter",
+        "selectAgent": "Wählen Sie einen Agenten aus",
+        "setupIncomplete": "Einrichtung unvollständig",
+        "steps": {
+          "back": "Zurück",
+          "checking": "Überprüfung…",
+          "close": "Schließen",
+          "create": "Erstellen",
+          "credentials": "Anmeldeinformationen",
+          "done": "Erledigt",
+          "events": "Veranstaltungen",
+          "next": "Nächste",
+          "permissions": "Bereiche",
+          "publish": "Veröffentlichen",
+          "redirect": "Umleiten",
+          "tokens": "Tokens",
+          "verify": "Überprüfen und fortfahren",
+          "verifying": "Überprüfen…",
+          "waiting": "Warte auf Rückruf"
+        },
+        "toasts": {
+          "botInstalled": "Der Lark-Bot wurde erfolgreich installiert",
+          "botUninstalled": "Lark-Bot deinstalliert",
+          "connected": "Lark hat erfolgreich eine Verbindung hergestellt",
+          "disconnected": "Von Lark getrennt"
+        },
+        "tokens": {
+          "descriptionAfter": ", wählen Sie die soeben erstellte App aus und rufen Sie deren Konfigurationsseite auf. Öffnen Sie Ereigniskonfiguration → Verschlüsselungsstrategie und kopieren Sie dann den Verschlüsselungsschlüssel und das Verifizierungstoken.",
+          "descriptionBefore": "Öffnen Sie die ",
+          "encryptKey": "Schlüssel verschlüsseln",
+          "imageAlt": "Bildschirm „Feishu-Verschlüsselungsstrategie“ mit dem Verschlüsselungsschlüssel und dem Verifizierungstoken",
+          "title": "Fügen Sie die Ereignisüberprüfungstoken hinzu",
+          "verificationToken": "Verifizierungstoken"
+        },
+        "uninstallDescription": "Dadurch wird {{bot}} aus dem Arbeitsbereich deinstalliert und jedes {{brandName}}-Konto, das es verwendet, wird getrennt. Diese Aktion kann nicht rückgängig gemacht werden.",
+        "uninstallTargetFallback": "dieser Bot",
+        "uninstallTitle": "Lark-Bot deinstallieren?"
       },
       "telegram": {
         "addBot": "Bot hinzufügen",
@@ -3761,10 +3913,6 @@
       "toasts": {
         "agentphoneConnected": "AgentPhone verbunden",
         "agentphoneDisconnected": "AgentPhone getrennt",
-        "feishuBotInstalled": "Der Feishu-Bot wurde erfolgreich installiert",
-        "feishuBotUninstalled": "Feishu-Bot deinstalliert",
-        "feishuConnected": "Feishu hat erfolgreich eine Verbindung hergestellt",
-        "feishuDisconnected": "Von Feishu getrennt",
         "slackConnected": "Slack erfolgreich verbunden",
         "slackDisconnected": "Von Slack getrennt",
         "slackInstalled": "Slack erfolgreich installiert",
@@ -5477,7 +5625,7 @@
         "categoryImage": "Bild",
         "categoryVideo": "Video",
         "chatModels": "Chatmodelle",
-        "effort": "Denkaufwand",
+        "effort": "Aufwand",
         "fast": "Schnell",
         "fastImpact": {
           "apiCost": "2× API-Tokenkosten",
@@ -6780,6 +6928,9 @@
       "noWorkflows": "Keine Workflows",
       "open": "Öffnen Sie {{title}}",
       "openRecovery": "Wiederherstellung für {{title}} öffnen",
+      "ownerLoading": "Autor wird geladen…",
+      "ownerRetry": "Autor nicht verfügbar. Zum Wiederholen erneut öffnen.",
+      "ownerUnavailable": "Autor nicht verfügbar",
       "runsAs": "Läuft als",
       "runsAsAria": "Läuft als {{agent}}",
       "section": {

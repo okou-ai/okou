@@ -254,7 +254,7 @@ import {
   automationKindLabel,
   workflowTitle,
 } from "./workflow-shared.tsx";
-import { WorkflowHoverContent } from "./workflows-page.tsx";
+import { WorkflowTooltip } from "./workflows-page.tsx";
 import { AutomationListIcon } from "../okou-page/workflow-automations-page.tsx";
 import { emptyAutomationsImg } from "../okou-page/platform-assets.ts";
 import { WorkflowWebhookUpgradeDialog } from "./workflow-webhook-upgrade-dialog.tsx";
@@ -1125,28 +1125,14 @@ function DetailHeader({
             <div className="flex min-w-0 items-center gap-3">
               <WorkflowHeaderIcon automation={detail.automations[0]} />
               <div className="flex min-w-0 flex-col justify-center">
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <h1 className="w-fit max-w-full cursor-help truncate text-lg font-semibold tracking-tight text-foreground underline decoration-foreground/40 decoration-dotted decoration-[1px] underline-offset-2 sm:text-xl">
-                        {workflowTitle(detail)}
-                      </h1>
-                    </TooltipTrigger>
-                    <TooltipContent
-                      side="bottom"
-                      align="start"
-                      className="rounded-lg border border-[hsl(var(--gray-400))] p-3"
-                      style={{
-                        backgroundColor: "hsl(var(--card))",
-                        color: "hsl(var(--card-foreground))",
-                        boxShadow:
-                          "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
-                      }}
-                    >
-                      <WorkflowHoverContent workflow={detail} />
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <WorkflowTooltip workflow={detail}>
+                  <h1
+                    tabIndex={0}
+                    className="w-fit max-w-full cursor-help truncate text-lg font-semibold tracking-tight text-foreground underline decoration-foreground/40 decoration-dotted decoration-[1px] underline-offset-2 sm:text-xl"
+                  >
+                    {workflowTitle(detail)}
+                  </h1>
+                </WorkflowTooltip>
                 <p className="mt-1.5 max-w-full truncate text-sm text-muted-foreground">
                   /{detail.name}
                 </p>
@@ -9027,7 +9013,7 @@ function AutomationControls({
   return (
     <div className="flex min-w-0 items-center justify-end pr-1.5">
       <TooltipProvider delayDuration={200}>
-        <div className="flex items-center justify-end gap-1 opacity-100 transition-opacity pointer-events-auto [@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:pointer-events-auto [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:pointer-events-auto [@media(hover:hover)]:group-focus-within:opacity-100">
+        <div className="flex items-center justify-end gap-1 opacity-100 pointer-events-auto [@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:pointer-events-auto [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:pointer-events-auto [@media(hover:hover)]:group-focus-within:opacity-100">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

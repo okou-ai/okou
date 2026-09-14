@@ -6,7 +6,7 @@ import type {
 
 const FEISHU_API_PREFIX = "https://open.feishu.cn/open-apis/";
 const FEISHU_MANAGED_CONNECTOR_SLUG_PATTERN =
-  /^_feishu-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+  /^_(?:feishu|lark)-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
 export const FEISHU_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF =
   "builtin:feishu@1" satisfies CustomConnectorPermissionBundleRef;
@@ -54,7 +54,8 @@ function buildStandardApprovalRules(): string[] {
 export const FEISHU_CUSTOM_CONNECTOR_PERMISSIONS = [
   {
     name: "standard:use",
-    description: "Use Feishu APIs that do not match a higher-risk action.",
+    description:
+      "Use connected workspace APIs that do not match a higher-risk action.",
     rules: buildStandardApprovalRules(),
   },
   {
@@ -81,7 +82,7 @@ export const FEISHU_CUSTOM_CONNECTOR_PERMISSIONS = [
   {
     name: "resources:delete",
     description:
-      "Delete Feishu files, documents, sheets, Base tables or records, Wiki nodes, or slides.",
+      "Delete files, documents, sheets, Base tables or records, Wiki nodes, or slides.",
     rules: [
       "DELETE /drive/{path*}",
       "DELETE /docx/{path*}",
@@ -216,7 +217,10 @@ function isManagedFeishuCustomConnector(args: {
     args.authMode === "oauth" &&
     args.oauthProviderAdapter === "feishu" &&
     args.prefixTemplates.length === 1 &&
-    args.prefixTemplates[0] === FEISHU_API_PREFIX
+    args.prefixTemplates[0] ===
+      (args.slug.startsWith("_lark-")
+        ? "https://open.larksuite.com/open-apis/"
+        : FEISHU_API_PREFIX)
   );
 }
 

@@ -22,7 +22,24 @@ index 363a50de0d9702d7c365efcd6ade09e534713261..be8d84662b7aafa6f71ea314bdc885e9
  const TRACE_NAME = "Pi Turn";
  const GENERATION_PREFIX = "LLM Call";
  const TOOL_PREFIX = "Tool:";
-@@ -654,6 +655,85 @@ export default function (pi: ExtensionAPI) {
+@@ -148,11 +149,12 @@ export function truncateText(text: string): { text: string; meta: TruncationMeta } {
+-  if (text.length <= MAX_CHARS) {
+-    return { text, meta: { truncated: false, orig_len: text.length } };
++  const redacted = redactLangfuseKeys(text) as string;
++  if (redacted.length <= MAX_CHARS) {
++    return { text: redacted, meta: { truncated: false, orig_len: redacted.length } };
+   }
+   return {
+-    text: text.slice(0, MAX_CHARS),
++    text: redacted.slice(0, MAX_CHARS),
+     meta: {
+       truncated: true,
+-      orig_len: text.length,
++      orig_len: redacted.length,
+       kept_len: MAX_CHARS,
+       sha256: createHash("sha256").update(text).digest("hex"),
+     },
+@@ -654,6 +656,85 @@ export default function (pi: ExtensionAPI) {
      debug("root created, turn", turnNumber);
    });
 -

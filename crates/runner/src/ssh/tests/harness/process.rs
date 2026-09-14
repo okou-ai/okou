@@ -51,6 +51,25 @@ impl Process {
         if let Some(command) = command {
             process.arg("-c").arg(std::str::from_utf8(command).unwrap());
         }
+        Self::spawn(process, channel, handle)
+    }
+
+    pub(super) fn sftp(mode: &str, channel: ChannelId, handle: server::Handle) -> Self {
+        let process = if mode == "openssh" {
+            Command::new("/usr/lib/openssh/sftp-server")
+        } else {
+            let mut process = Command::new("python3");
+            process.args([
+                "-u",
+                concat!(env!("CARGO_MANIFEST_DIR"), "/src/ssh/tests/harness/sftp.py"),
+                mode,
+            ]);
+            process
+        };
+        Self::spawn(process, channel, handle)
+    }
+
+    fn spawn(mut process: Command, channel: ChannelId, handle: server::Handle) -> Self {
         let mut child = process
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

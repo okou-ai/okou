@@ -1,8 +1,7 @@
 import { testUsageSettlementContract } from "@okouai/api-contracts/contracts/test-usage-settlement";
-import { orgPlanEntitlementsCanonicalWrites } from "@okouai/db/operations/org-plan-entitlement-canonical-write";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/schema/org-plan-entitlement";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
 import { command } from "ccstate";
 import { asc, eq } from "drizzle-orm";
@@ -19,6 +18,7 @@ import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
 } from "./test-endpoint-helpers";
+import { writeOrgMetadataWithDefaultPlanEntitlement } from "../services/org-plan-entitlements.service";
 
 const body$ = bodyResultOf(testUsageSettlementContract.process);
 const setupBody$ = bodyResultOf(testUsageSettlementContract.setup);
@@ -57,19 +57,31 @@ const setupUsageSettlement$ = command(
     }
 
     const db = set(writeDb$);
-    await db
-      .insert(orgMetadataCanonicalWrites)
-      .values({
-        orgId: bodyResult.data.org_id,
-        credits: bodyResult.data.credits,
-      })
-      .onConflictDoUpdate({
-        target: orgMetadataCanonicalWrites.orgId,
-        set: { credits: bodyResult.data.credits },
-      });
+    await db.transaction(async (tx) => {
+      await writeOrgMetadataWithDefaultPlanEntitlement(
+        tx,
+        bodyResult.data.org_id,
+        async (writeTx) => {
+          return await writeTx
+            .insert(orgMetadataCanonicalWrites)
+            .values({
+              orgId: bodyResult.data.org_id,
+              credits: bodyResult.data.credits,
+            })
+            .onConflictDoUpdate({
+              target: orgMetadataCanonicalWrites.orgId,
+              set: { credits: bodyResult.data.credits },
+            })
+            .returning({
+              orgId: orgMetadataCanonicalWrites.orgId,
+              tier: orgMetadataCanonicalWrites.tier,
+            });
+        },
+      );
+    });
     signal.throwIfAborted();
     await db
-      .insert(orgPlanEntitlementsCanonicalWrites)
+      .insert(orgPlanEntitlements)
       .values({
         orgId: bodyResult.data.org_id,
         planKey: "usage-pack-test",
@@ -79,7 +91,7 @@ const setupUsageSettlement$ = command(
         restrictedBuiltInModels: false,
       })
       .onConflictDoUpdate({
-        target: orgPlanEntitlementsCanonicalWrites.orgId,
+        target: orgPlanEntitlements.orgId,
         set: {
           status: "active",
           restrictedBuiltInModels: false,

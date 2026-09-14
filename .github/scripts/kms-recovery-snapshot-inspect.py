@@ -24,7 +24,7 @@ WORKFLOW = (
     "vm0-ai/vm0/.github/workflows/kms-recovery-snapshot-inspect.yml@refs/heads/main"
 )
 PREFIX = "kms-recovery-32264-"
-DEADLINE = time.monotonic() + 20 * 60
+DEADLINE = time.monotonic() + 90 * 60
 
 
 class InspectionError(Exception):
@@ -214,7 +214,7 @@ def validate_preview(branch, name, snapshot_id, existing_ids):
     return branch_id
 
 
-def inspect_database(database, endpoint, branch_id, target_environment=None):
+def inspect_database(database, endpoint, branch_id, target_environment, record_stage):
     name, owner = database.get("name"), database.get("owner_name")
     require(database.get("branch_id") == branch_id, "database_branch_mismatch")
     require(
@@ -233,6 +233,8 @@ def inspect_database(database, endpoint, branch_id, target_environment=None):
             "pooled": "false",
         }
     )
+    database_hash = digest(name)
+    record_stage(database_hash, "connection_metadata")
     parsed = urllib.parse.urlsplit(api("/connection_uri?" + query)["uri"])
     require(
         parsed.scheme in {"postgres", "postgresql"}
@@ -261,30 +263,40 @@ def inspect_database(database, endpoint, branch_id, target_environment=None):
             "PGOPTIONS": "-c default_transaction_read_only=on -c statement_timeout=120000 -c lock_timeout=5000",
         }
     )
-    seconds = min(900, int(DEADLINE - time.monotonic()))
+    # Large retained databases exceeded the former cumulative 15-minute limit.
+    # Keep each SQL statement bounded and leave time for target verification.
+    seconds = min(60 * 60, int(DEADLINE - time.monotonic()))
     require(seconds > 0, "inspection_time_budget_exhausted")
-    result = subprocess.run(
-        [
-            "psql",
-            "-X",
-            "-qAt",
-            "-v",
-            "ON_ERROR_STOP=1",
-            "-f",
-            str(Path(__file__).with_name("kms-recovery-snapshot-inventory.sql")),
-        ],
-        env=environment,
-        capture_output=True,
-        text=True,
-        timeout=seconds,
-        check=False,
-    )
-    safe = scan_records(result, digest(name))
-    scanned = {"databaseNameSha256": digest(name), "readOnly": True, "records": safe}
+    record_stage(database_hash, "marker_scan")
+    try:
+        result = subprocess.run(
+            [
+                "stdbuf",
+                "-oL",
+                "psql",
+                "-X",
+                "-qAt",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-f",
+                str(Path(__file__).with_name("kms-recovery-snapshot-inventory.sql")),
+            ],
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        result = error
+    safe = scan_records(result, database_hash)
+    scanned = {"databaseNameSha256": database_hash, "readOnly": True, "records": safe}
     if target_environment is not None:
+        record_stage(database_hash, "target_verification")
         scanned["targetVerification"] = verify_database(
             parsed, target_environment, DEADLINE
         )
+    record_stage(database_hash, "complete")
     return scanned
 
 
@@ -313,6 +325,13 @@ def main():
     def checkpoint():
         report_path.write_text(json.dumps(report, indent=2) + "\n")
 
+    def record_stage(database_hash, phase):
+        report["lastDatabaseStage"] = {
+            "databaseNameSha256": database_hash,
+            "phase": phase,
+        }
+        checkpoint()
+
     preview_id = None
     production = None
     before_endpoints = None
@@ -331,8 +350,6 @@ def main():
         )
         verification = os.environ.get("VERIFY_TARGET_CIPHERTEXT", "false")
         require(verification in {"true", "false"}, "invalid_target_verification_option")
-        if verification == "true":
-            DEADLINE = time.monotonic() + 90 * 60
         require(
             os.environ.get("NEON_PROJECT_ID") == PROJECT
             and os.environ.get("NEON_API_KEY"),
@@ -488,7 +505,9 @@ def main():
                 report["targetVerificationStarted"] = True
                 checkpoint()
             report["databases"].append(
-                inspect_database(database, endpoint, preview_id, target_environment)
+                inspect_database(
+                    database, endpoint, preview_id, target_environment, record_stage
+                )
             )
             if target_environment is not None:
                 report["kmsCallsMade"] = any(

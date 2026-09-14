@@ -51,14 +51,18 @@ export interface SocialQueryTarget {
 export type SocialTarget = SocialQueryTarget | SocialUrlTarget;
 
 export interface SocialRequestMetadata {
+  readonly customFields?: boolean;
   readonly customPrompt?: boolean;
   readonly date?: string;
   readonly format?: string;
+  readonly fullDetails?: boolean;
   readonly hashtag?: boolean;
   readonly kind?: string;
   readonly limit?: number;
   readonly maxDuration?: number;
   readonly quality?: string;
+  readonly refresh?: boolean;
+  readonly requireViews?: boolean;
   readonly resume?: boolean;
   readonly sort?: string;
   readonly thread?: boolean;
@@ -79,6 +83,9 @@ export interface SocialCapability {
   readonly notes?: readonly string[];
 }
 
+const SUMMARY_FIELDS_NOTE =
+  'Summarize accepts --fields JSON or --fields-file PATH, e.g. {"audience":"Who this video helps"}, plus optional --prompt guidance (not strict JSON Schema)';
+
 export const SOCIAL_CAPABILITIES: readonly SocialCapability[] = [
   {
     platform: "linkedin",
@@ -93,6 +100,7 @@ export const SOCIAL_CAPABILITIES: readonly SocialCapability[] = [
   {
     platform: "facebook",
     operations: ["comments", "download", "inspect", "summarize", "transcript"],
+    notes: [SUMMARY_FIELDS_NOTE],
   },
   {
     platform: "instagram",
@@ -105,7 +113,14 @@ export const SOCIAL_CAPABILITIES: readonly SocialCapability[] = [
       "summarize",
       "transcript",
     ],
-    notes: ["Posts supports posts and reels", "Search returns reels"],
+    notes: [
+      "Posts supports posts and reels",
+      "Search supports keywords and hashtags (up to 100 trimmed characters)",
+      "Search returns one anonymous batch of up to 12 reels; additional pages and exhaustive results are unavailable",
+      "Inspect preserves unavailable views as null, distinct from zero",
+      "Inspect --require-views requires verified video views for posts/reels; unavailable views fail without a charge and are not retried automatically",
+      SUMMARY_FIELDS_NOTE,
+    ],
   },
   {
     platform: "tiktok",
@@ -118,7 +133,7 @@ export const SOCIAL_CAPABILITIES: readonly SocialCapability[] = [
       "summarize",
       "transcript",
     ],
-    notes: ["Search supports keywords and hashtags"],
+    notes: ["Search supports keywords and hashtags", SUMMARY_FIELDS_NOTE],
   },
   {
     platform: "youtube",
@@ -131,15 +146,24 @@ export const SOCIAL_CAPABILITIES: readonly SocialCapability[] = [
       "summarize",
       "transcript",
     ],
-    notes: ["Posts supports channels and playlists"],
+    notes: [
+      "Posts supports channels and playlists",
+      "Posts --full-details requests exact dates and descriptions (slower; --limit at most 30)",
+      "Unavailable publication dates and descriptions remain null, empty, or missing",
+      "Transcript and summarize support --refresh to bypass extraction caches, including cached caption absence; captions may still be unavailable",
+      "Summary-result caching is separate and unchanged by --refresh",
+      SUMMARY_FIELDS_NOTE,
+    ],
   },
 ] as const;
 
 interface InspectOptions {
+  readonly requireViews?: boolean;
   readonly thread?: boolean;
 }
 
 interface PostsOptions {
+  readonly fullDetails?: boolean;
   readonly kind?: string;
   readonly limit: number;
 }
@@ -156,6 +180,15 @@ interface SearchOptions {
 interface CommentsOptions {
   readonly limit: number;
   readonly sort?: string;
+}
+
+interface TranscriptOptions {
+  readonly refresh?: boolean;
+}
+
+interface SummarizeOptions extends TranscriptOptions {
+  readonly fields?: Readonly<Record<string, string>>;
+  readonly prompt?: string;
 }
 
 function socialRequest(
@@ -376,12 +409,26 @@ const INSTAGRAM_NON_PROFILE_PATHS = new Set([
 
 function instagramTargetKind(url: URL): SocialTargetKind {
   const segments = pathSegments(url);
-  const [first, second] = segments;
+  const [first, second, third] = segments;
   if (first === "p") {
     return second ? "post" : "unknown";
   }
   if (first === "reel" || first === "reels" || first === "tv") {
     return second ? "video" : "unknown";
+  }
+  if (
+    segments.length === 3 &&
+    first &&
+    /^[\w.]+$/u.test(first) &&
+    !INSTAGRAM_NON_PROFILE_PATHS.has(first) &&
+    third
+  ) {
+    if (second === "p") {
+      return "post";
+    }
+    if (second === "reel") {
+      return "video";
+    }
   }
   return segments.length === 1 &&
     first &&
@@ -695,12 +742,54 @@ export function inspectIntent(
   if (options.thread && target.platform !== "twitter") {
     return unsupported("--thread is supported only for X post URLs");
   }
+  const tool = inspectionTool(target, options.thread === true);
+  if (options.requireViews && tool !== "instagram_stats") {
+    return unsupported(
+      "--require-views is supported only for Instagram post or video URLs",
+    );
+  }
   return urlIntent(
     "inspect",
     target,
-    inspectionTool(target, options.thread === true),
-    { url: target.canonicalUrl },
-    { thread: options.thread === true },
+    tool,
+    {
+      url: target.canonicalUrl,
+      ...(options.requireViews ? { requireViews: true } : {}),
+    },
+    {
+      thread: options.thread === true,
+      ...(tool === "instagram_stats"
+        ? { requireViews: options.requireViews === true }
+        : {}),
+    },
+  );
+}
+
+function youtubePostsIntent(
+  target: SocialUrlTarget,
+  options: PostsOptions,
+): SocialIntent {
+  if (target.targetKind !== "channel" && target.targetKind !== "playlist") {
+    return unsupported("YouTube posts requires a channel or playlist URL");
+  }
+  if (options.fullDetails === true && options.limit > 30) {
+    return unsupported(
+      "--full-details supports at most 30 videos; use --limit 30 or less, or omit --full-details for the fast listing",
+    );
+  }
+  return urlIntent(
+    "posts",
+    target,
+    "youtube_videos",
+    {
+      url: target.canonicalUrl,
+      limit: Math.min(options.limit, 100),
+      ...(options.fullDetails === true ? { full_details: true } : {}),
+    },
+    {
+      limit: options.limit,
+      ...(options.fullDetails === true ? { fullDetails: true } : {}),
+    },
   );
 }
 
@@ -708,6 +797,11 @@ export function postsIntent(
   target: SocialUrlTarget,
   options: PostsOptions,
 ): SocialIntent {
+  if (options.fullDetails === true && target.platform !== "youtube") {
+    return unsupported(
+      "--full-details is supported only for YouTube channels and playlists",
+    );
+  }
   if (options.kind !== undefined && target.platform !== "instagram") {
     return unsupported("--kind is supported only for Instagram profiles");
   }
@@ -786,19 +880,7 @@ export function postsIntent(
       );
     }
     case "youtube": {
-      if (target.targetKind !== "channel" && target.targetKind !== "playlist") {
-        return unsupported("YouTube posts requires a channel or playlist URL");
-      }
-      return urlIntent(
-        "posts",
-        target,
-        "youtube_videos",
-        {
-          url: target.canonicalUrl,
-          limit: Math.min(options.limit, 100),
-        },
-        requestMetadata,
-      );
+      return youtubePostsIntent(target, options);
     }
   }
 }
@@ -813,13 +895,12 @@ function instagramSearchRequest(
   options: SearchOptions,
 ): SearchRequest {
   if (
-    options.hashtag ||
     options.sort !== undefined ||
     options.date !== undefined ||
     options.type !== undefined
   ) {
     return unsupported(
-      "Instagram search does not support hashtag, sort, date, or type filters",
+      "Instagram search does not support sort, date, or type filters",
     );
   }
   return { tool: "instagram_reels_search", input: { query } };
@@ -1001,8 +1082,14 @@ export function commentsIntent(
   }
 }
 
-export function transcriptIntent(target: SocialUrlTarget): SocialIntent {
+export function transcriptIntent(
+  target: SocialUrlTarget,
+  options: TranscriptOptions,
+): SocialIntent {
   contentTarget(target, "transcript");
+  if (options.refresh && target.platform !== "youtube") {
+    return unsupported("--refresh is supported only for YouTube videos");
+  }
   let tool: ManagedSocialKitToolName;
   switch (target.platform) {
     case "linkedin": {
@@ -1034,16 +1121,22 @@ export function transcriptIntent(target: SocialUrlTarget): SocialIntent {
     "transcript",
     target,
     tool,
-    { url: target.canonicalUrl },
-    {},
+    {
+      url: target.canonicalUrl,
+      ...(options.refresh ? { no_cache: true } : {}),
+    },
+    options.refresh ? { refresh: true } : {},
   );
 }
 
 export function summarizeIntent(
   target: SocialUrlTarget,
-  prompt?: string,
+  options: SummarizeOptions,
 ): SocialIntent {
   contentTarget(target, "summarize");
+  if (options.refresh && target.platform !== "youtube") {
+    return unsupported("--refresh is supported only for YouTube videos");
+  }
   if (target.platform === "linkedin" || target.platform === "twitter") {
     return unsupported(
       `${target.platform} summaries are not currently supported`,
@@ -1074,9 +1167,19 @@ export function summarizeIntent(
     tool,
     {
       url: target.canonicalUrl,
-      ...(prompt === undefined ? {} : { custom_prompt: prompt }),
+      ...(options.fields === undefined
+        ? {}
+        : { custom_response: options.fields }),
+      ...(options.prompt === undefined
+        ? {}
+        : { custom_prompt: options.prompt }),
+      ...(options.refresh ? { no_cache: true } : {}),
     },
-    { customPrompt: prompt !== undefined },
+    {
+      ...(options.fields === undefined ? {} : { customFields: true }),
+      customPrompt: options.prompt !== undefined,
+      ...(options.refresh ? { refresh: true } : {}),
+    },
   );
 }
 

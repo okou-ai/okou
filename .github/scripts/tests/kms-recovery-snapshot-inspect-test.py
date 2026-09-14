@@ -12,10 +12,37 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE.parent / "kms-recovery-snapshot-inspect.py"
 TOOLS = HERE / "fixtures/kms-recovery-snapshot-tools.py"
+TIMEOUT_LAUNCHER = """
+import runpy
+import subprocess
+import sys
+from pathlib import Path
+
+run = subprocess.run
+def process(command, **kwargs):
+    result = run(command, **kwargs)
+    tool = command[2] if command[0] == "stdbuf" else command[0]
+    if tool == sys.argv[2]:
+        # Simulate the external deadline without waiting for the scan budget.
+        # Internal inspection, decoding, reporting and cleanup remain real.
+        empty = sys.argv[3] == "empty"
+        output = None if empty else result.stdout.encode() + b'{"private":"fixture-private-password' + bytes([0xe4])
+        raise subprocess.TimeoutExpired(
+            command, kwargs["timeout"], output=output,
+            stderr=None if empty else result.stderr.encode(),
+        )
+    return result
+
+subprocess.run = process
+sys.path.insert(0, str(Path(sys.argv[1]).parent))
+runpy.run_path(sys.argv[1], run_name="__main__")
+"""
 
 
 class SnapshotInspectionTest(unittest.TestCase):
-    def invoke(self, scenario="normal", overrides=None):
+    def invoke(
+        self, scenario="normal", overrides=None, timeout_tool=None, empty_output=False
+    ):
         with tempfile.TemporaryDirectory(
             prefix="snapshot-inspection-test-"
         ) as directory:
@@ -50,15 +77,27 @@ class SnapshotInspectionTest(unittest.TestCase):
                 "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "fixture-private-oidc-request",
                 **(overrides or {}),
             }
+            command = ["python3", str(SCRIPT)]
+            if timeout_tool is not None:
+                command = [
+                    "python3",
+                    "-c",
+                    TIMEOUT_LAUNCHER,
+                    str(SCRIPT),
+                    timeout_tool,
+                    "empty" if empty_output else "partial",
+                ]
             result = subprocess.run(
-                ["python3", str(SCRIPT)],
+                command,
                 env=environment,
                 capture_output=True,
                 text=True,
                 timeout=20,
                 check=False,
             )
-            raw = (root / "kms-recovery-snapshot.json").read_text()
+            report_path = root / "kms-recovery-snapshot.json"
+            self.assertTrue(report_path.is_file(), result.stderr)
+            raw = report_path.read_text()
             for value in (raw, result.stdout, result.stderr):
                 for secret in (
                     "fixture-private-password",
@@ -248,6 +287,20 @@ class SnapshotInspectionTest(unittest.TestCase):
                 "psqlExitCode": 3,
                 "sqlState": "57014",
                 "completedTables": 1,
+                "plannedTables": 2,
+                "completedChunks": 1,
+                "lastCompletedChunk": {
+                    "relationOid": 123,
+                    "firstBlock": 0,
+                    "endBlock": 1,
+                    "rows": 20,
+                },
+                "lastStartedBatch": {
+                    "relationOid": 456,
+                    "firstBlock": 0,
+                    "endBlock": 8192,
+                    "startedAt": "2026-09-14T08:42:00+00:00",
+                },
                 "lastStartedScan": {
                     "phase": "table",
                     "relationOid": 456,
@@ -266,6 +319,89 @@ class SnapshotInspectionTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertEqual(report["failure"], "invalid_scan_counter")
         self.assertNotIn("databaseScanFailure", report)
+        self.assertFalse(report["collectionComplete"])
+        self.assertTrue(report["cleanupComplete"])
+
+    def test_process_timeout_preserves_only_complete_scan_progress_and_cleans_up(self):
+        result, report, state = self.invoke(
+            "sql-process-timeout",
+            {"VERIFY_TARGET_CIPHERTEXT": "true"},
+            timeout_tool="psql",
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(report["failure"], "snapshot_database_scan_process_timeout")
+        self.assertEqual(report["lastDatabaseStage"]["phase"], "marker_scan")
+        self.assertEqual(
+            report["databaseScanFailure"],
+            {
+                "databaseNameSha256": hashlib.sha256(b"neondb").hexdigest(),
+                "psqlExitCode": None,
+                "sqlState": None,
+                "processTimeoutSeconds": 3600,
+                "completedTables": 1,
+                "plannedTables": 2,
+                "completedChunks": 1,
+                "lastCompletedChunk": {
+                    "relationOid": 123,
+                    "firstBlock": 0,
+                    "endBlock": 1,
+                    "rows": 20,
+                },
+                "lastStartedBatch": {
+                    "relationOid": 456,
+                    "firstBlock": 0,
+                    "endBlock": 8192,
+                    "startedAt": "2026-09-14T08:42:00+00:00",
+                },
+                "lastStartedScan": {
+                    "phase": "table",
+                    "relationOid": 456,
+                    "relationBytes": 5368709120,
+                    "firstBlock": 256,
+                    "endBlock": 384,
+                },
+            },
+        )
+        self.assertFalse(report["collectionComplete"])
+        self.assertFalse(report["cryptographicVerification"])
+        self.assertNotIn("targetVerificationCalls", state)
+        self.assertTrue(report["cleanupComplete"])
+        self.assertTrue(report["snapshotSetUnchanged"])
+        self.assertTrue(report["productionEndpointsUnchanged"])
+
+    def test_process_timeout_without_output_does_not_invent_progress(self):
+        result, report, _ = self.invoke(timeout_tool="psql", empty_output=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(report["failure"], "snapshot_database_scan_process_timeout")
+        self.assertEqual(report["databaseScanFailure"]["completedTables"], 0)
+        self.assertIsNone(report["databaseScanFailure"]["lastStartedScan"])
+        self.assertIsNone(report["databaseScanFailure"]["lastStartedBatch"])
+        self.assertIsNone(report["databaseScanFailure"]["lastCompletedChunk"])
+        self.assertIsNone(report["databaseScanFailure"]["plannedTables"])
+        self.assertFalse(report["collectionComplete"])
+        self.assertTrue(report["cleanupComplete"])
+
+    def test_invalid_batch_metadata_never_reaches_retained_evidence(self):
+        for scenario, error in [
+            ("invalid-batch-range", "invalid_scan_batch"),
+            ("invalid-batch-time", "invalid_batch_timestamp"),
+        ]:
+            with self.subTest(scenario=scenario):
+                result, report, _ = self.invoke(scenario)
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(report["failure"], error)
+                self.assertNotIn("databaseScanFailure", report)
+                self.assertFalse(report["collectionComplete"])
+                self.assertTrue(report["cleanupComplete"])
+
+    def test_verification_timeout_is_distinct_from_a_marker_scan_failure(self):
+        result, report, _ = self.invoke(
+            overrides={"VERIFY_TARGET_CIPHERTEXT": "true"}, timeout_tool="pnpm"
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(report["lastDatabaseStage"]["phase"], "target_verification")
+        self.assertNotIn("databaseScanFailure", report)
+        self.assertFalse(report["cryptographicVerification"])
         self.assertFalse(report["collectionComplete"])
         self.assertTrue(report["cleanupComplete"])
 

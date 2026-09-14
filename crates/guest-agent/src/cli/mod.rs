@@ -77,7 +77,7 @@ use guest_telemetry::{log_info, log_warn};
 use process_group::ChildProcessGroup;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::process::{ExitStatus, Stdio};
 use std::time::{Duration, Instant};
@@ -95,6 +95,14 @@ const OPENAI_BASE_URL_ENV_KEY: &str = "OPENAI_BASE_URL";
 const OKOU_AGENT_ID_ENV_KEY: &str = "OKOU_AGENT_ID";
 const CODEX_SERVICE_TIER_CANONICAL_ENV: &str = "OKOU_CODEX_SERVICE_TIER";
 const CLI_PACKAGE_URL_ENV_KEY: &str = "CLI_PKG_URL";
+const PI_LANGFUSE_DEBUG_ENABLED_ENV_KEY: &str = "OKOU_PI_LANGFUSE_DEBUG_ENABLED";
+const PI_LANGFUSE_CONFIG_FILE_ENV_KEY: &str = "OKOU_PI_LANGFUSE_CONFIG_FILE";
+const LANGFUSE_PUBLIC_KEY_ENV_KEY: &str = "LANGFUSE_PUBLIC_KEY";
+const LANGFUSE_SECRET_KEY_ENV_KEY: &str = "LANGFUSE_SECRET_KEY";
+const LANGFUSE_BASE_URL_ENV_KEY: &str = "LANGFUSE_BASE_URL";
+const LANGFUSE_USER_ID_ENV_KEY: &str = "LANGFUSE_USER_ID";
+const LANGFUSE_TRACING_ENVIRONMENT_ENV_KEY: &str = "LANGFUSE_TRACING_ENVIRONMENT";
+const PI_LANGFUSE_CONFIG_FILENAME: &str = "langfuse-bootstrap.json";
 const WEB_SEARCH_TOOL_NAME: &str = "WebSearch";
 const MAX_EVENT_SEQUENCE_NUMBER: u32 = i32::MAX as u32;
 const CODEX_FIXED_STARTUP_CONFIGS: [&str; 5] = [
@@ -492,7 +500,9 @@ impl<'a> CliRuntimeConfig<'a> {
         let remove_claude_effort = matches!(self.framework, env::Framework::ClaudeCode)
             && self.reasoning_effort.is_some()
             && self.user_env.contains_key("CLAUDE_CODE_EFFORT_LEVEL");
-        if !remove_base_url && !remove_claude_effort {
+        let remove_pi_langfuse_credentials = matches!(self.framework, env::Framework::Pi)
+            && user_env_value(self.user_env, PI_LANGFUSE_DEBUG_ENABLED_ENV_KEY) == "true";
+        if !remove_base_url && !remove_claude_effort && !remove_pi_langfuse_credentials {
             return Cow::Borrowed(self.user_env);
         }
         // Structured Codex runtime config is authoritative; do not let stale
@@ -505,6 +515,10 @@ impl<'a> CliRuntimeConfig<'a> {
         // ultracode. An explicit chat choice must win over restored user env.
         if remove_claude_effort {
             user_env.remove("CLAUDE_CODE_EFFORT_LEVEL");
+        }
+        if remove_pi_langfuse_credentials {
+            user_env.remove(LANGFUSE_PUBLIC_KEY_ENV_KEY);
+            user_env.remove(LANGFUSE_SECRET_KEY_ENV_KEY);
         }
         Cow::Owned(user_env)
     }
@@ -578,6 +592,103 @@ fn write_pi_launch_payload_file(runtime: &CliRuntimeConfig<'_>) -> Result<(), Ag
     paths::ensure_parent_dir(path)?;
     paths::write_private(path, serde_json::to_vec(&payload)?)?;
     Ok(())
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PiLangfuseBootstrapConfig<'a> {
+    public_key: &'a str,
+    secret_key: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    base_url: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    user_id: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    environment: Option<&'a str>,
+}
+
+fn nonempty_user_env_value<'a>(
+    user_env: &'a HashMap<String, String>,
+    key: &str,
+) -> Option<&'a str> {
+    user_env
+        .get(key)
+        .map(String::as_str)
+        .filter(|value| !value.is_empty())
+}
+
+struct PiLangfuseBootstrapFile {
+    path: PathBuf,
+    environment_value: String,
+}
+
+impl PiLangfuseBootstrapFile {
+    fn environment_value(&self) -> &str {
+        &self.environment_value
+    }
+}
+
+impl Drop for PiLangfuseBootstrapFile {
+    fn drop(&mut self) {
+        match std::fs::remove_file(&self.path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => log_warn!(LOG_TAG, "Pi Langfuse bootstrap cleanup failed: {error}"),
+        }
+    }
+}
+
+fn write_pi_langfuse_bootstrap_file(
+    runtime: &CliRuntimeConfig<'_>,
+) -> Result<Option<PiLangfuseBootstrapFile>, AgentError> {
+    if user_env_value(runtime.user_env, PI_LANGFUSE_DEBUG_ENABLED_ENV_KEY) != "true" {
+        return Ok(None);
+    }
+    let Some(public_key) = nonempty_user_env_value(runtime.user_env, LANGFUSE_PUBLIC_KEY_ENV_KEY)
+    else {
+        return Ok(None);
+    };
+    let Some(secret_key) = nonempty_user_env_value(runtime.user_env, LANGFUSE_SECRET_KEY_ENV_KEY)
+    else {
+        return Ok(None);
+    };
+    let parent = Path::new(runtime.pi_launch_payload_file.as_ref())
+        .parent()
+        .ok_or_else(|| AgentError::Execution("Pi Langfuse bootstrap path is invalid".into()))?;
+    let path = parent.join(PI_LANGFUSE_CONFIG_FILENAME);
+    let environment_value = path
+        .to_str()
+        .ok_or_else(|| AgentError::Execution("Pi Langfuse bootstrap path is invalid".into()))?
+        .to_string();
+    let payload = serde_json::to_vec(&PiLangfuseBootstrapConfig {
+        public_key,
+        secret_key,
+        base_url: nonempty_user_env_value(runtime.user_env, LANGFUSE_BASE_URL_ENV_KEY),
+        user_id: nonempty_user_env_value(runtime.user_env, LANGFUSE_USER_ID_ENV_KEY),
+        environment: nonempty_user_env_value(
+            runtime.user_env,
+            LANGFUSE_TRACING_ENVIRONMENT_ENV_KEY,
+        ),
+    })?;
+    if let Err(error) = paths::write_private(&path, payload) {
+        match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(cleanup_error) if cleanup_error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(cleanup_error) => log_warn!(
+                LOG_TAG,
+                "Pi Langfuse bootstrap cleanup failed after write error: {cleanup_error}"
+            ),
+        }
+        log_warn!(
+            LOG_TAG,
+            "Pi Langfuse bootstrap write failed; continuing without tracing: {error}"
+        );
+        return Ok(None);
+    }
+    Ok(Some(PiLangfuseBootstrapFile {
+        path,
+        environment_value,
+    }))
 }
 
 fn write_claude_append_system_prompt_file(
@@ -1029,6 +1140,12 @@ async fn execute_cli_inner(
         // leave a CLI process running in the VM.
         .kill_on_drop(true);
 
+    let pi_langfuse_bootstrap = if matches!(runtime.framework, env::Framework::Pi) {
+        write_pi_launch_payload_file(runtime)?;
+        write_pi_langfuse_bootstrap_file(runtime)?
+    } else {
+        None
+    };
     let mut child_env_values = child_env::values_for_runtime(runtime);
     match runtime.framework {
         env::Framework::ClaudeCode => child_env_values.push((
@@ -1036,8 +1153,13 @@ async fn execute_cli_inner(
             runtime.claude_config_dir.to_string(),
         )),
         env::Framework::Pi => {
-            write_pi_launch_payload_file(runtime)?;
             child_env_values.extend(pi_child_env_values(runtime));
+            if let Some(bootstrap) = pi_langfuse_bootstrap.as_ref() {
+                child_env_values.push((
+                    PI_LANGFUSE_CONFIG_FILE_ENV_KEY.to_string(),
+                    bootstrap.environment_value().to_string(),
+                ));
+            }
         }
         env::Framework::Codex => {}
     }
@@ -2249,7 +2371,8 @@ mod tests {
         CliExitObservation, CliFailureDiagnostic, CliRuntimeConfig, child_env,
         claude_initial_prompt_frame, cli_exit_summary_from_status, command, exec_boundary,
         pi_child_env_values, record_cli_exit, select_failure_diagnostic, set_cli_current_dir,
-        with_carried_failure_reason, write_pi_launch_payload_file,
+        with_carried_failure_reason, write_pi_langfuse_bootstrap_file,
+        write_pi_launch_payload_file,
     };
     use crate::active_input::ActiveInputRuntime;
     use crate::paths;
@@ -2448,6 +2571,108 @@ mod tests {
             runtime
                 .codex_startup_config_overrides()
                 .contains(&super::CODEX_WEB_SEARCH_DISABLED_CONFIG.to_string())
+        );
+    }
+
+    #[test]
+    fn pi_langfuse_credentials_use_a_private_bootstrap_file_not_child_env() {
+        let directory = tempfile::tempdir().unwrap();
+        let launch_payload = directory.path().join("pi-launch/payload.json");
+        let user_env = HashMap::from([
+            (
+                super::PI_LANGFUSE_DEBUG_ENABLED_ENV_KEY.to_string(),
+                "true".to_string(),
+            ),
+            (
+                super::LANGFUSE_PUBLIC_KEY_ENV_KEY.to_string(),
+                "pk-lf-private".to_string(),
+            ),
+            (
+                super::LANGFUSE_SECRET_KEY_ENV_KEY.to_string(),
+                "sk-lf-private".to_string(),
+            ),
+            (
+                super::LANGFUSE_BASE_URL_ENV_KEY.to_string(),
+                "https://us.cloud.langfuse.com".to_string(),
+            ),
+        ]);
+        let mut runtime = runtime_for_command_test(env::Framework::Pi, "prompt", "", &user_env);
+        runtime.pi_launch_payload_file = Cow::Owned(launch_payload.to_string_lossy().into_owned());
+
+        let child_values = child_env::values_for_runtime(&runtime);
+        assert!(
+            !child_values
+                .iter()
+                .any(|(key, _)| key == super::LANGFUSE_PUBLIC_KEY_ENV_KEY)
+        );
+        assert!(
+            !child_values
+                .iter()
+                .any(|(key, _)| key == super::LANGFUSE_SECRET_KEY_ENV_KEY)
+        );
+        assert!(child_values.iter().any(|(key, value)| key
+            == super::PI_LANGFUSE_DEBUG_ENABLED_ENV_KEY
+            && value == "true"));
+        #[cfg(target_os = "linux")]
+        {
+            let mut child = std::process::Command::new("/bin/sh");
+            child
+                .arg("-c")
+                .arg("tr '\\0' '\\n' < /proc/self/environ")
+                .env_clear()
+                .envs(child_values.iter().cloned());
+            let output = child.output().unwrap();
+            assert!(output.status.success());
+            let initial_environment = String::from_utf8(output.stdout).unwrap();
+            assert!(!initial_environment.contains("pk-lf-private"));
+            assert!(!initial_environment.contains("sk-lf-private"));
+        }
+
+        let bootstrap = write_pi_langfuse_bootstrap_file(&runtime)
+            .unwrap()
+            .expect("complete credentials should create a bootstrap file");
+        let path = bootstrap.environment_value().to_string();
+        let payload: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(payload["publicKey"], "pk-lf-private");
+        assert_eq!(payload["secretKey"], "sk-lf-private");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        drop(bootstrap);
+        assert!(!Path::new(&path).exists());
+    }
+
+    #[test]
+    fn pi_langfuse_credentials_remain_user_owned_when_tracing_gate_is_off() {
+        let user_env = HashMap::from([
+            (
+                super::LANGFUSE_PUBLIC_KEY_ENV_KEY.to_string(),
+                "user-public-key".to_string(),
+            ),
+            (
+                super::LANGFUSE_SECRET_KEY_ENV_KEY.to_string(),
+                "user-secret-key".to_string(),
+            ),
+        ]);
+        let runtime = runtime_for_command_test(env::Framework::Pi, "prompt", "", &user_env);
+        let child_values = child_env::values_for_runtime(&runtime);
+
+        assert!(child_values.iter().any(|(key, value)| {
+            key == super::LANGFUSE_PUBLIC_KEY_ENV_KEY && value == "user-public-key"
+        }));
+        assert!(child_values.iter().any(|(key, value)| {
+            key == super::LANGFUSE_SECRET_KEY_ENV_KEY && value == "user-secret-key"
+        }));
+        assert!(
+            write_pi_langfuse_bootstrap_file(&runtime)
+                .unwrap()
+                .is_none()
         );
     }
 

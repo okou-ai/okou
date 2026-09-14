@@ -2006,19 +2006,23 @@ function estimateVideoCredits(
   }, 0);
 }
 
+interface RecordGeneratedVideoArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly runId: string | undefined;
+  readonly billingRunId: string | null;
+  readonly billingContext: string;
+  readonly publicBrand: PublicBrand;
+  readonly privateArtifacts: boolean;
+  readonly pricing: VideoPricing;
+  readonly generation: ParsedVideoGeneration;
+  readonly usageIdempotency: BuiltInGenerationUsageIdempotency;
+}
+
 export const recordGeneratedVideo$ = command(
   async (
     { set },
-    params: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly runId: string | undefined;
-      readonly publicBrand: PublicBrand;
-      readonly privateArtifacts: boolean;
-      readonly pricing: VideoPricing;
-      readonly generation: ParsedVideoGeneration;
-      readonly usageIdempotency: BuiltInGenerationUsageIdempotency;
-    },
+    params: RecordGeneratedVideoArgs,
     signal: AbortSignal,
   ): Promise<RecordedVideo> => {
     const writeDb = set(writeDb$);
@@ -2098,6 +2102,8 @@ export const recordGeneratedVideo$ = command(
         usageRows.map((row) => {
           return {
             runId: params.runId ?? null,
+            billingRunId: params.billingRunId,
+            billingContext: params.billingContext,
             idempotencyKey: builtInGenerationUsageIdempotencyKey({
               ...params.usageIdempotency,
               category: row.category,

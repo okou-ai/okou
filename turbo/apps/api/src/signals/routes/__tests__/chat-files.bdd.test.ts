@@ -783,6 +783,9 @@ describe("FILE-01 uploads, storage, and host APIs", () => {
   it("prepares and completes an upload through S3 boundary state", async () => {
     const actor = bdd.user();
 
+    context.mocks.s3.getSignedUrl.mockResolvedValue(
+      "https://r2.example.com/upload?sig=test",
+    );
     api.mockEmptyObjectStorage();
     const prepared = await api.prepareUpload(actor, {
       filename: "notes.txt",
@@ -791,7 +794,7 @@ describe("FILE-01 uploads, storage, and host APIs", () => {
     });
     expect(prepared).toMatchObject({
       filename: "notes.txt",
-      contentType: "text/plain",
+      contentType: "text/plain; charset=utf-8",
       size: 12,
     });
     expect("uploadUrl" in prepared ? prepared.uploadUrl : "").toMatch(
@@ -801,11 +804,14 @@ describe("FILE-01 uploads, storage, and host APIs", () => {
     expect(prepared.url).not.toContain(actor.userId);
 
     api.mockCompletedUploadObject(actor, prepared.id, "notes.txt", 12);
-    const completed = await api.completeUpload(actor, { id: prepared.id });
+    const completed = await api.completeUpload(actor, {
+      id: prepared.id,
+      contentType: prepared.contentType,
+    });
     expect(completed).toMatchObject({
       id: prepared.id,
       filename: "notes.txt",
-      contentType: "text/plain",
+      contentType: "text/plain; charset=utf-8",
       size: 12,
     });
 

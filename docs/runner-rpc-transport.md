@@ -157,10 +157,11 @@ process control/placement IPC, not this cross-VM transport.
 ## Opt-in binary streaming foundation
 
 #33856 (under #33847) adds `/usr/local/bin/runner-rpc-client --stream` for
-future binary consumers. It does **not** enable SSH upload/download: #33857 owns
-those methods, SFTP and CLI file semantics. The current production dispatcher
-still rejects those unknown methods before resolving authority. Existing exec,
-session and no-argument helper contracts are unchanged.
+bounded binary consumers. #33857 adds `ssh.file.upload` / `ssh.file.download`,
+Runner-owned SFTP and [CLI file semantics](ssh-access.md#file-upload-and-download).
+Only validated file methods extend the Runner request lifetime; unknown methods
+are rejected before resolving authority. Existing exec, session and no-argument
+helper contracts are unchanged.
 
 Streaming stdin starts with one length-delimited, ordinary version-1 Request
 frame, followed by binary frames. The helper rejects caller-supplied
@@ -239,11 +240,14 @@ checks are not a claim that this metal-host test ran locally.
 ## SSH consumer ownership and delivery
 
 Managed `ssh.session.*` methods use the same opaque version-1 transport and one
-terminal result per short request. Session IDs, cursor reads, stdin/EOF, signals,
+terminal result per bounded request. Session IDs, cursor reads, stdin/EOF, signals,
 PTY and retained process state belong to the SSH consumer, not this protocol.
 The Runner-owned session task never retains the initiating guest stream or its
-park reservation. No helper negotiation, method fallback or automatic replay is
-added: an older Runner returns `unknown_method` explicitly. See
+park reservation. A bounded waiting read owns its own stream/reservation until
+that request finishes; it is not attached to the retained session task. No helper
+negotiation, method fallback or automatic replay is added. The staff-gated SSH
+reader changes its required business parameters directly without a legacy read
+payload path; the opaque version-1 framing and helper invocation are unchanged. See
 [managed SSH session ownership](runner-ssh-execution.md#managed-sessions-within-one-run).
 
 #32013 owns explicit `ssh.exec` dispatch, strict business schemas, dynamic JIT

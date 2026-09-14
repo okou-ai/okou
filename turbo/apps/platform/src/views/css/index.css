@@ -34,6 +34,13 @@
   --color-nav-copy: var(--nav-copy, var(--color-sidebar-foreground));
   --color-nav-copy-muted: var(--nav-copy-muted, var(--color-muted-foreground));
 
+  /* Nav chrome, on the same contract as the nav copy above: the gradient color
+     themes define the raw values at :root and the nav resolves to them, while
+     everywhere else they are unset and each consumer falls back to the shared
+     sidebar token it already read. */
+  --color-nav-border: var(--nav-border, var(--color-sidebar-border));
+  --color-nav-rail: var(--nav-rail, var(--color-sidebar-rail));
+
   /* Credit balance breakdown segment colors (usage bar chart) */
   --color-credit-free: #008d76;
   --color-credit-promotional: #ff6030;
@@ -78,6 +85,49 @@
      property, which would compose with the animation instead of being
      replaced by it. */
   --animate-mic-starting-spin: mic-starting-spin 0.7s linear infinite;
+
+  /* Reasoning-effort bar. The top step reveals a warm aurora behind the plain
+     track. Every length here is a fixed pixel value on purpose: the browser
+     resampling a tile is what reads as the texture "growing" during the
+     reveal, so nothing in this texture may be sized in percentages or scaled.
+     The four bands tile at 97 / 61 / 151 / 211px. Those widths are pairwise
+     coprime and each band drifts a whole number of tiles per cycle, so the
+     curtain's silhouette never repeats along the bar and tall peaks keep
+     sliding past short ones. The periods are primes for the same reason:
+     no two layers realign inside a session. */
+  --background-image-effort-aurora-ground: linear-gradient(
+    90deg,
+    oklch(0.955 0.028 72),
+    oklch(0.9 0.085 52)
+  );
+  --background-image-effort-aurora-peaks:
+    radial-gradient(
+      46px 40px at 50% 116%,
+      oklch(0.64 0.19 38 / 0.95),
+      transparent 70%
+    ),
+    radial-gradient(
+      30px 33px at 50% 121%,
+      oklch(0.7 0.175 56 / 0.9),
+      transparent 68%
+    );
+  --background-image-effort-aurora-curtain:
+    radial-gradient(
+      84px 27px at 50% 127%,
+      oklch(0.68 0.175 44 / 0.9),
+      transparent 72%
+    ),
+    radial-gradient(
+      120px 20px at 50% 132%,
+      oklch(0.76 0.145 72 / 0.85),
+      transparent 70%
+    );
+  --animate-effort-aurora-peaks:
+    effort-aurora-peaks 23s linear infinite,
+    effort-aurora-breathe 11s ease-in-out infinite;
+  --animate-effort-aurora-curtain:
+    effort-aurora-curtain 29s linear infinite,
+    effort-aurora-breathe 13s ease-in-out infinite;
 }
 
 /* Palette previews keep the fixed 135deg/52% sRGB blend in Light and Dark.
@@ -106,6 +156,124 @@
   --sal: env(safe-area-inset-left, 0px);
   --okou-viewport-height: 100dvh;
   --okou-desktop-titlebar-height: 48px;
+}
+
+/* The effort bar's handle is a superellipse rather than a rounded rectangle --
+   the same corner smoothing Figma applies -- sampled from
+   |x/r|^n + |y/r|^n = 1 at n = 3.6, twelve points per corner. It is a shape
+   rather than a radius, so it has to be a clip path, and `clip-path` cuts a
+   border off with everything else: the outline is the outer shape showing
+   through a 1px inset of the inner one. Both are fixed to the handle's
+   18x40 / 16x38 geometry. */
+:root {
+  --okou-effort-thumb-clip: polygon(
+    0px 8.2px,
+    0.04px 5.55px,
+    0.16px 4.33px,
+    0.35px 3.39px,
+    0.63px 2.62px,
+    0.99px 1.98px,
+    1.44px 1.44px,
+    1.98px 0.99px,
+    2.62px 0.63px,
+    3.39px 0.35px,
+    4.33px 0.16px,
+    5.55px 0.04px,
+    8.2px 0px,
+    9.8px 0px,
+    12.45px 0.04px,
+    13.67px 0.16px,
+    14.61px 0.35px,
+    15.38px 0.63px,
+    16.02px 0.99px,
+    16.56px 1.44px,
+    17.01px 1.98px,
+    17.37px 2.62px,
+    17.65px 3.39px,
+    17.84px 4.33px,
+    17.96px 5.55px,
+    18px 8.2px,
+    18px 31.8px,
+    17.96px 34.45px,
+    17.84px 35.67px,
+    17.65px 36.61px,
+    17.37px 37.38px,
+    17.01px 38.02px,
+    16.56px 38.56px,
+    16.02px 39.01px,
+    15.38px 39.37px,
+    14.61px 39.65px,
+    13.67px 39.84px,
+    12.45px 39.96px,
+    9.8px 40px,
+    8.2px 40px,
+    5.55px 39.96px,
+    4.33px 39.84px,
+    3.39px 39.65px,
+    2.62px 39.37px,
+    1.98px 39.01px,
+    1.44px 38.56px,
+    0.99px 38.02px,
+    0.63px 37.38px,
+    0.35px 36.61px,
+    0.16px 35.67px,
+    0.04px 34.45px,
+    0px 31.8px
+  );
+  --okou-effort-thumb-body-clip: polygon(
+    0px 7.4px,
+    0.04px 5.01px,
+    0.14px 3.91px,
+    0.32px 3.06px,
+    0.57px 2.37px,
+    0.89px 1.78px,
+    1.3px 1.3px,
+    1.78px 0.89px,
+    2.37px 0.57px,
+    3.06px 0.32px,
+    3.91px 0.14px,
+    5.01px 0.04px,
+    7.4px 0px,
+    8.6px 0px,
+    10.99px 0.04px,
+    12.09px 0.14px,
+    12.94px 0.32px,
+    13.63px 0.57px,
+    14.22px 0.89px,
+    14.7px 1.3px,
+    15.11px 1.78px,
+    15.43px 2.37px,
+    15.68px 3.06px,
+    15.86px 3.91px,
+    15.96px 5.01px,
+    16px 7.4px,
+    16px 30.6px,
+    15.96px 32.99px,
+    15.86px 34.09px,
+    15.68px 34.94px,
+    15.43px 35.63px,
+    15.11px 36.22px,
+    14.7px 36.7px,
+    14.22px 37.11px,
+    13.63px 37.43px,
+    12.94px 37.68px,
+    12.09px 37.86px,
+    10.99px 37.96px,
+    8.6px 38px,
+    7.4px 38px,
+    5.01px 37.96px,
+    3.91px 37.86px,
+    3.06px 37.68px,
+    2.37px 37.43px,
+    1.78px 37.11px,
+    1.3px 36.7px,
+    0.89px 36.22px,
+    0.57px 35.63px,
+    0.32px 34.94px,
+    0.14px 34.09px,
+    0.04px 32.99px,
+    0px 30.6px
+  );
 }
 
 @supports (height: 100lvh) {
@@ -170,21 +338,6 @@ body {
     height: var(--okou-keyboard-scroll-reserve, 0px);
     pointer-events: none;
   }
-}
-
-.okou-viewport-shell {
-  box-sizing: border-box;
-  height: 100%;
-  min-height: 100%;
-  max-height: 100%;
-  overflow: hidden;
-  padding-bottom: var(--sab);
-}
-
-/* Workspace scrollports reach the physical viewport edge. Their scroll content,
-   composer, and other bottom interactions own the safe inset instead. */
-.okou-managed-bottom-safe-area {
-  padding-bottom: 0;
 }
 
 .okou-fixed-viewport-shell {
@@ -354,46 +507,6 @@ body {
   }
 }
 
-/* Thinking indicator: 3-block loader */
-.okou-blocks {
-  display: inline-grid;
-  grid-template-columns: repeat(2, 5px);
-  grid-template-rows: repeat(2, 5px);
-  gap: 1.5px;
-}
-.okou-blocks span {
-  border-radius: 1.5px;
-}
-.okou-blocks span:nth-child(1) {
-  background: var(--zb-c1);
-  grid-column: 2;
-  grid-row: 1;
-  animation: okou-block-pop 1.4s ease-in-out infinite;
-}
-.okou-blocks span:nth-child(2) {
-  background: var(--zb-c2);
-  grid-column: 1;
-  grid-row: 2;
-  animation: okou-block-pop 1.4s ease-in-out 0.2s infinite;
-}
-.okou-blocks span:nth-child(3) {
-  background: var(--zb-c3);
-  grid-column: 2;
-  grid-row: 2;
-  animation: okou-block-pop 1.4s ease-in-out 0.4s infinite;
-}
-@keyframes okou-block-pop {
-  0%,
-  100% {
-    transform: scale(0.8);
-    opacity: 0.5;
-  }
-  50% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
 /* Each named theme pairs one anchor with one companion; the same pair drives
    picker swatches, primary actions, and the workspace ambience below. The HSL
    primary value also feeds the shared semantic token without duplicating it. */
@@ -546,7 +659,24 @@ body {
   user-select: text;
 }
 
-/* Reusable 0.7px border utilities — replaces inline style={{ border: "0.7px solid ..." }} */
+/* Reusable 0.7px border utilities — replaces inline style={{ border: "0.7px solid ..." }}
+
+   Do not delete this rule yet, and do not trust the tooling about it. Its last
+   consumer is `tileBorderClass()` in `buy-credits-section.tsx`, which returns
+   the class from a function instead of spelling it in a `className` attribute.
+   Neither guard can see that: the legacy baseline resolves attributes and
+   constants, and `no-unknown-classes` is scoped to `class` / `className` /
+   `contentClassName`. So the baseline records no consumers, and removing this
+   rule and running the `pnpm lint:style:prune` that the resulting failure tells
+   you to run leaves a fully green tree while those preset tiles silently lose
+   their border.
+
+   That consumer is also not mechanically replaceable. This rule is unlayered,
+   so its `border` shorthand outranks every Tailwind utility regardless of
+   specificity — including the `hover:border-muted-foreground/30` beside it,
+   which therefore has never painted. Swapping the class in activates that
+   hover, so retiring it is a visual decision rather than an equivalence. See
+   "The all-round hairline" in docs/styles.md. */
 .okou-border {
   border: 0.7px solid hsl(var(--gray-400));
 }
@@ -557,25 +687,10 @@ body {
   border: 0.5px solid hsl(var(--gray-400));
 }
 
-/* Left nav */
-.okou-nav {
-  --color-sidebar-border: hsl(var(--gray-200));
-}
-
 /* The sidebars take the site's own two greys. */
 .okou-app {
   --color-sidebar: hsl(var(--sidebar));
   --color-sidebar-rail: hsl(var(--sidebar-rail));
-}
-.okou-app[data-gradient-color-themes] .okou-nav {
-  --color-sidebar: hsl(var(--sidebar));
-  --color-sidebar-border: hsl(var(--border) / 0.5);
-}
-.okou-app[data-gradient-color-themes] .okou-nav.okou-nav-rail {
-  background-color: hsl(var(--okou-nav-rail));
-}
-:where([data-theme="dark"]) .okou-nav {
-  --color-sidebar: hsl(var(--sidebar));
 }
 
 /* The travel a sidebar thread title is scrolled by while its row is hovered or
@@ -617,20 +732,6 @@ body {
   .okou-app .okou-chat-card {
     background-color: hsl(var(--card));
   }
-}
-
-/* Gray-100 clears 1.06:1 against the white canvas, so
-   the bubble stops reading as a bubble and the turn boundary disappears. Take
-   the gray-200 step dark has always used here. */
-.okou-app .okou-chat-bubble-user {
-  background-color: hsl(var(--gray-200));
-  color: hsl(var(--foreground));
-}
-
-/* Chat: assistant message bubble */
-.okou-app .okou-chat-bubble-assistant {
-  background-color: transparent;
-  border: none;
 }
 
 /* Composer / input card (white, light border — “Just ask” / chat input) */
@@ -744,7 +845,6 @@ body {
   --color-success-emphasis: #2a7a4b;
   --color-done-fg: #6a5acd;
   --color-done-emphasis: #6a5acd;
-  --color-copied-active-bg: hsl(var(--gray-400));
 
   /* Syntax — muted earth tones on cool-neutral background */
   --color-prettylights-syntax-comment: hsl(var(--gray-600));
@@ -797,7 +897,6 @@ body {
   --color-success-emphasis: #7dba97;
   --color-done-fg: #b8a0d8;
   --color-done-emphasis: #b8a0d8;
-  --color-copied-active-bg: hsl(var(--gray-400));
 
   /* Syntax — softer tones for dark backgrounds */
   --color-prettylights-syntax-comment: hsl(var(--gray-600));
@@ -838,17 +937,6 @@ body {
 .wmde-markdown .okou-markdown-card {
   margin-top: 6px;
   margin-bottom: 6px;
-}
-
-/* Chat bubbles: relax paragraph spacing so 15px text doesn't read cramped.
-   Line-height is owned by the bubble container (leading-[1.7]) and inherited
-   by the markdown body, mirroring how the bubble owns the font size. */
-.okou-chat-bubble-assistant .wmde-markdown p,
-.okou-chat-bubble-user .wmde-markdown p,
-.okou-chat-bubble-assistant .wmde-markdown .okou-markdown-card,
-.okou-chat-bubble-user .wmde-markdown .okou-markdown-card {
-  margin-top: 8px;
-  margin-bottom: 8px;
 }
 
 .wmde-markdown h1,
@@ -991,10 +1079,6 @@ body {
   border-bottom-color: hsl(var(--border));
 }
 
-.okou-chat-bubble-assistant .wmde-markdown hr {
-  display: none;
-}
-
 /* --- Mark / highlight --------------------------------------------------- */
 .wmde-markdown mark {
   background-color: hsl(var(--brand-subtle));
@@ -1073,102 +1157,6 @@ body {
 /* Code block scrollbar */
 .wmde-markdown pre > code::-webkit-scrollbar-thumb {
   background: hsl(var(--gray-400));
-}
-
-/* --- Mermaid Diagrams --------------------------------------------------- */
-.wmde-markdown .mermaid-block {
-  margin-bottom: 16px;
-}
-
-/* The box is reserved at this size before the render starts, so every diagram
-   in a thread is the same height and none of them changes the height of the
-   message it sits in once it appears. Below the max width the box keeps its
-   ratio, so diagrams stay equally tall as the column narrows. */
-.wmde-markdown .mermaid-block > .icon-tooltip-trigger {
-  display: block;
-  width: 100%;
-  max-width: 420px;
-}
-
-.wmde-markdown .mermaid-diagram-expand {
-  position: relative;
-  display: block;
-  width: 100%;
-  max-width: 420px;
-  aspect-ratio: 4 / 3;
-  margin: 4px 0;
-  padding: 8px;
-  border: 1px solid hsl(var(--foreground) / 0.1);
-  border-radius: 8px;
-  background: hsl(var(--muted) / 0.3);
-  overflow: hidden;
-  cursor: zoom-in;
-}
-
-.wmde-markdown .mermaid-diagram-expand:disabled {
-  cursor: default;
-}
-
-/* The image and state indicators are taken out of flow so none can size the
-   box: the diagram is serialized at lightbox scale, and an in-flow image that
-   wide would win over `aspect-ratio` through its content-based minimum size.
-   Letterboxed rather than stretched, since a single box can only hold diagrams
-   of different aspect ratios undistorted by leaving margins. */
-.wmde-markdown .mermaid-diagram-image,
-.wmde-markdown .mermaid-diagram-pending {
-  /* Inset by the box's own padding: an absolutely positioned child is placed
-     against the padding box, which the padding would otherwise not clear. */
-  position: absolute;
-  inset: 8px;
-}
-
-.wmde-markdown .mermaid-diagram-image {
-  /* An absolutely positioned <img> whose width and height are `auto` is laid
-     out at its own intrinsic size, so `inset` alone leaves the diagram at
-     lightbox scale and `object-fit` has nothing to fit into. The size is
-     therefore stated: `calc` rather than `100%`, since a percentage resolves
-     against the padding box, which the box's own padding would not clear. */
-  width: calc(100% - 16px);
-  height: calc(100% - 16px);
-  object-fit: contain;
-  /* github-markdown-css paints every image on an opaque canvas colour, which
-     would cover the box behind the letterboxed diagram. */
-  background: none;
-}
-
-.wmde-markdown .mermaid-diagram-pending {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: hsl(var(--muted-foreground));
-}
-
-.wmde-markdown .mermaid-diagram-source > summary {
-  cursor: pointer;
-  color: hsl(var(--muted-foreground));
-  font-size: 0.8125rem;
-}
-
-.wmde-markdown .mermaid-diagram-source > pre {
-  margin-top: 8px;
-}
-
-/* --- Code Block Copy Button --------------------------------------------- */
-.wmde-markdown pre .copied {
-  background: hsl(var(--gray-200));
-  color: hsl(var(--muted-foreground));
-  border-radius: 6px;
-}
-
-.wmde-markdown pre:hover .copied:hover {
-  background: hsl(var(--gray-300));
-  color: hsl(var(--foreground));
-}
-
-.wmde-markdown pre:hover .copied:active,
-.wmde-markdown pre .copied.active {
-  background: hsl(var(--gray-400));
-  color: hsl(var(--foreground));
 }
 
 /* --- KBD ---------------------------------------------------------------- */
@@ -1288,6 +1276,53 @@ details > summary {
 /* ---------------------------------------------------------------------------
  * Mic button – voice activity fill
  * ------------------------------------------------------------------------- */
+
+/* Whole-tile drifts, so every cycle wraps seamlessly. Only background-position
+   moves; background-size is never touched, which is what makes it impossible
+   for the peaks to change size. */
+@keyframes effort-aurora-peaks {
+  to {
+    background-position:
+      -291px 0,
+      183px 0;
+  }
+}
+
+@keyframes effort-aurora-curtain {
+  to {
+    background-position:
+      302px 0,
+      -422px 0;
+  }
+}
+
+/* Uneven keyframes rather than a sine, so the breathing never reads as a beat. */
+@keyframes effort-aurora-breathe {
+  0% {
+    opacity: 0.74;
+  }
+  17% {
+    opacity: 0.96;
+  }
+  29% {
+    opacity: 0.81;
+  }
+  46% {
+    opacity: 1;
+  }
+  58% {
+    opacity: 0.86;
+  }
+  79% {
+    opacity: 0.97;
+  }
+  91% {
+    opacity: 0.78;
+  }
+  100% {
+    opacity: 0.74;
+  }
+}
 
 @keyframes mic-starting-spin {
   from {
@@ -1744,7 +1779,8 @@ details > summary {
      card as well as backing the chat column, and a full-strength tint around a
      white sheet overpowers it. The rail keeps its depth and stays the anchor. */
   --sidebar: var(--okou-color-theme-hue) 30% 98.4%;
-  --okou-nav-rail: var(--okou-color-theme-hue) 36% 93.5%;
+  --nav-rail: hsl(var(--okou-color-theme-hue) 36% 93.5%);
+  --nav-border: hsl(var(--border) / 0.5);
   --nav-copy: hsl(var(--okou-color-theme-hue) 24% 18%);
   --nav-copy-muted: hsl(var(--okou-color-theme-hue) 18% 38%);
   --background-50: var(--gray-50);
@@ -1785,7 +1821,8 @@ details > summary {
   --input: var(--gray-200);
   --ring: var(--okou-color-theme-hue) 45% 62%;
   --sidebar: var(--okou-color-theme-hue) 14% 12%;
-  --okou-nav-rail: var(--okou-color-theme-hue) 18% 8%;
+  --nav-rail: hsl(var(--okou-color-theme-hue) 18% 8%);
+  --nav-border: hsl(var(--border) / 0.5);
   --nav-copy: hsl(var(--okou-color-theme-hue) 22% 90%);
   --nav-copy-muted: hsl(var(--okou-color-theme-hue) 16% 64%);
   --background-50: var(--gray-50);

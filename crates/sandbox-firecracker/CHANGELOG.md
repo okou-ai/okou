@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.42.3](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.42.2...sandbox-firecracker-v0.42.3) (2026-09-14)
+
+
+### Bug Fixes
+
+* **rust:** reuse managed child pidfds for firecracker monitoring ([#34061](https://github.com/vm0-ai/vm0/issues/34061)) ([7112251](https://github.com/vm0-ai/vm0/commit/7112251220aa4268e6b0b1e154bff401eb2d09d1))
+
+## [0.42.2](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.42.1...sandbox-firecracker-v0.42.2) (2026-09-14)
+
+## [0.42.1](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.42.0...sandbox-firecracker-v0.42.1) (2026-09-14)
+
+
+### Bug Fixes
+
+* **rust:** stop host cpu fairness ticker on sampling failures ([#33939](https://github.com/vm0-ai/vm0/issues/33939)) ([16999c6](https://github.com/vm0-ai/vm0/commit/16999c63ada2b7e89f7a23a670670cc55932b84d))
+
 ## [0.42.0](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.41.10...sandbox-firecracker-v0.42.0) (2026-09-14)
 
 

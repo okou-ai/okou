@@ -4,6 +4,7 @@ import zlib
 
 from mitmproxy import http
 
+import content_encoding
 from body_limits import REQUEST_BODY_BILLING_INSPECTION_LIMIT
 from zlib_decoding import decode_zlib_bounded
 
@@ -48,17 +49,19 @@ def decode_request_body_for_billing(
     """Decode a request body for conservative billing inspection.
 
     Unlike response capture helpers, billing must fail closed: unsupported,
-    invalid, incomplete, or oversized encoded bodies are treated as
-    uninspectable rather than falling back to raw bytes. Complete gzip member
-    sequences share one decoded-output budget; deflate accepts one zlib-wrapped
-    or raw stream.
+    invalid, incomplete, or oversized encoded bodies and exhausted encoding
+    header budgets are treated as uninspectable rather than falling back to raw
+    bytes. Complete gzip member sequences share one decoded-output budget;
+    deflate accepts one zlib-wrapped or raw stream.
     """
     if not raw_content:
         return None
     if len(raw_content) > max_raw:
         return None
 
-    encoding = headers.get("content-encoding", "").strip().lower()
+    encoding = content_encoding.read_folded(headers)
+    if encoding is None:
+        return None
     if not encoding or encoding == "identity":
         return raw_content if len(raw_content) <= max_decoded else None
     if encoding == "gzip":

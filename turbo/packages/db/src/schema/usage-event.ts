@@ -1,5 +1,6 @@
 import {
   pgTable,
+  check,
   uuid,
   varchar,
   text,
@@ -66,6 +67,11 @@ export const usageEvent = pgTable(
     idempotencyKey: uuid("idempotency_key").notNull(),
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
+    // Original identity survives run_id SET NULL. Missing historical context is
+    // explicit; this is not an authorization reference or a pricing input yet.
+    billingRunId: uuid("billing_run_id"),
+    billingAnchorAt: timestamp("billing_anchor_at"),
+    billingContext: text("billing_context").notNull().default("legacy_unknown"),
     kind: varchar("kind", { length: 30 }).notNull(),
     provider: varchar("provider", { length: 100 }).notNull(),
     category: varchar("category", { length: 100 }).notNull(),
@@ -78,6 +84,16 @@ export const usageEvent = pgTable(
   },
   (table) => {
     return [
+      index("idx_usage_event_billing_run").on(table.billingRunId),
+      check(
+        "usage_event_billing_context_check",
+        sql`(
+        (${table.billingContext} = 'run' AND ${table.billingRunId} IS NOT NULL AND ${table.billingAnchorAt} IS NOT NULL)
+        OR (${table.billingContext} = 'runless' AND ${table.billingRunId} IS NULL AND ${table.billingAnchorAt} IS NOT NULL)
+        OR (${table.billingContext} = 'missing_run' AND ${table.billingRunId} IS NOT NULL AND ${table.billingAnchorAt} IS NULL)
+        OR (${table.billingContext} = 'legacy_unknown' AND ${table.billingRunId} IS NULL AND ${table.billingAnchorAt} IS NULL)
+      )`,
+      ),
       uniqueIndex("uq_usage_event_idempotency_key").on(table.idempotencyKey),
       index("idx_usage_event_run_id").on(table.runId),
       index("idx_usage_event_org_status").on(table.orgId, table.status),

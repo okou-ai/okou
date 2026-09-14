@@ -32,6 +32,15 @@ const MICROSOFT_TOKEN_URL =
   "https://login.microsoftonline.com/common/oauth2/v2.0/token";
 const MICROSOFT_ME_URL = "https://graph.microsoft.com/v1.0/me";
 
+class ClerkResourceNotFoundTestError extends Error {
+  static readonly kind = "ClerkAPIResponseError";
+  readonly status = 404;
+
+  constructor() {
+    super("Clerk Backend API request failed with status 404");
+  }
+}
+
 async function appRequest(
   path: string,
   options: {
@@ -405,5 +414,36 @@ describe("Teams OAuth API routes", () => {
     expect(new URL(location!).searchParams.get("error")).toBe(
       "Invalid connect state.",
     );
+  });
+
+  // #33822: a deleted Clerk identity now reaches this call site as a controlled
+  // `identity_not_found` result instead of an escaping SDK exception. It must
+  // deny exactly like the non-member case above, with no observable change.
+  it("rejects callback state when the Clerk identity no longer exists", async () => {
+    const fixture = await seedTeamsInstallation(track);
+    context.mocks.clerk.users.getOrganizationMembershipList.mockRejectedValue(
+      new ClerkResourceNotFoundTestError(),
+    );
+
+    const response = await appRequest(
+      callbackPath({
+        code: "valid-code",
+        state: {
+          orgId: fixture.orgId,
+          publicBrand: "okou",
+          userId: fixture.userId,
+          redirectUri: CALLBACK_REDIRECT_URI,
+        },
+      }),
+      { origin: API_ORIGIN },
+    );
+
+    expect(response.status).toBe(307);
+    const location = response.headers.get("location");
+    expect(location).toContain(`${APP_ORIGIN}/settings/teams?error=`);
+    expect(new URL(location!).searchParams.get("error")).toBe(
+      "Invalid connect state.",
+    );
+    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
   });
 });

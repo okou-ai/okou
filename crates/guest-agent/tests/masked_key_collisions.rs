@@ -1,7 +1,10 @@
 use base64::Engine;
 use guest_agent::{events::prepare_event_payload_for_run_id, masker::SecretMasker};
 use serde_json::{Map, Value, json};
-use std::{error::Error, time::Duration};
+use std::{
+    error::Error,
+    time::{Duration, Instant},
+};
 
 type TestResult = Result<(), Box<dyn Error>>;
 
@@ -18,6 +21,41 @@ fn blocked_decimal_secrets() -> Vec<String> {
     let mut secrets = vec!["token-alpha".to_string(), "token-bravo".to_string()];
     secrets.extend((1..=9).map(|digit| format!("***#{digit}")));
     secrets
+}
+
+fn binary_collision_entries(bits: u32) -> Map<String, Value> {
+    let encoded = base64::engine::general_purpose::STANDARD.encode("secret");
+    (0..1usize << bits)
+        .map(|index| {
+            let mut key = String::new();
+            for bit in 0..bits {
+                key.push_str(if index & (1 << bit) == 0 {
+                    "secret"
+                } else {
+                    &encoded
+                });
+            }
+            (key, json!(index))
+        })
+        .collect()
+}
+
+fn separate_collision_families(count: usize) -> Map<String, Value> {
+    let encoded = base64::engine::general_purpose::STANDARD.encode("secret");
+    (0..count)
+        .flat_map(|index| {
+            [
+                (format!("family-{index}-secret"), json!(index * 2)),
+                (format!("family-{index}-{encoded}"), json!(index * 2 + 1)),
+            ]
+        })
+        .collect()
+}
+
+fn assert_numbered_values(input: &Map<String, Value>, count: usize) {
+    let mut numbers = input.values().filter_map(Value::as_u64).collect::<Vec<_>>();
+    numbers.sort_unstable();
+    assert_eq!(numbers, (0..count as u64).collect::<Vec<_>>());
 }
 
 async fn in_child_process(test_name: &str, check: impl FnOnce()) -> TestResult {
@@ -93,7 +131,7 @@ async fn event_preparation_preserves_reserved_fallback_keys_and_nested_values() 
                 "\u{10002}\u{10000}".to_string(),
                 "sequenceNumber".to_string(),
             ]);
-            secrets.extend((0..64).map(|index| format!("token-{index}")));
+            secrets.push("secret".to_string());
             let masker = masker_for(&secrets);
             let probe = prepare_event_payload_for_run_id(
                 json!({
@@ -113,9 +151,7 @@ async fn event_preparation_preserves_reserved_fallback_keys_and_nested_values() 
             reserved.insert("".to_string(), json!("reserved empty key"));
             reserved.insert("***#0".to_string(), json!("reserved numeric key"));
             let mut input = reserved.clone();
-            for index in 0..64 {
-                input.insert(format!("token-{index}"), json!(index));
-            }
+            input.extend(binary_collision_entries(10));
             input.insert(
                 "nested".to_string(),
                 json!([{
@@ -132,12 +168,7 @@ async fn event_preparation_preserves_reserved_fallback_keys_and_nested_values() 
             for (key, value) in reserved {
                 assert_eq!(masked_input[&key], value);
             }
-            let mut numbers = masked_input
-                .values()
-                .filter_map(Value::as_u64)
-                .collect::<Vec<_>>();
-            numbers.sort_unstable();
-            assert_eq!(numbers, (0..64).collect::<Vec<_>>());
+            assert_numbered_values(masked_input, 1 << 10);
             for key in masked_input.keys() {
                 assert_eq!(masker.mask_string(key), *key);
             }
@@ -176,7 +207,9 @@ async fn event_preparation_keeps_ordinary_collision_suffixes() -> TestResult {
                         "***": "reserved base",
                         "***#2": "reserved suffix",
                         "token-alpha": {"token-bravo": "first"},
-                        "token-bravo": "second"
+                        "token-alpha#3": "first suffixed base",
+                        "token-bravo": "second",
+                        "token-bravo#3": "second suffixed base"
                     }
                 }),
                 7,
@@ -194,8 +227,275 @@ async fn event_preparation_keeps_ordinary_collision_suffixes() -> TestResult {
                             "***": "reserved base",
                             "***#2": "reserved suffix",
                             "***#3": {"***": "first"},
+                            "***#3#2": "first suffixed base",
+                            "***#3#3": "second suffixed base",
                             "***#4": "second"
                         }
+                    }]
+                })
+            );
+        },
+    )
+    .await
+}
+
+#[tokio::test]
+async fn event_preparation_handles_large_plaintext_base64_collision_families() -> TestResult {
+    in_child_process(
+        "event_preparation_handles_large_plaintext_base64_collision_families",
+        || {
+            let bits = 12;
+            let count = 1 << bits;
+            let masker = masker_for(&["secret".to_string()]);
+            let base = "***".repeat(bits as usize);
+            let reserved = Map::from_iter([
+                (base.clone(), json!("reserved base")),
+                (format!("{base}#2"), json!("reserved first suffix")),
+                (format!("{base}#17"), json!("reserved later suffix")),
+            ]);
+            let mut input = binary_collision_entries(bits);
+            input.extend(reserved.clone());
+            let event = json!({
+                "type": "assistant",
+                "tool_input": input,
+                "nested": [{"tool_input": input}]
+            });
+            let payload = prepare_event_payload_for_run_id(event.clone(), 42, &masker, "test-run");
+            let masked_input = payload["events"][0]["tool_input"].as_object().unwrap();
+
+            assert_eq!(masked_input.len(), count + reserved.len());
+            for (key, value) in reserved {
+                assert_eq!(masked_input[&key], value);
+            }
+            assert_numbered_values(masked_input, count);
+            // Every available ordinary suffix is used, even past a reserved gap.
+            for suffix in 2..=count + 3 {
+                assert!(masked_input.contains_key(&format!("{base}#{suffix}")));
+            }
+            for key in masked_input.keys() {
+                assert_eq!(masker.mask_string(key), *key);
+            }
+            assert_eq!(
+                payload["events"][0]["nested"][0]["tool_input"],
+                payload["events"][0]["tool_input"]
+            );
+            assert_eq!(payload["events"][0]["sequenceNumber"], 42);
+            assert_eq!(payload["runId"], "test-run");
+            assert_eq!(
+                payload,
+                prepare_event_payload_for_run_id(event, 42, &masker, "test-run")
+            );
+        },
+    )
+    .await
+}
+
+#[tokio::test]
+async fn event_preparation_bounds_work_across_many_blocked_collision_families() -> TestResult {
+    in_child_process(
+        "event_preparation_bounds_work_across_many_blocked_collision_families",
+        || {
+            let mut secrets = blocked_decimal_secrets();
+            secrets.push("secret".to_string());
+            let masker = masker_for(&secrets);
+            let count = 1024;
+            let event = json!({
+                "type": "assistant",
+                "tool_input": separate_collision_families(count)
+            });
+            let payload = prepare_event_payload_for_run_id(event.clone(), 7, &masker, "test-run");
+            let input = payload["events"][0]["tool_input"].as_object().unwrap();
+
+            assert_eq!(input.len(), count * 2);
+            assert_numbered_values(input, count * 2);
+            for index in 0..count {
+                assert!(input.contains_key(&format!("family-{index}-***")));
+            }
+            for key in input.keys() {
+                assert_eq!(masker.mask_string(key), *key);
+            }
+            assert_eq!(
+                payload,
+                prepare_event_payload_for_run_id(event, 7, &masker, "test-run")
+            );
+        },
+    )
+    .await
+}
+
+// Run explicitly with --ignored --nocapture. Compare the same profile and
+// toolchain across revisions; the subprocess watchdog above only guards liveness.
+#[test]
+#[ignore = "manual collision-scaling benchmark"]
+fn event_preparation_collision_scaling_benchmark() {
+    let ordinary = masker_for(&["secret".to_string()]);
+    let mut secrets = blocked_decimal_secrets();
+    secrets.push("secret".to_string());
+    let blocked = masker_for(&secrets);
+    for bits in 8..=11 {
+        for (case, masker, input) in [
+            ("decimal", &ordinary, binary_collision_entries(bits)),
+            ("unicode", &blocked, binary_collision_entries(bits)),
+            (
+                "many-families",
+                &blocked,
+                separate_collision_families(1 << (bits - 1)),
+            ),
+        ] {
+            let count = input.len();
+            let event = json!({"type": "assistant", "tool_input": input});
+            let mut samples = Vec::new();
+            for _ in 0..3 {
+                let event = event.clone();
+                let start = Instant::now();
+                let payload = prepare_event_payload_for_run_id(event, 7, masker, "test-run");
+                samples.push(start.elapsed());
+                assert_eq!(
+                    payload["events"][0]["tool_input"]
+                        .as_object()
+                        .unwrap()
+                        .len(),
+                    count
+                );
+            }
+            samples.sort_unstable();
+            println!("{case}: {count} keys, median {:?}", samples[1]);
+        }
+    }
+}
+
+#[tokio::test]
+async fn event_preparation_finishes_for_long_single_key_cascades() -> TestResult {
+    in_child_process(
+        "event_preparation_finishes_for_long_single_key_cascades",
+        || {
+            let masker = masker_for(&["a***b".to_string()]);
+            for n in [4_096, 8_192, 16_384, 32_768, 262_144] {
+                let key = format!("{}***{}", "a".repeat(n), "b".repeat(n));
+                let event = Value::Object(Map::from_iter([(key, Value::Null)]));
+                let payload = prepare_event_payload_for_run_id(event, 7, &masker, "test-run");
+
+                assert_eq!(
+                    payload,
+                    json!({
+                        "runId": "test-run",
+                        "events": [{"***": null, "sequenceNumber": 7}]
+                    })
+                );
+            }
+        },
+    )
+    .await
+}
+
+#[tokio::test]
+async fn event_preparation_preserves_nested_values_after_whole_key_redaction() -> TestResult {
+    in_child_process(
+        "event_preparation_preserves_nested_values_after_whole_key_redaction",
+        || {
+            let mut secrets = blocked_decimal_secrets();
+            secrets.extend(["a***b".to_string(), "\u{10000}\u{10001}".to_string()]);
+            let masker = masker_for(&secrets);
+            let cascade = format!("{}***{}", "a".repeat(4_096), "b".repeat(4_096));
+            let probe = prepare_event_payload_for_run_id(
+                json!({"***": "reserved", (cascade.clone()): 0}),
+                1,
+                &masker,
+                "test-run",
+            );
+            let opaque_key = probe["events"][0]
+                .as_object()
+                .unwrap()
+                .iter()
+                .find_map(|(key, value)| (value == &json!(0)).then_some(key.clone()))
+                .unwrap();
+            let reserved = Map::from_iter([
+                ("***".to_string(), json!("reserved base")),
+                ("***#0".to_string(), json!("reserved numeric key")),
+                (opaque_key, json!("reserved opaque key")),
+                ("ordinary".to_string(), json!("unmatched value")),
+            ]);
+            let mut input = reserved.clone();
+            input.insert(cascade.clone(), json!(11));
+            input.insert(format!("prefix-{cascade}-suffix"), json!(22));
+            input.insert(
+                "nested".to_string(),
+                json!([{
+                    (cascade): "contains token-alpha here",
+                    "***": "reserved nested base"
+                }]),
+            );
+            let entry_count = input.len();
+            let event = json!({"type": "assistant", "tool_input": input});
+            let payload = prepare_event_payload_for_run_id(event.clone(), 42, &masker, "test-run");
+            let masked_input = payload["events"][0]["tool_input"].as_object().unwrap();
+
+            assert_eq!(masked_input.len(), entry_count);
+            for (key, value) in reserved {
+                assert_eq!(masked_input[&key], value);
+            }
+            let mut numbers = masked_input
+                .values()
+                .filter_map(Value::as_u64)
+                .collect::<Vec<_>>();
+            numbers.sort_unstable();
+            assert_eq!(numbers, [11, 22]);
+            for key in masked_input.keys() {
+                assert_eq!(masker.mask_string(key), *key);
+            }
+            let nested = masked_input["nested"][0].as_object().unwrap();
+            assert_eq!(nested.len(), 2);
+            assert_eq!(nested["***"], "reserved nested base");
+            assert!(nested.values().any(|value| value == "contains *** here"));
+            for key in nested.keys() {
+                assert_eq!(masker.mask_string(key), *key);
+            }
+            secrets.reverse();
+            assert_eq!(
+                payload,
+                prepare_event_payload_for_run_id(event, 42, &masker_for(&secrets), "test-run")
+            );
+            let serialized = serde_json::to_string(&payload).unwrap();
+            assert_eq!(serde_json::from_str::<Value>(&serialized).unwrap(), payload);
+        },
+    )
+    .await
+}
+
+#[tokio::test]
+async fn event_preparation_keeps_readable_short_and_encoded_cascades() -> TestResult {
+    in_child_process(
+        "event_preparation_keeps_readable_short_and_encoded_cascades",
+        || {
+            let masker = masker_for(&["a***b".to_string(), "é***ß".to_string()]);
+            let encoded_cascade =
+                format!("{}***{}", "%c3%a9".repeat(4_096), "%c3%9f".repeat(4_096));
+            let payload = prepare_event_payload_for_run_id(
+                json!({
+                    "prefix-aa***bb-suffix": 1,
+                    "unicode-éé***ßß-suffix": 2,
+                    "encoded-%c3%a9%c3%a9***%c3%9f%c3%9f-suffix": 3,
+                    "long": [{(encoded_cascade): 4}],
+                    "***": "reserved base",
+                    "***#2": "reserved suffix"
+                }),
+                7,
+                &masker,
+                "test-run",
+            );
+
+            assert_eq!(
+                payload,
+                json!({
+                    "runId": "test-run",
+                    "events": [{
+                        "prefix-***-suffix": 1,
+                        "unicode-***-suffix": 2,
+                        "encoded-***-suffix": 3,
+                        "long": [{"***": 4}],
+                        "***": "reserved base",
+                        "***#2": "reserved suffix",
+                        "sequenceNumber": 7
                     }]
                 })
             );

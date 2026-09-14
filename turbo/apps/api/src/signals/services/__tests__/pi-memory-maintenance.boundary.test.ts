@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 
 import { executionContextSchema } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -45,6 +46,10 @@ import { webhooksAgentCompleteRoutes } from "../../routes/webhooks-agent-complet
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
 import { webhooksAgentStorageRoutes } from "../../routes/webhooks-agent-storage";
 import { testCronCleanupSandboxesStateRoutes } from "../../routes/test-cron-cleanup-sandboxes-state";
+import {
+  deleteFeatureSwitchesForUser,
+  updateFeatureSwitchesForUser,
+} from "../../routes/__tests__/helpers/feature-switches";
 import { seedBuiltInModelKey } from "../../routes/__tests__/helpers/runtime-state";
 import {
   advancePiMemoryPhase2InputRevision,
@@ -392,6 +397,19 @@ async function claimMaintenanceRun(
 async function launch(fault: Fault, noDiff = false, cleanupMode?: CleanupMode) {
   const scope = await createPhase2TestScope(`boundary-${fault}`, {
     emptyBase: true,
+  });
+  // PiMemory is off for everyone by default; the maintenance dispatcher
+  // only runs for owners whose explicit override enables it.
+  await updateFeatureSwitchesForUser(
+    context,
+    { orgId: scope.orgId, userId: scope.userId },
+    { [FeatureSwitchKey.PiMemory]: true },
+  );
+  onTestFinished(async () => {
+    await deleteFeatureSwitchesForUser(context, {
+      orgId: scope.orgId,
+      userId: scope.userId,
+    });
   });
   const candidate = {
     piSessionId: randomUUID(),
@@ -844,7 +862,6 @@ async function launch(fault: Fault, noDiff = false, cleanupMode?: CleanupMode) {
       piModelConfig: JSON.stringify({
         provider: "openai",
         model: "gpt-5.6-terra",
-        api: "openai-responses",
         baseUrl: `${baseUrl}/v1`,
         apiKeyEnv: "OPENAI_API_KEY",
         credentialSecretName: "OPENAI_API_KEY",

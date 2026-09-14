@@ -1,6 +1,12 @@
+import {
+  FEISHU_PLATFORMS,
+  type FeishuPlatform,
+} from "@okouai/core/feishu-platform";
+import { pathname$ } from "../route.ts";
 import { command, computed, state } from "ccstate";
 import {
   feishuConnectContract,
+  larkConnectContract,
   type FeishuConnectStatus,
   type FeishuInstallationStatus,
 } from "@okouai/api-contracts/contracts/feishu-connect";
@@ -10,6 +16,14 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 import { i18n } from "../../i18n/index.ts";
+
+export const feishuPlatform$ = computed((get): FeishuPlatform => {
+  const path = get(pathname$);
+  return path === FEISHU_PLATFORMS.lark.settingsPath ||
+    path === FEISHU_PLATFORMS.lark.callbackPath
+    ? "lark"
+    : "feishu";
+});
 
 const reload$ = state(0);
 const internalDialogOpen$ = state(false);
@@ -37,8 +51,12 @@ const FEISHU_SETUP_STEP_ORDER = [
 export const feishuOrgData$ = computed(
   async (get): Promise<FeishuConnectStatus> => {
     get(reload$);
-    const client = get(apiClient$)(feishuConnectContract);
-    const result = await accept(client.getStatus(), [200]);
+    const client = get(apiClient$)(
+      get(feishuPlatform$) === "lark"
+        ? larkConnectContract
+        : feishuConnectContract,
+    );
+    const result = await accept(client.getStatus({}), [200]);
     return result.body;
   },
 );
@@ -101,7 +119,11 @@ export const feishuInstallations$ = computed(
 
 export const disconnectFeishuOrg$ = command(
   async ({ get, set }, installationId: string | null, signal: AbortSignal) => {
-    const client = get(apiClient$)(feishuConnectContract);
+    const client = get(apiClient$)(
+      get(feishuPlatform$) === "lark"
+        ? larkConnectContract
+        : feishuConnectContract,
+    );
     if (installationId) {
       await accept(
         client.disconnectInstallation({
@@ -111,7 +133,12 @@ export const disconnectFeishuOrg$ = command(
         [200],
       );
     } else {
-      await accept(client.disconnect({ fetchOptions: { signal } }), [200]);
+      await accept(
+        client.disconnect({
+          fetchOptions: { signal },
+        }),
+        [200],
+      );
     }
     signal.throwIfAborted();
     set(reload$, (value) => {
@@ -119,7 +146,8 @@ export const disconnectFeishuOrg$ = command(
     });
     toast.success(
       i18n.t(($) => {
-        return $.connectors.providerSettings.toasts.feishuDisconnected;
+        return $.connectors.providerSettings[get(feishuPlatform$)].toasts
+          .disconnected;
       }),
     );
   },
@@ -237,9 +265,16 @@ export const setupFeishuOrg$ = command(
     },
     signal: AbortSignal,
   ): Promise<FeishuConnectStatus> => {
-    const client = get(apiClient$)(feishuConnectContract);
+    const client = get(apiClient$)(
+      get(feishuPlatform$) === "lark"
+        ? larkConnectContract
+        : feishuConnectContract,
+    );
     const result = await accept(
-      client.setup({ body: input, fetchOptions: { signal } }),
+      client.setup({
+        body: input,
+        fetchOptions: { signal },
+      }),
       [200],
     );
     signal.throwIfAborted();
@@ -257,7 +292,11 @@ export const setupFeishuOrg$ = command(
 
 export const checkFeishuAppIdAvailable$ = command(
   async ({ get }, appId: string, signal: AbortSignal): Promise<void> => {
-    const client = get(apiClient$)(feishuConnectContract);
+    const client = get(apiClient$)(
+      get(feishuPlatform$) === "lark"
+        ? larkConnectContract
+        : feishuConnectContract,
+    );
     await accept(
       client.checkAppId({
         query: { appId },
@@ -276,7 +315,11 @@ export const updateFeishuInstallationAgent$ = command(
     defaultAgentId: string,
     signal: AbortSignal,
   ) => {
-    const client = get(apiClient$)(feishuConnectContract);
+    const client = get(apiClient$)(
+      get(feishuPlatform$) === "lark"
+        ? larkConnectContract
+        : feishuConnectContract,
+    );
     await accept(
       client.updateInstallation({
         params: { installationId },
@@ -299,7 +342,11 @@ export const completeFeishuInstallationSetup$ = command(
     defaultAgentId: string,
     signal: AbortSignal,
   ) => {
-    const client = get(apiClient$)(feishuConnectContract);
+    const client = get(apiClient$)(
+      get(feishuPlatform$) === "lark"
+        ? larkConnectContract
+        : feishuConnectContract,
+    );
     await accept(
       client.updateInstallation({
         params: { installationId },
@@ -314,7 +361,8 @@ export const completeFeishuInstallationSetup$ = command(
     });
     toast.success(
       i18n.t(($) => {
-        return $.connectors.providerSettings.toasts.feishuBotInstalled;
+        return $.connectors.providerSettings[get(feishuPlatform$)].toasts
+          .botInstalled;
       }),
     );
   },
@@ -322,7 +370,11 @@ export const completeFeishuInstallationSetup$ = command(
 
 export const uninstallFeishuInstallation$ = command(
   async ({ get, set }, installationId: string, signal: AbortSignal) => {
-    const client = get(apiClient$)(feishuConnectContract);
+    const client = get(apiClient$)(
+      get(feishuPlatform$) === "lark"
+        ? larkConnectContract
+        : feishuConnectContract,
+    );
     await accept(
       client.removeInstallation({
         params: { installationId },
@@ -336,7 +388,8 @@ export const uninstallFeishuInstallation$ = command(
     });
     toast.success(
       i18n.t(($) => {
-        return $.connectors.providerSettings.toasts.feishuBotUninstalled;
+        return $.connectors.providerSettings[get(feishuPlatform$)].toasts
+          .botUninstalled;
       }),
     );
   },
@@ -375,14 +428,15 @@ const onFeishuChanged$ = command(async ({ get, set }, signal: AbortSignal) => {
   ) {
     toast.success(
       i18n.t(($) => {
-        return $.connectors.providerSettings.toasts.feishuConnected;
+        return $.connectors.providerSettings[get(feishuPlatform$)].toasts
+          .connected;
       }),
     );
   }
   return false;
 });
 
-export const showFeishuSettingsResult$ = command(() => {
+export const showFeishuSettingsResult$ = command(({ get }) => {
   const params = new URLSearchParams(window.location.search);
   const error = params.get("error");
   if (error) {
@@ -390,7 +444,8 @@ export const showFeishuSettingsResult$ = command(() => {
   } else if (params.get("status") === "connected") {
     toast.success(
       i18n.t(($) => {
-        return $.connectors.providerSettings.toasts.feishuConnected;
+        return $.connectors.providerSettings[get(feishuPlatform$)].toasts
+          .connected;
       }),
     );
   } else {

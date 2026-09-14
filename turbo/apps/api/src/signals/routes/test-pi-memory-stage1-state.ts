@@ -1,11 +1,16 @@
-import { randomUUID } from "node:crypto";
-
-import { initContract } from "@okouai/api-contracts/contracts/trpc-contract";
+import { agents } from "@okouai/db/schema/agent";
+import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import {
+  DEFAULT_PROFILE,
   SESSION_HISTORY_ENCODING_GZIP,
   SESSION_HISTORY_ENCODING_IDENTITY,
   SESSION_HISTORY_ENCODING_ZSTD,
 } from "@okouai/api-contracts/contracts/runners";
+import { requestPiMemoryStage1Day } from "../services/pi-memory-stage1-schedule.service";
+import { randomUUID } from "node:crypto";
+
+import { initContract } from "@okouai/api-contracts/contracts/trpc-contract";
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -99,6 +104,7 @@ const actionBodySchema = z.discriminatedUnion("action", [
 const candidateStateSchema = z.object({
   status: z.string(),
   retry_count: z.number().int().nonnegative(),
+  retry_at: z.iso.datetime().nullable(),
   last_error_class: z.string().nullable(),
   raw_memory: z.string().nullable(),
   rollout_summary: z.string().nullable(),
@@ -195,6 +201,78 @@ async function seedCandidate(
     .onConflictDoNothing();
   signal.throwIfAborted();
   const completedAt = new Date(body.source_completed_at);
+  const agentId = randomUUID();
+  const sessionId = randomUUID();
+  const sourceRunId = randomUUID();
+  const sourceThreadId = randomUUID();
+  const triggerThreadId = randomUUID();
+  await db.insert(agents).values({
+    id: agentId,
+    orgId: body.org_id,
+    owner: body.user_id,
+    name: agentId,
+  });
+  await db.insert(agentSessions).values({
+    id: sessionId,
+    orgId: body.org_id,
+    userId: body.user_id,
+    agentId,
+  });
+  await db.insert(chatThreads).values([
+    {
+      id: sourceThreadId,
+      agentId,
+      userId: body.user_id,
+      lastMessageAt: completedAt,
+    },
+    { id: triggerThreadId, agentId, userId: body.user_id },
+  ]);
+  const launchSnapshot = {
+    schemaVersion: 3 as const,
+    framework: "pi" as const,
+    runnerProfile: DEFAULT_PROFILE,
+  };
+  await db.insert(agentRuns).values({
+    id: sourceRunId,
+    sessionId,
+    orgId: body.org_id,
+    userId: body.user_id,
+    status: "completed",
+    prompt: "source fixture",
+    chatThreadId: sourceThreadId,
+    triggerSource: "web",
+    autonomyBudget: 0,
+    launchSnapshot,
+    createdAt: completedAt,
+    completedAt,
+  });
+  await db.insert(conversations).values({
+    runId: sourceRunId,
+    cliAgentType: "pi",
+    cliAgentSessionId: body.pi_session_id,
+    cliAgentSessionHistoryHash: body.source_history_hash,
+  });
+  const [trigger] = await db
+    .insert(agentRuns)
+    .values({
+      sessionId,
+      orgId: body.org_id,
+      userId: body.user_id,
+      status: "queued",
+      prompt: "startup fixture",
+      chatThreadId: triggerThreadId,
+      triggerSource: "web",
+      autonomyBudget: 0,
+      launchSnapshot,
+    })
+    .returning();
+  if (!trigger) {
+    throw new Error("Missing startup fixture");
+  }
+  await db.transaction(async (tx) => {
+    await requestPiMemoryStage1Day(tx, trigger);
+  });
+
   await db.transaction(async (tx) => {
     await insertPiMemoryStage1Candidates(tx, [
       {
@@ -202,7 +280,7 @@ async function seedCandidate(
         orgId: body.org_id,
         userId: body.user_id,
         piSessionId: body.pi_session_id,
-        sourceRunId: randomUUID(),
+        sourceRunId,
         sourceHistoryHash: body.source_history_hash,
         sourceCompletedAt: completedAt,
         eligibleAt: new Date(completedAt.getTime() + 1),
@@ -229,6 +307,7 @@ async function inspectCandidate(
     .select({
       status: piMemoryStage1Candidates.status,
       retryCount: piMemoryStage1Candidates.retryCount,
+      retryAt: piMemoryStage1Candidates.retryAt,
       lastErrorClass: piMemoryStage1Candidates.lastErrorClass,
       rawMemory: piMemoryStage1Candidates.rawMemory,
       rolloutSummary: piMemoryStage1Candidates.rolloutSummary,
@@ -243,6 +322,7 @@ async function inspectCandidate(
       ? {
           status: row.status,
           retry_count: row.retryCount,
+          retry_at: row.retryAt?.toISOString() ?? null,
           last_error_class: row.lastErrorClass,
           raw_memory: row.rawMemory,
           rollout_summary: row.rolloutSummary,
@@ -316,30 +396,34 @@ async function createActiveRun(
   scope: CandidateScope,
   signal: AbortSignal,
 ) {
-  const agentSessionId = randomUUID();
+  const [source] = await db
+    .select({
+      sessionId: agentRuns.sessionId,
+      chatThreadId: agentRuns.chatThreadId,
+    })
+    .from(agentRuns)
+    .innerJoin(
+      piMemoryStage1Candidates,
+      eq(piMemoryStage1Candidates.sourceRunId, agentRuns.id),
+    )
+    .where(candidateCondition(scope));
+  if (!source) {
+    throw new Error("Missing active source fixture");
+  }
   const runId = randomUUID();
-  await db.insert(agentSessions).values({
-    id: agentSessionId,
-    orgId: scope.org_id,
-    userId: scope.user_id,
-  });
-  signal.throwIfAborted();
   await db.insert(agentRuns).values({
     id: runId,
     orgId: scope.org_id,
     userId: scope.user_id,
-    sessionId: agentSessionId,
-    status: "pending",
-    prompt: "active Pi continuation",
+    sessionId: source.sessionId,
+    chatThreadId: source.chatThreadId,
+    status: "queued",
+    prompt: "fresh continuation without a checkpoint",
+    triggerSource: "web",
+    autonomyBudget: 0,
   });
   signal.throwIfAborted();
-  await db.insert(conversations).values({
-    runId,
-    cliAgentType: "pi",
-    cliAgentSessionId: scope.pi_session_id,
-  });
-  signal.throwIfAborted();
-  return actionOk({ run_id: runId, agent_session_id: agentSessionId });
+  return actionOk({ run_id: runId, agent_session_id: source.sessionId });
 }
 
 async function inspectUsage(db: Db, owner: OwnerScope, signal: AbortSignal) {
@@ -386,6 +470,12 @@ async function cleanupFixture(
       eq(storages.id, body.memory_storage_id),
     );
   });
+  await db
+    .delete(agents)
+    .where(and(eq(agents.orgId, body.org_id), eq(agents.owner, body.user_id)));
+  await db
+    .delete(piMemoryStage1Days)
+    .where(eq(piMemoryStage1Days.userId, body.user_id));
   signal.throwIfAborted();
   await db
     .delete(usageEvent)

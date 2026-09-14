@@ -263,10 +263,10 @@ interface PiLangfuseTextCapture {
 /** Mirror the official plugin's text shape and limit before shared export. */
 function capturePiLangfuseText(text: string): PiLangfuseTextCapture {
   const redacted = text.replace(LANGFUSE_KEY_TOKEN, CAPTURE_REDACTION_MARK);
-  if (text.length <= PI_LANGFUSE_MAX_CAPTURED_CHARS) {
+  if (redacted.length <= PI_LANGFUSE_MAX_CAPTURED_CHARS) {
     return {
       text: redacted,
-      meta: { truncated: false, orig_len: text.length },
+      meta: { truncated: false, orig_len: redacted.length },
     };
   }
   const captured = redacted.slice(0, PI_LANGFUSE_MAX_CAPTURED_CHARS);
@@ -274,7 +274,7 @@ function capturePiLangfuseText(text: string): PiLangfuseTextCapture {
     text: captured,
     meta: {
       truncated: true,
-      orig_len: text.length,
+      orig_len: redacted.length,
       kept_len: captured.length,
       sha256: createHash("sha256").update(text).digest("hex"),
     },
@@ -482,15 +482,19 @@ function sampledSpanContext(
   return context;
 }
 
-function createApiFirstTurnTraceContext(args: {
-  readonly root: LangfuseSpan;
-  readonly rootSpanContext: SpanContext;
-  readonly runId: string;
-  readonly sessionId: string;
-  readonly userId: string;
-}): PiApiFirstTurnTraceContext {
+function createApiFirstTurnTraceContext(
+  args: {
+    readonly root: LangfuseSpan;
+    readonly rootSpanContext: SpanContext;
+    readonly runId: string;
+    readonly sessionId: string;
+    readonly userId: string;
+  },
+  signal?: AbortSignal,
+): PiApiFirstTurnTraceContext {
   let ended = false;
-  return {
+  let onAbort: (() => void) | undefined;
+  const context: PiApiFirstTurnTraceContext = {
     rootSpanContext: args.rootSpanContext,
     runId: args.runId,
     sessionId: args.sessionId,
@@ -500,6 +504,9 @@ function createApiFirstTurnTraceContext(args: {
         return;
       }
       ended = true;
+      if (onAbort) {
+        signal?.removeEventListener("abort", onAbort);
+      }
       if (error !== undefined) {
         safeSync(() => {
           args.root.update({
@@ -512,6 +519,17 @@ function createApiFirstTurnTraceContext(args: {
       safeEnd(args.root);
     },
   };
+  if (signal) {
+    onAbort = () => {
+      context.end(signal.reason);
+    };
+    if (signal.aborted) {
+      onAbort();
+    } else {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+  }
+  return context;
 }
 
 /**
@@ -655,6 +673,7 @@ function updateApiTraceFailure(
  */
 export async function tracePiApiFirstTurn(
   args: PiApiFirstTurnTraceArgs,
+  signal?: AbortSignal,
 ): Promise<PiApiFirstTurnTraceResult> {
   const root = startApiTrace(args);
   if (!root) {
@@ -688,12 +707,15 @@ export async function tracePiApiFirstTurn(
   }
   return {
     result,
-    traceContext: createApiFirstTurnTraceContext({
-      root,
-      rootSpanContext,
-      runId: args.runId,
-      sessionId: args.sessionId,
-      userId: args.userId,
-    }),
+    traceContext: createApiFirstTurnTraceContext(
+      {
+        root,
+        rootSpanContext,
+        runId: args.runId,
+        sessionId: args.sessionId,
+        userId: args.userId,
+      },
+      signal,
+    ),
   };
 }

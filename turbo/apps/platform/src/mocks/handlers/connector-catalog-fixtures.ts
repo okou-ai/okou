@@ -9,11 +9,9 @@ import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 interface TestConnectorAuthMethod {
   readonly detail: PublicConnectorCatalogAuthMethodDetail;
-  readonly featureSwitch?: FeatureSwitchKey;
   readonly requestedScopes: readonly string[];
   readonly supportsRefresh: boolean;
 }
@@ -47,7 +45,6 @@ function icon(connectorSlug: ConnectorSlug): PublicConnectorCatalogIcon {
 
 function authCodeMethod(
   args: {
-    readonly featureSwitch?: FeatureSwitchKey;
     readonly requestedScopes?: readonly string[];
     readonly supportsRefresh?: boolean;
   } = {},
@@ -61,7 +58,6 @@ function authCodeMethod(
       manualFields: [],
       startOptions: [],
     },
-    ...(args.featureSwitch ? { featureSwitch: args.featureSwitch } : {}),
     requestedScopes: args.requestedScopes ?? [],
     supportsRefresh: args.supportsRefresh ?? true,
   };
@@ -90,7 +86,6 @@ function externalCodeMethod(args: {
   readonly id: ConnectorAuthMethodId;
   readonly label: string;
   readonly description: string;
-  readonly featureSwitch?: FeatureSwitchKey;
 }): TestConnectorAuthMethod {
   return {
     detail: {
@@ -101,7 +96,6 @@ function externalCodeMethod(args: {
       manualFields: [],
       startOptions: [],
     },
-    ...(args.featureSwitch ? { featureSwitch: args.featureSwitch } : {}),
     requestedScopes: [],
     supportsRefresh: true,
   };
@@ -113,7 +107,6 @@ function oauthConnector(args: {
   readonly description: string;
   readonly category: string;
   readonly tags?: readonly string[];
-  readonly featureSwitch?: FeatureSwitchKey;
   readonly requestedScopes?: readonly string[];
   readonly permissionDetail?: PublicConnectorCatalogPermissionDetail;
 }): TestConnectorCatalogDefinition {
@@ -126,12 +119,9 @@ function oauthConnector(args: {
     generation: [],
     tags: args.tags ?? [],
     authMethods: [
-      authCodeMethod({
-        ...(args.featureSwitch ? { featureSwitch: args.featureSwitch } : {}),
-        ...(args.requestedScopes
-          ? { requestedScopes: args.requestedScopes }
-          : {}),
-      }),
+      authCodeMethod(
+        args.requestedScopes ? { requestedScopes: args.requestedScopes } : {},
+      ),
     ],
     permissionSummary:
       args.permissionDetail === undefined
@@ -493,7 +483,6 @@ export const testConnectorCatalogDefinitions = (
       label: "Mailchimp",
       description: "Manage Mailchimp audiences and campaigns.",
       category: "marketing-content-growth",
-      featureSwitch: FeatureSwitchKey.MailchimpConnector,
     }),
     oauthConnector({
       connectorSlug: "meta-ads",

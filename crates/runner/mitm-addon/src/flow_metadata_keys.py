@@ -69,10 +69,6 @@ Firewall and auth context
 - ``FIREWALL_AUTH_CACHE_ENTRY_IDENTITY``: credential-free process-local object
   identifying the exact cached auth result applied to this flow. Written only
   after successful auth application and read by 401 cache invalidation.
-- ``FIREWALL_AUTH_PROBE_FAILURE``: ``Exception`` caught by header-phase auth
-  probing after restoring the probe snapshot. Popped by request-phase auth
-  handling to produce the same local auth failure without resolving auth a
-  second time; removed by terminal cleanup when it was not consumed.
 - ``FIREWALL_NAME``: ``str`` firewall connector/model name. Read by logging,
   model-provider gates, and connector usage dispatch.
 - ``FIREWALL_PERMISSION``: ``str`` matched permission name or empty string.
@@ -221,7 +217,6 @@ FIREWALL_BASE: Final = "firewall_base"
 FIREWALL_API_ID: Final = "firewall_api_id"
 FIREWALL_AUTH_CACHE_KEY: Final = "firewall_auth_cache_key"
 FIREWALL_AUTH_CACHE_ENTRY_IDENTITY: Final = "firewall_auth_cache_entry_identity"
-FIREWALL_AUTH_PROBE_FAILURE: Final = "firewall_auth_probe_failure"
 FIREWALL_NAME: Final = "firewall_name"
 FIREWALL_PERMISSION: Final = "firewall_permission"
 FIREWALL_RULE_MATCH: Final = "firewall_rule_match"

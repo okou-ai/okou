@@ -24,13 +24,25 @@ describe("okou workflow list command", () => {
     .spyOn(console, "error")
     .mockImplementation(() => {});
 
+  const ownerProfileRequest = vi.fn(() => {
+    return HttpResponse.json({ displayName: null, imageUrl: null });
+  });
+
   beforeEach(() => {
+    server.use(
+      http.get(
+        "http://localhost:3000/api/workflows/:workflowId/owner-profile",
+        ownerProfileRequest,
+      ),
+    );
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
   });
 
   afterEach(() => {
+    expect(ownerProfileRequest).not.toHaveBeenCalled();
+    ownerProfileRequest.mockClear();
     mockExit.mockClear();
     mockConsoleLog.mockClear();
     mockConsoleError.mockClear();

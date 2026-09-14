@@ -172,6 +172,21 @@ async function captureExport(
 }
 
 describe("patched official Pi Langfuse extension", () => {
+  it("enforces the content ceiling after key redaction expands text", async () => {
+    const extension = await import("@langfuse/pi-observability-plugin");
+    const source = "pk-lf-xxxx ".repeat(Math.floor(20_000 / 11));
+    expect(source.length).toBeLessThanOrEqual(20_000);
+
+    const captured = extension.truncateText(source);
+
+    expect(captured.text).toHaveLength(20_000);
+    expect(captured.text).not.toContain("pk-lf-xxxx");
+    expect(captured.meta).toMatchObject({
+      truncated: true,
+      kept_len: 20_000,
+    });
+  });
+
   it("exports a parented Sandbox Continuation on pending-tool agent_start", async () => {
     const payload = await captureExport(async (handlers) => {
       await onlyHandler(handlers, "agent_start")(

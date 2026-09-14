@@ -1,3 +1,4 @@
+import { requestPiMemoryStage1Day } from "./pi-memory-stage1-schedule.service";
 import {
   measurePiPreparation,
   measurePiPreparationSync,
@@ -294,6 +295,7 @@ import {
   piApiFirstTurnObjectKey,
   requirePiApiFirstTurnExecutionContext,
 } from "./pi-api-first-turn-config";
+import { lockModelProviderState } from "./auth-state-lock.service";
 import {
   activePersonalModelProviderAccount,
   ensurePersonalModelProviderAccount,
@@ -372,6 +374,9 @@ import {
   type CompressedSessionHistoryBlobEncoding,
 } from "./session-history-blobs";
 import type { Tx } from "../../lib/db-types";
+import type { PiPreparationDiscardReason } from "./pi-api-first-turn-preparation";
+import { waitUntil } from "../context/wait-until";
+import { prepareConfiguredPiApiFirstTurn$ } from "./pi-api-first-turn-dispatch.service";
 import { activatePendingRun$ } from "./agent-run-activation.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
 import {
@@ -1535,7 +1540,6 @@ async function resolveRequestedRunFramework(
   db: Db,
   args: CreateAgentRunArgs,
   composeFramework: SupportedFramework,
-  featureSwitchContext: FeatureSwitchContext,
 ): Promise<SupportedFramework> {
   if (args.modelProviderType && isModelProviderType(args.modelProviderType)) {
     return (
@@ -1568,13 +1572,7 @@ async function resolveRequestedRunFramework(
     )
     .limit(1);
 
-  if (
-    !provider &&
-    isFeatureEnabled(
-      FeatureSwitchKey.PersonalModelProviderAccounts,
-      featureSwitchContext,
-    )
-  ) {
+  if (!provider) {
     const [account] = await db
       .select({ type: modelProviderAccounts.type })
       .from(modelProviderAccounts)
@@ -2866,15 +2864,7 @@ async function resolveExactPersonalModelProviderAccount(
   db: Db,
   args: ResolveModelProviderEnvironmentArgs,
 ): Promise<ResolvedModelProviderEnvironment | null> {
-  if (
-    !args.modelProviderId ||
-    args.modelProviderCredentialScope === "org" ||
-    (!args.piExecution &&
-      !isFeatureEnabled(
-        FeatureSwitchKey.PersonalModelProviderAccounts,
-        args.featureSwitchContext,
-      ))
-  ) {
+  if (!args.modelProviderId || args.modelProviderCredentialScope === "org") {
     return null;
   }
   const account = await personalModelProviderAccountById({
@@ -2907,12 +2897,7 @@ function shouldResolveActivePersonalModelProviderAccount(
   row: ResolvableModelProviderEnvironmentRow,
 ): boolean {
   return (
-    row.userId === args.userId &&
-    isPersonalSubscriptionProviderType(row.type) &&
-    isFeatureEnabled(
-      FeatureSwitchKey.PersonalModelProviderAccounts,
-      args.featureSwitchContext,
-    )
+    row.userId === args.userId && isPersonalSubscriptionProviderType(row.type)
   );
 }
 
@@ -6438,11 +6423,16 @@ function launchRunMetadataValues(args: LaunchRunRowsArgs): RunMetadataValues {
   const metadata: AgentRunMetadata = args.agentRunMetadata ?? {};
   const modelPin =
     args.agentRunModelPin ?? agentRunModelProviderValues(args.modelProvider);
+  const exactSubscriptionId =
+    args.modelProvider &&
+    isPersonalSubscriptionProviderType(args.modelProvider.type)
+      ? args.modelProvider.id
+      : undefined;
   return normalizeRunMetadata({
     triggerSource: args.body.triggerSource,
     ...agentRunLaunchMetadataInput(metadata),
     modelProvider: modelPin.modelProvider,
-    modelProviderId: modelPin.modelProviderId,
+    modelProviderId: exactSubscriptionId ?? modelPin.modelProviderId,
     modelProviderCredentialScope: modelPin.modelProviderCredentialScope,
     selectedModel: modelPin.selectedModel,
     ...builtInModelLaunchMetadataValues(args.modelProvider),
@@ -6642,7 +6632,7 @@ async function buildStoredExecutionContextDraft(args: {
   const executionSecrets = buildStoredExecutionSecrets({
     connectorContext: args.connectorContext,
     modelProvider: args.modelProvider,
-    bodySecrets: mergeRecords(args.body.secrets, langfuseEnvironment.secrets),
+    bodySecrets: args.body.secrets,
     customConnectorContext: args.customConnectorContext,
   });
   const secretNames = executionSecrets.secrets
@@ -6712,7 +6702,8 @@ async function buildStoredExecutionContextDraft(args: {
       vars: args.connectorContext.vars ?? null,
       resumeSession: args.resolved.resumeSession ?? null,
       encryptedSecrets: await encryptPersistentSecretsMap(
-        executionSecrets.secrets ?? null,
+        mergeRecords(executionSecrets.secrets, langfuseEnvironment.secrets) ??
+          null,
         args.featureSwitchContext,
       ),
       secretConnectorMap: executionSecrets.secretConnectorMap,
@@ -7185,6 +7176,7 @@ async function resolvePiMemoryRecall(
     readonly db: Db;
     readonly orgId: string;
     readonly userId: string;
+    readonly piMemoryEnabled: boolean;
     readonly storageMounts: readonly StorageMountMetadata[];
     readonly persistedStorageMounts:
       | readonly PersistedStorageMount[]
@@ -7206,6 +7198,15 @@ async function resolvePiMemoryRecall(
     persistedMemoryMount.version !== currentMemoryMount.versionId
   ) {
     return undefined;
+  }
+  if (!args.piMemoryEnabled) {
+    // PiMemory is off for this owner: the mount stays pinned, but neither a
+    // prior recall epoch nor the summary projection is read, so nothing from
+    // the memory tree reaches the prompt.
+    return noContentPiMemoryRecall({
+      memoryStorageId: currentMemoryMount.storageId,
+      storageVersionId: currentMemoryMount.versionId,
+    });
   }
 
   const prior = priorPiMemoryRecall({
@@ -7357,6 +7358,7 @@ interface PreparePiLaunchResourcesArgs {
   readonly db: Db;
   readonly orgId: string;
   readonly userId: string;
+  readonly piMemoryEnabled: boolean;
   readonly runId: string;
   readonly agentSessionId: string;
   readonly apiStartTime: number;
@@ -7472,6 +7474,7 @@ function preparePiLaunchResources(
                         db: args.db,
                         orgId: args.orgId,
                         userId: args.userId,
+                        piMemoryEnabled: args.piMemoryEnabled,
                         storageMounts: metadata.storageMounts,
                         persistedStorageMounts: metadata.persistedStorageMounts,
                         previousRunStorageMounts: args.previousRunStorageMounts,
@@ -7682,6 +7685,11 @@ function buildRunnerJobPayload(
           db,
           orgId: args.orgId,
           userId: args.userId,
+          // The launching Run's own switch context, never the caller's.
+          piMemoryEnabled: isFeatureEnabled(
+            FeatureSwitchKey.PiMemory,
+            args.featureSwitchContext,
+          ),
           runId: args.run.id,
           agentSessionId: args.run.sessionId,
           apiStartTime: args.apiStartTime,
@@ -8601,7 +8609,51 @@ async function bindPreparedPiMemoryPhase2MaintenanceRun(
   });
 }
 
+async function validateCapturedSubscriptionAccount(
+  tx: Tx,
+  args: CommitPreparedLaunchArgs,
+) {
+  const provider = args.context.modelProvider;
+  if (
+    provider &&
+    isPersonalSubscriptionProviderType(provider.type) &&
+    provider.credentialOwner === "member"
+  ) {
+    await lockModelProviderState(tx, {
+      orgId: args.createArgs.orgId,
+      userId: args.createArgs.userId,
+      type: provider.type,
+    });
+    const account = provider.id
+      ? await personalModelProviderAccountById({
+          db: tx,
+          orgId: args.createArgs.orgId,
+          userId: args.createArgs.userId,
+          id: provider.id,
+        })
+      : null;
+    if (!account || account.type !== provider.type) {
+      return conflict(
+        "The selected subscription account was disconnected. Reconnect it before starting another run.",
+      );
+    }
+  }
+  return undefined;
+}
+
 async function commitPreparedLaunchUnderLock(
+  tx: DbTransaction,
+  args: CommitPreparedLaunchArgs,
+  payload: RunnerJobPayload,
+): Promise<AtomicLaunchCommitResult | CreateRunErrorResult> {
+  const failure = await validateCapturedSubscriptionAccount(tx, args);
+  if (failure) {
+    return failure;
+  }
+  return await commitValidatedPreparedLaunch(tx, args, payload);
+}
+
+async function commitValidatedPreparedLaunch(
   tx: DbTransaction,
   args: CommitPreparedLaunchArgs,
   payload: RunnerJobPayload,
@@ -8739,10 +8791,22 @@ async function commitPreparedLaunch(
       },
     );
     const admissionLockHeldStartedAt = now();
-    return {
-      result: await commitPreparedLaunchUnderLock(tx, args, payload),
-      admissionLockHeldStartedAt,
-    };
+    const result = await commitPreparedLaunchUnderLock(tx, args, payload);
+    if (
+      "kind" in result &&
+      (result.kind === "pending" || result.kind === "queued")
+    ) {
+      await requestPiMemoryStage1Day(tx, {
+        ...result.run,
+        userId: args.createArgs.userId,
+        orgId: args.createArgs.orgId,
+        chatThreadId: args.createArgs.chatThreadId ?? null,
+        triggerSource: args.context.body.triggerSource,
+        launchSnapshot: args.context.launchSnapshot,
+        completedAt: null,
+      });
+    }
+    return { result, admissionLockHeldStartedAt };
   });
   const transactionReturnedAt = now();
   args.timing.recordElapsed(
@@ -9575,7 +9639,6 @@ function prepareRunBodyContext(
           args.db,
           args.createArgs,
           frameworkValidation.framework,
-          featureSwitchContext,
         );
       },
     );
@@ -10432,6 +10495,15 @@ function flushQueueFirstClaimLostTiming(args: {
   });
 }
 
+const piPreparationAuthority = Symbol("creator-authorized-pi-preparation");
+
+/** Issued only after authorization and finalized launch payload construction. */
+export interface CreatorAuthorizedPiPreparation {
+  readonly [piPreparationAuthority]: true;
+  readonly activation: NonNullable<PendingRunActivation["piApiFirstTurn"]>;
+  readonly triggerSource: CreateRunBody["triggerSource"];
+}
+
 interface AtomicLaunchRunInput {
   readonly db: Db;
   readonly args: CreateAgentRunArgs;
@@ -10482,7 +10554,7 @@ function finalizeAtomicLaunchCommit(
     return committed;
   }
   return committedAtomicLaunchResponse({
-    createArgs: args.input.args,
+    createArgs: { ...args.input.args, body: args.input.context.body },
     committed,
     transactionReturnedAt: args.committed.transactionReturnedAt,
     timing: args.input.timing,
@@ -10553,11 +10625,123 @@ async function completeQueuePayloadLaunch(
   return finalized;
 }
 
-function createAtomicLaunchRun(
-  input: AtomicLaunchRunInput,
-  signal: AbortSignal,
-): Computed<Promise<QueueFirstAgentRunResult>> {
-  return computed(async (get): Promise<QueueFirstAgentRunResult> => {
+const commitAndActivateAtomicLaunch$ = command(
+  async (
+    { set },
+    args: {
+      readonly input: AtomicLaunchRunInput;
+      readonly identity: LaunchRunIdentity;
+      readonly callbackRows: readonly AgentRunCallbackInsert[];
+      readonly launch: PreparedRunnerLaunch;
+    },
+    signal: AbortSignal,
+  ): Promise<QueueFirstAgentRunResult> => {
+    const { input, identity, callbackRows, launch } = args;
+    const executionContext = launch.runnerJobPayload.executionContext;
+    const preparation =
+      input.context.body.triggerSource !== "goal" &&
+      executionContext.piLaunchConfig &&
+      !executionContext.piLaunchConfig.maintenance
+        ? set(prepareConfiguredPiApiFirstTurn$, {
+            [piPreparationAuthority]: true,
+            triggerSource: input.context.body.triggerSource,
+            activation: {
+              runId: identity.runId,
+              runnerGroup: launch.runnerJobPayload.runnerGroup,
+              userId: input.args.userId,
+              orgId: input.args.orgId,
+              prompt: input.context.body.prompt,
+              appendSystemPrompt: input.context.body.appendSystemPrompt ?? null,
+              executionContext:
+                requirePiApiFirstTurnExecutionContext(executionContext),
+            },
+          })
+        : undefined;
+    let transferred = false;
+    let discardReason: PiPreparationDiscardReason = "admission-failed";
+    return await (async () => {
+      const commitLaunch: CommitAtomicLaunch = async (
+        encryptedQueuedParams: string | undefined,
+      ) => {
+        return await input.timing.measure(
+          "api_dispatch_insert_run_with_concurrency",
+          "top_level",
+          async () => {
+            return await commitPreparedLaunch({
+              db: input.db,
+              createArgs: input.args,
+              creditAdmitted: input.creditAdmitted,
+              context: input.context,
+              identity,
+              callbackRows,
+              launch,
+              encryptedQueuedParams,
+              timing: input.timing,
+            });
+          },
+        );
+      };
+
+      const committed = await commitLaunch(undefined);
+      const finalized = finalizeAtomicLaunchCommit(
+        {
+          input,
+          identity,
+          launch,
+          committed,
+        },
+        signal,
+      );
+      const result = isQueuePayloadRequiredResult(finalized)
+        ? await completeQueuePayloadLaunch(
+            { input, identity, callbackRows, launch, commitLaunch },
+            signal,
+          )
+        : finalized;
+      if (
+        "status" in result &&
+        result.status === 201 &&
+        result.pendingActivation
+      ) {
+        // Commit determines ownership even if the initiating request disconnected.
+        // The API branch is owned by waitUntil; Runner notification never joins it.
+        transferred = true;
+
+        await set(activatePendingRun$, {
+          activation: result.pendingActivation,
+          activationScheduledAt: now(),
+          preparation,
+        });
+        const { pendingActivation: _pendingActivation, ...activated } = result;
+        return activated;
+      }
+      if ("kind" in result) {
+        if (result.kind === "queue-first-claim-lost") {
+          discardReason = "claim-lost";
+        }
+        if (result.kind === "thread-session-snapshot-stale") {
+          discardReason = "stale";
+        }
+      } else if (result.status === 201) {
+        discardReason = "queued";
+      }
+      return result;
+    })().finally(() => {
+      if (!transferred && preparation) {
+        // Discard immediately; waitUntil joins late SDK initialization without
+        // delaying queued responses or making another attempt reuse this one.
+        waitUntil(preparation.dispose(discardReason));
+      }
+    });
+  },
+);
+
+const createAtomicLaunchRun$ = command(
+  async (
+    { get, set },
+    input: AtomicLaunchRunInput,
+    signal: AbortSignal,
+  ): Promise<QueueFirstAgentRunResult> => {
     const identity = prepareLaunchRunIdentity({
       resolved: input.context.resolved,
     });
@@ -10630,53 +10814,13 @@ function createAtomicLaunchRun(
     const launch = launchResult.value;
     input.phaseTiming.checkpoint("api_dispatch_phase_prepare_launch", now());
 
-    const commitLaunch: CommitAtomicLaunch = async (
-      encryptedQueuedParams: string | undefined,
-    ) => {
-      return await input.timing.measure(
-        "api_dispatch_insert_run_with_concurrency",
-        "top_level",
-        async () => {
-          return await commitPreparedLaunch({
-            db: input.db,
-            createArgs: input.args,
-            creditAdmitted: input.creditAdmitted,
-            context: input.context,
-            identity,
-            callbackRows,
-            launch,
-            encryptedQueuedParams,
-            timing: input.timing,
-          });
-        },
-      );
-    };
-
-    const committed = await commitLaunch(undefined);
-    const finalized = finalizeAtomicLaunchCommit(
-      {
-        input,
-        identity,
-        launch,
-        committed,
-      },
+    return await set(
+      commitAndActivateAtomicLaunch$,
+      { input, identity, callbackRows, launch },
       signal,
     );
-    if (isQueuePayloadRequiredResult(finalized)) {
-      return await completeQueuePayloadLaunch(
-        {
-          input,
-          identity,
-          callbackRows,
-          launch,
-          commitLaunch,
-        },
-        signal,
-      );
-    }
-    return finalized;
-  });
-}
+  },
+);
 
 interface PreparedAgentRun {
   readonly args: CreateAgentRunArgs;
@@ -10808,7 +10952,7 @@ export const prepareAgentRun$ = command(
 
 export const completeAgentRun$ = command(
   async (
-    { get, set },
+    { set },
     input: CompleteAgentRunArgs,
     signal: AbortSignal,
   ): Promise<QueueFirstAgentRunResult> => {
@@ -10859,47 +11003,18 @@ export const completeAgentRun$ = command(
       return admissionGate;
     }
 
-    const result = await get(
-      createAtomicLaunchRun(
-        {
-          db,
-          args,
-          creditAdmitted,
-          context,
-          timing,
-          phaseTiming: input.prepared.phaseTiming,
-        },
-        signal,
-      ),
+    return await set(
+      createAtomicLaunchRun$,
+      {
+        db,
+        args,
+        creditAdmitted,
+        context,
+        timing,
+        phaseTiming: input.prepared.phaseTiming,
+      },
+      signal,
     );
-    // The run and runner job are durable now. Observe request cancellation for
-    // diagnostics, but let the commit-owned activation finish independently.
-    if (signal.aborted) {
-      L.debug("Request aborted after run launch commit", {
-        orgId: args.orgId,
-      });
-    }
-    if (
-      !("status" in result) ||
-      result.status !== 201 ||
-      result.pendingActivation === undefined
-    ) {
-      return result;
-    }
-
-    const activationScheduledAt = now();
-    await set(activatePendingRun$, {
-      activation: result.pendingActivation,
-      activationScheduledAt,
-    });
-    if (signal.aborted) {
-      L.debug("Request remained aborted after run activation", {
-        runId: result.pendingActivation.runnerNotification.runId,
-      });
-    }
-    const { pendingActivation: _pendingActivation, ...activatedResult } =
-      result;
-    return activatedResult;
   },
 );
 

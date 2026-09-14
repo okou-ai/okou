@@ -21,7 +21,6 @@ import { agentSessions } from "@okouai/db/schema/agent-session";
 import { checkpoints } from "@okouai/db/schema/checkpoint";
 import type { Tx } from "../../lib/db-types";
 import { notFound } from "../../lib/error";
-import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { piLangfuseDebugUserId } from "../../lib/pi-langfuse-debug";
 import { recordPiLangfuseRunEndToEnd } from "../../lib/pi-langfuse-tracing";
@@ -33,7 +32,7 @@ import {
   publishChatThreadDetailChangedSafely,
   publishChatThreadMessageCreatedSafely,
 } from "../external/realtime";
-import { tapError } from "../utils";
+import { safeSync, tapError } from "../utils";
 import {
   chatCallbackIdForRun,
   dispatchFailedRunCallbacks,
@@ -56,11 +55,7 @@ import {
   persistAgentCheckpointInTransaction,
   prepareAgentCheckpointPersistence$,
 } from "./agent-webhook-checkpoints.service";
-import {
-  admitPiMemoryStage1Candidate,
-  lockPiMemoryCandidateStorage,
-  type PiMemoryStage1Admission,
-} from "./pi-memory-stage1-candidate.service";
+import { lockPiMemoryCandidateStorage } from "./pi-memory-stage1-candidate.service";
 import { isGptApiKeyPiProviderType } from "./pi-sandbox-config";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
 
@@ -161,7 +156,6 @@ interface CompletionCommit {
   readonly transitionFailureKind?: PreparedCompletion["failureKind"];
   readonly transitionFailureReason?: RunFailureReasonToken;
   readonly finalization: FinalizeActiveInputDeliveryResult;
-  readonly piMemoryStage1Admission?: PiMemoryStage1Admission;
 }
 
 type CompletionTransactionResult =
@@ -595,25 +589,6 @@ async function completeActiveAgentRunTransition(
 ): Promise<CompletionTransactionResult> {
   const completedAt = nowDate();
   await applyTerminalCompletion(tx, input, run, prepared, completedAt);
-  const launchSnapshot = run.launchSnapshot;
-  const piMemoryStage1Admission = await admitPiMemoryStage1Candidate(tx, {
-    runId: input.body.runId,
-    orgId: run.orgId,
-    userId: run.userId,
-    status: prepared.status,
-    framework: launchSnapshot?.framework ?? null,
-    // Historical V1/null snapshots remain disabled. V2 retains its persisted
-    // rollout decision; V3 Pi runs have already passed the PiLoop launch policy.
-    generationEnabled:
-      launchSnapshot?.schemaVersion === 2
-        ? launchSnapshot.piMemoryGenerationEnabled
-        : launchSnapshot?.schemaVersion === 3 &&
-          launchSnapshot.framework === "pi",
-    triggerSource: run.triggerSource,
-    chatThreadId: run.chatThreadId,
-    completedAt,
-    idleDelayMs: env("PI_MEMORY_STAGE1_IDLE_DELAY_MS"),
-  });
   return {
     kind: "committed",
     commit: {
@@ -624,7 +599,6 @@ async function completeActiveAgentRunTransition(
       transitionFailureKind: prepared.failureKind,
       transitionFailureReason: prepared.failureReason,
       finalization,
-      piMemoryStage1Admission,
     },
   };
 }
@@ -1037,17 +1011,22 @@ export const completeAgentRun$ = command(
       const terminalCommittedAtIso = new Date(
         terminalCommittedAt,
       ).toISOString();
-      recordPiLangfuseRunEndToEnd({
-        enabled:
-          commit.run.launchSnapshot?.framework === "pi" &&
-          commit.run.langfuseTraceEnabled,
-        runId: input.body.runId,
-        sessionId: commit.run.sessionId,
-        userId: piLangfuseDebugUserId(commit.run.userId),
-        apiStartedAt: commit.run.apiStartedAt?.getTime(),
-        terminalCommittedAt,
-        terminalStatus: commit.responseStatus,
-      });
+      if (
+        commit.run.launchSnapshot?.framework === "pi" &&
+        commit.run.langfuseTraceEnabled
+      ) {
+        safeSync(() => {
+          recordPiLangfuseRunEndToEnd({
+            enabled: true,
+            runId: input.body.runId,
+            sessionId: commit.run.sessionId,
+            userId: piLangfuseDebugUserId(commit.run.userId),
+            apiStartedAt: commit.run.apiStartedAt?.getTime(),
+            terminalCommittedAt,
+            terminalStatus: commit.responseStatus,
+          });
+        });
+      }
       recordSandboxOperation({
         sandboxType: "runner",
         actionType: "run_terminal_transition_committed",
@@ -1055,32 +1034,6 @@ export const completeAgentRun$ = command(
         success: true,
         runId: input.body.runId,
         timestamp: terminalCommittedAtIso,
-      });
-      const admission = commit.piMemoryStage1Admission;
-      if (!admission) {
-        throw new Error("Terminal transition is missing Pi memory admission");
-      }
-      recordSandboxOperation({
-        sandboxType: "runner",
-        actionType: "pi_memory_stage1_candidate_admission",
-        durationMs: 0,
-        success: true,
-        runId: input.body.runId,
-        dimensions: {
-          candidate_outcome: admission.outcome,
-          ...(admission.outcome === "skipped"
-            ? { candidate_skip_reason: admission.reason }
-            : {}),
-          ...(admission.memoryStorageId
-            ? { memory_storage_id: admission.memoryStorageId }
-            : {}),
-          ...(admission.piSessionId
-            ? { pi_session_id: admission.piSessionId }
-            : {}),
-          ...(admission.sourceHistoryHash
-            ? { source_history_hash: admission.sourceHistoryHash }
-            : {}),
-        },
       });
       logAgentRunCompletionOutcome(input, commit);
     } else if (

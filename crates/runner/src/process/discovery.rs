@@ -1,6 +1,10 @@
+use std::future::Future;
 use std::path::{Path, PathBuf};
 
-use super::procfs::{read_cmdline, read_cwd, read_ppid, read_process_stat, scan_proc_cmdlines};
+use super::procfs::{
+    ProcessStatRead, read_cmdline, read_cwd, read_ppid_from, read_process_stat_checked_from,
+    scan_proc_cmdlines,
+};
 use super::types::{
     DiscoveredProcesses, DnsmasqProcessInfo, FirecrackerProcessInfo, MitmproxyProcessInfo,
     ProcessDiscovery, ProcessStat, process_stat_is_live,
@@ -75,6 +79,7 @@ enum FirecrackerCandidateResolution {
         ppid: Option<u32>,
         process_stat: ProcessStat,
     },
+    // A candidate that may still be live, without a verified workspace or generation.
     UnidentifiedLive {
         pid: u32,
         ppid: Option<u32>,
@@ -124,10 +129,21 @@ fn fallback_sandbox_id(pid: u32) -> String {
     format!("pid-{pid}")
 }
 
-async fn read_stable_firecracker_stat(pid: u32) -> Option<ProcessStat> {
-    let before = read_process_stat(pid).await?;
-    let argv = read_cmdline(pid).await?;
-    let after = read_process_stat(pid).await?;
+async fn read_stable_firecracker_stat<Fut>(
+    proc_root: &Path,
+    pid: u32,
+    read_stat: &mut impl FnMut(u32) -> Fut,
+) -> Option<ProcessStat>
+where
+    Fut: Future<Output = ProcessStatRead>,
+{
+    let ProcessStatRead::Found(before) = read_stat(pid).await else {
+        return None;
+    };
+    let argv = read_cmdline(proc_root, pid).await?;
+    let ProcessStatRead::Found(after) = read_stat(pid).await else {
+        return None;
+    };
     stable_live_firecracker_stat(&before, &argv, after)
 }
 
@@ -170,11 +186,24 @@ fn unidentified_firecracker_process(pid: u32, ppid: Option<u32>) -> FirecrackerP
     }
 }
 
-async fn unresolved_firecracker_resolution_if_present(pid: u32) -> FirecrackerCandidateResolution {
-    let Some(stat) = read_process_stat(pid).await else {
-        return FirecrackerCandidateResolution::NotPresent;
+async fn unresolved_firecracker_resolution_if_present<Fut>(
+    proc_root: &Path,
+    pid: u32,
+    read_stat: &mut impl FnMut(u32) -> Fut,
+) -> FirecrackerCandidateResolution
+where
+    Fut: Future<Output = ProcessStatRead>,
+{
+    let stat = match read_stat(pid).await {
+        ProcessStatRead::Found(stat) => stat,
+        ProcessStatRead::Missing => return FirecrackerCandidateResolution::NotPresent,
+        ProcessStatRead::Unreadable(_) | ProcessStatRead::Invalid => {
+            // The cmdline scan identified this candidate. A failed stat read
+            // cannot prove it exited or safely attribute its workspace.
+            return FirecrackerCandidateResolution::UnidentifiedLive { pid, ppid: None };
+        }
     };
-    let argv = read_cmdline(pid).await;
+    let argv = read_cmdline(proc_root, pid).await;
     if should_keep_unidentified_firecracker_candidate(&stat, argv.as_deref()) {
         FirecrackerCandidateResolution::UnidentifiedLive {
             pid,
@@ -215,15 +244,22 @@ fn stable_firecracker_resolution(
     }
 }
 
-async fn resolve_firecracker_candidate(pid: u32) -> FirecrackerCandidateResolution {
-    let Some(initial_stat) = read_stable_firecracker_stat(pid).await else {
-        return unresolved_firecracker_resolution_if_present(pid).await;
+async fn resolve_firecracker_candidate<Fut>(
+    proc_root: &Path,
+    pid: u32,
+    read_stat: &mut impl FnMut(u32) -> Fut,
+) -> FirecrackerCandidateResolution
+where
+    Fut: Future<Output = ProcessStatRead>,
+{
+    let Some(initial_stat) = read_stable_firecracker_stat(proc_root, pid, read_stat).await else {
+        return unresolved_firecracker_resolution_if_present(proc_root, pid, read_stat).await;
     };
-    let cwd_info = read_cwd(pid)
+    let cwd_info = read_cwd(proc_root, pid)
         .await
         .and_then(|cwd| parse_workspace_cwd(&cwd));
-    let Some(process_stat) = read_stable_firecracker_stat(pid).await else {
-        return unresolved_firecracker_resolution_if_present(pid).await;
+    let Some(process_stat) = read_stable_firecracker_stat(proc_root, pid, read_stat).await else {
+        return unresolved_firecracker_resolution_if_present(proc_root, pid, read_stat).await;
     };
     stable_firecracker_resolution(pid, cwd_info, initial_stat, process_stat)
 }
@@ -245,8 +281,25 @@ pub async fn discover_all() -> DiscoveredProcesses {
 /// processes do not make it false. Destructive cleanup code should use this
 /// variant so it can fail closed; the status is not generic argv completeness
 /// for every process.
+/// Candidates whose identity cannot be verified after the cmdline scan remain
+/// in the result with an unknown workspace and generation. Cleanup must also
+/// account for these retained candidates when `proc_scan_complete` is true.
 pub(crate) async fn discover_all_with_status() -> ProcessDiscovery {
-    let proc_scan = scan_proc_cmdlines().await;
+    let proc_root = Path::new("/proc");
+    discover_all_with_status_from(proc_root, |pid| {
+        read_process_stat_checked_from(proc_root, pid)
+    })
+    .await
+}
+
+async fn discover_all_with_status_from<Fut>(
+    proc_root: &Path,
+    mut read_stat: impl FnMut(u32) -> Fut,
+) -> ProcessDiscovery
+where
+    Fut: Future<Output = ProcessStatRead>,
+{
+    let proc_scan = scan_proc_cmdlines(proc_root).await;
 
     let mut firecrackers = Vec::new();
     let mut mitmdumps = Vec::new();
@@ -267,7 +320,10 @@ pub(crate) async fn discover_all_with_status() -> ProcessDiscovery {
     // Resolve sandbox_id + base_dir + ppid from CWD for firecracker processes
     let mut fc_infos = Vec::with_capacity(firecrackers.len());
     for pid in firecrackers {
-        if let Some(info) = resolve_firecracker_candidate(pid).await.into_process_info() {
+        if let Some(info) = resolve_firecracker_candidate(proc_root, pid, &mut read_stat)
+            .await
+            .into_process_info()
+        {
             fc_infos.push(info);
         }
     }
@@ -275,7 +331,7 @@ pub(crate) async fn discover_all_with_status() -> ProcessDiscovery {
     // Resolve ppid for mitmdump processes
     let mut mitm_infos = Vec::with_capacity(mitmdumps.len());
     for (pid, port) in mitmdumps {
-        let ppid = read_ppid(pid).await;
+        let ppid = read_ppid_from(proc_root, pid).await;
         mitm_infos.push(MitmproxyProcessInfo { pid, ppid, port });
     }
 
@@ -300,8 +356,12 @@ pub fn firecracker_process_exists_for_sandbox_id(
 }
 
 #[cfg(test)]
+pub(crate) mod test_support;
+
+#[cfg(test)]
 mod tests {
     use super::*;
+    use test_support::{FIRECRACKER_PID, ProcfsFixture, StatFault, UNCERTAIN_STAT_FAULTS};
 
     fn argv(parts: &[&str]) -> Vec<String> {
         parts.iter().map(|s| (*s).to_string()).collect()
@@ -317,6 +377,108 @@ mod tests {
             ppid,
             pgid,
             starttime,
+        }
+    }
+
+    #[tokio::test]
+    async fn discovery_preserves_candidates_after_stat_faults_at_each_identity_read() {
+        for fault in UNCERTAIN_STAT_FAULTS {
+            // Two stat reads bracket each of the initial and final cmdline checks.
+            for successful_reads in 0..4 {
+                let fixture = ProcfsFixture::new(Path::new("/data/runner/workspaces/sandbox-a"));
+                let discovered = fixture
+                    .discover_with_stat_fault(successful_reads, fault)
+                    .await;
+
+                assert!(discovered.proc_scan_complete);
+                assert_eq!(
+                    discovered.processes.firecrackers,
+                    vec![FirecrackerProcessInfo {
+                        pid: FIRECRACKER_PID,
+                        ppid: None,
+                        sandbox_id: format!("pid-{FIRECRACKER_PID}"),
+                        base_dir: None,
+                        generation: None,
+                    }],
+                    "{fault:?} after {successful_reads} successful stat reads"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn discovery_resolves_a_stable_workspace() {
+        let fixture = ProcfsFixture::new(Path::new("/data/runner/workspaces/sandbox-a"));
+        let discovered = fixture.discover().await;
+
+        assert!(discovered.proc_scan_complete);
+        assert_eq!(discovered.processes.firecrackers.len(), 1);
+        let info = &discovered.processes.firecrackers[0];
+        assert_eq!(info.pid, FIRECRACKER_PID);
+        assert_eq!(info.ppid, Some(1));
+        assert_eq!(info.sandbox_id, "sandbox-a");
+        assert_eq!(info.base_dir.as_deref(), Some(Path::new("/data/runner")));
+        assert_eq!(
+            info.generation,
+            Some(stat('S', 42, 123456).procfs_generation())
+        );
+    }
+
+    #[tokio::test]
+    async fn discovery_excludes_candidates_after_conclusive_observations() {
+        for (fault, read_positions) in [
+            (StatFault::Missing, &[0, 1, 2, 3][..]),
+            (StatFault::Terminal('Z'), &[0, 1, 2, 3][..]),
+            (StatFault::Terminal('X'), &[0, 1, 2, 3][..]),
+            (StatFault::Terminal('x'), &[0, 1, 2, 3][..]),
+            // Change argv before each cmdline observation, not after it.
+            (StatFault::NonFirecracker, &[0, 2][..]),
+        ] {
+            for &successful_reads in read_positions {
+                let fixture = ProcfsFixture::new(Path::new("/data/runner/workspaces/sandbox-a"));
+                let discovered = fixture
+                    .discover_with_stat_fault(successful_reads, fault)
+                    .await;
+
+                assert!(discovered.proc_scan_complete);
+                assert!(
+                    discovered.processes.firecrackers.is_empty(),
+                    "{fault:?} after {successful_reads} successful stat reads"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn discovery_preserves_a_candidate_when_stat_recovers_during_resolution() {
+        for failed_read in 1..=4 {
+            let fixture = ProcfsFixture::new(Path::new("/data/runner/workspaces/sandbox-a"));
+            let mut reads = 0;
+            let proc_root = fixture.root();
+            let discovered = discover_all_with_status_from(proc_root, |pid| {
+                reads += 1;
+                let fail = reads == failed_read;
+                async move {
+                    if fail {
+                        ProcessStatRead::Unreadable(std::io::Error::from_raw_os_error(libc::EMFILE))
+                    } else {
+                        read_process_stat_checked_from(proc_root, pid).await
+                    }
+                }
+            })
+            .await;
+
+            assert!(discovered.proc_scan_complete);
+            assert_eq!(
+                discovered.processes.firecrackers,
+                vec![FirecrackerProcessInfo {
+                    pid: FIRECRACKER_PID,
+                    ppid: Some(1),
+                    sandbox_id: format!("pid-{FIRECRACKER_PID}"),
+                    base_dir: None,
+                    generation: None,
+                }]
+            );
         }
     }
 

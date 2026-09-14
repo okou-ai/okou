@@ -9,6 +9,7 @@ import {
   PI_MEMORY_CITATION_CLOSE,
 } from "@okouai/api-contracts/contracts/pi-memory-citations";
 
+import { PI_MEMORY_STAGE1_MODEL } from "./memory-background-config";
 import {
   PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
   projectPiMemoryStage1History,
@@ -334,7 +335,7 @@ describe("Pi memory Stage 1 runtime", () => {
     expect(first.content).not.toContain("MIDDLE");
   });
 
-  it("sends one fixed low-reasoning strict-schema request without tools", async () => {
+  it("sends one fixed luna low-reasoning strict-schema request without tools", async () => {
     const requests: unknown[] = [];
     const server = createServer((request, response) => {
       void (async () => {
@@ -374,7 +375,7 @@ describe("Pi memory Stage 1 runtime", () => {
           provider: "openai",
           baseUrl: `http://127.0.0.1:${address.port}/v1`,
           apiKey: "test-key",
-          model: "gpt-5.6-terra",
+          model: PI_MEMORY_STAGE1_MODEL,
           dialect: "openai-responses",
           transport: "sse",
         },
@@ -388,8 +389,8 @@ describe("Pi memory Stage 1 runtime", () => {
       });
       expect(requests).toHaveLength(1);
       expect(requests[0]).toMatchObject({
-        model: "gpt-5.6-terra",
-        reasoning: { effort: "max" },
+        model: "gpt-5.6-luna",
+        reasoning: { effort: "low" },
         text: {
           format: {
             type: "json_schema",

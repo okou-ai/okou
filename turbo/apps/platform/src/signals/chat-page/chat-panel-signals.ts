@@ -231,7 +231,6 @@ export interface ChatPanelSignals {
   >;
   readonly subscribeChatThread$: Command<Promise<void>, [AbortSignal]>;
   // -- Thinking indicator ---------------------------------------------------
-  readonly blockColors$: Computed<[string, string, string]>;
   readonly thinkingPhrase$: Computed<string>;
   readonly donePhrase$: Computed<Promise<string>>;
   // -- Artifacts ------------------------------------------------------------
