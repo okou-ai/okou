@@ -3663,7 +3663,7 @@ function ChatThreadSkeletonOverlay({ thread }: { thread: ChatPanelSignals }) {
       <main className={CHAT_THREAD_CONTENT_MAIN_CLASS}>
         <div
           className={cn(
-            "okou-chat-skeleton-reveal",
+            "opacity-0 animate-chat-skeleton-reveal",
             CHAT_THREAD_MESSAGE_LIST_CLASS,
           )}
         >
@@ -4317,14 +4317,14 @@ function ThinkingLoader() {
     <span
       aria-hidden
       data-thinking-loader="spinner"
-      className="okou-thinking-spinner-frame inline-flex size-4 shrink-0 items-center justify-center"
+      className="inline-flex size-4 shrink-0 items-center justify-center"
     >
       <img
         src={thinkingSpinnerImg}
         alt=""
         // The 48px asset has a 4px inset. A 17px canvas makes its visible
         // mark match the perceived size of the 16px line icons.
-        className="okou-thinking-spinner size-[17px] max-w-none shrink-0 animate-spin motion-reduce:animate-none"
+        className="size-[17px] max-w-none shrink-0 animate-spin [animation-duration:1.4s] will-change-transform motion-reduce:animate-none"
       />
     </span>
   );
@@ -4423,7 +4423,7 @@ function WaitingForAssistantResponse({
       <div
         {...thinkingIndicatorProps}
         data-role="assistant-thinking"
-        className="okou-thinking-enter min-w-0"
+        className="animate-thinking-in min-w-0"
       >
         <InlineThinkingRow
           isQueued={isQueued}
@@ -4438,7 +4438,7 @@ function WaitingForAssistantResponse({
     <div
       {...thinkingIndicatorProps}
       data-role="assistant"
-      className="okou-thinking-enter flex flex-col gap-2"
+      className="animate-thinking-in flex flex-col gap-2"
     >
       <div className={CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS}>
         <AssistantBubbleAvatar thread={thread} />
@@ -4495,7 +4495,7 @@ function AssistantThinkingStatusRow({
       <div
         {...thinkingIndicatorProps}
         data-role="assistant-thinking"
-        className="okou-thinking-enter min-w-0"
+        className="animate-thinking-in min-w-0"
       >
         {content}
       </div>

@@ -3,7 +3,6 @@
   "legacyClassTokens": [
     "language-mermaid",
     "okou-app",
-    "okou-chat-skeleton-reveal",
     "okou-composer",
     "okou-desktop-titlebar-drag-region",
     "okou-fixed-viewport-shell",
@@ -13,9 +12,6 @@
     "okou-pwa-fixed-cover",
     "okou-shimmer-text",
     "okou-sidebar-header",
-    "okou-thinking-enter",
-    "okou-thinking-spinner",
-    "okou-thinking-spinner-frame",
     "okou-workspace-bg",
     "owf-diagram",
     "owf-diagram-action",
@@ -277,41 +273,6 @@
         "selector": ".okou-shimmer-text",
         "property": "animation",
         "value": "okou-shimmer 3.5s linear infinite",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-thinking-enter",
-        "property": "animation",
-        "value": "okou-thinking-in 0.3s ease-out",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-thinking-spinner",
-        "property": "animation-duration",
-        "value": "1.4s",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-thinking-spinner",
-        "property": "will-change",
-        "value": "transform",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-chat-skeleton-reveal",
-        "property": "opacity",
-        "value": "0",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-chat-skeleton-reveal",
-        "property": "animation",
-        "value": "okou-chat-skeleton-reveal 0s 100ms forwards",
         "important": false
       },
       {
@@ -2393,11 +2354,7 @@
       "okou-app": 1
     },
     "apps/platform/src/views/okou-page/chat-thread-page.tsx": {
-      "okou-chat-skeleton-reveal": 1,
-      "okou-shimmer-text": 1,
-      "okou-thinking-enter": 3,
-      "okou-thinking-spinner": 1,
-      "okou-thinking-spinner-frame": 1
+      "okou-shimmer-text": 1
     },
     "apps/platform/src/views/okou-page/components/org-manage/org-billing-tab.tsx": {
       "okou-app": 1

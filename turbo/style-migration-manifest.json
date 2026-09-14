@@ -875,6 +875,29 @@
       ],
       "status": "implemented",
       "evidence": []
+    },
+    {
+      "id": "chat-thinking-states",
+      "family": "motion-and-injection",
+      "tokens": [
+        "okou-chat-skeleton-reveal",
+        "okou-thinking-enter",
+        "okou-thinking-spinner",
+        "okou-thinking-spinner-frame"
+      ],
+      "consumers": ["apps/platform/src/views/okou-page/chat-thread-page.tsx"],
+      "cases": [
+        "chat-thinking-light",
+        "chat-thinking-dark",
+        "chat-thinking-light-retina",
+        "chat-thinking-dark-retina",
+        "chat-thinking-narrow",
+        "chat-thinking-narrow-dark"
+      ],
+      "status": "implemented",
+      "evidence": [],
+      "pullRequest": "https://github.com/vm0-ai/vm0/pull/33843",
+      "mergeCommit": null
     }
   ],
   "caseFiles": [
@@ -898,6 +921,7 @@
     "../e2e/playwright/style-migration/external-contract-audit-cases.json",
     "../e2e/playwright/style-migration/chat-bubble-cases.json",
     "../e2e/playwright/style-migration/code-fence-copy-cases.json",
-    "../e2e/playwright/style-migration/chat-card-cases.json"
+    "../e2e/playwright/style-migration/chat-card-cases.json",
+    "../e2e/playwright/style-migration/chat-thinking-cases.json"
   ]
 }
