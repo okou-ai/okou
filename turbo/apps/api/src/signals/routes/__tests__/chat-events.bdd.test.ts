@@ -2736,6 +2736,7 @@ async function expectExactPrivatePiMemoryAdmission(args: {
 }
 
 async function extractOwnedThreadPiMemory(actor: ApiTestUser, runId: string) {
+  mockEnv("PI_MEMORY_BACKGROUND_WORKERS_ENABLED", "true");
   const scope = { orgId: requireOrgId(actor), userId: actor.userId };
   const candidate = await readPiMemoryStage1CandidateFixture(scope);
   if (!candidate) {
