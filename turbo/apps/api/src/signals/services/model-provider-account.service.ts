@@ -956,11 +956,32 @@ export async function upsertPersonalModelProviderAccount(
         return result;
       }
       return {
-        provider: accountResponse({ account: result.account, provider }),
+        provider: accountResponse({
+          account: result.account,
+          provider: await persistSubscriptionSelectedModel(tx, provider, args),
+        }),
         created: result.created,
       };
     })
     .finally(invalidateExpiry);
+}
+
+async function persistSubscriptionSelectedModel(
+  db: Db,
+  provider: ProviderRow,
+  args: Pick<UpsertPersonalAccountArgs, "mode" | "selectedModel">,
+): Promise<ProviderRow> {
+  const selectedModel =
+    args.mode.kind === "replace-active"
+      ? (args.selectedModel ?? null)
+      : provider.selectedModel;
+  if (selectedModel !== provider.selectedModel) {
+    await db
+      .update(modelProviders)
+      .set({ selectedModel, updatedAt: nowDate() })
+      .where(eq(modelProviders.id, provider.id));
+  }
+  return { ...provider, selectedModel };
 }
 
 async function hydrateClaudeAccountIdentities(

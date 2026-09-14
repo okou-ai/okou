@@ -1,5 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished } from "vitest";
+import { countWaitingPersonalSubscriptionMutationsFixture } from "../../../test-fixtures/personal-subscription";
+import { createDeferredPromise } from "../../utils";
 import { holdOrgAdmissionLockFixture } from "../../../test-fixtures/chat-events";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
@@ -23,7 +25,6 @@ import {
   createAuthDeviceApiActions,
 } from "./helpers/api-bdd-auth-device";
 import {
-  transitionRunToTerminal,
   cleanupTimedOutRun,
   type TestTerminalRunStatus,
 } from "./helpers/api-bdd-run-timeout";
@@ -112,7 +113,7 @@ async function fixture(
   });
   mockClaudeCodeTokenEndpoint();
   const connected = await connect(actor, type, "identity-a");
-  const model =
+  const model: "gpt-5.6-luna" | "claude-sonnet-5" =
     type === "codex-oauth-token" ? "gpt-5.6-luna" : "claude-sonnet-5";
   await runs.updateOrgModelPolicies(actor, [
     {
@@ -207,12 +208,60 @@ function accountId(claim: Claim, type: SubscriptionType) {
   return id;
 }
 
+async function finish(
+  actor: ApiTestUser,
+  runId: string,
+  claim: Claim,
+  status: TestTerminalRunStatus,
+) {
+  if (status === "cancelled") {
+    await runs.requestCancelRun(actor, runId, [200]);
+  } else if (status === "timeout") {
+    if (!actor.orgId) {
+      throw new Error("Expected an organization");
+    }
+    const orgId = actor.orgId;
+    // Infrastructure exception: runtime timeout has no caller endpoint. The
+    // scheduler observes elapsed time; its scoped fixture keeps other runs live.
+    await withMockNowForTest(now() + 25 * 60 * 60 * 1000, async () => {
+      await cleanupTimedOutRun(context, {
+        runId,
+        orgId,
+        chatThreadId: randomUUID(),
+      });
+    });
+  } else {
+    await createWebhookCallbackApi(context).requestAgentComplete(
+      {
+        runId,
+        exitCode: status === "completed" ? 0 : 1,
+        ...(status === "completed"
+          ? {
+              checkpoint: {
+                cliAgentType: "codex" as const,
+                cliAgentSessionId: `subscription-${runId}`,
+                cliAgentSessionHistoryHash: createHash("sha256")
+                  .update(`subscription history ${runId}`)
+                  .digest("hex"),
+              },
+            }
+          : { error: "Upstream run failed" }),
+      },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+  }
+  expect((await runs.readRun(actor, runId)).status).toBe(status);
+}
+
 describe("personal subscription run identity", () => {
   it("fails captured admission when disconnect commits before run insertion", async () => {
     const f = await fixture("codex-oauth-token");
     if (!f.actor.orgId) {
       throw new Error("Expected an organization");
     }
+    // Infrastructure exception: the API cannot pause a transaction at its
+    // admission lock; the fixture only orders competing production requests.
     const lock = await holdOrgAdmissionLockFixture({
       orgId: f.actor.orgId,
       signal: context.signal,
@@ -307,6 +356,9 @@ describe("personal subscription run identity", () => {
       "ChatGPT-Account-ID": "identity-b",
     });
     const listed = await support.listPersonalModelProviders(f.actor, [200]);
+    if (listed.status !== 200) {
+      throw new Error("Expected the connected account list");
+    }
     expect(
       listed.body.modelProviders.map((account) => {
         return account.id;
@@ -322,13 +374,15 @@ describe("personal subscription run identity", () => {
       throw new Error("Expected an organization");
     }
     const orgId = f.actor.orgId;
+    await connect(f.actor, f.type, "identity-b");
     const first = await f.start();
     const second = await f.start();
+    const queuedAccount = await connect(f.actor, f.type, "identity-a");
     const queued = await f.start();
     expect((await runs.readRun(f.actor, queued)).status).toBe("queued");
-    await support.deletePersonalModelProviderAccount(f.actor, f.connected.id);
-    await transitionRunToTerminal(context, first, "cancelled");
-    await transitionRunToTerminal(context, second, "cancelled");
+    await support.deletePersonalModelProviderAccount(f.actor, queuedAccount.id);
+    // Infrastructure exception: only the scheduler can advance wall-clock
+    // expiry. Invoke its scoped cleanup, then observe the production run API.
     await withMockNowForTest(now() + 25 * 60 * 60 * 1000, async () => {
       await cleanupTimedOutRun(context, {
         runId: queued,
@@ -338,8 +392,10 @@ describe("personal subscription run identity", () => {
     });
     expect((await runs.readRun(f.actor, queued)).status).toBe("timeout");
     expect((await connect(f.actor, f.type, "identity-a")).id).not.toBe(
-      f.connected.id,
+      queuedAccount.id,
     );
+    await runs.requestCancelRun(f.actor, first, [200]);
+    await runs.requestCancelRun(f.actor, second, [200]);
   }, 20_000);
 
   it.each([false, true])(
@@ -479,15 +535,81 @@ describe("personal subscription run identity", () => {
       const secondClaim = await f.claim(second);
       const captured = accountId(firstClaim, f.type);
       await support.deletePersonalModelProviderAccount(f.actor, captured);
-      await transitionRunToTerminal(context, first, status);
+      await finish(f.actor, first, firstClaim, status);
       await expect(resolve(secondClaim, f.type)).resolves.toMatchObject({
         "ChatGPT-Account-ID": "identity-a",
       });
-      await transitionRunToTerminal(context, second, status);
+      await finish(f.actor, second, secondClaim, status);
       const reconnected = await connect(f.actor, f.type, "identity-a");
       expect(reconnected.id).not.toBe(captured);
     },
   );
+
+  it("does not resurrect a retained credential when final cancellation races refresh", async () => {
+    const f = await fixture("codex-oauth-token");
+    const runId = await f.start();
+    const claim = await f.claim(runId);
+    const captured = accountId(claim, f.type);
+    await connect(f.actor, f.type, "identity-a", true);
+    await support.deletePersonalModelProviderAccount(f.actor, captured);
+    if (!f.actor.orgId) {
+      throw new Error("Expected an organization");
+    }
+    const orgId = f.actor.orgId;
+    const started = createDeferredPromise<void>(context.signal);
+    const released = createDeferredPromise<void>(context.signal);
+    firewall.mockCodexTokenRefresh(async () => {
+      started.resolve(undefined);
+      await released.promise;
+      return HttpResponse.json({
+        access_token: "refreshed-before-delete",
+        refresh_token: "rotated-before-delete",
+        expires_in: 7200,
+      });
+    });
+    const refreshing = firewall.requestFirewallAuth(
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      authBody(claim, f.type),
+      [200, 403],
+    );
+    onTestFinished(async () => {
+      if (!released.settled()) {
+        released.resolve(undefined);
+      }
+      await refreshing;
+    });
+    await started.promise;
+    const cancelling = runs.requestCancelRun(f.actor, runId, [200]);
+    onTestFinished(async () => {
+      if (!released.settled()) {
+        released.resolve(undefined);
+      }
+      await cancelling;
+    });
+    // Infrastructure exception: no API exposes PostgreSQL lock timing. Observe
+    // only the waiter to prove cancellation overlaps the held upstream refresh.
+    await expect
+      .poll(async () => {
+        return await countWaitingPersonalSubscriptionMutationsFixture({
+          orgId,
+          userId: f.actor.userId,
+          type: f.type,
+        });
+      })
+      .toBeGreaterThan(0);
+    released.resolve(undefined);
+    await Promise.all([refreshing, cancelling]);
+    expect((await runs.readRun(f.actor, runId)).status).toBe("cancelled");
+    const denied = await firewall.requestFirewallAuth(
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      authBody(claim, f.type),
+      [400, 403, 424],
+    );
+    expect(denied.status).not.toBe(200);
+    expect((await connect(f.actor, f.type, "identity-a")).id).not.toBe(
+      captured,
+    );
+  }, 20_000);
 
   it("shares same-identity reconnect and serializes retained-account refresh", async () => {
     const f = await fixture("codex-oauth-token");

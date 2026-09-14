@@ -437,6 +437,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.PersonalSubscriptionPriority]: {
     maintainer: "lancy@okou.ai",
+    description:
+      "Preserve personal subscription identities for admitted runs and gate the personal subscription priority rollout.",
     enabled: false,
   },
   [FeatureSwitchKey.PersonalModelProviderAccounts]: {
