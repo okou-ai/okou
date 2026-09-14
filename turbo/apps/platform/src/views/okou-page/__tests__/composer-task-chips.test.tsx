@@ -114,7 +114,7 @@ test.each([
     } else {
       await screen.findByRole("group", { name: "Ideas to get started" });
     }
-    click(button(`Remove ${task}`, selected));
+    click(selected);
     await screen.findByRole("group", { name: "Choose a task" });
     expect(screen.queryByRole("group", { name: task })).toBeNull();
     expect(
