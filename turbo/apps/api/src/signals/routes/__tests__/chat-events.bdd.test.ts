@@ -1,4 +1,7 @@
-import { sessionOutputDeltaSchema } from "@okouai/api-contracts/contracts/realtime";
+import {
+  sessionOutputDeltaSchema,
+  type SessionOutputDelta,
+} from "@okouai/api-contracts/contracts/realtime";
 import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
 import {
   PI_NATIVE_CREDENTIAL_PLACEHOLDER,
@@ -12938,6 +12941,63 @@ describe("CHAT-02: model-first provider policies", () => {
       status: "cancelled",
     });
   }, 90_000);
+
+  it("completes API-first output when transient stream publication fails", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: requireOrgId(actor) },
+      { [FeatureSwitchKey.PiLoop]: true },
+    );
+    mockPiResourceArchiveDownloads();
+    mockPiCheckpointObjectStore();
+    const answer = "The complete answer survives the streaming outage";
+    server.use(
+      http.post("https://api.openai.com/v1/responses", () => {
+        return new HttpResponse(piResponsesTextSse(answer, 1), {
+          headers: { "content-type": "text/event-stream" },
+        });
+      }),
+    );
+    const failedPublications: SessionOutputDelta[] = [];
+    context.mocks.ably.publish.mockImplementation((_topic, payload) => {
+      const chunk = sessionOutputDeltaSchema.safeParse(payload);
+      if (chunk.success) {
+        failedPublications.push(chunk.data);
+        return Promise.reject(
+          new Error("Session output transport unavailable"),
+        );
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: "Finish the answer even if its live preview is unavailable",
+      model: "gpt-5.6-terra",
+    });
+    await waitForRunStatus(actor, run.runId, "completed");
+    const thread = await chat.listThreadEvents(actor, run.threadId);
+    const messages = eventBackedContents(thread.events, run.runId);
+    expect(messages).toStrictEqual([
+      expect.objectContaining({ content: answer, sequenceNumber: 0 }),
+    ]);
+    expect(failedPublications).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          runId: run.runId,
+          eventId: messages[0]?.id,
+          chunkIndex: 0,
+          delta: answer,
+        }),
+      ]),
+    );
+    const reread = await chat.listThreadEvents(actor, run.threadId);
+    expect(eventBackedContents(reread.events, run.runId)).toStrictEqual(
+      messages,
+    );
+  });
 
   it("projects citation-free API-first blocks and durable private provenance", async () => {
     const { actor, agentId } = await entitledChatActor();
