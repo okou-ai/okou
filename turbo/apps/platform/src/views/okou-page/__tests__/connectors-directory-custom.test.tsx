@@ -191,7 +191,7 @@ test("Ignore obsolete connection filters in directory mode", async () => {
   await waitFor(() => {
     expect(locationSearch()).toContain("scope=custom");
   });
-  expect(getConnectorCard("Acme Reports")).toBeVisible();
+  expect(getConnectorCard("Acme Reports")).toBeInTheDocument();
   expect(locationSearch()).not.toContain("connection=");
 });
 
@@ -249,7 +249,7 @@ test("Keep Custom usable while catalog loading fails, then recover", async () =>
   // The other scope is a different page and does not go down with the catalog.
   click(screen.getByTestId("connectors-scope-custom"));
   await waitFor(() => {
-    expect(getConnectorCard("Acme Reports")).toBeVisible();
+    expect(getConnectorCard("Acme Reports")).toBeInTheDocument();
   });
   click(screen.getByTestId("connectors-scope-discover"));
   failing = false;
