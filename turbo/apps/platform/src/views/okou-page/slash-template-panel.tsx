@@ -236,8 +236,17 @@ function SlashTemplateDetailPane({
           The grid is a child of the scroller rather than the scroller itself,
           so its trailing padding is an ordinary block margin every engine
           measures, not padding on a scroll container.
+
+          The 1px top and left padding is what keeps the cards' hairline visible.
+          `ring` is an outset shadow and `overflow-y-auto` clips to the padding
+          box on both axes, so without it the top row and the left column lose
+          the edge of their ring. The grid stays where it was: `-ml-px` cancels
+          the left padding, and the top gap is written as 11px + 1px rather than
+          a negative margin, because that would collide with `mt-3` on the same
+          property. The bottom stays unpadded, since the covers are meant to
+          bleed off that edge.
         */}
-        <div className="-mr-4 mt-3 min-h-0 flex-1 overflow-y-auto pr-4">
+        <div className="mt-[11px] -ml-px -mr-4 min-h-0 flex-1 overflow-y-auto pl-px pr-4 pt-px">
           <div className="grid grid-cols-2 gap-2.5 pb-4">
             {category === "slides" && (
               <SlashTemplateImportCard onImportDeck={onImportDeck} />
