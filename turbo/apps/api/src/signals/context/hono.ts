@@ -2,6 +2,7 @@ import type { AppRoute } from "@okouai/api-contracts/contracts/trpc-contract";
 import { command, computed, state } from "ccstate";
 import type { Context } from "hono";
 import { RedirectStatusCode } from "hono/utils/http-status";
+import type { S3DownloadFailureDiagnostics } from "../external/s3";
 
 import {
   previewAutomationBypassSecret,
@@ -11,6 +12,27 @@ import {
 const innerHonoContext$ = state<Context>({} as Context);
 const innerRoute$ = state<AppRoute | null>(null);
 const innerApiStartTime$ = state<number | null>(null);
+
+interface WebDownloadFailureDiagnostics extends S3DownloadFailureDiagnostics {
+  readonly storageScope: "private_artifact" | "user_artifact";
+  readonly objectFingerprint: string;
+  readonly objectSize: number;
+  readonly requestAborted: boolean;
+}
+
+declare module "hono" {
+  interface ContextVariableMap {
+    webDownloadFailure: WebDownloadFailureDiagnostics | undefined;
+  }
+}
+
+/** Keep storage diagnostics on the request that owns the eventual error log. */
+export const recordWebDownloadFailure$ = computed((get) => {
+  const context = get(innerHonoContext$);
+  return (diagnostics: WebDownloadFailureDiagnostics): void => {
+    context.set("webDownloadFailure", diagnostics);
+  };
+});
 
 export const initHono$ = command(
   ({ set }, context: Context, route: AppRoute, apiStartTime: number): void => {
