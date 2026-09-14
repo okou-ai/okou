@@ -47,6 +47,20 @@ to refresh this document.
   binary values. Foreign tables and large objects were absent. Cleanup and
   original-state preservation passed. This is complete marker evidence, not
   target-only decryption or retirement clearance.
+- [September 11 target-only recovery 34866103749](https://github.com/vm0-ai/vm0/actions/runs/34866103749)
+  completed at `2026-09-14T17:01:17.802586Z`. All 77,416 fields in the reviewed
+  historical manifest decrypted successfully with a session restricted to the
+  target key. Source, nested source, uninspected nested, invalid and unknown-key
+  counts were zero, with no database updates. Complete marker records exactly
+  matched run 34836589200. The 77,416 encrypted-field count differs from the
+  77,410 marker-containing-row count above. Original state was preserved, and
+  the temporary preview was removed from both live and deleted-branch listings.
+  The collected report SHA-256 is
+  `7b31c67db66180478aeddd2dec3524a0f45d156b44498d084021ef1d9e8adb8f`.
+
+This completes the September 11 known-field and nested-queue recovery check.
+Reuse that evidence; another preparatory PR merge is not a reason to repeat the
+full scan and decryption. The independent remaining coverage below still applies.
 
 ## Remaining recovery coverage
 
@@ -60,6 +74,13 @@ verified target-only recovery; a configured date is not expiration evidence.
 Classify new daily snapshots by their data and writers rather than repeatedly
 extending a wait because a new snapshot exists.
 
+The finite retention follow-up is scheduled for `2026-09-25T00:20:00Z`
+(08:20 Asia/Shanghai). Preserve the original recovery points until then and
+reconcile their actual presence by the recorded hashes. Actual expiration can
+discharge a historical point's remaining classification work once no retained
+copy needs that point. This appointment does not schedule KMS deletion or clear
+other retained branches, live state or PITR coverage.
+
 All 15 listed snapshots lack reported data timestamps/LSNs. The configured
 24-hour PITR window and its calculated start do not establish the earliest
 actually restorable point. Six other retained branches have reported parent
@@ -70,18 +91,28 @@ locations found in the operational inventory before claiming coverage.
 
 The September 11 marker result leaves these specific classification gaps:
 
-| Observed state                 | Required evidence                                                                                                |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| 20 literal source-UUID rows    | Exact catalog/field locations and reader semantics; literal text is not a decoded key reference.                 |
-| 10,220 binary values           | Actual catalog identities, formats and decoded contents; repository schema names alone do not prove the mapping. |
-| Known fields and nested queues | A complete target-only cryptographic report from the isolated recovery workflow.                                 |
-| Later and current SSH storage  | Actual schema coverage for every retained encrypted field, including `ssh_credentials.encrypted_password`.       |
+| Observed state                | Required evidence                                                                                                |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| 20 literal source-UUID rows   | Exact catalog/field locations and reader semantics; literal text is not a decoded key reference.                 |
+| 10,220 binary values          | Actual catalog identities, formats and decoded contents; repository schema names alone do not prove the mapping. |
+| Later and current SSH storage | Actual schema coverage for every retained encrypted field, including `ssh_credentials.encrypted_password`.       |
 
-The snapshot's historical manifest lists `ssh_connection_credentials`; later
-code uses `ssh_credentials` with a different primary key and an additional
-password field. Match the manifest to each inspected database. A missing old
-table is not zero ciphertext, and schema drift is not an explanation for a
-failed run unless its actual diagnostic establishes that cause.
+The snapshot's accepted historical manifest lists `ssh_connection_credentials`.
+[PR 34135](https://github.com/vm0-ai/vm0/pull/34135) adds an explicit, read-only
+`--verify --recovery-schema` option covering either that table or the later
+`ssh_credentials` table, including its different primary key and password field.
+At least one SSH table must exist; every present table must pass column and key
+validation. The original migration manifest remains unchanged. The recovery
+workflow now selects this option explicitly. This prepares later/current checks;
+local tests and the merged PR do not establish their actual data coverage.
+
+Registry reader semantics also bound the remaining work: the API encrypts the
+runtime string map once, the runner copies that envelope unchanged, and the API
+decrypts it once before using its string values. These inspected readers do not
+recursively KMS-decrypt individual map values. Bind the deployed readers and
+refresh registry evidence at retirement; do not infer recursive dependencies
+solely from the inventory's `outerHeadersOnly` flag. Backing database credential
+refresh and concrete state outside the registries require their own coverage.
 
 ## Isolated snapshot inspection
 
