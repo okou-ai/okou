@@ -1,3 +1,4 @@
+import { advancePiMemoryStage1Watermark } from "./pi-memory-stage1-watermark.service";
 import { and, asc, eq, gt, gte, inArray, sql, type SQL } from "drizzle-orm";
 
 import { z } from "zod";
@@ -238,7 +239,7 @@ export async function deleteStoragesWithPiMemoryCandidates(
   return deleted.length;
 }
 
-export type PiMemoryStage1AdmissionSkipReason =
+type PiMemoryStage1AdmissionSkipReason =
   | "generation_disabled"
   | "history_not_hash_backed"
   | "missing_chat_thread"
@@ -251,7 +252,7 @@ export type PiMemoryStage1AdmissionSkipReason =
   | "synthetic_source"
   | "stale_source";
 
-export type PiMemoryStage1Admission =
+type PiMemoryStage1Admission =
   | {
       readonly outcome: "created" | "exact_retry" | "replaced";
       readonly memoryStorageId: string;
@@ -597,12 +598,41 @@ interface CommitPiMemoryStage1CandidateArgs {
   readonly leaseToken: string;
   readonly committedAt: Date;
   readonly result: PiMemoryStage1CommitResult;
+  readonly selectedSource?: {
+    readonly chatThreadId: string;
+    readonly sourceRunId: string;
+    readonly sourceActivityAt: Date;
+  };
+}
+
+async function lockOwnedPiMemorySourceThread(
+  tx: Tx,
+  userId: string,
+  threadId: string,
+): Promise<boolean> {
+  const [thread] = await tx
+    .select({ id: chatThreads.id })
+    .from(chatThreads)
+    .where(and(eq(chatThreads.id, threadId), eq(chatThreads.userId, userId)))
+    .for("key share");
+  return thread !== undefined;
 }
 
 export async function commitPiMemoryStage1Candidate(
   tx: Tx,
   args: CommitPiMemoryStage1CandidateArgs,
 ): Promise<boolean> {
+  // Take the Thread FK lock before Storage/candidate and Phase 2 locks.
+  if (
+    args.selectedSource &&
+    !(await lockOwnedPiMemorySourceThread(
+      tx,
+      args.userId,
+      args.selectedSource.chatThreadId,
+    ))
+  ) {
+    return false;
+  }
   // Phase 2 enqueue can take a parent FK lock after updating the candidate.
   // Take it first so cleanup cannot hold the parent while waiting for this row.
   const [owner] = await tx
@@ -679,6 +709,12 @@ export async function commitPiMemoryStage1Candidate(
         eq(piMemoryStage1Candidates.userId, args.userId),
         eq(piMemoryStage1Candidates.piSessionId, args.piSessionId),
         eq(piMemoryStage1Candidates.sourceHistoryHash, args.sourceHistoryHash),
+        args.selectedSource
+          ? eq(
+              piMemoryStage1Candidates.sourceRunId,
+              args.selectedSource.sourceRunId,
+            )
+          : undefined,
         eq(piMemoryStage1Candidates.status, "leased"),
         eq(piMemoryStage1Candidates.leaseToken, args.leaseToken),
         gt(piMemoryStage1Candidates.leaseExpiresAt, args.committedAt),
@@ -692,6 +728,16 @@ export async function commitPiMemoryStage1Candidate(
     args.result.kind === "succeeded" ||
     args.result.kind === "succeeded_no_output"
   ) {
+    if (args.selectedSource) {
+      await advancePiMemoryStage1Watermark(tx, {
+        memoryStorageId: args.memoryStorageId,
+        orgId: args.orgId,
+        userId: args.userId,
+        chatThreadId: args.selectedSource.chatThreadId,
+        sourceActivityAt: args.selectedSource.sourceActivityAt,
+        sourceHistoryHash: args.sourceHistoryHash,
+      });
+    }
     await advancePiMemoryPhase2InputRevision(tx, {
       memoryStorageId: args.memoryStorageId,
       orgId: args.orgId,

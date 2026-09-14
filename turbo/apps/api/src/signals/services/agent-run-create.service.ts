@@ -1,3 +1,4 @@
+import { requestPiMemoryStage1Day } from "./pi-memory-stage1-schedule.service";
 import {
   measurePiPreparation,
   measurePiPreparationSync,
@@ -8716,10 +8717,22 @@ async function commitPreparedLaunch(
       },
     );
     const admissionLockHeldStartedAt = now();
-    return {
-      result: await commitPreparedLaunchUnderLock(tx, args, payload),
-      admissionLockHeldStartedAt,
-    };
+    const result = await commitPreparedLaunchUnderLock(tx, args, payload);
+    if (
+      "kind" in result &&
+      (result.kind === "pending" || result.kind === "queued")
+    ) {
+      await requestPiMemoryStage1Day(tx, {
+        ...result.run,
+        userId: args.createArgs.userId,
+        orgId: args.createArgs.orgId,
+        chatThreadId: args.createArgs.chatThreadId ?? null,
+        triggerSource: args.context.body.triggerSource,
+        launchSnapshot: args.context.launchSnapshot,
+        completedAt: null,
+      });
+    }
+    return { result, admissionLockHeldStartedAt };
   });
   const transactionReturnedAt = now();
   args.timing.recordElapsed(

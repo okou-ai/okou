@@ -1,3 +1,4 @@
+import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
@@ -870,6 +871,9 @@ async function deleteUserData(
   await db.transaction(async (tx) => {
     await deleteStoragesWithPiMemoryCandidates(tx, eq(storages.userId, userId));
   });
+  await db
+    .delete(piMemoryStage1Days)
+    .where(eq(piMemoryStage1Days.userId, userId));
   await db.delete(modelProviders).where(eq(modelProviders.userId, userId));
   await db
     .delete(modelProviderAuthSessions)
