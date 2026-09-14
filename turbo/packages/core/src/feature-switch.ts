@@ -409,13 +409,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ChatThinkingSpinner]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Replace the three-block chat thinking loader with a rotating Okou mark.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ComposerImageAnnotation]: {
     maintainer: "tongx@okou.ai",
     description:

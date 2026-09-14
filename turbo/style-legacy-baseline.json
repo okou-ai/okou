@@ -5,7 +5,6 @@
     "language-mermaid",
     "lucide",
     "okou-app",
-    "okou-blocks",
     "okou-chat-bubble-assistant",
     "okou-chat-bubble-user",
     "okou-chat-card",
@@ -319,125 +318,6 @@
         "selector": ".okou-chat-skeleton-reveal",
         "property": "animation",
         "value": "okou-chat-skeleton-reveal 0s 100ms forwards",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks",
-        "property": "display",
-        "value": "inline-grid",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks",
-        "property": "grid-template-columns",
-        "value": "repeat(2,5px)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks",
-        "property": "grid-template-rows",
-        "value": "repeat(2,5px)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks",
-        "property": "gap",
-        "value": "1.5px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span",
-        "property": "border-radius",
-        "value": "1.5px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(1)",
-        "property": "background",
-        "value": "var(--zb-c1)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(1)",
-        "property": "grid-column",
-        "value": "2",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(1)",
-        "property": "grid-row",
-        "value": "1",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(1)",
-        "property": "animation",
-        "value": "okou-block-pop 1.4s ease-in-out infinite",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(2)",
-        "property": "background",
-        "value": "var(--zb-c2)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(2)",
-        "property": "grid-column",
-        "value": "1",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(2)",
-        "property": "grid-row",
-        "value": "2",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(2)",
-        "property": "animation",
-        "value": "okou-block-pop 1.4s ease-in-out 0.2s infinite",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(3)",
-        "property": "background",
-        "value": "var(--zb-c3)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(3)",
-        "property": "grid-column",
-        "value": "2",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(3)",
-        "property": "grid-row",
-        "value": "2",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(3)",
-        "property": "animation",
-        "value": "okou-block-pop 1.4s ease-in-out 0.4s infinite",
         "important": false
       },
       {
@@ -2629,7 +2509,6 @@
       "okou-chat-bubble-user": 1
     },
     "apps/platform/src/views/okou-page/chat-thread-page.tsx": {
-      "okou-blocks": 1,
       "okou-chat-bubble-user": 2,
       "okou-chat-card": 2,
       "okou-chat-skeleton-reveal": 1,

@@ -346,46 +346,6 @@ body {
   }
 }
 
-/* Thinking indicator: 3-block loader */
-.okou-blocks {
-  display: inline-grid;
-  grid-template-columns: repeat(2, 5px);
-  grid-template-rows: repeat(2, 5px);
-  gap: 1.5px;
-}
-.okou-blocks span {
-  border-radius: 1.5px;
-}
-.okou-blocks span:nth-child(1) {
-  background: var(--zb-c1);
-  grid-column: 2;
-  grid-row: 1;
-  animation: okou-block-pop 1.4s ease-in-out infinite;
-}
-.okou-blocks span:nth-child(2) {
-  background: var(--zb-c2);
-  grid-column: 1;
-  grid-row: 2;
-  animation: okou-block-pop 1.4s ease-in-out 0.2s infinite;
-}
-.okou-blocks span:nth-child(3) {
-  background: var(--zb-c3);
-  grid-column: 2;
-  grid-row: 2;
-  animation: okou-block-pop 1.4s ease-in-out 0.4s infinite;
-}
-@keyframes okou-block-pop {
-  0%,
-  100% {
-    transform: scale(0.8);
-    opacity: 0.5;
-  }
-  50% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
 /* Each named theme pairs one anchor with one companion; the same pair drives
    picker swatches, primary actions, and the workspace ambience below. The HSL
    primary value also feeds the shared semantic token without duplicating it. */

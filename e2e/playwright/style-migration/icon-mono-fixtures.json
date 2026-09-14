@@ -64,7 +64,6 @@
       "privateArtifacts": false,
       "agentMessageMath": false,
       "progressiveArtifactPreview": false,
-      "chatThinkingSpinner": false,
       "onboarding-chat": false,
       "_sidebarSubscriptionUsage": false,
       "_multipleSubscriptions": false,
