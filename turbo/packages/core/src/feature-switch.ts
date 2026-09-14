@@ -396,12 +396,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Use private storage and authenticated previews for CLI artifact uploads and managed generation.",
     enabled: false,
   },
-  [FeatureSwitchKey.AgentMessageMath]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Render explicit LaTeX delimiters in Agent messages as native MathML.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ProgressiveArtifactPreview]: {
     maintainer: "bingjie@okou.ai",
     description:

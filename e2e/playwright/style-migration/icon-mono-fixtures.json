@@ -62,7 +62,6 @@
       "zapierConnector": false,
       "computerUseDesktopPlugins": false,
       "privateArtifacts": false,
-      "agentMessageMath": false,
       "progressiveArtifactPreview": false,
       "chatThinkingSpinner": false,
       "onboarding-chat": false,
