@@ -60,7 +60,6 @@
     "owf-diagram-okou-icon",
     "owf-diagram-vertical-control",
     "owf-diagram-wrap",
-    "table-wrapper",
     "toaster",
     "wmde-markdown",
     "wmde-markdown-color"
@@ -3132,9 +3131,6 @@
     },
     "packages/ui/src/components/ui/sonner.tsx": {
       "toaster": 1
-    },
-    "packages/ui/src/components/ui/table.tsx": {
-      "table-wrapper": 1
     }
   },
   "styleInjections": {
@@ -3144,14 +3140,6 @@
         "kind": "jsx-style",
         "fingerprint": "c2ae7df091deaac1ec819d82c4261087fedf4cc4fe033165510ada776afdb097",
         "preview": "<style>{` @keyframes avatar-option-appear { from { opacity: 0; transform: translateY(8px) scale(0.9); } to { opacity: 1;"
-      }
-    ],
-    "packages/ui/src/components/ui/table.tsx": [
-      {
-        "file": "packages/ui/src/components/ui/table.tsx",
-        "kind": "jsx-style",
-        "fingerprint": "b9757dbcec3bc3a6039e74464b1fd635f08432eca2f5b6f566937d7d85c02577",
-        "preview": "<style dangerouslySetInnerHTML={{ __html: ` .table-wrapper tbody tr:last-child { border-bottom: 0 !important; } .table-w"
       }
     ]
   }

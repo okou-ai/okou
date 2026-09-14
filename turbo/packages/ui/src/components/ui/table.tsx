@@ -8,39 +8,7 @@ const Table = React.forwardRef<
 >(({ className, ...props }, ref) => {
   return (
     <div className="relative w-full overflow-hidden rounded-lg border border-border bg-card">
-      <style
-        dangerouslySetInnerHTML={{
-          __html: `
-        .table-wrapper tbody tr:last-child {
-          border-bottom: 0 !important;
-        }
-        .table-wrapper thead {
-          border-bottom: 1px solid hsl(var(--border)) !important;
-        }
-        .table-wrapper thead tr {
-          border-bottom: 0 !important;
-        }
-        .table-wrapper {
-          scrollbar-width: thin;
-          scrollbar-color: hsl(var(--muted-foreground) / 0.2) transparent;
-        }
-        .table-wrapper::-webkit-scrollbar {
-          height: 6px;
-        }
-        .table-wrapper::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .table-wrapper::-webkit-scrollbar-thumb {
-          background-color: hsl(var(--muted-foreground) / 0.2);
-          border-radius: 3px;
-        }
-        .table-wrapper::-webkit-scrollbar-thumb:hover {
-          background-color: hsl(var(--muted-foreground) / 0.3);
-        }
-      `,
-        }}
-      />
-      <div className="table-wrapper overflow-x-auto">
+      <div className="overflow-x-auto">
         <table
           ref={ref}
           className={cn(
@@ -59,7 +27,16 @@ const TableHeader = React.forwardRef<
   HTMLTableSectionElement,
   React.HTMLAttributes<HTMLTableSectionElement>
 >(({ className, ...props }, ref) => {
-  return <thead ref={ref} className={cn("bg-muted", className)} {...props} />;
+  return (
+    <thead
+      ref={ref}
+      className={cn(
+        "bg-muted border-b border-b-border [&_tr]:border-b-0",
+        className,
+      )}
+      {...props}
+    />
+  );
 });
 TableHeader.displayName = "TableHeader";
 
