@@ -16,6 +16,10 @@ import {
   type PiModelConfigV4,
 } from "@okouai/api-contracts/contracts/pi-native";
 import { piNativeFirewall } from "@okouai/api-contracts/contracts/pi-native-firewall";
+import {
+  getOpenRouterBaseUrl,
+  OPENROUTER_US_ORIGIN,
+} from "@okouai/api-contracts/contracts/openrouter-routing";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { isUnsupportedRunAdmission } from "./run-admission-input";
 import { createHash, randomUUID } from "node:crypto";
@@ -2546,6 +2550,7 @@ async function multiAuthModelProviderEnvironment(
 async function builtInModelProviderEnvironment(
   db: Db,
   selectedModel: string,
+  featureSwitchContext: FeatureSwitchContext,
   resolvedRoute?: BuiltInModelRuntimeRoute,
 ): Promise<ResolvedModelProviderEnvironment | null> {
   if (resolvedRoute && resolvedRoute.selectedModel !== selectedModel) {
@@ -2601,6 +2606,23 @@ async function builtInModelProviderEnvironment(
     key.apiKey,
     route.upstreamModel,
   );
+  const routing = {
+    credentialOwner: "builtin" as const,
+    model: route.upstreamModel,
+    usRoutingEnabled: isFeatureEnabled(
+      FeatureSwitchKey.OpenRouterUsRouting,
+      featureSwitchContext,
+    ),
+  };
+  const firewall = getModelProviderFirewall(route.providerType, routing);
+  const usesUsEndpoint = firewall?.apis.some((api) => {
+    return api.base.startsWith(`${OPENROUTER_US_ORIGIN}/`);
+  });
+  if (route.providerType === "openrouter-api-key") {
+    environment.ANTHROPIC_BASE_URL = getOpenRouterBaseUrl("messages", routing);
+  } else if (route.providerType === "openrouter-codex") {
+    environment.OPENAI_BASE_URL = getOpenRouterBaseUrl("responses", routing);
+  }
   const codexRuntimeConfig = resolveModelProviderCodexRuntimeConfig({
     type: route.providerType,
     logicalModel: selectedModel,
@@ -2617,6 +2639,7 @@ async function builtInModelProviderEnvironment(
     secrets: { [secretName]: key.apiKey },
     selectedModel,
     builtInModelRuntimeRoute: route,
+    ...(usesUsEndpoint ? { firewall } : {}),
     ...(codexRuntimeConfig ? { codexRuntimeConfig } : {}),
   };
 }
@@ -2991,6 +3014,7 @@ async function resolveCandidateModelProviderEnvironment(
     const provider = await builtInModelProviderEnvironment(
       db,
       selectedModel,
+      args.featureSwitchContext,
       args.builtInModelRuntimeRoute,
     );
     return provider?.concreteType &&
@@ -3060,6 +3084,7 @@ async function resolveModelProviderEnvironment(
       db,
       args.selectedModelOverride ??
         MODEL_PROVIDER_TYPES["built-in"].defaultModel,
+      args.featureSwitchContext,
       args.builtInModelRuntimeRoute,
     );
     return provider?.concreteType &&
@@ -5376,7 +5401,8 @@ function modelProviderPermissionManifest(
   const askSet = new Set(firewall.defaultPolicies?.ask ?? []);
   return {
     firewalls: [
-      modelProvider.inlineFirewall
+      // A name-only entry would lose the endpoint selected for this run.
+      modelProvider.firewall !== undefined
         ? inlineFirewallEntry(firewall)
         : builtinFirewallEntry(firewall, vars),
     ],

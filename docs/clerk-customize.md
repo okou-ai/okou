@@ -20,7 +20,7 @@ The code that owns the DOM also owns its control styling and states.
 | Concern                                                   | Source                                                                 |
 | --------------------------------------------------------- | ---------------------------------------------------------------------- |
 | Provider-level semantic variables and Clerk cascade layer | `turbo/apps/platform/src/views/auth-v1/provider-appearance.ts`         |
-| Auth component options and public element slots           | `turbo/apps/platform/src/views/auth-v1/component-appearance.ts`        |
+| Shared auth options and public element slots              | `turbo/apps/platform/src/views/auth-v1/clerk-auth-appearance.ts`       |
 | Shared page canvas and brand shell                        | `turbo/apps/platform/src/views/auth/auth-shell.tsx`                    |
 | Clerk layer order and card geometry                       | `turbo/apps/platform/src/views/css/index.css`                          |
 | Exact browser artifact versions                           | `turbo/apps/platform/src/lib/clerk-versions.ts` and its `package.json` |
@@ -49,11 +49,12 @@ Clerk derives its border scale from `colorNeutral`. Do not map the application's
 `--border` variable, so the deferred value can resolve against the wrong owner.
 
 Provider appearance must not contain `elements`. Authentication-specific
-element overrides belong on `SignIn` and `SignUp`, so unrelated Clerk surfaces
-cannot inherit them.
+element overrides belong on `SignIn`, `SignUp`, and imperative SignIn dialogs,
+so unrelated Clerk surfaces cannot inherit them.
 
-Component appearance selects an official Clerk theme and options, then adapts
-only public slots:
+Shared auth appearance selects an official Clerk theme and options, then adapts
+only public slots. Page-mounted `SignIn` / `SignUp` and imperative
+`clerk.openSignIn()` dialogs must use the same appearance builder:
 
 ```ts
 return {

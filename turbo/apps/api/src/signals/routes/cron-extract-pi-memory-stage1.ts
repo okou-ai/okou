@@ -11,7 +11,7 @@ import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 import { admitsPiMemoryBackgroundWorkerInvocation } from "./pi-memory-background-worker-breaker";
 
 interface PiMemoryStage1RouteScope {
-  readonly memoryStorageId: string;
+  readonly memoryStorageIds: readonly string[];
   readonly piSessionId?: string;
 }
 

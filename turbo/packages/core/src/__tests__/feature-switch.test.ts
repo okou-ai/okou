@@ -33,10 +33,32 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
+  it("enables OpenRouter US routing for staff and honors explicit overrides", () => {
+    for (const context of [{}, { orgId: "org_nonexistent" }]) {
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.OpenRouterUsRouting, context),
+      ).toBe(false);
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.OpenRouterUsRouting, {
+          ...context,
+          overrides: { [FeatureSwitchKey.OpenRouterUsRouting]: true },
+        }),
+      ).toBe(true);
+    }
+    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.OpenRouterUsRouting, staffContext),
+    ).toBe(true);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.OpenRouterUsRouting, {
+        ...staffContext,
+        overrides: { [FeatureSwitchKey.OpenRouterUsRouting]: false },
+      }),
+    ).toBe(false);
+  });
   it("should return true for globally enabled switch", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.Dummy, {})).toBe(true);
     expect(isFeatureEnabled(FeatureSwitchKey.AvatarNeckSweater, {})).toBe(true);
-    expect(isFeatureEnabled(FeatureSwitchKey.MarkdownTime, {})).toBe(true);
   });
 
   it("should return true for globally enabled switch even with context", () => {
@@ -338,9 +360,6 @@ describe("getFeatureSwitchMetadata", () => {
     const metadata = getFeatureSwitchMetadata();
 
     expect(metadata[FeatureSwitchKey.AvatarNeckSweater].rolloutStage).toBe(
-      "released",
-    );
-    expect(metadata[FeatureSwitchKey.MarkdownTime].rolloutStage).toBe(
       "released",
     );
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");

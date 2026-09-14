@@ -508,7 +508,9 @@ export const mockedClerk = {
       create: clientSignInCreate,
     },
   },
-  openSignIn: vi.fn<() => Promise<void>>(() => Promise.resolve()),
+  openSignIn: vi.fn<
+    (...args: Parameters<BrowserClerk["openSignIn"]>) => Promise<void>
+  >(() => Promise.resolve()),
   signOut: vi.fn<BrowserClerk["signOut"]>(() => {
     return Promise.resolve();
   }),

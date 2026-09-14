@@ -14,7 +14,7 @@ import { hideAppSkeletonOnContentReadyRef$ } from "../../signals/app-skeleton.ts
 import { theme$ } from "../../signals/theme.ts";
 import type { AuthV1ClerkSignals } from "../../signals/auth-v1-clerk.ts";
 import { AuthV1Layout } from "./auth-v1-layout.tsx";
-import { getAuthV1ComponentAppearance } from "./component-appearance.ts";
+import { getClerkAuthAppearance } from "./clerk-auth-appearance.ts";
 
 export type AuthV1PageMode = "sign-in" | "sign-up";
 
@@ -82,7 +82,7 @@ function AuthV1PageContent({ mode }: Pick<AuthV1PageProps, "mode">) {
             ref={authPageMountRef}
           >
             <SignIn
-              appearance={getAuthV1ComponentAppearance(authBrand, theme)}
+              appearance={getClerkAuthAppearance(authBrand.homeUrl, theme)}
               fallback={<AuthLoadingFallback />}
               fallbackRedirectUrl={redirectUrl}
               forceRedirectUrl={redirectUrl}
@@ -117,7 +117,7 @@ function AuthV1PageContent({ mode }: Pick<AuthV1PageProps, "mode">) {
         ref={authPageMountRef}
       >
         <SignUp
-          appearance={getAuthV1ComponentAppearance(authBrand, theme)}
+          appearance={getClerkAuthAppearance(authBrand.homeUrl, theme)}
           fallback={<AuthLoadingFallback />}
           fallbackRedirectUrl={redirectUrl}
           forceRedirectUrl={redirectUrl}

@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { checkSource, formatFailure } from "./check-clerk-customize.mjs";
 
-const componentAppearancePath = "src/views/auth-v1/component-appearance.ts";
+const clerkAuthAppearancePath = "src/views/auth-v1/clerk-auth-appearance.ts";
 
 function violationReasons(
   sourceText,
@@ -106,10 +106,10 @@ await test("failure output directs contributors to the Clerk guide", () => {
       column: 5,
       line: 10,
       reason: "uses !important",
-      relativePath: componentAppearancePath,
+      relativePath: clerkAuthAppearancePath,
     },
   ]);
 
   assert.match(output, /Read docs\/clerk-customize\.md/u);
-  assert.match(output, /component-appearance\.ts:10:5 uses !important/u);
+  assert.match(output, /clerk-auth-appearance\.ts:10:5 uses !important/u);
 });

@@ -334,6 +334,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.OpenRouterUsRouting]: {
+    maintainer: "liangyou@okou.ai",
+    description:
+      "Use US routing for supported models with platform-owned OpenRouter keys.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.IntroVideo]: {
     maintainer: "bingjie@okou.ai",
     description:
@@ -397,12 +404,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     description:
       "Render explicit LaTeX delimiters in Agent messages as native MathML.",
-    enabled: true,
-  },
-  [FeatureSwitchKey.MarkdownTime]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Render Markdown time tags with explicit datetime offsets in the browser timezone.",
     enabled: true,
   },
   [FeatureSwitchKey.ProgressiveArtifactPreview]: {

@@ -5,6 +5,7 @@ import {
 } from "@okouai/connectors/firewall-types";
 import { piCredentialHeaderSchema } from "./pi-credential";
 import { piNativeCatalogModelSchema } from "./pi-native-models";
+import { getOpenRouterBaseUrl } from "./openrouter-routing";
 
 export const PI_MODEL_CONFIG_NATIVE_GENERATION = 4;
 
@@ -203,8 +204,18 @@ function validateMessagesEndpoint(
   } as const;
   if (config.route in expected) {
     const policy = expected[config.route as keyof typeof expected];
+    // Captured global contexts remain valid after rollout. US contexts remain
+    // valid after switch-off, but only for the verified platform-owned route.
+    const eligibleUsBase =
+      config.route === "openrouter-api-key"
+        ? getOpenRouterBaseUrl("messages", {
+            credentialOwner: config.credentialOwner,
+            model: config.model,
+            usRoutingEnabled: true,
+          })
+        : policy[0];
     if (
-      config.baseUrl !== policy[0] ||
+      (config.baseUrl !== policy[0] && config.baseUrl !== eligibleUsBase) ||
       binding.secretName !== policy[1] ||
       binding.credentialHeader.name.toLowerCase() !== policy[2] ||
       binding.credentialHeader.valueTemplate !== policy[3]

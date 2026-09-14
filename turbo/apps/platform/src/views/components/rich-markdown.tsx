@@ -1,7 +1,6 @@
 import { withChatScrollLayout } from "./chat-scroll-layout.tsx";
 import "../css/vendor/uiw-react-markdown-preview-5.2.0.css";
 import { CopyButton } from "@okouai/ui";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import type { Element, Root } from "hast";
 import { toJsxRuntime } from "hast-util-to-jsx-runtime";
@@ -23,7 +22,6 @@ import type {
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import { isImageUrl, isSafeMediaUrl } from "../../lib/media-url.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { MarkdownCardView } from "../okou-page/chat-body-cards.tsx";
 import { MarkdownColorPreview } from "./markdown-color-preview.tsx";
 import { MarkdownFrame } from "./markdown-frame.tsx";
@@ -355,13 +353,10 @@ function MarkdownTimeRenderer({
   dateTime,
   ...rest
 }: MarkdownTimeProps) {
-  const features = useLastResolved(featureSwitch$);
   const browserLocales =
     navigator.languages.length > 0 ? navigator.languages : [navigator.language];
-  const timestamp = features?.[FeatureSwitchKey.MarkdownTime]
-    ? markdownDateTimeSchema.safeParse(dateTime)
-    : undefined;
-  const content = timestamp?.success
+  const timestamp = markdownDateTimeSchema.safeParse(dateTime);
+  const content = timestamp.success
     ? new Intl.DateTimeFormat(browserLocales, {
         dateStyle: "medium",
         timeStyle: "long",

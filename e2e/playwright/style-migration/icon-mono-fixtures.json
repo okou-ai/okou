@@ -65,7 +65,6 @@
       "computerUseDesktopPlugins": false,
       "privateArtifacts": false,
       "agentMessageMath": false,
-      "markdownTime": false,
       "progressiveArtifactPreview": false,
       "chatThinkingSpinner": false,
       "onboarding-chat": false,

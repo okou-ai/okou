@@ -10,16 +10,16 @@ use std::{
 
 use super::super::{
     R2DownloadError, R2Error,
-    archive::TEMPLATE_FILE,
+    archive::{MAX_TEMPLATE_METADATA_BYTES, TEMPLATE_FILE},
     download::{file_staging_dir, finish_file_staging_error},
     io_other,
 };
 use super::fixtures::{
     archive_limits, archive_with_type, deterministic_bytes, empty_template_archive,
-    excessive_sparse_metadata_archive, get_object_body, get_object_body_for_key,
-    get_object_body_then_error, get_object_body_with_content_length, mock_cache,
-    nested_template_archive, production_template_archive, regular_template_archive,
-    sparse_template_archive, template_archive_with_extra,
+    get_object_body, get_object_body_for_key, get_object_body_then_error,
+    get_object_body_with_content_length, mock_cache, nested_template_archive,
+    production_template_archive, regular_template_archive, sparse_template_archive,
+    sparse_template_archive_with_extensions, template_archive_with_extra,
     template_archive_with_trailing_decompressed_data, zstd_bytes,
 };
 use aws_sdk_s3::primitives::ByteStream;
@@ -569,8 +569,39 @@ async fn corrupt_zstd_is_rejected_and_staging_is_removed() {
 
 #[tokio::test]
 async fn excessive_sparse_metadata_is_rejected_within_budget() {
-    let (archive, expected_bytes) = excessive_sparse_metadata_archive();
-    assert_invalid_preserves_destination(get_object_body(archive), expected_bytes).await;
+    // The initial header plus these extensions exceed the metadata budget
+    // before payload extraction; the rest of the archive is complete and valid.
+    let (archive, expected) =
+        sparse_template_archive_with_extensions(MAX_TEMPLATE_METADATA_BYTES / 512);
+    let error =
+        assert_invalid_preserves_destination(get_object_body(archive), expected.len() as u64).await;
+
+    assert!(
+        error
+            .to_string()
+            .contains("template archive exceeds metadata byte limit"),
+        "expected metadata budget rejection, got {error:?}"
+    );
+}
+
+#[tokio::test]
+async fn sparse_metadata_at_budget_is_accepted() {
+    // Include the initial header and both trailer blocks in the 8 MiB budget.
+    let (archive, expected) =
+        sparse_template_archive_with_extensions(MAX_TEMPLATE_METADATA_BYTES / 512 - 3);
+    let get = get_object_body(archive);
+    let cache = mock_cache("test-bucket", &[&get]);
+    let dst = tempfile::tempdir().unwrap();
+    let destination = dst.path().join(TEMPLATE_FILE);
+
+    let downloaded = cache
+        .try_download_template_to_file("hash", &destination, expected.len() as u64)
+        .await
+        .unwrap();
+
+    assert!(downloaded);
+    assert_eq!(tokio::fs::read(&destination).await.unwrap(), expected);
+    assert!(!file_staging_dir(&destination).exists());
 }
 
 #[tokio::test]
@@ -629,7 +660,10 @@ async fn cleanup_failure_does_not_mask_original_invalid_object() {
     assert!(staging.exists());
 }
 
-async fn assert_invalid_preserves_destination(get: aws_smithy_mocks::Rule, expected_bytes: u64) {
+async fn assert_invalid_preserves_destination(
+    get: aws_smithy_mocks::Rule,
+    expected_bytes: u64,
+) -> R2DownloadError {
     let cache = mock_cache("test-bucket", &[&get]);
     let dst = tempfile::tempdir().unwrap();
     let destination = dst.path().join("template.ext4");
@@ -651,4 +685,5 @@ async fn assert_invalid_preserves_destination(get: aws_smithy_mocks::Rule, expec
         b"existing-rootfs"
     );
     assert!(!file_staging_dir(&destination).exists());
+    error
 }

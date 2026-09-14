@@ -11,6 +11,14 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.893.7](https://github.com/vm0-ai/vm0/compare/app-v0.893.6...app-v0.893.7) (2026-09-13)
+
+
+### Bug Fixes
+
+* **app:** hide user message actions while sharing ([#33782](https://github.com/vm0-ai/vm0/issues/33782)) ([dcf5041](https://github.com/vm0-ai/vm0/commit/dcf504103ba465246750be8741f919a4abdf2cc1))
+* **app:** share Clerk auth appearance with add-account dialog ([#33752](https://github.com/vm0-ai/vm0/issues/33752)) ([f993a0f](https://github.com/vm0-ai/vm0/commit/f993a0ff2abb4f7be9914cf31486d48e6650e9ae))
+
 ## [0.893.6](https://github.com/vm0-ai/vm0/compare/app-v0.893.5...app-v0.893.6) (2026-09-13)
 
 

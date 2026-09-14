@@ -460,21 +460,6 @@ export const ensureClerkUiLoaded$ = command(
   },
 );
 
-/** Open Clerk's hosted account switcher without leaving the active app page. */
-export const openClerkAddAccount$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const clerk = await get(clerk$);
-    signal.throwIfAborted();
-    await set(ensureClerkUiLoaded$, signal);
-    signal.throwIfAborted();
-    await clerk.openSignIn({
-      fallbackRedirectUrl: "/",
-      forceRedirectUrl: "/",
-    });
-    signal.throwIfAborted();
-  },
-);
-
 /**
  * Command to setup Clerk authentication listeners.
  * The runtime starts during bootstrap; this command waits for it and installs

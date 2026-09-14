@@ -6857,6 +6857,7 @@ function PagedUserMessage({
   const copiedId = useGet(thread.copiedEventId$);
   const copied = copiedId === event.id;
   const copyEvent = useSet(thread.copyEvent$);
+  const sharingPhase = useGet(thread.sharing.phase$);
   const allAttachments = userMessageRenderAttachments(renderDocument);
   const canCopy =
     canonicalUserMessage !== undefined ||
@@ -6922,11 +6923,13 @@ function PagedUserMessage({
               onImageClick={openLightbox}
             />
           ) : null}
-          <UserMessageActions
-            canCopy={canCopy}
-            copied={copied}
-            onCopy={handleCopy}
-          />
+          {sharingPhase === "idle" ? (
+            <UserMessageActions
+              canCopy={canCopy}
+              copied={copied}
+              onCopy={handleCopy}
+            />
+          ) : null}
         </div>
       </div>
     </div>

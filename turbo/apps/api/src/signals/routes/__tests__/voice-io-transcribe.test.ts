@@ -148,7 +148,9 @@ function form(
   return data;
 }
 
-async function enabledActor() {
+async function enabledActor(
+  overrides: Partial<Record<FeatureSwitchKey, boolean>> = {},
+) {
   const actor = createBddApi(context).user();
   if (!actor.orgId) {
     throw new Error("Voice draft tests require an organization");
@@ -160,6 +162,7 @@ async function enabledActor() {
     { userId: actor.userId, orgId: actor.orgId, orgRole: "org:admin" },
     {
       [FeatureSwitchKey.VoiceInputV2]: true,
+      ...overrides,
     },
   );
   return actor;
@@ -252,11 +255,11 @@ describe("voice input models and reference context", () => {
   });
 
   it.each(["openai/gpt-audio", "openai/gpt-audio-mini"] as const)(
-    "keeps %s audio on OpenRouter without Google configuration",
+    "keeps %s audio on global OpenRouter with US routing enabled",
     async (model) => {
       mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
       mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
-      await enabledActor();
+      await enabledActor({ [FeatureSwitchKey.OpenRouterUsRouting]: true });
       const headers = { authorization: "Bearer clerk-session" };
       await accept(
         preferencesClient().update({
@@ -545,7 +548,7 @@ describe("voice input models and reference context", () => {
       maxOutputTokens: 65_536,
     },
   ] as const)(
-    "uses the persisted $model preference through its native Google region without OpenRouter",
+    "uses the persisted $model preference through native Google with OpenRouter US routing enabled",
     async ({
       model,
       native,
@@ -557,7 +560,7 @@ describe("voice input models and reference context", () => {
     }) => {
       mockOptionalEnv("OPENROUTER_API_KEY", undefined);
       const google = mockGoogleVoice();
-      await enabledActor();
+      await enabledActor({ [FeatureSwitchKey.OpenRouterUsRouting]: true });
       const headers = { authorization: "Bearer clerk-session" };
       await accept(
         preferencesClient().update({

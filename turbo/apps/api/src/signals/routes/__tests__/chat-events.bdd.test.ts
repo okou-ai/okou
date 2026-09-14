@@ -2770,7 +2770,7 @@ async function extractOwnedThreadPiMemory(actor: ApiTestUser, runId: string) {
       // Scope the existing cron worker to this source; no production API
       // exposes internal candidate extraction or its private output.
       routes: cronExtractPiMemoryStage1RoutesForTest({
-        memoryStorageId: candidate.memoryStorageId,
+        memoryStorageIds: [candidate.memoryStorageId],
         piSessionId: candidate.piSessionId,
       }),
     })(cronExtractPiMemoryStage1Contract).extract({
@@ -11000,9 +11000,20 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it.each(["deepseek-v4-flash", "deepseek-v4-pro"] as const)(
-    "runs built-in %s OpenRouter fallback through Responses without widening admission",
-    async (selectedModel) => {
+  it.each(
+    (
+      ["deepseek-v4-flash", "deepseek-v4-pro", "gpt-5.6-terra"] as const
+    ).flatMap((selectedModel) => {
+      return [false, true].map((usRoutingEnabled) => {
+        return {
+          selectedModel,
+          usRoutingEnabled,
+        };
+      });
+    }),
+  )(
+    "runs built-in $selectedModel OpenRouter Responses with US switch $usRoutingEnabled",
+    async ({ selectedModel, usRoutingEnabled }) => {
       const { actor, agentId } = await entitledChatActor();
       const orgId = requireOrgId(actor);
       const usagePricingResolution =
@@ -11014,14 +11025,17 @@ describe("CHAT-02: model-first provider policies", () => {
       await updateFeatureSwitchesForUser(
         context,
         { ...actor, orgId },
-        { [FeatureSwitchKey.PiLoop]: true },
+        {
+          [FeatureSwitchKey.PiLoop]: true,
+          [FeatureSwitchKey.OpenRouterUsRouting]: usRoutingEnabled,
+        },
       );
       mockPiResourceArchiveDownloads();
       mockPiCheckpointObjectStore();
       const modelRequests: unknown[] = [];
       server.use(
         http.post(
-          "https://openrouter.ai/api/v1/responses",
+          `https://${usRoutingEnabled ? "us." : ""}openrouter.ai/api/v1/responses`,
           async ({ request }) => {
             modelRequests.push(await request.json());
             return new HttpResponse(
@@ -11051,7 +11065,7 @@ describe("CHAT-02: model-first provider policies", () => {
 
       expect(modelRequests).toStrictEqual([
         expect.objectContaining({
-          model: `deepseek/${selectedModel}`,
+          model: `${selectedModel.startsWith("deepseek") ? "deepseek" : "openai"}/${selectedModel}`,
           store: false,
         }),
       ]);
@@ -19471,9 +19485,105 @@ describe("CHAT-02: model-first provider policies", () => {
     await cancelChatRun(actor, followUp.runId);
   }, 90_000);
 
+  it.each(
+    (
+      [
+        "claude-sonnet-4-6",
+        "claude-fable-5-1",
+        "gpt-5.6-terra",
+        "deepseek-v4-flash",
+      ] as const
+    ).flatMap((model) => {
+      return [false, true].map((enabled) => {
+        return { model, enabled };
+      });
+    }),
+  )(
+    "freezes managed $model endpoint and firewall with US switch $enabled",
+    async ({ model, enabled }) => {
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const withRoute = await configureBuiltInPiModelOnOpenRouter(actor, model);
+      await authDeviceSupport.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.PiLoop]: false,
+        [FeatureSwitchKey.OpenRouterUsRouting]: enabled,
+      });
+      const run = await withRoute(() => {
+        return sendChatRun(actor, {
+          agentId,
+          model,
+          prompt: "capture the managed regional route",
+        });
+      });
+      await authDeviceSupport.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.OpenRouterUsRouting]: !enabled,
+      });
+      const { claim, sandboxHeaders } = await claimChatRun(
+        runnerGroup,
+        run.runId,
+      );
+      const environment = claimEnvironment(claim);
+      const messages = model.startsWith("claude");
+      const usesUs = enabled && model !== "claude-fable-5-1";
+      const baseUrl = `https://${usesUs ? "us." : ""}openrouter.ai/api${messages ? "" : "/v1"}`;
+      expect(
+        environment[messages ? "ANTHROPIC_BASE_URL" : "OPENAI_BASE_URL"],
+      ).toBe(baseUrl);
+      expect(claim.cliAgentType).toBe(messages ? "claude-code" : "codex");
+      if (model.startsWith("deepseek")) {
+        expect(claim.codexRuntimeConfig?.baseUrl).toBe(baseUrl);
+      }
+      const name = `model-provider:${messages ? "openrouter-api-key" : "openrouter-codex"}`;
+      expect(claim.billableFirewalls).toContain(name);
+      if (usesUs) {
+        expect(claim.firewalls).toContainEqual(
+          expect.objectContaining({
+            kind: "inline",
+            firewall: expect.objectContaining({
+              name,
+              apis: expect.arrayContaining([
+                expect.objectContaining({
+                  base: `${baseUrl}${messages ? "/v1/messages" : "/responses"}`,
+                  auth: {
+                    headers: {
+                      Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
+                    },
+                  },
+                }),
+              ]),
+            }),
+          }),
+        );
+      }
+      if (!claim.encryptedSecrets) {
+        throw new Error("Missing managed credential bundle");
+      }
+      const auth = await createFirewallApi(context).requestFirewallAuth(
+        sandboxHeaders,
+        {
+          encryptedSecrets: claim.encryptedSecrets,
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
+          },
+          secretConnectorMap: claim.secretConnectorMap ?? undefined,
+          secretConnectorMetadataMap:
+            claim.secretConnectorMetadataMap ?? undefined,
+        },
+        [200],
+      );
+      expect(auth.body).toMatchObject({
+        resolvedSecrets: ["OPENROUTER_API_KEY"],
+      });
+      await cancelChatRun(actor, run.runId);
+    },
+    90_000,
+  );
+
   it("routes OpenRouter provider pins through runtime model aliases and firewall auth", async () => {
     const fw = createFirewallApi(context);
     const { actor, agentId, runnerGroup } = await entitledChatActor();
+    await authDeviceSupport.updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.OpenRouterUsRouting]: true,
+    });
     const { providerId } = await upsertOrgModelProvider(actor, {
       type: "openrouter-api-key",
       secret: "test-openrouter-key",
@@ -29366,61 +29476,70 @@ describe("shared native Pi route activation", () => {
     });
   }, 90_000);
 
-  it("captures the managed OpenRouter Claude key before API ownership and charges native categories once", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    configureNativeCliArtifact();
-    const model = "claude-sonnet-4-6";
-    const withSelectedRoute = await configureBuiltInPiModelOnOpenRouter(
-      actor,
-      model,
-    );
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PiLoop]: true,
-    });
-    const pricing = await createPiApiFirstTurnUsagePricingResolution(model);
-    mockPiResourceArchiveDownloads();
-    mockPiCheckpointObjectStore();
-    let openRouterCalls = 0;
-    let anthropicCalls = 0;
-    server.use(
-      http.post("https://api.anthropic.com/*", () => {
-        anthropicCalls += 1;
-        return nativeMessagesResponse(model, "unselected");
-      }),
-      http.post(
-        "https://openrouter.ai/api/v1/messages",
-        async ({ request }) => {
-          openRouterCalls += 1;
-          expect(request.headers.get("authorization")).toMatch(/^Bearer .+/u);
-          expect(request.headers.get("x-api-key")).toBeNull();
-          await expect(request.json()).resolves.toMatchObject({
-            model: "anthropic/claude-sonnet-4.6",
-          });
-          return nativeMessagesResponse(
-            "anthropic/claude-sonnet-4.6",
-            "Managed native response",
-          );
-        },
-      ),
-    );
-    const run = await withSelectedRoute(() => {
-      return sendChatRun(
+  it.each([false, true])(
+    "captures the managed OpenRouter Claude key with US switch %s and charges native categories once",
+    async (usRoutingEnabled) => {
+      const { actor, agentId } = await entitledChatActor();
+      configureNativeCliArtifact();
+      const model = "claude-sonnet-4-6";
+      const withSelectedRoute = await configureBuiltInPiModelOnOpenRouter(
         actor,
-        { agentId, model, prompt: "use the selected managed OpenRouter route" },
-        pricing,
+        model,
       );
-    });
-    await waitForRunStatus(actor, run.runId, "completed");
-    await flushWaitUntilForTest();
-    expect(openRouterCalls).toBe(1);
-    expect(anthropicCalls).toBe(0);
-    await expectPiApiUsage(run.runId, model, "", {
-      input: 5,
-      output: 3,
-      cacheRead: 3,
-      cacheCreation: 2,
-    });
-  }, 90_000);
+      await authDeviceSupport.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.OpenRouterUsRouting]: usRoutingEnabled,
+      });
+      const pricing = await createPiApiFirstTurnUsagePricingResolution(model);
+      mockPiResourceArchiveDownloads();
+      mockPiCheckpointObjectStore();
+      let openRouterCalls = 0;
+      let anthropicCalls = 0;
+      server.use(
+        http.post("https://api.anthropic.com/*", () => {
+          anthropicCalls += 1;
+          return nativeMessagesResponse(model, "unselected");
+        }),
+        http.post(
+          `https://${usRoutingEnabled ? "us." : ""}openrouter.ai/api/v1/messages`,
+          async ({ request }) => {
+            openRouterCalls += 1;
+            expect(request.headers.get("authorization")).toMatch(/^Bearer .+/u);
+            expect(request.headers.get("x-api-key")).toBeNull();
+            await expect(request.json()).resolves.toMatchObject({
+              model: "anthropic/claude-sonnet-4.6",
+            });
+            return nativeMessagesResponse(
+              "anthropic/claude-sonnet-4.6",
+              "Managed native response",
+            );
+          },
+        ),
+      );
+      const run = await withSelectedRoute(() => {
+        return sendChatRun(
+          actor,
+          {
+            agentId,
+            model,
+            prompt: "use the selected managed OpenRouter route",
+          },
+          pricing,
+        );
+      });
+      await waitForRunStatus(actor, run.runId, "completed");
+      await flushWaitUntilForTest();
+      expect(openRouterCalls).toBe(1);
+      expect(anthropicCalls).toBe(0);
+      await expectPiApiUsage(run.runId, model, "", {
+        input: 5,
+        output: 3,
+        cacheRead: 3,
+        cacheCreation: 2,
+      });
+    },
+    90_000,
+  );
   it.each(["schedule", "event"] as const)(
     "uses the shared native %s Automation handoff, completion and owned memory path",
     async (source) => {

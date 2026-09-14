@@ -20,6 +20,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { mockNow } from "../../../__tests__/time.ts";
+import { platformOkouWordmarkLightImg } from "../../../lib/static-assets.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
@@ -1180,18 +1181,33 @@ test.each(["success", "failure", "pending task"])(
   },
 );
 
-test("Add account opens the hosted Clerk account switcher", async () => {
+test("Add account opens the hosted Clerk account switcher with the shared appearance", async () => {
+  context.mocks.browser.matchMedia(true);
   const clerk = context.mocks.clerk();
   await setupAddAccountPage();
+  expect(document.documentElement).toHaveAttribute("data-theme", "dark");
 
   const menu = await openAccountMenu();
   click(within(menu).getByText("Add account"));
 
   await waitFor(() => {
-    expect(mockedClerk.openSignIn).toHaveBeenCalledExactlyOnceWith({
-      fallbackRedirectUrl: "/",
-      forceRedirectUrl: "/",
-    });
+    expect(mockedClerk.openSignIn).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        appearance: expect.objectContaining({
+          theme: "simple",
+          options: expect.objectContaining({
+            logoImageUrl: platformOkouWordmarkLightImg,
+            logoLinkUrl: "/",
+          }),
+          elements: expect.objectContaining({
+            formButtonPrimary: expect.stringContaining("bg-primary"),
+            formFieldInput: expect.stringContaining("bg-input"),
+          }),
+        }),
+        fallbackRedirectUrl: "/",
+        forceRedirectUrl: "/",
+      }),
+    );
   });
   expect(clerk.uiRequests).toStrictEqual([
     "https://app.example.test/assets/clerk-ui-test.js",
