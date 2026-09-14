@@ -213,6 +213,7 @@ import { getDatasetName, ingestToAxiom } from "../external/axiom";
 import { now, nowDate } from "../../lib/time";
 import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
 import {
+  isPiLangfuseDebugRunEnvironment,
   piLangfuseDebugPlatformEnvironment,
   piLangfuseDebugSecretEnvironment,
   resolvePiLangfuseDebugConfig,
@@ -6334,6 +6335,7 @@ interface LaunchRunRowsArgs {
   readonly apiStartTime: number;
   readonly runnerGroup: string | undefined;
   readonly launchSnapshot: AgentRunLaunchSnapshot;
+  readonly langfuseTraceEnabled: boolean;
   readonly officialWorkflowProvenance:
     | AgentRunOfficialWorkflowProvenance
     | undefined;
@@ -6385,6 +6387,7 @@ function launchRunValues(
     lastHeartbeatAt: createdAt,
     runnerGroup: args.runnerGroup ?? null,
     launchSnapshot: args.launchSnapshot,
+    langfuseTraceEnabled: args.langfuseTraceEnabled,
     officialWorkflowProvenance: args.officialWorkflowProvenance ?? null,
     completedAt: args.status === "failed" ? createdAt : null,
     error: args.error ?? null,
@@ -7758,6 +7761,9 @@ function preparedLaunchRowsArgs(args: {
     apiStartTime: args.commit.createArgs.apiStartTime,
     runnerGroup: args.runnerGroup,
     launchSnapshot: args.commit.context.launchSnapshot,
+    langfuseTraceEnabled: isPiLangfuseDebugRunEnvironment(
+      args.commit.launch.runnerJobPayload.executionContext.platformEnvironment,
+    ),
     officialWorkflowProvenance:
       args.commit.context.officialWorkflowRun?.provenance,
     error: undefined,
@@ -8258,6 +8264,7 @@ async function persistFailedLaunch(
     apiStartTime: args.createArgs.apiStartTime,
     runnerGroup: undefined,
     launchSnapshot: args.context.launchSnapshot,
+    langfuseTraceEnabled: false,
     officialWorkflowProvenance: args.context.officialWorkflowRun?.provenance,
     error: message,
     creditAdmitted: false,

@@ -9,7 +9,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { safeUrlParse } from "../signals/utils";
 import { optionalEnv } from "./env";
 
-export const PI_LANGFUSE_DEBUG_ENABLED_ENV = "OKOU_PI_LANGFUSE_DEBUG_ENABLED";
+const PI_LANGFUSE_DEBUG_ENABLED_ENV = "OKOU_PI_LANGFUSE_DEBUG_ENABLED";
 const LANGFUSE_PUBLIC_KEY_ENV = "LANGFUSE_PUBLIC_KEY";
 const LANGFUSE_SECRET_KEY_ENV = "LANGFUSE_SECRET_KEY";
 const LANGFUSE_BASE_URL_ENV = "LANGFUSE_BASE_URL";

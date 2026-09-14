@@ -41,6 +41,20 @@ import { projectLegacyWritebackArtifacts } from "../signals/services/storage-leg
 
 const store = createStore();
 
+export async function readRunLangfuseTraceEnabledFixture(
+  runId: string,
+): Promise<boolean> {
+  const [run] = await db()
+    .select({ langfuseTraceEnabled: agentRuns.langfuseTraceEnabled })
+    .from(agentRuns)
+    .where(eq(agentRuns.id, runId))
+    .limit(1);
+  if (!run) {
+    throw new Error("Expected the Agent Run fixture to exist");
+  }
+  return run.langfuseTraceEnabled;
+}
+
 export async function readSessionHistoryBlobRefCountFixture(
   hash: string,
 ): Promise<number> {

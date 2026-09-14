@@ -19,17 +19,11 @@ import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhook
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { checkpoints } from "@okouai/db/schema/checkpoint";
-import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-
-import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";
 import { notFound } from "../../lib/error";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
-import {
-  PI_LANGFUSE_DEBUG_ENABLED_ENV,
-  piLangfuseDebugUserId,
-} from "../../lib/pi-langfuse-debug";
+import { piLangfuseDebugUserId } from "../../lib/pi-langfuse-debug";
 import { recordPiLangfuseRunEndToEnd } from "../../lib/pi-langfuse-tracing";
 import { now, nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
@@ -180,13 +174,6 @@ type CompletionTransactionResult =
   | { readonly kind: "committed"; readonly commit: CompletionCommit };
 
 const L = logger("webhook:complete");
-
-const langfuseTraceEnabledSelection = sql`
-  coalesce(
-    ${runnerJobQueue.executionContext}->'platformEnvironment'->>${PI_LANGFUSE_DEBUG_ENABLED_ENV},
-    ''
-  ) = 'true'
-`.mapWith(pgBooleanDecoder);
 
 function logGptApiKeyPiSandboxOutcome(
   input: CompleteAgentRunInput,
@@ -408,11 +395,10 @@ async function loadCompletionRun(
       chatThreadId: agentRuns.chatThreadId,
       triggerSource: agentRuns.triggerSource,
       launchSnapshot: agentRuns.launchSnapshot,
-      langfuseTraceEnabled: langfuseTraceEnabledSelection,
+      langfuseTraceEnabled: agentRuns.langfuseTraceEnabled,
       modelProvider: agentRuns.modelProvider,
     })
     .from(agentRuns)
-    .leftJoin(runnerJobQueue, eq(runnerJobQueue.runId, agentRuns.id))
     .where(
       and(
         eq(agentRuns.id, input.body.runId),
@@ -481,11 +467,10 @@ async function lockCompletionRun(
       chatThreadId: agentRuns.chatThreadId,
       triggerSource: agentRuns.triggerSource,
       launchSnapshot: agentRuns.launchSnapshot,
-      langfuseTraceEnabled: langfuseTraceEnabledSelection,
+      langfuseTraceEnabled: agentRuns.langfuseTraceEnabled,
       modelProvider: agentRuns.modelProvider,
     })
     .from(agentRuns)
-    .leftJoin(runnerJobQueue, eq(runnerJobQueue.runId, agentRuns.id))
     .where(
       and(
         eq(agentRuns.id, input.body.runId),
