@@ -19,12 +19,19 @@ import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhook
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { checkpoints } from "@okouai/db/schema/checkpoint";
+import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
+import type { Tx } from "../../lib/db-types";
 import { notFound } from "../../lib/error";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
+import {
+  PI_LANGFUSE_DEBUG_ENABLED_ENV,
+  piLangfuseDebugUserId,
+} from "../../lib/pi-langfuse-debug";
+import { recordPiLangfuseRunEndToEnd } from "../../lib/pi-langfuse-tracing";
 import { now, nowDate } from "../../lib/time";
-import type { Tx } from "../../lib/db-types";
 import type { SandboxAuth } from "../../types/auth";
 import { writeDb$, type Db } from "../external/db";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
@@ -131,6 +138,7 @@ type CompletionResponse =
   | AgentCheckpointErrorResponse;
 
 interface RunRecord {
+  readonly apiStartedAt: Date | null;
   readonly cancellationRecoveryCompleted: boolean | null;
   readonly orgId: string;
   readonly sessionId: string;
@@ -139,6 +147,7 @@ interface RunRecord {
   readonly chatThreadId: string | null;
   readonly triggerSource: string | null;
   readonly launchSnapshot: (typeof agentRuns.$inferSelect)["launchSnapshot"];
+  readonly langfuseTraceEnabled: boolean;
   readonly modelProvider: string | null;
 }
 
@@ -171,6 +180,13 @@ type CompletionTransactionResult =
   | { readonly kind: "committed"; readonly commit: CompletionCommit };
 
 const L = logger("webhook:complete");
+
+const langfuseTraceEnabledSelection = sql`
+  coalesce(
+    ${runnerJobQueue.executionContext}->'platformEnvironment'->>${PI_LANGFUSE_DEBUG_ENABLED_ENV},
+    ''
+  ) = 'true'
+`.mapWith(pgBooleanDecoder);
 
 function logGptApiKeyPiSandboxOutcome(
   input: CompleteAgentRunInput,
@@ -383,6 +399,7 @@ async function loadCompletionRun(
 ): Promise<RunRecord | null> {
   const [run] = await db
     .select({
+      apiStartedAt: agentRuns.apiStartedAt,
       orgId: agentRuns.orgId,
       sessionId: agentRuns.sessionId,
       status: agentRuns.status,
@@ -391,9 +408,11 @@ async function loadCompletionRun(
       chatThreadId: agentRuns.chatThreadId,
       triggerSource: agentRuns.triggerSource,
       launchSnapshot: agentRuns.launchSnapshot,
+      langfuseTraceEnabled: langfuseTraceEnabledSelection,
       modelProvider: agentRuns.modelProvider,
     })
     .from(agentRuns)
+    .leftJoin(runnerJobQueue, eq(runnerJobQueue.runId, agentRuns.id))
     .where(
       and(
         eq(agentRuns.id, input.body.runId),
@@ -453,6 +472,7 @@ async function lockCompletionRun(
 ): Promise<RunRecord | null> {
   const [run] = await tx
     .select({
+      apiStartedAt: agentRuns.apiStartedAt,
       orgId: agentRuns.orgId,
       sessionId: agentRuns.sessionId,
       status: agentRuns.status,
@@ -461,9 +481,11 @@ async function lockCompletionRun(
       chatThreadId: agentRuns.chatThreadId,
       triggerSource: agentRuns.triggerSource,
       launchSnapshot: agentRuns.launchSnapshot,
+      langfuseTraceEnabled: langfuseTraceEnabledSelection,
       modelProvider: agentRuns.modelProvider,
     })
     .from(agentRuns)
+    .leftJoin(runnerJobQueue, eq(runnerJobQueue.runId, agentRuns.id))
     .where(
       and(
         eq(agentRuns.id, input.body.runId),
@@ -1026,12 +1048,28 @@ export const completeAgentRun$ = command(
     }
 
     if (commit.transitioned) {
+      const terminalCommittedAt = now();
+      const terminalCommittedAtIso = new Date(
+        terminalCommittedAt,
+      ).toISOString();
+      recordPiLangfuseRunEndToEnd({
+        enabled:
+          commit.run.launchSnapshot?.framework === "pi" &&
+          commit.run.langfuseTraceEnabled,
+        runId: input.body.runId,
+        sessionId: commit.run.sessionId,
+        userId: piLangfuseDebugUserId(commit.run.userId),
+        apiStartedAt: commit.run.apiStartedAt?.getTime(),
+        terminalCommittedAt,
+        terminalStatus: commit.responseStatus,
+      });
       recordSandboxOperation({
         sandboxType: "runner",
         actionType: "run_terminal_transition_committed",
         durationMs: 0,
         success: true,
         runId: input.body.runId,
+        timestamp: terminalCommittedAtIso,
       });
       const admission = commit.piMemoryStage1Admission;
       if (!admission) {

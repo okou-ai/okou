@@ -1,6 +1,9 @@
 import { randomBytes } from "node:crypto";
 
-import type { PiLangfuseParent } from "@okouai/api-contracts/contracts/runners";
+import {
+  elapsedSinceApiStartMs,
+  type PiLangfuseParent,
+} from "@okouai/api-contracts/contracts/runners";
 import type { PiApiFirstTurnResult } from "@okouai/pi-agent-runtime/api";
 import {
   type LangfuseGeneration,
@@ -23,9 +26,16 @@ function traceTags(): string[] {
   return ["pi", "api-first", "internal-debug"];
 }
 
-/** Complete API-side ancestor set used by the start-time export filter. */
+const PI_LANGFUSE_RUN_END_TO_END_OBSERVATION_NAME = "Run End-to-End";
+
+/** Complete API-side observation set used by the start-time export filter. */
 export const PI_LANGFUSE_API_OBSERVATION_NAMES: readonly string[] =
-  Object.freeze(["API First Turn", "API LLM Call", "Ownership Transfer"]);
+  Object.freeze([
+    "API First Turn",
+    "API LLM Call",
+    "Ownership Transfer",
+    PI_LANGFUSE_RUN_END_TO_END_OBSERVATION_NAME,
+  ]);
 
 export interface PiApiFirstTurnTraceContext {
   readonly rootSpanContext: SpanContext;
@@ -54,6 +64,16 @@ interface PiApiFirstTurnTraceArgs {
   readonly model: string;
   readonly provider: string;
   readonly execute: () => Promise<PiApiFirstTurnResult>;
+}
+
+interface PiRunEndToEndTraceArgs {
+  readonly enabled: boolean;
+  readonly runId: string;
+  readonly sessionId: string;
+  readonly userId: string;
+  readonly apiStartedAt: number | undefined;
+  readonly terminalCommittedAt: number;
+  readonly terminalStatus: "completed" | "failed";
 }
 
 export function normalizePiLangfuseTraceId(runId: string): string | undefined {
@@ -105,6 +125,72 @@ function stampObservation(
     ...traceAttributes(args),
     "vm0.pi.telemetry.schema_version": 1,
     ...args.attributes,
+  });
+}
+
+export function recordPiLangfuseRunEndToEnd(
+  args: PiRunEndToEndTraceArgs,
+): void {
+  const traceId = normalizePiLangfuseTraceId(args.runId);
+  const durationMs = elapsedSinceApiStartMs(
+    args.apiStartedAt,
+    args.terminalCommittedAt,
+  );
+  if (
+    !args.enabled ||
+    !traceId ||
+    durationMs === undefined ||
+    !Number.isInteger(args.terminalCommittedAt) ||
+    args.apiStartedAt === undefined ||
+    args.terminalCommittedAt < args.apiStartedAt
+  ) {
+    return;
+  }
+
+  const apiStartedAt = new Date(args.apiStartedAt);
+  const terminalCommittedAt = new Date(args.terminalCommittedAt);
+  const started = safeSync(() => {
+    return startObservation(
+      PI_LANGFUSE_RUN_END_TO_END_OBSERVATION_NAME,
+      {
+        level: args.terminalStatus === "failed" ? "ERROR" : undefined,
+        metadata: {
+          source: "vm0-api",
+          run_id: args.runId,
+          api_started_at: apiStartedAt.toISOString(),
+          terminal_committed_at: terminalCommittedAt.toISOString(),
+          duration_ms: durationMs,
+          terminal_status: args.terminalStatus,
+          content_capture: "metadata-only",
+        },
+      },
+      {
+        asType: "span",
+        parentSpanContext: bootstrapParent(traceId),
+        startTime: apiStartedAt,
+      },
+    );
+  });
+  if ("error" in started) {
+    return;
+  }
+
+  const observation = started.ok;
+  safeSync(() => {
+    stampObservation(observation, {
+      sessionId: args.sessionId,
+      userId: args.userId,
+      attributes: {
+        "vm0.pi.run_id": args.runId,
+        "vm0.pi.phase": "run-end-to-end",
+        "vm0.pi.langfuse_debug": true,
+        "vm0.pi.e2e.duration_ms": durationMs,
+        "vm0.pi.terminal_committed_at": terminalCommittedAt.toISOString(),
+      },
+    });
+  });
+  safeSync(() => {
+    observation.end(terminalCommittedAt);
   });
 }
 
