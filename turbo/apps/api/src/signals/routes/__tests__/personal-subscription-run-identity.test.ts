@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { countWaitingPersonalSubscriptionMutationsFixture } from "../../../test-fixtures/personal-subscription";
+import { readPiMemoryStage1DayFixture } from "../../../test-fixtures/pi-memory-stage1-candidates";
 import { createDeferredPromise } from "../../utils";
 import {
   holdAgentRunRowLockFixture,
@@ -11,8 +12,8 @@ import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
-import { testContext } from "../../../__tests__/test-context";
 import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
+import { testContext } from "../../../__tests__/test-context";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -392,34 +393,46 @@ describe("personal subscription run identity", () => {
     20_000,
   );
 
-  it("fails captured admission when disconnect commits before run insertion", async () => {
-    const f = await fixture("codex-oauth-token");
-    if (!f.actor.orgId) {
-      throw new Error("Expected an organization");
-    }
-    // Infrastructure exception: the API cannot pause a transaction at its
-    // admission lock; the fixture only orders competing production requests.
-    const lock = await holdOrgAdmissionLockFixture({
-      orgId: f.actor.orgId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
+  it.each([false, true])(
+    "fails captured admission when disconnect commits before run insertion (Pi: %s)",
+    async (pi) => {
+      const f = await fixture("codex-oauth-token");
+      await support.updateFeatureSwitches(f.actor, {
+        [FeatureSwitchKey.PiLoop]: pi,
+        [FeatureSwitchKey.PiMemory]: true,
+      });
+      if (!f.actor.orgId) {
+        throw new Error("Expected an organization");
+      }
+      // Infrastructure exception: the API cannot pause a transaction at its
+      // admission lock; the fixture only orders competing production requests.
+      const lock = await holdOrgAdmissionLockFixture({
+        orgId: f.actor.orgId,
+        signal: context.signal,
+      });
+      onTestFinished(async () => {
+        lock.release();
+        await lock.done;
+      });
+      const sending = createChatFilesBddApi(context).requestSendEvent(
+        f.actor,
+        { agentId: f.agentId, prompt: "admission race", model: f.model },
+        [409],
+      );
+      await expect.poll(lock.waiterCount).toBe(1);
+      await support.deletePersonalModelProviderAccount(f.actor, f.connected.id);
+      await connect(f.actor, f.type, "identity-b");
       lock.release();
-      await lock.done;
-    });
-    const sending = createChatFilesBddApi(context).requestSendEvent(
-      f.actor,
-      { agentId: f.agentId, prompt: "admission race", model: f.model },
-      [409],
-    );
-    await expect.poll(lock.waiterCount).toBe(1);
-    await support.deletePersonalModelProviderAccount(f.actor, f.connected.id);
-    await connect(f.actor, f.type, "identity-b");
-    lock.release();
-    const denied = await sending;
-    expect(denied.status).toBe(409);
-    expect((await runs.readRunQueue(f.actor)).body.queue).toHaveLength(0);
-  });
+      const denied = await sending;
+      expect(denied.status).toBe(409);
+      expect((await runs.readRunQueue(f.actor)).body.queue).toHaveLength(0);
+      // Infrastructure exception: no endpoint exposes the persistent daily
+      // decision. A rejected captured account must leave this budget unconsumed.
+      await expect(
+        readPiMemoryStage1DayFixture(f.actor.userId),
+      ).resolves.toBeNull();
+    },
+  );
   it("retains pending and queued bindings when a replacement changes the active identity", async () => {
     const f = await fixture("codex-oauth-token");
     const first = await f.start();

@@ -176,3 +176,93 @@ fresh writer inventory in #33747. Removal requires all of those writers to use
 the explicit contract. A merged preparation PR alone does not establish the
 serving/rollback gate, and rolling back an API artifact does not restore dropped
 triggers.
+
+## Hosted-site ownership preparation
+
+`hosted-site-scope.service.ts` owns the explicit counterparts of
+`canonicalize_hosted_site_scope_0753` and
+`enforce_hosted_deployment_scope_0753`:
+
+- `lockHostedRunChatThreadId(tx, runId)` reads the current run under `FOR SHARE`.
+  Missing runs, absent IDs, null `trigger_source`, and null chat IDs retain null
+  ownership. Runs without trigger metadata are still locked, so a concurrent
+  metadata update cannot change their ownership during admission. Historical
+  text references retain the trigger's exact `id::text` comparison semantics;
+  canonical UUIDs use the primary-key lookup rather than a cast on the column.
+- `canonicalizeHostedSiteScope(tx, values, existingSiteId?)` fills a null
+  requested slug from `slug` and a null owner from the originating run. Explicit
+  values, including an empty requested slug, are preserved. Updates/repairs
+  supply the complete intended scope and the existing site ID. The operation
+  locks that organization's site and rejects clearing or moving an established
+  owner **before** applying the derived owner. Write its returned columns in
+  the same transaction; an ordinary update of unrelated columns needs no
+  canonicalization.
+- `assertHostedDeploymentScope(tx, args)` locks the run and the site, scoped by
+  organization, and compares their final ownership, including null. It must
+  precede deployment insertion in the same transaction. Scope errors escape
+  the transaction before the route converts them to an HTTP conflict.
+
+### Hosting writer and lock inventory
+
+Paths below are relative to `turbo/apps/api/src/` unless stated otherwise.
+
+| Writer                                                           | Transaction and behavior                                                                                                                                                                                                                                                                          |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `signals/services/host.service.ts`: prepare/allocation           | `createHostedSiteDeployment` locks the run before selecting/locking or creating a site. It performs the unscoped-site conflict check, canonical creation, version allocation, final admission and deployment insert in one transaction. Public and private deployments share the ownership check. |
+| `signals/services/host.service.ts`: completion/promotion         | Retains the existing site row lock and updates only deployment status and active-version fields. It does not change ownership, requested slug or originating run. Existing completion authorization and chat checks remain in place.                                                              |
+| `signals/routes/test-cron-cleanup-sandboxes-state.ts`            | Current setup explicitly canonicalizes site ownership and admits its deployment in one transaction. Its teardown deletes only the owned site; ordinary foreign keys cascade deployments.                                                                                                          |
+| `test-fixtures/hosted-sites.ts`                                  | The historical VM0-brand fixture explicitly writes its requested slug and has no originating run/chat owner. It is already independent of the two triggers.                                                                                                                                       |
+| `signals/routes/test-runtime-state.ts`                           | The two `*-as-previous-api` operations deliberately retain old SQL shapes as outgoing-version controls. They require the retained triggers and are not current repair entry points.                                                                                                               |
+| `turbo/packages/db/scripts/test-migration-consistency-schema.ts` | Retains the exact shipped trigger/function inventory and its outgoing-writer assertions during preparation.                                                                                                                                                                                       |
+| Numbered `014-public-artifact-registration` backfill             | Reads sites/deployments for artifact registration; it does not write their ownership. Preserve this historical migration.                                                                                                                                                                         |
+
+Acquire run row locks before site row locks. Allocation uses `FOR UPDATE` on
+an existing site; standalone admission uses `FOR SHARE`. Both prevent a
+concurrent non-key ownership update, whereas `FOR KEY SHARE` would not.
+Allocation's unique indexes and `ON CONFLICT DO NOTHING` still arbitrate new
+site/public-slug races. The run lock is retained when an outgoing allocator
+already holds the site lock. Promotion takes only its existing site lock and
+does not subsequently write run metadata. No thread-row lock or new foreign
+key is added: the stored chat ID must survive deletion of its originating
+thread or run.
+
+Prepared requests perform one additional site read for final admission. A
+canonical run reference also adds an admission run read; a newly created site
+whose run has null ownership additionally resolves its canonical scope. These
+are awaited within the existing transaction, with primary-key run/site
+lookups. Runless requests add no run queries. The preparation changes neither
+the public-slug retry bound nor the existing organization/public versus
+user/private authorization rules.
+
+### Hosting repair and removal gate
+
+There is no current product endpoint that moves site ownership. A repair must
+inventory the site's existing deployments and intended complete scope, acquire
+all referenced run locks before site locks (sort IDs when repairing multiple
+rows), then use the canonicalizer with the existing site ID and persist its
+result in that transaction. Do not clear a non-null owner to force adoption.
+Creating a deployment uses the explicit admission operation in the same
+transaction; do not catch a failed admission and commit the allocation.
+Run/chat cleanup preserves the denormalized site owner. Direct SQL that relied
+on either trigger is not a supported repair path after contraction.
+
+The private PostgreSQL suite uses shipped site/deployment constraints and
+retained or absent hosting triggers, without changing shared/public triggers.
+It exercises canonical/null semantics, immutable ownership, explicit repair,
+cross-chat rejection, actual allocation transactions, concurrent versions,
+public/private behavior, insertion failure and retry, and run/site row locks.
+API route coverage exercises site reuse, chat isolation, organization-site
+adoption rejection, completion permissions, public/private workflows and
+concurrent prepares. The previous-API route control intentionally belongs to
+the retained schema only; an old writer is unsupported after contraction.
+
+Both hosting triggers and their functions remain installed. Their
+canonical assignments/validation can coexist with prepared values without
+duplicating a side effect. This preparation makes no schema, migration or
+rollback-floor change. Before physical removal, record prepared serving and
+background artifacts, the oldest permitted rollback artifact, a fresh writer
+audit and the retained/absent compatibility evidence in #33747. All current
+writers and supported rollback writers must use the explicit contract; merge
+alone does not prove that gate. Retire outgoing-writer fixture expectations
+and update the exact schema inventory in the later removal change. API
+rollback does not restore database triggers.

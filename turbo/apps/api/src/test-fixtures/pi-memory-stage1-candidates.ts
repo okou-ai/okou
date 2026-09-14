@@ -1,3 +1,4 @@
+import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import { and, count, eq } from "drizzle-orm";
 
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -325,4 +326,12 @@ export async function deletePiMemoryStorageFixture(
   if (!deleted) {
     throw new Error("Expected Pi memory Storage fixture to be deleted");
   }
+}
+
+export async function readPiMemoryStage1DayFixture(userId: string) {
+  const [day] = await db()
+    .select()
+    .from(piMemoryStage1Days)
+    .where(eq(piMemoryStage1Days.userId, userId));
+  return day ?? null;
 }

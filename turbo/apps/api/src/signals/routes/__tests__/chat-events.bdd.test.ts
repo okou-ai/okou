@@ -180,6 +180,7 @@ import {
   readmitPiMemoryStage1CandidateFixture,
   readPiConversationIdentityFixture,
   readPiMemoryStage1CandidateFixture,
+  readPiMemoryStage1DayFixture,
   setSyntheticPiMemoryStage1SelectionFixture,
 } from "../../../test-fixtures/pi-memory-stage1-candidates";
 import {
@@ -2701,9 +2702,15 @@ async function expectExactPrivatePiMemoryAdmission(args: {
   readonly userId: string;
 }): Promise<void> {
   // Stage 1 candidates intentionally have no production read API. After the
-  // real send and completion paths run, this focused fixture proves the exact
-  // private admission identity without controlling the behavior under test.
+  // real send and completion paths run, verify completion did not enqueue and
+  // explicitly exercise the canonical writer's exact checkpoint ownership.
   const conversation = await readPiConversationIdentityFixture(args.runId);
+  const beforeAdmission = await readPiMemoryStage1CandidateFixture({
+    orgId: args.orgId,
+    userId: args.userId,
+  });
+  expect(beforeAdmission?.sourceRunId).not.toBe(args.runId);
+  await readmitPiMemoryStage1CandidateFixture(args.runId);
   const candidate = await readPiMemoryStage1CandidateFixture({
     orgId: args.orgId,
     userId: args.userId,
@@ -2722,7 +2729,7 @@ async function expectExactPrivatePiMemoryAdmission(args: {
   });
   expect(
     candidate.eligibleAt.getTime() - candidate.sourceCompletedAt.getTime(),
-  ).toBe(60_000);
+  ).toBe(0);
   await expect(
     readmitPiMemoryStage1CandidateFixture(args.runId),
   ).resolves.toMatchObject({ outcome: "exact_retry" });
@@ -2742,7 +2749,11 @@ async function expectExactPrivatePiMemoryAdmission(args: {
   }
 }
 
-async function extractOwnedThreadPiMemory(actor: ApiTestUser, runId: string) {
+async function extractOwnedThreadPiMemory(
+  actor: ApiTestUser,
+  runId: string,
+  agentId: string,
+) {
   mockEnv("PI_MEMORY_BACKGROUND_WORKERS_ENABLED", "true");
   const scope = { orgId: requireOrgId(actor), userId: actor.userId };
   const candidate = await readPiMemoryStage1CandidateFixture(scope);
@@ -2771,7 +2782,44 @@ async function extractOwnedThreadPiMemory(actor: ApiTestUser, runId: string) {
       { once: true },
     ),
   );
-  mockNow(candidate.eligibleAt.getTime() + 1000);
+  // A later UTC day needs its own committed startup; a real queued Pi launch
+  // exercises the common admission hook without making a foreground model call.
+  const nextDay = new Date(candidate.sourceCompletedAt);
+  nextDay.setUTCHours(24, 0, 0, 0);
+  mockNow(
+    Math.max(
+      nextDay.getTime(),
+      candidate.sourceCompletedAt.getTime() + 7 * 3_600_000,
+    ),
+  );
+  mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+  await updateFeatureSwitchesForUser(context, scope, {
+    [FeatureSwitchKey.PiMemory]: false,
+    [FeatureSwitchKey.PiLoop]: false,
+  });
+  const anchor = await sendChatRun(actor, {
+    agentId,
+    prompt: "hold daily startup admission",
+    model: "gpt-5.6-terra",
+  });
+  await flushWaitUntilForTest();
+  await updateFeatureSwitchesForUser(context, scope, {
+    [FeatureSwitchKey.PiMemory]: true,
+    [FeatureSwitchKey.PiLoop]: true,
+  });
+  const startup = await sendChatRun(actor, {
+    agentId,
+    prompt: "request the daily Pi batch",
+    model: "gpt-5.6-terra",
+  });
+  await waitForRunStatus(actor, startup.runId, "queued");
+  await expect(
+    readPiMemoryStage1DayFixture(actor.userId),
+  ).resolves.toMatchObject({
+    day: nowDate().toISOString().slice(0, 10),
+    triggerThreadId: startup.threadId,
+    consumedAt: null,
+  });
   const extracted = await accept(
     setupApp({
       context,
@@ -2797,6 +2845,8 @@ async function extractOwnedThreadPiMemory(actor: ApiTestUser, runId: string) {
     status: "succeeded",
     rawMemory: "The owner prefers concise progress reports.",
   });
+  await api.requestCancelRun(actor, startup.runId, [200]);
+  await api.requestCancelRun(actor, anchor.runId, [200]);
 }
 
 function threadPiAutomationsClient(
@@ -2979,7 +3029,7 @@ describe("thread-bound Pi Automation and Goal execution", () => {
           [FeatureSwitchKey.PiMemory]: true,
         },
       );
-      mockEnv("PI_MEMORY_STAGE1_IDLE_DELAY_MS", 60_000);
+
       mockPiResourceArchiveDownloads();
       const checkpointObjects = mockPiCheckpointObjectStore();
       const requests: unknown[] = [];
@@ -3143,7 +3193,7 @@ describe("thread-bound Pi Automation and Goal execution", () => {
         cacheRead: 0,
         cacheCreation: 0,
       });
-      await extractOwnedThreadPiMemory(actor, user.runId);
+      await extractOwnedThreadPiMemory(actor, user.runId, agentId);
       clearMockNow();
     },
     90_000,
@@ -8076,10 +8126,7 @@ describe("CHAT-02: model-first provider policies", () => {
         orgId,
         userId: actor.userId,
       }),
-    ).resolves.toMatchObject({
-      sourceRunId: first.runId,
-      status: "pending",
-    });
+    ).resolves.toBeNull();
     const firstDeveloperPrompt = piResponsesDeveloperPrompt(
       modelRequestBodies[0],
     );
@@ -9089,8 +9136,7 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it("decodes persisted launch snapshots at webhook completion before Stage 1 admission", async () => {
-    mockEnv("PI_MEMORY_STAGE1_IDLE_DELAY_MS", 60_000);
+  it("keeps completion scheduling-free and decodes historical snapshots in canonical admission", async () => {
     const rejectedSnapshots = [
       ["historical null", null],
       [
@@ -9209,6 +9255,10 @@ describe("CHAT-02: model-first provider policies", () => {
         completionOptions,
       );
       await flushWaitUntilForTest();
+      await expect(
+        readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
+      ).resolves.toBeNull();
+      await readmitPiMemoryStage1CandidateFixture(run.runId);
       const candidate = await readPiMemoryStage1CandidateFixture({
         orgId,
         userId: actor.userId,
@@ -9233,7 +9283,7 @@ describe("CHAT-02: model-first provider policies", () => {
         name,
         sourceRunId: run.runId,
         sourceHistoryHash: expectedHistoryHash,
-        eligibilityDelayMs: 60_000,
+        eligibilityDelayMs: 0,
       });
 
       await completeChatRunOk(
@@ -9298,8 +9348,7 @@ describe("CHAT-02: model-first provider policies", () => {
     }
   }, 90_000);
 
-  it("admits Pi completions only while the owner's PiMemory override is on", async () => {
-    mockEnv("PI_MEMORY_STAGE1_IDLE_DELAY_MS", 60_000);
+  it("leaves completion scheduling-free while canonical admission honors PiMemory", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     const scope = { orgId, userId: actor.userId };
@@ -9349,7 +9398,7 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     await expect(readPiMemoryStage1CandidateFixture(scope)).resolves.toBeNull();
 
-    // This owner's override admits the next completion exactly as before.
+    // Completion remains scheduling-free; explicitly exercise the canonical writer.
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
@@ -9359,6 +9408,8 @@ describe("CHAT-02: model-first provider policies", () => {
       off.threadId,
       "complete Pi with PiMemory on",
     );
+    await expect(readPiMemoryStage1CandidateFixture(scope)).resolves.toBeNull();
+    await readmitPiMemoryStage1CandidateFixture(on.runId);
     const admitted = await readPiMemoryStage1CandidateFixture(scope);
     if (!admitted) {
       throw new Error("Expected the enabled owner's completion to be admitted");
@@ -9372,7 +9423,7 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     expect(
       admitted.eligibleAt.getTime() - admitted.sourceCompletedAt.getTime(),
-    ).toBe(60_000);
+    ).toBe(0);
     await expect(
       readmitPiMemoryStage1CandidateFixture(on.runId),
     ).resolves.toMatchObject({ outcome: "exact_retry" });
@@ -9419,7 +9470,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const targetThread = await chat.createThread(actor, { agentId });
 
     const usagePricingResolution = await createGptUsagePricingResolution();
-    mockEnv("PI_MEMORY_STAGE1_IDLE_DELAY_MS", 60_000);
+
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
     await updateFeatureSwitchesForUser(
       context,
@@ -9495,7 +9546,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await cancelChatRun(actor, source.runId, sourceClaim.sandboxHeaders);
   }, 90_000);
 
-  it("admits exact owned Pi histories with immutable launch policy and stale-lease fencing", async () => {
+  it("keeps Pi checkpoints intact without completion admission and fences canonical writes", async () => {
     const { actor, agentId } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     expect(piMemoryStage1AdmissionPrerequisiteSkipReasonFixture()).toBeNull();
@@ -9583,7 +9634,7 @@ describe("CHAT-02: model-first provider policies", () => {
       ).toBe(prerequisiteByTriggerSource[triggerSource]);
     }
     const usagePricingResolution = await createGptUsagePricingResolution();
-    mockEnv("PI_MEMORY_STAGE1_IDLE_DELAY_MS", 60_000);
+
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
     await updateFeatureSwitchesForUser(
       context,
@@ -9650,6 +9701,14 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     await firstProviderEntered.promise;
     await expect(
+      readPiMemoryStage1DayFixture(actor.userId),
+    ).resolves.toMatchObject({
+      triggerThreadId: first.threadId,
+      day: nowDate().toISOString().slice(0, 10),
+      consumedAt: null,
+    });
+
+    await expect(
       readRunLaunchSnapshotFixture(context, first.runId),
     ).resolves.toMatchObject({
       launch_snapshot: {
@@ -9676,6 +9735,10 @@ describe("CHAT-02: model-first provider policies", () => {
       },
     });
 
+    await expect(
+      readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
+    ).resolves.toBeNull();
+    await readmitPiMemoryStage1CandidateFixture(first.runId);
     const firstConversation = await readPiConversationIdentityFixture(
       first.runId,
     );
@@ -9701,7 +9764,7 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(
       firstCandidate.eligibleAt.getTime() -
         firstCandidate.sourceCompletedAt.getTime(),
-    ).toBe(60_000);
+    ).toBe(0);
     await expect(
       readSessionHistoryBlobRefCountFixture(firstCandidate.sourceHistoryHash),
     ).resolves.toBe(2);
@@ -9734,6 +9797,10 @@ describe("CHAT-02: model-first provider policies", () => {
     await waitForRunStatus(actor, second.runId, "completed", 10_000);
     await flushWaitUntilForTest();
 
+    await expect(
+      readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
+    ).resolves.toMatchObject({ sourceRunId: first.runId });
+    await readmitPiMemoryStage1CandidateFixture(second.runId);
     const secondConversation = await readPiConversationIdentityFixture(
       second.runId,
     );
@@ -9859,6 +9926,10 @@ describe("CHAT-02: model-first provider policies", () => {
     await waitForRunStatus(actor, third.runId, "completed", 10_000);
     await flushWaitUntilForTest();
 
+    await expect(
+      readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
+    ).resolves.toMatchObject({ sourceRunId: second.runId });
+    await readmitPiMemoryStage1CandidateFixture(third.runId);
     const thirdConversation = await readPiConversationIdentityFixture(
       third.runId,
     );
@@ -17919,11 +17990,10 @@ describe("CHAT-02: model-first provider policies", () => {
         orgId,
         userId: actor.userId,
       }),
-    ).resolves.toMatchObject({
-      piSessionId: sandboxConversation.piSessionId,
-      sourceRunId: run.runId,
-      sourceHistoryHash: sandboxConversation.sourceHistoryHash,
-      status: "pending",
+    ).resolves.toBeNull();
+    expect(sandboxConversation).toMatchObject({
+      piSessionId: run.threadId,
+      sourceHistoryHash: h2Hash,
     });
 
     const idempotentH2 = await webhooks.requestAgentCheckpoint(
@@ -28856,7 +28926,7 @@ describe("CHAT-02: run image model snapshot", () => {
 function configureNativeCliArtifact(): string {
   const commit = "a".repeat(40);
   const url = `https://static.okou.io/okou-cli/${commit}/package.tgz`;
-  mockEnv("PI_MEMORY_STAGE1_IDLE_DELAY_MS", 60_000);
+
   mockEnv("GIT_COMMIT_SHA", commit);
   mockEnv("CLI_PKG_URL", url);
   return url;

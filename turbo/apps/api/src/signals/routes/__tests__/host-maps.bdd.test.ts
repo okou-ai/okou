@@ -60,6 +60,55 @@ function geocodeOkHandler(requests: URL[]) {
 }
 
 describe("FILE-01: hosted-site deployments through host APIs", () => {
+  it("allocates distinct versions when the same site is prepared concurrently [HOST-A]", async () => {
+    const bdd = createBddApi(context);
+    const api = createHostMapsBddApi(context);
+    const actor = bdd.user();
+    api.captureHostedSitesS3();
+    const body = {
+      site: `bdd-concurrent-${randomUUID().slice(0, 8)}`,
+      artifactKind: "hosted-site" as const,
+      spaFallback: false,
+      files: [hostedTextFile("/index.html", "<main>concurrent</main>")],
+    };
+    const prepared = await Promise.all(
+      Array.from({ length: 3 }, async () => {
+        return await api.prepareHostedSite(actor, body);
+      }),
+    );
+    expect(
+      new Set(
+        prepared.map(({ siteId }) => {
+          return siteId;
+        }),
+      ).size,
+    ).toBe(1);
+    expect(
+      new Set(
+        prepared.map(({ deploymentId }) => {
+          return deploymentId;
+        }),
+      ).size,
+    ).toBe(3);
+    expect(
+      prepared
+        .map(({ deploymentVersion }) => {
+          return deploymentVersion;
+        })
+        .sort(),
+    ).toStrictEqual([1, 2, 3]);
+    const history = await api.readHostedSiteDeployments(actor, body.site);
+    expect(history.siteId).toBe(prepared[0]?.siteId);
+    expect(history.deployments).toHaveLength(3);
+    expect(
+      history.deployments
+        .map(({ deploymentVersion }) => {
+          return deploymentVersion;
+        })
+        .sort(),
+    ).toStrictEqual([1, 2, 3]);
+  });
+
   it("creates immutable versions behind a simple alias and promotes only the newest completed version [HOST-A]", async () => {
     mockEnv("OKOU_PUBLIC_HOST_DOMAIN", "okou-public-sites.test");
     mockEnv("ZERO_HOST_DOMAIN", "zero-sites.test");

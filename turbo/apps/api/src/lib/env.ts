@@ -153,11 +153,6 @@ const SCHEMA = {
   MICROSOFT_TEAMS_BOT_APP_PASSWORD: z.string().min(1).optional(),
   MICROSOFT_TEAMS_APP_TENANT_ID: z.string().min(1).optional(),
   CONCURRENT_RUN_LIMIT_CAP: z.coerce.number().int().min(0).optional(),
-  PI_MEMORY_STAGE1_IDLE_DELAY_MS: z.coerce
-    .number()
-    .int()
-    .min(0)
-    .default(30 * 60 * 1000),
   // Background workers remain opt-in until explicitly re-enabled.
   PI_MEMORY_BACKGROUND_WORKERS_ENABLED: z
     .enum(["true", "false"])

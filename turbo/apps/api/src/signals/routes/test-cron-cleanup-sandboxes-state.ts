@@ -23,6 +23,10 @@ import { exportJobs } from "@okouai/db/schema/export-job";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { hostedDeployments, hostedSites } from "@okouai/db/schema/hosted-site";
+import {
+  assertHostedDeploymentScope,
+  canonicalizeHostedSiteScope,
+} from "../services/hosted-site-scope.service";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { usageEvent } from "@okouai/db/schema/usage-event";
@@ -402,44 +406,59 @@ async function seedHostedPublication(
   const hostedSiteId = randomUUID();
   const hostedDeploymentId = randomUUID();
   const publicSlug = `cleanup-${randomUUID()}`;
-  await db.insert(hostedSites).values({
-    id: hostedSiteId,
-    orgId: run.orgId,
-    userId: run.userId,
-    slug: publicSlug,
-    publicBrand: "vm0",
-    publicSlug,
-    createdFromRunId: run.id,
-  });
-  signal.throwIfAborted();
-  await db.insert(hostedDeployments).values({
-    id: hostedDeploymentId,
-    siteId: hostedSiteId,
-    orgId: run.orgId,
-    userId: run.userId,
-    runId: run.id,
-    publicBrand: "vm0",
-    status: "ready",
-    deploymentVersion: 1,
-    artifactUrl: `https://storage.example/${hostedDeploymentId}.zip`,
-    r2Prefix: `hosted/${hostedDeploymentId}`,
-    manifest: {
-      version: 1,
-      deploymentId: hostedDeploymentId,
-      siteId: hostedSiteId,
+  await db.transaction(async (tx) => {
+    const scope = await canonicalizeHostedSiteScope(tx, {
+      orgId: run.orgId,
+      slug: publicSlug,
+      createdFromRunId: run.id,
+    });
+    signal.throwIfAborted();
+    await tx.insert(hostedSites).values({
+      id: hostedSiteId,
+      orgId: run.orgId,
+      userId: run.userId,
+      slug: publicSlug,
+      ...scope,
+      publicBrand: "vm0",
       publicSlug,
+      createdFromRunId: run.id,
+    });
+    signal.throwIfAborted();
+    await assertHostedDeploymentScope(tx, {
+      siteId: hostedSiteId,
+      orgId: run.orgId,
+      runId: run.id,
+    });
+    signal.throwIfAborted();
+    await tx.insert(hostedDeployments).values({
+      id: hostedDeploymentId,
+      siteId: hostedSiteId,
+      orgId: run.orgId,
+      userId: run.userId,
+      runId: run.id,
+      publicBrand: "vm0",
+      status: "ready",
       deploymentVersion: 1,
-      createdAt: nowDate().toISOString(),
-      artifactKind: "hosted-site",
-      spaFallback: false,
-      files: {},
-    },
-    manifestHash: "a".repeat(64),
-    contentHash: "b".repeat(64),
-    fileCount: 0,
-    sizeBytes: 0,
-    url: `https://${publicSlug}.sites.example`,
-    readyAt: nowDate(),
+      artifactUrl: `https://storage.example/${hostedDeploymentId}.zip`,
+      r2Prefix: `hosted/${hostedDeploymentId}`,
+      manifest: {
+        version: 1,
+        deploymentId: hostedDeploymentId,
+        siteId: hostedSiteId,
+        publicSlug,
+        deploymentVersion: 1,
+        createdAt: nowDate().toISOString(),
+        artifactKind: "hosted-site",
+        spaFallback: false,
+        files: {},
+      },
+      manifestHash: "a".repeat(64),
+      contentHash: "b".repeat(64),
+      fileCount: 0,
+      sizeBytes: 0,
+      url: `https://${publicSlug}.sites.example`,
+      readyAt: nowDate(),
+    });
   });
   signal.throwIfAborted();
   const hostedArtifactId = randomUUID();
