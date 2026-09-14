@@ -3,7 +3,6 @@
   "legacyClassTokens": [
     "copied",
     "language-mermaid",
-    "lucide",
     "okou-app",
     "okou-blocks",
     "okou-chat-bubble-assistant",
@@ -2717,9 +2716,6 @@
       "owf-diagram-okou-icon": 1,
       "owf-diagram-vertical-control": 1,
       "owf-diagram-wrap": 1
-    },
-    "apps/platform/src/views/queue-page/queue-drawer.tsx": {
-      "lucide": 1
     },
     "apps/platform/src/views/shared-thread-page/shared-thread-page.tsx": {
       "okou-app": 1,

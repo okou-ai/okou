@@ -1009,7 +1009,8 @@
     "toasts": {
       "copyLinkFailed": "लिंक कॉपी करने में विफल",
       "downloadFailed": "डाउनलोड विफल रहा",
-      "linkCopied": "लिंक कॉपी किया गया"
+      "linkCopied": "लिंक कॉपी किया गया",
+      "sharing": "साझा किया जा रहा है…"
     }
   },
   "auth": {
@@ -1745,15 +1746,10 @@
       "selectModel": "मॉडल चुनें",
       "slashPanel": {
         "browseAll": "सभी टेम्पलेट देखें",
-        "illustrationDescription": "आपकी चुनी हुई शैली में एक अकेली छवि",
         "make": "बनाएँ",
-        "slidesDescription": "प्रस्तुत करने लायक HTML स्लाइड",
         "templateCount_one": "{{count}} टेम्पलेट",
         "templateCount_other": "{{count}} टेम्पलेट",
-        "useTemplate": "टेम्पलेट {{title}} इस्तेमाल करें",
-        "videoDescription": "टेक्स्ट से वीडियो, चुने गए मॉडल के पैरामीटर के साथ",
-        "websiteDescription": "एक स्टैटिक साइट जिसे आप प्रकाशित कर सकते हैं",
-        "workflowDescription": "सहेजा गया वर्कफ़्लो जिसे आप कंपोज़र से चला सकते हैं"
+        "useTemplate": "टेम्पलेट {{title}} इस्तेमाल करें"
       },
       "temporarilySwitchTo": "अस्थायी रूप से इस पर स्विच करें",
       "threadSuggestions": "चैट थ्रेड",
@@ -2801,6 +2797,11 @@
         "website": "वेबसाइट",
         "workflow": "वर्कफ़्लो"
       },
+      "importedEmpty": "अभी तक कोई टेम्पलेट अपलोड नहीं किया गया है।",
+      "importedLoadFailed": "अपलोड किए गए टेम्पलेट लोड नहीं हो सके।",
+      "importedLoading": "अपलोड किए गए टेम्पलेट लोड हो रहे हैं…",
+      "importedUnavailable": "अपलोड किए गए टेम्पलेट फ़िलहाल उपलब्ध नहीं हैं।",
+      "previewRefreshFailed": "टेम्पलेट के प्रीव्यू रीफ़्रेश नहीं हो सके।",
       "previewTemplate": "पूर्वावलोकन टेम्पलेट {{title}}",
       "previewVideo": "पूर्वावलोकन वीडियो टेम्पलेट {{title}}",
       "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",
@@ -2809,6 +2810,7 @@
       "removeVideo": "वीडियो टेम्प्लेट {{title}} हटाएं",
       "removeWebsite": "वेबसाइट टेम्पलेट {{title}} हटाएँ",
       "removeWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} हटाएँ",
+      "retry": "फिर से कोशिश करें",
       "videoOptions": "वीडियो विकल्प",
       "videoOptionsAudio": "ऑडियो बनाएँ",
       "videoOptionsAudioOff": "ऑडियो बंद",

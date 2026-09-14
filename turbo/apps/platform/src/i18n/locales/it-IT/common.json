@@ -1028,7 +1028,8 @@
     "toasts": {
       "copyLinkFailed": "Impossibile copiare il collegamento",
       "downloadFailed": "Download non riuscito",
-      "linkCopied": "Collegamento copiato"
+      "linkCopied": "Collegamento copiato",
+      "sharing": "Condivisione in corso…"
     }
   },
   "auth": {
@@ -1774,16 +1775,11 @@
       "selectModel": "Seleziona modello",
       "slashPanel": {
         "browseAll": "Sfoglia tutti i modelli",
-        "illustrationDescription": "Una singola immagine, nello stile che scegli",
         "make": "Crea",
-        "slidesDescription": "Una presentazione HTML pronta da mostrare",
         "templateCount_one": "{{count}} modello",
         "templateCount_many": "{{count}} modelli",
         "templateCount_other": "{{count}} modelli",
-        "useTemplate": "Usa il modello {{title}}",
-        "videoDescription": "Da testo a video, con i parametri del modello scelto",
-        "websiteDescription": "Un sito statico che puoi pubblicare",
-        "workflowDescription": "Un flusso di lavoro salvato che puoi eseguire dal compositore"
+        "useTemplate": "Usa il modello {{title}}"
       },
       "temporarilySwitchTo": "Passa temporaneamente a",
       "threadSuggestions": "Thread di chat",
@@ -2847,6 +2843,11 @@
         "website": "Sito web",
         "workflow": "Flusso di lavoro"
       },
+      "importedEmpty": "Nessun modello ancora caricato.",
+      "importedLoadFailed": "Impossibile caricare i modelli caricati.",
+      "importedLoading": "Caricamento dei modelli caricati…",
+      "importedUnavailable": "I modelli caricati sono temporaneamente non disponibili.",
+      "previewRefreshFailed": "Impossibile aggiornare le anteprime dei modelli.",
       "previewTemplate": "Modello di anteprima {{title}}",
       "previewVideo": "Anteprima modello video {{title}}",
       "previewWebsite": "Anteprima del modello di sito web {{title}}",
@@ -2855,6 +2856,7 @@
       "removeVideo": "Rimuovi modello video {{title}}",
       "removeWebsite": "Rimuovi modello di sito web {{title}}",
       "removeWorkflow": "Rimuovi modello di flusso di lavoro {{title}}",
+      "retry": "Riprova",
       "videoOptions": "Opzioni video",
       "videoOptionsAudio": "Genera audio",
       "videoOptionsAudioOff": "Audio disattivato",

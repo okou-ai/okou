@@ -12,6 +12,9 @@ import { useTranslation } from "react-i18next";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { i18n } from "../../i18n/index.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { rootSignal$ } from "../../signals/root-signal.ts";
+import { detach, Reason } from "../../signals/utils.ts";
+import { importPresentationTemplateDeck$ } from "../../signals/okou-page/presentation-template-import.ts";
 import type { ComposerAgentSuggestion } from "../../signals/okou-page/composer-agent-suggestion-domain.ts";
 import type { ComposerChatThreadSuggestion } from "../../signals/okou-page/chat-thread-suggestion-domain.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
@@ -325,6 +328,7 @@ interface ComposerSuggestionMenuState {
   readonly previewSuggestion: (index: number | null) => void;
   readonly selectCategory: (category: SlashTemplateCategory) => void;
   readonly selectTemplate: (preview: SlashTemplatePreview) => void;
+  readonly importDeck: (file: File) => void;
   readonly browseAllTemplates: () => void;
   readonly showTemplatePanel: boolean;
   readonly workflowsLoading: boolean;
@@ -419,6 +423,8 @@ function useSlashTemplatePanelActions(
   const selectCreate = useSet(composer.create.selectCommand$);
   const insertTemplate = useSet(composer.template.insertTemplate$);
   const openTemplatePicker = useSet(composer.template.openTemplatePicker$);
+  const runDeckImport = useSet(importPresentationTemplateDeck$);
+  const rootSignal = useGet(rootSignal$);
   const categories = useSlashTemplateCategorySuggestions(
     composer,
     enabled ? query : undefined,
@@ -438,6 +444,18 @@ function useSlashTemplatePanelActions(
       insertTemplate(preview.template, preview.attachment);
       close();
     },
+    /**
+     * The import attaches the deck and sends, which navigates away from the
+     * page that started it, so it owns the root signal rather than a page
+     * signal — the same reason the picker dialog's import card does.
+     */
+    importDeck(file: File): void {
+      close();
+      detach(
+        runDeckImport({ signals: composer, file }, rootSignal),
+        Reason.DomCallback,
+      );
+    },
     browseAll(): void {
       openTemplatePicker({ kind: "insert", category: "slides" });
     },
@@ -449,9 +467,6 @@ function useComposerWorkflowSuggestions(
   query: string | undefined,
 ) {
   const workflowsLoadable = useLastLoadable(composer.workflow.workflows$);
-  const fuzzyWorkflows =
-    useGet(featureSwitch$)[FeatureSwitchKey.ComposerWorkflowFuzzySearch] ===
-    true;
   const workflows = buildComposerSlashWorkflows({
     agentId: composer.agentId,
     workflows:
@@ -459,9 +474,7 @@ function useComposerWorkflowSuggestions(
   });
   return {
     workflows:
-      query === undefined
-        ? []
-        : findWorkflowQueryMatches(workflows, query, fuzzyWorkflows),
+      query === undefined ? [] : findWorkflowQueryMatches(workflows, query),
     loading: workflowsLoadable.state === "loading",
   };
 }
@@ -703,6 +716,7 @@ function useComposerSuggestionMenu({
     previewSuggestion,
     selectCategory: templatePanel.selectCategory,
     selectTemplate: templatePanel.selectTemplate,
+    importDeck: templatePanel.importDeck,
     browseAllTemplates: templatePanel.browseAll,
     showTemplatePanel: templatePanelEnabled,
     workflowsLoading: workflowResult.loading,
@@ -717,25 +731,18 @@ function useComposerSuggestionMenu({
   };
 }
 
-export function TiptapWorkflowComposer({
-  signals,
-  onDraftChange,
-  sending,
-  onKeyDown,
-  onPaste,
-}: TiptapWorkflowComposerProps) {
-  const composer = signals;
-  const suggestionMenu = useComposerSuggestionMenu({
-    composer,
-    onKeyDown,
-  });
+/**
+ * Resolves a paste against the editor before the host handler sees it. The host
+ * gets first refusal so it can claim files; anything it leaves is inserted as
+ * Markdown so pasted prose keeps its structure instead of arriving flattened.
+ */
+function useComposerPasteHandler(
+  composer: ComposerSignals,
+  onPaste: TiptapWorkflowComposerProps["onPaste"],
+): (event: ClipboardEvent, currentTarget: HTMLElement) => boolean {
   const insertPromptMarkdown = useSet(composer.editor.insertPromptMarkdown$);
-  const setContainerRef = useSet(composer.editor.setContainerRef$);
 
-  function handlePaste(
-    event: ClipboardEvent,
-    currentTarget: HTMLElement,
-  ): boolean {
+  return function handlePaste(event, currentTarget) {
     if (eventTargetsNonEditableNodeView(event)) {
       return false;
     }
@@ -759,7 +766,23 @@ export function TiptapWorkflowComposer({
       return true;
     }
     return event.defaultPrevented;
-  }
+  };
+}
+
+export function TiptapWorkflowComposer({
+  signals,
+  onDraftChange,
+  sending,
+  onKeyDown,
+  onPaste,
+}: TiptapWorkflowComposerProps) {
+  const composer = signals;
+  const suggestionMenu = useComposerSuggestionMenu({
+    composer,
+    onKeyDown,
+  });
+  const handlePaste = useComposerPasteHandler(composer, onPaste);
+  const setContainerRef = useSet(composer.editor.setContainerRef$);
 
   return (
     <Popover
@@ -826,6 +849,7 @@ export function TiptapWorkflowComposer({
                 onPreview={suggestionMenu.previewSuggestion}
                 onSelectCategory={suggestionMenu.selectCategory}
                 onSelectTemplate={suggestionMenu.selectTemplate}
+                onImportDeck={suggestionMenu.importDeck}
                 onSelectWorkflow={suggestionMenu.selectWorkflow}
                 onBrowseAll={suggestionMenu.browseAllTemplates}
                 workflowOptionId={slashWorkflowOptionId}

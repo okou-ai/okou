@@ -30,7 +30,9 @@ import {
   type PiApiModelFailureDiagnostic,
   inspectPiSessionJsonl,
   PiApiFirstTurnCompactionRequiredError,
-  runPiApiFirstTurn,
+  preparePiApiTurn,
+  executePreparedPiApiTurn,
+  type PreparedPiApiTurn,
   measurePiPreparation,
   measurePiPreparationSync,
   startPiPreparationObservation,
@@ -86,6 +88,7 @@ import {
 import { createPiApiFirstTurnCheckpoint$ } from "./agent-webhook-checkpoints.service";
 import {
   isTerminalChatgptRefreshErrorCode,
+  readModelProviderRuntimeReconnectStateForApi,
   resolveCurrentModelProviderRuntimeSecretForApi,
   resolveModelProviderRuntimeSecretForApi,
 } from "./agent-webhook-firewall-auth.service";
@@ -128,6 +131,12 @@ import {
   settleIncludingAbort,
   tapError,
 } from "../utils";
+
+import type { CreatorAuthorizedPiPreparation } from "./agent-run-create.service";
+import {
+  PiApiFirstTurnPreparation,
+  type PiApiFirstTurnPreparedInputs,
+} from "./pi-api-first-turn-preparation";
 
 const MODEL_COMMIT_BUDGET_MS = 2000;
 const FAILURE_COMMIT_TIMEOUT_MS = 10_000;
@@ -1104,6 +1113,88 @@ async function recordApiFirstTurnUsage(
   });
 }
 
+/** Early credential materialization does not retain a revoked provider grant. */
+async function validateApiFirstTurnCredentialSources(
+  args: ApiFirstTurnModelContext,
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted();
+  const executionContext = args.activation.executionContext;
+  const subscriptionReferences = codexSubscriptionCredentialReferences({
+    activation: args.activation,
+    executionContext,
+    route: args.route,
+  });
+  if (subscriptionReferences) {
+    const state = await settle(
+      readModelProviderRuntimeReconnectStateForApi(
+        runtimeCredentialLookupArgs(args, subscriptionReferences.accessToken),
+      ),
+    );
+    signal.throwIfAborted();
+    if (!state.ok) {
+      throw piApiFirstTurnError(
+        "PI_API_MODEL_CREDENTIAL_INVALID",
+        "Pi API first-turn subscription access token lookup failed",
+        state.error,
+      );
+    }
+    if (
+      state.value?.needsReconnect &&
+      isTerminalChatgptRefreshErrorCode(state.value.lastRefreshErrorCode)
+    ) {
+      throw new PiApiFirstTurnCodexReconnectRequiredError();
+    }
+    if (!state.value) {
+      throw piApiFirstTurnError(
+        "PI_API_MODEL_CREDENTIAL_INVALID",
+        "Pi API first-turn subscription access token is unavailable",
+        undefined,
+        "reconnect_required",
+      );
+    }
+  }
+  for (const binding of args.route.credentialBindings) {
+    const providerKey =
+      executionContext.secretConnectorMap?.[binding.secretName];
+    const metadata =
+      executionContext.secretConnectorMetadataMap?.[binding.secretName];
+    if (!providerKey || metadata?.sourceType !== "model-provider") {
+      continue;
+    }
+    const resolved = await settle(
+      resolveModelProviderRuntimeSecretForApi({
+        db: args.db,
+        orgId: args.activation.orgId,
+        userId: args.activation.userId,
+        key: binding.secretName,
+        providerKey,
+        metadata,
+        featureSwitchContext: {
+          userId: args.activation.userId,
+          orgId: args.activation.orgId,
+        },
+      }),
+    );
+    signal.throwIfAborted();
+    if (!resolved.ok) {
+      throw piApiFirstTurnError(
+        "PI_API_MODEL_CREDENTIAL_INVALID",
+        "Pi API first-turn model credential lookup failed",
+        resolved.error,
+      );
+    }
+    if (!resolved.value?.trim()) {
+      throw piApiFirstTurnError(
+        "PI_API_MODEL_CREDENTIAL_INVALID",
+        "Pi API first-turn model credential is unavailable",
+        undefined,
+        subscriptionReferences ? "reconnect_required" : undefined,
+      );
+    }
+  }
+}
+
 async function observeDiscardedProviderResult(
   operation: Promise<PiApiFirstTurnResult>,
   args: ApiFirstTurnModelContext,
@@ -1161,10 +1252,8 @@ interface ExecuteApiModelTurnArgs {
   readonly activation: PiApiFirstTurnActivation;
   readonly context: ApiFirstTurnModelContext;
   readonly commitIdentity: ApiFirstTurnCommitIdentity;
-  readonly model: PiAgentModelConfig;
-  readonly resourceSnapshot: PiResourceSnapshot;
-  readonly sessionJsonl: string;
-  readonly sessionId: string;
+  readonly runtime: PreparedPiApiTurn;
+  readonly startedAt: number;
   readonly ownership: PiApiFirstTurnOwnership;
 }
 
@@ -1211,6 +1300,10 @@ async function executeApiModelTurn(
   readonly startedAt: number;
   readonly turn: PiApiFirstTurnResult;
 }> {
+  // Use the captured source, never the active account. Revalidation neither
+  // refreshes credentials nor changes the prepared runtime, and stays outside
+  // the lifecycle lock that owns the final provider transition.
+  await validateApiFirstTurnCredentialSources(args.context, signal);
   const modelDeadline =
     apiFirstTurnApiDeadlineAt(args.activation.executionContext) -
     MODEL_COMMIT_BUDGET_MS;
@@ -1220,29 +1313,15 @@ async function executeApiModelTurn(
       "Pi API first turn has no remaining model commit budget",
     );
   }
-  const startedAt = now();
+  const startedAt = args.startedAt;
   const modelDeadlineSignal = AbortSignal.timeout(
     Math.max(1, modelDeadline - now()),
   );
   const modelSignal = AbortSignal.any([signal, modelDeadlineSignal]);
-  const operation = runPiApiFirstTurn(
+  const operation = executePreparedPiApiTurn(
+    args.runtime,
     {
-      cwd: CANONICAL_WORKING_DIR,
-      agentDir: PI_AGENT_DIR,
-      sessionId: args.sessionId,
-      sessionJsonl: args.sessionJsonl,
-      prompt: args.activation.prompt,
-      appendSystemPrompt: args.activation.appendSystemPrompt,
-      model: args.model,
-      resourceSnapshot: args.resourceSnapshot,
       ownership: args.ownership,
-      onPreparationTiming: args.onPreparationTiming,
-      onMemoryRecallOutcome(outcome) {
-        L.debug("Pi memory recall outcome", {
-          runId: args.activation.runId,
-          ...outcome,
-        });
-      },
       providerRequestBoundary: async (markProviderRequestMayHaveStarted) => {
         await acquireApiProviderOwnership(
           args,
@@ -1275,20 +1354,6 @@ async function executeApiModelTurn(
       executed.error instanceof PiApiFirstTurnCanonicalCancellationError
     ) {
       throw executed.error;
-    }
-    if (executed.error instanceof UnsupportedPiResourceSnapshotError) {
-      throw piApiFirstTurnError(
-        "PI_API_PREHEAT_FAILED",
-        executed.error.message,
-        executed.error,
-      );
-    }
-    if (executed.error instanceof PiApiFirstTurnCompactionRequiredError) {
-      throw piApiFirstTurnError(
-        "PI_API_COMPACTION_PREFLIGHT_REQUIRED",
-        "Pi H0 requires official Sandbox compaction preflight",
-        executed.error,
-      );
     }
     if (
       !modelSignal.aborted &&
@@ -1539,124 +1604,313 @@ const publishSandboxFallback$ = command(async function publishSandboxFallback(
   });
 });
 
-const prepareApiFirstTurn$ = command(async function prepareApiFirstTurn(
-  { set },
-  args: ApiFirstTurnContext,
-  ownership: PiApiFirstTurnOwnership,
+async function disposeLateApiFirstTurnRuntime(
+  initialization: Promise<PreparedPiApiTurn>,
+): Promise<void> {
+  const late = await settleIncludingAbort(initialization);
+  if (late.ok) {
+    late.value.dispose();
+  }
+}
+
+async function initializeApiFirstTurnRuntime(
+  runtimeArgs: Parameters<typeof preparePiApiTurn>[0],
+  apiDeadlineAt: number,
   signal: AbortSignal,
-): Promise<PreparedApiFirstTurn> {
-  const { executionContext, launchConfig, sessionId } =
-    validateApiFirstTurnLaunch(args);
-  const commitIdentity = apiFirstTurnCommitIdentity(args);
-  signal.throwIfAborted();
-  // The direct API model turn cannot run native input/skill expansion. Choose
-  // AgentSession before API-only preparation; handoff must keep the input intact.
-  if (args.activation.prompt.trimStart().startsWith("/")) {
+): Promise<PiApiFirstTurnPreparedInputs> {
+  const modelDeadline = apiDeadlineAt - MODEL_COMMIT_BUDGET_MS;
+  if (now() >= modelDeadline) {
     throw piApiFirstTurnError(
-      "PI_API_NATIVE_INPUT_REQUIRED",
-      "Pi slash-prefixed input requires native AgentSession processing",
+      "PI_API_FIRST_TURN_DEADLINE_EXCEEDED",
+      "Pi API first turn has no remaining model commit budget",
     );
   }
-  const onPreparationTiming = piPreparationObserver(args.activation.runId);
-  const resourceSnapshot = await measurePiPreparation(
-    onPreparationTiming,
-    "resource_snapshot",
-    () => {
-      return set(
-        loadApiFirstTurnResource$,
-        args,
-        executionContext,
-        launchConfig.resourceSnapshotDigest,
-        signal,
-      );
-    },
+  const modelSignal = AbortSignal.any([
     signal,
+    AbortSignal.timeout(Math.max(1, modelDeadline - now())),
+  ]);
+  const startedAt = now();
+  const initialization = preparePiApiTurn(runtimeArgs, modelSignal);
+  const initialized = await settleIncludingAbort(
+    awaitWithSignal(initialization, modelSignal),
   );
-  signal.throwIfAborted();
-  const { modelContext, model } = await measurePiPreparation(
-    onPreparationTiming,
-    "credentials_route",
-    async () => {
-      const modelContext: ApiFirstTurnModelContext = {
-        ...args,
-        route: normalizePiExecutionRoute(executionContext.piModelConfig),
-      };
-      const model = await apiFirstTurnModelConfig(
-        modelContext,
-        executionContext,
-        signal,
+  if (!initialized.ok) {
+    if (modelSignal.aborted) {
+      waitUntil(disposeLateApiFirstTurnRuntime(initialization));
+      throw piApiFirstTurnError(
+        "PI_API_FIRST_TURN_DEADLINE_EXCEEDED",
+        "Pi API first-turn model deadline elapsed",
+        initialized.error,
       );
-      return { modelContext, model };
-    },
-    signal,
-  );
+    }
+    if (initialized.error instanceof UnsupportedPiResourceSnapshotError) {
+      throw piApiFirstTurnError(
+        "PI_API_PREHEAT_FAILED",
+        initialized.error.message,
+        initialized.error,
+      );
+    }
+    if (initialized.error instanceof PiApiFirstTurnCompactionRequiredError) {
+      throw piApiFirstTurnError(
+        "PI_API_COMPACTION_PREFLIGHT_REQUIRED",
+        "Pi H0 requires official Sandbox compaction preflight",
+        initialized.error,
+      );
+    }
+    throw initialized.error;
+  }
+  return { kind: "api", runtime: initialized.value, startedAt };
+}
+
+async function resolveApiFirstTurnResourcesAndModel(
+  resources: Promise<PiResourceSnapshot>,
+  credentials: Promise<PiAgentModelConfig>,
+  signal: AbortSignal,
+): Promise<{
+  readonly resourceSnapshot: PiResourceSnapshot;
+  readonly model: PiAgentModelConfig;
+}> {
+  const credentialResult = settleIncludingAbort(credentials);
+  const resourceResult = await settleIncludingAbort(resources);
+  if (!resourceResult.ok) {
+    // The sibling cannot replace the original resource failure or extend its
+    // decision boundary. Its result remains observed and owned until settled.
+    waitUntil(credentialResult);
+    throw resourceResult.error;
+  }
   signal.throwIfAborted();
-  const loadedSession = await measurePiPreparation(
-    onPreparationTiming,
-    "h0_load",
-    () => {
-      return set(
-        loadResumeSessionJsonl$,
-        {
-          db: args.db,
-          resumeSession: executionContext.resumeSession,
+  const resolvedCredential = await credentialResult;
+  if (!resolvedCredential.ok) {
+    throw resolvedCredential.error;
+  }
+  signal.throwIfAborted();
+  const resourceSnapshot = resourceResult.value;
+  const model = resolvedCredential.value;
+  return { resourceSnapshot, model };
+}
+
+const prepareApiFirstTurnInputs$ = command(
+  async function prepareApiFirstTurnInputs(
+    { set },
+    args: ApiFirstTurnContext,
+    signal: AbortSignal,
+  ): Promise<PiApiFirstTurnPreparedInputs> {
+    const { executionContext, launchConfig, sessionId } =
+      validateApiFirstTurnLaunch(args);
+    signal.throwIfAborted();
+    const resumeSession = executionContext.resumeSession;
+    if (resumeSession && "historyRef" in resumeSession) {
+      const metadata = await measurePiPreparation(
+        piPreparationObserver(args.activation.runId),
+        "h0_metadata_preflight",
+        () => {
+          return readResumeSessionMetadata(
+            args.db,
+            resumeSession.historyRef,
+            signal,
+          );
         },
         signal,
       );
-    },
-    signal,
-  );
-  const sessionJsonl = measurePiPreparationSync(
-    onPreparationTiming,
-    "h0_validate_materialize",
-    () => {
-      validateResumeSession({
-        loaded: loadedSession,
-        expectedBaseSession: launchConfig.baseSession,
-        sessionId,
-      });
-      return materializeApiFirstTurnH0({
-        apiStartTime: executionContext.apiStartTime,
-        loadedSession,
-        sessionId,
-      });
-    },
-    signal,
-  );
-  const { startedAt, turn } = await executeApiModelTurn(
-    {
-      activation: args.activation,
-      context: modelContext,
-      commitIdentity,
-      model,
-      resourceSnapshot,
-      sessionJsonl,
-      sessionId,
-      ownership,
+      if (decideApiFirstTurnHistory(metadata) !== "api") {
+        return { kind: "large-history" };
+      }
+    }
+    // The direct API model turn cannot run native input/skill expansion. Choose
+    // AgentSession before API-only preparation; handoff must keep the input intact.
+    if (args.activation.prompt.trimStart().startsWith("/")) {
+      throw piApiFirstTurnError(
+        "PI_API_NATIVE_INPUT_REQUIRED",
+        "Pi slash-prefixed input requires native AgentSession processing",
+      );
+    }
+    const onPreparationTiming = piPreparationObserver(args.activation.runId);
+    const resources = measurePiPreparation(
       onPreparationTiming,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  const { sessionBytes, sessionHash } = validateApiFirstTurnH1(turn, sessionId);
-  signal.throwIfAborted();
-  const auth: SandboxAuth = {
-    userId: args.activation.userId,
-    orgId: args.activation.orgId,
-    runId: args.activation.runId,
-  };
-  return {
-    apiStartTime: executionContext.apiStartTime,
-    auth,
-    baseSession: launchConfig.baseSession,
-    commitIdentity,
-    sessionBytes,
-    sessionHash,
-    sessionId,
-    startedAt,
-    turn,
-  };
-});
+      "resource_snapshot",
+      () => {
+        return set(
+          loadApiFirstTurnResource$,
+          args,
+          executionContext,
+          launchConfig.resourceSnapshotDigest,
+          signal,
+        );
+      },
+      signal,
+    );
+    const modelContext: ApiFirstTurnModelContext = {
+      ...args,
+      route: normalizePiExecutionRoute(executionContext.piModelConfig),
+    };
+    const credentials = measurePiPreparation(
+      onPreparationTiming,
+      "credentials_route",
+      () => {
+        return apiFirstTurnModelConfig(modelContext, executionContext, signal);
+      },
+      signal,
+    );
+    const { resourceSnapshot, model } =
+      await resolveApiFirstTurnResourcesAndModel(
+        resources,
+        credentials,
+        signal,
+      );
+    signal.throwIfAborted();
+    const loadedSession = await measurePiPreparation(
+      onPreparationTiming,
+      "h0_load",
+      () => {
+        return set(
+          loadResumeSessionJsonl$,
+          {
+            db: args.db,
+            resumeSession: executionContext.resumeSession,
+          },
+          signal,
+        );
+      },
+      signal,
+    );
+    const sessionJsonl = measurePiPreparationSync(
+      onPreparationTiming,
+      "h0_validate_materialize",
+      () => {
+        validateResumeSession({
+          loaded: loadedSession,
+          expectedBaseSession: launchConfig.baseSession,
+          sessionId,
+        });
+        return materializeApiFirstTurnH0({
+          apiStartTime: executionContext.apiStartTime,
+          loadedSession,
+          sessionId,
+        });
+      },
+      signal,
+    );
+    return await initializeApiFirstTurnRuntime(
+      {
+        cwd: CANONICAL_WORKING_DIR,
+        agentDir: PI_AGENT_DIR,
+        sessionId,
+        sessionJsonl,
+        prompt: args.activation.prompt,
+        appendSystemPrompt: args.activation.appendSystemPrompt,
+        model,
+        resourceSnapshot,
+        onPreparationTiming,
+        onMemoryRecallOutcome(outcome) {
+          L.debug("Pi memory recall outcome", {
+            runId: args.activation.runId,
+            ...outcome,
+          });
+        },
+      },
+      apiFirstTurnApiDeadlineAt(executionContext),
+      signal,
+    );
+  },
+);
+
+const startApiFirstTurnPreparation$ = command(
+  (
+    { set },
+    activation: PiApiFirstTurnActivation,
+    parentSignal?: AbortSignal,
+  ): PiApiFirstTurnPreparation => {
+    const startedAt = now();
+    const controller = new AbortController();
+    const signal = AbortSignal.any([
+      controller.signal,
+      ...(parentSignal ? [parentSignal] : []),
+      AbortSignal.timeout(
+        Math.max(
+          1,
+          apiFirstTurnApiDeadlineAt(activation.executionContext) - now(),
+        ),
+      ),
+    ]);
+    return new PiApiFirstTurnPreparation(
+      activation,
+      controller,
+      set(
+        prepareApiFirstTurnInputs$,
+        { db: set(writeDb$), activation },
+        signal,
+      ),
+      signal,
+      startedAt,
+    );
+  },
+);
+
+/** Only the authorized creator calls this entry with complete captured inputs. */
+export const prepareCreatedPiApiFirstTurn$ = command(
+  (
+    { set },
+    input: CreatorAuthorizedPiPreparation,
+  ): PiApiFirstTurnPreparation => {
+    if (input.triggerSource === "goal") {
+      throw new Error("Unsupported Pi preparation source");
+    }
+    return set(startApiFirstTurnPreparation$, input.activation);
+  },
+);
+
+const executePreparedApiFirstTurn$ = command(
+  async function executePreparedApiFirstTurn(
+    _ctx,
+    args: ApiFirstTurnContext,
+    ownership: PiApiFirstTurnOwnership,
+    inputs: Extract<PiApiFirstTurnPreparedInputs, { readonly kind: "api" }>,
+    signal: AbortSignal,
+  ): Promise<PreparedApiFirstTurn> {
+    const { executionContext, launchConfig, sessionId } =
+      validateApiFirstTurnLaunch(args);
+    const commitIdentity = apiFirstTurnCommitIdentity(args);
+    const modelContext: ApiFirstTurnModelContext = {
+      ...args,
+      route: normalizePiExecutionRoute(executionContext.piModelConfig),
+    };
+    const onPreparationTiming = piPreparationObserver(args.activation.runId);
+    const { startedAt, turn } = await executeApiModelTurn(
+      {
+        activation: args.activation,
+        context: modelContext,
+        commitIdentity,
+        runtime: inputs.runtime,
+        startedAt: inputs.startedAt,
+        ownership,
+        onPreparationTiming,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    const { sessionBytes, sessionHash } = validateApiFirstTurnH1(
+      turn,
+      sessionId,
+    );
+    signal.throwIfAborted();
+    const auth: SandboxAuth = {
+      userId: args.activation.userId,
+      orgId: args.activation.orgId,
+      runId: args.activation.runId,
+    };
+    return {
+      apiStartTime: executionContext.apiStartTime,
+      auth,
+      baseSession: launchConfig.baseSession,
+      commitIdentity,
+      sessionBytes,
+      sessionHash,
+      sessionId,
+      startedAt,
+      turn,
+    };
+  },
+);
 
 const persistCompleteTurnCheckpoint$ = command(
   async function persistCompleteTurnCheckpoint(
@@ -1955,14 +2209,30 @@ const publishLargeHistoryTransfer$ = command(
 const executeApiFirstTurn$ = command(async function executeApiFirstTurn(
   { set },
   args: ApiFirstTurnContext,
-  ownership: PiApiFirstTurnOwnership,
-  commitProgress: ApiFirstTurnCommitProgress,
+  attempt: {
+    readonly ownership: PiApiFirstTurnOwnership;
+    readonly commitProgress: ApiFirstTurnCommitProgress;
+    readonly preparation: PiApiFirstTurnPreparation;
+  },
   signal: AbortSignal,
 ): Promise<ApiFirstTurnExecutionResult> {
-  if (await set(publishLargeHistoryTransfer$, args, commitProgress, signal)) {
+  const { ownership, commitProgress, preparation } = attempt;
+  const inputs = await preparation.take(args.activation, signal);
+  signal.throwIfAborted();
+  if (inputs.kind === "large-history") {
+    await set(publishLargeHistoryTransfer$, args, commitProgress, signal);
     return { outcome: "transferred" };
   }
-  const prepared = await set(prepareApiFirstTurn$, args, ownership, signal);
+  const prepared = await set(
+    executePreparedApiFirstTurn$,
+    args,
+    ownership,
+    inputs,
+    signal,
+  ).finally(() => {
+    inputs.runtime.dispose();
+  });
+  signal.throwIfAborted();
   const committed = await settle(
     set(commitApiFirstTurn$, args, prepared, commitProgress, signal),
     signal,
@@ -2228,6 +2498,7 @@ const runPiApiFirstTurnCore$ = command(
   async (
     { set },
     activation: PiApiFirstTurnActivation,
+    preparation: PiApiFirstTurnPreparation,
     signal: AbortSignal,
   ): Promise<DispatchCompleteSideEffectsInput | undefined> => {
     const context: ApiFirstTurnContext = { db: set(writeDb$), activation };
@@ -2242,17 +2513,22 @@ const runPiApiFirstTurnCore$ = command(
       apiAttemptController.signal,
       AbortSignal.timeout(Math.max(1, apiDeadlineAt - now())),
     ]);
-    const executed = await settleApiFirstTurnExecution(
+    const executionResult = await settleApiFirstTurnExecution(
       set(
         executeApiFirstTurn$,
         context,
-        ownership,
-        commitProgress,
+        { ownership, commitProgress, preparation },
         apiAttemptSignal,
       ),
       apiAttemptSignal,
       signal,
     );
+    // A preparation failure observed before admission finished retains its
+    // classification even if admission outlives the API ownership budget.
+    const executed =
+      ownership.stage === "pre-provider" && !commitProgress.started
+        ? (preparation.failure ?? executionResult)
+        : executionResult;
     if (executed.ok) {
       const outcome = executed.value;
       return outcome.outcome === "completed" && outcome.sideEffects
@@ -2332,16 +2608,37 @@ export const runPiApiFirstTurn$ = command(
   async (
     { set },
     activation: PiApiFirstTurnActivation,
+    preparation: PiApiFirstTurnPreparation | undefined,
     signal: AbortSignal,
   ): Promise<DispatchCompleteSideEffectsInput | undefined> => {
-    const [run] = await set(writeDb$)
-      .select({ triggerSource: agentRuns.triggerSource })
-      .from(agentRuns)
-      .where(eq(agentRuns.id, activation.runId));
-    signal.throwIfAborted();
-    if (!run || run.triggerSource === "goal") {
-      return undefined;
-    }
-    return await set(runPiApiFirstTurnCore$, activation, signal);
+    let ownedPreparation = preparation;
+    return await (async () => {
+      const [run] = await set(writeDb$)
+        .select({ triggerSource: agentRuns.triggerSource })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, activation.runId));
+      signal.throwIfAborted();
+      if (!run || run.triggerSource === "goal") {
+        return undefined;
+      }
+      // Queue promotion prepares only after canonical authorization, with its
+      // refreshed captured deadline. It owns late initialization just like the
+      // creator path, without reusing a discarded speculative session.
+      ownedPreparation ??= set(
+        startApiFirstTurnPreparation$,
+        activation,
+        signal,
+      );
+      return await set(
+        runPiApiFirstTurnCore$,
+        activation,
+        ownedPreparation,
+        signal,
+      );
+    })().finally(() => {
+      if (ownedPreparation) {
+        waitUntil(ownedPreparation.dispose("activation-finished"));
+      }
+    });
   },
 );

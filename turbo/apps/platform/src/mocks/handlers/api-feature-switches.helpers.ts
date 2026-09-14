@@ -9,7 +9,6 @@ import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature
 
 import { mockApi } from "../msw-contract.ts";
 import { server } from "../server.ts";
-import { setMockConnectorFeatureSwitches } from "./api-connectors.ts";
 
 export function setMockFeatureSwitches(
   switches: Partial<Record<string, boolean>>,
@@ -20,7 +19,6 @@ export function setMockFeatureSwitches(
       sanitized[key] = value;
     }
   }
-  setMockConnectorFeatureSwitches(sanitized);
   server.use(
     mockApi(featureSwitchesContract.get, ({ respond }) => {
       return respond(200, {

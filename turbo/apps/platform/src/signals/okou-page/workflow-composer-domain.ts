@@ -3,7 +3,6 @@ import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows"
 export function findWorkflowQueryMatches(
   workflows: readonly ComposerSlashWorkflow[],
   query: string,
-  fuzzy: boolean,
 ): readonly ComposerSlashWorkflowMatch[] {
   const normalizedQuery = query.toLowerCase();
   const matches: {
@@ -22,14 +21,13 @@ export function findWorkflowQueryMatches(
           ...workflow,
           matchRanges: query ? [{ start, end: start + query.length }] : [],
         },
-        rank:
-          fuzzy && normalizedName === normalizedQuery ? 0 : start === 0 ? 1 : 2,
+        rank: normalizedName === normalizedQuery ? 0 : start === 0 ? 1 : 2,
         skippedCharacters: 0,
         start,
       });
       continue;
     }
-    if (fuzzy && normalizedQuery.length >= 3) {
+    if (normalizedQuery.length >= 3) {
       const match = findWorkflowSubsequence(normalizedName, normalizedQuery);
       if (match) {
         matches.push({

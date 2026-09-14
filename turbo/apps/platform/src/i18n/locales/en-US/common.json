@@ -1009,7 +1009,8 @@
     "toasts": {
       "copyLinkFailed": "Failed to copy link",
       "downloadFailed": "Download failed",
-      "linkCopied": "Link copied"
+      "linkCopied": "Link copied",
+      "sharing": "Sharing…"
     }
   },
   "auth": {
@@ -1745,15 +1746,10 @@
       "selectModel": "Select model",
       "slashPanel": {
         "browseAll": "Browse all templates",
-        "illustrationDescription": "A single image, in the style you pick",
         "make": "Make",
-        "slidesDescription": "An HTML slide deck you can present",
         "templateCount_one": "{{count}} template",
         "templateCount_other": "{{count}} templates",
-        "useTemplate": "Use template {{title}}",
-        "videoDescription": "Text to video, with parameters from the chosen model",
-        "websiteDescription": "A static site you can publish",
-        "workflowDescription": "A saved workflow you can run from the composer"
+        "useTemplate": "Use template {{title}}"
       },
       "temporarilySwitchTo": "Temporarily switch to",
       "threadSuggestions": "Chat threads",
@@ -2801,6 +2797,11 @@
         "website": "Website",
         "workflow": "Workflow"
       },
+      "importedEmpty": "No uploaded templates yet.",
+      "importedLoadFailed": "Couldn't load uploaded templates.",
+      "importedLoading": "Loading uploaded templates…",
+      "importedUnavailable": "Uploaded templates are temporarily unavailable.",
+      "previewRefreshFailed": "Couldn't refresh template previews.",
       "previewTemplate": "Preview template {{title}}",
       "previewVideo": "Preview video template {{title}}",
       "previewWebsite": "Preview website template {{title}}",
@@ -2809,6 +2810,7 @@
       "removeVideo": "Remove video template {{title}}",
       "removeWebsite": "Remove website template {{title}}",
       "removeWorkflow": "Remove workflow template {{title}}",
+      "retry": "Retry",
       "videoOptions": "Video options",
       "videoOptionsAudio": "Generate audio",
       "videoOptionsAudioOff": "Audio off",

@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.192.3](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.192.2...runner-rs-v0.192.3) (2026-09-14)
+
+
+### Bug Fixes
+
+* **python:** reject truncated buffered json usage responses ([#33972](https://github.com/vm0-ai/vm0/issues/33972)) ([aba8e15](https://github.com/vm0-ai/vm0/commit/aba8e159c3ac4607977b462193632908131eaac4))
+* **runner:** preserve firecracker discovery uncertainty on stat errors ([#33988](https://github.com/vm0-ai/vm0/issues/33988)) ([8e8829f](https://github.com/vm0-ai/vm0/commit/8e8829fe1a2b6bb01312973f9f40e82a13f95f76))
+* **runner:** reject overlong integers in flush markers ([#33999](https://github.com/vm0-ai/vm0/issues/33999)) ([d214b89](https://github.com/vm0-ai/vm0/commit/d214b89961eff646fa1a1910d398b688bcda272e))
+* **runner:** terminate oversized header names before body buffering ([#33962](https://github.com/vm0-ai/vm0/issues/33962)) ([0326351](https://github.com/vm0-ai/vm0/commit/0326351d39a9e79bd9d0c6a0085b84a18d177b81))
+
+
+### Documentation
+
+* **python:** correct idle websocket failure-observer contract ([#33991](https://github.com/vm0-ai/vm0/issues/33991)) ([4a4be18](https://github.com/vm0-ai/vm0/commit/4a4be185ef2b420dd1bd2674deb309a25702afa6))
+
 ## [0.192.2](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.192.1...runner-rs-v0.192.2) (2026-09-14)
 
 

@@ -367,6 +367,9 @@ import {
   type CompressedSessionHistoryBlobEncoding,
 } from "./session-history-blobs";
 import type { Tx } from "../../lib/db-types";
+import type { PiPreparationDiscardReason } from "./pi-api-first-turn-preparation";
+import { waitUntil } from "../context/wait-until";
+import { prepareConfiguredPiApiFirstTurn$ } from "./pi-api-first-turn-dispatch.service";
 import { activatePendingRun$ } from "./agent-run-activation.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
 import {
@@ -10435,6 +10438,15 @@ function flushQueueFirstClaimLostTiming(args: {
   });
 }
 
+const piPreparationAuthority = Symbol("creator-authorized-pi-preparation");
+
+/** Issued only after authorization and finalized launch payload construction. */
+export interface CreatorAuthorizedPiPreparation {
+  readonly [piPreparationAuthority]: true;
+  readonly activation: NonNullable<PendingRunActivation["piApiFirstTurn"]>;
+  readonly triggerSource: CreateRunBody["triggerSource"];
+}
+
 interface AtomicLaunchRunInput {
   readonly db: Db;
   readonly args: CreateAgentRunArgs;
@@ -10485,7 +10497,7 @@ function finalizeAtomicLaunchCommit(
     return committed;
   }
   return committedAtomicLaunchResponse({
-    createArgs: args.input.args,
+    createArgs: { ...args.input.args, body: args.input.context.body },
     committed,
     transactionReturnedAt: args.committed.transactionReturnedAt,
     timing: args.input.timing,
@@ -10556,11 +10568,123 @@ async function completeQueuePayloadLaunch(
   return finalized;
 }
 
-function createAtomicLaunchRun(
-  input: AtomicLaunchRunInput,
-  signal: AbortSignal,
-): Computed<Promise<QueueFirstAgentRunResult>> {
-  return computed(async (get): Promise<QueueFirstAgentRunResult> => {
+const commitAndActivateAtomicLaunch$ = command(
+  async (
+    { set },
+    args: {
+      readonly input: AtomicLaunchRunInput;
+      readonly identity: LaunchRunIdentity;
+      readonly callbackRows: readonly AgentRunCallbackInsert[];
+      readonly launch: PreparedRunnerLaunch;
+    },
+    signal: AbortSignal,
+  ): Promise<QueueFirstAgentRunResult> => {
+    const { input, identity, callbackRows, launch } = args;
+    const executionContext = launch.runnerJobPayload.executionContext;
+    const preparation =
+      input.context.body.triggerSource !== "goal" &&
+      executionContext.piLaunchConfig &&
+      !executionContext.piLaunchConfig.maintenance
+        ? set(prepareConfiguredPiApiFirstTurn$, {
+            [piPreparationAuthority]: true,
+            triggerSource: input.context.body.triggerSource,
+            activation: {
+              runId: identity.runId,
+              runnerGroup: launch.runnerJobPayload.runnerGroup,
+              userId: input.args.userId,
+              orgId: input.args.orgId,
+              prompt: input.context.body.prompt,
+              appendSystemPrompt: input.context.body.appendSystemPrompt ?? null,
+              executionContext:
+                requirePiApiFirstTurnExecutionContext(executionContext),
+            },
+          })
+        : undefined;
+    let transferred = false;
+    let discardReason: PiPreparationDiscardReason = "admission-failed";
+    return await (async () => {
+      const commitLaunch: CommitAtomicLaunch = async (
+        encryptedQueuedParams: string | undefined,
+      ) => {
+        return await input.timing.measure(
+          "api_dispatch_insert_run_with_concurrency",
+          "top_level",
+          async () => {
+            return await commitPreparedLaunch({
+              db: input.db,
+              createArgs: input.args,
+              creditAdmitted: input.creditAdmitted,
+              context: input.context,
+              identity,
+              callbackRows,
+              launch,
+              encryptedQueuedParams,
+              timing: input.timing,
+            });
+          },
+        );
+      };
+
+      const committed = await commitLaunch(undefined);
+      const finalized = finalizeAtomicLaunchCommit(
+        {
+          input,
+          identity,
+          launch,
+          committed,
+        },
+        signal,
+      );
+      const result = isQueuePayloadRequiredResult(finalized)
+        ? await completeQueuePayloadLaunch(
+            { input, identity, callbackRows, launch, commitLaunch },
+            signal,
+          )
+        : finalized;
+      if (
+        "status" in result &&
+        result.status === 201 &&
+        result.pendingActivation
+      ) {
+        // Commit determines ownership even if the initiating request disconnected.
+        // The API branch is owned by waitUntil; Runner notification never joins it.
+        transferred = true;
+
+        await set(activatePendingRun$, {
+          activation: result.pendingActivation,
+          activationScheduledAt: now(),
+          preparation,
+        });
+        const { pendingActivation: _pendingActivation, ...activated } = result;
+        return activated;
+      }
+      if ("kind" in result) {
+        if (result.kind === "queue-first-claim-lost") {
+          discardReason = "claim-lost";
+        }
+        if (result.kind === "thread-session-snapshot-stale") {
+          discardReason = "stale";
+        }
+      } else if (result.status === 201) {
+        discardReason = "queued";
+      }
+      return result;
+    })().finally(() => {
+      if (!transferred && preparation) {
+        // Discard immediately; waitUntil joins late SDK initialization without
+        // delaying queued responses or making another attempt reuse this one.
+        waitUntil(preparation.dispose(discardReason));
+      }
+    });
+  },
+);
+
+const createAtomicLaunchRun$ = command(
+  async (
+    { get, set },
+    input: AtomicLaunchRunInput,
+    signal: AbortSignal,
+  ): Promise<QueueFirstAgentRunResult> => {
     const identity = prepareLaunchRunIdentity({
       resolved: input.context.resolved,
     });
@@ -10633,53 +10757,13 @@ function createAtomicLaunchRun(
     const launch = launchResult.value;
     input.phaseTiming.checkpoint("api_dispatch_phase_prepare_launch", now());
 
-    const commitLaunch: CommitAtomicLaunch = async (
-      encryptedQueuedParams: string | undefined,
-    ) => {
-      return await input.timing.measure(
-        "api_dispatch_insert_run_with_concurrency",
-        "top_level",
-        async () => {
-          return await commitPreparedLaunch({
-            db: input.db,
-            createArgs: input.args,
-            creditAdmitted: input.creditAdmitted,
-            context: input.context,
-            identity,
-            callbackRows,
-            launch,
-            encryptedQueuedParams,
-            timing: input.timing,
-          });
-        },
-      );
-    };
-
-    const committed = await commitLaunch(undefined);
-    const finalized = finalizeAtomicLaunchCommit(
-      {
-        input,
-        identity,
-        launch,
-        committed,
-      },
+    return await set(
+      commitAndActivateAtomicLaunch$,
+      { input, identity, callbackRows, launch },
       signal,
     );
-    if (isQueuePayloadRequiredResult(finalized)) {
-      return await completeQueuePayloadLaunch(
-        {
-          input,
-          identity,
-          callbackRows,
-          launch,
-          commitLaunch,
-        },
-        signal,
-      );
-    }
-    return finalized;
-  });
-}
+  },
+);
 
 interface PreparedAgentRun {
   readonly args: CreateAgentRunArgs;
@@ -10811,7 +10895,7 @@ export const prepareAgentRun$ = command(
 
 export const completeAgentRun$ = command(
   async (
-    { get, set },
+    { set },
     input: CompleteAgentRunArgs,
     signal: AbortSignal,
   ): Promise<QueueFirstAgentRunResult> => {
@@ -10862,47 +10946,18 @@ export const completeAgentRun$ = command(
       return admissionGate;
     }
 
-    const result = await get(
-      createAtomicLaunchRun(
-        {
-          db,
-          args,
-          creditAdmitted,
-          context,
-          timing,
-          phaseTiming: input.prepared.phaseTiming,
-        },
-        signal,
-      ),
+    return await set(
+      createAtomicLaunchRun$,
+      {
+        db,
+        args,
+        creditAdmitted,
+        context,
+        timing,
+        phaseTiming: input.prepared.phaseTiming,
+      },
+      signal,
     );
-    // The run and runner job are durable now. Observe request cancellation for
-    // diagnostics, but let the commit-owned activation finish independently.
-    if (signal.aborted) {
-      L.debug("Request aborted after run launch commit", {
-        orgId: args.orgId,
-      });
-    }
-    if (
-      !("status" in result) ||
-      result.status !== 201 ||
-      result.pendingActivation === undefined
-    ) {
-      return result;
-    }
-
-    const activationScheduledAt = now();
-    await set(activatePendingRun$, {
-      activation: result.pendingActivation,
-      activationScheduledAt,
-    });
-    if (signal.aborted) {
-      L.debug("Request remained aborted after run activation", {
-        runId: result.pendingActivation.runnerNotification.runId,
-      });
-    }
-    const { pendingActivation: _pendingActivation, ...activatedResult } =
-      result;
-    return activatedResult;
   },
 );
 

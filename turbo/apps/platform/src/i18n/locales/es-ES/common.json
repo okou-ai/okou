@@ -1028,7 +1028,8 @@
     "toasts": {
       "copyLinkFailed": "No se pudo copiar el enlace",
       "downloadFailed": "Descarga fallida",
-      "linkCopied": "Enlace copiado"
+      "linkCopied": "Enlace copiado",
+      "sharing": "Compartiendo…"
     }
   },
   "auth": {
@@ -1774,16 +1775,11 @@
       "selectModel": "Seleccionar modelo",
       "slashPanel": {
         "browseAll": "Ver todas las plantillas",
-        "illustrationDescription": "Una sola imagen, con el estilo que elijas",
         "make": "Crear",
-        "slidesDescription": "Una presentación HTML lista para mostrar",
         "templateCount_one": "{{count}} plantilla",
         "templateCount_many": "{{count}} plantillas",
         "templateCount_other": "{{count}} plantillas",
-        "useTemplate": "Usar la plantilla {{title}}",
-        "videoDescription": "De texto a vídeo, con los parámetros del modelo elegido",
-        "websiteDescription": "Un sitio estático que puedes publicar",
-        "workflowDescription": "Un flujo de trabajo guardado que puedes ejecutar desde el compositor"
+        "useTemplate": "Usar la plantilla {{title}}"
       },
       "temporarilySwitchTo": "Cambiar temporalmente a",
       "threadSuggestions": "Conversaciones",
@@ -2847,6 +2843,11 @@
         "website": "Sitio web",
         "workflow": "Flujo de trabajo"
       },
+      "importedEmpty": "Aún no hay plantillas subidas.",
+      "importedLoadFailed": "No se pudieron cargar las plantillas subidas.",
+      "importedLoading": "Cargando plantillas subidas…",
+      "importedUnavailable": "Las plantillas subidas no están disponibles temporalmente.",
+      "previewRefreshFailed": "No se pudieron actualizar las vistas previas de las plantillas.",
       "previewTemplate": "Plantilla de vista previa {{title}}",
       "previewVideo": "Vista previa de la plantilla de vídeo {{title}}",
       "previewWebsite": "Vista previa de la plantilla de sitio web {{title}}",
@@ -2855,6 +2856,7 @@
       "removeVideo": "Eliminar la plantilla de vídeo {{title}}",
       "removeWebsite": "Eliminar la plantilla de sitio web {{title}}",
       "removeWorkflow": "Eliminar la plantilla de flujo de trabajo {{title}}",
+      "retry": "Reintentar",
       "videoOptions": "Opciones de vídeo",
       "videoOptionsAudio": "Generar audio",
       "videoOptionsAudioOff": "Audio desactivado",

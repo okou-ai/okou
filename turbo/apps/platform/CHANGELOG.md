@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.893.11](https://github.com/vm0-ai/vm0/compare/app-v0.893.10...app-v0.893.11) (2026-09-14)
+
+
+### Bug Fixes
+
+* **app:** scope video controls to creative video drafts ([#33934](https://github.com/vm0-ai/vm0/issues/33934)) ([dc5ccdf](https://github.com/vm0-ai/vm0/commit/dc5ccdf653935b778d77fe120d62f3e20cc2b4e5))
+
+
+### Refactoring
+
+* **platform:** replace mermaid diagram selectors with utilities ([#33979](https://github.com/vm0-ai/vm0/issues/33979)) ([857cc5d](https://github.com/vm0-ai/vm0/commit/857cc5d3fdcd9e1a4eb041d8519f2612886e3f58))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.436.0
+    * @okouai/core bumped to 8.662.1
+
 ## [0.893.10](https://github.com/vm0-ai/vm0/compare/app-v0.893.9...app-v0.893.10) (2026-09-14)
 
 

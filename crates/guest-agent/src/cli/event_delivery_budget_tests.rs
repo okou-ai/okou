@@ -52,16 +52,53 @@ fn text_event(framework: Framework, text: &str) -> Value {
     events::prepare_event_for_delivery(event, 19, &SecretMasker::from_raw(""))
 }
 
+fn collaboration_event(states: Value) -> Result<Value, &'static str> {
+    let receiver_ids = states
+        .as_object()
+        .ok_or("child states must be an object")?
+        .keys()
+        .collect::<Vec<_>>();
+    Ok(events::prepare_event_for_delivery(
+        json!({
+            "type": "item.completed", "thread_id": "parent", "turn_id": "turn",
+            "item": {
+                "id": "wait", "type": "collab_agent_tool_call", "tool": "wait",
+                "status": "completed", "sender_thread_id": "parent",
+                "receiver_thread_ids": receiver_ids, "prompt": null,
+                "model": "test-model", "reasoning_effort": "high", "agents_states": states,
+            }
+        }),
+        19,
+        &SecretMasker::from_raw(""),
+    ))
+}
+
 #[tokio::test]
 async fn sender_preserves_normal_bytes_and_accounts_for_exact_citation_envelopes() {
-    for framework in [Framework::Pi, Framework::Codex] {
+    for (framework, collaboration) in [
+        (Framework::Pi, false),
+        (Framework::Codex, false),
+        (Framework::Codex, true),
+    ] {
+        let make_event = |text: &str| {
+            if collaboration {
+                collaboration_event(json!({
+                    "status": {"status": "errored", "message": text},
+                    "null-child": {"status": "running", "message": null},
+                    "empty-child": {"status": "completed", "message": ""},
+                }))
+                .unwrap()
+            } else {
+                text_event(framework, text)
+            }
+        };
         for transport in [false, true] {
             for overflow in [None, Some(0), Some(1)] {
-                let empty = text_event(framework, "");
+                let empty = make_event("");
                 let retained = overflow.map_or(5, |extra| {
                     LIMIT - body(&empty, transport).unwrap().len() + extra
                 });
-                let event = text_event(framework, &"x".repeat(retained));
+                let event = make_event(&"x".repeat(retained));
                 let expected = body(&event, transport).unwrap();
                 if let Some(extra) = overflow {
                     assert_eq!(expected.len(), LIMIT + extra);
@@ -86,6 +123,14 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_citation_envelopes
                                 && payload["events"][0]["memoryCitation"]
                                     == expected_json["events"][0]["memoryCitation"]
                                 && payload["events"][0]["sequenceNumber"] == 19
+                                && (!collaboration || {
+                                    let mut restored = payload["events"][0].clone();
+                                    restored["item"]["agents_states"]["status"]["message"] =
+                                        expected_json["events"][0]["item"]["agents_states"]
+                                            ["status"]["message"]
+                                            .clone();
+                                    restored == expected_json["events"][0]
+                                })
                         });
                     then.status(200);
                 });
@@ -112,6 +157,102 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_citation_envelopes
 }
 
 #[tokio::test]
+async fn collaboration_fallback_preserves_structure_beyond_content_discovery_limits() {
+    for (child_count, key_bytes, message) in [
+        (40, 0, Some("x".repeat(256 * 1024))),
+        (300, 0, Some("x".repeat(32 * 1024))),
+        (1500, 0, None),
+        (1, 257, Some("x".repeat(LIMIT))),
+        (30_000, 0, Some("\0".repeat(30))),
+    ] {
+        let mut states = serde_json::Map::new();
+        for index in 0..child_count {
+            let key = format!("child-{index:04}{}", "k".repeat(key_bytes));
+            states.insert(key, json!({"status": "errored", "message": message}));
+        }
+        if message.is_none() {
+            states.insert(
+                "zz-last-child".into(),
+                json!({"status": "completed", "message": "x".repeat(LIMIT)}),
+            );
+        }
+        states.insert(
+            "empty-child".into(),
+            json!({"status": "running", "message": ""}),
+        );
+        states.insert(
+            "null-child".into(),
+            json!({"status": "pending_init", "message": null}),
+        );
+        states.insert(
+            "short-child".into(),
+            json!({"status": "completed", "message": "done"}),
+        );
+        let mut event = collaboration_event(Value::Object(states)).unwrap();
+        event["item"]["prompt"] = json!("p".repeat(LIMIT));
+        let mut expected = event.clone();
+        expected["item"]["prompt"] = json!("[event content truncated for delivery]");
+        for (child_id, state) in expected["item"]["agents_states"]
+            .as_object_mut()
+            .unwrap()
+            .iter_mut()
+        {
+            if (child_id.starts_with("child-") || child_id == "zz-last-child")
+                && state["message"].is_string()
+            {
+                state["message"] = json!("[event content truncated for delivery]");
+            }
+        }
+
+        let server = MockServer::start_async().await;
+        let request = server.mock(|when, then| {
+            when.method(POST)
+                .path("/api/webhooks/agent/events")
+                .is_true(move |request| {
+                    let payload: Value = serde_json::from_slice(request.body_ref()).unwrap();
+                    let mut actual = payload["events"][0].clone();
+                    for (child_id, state) in expected["item"]["agents_states"].as_object().unwrap()
+                    {
+                        if state["message"] == "[event content truncated for delivery]" {
+                            let message = &mut actual["item"]["agents_states"][child_id]["message"];
+                            // A per-field notice can be smaller than the fallback notice
+                            // for short strings that expand under JSON escaping.
+                            if !message.as_str().is_some_and(|text| {
+                                text == "[event content truncated for delivery]"
+                                    || text.contains("bytes truncated for delivery")
+                            }) {
+                                return false;
+                            }
+                            *message = state["message"].clone();
+                        }
+                    }
+                    request.body_ref().len() <= LIMIT
+                        && payload["events"].as_array().map(Vec::len) == Some(1)
+                        && actual == expected
+                });
+            then.status(200);
+        });
+        let http = HttpClient::with_api_config(
+            server.base_url(),
+            "test-token",
+            "",
+            "test-session",
+            Duration::ZERO,
+        )
+        .unwrap();
+        let runtime = EventDeliveryRuntime::start(http, RUN_ID, 19, false).unwrap();
+        runtime
+            .sender()
+            .try_send_for_framework(19, event, Framework::Codex)
+            .unwrap();
+        let report = runtime.finish().await.unwrap();
+        assert_eq!(report.last_acknowledged_sequence, Some(19));
+        assert!(report.diagnostic.is_none());
+        request.assert_calls_async(1).await;
+    }
+}
+
+#[tokio::test]
 async fn impossible_citation_and_protected_core_fail_before_http() {
     let server = MockServer::start_async().await;
     let request = server.mock(|when, then| {
@@ -122,6 +263,21 @@ async fn impossible_citation_and_protected_core_fail_before_http() {
         (Framework::Pi, text_event(Framework::Pi, "text")),
         (Framework::Pi, text_event(Framework::Pi, "text")),
         (Framework::Codex, text_event(Framework::Codex, "text")),
+        (
+            Framework::Codex,
+            collaboration_event(json!({"child": {"status": "errored", "message": "text"}}))
+                .unwrap(),
+        ),
+        (
+            Framework::Codex,
+            collaboration_event(json!({"child": {"status": "errored", "message": "text"}}))
+                .unwrap(),
+        ),
+        (
+            Framework::Codex,
+            collaboration_event(json!({"child": {"status": "errored", "message": "text"}}))
+                .unwrap(),
+        ),
     ]
     .into_iter()
     .enumerate()
@@ -129,7 +285,13 @@ async fn impossible_citation_and_protected_core_fail_before_http() {
         match i {
             0 => event["memoryCitation"]["entries"][0]["note"] = json!("x".repeat(LIMIT)),
             1 => event["message"]["id"] = json!("x".repeat(LIMIT)),
-            _ => event["item"]["id"] = json!("x".repeat(LIMIT)),
+            2 => event["item"]["id"] = json!("x".repeat(LIMIT)),
+            3 => event["item"]["receiver_thread_ids"] = json!(["x".repeat(LIMIT)]),
+            4 => {
+                event["item"]["agents_states"] =
+                    json!({"x".repeat(LIMIT): {"status": "errored", "message": "text"}})
+            }
+            _ => event["item"]["reasoning_effort"] = json!("x".repeat(LIMIT)),
         }
         (framework, event)
     }) {

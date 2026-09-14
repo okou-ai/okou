@@ -316,6 +316,7 @@ export async function activateLegacyGoalPiFixture(
         },
       }),
     },
+    undefined,
     signal,
   );
 }

@@ -1008,7 +1008,8 @@
     "toasts": {
       "copyLinkFailed": "Gagal menyalin tautan",
       "downloadFailed": "Gagal mengunduh",
-      "linkCopied": "Tautan disalin"
+      "linkCopied": "Tautan disalin",
+      "sharing": "Membagikan…"
     }
   },
   "auth": {
@@ -1742,14 +1743,9 @@
       "selectModel": "Pilih model",
       "slashPanel": {
         "browseAll": "Jelajahi semua templat",
-        "illustrationDescription": "Satu gambar, dengan gaya yang Anda pilih",
         "make": "Buat",
-        "slidesDescription": "Salindia HTML yang siap dipresentasikan",
         "templateCount_other": "{{count}} templat",
-        "useTemplate": "Gunakan templat {{title}}",
-        "videoDescription": "Teks menjadi video, dengan parameter dari model yang dipilih",
-        "websiteDescription": "Situs statis yang bisa Anda terbitkan",
-        "workflowDescription": "Alur kerja tersimpan yang bisa dijalankan dari komposer"
+        "useTemplate": "Gunakan templat {{title}}"
       },
       "temporarilySwitchTo": "Beralih sementara ke",
       "threadSuggestions": "Thread chat",
@@ -2792,6 +2788,11 @@
         "website": "Situs web",
         "workflow": "Alur kerja"
       },
+      "importedEmpty": "Belum ada templat yang diunggah.",
+      "importedLoadFailed": "Tidak dapat memuat templat yang diunggah.",
+      "importedLoading": "Memuat templat yang diunggah…",
+      "importedUnavailable": "Templat yang diunggah untuk sementara tidak tersedia.",
+      "previewRefreshFailed": "Tidak dapat memperbarui pratinjau templat.",
       "previewTemplate": "Pratinjau template {{title}}",
       "previewVideo": "Pratinjau template video {{title}}",
       "previewWebsite": "Pratinjau template situs web {{title}}",
@@ -2800,6 +2801,7 @@
       "removeVideo": "Hapus template video {{title}}",
       "removeWebsite": "Hapus template situs web {{title}}",
       "removeWorkflow": "Hapus template alur kerja {{title}}",
+      "retry": "Coba lagi",
       "videoOptions": "Opsi video",
       "videoOptionsAudio": "Hasilkan audio",
       "videoOptionsAudioOff": "Audio nonaktif",

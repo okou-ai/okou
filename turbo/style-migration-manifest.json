@@ -791,6 +791,43 @@
       ],
       "status": "implemented",
       "evidence": []
+    },
+    {
+      "id": "queue-drawer-check-icon",
+      "family": "external-contract-audit",
+      "tokens": ["lucide"],
+      "consumers": ["apps/platform/src/views/queue-page/queue-drawer.tsx"],
+      "cases": [
+        "queue-drawer-check-icon-light",
+        "queue-drawer-check-icon-dark",
+        "queue-drawer-check-icon-light-retina",
+        "queue-drawer-check-icon-dark-retina",
+        "queue-drawer-check-icon-narrow",
+        "queue-drawer-check-icon-narrow-dark"
+      ],
+      "status": "implemented",
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
+    },
+    {
+      "id": "toast-surface-contract",
+      "family": "external-contract-audit",
+      "tokens": ["toaster"],
+      "consumers": ["packages/ui/src/components/ui/sonner.tsx"],
+      "cases": [
+        "toast-surface-light",
+        "toast-surface-dark",
+        "toast-surface-light-retina",
+        "toast-surface-dark-retina",
+        "toast-surface-narrow",
+        "toast-surface-narrow-dark"
+      ],
+      "status": "blocked",
+      "blockedReason": "The audit shows `toaster` is a first-party marker class, not an upstream contract, so it is drainable rather than allowlistable. Draining it is blocked on a product decision, not on mechanics. The same class string carries a confirmed defect: sonner injects its stylesheet unlayered into document.head, so the four un-prefixed variants (bg-popover, text-foreground, border-border, shadow-lg) never apply and dark-theme toasts render as a white panel. Repairing that defect rewrites this class string, and the two obvious repairs disagree visually: making the four important also changes the online-visible Light theme and removes sonner's :focus-visible ring, while adopting sonner's supported `theme` prop takes sonner's palette rather than the App's popover tokens. Choose the repair first; the drain then lands with it.",
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
     }
   ],
   "caseFiles": [
@@ -811,6 +848,7 @@
     "../e2e/playwright/style-migration/sidebar-thread-title-cases.json",
     "../e2e/playwright/style-migration/desktop-titlebar-cases.json",
     "../e2e/playwright/style-migration/nav-chrome-cases.json",
-    "../e2e/playwright/style-migration/okou-border-hairline-cases.json"
+    "../e2e/playwright/style-migration/okou-border-hairline-cases.json",
+    "../e2e/playwright/style-migration/external-contract-audit-cases.json"
   ]
 }
