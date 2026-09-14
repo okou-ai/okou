@@ -638,17 +638,10 @@ def _apply_header_query_injection(
         resolved_fields_by_name: dict[bytes, tuple[bytes, bytes]] = {}
         for header_name, header_value in auth_pairs:
             encoded_name = header_name.encode("ascii")
-            encoded_value = header_value.encode("latin-1")
-            normalized_name = encoded_name.lower()
-            existing_field = resolved_fields_by_name.get(normalized_name)
-            if existing_field is None:
-                resolved_fields_by_name[normalized_name] = (encoded_name, encoded_value)
-            else:
-                # Match Headers.set_all(): keep the first spelling and let the last value win.
-                resolved_fields_by_name[normalized_name] = (
-                    existing_field[0],
-                    encoded_value,
-                )
+            resolved_fields_by_name[encoded_name.lower()] = (
+                encoded_name,
+                header_value.encode("latin-1"),
+            )
 
         remaining_fields = resolved_fields_by_name.copy()
         merged_fields: list[tuple[bytes, bytes]] = []

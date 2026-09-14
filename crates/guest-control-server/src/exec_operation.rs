@@ -260,32 +260,15 @@ pub(crate) struct ExecOperationWorkerRequest {
 
 impl ExecOperationWorkerRequest {
     fn process_class(&self) -> &'static str {
-        match self.role {
-            ExecProcessRole::Workload => "contained_workload",
-            ExecProcessRole::Agent => "controlled_agent",
-            ExecProcessRole::SessionHistoryIdentityVerifier => "session_history_identity_verifier",
-            ExecProcessRole::CodexSessionCleanup => "codex_session_cleanup",
-        }
+        self.role.process_class()
     }
 
     fn operation_kind(&self) -> &'static str {
-        match (self.role, self.lifecycle) {
-            (ExecProcessRole::Workload, ExecOperationLifecycle::OneShot) => "exec",
-            (ExecProcessRole::Workload, ExecOperationLifecycle::Supervised) => "start_process",
-            (ExecProcessRole::Agent, ExecOperationLifecycle::Supervised) => "start_agent_process",
-            (ExecProcessRole::Agent, ExecOperationLifecycle::OneShot) => "invalid",
-            (ExecProcessRole::SessionHistoryIdentityVerifier, ExecOperationLifecycle::OneShot) => {
-                "verify_session_history_identity"
-            }
-            (
-                ExecProcessRole::SessionHistoryIdentityVerifier,
-                ExecOperationLifecycle::Supervised,
-            ) => "invalid",
-            (ExecProcessRole::CodexSessionCleanup, ExecOperationLifecycle::OneShot) => {
-                "cleanup_codex_session"
-            }
-            (ExecProcessRole::CodexSessionCleanup, ExecOperationLifecycle::Supervised) => "invalid",
-        }
+        let lifecycle = match self.lifecycle {
+            ExecOperationLifecycle::OneShot => ExecLifecyclePolicy::OneShot,
+            ExecOperationLifecycle::Supervised => ExecLifecyclePolicy::Supervised,
+        };
+        self.role.operation_kind(lifecycle)
     }
 
     pub(crate) fn from_decoded(
@@ -2805,36 +2788,60 @@ mod tests {
 
     #[test]
     fn exec_terminal_log_message_marks_slow_only_result_as_latency_only() {
-        let request = request(7, "true");
         let stdout = BoundedDrainResult::default();
         let stderr = BoundedDrainResult::default();
 
-        let message = exec_terminal_log_message(ExecTerminalLogMessageInput {
-            request: &request,
-            elapsed_ms: 6000,
-            termination: ExecTermination::Exited { exit_code: 0 },
-            stdout_result: &stdout,
-            stderr_result: &stderr,
-            diagnostic_present: false,
-            oom_evidence: false,
-            oom_evidence_proof: false,
-            slow: true,
-            notable: false,
-        })
-        .unwrap();
+        for (lifecycle, operation_kind) in [
+            (ExecLifecyclePolicy::OneShot, "exec"),
+            (ExecLifecyclePolicy::Supervised, "start_process"),
+        ] {
+            let request = ExecOperationWorkerRequest::from_decoded(
+                7,
+                decoded_request(
+                    ExecProcessRole::Workload,
+                    lifecycle,
+                    ExecControlPolicy::Disabled,
+                ),
+                ProcessContainmentMode::TestNoop,
+                EXEC_OUTPUT_DRAIN_DEADLINE,
+                GuestAgentProgram::production(),
+            )
+            .unwrap();
+            let message = exec_terminal_log_message(ExecTerminalLogMessageInput {
+                request: &request,
+                elapsed_ms: 6000,
+                termination: ExecTermination::Exited { exit_code: 0 },
+                stdout_result: &stdout,
+                stderr_result: &stderr,
+                diagnostic_present: false,
+                oom_evidence: false,
+                oom_evidence_proof: false,
+                slow: true,
+                notable: false,
+            })
+            .unwrap();
 
-        assert!(message.contains("seq=7"), "message={message}");
-        assert!(message.contains("label=test"), "message={message}");
-        assert!(message.contains("slow=true"), "message={message}");
-        assert!(message.contains("notable=false"), "message={message}");
-        assert!(
-            message.contains("terminal_reason=slow"),
-            "message={message}"
-        );
-        assert!(
-            message.contains("diagnostic_present=false"),
-            "message={message}"
-        );
+            assert!(message.contains("seq=7"), "message={message}");
+            assert!(message.contains("label=test"), "message={message}");
+            assert!(
+                message.contains("process_class=contained_workload "),
+                "message={message}"
+            );
+            assert!(
+                message.contains(&format!("operation_kind={operation_kind} ")),
+                "message={message}"
+            );
+            assert!(message.contains("slow=true"), "message={message}");
+            assert!(message.contains("notable=false"), "message={message}");
+            assert!(
+                message.contains("terminal_reason=slow"),
+                "message={message}"
+            );
+            assert!(
+                message.contains("diagnostic_present=false"),
+                "message={message}"
+            );
+        }
     }
 
     #[test]

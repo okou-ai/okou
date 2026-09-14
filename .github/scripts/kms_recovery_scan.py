@@ -2,6 +2,7 @@
 
 import json
 import re
+import subprocess
 
 
 class ScanReportError(Exception):
@@ -24,6 +25,15 @@ def counter(record, field):
 
 
 def scan_records(result, database_hash):
+    timed_out = isinstance(result, subprocess.TimeoutExpired)
+    output = result.stdout or ""
+    if timed_out:
+        # A killed process can end halfway through JSON or a UTF-8 character.
+        # Only complete lines may contribute diagnostic progress, never coverage.
+        newline = b"\n" if isinstance(output, bytes) else "\n"
+        output = output[: output.rfind(newline) + 1]
+    if isinstance(output, bytes):
+        output = output.decode("utf-8")
     safe, headers, last_scan = [], [], None
     plans = {}
     row_fields = {"rows", "rowsWithEnvelopeMarker", "rowsWithSourceReference"}
@@ -31,7 +41,7 @@ def scan_records(result, database_hash):
         "database": {"largeObjects", "foreignTables", "plannedTables"},
         "binary": {"relationOid", "columnNumber", "nonNullValues"},
     }
-    for line in result.stdout.splitlines():
+    for line in output.splitlines():
         if not line:
             continue
         record = json.loads(line)
@@ -98,18 +108,24 @@ def scan_records(result, database_hash):
         for field in fields[kind]:
             item[field] = counter(record, field)
         safe.append(item)
-    if result.returncode != 0:
+    if timed_out or result.returncode != 0:
         # VERBOSITY=sqlstate produces a code-only ERROR line. Arbitrary stderr,
         # including connection errors, provider messages and SQL, is discarded.
-        states = re.findall(r"ERROR:\s+([0-9A-Z]{5})\s*$", result.stderr, re.MULTILINE)
+        stderr = result.stderr or ""
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        states = re.findall(r"ERROR:\s+([0-9A-Z]{5})\s*$", stderr, re.MULTILINE)
         raise ScanReportError(
-            "snapshot_database_scan_failed",
+            "snapshot_database_scan_process_timeout"
+            if timed_out
+            else "snapshot_database_scan_failed",
             {
                 "databaseNameSha256": database_hash,
-                "psqlExitCode": result.returncode,
+                "psqlExitCode": None if timed_out else result.returncode,
                 "sqlState": states[0] if len(states) == 1 else None,
                 "completedTables": sum(r["kind"] == "table" for r in safe),
                 "lastStartedScan": last_scan,
+                **({"processTimeoutSeconds": result.timeout} if timed_out else {}),
             },
         )
     require(

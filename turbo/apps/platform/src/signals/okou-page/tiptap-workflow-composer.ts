@@ -205,6 +205,8 @@ export interface WorkflowComposerSignals {
   readonly reloadWorkflows$: Command<Promise<void>, [AbortSignal]>;
   readonly selectedSuggestionIndex$: Computed<number>;
   readonly setSelectedSuggestionIndex$: Command<void, [number]>;
+  readonly previewSuggestionIndex$: Computed<number>;
+  readonly previewSuggestion$: Command<void, [number | null]>;
   readonly closeSuggestionMenu$: Command<void, []>;
   readonly insertWorkflow$: Command<void, [ComposerSlashWorkflow]>;
   readonly insertAgent$: Command<void, [ComposerAgentSuggestion]>;
@@ -2000,6 +2002,7 @@ interface MountEditorOptions {
   caretIndex$: State<number>;
   editorFocusedState$: State<boolean>;
   selectedSuggestionIndexState$: State<number>;
+  previewSuggestionIndexState$: State<number | null>;
   feedback: ComposerFeedbackModel;
   compositionGate: CompositionGate;
   syncWorkflowNames$: WorkflowNamesSyncCommand;
@@ -2070,6 +2073,7 @@ function createMountEditorCommand({
   caretIndex$,
   editorFocusedState$,
   selectedSuggestionIndexState$,
+  previewSuggestionIndexState$,
   feedback,
   compositionGate,
   syncWorkflowNames$,
@@ -2092,19 +2096,23 @@ function createMountEditorCommand({
           createEditorDocumentSnapshot(updatedEditor.state.doc),
         );
         set(selectedSuggestionIndexState$, 0);
+        set(previewSuggestionIndexState$, null);
         set(caretIndex$, updatedEditor.state.selection.head);
         compositionGate.notifySettled();
         // Forward TipTap updates through the React-owned DOM boundary.
         element.dispatchEvent(new Event("input", { bubbles: true }));
       };
       runtime.selectionUpdate = (updatedEditor) => {
+        set(previewSuggestionIndexState$, null);
         set(caretIndex$, updatedEditor.state.selection.head);
       };
       runtime.focus = (focusedEditor) => {
+        set(previewSuggestionIndexState$, null);
         set(editorFocusedState$, true);
         set(caretIndex$, focusedEditor.state.selection.head);
       };
       runtime.blur = () => {
+        set(previewSuggestionIndexState$, null);
         set(editorFocusedState$, false);
       };
       runtime.replaceFeedbackItems = (items) => {
@@ -2162,6 +2170,7 @@ function createMountEditorCommand({
         resetMountedWorkflowRuntime(runtime);
         set(legacyTemplateAttachment.reset$);
         set(draft.setInputSyncTarget$, null);
+        set(previewSuggestionIndexState$, null);
         set(editorFocusedState$, false);
         editor.unmount();
       });
@@ -2692,6 +2701,9 @@ export function createWorkflowComposerSignals<
   const caretIndex$ = state(-1);
   const editorFocusedState$ = state(false);
   const selectedSuggestionIndexState$ = state(0);
+  // A pointer preview is independent of keyboard selection. Null means the
+  // preview follows the keyboard again, including when the menu reopens.
+  const previewSuggestionIndexState$ = state<number | null>(null);
   const runtime = createWorkflowComposerRuntime();
   const agentMentionAvatarRuntime = createAgentMentionAvatarRuntime();
   const templatePreview = createTemplatePreviewRuntime();
@@ -2734,8 +2746,18 @@ export function createWorkflowComposerSignals<
   );
   const setSelectedSuggestionIndex$ = command(({ set }, index: number) => {
     set(selectedSuggestionIndexState$, index);
+    set(previewSuggestionIndexState$, null);
+  });
+  const previewSuggestionIndex$ = computed((get) => {
+    return (
+      get(previewSuggestionIndexState$) ?? get(selectedSuggestionIndexState$)
+    );
+  });
+  const previewSuggestion$ = command(({ set }, index: number | null) => {
+    set(previewSuggestionIndexState$, index);
   });
   const closeSuggestionMenu$ = command(({ set }) => {
+    set(previewSuggestionIndexState$, null);
     set(caretIndex$, -1);
   });
   const focus$ = command(() => {
@@ -2750,6 +2772,7 @@ export function createWorkflowComposerSignals<
     caretIndex$,
     editorFocusedState$,
     selectedSuggestionIndexState$,
+    previewSuggestionIndexState$,
     feedback,
     compositionGate,
     syncWorkflowNames$,
@@ -2786,6 +2809,8 @@ export function createWorkflowComposerSignals<
     reloadWorkflows$: reloadMountedComposerWorkflows$,
     selectedSuggestionIndex$,
     setSelectedSuggestionIndex$,
+    previewSuggestionIndex$,
+    previewSuggestion$,
     closeSuggestionMenu$,
     ...suggestionInsertionCommands,
     ...textCommands,

@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { workflowsCollectionContract } from "@okouai/api-contracts";
@@ -23,6 +23,14 @@ import {
 } from "./chat-composer-test-helpers.ts";
 
 const WORKFLOW_NAME = "axiom-red";
+const SECOND_WORKFLOW_NAME = "axiom-status";
+const THIRD_WORKFLOW_NAME = "axiom-traces";
+
+// The unfiltered menu has five category rows before the workflows.
+const WORKFLOW_NAVIGATION_CASES = [
+  { query: "", downCount: 6 },
+  { query: "axi", downCount: 1 },
+] as const;
 
 function setupModels(): void {
   mockAgent();
@@ -51,11 +59,23 @@ function setupModels(): void {
         visibility: "public",
         shadowedBy: null,
       },
+      workflowSummary({
+        name: SECOND_WORKFLOW_NAME,
+        agentId: AGENT_ID,
+        displayName: null,
+        description: "Check Axiom service status",
+      }),
+      workflowSummary({
+        name: THIRD_WORKFLOW_NAME,
+        agentId: AGENT_ID,
+        displayName: null,
+        description: "Inspect Axiom traces",
+      }),
     ]);
   });
 }
 
-async function openSlashMenu(panel: boolean): Promise<void> {
+async function openSlashMenu(panel: boolean, query = ""): Promise<void> {
   setupModels();
   mockChatLifecycle(context);
   await setupPage({
@@ -67,7 +87,7 @@ async function openSlashMenu(panel: boolean): Promise<void> {
     },
   });
   const editor = await findComposerEditor();
-  await fill(editor, "Draft /");
+  await fill(editor, `Draft /${query}`);
   await screen.findByTestId("slash-workflow-menu");
 }
 
@@ -96,14 +116,13 @@ test("The slash menu keeps its flat Create group until the panel switch is on", 
   expect(slashButton("Create")).toBeInTheDocument();
 });
 
-test("The slash panel previews the highlighted type's covers", async () => {
+test("The slash panel initially previews the keyboard-selected type's covers", async () => {
   await openSlashMenu(true);
   const pane = detailPane();
   if (!pane) {
     throw new Error("Expected the detail pane");
   }
-  // The first row is highlighted when the panel opens, and slides is the only
-  // row that can be highlighted without moving.
+  // The first category is selected when the panel opens.
   expect(pane).toHaveAttribute("data-category", "slides");
   expect(
     within(pane).getByText(
@@ -132,7 +151,7 @@ test("The pane carries more than one row of covers, so later templates are reach
   expect(within(pane).getByText(later.title)).toBeInTheDocument();
 });
 
-test("Highlighting a website row swaps the pane to the website catalog", async () => {
+test("Hovering a website row previews the website catalog", async () => {
   const user = userEvent.setup();
   await openSlashMenu(true);
   await user.hover(slashButton("Website"));
@@ -150,7 +169,7 @@ test("Highlighting a website row swaps the pane to the website catalog", async (
   ).toBeInTheDocument();
 });
 
-test("Highlighting a workflow closes the pane instead of leaving a stale type open", async () => {
+test("Hovering a workflow closes the preview pane", async () => {
   const user = userEvent.setup();
   await openSlashMenu(true);
   expect(detailPane()).not.toBeNull();
@@ -158,6 +177,227 @@ test("Highlighting a workflow closes the pane instead of leaving a stale type op
   await waitFor(() => {
     expect(detailPane()).toBeNull();
   });
+});
+
+test.each(WORKFLOW_NAVIGATION_CASES)(
+  "Enter keeps the keyboard selection while another workflow is hovered for query '$query'",
+  async ({ query, downCount }) => {
+    const user = userEvent.setup();
+    await openSlashMenu(true, query);
+    const editor = await findComposerEditor();
+    const workflow = await waitFor(() => {
+      return slashButton(`/${WORKFLOW_NAME}`);
+    });
+
+    await user.keyboard("{ArrowDown}".repeat(downCount));
+    await user.pointer({
+      target: workflow,
+      coords: { clientX: 10, clientY: 10 },
+    });
+    await user.pointer({
+      target: workflow,
+      coords: { clientX: 12, clientY: 10 },
+    });
+    await user.keyboard("{Enter}");
+
+    await waitFor(() => {
+      expect(editor).toHaveTextContent(`/${SECOND_WORKFLOW_NAME}`);
+    });
+    expect(editor).not.toHaveTextContent(`/${WORKFLOW_NAME}`);
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  },
+);
+
+test.each(WORKFLOW_NAVIGATION_CASES)(
+  "Clicking a workflow activates the pointer target for query '$query'",
+  async ({ query, downCount }) => {
+    const user = userEvent.setup();
+    await openSlashMenu(true, query);
+    const editor = await findComposerEditor();
+    const workflow = await waitFor(() => {
+      return slashButton(`/${WORKFLOW_NAME}`);
+    });
+
+    await user.keyboard("{ArrowDown}".repeat(downCount));
+    await user.click(workflow);
+
+    await waitFor(() => {
+      expect(editor).toHaveTextContent(`/${WORKFLOW_NAME}`);
+    });
+    expect(editor).not.toHaveTextContent(`/${SECOND_WORKFLOW_NAME}`);
+    expect(editor).toHaveFocus();
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  },
+);
+
+test.each(WORKFLOW_NAVIGATION_CASES)(
+  "Arrow navigation continues from the keyboard selection after hover for query '$query'",
+  async ({ query, downCount }) => {
+    const user = userEvent.setup();
+    await openSlashMenu(true, query);
+    const editor = await findComposerEditor();
+    const workflow = await waitFor(() => {
+      return slashButton(`/${WORKFLOW_NAME}`);
+    });
+
+    await user.keyboard("{ArrowDown}".repeat(downCount));
+    await user.hover(workflow);
+    await user.keyboard("{ArrowDown}{Enter}");
+
+    await waitFor(() => {
+      expect(editor).toHaveTextContent(`/${THIRD_WORKFLOW_NAME}`);
+    });
+    expect(editor).not.toHaveTextContent(`/${SECOND_WORKFLOW_NAME}`);
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  },
+);
+
+test("Tab keeps the keyboard selection after the pointer leaves the menu", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu(true, "axi");
+  const editor = await findComposerEditor();
+  const workflow = await waitFor(() => {
+    return slashButton(`/${WORKFLOW_NAME}`);
+  });
+
+  await user.keyboard("{ArrowDown}");
+  await user.hover(workflow);
+  await user.unhover(workflow);
+  await user.keyboard("{Tab}");
+
+  await waitFor(() => {
+    expect(editor).toHaveTextContent(`/${SECOND_WORKFLOW_NAME}`);
+  });
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+});
+
+test.each([
+  { action: "Enter", expectedMode: "Create presentation" },
+  { action: "click", expectedMode: "Create video" },
+])(
+  "$action activates the appropriate category while Video is hovered",
+  async ({ action, expectedMode }) => {
+    const user = userEvent.setup();
+    await openSlashMenu(true);
+    const video = slashButton("Video");
+    await user.hover(video);
+    await waitFor(() => {
+      expect(detailPane()).toHaveAttribute("data-category", "video");
+    });
+
+    if (action === "click") {
+      await user.click(video);
+    } else {
+      await user.keyboard("{Enter}");
+    }
+
+    await expect(
+      screen.findByTestId("composer-create-mode"),
+    ).resolves.toHaveTextContent(expectedMode);
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  },
+);
+
+test("Keyboard navigation restores its preview even at the first row boundary", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu(true);
+  const website = slashButton("Website");
+  await user.hover(website);
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "website");
+  });
+
+  await user.keyboard("{ArrowUp}");
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "slides");
+  });
+
+  await user.pointer({
+    target: website,
+    coords: { clientX: 12, clientY: 10 },
+  });
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "website");
+  });
+  await user.keyboard("{Enter}");
+  await expect(
+    screen.findByTestId("composer-create-mode"),
+  ).resolves.toHaveTextContent("Create presentation");
+});
+
+test("Leaving the panel restores the keyboard-selected category preview", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu(true);
+  const website = slashButton("Website");
+  await user.hover(website);
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "website");
+  });
+
+  await user.unhover(website);
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "slides");
+  });
+});
+
+test("Changing the slash query resets the pointer preview to the filtered selection", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu(true);
+  const editor = await findComposerEditor();
+  await user.hover(slashButton("Website"));
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "website");
+  });
+
+  await fill(editor, "Draft /vid");
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "video");
+  });
+  expect(slashButton("Video")).toBeInTheDocument();
+});
+
+test("Reopening the slash panel clears the previous pointer preview", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu(true);
+  await user.hover(slashButton("Website"));
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "website");
+  });
+
+  await user.keyboard("{Escape}");
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  await user.keyboard("{ArrowLeft}{ArrowRight}");
+  await screen.findByTestId("slash-workflow-menu");
+  expect(detailPane()).toHaveAttribute("data-category", "slides");
+});
+
+test("A hovered category's template stays selectable when the pointer enters its preview", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu(true);
+  const website = slashButton("Website");
+  // user-event 14 omits relatedTarget on mouseout. Use the browser's exact
+  // boundary events here so React can distinguish entering a child of the
+  // panel from leaving the whole panel. Real pointer movement is also checked
+  // on the PR preview.
+  fireEvent.mouseOver(website);
+  fireEvent.mouseMove(website);
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "website");
+  });
+  const [first] = WEBSITE_TEMPLATE_ITEMS;
+  if (!first) {
+    throw new Error("Expected a website template");
+  }
+
+  const cover = slashButton(first.title);
+  fireEvent.mouseOut(website, { relatedTarget: cover });
+  fireEvent.mouseOver(cover, { relatedTarget: website });
+  fireEvent.mouseMove(cover);
+  expect(detailPane()).toHaveAttribute("data-category", "website");
+  await user.click(cover);
+
+  await expectInlineTemplateInComposer(first.title);
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
 
 test("The panel emphasizes the typed query inside a workflow name", async () => {

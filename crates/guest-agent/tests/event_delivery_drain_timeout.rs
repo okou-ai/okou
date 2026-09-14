@@ -4,9 +4,7 @@
 mod common;
 
 use guest_agent::masker::SecretMasker;
-use guest_contracts::diagnostics::{
-    EventDeliveryAcceptanceOutcome, EventDeliveryAttemptFailureKind,
-};
+use guest_contracts::diagnostics::{EventDeliveryAcceptanceOutcome, HttpAttemptFailureKind};
 use serde_json::json;
 use std::io;
 use std::time::Duration;
@@ -102,7 +100,7 @@ async fn event_delivery_aborts_after_the_global_drain_deadline()
         EventDeliveryAcceptanceOutcome::OutcomeUnknown
     );
     assert!(failed_batch.attempts.iter().all(|attempt| {
-        attempt.failure_kind == EventDeliveryAttemptFailureKind::Timeout
+        attempt.failure_kind == HttpAttemptFailureKind::Timeout
             && attempt.http_status.is_none()
             && attempt.timeout_observed == Some(true)
             && attempt.connect_observed == Some(false)

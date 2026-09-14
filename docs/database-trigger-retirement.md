@@ -22,12 +22,11 @@ release evidence. Preparation changes do not authorize trigger removal.
   snapshot when a billing or bootstrap operation intends to change the plan.
   Its tier values already include the managed-source credit-purchase rule.
 
-The ensure and managed upsert operations explicitly derive the physical
-`member_invitation_allowed`
-compatibility value from the same status normalization used by current API
-admission. The companion update runs under the preceding entitlement write's
-row lock. It is not a configurable invitation capability. Canonical inserts
-continue to omit that legacy column; column retirement belongs to #32575.
+Both operations use the canonical runtime entitlement mapping introduced by
+#33909. Current invitation admission derives from normalized `status`; neither
+operation names or mirrors either legacy invitation column. The status-mirror
+trigger remains for outgoing API SQL until #32575's serving/rollback gate
+permits contraction. Its eventual removal needs no replacement API mirror.
 
 Metadata writes and their entitlement operation must share a transaction.
 Pass the **returned** `orgId` and `tier`, not the attempted insert values: a
@@ -51,13 +50,13 @@ Paths below are relative to `turbo/apps/api/src/signals/`.
 | `services/impact-attribution.service.ts`         | Completes the conditional latest-click metadata upsert and its entitlement together.                                                                        |
 | `routes/billing-credit-checkout.ts`              | Completes metadata creation before continuing to the existing auto-recharge operation.                                                                      |
 | `services/org-limited-free-bootstrap.service.ts` | Already explicitly writes both rows through `writeOrgMetadataWithPlanEntitlements`; keeps the intentional bootstrap plan change.                            |
-| Billing/webhook/cron plan changes                | Continue using `upsertOrgPlanEntitlement`; status-only changes also update the legacy invitation mirror.                                                    |
+| Billing/webhook/cron plan changes                | Continue using `upsertOrgPlanEntitlement`; current invitation admission derives from normalized status.                                                     |
 
 Current test setup routes for usage, credit settlement, Slack, Teams, Telegram,
 cron cleanup, billing reconciliation, and the chat-thread benchmark explicitly
 complete their metadata writes. `upsertOrgMetadataFixture` already writes the
-managed entitlement. Deliberately divergent entitlement fixtures explicitly
-maintain the status-derived invitation value.
+managed entitlement. Deliberately divergent entitlement fixtures use the same
+canonical runtime mapping and explicit status.
 
 `insertOrgMetadataAsLegacyWriterFixture`,
 `updateOrgPlanKeyAsLegacyWriterFixture`, and the frozen migration compatibility
@@ -84,13 +83,14 @@ this preparation change.
 
 All three organization-entitlement triggers remain installed during this
 preparation release. An existing trigger can create the row before the API
-ensure runs; `ON CONFLICT DO NOTHING` preserves it. Explicit invitation writes
-agree with the installed trigger's derivation and do not reapply grants or
-overwrite a manual entitlement.
+ensure runs; `ON CONFLICT DO NOTHING` preserves it without reapplying grants or
+overwriting a manual entitlement. The retained invitation trigger continues
+to serve outgoing API statements; current API writers do not depend on it.
 
 The compatibility tests use private schemas with actual PostgreSQL constraints
-and either the installed legacy triggers or no entitlement triggers. They
-exercise all tiers, managed sources, status changes, preservation, rollback,
+on the retained schema, without entitlement triggers, and after dropping both
+legacy invitation columns. They exercise all tiers, managed sources, status
+changes, preservation, rollback,
 retry, and a verified blocked concurrent writer. Shared/public triggers are
 never disabled by the tests. Full route suites run in the PR pipeline.
 
@@ -99,8 +99,10 @@ that removes these triggers, record the prepared serving/background artifacts,
 the oldest supported rollback artifact, and proof that all relevant writers
 have migrated. A merge alone is not deployment evidence. After removal, an
 application rollback must target a prepared artifact; it does not recreate the
-database triggers. Keep the legacy invitation column until its separate
-consumer retirement gate passes.
+database triggers. Coordinate invitation-trigger and column removal with the
+[invitation contraction gate](deployment-compatibility.md#invitation-and-free-member-contract-cleanup-2026-09-14)
+owned by #32575; its prepared serving and rollback artifacts must exclude both
+legacy columns.
 
 The purchase, OAuth, hosting, and privacy work packages remain tracked in
 #33747. In particular, [the privacy implementation rollback](marketing-privacy-choices.md)

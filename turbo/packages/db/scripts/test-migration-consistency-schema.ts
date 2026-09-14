@@ -1229,6 +1229,55 @@ type PermanentFunction = {
 const EXPECTED_PERMANENT_TRIGGERS = [
   {
     definition:
+      "CREATE TRIGGER capture_billing_run_attribution BEFORE INSERT ON public.agent_runs FOR EACH ROW EXECUTE FUNCTION capture_billing_run_attribution()",
+    schemaName: "public",
+    tableName: "agent_runs",
+    triggerName: "capture_billing_run_attribution",
+  },
+  {
+    definition:
+      "CREATE TRIGGER billing_run_attribution_immutable BEFORE UPDATE ON public.billing_run_attribution FOR EACH ROW EXECUTE FUNCTION reject_billing_attribution_update()",
+    schemaName: "public",
+    tableName: "billing_run_attribution",
+    triggerName: "billing_run_attribution_immutable",
+  },
+  {
+    definition:
+      "CREATE TRIGGER capture_usage_billing_attribution BEFORE INSERT OR UPDATE OF billing_run_id, billing_anchor_at, billing_context, org_id, user_id ON public.usage_event FOR EACH ROW EXECUTE FUNCTION capture_usage_billing_attribution()",
+    schemaName: "public",
+    tableName: "usage_event",
+    triggerName: "capture_usage_billing_attribution",
+  },
+  {
+    definition:
+      "CREATE TRIGGER capture_hourly_billing_attribution BEFORE INSERT OR UPDATE OF billing_run_id, billing_anchor_at, billing_context, org_id, user_id ON public.usage_event_hourly_rollup FOR EACH ROW EXECUTE FUNCTION capture_usage_billing_attribution()",
+    schemaName: "public",
+    tableName: "usage_event_hourly_rollup",
+    triggerName: "capture_hourly_billing_attribution",
+  },
+  {
+    definition:
+      "CREATE TRIGGER capture_generation_billing_identity BEFORE INSERT OR UPDATE OF billing_run_id, billing_context ON public.built_in_generation_jobs FOR EACH ROW EXECUTE FUNCTION capture_generation_billing_identity()",
+    schemaName: "public",
+    tableName: "built_in_generation_jobs",
+    triggerName: "capture_generation_billing_identity",
+  },
+  {
+    definition:
+      "CREATE TRIGGER mark_raw_billing_usage_observed AFTER INSERT OR UPDATE OF billing_run_id, billing_context ON public.usage_event FOR EACH ROW EXECUTE FUNCTION mark_billing_usage_observed()",
+    schemaName: "public",
+    tableName: "usage_event",
+    triggerName: "mark_raw_billing_usage_observed",
+  },
+  {
+    definition:
+      "CREATE TRIGGER mark_hourly_billing_usage_observed AFTER INSERT OR UPDATE OF billing_run_id, billing_context ON public.usage_event_hourly_rollup FOR EACH ROW EXECUTE FUNCTION mark_billing_usage_observed()",
+    schemaName: "public",
+    tableName: "usage_event_hourly_rollup",
+    triggerName: "mark_hourly_billing_usage_observed",
+  },
+  {
+    definition:
       "CREATE TRIGGER marketing_privacy_withdrawal BEFORE UPDATE ON public.privacy_choices FOR EACH ROW EXECUTE FUNCTION invalidate_marketing_privacy_epochs()",
     schemaName: "public",
     tableName: "privacy_choices",
@@ -1378,6 +1427,64 @@ const EXPECTED_PERMANENT_TRIGGERS = [
 ] as const satisfies readonly PermanentTrigger[];
 
 const EXPECTED_PERMANENT_FUNCTIONS = [
+  {
+    bodyHash: "8838fc6fbf2d02e7ca8294efda788e90",
+    functionName: "billing_usage_source",
+    identityArguments: "trigger_source text",
+    kind: "f",
+    schemaName: "public",
+  },
+  {
+    bodyHash: "2fdb21cba7d0146b70a3baf574368720",
+    functionName: "ensure_billing_run_attribution",
+    identityArguments:
+      "billing_id uuid, billed_org text, billed_user text, original_start timestamp without time zone, billing_source text",
+    kind: "f",
+    schemaName: "public",
+  },
+  {
+    bodyHash: "dcd72e07d81d076359c048ef76eaa48f",
+    functionName: "capture_billing_run_attribution",
+    identityArguments: "",
+    kind: "f",
+    schemaName: "public",
+  },
+  {
+    bodyHash: "a3491f2fc3ed69bebd63f083c88d4b7f",
+    functionName: "reject_billing_attribution_update",
+    identityArguments: "",
+    kind: "f",
+    schemaName: "public",
+  },
+  {
+    bodyHash: "7fa1f4813c3bcfb4d16269639d9640a3",
+    functionName: "capture_usage_billing_attribution",
+    identityArguments: "",
+    kind: "f",
+    schemaName: "public",
+  },
+  {
+    bodyHash: "81ad11f2d8edaa5b6d708e02e21b792a",
+    functionName: "capture_generation_billing_identity",
+    identityArguments: "",
+    kind: "f",
+    schemaName: "public",
+  },
+  {
+    bodyHash: "edb73467bdfa0f1f58e388f2df908b89",
+    functionName: "mark_billing_usage_observed",
+    identityArguments: "",
+    kind: "f",
+    schemaName: "public",
+  },
+  {
+    bodyHash: "9d5c181a9f7d32a4a02430ee95af739c",
+    functionName: "purge_quiescent_provisional_billing_attribution",
+    identityArguments:
+      "billed_org text, billed_user text, quiescent_run_ids uuid[]",
+    kind: "f",
+    schemaName: "public",
+  },
   {
     bodyHash: "7c040af77f50f9b85eb592fc30da7fcb",
     functionName: "invalidate_marketing_privacy_epochs",

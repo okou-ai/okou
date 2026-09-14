@@ -1395,18 +1395,18 @@ where
 pub fn test_heartbeat_failure_diagnostic()
 -> guest_contracts::diagnostics::HeartbeatFailureDiagnostic {
     use guest_contracts::diagnostics::{
-        HeartbeatAttemptFailureKind, HeartbeatCompletedAttemptDiagnostic,
-        HeartbeatFailedCycleDiagnostic, HeartbeatFailureDiagnostic,
+        HeartbeatFailedCycleDiagnostic, HeartbeatFailureDiagnostic, HttpAttemptFailureKind,
+        HttpCompletedAttemptDiagnostic,
     };
 
     HeartbeatFailureDiagnostic {
         failed_cycles: vec![HeartbeatFailedCycleDiagnostic {
             scheduled_lag_ms: 17,
-            attempts: vec![HeartbeatCompletedAttemptDiagnostic {
+            attempts: vec![HttpCompletedAttemptDiagnostic {
                 attempt: 3,
                 client_request_id: "11111111-1111-4111-8111-111111111111".to_string(),
                 elapsed_ms: 30_001,
-                failure_kind: HeartbeatAttemptFailureKind::Timeout,
+                failure_kind: HttpAttemptFailureKind::Timeout,
                 http_status: None,
                 timeout_observed: Some(true),
                 connect_observed: Some(false),

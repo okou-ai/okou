@@ -373,10 +373,7 @@ def test_large_non_terminal_event_is_ignored():
     ).encode()
     event = inspect_openai_responses_event_json(body)
 
-    assert (
-        openai_responses._classify_responses_event_type(body)
-        == openai_responses._RESPONSES_EVENT_KNOWN_NON_USAGE
-    )
+    assert event.event_type == "response.output_text.delta"
     assert extract_openai_responses_usage_from_event(event) is None
 
 
@@ -416,20 +413,16 @@ def test_non_terminal_prefilter_ignores_nested_types_and_payload_text():
     ).encode()
     event = inspect_openai_responses_event_json(body)
 
-    assert (
-        openai_responses._classify_responses_event_type(body)
-        == openai_responses._RESPONSES_EVENT_KNOWN_NON_USAGE
-    )
+    assert event.event_type == "response.output_text.delta"
     assert extract_openai_responses_usage_from_event(event) is None
 
 
 def test_non_terminal_prefilter_handles_fractional_exponent_number_before_type():
     body = b'{"score":-2.5e+3,"type":"response.output_text.delta","delta":"ignored"}'
+    event = inspect_openai_responses_event_json(body)
 
-    assert (
-        openai_responses._classify_responses_event_type(body)
-        == openai_responses._RESPONSES_EVENT_KNOWN_NON_USAGE
-    )
+    assert event.event_type == "response.output_text.delta"
+    assert extract_openai_responses_usage_from_event(event) is None
 
 
 def test_duplicate_top_level_type_uses_first_type_boundary():
@@ -440,10 +433,7 @@ def test_duplicate_top_level_type_uses_first_type_boundary():
     )
     event = inspect_openai_responses_event_json(body)
 
-    assert (
-        openai_responses._classify_responses_event_type(body)
-        == openai_responses._RESPONSES_EVENT_KNOWN_NON_USAGE
-    )
+    assert event.event_type == "response.output_text.delta"
     assert extract_openai_responses_usage_from_event(event) is None
 
 
@@ -530,10 +520,7 @@ def test_non_string_type_falls_back_to_real_extractor():
     )
     event = inspect_openai_responses_event_json(body)
 
-    assert (
-        openai_responses._classify_responses_event_type(body)
-        == openai_responses._RESPONSES_EVENT_UNKNOWN
-    )
+    assert event.event_type is None
     assert extract_openai_responses_usage_from_event(event) == {
         "model": "gpt-5.6",
         "tokens.input": 3,
@@ -549,10 +536,7 @@ def test_oversized_type_falls_back_to_real_extractor():
     )
     event = inspect_openai_responses_event_json(body)
 
-    assert (
-        openai_responses._classify_responses_event_type(body)
-        == openai_responses._RESPONSES_EVENT_UNKNOWN
-    )
+    assert event.event_type is None
     assert extract_openai_responses_usage_from_event(event) == {
         "model": "gpt-5.6",
         "tokens.input": 5,

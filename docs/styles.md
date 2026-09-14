@@ -329,6 +329,76 @@ override, and the guard is the better behaviour.
 Sidebar thread titles carry `data-slot="sidebar-thread-title"` so tests select
 them through a documented slot instead of the styling class.
 
+### Nav chrome under the gradient color themes
+
+The `okou-nav` selector and its consumers have been removed. It carried five
+declarations across four rules, and it was the scoping ancestor the rail fill
+needed: `.okou-app[data-gradient-color-themes] .okou-nav.okou-nav-rail` painted
+the rail's background, so deleting the class alone would have unscoped that
+compound selector and dropped the rail tint under every gradient palette.
+
+Three of the five declarations were inert. `.okou-nav` re-declared
+`--color-sidebar-border` as `hsl(var(--gray-200))`, which is already the App
+`@theme` default, and the gradient and dark rules re-declared `--color-sidebar`
+as `hsl(var(--sidebar))`, which both `:root` and `.okou-app` already set to the
+same substituted value. `--sidebar` and `--gray-200` are only ever assigned at
+document scope, so re-anchoring them on a descendant could not change what the
+nav resolved. Removing all three is measured below as zero change, including
+for descendants that read the inherited tokens.
+
+The two live declarations were gradient-only, and they collapse to the variable
+layer the same way the nav copy above does:
+
+```css
+:root[data-gradient-color-themes][data-color-theme] {
+  --nav-rail: hsl(var(--okou-color-theme-hue) 36% 93.5%);
+  --nav-border: hsl(var(--border) / 0.5);
+}
+```
+
+```css
+--color-nav-border: var(--nav-border, var(--color-sidebar-border));
+--color-nav-rail: var(--nav-rail, var(--color-sidebar-rail));
+```
+
+The rail composes `border-nav-border bg-nav-rail` and the expanded drawer
+composes `border-nav-border`. With the gradient themes on, the raw values exist
+and both resolve to them; everywhere else they are unset and each consumer falls
+back to the shared sidebar token it already read. `--okou-nav-rail` is renamed
+to `--nav-rail` rather than kept beside it, because the retired rule was its
+only reader.
+
+This narrows a contract on purpose. The retired rules overrode an _inherited_
+token on the whole nav subtree, so any descendant spelling
+`border-sidebar-border` silently took the gradient alpha; the replacement is an
+explicit utility that a consumer opts into. The three nav elements are the only
+consumers of `border-sidebar-border`, `bg-sidebar` and `bg-sidebar-rail` in
+Platform and UI today, so nothing changes now, and a future nav descendant that
+wants the gradient stroke asks for `border-nav-border` by name.
+
+`.okou-nav-rail` stays on the rail element and now carries no declarations. It
+is neither in the legacy baseline nor in a batch, so retiring it belongs to
+whichever change closes that gap, not to this one. The expanded drawer carries
+`data-slot="sidebar-expanded"` so the account-menu test selects it through a
+documented slot instead of `aside.okou-nav:not(.okou-nav-rail)`.
+
+`GradientColorThemes` is `enabled: false` with no organization allowlist, so the
+default palette is the online-visible path and every gradient palette is a
+superset behind the switch.
+
+Measured against `main` with the App's own Tailwind compiler in Chromium over
+CDP, across 36 captures — the default palette plus all eight gradient palettes,
+each in Light and Dark, at desktop 1280x900 DPR 1 and narrow 700x900 DPR 2:
+zero changed pixels and zero changed rendered properties on every capture,
+online-visible path included. A second fixture adds descendants that read the
+inherited sidebar tokens; there the only difference is the intended one, the
+`border-sidebar-border` probe losing its gradient alpha inside the nav, and the
+`bg-sidebar`, `bg-sidebar-rail` and `text-sidebar-foreground` probes are
+unchanged, which is what establishes that the three inert declarations were
+inert. Negative controls that drop the rail fill, shift the border alpha by
+0.05, and shift the rail lightness by 0.5% all report changes, so the zeros are
+not degenerate.
+
 ### Horizontal hairline rules
 
 The `okou-border-t` selector and its consumers have been removed. It was one
@@ -354,6 +424,33 @@ alongside their existing `border-0`. That still paints, because Tailwind emits
 `border-width` before `border-top-width` inside the utilities layer; previously
 the legacy rule won only by sitting outside every layer. Tests continue to
 select both separators through `data-slot`.
+
+### Page layouts
+
+Choose the existing layout that owns the page structure. Route setup selects
+`pageLayout$`; the Router's `LayoutHost` supplies `SidebarLayout` or
+`StandaloneLayout`, and the page supplies the content inside it.
+
+| Component                                         | Use it for                                                                                               | Placement                                    |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `SidebarLayout`                                   | Workspace pages with navigation and a workspace pane                                                     | Selected by the router's `sidebar` layout    |
+| `StandaloneLayout`                                | Independent flows with shared theme and dialogs, such as authorization, browser sessions, and redemption | Selected by the router's `standalone` layout |
+| `OnboardingShell`                                 | Step-based onboarding with progress, account controls, and an optional footer                            | The onboarding page's outer layout           |
+| `PageShell` in `okou-page/connect-page-shell.tsx` | Connector sign-in, authorization, and status content in a centered card                                  | The connection page's outer layout           |
+| `DirectedCardShell`                               | Connector-specific title, icon, description, and actions in a centered handoff card                      | Content inside `StandaloneLayout`            |
+| `DetailPageShell`                                 | A detail page's flex and scroll container                                                                | Content inside an existing workspace layout  |
+
+Pages rendered inside a shared layout reuse that layout's outer container.
+Independent pages that already own their structure, such as `ExportPage`, keep
+their native root element.
+
+Viewport sizing stays on the existing native roots through
+`box-border h-full max-h-full min-h-full overflow-hidden`. Page roots reserve
+the bottom safe-area inset with `pb-(--sab)`; `SidebarLayout` uses `pb-0` so its
+scrollports reach the viewport edge and its content/composer owns the inset.
+Document sizing, top and horizontal insets, and PWA keyboard handling remain
+owned by the existing global environment rules. The `okou-viewport-shell` and
+`okou-managed-bottom-safe-area` selectors and their consumers have been removed.
 
 ### Table header rules and the global scrollbar treatment
 

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/schema/org-plan-entitlement";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -35,7 +35,7 @@ interface EntitlementHarness {
 }
 
 async function createHarness(
-  withTriggers: boolean,
+  schema: "retained" | "without-triggers" | "contracted",
 ): Promise<EntitlementHarness> {
   const schemaName = `entitlement_${randomUUID().replaceAll("-", "")}`;
   const adminPool = new Pool({
@@ -74,7 +74,14 @@ async function createHarness(
       await tx.execute(
         sql`CREATE TABLE org_plan_entitlements (LIKE public.org_plan_entitlements INCLUDING ALL)`,
       );
-      if (withTriggers) {
+      if (schema === "contracted") {
+        await tx.execute(sql`
+          ALTER TABLE org_plan_entitlements
+          DROP COLUMN member_invitation_allowed,
+          DROP COLUMN member_invite_usage_pack_required
+        `);
+      }
+      if (schema === "retained") {
         await tx.execute(sql`
         CREATE TRIGGER ensure_legacy_org_metadata_plan_entitlement
         AFTER INSERT ON org_metadata FOR EACH ROW
@@ -122,13 +129,13 @@ function entitlement(db: ApiDb, orgId: string) {
     .where(eq(orgPlanEntitlements.orgId, orgId));
 }
 
-describe.each([true, false])(
-  "entitlement writes with legacy triggers = %s",
-  (withTriggers) => {
+describe.each(["retained", "without-triggers", "contracted"] as const)(
+  "entitlement writes on the %s schema",
+  (schema) => {
     let harness: EntitlementHarness;
 
     beforeEach(async () => {
-      harness = await createHarness(withTriggers);
+      harness = await createHarness(schema);
     });
 
     afterEach(async () => {
@@ -171,7 +178,6 @@ describe.each([true, false])(
           status: active ? "active" : "suspended",
           baseConcurrencyLimit: concurrency,
           canBuyCredits: credits,
-          legacyMemberInvitationAllowed: active,
           showUsagePack: false,
           stripeSubscriptionId: null,
         });
@@ -194,7 +200,6 @@ describe.each([true, false])(
       expect(before[0]).toMatchObject({
         planKey: "limited-free-1",
         canBuyCredits: false,
-        legacyMemberInvitationAllowed: true,
       });
       await expect(entitlement(harness.db, orgId)).resolves.toStrictEqual(
         before,
@@ -211,7 +216,6 @@ describe.each([true, false])(
         status: "manual_active",
         baseConcurrencyLimit: 27,
         canBuyCredits: false,
-        legacyMemberInvitationAllowed: true,
         restrictedBuiltInModels: false,
         sourceMetadata: { preserved: "manual" },
       });
@@ -266,7 +270,6 @@ describe.each([true, false])(
         planKey: "limited-free-1",
         source: "org_metadata_migration",
         canBuyCredits: false,
-        legacyMemberInvitationAllowed: true,
       });
     });
 
@@ -325,9 +328,10 @@ describe.each([true, false])(
             status,
           });
         });
-        expect((await entitlement(harness.db, orgId))[0]).toMatchObject({
-          status,
-          legacyMemberInvitationAllowed: expected,
+        await expect(
+          loadOrgPlanCapabilities(harness.db, orgId),
+        ).resolves.toMatchObject({
+          status: expected ? "active" : "suspended",
         });
         await harness.db.transaction(async (tx) => {
           await upsertOrgPlanEntitlement(tx, {
@@ -337,10 +341,11 @@ describe.each([true, false])(
             status: expected ? "suspended" : "active",
           });
         });
-        expect(
-          (await entitlement(harness.db, orgId))[0]
-            ?.legacyMemberInvitationAllowed,
-        ).toBe(!expected);
+        await expect(
+          loadOrgPlanCapabilities(harness.db, orgId),
+        ).resolves.toMatchObject({
+          status: expected ? "suspended" : "active",
+        });
       },
     );
 
@@ -375,8 +380,8 @@ describe.each([true, false])(
 
     it("rolls back metadata if its companion entitlement write fails", async () => {
       await harness.db.execute(sql`
-      ALTER TABLE org_plan_entitlements ADD CONSTRAINT reject_active_invitation
-      CHECK (NOT member_invitation_allowed)
+      ALTER TABLE org_plan_entitlements ADD CONSTRAINT reject_credit_purchasing
+      CHECK (NOT can_buy_credits)
     `);
       const orgId = `org_${randomUUID()}`;
       await expect(
@@ -393,7 +398,7 @@ describe.each([true, false])(
       await expect(entitlement(harness.db, orgId)).resolves.toStrictEqual([]);
     });
 
-    it("rolls back both capability and invitation changes after a later failure", async () => {
+    it("rolls back capability and status changes after a later failure", async () => {
       const orgId = `org_${randomUUID()}`;
       await harness.db.transaction(async (tx) => {
         await upsertOrgPlanEntitlement(tx, {
@@ -480,7 +485,6 @@ describe.each([true, false])(
         planKey: "pro",
         source: "stripe_subscription",
         canBuyCredits: true,
-        legacyMemberInvitationAllowed: true,
       });
       await expect(
         harness.db.select({ orgId: orgMetadata.orgId }).from(orgMetadata),

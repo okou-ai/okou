@@ -30,6 +30,8 @@ surface; the index does not replace their detailed rules.
 
 ## Specialized Guidance
 
+- [Billing attribution foundation](./database/billing-attribution.md): immutable
+  billing identity, writer inventory, bounded backfill and activation boundaries.
 - [Database trigger retirement](./database-trigger-retirement.md): explicit API
   entitlement writers, repair paths, and the serving/rollback removal gate.
 - [Account telemetry and recovery erasure](./account-erasure-evidence.md):

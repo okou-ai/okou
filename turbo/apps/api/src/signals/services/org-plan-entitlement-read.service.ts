@@ -1,5 +1,5 @@
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/schema/org-plan-entitlement";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { eq } from "drizzle-orm";
 
 import type { Db } from "../external/db";
@@ -39,7 +39,7 @@ const CAPABILITY_SELECTION = {
   audioDailyDurationSeconds: orgPlanEntitlements.audioDailyDurationSeconds,
 } as const;
 
-export function runtimeStatusForEntitlement(
+function runtimeStatusForEntitlement(
   status: string,
 ): OrgPlanCapabilities["status"] {
   switch (status) {

@@ -5,7 +5,7 @@ mod common;
 
 use guest_agent::masker::SecretMasker;
 use guest_contracts::diagnostics::{
-    EventDeliveryAcceptanceOutcome, EventDeliveryAttemptFailureKind, EventDeliveryDiagnostic,
+    EventDeliveryAcceptanceOutcome, EventDeliveryDiagnostic, HttpAttemptFailureKind,
 };
 use serde_json::json;
 use std::io;
@@ -17,7 +17,7 @@ async fn response_less_failures_have_stable_classifications()
     let connect_delivery = run_connect_failure().await?;
     assert_failed_attempts(
         &connect_delivery,
-        EventDeliveryAttemptFailureKind::Connect,
+        HttpAttemptFailureKind::Connect,
         false,
         true,
     )?;
@@ -25,7 +25,7 @@ async fn response_less_failures_have_stable_classifications()
     let (transport_delivery, on_wire_request_ids) = run_transport_failure().await?;
     let transport_attempts = assert_failed_attempts(
         &transport_delivery,
-        EventDeliveryAttemptFailureKind::Transport,
+        HttpAttemptFailureKind::Transport,
         false,
         false,
     )?;
@@ -40,7 +40,7 @@ async fn response_less_failures_have_stable_classifications()
     let connect_timeout_delivery = run_connect_timeout_failure().await?;
     assert_failed_attempts(
         &connect_timeout_delivery,
-        EventDeliveryAttemptFailureKind::Timeout,
+        HttpAttemptFailureKind::Timeout,
         true,
         true,
     )?;
@@ -231,11 +231,11 @@ async fn run_connect_timeout_failure() -> Result<EventDeliveryDiagnostic, Box<dy
 
 fn assert_failed_attempts(
     delivery: &EventDeliveryDiagnostic,
-    expected_kind: EventDeliveryAttemptFailureKind,
+    expected_kind: HttpAttemptFailureKind,
     timeout_observed: bool,
     connect_observed: bool,
 ) -> Result<
-    &[guest_contracts::diagnostics::EventDeliveryCompletedAttemptDiagnostic],
+    &[guest_contracts::diagnostics::HttpCompletedAttemptDiagnostic],
     Box<dyn std::error::Error>,
 > {
     let failed_batch = delivery

@@ -1,7 +1,7 @@
 import { testUsageSettlementContract } from "@okouai/api-contracts/contracts/test-usage-settlement";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/schema/org-plan-entitlement";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
 import { command } from "ccstate";
 import { asc, eq } from "drizzle-orm";
@@ -88,14 +88,12 @@ const setupUsageSettlement$ = command(
         planRank: 1,
         source: "test_fixture",
         status: "active",
-        legacyMemberInvitationAllowed: true,
         restrictedBuiltInModels: false,
       })
       .onConflictDoUpdate({
         target: orgPlanEntitlements.orgId,
         set: {
           status: "active",
-          legacyMemberInvitationAllowed: true,
           restrictedBuiltInModels: false,
         },
       });

@@ -11,7 +11,7 @@ import type {
   UsagePackUsd,
 } from "@okouai/api-contracts/contracts/billing";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/schema/org-plan-entitlement";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 

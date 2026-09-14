@@ -10,6 +10,7 @@ use api_contracts::generated::constants::client::headers::{
 use api_contracts::generated::constants::client::types::CLIENT_TYPE_GUEST_AGENT;
 use api_contracts::generated::types::runners::runs::active_inputs::receipt::Response as ActiveInputReceiptResponse;
 use bytes::{Bytes, BytesMut};
+use guest_contracts::diagnostics::{HttpAttemptFailureKind, HttpCompletedAttemptDiagnostic};
 use guest_telemetry::log_warn;
 use http_body::{Frame, SizeHint};
 use pin_project_lite::pin_project;
@@ -60,6 +61,31 @@ pub(crate) struct HttpAttemptFinished {
     pub outcome: HttpAttemptOutcome,
 }
 
+impl HttpAttemptFinished {
+    /// Retain completed failure facts without recording successful attempts.
+    pub(crate) fn into_failure_diagnostic(self) -> Option<HttpCompletedAttemptDiagnostic> {
+        let HttpAttemptOutcome::Failure {
+            kind,
+            http_status,
+            timeout_observed,
+            connect_observed,
+        } = self.outcome
+        else {
+            return None;
+        };
+
+        Some(HttpCompletedAttemptDiagnostic {
+            attempt: self.attempt,
+            client_request_id: self.client_request_id,
+            elapsed_ms: self.elapsed_ms,
+            failure_kind: kind,
+            http_status,
+            timeout_observed,
+            connect_observed,
+        })
+    }
+}
+
 /// Transport outcome for an observed request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HttpAttemptOutcome {
@@ -70,15 +96,6 @@ pub(crate) enum HttpAttemptOutcome {
         timeout_observed: Option<bool>,
         connect_observed: Option<bool>,
     },
-}
-
-/// Content-safe failure classification for an observed request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum HttpAttemptFailureKind {
-    Timeout,
-    Connect,
-    HttpStatus,
-    Transport,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1028,6 +1045,81 @@ mod tests {
     use super::*;
     use http_body::Body as _;
     use std::future::poll_fn;
+
+    #[test]
+    fn completed_http_failures_preserve_diagnostic_wire_facts() {
+        let cases = [
+            (
+                RetryableFailure::HttpStatus(503),
+                serde_json::json!({ "failureKind": "http_status", "httpStatus": 503 }),
+            ),
+            (
+                RetryableFailure::Timeout {
+                    connect_observed: false,
+                },
+                serde_json::json!({
+                    "failureKind": "timeout",
+                    "timeoutObserved": true,
+                    "connectObserved": false
+                }),
+            ),
+            (
+                RetryableFailure::Timeout {
+                    connect_observed: true,
+                },
+                serde_json::json!({
+                    "failureKind": "timeout",
+                    "timeoutObserved": true,
+                    "connectObserved": true
+                }),
+            ),
+            (
+                RetryableFailure::Connect,
+                serde_json::json!({
+                    "failureKind": "connect",
+                    "timeoutObserved": false,
+                    "connectObserved": true
+                }),
+            ),
+            (
+                RetryableFailure::Transport,
+                serde_json::json!({
+                    "failureKind": "transport",
+                    "timeoutObserved": false,
+                    "connectObserved": false
+                }),
+            ),
+        ];
+
+        for (failure, mut expected) in cases {
+            let diagnostic = HttpAttemptFinished {
+                attempt: 3,
+                client_request_id: "11111111-1111-4111-8111-111111111111".to_string(),
+                elapsed_ms: 12_345,
+                outcome: failure.attempt_outcome(),
+            }
+            .into_failure_diagnostic()
+            .expect("failed attempt should retain its diagnostic");
+
+            expected["attempt"] = serde_json::json!(3);
+            expected["clientRequestId"] = serde_json::json!("11111111-1111-4111-8111-111111111111");
+            expected["elapsedMs"] = serde_json::json!(12_345);
+            assert_eq!(diagnostic.failure_kind.as_str(), expected["failureKind"]);
+            assert_eq!(serde_json::to_value(&diagnostic).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn completed_http_success_has_no_failure_diagnostic() {
+        let attempt = HttpAttemptFinished {
+            attempt: 2,
+            client_request_id: "22222222-2222-4222-8222-222222222222".to_string(),
+            elapsed_ms: 17,
+            outcome: HttpAttemptOutcome::Success,
+        };
+
+        assert_eq!(attempt.into_failure_diagnostic(), None);
+    }
 
     async fn sized_body_from_bytes(data: &[u8]) -> (tempfile::TempDir, SizedBody) {
         let dir = tempfile::tempdir().unwrap();

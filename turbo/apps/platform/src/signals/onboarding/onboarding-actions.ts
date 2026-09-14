@@ -11,7 +11,7 @@ import { reloadAgents$ } from "../agent.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { ROUTES } from "../route-paths.ts";
 import { billingStatusAsync$ } from "../okou-page/billing.ts";
-import { readApiAdAttributionMetadata$ } from "../bootstrap/ad-attribution.ts";
+import { readStoredAdAttributionMetadata$ } from "../bootstrap/ad-attribution.ts";
 import { reloadOnboardingStatus$ } from "../okou-page/onboarding.ts";
 import {
   ONBOARDING_CHECKOUT_STATE_PARAM,
@@ -120,7 +120,7 @@ export const prepareOnboardingVideoRun$ = command(
       prompt: input.prompt,
       note: input.note,
     });
-    const adAttribution = set(readApiAdAttributionMetadata$);
+    const adAttribution = set(readStoredAdAttributionMetadata$);
     const successUrl = checkoutReturnUrl(input, "pro", checkoutState);
     const cancelUrl = checkoutReturnUrl(input, "canceled", checkoutState);
     const { userId } = await get(authenticatedIdentity$);

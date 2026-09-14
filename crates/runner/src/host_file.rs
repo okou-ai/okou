@@ -38,6 +38,9 @@ use std::path::{Component, Path, PathBuf};
 use nix::fcntl::{OFlag, open, openat};
 use nix::sys::stat::{Mode, SFlag, fstat, mkdirat};
 
+#[cfg(test)]
+pub(crate) mod atomic_write_test;
+
 pub(crate) const PRIVATE_DIR_MODE: u32 = 0o700;
 pub(crate) const PRIVATE_FILE_MODE: u32 = 0o600;
 pub(crate) const SHARED_TRUSTED_DIR_MODE: u32 = 0o755;
@@ -214,9 +217,11 @@ pub(crate) async fn write_private_atomic(
     let result = async {
         write_private_new(&tmp, content, context).await?;
 
-        tokio::fs::rename(&tmp, path)
-            .await
-            .map_err(|e| wrap_io(e, format!("rename {context} {}", path.display())))?;
+        #[cfg(test)]
+        let renamed = atomic_write_test::rename(&tmp, path).await;
+        #[cfg(not(test))]
+        let renamed = tokio::fs::rename(&tmp, path).await;
+        renamed.map_err(|e| wrap_io(e, format!("rename {context} {}", path.display())))?;
         Ok(())
     }
     .await;

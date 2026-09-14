@@ -3,13 +3,11 @@ import {
   type OrgTier,
 } from "@okouai/api-contracts/contracts/orgs";
 import type { OrgPlanEntitlementSourceMetadata } from "@okouai/db/jsonb-contracts/org-plan-entitlement";
-import { orgPlanEntitlementsCanonicalWrites } from "@okouai/db/operations/org-plan-entitlement-canonical-write";
-import { orgPlanEntitlements } from "@okouai/db/schema/org-plan-entitlement";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { eq } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { ORG_PLAN_ENTITLEMENT_TIER_VALUES } from "./org-plan-entitlement-tier-values";
-import { runtimeStatusForEntitlement } from "./org-plan-entitlement-read.service";
 import type { Tx } from "../../lib/db-types";
 
 type WriteTx = Tx;
@@ -106,9 +104,6 @@ function orgPlanEntitlementValues(
     baseConcurrencyLimit: limits.baseConcurrencyLimit,
     canBuyConcurrency: limits.canBuyConcurrency,
     canBuyCredits: limits.canBuyCredits,
-    // Mirror for outgoing and rollback API readers. Retire this write with the
-    // legacy column after the serving and rollback gates in #32575 pass.
-    legacyMemberInviteUsagePackRequired: showUsagePack,
     showUsagePack,
     autoRechargeAllowed: limits.autoRechargeAllowed,
     supportByok: limits.supportByok,
@@ -127,21 +122,6 @@ function orgPlanEntitlementValues(
     sourceMetadata: stripeSubscriptionSnapshot.sourceMetadata,
     updatedAt,
   };
-}
-
-async function writeLegacyInvitationStatus(
-  tx: WriteTx,
-  values: { readonly orgId: string; readonly status: string },
-): Promise<void> {
-  // Keep outgoing/rollback readers working after #33747 removes the trigger.
-  // The preceding entitlement insert/upsert owns this row lock until commit.
-  await tx
-    .update(orgPlanEntitlements)
-    .set({
-      legacyMemberInvitationAllowed:
-        runtimeStatusForEntitlement(values.status) === "active",
-    })
-    .where(eq(orgPlanEntitlements.orgId, values.orgId));
 }
 
 /**
@@ -166,14 +146,10 @@ export async function ensureOrgMetadataPlanEntitlement(
     },
     { stripeSubscriptionId: null, sourceMetadata: {} },
   );
-  const [inserted] = await tx
-    .insert(orgPlanEntitlementsCanonicalWrites)
+  await tx
+    .insert(orgPlanEntitlements)
     .values(values)
-    .onConflictDoNothing({ target: orgPlanEntitlementsCanonicalWrites.orgId })
-    .returning({ orgId: orgPlanEntitlementsCanonicalWrites.orgId });
-  if (inserted) {
-    await writeLegacyInvitationStatus(tx, values);
-  }
+    .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
 }
 
 /**
@@ -213,10 +189,10 @@ export async function upsertOrgPlanEntitlement(
   );
   const values = orgPlanEntitlementValues(args, stripeSubscriptionSnapshot);
   await tx
-    .insert(orgPlanEntitlementsCanonicalWrites)
+    .insert(orgPlanEntitlements)
     .values(values)
     .onConflictDoUpdate({
-      target: orgPlanEntitlementsCanonicalWrites.orgId,
+      target: orgPlanEntitlements.orgId,
       set: {
         planKey: values.planKey,
         planRank: values.planRank,
@@ -225,7 +201,6 @@ export async function upsertOrgPlanEntitlement(
         baseConcurrencyLimit: values.baseConcurrencyLimit,
         canBuyConcurrency: values.canBuyConcurrency,
         canBuyCredits: values.canBuyCredits,
-        legacyMemberInviteUsagePackRequired: values.showUsagePack,
         showUsagePack: values.showUsagePack,
         autoRechargeAllowed: values.autoRechargeAllowed,
         supportByok: values.supportByok,
@@ -247,7 +222,6 @@ export async function upsertOrgPlanEntitlement(
         updatedAt: values.updatedAt,
       },
     });
-  await writeLegacyInvitationStatus(tx, values);
 }
 
 export async function orgPlanEntitlementOrgIdForStripeSubscription(
