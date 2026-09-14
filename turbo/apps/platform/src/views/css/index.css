@@ -613,20 +613,6 @@ body {
   }
 }
 
-/* Gray-100 clears 1.06:1 against the white canvas, so
-   the bubble stops reading as a bubble and the turn boundary disappears. Take
-   the gray-200 step dark has always used here. */
-.okou-app .okou-chat-bubble-user {
-  background-color: hsl(var(--gray-200));
-  color: hsl(var(--foreground));
-}
-
-/* Chat: assistant message bubble */
-.okou-app .okou-chat-bubble-assistant {
-  background-color: transparent;
-  border: none;
-}
-
 /* Composer / input card (white, light border — “Just ask” / chat input) */
 .okou-app .okou-composer {
   --okou-composer-ring: var(--gray-500);
@@ -834,17 +820,6 @@ body {
   margin-bottom: 6px;
 }
 
-/* Chat bubbles: relax paragraph spacing so 15px text doesn't read cramped.
-   Line-height is owned by the bubble container (leading-[1.7]) and inherited
-   by the markdown body, mirroring how the bubble owns the font size. */
-.okou-chat-bubble-assistant .wmde-markdown p,
-.okou-chat-bubble-user .wmde-markdown p,
-.okou-chat-bubble-assistant .wmde-markdown .okou-markdown-card,
-.okou-chat-bubble-user .wmde-markdown .okou-markdown-card {
-  margin-top: 8px;
-  margin-bottom: 8px;
-}
-
 .wmde-markdown h1,
 .wmde-markdown h2,
 .wmde-markdown h3,
@@ -983,10 +958,6 @@ body {
 .wmde-markdown hr {
   background-color: hsl(var(--border));
   border-bottom-color: hsl(var(--border));
-}
-
-.okou-chat-bubble-assistant .wmde-markdown hr {
-  display: none;
 }
 
 /* --- Mark / highlight --------------------------------------------------- */

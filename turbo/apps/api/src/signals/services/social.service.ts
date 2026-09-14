@@ -694,6 +694,14 @@ function validatedCollection(
   if (!reportedTotal.ok) {
     return undefined;
   }
+  if (collection.sourceLimit) {
+    return {
+      state: "provider_limited",
+      itemsReturned: items.length,
+      reason: "provider_ceiling",
+      sourceLimit: collection.sourceLimit,
+    };
+  }
   return validatedPagination(
     result,
     items.length,

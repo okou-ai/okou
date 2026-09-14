@@ -22,12 +22,19 @@ const ENABLED_SERVICE_STATE_DIR_ENV: &str = "OKOU_RUN_GC_ENABLED_SERVICE_STATE_D
 const ENABLED_SERVICE_INVOCATIONS_ENV: &str = "OKOU_RUN_GC_ENABLED_SERVICE_INVOCATIONS";
 const ENABLED_SERVICE_CHILD_TEST: &str =
     "cmd::gc::image_refs::tests::enabled_service_systemctl_child";
+const REFILL_SERVICE_SUFFIXES: [&str; 5] = ["gamma", "alpha", "epsilon", "beta", "delta"];
 const FAKE_SYSTEMCTL: &str = r#"#!/bin/sh
 printf '%s\n' "$*" >> "$OKOU_RUN_GC_ENABLED_SERVICE_INVOCATIONS"
 
+if [ "$OKOU_RUN_GC_ENABLED_SERVICE_SCENARIO" = "refill" ]; then
+  invocation="$*"
+  printf 'started %s\n' "$invocation" >> "$OKOU_RUN_GC_ENABLED_SERVICE_STATE_DIR/events"
+  trap 'printf "finished %s\n" "$invocation" >> "$OKOU_RUN_GC_ENABLED_SERVICE_STATE_DIR/events"' 0
+fi
+
 if [ "$1" = "is-enabled" ]; then
   unit="$2"
-  if [ "$OKOU_RUN_GC_ENABLED_SERVICE_SCENARIO" = "bounded" ]; then
+  if [ "$OKOU_RUN_GC_ENABLED_SERVICE_SCENARIO" = "bounded" ] || [ "$OKOU_RUN_GC_ENABLED_SERVICE_SCENARIO" = "refill" ]; then
     : > "$OKOU_RUN_GC_ENABLED_SERVICE_STATE_DIR/$unit.started"
     while [ ! -f "$OKOU_RUN_GC_ENABLED_SERVICE_STATE_DIR/$unit.release" ]; do :; done
     if [ "$unit" = "vm0-runner-disabled.service" ]; then
@@ -58,7 +65,7 @@ if [ "$1" = "--no-pager" ] && [ "$2" = "cat" ] && [ "$3" = "--" ]; then
       printf '%s\n' '[Service]' 'ExecStart=/usr/bin/true'
       exit 0
       ;;
-    bounded)
+    bounded|refill)
       unit="$4"
       if [ "$unit" = "vm0-runner-failure.service" ]; then
         printf '%s\n' 'cannot read selected drop-in' >&2
@@ -510,6 +517,11 @@ async fn enabled_service_discovery_overlaps_with_a_fixed_bound() {
 }
 
 #[tokio::test]
+async fn enabled_service_discovery_refills_before_first_unit_finishes() {
+    run_enabled_service_scenario("refill").await;
+}
+
+#[tokio::test]
 async fn effective_enabled_service_config_ref_keeps_image_snapshot() {
     let invocations = run_enabled_service_scenario("effective").await;
 
@@ -556,10 +568,10 @@ async fn run_enabled_service_scenario(scenario: &str) -> Vec<String> {
 
     let system_dir = dir.path().join("system");
     std::fs::create_dir(&system_dir).unwrap();
-    let suffixes: &[&str] = if scenario == "bounded" {
-        &["alpha", "beta", "disabled", "failure", "gamma"]
-    } else {
-        &["test"]
+    let suffixes: &[&str] = match scenario {
+        "bounded" => &["alpha", "beta", "disabled", "failure", "gamma"],
+        "refill" => &REFILL_SERVICE_SUFFIXES,
+        _ => &["test"],
     };
     for suffix in suffixes {
         std::fs::write(system_dir.join(format!("vm0-runner-{suffix}.service")), "").unwrap();
@@ -624,6 +636,7 @@ async fn enabled_service_systemctl_child() {
     let system_dir = PathBuf::from(std::env::var(ENABLED_SERVICE_SYSTEM_DIR_ENV).unwrap());
     match scenario.as_str() {
         "bounded" => assert_bounded_enabled_service_discovery(&system_dir).await,
+        "refill" => assert_enabled_service_discovery_refills_before_first_finishes().await,
         "effective" | "comment-hash" | "comment-semicolon" => {
             let home = test_home(Path::new(&std::env::var(ENABLED_SERVICE_HOME_ENV).unwrap()));
             let rootfs_hash = test_hash('a');
@@ -697,6 +710,86 @@ async fn assert_bounded_enabled_service_discovery(system_dir: &Path) {
         ]
     );
     assert!(!scan.inventory_complete);
+}
+
+async fn assert_enabled_service_discovery_refills_before_first_finishes() {
+    let state_dir = PathBuf::from(std::env::var(ENABLED_SERVICE_STATE_DIR_ENV).unwrap());
+    let units: Vec<_> = REFILL_SERVICE_SUFFIXES
+        .iter()
+        .map(|suffix| {
+            service::RunnerServiceUnit::from_file_name(&format!("vm0-runner-{suffix}.service"))
+                .unwrap()
+        })
+        .collect();
+    let service_names: Vec<_> = units
+        .iter()
+        .map(|unit| unit.service_name().to_string())
+        .collect();
+    let first_unit = service_names.first().unwrap();
+    let last_unit = service_names.last().unwrap();
+    let discovery = tokio::spawn(enabled_runner_service_config_paths_for_units(units));
+
+    wait_for_started_enabled_service_queries(&state_dir, ENABLED_SERVICE_QUERY_CONCURRENCY).await;
+    let first_batch = started_enabled_service_queries(&state_dir);
+    assert_eq!(first_batch.len(), ENABLED_SERVICE_QUERY_CONCURRENCY);
+    assert!(first_batch.contains(first_unit));
+    assert!(!first_batch.contains(last_unit));
+    let later_units: Vec<_> = first_batch
+        .into_iter()
+        .filter(|unit| unit != first_unit)
+        .collect();
+    release_enabled_service_queries(&state_dir, &later_units);
+
+    // A completed later pipeline must admit the fifth unit while the first is still gated.
+    wait_for_started_enabled_service_queries(&state_dir, service_names.len()).await;
+    release_enabled_service_queries(&state_dir, std::slice::from_ref(last_unit));
+    let last_config_finished = format!("finished --no-pager cat -- {last_unit}");
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let events = std::fs::read_to_string(state_dir.join("events")).unwrap();
+            if events.lines().any(|event| event == last_config_finished) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the fifth unit should finish before releasing the first");
+    assert!(!discovery.is_finished());
+    assert!(!state_dir.join(format!("{first_unit}.release")).exists());
+    release_enabled_service_queries(&state_dir, std::slice::from_ref(first_unit));
+
+    let scan = tokio::time::timeout(Duration::from_secs(5), discovery)
+        .await
+        .expect("discovery should finish after releasing the first unit")
+        .unwrap();
+    assert!(scan.inventory_complete);
+    assert_eq!(
+        scan.paths,
+        REFILL_SERVICE_SUFFIXES.map(|suffix| PathBuf::from(format!("/configs/{suffix}.yaml")))
+    );
+
+    let events = std::fs::read_to_string(state_dir.join("events")).unwrap();
+    let mut active_queries = HashSet::new();
+    let mut completed_queries = HashSet::new();
+    let mut max_active_queries = 0;
+    for event in events.lines() {
+        if let Some(invocation) = event.strip_prefix("started ") {
+            if let Some(unit) = invocation.strip_prefix("--no-pager cat -- ") {
+                assert!(completed_queries.contains(&format!("is-enabled {unit}")));
+            }
+            assert!(active_queries.insert(invocation.to_string()));
+            max_active_queries = max_active_queries.max(active_queries.len());
+            assert!(active_queries.len() <= ENABLED_SERVICE_QUERY_CONCURRENCY);
+        } else {
+            let invocation = event.strip_prefix("finished ").unwrap();
+            assert!(active_queries.remove(invocation));
+            assert!(completed_queries.insert(invocation.to_string()));
+        }
+    }
+    assert!(active_queries.is_empty());
+    assert_eq!(completed_queries.len(), service_names.len() * 2);
+    assert_eq!(max_active_queries, ENABLED_SERVICE_QUERY_CONCURRENCY);
 }
 
 async fn wait_for_started_enabled_service_queries(state_dir: &Path, expected: usize) {

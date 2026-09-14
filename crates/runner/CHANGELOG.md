@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.192.4](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.192.3...runner-rs-v0.192.4) (2026-09-14)
+
+
+### Documentation
+
+* **python:** clarify brotli trailing-data fallback ([#34049](https://github.com/vm0-ai/vm0/issues/34049)) ([dd61073](https://github.com/vm0-ai/vm0/commit/dd610736476b821b9caa39239f67432bcea7c516))
+
 ## [0.192.3](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.192.2...runner-rs-v0.192.3) (2026-09-14)
 
 

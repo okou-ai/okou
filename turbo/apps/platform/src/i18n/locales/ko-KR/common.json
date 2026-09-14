@@ -6905,6 +6905,9 @@
       "noWorkflows": "워크플로가 없습니다",
       "open": "{{title}} 열기",
       "openRecovery": "{{title}} 복구 열기",
+      "ownerLoading": "작성자 불러오는 중…",
+      "ownerRetry": "작성자 정보를 사용할 수 없습니다. 다시 열어 재시도하세요.",
+      "ownerUnavailable": "작성자 정보를 사용할 수 없습니다",
       "runsAs": "다음 에이전트로 실행됨",
       "runsAsAria": "{{agent}}로 실행됨",
       "section": {

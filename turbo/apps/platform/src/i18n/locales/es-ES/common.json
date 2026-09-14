@@ -6993,6 +6993,9 @@
       "noWorkflows": "Sin flujos de trabajo",
       "open": "Abrir {{title}}",
       "openRecovery": "Abrir la recuperación de {{title}}",
+      "ownerLoading": "Cargando autor…",
+      "ownerRetry": "Autor no disponible. Vuelve a abrir para reintentar.",
+      "ownerUnavailable": "Autor no disponible",
       "runsAs": "Se ejecuta como",
       "runsAsAria": "Se ejecuta como {{agent}}",
       "section": {

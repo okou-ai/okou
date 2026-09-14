@@ -602,8 +602,7 @@ describe("Pi memory Stage 1 worker", () => {
       retry_count: 0,
       last_error_class: null,
     });
-    // Terminal with the explicit class, and the seeded attempt count is
-    // untouched: no attempt was consumed.
+    // Unscheduled legacy work remains pending with its attempt count untouched.
     await expect(inspect(disabled)).resolves.toStrictEqual({
       status: "pending",
       retry_count: 2,

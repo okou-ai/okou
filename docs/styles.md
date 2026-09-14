@@ -542,6 +542,101 @@ appearance. Leaving the separator to `TableRow` instead is not equivalent — a 
 border never wins that boundary, so the header rule simply disappears and every
 body row shifts up.
 
+### Chat message bubbles
+
+The `okou-chat-bubble-user` and `okou-chat-bubble-assistant` selectors and their
+consumers have been removed. Between them they carried seven declarations over
+four rules: the user bubble's fill and foreground, the assistant bubble's
+transparent fill and `border: none`, the 8px block spacing the Markdown body
+inside either bubble used instead of the App's 6px default, and the assistant
+bubble's suppressed horizontal rules.
+
+The two fills are ordinary utilities. The user bubble writes `bg-gray-200
+text-foreground` — `--color-gray-200` and `--color-foreground` are the
+registered names for `hsl(var(--gray-200))` and `hsl(var(--foreground))`, the
+same runtime variables the retired rule read, so every Dark and
+gradient-palette override still applies. The assistant bubble writes
+`bg-transparent border-none border-current`. The colour utility is there because
+`border: none` is a shorthand: it reset `border-color` to `currentcolor`, while
+`border-none` sets only the style. The width is 0 either way, so this is
+invisible today; it is kept because the retired rule decided it, so an assistant
+body that later carries a border keeps the treatment it has now.
+
+The Markdown block treatment is different in kind, because it applies to
+elements the Markdown library renders. `MarkdownEventBody` takes a `chatBubble`
+prop and composes the whole treatment onto the frame it already owns:
+
+```
+[&_:is(p,[data-slot=markdown-card])]:my-2! [&>*:first-child]:mt-0!
+[&>*:last-child]:mb-0! [&_blockquote>*:first-child]:mt-0!
+[&_blockquote>*:last-child]:mb-0! [&_hr]:hidden
+```
+
+Every margin there is important, and the four resets exist only because of it.
+The competitor for the paragraphs and cards is the App's own unlayered
+`.wmde-markdown p, .wmde-markdown .okou-markdown-card` rule, which a utility in
+`@layer utilities` cannot outrank without one; a layered important declaration
+does. But that same promotion would also beat the two competitors the retired
+rule _lost_ to — the vendored `.wmde-markdown > *:first-child` /
+`> *:last-child` resets, which are themselves important, and the vendored
+`blockquote > :first-child` / `:last-child` pair, which ties the retired rule on
+specificity and wins on source order because the Markdown chunk's stylesheet
+loads after the App's. Restating those four at the same tier is what keeps the
+edge paragraphs flush. `[&_hr]:hidden` needs no important, because nothing
+unlayered declares `display` on a Markdown rule.
+
+The card slot is addressed through `data-slot="markdown-card"` rather than its
+`okou-markdown-card` class, for the same reason the desktop titlebar block below
+cannot be respelled: naming a legacy class inside an arbitrary variant registers
+a new dependency on it, and that token belongs to a later batch. The slot
+carries no styles. `data-slot="chat-user-message"` likewise replaces the
+attachment-preview test's `.okou-chat-bubble-user` query.
+
+This narrows a contract on purpose, the way the nav chrome above does. The
+retired rules applied to _any_ Markdown frame that happened to sit inside a
+bubble; the replacement applies to the three call sites that ask for it — the
+chat transcript's Agent message, and the shared thread's rendered and
+rich-content Agent messages. Those are every Markdown frame inside a bubble
+today, so nothing changes now, and a future in-bubble frame asks for the
+treatment by name.
+
+Two of the four retired rules were already partly dead.
+`.okou-chat-bubble-user .wmde-markdown p` and its `.okou-markdown-card` sibling
+never matched: a user bubble's body renders spans and reference chips through
+`UserMessagePartView`, the shared thread's renders plain text, and the
+automation and goal bubbles render plain text, so no Markdown frame has ever
+existed inside one. Both bubble names also remain in the
+`.okou-app[data-desktop-shell] :where(…)` selection exception, which nothing in
+the repository can activate for the reason the titlebar section below records;
+that block belongs to the `okou-app` batch and is deliberately untouched here,
+so the two class names stay inside it while no element carries them.
+
+Measured against `main` with the App's own Tailwind compiler (the 4.2.2 engine
+the Vite plugin bundles) in Chromium over CDP, across 28 captures — the default
+palette in Light and Dark at desktop 1280x1400 device scale 1 and 2 and narrow
+700x1400 device scale 2, each with and without the fine-pointer hover flags,
+plus all eight gradient palettes in Light and Dark at the desktop geometry:
+zero changed pixels and zero computed-style or geometry differences on every
+capture. `GradientColorThemes` is `enabled: false` with no organization
+allowlist, so the default palette is the online-visible result and the palette
+states are a superset. The fixture
+rebuilds the real ancestor chain down to the bubble and reproduces the Markdown
+frame's element, a first/middle/last paragraph, a loose list item, a blockquote,
+both card forms, a horizontal rule, and the single `<p class="m-0">` the plain
+Markdown path renders. The capture is taller than a real viewport on purpose:
+the chat pane scrolls inside an absolutely positioned container, so the document
+never grows and a page-height capture would compare only the first turn.
+
+Six negative controls establish that those zeros are not degenerate. Dropping
+the paragraph/card spacing changes 214,329 pixels on desktop Light and 10,227,660
+over all 28 captures; dropping the first-child reset changes 108,927 and
+5,131,289; dropping the rule suppression changes 211,552 and 10,147,418;
+dropping the user bubble's fill changes 32,890 and 1,690,648. The remaining two
+are invisible by construction and are caught by the observation channel alone:
+dropping the blockquote reset changes one observed margin per capture at zero
+pixels, and dropping `border-current` changes three observed border colours per
+capture at zero pixels.
+
 ### Desktop titlebar drag region — partially drained
 
 The `okou-desktop-no-drag` selector and its consumer have been removed. The

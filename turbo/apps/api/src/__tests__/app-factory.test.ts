@@ -1374,69 +1374,134 @@ describe("createApp", () => {
     });
   });
 
+  // This suite owns request-log wiring, so log fields are the tested contract.
   describe("axiom request log", () => {
-    it("records client headers on request log events", async () => {
-      context.mocks.axiom.flush.mockResolvedValue(undefined);
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("https://api.okou.test/health", {
-        method: "GET",
-        headers: {
+    it.each([DESKTOP_PRODUCT_ZERO, DESKTOP_PRODUCT_OKOU])(
+      "records client headers for explicit %s Desktop requests",
+      async (product) => {
+        context.mocks.axiom.flush.mockResolvedValue(undefined);
+        const app = createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        });
+        const response = await app.request("https://api.okou.test/health", {
+          method: "GET",
+          headers: {
+            "user-agent": "okou-test-agent",
+            "x-forwarded-for": "203.0.113.10, 198.51.100.5",
+            "x-client-version": MINIMUM_WEB_CLIENT_VERSION,
+            "x-client-type": CLIENT_TYPE_DESKTOP,
+            [CLIENT_PRODUCT_HEADER]: product,
+            "x-client-session-id": "session-test",
+            "x-client-request-id": "request-test",
+          },
+        });
+
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toStrictEqual({ status: "ok" });
+        await flushWaitUntilForTest();
+
+        const [event] = axiomRequestLogEvents(context);
+        expect(event).toMatchObject({
+          method: "GET",
+          status: 200,
+          host: "api.okou.test",
+          path_template: "/health",
+          remote_addr: "203.0.113.10",
+          user_agent: "okou-test-agent",
+          x_client_version: MINIMUM_WEB_CLIENT_VERSION,
+          x_client_type: CLIENT_TYPE_DESKTOP,
+          x_client_product: product,
+          x_client_session_id: "session-test",
+          x_client_request_id: "request-test",
+        });
+        expect(event?._time).toStrictEqual(expect.any(String));
+        expect(event?.request_time_ms).toStrictEqual(expect.any(Number));
+        expect(context.mocks.axiom.flush).toHaveBeenCalledWith({
+          client: "telemetry",
+        });
+      },
+    );
+
+    it.each([undefined, "", "unknown", "Okou", "zero,okou"])(
+      "preserves Desktop requests and metadata with unclassified product %s",
+      async (product) => {
+        const app = createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        });
+        const headers = new Headers({
           "user-agent": "okou-test-agent",
           "x-forwarded-for": "203.0.113.10, 198.51.100.5",
-          "x-client-version": MINIMUM_WEB_CLIENT_VERSION,
-          "x-client-type": CLIENT_TYPE_DESKTOP,
-          [CLIENT_PRODUCT_HEADER]: DESKTOP_PRODUCT_OKOU,
+          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_DESKTOP,
+          [CLIENT_VERSION_HEADER]: MINIMUM_WEB_CLIENT_VERSION,
           "x-client-session-id": "session-test",
           "x-client-request-id": "request-test",
-        },
-      });
+        });
+        if (product !== undefined) {
+          headers.set(CLIENT_PRODUCT_HEADER, product);
+        }
+        const response = await app.request("https://api.okou.test/health", {
+          method: "GET",
+          headers,
+        });
 
-      expect(response.status).toBe(200);
-      await flushWaitUntilForTest();
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toStrictEqual({ status: "ok" });
+        await flushWaitUntilForTest();
 
-      const [event] = axiomRequestLogEvents(context);
-      expect(event).toMatchObject({
-        method: "GET",
-        status: 200,
-        host: "api.okou.test",
-        path_template: "/health",
-        remote_addr: "203.0.113.10",
-        user_agent: "okou-test-agent",
-        x_client_version: MINIMUM_WEB_CLIENT_VERSION,
-        x_client_type: CLIENT_TYPE_DESKTOP,
-        x_client_product: DESKTOP_PRODUCT_OKOU,
-        x_client_session_id: "session-test",
-        x_client_request_id: "request-test",
-      });
-      expect(event?._time).toStrictEqual(expect.any(String));
-      expect(event?.request_time_ms).toStrictEqual(expect.any(Number));
-      expect(context.mocks.axiom.flush).toHaveBeenCalledWith({
-        client: "telemetry",
-      });
-    });
+        const [event] = axiomRequestLogEvents(context);
+        expect(event).toMatchObject({
+          method: "GET",
+          status: 200,
+          host: "api.okou.test",
+          path_template: "/health",
+          remote_addr: "203.0.113.10",
+          user_agent: "okou-test-agent",
+          x_client_version: MINIMUM_WEB_CLIENT_VERSION,
+          x_client_type: CLIENT_TYPE_DESKTOP,
+          x_client_session_id: "session-test",
+          x_client_request_id: "request-test",
+        });
+        expect(event?._time).toStrictEqual(expect.any(String));
+        expect(event?.request_time_ms).toStrictEqual(expect.any(Number));
+        expect(event).not.toHaveProperty("x_client_product");
+      },
+    );
 
-    it("classifies legacy Desktop requests without a product header as Zero", async () => {
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/health", {
-        method: "GET",
-        headers: { [CLIENT_TYPE_HEADER]: CLIENT_TYPE_DESKTOP },
-      });
+    it.each([CLIENT_TYPE_APP, CLIENT_TYPE_CLI, undefined])(
+      "preserves non-Desktop client type %s with a product header",
+      async (clientType) => {
+        const app = createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        });
+        const headers = new Headers({
+          [CLIENT_PRODUCT_HEADER]: DESKTOP_PRODUCT_OKOU,
+        });
+        if (clientType !== undefined) {
+          headers.set(CLIENT_TYPE_HEADER, clientType);
+        }
+        const response = await app.request("/health", { headers });
 
-      expect(response.status).toBe(200);
-      await flushWaitUntilForTest();
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toStrictEqual({ status: "ok" });
+        await flushWaitUntilForTest();
 
-      const [event] = axiomRequestLogEvents(context);
-      expect(event).toMatchObject({
-        x_client_type: CLIENT_TYPE_DESKTOP,
-        x_client_product: DESKTOP_PRODUCT_ZERO,
-      });
-    });
+        const [event] = axiomRequestLogEvents(context);
+        expect(event).toMatchObject({
+          method: "GET",
+          status: 200,
+          path_template: "/health",
+        });
+        expect(event).not.toHaveProperty("x_client_product");
+        if (clientType === undefined) {
+          expect(event).not.toHaveProperty("x_client_type");
+        } else {
+          expect(event).toMatchObject({ x_client_type: clientType });
+        }
+      },
+    );
 
     it("omits client header fields when they are absent", async () => {
       const app = createApp({

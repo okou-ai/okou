@@ -828,6 +828,34 @@
       "evidence": [],
       "pullRequest": null,
       "mergeCommit": null
+    },
+    {
+      "id": "chat-message-bubbles",
+      "family": "chat-and-content",
+      "tokens": ["okou-chat-bubble-assistant", "okou-chat-bubble-user"],
+      "consumers": [
+        "apps/platform/src/views/okou-page/chat-message-surface.tsx",
+        "apps/platform/src/views/okou-page/chat-thread-page.tsx",
+        "apps/platform/src/views/okou-page/settings-tab.tsx",
+        "apps/platform/src/views/components/markdown.tsx",
+        "apps/platform/src/views/components/rich-markdown.tsx",
+        "apps/platform/src/views/shared-thread-page/shared-thread-page.tsx",
+        "apps/platform/src/views/okou-page/__tests__/chat-attachment-message-previews.test.tsx"
+      ],
+      "cases": [
+        "chat-bubble-light",
+        "chat-bubble-dark",
+        "chat-bubble-light-retina",
+        "chat-bubble-dark-retina",
+        "chat-bubble-narrow",
+        "chat-bubble-narrow-dark",
+        "chat-bubble-agent-profile-light",
+        "chat-bubble-agent-profile-dark"
+      ],
+      "status": "implemented",
+      "evidence": [],
+      "pullRequest": "https://github.com/vm0-ai/vm0/pull/34076",
+      "mergeCommit": null
     }
   ],
   "caseFiles": [
@@ -849,6 +877,7 @@
     "../e2e/playwright/style-migration/desktop-titlebar-cases.json",
     "../e2e/playwright/style-migration/nav-chrome-cases.json",
     "../e2e/playwright/style-migration/okou-border-hairline-cases.json",
-    "../e2e/playwright/style-migration/external-contract-audit-cases.json"
+    "../e2e/playwright/style-migration/external-contract-audit-cases.json",
+    "../e2e/playwright/style-migration/chat-bubble-cases.json"
   ]
 }

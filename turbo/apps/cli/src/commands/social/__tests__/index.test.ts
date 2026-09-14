@@ -172,6 +172,11 @@ describe("okou social command", () => {
       command.setOptionValue("quality", undefined);
       command.setOptionValue("format", undefined);
       command.setOptionValue("resume", undefined);
+      command.setOptionValue("cursor", undefined);
+      command.setOptionValue("status", undefined);
+      if (command.name() === "downloads") {
+        command.setOptionValue("limit", 20);
+      }
     }
   });
 
@@ -194,6 +199,254 @@ describe("okou social command", () => {
   function output(): string {
     return mockConsoleLog.mock.calls.flat().join("\n");
   }
+
+  it("discovers a lost task ID and retrieves its artifact through existing resume", async () => {
+    const task = completedDownload();
+    server.use(
+      http.get("http://localhost:3000/api/social/downloads", ({ request }) => {
+        expect(new URL(request.url).searchParams.get("limit")).toBe("20");
+        return HttpResponse.json({
+          downloads: [
+            {
+              ...task,
+              providerName: "SocialKit",
+              request: {
+                platform: "youtube",
+                url: "https://youtu.be/video123",
+                maxDuration: 600,
+                quality: "720p",
+                format: "mp4",
+              },
+              resumeCommand: `okou social download --resume ${task.downloadId}`,
+            },
+          ],
+          nextCursor: null,
+        });
+      }),
+      http.get(
+        "http://localhost:3000/api/social/downloads/:downloadId",
+        ({ params }) => {
+          expect(params.downloadId).toBe(task.downloadId);
+          return HttpResponse.json(task);
+        },
+      ),
+    );
+    await socialCommand.parseAsync(["node", "okou", "downloads", "--json"]);
+    expect(JSON.parse(output()) as unknown).toMatchObject({
+      downloads: [
+        {
+          downloadId: task.downloadId,
+          request: { url: "https://youtu.be/video123" },
+          artifact: task.artifact,
+        },
+      ],
+      nextCommand: null,
+    });
+    expect(output()).not.toContain("providerName");
+    mockConsoleLog.mockClear();
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "download",
+      "--resume",
+      task.downloadId,
+      "--json",
+    ]);
+    expect(output()).toContain(task.artifact.url);
+  });
+
+  it("lists only one requested page and preserves filter and cursor in continuation guidance", async () => {
+    const task = failedDownload("artifact_failed");
+    const cursor = "fc168c40-dd27-4e4a-b588-628bac29070b";
+    server.use(
+      http.get("http://localhost:3000/api/social/downloads", ({ request }) => {
+        const params = new URL(request.url).searchParams;
+        expect(Object.fromEntries(params)).toStrictEqual({
+          limit: "1",
+          cursor,
+          status: "active",
+        });
+        return HttpResponse.json({
+          downloads: [
+            {
+              ...task,
+              request: {
+                platform: "youtube",
+                url: "https://youtu.be/video123",
+                maxDuration: 600,
+                quality: "720p",
+                format: "mp4",
+              },
+              resumeCommand: `okou social download --resume ${task.downloadId}`,
+            },
+          ],
+          nextCursor: task.downloadId,
+        });
+      }),
+    );
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "downloads",
+      "--limit",
+      "1",
+      "--cursor",
+      cursor,
+      "--status",
+      "active",
+      "--json",
+    ]);
+    expect(JSON.parse(output()) as unknown).toMatchObject({
+      downloads: [
+        { status: "artifact_failed", error: { billed: true, retryable: true } },
+      ],
+      nextCommand: `okou social downloads --limit 1 --cursor ${task.downloadId} --status active --json`,
+    });
+  });
+
+  it("prints empty discovery guidance without starting a download", async () => {
+    server.use(
+      http.get("http://localhost:3000/api/social/downloads", () => {
+        return HttpResponse.json({ downloads: [], nextCursor: null });
+      }),
+    );
+    await socialCommand.parseAsync(["node", "okou", "downloads", "--json"]);
+    expect(JSON.parse(output()) as unknown).toMatchObject({
+      downloads: [],
+      nextCursor: null,
+      nextCommand: null,
+      message: expect.stringContaining("okou social download --help"),
+    });
+  });
+
+  it.each([
+    ["--limit", "101"],
+    ["--status", "unknown"],
+  ])(
+    "rejects invalid discovery input %s %s before HTTP",
+    async (flag, value) => {
+      await expect(
+        socialCommand.parseAsync([
+          "node",
+          "okou",
+          "downloads",
+          flag,
+          value,
+          "--json",
+        ]),
+      ).rejects.toThrow("process.exit called");
+      expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+        error: { code: "INVALID_INPUT" },
+      });
+    },
+  );
+
+  it.each([false, true])(
+    "preserves actionable download conflicts with json=%s without resuming automatically",
+    async (json) => {
+      const recovery = {
+        downloadId: completedDownload().downloadId,
+        resumeCommand: `okou social download --resume ${completedDownload().downloadId}`,
+      };
+      server.use(
+        http.post("http://localhost:3000/api/social/downloads", () => {
+          return HttpResponse.json(
+            {
+              error: {
+                code: "DOWNLOAD_IN_PROGRESS",
+                message: "Another social media download is already in progress",
+                recovery,
+              },
+            },
+            { status: 409 },
+          );
+        }),
+      );
+      await expect(
+        socialCommand.parseAsync([
+          "node",
+          "okou",
+          "download",
+          "https://youtu.be/video123",
+          "--max-duration",
+          "60",
+          ...(json ? ["--json"] : []),
+        ]),
+      ).rejects.toThrow("process.exit called");
+      if (json) {
+        expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+          error: {
+            code: "DOWNLOAD_IN_PROGRESS",
+            httpStatus: 409,
+            retryable: false,
+          },
+          recovery,
+        });
+      } else {
+        expect(errorOutput()).toContain(recovery.downloadId);
+        expect(errorOutput()).toContain(recovery.resumeCommand);
+      }
+    },
+  );
+
+  it("accepts a generic create conflict without inventing recovery details", async () => {
+    server.use(
+      http.post("http://localhost:3000/api/social/downloads", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "DOWNLOAD_IN_PROGRESS",
+              message: "Another social media download is already in progress",
+            },
+          },
+          { status: 409 },
+        );
+      }),
+    );
+    await expect(
+      socialCommand.parseAsync([
+        "node",
+        "okou",
+        "download",
+        "https://youtu.be/video123",
+        "--max-duration",
+        "60",
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(JSON.parse(errorOutput()) as unknown).toStrictEqual({
+      status: "error",
+      error: {
+        kind: "request_failed",
+        code: "DOWNLOAD_IN_PROGRESS",
+        message: "Another social media download is already in progress",
+        httpStatus: 409,
+        retryable: false,
+      },
+    });
+  });
+
+  it.each([403, 404, 503])(
+    "reports discovery HTTP %s without substituting another operation",
+    async (status) => {
+      server.use(
+        http.get("http://localhost:3000/api/social/downloads", () => {
+          return HttpResponse.json(
+            {
+              error: { code: "UNAVAILABLE", message: "Discovery unavailable" },
+            },
+            { status },
+          );
+        }),
+      );
+      await expect(
+        socialCommand.parseAsync(["node", "okou", "downloads", "--json"]),
+      ).rejects.toThrow("process.exit called");
+      expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+        error: { httpStatus: status, message: "Discovery unavailable" },
+      });
+    },
+  );
 
   function errorOutput(): string {
     return mockConsoleError.mock.calls.flat().map(String).join("\n");
@@ -245,6 +498,8 @@ describe("okou social command", () => {
     });
     expect(output()).not.toContain("inputSchema");
     expect(output()).not.toContain("instagram_channel_posts");
+    expect(output()).toContain("up to 100 trimmed characters");
+    expect(output()).toContain("one anonymous batch of up to 12 reels");
     expect(apiRequests).toBe(0);
   });
 
@@ -270,6 +525,8 @@ describe("okou social command", () => {
     ],
     ["https://instagram.com/example", "instagram_channel_stats"],
     ["https://instagram.com/reel/example", "instagram_stats"],
+    ["https://www.instagram.com/example.user/p/ABC123/", "instagram_stats"],
+    ["https://instagram.com/example_user/reel/ABC123", "instagram_stats"],
     ["https://tiktok.com/@example", "tiktok_channel_stats"],
     ["https://tiktok.com/@example/video/1", "tiktok_stats"],
     ["https://tiktok.com/t/example", "tiktok_stats"],
@@ -623,6 +880,221 @@ describe("okou social command", () => {
       expect(requestBody).toHaveProperty("input.hashtag", "launch");
     }
     expect(outputRequest()).toStrictEqual({ limit: 10, hashtag });
+  });
+
+  it.each([
+    { query: "  CaTs  ", hashtag: false, normalized: "CaTs" },
+    { query: "#CaTs", hashtag: false, normalized: "CaTs" },
+    { query: "%23CaTs", hashtag: false, normalized: "CaTs" },
+    { query: "CaTs", hashtag: true, normalized: "CaTs" },
+    { query: " #CaTs ", hashtag: true, normalized: "CaTs" },
+    { query: "%23CaTs", hashtag: true, normalized: "CaTs" },
+    { query: "Cat Videos", hashtag: false, normalized: "CatVideos" },
+    {
+      query: `  ${"A".repeat(100)}  `,
+      hashtag: false,
+      normalized: "A".repeat(100),
+    },
+    { query: "İ".repeat(100), hashtag: false, normalized: "İ".repeat(100) },
+  ])(
+    "normalizes Instagram query $query with hashtag=$hashtag",
+    async ({ query, hashtag, normalized }) => {
+      let requestBody: unknown;
+      server.use(
+        http.post(
+          "http://localhost:3000/api/social/request",
+          async ({ request }) => {
+            requestBody = await request.json();
+            return HttpResponse.json(
+              socialResponse(
+                "instagram_reels_search",
+                { state: "complete", itemsReturned: 0 },
+                { items: [], hasMore: false },
+              ),
+            );
+          },
+        ),
+      );
+      const args = [
+        "node",
+        "okou",
+        "search",
+        query,
+        "--platform",
+        "instagram",
+        "--json",
+      ];
+      if (hashtag) {
+        args.push("--hashtag");
+      }
+
+      await socialCommand.parseAsync(args);
+
+      expect(requestBody).toStrictEqual({
+        tool: "instagram_reels_search",
+        input: { query: normalized },
+      });
+      expect(outputRequest()).toStrictEqual({ limit: 10, hashtag });
+    },
+  );
+
+  it.each(["a".repeat(101), `  ${"a".repeat(101)}  `, "#", "%23"])(
+    "rejects invalid Instagram query %s before an API request",
+    async (query) => {
+      let apiRequests = 0;
+      server.use(
+        http.post("http://localhost:3000/api/social/request", () => {
+          apiRequests += 1;
+          return new HttpResponse(null, { status: 500 });
+        }),
+      );
+
+      await expect(
+        socialCommand.parseAsync([
+          "node",
+          "okou",
+          "search",
+          query,
+          "--platform",
+          "instagram",
+          "--hashtag",
+          "--json",
+        ]),
+      ).rejects.toThrow("process.exit called");
+
+      expect(apiRequests).toBe(0);
+      expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+        status: "error",
+        error: { kind: "invalid_input" },
+      });
+    },
+  );
+
+  it.each([
+    { count: 0, limit: 20, stream: false },
+    { count: 3, limit: 20, stream: true },
+    { count: 12, limit: 20, stream: false },
+    { count: 12, limit: 12, stream: true },
+    { count: 12, limit: 2, stream: false },
+    { count: 12, limit: 2, stream: true },
+  ])(
+    "reports Instagram source and caller limits for $count items, limit $limit, stream=$stream",
+    async ({ count, limit, stream }) => {
+      let apiRequests = 0;
+      const items = Array.from({ length: count }, (_, id) => {
+        return {
+          id: String(id),
+        };
+      });
+      server.use(
+        http.post("http://localhost:3000/api/social/request", () => {
+          apiRequests += 1;
+          return HttpResponse.json(
+            socialResponse(
+              "instagram_reels_search",
+              { state: "complete", itemsReturned: count },
+              { items, count, hasMore: false },
+            ),
+          );
+        }),
+      );
+      const args = [
+        "node",
+        "okou",
+        "search",
+        "cats",
+        "--platform",
+        "instagram",
+        "--limit",
+        String(limit),
+        "--json",
+      ];
+      if (stream) {
+        args.push("--stream");
+      }
+
+      await socialCommand.parseAsync(args);
+
+      const records = output()
+        .split("\n")
+        .map((line) => {
+          return JSON.parse(line) as Record<string, unknown>;
+        });
+      const terminal = records.at(-1);
+      expect(terminal).toMatchObject({
+        kind: stream ? "summary" : "result",
+        status: count >= limit ? "complete" : "partial",
+        collection: {
+          state: "provider_limited",
+          pages: 1,
+          itemsReturned: Math.min(count, limit),
+          itemsObserved: count,
+          requestedItems: limit,
+          reason: "provider_ceiling",
+          sourceLimit: { kind: "single_batch", maxItems: 12 },
+          callerLimited: count > limit,
+        },
+        warnings: expect.arrayContaining([
+          expect.objectContaining({
+            code: "PROVIDER_LIMITED",
+            message: expect.stringContaining("one anonymous batch of up to 12"),
+          }),
+        ]),
+      });
+      if (count > limit) {
+        expect(terminal?.warnings).toContainEqual(
+          expect.objectContaining({ code: "RESULT_LIMIT_REACHED" }),
+        );
+      }
+      if (stream) {
+        expect(terminal).not.toHaveProperty("data");
+        expect(records[0]).toMatchObject({
+          kind: "page",
+          data: { items: items.slice(0, limit) },
+        });
+      } else {
+        expect(terminal).toMatchObject({
+          data: { items: items.slice(0, limit) },
+        });
+      }
+      expect(apiRequests).toBe(1);
+      expect(process.exitCode).toBe(count >= limit ? originalExitCode : 2);
+    },
+  );
+
+  it("does not follow an older API's Instagram page-2 continuation", async () => {
+    let apiRequests = 0;
+    server.use(
+      http.post("http://localhost:3000/api/social/request", () => {
+        apiRequests += 1;
+        return HttpResponse.json(
+          socialResponse(
+            "instagram_reels_search",
+            { state: "more", itemsReturned: 1, nextInput: { page: 2 } },
+            { items: [{ id: "one" }], hasMore: true },
+          ),
+        );
+      }),
+    );
+
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "search",
+      "cats",
+      "--platform",
+      "instagram",
+      "--json",
+    ]);
+
+    expect(apiRequests).toBe(1);
+    expect(JSON.parse(output()) as unknown).toMatchObject({
+      status: "partial",
+      collection: {
+        state: "provider_limited",
+        sourceLimit: { kind: "single_batch", maxItems: 12 },
+      },
+    });
   });
 
   it("reports provider-neutral search filters in the result envelope", async () => {
@@ -1229,9 +1701,12 @@ describe("okou social command", () => {
     },
   );
 
-  it.each([2, 3])(
-    "preserves only validated page continuation after page %i is offered",
-    async (nextPage) => {
+  it.each([
+    { continuation: "cursor", nextInput: { cursor: "next" } },
+    { continuation: "unsupported page", nextInput: { page: 2 } },
+  ] as const)(
+    "preserves only validated continuation after $continuation is offered",
+    async ({ nextInput }) => {
       const requests: unknown[] = [];
       server.use(
         http.post(
@@ -1241,13 +1716,13 @@ describe("okou social command", () => {
             if (requests.length === 1) {
               return HttpResponse.json(
                 socialResponse(
-                  "instagram_reels_search",
+                  "instagram_comments",
                   {
                     state: "more",
                     itemsReturned: 1,
-                    nextInput: { page: nextPage },
+                    nextInput,
                   },
-                  { items: [{ id: "one" }], hasMore: true },
+                  { comments: [{ id: "one" }], hasMore: true },
                 ),
               );
             }
@@ -1267,10 +1742,8 @@ describe("okou social command", () => {
       await socialCommand.parseAsync([
         "node",
         "okou",
-        "search",
-        "launch",
-        "--platform",
-        "instagram",
+        "comments",
+        "https://instagram.com/p/example",
         "--json",
       ]);
 
@@ -1281,20 +1754,15 @@ describe("okou social command", () => {
         collection: { state: "failed", pages: 1, itemsReturned: 1 },
         billing: { quantity: 1, creditsCharged: 3 },
       });
-      if (nextPage === 2) {
+      if ("cursor" in nextInput) {
         expect(requests).toHaveLength(2);
-        expect(requests[1]).toHaveProperty("input", {
-          query: "launch",
-          page: 2,
-        });
-        expect(result).toHaveProperty("collection.nextInput", { page: 2 });
+        expect(requests[1]).toHaveProperty("input.cursor", "next");
+        expect(requests[1]).toHaveProperty("input.limit", 9);
+        expect(result).toHaveProperty("collection.nextInput", nextInput);
       } else {
         expect(requests).toHaveLength(1);
         expect(result).not.toHaveProperty("collection.nextInput");
-        expect(result).toHaveProperty(
-          "error.message",
-          "Okou Social produced an invalid continuation request",
-        );
+        expect(result).toHaveProperty("error.kind", "internal");
       }
       expect(process.exitCode).toBe(1);
     },
@@ -1550,7 +2018,12 @@ describe("okou social command", () => {
     });
   });
 
-  it("rejects unsupported hosts before managed work", async () => {
+  it.each([
+    "https://example.com/video",
+    "https://instagram.com.example.com/user/p/ABC123/",
+    "https://user:password@instagram.com/user/reel/ABC123/",
+    "https://instagram.com/explore/p/ABC123/",
+  ])("rejects unsupported URL %s before managed work", async (url) => {
     let apiRequests = 0;
     server.use(
       http.post("http://localhost:3000/api/social/request", () => {
@@ -1560,13 +2033,7 @@ describe("okou social command", () => {
     );
 
     await expect(
-      socialCommand.parseAsync([
-        "node",
-        "okou",
-        "inspect",
-        "https://example.com/video",
-        "--json",
-      ]),
+      socialCommand.parseAsync(["node", "okou", "inspect", url, "--json"]),
     ).rejects.toThrow("process.exit called");
 
     expect(apiRequests).toBe(0);

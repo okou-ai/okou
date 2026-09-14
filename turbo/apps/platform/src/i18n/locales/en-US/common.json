@@ -6914,6 +6914,9 @@
       "noWorkflows": "No workflows",
       "open": "Open {{title}}",
       "openRecovery": "Open {{title}} recovery",
+      "ownerLoading": "Loading author…",
+      "ownerRetry": "Author unavailable. Reopen to retry.",
+      "ownerUnavailable": "Author unavailable",
       "runsAs": "Runs as",
       "runsAsAria": "Runs as {{agent}}",
       "section": {
