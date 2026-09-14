@@ -86,7 +86,7 @@ const importedPresentationTemplateCatalog$ = computed(
     }
     const client = get(apiClient$)(presentationTemplatesContract);
     const result = await retryTransientLoad(() => {
-      return accept(client.list(), [200]);
+      return accept(client.list(), [200], undefined, { showErrorToast: false });
     });
     return { templates: result.body, loadedAtMs: now() };
   },
@@ -202,6 +202,8 @@ async function resolvePresentationTemplatePreviewAssets(
             body: { previewAssetIds: previewAssetIdBatch },
           }),
           [200],
+          undefined,
+          { showErrorToast: false },
         );
       });
     }),

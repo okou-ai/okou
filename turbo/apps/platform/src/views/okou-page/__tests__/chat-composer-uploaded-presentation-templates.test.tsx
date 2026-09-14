@@ -238,6 +238,7 @@ test("Retrying a failed catalog reuses the live template subscriptions", async (
   await expect(
     within(picker).findByText("Couldn't load uploaded templates."),
   ).resolves.toBeInTheDocument();
+  expect(screen.queryAllByText("Catalog unavailable")).toHaveLength(0);
   unavailable = false;
   click(buttonNamed("Retry", picker));
   await expect(
@@ -296,6 +297,7 @@ test("A failed preview renewal can retry while the loaded cover stays in place",
   await expect(
     within(picker).findByText("Couldn't refresh template previews."),
   ).resolves.toBeInTheDocument();
+  expect(screen.queryAllByText("Preview renewal unavailable")).toHaveLength(0);
   unavailable = false;
   click(buttonNamed("Retry", picker));
   const renewedImage = await pendingImportedTemplateImage(media, "renewed");
