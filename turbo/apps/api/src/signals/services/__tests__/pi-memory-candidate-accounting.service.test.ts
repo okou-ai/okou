@@ -641,8 +641,9 @@ async function insertBCandidates(
         .set({ refCount: sql`${blobs.refCount} + 1` })
         .where(eq(blobs.hash, row.hash))
         .returning({ hash: blobs.hash });
-      if (!retained)
+      if (!retained) {
         throw new Error("Pi memory candidate source blob does not exist");
+      }
     }
   }
   return created;
@@ -692,14 +693,16 @@ test("holds a DML-compatible lock through commit while DROP TRIGGER waits", asyn
 });
 
 test.each(["COMMIT", "ROLLBACK"] as const)(
-  "B observes DDL %s in its post-lock statement despite an earlier snapshot",
+  "b observes DDL %s in its post-lock statement despite an earlier snapshot",
   async (finish) => {
     const h = await harness(true);
     const parent = await owner(h.db);
     await blob(h.db);
     const gate = createDeferredPromise<void>(context.signal);
     onTestFinished(() => {
-      if (!gate.settled()) gate.resolve();
+      if (!gate.settled()) {
+        gate.resolve();
+      }
     });
     const ready = createDeferredPromise<void>(context.signal);
     const ddl = h.db.transaction(async (tx) => {
@@ -711,12 +714,11 @@ test.each(["COMMIT", "ROLLBACK"] as const)(
       );
       ready.resolve();
       await gate.promise;
-      if (finish === "ROLLBACK") throw new Error("injected DDL rollback");
+      if (finish === "ROLLBACK") {
+        throw new Error("injected DDL rollback");
+      }
     });
-    const ddlOutcome =
-      finish === "ROLLBACK"
-        ? expect(ddl).rejects.toThrow("injected DDL rollback")
-        : expect(ddl).resolves.toBeUndefined();
+    const ddlOutcome = Promise.allSettled([ddl]);
     await ready.promise;
     const backend = createDeferredPromise<number>(context.signal);
     const writer = h.db.transaction(async (tx) => {
@@ -725,7 +727,11 @@ test.each(["COMMIT", "ROLLBACK"] as const)(
     });
     await blocked(h.db, await backend.promise);
     gate.resolve();
-    await ddlOutcome;
+    await expect(ddlOutcome).resolves.toStrictEqual([
+      finish === "ROLLBACK"
+        ? { status: "rejected", reason: new Error("injected DDL rollback") }
+        : { status: "fulfilled", value: undefined },
+    ]);
     await writer;
     await expect(refs(h.db)).resolves.toStrictEqual([
       { hash: oldHash, count: 2 },
@@ -922,7 +928,7 @@ test("takes the worker parent FK lock before waiting for a candidate during clea
 
 // Infrastructure-only historical fixture: this represents the exact accepted
 // old-source deleted-run residual, which has no writable production API.
-test("C releases only the candidate reference from a preserved residual", async () => {
+test("c releases only the candidate reference from a preserved residual", async () => {
   const h = await harness(false);
   const parent = await owner(h.db);
   await blob(h.db, oldHash, 1);
