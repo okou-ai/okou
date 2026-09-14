@@ -38,6 +38,7 @@ import {
   type CustomConnectorDefinitionRow,
 } from "./custom-connector-definition-selection";
 import type { Tx } from "../../lib/db-types";
+import { writeCustomConnectorOAuthState } from "./custom-connector-oauth-write.service";
 import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
 import { resolveConnectorAccount } from "./connector-account-resolution.service";
 
@@ -287,34 +288,40 @@ async function createFeishuCustomConnector(
   prepared: PreparedFeishuCustomConnectorSkill,
   signal: AbortSignal,
 ): Promise<ReconciledFeishuCustomConnector> {
-  const [connector] = await tx
-    .insert(orgCustomConnectors)
-    .values({
-      id: prepared.connectorId,
-      orgId: args.orgId,
-      slug: getFeishuCustomConnectorSlug(
-        args.installationId,
-        installation.platform,
-      ),
-      ...desiredConnectorDefinition(installation),
-      skillStorageVersionId: prepared.volume.version.versionId,
-      createdBy: installation.ownerUserId ?? args.userId,
-    })
-    .returning({ id: orgCustomConnectors.id });
-  signal.throwIfAborted();
-  if (!connector) {
-    throw new Error("Expected Feishu custom connector to be created");
-  }
-  await tx.insert(orgCustomConnectorOauthConfigs).values({
-    connectorId: connector.id,
-    ...desiredOAuthConfig(installation),
-  });
-  signal.throwIfAborted();
-  return {
-    connectorId: connector.id,
-    definitionChanged: true,
-    runtimeChanged: false,
-  };
+  return await writeCustomConnectorOAuthState(
+    tx,
+    [{ connectorId: prepared.connectorId, orgId: args.orgId }],
+    async () => {
+      const [connector] = await tx
+        .insert(orgCustomConnectors)
+        .values({
+          id: prepared.connectorId,
+          orgId: args.orgId,
+          slug: getFeishuCustomConnectorSlug(
+            args.installationId,
+            installation.platform,
+          ),
+          ...desiredConnectorDefinition(installation),
+          skillStorageVersionId: prepared.volume.version.versionId,
+          createdBy: installation.ownerUserId ?? args.userId,
+        })
+        .returning({ id: orgCustomConnectors.id });
+      signal.throwIfAborted();
+      if (!connector) {
+        throw new Error("Expected Feishu custom connector to be created");
+      }
+      await tx.insert(orgCustomConnectorOauthConfigs).values({
+        connectorId: connector.id,
+        ...desiredOAuthConfig(installation),
+      });
+      signal.throwIfAborted();
+      return {
+        connectorId: connector.id,
+        definitionChanged: true,
+        runtimeChanged: false,
+      };
+    },
+  );
 }
 
 async function repairFeishuCustomConnector(
@@ -324,42 +331,48 @@ async function repairFeishuCustomConnector(
   skillStorageVersionId: string,
   signal: AbortSignal,
 ): Promise<ReconciledFeishuCustomConnector> {
-  const credentialContractChanged =
-    existing.connector.authMode !== "oauth" ||
-    !isDeepStrictEqual(existing.connector.fields, []) ||
-    !oauthConfigMatches(existing.oauthConfig, installation);
-  await tx
-    .update(orgCustomConnectors)
-    .set({
-      ...desiredConnectorDefinition(installation),
-      skillStorageVersionId,
-      storageVersion: credentialContractChanged
-        ? existing.connector.storageVersion + 1
-        : existing.connector.storageVersion,
-      updatedAt: nowDate(),
-    })
-    .where(eq(orgCustomConnectors.id, existing.connector.id));
-  signal.throwIfAborted();
-  const oauthConfig = desiredOAuthConfig(installation);
-  await tx
-    .insert(orgCustomConnectorOauthConfigs)
-    .values({
-      connectorId: existing.connector.id,
-      ...oauthConfig,
-    })
-    .onConflictDoUpdate({
-      target: orgCustomConnectorOauthConfigs.connectorId,
-      set: {
-        ...oauthConfig,
-        updatedAt: nowDate(),
-      },
-    });
-  signal.throwIfAborted();
-  return {
-    connectorId: existing.connector.id,
-    definitionChanged: true,
-    runtimeChanged: true,
-  };
+  return await writeCustomConnectorOAuthState(
+    tx,
+    [{ connectorId: existing.connector.id, orgId: installation.orgId }],
+    async () => {
+      const credentialContractChanged =
+        existing.connector.authMode !== "oauth" ||
+        !isDeepStrictEqual(existing.connector.fields, []) ||
+        !oauthConfigMatches(existing.oauthConfig, installation);
+      await tx
+        .update(orgCustomConnectors)
+        .set({
+          ...desiredConnectorDefinition(installation),
+          skillStorageVersionId,
+          storageVersion: credentialContractChanged
+            ? existing.connector.storageVersion + 1
+            : existing.connector.storageVersion,
+          updatedAt: nowDate(),
+        })
+        .where(eq(orgCustomConnectors.id, existing.connector.id));
+      signal.throwIfAborted();
+      const oauthConfig = desiredOAuthConfig(installation);
+      await tx
+        .insert(orgCustomConnectorOauthConfigs)
+        .values({
+          connectorId: existing.connector.id,
+          ...oauthConfig,
+        })
+        .onConflictDoUpdate({
+          target: orgCustomConnectorOauthConfigs.connectorId,
+          set: {
+            ...oauthConfig,
+            updatedAt: nowDate(),
+          },
+        });
+      signal.throwIfAborted();
+      return {
+        connectorId: existing.connector.id,
+        definitionChanged: true,
+        runtimeChanged: true,
+      };
+    },
+  );
 }
 
 async function preflightFeishuCustomConnectorId(
