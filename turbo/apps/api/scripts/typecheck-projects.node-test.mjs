@@ -216,8 +216,11 @@ test("membership follows additions, deletions and renames and rejects stale outp
   rejected(guard(root), /Stale or modified test project/);
   prepare(root);
   validateTestProjects(root);
-  assert.ok(owners().has(join(root, added)));
-  for (const [file, owner] of original) assert.equal(owners().get(file), owner);
+  const updated = owners();
+  assert.ok(updated.has(join(root, added)));
+  for (const [file, owner] of original) {
+    assert.equal(updated.get(file), owner);
+  }
   const renamed = "src/__tests__/renamed.test.ts";
   renameSync(join(root, added), join(root, renamed));
   assert.throws(() => {
