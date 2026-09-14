@@ -12,6 +12,7 @@ import { HardBreak } from "@tiptap/extension-hard-break";
 import { Paragraph } from "@tiptap/extension-paragraph";
 import { Text } from "@tiptap/extension-text";
 import { Dropcursor, Gapcursor, UndoRedo } from "@tiptap/extensions";
+import { GapCursor } from "@tiptap/pm/gapcursor";
 import { Slice, type Node as ProseMirrorNode } from "@tiptap/pm/model";
 import {
   Plugin,
@@ -732,6 +733,49 @@ function createFeedbackChromePlugin(runtime: WorkflowComposerRuntime): Plugin {
       decorations(state) {
         return buildFeedbackChromeDecorations(state.doc, runtime);
       },
+    },
+  });
+}
+
+function createFeedbackTextSelectionPlugin(): Plugin {
+  return new Plugin({
+    key: new PluginKey("feedbackTextSelection"),
+    appendTransaction(_transactions, previous, current) {
+      const { selection } = current;
+      if (!(selection instanceof GapCursor)) {
+        return null;
+      }
+
+      const { $head } = selection;
+      if ($head.depth !== 0) {
+        return null;
+      }
+      const before = $head.nodeBefore?.type.name;
+      const after = $head.nodeAfter?.type.name;
+      if (
+        before !== FEEDBACK_ITEM_NODE_NAME &&
+        after !== FEEDBACK_ITEM_NODE_NAME
+      ) {
+        return null;
+      }
+
+      // Legacy block templates still need their surrounding insertion points.
+      if (
+        before === TEMPLATE_ATTACHMENT_NODE_NAME ||
+        after === TEMPLATE_ATTACHMENT_NODE_NAME
+      ) {
+        return null;
+      }
+
+      // Keep keyboard and pointer navigation on editable feedback text. At
+      // either document edge, stay in the nearest existing paragraph.
+      const direction = selection.head < previous.selection.head ? -1 : 1;
+      const next =
+        Selection.findFrom($head, direction, true) ??
+        Selection.findFrom($head, -direction, true);
+      return next instanceof TextSelection
+        ? current.tr.setSelection(next).setMeta("addToHistory", false)
+        : null;
     },
   });
 }
@@ -1673,7 +1717,10 @@ function createFeedbackItemNode(
       };
     },
     addProseMirrorPlugins() {
-      return [createFeedbackChromePlugin(runtime)];
+      return [
+        createFeedbackChromePlugin(runtime),
+        createFeedbackTextSelectionPlugin(),
+      ];
     },
   });
 }
