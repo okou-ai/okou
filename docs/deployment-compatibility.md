@@ -195,6 +195,45 @@ raises the frontend compatibility floor, rolling the frontend below that floor
 also requires rolling back the backend floor. Rolling the backend back to the
 dual-protocol preparation release remains safe for canonical clients.
 
+### Ordinary Social zero-usage response preparation
+
+The reader preparation in [#34045](https://github.com/vm0-ai/vm0/issues/34045)
+allows an ordinary Social response to carry `billingQuantity: 0` alongside
+`creditsCharged: 0`. Shared response validation, public projection, and CLI
+output preserve the result and its billing attribution. Current API writers
+continue producing positive quantities; actual provider usage reconciliation
+and zero writers belong to [#34046](https://github.com/vm0-ai/vm0/issues/34046),
+under [#34025](https://github.com/vm0-ai/vm0/issues/34025).
+
+| Reader                         | Writer                        | Compatibility                                              |
+| ------------------------------ | ----------------------------- | ---------------------------------------------------------- |
+| Previous CLI or API projection | Current positive-quantity API | Existing behavior remains valid.                           |
+| Prepared CLI or API projection | Current positive-quantity API | Existing responses remain valid.                           |
+| Prepared CLI or API projection | Future zero-capable API       | Zero and positive responses remain valid.                  |
+| Previous CLI or API projection | Future zero-capable API       | Unsupported: zero fails the previous positive-only schema. |
+
+Before enabling zero writers, the accounting follow-up must record:
+
+1. The actual merged reader commit and published immutable CLI package URL,
+   plus the API deployment that starts selecting that artifact in execution
+   contexts. A semantic package version or a merged reader PR alone is not
+   release evidence.
+2. Completion of the maximum queue lifetime plus claimed execution and
+   finalization lifetime for contexts created before that deployment, with a
+   current census confirming no queued or active context retains an
+   incompatible CLI. A Runner upgrade does not replace those packages.
+3. Compatibility or retirement of explicitly supported external callers and
+   all retained API rollback readers. Keep zero writers disabled while an old
+   reader remains supported; never substitute quantity 1 for a zero result.
+
+Before writer activation, rolling either API or CLI back to a previous reader
+is safe with the current positive writers. After activation, a previous CLI
+must not be selected while zero writers are reachable, and an API rollback
+that can still read zero responses must retain the prepared schema. Returning
+to a positive-only deployment requires retiring zero writers before admitting
+old readers. This preparation does not assert that any production drain has
+completed, change database state, or alter download contracts or retail prices.
+
 ### Pi Gen1 wire-field retirement
 
 [#33966](https://github.com/vm0-ai/vm0/issues/33966) removes only the optional

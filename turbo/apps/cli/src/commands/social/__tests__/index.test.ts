@@ -581,6 +581,55 @@ describe("okou social command", () => {
     expect(outputRequest()).toStrictEqual({ customPrompt: true });
   });
 
+  it.each([false, true])(
+    "preserves a zero-charge summary with json=%s",
+    async (json) => {
+      server.use(
+        http.post("http://localhost:3000/api/social/request", () => {
+          return HttpResponse.json(
+            socialResponse(
+              "youtube_summarize",
+              null,
+              { summary: "A cached summary", mainTopics: ["Business"] },
+              0,
+            ),
+          );
+        }),
+      );
+
+      await socialCommand.parseAsync([
+        "node",
+        "okou",
+        "summarize",
+        "https://youtu.be/example",
+        ...(json ? ["--json"] : []),
+      ]);
+
+      expect(JSON.parse(output())).toMatchObject({
+        kind: "result",
+        status: "complete",
+        operation: "summarize",
+        platform: "youtube",
+        target: {
+          kind: "url",
+          targetKind: "video",
+          input: "https://youtu.be/example",
+          canonicalUrl: "https://youtu.be/example",
+        },
+        request: { customPrompt: false },
+        data: { summary: "A cached summary", mainTopics: ["Business"] },
+        collection: null,
+        billing: { category: "request", quantity: 0, creditsCharged: 0 },
+        warnings: [],
+      });
+      expect(output()).toContain(json ? '"quantity":0' : '"quantity": 0');
+      expect(output()).toContain(
+        json ? '"creditsCharged":0' : '"creditsCharged": 0',
+      );
+      expect(errorOutput()).toBe("");
+    },
+  );
+
   it("aggregates pages, trims provider overshoot, and totals billing", async () => {
     const requests: unknown[] = [];
     server.use(
@@ -834,64 +883,78 @@ describe("okou social command", () => {
     });
   });
 
-  it("streams only when explicitly requested", async () => {
-    let requests = 0;
-    server.use(
-      http.post("http://localhost:3000/api/social/request", () => {
-        requests += 1;
-        const firstPage = requests === 1;
-        return HttpResponse.json(
-          socialResponse(
-            "instagram_comments",
-            firstPage
-              ? {
-                  state: "more",
-                  itemsReturned: 1,
-                  nextInput: { cursor: "next" },
-                }
-              : { state: "complete", itemsReturned: 1 },
-            {
-              comments: [{ id: String(requests) }],
-              hasMore: firstPage,
-              ...(firstPage ? { cursor: "next" } : {}),
-            },
-          ),
-        );
-      }),
-    );
+  it.each([
+    { firstQuantity: 1, secondQuantity: 1, totalQuantity: 2 },
+    { firstQuantity: 0, secondQuantity: 0, totalQuantity: 0 },
+    { firstQuantity: 0, secondQuantity: 1, totalQuantity: 1 },
+  ])(
+    "streams page billing $firstQuantity + $secondQuantity and its total",
+    async ({ firstQuantity, secondQuantity, totalQuantity }) => {
+      let requests = 0;
+      server.use(
+        http.post("http://localhost:3000/api/social/request", () => {
+          requests += 1;
+          const firstPage = requests === 1;
+          return HttpResponse.json(
+            socialResponse(
+              "instagram_comments",
+              firstPage
+                ? {
+                    state: "more",
+                    itemsReturned: 1,
+                    nextInput: { cursor: "next" },
+                  }
+                : { state: "complete", itemsReturned: 1 },
+              {
+                comments: [{ id: String(requests) }],
+                hasMore: firstPage,
+                ...(firstPage ? { cursor: "next" } : {}),
+              },
+              firstPage ? firstQuantity : secondQuantity,
+            ),
+          );
+        }),
+      );
 
-    await socialCommand.parseAsync([
-      "node",
-      "okou",
-      "comments",
-      "https://instagram.com/p/example",
-      "--limit",
-      "10",
-      "--stream",
-    ]);
+      await socialCommand.parseAsync([
+        "node",
+        "okou",
+        "comments",
+        "https://instagram.com/p/example",
+        "--limit",
+        "10",
+        "--stream",
+      ]);
 
-    const records = mockConsoleLog.mock.calls.map(([value]) => {
-      return JSON.parse(String(value)) as Readonly<Record<string, unknown>>;
-    });
-    expect(records).toHaveLength(3);
-    expect(records[0]).toMatchObject({
-      kind: "page",
-      page: 1,
-      request: { limit: 10 },
-    });
-    expect(records[1]).toMatchObject({
-      kind: "page",
-      page: 2,
-      request: { limit: 10 },
-    });
-    expect(records[2]).toMatchObject({
-      kind: "summary",
-      status: "complete",
-      request: { limit: 10 },
-      collection: { pages: 2 },
-    });
-    expect(records[2]).not.toHaveProperty("data");
-  });
+      const records = mockConsoleLog.mock.calls.map(([value]) => {
+        return JSON.parse(String(value)) as Readonly<Record<string, unknown>>;
+      });
+      expect(records).toHaveLength(3);
+      expect(records[0]).toMatchObject({
+        kind: "page",
+        page: 1,
+        request: { limit: 10 },
+        billing: { quantity: firstQuantity, creditsCharged: firstQuantity * 3 },
+      });
+      expect(records[1]).toMatchObject({
+        kind: "page",
+        page: 2,
+        request: { limit: 10 },
+        billing: {
+          quantity: secondQuantity,
+          creditsCharged: secondQuantity * 3,
+        },
+      });
+      expect(records[2]).toMatchObject({
+        kind: "summary",
+        status: "complete",
+        request: { limit: 10 },
+        collection: { pages: 2 },
+        billing: { quantity: totalQuantity, creditsCharged: totalQuantity * 3 },
+      });
+      expect(records[2]).not.toHaveProperty("data");
+    },
+  );
 
   it("emits structured API failures and exits non-zero", async () => {
     server.use(

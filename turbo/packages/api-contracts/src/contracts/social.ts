@@ -303,7 +303,9 @@ function responseVariant<Tool extends ManagedSocialKitTool>(tool: Tool) {
     provider: z.literal("socialkit").optional(),
     tool: z.literal(tool.name),
     billingCategory: z.literal(MANAGED_SOCIALKIT_BILLING_CATEGORY),
-    billingQuantity: z.number().int().positive(),
+    // Zero preserves no-usage successes. Writer activation is gated in
+    // docs/deployment-compatibility.md#ordinary-social-zero-usage-response-preparation.
+    billingQuantity: z.number().int().nonnegative(),
     creditsCharged: z.number().int().nonnegative(),
     collection: socialKitCollectionSchema,
     result: tool.resultSchema,

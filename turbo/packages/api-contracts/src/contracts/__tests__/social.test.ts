@@ -442,28 +442,62 @@ describe("managed SocialKit contract", () => {
     },
   );
 
-  it("keeps the provider discriminator optional for boundary projection", () => {
-    const responseWithProvider = socialKitResponseSchema.parse({
-      provider: "socialkit",
-      tool: "youtube_transcript",
-      billingCategory: "request",
-      billingQuantity: 1,
-      creditsCharged: 3,
-      collection: null,
-      result: { transcript: "A transcript" },
-    });
-    expect(responseWithProvider.provider).toBe("socialkit");
+  it.each([
+    { billingQuantity: 0, creditsCharged: 0 },
+    { billingQuantity: 1, creditsCharged: 3 },
+  ])(
+    "preserves billing $billingQuantity across response projections",
+    (billing) => {
+      const responseWithProvider = socialKitResponseSchema.parse({
+        provider: "socialkit",
+        tool: "youtube_summarize",
+        billingCategory: "request",
+        ...billing,
+        collection: null,
+        result: { summary: "A summary" },
+      });
+      expect(responseWithProvider.provider).toBe("socialkit");
 
-    const responseWithoutProvider = socialKitResponseSchema.parse({
-      tool: "youtube_transcript",
-      billingCategory: "request",
-      billingQuantity: 1,
-      creditsCharged: 3,
-      collection: null,
-      result: { transcript: "A transcript" },
-    });
-    expect(responseWithoutProvider).not.toHaveProperty("provider");
-  });
+      const responseWithoutProvider = socialKitResponseSchema.parse({
+        tool: "youtube_summarize",
+        billingCategory: "request",
+        ...billing,
+        collection: null,
+        result: { summary: "A summary" },
+      });
+      expect(responseWithoutProvider).not.toHaveProperty("provider");
+      expect(responseWithoutProvider).toMatchObject({
+        ...billing,
+        result: { summary: "A summary" },
+      });
+      expect(projectPublicSocialResponse(responseWithProvider)).toStrictEqual({
+        ok: true,
+        response: responseWithoutProvider,
+      });
+      expect(
+        projectPublicSocialResponse(responseWithoutProvider),
+      ).toStrictEqual({
+        ok: true,
+        response: responseWithoutProvider,
+      });
+    },
+  );
+
+  it.each([-1, 0.5, Number.MAX_SAFE_INTEGER + 1])(
+    "rejects invalid billing quantity %s",
+    (billingQuantity) => {
+      expect(
+        socialKitResponseSchema.safeParse({
+          tool: "youtube_summarize",
+          billingCategory: "request",
+          billingQuantity,
+          creditsCharged: 0,
+          collection: null,
+          result: { summary: "A summary" },
+        }).success,
+      ).toBe(false);
+    },
+  );
 
   it("validates real JSON scalar and enum input types", () => {
     const input: SocialKitInput<"youtube_search"> = {
