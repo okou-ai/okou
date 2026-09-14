@@ -70,7 +70,6 @@ export enum FeatureSwitchKey {
   VoiceInputV2 = "voiceInputV2",
   ComposerCreateCommands = "composerCreateCommands",
   ComposerTaskChips = "composerTaskChips",
-  ComposerWorkflowFuzzySearch = "composerWorkflowFuzzySearch",
   ComposerImageAnnotation = "composerImageAnnotation",
   GradientColorThemes = "gradientColorThemes",
   AvatarNeckSweater = "avatarNeckSweater",

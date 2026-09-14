@@ -449,9 +449,6 @@ function useComposerWorkflowSuggestions(
   query: string | undefined,
 ) {
   const workflowsLoadable = useLastLoadable(composer.workflow.workflows$);
-  const fuzzyWorkflows =
-    useGet(featureSwitch$)[FeatureSwitchKey.ComposerWorkflowFuzzySearch] ===
-    true;
   const workflows = buildComposerSlashWorkflows({
     agentId: composer.agentId,
     workflows:
@@ -459,9 +456,7 @@ function useComposerWorkflowSuggestions(
   });
   return {
     workflows:
-      query === undefined
-        ? []
-        : findWorkflowQueryMatches(workflows, query, fuzzyWorkflows),
+      query === undefined ? [] : findWorkflowQueryMatches(workflows, query),
     loading: workflowsLoadable.state === "loading",
   };
 }

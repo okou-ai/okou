@@ -79,7 +79,6 @@
       "voiceInputV2": false,
       "composerCreateCommands": false,
       "composerTaskChips": false,
-      "composerWorkflowFuzzySearch": false,
       "composerImageAnnotation": false,
       "gradientColorThemes": false,
       "avatarNeckSweater": true,
