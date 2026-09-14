@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   copyFileSync,
   mkdirSync,
   mkdtempSync,
@@ -348,45 +349,90 @@ test("production ownership includes JSON and rejects uncovered or overlapping in
 test("aggregate entrypoint preserves stage order and stops at a failed command", (t) => {
   const root = fixture(t);
   copyFileSync(
-    join(import.meta.dirname, "check-types.mjs"),
-    join(root, "scripts/check-types.mjs"),
+    join(import.meta.dirname, "check-types.sh"),
+    join(root, "scripts/check-types.sh"),
   );
-  write(
-    root,
-    "scripts/stage.mjs",
-    `import { appendFileSync } from "node:fs";
-appendFileSync("stages.txt", process.argv[2] + "\\n");
-process.exit(Number(process.argv[3]));
+  const bin = join(root, "bin");
+  mkdirSync(bin);
+  for (const command of ["node", "pnpm", "tsc"]) {
+    const path = join(bin, command);
+    writeFileSync(
+      path,
+      `#!${process.execPath}
+const { appendFileSync } = require("node:fs");
+const args = process.argv.slice(2);
+appendFileSync("commands.jsonl", JSON.stringify({ command: "${command}", args }) + "\\n");
+if (args.includes("../../scripts/tsc-checkers.mjs")) process.stdout.write("2");
+if (args.includes(process.env.TYPECHECK_FIXTURE_FAIL)) process.exit(17);
 `,
-  );
-  const stages = [
-    "deps",
-    "boundaries",
-    "gateways",
-    "core",
-    "bootstrap",
-    "tests",
-    "bootstrap-wiring",
-  ];
-  const scripts = Object.fromEntries(
-    stages.map((stage) => {
-      return [`check-types:${stage}`, `node scripts/stage.mjs ${stage} 0`];
-    }),
-  );
-  write(root, "package.json", JSON.stringify({ scripts }));
-  const success = run(root, "check-types.mjs");
+    );
+    chmodSync(path, 0o755);
+  }
+  const invoke = (stage, failure = "") => {
+    return spawnSync("bash", [join(root, "scripts/check-types.sh"), stage], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH}`,
+        TYPECHECK_FIXTURE_FAIL: failure,
+      },
+    });
+  };
+  const commands = () => {
+    return readFileSync(join(root, "commands.jsonl"), "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => {
+        return JSON.parse(line);
+      });
+  };
+  const projects = () => {
+    return commands()
+      .filter(({ command }) => {
+        return command === "tsc";
+      })
+      .map(({ args }) => {
+        assert.deepEqual(args.slice(-2), ["--checkers", "2"]);
+        return args[1];
+      });
+  };
+  const success = invoke("all");
   assert.equal(success.status, 0, success.stderr);
-  assert.equal(
-    readFileSync(join(root, "stages.txt"), "utf8"),
-    stages.join("\n") + "\n",
-  );
-  rmSync(join(root, "stages.txt"));
-  scripts["check-types:gateways"] = "node scripts/stage.mjs gateways 17";
-  write(root, "package.json", JSON.stringify({ scripts }));
-  const failure = run(root, "check-types.mjs");
+  assert.deepEqual(projects(), [
+    "tsconfig.core.json",
+    "tsconfig.routes.json",
+    "tsconfig.bootstrap.json",
+    ".typecheck/tsconfig.tests-0.json",
+    ".typecheck/tsconfig.tests-1.json",
+    "tsconfig.bootstrap-wiring.json",
+  ]);
+  assert.deepEqual(commands().slice(0, 5), [
+    {
+      command: "pnpm",
+      args: ["--filter", "@okouai/pi-agent-runtime", "run", "build"],
+    },
+    {
+      command: "node",
+      args: ["--test", "scripts/typecheck-projects.node-test.mjs"],
+    },
+    { command: "node", args: ["scripts/prepare-typecheck-tests.mjs"] },
+    { command: "node", args: ["scripts/check-typecheck-boundaries.mjs"] },
+    { command: "pnpm", args: ["run", "check-types:gateways"] },
+  ]);
+  rmSync(join(root, "commands.jsonl"));
+  const failure = invoke("all", "tsconfig.routes.json");
   assert.equal(failure.status, 17, failure.stderr);
-  assert.equal(
-    readFileSync(join(root, "stages.txt"), "utf8"),
-    "deps\nboundaries\ngateways\n",
-  );
+  assert.deepEqual(projects(), ["tsconfig.core.json", "tsconfig.routes.json"]);
+  rmSync(join(root, "commands.jsonl"));
+  const tests = invoke("tests");
+  assert.equal(tests.status, 0, tests.stderr);
+  assert.deepEqual(commands()[0], {
+    command: "node",
+    args: ["scripts/prepare-typecheck-tests.mjs"],
+  });
+  assert.deepEqual(projects(), [
+    ".typecheck/tsconfig.tests-0.json",
+    ".typecheck/tsconfig.tests-1.json",
+  ]);
 });
