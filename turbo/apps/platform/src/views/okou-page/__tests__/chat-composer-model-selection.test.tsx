@@ -816,7 +816,11 @@ test("Navigate the compact menu by keyboard and retain Fast after dismissal", as
   await user.keyboard("{ArrowDown}");
   expect(settingsButton).toHaveFocus();
   await user.keyboard("{Enter}");
-  await screen.findByRole("region", { name: "Chat settings" });
+  const settings = await screen.findByRole("region", { name: "Chat settings" });
+  // Fast's speed and credit cost live in the bolt's tooltip, so the bolt is a
+  // stop of its own: what a pointer reads on hover a keyboard reads on focus.
+  await user.keyboard("{ArrowDown}");
+  expect(within(settings).getByText("Fast").closest("button")).toHaveFocus();
   await user.keyboard("{ArrowDown}");
   expect(screen.getByRole("switch", { name: "Fast" })).toHaveFocus();
   await user.keyboard(" ");
@@ -1060,7 +1064,12 @@ test("Keep independent effort selections when changing models", async () => {
   await waitFor(() => {
     expect(slider).toHaveAttribute("aria-valuetext", "Extra");
   });
-  expect(screen.getByText("Extra")).toBeInTheDocument();
+  // The composer names the effort too, so scope this to the settings page.
+  expect(
+    within(screen.getByRole("region", { name: "Chat settings" })).getByText(
+      "Extra",
+    ),
+  ).toBeInTheDocument();
   expect(screen.queryByText("ultracode")).not.toBeInTheDocument();
   click(
     buttonNamed(
