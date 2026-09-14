@@ -18,7 +18,10 @@ import process from "node:process";
 
 import ts from "typescript";
 
-import { prepareTestProjects } from "./prepare-typecheck-tests.mjs";
+import {
+  prepareTestProjects,
+  validateTestProjects,
+} from "./prepare-typecheck-tests.mjs";
 
 function write(root, file, content) {
   const path = join(root, file);
@@ -146,7 +149,6 @@ test("generated programs retain compiler semantics, references and every canonic
   const root = fixture(t);
   const result = run(root, "prepare-typecheck-tests.mjs");
   assert.equal(result.status, 0, result.stderr);
-  accepted(guard(root));
   const canonical = config(root, "tsconfig.tests.json");
   const children = generatedNames().map((name) => {
     return config(root, name);
@@ -213,17 +215,21 @@ test("membership follows additions, deletions and renames and rejects stale outp
   write(root, added, "export {};\n");
   rejected(guard(root), /Stale or modified test project/);
   prepare(root);
-  accepted(guard(root));
+  validateTestProjects(root);
   assert.ok(owners().has(join(root, added)));
   for (const [file, owner] of original) assert.equal(owners().get(file), owner);
   const renamed = "src/__tests__/renamed.test.ts";
   renameSync(join(root, added), join(root, renamed));
-  rejected(guard(root), /Stale or modified test project/);
+  assert.throws(() => {
+    validateTestProjects(root);
+  }, /Stale or modified test project/);
   prepare(root);
   assert.ok(!owners().has(join(root, added)));
   assert.ok(owners().has(join(root, renamed)));
   rmSync(join(root, renamed));
-  rejected(guard(root), /Stale or modified test project/);
+  assert.throws(() => {
+    validateTestProjects(root);
+  }, /Stale or modified test project/);
   prepare(root);
   accepted(guard(root));
   assert.deepEqual(owners(), original);
@@ -251,16 +257,22 @@ test("missing, extra, duplicated and malformed generated roots cannot pass the g
     },
   ]) {
     changeConfig(root, name, mutate);
-    rejected(guard(root), /Stale or modified test project/);
+    assert.throws(() => {
+      validateTestProjects(root);
+    }, /Stale or modified test project/);
     prepare(root);
   }
   write(root, name, "{broken");
-  rejected(guard(root), /Stale or modified test project/);
+  assert.throws(() => {
+    validateTestProjects(root);
+  }, /Stale or modified test project/);
   prepare(root);
   rmSync(join(root, name));
-  rejected(guard(root), /ENOENT/);
+  assert.throws(() => {
+    validateTestProjects(root);
+  }, /ENOENT/);
   prepare(root);
-  accepted(guard(root));
+  validateTestProjects(root);
 });
 
 test("canonical parse errors and missing or duplicate explicit roots fail preparation", (t) => {
@@ -289,11 +301,12 @@ test("canonical parse errors and missing or duplicate explicit roots fail prepar
     },
   ]) {
     changeConfig(root, name, mutate);
-    rejected(
-      run(root, "prepare-typecheck-tests.mjs"),
-      /strict|ENOENT|Duplicate|rootDir|references/,
-    );
-    rejected(guard(root), /strict|ENOENT|Duplicate|rootDir|references/);
+    assert.throws(() => {
+      prepareTestProjects(root);
+    }, /strict|ENOENT|Duplicate|rootDir|references/);
+    assert.throws(() => {
+      validateTestProjects(root);
+    }, /strict|ENOENT|Duplicate|rootDir|references/);
     write(root, name, original);
   }
   write(root, name, "{broken");
