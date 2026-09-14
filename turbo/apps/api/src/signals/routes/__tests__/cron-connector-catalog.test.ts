@@ -6976,71 +6976,90 @@ describe("connector catalog rejection and latest-valid retention", () => {
     });
   });
 
-  it("skips large artifacts for a deterministically rejected candidate", async () => {
-    configureSource();
-    const accepted = buildRelease({ version: "2026-07-15.cache-valid" });
-    serveObjects(catalogObjects([accepted], accepted));
-    await syncCatalog();
+  it.each(["invalid-artifact", "relationship-mismatch"])(
+    "retains the active catalog while reusing a cached %s rejection",
+    async (failureCode) => {
+      configureSource();
+      const accepted = buildRelease({ version: "2026-07-15.cache-valid" });
+      serveObjects(catalogObjects([accepted], accepted));
+      await syncCatalog();
 
-    const invalid = buildRelease({
-      version: "2026-07-15.cache-invalid",
-      mutateCatalog: (artifact) => {
-        artifact.extra = true;
-      },
-    });
-    serveObjects(catalogObjects([accepted, invalid], invalid));
-    const callsBeforeFirstRejection = context.mocks.s3.send.mock.calls.length;
-    const freshRejection = await syncCatalog();
-    expect(freshRejection.body).toMatchObject({
-      outcome: "rejected",
-      state: "stale",
-      lastAttempt: {
-        failureCode: "invalid-artifact",
-        reusedCachedRejection: false,
-      },
-      rejectedCandidate: {
-        catalogVersion: invalid.version,
-        failureCode: "invalid-artifact",
-        backendVersion: DEFAULT_API_VERSION,
-      },
-    });
-    expect(
-      context.mocks.s3.send.mock.calls.length - callsBeforeFirstRejection,
-    ).toBe(2);
+      const invalid = buildRelease({
+        version: "2026-07-15.cache-invalid",
+        mutateCatalog: (artifact) => {
+          if (failureCode === "relationship-mismatch") {
+            firstRecord(artifact.connectors, "connectors").category = "unknown";
+          } else {
+            artifact.extra = true;
+          }
+        },
+      });
+      serveObjects(catalogObjects([accepted, invalid], invalid));
+      const callsBeforeFirstRejection = context.mocks.s3.send.mock.calls.length;
+      const freshRejection = await syncCatalog();
+      expect(freshRejection.body).toMatchObject({
+        outcome: "rejected",
+        state: "stale",
+        active: { catalogVersion: accepted.version },
+        lastAttempt: {
+          failureCode,
+          reusedCachedRejection: false,
+        },
+        rejectedCandidate: {
+          catalogVersion: invalid.version,
+          failureCode,
+          backendVersion: DEFAULT_API_VERSION,
+        },
+      });
+      expect(
+        context.mocks.s3.send.mock.calls.length - callsBeforeFirstRejection,
+      ).toBe(2);
 
-    const callsBeforeCachedRejection = context.mocks.s3.send.mock.calls.length;
-    const cachedRejection = await syncCatalog();
-    expect(cachedRejection.body).toMatchObject({
-      outcome: "rejected",
-      state: "stale",
-      lastAttempt: {
-        failureCode: "invalid-artifact",
-        reusedCachedRejection: true,
-      },
-      rejectedCandidate: {
-        catalogVersion: invalid.version,
-        failureCode: "invalid-artifact",
-        backendVersion: DEFAULT_API_VERSION,
-      },
-    });
-    expect(
-      context.mocks.s3.send.mock.calls.length - callsBeforeCachedRejection,
-    ).toBe(1);
-    expect(
-      commandInput(
-        context.mocks.s3.send.mock.calls[callsBeforeCachedRejection]?.[0],
-      ),
-    ).toMatchObject({
-      Key: ACTIVE_KEY,
-      IfNoneMatch: objectEtag(invalid.pointer),
-    });
-    expect(JSON.stringify(cachedRejection.body)).not.toContain(
-      invalid.catalogKey,
-    );
-    expect(JSON.stringify(cachedRejection.body)).not.toContain(
-      objectEtag(invalid.pointer),
-    );
-  });
+      const callsBeforeCachedRejection =
+        context.mocks.s3.send.mock.calls.length;
+      const cachedRejection = await syncCatalog();
+      expect(cachedRejection.body).toMatchObject({
+        outcome: "rejected",
+        state: "stale",
+        active: { catalogVersion: accepted.version },
+        lastAttempt: {
+          failureCode,
+          reusedCachedRejection: true,
+        },
+        rejectedCandidate: {
+          catalogVersion: invalid.version,
+          failureCode,
+          backendVersion: DEFAULT_API_VERSION,
+        },
+      });
+      expect(
+        context.mocks.s3.send.mock.calls.length - callsBeforeCachedRejection,
+      ).toBe(1);
+      expect(
+        commandInput(
+          context.mocks.s3.send.mock.calls[callsBeforeCachedRejection]?.[0],
+        ),
+      ).toMatchObject({
+        Key: ACTIVE_KEY,
+        IfNoneMatch: objectEtag(invalid.pointer),
+      });
+      expect(JSON.stringify(cachedRejection.body)).not.toContain(
+        invalid.catalogKey,
+      );
+      expect(JSON.stringify(cachedRejection.body)).not.toContain(
+        objectEtag(invalid.pointer),
+      );
+      const recovered = buildRelease({ version: "2026-07-15.cache-recovered" });
+      serveObjects(catalogObjects([accepted, invalid, recovered], recovered));
+      expect((await syncCatalog()).body).toMatchObject({
+        outcome: "accepted",
+        state: "current",
+        active: { catalogVersion: recovered.version },
+        lastAttempt: { failureCode: null, reusedCachedRejection: false },
+        rejectedCandidate: null,
+      });
+    },
+  );
 
   it("revalidates a rejection when the production backend version advances", async () => {
     configureSource();

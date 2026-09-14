@@ -30,6 +30,9 @@ surface; the index does not replace their detailed rules.
 
 ## Specialized Guidance
 
+- [Connector catalog rejections](./connector-catalog-rejections.md): safe
+  validation reasons, cached rejection records, retained snapshots and recovered
+  publication-order evidence.
 - [Dependency override audit](./dependency-overrides.md): retained dependency
   constraints, their origins, and evidence for removing obsolete overrides.
 - [Marketing privacy rollback](./marketing-privacy-choices.md): withdrawn runtime

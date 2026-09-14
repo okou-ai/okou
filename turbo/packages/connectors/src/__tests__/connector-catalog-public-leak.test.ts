@@ -106,6 +106,97 @@ function decodeCatalog(
   }).artifact;
 }
 
+describe("connector catalog relationship failure details", () => {
+  it.each([
+    "unknown-category",
+    "auth-client-presence",
+    "auth-code-client-registration",
+    "undeclared-storage-reference",
+    "duplicate-storage-secret-owner",
+    "unknown-firewall-binding",
+    "firewall-permission-categories",
+  ])("preserves the safe %s rule without private error content", (rule) => {
+    const artifact = catalogArtifact("Public description");
+    for (const connector of artifact.connectors) {
+      if (rule === "unknown-category") {
+        connector.category = "missing-category";
+      }
+      for (const method of connector.authMethods) {
+        if (rule === "auth-client-presence") {
+          method.client = {
+            clientRegistration: "static",
+            clientType: "public",
+            clientId: "https://private.example/client",
+          };
+        }
+        if (rule === "auth-code-client-registration") {
+          method.client = {
+            clientRegistration: "dynamic",
+            clientType: "public",
+          };
+          method.grant = {
+            kind: "auth-code",
+            scopes: [],
+            callbackOrigin: "web",
+            outputs: { token: VALUE_REF },
+          };
+        }
+        if (rule === "undeclared-storage-reference") {
+          method.access.envBindings.SERVICE_TOKEN =
+            "$secrets.UNDECLARED_PRIVATE_TOKEN";
+        }
+      }
+      if (
+        rule === "unknown-firewall-binding" ||
+        rule === "firewall-permission-categories"
+      ) {
+        connector.firewall = {
+          kind: "generated",
+          billable: false,
+          config: {
+            apis: [
+              {
+                base: "https://api.example.com",
+                auth: {
+                  headers: {
+                    Authorization:
+                      "Bearer ${{ secrets.UNKNOWN_PRIVATE_TOKEN }}",
+                  },
+                },
+                permissions: [{ name: "read", rules: ["GET /items"] }],
+              },
+            ],
+          },
+          categories:
+            rule === "firewall-permission-categories"
+              ? { byPermission: {}, displayOrder: ["read"] }
+              : null,
+          defaultAllowed: null,
+          defaultUnknownPolicy: "deny",
+        };
+      }
+    }
+    if (rule === "duplicate-storage-secret-owner") {
+      for (const connector of catalogArtifact("Another description")
+        .connectors) {
+        connector.slug = "another-connector";
+        connector.skill = { kind: "none" };
+        artifact.connectors.push(connector);
+      }
+    }
+
+    expect(() => {
+      decodeCatalog(artifact);
+    }).toThrow(
+      expect.objectContaining({
+        code: "relationship-mismatch",
+        message: "relationship-mismatch",
+        relationshipRule: rule,
+      }),
+    );
+  });
+});
+
 describe("connector catalog public projection", () => {
   it("accepts the exact public slug derived from bundled skill storage", () => {
     const artifact = decodeCatalog(

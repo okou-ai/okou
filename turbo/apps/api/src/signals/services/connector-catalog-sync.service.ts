@@ -30,6 +30,7 @@ import {
 import {
   CONNECTOR_CATALOG_ACTIVE_MAX_BYTES,
   connectorCatalogArtifactFailureCode,
+  connectorCatalogArtifactRelationshipRule,
   encodeConnectorCatalogSnapshot,
   loadConnectorCatalogCandidate,
   parseConnectorCatalogActivePointer,
@@ -37,6 +38,7 @@ import {
   type ConnectorCatalogArtifactReader,
   type ValidatedConnectorCatalogCandidate,
 } from "@okouai/connectors/connector-catalog/artifacts/loader";
+import type { ConnectorCatalogRelationshipRule } from "@okouai/connectors/connector-catalog/artifacts/relationship-error";
 import {
   connectorCatalogExecutableCapabilityState,
   persistConnectorCatalogCompatibility,
@@ -849,6 +851,7 @@ async function rejectCandidate(args: {
   readonly source: ConnectorCatalogSource;
   readonly baseline: SyncStateSnapshot | undefined;
   readonly failureCode: ConnectorCatalogSyncFailureCode;
+  readonly relationshipRule?: ConnectorCatalogRelationshipRule;
   readonly rejectedCandidate?: RejectedCandidate;
   readonly pointerObservation?: PointerObservation;
   readonly reusedCachedRejection: boolean;
@@ -869,12 +872,31 @@ async function rejectCandidate(args: {
     return undefined;
   }
 
-  log.warn("Connector catalog candidate rejected", {
+  const retainedActiveSnapshot = Boolean(args.baseline?.activeCatalogVersion);
+  const pointer = args.reusedCachedRejection
+    ? rejectedCandidateFromState(args.baseline)?.pointer
+    : args.pointerObservation?.pointer;
+  const fields = {
     sourceId: args.source.sourceId,
     schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
     failureCode: args.failureCode,
-    retainedActiveSnapshot: Boolean(args.baseline?.activeCatalogVersion),
-  });
+    retainedActiveSnapshot,
+    reusedCachedRejection: args.reusedCachedRejection,
+    ...(pointer
+      ? {
+          catalogVersion: pointer.catalogVersion,
+          catalogDigest: pointer.catalogDigest,
+        }
+      : {}),
+    ...(args.relationshipRule === undefined
+      ? {}
+      : { relationshipRule: args.relationshipRule }),
+  };
+  if (args.reusedCachedRejection && retainedActiveSnapshot) {
+    log.debug("Connector catalog candidate rejected", fields);
+  } else {
+    log.warn("Connector catalog candidate rejected", fields);
+  }
   return await responseFromState({
     db: args.db,
     sourceId: args.source.sourceId,
@@ -918,6 +940,7 @@ type PointerLoadResult =
     };
 
 interface RejectSyncAttemptOptions {
+  readonly relationshipRule?: ConnectorCatalogRelationshipRule;
   readonly pointerObservation?: PointerObservation;
   readonly cacheable?: boolean;
   readonly reusedCachedRejection?: boolean;
@@ -937,6 +960,7 @@ async function rejectSyncAttempt(
     source: runtime.source,
     baseline,
     failureCode,
+    relationshipRule: resolvedOptions.relationshipRule,
     rejectedCandidate:
       !reusedCachedRejection && (resolvedOptions.cacheable ?? true)
         ? cacheableRejectedCandidate(
@@ -1027,7 +1051,12 @@ async function loadCandidateForSync(
       runtime,
       baseline,
       classifySyncFailure(result.error),
-      { pointerObservation },
+      {
+        pointerObservation,
+        relationshipRule: connectorCatalogArtifactRelationshipRule(
+          result.error,
+        ),
+      },
       signal,
     );
   }
