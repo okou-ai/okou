@@ -1,6 +1,11 @@
 import { useRender } from "@base-ui/react/use-render";
 import { cn } from "@okouai/ui";
 
+type ChatCardProps = useRender.ComponentProps<"div"> & {
+  /** Paints the shared card fill. Turn it off to own the background. */
+  readonly filled?: boolean;
+};
+
 /**
  * Cards inside the chat transcript: notice cards, action cards, artifact and
  * media frames. One surface, one border, one shadow, one radius — before this
@@ -17,7 +22,7 @@ import { cn } from "@okouai/ui";
  * call sites. `tailwind-merge` cannot classify an arbitrary `shadow-[var(…)]`
  * as a box-shadow, so it would not drop this base for a caller's own
  * `shadow-*`; no consumer overrides the shadow, and the paired `rounded-[…]`
- * and every colour and width utility below still merge normally.
+ * and every colour and width utility in the base still merge normally.
  *
  * The border is deliberately `border-[1px] border-gray-400` rather than the
  * shared `border` hairline and a semantic border token that `docs/styles.md`
@@ -33,17 +38,9 @@ import { cn } from "@okouai/ui";
  * `className`, so a conflicting base utility is dropped rather than outranked,
  * and the browser-session card's hover and selected borders apply without any
  * layer ordering.
+ *
+ * Renders a `div` unless `render` supplies another element.
  */
-const chatCardClassName =
-  "rounded-[var(--okou-chat-card-radius)] border-[1px] border-gray-400 shadow-[var(--okou-chat-card-shadow)]";
-const chatCardFillClassName = "bg-card";
-
-type ChatCardProps = useRender.ComponentProps<"div"> & {
-  /** Paints the shared card fill. Turn it off to own the background. */
-  readonly filled?: boolean;
-};
-
-/** Renders a `div` unless `render` supplies another element. */
 export function ChatCard({
   className,
   filled = true,
@@ -57,8 +54,8 @@ export function ChatCard({
       "data-slot": "chat-card",
       ...props,
       className: cn(
-        chatCardClassName,
-        filled && chatCardFillClassName,
+        "rounded-[var(--okou-chat-card-radius)] border-[1px] border-gray-400 shadow-[var(--okou-chat-card-shadow)]",
+        filled && "bg-card",
         className,
       ),
     },
