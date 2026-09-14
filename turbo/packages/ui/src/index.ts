@@ -138,6 +138,7 @@ export { cn } from "./lib/utils";
 export {
   BrandGithub,
   BrandGoogleDrive,
+  BrandLangfuse,
   BrandNotion,
   BrandSlack,
   BrandStripe,

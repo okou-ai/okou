@@ -56,6 +56,7 @@ import {
 import { zodEnumDriverValueDecoder } from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";
 import { now, nowDate } from "../../lib/time";
+import { readPiLangfuseServerConfig } from "../../lib/pi-langfuse-debug";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
 import { inferMimetype } from "./chat-event-shared.service";
 import { latestRunFinishEventSubquery } from "./chat-thread-read-state-query";
@@ -298,12 +299,42 @@ export function chatThreadDetail(args: {
       await cancellationRecoveryPendingForThread(get(db$), {
         threadId: args.threadId,
       });
+    const langfuseTraceUrls = await chatThreadLangfuseTraceUrls(get(db$), args);
 
     return {
       lastReadAt: thread.lastReadAt?.toISOString() ?? null,
       cancellationRecoveryPending,
+      ...(langfuseTraceUrls ? { langfuseTraceUrls } : {}),
     };
   });
+}
+
+async function chatThreadLangfuseTraceUrls(
+  db: ReadonlyDb,
+  args: { readonly threadId: string; readonly userId: string },
+): Promise<Record<string, string> | undefined> {
+  const config = readPiLangfuseServerConfig();
+  if (!config) {
+    return undefined;
+  }
+  const runs = await db
+    .select({ id: agentRuns.id })
+    .from(agentRuns)
+    .where(
+      and(
+        eq(agentRuns.userId, args.userId),
+        eq(agentRuns.chatThreadId, args.threadId),
+        eq(agentRuns.langfuseTraceEnabled, true),
+      ),
+    );
+  if (runs.length === 0) {
+    return undefined;
+  }
+  return Object.fromEntries(
+    runs.map((run) => {
+      return [run.id, `${config.baseUrl}/trace/${run.id.replaceAll("-", "")}`];
+    }),
+  );
 }
 
 /**

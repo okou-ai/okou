@@ -2156,6 +2156,7 @@
         "wiring": "Conectándolo todo..."
       },
       "viewActivityLogs": "Ver registros de actividad",
+      "viewLangfuseTrace": "Ver traza de Langfuse",
       "viewLogs": "Ver registros de ejecución",
       "waitingIn": "Esperando",
       "workedFor": "Trabajo realizado durante {{duration}}",

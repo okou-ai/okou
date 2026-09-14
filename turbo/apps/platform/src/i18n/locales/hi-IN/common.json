@@ -2111,6 +2111,7 @@
         "wiring": "इसे एक साथ जोड़ना..."
       },
       "viewActivityLogs": "गतिविधि लॉग देखें",
+      "viewLangfuseTrace": "Langfuse ट्रेस देखें",
       "viewLogs": "रन लॉग देखें",
       "waitingIn": "प्रतीक्षा कर रहा है",
       "workedFor": "{{duration}} के लिए काम किया",

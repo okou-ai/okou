@@ -2156,6 +2156,7 @@
         "wiring": "Collegando tutto..."
       },
       "viewActivityLogs": "Visualizza i registri delle attività",
+      "viewLangfuseTrace": "Visualizza la traccia Langfuse",
       "viewLogs": "Visualizza i registri di esecuzione",
       "waitingIn": "In attesa",
       "workedFor": "Ha lavorato per {{duration}}",

@@ -124,7 +124,7 @@ import {
 } from "./chat-event-state.ts";
 import { logger } from "../log.ts";
 import {
-  createCancellationRecoverySignals,
+  createChatThreadDetailSignals,
   createRemoteChatThreadDraft,
   patchChatThreadComputerUseHost$,
   patchChatThreadDraft$,
@@ -2706,7 +2706,7 @@ interface RunTrackingDeps {
   subscribeThinkingSummaries$: ThreadActivitySummarySignals["subscribe$"];
   thinkingSummarySubscription: ThreadActivitySummarySignals["subscription"];
   automationSignals: Pick<ChatPanelSignals, "headerAutomations">;
-  cancellationRecovery: ReturnType<typeof createCancellationRecoverySignals>;
+  threadDetail: ReturnType<typeof createChatThreadDetailSignals>;
   reloadConnectorAccounts$: Command<void, []>;
   reloadConnectorAccountPreference$: Command<void, []>;
 }
@@ -3067,23 +3067,23 @@ function createOnSubscribedCommand({
   threadId,
   catchUpChatEvents$,
   reloadArtifacts$,
-  cancellationRecovery,
+  threadDetail,
   reloadConnectorAccounts$,
 }: Pick<
   RunTrackingDeps,
   | "threadId"
   | "catchUpChatEvents$"
   | "reloadArtifacts$"
-  | "cancellationRecovery"
+  | "threadDetail"
   | "reloadConnectorAccounts$"
 >): Command<Promise<void>, [AbortSignal]> {
   return command(async ({ get, set }, signal: AbortSignal) => {
     L.debug("subscribeChatThread$ catchup start", { threadId });
-    set(cancellationRecovery.reload$);
+    set(threadDetail.reload$);
     set(reloadArtifacts$);
     set(reloadConnectorAccounts$);
     await Promise.all([
-      get(cancellationRecovery.pending$),
+      get(threadDetail.cancellationRecoveryPending$),
       set(reloadMountedComposerWorkflows$, signal),
       set(catchUpChatEvents$, signal),
     ]);
@@ -3108,7 +3108,7 @@ function createRunTracking({
   subscribeThinkingSummaries$,
   thinkingSummarySubscription,
   automationSignals,
-  cancellationRecovery,
+  threadDetail,
   reloadConnectorAccounts$,
   reloadConnectorAccountPreference$,
 }: RunTrackingDeps) {
@@ -3116,7 +3116,7 @@ function createRunTracking({
     threadId,
     catchUpChatEvents$,
     reloadArtifacts$,
-    cancellationRecovery,
+    threadDetail,
     reloadConnectorAccounts$,
   });
 
@@ -3134,7 +3134,7 @@ function createRunTracking({
           threadId,
           invalidations: {
             threadDetail: [
-              cancellationRecovery.reload$,
+              threadDetail.reload$,
               reloadConnectorAccountPreference$,
             ],
             automations: [
@@ -3993,7 +3993,10 @@ export function createThreadComposerSignals(
   } = {},
 ): ComposerSignals {
   const threadMeta$ = createThreadMeta(threadId);
-  const cancellationRecovery = createCancellationRecoverySignals(threadId);
+  const threadDetail = createChatThreadDetailSignals(
+    threadId,
+    chatEvents.chatEvents$,
+  );
   return createThreadComposerSignalsWithContext(
     threadId,
     chatEvents,
@@ -4001,7 +4004,7 @@ export function createThreadComposerSignals(
       threadMeta$,
       threadDraft$: createRemoteChatThreadDraft(threadId),
       agentId,
-      cancellationRecoveryPending$: cancellationRecovery.pending$,
+      cancellationRecoveryPending$: threadDetail.cancellationRecoveryPending$,
       forward: options.forward,
       onOptimisticSend: options.onOptimisticSend,
     },
@@ -4030,7 +4033,10 @@ export function createChatPanelSignals(
   );
   const container = createChatThreadContainerSignals();
   const threadOwned = createThreadOwnedSignals(threadId);
-  const cancellationRecovery = createCancellationRecoverySignals(threadId);
+  const threadDetail = createChatThreadDetailSignals(
+    threadId,
+    chatEvents.chatEvents$,
+  );
   const composer = createThreadComposerSignalsWithContext(
     threadId,
     chatEvents,
@@ -4038,7 +4044,7 @@ export function createChatPanelSignals(
       threadMeta$,
       threadDraft$,
       agentId,
-      cancellationRecoveryPending$: cancellationRecovery.pending$,
+      cancellationRecoveryPending$: threadDetail.cancellationRecoveryPending$,
     },
     draft,
   );
@@ -4074,7 +4080,7 @@ export function createChatPanelSignals(
     subscribeThinkingSummaries$: activity.subscribe$,
     thinkingSummarySubscription: activity.subscription,
     automationSignals: threadOwned,
-    cancellationRecovery,
+    threadDetail,
     reloadConnectorAccounts$: composer.connector.accounts.reload$,
     reloadConnectorAccountPreference$:
       composer.connector.accounts.reloadPreference$,
@@ -4111,6 +4117,7 @@ export function createChatPanelSignals(
     ...publicChatThreadEventSignals(messages),
     subscribeChatThread$: runTracking.subscribeChatThread$,
     ...createThinkingIndicatorSignals(activity, messages),
+    langfuseTraceUrls$: threadDetail.langfuseTraceUrls$,
     artifacts$: messages.artifacts$,
     reloadArtifacts$: messages.reloadArtifacts$,
   };

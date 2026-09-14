@@ -2111,6 +2111,7 @@
         "wiring": "Komponenten werden verbunden..."
       },
       "viewActivityLogs": "Aktivitätsprotokolle anzeigen",
+      "viewLangfuseTrace": "Langfuse-Trace anzeigen",
       "viewLogs": "Ausführungsprotokolle anzeigen",
       "waitingIn": "Warten",
       "workedFor": "Ausgeführt in {{duration}}",

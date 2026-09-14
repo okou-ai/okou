@@ -8061,6 +8061,78 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
+  it("exposes only the owner's traced runs in chat details after tracing is disabled", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    const orgId = requireOrgId(actor);
+    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    const pricing = await createGptUsagePricingResolution();
+    mockPiResourceArchiveDownloads();
+    mockPiCheckpointObjectStore();
+    mockOptionalEnv("LANGFUSE_PUBLIC_KEY", "pk-lf-bdd-trace-link");
+    mockOptionalEnv("LANGFUSE_SECRET_KEY", "sk-lf-bdd-trace-link");
+    mockOptionalEnv("LANGFUSE_BASE_URL", "https://langfuse.example/");
+    server.use(
+      http.post("https://api.openai.com/v1/responses", () => {
+        return new HttpResponse(piResponsesTextSse("Completed answer", 0), {
+          headers: { "content-type": "text/event-stream" },
+        });
+      }),
+    );
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      {
+        [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.LangfuseTrace]: true,
+      },
+    );
+    const traced = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "complete a traced run",
+        model: "gpt-5.6-terra",
+      },
+      pricing,
+    );
+    await waitForRunStatus(actor, traced.runId, "completed");
+    await flushWaitUntilForTest();
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      {
+        [FeatureSwitchKey.LangfuseTrace]: false,
+      },
+    );
+    const traceUrls = {
+      [traced.runId]: `https://langfuse.example/trace/${traced.runId.replaceAll("-", "")}`,
+    };
+    expect(
+      (await chat.readThread(actor, traced.threadId)).langfuseTraceUrls,
+    ).toStrictEqual(traceUrls);
+    const untraced = await sendChatRun(
+      actor,
+      {
+        agentId,
+        threadId: traced.threadId,
+        prompt: "continue without tracing",
+        model: "gpt-5.6-terra",
+      },
+      pricing,
+    );
+    await waitForRunStatus(actor, untraced.runId, "completed");
+    await flushWaitUntilForTest();
+    expect(
+      (await chat.readThread(actor, traced.threadId)).langfuseTraceUrls,
+    ).toStrictEqual(traceUrls);
+    const peer = { ...actor, userId: `${actor.userId}_peer` };
+    await chat.requestReadThread(peer, traced.threadId, [404]);
+    mockOptionalEnv("LANGFUSE_BASE_URL", "javascript:alert(1)");
+    await expect(
+      chat.readThread(actor, traced.threadId),
+    ).resolves.not.toHaveProperty("langfuseTraceUrls");
+  });
+
   it("persists Langfuse trace admission after runner claim", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);

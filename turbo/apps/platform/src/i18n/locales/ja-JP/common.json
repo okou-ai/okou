@@ -2103,6 +2103,7 @@
         "wiring": "配線を合わせてみると・・・"
       },
       "viewActivityLogs": "アクティビティログを表示する",
+      "viewLangfuseTrace": "Langfuse トレースを表示",
       "viewLogs": "実行ログを表示する",
       "waitingIn": "待機中",
       "workedFor": "{{duration}} で働いていました",

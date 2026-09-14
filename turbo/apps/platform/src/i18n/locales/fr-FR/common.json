@@ -2156,6 +2156,7 @@
         "wiring": "Branchement des éléments..."
       },
       "viewActivityLogs": "Voir les journaux d'activité",
+      "viewLangfuseTrace": "Voir la trace Langfuse",
       "viewLogs": "Voir les journaux d'exécution",
       "waitingIn": "En attente",
       "workedFor": "Fonctionné pendant {{duration}}",
