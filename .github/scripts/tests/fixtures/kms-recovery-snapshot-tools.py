@@ -5,9 +5,9 @@ import datetime as dt
 import hashlib
 import json
 import os
-from pathlib import Path
 import sys
 import urllib.parse
+from pathlib import Path
 
 state_path = Path(__file__).resolve().parent.parent / "fixture.json"
 state = json.loads(state_path.read_text())
@@ -231,6 +231,22 @@ if Path(sys.argv[0]).name == "psql":
             }
         )
     )
+    if scenario in {"sql-timeout", "invalid-scan-progress"}:
+        print(
+            json.dumps(
+                {
+                    "kind": "scan-start",
+                    "phase": "table",
+                    "relationOid": 456 if scenario == "sql-timeout" else True,
+                    "relationBytes": 5368709120,
+                    "private": "fixture-private-password",
+                }
+            )
+        )
+        sys.stderr.write(
+            "psql:inventory.sql:42: ERROR:  57014\nDETAIL: fixture-private-password\n"
+        )
+        raise SystemExit(3)
     raise SystemExit(0)
 
 assert Path(sys.argv[0]).name == "curl"

@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """Run the actual aggregate SQL in an isolated local PostgreSQL cluster."""
 
+import hashlib
 import json
 import os
-from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from kms_recovery_scan import ScanReportError, scan_records
 
 SQL = Path(__file__).resolve().parents[1] / "kms-recovery-snapshot-inventory.sql"
 
@@ -60,6 +65,7 @@ class SnapshotSqlTest(unittest.TestCase):
                     capture_output=True,
                     text=True,
                     timeout=30,
+                    check=False,
                 )
 
             try:
@@ -103,6 +109,19 @@ class SnapshotSqlTest(unittest.TestCase):
                     ).stdout.strip(),
                     "3",
                 )
+                role = psql("-c", "CREATE ROLE snapshot_scan_reader LOGIN")
+                self.assertEqual(role.returncode, 0, role.stderr)
+                denied = psql("-U", "snapshot_scan_reader", "-f", str(SQL))
+                self.assertNotEqual(denied.returncode, 0)
+                self.assertNotIn("private-plaintext", denied.stdout + denied.stderr)
+                with self.assertRaises(ScanReportError) as raised:
+                    scan_records(denied, hashlib.sha256(b"postgres").hexdigest())
+                self.assertEqual(raised.exception.diagnostics["sqlState"], "42501")
+                self.assertEqual(
+                    raised.exception.diagnostics["lastStartedScan"]["relationOid"],
+                    tables[0]["relationOid"],
+                )
+                self.assertEqual(raised.exception.diagnostics["completedTables"], 0)
             finally:
                 subprocess.run(
                     [

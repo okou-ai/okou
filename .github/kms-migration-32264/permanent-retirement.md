@@ -105,6 +105,15 @@ means a started verification failed before its call count could be established.
 Target mode has a 90-minute inspection budget and separately reserved cleanup
 time; the default marker-only mode keeps its 20-minute inspection budget.
 
+When a database scan fails, `databaseScanFailure` retains the PostgreSQL
+SQLSTATE when available, the process exit code, the number of completed tables,
+and the last started table or binary-column scan's relation OID and size.
+These diagnostics contain no table contents, SQL text, database names or raw
+error messages. Partial scan progress is not a complete inventory or evidence
+of zero dependencies. Inspect the failure and verify preview cleanup before
+dispatching another isolated check; do not increase timeouts or repeat restores
+without diagnosing the actual cause.
+
 The provider contract is documented in
 [Neon's snapshot restore API](https://neon.com/docs/reference/api/snapshots/restore-snapshot).
 Run `bash .github/scripts/tests/kms-recovery-snapshot-inspect-test.sh` for the
