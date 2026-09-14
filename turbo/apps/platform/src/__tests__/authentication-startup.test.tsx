@@ -3,7 +3,12 @@ import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
 
 import { mockedClerk } from "./mock-auth.ts";
-import { queryAllByRoleFast, setupPage, startPage } from "./page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+  startPage,
+} from "./page-helper.ts";
 import frFRCommon from "../i18n/locales/fr-FR/common.json";
 import frFRCommonUrl from "../i18n/locales/fr-FR/common.json?url";
 import { testContext } from "../signals/__tests__/test-helpers.ts";
@@ -194,6 +199,50 @@ test("Authentication startup is reused without a duplicate load", async () => {
   ).resolves.toBeInTheDocument();
   expect(clerk.loads).toHaveLength(1);
   expect(clerk.uiRequests).toStrictEqual([]);
+});
+
+test("A Clerk core failure offers a visible refresh without an automatic retry", async () => {
+  const failure = new Error("Clerk core resource is unavailable");
+  const clerk = context.mocks.clerk();
+  clerk.resourceUnavailable(failure);
+  const consoleError = vi.spyOn(console, "error");
+  const unexpectedError = consoleError.getMockImplementation();
+  consoleError.mockImplementation((...args) => {
+    if (args.includes(failure)) {
+      return;
+    }
+    unexpectedError?.(...args);
+  });
+
+  const page = await startPage({
+    context,
+    host: "app.okou.ai",
+    path: "/sign-in",
+    auth: null,
+  });
+
+  const alert = await screen.findByRole("alert");
+  await page.ready;
+  expect(alert).toHaveTextContent("Oops! Something went sideways");
+  expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("app-skeleton")).not.toBeInTheDocument();
+  expect(clerk.resourceRequests).toStrictEqual([
+    { publishableKey: "test_production_key" },
+  ]);
+  expect(clerk.loads).toHaveLength(0);
+
+  const reload = vi
+    .spyOn(window.location, "reload")
+    .mockImplementation(() => {});
+  const refresh = queryAllByRoleFast("button", alert).find((button) => {
+    return button.textContent === "Refresh";
+  });
+  expect(refresh).toBeDefined();
+  if (!refresh) {
+    throw new Error("Refresh action is missing");
+  }
+  click(refresh);
+  expect(reload).toHaveBeenCalledOnce();
 });
 
 test("Startup onboarding follows the current account and workspace", async () => {

@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import indexHtml from "../../index.html?raw";
 import { setupPage } from "./page-helper.ts";
@@ -198,6 +198,24 @@ test("The inline bootstrap owns the Clerk runtime", async () => {
     signInUrl: "https://app.okou.ai/sign-in",
     signUpUrl: "https://app.okou.ai/sign-up",
   });
+});
+
+test("The inline bootstrap rejects an unavailable Clerk core resource", async () => {
+  const consoleError = vi.spyOn(console, "error");
+  const unexpectedError = consoleError.getMockImplementation();
+  consoleError.mockImplementation((...args) => {
+    if (args[0] === "Clerk core bootstrap failed") {
+      return;
+    }
+    unexpectedError?.(...args);
+  });
+  const { bootstrap, script } = runInlineBootstrap("app.okou.ai", "/agents");
+
+  script.onerror?.();
+
+  await expect(bootstrap.runtime).rejects.toThrow(
+    "Clerk core resource is unavailable",
+  );
 });
 
 test("The inline Clerk bootstrap uses the current page sign-in URL", async () => {

@@ -23,6 +23,7 @@ import {
   type DeferredPromise,
   NEVER_RESOLVED_PROMISE,
   onDomEventFn,
+  onRejection,
 } from "./utils.ts";
 import { writeConnectionDiagnostic$ } from "./connection-diagnostics.ts";
 import { sessionStorageSignals } from "./external/session-storage.ts";
@@ -383,11 +384,17 @@ export const setupClerkUser$ = command(
     // Claim the signal before the first await. Daemons and route setups started
     // in the same synchronous pass then read a promise this command resolves,
     // instead of the module sentinel that nothing settles.
-    let pending: DeferredPromise<UserResource | null> | null =
-      createDeferredPromise<UserResource | null>(signal);
-    set(internalClerkUser$, pending.promise);
+    const initialPending = createDeferredPromise<UserResource | null>(signal);
+    let pending: DeferredPromise<UserResource | null> | null = initialPending;
+    set(internalClerkUser$, initialPending.promise);
 
-    const clerk = await get(clerk$);
+    const clerk = await onRejection(get(clerk$), (error) => {
+      signal.throwIfAborted();
+      pending = null;
+      if (!initialPending.settled()) {
+        initialPending.reject(error);
+      }
+    });
     signal.throwIfAborted();
 
     let publishedUserId: string | null | undefined;
