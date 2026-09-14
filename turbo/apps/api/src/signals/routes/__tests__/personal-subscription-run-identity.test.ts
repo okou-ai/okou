@@ -1010,79 +1010,78 @@ describe("actual historical subscription writers", () => {
       }),
     );
     const oldRead = support.listPersonalModelProviders(f.actor, [200]);
-    await (async () => {
-      await entered.promise;
-      const restored = await writeHistoricalSubscription(
-        f.actor,
-        f.type,
-        "identity-a",
-        3,
-      );
-      const freshExpiry = new Date(now() + 7_200_000).toISOString();
-      server.use(
-        http.get(detailsUrl, ({ request }) => {
-          expect(request.headers.get("authorization")).toBe(
-            `Bearer ${restored.token}`,
-          );
-          expect(request.headers.get("chatgpt-account-id")).toBe("identity-a");
-          return HttpResponse.json({
-            credits: [{ status: "available", expires_at: freshExpiry }],
-          });
-        }),
-      );
-      const listed = await support.listPersonalModelProviders(f.actor, [200]);
-      expect(listed.body).toMatchObject({
-        modelProviders: [
-          {
-            id: accountId(a, f.type),
-            isActive: true,
-            subscriptionResetCreditsNextExpiresAt: freshExpiry,
-          },
-        ],
-      });
-      expect((await oldRead).body).toMatchObject({
-        modelProviders: [
-          {
-            id: b.id,
-            subscriptionResetCreditsNextExpiresAt: null,
-          },
-        ],
-      });
-      release.resolve(
-        HttpResponse.json({
-          credits: [
-            {
-              status: "available",
-              expires_at: new Date(now() + 3_600_000).toISOString(),
-            },
-          ],
-        }),
-      );
-      expect(
-        (await support.listPersonalModelProviders(f.actor, [200])).body,
-      ).toMatchObject({
-        modelProviders: [
-          {
-            id: accountId(a, f.type),
-            subscriptionResetCreditsNextExpiresAt: freshExpiry,
-          },
-        ],
-      });
-      await expect(resolve(a, f.type)).resolves.toMatchObject({
-        Authorization: `Bearer ${restored.token}`,
-        "ChatGPT-Account-ID": "identity-a",
-      });
-      await expect(resolve(bClaim, f.type)).resolves.toMatchObject({
-        Authorization: `Bearer ${b.token}`,
-        "ChatGPT-Account-ID": "identity-b",
-      });
-    })().finally(async () => {
+    onTestFinished(async () => {
       if (!release.settled()) {
         release.resolve(HttpResponse.json({ credits: [] }));
       }
       await oldRead;
       await runs.requestCancelRun(f.actor, first, [200]);
       await runs.requestCancelRun(f.actor, second, [200]);
+    });
+    await entered.promise;
+    const restored = await writeHistoricalSubscription(
+      f.actor,
+      f.type,
+      "identity-a",
+      3,
+    );
+    const freshExpiry = new Date(now() + 7_200_000).toISOString();
+    server.use(
+      http.get(detailsUrl, ({ request }) => {
+        expect(request.headers.get("authorization")).toBe(
+          `Bearer ${restored.token}`,
+        );
+        expect(request.headers.get("chatgpt-account-id")).toBe("identity-a");
+        return HttpResponse.json({
+          credits: [{ status: "available", expires_at: freshExpiry }],
+        });
+      }),
+    );
+    const listed = await support.listPersonalModelProviders(f.actor, [200]);
+    expect(listed.body).toMatchObject({
+      modelProviders: [
+        {
+          id: accountId(a, f.type),
+          isActive: true,
+          subscriptionResetCreditsNextExpiresAt: freshExpiry,
+        },
+      ],
+    });
+    expect((await oldRead).body).toMatchObject({
+      modelProviders: [
+        {
+          id: b.id,
+          subscriptionResetCreditsNextExpiresAt: null,
+        },
+      ],
+    });
+    release.resolve(
+      HttpResponse.json({
+        credits: [
+          {
+            status: "available",
+            expires_at: new Date(now() + 3_600_000).toISOString(),
+          },
+        ],
+      }),
+    );
+    expect(
+      (await support.listPersonalModelProviders(f.actor, [200])).body,
+    ).toMatchObject({
+      modelProviders: [
+        {
+          id: accountId(a, f.type),
+          subscriptionResetCreditsNextExpiresAt: freshExpiry,
+        },
+      ],
+    });
+    await expect(resolve(a, f.type)).resolves.toMatchObject({
+      Authorization: `Bearer ${restored.token}`,
+      "ChatGPT-Account-ID": "identity-a",
+    });
+    await expect(resolve(bClaim, f.type)).resolves.toMatchObject({
+      Authorization: `Bearer ${b.token}`,
+      "ChatGPT-Account-ID": "identity-b",
     });
   });
 

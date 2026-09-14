@@ -382,97 +382,97 @@ describe("legacy subscription import expiry isolation", () => {
         return releaseA.promise;
       };
       const oldRead = a.list();
-      let freshRead: ReturnType<typeof a.list> | undefined;
-      await (async () => {
-        await Promise.all([aStarted.promise, bStarted.promise]);
-        if (reused) {
-          await reusedStarted.promise;
-        }
-        const next = credentials(
-          mutation === "same-identity"
-            ? a.auth.accountId
-            : mutation === "reuse"
-              ? reusedIdentity
-              : randomUUID(),
-        );
-        await legacyRotation(a, next);
-        const imported = createDeferredPromise<void>(context.signal);
-        const freshExpiry = new Date(now() + 7_200_000).toISOString();
-        remote.details = (request) => {
-          requests.push(request.headers.get("chatgpt-account-id"));
-          if (request.headers.get("chatgpt-account-id") === next.accountId) {
-            expect(request.headers.get("authorization")).toBe(
-              `Bearer ${next.accessToken}`,
-            );
-            imported.resolve();
-          }
-          return expiryResponse(freshExpiry);
-        };
-        freshRead = a.list();
-        await imported.promise;
-        expect(bSignal).toMatchObject({ aborted: false });
-        releaseB.resolve(expiryResponse(remote.expiry));
-        const current = await freshRead;
-        expect(current).toContainEqual(
-          expect.objectContaining({
-            id: b,
-            subscriptionResetCreditsNextExpiresAt: remote.expiry,
-          }),
-        );
-        expect(current).toContainEqual(
-          expect.objectContaining({
-            ...(mutation === "same-identity"
-              ? { id: a.id }
-              : reused
-                ? { id: reused }
-                : {}),
-            isActive: true,
-            subscriptionResetCreditsNextExpiresAt: freshExpiry,
-          }),
-        );
-        const stale = await oldRead;
-        expect(stale).toContainEqual(
-          expect.objectContaining({
-            id: a.id,
-            subscriptionResetCreditsNextExpiresAt: null,
-          }),
-        );
-        if (reused) {
-          expect(stale).toContainEqual(
-            expect.objectContaining({
-              id: reused,
-              subscriptionResetCreditsNextExpiresAt: null,
-            }),
-          );
-        }
-        releaseA.resolve(expiryResponse(remote.expiry));
-        const listed = await a.list();
-        expect(listed).toContainEqual(
-          expect.objectContaining({
-            id: b,
-            subscriptionResetCreditsNextExpiresAt: remote.expiry,
-          }),
-        );
-        expect(listed).toContainEqual(
-          expect.objectContaining({
-            isActive: true,
-            subscriptionResetCreditsNextExpiresAt: freshExpiry,
-          }),
-        );
-        expect(
-          requests.filter((identity) => {
-            return identity === bIdentity;
-          }),
-        ).toHaveLength(1);
-      })().finally(async () => {
+      const reads = [oldRead];
+      onTestFinished(async () => {
         if (!releaseA.settled()) {
           releaseA.resolve(expiryResponse(null));
         }
         if (!releaseB.settled()) {
           releaseB.resolve(expiryResponse(null));
         }
-        await Promise.allSettled([oldRead, freshRead]);
+        await Promise.allSettled(reads);
       });
+      await Promise.all([aStarted.promise, bStarted.promise]);
+      if (reused) {
+        await reusedStarted.promise;
+      }
+      const next = credentials(
+        mutation === "same-identity"
+          ? a.auth.accountId
+          : mutation === "reuse"
+            ? reusedIdentity
+            : randomUUID(),
+      );
+      await legacyRotation(a, next);
+      const imported = createDeferredPromise<void>(context.signal);
+      const freshExpiry = new Date(now() + 7_200_000).toISOString();
+      remote.details = (request) => {
+        requests.push(request.headers.get("chatgpt-account-id"));
+        if (request.headers.get("chatgpt-account-id") === next.accountId) {
+          expect(request.headers.get("authorization")).toBe(
+            `Bearer ${next.accessToken}`,
+          );
+          imported.resolve();
+        }
+        return expiryResponse(freshExpiry);
+      };
+      const freshRead = a.list();
+      reads.push(freshRead);
+      await imported.promise;
+      expect(bSignal).toMatchObject({ aborted: false });
+      releaseB.resolve(expiryResponse(remote.expiry));
+      const current = await freshRead;
+      expect(current).toContainEqual(
+        expect.objectContaining({
+          id: b,
+          subscriptionResetCreditsNextExpiresAt: remote.expiry,
+        }),
+      );
+      expect(current).toContainEqual(
+        expect.objectContaining({
+          ...(mutation === "same-identity"
+            ? { id: a.id }
+            : reused
+              ? { id: reused }
+              : {}),
+          isActive: true,
+          subscriptionResetCreditsNextExpiresAt: freshExpiry,
+        }),
+      );
+      const stale = await oldRead;
+      expect(stale).toContainEqual(
+        expect.objectContaining({
+          id: a.id,
+          subscriptionResetCreditsNextExpiresAt: null,
+        }),
+      );
+      if (reused) {
+        expect(stale).toContainEqual(
+          expect.objectContaining({
+            id: reused,
+            subscriptionResetCreditsNextExpiresAt: null,
+          }),
+        );
+      }
+      releaseA.resolve(expiryResponse(remote.expiry));
+      const listed = await a.list();
+      expect(listed).toContainEqual(
+        expect.objectContaining({
+          id: b,
+          subscriptionResetCreditsNextExpiresAt: remote.expiry,
+        }),
+      );
+      expect(listed).toContainEqual(
+        expect.objectContaining({
+          isActive: true,
+          subscriptionResetCreditsNextExpiresAt: freshExpiry,
+        }),
+      );
+      expect(
+        requests.filter((identity) => {
+          return identity === bIdentity;
+        }),
+      ).toHaveLength(1);
     },
   );
 });
