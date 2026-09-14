@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   normalizePiLangfuseTraceId,
+  piLangfuseIdGenerator,
   PI_LANGFUSE_API_OBSERVATION_NAMES,
   recordPiLangfuseRunEndToEnd,
   startPiLangfuseOwnershipTransfer,
@@ -61,6 +62,7 @@ function installMemoryExporter(): {
 } {
   const exporter = new InMemorySpanExporter();
   const provider = new BasicTracerProvider({
+    idGenerator: piLangfuseIdGenerator,
     spanProcessors: [
       new LangfuseSpanProcessor({
         exporter,
@@ -114,6 +116,7 @@ describe("Pi run E2E Langfuse tracing", () => {
     const [e2e] = spans;
     expect(e2e?.name).toBe("Run End-to-End");
     expect(e2e?.spanContext().traceId).toBe(normalizePiLangfuseTraceId(RUN_ID));
+    expect(e2e?.parentSpanContext).toBeUndefined();
     expect(epochMillis(e2e?.startTime ?? [0, 0])).toBe(apiStartedAt);
     expect(epochMillis(e2e?.endTime ?? [0, 0])).toBe(terminalCommittedAt);
     expect(e2e?.attributes).toMatchObject({
@@ -162,6 +165,16 @@ describe("Pi API-first Langfuse tracing", () => {
     }
     transfer.end();
     result.traceContext?.end();
+    const terminalCommittedAt = Date.parse("2026-09-14T03:39:10.832Z");
+    recordPiLangfuseRunEndToEnd({
+      enabled: true,
+      runId: RUN_ID,
+      sessionId: SESSION_ID,
+      userId: "user-1",
+      apiStartedAt: terminalCommittedAt - 2000,
+      terminalCommittedAt,
+      terminalStatus: "completed",
+    });
     await provider.forceFlush();
 
     const spans = exporter.getFinishedSpans();
@@ -174,10 +187,14 @@ describe("Pi API-first Langfuse tracing", () => {
     const ownership = spans.find((span) => {
       return span.name === "Ownership Transfer";
     });
+    const runEndToEnd = spans.find((span) => {
+      return span.name === "Run End-to-End";
+    });
     expect(root).toBeDefined();
     expect(generation).toBeDefined();
     expect(ownership).toBeDefined();
-    if (!root || !generation || !ownership) {
+    expect(runEndToEnd).toBeDefined();
+    if (!root || !generation || !ownership || !runEndToEnd) {
       throw new Error("Expected a complete API-first transfer trace");
     }
 
@@ -185,6 +202,11 @@ describe("Pi API-first Langfuse tracing", () => {
     expect(root.spanContext().traceId).toBe(traceId);
     expect(generation.spanContext().traceId).toBe(traceId);
     expect(ownership.spanContext().traceId).toBe(traceId);
+    expect(runEndToEnd.spanContext().traceId).toBe(traceId);
+    expect(runEndToEnd.parentSpanContext).toBeUndefined();
+    expect(root.parentSpanContext?.spanId).toBe(
+      runEndToEnd.spanContext().spanId,
+    );
     expect(root.attributes[LangfuseOtelSpanAttributes.IS_APP_ROOT]).toBe(true);
     expect(generation.attributes[LangfuseOtelSpanAttributes.IS_APP_ROOT]).toBe(
       undefined,

@@ -1,4 +1,5 @@
-import { randomBytes } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash, randomBytes } from "node:crypto";
 
 import {
   elapsedSinceApiStartMs,
@@ -12,13 +13,16 @@ import {
   startObservation,
 } from "@langfuse/tracing";
 import {
+  context,
   isSpanContextValid,
+  ROOT_CONTEXT,
   TraceFlags,
   type Attributes,
   type SpanContext,
 } from "@opentelemetry/api";
 
 import { safeSync, settleIncludingAbort } from "../signals/utils";
+import { singleton } from "./singleton";
 
 const LANGFUSE_TRACE_NAME = "Pi Agent Run";
 
@@ -84,18 +88,53 @@ export function normalizePiLangfuseTraceId(runId: string): string | undefined {
   return traceId;
 }
 
-function randomSpanId(): string {
-  let spanId = randomBytes(8).toString("hex");
-  while (/^0+$/.test(spanId)) {
-    spanId = randomBytes(8).toString("hex");
+function randomHexId(bytes: number): string {
+  let id = randomBytes(bytes).toString("hex");
+  while (/^0+$/.test(id)) {
+    id = randomBytes(bytes).toString("hex");
   }
-  return spanId;
+  return id;
 }
 
-function bootstrapParent(traceId: string): SpanContext {
+interface ForcedPiLangfuseIds {
+  readonly traceId: string;
+  readonly spanId: string;
+}
+
+const forcedPiLangfuseIds = singleton(() => {
+  return new AsyncLocalStorage<ForcedPiLangfuseIds>();
+});
+
+/**
+ * Preserve normal OpenTelemetry randomness while allowing the retrospective
+ * run root to reuse the parent ID published before Sandbox ownership transfer.
+ */
+export const piLangfuseIdGenerator = Object.freeze({
+  generateTraceId(): string {
+    return forcedPiLangfuseIds.peek()?.getStore()?.traceId ?? randomHexId(16);
+  },
+  generateSpanId(): string {
+    return forcedPiLangfuseIds.peek()?.getStore()?.spanId ?? randomHexId(8);
+  },
+});
+
+function runEndToEndSpanId(traceId: string): string {
+  const digest = createHash("sha256")
+    .update(`vm0.pi.run-end-to-end:${traceId}`)
+    .digest("hex");
+  for (let offset = 0; offset <= digest.length - 16; offset += 16) {
+    const spanId = digest.slice(offset, offset + 16);
+    if (!/^0+$/.test(spanId)) {
+      return spanId;
+    }
+  }
+  return "0000000000000001";
+}
+
+function runEndToEndSpanContext(traceId: string): SpanContext {
   return {
     traceId,
-    spanId: randomSpanId(),
+    spanId: runEndToEndSpanId(traceId),
     traceFlags: TraceFlags.SAMPLED,
     isRemote: true,
   };
@@ -149,27 +188,31 @@ export function recordPiLangfuseRunEndToEnd(
 
   const apiStartedAt = new Date(args.apiStartedAt);
   const terminalCommittedAt = new Date(args.terminalCommittedAt);
+  const rootSpanContext = runEndToEndSpanContext(traceId);
   const started = safeSync(() => {
-    return startObservation(
-      PI_LANGFUSE_RUN_END_TO_END_OBSERVATION_NAME,
-      {
-        level: args.terminalStatus === "failed" ? "ERROR" : undefined,
-        metadata: {
-          source: "vm0-api",
-          run_id: args.runId,
-          api_started_at: apiStartedAt.toISOString(),
-          terminal_committed_at: terminalCommittedAt.toISOString(),
-          duration_ms: durationMs,
-          terminal_status: args.terminalStatus,
-          content_capture: "metadata-only",
-        },
-      },
-      {
-        asType: "span",
-        parentSpanContext: bootstrapParent(traceId),
-        startTime: apiStartedAt,
-      },
-    );
+    return context.with(ROOT_CONTEXT, () => {
+      return forcedPiLangfuseIds().run(rootSpanContext, () => {
+        return startObservation(
+          PI_LANGFUSE_RUN_END_TO_END_OBSERVATION_NAME,
+          {
+            level: args.terminalStatus === "failed" ? "ERROR" : undefined,
+            metadata: {
+              source: "vm0-api",
+              run_id: args.runId,
+              api_started_at: apiStartedAt.toISOString(),
+              terminal_committed_at: terminalCommittedAt.toISOString(),
+              duration_ms: durationMs,
+              terminal_status: args.terminalStatus,
+              content_capture: "metadata-only",
+            },
+          },
+          {
+            asType: "span",
+            startTime: apiStartedAt,
+          },
+        );
+      });
+    });
   });
   if ("error" in started) {
     return;
@@ -250,7 +293,7 @@ function startApiTrace(
       },
       {
         asType: "span",
-        parentSpanContext: bootstrapParent(traceId),
+        parentSpanContext: runEndToEndSpanContext(traceId),
       },
     );
     stampObservation(root, {

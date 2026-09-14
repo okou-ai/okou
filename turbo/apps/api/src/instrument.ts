@@ -14,7 +14,10 @@ import {
   piLangfuseTracingEnvironment,
   readPiLangfuseServerConfig,
 } from "./lib/pi-langfuse-debug";
-import { PI_LANGFUSE_API_OBSERVATION_NAMES } from "./lib/pi-langfuse-tracing";
+import {
+  piLangfuseIdGenerator,
+  PI_LANGFUSE_API_OBSERVATION_NAMES,
+} from "./lib/pi-langfuse-tracing";
 import { safeSync } from "./signals/utils";
 
 const OTEL_SERVICE_NAME = "vm0-api";
@@ -68,6 +71,7 @@ function setupOpenTelemetry() {
     attributes: { [ATTR_SERVICE_VERSION]: env("GIT_COMMIT_SHA") },
     traceExporter: buildAxiomTraceExporter(),
     spanProcessors,
+    idGenerator: piLangfuseIdGenerator,
   });
 }
 
