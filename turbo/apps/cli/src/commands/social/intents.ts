@@ -61,6 +61,7 @@ export interface SocialRequestMetadata {
   readonly maxDuration?: number;
   readonly quality?: string;
   readonly refresh?: boolean;
+  readonly requireViews?: boolean;
   readonly resume?: boolean;
   readonly sort?: string;
   readonly thread?: boolean;
@@ -111,6 +112,8 @@ export const SOCIAL_CAPABILITIES: readonly SocialCapability[] = [
       "Posts supports posts and reels",
       "Search supports keywords and hashtags (up to 100 trimmed characters)",
       "Search returns one anonymous batch of up to 12 reels; additional pages and exhaustive results are unavailable",
+      "Inspect preserves unavailable views as null, distinct from zero",
+      "Inspect --require-views requires verified video views for posts/reels; unavailable views fail without a charge and are not retried automatically",
     ],
   },
   {
@@ -148,6 +151,7 @@ export const SOCIAL_CAPABILITIES: readonly SocialCapability[] = [
 ] as const;
 
 interface InspectOptions {
+  readonly requireViews?: boolean;
   readonly thread?: boolean;
 }
 
@@ -730,12 +734,26 @@ export function inspectIntent(
   if (options.thread && target.platform !== "twitter") {
     return unsupported("--thread is supported only for X post URLs");
   }
+  const tool = inspectionTool(target, options.thread === true);
+  if (options.requireViews && tool !== "instagram_stats") {
+    return unsupported(
+      "--require-views is supported only for Instagram post or video URLs",
+    );
+  }
   return urlIntent(
     "inspect",
     target,
-    inspectionTool(target, options.thread === true),
-    { url: target.canonicalUrl },
-    { thread: options.thread === true },
+    tool,
+    {
+      url: target.canonicalUrl,
+      ...(options.requireViews ? { requireViews: true } : {}),
+    },
+    {
+      thread: options.thread === true,
+      ...(tool === "instagram_stats"
+        ? { requireViews: options.requireViews === true }
+        : {}),
+    },
   );
 }
 

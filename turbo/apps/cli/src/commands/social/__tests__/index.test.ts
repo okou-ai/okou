@@ -159,6 +159,7 @@ describe("okou social command", () => {
       command.setOptionValue("json", undefined);
       command.setOptionValue("thread", undefined);
       command.setOptionValue("fullDetails", undefined);
+      command.setOptionValue("requireViews", undefined);
       command.setOptionValue("kind", undefined);
       command.setOptionValue("limit", 10);
       command.setOptionValue("stream", undefined);
@@ -501,6 +502,8 @@ describe("okou social command", () => {
     expect(output()).not.toContain("instagram_channel_posts");
     expect(output()).toContain("up to 100 trimmed characters");
     expect(output()).toContain("one anonymous batch of up to 12 reels");
+    expect(output()).toContain("--require-views");
+    expect(output()).toContain("null, distinct from zero");
     expect(apiRequests).toBe(0);
   });
 
@@ -577,7 +580,184 @@ describe("okou social command", () => {
       status: "complete",
       operation: "inspect",
     });
-    expect(outputRequest()).toStrictEqual({ thread: false });
+    expect(outputRequest()).toStrictEqual({
+      thread: false,
+      ...(expectedTool === "instagram_stats" ? { requireViews: false } : {}),
+    });
+  });
+
+  it.each([null, undefined, 0, 12])(
+    "preserves Instagram views %s through the real reader and output",
+    async (views) => {
+      const data = {
+        ...(views === undefined ? {} : { views }),
+        likes: 4,
+        author: "example",
+      };
+      const requests: unknown[] = [];
+      server.use(
+        http.post(
+          "http://localhost:3000/api/social/request",
+          async ({ request }) => {
+            expect(request.headers.get("x-okou-instagram-views")).toBe(
+              "nullable",
+            );
+            requests.push(await request.json());
+            return HttpResponse.json(
+              socialResponse("instagram_stats", null, data),
+            );
+          },
+        ),
+      );
+
+      await socialCommand.parseAsync([
+        "node",
+        "okou",
+        "inspect",
+        "https://instagram.com/reel/example",
+        "--json",
+      ]);
+
+      expect(requests).toStrictEqual([
+        {
+          tool: "instagram_stats",
+          input: { url: "https://www.instagram.com/reel/example" },
+        },
+      ]);
+      expect(JSON.parse(output()) as unknown).toMatchObject({
+        status: "complete",
+        request: { requireViews: false },
+        data,
+      });
+      expect((JSON.parse(output()) as { data: unknown }).data).toStrictEqual(
+        data,
+      );
+    },
+  );
+
+  it("forwards strict Instagram lookup and preserves verified zero", async () => {
+    const requests: unknown[] = [];
+    server.use(
+      http.post(
+        "http://localhost:3000/api/social/request",
+        async ({ request }) => {
+          requests.push(await request.json());
+          return HttpResponse.json(
+            socialResponse("instagram_stats", null, { views: 0 }),
+          );
+        },
+      ),
+    );
+
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "inspect",
+      "https://instagram.com/p/example",
+      "--require-views",
+      "--json",
+    ]);
+
+    expect(requests).toStrictEqual([
+      {
+        tool: "instagram_stats",
+        input: {
+          url: "https://www.instagram.com/p/example",
+          requireViews: true,
+        },
+      },
+    ]);
+    expect(JSON.parse(output()) as unknown).toMatchObject({
+      status: "complete",
+      request: { requireViews: true },
+      data: { views: 0 },
+    });
+  });
+
+  it.each([
+    "https://instagram.com/example",
+    "https://youtube.com/watch?v=example",
+    "https://x.com/example/status/1",
+    "https://facebook.com/example/posts/1",
+    "https://tiktok.com/@example/video/1",
+    "https://linkedin.com/posts/example",
+  ])("rejects --require-views for %s before HTTP", async (url) => {
+    let requests = 0;
+    server.use(
+      http.post("http://localhost:3000/api/social/request", () => {
+        requests += 1;
+        return HttpResponse.json({});
+      }),
+    );
+
+    await expect(
+      socialCommand.parseAsync([
+        "node",
+        "okou",
+        "inspect",
+        url,
+        "--require-views",
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    expect(requests).toBe(0);
+    expect(errorOutput()).toContain(
+      "--require-views is supported only for Instagram post or video URLs",
+    );
+  });
+
+  it("reports strict Instagram 503 without retrying optional lookup", async () => {
+    const requests: unknown[] = [];
+    server.use(
+      http.post(
+        "http://localhost:3000/api/social/request",
+        async ({ request }) => {
+          requests.push(await request.json());
+          return HttpResponse.json(
+            {
+              error: {
+                code: "SOCIAL_VIEWS_UNAVAILABLE",
+                message:
+                  "Instagram view count is temporarily unavailable. No credits were charged. Retry later, or omit --require-views to use other available data.",
+              },
+            },
+            { status: 503 },
+          );
+        },
+      ),
+    );
+
+    await expect(
+      socialCommand.parseAsync([
+        "node",
+        "okou",
+        "inspect",
+        "https://instagram.com/reel/example",
+        "--require-views",
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    expect(requests).toStrictEqual([
+      {
+        tool: "instagram_stats",
+        input: {
+          url: "https://www.instagram.com/reel/example",
+          requireViews: true,
+        },
+      },
+    ]);
+    expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+      status: "error",
+      error: {
+        code: "SOCIAL_VIEWS_UNAVAILABLE",
+        httpStatus: 503,
+        retryable: true,
+        message: expect.stringContaining("No credits were charged"),
+      },
+    });
+    expect(output()).toBe("");
   });
 
   it("canonicalizes supported URLs and routes X threads", async () => {
