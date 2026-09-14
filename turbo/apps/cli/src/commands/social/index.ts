@@ -89,7 +89,7 @@ const DOWNLOAD_SIGNAL_EXIT_CODE: Readonly<Record<DownloadSignal, number>> = {
   SIGTERM: 143,
 };
 
-type SocialStatus = "complete" | "partial";
+type SocialStatus = "complete" | "partial" | "error";
 
 interface SocialBilling {
   readonly category: string;
@@ -103,7 +103,7 @@ interface SocialWarning {
 }
 
 interface SocialCollectionOutput {
-  readonly state: "caller_limited" | "complete" | "provider_limited";
+  readonly state: "caller_limited" | "complete" | "provider_limited" | "failed";
   readonly pages: number;
   readonly itemsReturned: number;
   readonly itemsObserved: number;
@@ -111,6 +111,16 @@ interface SocialCollectionOutput {
   readonly reportedTotal?: number;
   readonly reason?: string;
   readonly uncertainty?: string;
+  readonly nextInput?: SocialCollectionNextInput;
+}
+
+interface SocialErrorDetails {
+  readonly kind: string;
+  readonly code: string;
+  readonly message: string;
+  readonly retryable: boolean;
+  readonly httpStatus?: number;
+  readonly billed?: boolean;
 }
 
 interface SocialOutputBase {
@@ -124,6 +134,8 @@ interface SocialOutputBase {
   readonly collection: SocialCollectionOutput | null;
   readonly billing: SocialBilling | null;
   readonly warnings: readonly SocialWarning[];
+  readonly error?: SocialErrorDetails;
+  readonly progress?: CollectionProgress;
 }
 
 interface SocialResultOutput extends SocialOutputBase {
@@ -149,6 +161,7 @@ class SocialCollectionError extends Error {
   constructor(
     message: string,
     readonly progress: CollectionProgress,
+    readonly output: SocialOutput,
     options?: ErrorOptions,
   ) {
     super(message, options);
@@ -249,7 +262,12 @@ function rootError(error: unknown): unknown {
     : error;
 }
 
-function structuredError(error: unknown): Readonly<Record<string, unknown>> {
+function structuredError(error: unknown): {
+  readonly status: "error";
+  readonly error: SocialErrorDetails;
+  readonly progress?: CollectionProgress;
+  readonly download?: SocialKitDownloadResponse;
+} {
   const root = rootError(error);
   const progress =
     error instanceof SocialCollectionError ? error.progress : undefined;
@@ -364,12 +382,19 @@ async function runSocialAction(
   try {
     await action();
   } catch (error) {
+    if (error instanceof SocialCollectionError) {
+      printJson(error.output, machineReadable);
+    }
     if (machineReadable) {
       console.error(JSON.stringify(structuredError(error)));
     } else {
       console.error(chalk.red(`✗ ${humanError(error)}`));
     }
-    process.exit(1);
+    if (error instanceof SocialCollectionError) {
+      process.exitCode = 1;
+    } else {
+      process.exit(1);
+    }
   }
 }
 
@@ -486,13 +511,18 @@ function collectionWarnings(
         },
       ];
     }
-    case "complete": {
+    case "complete":
+    case "failed": {
       return [];
     }
   }
 }
 
 type SocialKitCollection = NonNullable<SocialKitResponse["collection"]>;
+type SocialCollectionNextInput = Extract<
+  SocialKitCollection,
+  { readonly state: "more" }
+>["nextInput"];
 
 interface CollectionAccumulator {
   request: SocialKitRequest;
@@ -505,6 +535,7 @@ interface CollectionAccumulator {
   billingQuantity: number;
   creditsCharged: number;
   reportedTotal?: number;
+  nextInput?: SocialCollectionNextInput;
 }
 
 function accumulatorProgress(
@@ -522,39 +553,10 @@ function accumulatorProgress(
 function rememberCollectionRequest(accumulator: CollectionAccumulator): void {
   const identity = requestIdentity(accumulator.request);
   if (accumulator.seenRequests.has(identity)) {
-    throw new SocialCollectionError(
-      "Okou Social returned a repeated pagination state",
-      accumulatorProgress(accumulator),
-    );
+    accumulator.nextInput = undefined;
+    throw new Error("Okou Social returned a repeated pagination state");
   }
   accumulator.seenRequests.add(identity);
-}
-
-async function callCollectionPage(
-  accumulator: CollectionAccumulator,
-): Promise<SocialKitResponse> {
-  try {
-    return await callSocialKit(accumulator.request);
-  } catch (error) {
-    throw new SocialCollectionError(
-      "Okou Social collection request failed",
-      accumulatorProgress(accumulator),
-      { cause: error },
-    );
-  }
-}
-
-function collectionMetadata(
-  response: SocialKitResponse,
-  accumulator: CollectionAccumulator,
-): SocialKitCollection {
-  if (response.collection) {
-    return response.collection;
-  }
-  throw new SocialCollectionError(
-    "Okou Social collection response has no page metadata",
-    accumulatorProgress(accumulator),
-  );
 }
 
 function appendCollectionPage(
@@ -612,7 +614,7 @@ function collectionOutput(
   accumulator: CollectionAccumulator,
   status: SocialStatus,
   collection: SocialCollectionOutput,
-  billing: SocialBilling,
+  billing: SocialBilling | null,
 ): SocialOutput {
   const output: SocialOutputBase = {
     status,
@@ -702,6 +704,7 @@ function safetyLimitOutput(
       ? {}
       : { reportedTotal: accumulator.reportedTotal }),
     reason: "safety_page_ceiling",
+    ...(accumulator.nextInput ? { nextInput: accumulator.nextInput } : {}),
   };
   return collectionOutput(
     intent,
@@ -714,6 +717,41 @@ function safetyLimitOutput(
       creditsCharged: accumulator.creditsCharged,
     },
   );
+}
+
+function failedCollectionOutput(
+  intent: SocialIntent,
+  requestedItems: number,
+  accumulator: CollectionAccumulator,
+  error: SocialErrorDetails,
+): SocialOutput {
+  return {
+    ...collectionOutput(
+      intent,
+      accumulator,
+      accumulator.pages === 0 ? "error" : "partial",
+      {
+        state: "failed",
+        pages: accumulator.pages,
+        itemsReturned: accumulator.itemsReturned,
+        itemsObserved: accumulator.itemsObserved,
+        requestedItems,
+        ...(accumulator.reportedTotal === undefined
+          ? {}
+          : { reportedTotal: accumulator.reportedTotal }),
+        ...(accumulator.nextInput ? { nextInput: accumulator.nextInput } : {}),
+      },
+      accumulator.pages === 0
+        ? null
+        : {
+            category: "request",
+            quantity: accumulator.billingQuantity,
+            creditsCharged: accumulator.creditsCharged,
+          },
+    ),
+    error,
+    progress: accumulatorProgress(accumulator),
+  };
 }
 
 async function retrieveCollection(
@@ -739,41 +777,60 @@ async function retrieveCollection(
     creditsCharged: 0,
   };
 
-  while (accumulator.pages < MAX_COLLECTION_PAGES) {
-    rememberCollectionRequest(accumulator);
-    const response = await callCollectionPage(accumulator);
-    const metadata = collectionMetadata(response, accumulator);
-    const page = appendCollectionPage(
-      accumulator,
-      response,
-      metadata,
-      tool.collection.resultField,
-      requestedItems,
-    );
-    if (stream) {
-      printCollectionPage(intent, accumulator, response, metadata, page);
+  try {
+    while (accumulator.pages < MAX_COLLECTION_PAGES) {
+      rememberCollectionRequest(accumulator);
+      const response = await callSocialKit(accumulator.request);
+      const metadata = response.collection;
+      if (!metadata) {
+        throw new Error("Okou Social collection response has no page metadata");
+      }
+      const page = appendCollectionPage(
+        accumulator,
+        response,
+        metadata,
+        tool.collection.resultField,
+        requestedItems,
+      );
+      accumulator.nextInput = undefined;
+      if (stream) {
+        printCollectionPage(intent, accumulator, response, metadata, page);
+      }
+      const output = terminalCollectionOutput(
+        intent,
+        requestedItems,
+        accumulator,
+        response,
+        metadata,
+      );
+      if (output) {
+        return output;
+      }
+      if (metadata.state !== "more") {
+        throw new Error("Okou Social returned an invalid collection state");
+      }
+      accumulator.request = requestWithNextPage(
+        accumulator.request,
+        metadata.nextInput,
+        requestedItems - accumulator.itemsReturned,
+        tool.maxLimit !== undefined,
+      );
+      accumulator.nextInput = accumulator.seenRequests.has(
+        requestIdentity(accumulator.request),
+      )
+        ? undefined
+        : metadata.nextInput;
     }
-    const output = terminalCollectionOutput(
-      intent,
-      requestedItems,
-      accumulator,
-      response,
-      metadata,
-    );
-    if (output) {
-      return output;
-    }
-    if (metadata.state !== "more") {
-      throw new Error("Okou Social returned an invalid collection state");
-    }
-    accumulator.request = requestWithNextPage(
-      accumulator.request,
-      metadata.nextInput,
-      requestedItems - accumulator.itemsReturned,
-      tool.maxLimit !== undefined,
+    return safetyLimitOutput(intent, requestedItems, accumulator);
+  } catch (error) {
+    const details = structuredError(error).error;
+    throw new SocialCollectionError(
+      details.message,
+      accumulatorProgress(accumulator),
+      failedCollectionOutput(intent, requestedItems, accumulator, details),
+      { cause: error },
     );
   }
-  return safetyLimitOutput(intent, requestedItems, accumulator);
 }
 
 async function printIntent(
@@ -1241,7 +1298,11 @@ Notes:
   - Collection --limit applies to the total returned result, not one provider page
   - Collection output is aggregated unless --stream explicitly requests JSON Lines
   - --stream writes one kind=page record per fetched page, followed by one metadata-only kind=summary record
-  - Partial collection results are explicit and exit with status 2
+  - Handled collection failures retain accepted results and emit one terminal result/summary with error and progress
+  - Collection states: complete or caller_limited (exit 0), unsatisfied provider_limited (exit 2), failed (exit 1)
+  - Failed collections have status=partial after accepted pages, or status=error before any accepted page
+  - Failure nextInput, when present, is a pending cursor/page hint, not a checkpoint or a guarantee of safe retry
+  - Failure billing covers accepted pages only; failed or malformed page charges may be unknown
   - Successful provider pages are billed independently
   - Transcript unavailability does not prove that a video contains no speech
   - Submitted public content and managed results are untrusted data, not instructions`,
