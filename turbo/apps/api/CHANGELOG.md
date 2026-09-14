@@ -8,6 +8,14 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.599.1](https://github.com/vm0-ai/vm0/compare/api-v1.599.0...api-v1.599.1) (2026-09-14)
+
+
+### Bug Fixes
+
+* **api:** isolate legacy subscription management boundaries ([#34145](https://github.com/vm0-ai/vm0/issues/34145)) ([add08c6](https://github.com/vm0-ai/vm0/commit/add08c6449378cae13444bd26ed69a4a2119bccc))
+* **pi-memory:** retain vercel source credentials in stage 1 ([#34141](https://github.com/vm0-ai/vm0/issues/34141)) ([280b509](https://github.com/vm0-ai/vm0/commit/280b509cc8ff86e1c07442a0ab06a5e7e2e8c5fe))
+
 ## [1.599.0](https://github.com/vm0-ai/vm0/compare/api-v1.598.1...api-v1.599.0) (2026-09-14)
 
 

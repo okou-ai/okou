@@ -11,6 +11,13 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.895.3](https://github.com/vm0-ai/vm0/compare/app-v0.895.2...app-v0.895.3) (2026-09-14)
+
+
+### Bug Fixes
+
+* **platform:** notify thread indicators before chat warming ([#34147](https://github.com/vm0-ai/vm0/issues/34147)) ([1990ab3](https://github.com/vm0-ai/vm0/commit/1990ab34c4f62d5a79f10c6fa49bc1b0f7dda31f))
+
 ## [0.895.2](https://github.com/vm0-ai/vm0/compare/app-v0.895.1...app-v0.895.2) (2026-09-14)
 
 
