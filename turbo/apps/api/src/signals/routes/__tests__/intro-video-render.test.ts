@@ -451,18 +451,23 @@ describe("managed Intro Video cloud rendering", () => {
     mockStorage();
   });
 
-  it("gates new renders with Intro Video and requires dedicated pricing", async () => {
+  it("rejects new renders when Intro Video is disabled", async () => {
     const f = await fixture(false);
     const input = await upload(f);
     const cloud = provider();
     expect((await submit(f, input)).status).toBe(403);
+    expect(cloud.requests).toHaveLength(0);
+  });
+
+  it("rejects new renders without dedicated pricing", async () => {
     const unpriced = await fixture(true, false);
     const missingPriceInput = await upload(unpriced);
+    const cloud = provider();
     expect((await submit(unpriced, missingPriceInput)).status).toBe(503);
     expect(cloud.requests).toHaveLength(0);
   });
 
-  it("renders from user storage without private-artifact credentials and prevents input caching", async () => {
+  async function acceptUserStorageRender() {
     const f = await fixture();
     const input = await upload(f);
     mockEnv("R2_PRIVATE_ARTIFACTS_BUCKET_NAME", undefined);
@@ -477,6 +482,11 @@ describe("managed Intro Video cloud rendering", () => {
         `^test-user-storages/intro-video-render-inputs/${input.requestId}/[a-f0-9]{64}\\.zip$`,
       ),
     );
+    return { f, input, cloud, projectUrl };
+  }
+
+  it("keeps render input snapshots private and immutable without private-artifact credentials", async () => {
+    const { input, projectUrl } = await acceptUserStorageRender();
     const snapshot = await fetch(projectUrl);
     expect(snapshot.status).toBe(200);
     expect(snapshot.headers.get("cache-control")).toBe("private, no-store");
@@ -499,6 +509,10 @@ describe("managed Intro Video cloud rendering", () => {
       CacheControl: "private, no-store",
       IfNoneMatch: "*",
     });
+  });
+
+  it("hides provider input URLs while reporting user-storage render completion", async () => {
+    const { f, input, cloud, projectUrl } = await acceptUserStorageRender();
     const response = await getRender(f, input.requestId);
     expect(JSON.stringify(response)).not.toContain(projectUrl.toString());
     cloud.status = "completed";

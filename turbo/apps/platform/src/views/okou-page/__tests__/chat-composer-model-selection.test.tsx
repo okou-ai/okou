@@ -193,7 +193,7 @@ async function openCodexExecutionChat(): Promise<void> {
   await readyComposer();
 }
 
-test("Show and dismiss Fast Codex speed and credit guidance on hover", async () => {
+async function openMixedProviderFastMenu() {
   const user = userEvent.setup({ delay: null });
   installNewChat(["gpt-6-astra", "gpt-5.6-sol"], "gpt-6-astra");
   context.mocks.data.orgModelPolicies([
@@ -213,6 +213,11 @@ test("Show and dismiss Fast Codex speed and credit guidance on hover", async () 
   });
   await readyComposer();
   await user.click(await modelPicker("GPT 6 Astra"));
+  return user;
+}
+
+test("Show and dismiss Fast Codex ChatGPT usage guidance on hover", async () => {
+  const user = await openMixedProviderFastMenu();
   const fastOption = await screen.findByRole("option", {
     name: "GPT 6 Astra Fast",
   });
@@ -226,6 +231,10 @@ test("Show and dismiss Fast Codex speed and credit guidance on hover", async () 
       screen.queryByText("Fast · 2× model speed · 2.5× ChatGPT usage"),
     ).not.toBeInTheDocument();
   });
+});
+
+test("Show Fast Codex Okou credit guidance on hover", async () => {
+  const user = await openMixedProviderFastMenu();
   await user.hover(screen.getByRole("option", { name: "GPT 5.6 Sol Fast" }));
   await expect(
     screen.findByText("Fast · Up to 2.5× model speed · 2× Okou model credits"),

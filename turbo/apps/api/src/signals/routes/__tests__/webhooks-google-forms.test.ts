@@ -934,18 +934,9 @@ describe("Google Forms Pub/Sub webhook", () => {
     ]);
   });
 
-  it("repairs watches after account replacement, deletion, and re-add", async () => {
-    const {
-      actor,
-      agentId,
-      first,
-      second,
-      firstConnector,
-      firstWatchId,
-      secondWatchId,
-      secondConnector,
-      formsApi,
-    } = await setupGoogleFormsMultiAccountAutomations();
+  it("preserves watches when reconnecting the same Google Forms account", async () => {
+    const { actor, agentId, secondConnector, formsApi } =
+      await setupGoogleFormsMultiAccountAutomations();
 
     mockGoogleFormsConnectorOAuth({
       accessToken: "google-forms-reconnected-access-token",
@@ -981,6 +972,20 @@ describe("Google Forms Pub/Sub webhook", () => {
       }),
     );
     expect(formsApi.watchIds).toHaveLength(2);
+  });
+
+  it("repairs watches after Google Forms account deletion, replacement, and re-add", async () => {
+    const {
+      actor,
+      agentId,
+      first,
+      second,
+      firstConnector,
+      firstWatchId,
+      secondWatchId,
+      secondConnector,
+      formsApi,
+    } = await setupGoogleFormsMultiAccountAutomations();
 
     mocks.clerk.session(actor.userId, actor.orgId, "org:member");
     const deletedSelected = await accept(

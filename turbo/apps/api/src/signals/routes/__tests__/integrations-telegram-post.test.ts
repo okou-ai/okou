@@ -2672,7 +2672,8 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     await expect(selectedModelFor(fixture)).resolves.toBe("claude-sonnet-5");
   });
 
-  it("sends typing for accepted custom-bot runs and a queued message at the concurrency limit", async () => {
+  it("sends typing without an immediate reply for accepted custom-bot runs", async () => {
+    runsApi.acceptStorageDownloads();
     const acceptedFixture = await trackFixture(
       seedTelegramPostFixture({ linkTelegramUser: true }),
     );
@@ -2699,7 +2700,10 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     await flushWaitUntilForTest();
     expect(acceptedTelegramMocks.chatActions).toHaveLength(1);
     expect(acceptedTelegramMocks.sentMessages).toHaveLength(0);
+  });
 
+  it("sends typing and a queued message at the custom-bot concurrency limit", async () => {
+    runsApi.acceptStorageDownloads();
     const queuedFixture = await trackFixture(
       seedTelegramPostFixture({ linkTelegramUser: true }),
     );
