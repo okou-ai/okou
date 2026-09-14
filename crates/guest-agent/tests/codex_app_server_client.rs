@@ -858,6 +858,23 @@ async fn codex_app_server_cancelled_shutdown_can_retry_and_reap_child() -> Resul
 }
 
 #[tokio::test]
+async fn codex_app_server_terminate_completes_cancelled_shutdown() -> Result<(), String> {
+    let mut client = spawn_client(Some("hang-on-stdin-eof"))?;
+    let pid = client
+        .process_id()
+        .ok_or_else(|| "app-server child missing pid".to_string())?;
+    wait_result(client.initialize(), "initialize").await?;
+
+    cancel_after_first_pending(client.shutdown(), "shutdown").await?;
+
+    wait_result(client.terminate(), "terminate after cancelled shutdown").await?;
+    assert!(client.process_id().is_none());
+    assert_process_exited(pid)?;
+    wait_result(client.terminate(), "second terminate").await?;
+    wait_result(client.shutdown(), "shutdown after terminate").await
+}
+
+#[tokio::test]
 async fn codex_app_server_shutdown_skips_stdin_eof_grace() -> Result<(), String> {
     let mut client = spawn_client(Some("hang-on-stdin-eof"))?;
     let pid = client

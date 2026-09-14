@@ -724,17 +724,7 @@ impl CodexAppServerClient {
         if requested_graceful_shutdown {
             tokio::task::yield_now().await;
         }
-        if self.child.is_some() {
-            self.sigterm_process_group();
-            self.sigkill_process_group();
-            if !self.wait_for_child(SHUTDOWN_SIGKILL_GRACE).await? {
-                return Err(CodexAppServerError::ShutdownTimeout);
-            }
-        }
-
-        self.drain_stderr().await;
-        self.closed = true;
-        Ok(())
+        self.finish_close().await
     }
 
     /// Force app-server termination without the graceful stdin-EOF wait.
@@ -755,6 +745,11 @@ impl CodexAppServerClient {
         }
 
         self.close_io_handles();
+        self.finish_close().await
+    }
+
+    /// Finish cleanup after protocol I/O closes, signaling the owned child before reaping it.
+    async fn finish_close(&mut self) -> Result<(), CodexAppServerError> {
         if self.child.is_some() {
             self.sigterm_process_group();
             self.sigkill_process_group();
