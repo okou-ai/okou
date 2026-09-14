@@ -143,9 +143,12 @@ const TERMINAL = ["verified_erased", "verified_no_applicable_data"] as const;
 function invariant(valid: unknown, code: string): asserts valid {
   if (!valid) throw new Error(`account_erasure:${code}`);
 }
+// Match PostgreSQL output before persistence or replay hashing. Subject IDs are
+// case-sensitive text and must never pass through this UUID-only boundary.
 function uuid(value: string): void {
   invariant(
-    /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(value),
+    value.length === 36 &&
+      /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/.test(value),
     "invalid_reference",
   );
 }
@@ -260,6 +263,7 @@ export async function assertErasureSubjectWritable(
 }
 
 async function lockJob(tx: Tx, jobId: string, retiring = false): Promise<Job> {
+  uuid(jobId);
   const [locator] = await tx.select().from(jobs).where(eq(jobs.id, jobId));
   invariant(locator, "job_missing");
   await lockErasureSubjects(tx, [locator]);
@@ -471,6 +475,10 @@ export async function reviseErasureInventory(
   required: readonly ErasureSink[],
 ): Promise<Job> {
   invariant(required.length > 0 && required.length <= MAX_SINKS, "sink_limit");
+  for (const item of required) {
+    uuid(item.sinkId);
+    uuid(item.collectorVersion);
+  }
   invariant(
     new Set(
       required.map((item) => {
@@ -521,8 +529,6 @@ export async function reviseErasureInventory(
       })
       .where(and(eq(work.jobId, jobId), eq(work.kind, "inventory")));
     for (const item of required) {
-      uuid(item.sinkId);
-      uuid(item.collectorVersion);
       await tx
         .insert(sinks)
         .values({
@@ -562,6 +568,9 @@ async function lockedLease(
   tx: Tx,
   lease: ErasureLease,
 ): Promise<{ job: Job; item: Work }> {
+  uuid(lease.workId);
+  uuid(lease.leaseId);
+  if (lease.producerBoundaryRef !== null) uuid(lease.producerBoundaryRef);
   const job = await lockJob(tx, lease.jobId);
   sameRevision(job, lease);
   invariant(
@@ -769,6 +778,8 @@ export async function commitErasureInventoryPage(
     nextCursorDigest: page.nextCursor?.digest ?? null,
     enumerationRef: page.enumerationRef,
     items: page.items.map((item) => {
+      uuid(item.sinkId);
+      uuid(item.itemKey);
       return {
         sinkId: item.sinkId,
         itemKey: item.itemKey,
@@ -895,6 +906,7 @@ export async function sealErasureCapture(
   const boundary = await verifier.verify(snapshot, signal);
   signal.throwIfAborted();
   uuid(boundary.reference);
+  uuid(boundary.jobId);
   sameRevision(boundary, expected);
   invariant(boundary.jobId === jobId, "wrong_boundary");
   return await db.transaction(async (tx) => {
@@ -934,6 +946,12 @@ export async function assertErasureSourceCaptured(
   expected: ErasureRevision & { readonly producerBoundaryRef: string },
   requiredItems: readonly Pick<Dependency, "sinkId" | "itemKey">[],
 ): Promise<void> {
+  uuid(jobId);
+  uuid(expected.producerBoundaryRef);
+  for (const item of requiredItems) {
+    uuid(item.sinkId);
+    uuid(item.itemKey);
+  }
   const [locator] = await tx.select().from(jobs).where(eq(jobs.id, jobId));
   invariant(
     locator && subjectKey(subject) === subjectKey(locator),
@@ -983,7 +1001,21 @@ async function commitResult(
   db: Db,
   lease: ErasureLease,
   result: ErasureProof | ErasureUnresolved,
+  signal: AbortSignal,
 ): Promise<void> {
+  if ("evidenceRef" in result) {
+    for (const ref of [
+      result.workId,
+      result.sinkId,
+      result.producerBoundaryRef,
+      result.evidenceRef,
+      result.authenticatedReaderRef,
+      result.enumerationRef,
+    ])
+      uuid(ref);
+  } else if (result.requestRef !== null) {
+    uuid(result.requestRef);
+  }
   await db.transaction(async (tx) => {
     const { job, item } = await lockedLease(tx, lease);
     const [beforeDeadline] = await tx
@@ -996,6 +1028,10 @@ async function commitResult(
       await updateLease(tx, lease, {
         state: "capability_unresolved",
         errorCode: "deadline_exceeded",
+        requestRef:
+          "requestRef" in result
+            ? (result.requestRef ?? item.requestRef)
+            : item.requestRef,
         leaseId: null,
         leaseExpiresAt: null,
       });
@@ -1016,16 +1052,11 @@ async function commitResult(
         "stale_proof",
       );
       invariant(item.selectorCiphertext, "selector_missing");
-      for (const ref of [
-        result.evidenceRef,
-        result.authenticatedReaderRef,
-        result.enumerationRef,
-      ])
-        uuid(ref);
       invariant(
         Number.isFinite(result.observedAt.getTime()),
         "invalid_observation",
       );
+      signal.throwIfAborted();
       await updateLease(tx, lease, {
         state: result.outcome,
         evidenceRef: result.evidenceRef,
@@ -1039,6 +1070,7 @@ async function commitResult(
         leaseId: null,
         leaseExpiresAt: null,
       });
+      signal.throwIfAborted();
     } else {
       invariant(
         ["pending", "retryable_failure", "capability_unresolved"].includes(
@@ -1059,7 +1091,6 @@ async function commitResult(
         ].includes(result.errorCode),
         "invalid_error_code",
       );
-      if (result.requestRef !== null) uuid(result.requestRef);
       await updateLease(tx, lease, {
         state: result.outcome,
         errorCode: result.errorCode,
@@ -1090,18 +1121,24 @@ export async function executeErasureWork(
     .where(and(eq(sinks.jobId, job.id), eq(sinks.sinkId, item.sinkId)));
   invariant(sink, "sink_missing");
   signal.throwIfAborted();
+  if (handler) uuid(handler.version);
   if (
     !handler ||
     handler.version !== sink.collectorVersion ||
     !item.selectorCiphertext
   ) {
-    await commitResult(db, lease, {
-      outcome: "capability_unresolved",
-      errorCode: !item.selectorCiphertext
-        ? "selector_missing"
-        : "handler_missing",
-      requestRef: null,
-    });
+    await commitResult(
+      db,
+      lease,
+      {
+        outcome: "capability_unresolved",
+        errorCode: !item.selectorCiphertext
+          ? "selector_missing"
+          : "handler_missing",
+        requestRef: null,
+      },
+      signal,
+    );
     return;
   }
   if (item.kind === "inventory" && !item.captureComplete) {
@@ -1110,34 +1147,41 @@ export async function executeErasureWork(
         ? { ciphertext: item.cursorCiphertext, digest: item.cursorDigest }
         : null;
     const result = await handler.inventory({ ...lease, item }, cursor, signal);
-    signal.throwIfAborted();
-    if ("pageKey" in result)
+    if ("pageKey" in result) {
+      signal.throwIfAborted();
       await commitErasureInventoryPage(db, lease, result);
-    else await commitResult(db, lease, result);
+    } else {
+      await commitResult(db, lease, result, signal);
+    }
+    signal.throwIfAborted();
     return;
   }
   invariant(job.producerBoundaryRef !== null, "boundary_unproven");
   let verificationItem = item;
   if (item.kind !== "inventory") {
     const submitted = await handler.erase({ ...lease, item }, signal);
-    signal.throwIfAborted();
     if ("outcome" in submitted) {
-      await commitResult(db, lease, submitted);
+      await commitResult(db, lease, submitted, signal);
+      signal.throwIfAborted();
       return;
     }
+    // Acknowledged receipts survive cancellation under the same live-lease CAS.
+    // Check cancellation again after the commit and before any verification.
     uuid(submitted.requestRef);
     verificationItem = await db.transaction(async (tx) => {
       await lockedLease(tx, lease);
       return await updateLease(tx, lease, { requestRef: submitted.requestRef });
     });
   }
+  signal.throwIfAborted();
   const result = await handler.verify(
     { ...lease, item: verificationItem },
     job.producerBoundaryRef,
     signal,
   );
+  if ("evidenceRef" in result) signal.throwIfAborted();
+  await commitResult(db, lease, result, signal);
   signal.throwIfAborted();
-  await commitResult(db, lease, result);
 }
 
 export async function finalizeErasureJob(
@@ -1250,7 +1294,15 @@ export async function retireErasureProjectionPage(
     signal,
   );
   signal.throwIfAborted();
-  uuid(release.reference);
+  for (const ref of [
+    release.reference,
+    release.jobId,
+    release.decisionRef,
+    release.coveringDecisionRef,
+    release.covering.jobId,
+    release.covering.reference,
+  ])
+    uuid(ref);
   return await db.transaction(async (tx) => {
     const job = await lockJob(tx, jobId, true);
     const covering = await coveringJob(tx, job);
@@ -1368,6 +1420,7 @@ export async function retireErasureSelector(
   workId: string,
   expected: ErasureRevision,
 ): Promise<void> {
+  uuid(workId);
   await db.transaction(async (tx) => {
     const job = await lockJob(tx, jobId);
     sameRevision(job, expected);

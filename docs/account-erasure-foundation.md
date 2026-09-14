@@ -21,6 +21,18 @@ claim, renew, commit, or reopen the new generation. Recovered/transferred
 identities need authoritative disposition before projection, never inference
 from a missing optional `users` row.
 
+All UUID references accepted by the persistence operations must use lowercase,
+hyphenated `8-4-4-4-12` form. Noncanonical references fail with
+`account_erasure:invalid_reference` before their transaction can persist any
+change. This includes decisions/predecessors, jobs, sinks/adapter versions,
+items/dependencies, pages/enumerations, leases, producer boundaries, submission
+receipts, terminal proofs, source-capture guards and retirement releases.
+Callers must supply the canonical form on the first delivery and every replay;
+PostgreSQL returns that same form. Subject IDs and opaque selector payloads
+retain their own case-sensitive identity and are never lowercased here. Existing
+canonical rows, page digests and references remain unchanged; this dormant repair
+adds no migration or historical rewrite.
+
 The confirmation reference is supplied evidence, **not a locally generated
 signature or an acknowledgement guarantee**. G2d1 must establish the independent
 control database, signing/verification lifecycle, monotonic commit ordering,
@@ -109,7 +121,21 @@ Process interruption preserves the lease and last committed cursor for reclaim.
 An uncertain provider effect must be reconciled using the persisted request
 reference; an adapter must not blindly repeat a non-idempotent submission.
 An unresolved result with no new request reference preserves the previously
-committed receipt. Receipt removal belongs to verified projection retirement.
+committed receipt. A newly returned unresolved result retains its validated
+receipt even if the job deadline crosses during the provider call: the work becomes
+`capability_unresolved / deadline_exceeded`, with no accepted terminal proof.
+Cancellation observed after an adapter returns also preserves acknowledged
+receipts under valid ownership, then throws the abort without starting
+verification or accepting success. A pre-aborted execution starts no provider
+work. Terminal proof commits recheck cancellation inside their transaction.
+
+Receipt persistence uses the same locked generation/capture/inventory/producer
+boundary checks and final lease-expiry CAS as every other progress update.
+There is no grace lease and no attachment of an old response to a replacement
+claim. Process death before persistence, responses after lease expiry and
+providers without stable idempotency/reconciliation remain later-adapter
+obligations. The retained selector alone is not evidence that a submission can
+be reconciled. Receipt removal belongs to verified projection retirement.
 
 `commitErasureInventoryPage` atomically stores at most 100 stable item keys,
 their selector/dependency declarations, a page receipt and the next cursor.
@@ -182,8 +208,12 @@ The targeted database suite uses real PostgreSQL concurrent sessions and unique
 synthetic subjects. Because no production endpoint exists, it explicitly tests
 the dormant persistence contract, including both first-closure orders, lease
 expiry/reclaim, restart/cursor recovery, atomic multi-page rollback/replay, stale
-proofs, dependency expansion and final generation retirement. The API codec
-suite exercises the actual supported encryption path with the centralized
+proofs, dependency expansion and final generation retirement. Receipt regressions
+use deferred provider returns and explicit database deadline/ownership fixtures,
+covering null receipt preservation, post-return abort and invalidated owners.
+UUID regressions cover rejection before persistence, canonical replay, genuine
+conflicts and case-sensitive subjects across the same internal boundaries. The
+API codec suite exercises the actual supported encryption path with the centralized
 external KMS test client. These are local synthetic tests, not production
 fencing, provider erasure, control-store authority, or account acceptance.
 
@@ -195,3 +225,8 @@ migration. Future activation requires its own reviewed integration and observed
 old/new API, queued CLI, Runner, installed-client and provider-producer drains.
 There is no legacy contraction, release execution, or historical remediation
 in this slice. Never operate on the recovered September 12 account.
+
+Before production worker activation, the controller must independently verify a
+bounded claim plan as terminal work accumulates (including an appropriate
+pending/retryable index or equivalent plan and representative EXPLAIN evidence).
+The receipt/UUID repair does not change the current claim index or migration1124.
