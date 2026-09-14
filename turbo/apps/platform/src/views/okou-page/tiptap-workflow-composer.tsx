@@ -321,7 +321,8 @@ interface ComposerSuggestionMenuState {
   readonly selectCreate: (mode: ComposerCreateCommand) => void;
   /** Non-empty only while ComposerSlashTemplatePanel is on. */
   readonly panelCategories: readonly SlashTemplateCategory[];
-  readonly highlightSuggestion: (index: number) => void;
+  readonly previewIndex: number;
+  readonly previewSuggestion: (index: number | null) => void;
   readonly selectCategory: (category: SlashTemplateCategory) => void;
   readonly selectTemplate: (preview: SlashTemplatePreview) => void;
   readonly browseAllTemplates: () => void;
@@ -601,6 +602,8 @@ function useComposerSuggestionMenu({
     slashRange?.query,
   );
   const selectedIndex = useGet(composer.suggestion.selectedSuggestionIndex$);
+  const previewIndex = useGet(composer.suggestion.previewSuggestionIndex$);
+  const previewSuggestion = useSet(composer.suggestion.previewSuggestion$);
   const setSelectedIndex = useSet(
     composer.suggestion.setSelectedSuggestionIndex$,
   );
@@ -696,7 +699,8 @@ function useComposerSuggestionMenu({
     createModes,
     selectCreate,
     panelCategories,
-    highlightSuggestion: setSelectedIndex,
+    previewIndex,
+    previewSuggestion,
     selectCategory: templatePanel.selectCategory,
     selectTemplate: templatePanel.selectTemplate,
     browseAllTemplates: templatePanel.browseAll,
@@ -818,7 +822,8 @@ export function TiptapWorkflowComposer({
                 workflows={suggestionMenu.workflows}
                 workflowsLoading={suggestionMenu.workflowsLoading}
                 selectedIndex={suggestionMenu.selectedIndex}
-                onHighlight={suggestionMenu.highlightSuggestion}
+                previewIndex={suggestionMenu.previewIndex}
+                onPreview={suggestionMenu.previewSuggestion}
                 onSelectCategory={suggestionMenu.selectCategory}
                 onSelectTemplate={suggestionMenu.selectTemplate}
                 onSelectWorkflow={suggestionMenu.selectWorkflow}
