@@ -355,31 +355,31 @@ alongside their existing `border-0`. That still paints, because Tailwind emits
 the legacy rule won only by sitting outside every layer. Tests continue to
 select both separators through `data-slot`.
 
-### App page roots
+### Page layouts
 
-Use `AppPageRoot` from `views/components/app-page-root.tsx` when building the
-outermost container of a full-page app layout mounted under `#root`. It fills the
-available app height and leaves scrolling to the inner content.
+Choose the existing layout that owns the page structure. Route setup selects
+`pageLayout$`; the Router's `LayoutHost` supplies `SidebarLayout` or
+`StandaloneLayout`, and the page supplies the content inside it.
 
-- Independent page layouts, such as export and connector handoffs, use it as
-  their outermost container.
-- Shared layouts, such as `SidebarLayout` and `OnboardingShell`, use it once.
-  Pages rendered inside those layouts supply their content without another
-  `AppPageRoot`.
-- Cards, sections, dialogs, and nested scrollports keep their own layout
-  primitives; they do not own the app page root.
+| Component                                         | Use it for                                                                                               | Placement                                    |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `SidebarLayout`                                   | Workspace pages with navigation and a workspace pane                                                     | Selected by the router's `sidebar` layout    |
+| `StandaloneLayout`                                | Independent flows with shared theme and dialogs, such as authorization, browser sessions, and redemption | Selected by the router's `standalone` layout |
+| `OnboardingShell`                                 | Step-based onboarding with progress, account controls, and an optional footer                            | The onboarding page's outer layout           |
+| `PageShell` in `okou-page/connect-page-shell.tsx` | Connector sign-in, authorization, and status content in a centered card                                  | The connection page's outer layout           |
+| `DirectedCardShell`                               | Connector-specific title, icon, description, and actions in a centered handoff card                      | Content inside `StandaloneLayout`            |
+| `DetailPageShell`                                 | A detail page's flex and scroll container                                                                | Content inside an existing workspace layout  |
 
-The component renders the page's existing `div` and forwards native div props,
-including refs and theme attributes, without adding a wrapper. Tailwind
-utilities own border-box sizing, full parent height constraints, overflow
-clipping, and the bottom safe-area inset. The documented
-`data-slot="app-page-root"` identifies this boundary without carrying styles.
+Pages rendered inside a shared layout reuse that layout's outer container.
+Independent pages that already own their structure, such as `ExportPage`, keep
+their native root element.
 
-The default `bottomSafeArea="root"` reserves `--sab` below the page content.
-Sidebar layouts use `bottomSafeArea="content"` so their scrollports reach the
-viewport edge and their content and composer own the inset. Document sizing,
-top and horizontal insets, and PWA keyboard handling remain owned by the existing
-global environment rules. The `okou-viewport-shell` and
+Viewport sizing stays on the existing native roots through
+`box-border h-full max-h-full min-h-full overflow-hidden`. Page roots reserve
+the bottom safe-area inset with `pb-(--sab)`; `SidebarLayout` uses `pb-0` so its
+scrollports reach the viewport edge and its content/composer owns the inset.
+Document sizing, top and horizontal insets, and PWA keyboard handling remain
+owned by the existing global environment rules. The `okou-viewport-shell` and
 `okou-managed-bottom-safe-area` selectors and their consumers have been removed.
 
 ## Exception boundary

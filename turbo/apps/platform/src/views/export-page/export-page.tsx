@@ -22,7 +22,6 @@ import {
 } from "../../signals/export-page/export-page-signals.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
-import { AppPageRoot } from "../components/app-page-root.tsx";
 import { Link } from "../router/link.tsx";
 
 type ExportViewState =
@@ -432,7 +431,7 @@ export function ExportPage() {
   };
 
   return (
-    <AppPageRoot className="okou-app flex w-full bg-background okou-workspace-bg">
+    <div className="okou-app box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-(--sab) okou-workspace-bg">
       <main className="flex min-h-0 flex-1 items-center justify-center overflow-auto px-4 py-8">
         <section
           className={surfaceVariants({
@@ -507,6 +506,6 @@ export function ExportPage() {
           </div>
         </section>
       </main>
-    </AppPageRoot>
+    </div>
   );
 }
