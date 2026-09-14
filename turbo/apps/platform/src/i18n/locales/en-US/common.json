@@ -1744,15 +1744,10 @@
       "selectModel": "Select model",
       "slashPanel": {
         "browseAll": "Browse all templates",
-        "illustrationDescription": "A single image, in the style you pick",
         "make": "Make",
-        "slidesDescription": "An HTML slide deck you can present",
         "templateCount_one": "{{count}} template",
         "templateCount_other": "{{count}} templates",
-        "useTemplate": "Use template {{title}}",
-        "videoDescription": "Text to video, with parameters from the chosen model",
-        "websiteDescription": "A static site you can publish",
-        "workflowDescription": "A saved workflow you can run from the composer"
+        "useTemplate": "Use template {{title}}"
       },
       "temporarilySwitchTo": "Temporarily switch to",
       "threadSuggestions": "Chat threads",

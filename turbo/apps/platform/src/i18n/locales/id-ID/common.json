@@ -1741,14 +1741,9 @@
       "selectModel": "Pilih model",
       "slashPanel": {
         "browseAll": "Jelajahi semua templat",
-        "illustrationDescription": "Satu gambar, dengan gaya yang Anda pilih",
         "make": "Buat",
-        "slidesDescription": "Salindia HTML yang siap dipresentasikan",
         "templateCount_other": "{{count}} templat",
-        "useTemplate": "Gunakan templat {{title}}",
-        "videoDescription": "Teks menjadi video, dengan parameter dari model yang dipilih",
-        "websiteDescription": "Situs statis yang bisa Anda terbitkan",
-        "workflowDescription": "Alur kerja tersimpan yang bisa dijalankan dari komposer"
+        "useTemplate": "Gunakan templat {{title}}"
       },
       "temporarilySwitchTo": "Beralih sementara ke",
       "threadSuggestions": "Thread chat",

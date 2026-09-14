@@ -1773,16 +1773,11 @@
       "selectModel": "Seleccionar modelo",
       "slashPanel": {
         "browseAll": "Ver todas las plantillas",
-        "illustrationDescription": "Una sola imagen, con el estilo que elijas",
         "make": "Crear",
-        "slidesDescription": "Una presentación HTML lista para mostrar",
         "templateCount_one": "{{count}} plantilla",
         "templateCount_many": "{{count}} plantillas",
         "templateCount_other": "{{count}} plantillas",
-        "useTemplate": "Usar la plantilla {{title}}",
-        "videoDescription": "De texto a vídeo, con los parámetros del modelo elegido",
-        "websiteDescription": "Un sitio estático que puedes publicar",
-        "workflowDescription": "Un flujo de trabajo guardado que puedes ejecutar desde el compositor"
+        "useTemplate": "Usar la plantilla {{title}}"
       },
       "temporarilySwitchTo": "Cambiar temporalmente a",
       "threadSuggestions": "Conversaciones",

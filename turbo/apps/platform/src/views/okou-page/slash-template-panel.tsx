@@ -84,36 +84,6 @@ export function slashTemplateCategoryLabel(
   }
 }
 
-function categoryDescription(category: SlashTemplateCategory): string {
-  switch (category) {
-    case "slides": {
-      return i18n.t(($) => {
-        return $.chat.composer.slashPanel.slidesDescription;
-      });
-    }
-    case "illustration": {
-      return i18n.t(($) => {
-        return $.chat.composer.slashPanel.illustrationDescription;
-      });
-    }
-    case "video": {
-      return i18n.t(($) => {
-        return $.chat.composer.slashPanel.videoDescription;
-      });
-    }
-    case "website": {
-      return i18n.t(($) => {
-        return $.chat.composer.slashPanel.websiteDescription;
-      });
-    }
-    case "workflow": {
-      return i18n.t(($) => {
-        return $.chat.composer.slashPanel.workflowDescription;
-      });
-    }
-  }
-}
-
 function SectionLabel({ children }: { readonly children: string }) {
   return (
     <div className="px-2.5 pt-2.5 pb-1 text-xs font-medium text-muted-foreground">
@@ -162,9 +132,6 @@ function SlashTemplateDetailPane({
             </span>
           </span>
         </div>
-        <p className="mt-3 shrink-0 text-[13px] leading-6 text-muted-foreground">
-          {categoryDescription(category)}
-        </p>
         {/*
           The scroller reaches the pane's right edge and pads its content back,
           so the overlay scrollbar — which draws inward from the viewport edge —

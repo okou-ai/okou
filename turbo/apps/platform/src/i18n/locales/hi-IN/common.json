@@ -1744,15 +1744,10 @@
       "selectModel": "मॉडल चुनें",
       "slashPanel": {
         "browseAll": "सभी टेम्पलेट देखें",
-        "illustrationDescription": "आपकी चुनी हुई शैली में एक अकेली छवि",
         "make": "बनाएँ",
-        "slidesDescription": "प्रस्तुत करने लायक HTML स्लाइड",
         "templateCount_one": "{{count}} टेम्पलेट",
         "templateCount_other": "{{count}} टेम्पलेट",
-        "useTemplate": "टेम्पलेट {{title}} इस्तेमाल करें",
-        "videoDescription": "टेक्स्ट से वीडियो, चुने गए मॉडल के पैरामीटर के साथ",
-        "websiteDescription": "एक स्टैटिक साइट जिसे आप प्रकाशित कर सकते हैं",
-        "workflowDescription": "सहेजा गया वर्कफ़्लो जिसे आप कंपोज़र से चला सकते हैं"
+        "useTemplate": "टेम्पलेट {{title}} इस्तेमाल करें"
       },
       "temporarilySwitchTo": "अस्थायी रूप से इस पर स्विच करें",
       "threadSuggestions": "चैट थ्रेड",

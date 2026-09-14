@@ -1773,16 +1773,11 @@
       "selectModel": "Selecionar modelo",
       "slashPanel": {
         "browseAll": "Ver todos os modelos",
-        "illustrationDescription": "Uma única imagem, no estilo que você escolher",
         "make": "Criar",
-        "slidesDescription": "Uma apresentação em HTML pronta para exibir",
         "templateCount_one": "{{count}} modelo",
         "templateCount_many": "{{count}} modelos",
         "templateCount_other": "{{count}} modelos",
-        "useTemplate": "Usar o modelo {{title}}",
-        "videoDescription": "Texto para vídeo, com parâmetros do modelo escolhido",
-        "websiteDescription": "Um site estático que você pode publicar",
-        "workflowDescription": "Um fluxo de trabalho salvo que você pode executar no compositor"
+        "useTemplate": "Usar o modelo {{title}}"
       },
       "temporarilySwitchTo": "Mudar temporariamente para",
       "threadSuggestions": "Conversas",
