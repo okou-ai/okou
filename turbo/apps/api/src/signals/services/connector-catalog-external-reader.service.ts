@@ -627,9 +627,9 @@ export async function loadAcceptedConnectorCatalogSnapshot(
 }
 
 /**
- * Applies rollout policy to discovery projections only. Feature switches must
- * never be reused as connector authorization or execution checks;
- * ConnectorActionResolver intentionally does not read them.
+ * Applies per-method rollout policy to discovery. Ordinary HTTP method switches
+ * do not gate credential execution. Builtin MCP additionally has protocol-wide
+ * new-connection and run admission checks outside this discovery helper.
  */
 function featureSwitchEnabled(
   connectorSlug: string,
