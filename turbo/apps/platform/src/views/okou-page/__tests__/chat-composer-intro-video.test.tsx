@@ -473,3 +473,62 @@ test("A saved intro video draft cannot send outside the rollout and remains edit
   });
   expect(capture.selectedTemplates).toHaveLength(0);
 });
+
+test("Intro Video never displays or submits the preceding Creative Video settings", async () => {
+  const capture = installCatalogs();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: {
+      [FeatureSwitchKey.IntroVideo]: true,
+      [FeatureSwitchKey.ComposerCreateCommands]: true,
+      [FeatureSwitchKey.ComposerTaskChips]: true,
+    },
+  });
+  const user = userEvent.setup({ delay: null });
+  const editor = await screen.findByRole("textbox", { name: "Message" });
+  const tasks = screen.getByRole("group", { name: "Choose a task" });
+  click(control("Video", tasks));
+  const ratios = await screen.findByRole("radiogroup", { name: "Ratio" });
+  const portrait = queryAllByRoleFast("radio", ratios).find(
+    (radio) => radio.textContent?.trim() === "9:16",
+  );
+  if (!portrait) {
+    throw new Error("Portrait ratio missing");
+  }
+  click(portrait);
+  await user.keyboard("{Escape}");
+  click(control("Remove Video"));
+  const dialog = await openTemplatePicker(user);
+  click(control("Intro video", dialog, "tab"));
+  click(await within(dialog).findByLabelText("Select style Minimalism"));
+  click(control("Voice", dialog, "tab"));
+  click(within(dialog).getByText("No voiceover"));
+  await waitFor(() => {
+    expect(control("Use selection", dialog)).toBeEnabled();
+  });
+  click(control("Use selection", dialog));
+  await expectInlineTemplate("Intro video");
+  expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button").some((button) =>
+      button.getAttribute("aria-label")?.startsWith("Video options "),
+    ),
+  ).toBeFalsy();
+  expect(
+    screen.queryByRole("combobox", { name: "Video models" }),
+  ).not.toBeInTheDocument();
+  await user.click(editor);
+  await user.keyboard(" Explain our product{Enter}");
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  expect(capture.selectedTemplates[0]?.selection).toStrictEqual(
+    expect.objectContaining({ stylePresetId: "explainer-video" }),
+  );
+  expect(
+    capture.sentMessages[0]?.parts.some(
+      (part) => part.type === "additional_info",
+    ),
+  ).toBeFalsy();
+});

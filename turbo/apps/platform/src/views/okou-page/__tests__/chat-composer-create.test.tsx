@@ -144,13 +144,16 @@ test("Choose a video through the consolidated Create entry with the keyboard and
     name: "Video models",
   });
   expect(videoPicker).toHaveTextContent("Seedance 2.0");
-  click(screen.getByRole("combobox", { name: "Ratio" }));
-  click(await screen.findByRole("option", { name: "9:16" }));
-  await waitFor(() => {
-    expect(screen.getByRole("combobox", { name: "Ratio" })).toHaveTextContent(
-      "9:16",
-    );
-  });
+  const ratios = await screen.findByRole("radiogroup", { name: "Ratio" });
+  const portrait = queryAllByRoleFast("radio", ratios).find(
+    (radio) => radio.textContent?.trim() === "9:16",
+  );
+  if (!portrait) {
+    throw new Error("Portrait ratio missing");
+  }
+  click(portrait);
+  expect(portrait).toHaveAttribute("aria-checked", "true");
+  await user.keyboard("{Escape}");
   click(button("Send"));
   await waitFor(() => {
     expect(submissions).toHaveLength(1);

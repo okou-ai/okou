@@ -1,5 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import type {
   ChatRunOptionsRequest,
@@ -106,7 +107,9 @@ async function openVideoOptions(expectedSpec: string): Promise<HTMLElement> {
   const chip = await waitFor(() => {
     return fastControl("button", `Video options ${expectedSpec}`);
   });
-  click(chip);
+  if (chip.getAttribute("aria-expanded") !== "true") {
+    click(chip);
+  }
   return await screen.findByLabelText("Video options");
 }
 
@@ -207,8 +210,10 @@ test.each([false, true])(
       path: `/agents/${AGENT_ID}/chat`,
       featureSwitches: { [FeatureSwitchKey.ComposerCreateCommands]: enabled },
     });
-    await enterVideoMode("Claude Fable 5.1");
     await selectVideoTemplate();
+    await expect(
+      screen.findByLabelText("Video options"),
+    ).resolves.toBeVisible();
     await expect(
       openVideoOptions("16:9 · 8s · 720p"),
     ).resolves.toBeInTheDocument();
@@ -310,3 +315,110 @@ test.each([false, true])(
     await expect(screen.findByText(prompt)).resolves.toBeVisible();
   },
 );
+
+test("Selecting a video model alone keeps Creative Video settings hidden", async () => {
+  installVideoSubmissionCapture();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+  });
+  await enterVideoMode("Claude Fable 5.1");
+  expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button").some((button) => {
+      return button.getAttribute("aria-label")?.startsWith("Video options ");
+    }),
+  ).toBeFalsy();
+});
+
+test("Changing a Creative Video style retains settings without reopening the panel", async () => {
+  installVideoSubmissionCapture();
+  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  const editor = await enterText("Keep this scene description");
+  await selectVideoTemplate();
+  await screen.findByLabelText("Video options");
+  click(optionRadio(screen.getByRole("radiogroup", { name: "Ratio" }), "9:16"));
+  click(screen.getByRole("switch", { name: "Generate audio" }));
+  await userEvent.setup({ delay: null }).keyboard("{Escape}");
+  const summary = fastControl("button", "Video options 9:16 · 8s · 720p");
+  expect(summary).toHaveAttribute("aria-description", "Audio off");
+  const edit = composerInlineTemplates()[0]?.querySelector("button");
+  if (!edit) {
+    throw new Error("Template edit button missing");
+  }
+  click(edit);
+  const dialog = await screen.findByRole("dialog");
+  expect(
+    queryAllByRoleFast("tab", dialog).map((tab) => tab.textContent?.trim()),
+  ).toStrictEqual(["Video"]);
+  await userEvent.setup({ delay: null }).click(tabByText("Video"));
+  await userEvent.setup({ delay: null }).keyboard("{End}{ArrowDown}");
+  expect(tabByText("Video")).toHaveAttribute("aria-selected", "true");
+  const template = VIDEO_TEMPLATE_ITEMS[1]!;
+  click(
+    fastControl("button", `Select video template ${template.title}`, dialog),
+  );
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(editor).toHaveTextContent(template.title);
+  });
+  expect(editor).toHaveTextContent("Keep this scene description");
+  expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
+  expect(
+    fastControl("button", "Video options 9:16 · 8s · 720p"),
+  ).toHaveAttribute("aria-description", "Audio off");
+});
+
+async function restoreVideoDraft(stylePresetId: string): Promise<HTMLElement> {
+  installVideoSubmissionCapture();
+  context.mocks.api(agentDraftContract.get, ({ respond }) =>
+    respond(200, {
+      draftUserMessage: {
+        version: 1,
+        parts: [
+          { type: "text", text: "Continue this video " },
+          {
+            type: "template",
+            titleSnapshot: "Saved style",
+            template: {
+              type: "video",
+              selection: { stylePresetId },
+            },
+          },
+        ],
+      },
+      draftAttachments: null,
+    }),
+  );
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: {
+      [FeatureSwitchKey.IntroVideo]: true,
+      [FeatureSwitchKey.ComposerCreateCommands]: true,
+      [FeatureSwitchKey.ComposerTaskChips]: true,
+    },
+  });
+  const editor = await screen.findByRole("textbox", { name: "Message" });
+  await waitFor(() => {
+    expect(editor).toHaveTextContent("Saved style");
+  });
+  return editor;
+}
+
+test("A restored Creative Video draft exposes its settings", async () => {
+  await restoreVideoDraft(VIDEO_TEMPLATE_ITEMS[0]!.id);
+  await expect(screen.findByLabelText("Video options")).resolves.toBeVisible();
+});
+
+test("A legacy Intro Video draft excludes settings even after choosing Create video", async () => {
+  await restoreVideoDraft("explainer-video");
+  const tasks = screen.getByRole("group", { name: "Choose a task" });
+  click(fastControl("button", "Video", tasks));
+  expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button").some((button) =>
+      button.getAttribute("aria-label")?.startsWith("Video options "),
+    ),
+  ).toBeFalsy();
+});

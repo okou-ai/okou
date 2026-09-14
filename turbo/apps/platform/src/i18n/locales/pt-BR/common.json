@@ -2854,6 +2854,8 @@
       "removeWorkflow": "Remover template de fluxo de trabalho {{title}}",
       "videoOptions": "Opções de vídeo",
       "videoOptionsAudio": "Gerar áudio",
+      "videoOptionsAudioOff": "Áudio desativado",
+      "videoOptionsAudioOn": "Áudio ativado",
       "videoOptionsDuration": "Duração",
       "videoOptionsLabel": "Opções de vídeo {{spec}}",
       "videoOptionsModel": "Modelo",

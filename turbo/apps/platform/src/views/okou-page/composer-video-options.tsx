@@ -1,18 +1,11 @@
 import type { ReactNode } from "react";
 import { useGet, useLastResolved, useSet } from "ccstate-react";
-import { ChevronDown, SlidersHorizontal, Volume2, VolumeX } from "lucide-react";
+import { ChevronDown, Volume2, VolumeX } from "lucide-react";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@okouai/ui/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@okouai/ui/components/ui/select";
 import { Slider } from "@okouai/ui/components/ui/slider";
 import { Switch } from "@okouai/ui/components/ui/switch";
 import { Button, cn } from "@okouai/ui";
@@ -356,121 +349,16 @@ function VideoSettingsPane({
   );
 }
 
-function VideoToolbarField<Option extends string>({
-  label,
-  value,
-  values,
-  onChange,
-}: {
-  readonly label: string;
-  readonly value: Option;
-  readonly values: readonly Option[];
-  readonly onChange: (value: Option) => void;
-}) {
-  return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger
-        aria-label={label}
-        disabled={values.length < 2}
-        className="h-8 w-auto gap-1 border-transparent bg-transparent px-2 text-xs text-muted-foreground hover:bg-state-hover [&>[data-slot=select-icon]>svg]:size-3"
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent side="top" align="start">
-        {values.map((option) => {
-          return (
-            <SelectItem key={option} value={option}>
-              {option}
-            </SelectItem>
-          );
-        })}
-      </SelectContent>
-    </Select>
-  );
-}
-
-function VideoToolbar({
-  resolved,
-  config,
-  onChange,
-}: {
-  readonly resolved: ResolvedVideoGenerationOptions;
-  readonly config: VideoModelConfig;
-  readonly onChange: (next: ResolvedVideoGenerationOptions) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="hidden shrink-0 items-center gap-0.5 @min-[760px]/composer:flex">
-      <div className="mx-1 h-4 w-px bg-divider/60" />
-      <VideoToolbarField
-        label={t(($) => {
-          return $.chat.templates.videoOptionsRatio;
-        })}
-        value={resolved.aspectRatio}
-        values={config.aspectRatios}
-        onChange={(aspectRatio) => {
-          return onChange({ ...resolved, aspectRatio });
-        }}
-      />
-      <VideoToolbarField
-        label={t(($) => {
-          return $.chat.templates.videoOptionsResolution;
-        })}
-        value={resolved.resolution}
-        values={config.resolutions}
-        onChange={(resolution) => {
-          return onChange({ ...resolved, resolution });
-        }}
-      />
-      <VideoToolbarField
-        label={t(($) => {
-          return $.chat.templates.videoOptionsDuration;
-        })}
-        value={resolved.duration}
-        values={config.durations}
-        onChange={(duration) => {
-          return onChange({ ...resolved, duration });
-        }}
-      />
-      {config.supportsGenerateAudio && (
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-sm"
-          aria-label={t(($) => {
-            return $.chat.templates.videoOptionsAudio;
-          })}
-          aria-pressed={resolved.generateAudio}
-          showTooltip
-          onClick={() => {
-            return onChange({
-              ...resolved,
-              generateAudio: !resolved.generateAudio,
-            });
-          }}
-        >
-          {resolved.generateAudio ? (
-            <Volume2 size={16} />
-          ) : (
-            <VolumeX size={16} />
-          )}
-        </Button>
-      )}
-    </div>
-  );
-}
-
 function ComposerVideoOptionsChipBody({
   signals,
   videoModelSignals,
-  toolbar = false,
 }: {
   readonly signals: ComposerSignals;
   readonly videoModelSignals: ComposerVideoModelSignals;
-  readonly toolbar?: boolean;
 }) {
   const { t } = useTranslation();
   const open = useGet(signals.videoOptions.videoOptionsOpen$);
+  const templatePickerMounted = useGet(signals.template.templatePickerMounted$);
   const setOpen = useSet(signals.videoOptions.setVideoOptionsOpen$);
   const patch = useGet(signals.videoOptions.videoRunOptions$);
   const setPatch = useSet(signals.videoOptions.setVideoRunOptions$);
@@ -483,123 +371,78 @@ function ComposerVideoOptionsChipBody({
   const resolved = resolveVideoRunOptions(patch, model);
   const config: VideoModelConfig = VIDEO_MODEL_CONFIGS[model];
   const spec = videoRunOptionsText(resolved);
+  const audioLabel = t(($) => {
+    return resolved.generateAudio
+      ? $.chat.templates.videoOptionsAudioOn
+      : $.chat.templates.videoOptionsAudioOff;
+  });
 
   return (
-    <>
-      {toolbar && (
-        <VideoToolbar
+    <Popover open={open && !templatePickerMounted} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="quiet"
+          size="sm"
+          className="shrink-0 gap-1.5 font-normal data-popup-open:bg-state-hover data-popup-open:text-foreground"
+          aria-label={t(
+            ($) => {
+              return $.chat.templates.videoOptionsLabel;
+            },
+            { spec },
+          )}
+          aria-description={
+            config.supportsGenerateAudio ? audioLabel : undefined
+          }
+        >
+          <span className="tabular-nums">{spec}</span>
+          {config.supportsGenerateAudio &&
+            (resolved.generateAudio ? (
+              <Volume2 size={14} aria-hidden />
+            ) : (
+              <VolumeX size={14} aria-hidden />
+            ))}
+          <ChevronDown className="shrink-0 opacity-50" aria-hidden />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        side="top"
+        sideOffset={6}
+        className="w-[17.5rem] max-w-[calc(100vw-2rem)] p-1.5"
+        aria-label={t(($) => {
+          return $.chat.templates.videoOptions;
+        })}
+      >
+        <VideoSettingsPane
           resolved={resolved}
           config={config}
           onChange={(next) => {
-            return setPatch(videoRunOptionsPatch(next, model));
+            setPatch(videoRunOptionsPatch(next, model));
           }}
         />
-      )}
-      <Popover open={open} onOpenChange={setOpen}>
-        {/* The chip is a text control in the composer's icon row, so it is a
-          `quiet` `sm` Button: same h-8 height and radius as the icon buttons
-          beside it, with the regular weight the rest of the row reads at. */}
-        <PopoverTrigger asChild>
-          <Button
-            type="button"
-            variant="quiet"
-            size="sm"
-            className={cn(
-              "shrink-0 gap-1 font-normal",
-              toolbar &&
-                "w-8 px-0 @min-[520px]/composer:w-auto @min-[520px]/composer:px-2 @min-[760px]/composer:hidden",
-              "data-popup-open:bg-state-hover data-popup-open:text-foreground",
-            )}
-            aria-label={t(
-              ($) => {
-                return $.chat.templates.videoOptionsLabel;
-              },
-              { spec },
-            )}
-          >
-            {toolbar && (
-              <SlidersHorizontal
-                size={16}
-                className="@min-[520px]/composer:hidden"
-                aria-hidden
-              />
-            )}
-            <span
-              className={cn(
-                "tabular-nums",
-                toolbar && "hidden @min-[520px]/composer:inline",
-              )}
-            >
-              {spec}
-            </span>
-            <ChevronDown
-              className={cn(
-                "shrink-0 opacity-50",
-                toolbar && "hidden @min-[520px]/composer:block",
-              )}
-              aria-hidden
-            />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent
-          align="start"
-          side="top"
-          sideOffset={6}
-          // The gap between panels matches this padding, so the pane is evenly
-          // spaced on every side; that 6px is also what sets the panel radius.
-          className="w-[17.5rem] p-1.5"
-          aria-label={t(($) => {
-            return $.chat.templates.videoOptions;
-          })}
-        >
-          <VideoSettingsPane
-            resolved={resolved}
-            config={config}
-            onChange={(next) => {
-              setPatch(videoRunOptionsPatch(next, model));
-            }}
-          />
-        </PopoverContent>
-      </Popover>
-    </>
+      </PopoverContent>
+    </Popover>
   );
 }
 
-/**
- * Parameters for the next video the run generates, on a chip under the input.
- *
- * The chip states the four values the run would use even before the user
- * touches any of them, because "what will this cost me" is the question the
- * control exists to answer. Its value domains come from the model that is
- * actually in effect, so an illegal combination — the one the generation
- * endpoint has to reject with a 400 — cannot be selected here.
- *
- * Create video exposes these controls in the toolbar, with a compact popover
- * when space is limited. Ordinary chat follows the desktop picker's category.
- */
+/** One visible summary and one settings panel, exclusively for Creative Video. */
 export function ComposerVideoOptionsChip({
   signals,
 }: {
   readonly signals: ComposerSignals;
 }) {
-  const createMode = useGet(signals.create.mode$);
-  const desktopLayout = useGet(signals.model.desktopModelPickerLayout$);
-  const mediaModelCategory = useGet(signals.model.mediaModelCategory$);
+  const creativeVideo = useGet(signals.create.creativeVideo$);
   const videoModelSignals = signals.videoModel;
-  if (
-    createMode !== "video" &&
-    (!desktopLayout || mediaModelCategory !== "video")
-  ) {
-    return null;
-  }
-  if (!videoModelSignals) {
+  if (!creativeVideo || !videoModelSignals) {
     return null;
   }
   return (
-    <ComposerVideoOptionsChipBody
-      signals={signals}
-      videoModelSignals={videoModelSignals}
-      toolbar={createMode === "video"}
-    />
+    <div className="order-first w-full text-muted-foreground @min-[640px]/composer:order-none @min-[640px]/composer:w-auto">
+      <ComposerVideoOptionsChipBody
+        signals={signals}
+        videoModelSignals={videoModelSignals}
+      />
+    </div>
   );
 }

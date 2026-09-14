@@ -397,8 +397,15 @@ test("Task changes preserve uploaded files and the draft, and toggling off resto
   });
   click(button("Video", restoredTasks));
   await screen.findByRole("combobox", { name: "Video models" });
-  click(screen.getByRole("combobox", { name: "Ratio" }));
-  click(await screen.findByRole("option", { name: "9:16" }));
+  const ratios = await screen.findByRole("radiogroup", { name: "Ratio" });
+  const portrait = queryAllByRoleFast("radio", ratios).find(
+    (radio) => radio.textContent?.trim() === "9:16",
+  );
+  if (!portrait) {
+    throw new Error("Portrait ratio missing");
+  }
+  click(portrait);
+  await user.keyboard("{Escape}");
   click(button("Remove Video", selectedTask(editor, "Video")));
   await screen.findByRole("combobox", { name: "Claude Sonnet 4.6" });
   expect(screen.queryByTestId("composer-create-mode")).toBeNull();

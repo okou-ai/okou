@@ -49,7 +49,7 @@ export function videoRunOptionsPatch(
   };
 }
 
-/** `16:9 · 8s · 720p`, the chip's whole label. Audio is left to the panel. */
+/** Text summary; the control presents audio separately as an icon. */
 export function videoRunOptionsText(
   resolved: ResolvedVideoGenerationOptions,
 ): string {

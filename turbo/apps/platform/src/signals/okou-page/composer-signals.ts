@@ -896,10 +896,9 @@ function createSubmitCurrentInput({
         return false;
       }
       const mode = get(create.mode$);
-      const videoRunOptions =
-        mode !== null && mode !== "video"
-          ? undefined
-          : await set(readVideoRunOptions$, signal);
+      const videoRunOptions = get(create.creativeVideo$)
+        ? await set(readVideoRunOptions$, signal)
+        : undefined;
       signal.throwIfAborted();
       // Keep the new persisted part within the existing Create rollout.
       const additionalInfo = get(create.enabled$)
@@ -920,7 +919,7 @@ function createSubmitCurrentInput({
             additionalInfo,
           )
         : submission.editorDocument;
-      return await set(
+      const submitted = await set(
         options.submitMessage$,
         action,
         {
@@ -931,6 +930,10 @@ function createSubmitCurrentInput({
         },
         signal,
       );
+      if (submitted) {
+        set(videoOptions.resetVideoRunOptions$);
+      }
+      return submitted;
     },
   );
 }
