@@ -295,6 +295,7 @@ enum BackgroundFillEntryState {
 struct BackgroundFillEntry {
     group: CacheTargetGroup,
     home: HomePaths,
+    decoded: Option<decoded::DecodedCache>,
     subscribers: Vec<SandboxOpReporter>,
     state: BackgroundFillEntryState,
 }
@@ -340,6 +341,7 @@ struct BackgroundFillWork {
     key: (String, String),
     group: CacheTargetGroup,
     home: HomePaths,
+    decoded: Option<decoded::DecodedCache>,
 }
 
 struct BackgroundFillWorkerResult {
@@ -394,6 +396,7 @@ impl StorageCacheBackgroundFillCoordinator {
         group: CacheTargetGroup,
         home: HomePaths,
         reporter: SandboxOpReporter,
+        decoded: Option<decoded::DecodedCache>,
     ) -> BackgroundFillAdmission {
         let Some(key) = group_key(&group) else {
             warn!("storage_cache: refusing empty background fill group");
@@ -408,6 +411,9 @@ impl StorageCacheBackgroundFillCoordinator {
             return BackgroundFillAdmission::Closed;
         }
         if let Some(entry) = state.entries.get_mut(&key) {
+            if entry.decoded.is_none() {
+                entry.decoded = decoded;
+            }
             entry.subscribers.push(reporter);
             return BackgroundFillAdmission::Deduplicated;
         }
@@ -419,6 +425,7 @@ impl StorageCacheBackgroundFillCoordinator {
             BackgroundFillEntry {
                 group,
                 home,
+                decoded,
                 subscribers: vec![reporter],
                 state: BackgroundFillEntryState::Queued,
             },
@@ -503,6 +510,25 @@ impl StorageCacheBackgroundFillCoordinator {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .closed
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn wait_idle_for_test(&self) {
+        loop {
+            let (send, receive) = oneshot::channel();
+            self.lifecycle
+                .inner
+                .commands
+                .send(BackgroundFillCommand::Checkpoint(send))
+                .await
+                .unwrap();
+            if receive.await.unwrap() == (0, 0) {
+                return;
+            }
+            // Observe a coordinator checkpoint without busy-spinning while a
+            // blocking filesystem worker is active. This is test-only polling.
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
     }
 }
 
@@ -649,19 +675,24 @@ fn take_background_fill_work(
     if state.closed {
         return None;
     }
-    let (group, home) = {
+    let (group, home, decoded) = {
         let entry = state.entries.get_mut(key)?;
         if entry.state != BackgroundFillEntryState::Queued {
             return None;
         }
         entry.state = BackgroundFillEntryState::Active;
-        (entry.group.clone(), entry.home.clone())
+        (
+            entry.group.clone(),
+            entry.home.clone(),
+            entry.decoded.clone(),
+        )
     };
     state.queued = state.queued.saturating_sub(1);
     Some(BackgroundFillWork {
         key: key.clone(),
         group,
         home,
+        decoded,
     })
 }
 
@@ -705,7 +736,24 @@ async fn run_background_fill_work(
     http: Client,
 ) -> BackgroundFillWorkerResult {
     let started_at = Instant::now();
-    let report = match process_group_background_fill(&work.group, &http, &work.home).await {
+    let outcome = async {
+        let outcome = process_group_background_fill(&work.group, &http, &work.home).await?;
+        if matches!(
+            outcome,
+            BackgroundFillOutcome::Filled { .. } | BackgroundFillOutcome::AlreadyCached { .. }
+        ) && let Some(decoded) = &work.decoded
+        {
+            decoded
+                .warm_from_archive(&work.key.0, &work.key.1)
+                .await
+                .map_err(|error| {
+                    RunnerError::Internal(format!("warm extracted storage cache: {error}"))
+                })?;
+        }
+        Ok::<_, RunnerError>(outcome)
+    }
+    .await;
+    let report = match outcome {
         Ok(outcome) => BackgroundFillReport::from_outcome(outcome, started_at.elapsed()),
         Err(error) => {
             warn!(%error, "storage_cache: background fill failed");
@@ -999,7 +1047,7 @@ impl FreshArchiveDelivery {
 /// no asynchronous cleanup.
 #[must_use = "deferred storage cache fill must be started after agent spawn or explicitly dropped"]
 pub(crate) struct DeferredBackgroundFill {
-    groups: Vec<CacheTargetGroup>,
+    groups: Vec<(CacheTargetGroup, Option<decoded::DecodedCache>)>,
     home: HomePaths,
     selected_at: Instant,
 }
@@ -1023,8 +1071,8 @@ impl DeferredBackgroundFill {
         );
         let reporter = telemetry.reporter();
         let mut accepted = 0;
-        for group in self.groups {
-            match coordinator.submit(group, self.home.clone(), reporter.clone()) {
+        for (group, decoded) in self.groups {
+            match coordinator.submit(group, self.home.clone(), reporter.clone(), decoded) {
                 BackgroundFillAdmission::Accepted => accepted += 1,
                 BackgroundFillAdmission::Deduplicated => telemetry.record(
                     STORAGE_CACHE_BACKGROUND_FILL_DEDUPLICATED,
@@ -1153,6 +1201,9 @@ impl GuestStageRecorder<'_> {
         let Some(cache) = self.decoded else {
             return Ok(false);
         };
+        if !is_ordinary_storage_group(group, self.plan) {
+            return Ok(false);
+        }
         let Some(target) = group.targets.first() else {
             return Ok(false);
         };
@@ -1164,17 +1215,27 @@ impl GuestStageRecorder<'_> {
             result.is_ok(),
             None,
         );
-        let Some(files) = result.map_err(|error| {
+        let files = result.map_err(|error| {
             RunnerError::Internal(format!("lookup decoded storage cache: {error}"))
-        })?
-        else {
+        })?;
+        self.reuse_decoded(group, files)
+    }
+
+    fn reuse_decoded(
+        &mut self,
+        group: &CacheTargetGroup,
+        files: Option<Arc<decoded::CachedFiles>>,
+    ) -> RunnerResult<bool> {
+        let Some(files) = files else {
             return Ok(false);
         };
-        // Check mounts only on a ready hit. Misses retain their existing decode
-        // admission check after reading the archive, without doing it twice.
+        // Check mounts only on a ready hit. Misses keep ordinary delivery.
         let Some(mounts) = self.decoded_mounts(group) else {
             return Ok(false);
         };
+        if !self.plan.admit_decoded_manifest()? {
+            return Ok(false);
+        }
         Ok(self.add_decoded(mounts, files))
     }
 
@@ -1184,32 +1245,6 @@ impl GuestStageRecorder<'_> {
             .iter()
             .map(|target| self.plan.decoded_mount(target.handle).map(str::to_owned))
             .collect()
-    }
-
-    async fn try_decode(&mut self, group: &CacheTargetGroup, bytes: Bytes) -> RunnerResult<bool> {
-        let Some(cache) = self.decoded else {
-            return Ok(false);
-        };
-        let Some(mounts) = self.decoded_mounts(group) else {
-            return Ok(false);
-        };
-        let Some(target) = group.targets.first() else {
-            return Ok(false);
-        };
-        let started = Instant::now();
-        let result = cache.resolve(&target.name, &target.version, bytes).await;
-        self.telemetry.record(
-            "storage_cache_decode_resolve",
-            started.elapsed(),
-            result.is_ok(),
-            None,
-        );
-        let Some(files) = result
-            .map_err(|error| RunnerError::Internal(format!("decode storage cache: {error}")))?
-        else {
-            return Ok(false);
-        };
-        Ok(self.add_decoded(mounts, files))
     }
 
     fn add_decoded(&mut self, mounts: Vec<String>, files: Arc<decoded::CachedFiles>) -> bool {
@@ -1568,7 +1603,7 @@ async fn stage_fresh_archives(
     };
     for FreshArchiveResolved { group, archive } in resolved {
         let FreshArchivePublished { bytes, permit } = archive;
-        if stage.try_decode(&group, bytes.clone()).await? {
+        if stage.try_reuse_decoded(&group).await? {
             outcomes.push((group, TargetOutcome::Decoded));
             continue;
         }
@@ -1623,10 +1658,6 @@ async fn stage_processed_group(
         stage_write,
     } = processed;
     if let Some(stage_write) = stage_write {
-        if stage.try_decode(&group, stage_write.bytes.clone()).await? {
-            outcomes.push((group, TargetOutcome::Decoded));
-            return Ok(());
-        }
         push_guest_stage_write(stage_batch, stage_write, stage).await?;
     }
     outcomes.push((group, outcome));
@@ -1699,20 +1730,6 @@ pub(crate) async fn populate_cache_with_fresh_delivery(
     decoded: Option<&decoded::DecodedCache>,
 ) -> RunnerResult<Option<DeferredBackgroundFill>> {
     let targets = collect_targets(plan);
-    // Large manifests retain their existing file transport. Decide before any
-    // archive staging is omitted, so binary encoding cannot strand a mount.
-    let decoded = if decoded.is_some()
-        && serde_json::to_vec(&plan.clone().into_guest_manifest())
-            .map_err(|error| RunnerError::Internal(format!("manifest JSON: {error}")))?
-            .len()
-            // Reserve for every remaining URL becoming a bounded staged URL.
-            .saturating_add(plan.entry_count().saturating_mul(192))
-            <= guest_contracts::storage_files::MAX_MANIFEST_BYTES
-    {
-        decoded
-    } else {
-        None
-    };
     if targets.is_empty() && fresh_delivery.is_none() {
         return Ok(None);
     }
@@ -1759,50 +1776,88 @@ pub(crate) async fn populate_cache_with_fresh_delivery(
             decoded,
         };
 
-        for group in target_groups {
-            match stage.try_reuse_decoded(&group).await {
-                Ok(true) => {
+        for batch in target_groups.chunks(decoded::LOOKUP_BATCH_SIZE) {
+            let ready =
+                if let Some(cache) = decoded.filter(|_| !stage.plan.decoded_manifest_rejected()) {
+                    let mut keys = Vec::with_capacity(batch.len());
+                    for group in batch {
+                        let Some(target) = group.targets.first() else {
+                            abort_pending_processed_groups(&mut groups).await;
+                            return Err(RunnerError::Internal(
+                                "empty storage cache target group".into(),
+                            ));
+                        };
+                        keys.push(
+                            is_ordinary_storage_group(group, stage.plan)
+                                .then_some((target.name.as_str(), target.version.as_str())),
+                        );
+                    }
+                    let started = Instant::now();
+                    let result = cache.get_ready_batch(&keys).await;
+                    stage.telemetry.record(
+                        "storage_cache_decode_lookup",
+                        started.elapsed(),
+                        result.is_ok(),
+                        None,
+                    );
+                    match result {
+                        Ok(ready) => ready,
+                        Err(error) => {
+                            abort_pending_processed_groups(&mut groups).await;
+                            return Err(RunnerError::Internal(format!(
+                                "lookup extracted storage cache: {error}"
+                            )));
+                        }
+                    }
+                } else {
+                    vec![None; batch.len()]
+                };
+            for (group, files) in batch.iter().cloned().zip(ready) {
+                let reused = match stage.reuse_decoded(&group, files) {
+                    Ok(reused) => reused,
+                    Err(error) => {
+                        abort_pending_processed_groups(&mut groups).await;
+                        return Err(error);
+                    }
+                };
+                if reused {
                     outcomes.push((group, TargetOutcome::Decoded));
                     continue;
                 }
-                Ok(false) => {}
-                Err(error) => {
-                    abort_pending_processed_groups(&mut groups).await;
-                    return Err(error);
+                while groups.len() >= CONCURRENCY {
+                    let Some(task) = join_next_processed_group(&mut groups).await? else {
+                        break;
+                    };
+                    stage_joined_processed_group(
+                        &mut groups,
+                        task,
+                        &mut outcomes,
+                        &mut stage_batch,
+                        &mut stage,
+                    )
+                    .await?;
                 }
-            }
-            while groups.len() >= CONCURRENCY {
-                let Some(task) = join_next_processed_group(&mut groups).await? else {
-                    break;
-                };
-                stage_joined_processed_group(
-                    &mut groups,
-                    task,
-                    &mut outcomes,
-                    &mut stage_batch,
-                    &mut stage,
-                )
-                .await?;
-            }
 
-            let home = home.clone();
-            groups.spawn(async move {
-                let mut metrics = CacheProcessMetrics::default();
-                let started_at = Instant::now();
-                let processed = process_group_hit_or_passthrough(&group, &home, &mut metrics).await;
-                let success = processed.is_ok();
-                metrics.record(
-                    STORAGE_CACHE_PROCESS_GROUP,
-                    started_at.elapsed(),
-                    success,
-                    (!success).then_some(STORAGE_CACHE_PROCESS_GROUP_FAILED),
-                );
-                ProcessedGroupTask {
-                    group,
-                    metrics,
-                    processed,
-                }
-            });
+                let home = home.clone();
+                groups.spawn(async move {
+                    let mut metrics = CacheProcessMetrics::default();
+                    let started_at = Instant::now();
+                    let processed =
+                        process_group_hit_or_passthrough(&group, &home, &mut metrics).await;
+                    let success = processed.is_ok();
+                    metrics.record(
+                        STORAGE_CACHE_PROCESS_GROUP,
+                        started_at.elapsed(),
+                        success,
+                        (!success).then_some(STORAGE_CACHE_PROCESS_GROUP_FAILED),
+                    );
+                    ProcessedGroupTask {
+                        group,
+                        metrics,
+                        processed,
+                    }
+                });
+            }
         }
 
         while let Some(task) = join_next_processed_group(&mut groups).await? {
@@ -1823,7 +1878,8 @@ pub(crate) async fn populate_cache_with_fresh_delivery(
     let outcomes = stage_result?;
 
     record_passthrough_summary(&outcomes, telemetry);
-    let deferred = defer_background_fill_groups(&outcomes, home.clone(), telemetry);
+    let deferred =
+        defer_background_fill_groups(&outcomes, home.clone(), decoded.cloned(), plan, telemetry);
     for (group, outcome) in outcomes {
         apply_group_outcome(plan, &group, &outcome, telemetry);
     }
@@ -1837,15 +1893,32 @@ fn group_key(group: &CacheTargetGroup) -> Option<(String, String)> {
         .map(|target| (target.name.clone(), target.version.clone()))
 }
 
+fn is_ordinary_storage_group(group: &CacheTargetGroup, plan: &StoragePlan) -> bool {
+    !plan.decoded_manifest_rejected()
+        && !group.targets.is_empty()
+        && group
+            .targets
+            .iter()
+            .all(|target| plan.is_ordinary_storage_download(target.handle))
+}
+
 fn defer_background_fill_groups(
     outcomes: &[(CacheTargetGroup, TargetOutcome)],
     home: HomePaths,
+    decoded: Option<decoded::DecodedCache>,
+    plan: &StoragePlan,
     telemetry: &mut JobTelemetry,
 ) -> Option<DeferredBackgroundFill> {
     let groups = outcomes
         .iter()
-        .filter(|(_, outcome)| should_background_fill(outcome))
-        .map(|(group, _)| group.clone())
+        .filter_map(|(group, outcome)| {
+            let decoded = decoded
+                .as_ref()
+                .filter(|_| is_ordinary_storage_group(group, plan));
+            (should_background_fill(outcome)
+                || (decoded.is_some() && matches!(outcome, TargetOutcome::Hit)))
+            .then(|| (group.clone(), decoded.cloned()))
+        })
         .collect::<Vec<_>>();
     if groups.is_empty() {
         return None;
@@ -1871,7 +1944,7 @@ fn should_background_fill(outcome: &TargetOutcome) -> bool {
 
 #[cfg(test)]
 async fn run_background_fill_groups(
-    groups: Vec<CacheTargetGroup>,
+    groups: Vec<(CacheTargetGroup, Option<decoded::DecodedCache>)>,
     home: HomePaths,
 ) -> Vec<SandboxOpRecord> {
     let http = match Client::builder().build() {
@@ -1893,7 +1966,7 @@ async fn run_background_fill_groups(
 
     let mut fills = JoinSet::new();
     let mut reports = Vec::new();
-    for group in groups {
+    for (group, decoded) in groups {
         while fills.len() >= CONCURRENCY {
             if let Some(report) = join_next_background_fill(&mut fills).await {
                 reports.extend(report.into_records());
@@ -1903,14 +1976,13 @@ async fn run_background_fill_groups(
         let http = http.clone();
         let home = home.clone();
         fills.spawn(async move {
-            let started_at = Instant::now();
-            match process_group_background_fill(&group, &http, &home).await {
-                Ok(outcome) => BackgroundFillReport::from_outcome(outcome, started_at.elapsed()),
-                Err(error) => {
-                    warn!(%error, "storage_cache: background fill failed");
-                    BackgroundFillReport::failed(started_at.elapsed())
-                }
-            }
+            let work = BackgroundFillWork {
+                key: group_key(&group).unwrap(),
+                group,
+                home,
+                decoded,
+            };
+            run_background_fill_work(work, http).await.report
         });
     }
 
@@ -3736,13 +3808,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn decoded_hit_materializes_after_disk_eviction_while_archive_lock_is_busy() {
+    async fn decoded_hit_survives_restart_and_compressed_eviction_while_archive_lock_is_busy() {
         use std::os::unix::fs::PermissionsExt;
 
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
         let sandbox = MockSandbox::new("decoded-hit");
-        let cache = decoded::DecodedCache::new();
+        let cache = decoded::DecodedCache::new(home.clone());
         let mount = temp.path().join("guest-mount");
         let entry = storage_entry(
             mount.to_str().unwrap().into(),
@@ -3751,24 +3823,13 @@ mod tests {
             "v1",
         );
         write_cached_archive(&home, "name", "v1", &tarball_bytes());
-        let mut fill = plan_from_entries(vec![entry.clone()], Vec::new(), None);
-        assert!(
-            populate_cache_with_fresh_delivery(
-                &mut fill,
-                &sandbox,
-                &home,
-                &mut new_telemetry(),
-                None,
-                Some(&cache),
-            )
-            .await
-            .unwrap()
-            .is_none()
-        );
-        assert_eq!(fill.take_decoded().len(), 1);
+        write_storage_lock(&home, "name", "v1");
+        cache.warm_from_archive("name", "v1").await.unwrap();
+        cache.shutdown().await;
+        let cache = decoded::DecodedCache::new(home.clone());
 
-        // A process-owned decoded entry survives compressed-cache GC. Holding
-        // the real archive lock proves the hit does not depend on disk access.
+        // Extracted files survive owner restart and compressed-cache GC.
+        // Holding the archive lock proves the hit never reopens the archive.
         std::fs::remove_file(home.storage_cache_dir("name", "v1").join("archive.tar.gz")).unwrap();
         let writer = lock::acquire(home.storage_lock("name", "v1"))
             .await
@@ -3817,8 +3878,10 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
         let sandbox = MockSandbox::new("decoded-identity");
-        let cache = decoded::DecodedCache::new();
+        let cache = decoded::DecodedCache::new(home.clone());
         write_cached_archive(&home, "name", "v1", &tarball_bytes());
+        write_storage_lock(&home, "name", "v1");
+        cache.warm_from_archive("name", "v1").await.unwrap();
         let mut fill = fresh_storage_plan("https://storage.example/a".into(), "name", "v1");
         populate_cache_with_fresh_delivery(
             &mut fill,
@@ -3851,12 +3914,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn instruction_and_artifact_delivery_never_reads_or_warms_decoded_entries() {
+        for corrupt in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let home = home_at(&temp);
+            let sandbox = MockSandbox::new("decoded-ineligible");
+            let cache = decoded::DecodedCache::new(home.clone());
+            write_cached_archive(&home, "name", "v1", &tarball_bytes());
+            write_storage_lock(&home, "name", "v1");
+            if corrupt {
+                cache.warm_from_archive("name", "v1").await.unwrap();
+                let entry = home
+                    .storages_dir()
+                    .join(crate::paths::short_digest("name"))
+                    .join(format!("decoded-v1-{}", crate::paths::short_digest("v1")));
+                std::fs::write(entry.join("index.json"), b"{").unwrap();
+            }
+            let url = "https://storage.example/a";
+            let mut instruction =
+                storage_entry("/mnt/instructions".into(), url.into(), "name", "v1");
+            instruction.instructions_target_filename = Some("AGENTS.md".into());
+            for mut plan in [
+                plan_from_entries(vec![instruction], Vec::new(), None),
+                fresh_artifact_plan(url.into(), "name", "v1"),
+            ] {
+                let deferred = populate_cache_with_fresh_delivery(
+                    &mut plan,
+                    &sandbox,
+                    &home,
+                    &mut new_telemetry(),
+                    None,
+                    Some(&cache),
+                )
+                .await
+                .unwrap();
+                assert!(deferred.is_none(), "irrelevant decoded fill was selected");
+                assert!(plan.take_decoded().is_empty());
+                let source =
+                    storage_archive_url(&plan, 0).or_else(|| artifact_archive_url(&plan, 0));
+                assert!(source.unwrap().starts_with("file://"));
+            }
+            if !corrupt {
+                assert!(cache.get_ready("name", "v1").await.unwrap().is_none());
+            }
+            cache.shutdown().await;
+        }
+    }
+
+    #[tokio::test]
     async fn ready_decoded_files_preserve_mount_and_manifest_admission() {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
         let sandbox = MockSandbox::new("decoded-admission");
-        let cache = decoded::DecodedCache::new();
+        let cache = decoded::DecodedCache::new(home.clone());
         write_cached_archive(&home, "name", "v1", &tarball_bytes());
+        write_storage_lock(&home, "name", "v1");
+        cache.warm_from_archive("name", "v1").await.unwrap();
         let url = "https://storage.example/a";
         let mut fill = fresh_storage_plan(url.into(), "name", "v1");
         populate_cache_with_fresh_delivery(
@@ -5831,6 +5944,7 @@ mod tests {
                     ),
                     home.clone(),
                     reporter.clone(),
+                    None,
                 ),
                 BackgroundFillAdmission::Accepted
             );
@@ -5904,11 +6018,11 @@ mod tests {
             background_fill_group(archive_url, "deduplicated", "v1", Some(body.len() as u64));
 
         assert_eq!(
-            coordinator.submit(group.clone(), home.clone(), first_reporter),
+            coordinator.submit(group.clone(), home.clone(), first_reporter, None),
             BackgroundFillAdmission::Accepted
         );
         assert_eq!(
-            coordinator.submit(group, home.clone(), second_reporter),
+            coordinator.submit(group, home.clone(), second_reporter, None),
             BackgroundFillAdmission::Deduplicated
         );
 
@@ -5938,7 +6052,7 @@ mod tests {
             Some(body.len() as u64),
         );
         assert_eq!(
-            coordinator.submit(first_group, home.clone(), first_reporter),
+            coordinator.submit(first_group, home.clone(), first_reporter, None),
             BackgroundFillAdmission::Accepted
         );
         tokio::time::timeout(Duration::from_secs(5), server.requests.recv())
@@ -5961,7 +6075,10 @@ mod tests {
                     "v1",
                     Some(body.len() as u64),
                 ),
-            ],
+            ]
+            .into_iter()
+            .map(|group| (group, None))
+            .collect(),
             home: home.clone(),
             selected_at: Instant::now(),
         }
@@ -6015,6 +6132,7 @@ mod tests {
                 ),
                 home.clone(),
                 reporter.clone(),
+                None,
             ),
             BackgroundFillAdmission::Accepted
         );
@@ -6032,6 +6150,7 @@ mod tests {
                 ),
                 home.clone(),
                 reporter,
+                None,
             ),
             BackgroundFillAdmission::Accepted
         );

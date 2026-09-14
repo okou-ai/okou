@@ -62,6 +62,7 @@ pub(crate) struct StoragePlan {
     cleanup_paths: Vec<String>,
     instruction_cleanups: Vec<InstructionCleanup>,
     reused_entries: usize,
+    decoded_manifest_admitted: Option<bool>,
     decoded: Vec<(
         String,
         std::sync::Arc<crate::storage_cache::decoded::CachedFiles>,
@@ -317,11 +318,41 @@ pub(crate) fn build_storage_plan(
         cleanup_paths,
         instruction_cleanups,
         reused_entries,
+        decoded_manifest_admitted: None,
         decoded: Vec::new(),
     })
 }
 
 impl StoragePlan {
+    pub(crate) fn decoded_manifest_rejected(&self) -> bool {
+        self.decoded_manifest_admitted == Some(false)
+    }
+
+    /// Decide once, on a ready hit and before omitting any archive staging.
+    /// Misses never clone/serialize an otherwise unchanged manifest for this.
+    pub(crate) fn admit_decoded_manifest(&mut self) -> RunnerResult<bool> {
+        if let Some(admitted) = self.decoded_manifest_admitted {
+            return Ok(admitted);
+        }
+        let bytes = serde_json::to_vec(&self.clone().into_guest_manifest())
+            .map_err(|error| RunnerError::Internal(format!("manifest JSON: {error}")))?;
+        // Reserve for every remaining URL becoming a bounded staged URL.
+        let admitted = bytes
+            .len()
+            .saturating_add(self.entry_count().saturating_mul(192))
+            <= guest_contracts::storage_files::MAX_MANIFEST_BYTES;
+        self.decoded_manifest_admitted = Some(admitted);
+        Ok(admitted)
+    }
+
+    pub(crate) fn is_ordinary_storage_download(&self, handle: ArchiveHandle) -> bool {
+        matches!(handle.kind, ArchiveKind::Storage)
+            && self
+                .storages
+                .get(handle.index)
+                .is_some_and(|entry| matches!(entry.action, StorageAction::Download { .. }))
+    }
+
     pub(crate) fn decoded_mount(&self, handle: ArchiveHandle) -> Option<&str> {
         if !matches!(handle.kind, ArchiveKind::Storage) {
             return None;

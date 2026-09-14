@@ -971,7 +971,7 @@ async fn run_start_with_home(
         session_history_cpu: SessionHistoryCpuPool::for_host_cpus(host_cpus),
         session_history_probe: SessionHistoryProbe::default(),
         fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission::new(),
-        decoded_cache: crate::storage_cache::decoded::DecodedCache::new(),
+        decoded_cache: crate::storage_cache::decoded::DecodedCache::new(home.clone()),
         background_fill,
         pre_spawn_admission,
         storage_baseline_observer: Default::default(),

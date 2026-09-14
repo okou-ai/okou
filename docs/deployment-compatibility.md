@@ -554,6 +554,51 @@ it is upgraded (potentially causing a cache miss, not exposing an active build).
 Runner and guest binaries are deployed as one runner artifact. Compatibility is
 not required between a runner binary and a guest binary from a different version.
 
+The extracted storage cache is a separate, host-local cross-version boundary.
+New readers use `storages/<name-hash>/decoded-v1-<version-hash>/` containing an
+identity/content index and real files. Existing compressed readers continue to
+use their original hashed version directory and `archive.tar.gz`; neither
+reader interprets the other format. Compressed entries remain available during
+migration and rollback. New entries use the existing name/version-key flock,
+including the final-version lock for `.tmp` staging, so both old and new storage
+GC recursively account and evict them with the existing best-effort byte and
+entry targets. These targets are not hard disk-usage limits. Directory admission
+also bounds each extracted entry's inode footprint.
+
+Unsupported-archive admission records use separate
+`decoded-v1-rejected-<version-hash>/` keys under the same GC and lock rules.
+Only background fill reads these records; foreground lookup probes positive
+file entries only, so unsupported archives do not pay a rejection-record lock
+and read on every startup. Each reader validates its expected entry kind.
+
+Readers hold that lock while validating the bounded index, identity, file types,
+sizes and content digests, then pin owned bytes through Guest apply. GC can evict
+the disk entry afterward without invalidating an in-flight delivery. Orphaned
+lock GC may remove an unlocked lock while retaining its data; a reader recreates
+and revalidates the lock only for a present entry, then reopens the directory
+under the lock. Missing, busy or unsupported entries keep ordinary delivery;
+malformed present cache data is an error, not an unverified hit.
+
+The bounded binary-manifest check is computed once on the first usable ready
+hit, before omitting archive staging. Miss-only runs do not clone and serialize
+the manifest just to decide whether an unused binary input would fit.
+
+Lookup windows admit at most 128 identities with 128 KiB of owned key bytes,
+retaining the per-key limits. Non-admitted keys retain ordinary delivery;
+this bounds metadata even when a plan contains unusually long identities.
+Ready-file read-ahead stops after reaching 15 MiB of content, with at most one
+additional storage's size in that last read; the wider miss-probe window does
+not increase the former 16-MiB content read-ahead bound.
+
+First-fill extraction belongs to the existing bounded background-fill owner and
+starts only after Agent spawn. Before that point, selected work owns no task,
+cache lock or open file. Publication uses private staging and atomic rename;
+this is a disposable cache, not a power-loss-durable source of truth. Runner
+shutdown joins background work and extracted-cache blocking tasks. The binary
+final-file input is private to the bundled Runner/Guest storage operation;
+ordinary HTTP downloads, API manifests and generic exec-stdin limits do not
+change. No backend reader-first deployment is required for that bundled input.
+
 Use **sandbox** for provider-neutral runner lifecycle, ownership, status,
 network-policy, and operator concepts. Use **VM** only for concrete
 Firecracker/KVM implementation details such as the Firecracker `/vm` API, VM

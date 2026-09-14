@@ -192,6 +192,23 @@ async fn execute_job_reuse_materializes_runner_owned_decoded_files_once() {
         make_reusable_idle_sandbox(sandbox, source_ip, "test-session").await;
     let server = MockServer::start_async().await;
     let body = storage_archive(b"reused archive");
+    let home = crate::paths::HomePaths::with_root(dir.path().to_owned());
+    let archive_dir = home.storage_cache_dir("reused-archive", "v1");
+    std::fs::create_dir_all(&archive_dir).unwrap();
+    std::fs::write(archive_dir.join("archive.tar.gz"), &body).unwrap();
+    drop(
+        crate::lock::acquire(home.storage_lock("reused-archive", "v1"))
+            .await
+            .unwrap(),
+    );
+    config
+        .decoded_cache
+        .warm_from_archive("reused-archive", "v1")
+        .await
+        .unwrap();
+    // The real delivery still owns this fresh download, while its immutable
+    // decoded version came from a prior completed background fill.
+    std::fs::remove_file(archive_dir.join("archive.tar.gz")).unwrap();
     let full_get = server
         .mock_async(|when, then| {
             when.method(GET)

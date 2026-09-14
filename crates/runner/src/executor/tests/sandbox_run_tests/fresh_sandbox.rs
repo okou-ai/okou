@@ -287,6 +287,7 @@ async fn execute_inner_does_not_prefetch_after_early_guest_state_failure() {
 async fn fresh_archive_download_overlaps_blocked_sandbox_create() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
+    let cache = config.decoded_cache.clone();
     let factory = Arc::new(CreateGateFactory::new());
     let server = httpmock::MockServer::start_async().await;
     let body = storage_archive(b"fresh archive");
@@ -328,6 +329,8 @@ async fn fresh_archive_download_overlaps_blocked_sandbox_create() {
                 tokio_util::sync::CancellationToken::new(),
             )
             .await;
+            config.background_fill.wait_idle_for_test().await;
+            config.background_fill.shutdown().await;
             (outcome, telemetry)
         }
     });
@@ -349,6 +352,13 @@ async fn fresh_archive_download_overlaps_blocked_sandbox_create() {
         !task.is_finished(),
         "sandbox create gate should keep the run from reaching guest download"
     );
+    assert!(
+        cache
+            .get_ready("fresh-overlap", "v1")
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     factory.release.notify_one();
     let (outcome, telemetry) = tokio::time::timeout(Duration::from_secs(5), task)
@@ -357,7 +367,16 @@ async fn fresh_archive_download_overlaps_blocked_sandbox_create() {
         .expect("run task should not panic");
     assert_eq!(outcome.unwrap().exit_code(), 0);
     full_get.assert_calls_async(1).await;
-    assert_telemetry_action(&telemetry, "storage_cache_decoded", true, None);
+    assert_no_telemetry_action(&telemetry, "storage_cache_decoded");
+    assert_telemetry_action(&telemetry, "storage_cache_hit", true, None);
+    assert!(
+        cache
+            .get_ready("fresh-overlap", "v1")
+            .await
+            .unwrap()
+            .is_some()
+    );
+    cache.shutdown().await;
 }
 
 #[tokio::test]
