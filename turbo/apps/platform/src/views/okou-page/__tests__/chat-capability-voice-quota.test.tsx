@@ -57,6 +57,7 @@ function installVoicePlan(tier: VoicePlan, role: WorkspaceRole): void {
   });
   context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
     return respond(200, {
+      supportsFreeMembers: true,
       usagePacks: ([20, 50, 100, 200] as const).map((usagePackUsd) => {
         const purchasedCredits = usagePackUsd * 100;
         const bonusCredits = usagePackUsd * 10;

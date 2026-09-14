@@ -1,20 +1,16 @@
 import type { ClerkUIConstructor } from "@clerk/shared/ui";
-import type { BrowserClerk, ClerkOptions } from "@clerk/shared/types";
+import type { ClerkOptions } from "@clerk/shared/types";
 import type { ui } from "@clerk/ui";
 import type { DebugLoggers } from "./types/global-method";
 
-interface OkouClerkBootstrapLoadOptions {
-  readonly afterSignOutUrl: string;
-  readonly signInUrl: string;
-  readonly signUpUrl: string;
+interface OkouClerkBootstrapRuntime {
+  readonly clerk: unknown;
+  readonly loaded: Promise<void>;
 }
 
 interface OkouClerkBootstrap {
-  clerk?: BrowserClerk;
-  readonly loadOptions: OkouClerkBootstrapLoadOptions;
-  loaded?: Promise<void>;
+  readonly runtime: Promise<OkouClerkBootstrapRuntime>;
   uiLoaded?: Promise<typeof ui>;
-  readonly publishableKey: string;
   /**
    * Resolves the hosted UI constructor promise the page passed to its early
    * `clerk.load`. The app calls it once the UI script is available.

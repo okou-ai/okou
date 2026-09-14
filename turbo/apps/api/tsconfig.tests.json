@@ -2,7 +2,8 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "disableSourceOfProjectReferenceRedirect": true,
-    "tsBuildInfoFile": "./.typecheck/tests.tsbuildinfo"
+    "tsBuildInfoFile": "./.typecheck/tests.tsbuildinfo",
+    "rootDir": "."
   },
   "include": [
     "src/**/__benches__/**/*",
@@ -16,6 +17,7 @@
   "exclude": ["node_modules", "dist", "src/__tests__/vercel-crons.test.ts"],
   "references": [
     { "path": "./tsconfig.gateways.json" },
-    { "path": "./tsconfig.core.json" }
+    { "path": "./tsconfig.core.json" },
+    { "path": "./tsconfig.routes.json" }
   ]
 }

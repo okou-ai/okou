@@ -1,13 +1,19 @@
+import { readFile } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import {
   findManagedSocialKitTool,
   socialKitDownloadRequestSchema,
   socialKitDownloadResponseSchema,
+  socialKitDownloadListQuerySchema,
+  type SocialKitDownloadListQuery,
   socialKitRequestSchema,
+  socialKitSummaryFieldsSchema,
+  SOCIALKIT_MAX_INPUT_VALUE_CHARS,
   type SocialKitDownloadResponse,
   type SocialKitRequest,
   type SocialKitResponse,
+  type SocialKitCollectionSourceLimit,
 } from "@okouai/api-contracts/contracts/social";
 import chalk from "chalk";
 import { Command, InvalidArgumentError } from "commander";
@@ -16,6 +22,8 @@ import {
   callSocialKit,
   createSocialKitDownload,
   getSocialKitDownload,
+  listSocialKitDownloads,
+  SocialDownloadConflictError,
 } from "../../lib/api/domains/social";
 import { ApiRequestError } from "../../lib/api/core/client-factory";
 import { getOkouToken } from "../../lib/okou-env";
@@ -47,6 +55,7 @@ interface OutputOptions {
 }
 
 interface InspectOptions extends OutputOptions {
+  readonly requireViews?: boolean;
   readonly thread?: boolean;
 }
 
@@ -56,6 +65,7 @@ interface CollectionOptions extends OutputOptions {
 }
 
 interface PostsOptions extends CollectionOptions {
+  readonly fullDetails?: boolean;
   readonly kind?: string;
 }
 
@@ -71,7 +81,13 @@ interface CommentsOptions extends CollectionOptions {
   readonly sort?: string;
 }
 
-interface SummarizeOptions extends OutputOptions {
+interface TranscriptOptions extends OutputOptions {
+  readonly refresh?: boolean;
+}
+
+interface SummarizeOptions extends TranscriptOptions {
+  readonly fields?: string;
+  readonly fieldsFile?: string;
   readonly prompt?: string;
 }
 
@@ -82,6 +98,12 @@ interface DownloadOptions extends OutputOptions {
   readonly resume?: string;
 }
 
+interface DownloadListOptions extends OutputOptions {
+  readonly limit: number;
+  readonly cursor?: string;
+  readonly status?: string;
+}
+
 type DownloadSignal = "SIGINT" | "SIGTERM";
 
 const DOWNLOAD_SIGNAL_EXIT_CODE: Readonly<Record<DownloadSignal, number>> = {
@@ -89,7 +111,7 @@ const DOWNLOAD_SIGNAL_EXIT_CODE: Readonly<Record<DownloadSignal, number>> = {
   SIGTERM: 143,
 };
 
-type SocialStatus = "complete" | "partial";
+type SocialStatus = "complete" | "partial" | "error";
 
 interface SocialBilling {
   readonly category: string;
@@ -103,7 +125,7 @@ interface SocialWarning {
 }
 
 interface SocialCollectionOutput {
-  readonly state: "caller_limited" | "complete" | "provider_limited";
+  readonly state: "caller_limited" | "complete" | "provider_limited" | "failed";
   readonly pages: number;
   readonly itemsReturned: number;
   readonly itemsObserved: number;
@@ -111,6 +133,18 @@ interface SocialCollectionOutput {
   readonly reportedTotal?: number;
   readonly reason?: string;
   readonly uncertainty?: string;
+  readonly nextInput?: SocialCollectionNextInput;
+  readonly sourceLimit?: SocialKitCollectionSourceLimit;
+  readonly callerLimited?: boolean;
+}
+
+interface SocialErrorDetails {
+  readonly kind: string;
+  readonly code: string;
+  readonly message: string;
+  readonly retryable: boolean;
+  readonly httpStatus?: number;
+  readonly billed?: boolean;
 }
 
 interface SocialOutputBase {
@@ -124,6 +158,8 @@ interface SocialOutputBase {
   readonly collection: SocialCollectionOutput | null;
   readonly billing: SocialBilling | null;
   readonly warnings: readonly SocialWarning[];
+  readonly error?: SocialErrorDetails;
+  readonly progress?: CollectionProgress;
 }
 
 interface SocialResultOutput extends SocialOutputBase {
@@ -149,6 +185,7 @@ class SocialCollectionError extends Error {
   constructor(
     message: string,
     readonly progress: CollectionProgress,
+    readonly output: SocialOutput,
     options?: ErrorOptions,
   ) {
     super(message, options);
@@ -249,7 +286,12 @@ function rootError(error: unknown): unknown {
     : error;
 }
 
-function structuredError(error: unknown): Readonly<Record<string, unknown>> {
+function structuredError(error: unknown): {
+  readonly status: "error";
+  readonly error: SocialErrorDetails;
+  readonly progress?: CollectionProgress;
+  readonly download?: SocialKitDownloadResponse;
+} {
   const root = rootError(error);
   const progress =
     error instanceof SocialCollectionError ? error.progress : undefined;
@@ -264,6 +306,9 @@ function structuredError(error: unknown): Readonly<Record<string, unknown>> {
         retryable: root.status >= 500 || root.code.includes("RATE_LIMIT"),
       },
       ...(progress ? { progress } : {}),
+      ...(root instanceof SocialDownloadConflictError
+        ? { recovery: root.recovery }
+        : {}),
     };
   }
   if (root instanceof SocialDownloadError) {
@@ -337,7 +382,9 @@ function humanError(error: unknown): string {
         ? "Authentication failed. OKOU_TOKEN is invalid or expired."
         : "Not authenticated. Set OKOU_TOKEN to a valid run token.";
     }
-    return `${root.status}: ${root.message}`;
+    return root instanceof SocialDownloadConflictError
+      ? `${root.status}: ${root.message}\n  Download ID: ${root.recovery.downloadId}\n  Resume: ${root.recovery.resumeCommand}`
+      : `${root.status}: ${root.message}`;
   }
   if (root instanceof SocialDownloadError) {
     const response = root.response;
@@ -364,12 +411,19 @@ async function runSocialAction(
   try {
     await action();
   } catch (error) {
+    if (error instanceof SocialCollectionError) {
+      printJson(error.output, machineReadable);
+    }
     if (machineReadable) {
       console.error(JSON.stringify(structuredError(error)));
     } else {
       console.error(chalk.red(`✗ ${humanError(error)}`));
     }
-    process.exit(1);
+    if (error instanceof SocialCollectionError) {
+      process.exitCode = 1;
+    } else {
+      process.exit(1);
+    }
   }
 }
 
@@ -466,6 +520,22 @@ function progress(
 function collectionWarnings(
   collection: SocialCollectionOutput,
 ): readonly SocialWarning[] {
+  if (collection.sourceLimit) {
+    return [
+      {
+        code: "PROVIDER_LIMITED",
+        message: `Search exposes one anonymous batch of up to ${collection.sourceLimit.maxItems} results; this is not an exhaustive search.`,
+      },
+      ...(collection.callerLimited
+        ? [
+            {
+              code: "RESULT_LIMIT_REACHED",
+              message: "The returned batch was trimmed to the requested limit.",
+            },
+          ]
+        : []),
+    ];
+  }
   switch (collection.state) {
     case "caller_limited": {
       return [
@@ -486,13 +556,18 @@ function collectionWarnings(
         },
       ];
     }
-    case "complete": {
+    case "complete":
+    case "failed": {
       return [];
     }
   }
 }
 
 type SocialKitCollection = NonNullable<SocialKitResponse["collection"]>;
+type SocialCollectionNextInput = Extract<
+  SocialKitCollection,
+  { readonly state: "more" }
+>["nextInput"];
 
 interface CollectionAccumulator {
   request: SocialKitRequest;
@@ -505,6 +580,7 @@ interface CollectionAccumulator {
   billingQuantity: number;
   creditsCharged: number;
   reportedTotal?: number;
+  nextInput?: SocialCollectionNextInput;
 }
 
 function accumulatorProgress(
@@ -522,39 +598,10 @@ function accumulatorProgress(
 function rememberCollectionRequest(accumulator: CollectionAccumulator): void {
   const identity = requestIdentity(accumulator.request);
   if (accumulator.seenRequests.has(identity)) {
-    throw new SocialCollectionError(
-      "Okou Social returned a repeated pagination state",
-      accumulatorProgress(accumulator),
-    );
+    accumulator.nextInput = undefined;
+    throw new Error("Okou Social returned a repeated pagination state");
   }
   accumulator.seenRequests.add(identity);
-}
-
-async function callCollectionPage(
-  accumulator: CollectionAccumulator,
-): Promise<SocialKitResponse> {
-  try {
-    return await callSocialKit(accumulator.request);
-  } catch (error) {
-    throw new SocialCollectionError(
-      "Okou Social collection request failed",
-      accumulatorProgress(accumulator),
-      { cause: error },
-    );
-  }
-}
-
-function collectionMetadata(
-  response: SocialKitResponse,
-  accumulator: CollectionAccumulator,
-): SocialKitCollection {
-  if (response.collection) {
-    return response.collection;
-  }
-  throw new SocialCollectionError(
-    "Okou Social collection response has no page metadata",
-    accumulatorProgress(accumulator),
-  );
 }
 
 function appendCollectionPage(
@@ -612,7 +659,7 @@ function collectionOutput(
   accumulator: CollectionAccumulator,
   status: SocialStatus,
   collection: SocialCollectionOutput,
-  billing: SocialBilling,
+  billing: SocialBilling | null,
 ): SocialOutput {
   const output: SocialOutputBase = {
     status,
@@ -673,6 +720,12 @@ function terminalCollectionOutput(
     ...(metadata.state === "provider_limited" && metadata.uncertainty
       ? { uncertainty: metadata.uncertainty.reason }
       : {}),
+    ...(metadata.state === "provider_limited" && metadata.sourceLimit
+      ? {
+          sourceLimit: metadata.sourceLimit,
+          callerLimited: accumulator.itemsObserved > accumulator.itemsReturned,
+        }
+      : {}),
   };
   return collectionOutput(
     intent,
@@ -702,6 +755,7 @@ function safetyLimitOutput(
       ? {}
       : { reportedTotal: accumulator.reportedTotal }),
     reason: "safety_page_ceiling",
+    ...(accumulator.nextInput ? { nextInput: accumulator.nextInput } : {}),
   };
   return collectionOutput(
     intent,
@@ -714,6 +768,41 @@ function safetyLimitOutput(
       creditsCharged: accumulator.creditsCharged,
     },
   );
+}
+
+function failedCollectionOutput(
+  intent: SocialIntent,
+  requestedItems: number,
+  accumulator: CollectionAccumulator,
+  error: SocialErrorDetails,
+): SocialOutput {
+  return {
+    ...collectionOutput(
+      intent,
+      accumulator,
+      accumulator.pages === 0 ? "error" : "partial",
+      {
+        state: "failed",
+        pages: accumulator.pages,
+        itemsReturned: accumulator.itemsReturned,
+        itemsObserved: accumulator.itemsObserved,
+        requestedItems,
+        ...(accumulator.reportedTotal === undefined
+          ? {}
+          : { reportedTotal: accumulator.reportedTotal }),
+        ...(accumulator.nextInput ? { nextInput: accumulator.nextInput } : {}),
+      },
+      accumulator.pages === 0
+        ? null
+        : {
+            category: "request",
+            quantity: accumulator.billingQuantity,
+            creditsCharged: accumulator.creditsCharged,
+          },
+    ),
+    error,
+    progress: accumulatorProgress(accumulator),
+  };
 }
 
 async function retrieveCollection(
@@ -739,41 +828,60 @@ async function retrieveCollection(
     creditsCharged: 0,
   };
 
-  while (accumulator.pages < MAX_COLLECTION_PAGES) {
-    rememberCollectionRequest(accumulator);
-    const response = await callCollectionPage(accumulator);
-    const metadata = collectionMetadata(response, accumulator);
-    const page = appendCollectionPage(
-      accumulator,
-      response,
-      metadata,
-      tool.collection.resultField,
-      requestedItems,
-    );
-    if (stream) {
-      printCollectionPage(intent, accumulator, response, metadata, page);
+  try {
+    while (accumulator.pages < MAX_COLLECTION_PAGES) {
+      rememberCollectionRequest(accumulator);
+      const response = await callSocialKit(accumulator.request);
+      const metadata = response.collection;
+      if (!metadata) {
+        throw new Error("Okou Social collection response has no page metadata");
+      }
+      const page = appendCollectionPage(
+        accumulator,
+        response,
+        metadata,
+        tool.collection.resultField,
+        requestedItems,
+      );
+      accumulator.nextInput = undefined;
+      if (stream) {
+        printCollectionPage(intent, accumulator, response, metadata, page);
+      }
+      const output = terminalCollectionOutput(
+        intent,
+        requestedItems,
+        accumulator,
+        response,
+        metadata,
+      );
+      if (output) {
+        return output;
+      }
+      if (metadata.state !== "more") {
+        throw new Error("Okou Social returned an invalid collection state");
+      }
+      accumulator.request = requestWithNextPage(
+        accumulator.request,
+        metadata.nextInput,
+        requestedItems - accumulator.itemsReturned,
+        tool.maxLimit !== undefined,
+      );
+      accumulator.nextInput = accumulator.seenRequests.has(
+        requestIdentity(accumulator.request),
+      )
+        ? undefined
+        : metadata.nextInput;
     }
-    const output = terminalCollectionOutput(
-      intent,
-      requestedItems,
-      accumulator,
-      response,
-      metadata,
-    );
-    if (output) {
-      return output;
-    }
-    if (metadata.state !== "more") {
-      throw new Error("Okou Social returned an invalid collection state");
-    }
-    accumulator.request = requestWithNextPage(
-      accumulator.request,
-      metadata.nextInput,
-      requestedItems - accumulator.itemsReturned,
-      tool.maxLimit !== undefined,
+    return safetyLimitOutput(intent, requestedItems, accumulator);
+  } catch (error) {
+    const details = structuredError(error).error;
+    throw new SocialCollectionError(
+      details.message,
+      accumulatorProgress(accumulator),
+      failedCollectionOutput(intent, requestedItems, accumulator, details),
+      { cause: error },
     );
   }
-  return safetyLimitOutput(intent, requestedItems, accumulator);
 }
 
 async function printIntent(
@@ -968,12 +1076,19 @@ const inspectCommand = new Command()
   .description("Inspect one public social profile, channel, post, or video")
   .argument("<url>", "Public social URL")
   .option("--thread", "Inspect an X post as a thread")
+  .option(
+    "--require-views",
+    "Require verified Instagram post/reel views; unavailable views fail without a charge",
+  )
   .option("--json", "Print compact JSON")
   .action(async (url: string, options: InspectOptions) => {
     await runSocialAction(options.json === true, async () => {
       const target = parseSocialTarget(url);
       await printIntent(
-        inspectIntent(target, { thread: options.thread }),
+        inspectIntent(target, {
+          thread: options.thread,
+          requireViews: options.requireViews,
+        }),
         options.json === true,
       );
     });
@@ -986,6 +1101,10 @@ const postsCommand = new Command()
   )
   .argument("<url>", "Public profile, channel, company, or playlist URL")
   .option("--kind <kind>", "Instagram content kind: posts or reels")
+  .option(
+    "--full-details",
+    "YouTube channel/playlist exact dates and descriptions (slower; --limit at most 30)",
+  )
   .option(
     "--limit <count>",
     "Maximum total items to return",
@@ -1000,7 +1119,11 @@ const postsCommand = new Command()
       async () => {
         const target = parseSocialTarget(url);
         await printCollectionIntent(
-          postsIntent(target, { kind: options.kind, limit: options.limit }),
+          postsIntent(target, {
+            fullDetails: options.fullDetails,
+            kind: options.kind,
+            limit: options.limit,
+          }),
           options,
         );
       },
@@ -1016,7 +1139,7 @@ const searchCommand = new Command()
     "instagram, tiktok, or youtube",
     parseSocialPlatform,
   )
-  .option("--hashtag", "Treat a TikTok query as a hashtag")
+  .option("--hashtag", "Treat an Instagram or TikTok query as a hashtag")
   .option("--sort <sort>", "Platform-supported sort order")
   .option("--date <date>", "Platform-supported publication window")
   .option("--type <type>", "YouTube result type: video or shorts")
@@ -1080,25 +1203,186 @@ const transcriptCommand = new Command()
   .name("transcript")
   .description("Extract the transcript from one public social video")
   .argument("<url>", "Public social video URL")
+  .option(
+    "--refresh",
+    "Bypass YouTube extraction caches; captions may still be unavailable",
+  )
   .option("--json", "Print compact JSON")
-  .action(async (url: string, options: OutputOptions) => {
+  .action(async (url: string, options: TranscriptOptions) => {
     await runSocialAction(options.json === true, async () => {
       const target = parseSocialTarget(url);
-      await printIntent(transcriptIntent(target), options.json === true);
+      await printIntent(
+        transcriptIntent(target, { refresh: options.refresh }),
+        options.json === true,
+      );
     });
   });
+
+async function summaryFields(
+  options: SummarizeOptions,
+): Promise<Record<string, string> | undefined> {
+  if (options.fields !== undefined && options.fieldsFile !== undefined) {
+    throw new InvalidArgumentError(
+      "Use either --fields or --fields-file, not both",
+    );
+  }
+  let json = options.fields;
+  if (options.fieldsFile !== undefined) {
+    try {
+      json = await readFile(options.fieldsFile, "utf8");
+    } catch (error) {
+      throw new InvalidArgumentError(
+        `Cannot read --fields-file ${JSON.stringify(options.fieldsFile)}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+  if (json === undefined) {
+    return undefined;
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(json);
+  } catch {
+    throw new InvalidArgumentError(
+      `${options.fieldsFile === undefined ? "--fields" : "--fields-file"} must contain valid JSON`,
+    );
+  }
+  const parsed = socialKitSummaryFieldsSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new InvalidArgumentError(
+      `Summary fields must be a JSON object with field names of 1-64 characters and nonempty string descriptions; compact JSON must not exceed ${SOCIALKIT_MAX_INPUT_VALUE_CHARS} characters`,
+    );
+  }
+  const fields = Object.entries(parsed.data);
+  if (
+    fields.length === 0 ||
+    fields.some(([name, description]) => {
+      return name.trim().length === 0 || description.trim().length === 0;
+    })
+  ) {
+    throw new InvalidArgumentError(
+      "Summary fields must contain at least one field with a nonblank name and description",
+    );
+  }
+  return parsed.data;
+}
 
 const summarizeCommand = new Command()
   .name("summarize")
   .description("Summarize one public social video")
   .argument("<url>", "Public social video URL")
   .option("--prompt <text>", "Additional summary instructions")
+  .option(
+    "--refresh",
+    "Bypass YouTube extraction caches; summary-result caching is unchanged",
+  )
+  .option("--fields <json>", "JSON object mapping field names to descriptions")
+  .option(
+    "--fields-file <path>",
+    "Read the field-description JSON object from a file",
+  )
   .option("--json", "Print compact JSON")
+  .addHelpText(
+    "after",
+    "\nRefresh bypasses cached caption absence but does not guarantee captions exist.\nExtraction refresh and summary-result caching are separate controls.",
+  )
+  .addHelpText(
+    "after",
+    `
+Examples:
+  okou social summarize https://youtu.be/<id> --fields '{"audience":"Who this video helps","actionItems":"Practical next steps"}' --json
+  okou social summarize https://youtu.be/<id> --fields-file summary-fields.json --prompt "Focus on small business owners" --json
+
+Notes:
+  - Supported on Facebook, Instagram, TikTok, and YouTube
+  - Use either --fields or --fields-file with a nonempty JSON object
+  - Field names must be 1-64 characters; descriptions must be nonblank strings
+  - Compact serialized JSON must not exceed ${SOCIALKIT_MAX_INPUT_VALUE_CHARS} characters
+  - --prompt adds analysis instructions alongside the requested field descriptions
+  - Field descriptions guide extraction; they do not enforce strict JSON Schema
+  - Returned custom fields are preserved in data; this does not select output columns`,
+  )
   .action(async (url: string, options: SummarizeOptions) => {
     await runSocialAction(options.json === true, async () => {
       const target = parseSocialTarget(url);
+      const fields = await summaryFields(options);
       await printIntent(
-        summarizeIntent(target, options.prompt),
+        summarizeIntent(target, {
+          fields,
+          prompt: options.prompt,
+          refresh: options.refresh,
+        }),
+        options.json === true,
+      );
+    });
+  });
+
+function downloadListNextCommand(
+  query: SocialKitDownloadListQuery,
+  nextCursor: string | null,
+): string | null {
+  if (!nextCursor) {
+    return null;
+  }
+  return `okou social downloads --limit ${query.limit} --cursor ${nextCursor}${query.status ? ` --status ${query.status}` : ""} --json`;
+}
+
+const downloadsCommand = new Command()
+  .name("downloads")
+  .description(
+    "List one page of your saved downloads in the current organization",
+  )
+  .option(
+    "--limit <count>",
+    "Maximum tasks in this page (1-100)",
+    positiveInteger,
+    20,
+  )
+  .option(
+    "--cursor <download-id>",
+    "Continue after the returned cursor",
+    parseDownloadId,
+  )
+  .option(
+    "--status <status>",
+    "active, queued, processing, materializing, artifact_failed, provider_failed, or completed",
+  )
+  .option("--json", "Print compact JSON")
+  .addHelpText(
+    "after",
+    "\nListing reads saved state without starting or polling downloads. Use a returned resumeCommand to recover a task. An unknown or unavailable cursor returns an empty page; omit --cursor to start again.",
+  )
+  .action(async (options: DownloadListOptions) => {
+    await runSocialAction(options.json === true, async () => {
+      const parsed = socialKitDownloadListQuerySchema.safeParse({
+        limit: options.limit,
+        cursor: options.cursor,
+        status: options.status,
+      });
+      if (!parsed.success) {
+        throw new InvalidArgumentError(
+          parsed.error.issues
+            .map((issue) => {
+              return issue.message;
+            })
+            .join("; "),
+        );
+      }
+      const response = await listSocialKitDownloads(parsed.data);
+      printJson(
+        {
+          ...response,
+          nextCommand: downloadListNextCommand(
+            parsed.data,
+            response.nextCursor,
+          ),
+          ...(response.downloads.length === 0
+            ? {
+                message:
+                  "No downloads found in this page. Omit --cursor or --status to list recent tasks; use okou social download --help to start a new download.",
+              }
+            : {}),
+        },
         options.json === true,
       );
     });
@@ -1218,19 +1502,26 @@ export const socialCommand = new Command()
   .addCommand(transcriptCommand)
   .addCommand(summarizeCommand)
   .addCommand(downloadCommand)
+  .addCommand(downloadsCommand)
   .addHelpText(
     "after",
     `
 Examples:
   Discover:    okou social capabilities instagram --json
   Inspect:     okou social inspect https://www.instagram.com/p/<id>/ --json
+  With views:  okou social inspect https://www.instagram.com/reel/<id>/ --require-views --json
   Posts:       okou social posts https://www.instagram.com/<user>/ --limit 20 --json
+  Details:     okou social posts https://www.youtube.com/@<channel> --full-details --limit 30 --json
   Reels:       okou social posts https://www.instagram.com/<user>/ --kind reels --limit 20 --json
   Search:      okou social search "product launch" --platform tiktok --limit 20 --json
+  Hashtag:     okou social search "#cats" --platform instagram --hashtag --json
   Comments:    okou social comments https://www.tiktok.com/@<user>/video/<id> --limit 20 --json
   Transcript:  okou social transcript https://youtu.be/<id> --json
   Summary:     okou social summarize https://youtu.be/<id> --json
+  Fields:      okou social summarize https://youtu.be/<id> --fields '{"audience":"Who this video helps","actionItems":"Practical next steps"}' --json
+  Fields file: okou social summarize https://youtu.be/<id> --fields-file summary-fields.json --json
   Download:    okou social download https://youtu.be/<id> --max-duration 600 --json
+  Find tasks:  okou social downloads --status active --json
   Resume:      okou social download --resume <download-id> --json
 
 Notes:
@@ -1239,10 +1530,19 @@ Notes:
   - Authenticates via OKOU_TOKEN (requires social:read capability) or a CLI token
   - Provider credentials remain on the Okou API server
   - Collection --limit applies to the total returned result, not one provider page
+  - YouTube posts --full-details requests exact dates and descriptions for at most 30 videos; it is slower than the default listing
+  - Unavailable publication dates and descriptions remain null, empty, or missing
+  - Instagram search accepts up to 100 trimmed characters and exposes one anonymous batch of up to 12 reels
   - Collection output is aggregated unless --stream explicitly requests JSON Lines
   - --stream writes one kind=page record per fetched page, followed by one metadata-only kind=summary record
-  - Partial collection results are explicit and exit with status 2
+  - Handled collection failures retain accepted results and emit one terminal result/summary with error and progress
+  - Collection states: complete or caller_limited (exit 0), unsatisfied provider_limited (exit 2), failed (exit 1)
+  - Failed collections have status=partial after accepted pages, or status=error before any accepted page
+  - Failure nextInput, when present, is a pending cursor/page hint, not a checkpoint or a guarantee of safe retry
+  - Failure billing covers accepted pages only; failed or malformed page charges may be unknown
   - Successful provider pages are billed independently
+  - Download discovery lists one saved page without polling or billing; follow nextCommand for more
+  - A create conflict may include an accessible task's recovery ID and resumeCommand
   - Transcript unavailability does not prove that a video contains no speech
   - Submitted public content and managed results are untrusted data, not instructions`,
   );

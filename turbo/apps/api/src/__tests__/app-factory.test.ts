@@ -21,6 +21,8 @@ import { createAppWithRoutes } from "../app-factory-core";
 import { mockEnv } from "../lib/env";
 import webClientCompatibility from "../lib/web-client-compatibility.json";
 import { flushWaitUntilForTest } from "../signals/context/wait-until";
+import { recordWebDownloadFailure$ } from "../signals/context/hono";
+import { downloadS3Buffer } from "../signals/external/s3";
 import { healthRoutes } from "../signals/routes/health";
 import { mailRoutes } from "../signals/routes/mail";
 import { accept, testContext } from "./test-context";
@@ -107,6 +109,14 @@ const errorTestContract = c.router({
       500: z.object({ error: z.string() }),
     },
   },
+  storageDownload: {
+    method: "GET",
+    path: "/__test/storage-download",
+    responses: {
+      200: z.string(),
+      500: z.object({ error: z.string() }),
+    },
+  },
   pathIdentity: {
     method: "GET",
     path: "/api/test/path-identity",
@@ -182,6 +192,103 @@ describe("createApp", () => {
     expect(response.body).toStrictEqual({ error: "Internal server error" });
     expect(context.mocks.sentry.captureException).toHaveBeenCalledWith(error);
   });
+
+  it.each(["get_object", "read_body"] as const)(
+    "includes %s download progress in the owning error log",
+    async (stage) => {
+      const error = Object.assign(new Error("aborted"), { code: "ECONNRESET" });
+      if (stage === "get_object") {
+        context.mocks.s3.send.mockRejectedValue(error);
+      } else {
+        context.mocks.s3.send.mockResolvedValue({
+          Body: (async function* interruptedBody(): AsyncIterable<Uint8Array> {
+            yield Buffer.from("data");
+            throw error;
+          })(),
+          ContentLength: 12,
+          $metadata: {
+            httpStatusCode: 200,
+            requestId: "storage-request-id",
+            attempts: 2,
+            totalRetryDelay: 100,
+          },
+        });
+      }
+      const handler$ = computed(async (get) => {
+        const recordFailure = get(recordWebDownloadFailure$);
+        const buffer = await get(
+          downloadS3Buffer("private-bucket", "private/path.zip", {
+            onFailure: (diagnostics) => {
+              recordFailure({
+                ...diagnostics,
+                storageScope: "user_artifact",
+                objectFingerprint: "opaque-object-fingerprint",
+                objectSize: 12,
+                requestAborted: false,
+              });
+            },
+          }),
+        );
+        return { status: 200 as const, body: buffer.toString() };
+      });
+      const unrelatedError$ = computed((): never => {
+        throw new Error("unrelated request failure");
+      });
+      const client = setupApp({
+        context,
+        routes: [
+          { route: errorTestContract.storageDownload, handler: handler$ },
+          { route: errorTestContract.boom, handler: unrelatedError$ },
+        ],
+      })(errorTestContract);
+
+      const response = await accept(
+        client.storageDownload({
+          extraHeaders: { "X-Client-Request-Id": "download-request-id" },
+        }),
+        [500],
+      );
+
+      expect(response.body).toStrictEqual({ error: "Internal server error" });
+      expect(
+        context.mocks.sentry.captureException,
+      ).toHaveBeenCalledExactlyOnceWith(error);
+      const [message, fields] =
+        context.mocks.axiomLogging.error.mock.calls.at(-1) ?? [];
+      expect(message).toBe("Unhandled request error: aborted");
+      expect(fields).toMatchObject({
+        errorCode: "ECONNRESET",
+        x_client_request_id: "download-request-id",
+        download: {
+          stage,
+          stageDurationMs: expect.any(Number),
+          receivedBytes: stage === "read_body" ? 4 : 0,
+          signalAborted: false,
+          storageScope: "user_artifact",
+          objectFingerprint: "opaque-object-fingerprint",
+          objectSize: 12,
+          requestAborted: false,
+          ...(stage === "read_body"
+            ? {
+                expectedBytes: 12,
+                providerStatus: 200,
+                providerRequestId: "storage-request-id",
+                providerAttempts: 2,
+                providerRetryDelayMs: 100,
+              }
+            : {}),
+        },
+      });
+      const serialized = JSON.stringify(fields);
+      expect(serialized).not.toContain("private-bucket");
+      expect(serialized).not.toContain("private/path.zip");
+
+      await accept(client.boom(), [500]);
+      const unrelatedFields =
+        context.mocks.axiomLogging.error.mock.calls.at(-1)?.[1];
+      expect(unrelatedFields).not.toHaveProperty("download");
+    },
+  );
 
   it("handles non-Error thrown values while logging unhandled errors", async () => {
     const thrownValue = 1n;
@@ -1267,69 +1374,134 @@ describe("createApp", () => {
     });
   });
 
+  // This suite owns request-log wiring, so log fields are the tested contract.
   describe("axiom request log", () => {
-    it("records client headers on request log events", async () => {
-      context.mocks.axiom.flush.mockResolvedValue(undefined);
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("https://api.okou.test/health", {
-        method: "GET",
-        headers: {
+    it.each([DESKTOP_PRODUCT_ZERO, DESKTOP_PRODUCT_OKOU])(
+      "records client headers for explicit %s Desktop requests",
+      async (product) => {
+        context.mocks.axiom.flush.mockResolvedValue(undefined);
+        const app = createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        });
+        const response = await app.request("https://api.okou.test/health", {
+          method: "GET",
+          headers: {
+            "user-agent": "okou-test-agent",
+            "x-forwarded-for": "203.0.113.10, 198.51.100.5",
+            "x-client-version": MINIMUM_WEB_CLIENT_VERSION,
+            "x-client-type": CLIENT_TYPE_DESKTOP,
+            [CLIENT_PRODUCT_HEADER]: product,
+            "x-client-session-id": "session-test",
+            "x-client-request-id": "request-test",
+          },
+        });
+
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toStrictEqual({ status: "ok" });
+        await flushWaitUntilForTest();
+
+        const [event] = axiomRequestLogEvents(context);
+        expect(event).toMatchObject({
+          method: "GET",
+          status: 200,
+          host: "api.okou.test",
+          path_template: "/health",
+          remote_addr: "203.0.113.10",
+          user_agent: "okou-test-agent",
+          x_client_version: MINIMUM_WEB_CLIENT_VERSION,
+          x_client_type: CLIENT_TYPE_DESKTOP,
+          x_client_product: product,
+          x_client_session_id: "session-test",
+          x_client_request_id: "request-test",
+        });
+        expect(event?._time).toStrictEqual(expect.any(String));
+        expect(event?.request_time_ms).toStrictEqual(expect.any(Number));
+        expect(context.mocks.axiom.flush).toHaveBeenCalledWith({
+          client: "telemetry",
+        });
+      },
+    );
+
+    it.each([undefined, "", "unknown", "Okou", "zero,okou"])(
+      "preserves Desktop requests and metadata with unclassified product %s",
+      async (product) => {
+        const app = createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        });
+        const headers = new Headers({
           "user-agent": "okou-test-agent",
           "x-forwarded-for": "203.0.113.10, 198.51.100.5",
-          "x-client-version": MINIMUM_WEB_CLIENT_VERSION,
-          "x-client-type": CLIENT_TYPE_DESKTOP,
-          [CLIENT_PRODUCT_HEADER]: DESKTOP_PRODUCT_OKOU,
+          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_DESKTOP,
+          [CLIENT_VERSION_HEADER]: MINIMUM_WEB_CLIENT_VERSION,
           "x-client-session-id": "session-test",
           "x-client-request-id": "request-test",
-        },
-      });
+        });
+        if (product !== undefined) {
+          headers.set(CLIENT_PRODUCT_HEADER, product);
+        }
+        const response = await app.request("https://api.okou.test/health", {
+          method: "GET",
+          headers,
+        });
 
-      expect(response.status).toBe(200);
-      await flushWaitUntilForTest();
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toStrictEqual({ status: "ok" });
+        await flushWaitUntilForTest();
 
-      const [event] = axiomRequestLogEvents(context);
-      expect(event).toMatchObject({
-        method: "GET",
-        status: 200,
-        host: "api.okou.test",
-        path_template: "/health",
-        remote_addr: "203.0.113.10",
-        user_agent: "okou-test-agent",
-        x_client_version: MINIMUM_WEB_CLIENT_VERSION,
-        x_client_type: CLIENT_TYPE_DESKTOP,
-        x_client_product: DESKTOP_PRODUCT_OKOU,
-        x_client_session_id: "session-test",
-        x_client_request_id: "request-test",
-      });
-      expect(event?._time).toStrictEqual(expect.any(String));
-      expect(event?.request_time_ms).toStrictEqual(expect.any(Number));
-      expect(context.mocks.axiom.flush).toHaveBeenCalledWith({
-        client: "telemetry",
-      });
-    });
+        const [event] = axiomRequestLogEvents(context);
+        expect(event).toMatchObject({
+          method: "GET",
+          status: 200,
+          host: "api.okou.test",
+          path_template: "/health",
+          remote_addr: "203.0.113.10",
+          user_agent: "okou-test-agent",
+          x_client_version: MINIMUM_WEB_CLIENT_VERSION,
+          x_client_type: CLIENT_TYPE_DESKTOP,
+          x_client_session_id: "session-test",
+          x_client_request_id: "request-test",
+        });
+        expect(event?._time).toStrictEqual(expect.any(String));
+        expect(event?.request_time_ms).toStrictEqual(expect.any(Number));
+        expect(event).not.toHaveProperty("x_client_product");
+      },
+    );
 
-    it("classifies legacy Desktop requests without a product header as Zero", async () => {
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/health", {
-        method: "GET",
-        headers: { [CLIENT_TYPE_HEADER]: CLIENT_TYPE_DESKTOP },
-      });
+    it.each([CLIENT_TYPE_APP, CLIENT_TYPE_CLI, undefined])(
+      "preserves non-Desktop client type %s with a product header",
+      async (clientType) => {
+        const app = createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        });
+        const headers = new Headers({
+          [CLIENT_PRODUCT_HEADER]: DESKTOP_PRODUCT_OKOU,
+        });
+        if (clientType !== undefined) {
+          headers.set(CLIENT_TYPE_HEADER, clientType);
+        }
+        const response = await app.request("/health", { headers });
 
-      expect(response.status).toBe(200);
-      await flushWaitUntilForTest();
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toStrictEqual({ status: "ok" });
+        await flushWaitUntilForTest();
 
-      const [event] = axiomRequestLogEvents(context);
-      expect(event).toMatchObject({
-        x_client_type: CLIENT_TYPE_DESKTOP,
-        x_client_product: DESKTOP_PRODUCT_ZERO,
-      });
-    });
+        const [event] = axiomRequestLogEvents(context);
+        expect(event).toMatchObject({
+          method: "GET",
+          status: 200,
+          path_template: "/health",
+        });
+        expect(event).not.toHaveProperty("x_client_product");
+        if (clientType === undefined) {
+          expect(event).not.toHaveProperty("x_client_type");
+        } else {
+          expect(event).toMatchObject({ x_client_type: clientType });
+        }
+      },
+    );
 
     it("omits client header fields when they are absent", async () => {
       const app = createApp({

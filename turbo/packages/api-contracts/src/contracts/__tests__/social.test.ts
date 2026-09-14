@@ -1,4 +1,5 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
+import { apiErrorSchema } from "../errors";
 
 import {
   managedSocialKitToolCatalog,
@@ -9,6 +10,7 @@ import {
   publicSocialErrorMessage,
   redactSocialProviderIdentity,
   socialKitErrorSchema,
+  socialKitDownloadConflictSchema,
   socialKitRequestSchema,
   socialKitResponseSchema,
   SOCIALKIT_TRANSCRIPT_ERROR_CODES,
@@ -16,6 +18,113 @@ import {
 } from "../social";
 
 describe("managed SocialKit contract", () => {
+  it("preserves old conflict readers and accepts scoped conflicts without recovery metadata", () => {
+    const legacy = {
+      error: {
+        code: "DOWNLOAD_IN_PROGRESS",
+        message: "Another social media download is already in progress",
+      },
+    };
+    const enriched = {
+      error: {
+        ...legacy.error,
+        recovery: {
+          downloadId: "6bdc3449-41ef-4624-a525-45bce09c67f0",
+          resumeCommand:
+            "okou social download --resume 6bdc3449-41ef-4624-a525-45bce09c67f0",
+        },
+      },
+    };
+    expect(apiErrorSchema.parse(enriched)).toStrictEqual(legacy);
+    expect(socialKitDownloadConflictSchema.parse(legacy)).toStrictEqual(legacy);
+    expect(socialKitDownloadConflictSchema.parse(enriched)).toStrictEqual(
+      enriched,
+    );
+  });
+
+  it.each(["youtube_transcript", "youtube_summarize"] as const)(
+    "preserves opt-in extraction refresh independently of result caching for %s",
+    (tool) => {
+      const url = "https://youtu.be/example";
+      for (const input of [
+        { url },
+        { url, no_cache: true },
+        { url, no_cache: false },
+        { url, no_cache: true, cache: false },
+        { url, no_cache: true, cache: true, cache_ttl: 3600 },
+      ]) {
+        expect(socialKitRequestSchema.parse({ tool, input })).toStrictEqual({
+          tool,
+          input,
+        });
+      }
+      expect(
+        socialKitRequestSchema.safeParse({
+          tool,
+          input: { url, no_cache: "true" },
+        }).success,
+      ).toBe(false);
+    },
+  );
+
+  it.each(["instagram_transcript", "instagram_summarize", "youtube_stats"])(
+    "rejects extraction refresh for unsupported tool %s",
+    (tool) => {
+      expect(
+        socialKitRequestSchema.safeParse({
+          tool,
+          input: { url: "https://example.com/video", no_cache: true },
+        }).success,
+      ).toBe(false);
+    },
+  );
+
+  it("accepts nullable Instagram views without widening other counts", () => {
+    const resultSchema = MANAGED_SOCIALKIT_TOOLS.find((tool) => {
+      return tool.name === "instagram_stats";
+    })!.resultSchema;
+    for (const result of [
+      { views: null, likes: 4, author: "example" },
+      { likes: 4, author: "example" },
+      { views: 0, likes: 4, author: "example" },
+      { views: 12, likes: 4, author: "example" },
+    ]) {
+      expect(resultSchema.parse(result)).toStrictEqual(result);
+    }
+    for (const views of [-1, 1.5, "0"]) {
+      expect(resultSchema.safeParse({ views }).success).toBe(false);
+    }
+    expect(resultSchema.safeParse({ views: null, likes: null }).success).toBe(
+      false,
+    );
+  });
+
+  it("accepts requireViews only as an Instagram stats boolean", () => {
+    for (const requireViews of [false, true]) {
+      const request = {
+        tool: "instagram_stats",
+        input: { url: "https://www.instagram.com/reel/example/", requireViews },
+      };
+      expect(socialKitRequestSchema.parse(request)).toStrictEqual(request);
+    }
+    for (const [tool, requireViews] of [
+      ["instagram_stats", "true"],
+      ["instagram_stats", null],
+      ["instagram_channel_stats", true],
+      ["youtube_stats", true],
+    ]) {
+      expect(
+        socialKitRequestSchema.safeParse({
+          tool,
+          input: {
+            url: "https://www.instagram.com/reel/example/",
+            requireViews,
+          },
+        }).success,
+      ).toBe(false);
+    }
+  });
+
   it("publishes one typed input and output schema per reviewed tool", () => {
     const catalog = managedSocialKitToolCatalog();
 
@@ -81,6 +190,64 @@ describe("managed SocialKit contract", () => {
       }),
     ).toMatchObject({ availability: "transcript" });
   });
+
+  it("publishes Instagram's single batch and input bounds without a continuation", () => {
+    const search = managedSocialKitToolCatalog().find((tool) => {
+      return tool.name === "instagram_reels_search";
+    });
+
+    expect(search).toMatchObject({
+      inputSchema: {
+        properties: {
+          query: { type: "string", minLength: 1, maxLength: 100 },
+          page: { type: "number", const: 1 },
+        },
+      },
+      collection: {
+        retrieval: { kind: "provider_limited" },
+        sourceLimit: { kind: "single_batch", maxItems: 12 },
+      },
+    });
+    expect(search?.collection?.retrieval).not.toHaveProperty("maxPage");
+  });
+
+  it.each([
+    { state: "complete", itemsReturned: 0 },
+    { state: "more", itemsReturned: 0, nextInput: { page: 2 } },
+    { state: "provider_limited", itemsReturned: 0, reason: "provider_ceiling" },
+  ])(
+    "projects older Instagram $state metadata without claiming completeness",
+    (collection) => {
+      const response = socialKitResponseSchema.parse({
+        tool: "instagram_reels_search",
+        billingCategory: "request",
+        billingQuantity: 1,
+        creditsCharged: 3,
+        collection,
+        result: { items: [], count: 0, hasMore: false },
+      });
+      const projected = projectPublicSocialResponse(response);
+
+      expect(projected).toStrictEqual({
+        ok: true,
+        response: {
+          ...response,
+          collection: {
+            state: "provider_limited",
+            itemsReturned: 0,
+            reason: "provider_ceiling",
+            sourceLimit: { kind: "single_batch", maxItems: 12 },
+          },
+        },
+      });
+      if (!projected.ok) {
+        throw new Error("Expected a projected response");
+      }
+      expect(socialKitResponseSchema.parse(projected.response)).toStrictEqual(
+        projected.response,
+      );
+    },
+  );
 
   it("publishes reviewed TikTok collection constraints and capability boundaries", () => {
     const catalog = managedSocialKitToolCatalog();
@@ -409,8 +576,8 @@ describe("managed SocialKit contract", () => {
     },
     {
       tool: "instagram_reels_search",
-      input: { query: "launch", page: 2 },
-      result: { items: [{ author: { username: "example" } }] },
+      input: { query: "launch", page: 1 },
+      result: { items: [{ author: { username: "example" } }], hasMore: false },
     },
     {
       tool: "tiktok_hashtag_search",

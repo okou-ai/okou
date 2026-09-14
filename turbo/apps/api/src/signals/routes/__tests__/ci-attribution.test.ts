@@ -105,7 +105,7 @@ describe("CI attribution", () => {
           privateMetadata: {
             signup_attribution: {
               gclid: "ci-click",
-              vm0_campaign_id: "24220469665",
+              okou_campaign_id: "24220469665",
               recorded_at: expect.any(String),
             },
           },

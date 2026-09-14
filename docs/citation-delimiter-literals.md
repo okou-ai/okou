@@ -12,8 +12,10 @@ entire `OPEN` or `CLOSE` inside a fully closed backtick span is exempt. A fence
 may contain ASCII whitespace around one delimiter, but no other content. Fences
 use at least three backticks or tildes, at most three leading spaces, a simple
 ASCII language label, and a same-character closing run at least as wide as the
-opening run. A closing fence at EOF is supported. Candidates retain at most
-4,096 characters, including their code delimiters.
+opening run. A shorter run is non-whitespace body content, even with supported
+indentation or trailing whitespace, so it disqualifies the entire literal
+candidate. A closing fence at EOF is supported. Candidates retain at most 4,096
+characters, including their code delimiters.
 
 Only delimiter angle brackets become `&lt;` and `&gt;`. Their source segment
 ownership is retained. Entities stay encoded on every subsequent projection;

@@ -1,5 +1,78 @@
 # Changelog
 
+## [8.662.2](https://github.com/vm0-ai/vm0/compare/core-v8.662.1...core-v8.662.2) (2026-09-14)
+
+
+### Refactoring
+
+* remove agentMessageMath feature switch ([#34051](https://github.com/vm0-ai/vm0/issues/34051)) ([66cd8df](https://github.com/vm0-ai/vm0/commit/66cd8df66d3e3231a71bebb00fe8e21fb8b2c1ba))
+* remove composer workflow fuzzy search feature switch ([#34033](https://github.com/vm0-ai/vm0/issues/34033)) ([b812218](https://github.com/vm0-ai/vm0/commit/b8122187980a96ad51e376bca047f5e49479035a))
+* remove slack read feature switch ([#34060](https://github.com/vm0-ai/vm0/issues/34060)) ([b2337d3](https://github.com/vm0-ai/vm0/commit/b2337d3807cf8b85ae86f0e3de2ce6520bea5b22))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.437.0
+
+## [8.662.1](https://github.com/vm0-ai/vm0/compare/core-v8.662.0...core-v8.662.1) (2026-09-14)
+
+
+### Bug Fixes
+
+* **app:** scope video controls to creative video drafts ([#33934](https://github.com/vm0-ai/vm0/issues/33934)) ([dc5ccdf](https://github.com/vm0-ai/vm0/commit/dc5ccdf653935b778d77fe120d62f3e20cc2b4e5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.436.0
+
+## [8.662.0](https://github.com/vm0-ai/vm0/compare/core-v8.661.1...core-v8.662.0) (2026-09-14)
+
+
+### Features
+
+* **pi-memory:** add the pimemory feature switch gating admission, workers and recall ([#33927](https://github.com/vm0-ai/vm0/issues/33927)) ([121fb21](https://github.com/vm0-ai/vm0/commit/121fb21295cc188a89cd0534b66c34f851a5b885))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.435.1
+
+## [8.661.1](https://github.com/vm0-ai/vm0/compare/core-v8.661.0...core-v8.661.1) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.435.0
+
+## [8.661.0](https://github.com/vm0-ai/vm0/compare/core-v8.660.3...core-v8.661.0) (2026-09-14)
+
+
+### Features
+
+* **model-provider:** gate supported platform openrouter us routing ([#33768](https://github.com/vm0-ai/vm0/issues/33768)) ([a19d5ea](https://github.com/vm0-ai/vm0/commit/a19d5ea87246eac8595cb3a8163feae856f4835f))
+
+
+### Refactoring
+
+* remove cal.com connector feature switch ([#33841](https://github.com/vm0-ai/vm0/issues/33841)) ([fa2e6e6](https://github.com/vm0-ai/vm0/commit/fa2e6e6212dee848c8d37d72551cc5d9b7887ac4))
+* remove markdown time feature switch ([#33831](https://github.com/vm0-ai/vm0/issues/33831)) ([29c2fa6](https://github.com/vm0-ai/vm0/commit/29c2fa6d0de7ce9a391d594af7b3c252ef396471))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.434.0
+
 ## [8.660.3](https://github.com/vm0-ai/vm0/compare/core-v8.660.2...core-v8.660.3) (2026-09-13)
 
 

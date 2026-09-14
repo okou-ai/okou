@@ -30,7 +30,6 @@ import { mockEnv } from "../../../lib/env";
 import { now, nowDate, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createUsagePricingFixture } from "../../../test-fixtures/system-config-seeds";
-import { removeIntroVideoRenderProjectStorageFixture } from "../../../test-fixtures/built-in-generation";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { billingStatusRoutes } from "../billing-status";
 import { introVideoRenderRoutes } from "../intro-video-render";
@@ -273,23 +272,6 @@ function mockStorage() {
     }
     return Promise.resolve({});
   });
-  return {
-    moveRenderInput(generationId: string, bucket: string) {
-      const prefix = `test-user-storages/intro-video-render-inputs/${generationId}/`;
-      const entry = [...objects].find(([key]) => {
-        return key.startsWith(prefix);
-      });
-      if (!entry) {
-        throw new Error("Expected one render input snapshot");
-      }
-      const [key, object] = entry;
-      objects.set(
-        `${bucket}/${key.slice("test-user-storages/".length)}`,
-        object,
-      );
-      objects.delete(key);
-    },
-  };
 }
 
 async function upload(f: Fixture, bytes?: Buffer) {
@@ -558,29 +540,6 @@ describe("managed Intro Video cloud rendering", () => {
       );
       expect(projectUrl.searchParams.get("signed-at")).toBe(
         nowDate().toISOString(),
-      );
-      expect((await fetch(projectUrl)).status).toBe(200);
-      expect((await getRender(f, input.requestId)).providerRenderId).toBe(
-        "hfr_test",
-      );
-    });
-  });
-
-  it("resumes historical queued input from the original private bucket", async () => {
-    const storage = mockStorage();
-    const f = await fixture();
-    const cloud = provider();
-    const input = await queueRender(f);
-    // Only a pre-cutover writer can omit the input locator. Reproduce that
-    // historical persisted state, then exercise recovery through the real API.
-    storage.moveRenderInput(input.requestId, "test-private-artifacts");
-    await removeIntroVideoRenderProjectStorageFixture(input.requestId);
-    await withMockNowForTest(new Date(now() + 31 * 60 * 1000), async () => {
-      expect((await submit(f, input)).status).toBe(202);
-      expect(cloud.requests).toHaveLength(4);
-      const projectUrl = providerProjectUrl(cloud.requests[3]?.body);
-      expect(projectUrl.searchParams.get("object")).toContain(
-        `test-private-artifacts/intro-video-render-inputs/${input.requestId}/`,
       );
       expect((await fetch(projectUrl)).status).toBe(200);
       expect((await getRender(f, input.requestId)).providerRenderId).toBe(

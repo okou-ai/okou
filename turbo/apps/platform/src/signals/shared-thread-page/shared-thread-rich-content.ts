@@ -39,7 +39,6 @@ function createScopedResolver<Key, Value>(
  */
 export function createSharedThreadRichContentSignals(
   messages: readonly SharedMessage[],
-  mathEnabled: boolean,
   ownerSignal: AbortSignal,
 ): SharedThreadRichContentSignals {
   const resolveMermaidDiagram = createScopedResolver((code: string) => {
@@ -56,7 +55,7 @@ export function createSharedThreadRichContentSignals(
     const trees = new Map<number, Root>();
     for (const message of messages) {
       const tree = parseMarkdownTree(message.content, {
-        math: mathEnabled,
+        math: true,
         mermaid: true,
       });
       embedMermaidSignals(tree, resolveMermaidDiagram);

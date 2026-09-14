@@ -113,7 +113,10 @@ export const startSlackConnectorOAuth$ = command(
       context.userId,
       signal,
     );
-    if (!member || (context.flow === "install" && member.role !== "admin")) {
+    if (
+      member.kind !== "member" ||
+      (context.flow === "install" && member.role !== "admin")
+    ) {
       return failed(
         "You do not have permission to connect this Slack workspace.",
       );
@@ -256,7 +259,10 @@ const resolveSlackConnectorCallback$ = command(
       context.userId,
       signal,
     );
-    if (!member || (context.flow === "install" && member.role !== "admin")) {
+    if (
+      member.kind !== "member" ||
+      (context.flow === "install" && member.role !== "admin")
+    ) {
       return failed(
         "You do not have permission to connect this Slack workspace.",
       );

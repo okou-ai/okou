@@ -278,6 +278,7 @@ function mockUsagePackManagement(
   context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
     return respond(200, {
       tier: "pro",
+      supportsFreeMembers: true,
       currentPeriodEnd: "2026-09-01T00:00:00.000Z",
       allocations: [
         {
@@ -307,10 +308,10 @@ function mockUsagePackManagement(
   });
 }
 
-function mockUsagePackCatalog(supportsFreeMembers?: boolean): void {
+function mockUsagePackCatalog(): void {
   context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
     return respond(200, {
-      ...(supportsFreeMembers === undefined ? {} : { supportsFreeMembers }),
+      supportsFreeMembers: true,
       usagePacks: [
         {
           usagePackUsd: 20,
@@ -371,6 +372,7 @@ test("Show a scheduled package change on a pending invitation", async () => {
   context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
     return respond(200, {
       tier: "pro",
+      supportsFreeMembers: true,
       currentPeriodEnd: "2026-09-01T00:00:00.000Z",
       allocations: [
         {
@@ -508,7 +510,7 @@ test("Keep People package controls restricted to administrators", async () => {
 });
 
 test.each(["free", "limited-free-1", "pro", "team"])(
-  "Use explicit active status instead of a legacy invitation denial on %s",
+  "Invite members on active %s plans",
   async (tier) => {
     mockMembersStory();
     mockMemberInviteEntitlement(
@@ -516,7 +518,6 @@ test.each(["free", "limited-free-1", "pro", "team"])(
       { tier, status: "active" },
       {
         hasSubscription: tier === "pro" || tier === "team",
-        memberInvitationAllowed: false,
       },
     );
 
@@ -585,7 +586,7 @@ test.each([
         },
       );
     }
-    mockUsagePackCatalog(true);
+    mockUsagePackCatalog();
 
     await setupPage({ context, path: "/agents?settings=people" });
     await screen.findByRole("heading", { name: "People" });
@@ -638,7 +639,7 @@ test.each(["pro", "team"] as const)(
         subscriptionStatus: "atom_grant",
       },
     );
-    mockUsagePackCatalog(true);
+    mockUsagePackCatalog();
     context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
       return respond(404, {
         error: { code: "NOT_FOUND", message: "No usage pack subscription" },
@@ -672,7 +673,7 @@ test("Use the default $20 package when inviting a member", async () => {
     { hasSubscription: true },
   );
   mockUsagePackManagement({ supportsFreeMembers: true });
-  mockUsagePackCatalog(true);
+  mockUsagePackCatalog();
   context.mocks.api(orgInviteContract.previewPurchase, ({ body, respond }) => {
     expect(body).toMatchObject({
       email: "default-package@example.com",
@@ -718,20 +719,12 @@ test("Use the default $20 package when inviting a member", async () => {
   expect(within(confirmation).getByText(/5,100 credits/u)).toBeVisible();
 });
 
-const PAID_INVITATION_SCENARIOS = [
-  { tier: "pro", supportsFreeMembers: true },
-  { tier: "team", supportsFreeMembers: true },
-  { tier: "pro", supportsFreeMembers: false },
-  { tier: "team", supportsFreeMembers: false },
-] as const;
-async function preparePaidInvitation(
-  tier: "pro" | "team",
-  supportsFreeMembers: boolean,
-) {
+const PAID_INVITATION_SCENARIOS = ["pro", "team"] as const;
+async function preparePaidInvitation(tier: "pro" | "team") {
   const story = mockMembersStory(undefined, "admin", "owner");
   mockMemberInviteEntitlement(true, { tier, status: "active" });
   mockUsagePackManagement({ tier });
-  mockUsagePackCatalog(supportsFreeMembers ? true : undefined);
+  mockUsagePackCatalog();
   const purchaseId = "67d0ac76-170e-4a99-a5b6-ecc74c1179df";
   context.mocks.api(orgInviteContract.previewPurchase, ({ body, respond }) => {
     expect(body).toMatchObject({
@@ -789,7 +782,7 @@ async function preparePaidInvitation(
     queryAllByRoleFast("option").some((option) => {
       return option.textContent?.trim() === "No package";
     }),
-  ).toBe(supportsFreeMembers);
+  ).toBeTruthy();
   click(
     await waitFor(() => {
       const option = queryAllByRoleFast("option").find((candidate) => {
@@ -812,12 +805,9 @@ async function preparePaidInvitation(
 }
 
 test.each(PAID_INVITATION_SCENARIOS)(
-  "Review a paid invitation on $tier (no package: $supportsFreeMembers)",
-  async ({ tier, supportsFreeMembers }) => {
-    const { confirmation } = await preparePaidInvitation(
-      tier,
-      supportsFreeMembers,
-    );
+  "Review a paid invitation on %s",
+  async (tier) => {
+    const { confirmation } = await preparePaidInvitation(tier);
     expect(within(confirmation).getByText("$12.50")).toBeVisible();
     expect(
       within(confirmation).getByText("paid.invitee@example.com"),
@@ -826,12 +816,9 @@ test.each(PAID_INVITATION_SCENARIOS)(
 );
 
 test.each(PAID_INVITATION_SCENARIOS)(
-  "Purchase an invitation and reset its package on $tier (no package: $supportsFreeMembers)",
-  async ({ tier, supportsFreeMembers }) => {
-    const { confirmation } = await preparePaidInvitation(
-      tier,
-      supportsFreeMembers,
-    );
+  "Purchase an invitation and reset its package on %s",
+  async (tier) => {
+    const { confirmation } = await preparePaidInvitation(tier);
     click(buttonByText("Pay and invite", confirmation));
     await waitFor(() => {
       expect(rowByEmail("paid.invitee@example.com")).toBeVisible();
@@ -856,7 +843,7 @@ test.each([
   { tier: "pro-suspend" },
 ] as const)("Block invitations on suspended plans ($tier)", async (plan) => {
   mockMembersStory();
-  mockMemberInviteEntitlement(false, plan, { memberInvitationAllowed: true });
+  mockMemberInviteEntitlement(false, plan);
   mockUsagePackCatalog();
 
   await setupPage({

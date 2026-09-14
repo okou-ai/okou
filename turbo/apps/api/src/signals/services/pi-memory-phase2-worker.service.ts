@@ -1,5 +1,7 @@
 import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
 import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { command } from "ccstate";
@@ -12,6 +14,7 @@ import { settle } from "../utils";
 import { createAgentRun$ } from "./agent-run-create.service";
 import { dispatchRunCallbacks } from "./agent-run-callback.service";
 import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
+import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
   claimPiMemoryPhase2Job,
   failPiMemoryPhase2Job,
@@ -169,6 +172,17 @@ const dispatchClaim$ = command(
     signal: AbortSignal,
   ): Promise<PiMemoryPhase2WorkerResult> => {
     const { db, claim } = input;
+    // The claimed job's owner decides, never the cron caller. Off releases
+    // the lease with an explicit disposition and dispatches no maintenance run.
+    const featureSwitchContext = await loadUserFeatureSwitchContext(
+      db,
+      claim.orgId,
+      claim.userId,
+    );
+    signal.throwIfAborted();
+    if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, featureSwitchContext)) {
+      return await failClaim(db, claim, nowDate(), "pi_memory_disabled");
+    }
     const route = await resolveBuiltInModelRuntimeRoute(
       db,
       PI_MEMORY_PHASE2_MODEL,

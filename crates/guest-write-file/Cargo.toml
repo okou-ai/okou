@@ -1,6 +1,6 @@
 [package]
 name = "guest-write-file"
-version = "0.1.153"
+version = "0.1.155"
 edition.workspace = true
 description = "Write guest files from stdin without shell startup overhead"
 

@@ -418,9 +418,6 @@ test("Reports typed API requests with route templates and no parameters", async 
   const client = createAuthedContractClient(chatThreadEventsContract, {
     baseUrl: location.origin,
     clientVersion: "test-version",
-    getRootSignal: () => {
-      return context.signal;
-    },
     getToken: () => {
       return Promise.resolve(sensitiveToken);
     },
@@ -468,9 +465,6 @@ test("Reports API server failures as RED errors", async () => {
   const client = createAuthedContractClient(featureSwitchesContract, {
     baseUrl: location.origin,
     clientVersion: "test-version",
-    getRootSignal: () => {
-      return context.signal;
-    },
     getToken: () => {
       return Promise.resolve("test-token");
     },

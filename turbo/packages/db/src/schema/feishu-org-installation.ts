@@ -12,6 +12,8 @@ import { agents } from "./agent";
 import { orgCustomConnectors } from "./org-custom-connector";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 
+import type { FeishuPlatform } from "@okouai/api-contracts/contracts/feishu-platform";
+
 export const feishuOrgInstallations = pgTable(
   "feishu_org_installations",
   {
@@ -19,6 +21,10 @@ export const feishuOrgInstallations = pgTable(
     orgId: text("org_id").notNull(),
     customConnectorId: uuid("custom_connector_id"),
     ownerUserId: text("owner_user_id"),
+    platform: text("platform")
+      .$type<FeishuPlatform>()
+      .default("feishu")
+      .notNull(),
     appId: varchar("app_id", { length: 255 }).notNull(),
     botOpenId: varchar("bot_open_id", { length: 255 }),
     botName: varchar("bot_name", { length: 255 }),

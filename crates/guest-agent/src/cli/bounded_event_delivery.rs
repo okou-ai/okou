@@ -341,7 +341,7 @@ pub(super) fn image_notice(text_type: &str) -> Value {
     serde_json::json!({"type": text_type, "text": "[image omitted for delivery]"})
 }
 
-fn json_string_bytes(value: &str) -> usize {
+pub(super) fn json_string_bytes(value: &str) -> usize {
     value.chars().fold(2usize, |bytes, character| {
         bytes
             + match character {

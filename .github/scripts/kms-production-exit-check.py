@@ -761,6 +761,59 @@ def snapshot_evidence(snapshots, branch_id, cutoff):
     return sorted(evidence, key=lambda item: item["snapshotIdSha256"])
 
 
+def branch_evidence(branches, production_id, cutoff):
+    evidence, seen = [], set()
+    for branch in branches:
+        branch_id, parent_id = branch.get("id"), branch.get("parent_id")
+        for value, optional in [(branch_id, False), (parent_id, True)]:
+            require(
+                optional
+                and value is None
+                or isinstance(value, str)
+                and bool(re.fullmatch(r"br-[a-z0-9-]{1,80}", value)),
+                "invalid_branch_id",
+            )
+        require(
+            branch_id not in seen and parent_id != branch_id, "invalid_branch_identity"
+        )
+        seen.add(branch_id)
+        name = branch.get("name")
+        require(isinstance(name, str) and 0 < len(name) <= 1024, "invalid_branch_name")
+        created = metadata_timestamp(branch.get("created_at"))
+        point = metadata_timestamp(branch.get("parent_timestamp"))
+        lsn = branch.get("parent_lsn")
+        require(
+            lsn is None
+            or isinstance(lsn, str)
+            and bool(re.fullmatch(r"[0-9A-Fa-f]{1,8}/[0-9A-Fa-f]{1,8}", lsn)),
+            "invalid_branch_lsn",
+        )
+        inspection = re.fullmatch(
+            r"kms-recovery-32264-([1-9][0-9]{0,19})-([1-9][0-9]{0,8})", name
+        )
+        evidence.append(
+            {
+                "branchIdSha256": hashlib.sha256(branch_id.encode()).hexdigest(),
+                "branchNameSha256": hashlib.sha256(name.encode()).hexdigest(),
+                "isProduction": branch_id == production_id,
+                "parentBranchIdSha256": hashlib.sha256(parent_id.encode()).hexdigest()
+                if parent_id
+                else None,
+                "parentIsProduction": parent_id == production_id if parent_id else None,
+                "createdAt": created.isoformat() if created else None,
+                "reportedParentPoint": point.isoformat() if point else None,
+                "reportedParentLsn": lsn,
+                "parentPointBeforeMigrationVerification": point < cutoff
+                if point
+                else None,
+                "inspectionRunId": inspection[1] if inspection else None,
+                "inspectionAttempt": inspection[2] if inspection else None,
+                "ciphertextVerified": False,
+            }
+        )
+    return sorted(evidence, key=lambda item: item["branchIdSha256"])
+
+
 def backup_schedule_evidence(schedule):
     evidence = []
     for entry in schedule:
@@ -815,6 +868,7 @@ def recovery_history():
         "invalid_backup_schedule",
     )
     snapshot_details = snapshot_evidence(snapshots, branch_id, cutoff)
+    branch_details = branch_evidence(branches, branch_id, cutoff)
     schedule_details = backup_schedule_evidence(schedule["schedule"])
     return {
         "collectionComplete": True,
@@ -833,6 +887,8 @@ def recovery_history():
         ).isoformat(),
         "productionBranchFound": True,
         "otherBranchesNotInspected": len(branches) - 1,
+        "branchMetadataCollected": True,
+        "branches": branch_details,
         "retainedSnapshotsRequiringKeyReview": len(snapshots),
         "backupScheduleEntries": len(schedule["schedule"]),
         "snapshots": snapshot_details,

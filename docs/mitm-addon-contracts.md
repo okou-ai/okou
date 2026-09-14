@@ -27,6 +27,31 @@ nested fields map. Runner-owned Axiom metadata (`_time`, `context`, `service`,
 `runner_hostname`, and `runner_version`) remains authoritative. Callers remain
 responsible for redaction and bounded values.
 
+### Capture header inspection
+
+Opt-in network capture serializes a header prefix bounded to 512 raw fields
+and 32 KiB of raw name/value bytes per request or response. Header values retain
+the existing redaction rules. `*_headers_truncated` describes only that prefix.
+
+Total capture inspection is capped at 2,048 raw fields per side, including
+unrelated names. Body capture requires complete `Content-Type` and
+`Content-Encoding` discovery within that limit; dependency values retain their
+separate 512-field and 32-KiB budgets, including folding separators. Dependencies
+after the serialized prefix still apply when the complete collection fits.
+
+If the raw field count exceeds 2,048, capture skips dependency discovery and
+only serializes the bounded header prefix. Even an early valid Content-Type
+cannot establish that an unseen duplicate or encoding is absent. Nonempty bodies
+are omitted with `*_body_encoding: "binary"`; empty bodies have neither a body
+nor an encoding field. Empty, absent, and suppressed bodies do not need
+dependency discovery. Existing body truncation and incomplete-stream semantics
+remain independent of header truncation.
+
+This bounds optional capture work after upstream parsing. It does not reject
+traffic or modify status, headers, or wire body bytes. The final network-log row
+still reaches the existing writer. Old runners retain their previous capture
+policy until updated; the log schema and its consumers do not change.
+
 ### JSONL append recovery
 
 The asynchronous writer accepts caller-framed JSONL bytes and opens the
@@ -43,6 +68,27 @@ prefix, including after a writer restart, but cannot recover another producer's
 record already embedded in a malformed line or serialize independently
 interleaved short-write sequences. The existing Runner uploader continues to
 skip malformed physical lines and upload independently parseable records.
+
+## Header-phase credential-resolution failures
+
+If credential resolution fails while preparing a request for authenticated
+streaming, the addon terminates that upload from `requestheaders()`. The pinned
+mitmproxy runtime closes an HTTP/1 connection or resets the affected HTTP/2
+stream before sending `100 Continue` or consuming the request body. It makes no
+upstream request and does not retry credential resolution for that flow.
+
+These uploads receive a transport termination instead of a JSON error after
+body completion. The existing firewall action, error classification, and proxy
+diagnostic remain available; the error hook records a connection failure with
+status `0` and releases terminal resources. The unsent local error response is
+discarded so it cannot appear as a captured response. Auth failures first
+resolved in the normal buffered request hook keep their structured responses.
+Successful authenticated streaming retains its bounded capture behavior.
+
+This changes only the addon lifecycle. Runner/API and network-log schemas stay
+unchanged, and old Runner instances keep their previous behavior until replaced.
+`test_mitmproxy_header_auth_failure_framing.py` covers incomplete Content-Length,
+chunked, and HTTP/2 uploads, including body data queued during the headers hook.
 
 ## Model-provider failure reporting shutdown
 

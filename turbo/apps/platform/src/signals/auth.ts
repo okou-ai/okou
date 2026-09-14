@@ -7,7 +7,7 @@ import {
   isOkouProductionHostname,
   type PlatformService,
 } from "@okouai/core/platform-service-origin";
-import { startClerkBrowserRuntime } from "../lib/clerk-runtime.ts";
+import { readClerkBrowserRuntime } from "../lib/clerk-runtime.ts";
 import { clearSentryUser, setSentryUser } from "../lib/sentry.ts";
 import {
   clearPostHogUser,
@@ -15,18 +15,15 @@ import {
   setPostHogUser,
 } from "../lib/posthog.ts";
 import { appendCapturedPreviewBypassToUrl } from "../lib/preview-bypass-cookie.ts";
-import {
-  resolvePlatformEnvironment,
-  resolvePlatformRuntimeConfig,
-} from "../lib/platform-host.ts";
+import { resolvePlatformEnvironment } from "../lib/platform-host.ts";
 import { BRAND_NAME, type BrandName } from "./branding.ts";
-import { rootSignal$ } from "./root-signal.ts";
 import {
   bestEffort,
   createDeferredPromise,
   type DeferredPromise,
   NEVER_RESOLVED_PROMISE,
   onDomEventFn,
+  onRejection,
 } from "./utils.ts";
 import { writeConnectionDiagnostic$ } from "./connection-diagnostics.ts";
 import { sessionStorageSignals } from "./external/session-storage.ts";
@@ -347,20 +344,8 @@ export function buildAuthModeSwitchUrl(
   return `${path}${search ? `?${search}` : ""}${hash}`;
 }
 
-// eslint-disable-next-line ccstate/no-computed-signal -- migrate this computed away from AbortSignal ownership
-const clerkRuntime$ = computed(async (get) => {
-  const { clerkPublishableKey } = resolvePlatformRuntimeConfig();
-  return await startClerkBrowserRuntime(
-    {
-      loadOptions: {
-        afterSignOutUrl: resolveAppAuthUrl("/sign-in"),
-        signInUrl: resolveAppAuthUrl("/sign-in"),
-        signUpUrl: resolveAppAuthUrl("/sign-up"),
-      },
-      publishableKey: clerkPublishableKey,
-    },
-    get(rootSignal$),
-  );
+const clerkRuntime$ = computed(() => {
+  return readClerkBrowserRuntime();
 });
 
 /** Loaded Clerk instance for consumers that need authentication state. */
@@ -399,11 +384,17 @@ export const setupClerkUser$ = command(
     // Claim the signal before the first await. Daemons and route setups started
     // in the same synchronous pass then read a promise this command resolves,
     // instead of the module sentinel that nothing settles.
-    let pending: DeferredPromise<UserResource | null> | null =
-      createDeferredPromise<UserResource | null>(signal);
-    set(internalClerkUser$, pending.promise);
+    const initialPending = createDeferredPromise<UserResource | null>(signal);
+    let pending: DeferredPromise<UserResource | null> | null = initialPending;
+    set(internalClerkUser$, initialPending.promise);
 
-    const clerk = await get(clerk$);
+    const clerk = await onRejection(get(clerk$), (error) => {
+      signal.throwIfAborted();
+      pending = null;
+      if (!initialPending.settled()) {
+        initialPending.reject(error);
+      }
+    });
     signal.throwIfAborted();
 
     let publishedUserId: string | null | undefined;

@@ -39,9 +39,13 @@ describe("Pi run output normalization privacy boundary", () => {
             },
           },
         },
-        { type: "result", sequenceNumber: 4, result: `visible${envelope}` },
+        {
+          type: "result",
+          sequenceNumber: 4,
+          result: "visible",
+          memoryCitation: citation,
+        },
       ]),
-      true,
     );
 
     expect(normalized.citations).toStrictEqual([
@@ -55,7 +59,7 @@ describe("Pi run output normalization privacy boundary", () => {
       sequenceNumber: 1,
       message: { content: [{ type: "text", text: `literal ${envelope}` }] },
     } as const;
-    const normalized = normalizeRunOutputEvents(payload([event]), false);
+    const normalized = normalizeRunOutputEvents(payload([event]));
 
     expect(normalized.payload.events[0]).toBe(event);
     expect(normalized.citations).toStrictEqual([]);

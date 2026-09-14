@@ -17,10 +17,6 @@ import { updateDocumentTitle$ } from "../document-title.ts";
 import { pathParams$ } from "../route.ts";
 import { updatePage$ } from "../react-router.ts";
 import { setPageSignal$ } from "../page-signal.ts";
-import {
-  agentMessageMathEnabled$,
-  initialFeatureSwitchHydration$,
-} from "../external/feature-switch.ts";
 import { createSharedThreadRichContentSignals } from "./shared-thread-rich-content.ts";
 
 export const setupSharedThreadPage$ = command(
@@ -29,16 +25,12 @@ export const setupSharedThreadPage$ = command(
     const params = get(pathParams$);
     const id = String(params?.id ?? "");
     const client = get(apiClient$)(sharedThreadsContract);
-    const featureSwitchHydration = get(initialFeatureSwitchHydration$);
     const result = await accept(
       client.get({ params: { id }, fetchOptions: { signal } }),
       [200, 404],
       signal,
     );
-    await featureSwitchHydration;
-    signal.throwIfAborted();
     let sharedThread: SharedDisplayThread | null = null;
-    const mathEnabled = get(agentMessageMathEnabled$);
     if (result.status === 200) {
       const messages: SharedDisplayThread["messages"][number][] = [];
       const richMessages: (typeof result.body.messages)[number][] = [];
@@ -52,7 +44,9 @@ export const setupSharedThreadPage$ = command(
           message.runGroupIndex === undefined &&
           isRetiredGoalArchiveText(message.content)
             ? literalHistoryTree(message.content)
-            : createPlainMarkdownTree(message.content, { mathEnabled });
+            : createPlainMarkdownTree(message.content, {
+                mathEnabled: true,
+              });
         if (tree === null) {
           richMessages.push(message);
           messages.push({ ...message, tree: undefined });
@@ -66,11 +60,7 @@ export const setupSharedThreadPage$ = command(
         richContent:
           richMessages.length === 0
             ? undefined
-            : createSharedThreadRichContentSignals(
-                richMessages,
-                mathEnabled,
-                signal,
-              ),
+            : createSharedThreadRichContentSignals(richMessages, signal),
       };
     }
     set(

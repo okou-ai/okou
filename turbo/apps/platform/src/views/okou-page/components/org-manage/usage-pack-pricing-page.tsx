@@ -2176,14 +2176,8 @@ function managementMembersMatch(
       return member.id;
     }),
   );
-  const managedAllocations = managedAllocationsForMembers(management, members);
   return (
     memberIds.size === members.length &&
-    (management.supportsFreeMembers ||
-      memberIds.size === managedAllocations.length) &&
-    managedAllocations.every((allocation) => {
-      return memberIds.has(allocation.memberId);
-    }) &&
     management.allocations.every((allocation) => {
       return (
         memberIds.has(allocation.memberId) ||
@@ -2272,11 +2266,8 @@ function hasUsagePackConfigurationChange(
         return candidate.memberId === member.id;
       });
       return (
-        memberUsageSelection(
-          selections,
-          member.id,
-          management.supportsFreeMembers ? 0 : MINIMUM_USAGE_PACK_USD,
-        ) !== (allocation ? managedUsagePackSelection(allocation) : 0)
+        memberUsageSelection(selections, member.id, 0) !==
+        (allocation ? managedUsagePackSelection(allocation) : 0)
       );
     })
   );
@@ -2566,9 +2557,7 @@ function PackageConfigurationStep({
           )
         : undefined
     : allMembers;
-  const defaultUsage = management?.supportsFreeMembers
-    ? 0
-    : MINIMUM_USAGE_PACK_USD;
+  const defaultUsage = management ? 0 : MINIMUM_USAGE_PACK_USD;
   const totals = memberUsageTotals(
     members ?? [],
     selections,

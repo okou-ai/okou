@@ -259,7 +259,8 @@ function validProviderData(path: string): Record<string, unknown> {
     [collection.resultField]: [],
   };
   return collection.pagination.kind === "cursor" ||
-    collection.pagination.kind === "page"
+    collection.pagination.kind === "page" ||
+    collection.sourceLimit !== undefined
     ? { ...result, hasMore: false }
     : result;
 }
@@ -391,6 +392,358 @@ describe("managed SocialKit route", () => {
 
     expect(response.body.provider).toBe("socialkit");
     expect(providerRequests).toBe(1);
+  });
+
+  it.each(["session", "sandbox"] as const)(
+    "preserves Instagram views and legacy reader compatibility for %s callers",
+    async (tokenType) => {
+      const actor = createBddApi(context).user();
+      if (!actor.orgId) {
+        throw new Error("Social test actor must belong to an organization");
+      }
+      configureProvider();
+      const pricing = await setupConfiguredPricing();
+      await fundActor(actor);
+      const beforeCredits = await credits(actor);
+      const seconds = Math.floor(now() / 1000);
+      const headers =
+        tokenType === "session"
+          ? authenticate(actor)
+          : {
+              authorization: `Bearer ${signSandboxJwtForTests({
+                scope: "okou",
+                userId: actor.userId,
+                orgId: actor.orgId,
+                runId: randomUUID(),
+                capabilities: ["social:read"],
+                iat: seconds,
+                exp: seconds + 60,
+              })}`,
+            };
+      let providerRequests = 0;
+
+      for (const nullable of [false, true]) {
+        for (const views of [null, undefined, 0, 12]) {
+          const availableData = {
+            likes: 4,
+            comments: 2,
+            author: "example",
+            videoUrl: "https://media.example/video.mp4",
+          };
+          server.use(
+            http.get(`${SOCIALKIT_BASE}/instagram/stats`, ({ request }) => {
+              providerRequests += 1;
+              expect(
+                new URL(request.url).searchParams.has("requireViews"),
+              ).toBeFalsy();
+              return HttpResponse.json(
+                providerResponse({
+                  ...availableData,
+                  ...(views === undefined ? {} : { views }),
+                }),
+              );
+            }),
+          );
+
+          const response = await accept(
+            client(pricing.resolution)(socialContract).request({
+              headers: {
+                ...headers,
+                ...(nullable
+                  ? { "x-okou-instagram-views": "nullable" as const }
+                  : {}),
+              },
+              body: {
+                tool: "instagram_stats",
+                input: { url: "https://www.instagram.com/reel/example/" },
+              },
+            }),
+            [200],
+          );
+
+          expect(response.body.result).toStrictEqual({
+            ...availableData,
+            ...(views === undefined || (views === null && !nullable)
+              ? {}
+              : { views }),
+          });
+          expect(response.body.provider).toBe(
+            tokenType === "session" ? "socialkit" : undefined,
+          );
+          expect(response.body.creditsCharged).toBe(SOCIALKIT_REQUEST_CREDITS);
+        }
+      }
+      expect(providerRequests).toBe(8);
+      expect(beforeCredits - (await credits(actor))).toBe(
+        8 * SOCIALKIT_REQUEST_CREDITS,
+      );
+    },
+  );
+
+  it.each([false, true])(
+    "forwards Instagram requireViews=%s and bills verified zero once",
+    async (requireViews) => {
+      const actor = createBddApi(context).user();
+      configureProvider();
+      const pricing = await setupConfiguredPricing();
+      await fundActor(actor);
+      const beforeCredits = await credits(actor);
+      const observed: (string | null)[] = [];
+      server.use(
+        http.get(`${SOCIALKIT_BASE}/instagram/stats`, ({ request }) => {
+          observed.push(new URL(request.url).searchParams.get("requireViews"));
+          return HttpResponse.json(providerResponse({ views: 0, likes: 4 }));
+        }),
+      );
+
+      const response = await accept(
+        client(pricing.resolution)(socialContract).request({
+          headers: {
+            ...authenticate(actor),
+            "x-okou-instagram-views": "nullable",
+          },
+          body: {
+            tool: "instagram_stats",
+            input: {
+              url: "https://www.instagram.com/reel/example/",
+              requireViews,
+            },
+          },
+        }),
+        [200],
+      );
+
+      expect(response.body.result).toStrictEqual({ views: 0, likes: 4 });
+      expect(observed).toStrictEqual([String(requireViews)]);
+      expect(beforeCredits - (await credits(actor))).toBe(
+        SOCIALKIT_REQUEST_CREDITS,
+      );
+    },
+  );
+
+  it("preserves only the documented strict Instagram 503 without billing or retry", async () => {
+    const actor = createBddApi(context).user();
+    configureProvider();
+    const pricing = await setupConfiguredPricing();
+    await fundActor(actor);
+    const beforeCredits = await credits(actor);
+    const missingViews =
+      "Instagram view count is temporarily unavailable. Please retry.";
+    const cases = [
+      {
+        status: 503,
+        message: missingViews,
+        requireViews: true,
+        apiStatus: 503,
+      },
+      {
+        status: 503,
+        message: missingViews,
+        requireViews: false,
+        apiStatus: 502,
+      },
+      {
+        status: 500,
+        message: missingViews,
+        requireViews: true,
+        apiStatus: 502,
+      },
+      {
+        status: 503,
+        message:
+          "The upstream service is temporarily unavailable. Please retry later.",
+        requireViews: true,
+        apiStatus: 502,
+      },
+    ] as const;
+    let providerRequests = 0;
+    for (const fixture of cases) {
+      server.use(
+        http.get(`${SOCIALKIT_BASE}/instagram/stats`, ({ request }) => {
+          providerRequests += 1;
+          expect(new URL(request.url).searchParams.get("requireViews")).toBe(
+            String(fixture.requireViews),
+          );
+          return HttpResponse.json(
+            { success: false, message: fixture.message },
+            { status: fixture.status },
+          );
+        }),
+      );
+
+      const response = await rawSocialRequest(
+        actor,
+        {
+          tool: "instagram_stats",
+          input: {
+            url: "https://www.instagram.com/reel/example/",
+            requireViews: fixture.requireViews,
+          },
+        },
+        { usagePricingResolution: pricing.resolution },
+      );
+      const body: unknown = await response.json();
+
+      expect(response.status).toBe(fixture.apiStatus);
+      expect(body).toMatchObject({
+        error: {
+          code:
+            fixture.apiStatus === 503
+              ? "SOCIALKIT_VIEWS_UNAVAILABLE"
+              : "SOCIALKIT_UPSTREAM_ERROR",
+        },
+      });
+      if (fixture.apiStatus === 503) {
+        expect(body).toMatchObject({
+          error: {
+            message: expect.stringContaining("No credits were charged"),
+          },
+        });
+      } else {
+        expect(JSON.stringify(body)).not.toContain("No credits were charged");
+      }
+    }
+    expect(providerRequests).toBe(cases.length);
+    await expect(credits(actor)).resolves.toBe(beforeCredits);
+  });
+
+  it("rejects requireViews on an unsupported managed tool before provider I/O", async () => {
+    const actor = createBddApi(context).user();
+    let providerRequests = 0;
+    server.use(
+      http.get(`${SOCIALKIT_BASE}/youtube/stats`, () => {
+        providerRequests += 1;
+        return HttpResponse.json(providerResponse({ views: 0 }));
+      }),
+    );
+
+    const response = await rawSocialRequest(actor, {
+      tool: "youtube_stats",
+      input: { url: "https://youtu.be/example", requireViews: true },
+    });
+
+    expect(response.status).toBe(400);
+    expect(providerRequests).toBe(0);
+  });
+
+  it.each(["youtube_transcript", "youtube_summarize"] as const)(
+    "serializes %s extraction refresh independently of result caching",
+    async (tool) => {
+      const actor = createBddApi(context).user();
+      configureProvider();
+      const pricing = await setupConfiguredPricing();
+      await fundActor(actor);
+      const requests: Record<string, string>[] = [];
+      server.use(
+        http.get(
+          `${SOCIALKIT_BASE}/youtube/${tool === "youtube_transcript" ? "transcript" : "summarize"}`,
+          ({ request }) => {
+            requests.push(
+              Object.fromEntries(new URL(request.url).searchParams),
+            );
+            return HttpResponse.json(
+              providerResponse(
+                tool === "youtube_transcript"
+                  ? { transcript: "Current captions" }
+                  : { summary: "Current summary" },
+              ),
+            );
+          },
+        ),
+      );
+
+      const url = "https://youtu.be/video123";
+      const inputs = [
+        { url },
+        { url, no_cache: false },
+        { url, no_cache: true },
+        { url, no_cache: true, cache: false },
+        { url, no_cache: true, cache: true, cache_ttl: 3600 },
+      ];
+      for (const input of inputs) {
+        const response = await accept(
+          client(pricing.resolution)(socialContract).request({
+            headers: authenticate(actor),
+            body: { tool, input },
+          }),
+          [200],
+        );
+        expect(response.body).toMatchObject({
+          tool,
+          result:
+            tool === "youtube_transcript"
+              ? { transcript: "Current captions" }
+              : { summary: "Current summary" },
+        });
+      }
+
+      expect(requests).toStrictEqual([
+        { url },
+        { url, no_cache: "false" },
+        { url, no_cache: "true" },
+        { url, no_cache: "true", cache: "false" },
+        { url, no_cache: "true", cache: "true", cache_ttl: "3600" },
+      ]);
+    },
+  );
+
+  it("rejects unsupported extraction refresh before a provider request", async () => {
+    const actor = createBddApi(context).user();
+    configureProvider();
+    let providerRequests = 0;
+    server.use(
+      providerHandler("GET", "/instagram/summarize", () => {
+        providerRequests += 1;
+        return HttpResponse.json(providerResponse({ summary: "Unexpected" }));
+      }),
+    );
+
+    const response = await rawSocialRequest(actor, {
+      tool: "instagram_summarize",
+      input: { url: "https://instagram.com/reel/example", no_cache: true },
+    });
+
+    expect(response.status).toBe(400);
+    expect(providerRequests).toBe(0);
+  });
+
+  it("preserves structured caption absence after refreshing extraction", async () => {
+    const actor = createBddApi(context).user();
+    configureProvider();
+    const pricing = await setupConfiguredPricing();
+    await fundActor(actor);
+    const beforeCredits = await credits(actor);
+    const refreshParameters: (string | null)[] = [];
+    server.use(
+      http.get(`${SOCIALKIT_BASE}/youtube/transcript`, ({ request }) => {
+        refreshParameters.push(
+          new URL(request.url).searchParams.get("no_cache"),
+        );
+        return HttpResponse.json(
+          { message: "No transcript available for this video" },
+          { status: 404 },
+        );
+      }),
+    );
+
+    const response = await rawSocialRequest(
+      actor,
+      {
+        tool: "youtube_transcript",
+        input: { url: "https://youtu.be/video123", no_cache: true },
+      },
+      { usagePricingResolution: pricing.resolution },
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: SOCIALKIT_TRANSCRIPT_ERROR_CODES.TRANSCRIPT_UNAVAILABLE,
+        reason: "transcript_unavailable",
+      },
+    });
+    expect(refreshParameters).toStrictEqual(["true"]);
+    await expect(credits(actor)).resolves.toBe(beforeCredits);
   });
 
   it("applies reviewed TikTok limits while preserving raw session results", async () => {
@@ -892,6 +1245,133 @@ describe("managed SocialKit route", () => {
     );
   });
 
+  it("rejects invalid Instagram searches before provider work or billing", async () => {
+    const actor = createBddApi(context).user();
+    configureProvider();
+    await fundActor(actor);
+    const pricing = await setupConfiguredPricing();
+    const beforeCredits = await credits(actor);
+    let providerRequests = 0;
+    server.use(
+      providerHandler("GET", "/instagram/reels-search", () => {
+        providerRequests += 1;
+        return HttpResponse.json(
+          providerResponse({ items: [], hasMore: false }),
+        );
+      }),
+    );
+
+    for (const input of [
+      { query: "cats", page: 2 },
+      { query: `  ${"a".repeat(101)}  ` },
+      { query: "   " },
+      { query: "#" },
+      { query: "%23" },
+    ]) {
+      const response = await rawSocialRequest(
+        actor,
+        { tool: "instagram_reels_search", input },
+        { usagePricingResolution: pricing.resolution },
+      );
+      expect(response.status).toBe(400);
+    }
+
+    expect(providerRequests).toBe(0);
+    await expect(credits(actor)).resolves.toBe(beforeCredits);
+  });
+
+  it("normalizes Instagram queries and reports every anonymous batch as source-limited", async () => {
+    const actor = createBddApi(context).user();
+    configureProvider();
+    await fundActor(actor);
+    const pricing = await setupConfiguredPricing();
+    const beforeCredits = await credits(actor);
+    const observed: URL[] = [];
+    const cases = [
+      { query: "  Cats  ", normalized: "Cats", count: 0 },
+      { query: " #CaTs ", normalized: "CaTs", count: 3 },
+      { query: "%23CaTs", normalized: "CaTs", count: 12 },
+      { query: "Cat Videos", normalized: "CatVideos", count: 2 },
+      {
+        query: `  ${"A".repeat(100)}  `,
+        normalized: "A".repeat(100),
+        count: 1,
+      },
+      { query: "İ".repeat(100), normalized: "İ".repeat(100), count: 1 },
+    ];
+
+    for (const testCase of cases) {
+      server.use(
+        http.get(`${SOCIALKIT_BASE}/instagram/reels-search`, ({ request }) => {
+          observed.push(new URL(request.url));
+          return HttpResponse.json(
+            providerResponse({
+              items: providerItems(testCase.count),
+              count: testCase.count,
+              hasMore: false,
+            }),
+          );
+        }),
+      );
+      const response = await rawSocialRequest(
+        actor,
+        { tool: "instagram_reels_search", input: { query: testCase.query } },
+        { usagePricingResolution: pricing.resolution },
+      );
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        collection: {
+          state: "provider_limited",
+          itemsReturned: testCase.count,
+          reason: "provider_ceiling",
+          sourceLimit: { kind: "single_batch", maxItems: 12 },
+        },
+        result: { count: testCase.count, hasMore: false },
+      });
+    }
+
+    expect(
+      observed.map((url) => {
+        return Object.fromEntries(url.searchParams);
+      }),
+    ).toStrictEqual(
+      cases.map((testCase) => {
+        return { query: testCase.normalized };
+      }),
+    );
+    expect(beforeCredits - (await credits(actor))).toBe(
+      cases.length * SOCIALKIT_REQUEST_CREDITS,
+    );
+  });
+
+  it.each([
+    "https://www.instagram.com/example.user/p/ABC123/",
+    "https://instagram.com/example_user/reel/ABC123",
+  ])("accepts the documented Instagram stats URL %s", async (url) => {
+    const actor = createBddApi(context).user();
+    configureProvider();
+    await fundActor(actor);
+    const pricing = await setupConfiguredPricing();
+    let observedUrl: string | null = null;
+    server.use(
+      http.get(`${SOCIALKIT_BASE}/instagram/stats`, ({ request }) => {
+        observedUrl = new URL(request.url).searchParams.get("url");
+        return HttpResponse.json(providerResponse({ url, likes: 0 }));
+      }),
+    );
+
+    const response = await accept(
+      client(pricing.resolution)(socialContract).request({
+        headers: authenticate(actor),
+        body: { tool: "instagram_stats", input: { url } },
+      }),
+      [200],
+    );
+
+    expect(observedUrl).toBe(url);
+    expect(response.body.result).toMatchObject({ url, likes: 0 });
+  });
+
   it("maps typed tools to canonical GET requests without a body", async () => {
     const actor = createBddApi(context).user();
     let observedUrl = "";
@@ -909,7 +1389,7 @@ describe("managed SocialKit route", () => {
           observedAccessKey = request.headers.get("x-access-key");
           observedBody = await request.text();
           return HttpResponse.json(
-            providerResponse({ items: [], hasMore: false, page: 2 }),
+            providerResponse({ items: [], hasMore: false, page: 1 }),
           );
         },
       ),
@@ -920,14 +1400,14 @@ describe("managed SocialKit route", () => {
         headers: authenticate(actor),
         body: requestForPath("/instagram/reels-search", {
           query: "cats",
-          page: 2,
+          page: 1,
         }),
       }),
       [200],
     );
 
     expect(observedUrl).toBe(
-      `${SOCIALKIT_BASE}/instagram/reels-search?query=cats&page=2`,
+      `${SOCIALKIT_BASE}/instagram/reels-search?query=cats&page=1`,
     );
     expect(observedAccessKey).toBe("test-socialkit-key");
     expect(observedBody).toBe("");
@@ -935,8 +1415,13 @@ describe("managed SocialKit route", () => {
       billingCategory: DEFAULT_CATEGORY,
       billingQuantity: 1,
       creditsCharged: SOCIALKIT_REQUEST_CREDITS,
-      collection: { state: "complete", itemsReturned: 0 },
-      result: { items: [], hasMore: false, page: 2 },
+      collection: {
+        state: "provider_limited",
+        itemsReturned: 0,
+        reason: "provider_ceiling",
+        sourceLimit: { kind: "single_batch", maxItems: 12 },
+      },
+      result: { items: [], hasMore: false, page: 1 },
     });
     expect(beforeCredits - (await credits(actor))).toBe(
       SOCIALKIT_REQUEST_CREDITS,
@@ -1003,21 +1488,33 @@ describe("managed SocialKit route", () => {
         path: "/youtube/summarize",
         input: {
           url: "https://youtu.be/video123",
-          custom_response: { title: "Video title" },
+          custom_response: {
+            audience: "Who this video helps",
+            actionItems: 'Practical next steps with "quotes"\n原文',
+          },
           custom_prompt: "Return only the requested fields",
+          no_cache: true,
           cache: true,
           cache_ttl: 3600,
         },
         expectedQuery: {
           url: "https://youtu.be/video123",
-          custom_response: '{"title":"Video title"}',
+          custom_response:
+            '{"audience":"Who this video helps","actionItems":"Practical next steps with \\"quotes\\"\\n原文"}',
           custom_prompt: "Return only the requested fields",
+          no_cache: "true",
           cache: "true",
           cache_ttl: "3600",
         },
       },
     ] as const;
     const observed: { path: string; query: Record<string, string> }[] = [];
+    const summaryData = {
+      audience: ["Business owners"],
+      actionItems: [{ task: "Review feedback", owner: null }],
+      hasOffer: false,
+      offerCount: 0,
+    };
     configureProvider();
     await fundActor(actor);
     const pricing = await setupConfiguredPricing();
@@ -1029,19 +1526,26 @@ describe("managed SocialKit route", () => {
           query: Object.fromEntries(url.searchParams),
         });
         return HttpResponse.json(
-          providerResponse(validProviderData(url.pathname)),
+          providerResponse(
+            url.pathname === "/youtube/summarize"
+              ? summaryData
+              : validProviderData(url.pathname),
+          ),
         );
       }),
     );
 
     for (const request of cases) {
-      await accept(
+      const response = await accept(
         client(pricing.resolution)(socialContract).request({
           headers: authenticate(actor),
           body: requestForPath(request.path, request.input),
         }),
         [200],
       );
+      if (request.path === "/youtube/summarize") {
+        expect(response.body.result).toStrictEqual(summaryData);
+      }
     }
 
     expect(observed).toStrictEqual(
@@ -1191,21 +1695,12 @@ describe("managed SocialKit route", () => {
       {
         path: "/instagram/reels-search",
         query: { query: "cats", page: "1" },
-        data: { items: [{ id: "1" }], hasMore: true },
-        expected: {
-          state: "more",
-          itemsReturned: 1,
-          nextInput: { page: 2 },
-        },
-      },
-      {
-        path: "/instagram/reels-search",
-        query: { query: "cats", page: "2" },
-        data: { items: [{ id: "2" }], hasMore: true },
+        data: { items: [{ id: "1" }], hasMore: false },
         expected: {
           state: "provider_limited",
           itemsReturned: 1,
           reason: "provider_ceiling",
+          sourceLimit: { kind: "single_batch", maxItems: 12 },
         },
       },
       {
@@ -2210,6 +2705,20 @@ describe("managed SocialKit route", () => {
       },
     });
     expect(beforeCredits - creditsAfterCompletion).toBe(6);
+    const discovered = await accept(
+      socialClient.listDownloads({
+        headers: authenticate(actor),
+        query: { status: "completed" },
+      }),
+      [200],
+    );
+    expect(discovered.body.downloads).toMatchObject([
+      {
+        ...completed.body,
+        request: { url: "https://youtu.be/public-video" },
+        resumeCommand: `okou social download --resume ${created.body.downloadId}`,
+      },
+    ]);
     await expect(credits(actor)).resolves.toBe(creditsAfterCompletion);
     expect(
       context.mocks.s3.send.mock.calls.filter(([command]) => {
@@ -2774,6 +3283,10 @@ describe("managed SocialKit route", () => {
     expect(blocked.body.error).toStrictEqual({
       code: "DOWNLOAD_IN_PROGRESS",
       message: "Another social media download is already in progress",
+      recovery: {
+        downloadId: first.body.downloadId,
+        resumeCommand: `okou social download --resume ${first.body.downloadId}`,
+      },
     });
     expect(first.body.status).toBe("processing");
     expect(providerStarts).toBe(1);
@@ -3196,6 +3709,23 @@ describe("managed SocialKit route", () => {
     );
     const creditsAfterFailure = await credits(actor);
 
+    const discovered = await accept(
+      socialClient.listDownloads({
+        headers: authenticate(actor),
+        query: { status: "artifact_failed" },
+      }),
+      [200],
+    );
+    expect(discovered.body.downloads).toMatchObject([
+      {
+        downloadId: created.body.downloadId,
+        status: "artifact_failed",
+        request: { url: "https://youtu.be/public-video" },
+        resumeCommand: `okou social download --resume ${created.body.downloadId}`,
+        billing: { quantity: 2, creditsCharged: 6 },
+      },
+    ]);
+
     expect(failed.body).toMatchObject({
       status: "artifact_failed",
       billing: { quantity: 2, creditsCharged: 6 },
@@ -3225,6 +3755,9 @@ describe("managed SocialKit route", () => {
 
     expectApiError(blocked.body);
     expect(blocked.body.error.code).toBe("DOWNLOAD_IN_PROGRESS");
+    expect(blocked.body.error.recovery?.downloadId).toBe(
+      created.body.downloadId,
+    );
     expect(providerStarts).toBe(1);
 
     mockNow(now() + 61_000);

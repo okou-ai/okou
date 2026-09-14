@@ -2,6 +2,7 @@
 // Sentry must be initialized before any other imports
 import "./instrument.js";
 import { Command } from "commander";
+import { instrumentCommand } from "./sentry-command.js";
 import { configureGlobalProxyFromEnv } from "./lib/network/proxy.js";
 import {
   decodeSandboxTokenPayload,
@@ -51,6 +52,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   github: ["github:read", "github:write"],
   slack: ["slack:read", "slack:write"],
   feishu: "feishu:write",
+  lark: "lark:write",
   teams: "teams:write",
   telegram: ["telegram:read", "telegram:write"],
   phone: ["phone:read", "phone:write"],
@@ -200,6 +202,13 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       "List channels, read history, send messages, and transfer files as the Slack bot",
     load: async () => {
       return (await import("./commands/slack")).slackCommand;
+    },
+  },
+  {
+    name: "lark",
+    description: "Send messages and transfer files through Lark",
+    load: async () => {
+      return (await import("./commands/feishu")).createFeishuCommand("lark");
     },
   },
   {
@@ -541,6 +550,11 @@ export function buildHelpText(
       payload,
     ),
     ...commandExampleIfVisible(
+      "lark",
+      "  Send Lark?            okou lark message send --help",
+      payload,
+    ),
+    ...commandExampleIfVisible(
       "mail",
       "  Link Gmail draft?     okou mail link --help",
       payload,
@@ -643,6 +657,7 @@ export function buildHelpText(
  * @param commands - override default commands (used in tests)
  */
 export function registerCommands(prog: Command, commands?: Command[]): void {
+  instrumentCommand(prog);
   const token = getOkouToken();
   const payload = token ? decodeSandboxTokenPayload(token) : undefined;
 

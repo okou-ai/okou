@@ -2315,9 +2315,9 @@ describe("connector catalog valid lifecycle", () => {
     ).resolves.toHaveLength(0);
   });
 
-  it("applies compatibility, authored visibility, and request rollout filters", async () => {
+  it("applies compatibility and authored visibility to released connectors", async () => {
     configureSource();
-    const gated = publicAuthMethod({
+    const apiToken = publicAuthMethod({
       id: "api-token",
       grantKind: "manual",
       manual: true,
@@ -2337,13 +2337,13 @@ describe("connector catalog valid lifecycle", () => {
       version: "2026-07-15.external-request-filters",
       connectorSlug: "cal-com",
       mutateCatalog: (artifact) => {
-        setArtifactAuthMethods(artifact, [gated, visible, hidden]);
+        setArtifactAuthMethods(artifact, [apiToken, visible, hidden]);
       },
       mutateRuntime: (artifact) => {
         setArtifactAuthMethods(artifact, [
           manualPrivateAuthMethod({
             id: "api-token",
-            prefix: "GATED",
+            prefix: "API_TOKEN",
             access: "static",
             revoke: "none",
           }),
@@ -2372,53 +2372,12 @@ describe("connector catalog valid lifecycle", () => {
       context,
       routes: connectorCatalogRoutes,
     })(connectorCatalogContract);
-    const featureClient = setupApp({
-      context,
-      routes: featureSwitchesRoutes,
-    })(featureSwitchesContract);
-
     const released = await accept(catalogClient.list({ headers }), [200]);
     expect(
       released.body.connectors[0]?.authMethods.map((method) => {
         return method.id;
       }),
     ).toStrictEqual(["api-token", "cli"]);
-
-    await accept(
-      featureClient.update({
-        headers,
-        body: {
-          switches: { [FeatureSwitchKey.CalComConnector]: false },
-        },
-      }),
-      [200],
-    );
-    const disabled = await accept(catalogClient.list({ headers }), [200]);
-    expect(disabled.body.connectors[0]?.authMethods).toStrictEqual([
-      {
-        id: "cli",
-        label: "cli auth",
-        description: null,
-        grantKind: "manual",
-      },
-    ]);
-
-    await accept(
-      featureClient.update({
-        headers,
-        body: {
-          switches: { [FeatureSwitchKey.CalComConnector]: true },
-        },
-      }),
-      [200],
-    );
-    const enabled = await accept(catalogClient.list({ headers }), [200]);
-    expect(
-      enabled.body.connectors[0]?.authMethods.map((method) => {
-        return method.id;
-      }),
-    ).toStrictEqual(["api-token", "cli"]);
-    await accept(featureClient.delete({ headers }), [200]);
 
     const graduated = buildRelease({
       version: "2026-07-15.external-graduated-switch",
@@ -6976,71 +6935,90 @@ describe("connector catalog rejection and latest-valid retention", () => {
     });
   });
 
-  it("skips large artifacts for a deterministically rejected candidate", async () => {
-    configureSource();
-    const accepted = buildRelease({ version: "2026-07-15.cache-valid" });
-    serveObjects(catalogObjects([accepted], accepted));
-    await syncCatalog();
+  it.each(["invalid-artifact", "relationship-mismatch"])(
+    "retains the active catalog while reusing a cached %s rejection",
+    async (failureCode) => {
+      configureSource();
+      const accepted = buildRelease({ version: "2026-07-15.cache-valid" });
+      serveObjects(catalogObjects([accepted], accepted));
+      await syncCatalog();
 
-    const invalid = buildRelease({
-      version: "2026-07-15.cache-invalid",
-      mutateCatalog: (artifact) => {
-        artifact.extra = true;
-      },
-    });
-    serveObjects(catalogObjects([accepted, invalid], invalid));
-    const callsBeforeFirstRejection = context.mocks.s3.send.mock.calls.length;
-    const freshRejection = await syncCatalog();
-    expect(freshRejection.body).toMatchObject({
-      outcome: "rejected",
-      state: "stale",
-      lastAttempt: {
-        failureCode: "invalid-artifact",
-        reusedCachedRejection: false,
-      },
-      rejectedCandidate: {
-        catalogVersion: invalid.version,
-        failureCode: "invalid-artifact",
-        backendVersion: DEFAULT_API_VERSION,
-      },
-    });
-    expect(
-      context.mocks.s3.send.mock.calls.length - callsBeforeFirstRejection,
-    ).toBe(2);
+      const invalid = buildRelease({
+        version: "2026-07-15.cache-invalid",
+        mutateCatalog: (artifact) => {
+          if (failureCode === "relationship-mismatch") {
+            firstRecord(artifact.connectors, "connectors").category = "unknown";
+          } else {
+            artifact.extra = true;
+          }
+        },
+      });
+      serveObjects(catalogObjects([accepted, invalid], invalid));
+      const callsBeforeFirstRejection = context.mocks.s3.send.mock.calls.length;
+      const freshRejection = await syncCatalog();
+      expect(freshRejection.body).toMatchObject({
+        outcome: "rejected",
+        state: "stale",
+        active: { catalogVersion: accepted.version },
+        lastAttempt: {
+          failureCode,
+          reusedCachedRejection: false,
+        },
+        rejectedCandidate: {
+          catalogVersion: invalid.version,
+          failureCode,
+          backendVersion: DEFAULT_API_VERSION,
+        },
+      });
+      expect(
+        context.mocks.s3.send.mock.calls.length - callsBeforeFirstRejection,
+      ).toBe(2);
 
-    const callsBeforeCachedRejection = context.mocks.s3.send.mock.calls.length;
-    const cachedRejection = await syncCatalog();
-    expect(cachedRejection.body).toMatchObject({
-      outcome: "rejected",
-      state: "stale",
-      lastAttempt: {
-        failureCode: "invalid-artifact",
-        reusedCachedRejection: true,
-      },
-      rejectedCandidate: {
-        catalogVersion: invalid.version,
-        failureCode: "invalid-artifact",
-        backendVersion: DEFAULT_API_VERSION,
-      },
-    });
-    expect(
-      context.mocks.s3.send.mock.calls.length - callsBeforeCachedRejection,
-    ).toBe(1);
-    expect(
-      commandInput(
-        context.mocks.s3.send.mock.calls[callsBeforeCachedRejection]?.[0],
-      ),
-    ).toMatchObject({
-      Key: ACTIVE_KEY,
-      IfNoneMatch: objectEtag(invalid.pointer),
-    });
-    expect(JSON.stringify(cachedRejection.body)).not.toContain(
-      invalid.catalogKey,
-    );
-    expect(JSON.stringify(cachedRejection.body)).not.toContain(
-      objectEtag(invalid.pointer),
-    );
-  });
+      const callsBeforeCachedRejection =
+        context.mocks.s3.send.mock.calls.length;
+      const cachedRejection = await syncCatalog();
+      expect(cachedRejection.body).toMatchObject({
+        outcome: "rejected",
+        state: "stale",
+        active: { catalogVersion: accepted.version },
+        lastAttempt: {
+          failureCode,
+          reusedCachedRejection: true,
+        },
+        rejectedCandidate: {
+          catalogVersion: invalid.version,
+          failureCode,
+          backendVersion: DEFAULT_API_VERSION,
+        },
+      });
+      expect(
+        context.mocks.s3.send.mock.calls.length - callsBeforeCachedRejection,
+      ).toBe(1);
+      expect(
+        commandInput(
+          context.mocks.s3.send.mock.calls[callsBeforeCachedRejection]?.[0],
+        ),
+      ).toMatchObject({
+        Key: ACTIVE_KEY,
+        IfNoneMatch: objectEtag(invalid.pointer),
+      });
+      expect(JSON.stringify(cachedRejection.body)).not.toContain(
+        invalid.catalogKey,
+      );
+      expect(JSON.stringify(cachedRejection.body)).not.toContain(
+        objectEtag(invalid.pointer),
+      );
+      const recovered = buildRelease({ version: "2026-07-15.cache-recovered" });
+      serveObjects(catalogObjects([accepted, invalid, recovered], recovered));
+      expect((await syncCatalog()).body).toMatchObject({
+        outcome: "accepted",
+        state: "current",
+        active: { catalogVersion: recovered.version },
+        lastAttempt: { failureCode: null, reusedCachedRejection: false },
+        rejectedCandidate: null,
+      });
+    },
+  );
 
   it("revalidates a rejection when the production backend version advances", async () => {
     configureSource();

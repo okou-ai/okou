@@ -49,9 +49,13 @@ It never calls the finalize endpoint. Existing inspection previews block a new
 run, including after an uncertain request.
 
 The new branch must have the exact snapshot provenance and must not be an
-existing, default, or protected branch. If needed, one 0.25-CU preview compute is
-created with 60-second idle suspend. Connection discovery pins both the branch
-and endpoint; production endpoints and pooled connections are rejected.
+existing, default, or protected branch. Snapshot restore may return a primary
+compute and read replicas. The workflow selects the unique `read_write` primary
+and records endpoint type counts; multiple primaries and duplicate identities
+are rejected. If no primary exists, one 0.25-CU preview primary is created with
+60-second idle suspend. Connection discovery pins the branch, endpoint and type;
+production endpoints and pooled connections are rejected. Database transactions
+remain read-only regardless of the compute type.
 
 The workflow reads every database returned for the preview in PostgreSQL
 read-only, repeatable-read transactions. It scans physical user tables, partition
@@ -59,6 +63,15 @@ leaves, and materialized views for `vm0secret:` and the old key UUID. Only count
 and operational identifiers leave the database. Foreign tables, large objects,
 and binary fields are reported as coverage limitations. Provider and SQL errors
 never export their bodies.
+
+Table marker scans use contiguous ranges of at most 128 heap pages per query
+on PostgreSQL 14 or newer. All table locks and range measurements belong to one
+read-only, repeatable-read transaction, preventing rewrites or truncation while
+the scan runs. Inherited tables are counted separately with `ONLY`, including
+partition leaves. The decoder requires the declared table count and complete,
+nonoverlapping range coverage before accepting aggregates; unsupported table
+access methods and missing or repeated chunks fail the check. The 120-second
+statement timeout, total inspection budget and cleanup reserve are unchanged.
 
 Finally, it deletes only the newly created and revalidated preview, checks that
 it is no longer live, and separately inspects its provider recovery window.
@@ -70,10 +83,74 @@ name before cleanup, and never blindly retry a restore.
 
 This operation creates a temporary recovery copy and compute. It does not write
 production data, modify existing snapshots, change credentials or deployments,
-call KMS, finalize a restore, or schedule key deletion. `collectionComplete`
-only means the declared scan completed. It does not authenticate ciphertext,
+finalize a restore, or schedule key deletion. The default marker-only mode does
+not call KMS. `collectionComplete` only means the declared scan completed.
+The marker-only scan does not authenticate ciphertext,
 inspect plaintext nested inside encryption, decode arbitrary opaque formats, or
 prove application-level recovery. `retirementCleared` is always false.
+
+For a retained target-era snapshot, enable `verify_target_ciphertext`. The same
+preview isolation and cleanup checks run, followed by the existing migration
+CLI's **read-only `--verify`** mode against each preview database. Its reviewed
+storage manifest and queue payload decoder check the listed stored fields and
+nested queue ciphertext. This mode does not run old-key canaries, `--migrate`, or production
+verification.
+
+The workflow assumes the existing GitHub migration role through OIDC with an
+inline session policy: allow only target-key `kms:Decrypt` with the stored-secret
+encryption context, explicitly deny KMS on every other key, and explicitly deny
+all other actions except caller-identity lookup. This does not modify the role,
+key grants, static credentials, or deployments. Source-key ciphertext cannot be
+silently decrypted using the role's broader migration grants; encountering it
+makes the verification fail. Such an attempted decrypt can still appear as a
+denied inspection request in CloudTrail and must be attributed accordingly.
+
+Success requires a complete, unresumed report bound to the preview connection,
+nonzero ciphertext count, every row verified on target, zero source/nested source,
+invalid/unknown/uninspected values, and zero database updates. Only aggregate
+verification counters and manifest hashes are retained. If a verifier fails,
+cleanup still runs and no cryptographic success is claimed. `kmsCallsMade: null`
+means a started verification failed before its call count could be established.
+Both modes have a 90-minute inspection budget and separately reserved cleanup
+time. Each database marker scan is capped at 60 minutes or the remaining overall
+budget, whichever is smaller. A full first-database scan therefore leaves up to
+30 minutes for target verification; no phase extends the overall deadline.
+
+When a database scan fails, `databaseScanFailure` retains the PostgreSQL
+SQLSTATE when available, the process exit code, planned and completed table
+counts, completed chunk count, the last completed chunk, and the last returned
+table or binary-column progress record. For table chunks it also retains the
+starting and exclusive ending block. A separate `lastStartedBatch` record names
+the dispatched batch's relation OID, block range and server timestamp. Results
+inside a batch can be buffered, so `lastStartedScan` alone is not the current
+query or an exact failure location.
+If the bounded `psql` process deadline expires, the failure is
+`snapshot_database_scan_process_timeout`. The report keeps that deadline and
+validated progress from complete output lines; a truncated final JSON or UTF-8
+fragment is discarded. The process exit code remains unknown, and partial
+output is never accepted as completed coverage. `lastDatabaseStage` is saved
+before connection metadata, marker scanning and target verification so failures
+in those phases can be distinguished even when no database result is returned.
+These diagnostics contain no table contents, SQL text, database names or raw
+error messages. Partial scan progress is not a complete inventory or evidence
+of zero dependencies. Inspect the failure and verify preview cleanup before
+dispatching another isolated check; do not increase timeouts or repeat restores
+without diagnosing the actual cause.
+
+The September 14 runs 34816611497 and 34824009475 exhausted the former cumulative
+900-second limit with identical last-returned progress, including after batching.
+That evidence establishes a process-budget failure, not a measured CPU, storage
+or network cause. The 60-minute scan budget accommodates the retained database
+within the existing maximum inspection window; it is not a throughput guarantee.
+
+The marker scan sends at most 64 of its 128-page chunks in one database request.
+Each chunk still has its own 120-second statement limit, progress record and
+aggregate result. The decoder requires every chunk in order under the same
+read-only repeatable-read transaction. One separate request reports each batch
+before its chunk statements, and `stdbuf -oL` flushes the client's aggregate
+output to its capture pipe. This keeps useful progress visible when the next
+batch is still running. Batching does not turn an incomplete scan into a success;
+the statement, overall inspection and independent cleanup limits remain enforced.
 
 The provider contract is documented in
 [Neon's snapshot restore API](https://neon.com/docs/reference/api/snapshots/restore-snapshot).
@@ -114,3 +191,13 @@ external-boundary CLI scenarios and real isolated PostgreSQL aggregate tests.
 
 Do not substitute `DisableKey`, a successful metadata job, configured expiration,
 or an empty denied query for these dependency checks.
+
+The exit inventory includes metadata for every branch returned by the existing
+paginated project listing: hashed IDs and names, parent relationships, creation
+time, and any reported parent timestamp or LSN. It identifies the exact
+`kms-recovery-32264-<run>-<attempt>` inspection naming pattern without exporting
+other branch names. A recent creation time does not prove a recent data point;
+missing parent timestamps remain unknown. `otherBranchesNotInspected` and each
+branch's `ciphertextVerified: false` remain explicit until separate data
+verification resolves those dependencies. This collection adds no API requests,
+database connections, resource mutations or retirement clearance.

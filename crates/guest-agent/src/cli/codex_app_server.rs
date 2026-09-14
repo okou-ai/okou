@@ -30,7 +30,9 @@ use crate::error::AgentError;
 
 use super::{
     LOG_TAG, child_env,
-    child_exit_notifier::{ChildExitNotifier, wait_for_child_exit_without_reaping},
+    child_exit_notifier::{
+        ChildExitNotifier, child_exited_without_reaping, wait_for_child_exit_without_reaping,
+    },
     diagnostics, exec_boundary, line_reader,
     process_group::ChildProcessGroup,
 };
@@ -268,8 +270,10 @@ pub enum CodexAppServerError {
     /// JSON-RPC protocol contract.
     #[error("codex app-server protocol error: {0}")]
     Protocol(String),
-    /// App-server stdout ended before the pending operation completed.
-    #[error("codex app-server disconnected while waiting for {method}")]
+    /// App-server stdout ended without an observed child exit before cleanup.
+    #[error(
+        "codex app-server disconnected while waiting for {method}: stdout EOF; child exit not observed before cleanup"
+    )]
     Disconnected {
         /// Pending method or operation label.
         method: String,
@@ -720,17 +724,7 @@ impl CodexAppServerClient {
         if requested_graceful_shutdown {
             tokio::task::yield_now().await;
         }
-        if self.child.is_some() {
-            self.sigterm_process_group();
-            self.sigkill_process_group();
-            if !self.wait_for_child(SHUTDOWN_SIGKILL_GRACE).await? {
-                return Err(CodexAppServerError::ShutdownTimeout);
-            }
-        }
-
-        self.drain_stderr().await;
-        self.closed = true;
-        Ok(())
+        self.finish_close().await
     }
 
     /// Force app-server termination without the graceful stdin-EOF wait.
@@ -751,6 +745,11 @@ impl CodexAppServerClient {
         }
 
         self.close_io_handles();
+        self.finish_close().await
+    }
+
+    /// Finish cleanup after protocol I/O closes, signaling the owned child before reaping it.
+    async fn finish_close(&mut self) -> Result<(), CodexAppServerError> {
         if self.child.is_some() {
             self.sigterm_process_group();
             self.sigkill_process_group();
@@ -815,6 +814,21 @@ impl CodexAppServerClient {
                     let line = match line {
                         Ok(Some(line)) => line,
                         Ok(None) => {
+                            // Stdout stays first so buffered responses win. EOF
+                            // may also be ready when the child has already exited;
+                            // observe before poison_error sends our cleanup signal.
+                            // Do not reap here: group cleanup still owns this PID.
+                            if let Some(child_id) = fallback_child_id {
+                                match child_exited_without_reaping(child_id) {
+                                    Ok(true) => return Err(self.finish_observed_child_exit(pending_method).await),
+                                    Ok(false) => {}
+                                    Err(error) => return Err(self.poison_error(CodexAppServerError::Io(
+                                        std::io::Error::new(error.kind(), format!(
+                                            "observe child exit after stdout EOF while waiting for {pending_method}: {error}"
+                                        )),
+                                    ))),
+                                }
+                            }
                             return Err(self.poison_error(CodexAppServerError::Disconnected {
                                 method: pending_method.to_string(),
                             }));

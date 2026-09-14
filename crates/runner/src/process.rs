@@ -14,6 +14,8 @@ pub use self::ancestry::{is_orphan, process_has_ancestor};
 pub(crate) use self::discovery::discover_all_with_status;
 #[cfg(test)]
 pub(crate) use self::discovery::parse_dnsmasq_cmdline;
+#[cfg(test)]
+pub(crate) use self::discovery::test_support as discovery_test_support;
 pub use self::discovery::{discover_all, firecracker_process_exists_for_sandbox_id};
 pub(crate) use self::discovery::{is_firecracker_cmdline, parse_workspace_cwd};
 pub use self::procfs::read_service_unit;

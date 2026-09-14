@@ -83,23 +83,6 @@ export const isAbortError = (error: unknown): boolean => {
   return false;
 };
 
-/**
- * Treat cancellation by a nested lifecycle as successful completion while
- * preserving parent cancellation and unrelated failures.
- */
-export function completeOnLocalAbort(
-  completion: Promise<void>,
-  localSignal: AbortSignal,
-  parentSignal: AbortSignal,
-): Promise<void> {
-  return completion.then(undefined, (error) => {
-    parentSignal.throwIfAborted();
-    if (!localSignal.aborted || !isAbortError(error)) {
-      throw error;
-    }
-  });
-}
-
 export function throwIfAbort(e: unknown) {
   if (isAbortError(e)) {
     throw e;
@@ -233,6 +216,19 @@ export async function withCleanup<T>(
   } finally {
     await cleanup();
   }
+}
+
+/** Stop waiting for a shared operation without cancelling its other owners. */
+export function waitForOperation<T>(
+  operation: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  const cancelled = createDeferredPromise<never>(signal);
+  return withCleanup(Promise.race([operation, cancelled.promise]), () => {
+    if (!cancelled.settled()) {
+      cancelled.reject(new DOMException("Operation settled", "AbortError"));
+    }
+  });
 }
 // ---------------------------------------------------------------------------
 // Bounded async load retry

@@ -228,28 +228,31 @@ def _ensure_worker_locked() -> bool:
 
 
 def _run_writer() -> None:
+    # Each call owns its batch references so they are released before the next wait.
+    while _write_next_batch():
+        pass
+
+
+def _write_next_batch() -> bool:
+    item = _queue.get()
+    if item is _STOP:
+        return False
+
+    batch = [item]
+    should_stop = False
     while True:
-        item = _queue.get()
-        if item is _STOP:
-            return
+        try:
+            next_item = _queue.get_nowait()
+        except queue.Empty:
+            break
+        if next_item is _STOP:
+            should_stop = True
+            break
+        batch.append(next_item)
 
-        batch = [item]
-        should_stop = False
-        while True:
-            try:
-                next_item = _queue.get_nowait()
-            except queue.Empty:
-                break
-            if next_item is _STOP:
-                should_stop = True
-                break
-            batch.append(next_item)
-
-        _write_batch(batch)
-        _complete_batch(batch)
-
-        if should_stop:
-            return
+    _write_batch(batch)
+    _complete_batch(batch)
+    return not should_stop
 
 
 def _write_batch(items: list[object]) -> None:

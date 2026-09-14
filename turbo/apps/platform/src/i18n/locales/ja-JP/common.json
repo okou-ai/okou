@@ -353,6 +353,7 @@
       "feishu": "Feishu",
       "github": "GitHub",
       "goal": "目標",
+      "lark": "Lark",
       "slack": "Slack",
       "teams": "チーム",
       "telegram": "Telegram",
@@ -1007,7 +1008,12 @@
     "toasts": {
       "copyLinkFailed": "リンクのコピーに失敗しました",
       "downloadFailed": "ダウンロードに失敗しました",
-      "linkCopied": "リンクがコピーされました"
+      "linkCopied": "リンクがコピーされました",
+      "sharing": "共有中…"
+    },
+    "viewer": {
+      "continuePrompt": "この成果物を使った作業を手伝ってください: {{url}}",
+      "continueWithBrand": "{{brandName}} で続ける"
     }
   },
   "auth": {
@@ -1741,14 +1747,9 @@
       "selectModel": "モデルを選択してください",
       "slashPanel": {
         "browseAll": "すべてのテンプレートを見る",
-        "illustrationDescription": "選んだスタイルで 1 枚の画像を生成します",
         "make": "作成",
-        "slidesDescription": "そのまま発表できる HTML スライド",
         "templateCount_other": "{{count}} 件のテンプレート",
-        "useTemplate": "テンプレート {{title}} を使う",
-        "videoDescription": "テキストから動画を生成し、パラメーターは選択したモデルに従います",
-        "websiteDescription": "公開できる静的サイト",
-        "workflowDescription": "コンポーザーから実行できる保存済みワークフロー"
+        "useTemplate": "テンプレート {{title}} を使う"
       },
       "temporarilySwitchTo": "一時的な切り替え先",
       "threadSuggestions": "チャットスレッド",
@@ -1992,9 +1993,11 @@
       "agentphone": "AgentPhone",
       "feishu": "Feishu",
       "github": "GitHub",
+      "lark": "Lark",
       "openChat": "オープンチャット",
       "openFeishuChat": "Feishu で元のチャットを開く",
       "openGithubMessage": "GitHub で元の Issue または Pull Request を開く",
+      "openLarkChat": "Lark で元のチャットを開く",
       "openMessage": "メッセージを開く",
       "openSlackMessage": "Slack で元のメッセージを開く",
       "openTeamsMessage": "Microsoft Teams で元のメッセージを開く",
@@ -2789,6 +2792,11 @@
         "website": "ウェブサイト",
         "workflow": "ワークフロー"
       },
+      "importedEmpty": "アップロード済みテンプレートはまだありません。",
+      "importedLoadFailed": "アップロード済みテンプレートを読み込めませんでした。",
+      "importedLoading": "アップロード済みテンプレートを読み込み中…",
+      "importedUnavailable": "アップロード済みテンプレートは一時的に利用できません。",
+      "previewRefreshFailed": "テンプレートのプレビューを更新できませんでした。",
       "previewTemplate": "プレビュー テンプレート {{title}}",
       "previewVideo": "プレビュービデオテンプレート {{title}}",
       "previewWebsite": "Web サイト テンプレートのプレビュー {{title}}",
@@ -2797,8 +2805,11 @@
       "removeVideo": "ビデオ テンプレート {{title}} を削除します",
       "removeWebsite": "Web サイト テンプレート {{title}} を削除します",
       "removeWorkflow": "ワークフロー テンプレート {{title}} を削除します",
+      "retry": "再試行",
       "videoOptions": "動画オプション",
       "videoOptionsAudio": "音声を生成",
+      "videoOptionsAudioOff": "音声オフ",
+      "videoOptionsAudioOn": "音声オン",
       "videoOptionsDuration": "長さ",
       "videoOptionsLabel": "動画オプション {{spec}}",
       "videoOptionsModel": "モデル",
@@ -3117,9 +3128,11 @@
       "scope": {
         "aria": "コネクタの表示範囲",
         "attention": "対応が必要",
+        "connected": "接続済み",
+        "custom": "カスタム",
         "discover": "探す",
-        "mine": "あなたのコネクタ",
-        "searchMine": "あなたのコネクタを検索"
+        "searchConnected": "接続済みのコネクタを検索",
+        "searchCustom": "カスタムコネクタを検索"
       },
       "search": "コネクターを検索",
       "shelf": {
@@ -3403,6 +3416,9 @@
         "wrongOrganizationDescription": "アクティブな組織は、この GitHub インストールと一致しません。正しい組織に切り替えて、リンクを再度開きます。",
         "wrongOrganizationTitle": "組織を切り替える"
       },
+      "lark": {
+        "connectTitle": "Lark に接続します"
+      },
       "slack": {
         "connectDescription": "アカウントをこの Slack ワークスペースにリンクすると、Slack からエージェントと直接対話できるようになります。",
         "connectTitle": "Slack に接続します",
@@ -3657,6 +3673,12 @@
           "verifying": "確認中…",
           "waiting": "コールバックを待っています"
         },
+        "toasts": {
+          "botInstalled": "Feishu ボットは正常にインストールされました",
+          "botUninstalled": "Feishu ボットがアンインストールされました",
+          "connected": "Feishu は正常に接続されました",
+          "disconnected": "Feishu から切断されました"
+        },
         "tokens": {
           "descriptionAfter": "、作成したばかりのアプリを選択し、その構成ページに入ります。 「イベント構成」→「暗号化戦略」を開き、暗号化キーと検証トークンをコピーします。",
           "descriptionBefore": "を開きます ",
@@ -3668,6 +3690,136 @@
         "uninstallDescription": "これにより、ワークスペースから {{bot}} がアンインストールされ、それを使用しているすべての {{brandName}} アカウントが切断されます。この操作は元に戻すことができません。",
         "uninstallTargetFallback": "このボット",
         "uninstallTitle": "Feishu ボットをアンインストールしますか?"
+      },
+      "lark": {
+        "addBot": "ボットの追加",
+        "addDialogDescription": "エンタープライズ カスタム アプリを作成し、そのボットを有効にして、Lark 開発者コンソールでこれらの手順を完了します。",
+        "addDialogTitle": "Lark ボットを追加する",
+        "agentDescription": "このボットに送信されたメッセージを処理するエージェントを選択します。",
+        "backToIntegrations": "統合に戻る",
+        "botFallback": "Lark ボット",
+        "botIconAlt": "{{bot}} ボット アイコン",
+        "bots": "Lark ボット",
+        "callbackStatusVerified": "コールバックが検証されました",
+        "callbackStatusWaiting": "コールバックを待っています",
+        "configured": "設定済み",
+        "copied": "{{label}} がコピーされました",
+        "copy": "コピー",
+        "create": {
+          "descriptionAfter": "、任意の名前とアイコンでエンタープライズ カスタム アプリを作成してから、ボット機能を追加します。",
+          "descriptionBefore": "で ",
+          "downloadIcon": "任意の {{brandName}} アイコンをダウンロードします",
+          "iconAlt": "任意の {{brandName}} アプリ アイコン",
+          "iconHint": "、またはお好みのアイコンを使用してください。",
+          "iconTitle": "任意の {{brandName}} アプリ アイコン",
+          "imageAlt": "Feishu アプリ名、アイコン、および [作成] ボタンが強調表示されたアプリ作成フォーム",
+          "title": "エンタープライズカスタムアプリを作成する"
+        },
+        "credentials": {
+          "appId": "アプリID",
+          "appSecret": "アプリのシークレット",
+          "description": "「資格情報と基本情報」からアプリ ID とアプリ シークレットをコピーします。",
+          "imageAlt": "Feishu アプリ ID とアプリ シークレットの場所を示すアプリ作成結果",
+          "title": "アプリの認証情報を追加する"
+        },
+        "defaultAgent": "デフォルトエージェント",
+        "defaultAgentAria": "{{appId}} のデフォルト エージェント",
+        "developerConsole": "Lark 開発者コンソール",
+        "dialogAdminRequired": "組織管理者はアプリを構成する必要があります。セットアップが完了したら、Lark ボット リストから自分のアカウントに接続できます。",
+        "documentTitle": "Lark",
+        "emptyAdmin": "Lark メッセージをエージェントにルーティングするカスタム アプリを追加します。",
+        "emptyMember": "Lark ボットを追加するように組織管理者に依頼します。",
+        "emptyTitle": "Lark ボットはまだありません",
+        "events": {
+          "callbackLabel": "コールバック URL",
+          "continue": "Lark がコールバック URL を検証し、メッセージ イベントがサブスクライブされた後に続行します。",
+          "description": "イベント設定を開きます。サブスクリプション モードで、[開発者のサーバーに通知を送信する] を選択します。次に、「コールバック構成」を開き、コールバック URL を貼り付けます。 Lark がそれを検証した後、「受信メッセージ v1」イベントを追加します。",
+          "requestAlt": "Feishu 「リクエスト URL」フィールドが強調表示された「イベント構成」画面",
+          "requestLabel": "コールバックリクエストURLを追加します。",
+          "subscriptionAlt": "Feishu サブスクリプション モード編集コントロールが強調表示されたイベント構成画面",
+          "subscriptionLabel": "イベントサブスクリプションモードを選択します",
+          "title": "イベント配信を構成する"
+        },
+        "faq": {
+          "approvalAnswer": "可用性が [すべてのメンバー] に設定されている場合、Lark 管理者はリリースを承認する必要があります。 Lark は承認リクエストをダイレクト メッセージで管理者に送信し、アプリは管理者がレビューを完了するまで保留状態になります。",
+          "approvalQuestion": "アプリの公開が承認を待っているのはなぜですか?",
+          "challengeAnswer": "これは通常、トークンのステップ中に保存された暗号化キーまたは検証トークンが正しくないことを意味します。 「トークン」ステップに戻り、「イベント構成」→「暗号化戦略」から両方の値を再度入力し、保存して、リクエスト URL を再試行します。",
+          "challengeQuestion": "Lark に「チャレンジ コードは応答がありませんでした」と表示されるのはなぜですか?",
+          "title": "セットアップに関するよくある質問"
+        },
+        "guideReference": "スクリーンショットは参考用のFeishuコンソールです。操作はLark開発者コンソールで行ってください。",
+        "loadError": "Lark 設定を読み込めませんでした。",
+        "manage": "管理",
+        "manageDialogTitle": "Lark ボットを管理する",
+        "moreOptions": "{{bot}} のその他のオプション",
+        "pageDescription": "このワークスペースのボット ルーティングを管理する",
+        "permissions": {
+          "description": "Lark 開発者コンソールで「権限とスコープ」を開き、「一括インポート/エクスポート > インポート」を選択して、以下の JSON を貼り付けます。管理対象コネクタに必要なすべてのスコープがユーザー ID にインポートされます。これらは、連携の動作に必要な最小限の権限です。",
+          "hint": "インポートされたユーザー ID の権限はすべて維持し、OAuth 同意画面で権限を付与できるように、アプリの新しいバージョンを作成して公開します。いずれかの権限を削除すると連携は動作しなくなり、Lark 管理者の承認が必要になる場合があります。",
+          "label": "ユーザートークンスコープ JSON",
+          "menuAlt": "「スコープの一括インポート/エクスポート」メニューが強調表示された Feishu の「権限とスコープ」ページ",
+          "menuLabel": "スコープの一括インポート/エクスポートを開く",
+          "reviewAlt": "インポートした JSON と確認ボタンが強調表示された Feishu の「スコープの一括インポート/エクスポート」ダイアログ",
+          "reviewLabel": "JSON を貼り付けて新しいスコープを確認",
+          "title": "ユーザートークンスコープをインポート"
+        },
+        "publish": {
+          "allMembersAlt": "すべてのメンバーが選択された場合の Feishu 可用性設定",
+          "allMembersLabel": "すべてのメンバーが利用できるようにする",
+          "createVersionAlt": "Feishu [バージョンの作成] ボタンが強調表示された [バージョン管理] ページ",
+          "createVersionLabel": "アプリのバージョンを作成する",
+          "description": "アプリのバージョンを作成して公開し、その可用性設定を編集して [すべてのメンバー] を選択します。このアプリは、組織内の他のメンバーにアクセスを許可した後でのみ使用できます。",
+          "editAvailabilityAlt": "可用性設定の編集アクションが強調表示された Feishu バージョンの詳細ページ",
+          "editAvailabilityLabel": "可用性設定を編集する",
+          "title": "アプリを公開する"
+        },
+        "redirect": {
+          "descriptionAfter": "、「開発構成」→「セキュリティ設定」を開きます。 [リダイレクト URL] に以下の URL を追加して、ワークスペース メンバーが Lark アカウントを {{brandName}} に接続できるようにします。",
+          "descriptionBefore": "で ",
+          "imageAlt": "Feishu OAuth リダイレクト URL を追加する場所を示す [セキュリティ設定] ページ",
+          "label": "OAuth リダイレクト URL",
+          "title": "OAuth リダイレクト URL を構成する"
+        },
+        "reviewGuide": "レビューガイド",
+        "reviewGuideDescription": "この Lark ボットの完了したセットアップ手順を確認してください。",
+        "reviewGuideTitle": "Lark レビュー ガイド",
+        "routeDescription": "Lark メッセージをエージェントにルーティングする",
+        "selectAgent": "エージェントを選択してください",
+        "setupIncomplete": "セットアップが不完全",
+        "steps": {
+          "back": "戻る",
+          "checking": "確認中…",
+          "close": "閉じる",
+          "create": "作成",
+          "credentials": "資格情報",
+          "done": "完了",
+          "events": "イベント",
+          "next": "次へ",
+          "permissions": "スコープ",
+          "publish": "発行する",
+          "redirect": "リダイレクト",
+          "tokens": "トークン",
+          "verify": "確認して続行",
+          "verifying": "確認中…",
+          "waiting": "コールバックを待っています"
+        },
+        "toasts": {
+          "botInstalled": "Lark ボットは正常にインストールされました",
+          "botUninstalled": "Lark ボットがアンインストールされました",
+          "connected": "Lark は正常に接続されました",
+          "disconnected": "Lark から切断されました"
+        },
+        "tokens": {
+          "descriptionAfter": "、作成したばかりのアプリを選択し、その構成ページに入ります。 「イベント構成」→「暗号化戦略」を開き、暗号化キーと検証トークンをコピーします。",
+          "descriptionBefore": "を開きます ",
+          "encryptKey": "暗号化キー",
+          "imageAlt": "Feishu 暗号化キーと検証トークンを示す暗号化戦略画面",
+          "title": "イベント検証トークンを追加する",
+          "verificationToken": "検証トークン"
+        },
+        "uninstallDescription": "これにより、ワークスペースから {{bot}} がアンインストールされ、それを使用しているすべての {{brandName}} アカウントが切断されます。この操作は元に戻すことができません。",
+        "uninstallTargetFallback": "このボット",
+        "uninstallTitle": "Lark ボットをアンインストールしますか?"
       },
       "telegram": {
         "addBot": "ボットの追加",
@@ -3747,10 +3899,6 @@
       "toasts": {
         "agentphoneConnected": "エージェントフォンが接続されました",
         "agentphoneDisconnected": "AgentPhone が切断されました",
-        "feishuBotInstalled": "Feishu ボットは正常にインストールされました",
-        "feishuBotUninstalled": "Feishu ボットがアンインストールされました",
-        "feishuConnected": "Feishu は正常に接続されました",
-        "feishuDisconnected": "Feishu から切断されました",
         "slackConnected": "Slack は正常に接続されました",
         "slackDisconnected": "Slack から切断されました",
         "slackInstalled": "Slack は正常にインストールされました",
@@ -5463,9 +5611,19 @@
         "categoryImage": "画像",
         "categoryVideo": "動画",
         "chatModels": "チャットモデル",
-        "effort": "推論の強度",
+        "effort": "強度",
         "fast": "速い",
-        "fastImpact": "モデル速度 1.5× · クレジット消費 2.5×",
+        "fastImpact": {
+          "apiCost": "APIトークン料金 2×",
+          "chatGptUsage": "ChatGPT使用量 2.5×",
+          "fasterResponses": "モデルの応答が高速化",
+          "modelSpeed": "モデル速度 {{multiplier}}×",
+          "okouCredits": "Okouモデルクレジット消費 2×",
+          "providerSpeed": "速度はプロバイダーに依存",
+          "providerUsage": "使用量はプロバイダーに依存",
+          "solApiSpeed": "モデル速度 最大2.5×",
+          "summary": "{{speed}} · {{usage}}"
+        },
         "generationPriceTiers": {
           "higher": "1 回の生成あたりのコストは高め",
           "highest": "1 回の生成あたりのコストが最も高い",
@@ -5739,7 +5897,6 @@
         "emailOff": "メールはオフです。ブリーフは引き続きチャットに表示されます。",
         "emailWhenReady": "ブリーフの準備ができるとメールが届きます。",
         "loading": "Morning Brief の設定を読み込んでいます...",
-        "missingDataSource": "Gmail、Google カレンダー、GitHub、Slack のいずれかを接続すると配信が始まります。",
         "missingDefaultAgent": "Morning Brief を有効にする前に、使用可能なデフォルト Agent を選択してください。",
         "missingTimezone": "Morning Brief を有効にする前に、有効なタイムゾーンを設定してください。",
         "multipleInstallations": "Morning Brief のインストールが複数あります。この設定を変更する前に競合を解決してください。",
@@ -6753,6 +6910,9 @@
       "noWorkflows": "ワークフローなし",
       "open": "{{title}} を開く",
       "openRecovery": "{{title}} の復旧を開く",
+      "ownerLoading": "作成者を読み込み中…",
+      "ownerRetry": "作成者情報を取得できません。再度開いてお試しください。",
+      "ownerUnavailable": "作成者情報を取得できません",
       "runsAs": "として実行",
       "runsAsAria": "{{agent}} として実行",
       "section": {

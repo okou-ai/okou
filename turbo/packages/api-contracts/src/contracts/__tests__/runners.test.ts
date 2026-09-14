@@ -319,7 +319,6 @@ describe("Pi sandbox execution contract", () => {
       provider: "deepseek",
       baseUrl: "https://api.deepseek.com/",
       model: "deepseek-v4-flash",
-      api: "openai-responses" as const,
       apiKeyEnv: "OPENAI_API_KEY",
       credentialSecretName: "DEEPSEEK_API_KEY",
     },
@@ -347,35 +346,21 @@ describe("Pi sandbox execution contract", () => {
     rawSize: 1024,
   };
 
-  it("keeps legacy Pi transports decodable while current configs use Responses", () => {
+  it("preserves canonical Gen1 request policy and custom gateway credentials", () => {
     expect(piModelConfigSchema.parse(piStoredContext.piModelConfig)).toEqual(
       piStoredContext.piModelConfig,
     );
-    const { api: _currentApi, ...legacyBase } = piStoredContext.piModelConfig;
-    for (const api of [
-      undefined,
-      "openai-completions",
-      "openai-codex-responses",
-    ] as const) {
-      const legacy = {
-        ...legacyBase,
-        ...(api === undefined ? {} : { api }),
-      };
-      expect(piModelConfigSchema.parse(legacy)).toEqual(legacy);
-    }
     expect(
       piModelConfigSchema.parse({
         provider: "openai",
         baseUrl: "https://api.openai.com/v1",
         model: "gpt-5.6-terra",
-        api: "openai-responses",
         thinkingLevel: "low",
         serviceTier: "priority",
         apiKeyEnv: "OPENAI_API_KEY",
         credentialSecretName: "OPENAI_API_KEY",
       }),
     ).toMatchObject({
-      api: "openai-responses",
       thinkingLevel: "low",
       serviceTier: "priority",
     });
@@ -384,7 +369,6 @@ describe("Pi sandbox execution contract", () => {
         provider: "openai",
         baseUrl: "https://api.openai.com/v1",
         model: "gpt-5.6-terra",
-        api: "openai-responses",
         thinkingLevel: "low",
         serviceTier: "fast",
         apiKeyEnv: "OPENAI_API_KEY",
@@ -397,7 +381,6 @@ describe("Pi sandbox execution contract", () => {
         baseUrl: "https://gateway.example.com/v1",
         model: "company-deepseek-production",
         catalogModel: "deepseek-v4-flash",
-        api: "openai-responses",
         apiKeyEnv: "OPENAI_API_KEY",
         credentialSecretName: "CUSTOM_GATEWAY_API_KEY",
         credentialHeader: {
@@ -424,7 +407,6 @@ describe("Pi sandbox execution contract", () => {
           baseUrl: "https://gateway.example.com/v1",
           model: "company-deepseek-production",
           catalogModel: "deepseek-v4-flash",
-          api: "openai-responses",
           apiKeyEnv: "OPENAI_API_KEY",
           credentialSecretName: "CUSTOM_GATEWAY_API_KEY",
           credentialHeader: { name: "x-api-key", valueTemplate },
@@ -432,6 +414,30 @@ describe("Pi sandbox execution contract", () => {
       ).toBe(false);
     }
   });
+
+  it.each([
+    undefined,
+    "openai-responses",
+    "openai-completions",
+    "openai-codex-responses",
+  ])(
+    "rejects an extra Gen1 api key with value %s at the wire boundary",
+    (api) => {
+      const config = { ...piStoredContext.piModelConfig, api };
+      const result = piModelConfigLegacySchema.safeParse(config);
+      expect(result.error?.issues).toEqual([
+        expect.objectContaining({ code: "unrecognized_keys", keys: ["api"] }),
+      ]);
+      expect(piModelConfigSchema.safeParse(config).success).toBe(false);
+      expect(
+        storedExecutionContextSchema.safeParse({
+          ...storedContext,
+          ...piStoredContext,
+          piModelConfig: config,
+        }).success,
+      ).toBe(false);
+    },
+  );
 
   it.each([2, 3] as const)(
     "accepts only exact generation %s dialect-aware credential binding sets",

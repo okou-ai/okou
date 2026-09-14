@@ -62,7 +62,7 @@ socket but cannot guarantee the remote process stopped.
 ## Managed sessions within one Run
 
 #33464 adds `ssh.session.start/list/read/status/write/signal/close` as opaque
-version-1 RPC methods. Each request is still short and owns its guest stream
+version-1 RPC methods. Each request is bounded and owns its guest stream
 only until its response. Each active session exclusively owns a verified,
 authenticated SSH transport, which may be reused after an earlier channel ended.
 
@@ -85,13 +85,38 @@ socket work retains its original session permit until actual cleanup. These host
 resources never own guest I/O or a guest park reservation. Run end invalidates
 all IDs; a later Run cannot reattach to an earlier session.
 
-`read` takes `sessionId` and a nonnegative byte `cursor`. It immediately returns
-tagged standard-base64 chunks, a `next_cursor`, and session status including
+`read` requires `sessionId`, a nonnegative byte `cursor`, `waitMs` (0–30000),
+`maxBytes` (1–8192), and `maxChunks` (1–32). It returns tagged standard-base64
+chunks, `wait_expired`, a `next_cursor`, and session status including
 `oldest_cursor` and `end_cursor`. Reads do not consume data. Output retention is
 bounded by 1 MiB and 256 chunks of at most 4 KiB per session. Old chunks are
 discarded; reading behind the retained prefix returns `lost: {from, to}`. A read
-returns at most 8 KiB and 32 chunks, fitting one existing 24 KiB RPC frame.
+returns up to the requested byte/chunk bounds, fitting one existing 24 KiB RPC frame.
 Stdout and stderr share one cursor; their observed interleaving is preserved.
+
+Ready output, a lost prefix, or a terminal state returns immediately. Otherwise
+the request waits for output/terminal notification until its wait deadline.
+`wait_expired` is true only for a positive wait expiring without such progress;
+it is not a remote failure. A notification future is registered before reading
+the locked snapshot and publishers wake all readers after updating it. No data
+lock survives an await. Retained terminal output is not subjected to the expired
+process deadline again. Run cancellation, entry retirement and access
+invalidation interrupt waiting under the existing RPC scope.
+
+Two nonblocking per-Run permits bound quiet waiting readers, leaving other short
+operation slots available for status, input, signals and close. Extra waiters
+fail with `resource_exhausted`. These waits retain their guest stream and park
+reservation only for the bounded request, never for the SSH session lifetime.
+Generic guest half-close is not a cancellation protocol: an abandoned quiet
+reader can retain these resources until its wait expires (at most 30 seconds
+plus bounded terminal reserve). It does not stop the remote process.
+
+The CLI aggregates verified pages within its own byte/chunk/request/time budgets;
+only the first page may wait. Its `lost` array, `stop_reason`, continuation and
+nullable last observation are CLI-owned, not generic RPC framing. See
+[session reading](ssh-access.md#long-commands-and-persistent-shells).
+The staff-gated read contract replaces the old parameter defaults and payload;
+there is no old-reader fallback or mixed-version reader rollout for this change.
 
 `write` accepts `sessionId`, canonical `dataBase64` (at most 16 KiB decoded) and
 optional `eof`. Empty input requires EOF. One bounded eight-item queue serializes
@@ -115,6 +140,66 @@ value. A one-shot authentication/trust/configuration failure that evicts a share
 snapshot also retires sessions using that snapshot. The documented
 missed-notification window still applies; close/revocation
 does not guarantee remote process-tree termination.
+
+## File RPCs
+
+#33857 adds `ssh.file.upload` and `ssh.file.download` using the opt-in binary
+[RPC stream](runner-rpc-transport.md#opt-in-binary-streaming-foundation).
+Upload params are exactly `{sshConnectionId, remotePath, size, overwrite}`;
+download params are exactly `{sshConnectionId, remotePath}`. IDs are hyphenated
+UUIDs and paths are bounded literal UTF-8 (4096 bytes, no NUL or empty/dot final
+component). No Runner-local path or caller-supplied authority is accepted.
+
+Only these validated methods extend the helper work envelope to at most 900,000
+ms; initial request and connection/SFTP setup retain their 60-second bounds.
+Two Run-local transfer permits cover active transfer and owned staging cleanup,
+within the existing eight RPC and 24 physical limits. A two-second reserve
+bounds cleanup and final reporting. Retained notification-backed authority is
+required, including uncached watchers at cache saturation. Delivered
+invalidation, observed notification disconnect and Run/sandbox end interrupt
+the whole operation. File channels always retire their exclusive pool lease.
+
+A private sequential SFTP v3 client requests only the `sftp` subsystem after
+authentication. It has one outstanding request, monotonically checked IDs,
+32 KiB data chunks, a 64 KiB maximum packet checked before allocation, and
+bounded fields, attributes, extensions and opaque byte handles. Failed/partial
+exchanges are never resumed. Server status diagnostics are discarded; v3's
+generic failure remains `file_operation_failed` when a more precise reason is
+not available. There are no detached SFTP tasks or unbounded request queues.
+
+Upload accepts exact announced bytes plus End, hashes the stream, verifies
+staging attributes and close, then publishes atomically. Download checks source
+lstat/open/fstat, streams and hashes bytes, verifies EOF/count/final attributes,
+then returns End and a typed result. A failed download after Data still emits
+End before its failed result; this is not business success. The Runner's
+download result has `effects: not_started`; only the CLI can assert completed
+local publication. Upload `effects` tracks acknowledged remote publication.
+See [file semantics and limits](ssh-access.md#file-upload-and-download).
+After half-closing a terminal response, the Runner drains pending input within
+the same short reporting budget to avoid resetting the native vsock bridge
+before an early rejection reaches the guest. The CLI stops writing on closed
+input but still requires a validated terminal, EOF and helper exit.
+
+File failures add `invalid_path`, `file_too_large`, `transfer_limit`, `path_not_found`,
+`permission_denied`, `destination_exists`, `not_regular_file`, `source_changed`,
+`subsystem_unavailable`, `unsupported_operation` and `file_operation_failed`.
+The CLI additionally classifies local I/O, invalid paths and missing helpers.
+Missing extensions fail before staging writes. Lost creation/publication ACKs
+leave explicit possible residue; only the same healthy channel cleans its
+acknowledged private staging. Authenticated file-operation failures remain
+successful connection observations, not connectivity warnings.
+
+Runner and helper ship together. Older CLIs retain exec/session behavior; a new
+CLI receiving an unsupported helper/method fails explicitly, without a legacy
+file path. The existing `sshAccess` staff gate applies, with no extra switch,
+schema, credential or grant. Tests enter the actual dispatcher through a real
+SSH peer and temporary filesystem. Run the independent OpenSSH lane explicitly
+where `/usr/lib/openssh/sftp-server` is installed:
+
+```sh
+cargo test --manifest-path crates/Cargo.toml --profile local -p runner --bin runner \
+  ssh::tests::files::openssh_server_interoperability -- --ignored --exact
+```
 
 ## Idle connection reuse
 

@@ -195,6 +195,90 @@ raises the frontend compatibility floor, rolling the frontend below that floor
 also requires rolling back the backend floor. Rolling the backend back to the
 dual-protocol preparation release remains safe for canonical clients.
 
+#### Instagram nullable views
+
+Instagram stats accepts provider `views` as a nonnegative integer, null, or
+omitted. New CLI packages send `x-okou-instagram-views: nullable` on stats
+requests so explicit null survives through inspection output. Zero is a verified
+count; null is unavailable and is never converted to zero. The optional
+`requireViews` input requests the provider's bounded recovery. Its documented
+missing-view HTTP 503 returns without managed billing or automatic retries.
+
+The API retains the old response format for callers without that header: only
+explicit null views are omitted, preserving engagement, author data, extensions,
+and numeric zero. This projection applies to session/PAT and agent/sandbox
+requests, alongside the existing provider-identity redaction boundary.
+
+- Old CLI -> new API: unchanged requests receive numeric or omitted views,
+  which the pinned older reader accepts. This legacy format cannot distinguish
+  unavailable null from an originally omitted field.
+- New CLI -> new API: null, omitted, zero, and positive views stay distinct.
+- New CLI -> old API: the additional header does not change the old request
+  body. Numeric/omitted successes remain readable; the old API can still reject
+  provider null. The new strict input is rejected before provider I/O until the
+  supporting API is deployed. Deploy that API before selecting the new package.
+
+Keep the old response projection until the backend selects a capable
+commit-addressed CLI artifact and the maximum queue, execution, and finalization
+lifetimes have passed. Confirm no pre-deployment context or supported external
+caller still depends on the old format before removing it in a later release.
+CLI semantic versions and runner binary drain alone are insufficient evidence.
+Removal is tracked in [#34047](https://github.com/vm0-ai/vm0/issues/34047).
+
+### Instagram search collection limits
+
+Instagram Reels Search exposes one anonymous batch of up to 12 results. The
+request accepts only page 1 and a query of at most 100 characters after trimming.
+Keyword, hashtag and encoded leading-hash inputs share normalization. The CLI's
+request preserves case because Unicode case folding can expand a validated
+100-character input; the provider performs its documented lowercase conversion.
+The CLI's `--limit` truncates returned items locally; it does not request more
+source coverage or forward the OpenAPI's unbounded `limit` parameter.
+
+Search responses retain the existing `provider_limited` collection state and
+`provider_ceiling` reason, adding optional
+`sourceLimit: { kind: "single_batch", maxItems: 12 }`. Empty and short batches,
+including `hasMore: false`, do not establish exhaustive search. The provider's
+`count` describes the batch and is not a reported global total.
+
+Retained CLI response schemas accept these existing discriminants and ignore
+the new optional field. Current CLI public projection also applies the fixed
+source limit to older API responses, including `complete` and page-2 `more`
+metadata, so it never follows the unsupported continuation. Aggregate and
+streamed terminal output preserve the source limit; `callerLimited` independently
+records whether the fetched batch was trimmed. `status: complete` still means
+the caller's requested count was satisfied, while collection state describes
+source completeness. Unsatisfied source-limited requests remain partial.
+
+No response variant is retired and no CLI drain, schema migration, or release
+floor change is required. Rolling back the API retains request compatibility
+for the current CLI; it does not restore pagination in that CLI.
+Remove the old-API metadata projection and its compatibility-only tests after
+every serving API and retained rollback target emits the canonical source limit;
+[issue #34053](https://github.com/vm0-ai/vm0/issues/34053) owns that removal gate.
+
+### Pi Gen1 wire-field retirement
+
+[#33966](https://github.com/vm0-ai/vm0/issues/33966) removes only the optional
+Gen1 `piModelConfig.api` field. Slice 1
+[#32632](https://github.com/vm0-ai/vm0/pull/32632) stopped writing it while keeping
+readers tolerant. The [September 14 controller receipt](https://github.com/vm0-ai/vm0/issues/31085#issuecomment-5660026283)
+accepted the writer-cutoff release, supported rollback targets, executable
+context census, retained callers and Runner/Sandbox/CLI drain. Its
+[dispatch admission](https://github.com/vm0-ai/vm0/issues/33966#issuecomment-5660179289)
+reconciled all 17 Pi runs among 50 nonterminal runs and both empty queues. These
+are dated complete observations, not current counters.
+
+Old cutoff-safe writers and new readers share the field-absent Gen1 shape;
+new writers remain readable by the retained cutoff-safe readers. Strict
+TypeScript boundaries reject a Gen1 object containing `api`. Rust keeps its
+existing general unknown-field policy, discarding unknown fields during decode;
+the generated Gen1 DTO no longer represents, emits or retains this key. Gen1
+itself, Gen2/3/4, active subscription dialects and upstream Pi `Model.api` are
+unchanged. No stored context rewrite, migration, backfill or rollback-floor
+change is required or included. Parent #31085 still owns independent acceptance,
+release and final production verification.
+
 ### Pi native session history
 
 Pi checkpoint persistence shares the Runner's 128 MiB raw and encoded history
@@ -615,6 +699,60 @@ existing admin requirements. It does not change usage-pack balances or purchase
 eligibility. Further legacy-column retirement remains tracked in
 [issue #32575](https://github.com/vm0-ai/vm0/issues/32575).
 
+#### Invitation and Free-member contract cleanup (2026-09-14)
+
+The Free-member API and App shipped in commit
+`b8b18c4aed6a054791b7a3a5209ad7a6112c4217` (#32573). Release
+`3d58eaa4609967a4f655f7cd61d0d7cd454ba2a1` contains that commit and promoted
+API 1.575.2 at 2026-09-09 09:48:46 UTC and App 0.873.0 at 09:50:38 UTC.
+The [App promotion log](https://github.com/vm0-ai/vm0/actions/runs/34335229479/job/102417989571)
+verifies that exact artifact SHA, rather than a moving deployment SHA. App
+0.873.0 uses billing `status` for invitations and accepts an empty all-Free
+migration configuration. It ignores `memberInvitationAllowed` when `status`
+is present.
+
+The later [API promotion](https://github.com/vm0-ai/vm0/actions/runs/34794788803/job/103826080723)
+and [App promotion](https://github.com/vm0-ai/vm0/actions/runs/34794788803/job/103826582194)
+of `826d131351049b7f35f45cad577618e01b231544` succeeded on 2026-09-14 at
+01:11:42 and 01:13:20 UTC. The App log verifies the 0.893.7 artifact at that
+SHA. Both the serving release and the existing enforced API rollback floor
+`669d0befc9a181e44e3f1f9e39093efddabcc0f8` descend from #32573. Those API
+readers use `status` and `show_usage_pack`, and their catalog and management
+responses always advertise `supportsFreeMembers: true`.
+
+This cleanup raises the App floor from 0.857.0 to the already-live 0.873.0,
+removes the derived `memberInvitationAllowed` response alias, requires explicit
+Free-member support, and removes paid-only catalog/management fallbacks. The
+API returns all-Free migration configuration without requiring an opt-in. The
+App's existing migration query opt-in remains necessary when it reaches a
+supported rollback API; keep the query and its contract until every supported
+API returns configuration unconditionally. The general floor's existing
+handling of missing/unparseable versions and other client types is unchanged.
+
+All application entitlement access now uses `runtime/org-plan-entitlement`.
+That mapping excludes both old invitation columns from INSERT, SELECT and
+RETURNING, and the canonical writer stops mirroring `show_usage_pack` into
+`member_invite_usage_pack_required`. The migration-only schema declarations,
+physical columns, status-mirror trigger/function and transition validator stay
+in place. Removing them in this same release would break outgoing API SQL
+between migration and promotion. No schema migration or rollback-floor change
+is part of this preparation release.
+
+To finish #32575 after this API is released:
+
+1. Record its successful production promotion and outgoing API drain. Enforce
+   a supported rollback floor that contains the canonical-only runtime mapping
+   and unconditional migration response; the existing floor is insufficient.
+2. Generate the column-drop migration with Drizzle. Audit persisted SQL first,
+   including `ensure_legacy_org_metadata_plan_entitlement`, then drop both
+   legacy columns and the invitation status-mirror trigger/function. Update
+   their exact inventory entries. Coordinate the overlapping trigger with
+   #33747; unrelated triggers are outside #32575.
+3. Remove the App migration query opt-in and contract. Retire the invitation
+   transition validator only after its contraction has shipped and permanent
+   coverage retains active Free invitations, suspended direct/paid rejection,
+   admin authorization, reactivation and explicit `showUsagePack: false`.
+
 ### Workflow automation connector-account projections
 
 Connector-backed workflow event automations persist account authority in an
@@ -949,8 +1087,8 @@ release process.
 
 The new API can load the old confidential-client catalog. Its capability
 filter hides only the incompatible PostHog OAuth method until the companion
-catalog is published; the personal API-key method remains available. The
-existing PostHog OAuth feature switch still controls exposure.
+catalog is published; the personal API-key method remains available. PostHog
+OAuth is available to all users when its catalog method is compatible and visible.
 
 OAuth storage version 2 adds the account's region and API base URL and changes
 the client identity. Version 1 OAuth accounts must reconnect through the

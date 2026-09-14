@@ -1,5 +1,5 @@
 diff --git a/dist/core/agent-session.d.ts b/dist/core/agent-session.d.ts
-index 89f96e8..c2305bf 100644
+index 89f96e8769496a952cbf29efded4dd52b7eaad97..c2305bfcf6d1e261bcdba93540c0257906dcc8f7 100644
 --- a/dist/core/agent-session.d.ts
 +++ b/dist/core/agent-session.d.ts
 @@ -345,6 +345,8 @@ export declare class AgentSession {
@@ -12,7 +12,7 @@ index 89f96e8..c2305bf 100644
      private _handlePostAgentRun;
      /**
 diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
-index 66e874e..0362807 100644
+index 66e874efd252470d00d3cdaad2e2b4b6121de15b..036280769abdf81d6f7068396c70f7446ff51801 100644
 --- a/dist/core/agent-session.js
 +++ b/dist/core/agent-session.js
 @@ -271,7 +271,8 @@ export class AgentSession {
@@ -295,15 +295,8 @@ index 66e874e..0362807 100644
          }
          catch {
              // Aborted during sleep - emit end event so UI can clean up
-@@ -2828,4 +2873,4 @@ export class AgentSession {
-         return this._extensionRunner;
-     }
- }
--//# sourceMappingURL=agent-session.js.map
-\ No newline at end of file
-+//# sourceMappingURL=agent-session.js.map
 diff --git a/dist/core/tools/bash.d.ts b/dist/core/tools/bash.d.ts
-index c3d9348..dd2b935 100644
+index c3d9348029445772f711a923b1f1b01aa20f8acc..dd2b9351fefe1ed85be028adf654ab78108950b2 100644
 --- a/dist/core/tools/bash.d.ts
 +++ b/dist/core/tools/bash.d.ts
 @@ -30,6 +30,8 @@ export interface BashOperations {
@@ -316,7 +309,7 @@ index c3d9348..dd2b935 100644
          timeout?: number;
          env?: NodeJS.ProcessEnv;
 diff --git a/dist/core/tools/bash.js b/dist/core/tools/bash.js
-index b71057d..187a008 100644
+index b71057ddcf98b8500371f7b91f8ca10f52e7a78d..f37476dd73901eafc27c08efabef3d67eebcacc3 100644
 --- a/dist/core/tools/bash.js
 +++ b/dist/core/tools/bash.js
 @@ -34,7 +34,7 @@ export const bashToolSystemPromptContribution = {
@@ -486,7 +479,7 @@ index b71057d..187a008 100644
                  return snapshot;
              };
              const formatOutput = (snapshot, emptyText = "(no output)") => {
-@@ -236,37 +268,48 @@ export function createShellToolDefinition(cwd, config, options) {
+@@ -236,37 +268,53 @@ export function createShellToolDefinition(cwd, config, options) {
              };
              const appendStatus = (text, status) => `${text ? `${text}\n\n` : ""}${status}`;
              try {
@@ -529,7 +522,13 @@ index b71057d..187a008 100644
                  const snapshot = await finishOutput();
 +                execution.signal.throwIfAborted();
                  const { text: outputText, details } = formatOutput(snapshot);
-                 if (exitCode !== 0 && exitCode !== null) {
+-                if (exitCode !== 0 && exitCode !== null) {
++                // Upstream: https://github.com/earendil-works/pi/issues/9577
++                // Once this coding-agent path is fixed, upgrade Pi and remove this signal-result workaround.
++                if (exitCode === null) {
++                    throw new Error(appendStatus(outputText, "Command terminated by signal"));
++                }
++                if (exitCode !== 0) {
                      throw new Error(appendStatus(outputText, `Command exited with code ${exitCode}`));
                  }
                  return { content: [{ type: "text", text: outputText }], details };
@@ -557,7 +556,7 @@ index b71057d..187a008 100644
          },
          ...createShellRenderers(config.prompt),
 diff --git a/dist/core/tools/output-accumulator.d.ts b/dist/core/tools/output-accumulator.d.ts
-index fbd581f..6ecae28 100644
+index fbd581f6067c98771dc6a29272a5bab2b2653dcd..6ecae286e90e6d2008ea1c8a77526f4589fe4f80 100644
 --- a/dist/core/tools/output-accumulator.d.ts
 +++ b/dist/core/tools/output-accumulator.d.ts
 @@ -3,6 +3,7 @@ export interface OutputAccumulatorOptions {
@@ -590,7 +589,7 @@ index fbd581f..6ecae28 100644
      private appendDecodedText;
      private trimTail;
 diff --git a/dist/core/tools/output-accumulator.js b/dist/core/tools/output-accumulator.js
-index 7241668..293d1f1 100644
+index 72416680b6307108ffeace36e45fa7076cc8b7e5..293d1f1509c95505c3c5ac2371eb3df9a55df038 100644
 --- a/dist/core/tools/output-accumulator.js
 +++ b/dist/core/tools/output-accumulator.js
 @@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
@@ -716,7 +715,7 @@ index 7241668..293d1f1 100644
      }
  }
 diff --git a/dist/utils/child-process.d.ts b/dist/utils/child-process.d.ts
-index c75b42d..a554d3e 100644
+index c75b42d9d43a0ef9000277b4ef5426443eab9a3e..a554d3e4ef12363dc903f366abb0143d68d7c950 100644
 --- a/dist/utils/child-process.d.ts
 +++ b/dist/utils/child-process.d.ts
 @@ -14,5 +14,5 @@ export declare function spawnProcessSync(command: string, args: string[], option
@@ -728,7 +727,7 @@ index c75b42d..a554d3e 100644
  //# sourceMappingURL=child-process.d.ts.map
 \ No newline at end of file
 diff --git a/dist/utils/child-process.js b/dist/utils/child-process.js
-index 48e5724..fcdd8fe 100644
+index 48e5724c50f719449e4ef4e20f3497eed779ae35..fcdd8fef93006ff9cc45ecf653127af203cbbb88 100644
 --- a/dist/utils/child-process.js
 +++ b/dist/utils/child-process.js
 @@ -20,7 +20,7 @@ export function spawnProcessSync(command, args, options) {
@@ -806,7 +805,7 @@ index 48e5724..fcdd8fe 100644
  //# sourceMappingURL=child-process.js.map
 \ No newline at end of file
 diff --git a/dist/utils/photon.js b/dist/utils/photon.js
-index 3078895..d67667b 100644
+index 3078895bedba898ce26c439b6123425834ca2586..d67667b307af07c5a001efd5f1f5849a8cba8e6a 100644
 --- a/dist/utils/photon.js
 +++ b/dist/utils/photon.js
 @@ -105,7 +105,8 @@ export async function loadPhoton() {

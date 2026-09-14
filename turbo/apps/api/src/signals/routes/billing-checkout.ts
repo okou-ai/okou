@@ -33,7 +33,7 @@ import {
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { requestSignal$ } from "../context/hono";
-import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
+import { bodyResultOf, pathParamsOf } from "../context/request";
 import {
   clerk$,
   createClerkReadContext,
@@ -1243,7 +1243,7 @@ async function usagePackMigrationSchemasAvailable(
 }
 
 const usagePackMigrationGetAuthed$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  async ({ set }, signal: AbortSignal) => {
     const access = await set(usagePackManagementAccess$, signal);
     if (!access.allowed) {
       return access.response;
@@ -1261,20 +1261,9 @@ const usagePackMigrationGetAuthed$ = command(
     if (result.status === "conflict") {
       return conflict("Another subscription update is in progress");
     }
-    const query = get(queryOf(billingUsagePackMigrationContract.get));
-    // Loaded browsers require at least one paid selection in configuration.
-    // Preserve their optional-field response until they opt in to Free members.
-    const configuration = result.state.configuration;
     return {
       status: 200 as const,
-      body: {
-        ...result.state,
-        configuration:
-          configuration?.memberUsagePacks.length === 0 &&
-          !query?.supportsFreeMembers
-            ? undefined
-            : configuration,
-      },
+      body: result.state,
     };
   },
 );

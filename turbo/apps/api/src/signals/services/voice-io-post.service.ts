@@ -1119,6 +1119,7 @@ export const recordGeneratedSpeech$ = command(
 
     await writeDb.insert(usageEvent).values({
       runId: params.runId ?? null,
+      billingContext: params.runId ? "run" : "runless",
       idempotencyKey: randomUUID(),
       orgId: params.orgId,
       userId: params.userId,

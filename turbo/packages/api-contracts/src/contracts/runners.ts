@@ -14,10 +14,7 @@ import {
 } from "@okouai/connectors/firewall-contracts";
 import { connectorSlugSchema } from "./connector-identity";
 import { apiErrorSchema } from "./errors";
-import {
-  MODEL_PROVIDER_PI_APIS,
-  modelProviderCodexRuntimeConfigSchema,
-} from "./model-providers";
+import { modelProviderCodexRuntimeConfigSchema } from "./model-providers";
 import {
   CANONICAL_GUEST_HOME_DIR,
   CANONICAL_WORKING_DIR,
@@ -1010,11 +1007,6 @@ export const piModelConfigLegacySchema = z
     // organization-configured model provider gateway.
     model: z.string().min(1),
     catalogModel: z.string().min(1).optional(),
-    // Current Gen1 writers omit api. Retained API/Runner/CLI payloads and stored
-    // contexts may still carry any historical value; readers normalize them to
-    // public Responses. Remove only after the release, rollback, complete-cohort
-    // census and drain gates in #31085 pass.
-    api: z.enum(MODEL_PROVIDER_PI_APIS).optional(),
     thinkingLevel: z
       .enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
       .optional(),

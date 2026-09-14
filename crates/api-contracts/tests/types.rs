@@ -202,7 +202,6 @@ fn generated_pi_runtime_configs_round_trip_full_wire_shapes() {
         base_url: "https://api.deepseek.com/".to_string(),
         model: "deepseek-v4-flash".to_string(),
         catalog_model: None,
-        api: None,
         thinking_level: None,
         service_tier: None,
         api_key_env: PiModelConfigApiKeyEnv::OPENAIAPIKEY,
@@ -250,7 +249,7 @@ fn generated_pi_runtime_configs_round_trip_full_wire_shapes() {
         model
     );
 
-    // Stored Gen1 payloads from before the writer cutoff remain readable.
+    // Unknown wire fields keep serde's existing policy: discard them on decode.
     for api in [
         "openai-responses",
         "openai-completions",
@@ -258,15 +257,18 @@ fn generated_pi_runtime_configs_round_trip_full_wire_shapes() {
     ] {
         let mut legacy_value = serde_json::to_value(&model).unwrap();
         legacy_value["api"] = json!(api);
-        let legacy: PiModelConfig = serde_json::from_value(legacy_value.clone()).unwrap();
-        assert_eq!(serde_json::to_value(legacy).unwrap(), legacy_value);
+        let decoded: PiModelConfig = serde_json::from_value(legacy_value).unwrap();
+        assert_eq!(decoded, model);
+        assert_eq!(
+            serde_json::to_value(decoded).unwrap(),
+            serde_json::to_value(&model).unwrap()
+        );
     }
 
     let priority_model_value = json!({
         "provider": "openai",
         "baseUrl": "https://api.openai.com/v1",
         "model": "gpt-5.6-terra",
-        "api": "openai-responses",
         "thinkingLevel": "low",
         "serviceTier": "priority",
         "apiKeyEnv": "OPENAI_API_KEY",

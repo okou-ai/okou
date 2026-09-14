@@ -353,6 +353,7 @@
       "feishu": "Feishu",
       "github": "GitHub",
       "goal": "Tujuan",
+      "lark": "Lark",
       "slack": "Slack",
       "teams": "Teams",
       "telegram": "Telegram",
@@ -1007,7 +1008,12 @@
     "toasts": {
       "copyLinkFailed": "Gagal menyalin tautan",
       "downloadFailed": "Gagal mengunduh",
-      "linkCopied": "Tautan disalin"
+      "linkCopied": "Tautan disalin",
+      "sharing": "Membagikan…"
+    },
+    "viewer": {
+      "continuePrompt": "Bantu saya mengerjakan artefak ini: {{url}}",
+      "continueWithBrand": "Lanjutkan dengan {{brandName}}"
     }
   },
   "auth": {
@@ -1741,14 +1747,9 @@
       "selectModel": "Pilih model",
       "slashPanel": {
         "browseAll": "Jelajahi semua templat",
-        "illustrationDescription": "Satu gambar, dengan gaya yang Anda pilih",
         "make": "Buat",
-        "slidesDescription": "Salindia HTML yang siap dipresentasikan",
         "templateCount_other": "{{count}} templat",
-        "useTemplate": "Gunakan templat {{title}}",
-        "videoDescription": "Teks menjadi video, dengan parameter dari model yang dipilih",
-        "websiteDescription": "Situs statis yang bisa Anda terbitkan",
-        "workflowDescription": "Alur kerja tersimpan yang bisa dijalankan dari komposer"
+        "useTemplate": "Gunakan templat {{title}}"
       },
       "temporarilySwitchTo": "Beralih sementara ke",
       "threadSuggestions": "Thread chat",
@@ -1992,9 +1993,11 @@
       "agentphone": "AgentPhone",
       "feishu": "Feishu",
       "github": "GitHub",
+      "lark": "Lark",
       "openChat": "Buka chat",
       "openFeishuChat": "Buka chat asli di Feishu",
       "openGithubMessage": "Buka masalah atau pull request asli di GitHub",
+      "openLarkChat": "Buka chat asli di Lark",
       "openMessage": "Buka pesan",
       "openSlackMessage": "Buka pesan asli di Slack",
       "openTeamsMessage": "Buka pesan asli di Microsoft Teams",
@@ -2789,6 +2792,11 @@
         "website": "Situs web",
         "workflow": "Alur kerja"
       },
+      "importedEmpty": "Belum ada templat yang diunggah.",
+      "importedLoadFailed": "Tidak dapat memuat templat yang diunggah.",
+      "importedLoading": "Memuat templat yang diunggah…",
+      "importedUnavailable": "Templat yang diunggah untuk sementara tidak tersedia.",
+      "previewRefreshFailed": "Tidak dapat memperbarui pratinjau templat.",
       "previewTemplate": "Pratinjau template {{title}}",
       "previewVideo": "Pratinjau template video {{title}}",
       "previewWebsite": "Pratinjau template situs web {{title}}",
@@ -2797,8 +2805,11 @@
       "removeVideo": "Hapus template video {{title}}",
       "removeWebsite": "Hapus template situs web {{title}}",
       "removeWorkflow": "Hapus template alur kerja {{title}}",
+      "retry": "Coba lagi",
       "videoOptions": "Opsi video",
       "videoOptionsAudio": "Hasilkan audio",
+      "videoOptionsAudioOff": "Audio nonaktif",
+      "videoOptionsAudioOn": "Audio aktif",
       "videoOptionsDuration": "Durasi",
       "videoOptionsLabel": "Opsi video {{spec}}",
       "videoOptionsModel": "Model",
@@ -3117,9 +3128,11 @@
       "scope": {
         "aria": "Cakupan konektor",
         "attention": "Perlu perhatian",
+        "connected": "Terhubung",
+        "custom": "Kustom",
         "discover": "Jelajahi",
-        "mine": "Konektor Anda",
-        "searchMine": "Cari konektor Anda"
+        "searchConnected": "Cari konektor yang terhubung",
+        "searchCustom": "Cari konektor kustom"
       },
       "search": "Cari konektor",
       "shelf": {
@@ -3403,6 +3416,9 @@
         "wrongOrganizationDescription": "Organisasi aktif Anda tidak cocok dengan instalasi GitHub ini. Pindah ke organisasi yang benar dan buka tautannya lagi.",
         "wrongOrganizationTitle": "Pindah organisasi"
       },
+      "lark": {
+        "connectTitle": "Hubungkan ke Lark"
+      },
       "slack": {
         "connectDescription": "Tautkan akun Anda ke workspace Slack ini agar Anda dapat berinteraksi dengan agen Anda langsung dari Slack.",
         "connectTitle": "Hubungkan ke Slack",
@@ -3657,6 +3673,12 @@
           "verifying": "Memverifikasi…",
           "waiting": "Menunggu callback"
         },
+        "toasts": {
+          "botInstalled": "Bot Feishu berhasil diinstal",
+          "botUninstalled": "Bot Feishu di-uninstall",
+          "connected": "Feishu berhasil terhubung",
+          "disconnected": "Terputus dari Feishu"
+        },
         "tokens": {
           "descriptionAfter": ", pilih aplikasi yang baru saja Anda buat, lalu buka halaman konfigurasinya. Buka Event Configuration → Encryption Strategy, lalu salin Encrypt Key dan Verification Token.",
           "descriptionBefore": "Buka ",
@@ -3668,6 +3690,136 @@
         "uninstallDescription": "Ini akan meng-uninstall {{bot}} dari ruang kerja dan memutus semua akun {{brandName}} yang menggunakannya. Tindakan ini tidak dapat dibatalkan.",
         "uninstallTargetFallback": "bot ini",
         "uninstallTitle": "Uninstall bot Feishu?"
+      },
+      "lark": {
+        "addBot": "Tambahkan bot",
+        "addDialogDescription": "Buat aplikasi kustom enterprise, aktifkan bot-nya, dan selesaikan langkah-langkah ini di konsol developer Lark.",
+        "addDialogTitle": "Tambahkan bot Lark",
+        "agentDescription": "Pilih agen yang harus menangani pesan yang dikirim ke bot ini.",
+        "backToIntegrations": "Kembali ke integrasi",
+        "botFallback": "Bot Lark",
+        "botIconAlt": "Ikon bot {{bot}}",
+        "bots": "Bot Lark",
+        "callbackStatusVerified": "Callback terverifikasi",
+        "callbackStatusWaiting": "Menunggu callback",
+        "configured": "Terkonfigurasi",
+        "copied": "{{label}} disalin",
+        "copy": "Salin",
+        "create": {
+          "descriptionAfter": ", buat aplikasi kustom enterprise dengan nama dan ikon yang Anda pilih, lalu tambahkan kemampuan Bot.",
+          "descriptionBefore": "Di ",
+          "downloadIcon": "Unduh ikon {{brandName}} opsional",
+          "iconAlt": "Ikon aplikasi {{brandName}} opsional",
+          "iconHint": ", atau gunakan ikon apa pun yang Anda suka.",
+          "iconTitle": "Ikon aplikasi {{brandName}} opsional",
+          "imageAlt": "Formulir pembuatan aplikasi Feishu dengan nama aplikasi, ikon, dan tombol Create disorot",
+          "title": "Buat aplikasi kustom enterprise"
+        },
+        "credentials": {
+          "appId": "ID Aplikasi",
+          "appSecret": "Rahasia Aplikasi",
+          "description": "Salin App ID dan App Secret dari Credentials & Basic Information.",
+          "imageAlt": "Hasil pembuatan aplikasi Feishu yang menunjukkan tempat menemukan App ID dan App Secret",
+          "title": "Tambahkan kredensial aplikasi"
+        },
+        "defaultAgent": "Agen default",
+        "defaultAgentAria": "Agen default untuk {{appId}}",
+        "developerConsole": "Konsol developer Lark",
+        "dialogAdminRequired": "Admin organisasi harus mengonfigurasi aplikasi. Anda dapat menghubungkan akun Anda sendiri dari daftar bot Lark setelah penyiapan selesai.",
+        "documentTitle": "Lark",
+        "emptyAdmin": "Tambahkan aplikasi kustom untuk mengarahkan pesan Lark ke agen.",
+        "emptyMember": "Minta admin organisasi menambahkan bot Lark.",
+        "emptyTitle": "Belum ada bot Lark",
+        "events": {
+          "callbackLabel": "URL callback",
+          "continue": "Lanjutkan setelah Lark memverifikasi URL callback dan event pesan dilanggan.",
+          "description": "Buka Event Configuration. Di bawah Subscription mode, pilih “Send notifications to developer's server”. Lalu buka Callback Configuration dan tempel URL callback. Setelah Lark memverifikasinya, tambahkan event “Receive message v1”.",
+          "requestAlt": "Layar Feishu Event Configuration dengan kolom Request URL disorot",
+          "requestLabel": "Tambahkan URL request callback",
+          "subscriptionAlt": "Layar Feishu Event Configuration dengan kontrol edit mode langganan disorot",
+          "subscriptionLabel": "Pilih mode langganan event",
+          "title": "Konfigurasikan pengiriman event"
+        },
+        "faq": {
+          "approvalAnswer": "Jika ketersediaan diatur ke All members, administrator Lark harus menyetujui rilisnya. Lark mengirim permintaan persetujuan ke administrator melalui pesan langsung, dan aplikasi tetap pending sampai administrator menyelesaikan peninjauan.",
+          "approvalQuestion": "Mengapa publikasi aplikasi menunggu persetujuan?",
+          "challengeAnswer": "Ini biasanya berarti Encrypt Key atau Verification Token yang disimpan selama langkah Tokens salah. Kembali ke langkah Tokens, masukkan lagi kedua nilai dari Event Configuration → Encryption Strategy, simpan, lalu coba lagi Request URL.",
+          "challengeQuestion": "Mengapa Lark menampilkan \"Challenge code didn't get a response\"?",
+          "title": "FAQ penyiapan"
+        },
+        "guideReference": "Tangkapan layar menggunakan konsol Feishu sebagai referensi. Ikuti langkah ini di Lark Developer Console.",
+        "loadError": "Tidak dapat memuat pengaturan Lark.",
+        "manage": "Kelola",
+        "manageDialogTitle": "Kelola bot Lark",
+        "moreOptions": "Opsi lainnya untuk {{bot}}",
+        "pageDescription": "Kelola perutean bot untuk ruang kerja ini",
+        "permissions": {
+          "description": "Di konsol developer Lark, buka Permissions & Scopes, pilih Batch Import/Export > Import, lalu tempel JSON di bawah. Tindakan ini mengimpor semua scope konektor terkelola di bawah User identity. Ini adalah izin minimum yang diperlukan agar integrasi berfungsi.",
+          "hint": "Pertahankan semua izin User identity yang diimpor, lalu buat dan publikasikan versi aplikasi baru agar layar persetujuan OAuth dapat memberikannya. Menghapus izin apa pun akan membuat integrasi tidak berfungsi, dan persetujuan administrator Lark mungkin diperlukan.",
+          "label": "JSON scope token pengguna",
+          "menuAlt": "Halaman Permissions & Scopes Feishu dengan menu Batch import/export scopes disorot",
+          "menuLabel": "Buka Batch import/export scopes",
+          "reviewAlt": "Dialog Batch import/export scopes Feishu dengan JSON yang diimpor dan tombol tinjau disorot",
+          "reviewLabel": "Tempel JSON dan tinjau scope baru",
+          "title": "Impor scope token pengguna"
+        },
+        "publish": {
+          "allMembersAlt": "Pengaturan ketersediaan Feishu dengan All members dipilih",
+          "allMembersLabel": "Buat aplikasi tersedia untuk semua anggota",
+          "createVersionAlt": "Halaman Feishu Version Management dengan tombol Create a version disorot",
+          "createVersionLabel": "Buat versi aplikasi",
+          "description": "Buat dan publikasikan versi aplikasi, lalu edit pengaturan ketersediaannya dan pilih All members. Aplikasi hanya dapat digunakan oleh anggota organisasi Anda setelah Anda memberi mereka akses.",
+          "editAvailabilityAlt": "Halaman detail versi Feishu dengan tindakan edit pengaturan ketersediaan disorot",
+          "editAvailabilityLabel": "Edit pengaturan ketersediaan",
+          "title": "Publikasikan aplikasi"
+        },
+        "redirect": {
+          "descriptionAfter": ", buka Development Configuration → Security Settings. Tambahkan URL di bawah ini di bawah Redirect URLs agar anggota ruang kerja dapat menghubungkan akun Lark mereka ke {{brandName}}.",
+          "descriptionBefore": "Di ",
+          "imageAlt": "Halaman Security Settings Feishu yang menunjukkan tempat menambahkan URL pengalihan OAuth",
+          "label": "URL pengalihan OAuth",
+          "title": "Konfigurasikan URL pengalihan OAuth"
+        },
+        "reviewGuide": "Tinjau panduan",
+        "reviewGuideDescription": "Tinjau langkah-langkah penyiapan yang telah selesai untuk bot Lark ini.",
+        "reviewGuideTitle": "Panduan tinjau Lark",
+        "routeDescription": "Arahkan pesan Lark ke agen",
+        "selectAgent": "Pilih agen",
+        "setupIncomplete": "Penyiapan belum selesai",
+        "steps": {
+          "back": "Kembali",
+          "checking": "Memeriksa…",
+          "close": "Tutup",
+          "create": "Buat",
+          "credentials": "Kredensial",
+          "done": "Selesai",
+          "events": "Event",
+          "next": "Berikutnya",
+          "permissions": "Scope",
+          "publish": "Publikasikan",
+          "redirect": "Alihkan",
+          "tokens": "Token",
+          "verify": "Verifikasi dan lanjutkan",
+          "verifying": "Memverifikasi…",
+          "waiting": "Menunggu callback"
+        },
+        "toasts": {
+          "botInstalled": "Bot Lark berhasil diinstal",
+          "botUninstalled": "Bot Lark di-uninstall",
+          "connected": "Lark berhasil terhubung",
+          "disconnected": "Terputus dari Lark"
+        },
+        "tokens": {
+          "descriptionAfter": ", pilih aplikasi yang baru saja Anda buat, lalu buka halaman konfigurasinya. Buka Event Configuration → Encryption Strategy, lalu salin Encrypt Key dan Verification Token.",
+          "descriptionBefore": "Buka ",
+          "encryptKey": "Encrypt Key",
+          "imageAlt": "Layar Strategi Enkripsi Feishu yang menampilkan Encrypt Key dan Verification Token",
+          "title": "Tambahkan token verifikasi event",
+          "verificationToken": "Verification Token"
+        },
+        "uninstallDescription": "Ini akan meng-uninstall {{bot}} dari ruang kerja dan memutus semua akun {{brandName}} yang menggunakannya. Tindakan ini tidak dapat dibatalkan.",
+        "uninstallTargetFallback": "bot ini",
+        "uninstallTitle": "Uninstall bot Lark?"
       },
       "telegram": {
         "addBot": "Tambahkan bot",
@@ -3747,10 +3899,6 @@
       "toasts": {
         "agentphoneConnected": "AgentPhone terhubung",
         "agentphoneDisconnected": "AgentPhone terputus",
-        "feishuBotInstalled": "Bot Feishu berhasil diinstal",
-        "feishuBotUninstalled": "Bot Feishu di-uninstall",
-        "feishuConnected": "Feishu berhasil terhubung",
-        "feishuDisconnected": "Terputus dari Feishu",
         "slackConnected": "Slack berhasil terhubung",
         "slackDisconnected": "Terputus dari Slack",
         "slackInstalled": "Slack berhasil diinstal",
@@ -5463,9 +5611,19 @@
         "categoryImage": "Gambar",
         "categoryVideo": "Video",
         "chatModels": "Model chat",
-        "effort": "Upaya penalaran",
+        "effort": "Upaya",
         "fast": "Cepat",
-        "fastImpact": "Kecepatan model 1,5× · penggunaan kredit 2,5×",
+        "fastImpact": {
+          "apiCost": "2× biaya token API",
+          "chatGptUsage": "2,5× penggunaan ChatGPT",
+          "fasterResponses": "Respons model lebih cepat",
+          "modelSpeed": "{{multiplier}}× kecepatan model",
+          "okouCredits": "2× kredit model Okou",
+          "providerSpeed": "Kecepatan bergantung pada penyedia",
+          "providerUsage": "Penggunaan bergantung pada penyedia",
+          "solApiSpeed": "Hingga 2,5× kecepatan model",
+          "summary": "{{speed}} · {{usage}}"
+        },
         "generationPriceTiers": {
           "higher": "Biaya lebih tinggi per generasi",
           "highest": "Biaya tertinggi per generasi",
@@ -5739,7 +5897,6 @@
         "emailOff": "Email nonaktif. Ringkasan tetap muncul di Chat.",
         "emailWhenReady": "Anda akan menerima email saat ringkasan siap.",
         "loading": "Memuat pengaturan Morning Brief...",
-        "missingDataSource": "Hubungkan Gmail, Google Kalender, GitHub, atau Slack untuk mulai menerima ringkasan.",
         "missingDefaultAgent": "Pilih Agent default yang dapat digunakan sebelum mengaktifkan Morning Brief.",
         "missingTimezone": "Tetapkan zona waktu yang valid sebelum mengaktifkan Morning Brief.",
         "multipleInstallations": "Ada beberapa instalasi Morning Brief. Selesaikan konflik sebelum mengubah preferensi ini.",
@@ -6753,6 +6910,9 @@
       "noWorkflows": "Tidak ada alur kerja",
       "open": "Buka {{title}}",
       "openRecovery": "Buka pemulihan {{title}}",
+      "ownerLoading": "Memuat penulis…",
+      "ownerRetry": "Penulis tidak tersedia. Buka kembali untuk mencoba lagi.",
+      "ownerUnavailable": "Penulis tidak tersedia",
       "runsAs": "Dijalankan sebagai",
       "runsAsAria": "Dijalankan sebagai {{agent}}",
       "section": {

@@ -21,6 +21,10 @@ import {
 } from "./common";
 import { validateConnectorCatalogPublicProjection } from "./public-leak";
 import { validateConnectorCatalogArtifact } from "./relationships";
+import {
+  ConnectorCatalogRelationshipError,
+  type ConnectorCatalogRelationshipRule,
+} from "./relationship-error";
 
 const ACTIVE_POINTER_MAX_BYTES = 16 * 1024;
 const CONNECTOR_CATALOG_MAX_GZIP_BYTES = CONNECTOR_CATALOG_MAX_RAW_BYTES * 2;
@@ -85,7 +89,10 @@ export interface ConnectorCatalogArtifactReader {
 }
 
 class ConnectorCatalogArtifactError extends Error {
-  constructor(readonly code: ConnectorCatalogValidationFailureCode) {
+  constructor(
+    readonly code: ConnectorCatalogValidationFailureCode,
+    readonly relationshipRule?: ConnectorCatalogRelationshipRule,
+  ) {
     super(code);
     this.name = "ConnectorCatalogArtifactError";
   }
@@ -99,8 +106,19 @@ export function connectorCatalogArtifactFailureCode(
     : undefined;
 }
 
-function fail(code: ConnectorCatalogValidationFailureCode): never {
-  throw new ConnectorCatalogArtifactError(code);
+export function connectorCatalogArtifactRelationshipRule(
+  value: unknown,
+): ConnectorCatalogRelationshipRule | undefined {
+  return value instanceof ConnectorCatalogArtifactError
+    ? value.relationshipRule
+    : undefined;
+}
+
+function fail(
+  code: ConnectorCatalogValidationFailureCode,
+  relationshipRule?: ConnectorCatalogRelationshipRule,
+): never {
+  throw new ConnectorCatalogArtifactError(code, relationshipRule);
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
@@ -214,7 +232,12 @@ function validateCatalogJson(args: {
         validateConnectorCatalogArtifact(artifact);
       });
       if (!("ok" in relationships)) {
-        fail("relationship-mismatch");
+        fail(
+          "relationship-mismatch",
+          relationships.error instanceof ConnectorCatalogRelationshipError
+            ? relationships.error.rule
+            : undefined,
+        );
       }
     },
   );

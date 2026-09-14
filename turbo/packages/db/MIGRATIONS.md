@@ -32,12 +32,28 @@ expired transition validator must be deleted.
 
 ### Active transition validators
 
+- `scripts/test-pi-candidate-trigger-retirement.ts` protects migration
+  `1121_retire_pi_candidate_reference_trigger` (#33975): original catalog
+  identity, single-snapshot candidate ownership, narrowly classified #33973
+  residuals, default timeouts, post-drop/journal rollback and content-free
+  migration receipts. Test-only B lock/decision coverage lives in the API
+  candidate accounting suite. Retain both until the contract migration has
+  shipped and the B rollback window is closed; permanent current-schema
+  trigger/function inventory and C ownership coverage remain.
+
 - `scripts/test-member-invitation-retirement.ts` protects migration
   `1098_retire_member_invitation_capability` (#32573). It checks removal of
   manual invitation overrides, legacy INSERT/UPSERT/RETURNING statements, and
   current status-only writes observed by old API readers. The physical column
   and derived-status trigger remain only for serving and rollback compatibility;
-  remove them with this validator after the gates in #32575 pass.
+  remove them with this validator after the gates in #32575 pass. The current
+  application uses a canonical-only runtime mapping and no longer mirrors the
+  legacy usage-pack column. The validator also exercises that mapping's real
+  insert, conflict update, select and returning on an isolated contracted table.
+  This is readiness coverage, not evidence that production contraction shipped;
+  retain the migration-only declarations and validator until the
+  [remaining release gates](../../../docs/deployment-compatibility.md#invitation-and-free-member-contract-cleanup-2026-09-14)
+  pass.
 
 - `scripts/test-pi-memory-checkpoint-settlement.ts` protects migration
   `1079_pi_memory_checkpoint_settlement` (#31937): real PostgreSQL checks exact

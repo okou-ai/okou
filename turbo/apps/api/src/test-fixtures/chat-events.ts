@@ -29,7 +29,6 @@ import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
 import { feishuOrgEvents } from "@okouai/db/schema/feishu-org-event";
 import { githubChatThreadRoutes } from "@okouai/db/schema/github-chat-thread-route";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
-import { runOutputLegacyPiEvents } from "@okouai/db/schema/run-output-legacy-pi-event";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { runOutputMemoryCitations } from "@okouai/db/schema/run-output-memory-citation";
 import { usageEvent } from "@okouai/db/schema/usage-event";
@@ -1818,6 +1817,7 @@ export async function holdOrgAdmissionLockFixture(args: {
   readonly release: () => void;
   readonly done: Promise<void>;
   readonly waiterCount: () => Promise<number>;
+  readonly cancelBlockedQueries: () => Promise<number>;
 }> {
   const started = createDeferredPromise<number>(args.signal);
   const released = createDeferredPromise<void>(args.signal);
@@ -1866,6 +1866,21 @@ export async function holdOrgAdmissionLockFixture(args: {
         waiterCountRowSchema,
       );
       return rows[0]?.waiterCount ?? 0;
+    },
+    // Force a real admission rollback, scoped to this fixture's held lock.
+    cancelBlockedQueries: async () => {
+      const rows = await executeRawRows(
+        db(),
+        sql`
+          SELECT pg_cancel_backend(activity.pid) AS cancelled
+          FROM pg_stat_activity AS activity
+          WHERE ${holderPid} = ANY(pg_blocking_pids(activity.pid))
+        `,
+        z.object({ cancelled: z.boolean() }),
+      );
+      return rows.filter((row) => {
+        return row.cancelled;
+      }).length;
     },
   };
 }
@@ -2570,34 +2585,6 @@ export async function readRunOutputMemoryCitationsFixture(runId: string) {
     .from(runOutputMemoryCitations)
     .where(eq(runOutputMemoryCitations.runId, runId))
     .orderBy(asc(runOutputMemoryCitations.sequenceNumber));
-}
-
-export async function readRunOutputLegacyPiEventsFixture(runId: string) {
-  return await db()
-    .select({
-      sequenceNumber: runOutputLegacyPiEvents.sequenceNumber,
-      serializedEvent: runOutputLegacyPiEvents.serializedEvent,
-    })
-    .from(runOutputLegacyPiEvents)
-    .where(eq(runOutputLegacyPiEvents.runId, runId))
-    .orderBy(asc(runOutputLegacyPiEvents.sequenceNumber));
-}
-
-export async function readRunOutputMaterializationFixture(runId: string) {
-  const [row] = await db()
-    .select({
-      processedThroughSequence:
-        runOutputMaterializations.processedThroughSequence,
-      pendingSequenceNumbers: runOutputMaterializations.pendingSequenceNumbers,
-      latestResultSequence: runOutputMaterializations.latestResultSequence,
-      latestResultText: runOutputMaterializations.latestResultText,
-      latestOutputSequence: runOutputMaterializations.latestOutputSequence,
-      latestOutputText: runOutputMaterializations.latestOutputText,
-    })
-    .from(runOutputMaterializations)
-    .where(eq(runOutputMaterializations.runId, runId))
-    .limit(1);
-  return row ?? null;
 }
 
 /** Starts one event insert with reservation and persistence in one transaction. */

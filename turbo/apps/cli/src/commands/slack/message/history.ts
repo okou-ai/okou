@@ -41,6 +41,7 @@ Notes:
   - IM history is limited to your single-user conversation with the bot, identified by a D-prefixed ID, not a user ID.
   - To find a bot DM's ID, open its details in Slack and copy the conversation ID or link.
   - Channel history contains conversation messages; thread replies are not expanded. Use --json to retain blocks, files and thread metadata.
+  - To read a thread, use okou slack message replies --channel <id> --thread <parent-ts> --json.
   - Results are newest first. Each call reads one page. Keep the channel and time filters when continuing with --cursor.
   - If Slack rate limits a request, wait for the returned Retry-After duration before retrying.
   - To make a channel readable, join it in Slack and add Okou via the channel name > Agents & apps.`,
@@ -81,7 +82,7 @@ Notes:
           );
           if (message.reply_count)
             console.log(
-              `Thread: ${message.ts} (${message.reply_count} replies; not expanded)`,
+              `Thread: ${message.thread_ts ?? message.ts} (${message.reply_count} replies; not expanded)\nRead with: okou slack message replies --channel ${result.channel} --thread ${message.thread_ts ?? message.ts} --json`,
             );
         }
         if (result.nextCursor) {

@@ -70,11 +70,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ComposerWorkflowFuzzySearch]: {
-    maintainer: "bingjie@okou.ai",
-    description: "Fuzzy workflow name matching in the chat composer",
-    enabled: true,
-  },
   [FeatureSwitchKey.Dummy]: {
     maintainer: "ethan@okou.ai",
     description: "Test-only feature switch for flag system validation",
@@ -99,17 +94,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "yuma@okou.ai",
     description: "Enable the Canva design connector",
     enabled: false,
-  },
-  [FeatureSwitchKey.CalendlyOAuthConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable Calendly OAuth connections",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.CalComConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Cal.com scheduling connector",
-    enabled: true,
   },
   [FeatureSwitchKey.CopperConnector]: {
     maintainer: "yuma@okou.ai",
@@ -181,11 +165,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Webflow site management connector",
     enabled: false,
   },
-  [FeatureSwitchKey.PosthogConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the PostHog analytics connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.PayPalConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the PayPal payments connector",
@@ -195,11 +174,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "yuma@okou.ai",
     description: "Enable the Ramp spend management connector",
     enabled: false,
-  },
-  [FeatureSwitchKey.MailchimpConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Mailchimp email marketing connector",
-    enabled: true,
   },
   [FeatureSwitchKey.ResendConnector]: {
     maintainer: "yuma@okou.ai",
@@ -334,6 +308,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.PiMemory]: {
+    maintainer: "lancy@okou.ai",
+    description:
+      "Extract, consolidate, and recall memory for Pi threads. Off for everyone, including the staff org; enabled one user at a time through explicit overrides.",
+    enabled: false,
+  },
   [FeatureSwitchKey.OpenRouterUsRouting]: {
     maintainer: "liangyou@okou.ai",
     description:
@@ -393,23 +373,17 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Use private storage and authenticated previews for CLI artifact uploads and managed generation.",
     enabled: false,
   },
-  [FeatureSwitchKey.AgentMessageMath]: {
-    maintainer: "bingjie@okou.ai",
+  [FeatureSwitchKey.ArtifactViewer]: {
+    maintainer: "yuma@okou.ai",
     description:
-      "Render explicit LaTeX delimiters in Agent messages as native MathML.",
-    enabled: true,
+      "Open artifact links in the Okou viewer with preview, download, and copy-link actions.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ProgressiveArtifactPreview]: {
     maintainer: "bingjie@okou.ai",
     description:
       "Publish coherent website and HTML presentation previews while the agent continues improving them.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ChatThinkingSpinner]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Replace the three-block chat thinking loader with a rotating Okou mark.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -432,6 +406,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.PersonalSubscriptionPriority]: {
+    maintainer: "lancy@okou.ai",
+    description:
+      "Preserve personal subscription identities for admitted runs and gate the personal subscription priority rollout.",
+    enabled: false,
+  },
   [FeatureSwitchKey.PersonalModelProviderAccounts]: {
     maintainer: "ethan@okou.ai",
     description:
@@ -439,17 +419,15 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.LarkIntegration]: {
+    maintainer: "linghan@okou.ai",
+    description: "Enable Lark bot setup, account connections, and messaging.",
+    enabled: false,
+  },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "linghan@okou.ai",
     description:
       "Show the Feishu direct-message integration and Works page entry point.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.SlackRead]: {
-    maintainer: "linghan@okou.ai",
-    description:
-      "List Slack channels and read channel and bot DM history through the Okou CLI.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

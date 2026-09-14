@@ -5,11 +5,18 @@ import datetime as dt
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import subprocess
 import time
 import urllib.parse
+from pathlib import Path
+
+from kms_recovery_scan import ScanReportError, scan_records
+from kms_recovery_verify import (
+    RecoveryVerificationError,
+    target_session,
+    verify_database,
+)
 
 PROJECT = "hidden-lab-39609750"
 BASE = f"https://console.neon.tech/api/v2/projects/{PROJECT}"
@@ -17,7 +24,7 @@ WORKFLOW = (
     "vm0-ai/vm0/.github/workflows/kms-recovery-snapshot-inspect.yml@refs/heads/main"
 )
 PREFIX = "kms-recovery-32264-"
-DEADLINE = time.monotonic() + 20 * 60
+DEADLINE = time.monotonic() + 90 * 60
 
 
 class InspectionError(Exception):
@@ -83,6 +90,7 @@ def api(suffix, method="GET", body=None, allow_missing=False):
         capture_output=True,
         text=True,
         timeout=seconds + 5,
+        check=False,
     )
     require(response.returncode == 0, "neon_request_outcome_unconfirmed")
     content, status = response.stdout.rsplit("\n", 1)
@@ -206,7 +214,9 @@ def validate_preview(branch, name, snapshot_id, existing_ids):
     return branch_id
 
 
-def inspect_database(database, endpoint, branch_id):
+def inspect_database(
+    database, endpoint, branch_id, target_environment, record_stage, record_scan
+):
     name, owner = database.get("name"), database.get("owner_name")
     require(database.get("branch_id") == branch_id, "database_branch_mismatch")
     require(
@@ -225,6 +235,8 @@ def inspect_database(database, endpoint, branch_id):
             "pooled": "false",
         }
     )
+    database_hash = digest(name)
+    record_stage(database_hash, "connection_metadata")
     parsed = urllib.parse.urlsplit(api("/connection_uri?" + query)["uri"])
     require(
         parsed.scheme in {"postgres", "postgresql"}
@@ -238,7 +250,7 @@ def inspect_database(database, endpoint, branch_id):
         "isolated_connection_identity_mismatch",
     )
     environment = {
-        k: v for k, v in os.environ.items() if not k.startswith(("PG", "NEON_"))
+        k: v for k, v in os.environ.items() if k in {"PATH", "HOME", "LANG", "LC_ALL"}
     }
     environment.update(
         {
@@ -253,53 +265,42 @@ def inspect_database(database, endpoint, branch_id):
             "PGOPTIONS": "-c default_transaction_read_only=on -c statement_timeout=120000 -c lock_timeout=5000",
         }
     )
-    seconds = min(900, int(DEADLINE - time.monotonic()))
+    # Large retained databases exceeded the former cumulative 15-minute limit.
+    # Keep each SQL statement bounded and leave time for target verification.
+    seconds = min(60 * 60, int(DEADLINE - time.monotonic()))
     require(seconds > 0, "inspection_time_budget_exhausted")
-    result = subprocess.run(
-        [
-            "psql",
-            "-X",
-            "-qAt",
-            "-v",
-            "ON_ERROR_STOP=1",
-            "-f",
-            str(Path(__file__).with_name("kms-recovery-snapshot-inventory.sql")),
-        ],
-        env=environment,
-        capture_output=True,
-        text=True,
-        timeout=seconds,
-    )
-    require(result.returncode == 0, "snapshot_database_scan_failed")
-    records = [json.loads(line) for line in result.stdout.splitlines() if line]
-    headers = [r for r in records if r.get("kind") == "database"]
-    require(
-        len(headers) == 1
-        and headers[0].get("readOnly") is True
-        and headers[0].get("isolation") == "repeatable read",
-        "read_only_transaction_unverified",
-    )
-    safe = []
-    fields = {
-        "database": {"largeObjects", "foreignTables"},
-        "table": {
-            "relationOid",
-            "rows",
-            "rowsWithEnvelopeMarker",
-            "rowsWithSourceReference",
-        },
-        "binary": {"relationOid", "columnNumber", "nonNullValues"},
-    }
-    for record in records:
-        kind = record.get("kind")
-        require(kind in fields, "unknown_scan_record")
-        item = {"kind": kind}
-        for field in fields[kind]:
-            value = record.get(field)
-            require(type(value) is int and value >= 0, "invalid_scan_counter")
-            item[field] = value
-        safe.append(item)
-    return {"databaseNameSha256": digest(name), "readOnly": True, "records": safe}
+    record_stage(database_hash, "marker_scan")
+    try:
+        result = subprocess.run(
+            [
+                "stdbuf",
+                "-oL",
+                "psql",
+                "-X",
+                "-qAt",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-f",
+                str(Path(__file__).with_name("kms-recovery-snapshot-inventory.sql")),
+            ],
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        result = error
+    safe = scan_records(result, database_hash)
+    scanned = {"databaseNameSha256": database_hash, "readOnly": True, "records": safe}
+    record_scan(scanned)
+    if target_environment is not None:
+        record_stage(database_hash, "target_verification")
+        scanned["targetVerification"] = verify_database(
+            parsed, target_environment, DEADLINE
+        )
+    record_stage(database_hash, "complete")
+    return scanned
 
 
 def main():
@@ -327,12 +328,24 @@ def main():
     def checkpoint():
         report_path.write_text(json.dumps(report, indent=2) + "\n")
 
+    def record_stage(database_hash, phase):
+        report["lastDatabaseStage"] = {
+            "databaseNameSha256": database_hash,
+            "phase": phase,
+        }
+        checkpoint()
+
+    def record_scan(scanned):
+        report["databases"].append(scanned)
+        checkpoint()
+
     preview_id = None
     production = None
     before_endpoints = None
     before_snapshots = None
     existing_ids = set()
     snapshot_id = None
+    target_environment = None
     checkpoint()
     try:
         require(
@@ -342,6 +355,8 @@ def main():
             and os.environ.get("GITHUB_WORKFLOW_REF") == WORKFLOW,
             "unprotected_invocation",
         )
+        verification = os.environ.get("VERIFY_TARGET_CIPHERTEXT", "false")
+        require(verification in {"true", "false"}, "invalid_target_verification_option")
         require(
             os.environ.get("NEON_PROJECT_ID") == PROJECT
             and os.environ.get("NEON_API_KEY"),
@@ -384,6 +399,9 @@ def main():
             "snapshot_identity_mismatch",
         )
         snapshot_id = snapshot["id"]
+        if verification == "true":
+            target_environment, report["targetSession"] = target_session()
+            checkpoint()
         report.update(
             {
                 "snapshotIdSha256": expected_hash,
@@ -420,8 +438,23 @@ def main():
             "preview_endpoint_listing_mismatch",
         )
         report["previewEndpointCountBeforeCreate"] = len(endpoints)
+        report["previewEndpointTypeCountsBeforeCreate"] = {
+            kind: sum(e.get("type") == kind for e in endpoints)
+            for kind in ("read_write", "read_only")
+        }
         checkpoint()
-        if not endpoints:
+        endpoint_ids = [identifier(e.get("id"), "ep-") for e in endpoints]
+        require(
+            len(endpoint_ids) == len(set(endpoint_ids)), "duplicate_preview_endpoint_id"
+        )
+        require(
+            all(e.get("type") in {"read_write", "read_only"} for e in endpoints),
+            "unknown_preview_endpoint_type",
+        )
+        # Snapshot restore can copy both the primary and read replicas. Pin the
+        # unique primary; counting every compute incorrectly rejects that case.
+        primaries = [e for e in endpoints if e["type"] == "read_write"]
+        if not primaries:
             created = api(
                 "/endpoints",
                 "POST",
@@ -436,7 +469,8 @@ def main():
                 },
             )
             require(
-                created["endpoint"].get("branch_id") == preview_id,
+                created["endpoint"].get("branch_id") == preview_id
+                and created["endpoint"].get("type") == "read_write",
                 "created_endpoint_branch_mismatch",
             )
             endpoint_id = identifier(created["endpoint"].get("id"), "ep-")
@@ -447,19 +481,23 @@ def main():
             report["createdPreviewEndpointId"] = endpoint_id
             checkpoint()
             wait_operations(created)
-            endpoints = [created["endpoint"]]
-        require(len(endpoints) == 1, "preview_endpoint_not_unique")
-        endpoint_id = identifier(endpoints[0].get("id"), "ep-")
+            primaries = [created["endpoint"]]
+        require(len(primaries) == 1, "preview_primary_endpoint_not_unique")
+        endpoint_id = identifier(primaries[0].get("id"), "ep-")
         endpoint = api(f"/endpoints/{endpoint_id}")["endpoint"]
         require(
             endpoint.get("id") == endpoint_id
             and endpoint.get("branch_id") == preview_id
+            and endpoint.get("type") == "read_write"
             and isinstance(endpoint.get("host"), str)
             and endpoint["host"].startswith(endpoint["id"] + ".")
             and endpoint["host"].endswith(".neon.tech")
             and endpoint["id"] not in {e["id"] for e in before_endpoints},
             "preview_endpoint_identity_mismatch",
         )
+        report["selectedPreviewEndpointId"] = endpoint_id
+        report["selectedPreviewEndpointType"] = endpoint["type"]
+        checkpoint()
         databases = api(f"/branches/{preview_id}/databases")["databases"]
         require(
             isinstance(databases, list)
@@ -468,11 +506,33 @@ def main():
             "invalid_database_listing",
         )
         for database in databases:
-            report["databases"].append(inspect_database(database, endpoint, preview_id))
+            if target_environment is not None:
+                if report["kmsCallsMade"] is False:
+                    report["kmsCallsMade"] = None
+                report["targetVerificationStarted"] = True
+                checkpoint()
+            inspect_database(
+                database,
+                endpoint,
+                preview_id,
+                target_environment,
+                record_stage,
+                record_scan,
+            )
+            if target_environment is not None:
+                report["kmsCallsMade"] = any(
+                    item["targetVerification"]["totals"]["verified"] > 0
+                    for item in report["databases"]
+                )
             checkpoint()
+        if target_environment is not None:
+            report["cryptographicVerification"] = True
+            report["nestedPayloadInspection"] = True
         report["collectionComplete"] = True
     except (
         InspectionError,
+        ScanReportError,
+        RecoveryVerificationError,
         KeyError,
         ValueError,
         TypeError,
@@ -480,10 +540,21 @@ def main():
         subprocess.TimeoutExpired,
     ) as error:
         report["failure"] = (
-            str(error) if isinstance(error, InspectionError) else "inspection_failed"
+            str(error)
+            if isinstance(
+                error, (InspectionError, ScanReportError, RecoveryVerificationError)
+            )
+            else "inspection_failed"
         )
+        if isinstance(error, ScanReportError) and error.diagnostics is not None:
+            report["databaseScanFailure"] = error.diagnostics
+        if (
+            isinstance(error, RecoveryVerificationError)
+            and error.diagnostics is not None
+        ):
+            report["targetVerificationFailure"] = error.diagnostics
     finally:
-        # Reserve cleanup and preservation read-back time inside the 30-minute job.
+        # Reserve cleanup and preservation read-back time inside the job budget.
         DEADLINE = time.monotonic() + 5 * 60
         if preview_id is not None:
             try:

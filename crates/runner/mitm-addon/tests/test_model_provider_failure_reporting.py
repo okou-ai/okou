@@ -1939,6 +1939,67 @@ def test_protocol_sse_failures_are_reported(
     assert _reported_payloads(model_provider_failure_api) == [expected_payload]
 
 
+@pytest.mark.parametrize("payload_size", [4095, 4096, 4097])
+@pytest.mark.parametrize("chunk_size", [None, 7], ids=["whole", "split"])
+@pytest.mark.parametrize(
+    ("event_name", "reports_later_failure"),
+    [
+        ("response.completed", False),
+        ("response.done", False),
+        ("response.failed", False),
+        ("response.incomplete", False),
+        ("response.error", False),
+        ("error", False),
+        ("vendor.delta", False),
+        ("response.output_text.delta", True),
+        (None, True),
+    ],
+)
+def test_responses_sse_capture_keeps_framing_identity_across_prefix_bound(
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    model_provider_failure_api,
+    payload_size: int,
+    chunk_size: int | None,
+    event_name: str | None,
+    reports_later_failure: bool,
+):
+    payload_prefix = b'{"type":"response.output_text.delta","padding":"'
+    payload = payload_prefix + b"x" * (payload_size - len(payload_prefix) - 2) + b'"}'
+    event_prefix = b"" if event_name is None else f"event: {event_name}\n".encode()
+    body = (
+        event_prefix + b"data: " + payload + b"\n\n"
+        b"event: response.failed\n"
+        b'data: {"type":"response.failed","response":{'
+        b'"error":{"code":"server_error"}}}\n\n'
+    )
+    flow = _make_flow(
+        real_flow,
+        tmp_path / "proxy.jsonl",
+        request_path="/v1/responses",
+        response_body=body,
+        response_headers=header_map({"content-type": "text/event-stream"}),
+    )
+
+    model_provider_failure.admit_flow(flow)
+    mitm_addon.responseheaders(flow)
+    stream = response_stream(flow)
+    chunk_size = len(body) if chunk_size is None else chunk_size
+    for offset in range(0, len(body), chunk_size):
+        chunk = body[offset : offset + chunk_size]
+        assert stream(chunk) == chunk
+    assert stream(b"") == b""
+
+    expected = [{"failureKind": "provider_unavailable"}] if reports_later_failure else []
+    assert _reported_payloads(model_provider_failure_api) == expected
+
+    with mitm_ctx():
+        mitm_addon.response(flow)
+
+    assert _reported_payloads(model_provider_failure_api) == expected
+
+
 def test_conflicting_sse_event_type_is_not_reported(
     tmp_path,
     real_flow,

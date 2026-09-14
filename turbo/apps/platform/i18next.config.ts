@@ -29,6 +29,11 @@ export default defineConfig({
       "activity.network.details.*",
       "artifacts.templates.workflowCatalog.*",
       "artifacts.templates.workflowCategories.*",
+      // Shared bot views choose the provider at runtime.
+      "connectors.providerSettings.feishu.*",
+      "connectors.providerSettings.lark.*",
+      "connectors.providerConnect.feishu.*",
+      "connectors.providerConnect.lark.*",
       "onboarding.categories.*",
       "onboarding.make.options.*",
       "onboarding.templates.*.*",

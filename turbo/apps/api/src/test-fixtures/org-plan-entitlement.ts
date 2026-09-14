@@ -5,8 +5,7 @@
  * capabilities, so integration tests use this narrow boundary to verify those
  * reads and persisted webhook side effects.
  */
-import { orgPlanEntitlementsCanonicalWrites } from "@okouai/db/operations/org-plan-entitlement-canonical-write";
-import { orgPlanEntitlements } from "@okouai/db/schema/org-plan-entitlement";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { createStore } from "ccstate";
 import { eq } from "drizzle-orm";
@@ -70,7 +69,7 @@ export async function upsertOrgPlanEntitlementFixture(values: {
   };
   await createStore()
     .set(writeDb$)
-    .insert(orgPlanEntitlementsCanonicalWrites)
+    .insert(orgPlanEntitlements)
     .values({
       ...row,
       // Preserve the fixture's prior insert behavior without relying on a
@@ -78,7 +77,7 @@ export async function upsertOrgPlanEntitlementFixture(values: {
       restrictedBuiltInModels: row.restrictedBuiltInModels ?? true,
     })
     .onConflictDoUpdate({
-      target: orgPlanEntitlementsCanonicalWrites.orgId,
+      target: orgPlanEntitlements.orgId,
       set: {
         planKey: row.planKey,
         planRank: row.planRank,

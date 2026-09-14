@@ -57,17 +57,28 @@ describe("client header contract", () => {
     ]);
   });
 
-  it("defaults missing desktop product identity to Zero", () => {
-    expect(desktopProductFromClientHeader(undefined)).toBe(
-      DESKTOP_PRODUCT_ZERO,
-    );
-    expect(desktopProductFromClientHeader(DESKTOP_PRODUCT_ZERO)).toBe(
-      DESKTOP_PRODUCT_ZERO,
-    );
-    expect(desktopProductFromClientHeader(DESKTOP_PRODUCT_OKOU)).toBe(
-      DESKTOP_PRODUCT_OKOU,
-    );
-  });
+  it.each([DESKTOP_PRODUCT_ZERO, DESKTOP_PRODUCT_OKOU])(
+    "recognizes explicit desktop product %s",
+    (product) => {
+      expect(desktopProductFromClientHeader(product)).toBe(product);
+    },
+  );
+
+  it.each([
+    undefined,
+    null,
+    "",
+    "unknown",
+    "Okou",
+    "ZERO",
+    " okou ",
+    "zero,okou",
+  ])(
+    "leaves missing or unrecognized desktop product %s unclassified",
+    (product) => {
+      expect(desktopProductFromClientHeader(product)).toBeUndefined();
+    },
+  );
 
   it("keeps the force upgrade status stable for app clients", () => {
     expect(CLIENT_FORCE_UPGRADE_STATUS).toBe(426);

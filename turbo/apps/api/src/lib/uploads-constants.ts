@@ -1,3 +1,6 @@
+import { MIMEType } from "node:util";
+import { safeSync } from "../signals/utils";
+
 /**
  * Upload limits shared by the presigned-URL prepare endpoint and its callers.
  *
@@ -108,12 +111,26 @@ export function isAllowedUploadType(contentType: string): boolean {
 }
 
 /**
- * Keep recognized metadata and represent every other web upload as opaque
- * bytes. Slack canonical assets use isAllowedUploadType as a separate gate.
+ * Keep recognized MIME types and declared text charsets without inferring the
+ * encoding of bytes uploaded directly to storage. Other web uploads remain
+ * opaque bytes. Slack canonical assets use isAllowedUploadType as a separate gate.
  */
 export function normalizeWebUploadContentType(contentType: string): string {
   const normalized = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
-  return isAllowedUploadType(normalized)
-    ? normalized
-    : GENERIC_UPLOAD_CONTENT_TYPE;
+  if (!isAllowedUploadType(normalized)) {
+    return GENERIC_UPLOAD_CONTENT_TYPE;
+  }
+  if (!normalized.startsWith("text/")) {
+    return normalized;
+  }
+
+  const result = safeSync(() => {
+    const charset = new MIMEType(contentType).params.get("charset");
+    if (!charset) {
+      return normalized;
+    }
+    return `${normalized}; charset=${new TextDecoder(charset).encoding}`;
+  });
+  // Unrecognized parameters retain the existing base-MIME behavior.
+  return "ok" in result ? result.ok : normalized;
 }

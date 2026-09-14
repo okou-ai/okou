@@ -142,6 +142,10 @@ impl LiteralEscaper {
         if c == '\n' {
             let closes = self.fence_close && self.closing >= self.width;
             if !closes {
+                if self.closing > 0 {
+                    // A failed closing run is non-whitespace body content.
+                    self.invalidate(emit);
+                }
                 self.consume_token(c, true, emit);
             }
             self.retain(item, emit);

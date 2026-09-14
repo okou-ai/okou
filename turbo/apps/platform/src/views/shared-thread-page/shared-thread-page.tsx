@@ -234,7 +234,11 @@ function SharedAssistantGroup({
                     richContent={richContent}
                   />
                 ) : (
-                  <MarkdownEventBody tree={message.tree} mediaPreview="link" />
+                  <MarkdownEventBody
+                    chatBubble
+                    tree={message.tree}
+                    mediaPreview="link"
+                  />
                 )}
               </ChatAssistantMessageBody>
             );
@@ -269,7 +273,12 @@ function SharedRichMessageBody({
     trees.state === "hasData" ? trees.data.get(messageIndex) : undefined;
   const onRetry = trees.state === "hasError" ? retry : undefined;
   return (
-    <MarkdownEventBody tree={tree} mediaPreview="link" onRetry={onRetry} />
+    <MarkdownEventBody
+      chatBubble
+      tree={tree}
+      mediaPreview="link"
+      onRetry={onRetry}
+    />
   );
 }
 
@@ -359,7 +368,7 @@ function SharedThreadHeader({
         <a
           href={homeUrl}
           aria-label={brandName}
-          className="shrink-0 text-foreground transition-opacity hover:opacity-70"
+          className="shrink-0 text-foreground hover:opacity-70"
         >
           <ProductBrandMark size="small" />
         </a>

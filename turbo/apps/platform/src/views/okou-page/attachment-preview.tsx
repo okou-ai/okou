@@ -139,11 +139,11 @@ function AttachmentCardArtwork({
           testId={iconTestId}
         />
       </div>
-      <div className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-background/85 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground opacity-0 transition-opacity duration-200 group-hover/doc-preview:opacity-100">
+      <div className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-background/85 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground opacity-0 group-hover/doc-preview:opacity-100">
         {actionIcon}
         {actionLabel}
       </div>
-      <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/55 via-black/15 to-transparent px-2.5 py-2.5 text-white opacity-0 transition-opacity duration-200 group-hover/doc-preview:opacity-100">
+      <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/55 via-black/15 to-transparent px-2.5 py-2.5 text-white opacity-0 group-hover/doc-preview:opacity-100">
         <div className="min-w-0">
           <div className="truncate text-xs font-medium">{filename}</div>
         </div>
@@ -261,6 +261,7 @@ function fallbackHtmlPreviewTitle(filename: string, url: string): string {
 }
 
 function HtmlSitePreviewCard({
+  mountPreview$,
   resourceUrl$,
   filename,
   previewImageLoad,
@@ -268,6 +269,7 @@ function HtmlSitePreviewCard({
   previewImageUrl,
   url,
 }: {
+  mountPreview$: ArtifactSignals["mountPreview$"];
   resourceUrl$: ArtifactSignals["resourceUrl$"];
   filename: string;
   previewImageLoad?: ImageLoadSignals;
@@ -320,6 +322,7 @@ function HtmlSitePreviewCard({
             className="absolute inset-0 h-full w-full object-cover"
             fallback={
               <HtmlSitePreviewViewport
+                mountPreview$={mountPreview$}
                 resourceUrl$={resourceUrl$}
                 title={title}
               />
@@ -331,7 +334,11 @@ function HtmlSitePreviewCard({
             data-testid="attachment-preview-thumbnail-pending"
           />
         ) : (
-          <HtmlSitePreviewViewport resourceUrl$={resourceUrl$} title={title} />
+          <HtmlSitePreviewViewport
+            mountPreview$={mountPreview$}
+            resourceUrl$={resourceUrl$}
+            title={title}
+          />
         )}
       </div>
     </a>
@@ -339,16 +346,20 @@ function HtmlSitePreviewCard({
 }
 
 function HtmlSitePreviewViewport({
+  mountPreview$,
   resourceUrl$,
   title,
 }: {
+  mountPreview$: ArtifactSignals["mountPreview$"];
   resourceUrl$: ArtifactSignals["resourceUrl$"];
   title: string;
 }) {
   const { t } = useTranslation();
   const resourceUrl = useLastResolved(resourceUrl$) ?? null;
+  const mountPreview = useSet(mountPreview$);
   return (
     <div
+      ref={mountPreview}
       data-testid="attachment-preview-html-viewport"
       className="pointer-events-none absolute left-0 top-0 h-[400%] w-[400%] origin-top-left scale-[0.25]"
     >
@@ -371,6 +382,7 @@ function HtmlSitePreviewViewport({
 }
 
 function DocumentThumbnailPreview({
+  mountPreview$,
   resourceUrl$,
   filename,
   kind,
@@ -380,6 +392,7 @@ function DocumentThumbnailPreview({
   text$,
   url,
 }: {
+  mountPreview$: ArtifactSignals["mountPreview$"];
   resourceUrl$: ArtifactSignals["resourceUrl$"];
   filename: string;
   kind: "markdown" | "csv" | "pdf" | "html";
@@ -392,6 +405,7 @@ function DocumentThumbnailPreview({
   if (kind === "html") {
     return (
       <HtmlSitePreviewCard
+        mountPreview$={mountPreview$}
         resourceUrl$={resourceUrl$}
         filename={filename}
         previewImageLoad={previewImageLoad}
@@ -574,13 +588,13 @@ function VideoThumbnailPreview({
             <Play size={20} />
           </span>
         </span>
-        <div className="absolute right-2 top-2 z-30 inline-flex items-center gap-1 rounded-full bg-background/85 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground opacity-0 transition-opacity duration-200 group-hover/video-preview:opacity-100">
+        <div className="absolute right-2 top-2 z-30 inline-flex items-center gap-1 rounded-full bg-background/85 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground opacity-0 group-hover/video-preview:opacity-100">
           <Video size={10} />
           {t(($) => {
             return $.artifacts.preview.badge;
           })}
         </div>
-        <div className="absolute inset-x-0 bottom-0 z-30 flex items-end justify-between gap-2 bg-gradient-to-t from-black/65 via-black/20 to-transparent px-2.5 py-2.5 text-white opacity-0 transition-opacity duration-200 group-hover/video-preview:opacity-100">
+        <div className="absolute inset-x-0 bottom-0 z-30 flex items-end justify-between gap-2 bg-gradient-to-t from-black/65 via-black/20 to-transparent px-2.5 py-2.5 text-white opacity-0 group-hover/video-preview:opacity-100">
           <div className="min-w-0">
             <div className="truncate text-xs font-medium">{filename}</div>
           </div>
@@ -591,12 +605,14 @@ function VideoThumbnailPreview({
 }
 
 export function AttachmentPreview({
+  mountPreview$,
   resourceUrl$,
   attachment,
   onPreviewFile,
   previewImageLoad,
   text$,
 }: {
+  mountPreview$: ArtifactSignals["mountPreview$"];
   resourceUrl$: ArtifactSignals["resourceUrl$"];
   attachment: ChatAttachmentDescriptor;
   onPreviewFile: () => void;
@@ -609,6 +625,7 @@ export function AttachmentPreview({
     case "markdown": {
       return (
         <DocumentThumbnailPreview
+          mountPreview$={mountPreview$}
           resourceUrl$={resourceUrl$}
           filename={attachment.filename}
           url={attachment.url}
@@ -640,6 +657,7 @@ export function AttachmentPreview({
     case "csv": {
       return (
         <DocumentThumbnailPreview
+          mountPreview$={mountPreview$}
           resourceUrl$={resourceUrl$}
           filename={attachment.filename}
           url={attachment.url}
@@ -651,6 +669,7 @@ export function AttachmentPreview({
     case "pdf": {
       return (
         <DocumentThumbnailPreview
+          mountPreview$={mountPreview$}
           resourceUrl$={resourceUrl$}
           filename={attachment.filename}
           url={attachment.url}
@@ -661,6 +680,7 @@ export function AttachmentPreview({
     case "html": {
       return (
         <DocumentThumbnailPreview
+          mountPreview$={mountPreview$}
           resourceUrl$={resourceUrl$}
           filename={attachment.filename}
           previewImageLoad={previewImageLoad}

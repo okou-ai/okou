@@ -1,39 +1,23 @@
 {
   "version": 1,
   "legacyClassTokens": [
-    "copied",
-    "icon-tooltip-trigger",
     "language-mermaid",
-    "lucide",
-    "mermaid-block",
-    "mermaid-diagram-expand",
-    "mermaid-diagram-image",
-    "mermaid-diagram-pending",
-    "mermaid-diagram-source",
     "okou-app",
-    "okou-blocks",
-    "okou-border",
-    "okou-chat-bubble-assistant",
-    "okou-chat-bubble-user",
     "okou-chat-card",
     "okou-chat-frame",
     "okou-chat-skeleton-reveal",
     "okou-composer",
-    "okou-desktop-no-drag",
     "okou-desktop-titlebar-drag-region",
     "okou-fixed-viewport-shell",
-    "okou-managed-bottom-safe-area",
     "okou-markdown-card",
     "okou-mobile-fixed-safe-area",
     "okou-mobile-sidebar",
-    "okou-nav",
     "okou-pwa-fixed-cover",
     "okou-shimmer-text",
     "okou-sidebar-header",
     "okou-thinking-enter",
     "okou-thinking-spinner",
     "okou-thinking-spinner-frame",
-    "okou-viewport-shell",
     "okou-workspace-bg",
     "owf-diagram",
     "owf-diagram-action",
@@ -60,62 +44,12 @@
     "owf-diagram-okou-icon",
     "owf-diagram-vertical-control",
     "owf-diagram-wrap",
-    "table-wrapper",
     "toaster",
     "wmde-markdown",
     "wmde-markdown-color"
   ],
   "cssAtoms": {
     "apps/platform/src/views/css/index.css": [
-      {
-        "atRules": [],
-        "selector": ".okou-viewport-shell",
-        "property": "box-sizing",
-        "value": "border-box",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-viewport-shell",
-        "property": "height",
-        "value": "100%",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-viewport-shell",
-        "property": "min-height",
-        "value": "100%",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-viewport-shell",
-        "property": "max-height",
-        "value": "100%",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-viewport-shell",
-        "property": "overflow",
-        "value": "hidden",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-viewport-shell",
-        "property": "padding-bottom",
-        "value": "var(--sab)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-managed-bottom-safe-area",
-        "property": "padding-bottom",
-        "value": "0",
-        "important": false
-      },
       {
         "atRules": [],
         "selector": ".okou-fixed-viewport-shell",
@@ -233,27 +167,6 @@
         "selector": ".okou-mobile-sidebar::before",
         "property": "bottom",
         "value": "calc(-1*var(--sab))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-sidebar-header",
-        "property": "padding-top",
-        "value": "0.375rem",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-desktop-titlebar-drag-region",
-        "property": "display",
-        "value": "none",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-desktop-no-drag",
-        "property": "-webkit-app-region",
-        "value": "no-drag",
         "important": false
       },
       {
@@ -405,125 +318,6 @@
       },
       {
         "atRules": [],
-        "selector": ".okou-blocks",
-        "property": "display",
-        "value": "inline-grid",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks",
-        "property": "grid-template-columns",
-        "value": "repeat(2,5px)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks",
-        "property": "grid-template-rows",
-        "value": "repeat(2,5px)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks",
-        "property": "gap",
-        "value": "1.5px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span",
-        "property": "border-radius",
-        "value": "1.5px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(1)",
-        "property": "background",
-        "value": "var(--zb-c1)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(1)",
-        "property": "grid-column",
-        "value": "2",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(1)",
-        "property": "grid-row",
-        "value": "1",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(1)",
-        "property": "animation",
-        "value": "okou-block-pop 1.4s ease-in-out infinite",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(2)",
-        "property": "background",
-        "value": "var(--zb-c2)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(2)",
-        "property": "grid-column",
-        "value": "1",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(2)",
-        "property": "grid-row",
-        "value": "2",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(2)",
-        "property": "animation",
-        "value": "okou-block-pop 1.4s ease-in-out 0.2s infinite",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(3)",
-        "property": "background",
-        "value": "var(--zb-c3)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(3)",
-        "property": "grid-column",
-        "value": "2",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(3)",
-        "property": "grid-row",
-        "value": "2",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(3)",
-        "property": "animation",
-        "value": "okou-block-pop 1.4s ease-in-out 0.4s infinite",
-        "important": false
-      },
-      {
-        "atRules": [],
         "selector": ".okou-app",
         "property": "--okou-card-radius",
         "value": " 1.25rem",
@@ -615,13 +409,6 @@
       },
       {
         "atRules": [],
-        "selector": ".okou-nav",
-        "property": "--color-sidebar-border",
-        "value": " hsl(var(--gray-200))",
-        "important": false
-      },
-      {
-        "atRules": [],
         "selector": ".okou-app",
         "property": "--color-sidebar",
         "value": " hsl(var(--sidebar))",
@@ -632,34 +419,6 @@
         "selector": ".okou-app",
         "property": "--color-sidebar-rail",
         "value": " hsl(var(--sidebar-rail))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app[data-gradient-color-themes] .okou-nav",
-        "property": "--color-sidebar",
-        "value": " hsl(var(--sidebar))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app[data-gradient-color-themes] .okou-nav",
-        "property": "--color-sidebar-border",
-        "value": " hsl(var(--border) / 0.5)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app[data-gradient-color-themes] .okou-nav.okou-nav-rail",
-        "property": "background-color",
-        "value": "hsl(var(--okou-nav-rail))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ":where([data-theme=\"dark\"]) .okou-nav",
-        "property": "--color-sidebar",
-        "value": " hsl(var(--sidebar))",
         "important": false
       },
       {
@@ -688,34 +447,6 @@
         "selector": ".okou-app .okou-chat-card",
         "property": "background-color",
         "value": "hsl(var(--card))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app .okou-chat-bubble-user",
-        "property": "background-color",
-        "value": "hsl(var(--gray-200))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app .okou-chat-bubble-user",
-        "property": "color",
-        "value": "hsl(var(--foreground))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app .okou-chat-bubble-assistant",
-        "property": "background-color",
-        "value": "transparent",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app .okou-chat-bubble-assistant",
-        "property": "border",
-        "value": "none",
         "important": false
       },
       {
@@ -849,258 +580,6 @@
         "selector": ".wmde-markdown p,.wmde-markdown .okou-markdown-card",
         "property": "margin-bottom",
         "value": "6px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-chat-bubble-assistant .wmde-markdown p,.okou-chat-bubble-user .wmde-markdown p,.okou-chat-bubble-assistant .wmde-markdown .okou-markdown-card,.okou-chat-bubble-user .wmde-markdown .okou-markdown-card",
-        "property": "margin-top",
-        "value": "8px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-chat-bubble-assistant .wmde-markdown p,.okou-chat-bubble-user .wmde-markdown p,.okou-chat-bubble-assistant .wmde-markdown .okou-markdown-card,.okou-chat-bubble-user .wmde-markdown .okou-markdown-card",
-        "property": "margin-bottom",
-        "value": "8px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-chat-bubble-assistant .wmde-markdown hr",
-        "property": "display",
-        "value": "none",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-block",
-        "property": "margin-bottom",
-        "value": "16px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-block>.icon-tooltip-trigger",
-        "property": "display",
-        "value": "block",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-block>.icon-tooltip-trigger",
-        "property": "width",
-        "value": "100%",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-block>.icon-tooltip-trigger",
-        "property": "max-width",
-        "value": "420px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "position",
-        "value": "relative",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "display",
-        "value": "block",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "width",
-        "value": "100%",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "max-width",
-        "value": "420px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "aspect-ratio",
-        "value": "4/3",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "margin",
-        "value": "4px 0",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "padding",
-        "value": "8px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "border",
-        "value": "1px solid hsl(var(--foreground)/0.1)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "border-radius",
-        "value": "8px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "background",
-        "value": "hsl(var(--muted)/0.3)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "overflow",
-        "value": "hidden",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "cursor",
-        "value": "zoom-in",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand:disabled",
-        "property": "cursor",
-        "value": "default",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-image,.wmde-markdown .mermaid-diagram-pending",
-        "property": "position",
-        "value": "absolute",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-image,.wmde-markdown .mermaid-diagram-pending",
-        "property": "inset",
-        "value": "8px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-image",
-        "property": "width",
-        "value": "calc(100% - 16px)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-image",
-        "property": "height",
-        "value": "calc(100% - 16px)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-image",
-        "property": "object-fit",
-        "value": "contain",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-image",
-        "property": "background",
-        "value": "none",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-pending",
-        "property": "display",
-        "value": "flex",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-pending",
-        "property": "align-items",
-        "value": "center",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-pending",
-        "property": "justify-content",
-        "value": "center",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-pending",
-        "property": "color",
-        "value": "hsl(var(--muted-foreground))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-source>summary",
-        "property": "cursor",
-        "value": "pointer",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-source>summary",
-        "property": "color",
-        "value": "hsl(var(--muted-foreground))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-source>summary",
-        "property": "font-size",
-        "value": "0.8125rem",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-source>pre",
-        "property": "margin-top",
-        "value": "8px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown pre:hover .copied:active,.wmde-markdown pre .copied.active",
-        "property": "background",
-        "value": "hsl(var(--gray-400))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown pre:hover .copied:active,.wmde-markdown pre .copied.active",
-        "property": "color",
-        "value": "hsl(var(--foreground))",
         "important": false
       },
       {
@@ -2919,9 +2398,6 @@
       "okou-app": 1,
       "okou-fixed-viewport-shell": 1
     },
-    "apps/platform/src/views/components/icon-tooltip.tsx": {
-      "icon-tooltip-trigger": 1
-    },
     "apps/platform/src/views/components/instatus-status-notice.tsx": {
       "okou-app": 1,
       "okou-composer": 1
@@ -2931,25 +2407,14 @@
       "wmde-markdown-color": 1
     },
     "apps/platform/src/views/components/mermaid-diagram.tsx": {
-      "copied": 1,
-      "language-mermaid": 1,
-      "mermaid-block": 1,
-      "mermaid-diagram-expand": 1,
-      "mermaid-diagram-image": 1,
-      "mermaid-diagram-pending": 1,
-      "mermaid-diagram-source": 1
+      "language-mermaid": 1
     },
     "apps/platform/src/views/components/rich-markdown.tsx": {
-      "copied": 1,
       "okou-markdown-card": 2
     },
     "apps/platform/src/views/export-page/export-page.tsx": {
       "okou-app": 1,
-      "okou-viewport-shell": 1,
       "okou-workspace-bg": 1
-    },
-    "apps/platform/src/views/okou-page/agent-chat-page.tsx": {
-      "okou-border": 1
     },
     "apps/platform/src/views/okou-page/attachment-chips.tsx": {
       "okou-chat-card": 4,
@@ -2970,13 +2435,7 @@
     "apps/platform/src/views/okou-page/chat-forward-dialog.tsx": {
       "okou-app": 1
     },
-    "apps/platform/src/views/okou-page/chat-message-surface.tsx": {
-      "okou-chat-bubble-assistant": 1,
-      "okou-chat-bubble-user": 1
-    },
     "apps/platform/src/views/okou-page/chat-thread-page.tsx": {
-      "okou-blocks": 1,
-      "okou-chat-bubble-user": 2,
       "okou-chat-card": 2,
       "okou-chat-skeleton-reveal": 1,
       "okou-shimmer-text": 1,
@@ -2985,69 +2444,23 @@
       "okou-thinking-spinner-frame": 1
     },
     "apps/platform/src/views/okou-page/components/org-manage/org-billing-tab.tsx": {
-      "okou-app": 1,
-      "okou-border": 3
-    },
-    "apps/platform/src/views/okou-page/components/org-manage/org-members-tab.tsx": {
-      "okou-border": 1
-    },
-    "apps/platform/src/views/okou-page/components/org-manage/org-usage-tab.tsx": {
-      "okou-border": 3
-    },
-    "apps/platform/src/views/okou-page/components/settings/build-info-block.tsx": {
-      "okou-border": 1
-    },
-    "apps/platform/src/views/okou-page/components/settings/built-in-model-cooldown-diagnostics-block.tsx": {
-      "okou-border": 1
-    },
-    "apps/platform/src/views/okou-page/components/settings/color-theme-settings.tsx": {
-      "okou-border": 1
-    },
-    "apps/platform/src/views/okou-page/components/settings/connection-diagnostics-block.tsx": {
-      "okou-border": 1
-    },
-    "apps/platform/src/views/okou-page/components/settings/connector-catalog-diagnostics-block.tsx": {
-      "okou-border": 1
-    },
-    "apps/platform/src/views/okou-page/components/settings/indexeddb-diagnostics-block.tsx": {
-      "okou-border": 1
-    },
-    "apps/platform/src/views/okou-page/components/settings/permission-policy-toggle.tsx": {
-      "okou-border": 1
-    },
-    "apps/platform/src/views/okou-page/components/settings/permissions-dialog.tsx": {
-      "okou-border": 3
-    },
-    "apps/platform/src/views/okou-page/components/settings/preference-card-row.tsx": {
-      "okou-border": 1
-    },
-    "apps/platform/src/views/okou-page/components/settings/sections/account-section.tsx": {
-      "okou-border": 1
+      "okou-app": 1
     },
     "apps/platform/src/views/okou-page/components/settings/sections/credit-balance-section.tsx": {
-      "okou-app": 1,
-      "okou-border": 2
-    },
-    "apps/platform/src/views/okou-page/components/settings/sections/debug-section.tsx": {
-      "okou-border": 1
+      "okou-app": 1
     },
     "apps/platform/src/views/okou-page/components/settings/settings-dialog.tsx": {
       "okou-app": 1
     },
-    "apps/platform/src/views/okou-page/components/settings/worker-connection-diagnostics-block.tsx": {
-      "okou-border": 1
-    },
     "apps/platform/src/views/okou-page/connect-page-shell.tsx": {
       "okou-app": 1,
-      "okou-viewport-shell": 1,
       "okou-workspace-bg": 1
     },
     "apps/platform/src/views/okou-page/connector-account-action-card.tsx": {
       "okou-chat-card": 1
     },
     "apps/platform/src/views/okou-page/directed-shared.tsx": {
-      "okou-app": 1,
-      "okou-viewport-shell": 1
+      "okou-app": 1
     },
     "apps/platform/src/views/okou-page/image-annotation-editor.tsx": {
       "okou-app": 1
@@ -3055,28 +2468,18 @@
     "apps/platform/src/views/okou-page/replace-composer-draft-dialog.tsx": {
       "okou-app": 1
     },
-    "apps/platform/src/views/okou-page/settings-tab.tsx": {
-      "okou-chat-bubble-assistant": 1
-    },
     "apps/platform/src/views/okou-page/sidebar-dialogs.tsx": {
       "okou-app": 2
     },
     "apps/platform/src/views/okou-page/sidebar-layout.tsx": {
       "okou-app": 1,
-      "okou-managed-bottom-safe-area": 1,
-      "okou-pwa-fixed-cover": 1,
-      "okou-viewport-shell": 1
+      "okou-pwa-fixed-cover": 1
     },
     "apps/platform/src/views/okou-page/sidebar.tsx": {
-      "okou-desktop-no-drag": 1,
       "okou-desktop-titlebar-drag-region": 2,
       "okou-mobile-fixed-safe-area": 1,
       "okou-mobile-sidebar": 1,
-      "okou-nav": 3,
       "okou-sidebar-header": 1
-    },
-    "apps/platform/src/views/okou-page/tiptap-instructions-editor.tsx": {
-      "okou-border": 1
     },
     "apps/platform/src/views/okou-page/unsaved-bar.tsx": {
       "okou-app": 1
@@ -3088,8 +2491,7 @@
       "okou-workspace-bg": 1
     },
     "apps/platform/src/views/onboarding/onboarding-shell.tsx": {
-      "okou-app": 1,
-      "okou-viewport-shell": 1
+      "okou-app": 1
     },
     "apps/platform/src/views/onboarding/onboarding-workflow-diagram.tsx": {
       "owf-diagram": 1,
@@ -3118,10 +2520,6 @@
       "owf-diagram-vertical-control": 1,
       "owf-diagram-wrap": 1
     },
-    "apps/platform/src/views/queue-page/queue-drawer.tsx": {
-      "lucide": 1,
-      "okou-border": 3
-    },
     "apps/platform/src/views/shared-thread-page/shared-thread-page.tsx": {
       "okou-app": 1,
       "okou-composer": 1,
@@ -3132,9 +2530,6 @@
     },
     "packages/ui/src/components/ui/sonner.tsx": {
       "toaster": 1
-    },
-    "packages/ui/src/components/ui/table.tsx": {
-      "table-wrapper": 1
     }
   },
   "styleInjections": {
@@ -3144,14 +2539,6 @@
         "kind": "jsx-style",
         "fingerprint": "c2ae7df091deaac1ec819d82c4261087fedf4cc4fe033165510ada776afdb097",
         "preview": "<style>{` @keyframes avatar-option-appear { from { opacity: 0; transform: translateY(8px) scale(0.9); } to { opacity: 1;"
-      }
-    ],
-    "packages/ui/src/components/ui/table.tsx": [
-      {
-        "file": "packages/ui/src/components/ui/table.tsx",
-        "kind": "jsx-style",
-        "fingerprint": "b9757dbcec3bc3a6039e74464b1fd635f08432eca2f5b6f566937d7d85c02577",
-        "preview": "<style dangerouslySetInnerHTML={{ __html: ` .table-wrapper tbody tr:last-child { border-bottom: 0 !important; } .table-w"
       }
     ]
   }

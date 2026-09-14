@@ -1,3 +1,7 @@
+import {
+  FEISHU_PLATFORMS,
+  type FeishuPlatform,
+} from "@okouai/core/feishu-platform";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 
@@ -59,6 +63,7 @@ export function verifyFeishuConnectToken(args: {
 }
 
 export function buildFeishuConnectUrl(args: {
+  readonly platform?: FeishuPlatform;
   readonly installationId: string;
   readonly openId: string;
   readonly chatId: string;
@@ -73,7 +78,10 @@ export function buildFeishuConnectUrl(args: {
     ts: String(timestamp),
     sig: signFeishuConnectToken({ ...args, timestamp }),
   });
-  const url = new URL("/settings/feishu", env("APP_URL"));
+  const url = new URL(
+    FEISHU_PLATFORMS[args.platform ?? "feishu"].settingsPath,
+    env("APP_URL"),
+  );
   url.search = params.toString();
   return url.toString();
 }

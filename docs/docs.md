@@ -20,6 +20,8 @@ surface; the index does not replace their detailed rules.
 - [Testing](./testing.md): testing strategy, patterns, and anti-patterns.
 - [Deployment compatibility](./deployment-compatibility.md): compatibility
   requirements for independently deployed components and persisted state.
+- [Personal subscription run identity](./personal-subscription-run-identity.md):
+  concrete account ownership, bounded disconnect retention and activation gates.
 - [Connector-account workflow automations](./connector-account-workflow-automation.md):
   workflow-thread account authority, exact provider ingress, lifecycle
   convergence, and persisted compatibility for account-backed triggers.
@@ -30,6 +32,19 @@ surface; the index does not replace their detailed rules.
 
 ## Specialized Guidance
 
+- [Social download discovery](./social-download-discovery.md): bounded task
+  listing, scoped recovery hints, pagination, and CLI/API compatibility.
+
+- [Billing attribution foundation](./database/billing-attribution.md): immutable
+  billing identity, writer inventory, bounded backfill and activation boundaries.
+- [Database trigger retirement](./database-trigger-retirement.md): explicit API
+  entitlement writers, repair paths, and the serving/rollback removal gate.
+- [Account telemetry and recovery erasure](./account-erasure-evidence.md):
+  dated sink/copy inventory, provider capability gaps, and the parent-worker
+  design in [ADR 0004](./adr/0004-account-telemetry-recovery-erasure.md).
+- [Connector catalog rejections](./connector-catalog-rejections.md): safe
+  validation reasons, cached rejection records, retained snapshots and recovered
+  publication-order evidence.
 - [Dependency override audit](./dependency-overrides.md): retained dependency
   constraints, their origins, and evidence for removing obsolete overrides.
 - [Marketing privacy rollback](./marketing-privacy-choices.md): withdrawn runtime
@@ -40,6 +55,8 @@ surface; the index does not replace their detailed rules.
   ownership, conversion actions, rollout compatibility, and historical recovery.
 - [Connector inspection JSON](./connector-inspection-json.md): command output
   contracts, current versus run evidence, account identity, and next actions.
+- [Social collection output](./social-collection-output.md): aggregate and
+  streaming terminal records, partial failures, accounting, and continuation hints.
 - [Platform lint boundaries](./platform-lint.md): current transport and lifecycle
   exceptions, polling policy, and retired configuration history.
 - [Clerk customization](./clerk-customize.md): hosted Clerk styling ownership,
@@ -52,8 +69,8 @@ surface; the index does not replace their detailed rules.
 - [Pi native provider preparation](./pi-native-provider-preparation.md): additive
   native readers, transport/auth ownership, accounting and activation gates.
 - [Pi candidate reference accounting](./database/pi-memory-candidate-accounting.md):
-  API B trigger compatibility, parent cleanup, lock order, read-only audit and
-  the two-release retirement gate.
+  explicit API ownership, guarded trigger retirement, parent cleanup, audit
+  receipts and the B rollback floor.
 - [Pi runtime architecture](./pi-runtime-architecture.md): launch, SDK/session,
   memory, accounting, retained compatibility, and patch ownership boundaries.
 - [Runner host configuration](./runner-host-configuration.md): configure and

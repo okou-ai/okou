@@ -25,7 +25,8 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.RealAgentInPreview).toBe("_realAgentInPreview");
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
     expect(FeatureSwitchKey.SshAccess).toBe("sshAccess");
-    expect(FeatureSwitchKey.AgentMessageMath).toBe("agentMessageMath");
+    expect(FeatureSwitchKey.PiLoop).toBe("piLoop");
+    expect(FeatureSwitchKey.PiMemory).toBe("piMemory");
     expect(FeatureSwitchKey.ProgressiveArtifactPreview).toBe(
       "progressiveArtifactPreview",
     );
@@ -33,6 +34,37 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
+  it("keeps Pi memory off for everyone until an explicit override enables it", () => {
+    const staffOrgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
+    for (const context of [
+      {},
+      { orgId: "org_nonexistent" },
+      { orgId: staffOrgId },
+      { orgId: staffOrgId, userId: "staff-user", email: "lancy@okou.ai" },
+    ]) {
+      expect(isFeatureEnabled(FeatureSwitchKey.PiMemory, context)).toBe(false);
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.PiMemory, {
+          ...context,
+          overrides: { [FeatureSwitchKey.PiMemory]: true },
+        }),
+      ).toBe(true);
+    }
+    // PiLoop selects the runtime and stays independent of PiMemory.
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.PiLoop, {
+        orgId: staffOrgId,
+        overrides: { [FeatureSwitchKey.PiMemory]: false },
+      }),
+    ).toBe(true);
+    expect(getFeatureSwitchMetadata()[FeatureSwitchKey.PiMemory]).toEqual({
+      maintainer: "lancy@okou.ai",
+      description:
+        "Extract, consolidate, and recall memory for Pi threads. Off for everyone, including the staff org; enabled one user at a time through explicit overrides.",
+      rolloutStage: "alpha",
+    });
+  });
+
   it("enables OpenRouter US routing for staff and honors explicit overrides", () => {
     for (const context of [{}, { orgId: "org_nonexistent" }]) {
       expect(
@@ -211,12 +243,11 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.Lab]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.OkouDebug]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.Banking]).toBe(false);
-    expect(staffOrgStates[FeatureSwitchKey.AgentMessageMath]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ProgressiveArtifactPreview]).toBe(
       true,
     );
-    expect(staffOrgStates[FeatureSwitchKey.ChatThinkingSpinner]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PiLoop]).toBe(true);
+    expect(staffOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.ChatPreference]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.CustomConnectorMcp]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
@@ -236,12 +267,11 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.Lab]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.OkouDebug]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.Banking]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.AgentMessageMath]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.ProgressiveArtifactPreview]).toBe(
       false,
     );
-    expect(otherOrgStates[FeatureSwitchKey.ChatThinkingSpinner]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PiLoop]).toBe(false);
+    expect(otherOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.ChatPreference]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.CustomConnectorMcp]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
@@ -255,6 +285,24 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(
       false,
     );
+  });
+
+  it("enables Pi memory only for the user whose override says so", () => {
+    const staffOrgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
+    const testerStates = getAllFeatureStates({
+      orgId: staffOrgId,
+      userId: "pi-memory-tester",
+      overrides: { [FeatureSwitchKey.PiMemory]: true },
+    });
+    expect(testerStates[FeatureSwitchKey.PiMemory]).toBe(true);
+    expect(testerStates[FeatureSwitchKey.PiLoop]).toBe(true);
+
+    const colleagueStates = getAllFeatureStates({
+      orgId: staffOrgId,
+      userId: "pi-memory-colleague",
+    });
+    expect(colleagueStates[FeatureSwitchKey.PiMemory]).toBe(false);
+    expect(colleagueStates[FeatureSwitchKey.PiLoop]).toBe(true);
   });
 
   it("should enable the model picker menu for Bingjie by email outside the staff org", () => {

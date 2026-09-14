@@ -125,6 +125,31 @@ export function isSlashTemplatePreviewCategory(
 const SLASH_TEMPLATE_COVER_SIZE = { width: 280, height: 158 } as const;
 
 /**
+ * Illustrations are asked for by width alone. The transform fits inside the box
+ * it is given, so passing a 16:9 height as well shrank a 2:3 style to 105px
+ * wide and the card then upscaled it. Width-only keeps the native proportion at
+ * the resolution the card actually paints.
+ */
+const SLASH_TEMPLATE_NATIVE_COVER_SIZE = { width: 280 } as const;
+
+/**
+ * Categories whose covers keep their own proportion instead of the 16:9 tile.
+ * An illustration *is* the artifact, and its catalog runs 20 portrait, 9 square
+ * and 3 landscape, so a shared ratio would crop most of them — a 2:3 style
+ * keeps only 37% of its height in a 16:9 box. A deck cover, by contrast, is a
+ * slide and genuinely is 16:9.
+ */
+const SLASH_TEMPLATE_NATIVE_ASPECT_CATEGORIES = ["illustration"] as const;
+
+export function isSlashTemplateNativeAspectCategory(
+  category: SlashTemplatePreviewCategory,
+): boolean {
+  return SLASH_TEMPLATE_NATIVE_ASPECT_CATEGORIES.some((candidate) => {
+    return candidate === category;
+  });
+}
+
+/**
  * The pane scrolls, so it carries several screens of covers rather than the one
  * row a fixed pane could hold. This is catalog order, which is the same
  * curated order the picker dialog leads with; the client has no usage signal to
@@ -136,6 +161,11 @@ export interface SlashTemplatePreview {
   readonly slug: string;
   readonly title: string;
   readonly coverUrl: string;
+  /**
+   * The cover's own pixel proportion, for categories that render it uncropped.
+   * Absent when the category uses the shared 16:9 tile.
+   */
+  readonly aspect?: { readonly width: number; readonly height: number };
   readonly template: GenerationTemplateRequest;
   readonly attachment: ComposerTemplateAttachment;
 }
@@ -149,6 +179,10 @@ interface SlashTemplatePreviewGroup {
 
 function coverUrl(source: string): string {
   return r2ImageTransformUrl(source, SLASH_TEMPLATE_COVER_SIZE);
+}
+
+function nativeCoverUrl(source: string): string {
+  return r2ImageTransformUrl(source, SLASH_TEMPLATE_NATIVE_COVER_SIZE);
 }
 
 function presentationPreview(
@@ -174,11 +208,12 @@ function presentationPreview(
 function illustrationPreview(
   item: IllustrationTemplateItem,
 ): SlashTemplatePreview {
-  const cover = coverUrl(item.cardPreviewImage ?? item.previewImage);
+  const cover = nativeCoverUrl(item.cardPreviewImage ?? item.previewImage);
   return {
     slug: item.slug,
     title: item.title,
     coverUrl: cover,
+    aspect: { width: item.width, height: item.height },
     template: toIllustrationGenerationTemplate(item),
     attachment: {
       type: "illustration",

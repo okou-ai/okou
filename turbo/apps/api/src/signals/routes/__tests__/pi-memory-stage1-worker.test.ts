@@ -16,14 +16,17 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
+import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   seedBuiltInModelKey,
   seedBuiltInModelCandidateKeys,
   resolveBuiltInModelRouteFixture,
 } from "./helpers/runtime-state";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  deleteFeatureSwitchesForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
 import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { createDeferredPromise } from "../../utils";
@@ -59,6 +62,18 @@ interface ProviderInvocation {
   readonly sequence: number;
   readonly request: unknown;
   readonly url: string;
+}
+
+interface ProviderUsage {
+  readonly input_tokens: number;
+  readonly output_tokens: number;
+  readonly cached_tokens: number;
+  readonly cache_write_tokens: number;
+}
+
+interface ProviderReply {
+  readonly text: string;
+  readonly usage?: ProviderUsage;
 }
 
 type SessionHistoryEncoding =
@@ -127,8 +142,14 @@ function failNextObjectRead(key: string): void {
 function responsesSse(
   text: string,
   sequence: number,
-  responseId = `resp_pi_memory_stage1_${sequence.toString()}`,
+  usage: ProviderUsage = {
+    input_tokens: 12,
+    output_tokens: 8,
+    cached_tokens: 2,
+    cache_write_tokens: 3,
+  },
 ): string {
+  const responseId = `resp_pi_memory_stage1_${sequence.toString()}`;
   const messageId = `msg_pi_memory_stage1_${sequence.toString()}`;
   return [
     {
@@ -185,13 +206,13 @@ function responsesSse(
           },
         ],
         usage: {
-          input_tokens: 12,
-          output_tokens: 8,
+          input_tokens: usage.input_tokens,
+          output_tokens: usage.output_tokens,
           input_tokens_details: {
-            cached_tokens: 2,
-            cache_write_tokens: 3,
+            cached_tokens: usage.cached_tokens,
+            cache_write_tokens: usage.cache_write_tokens,
           },
-          total_tokens: 20,
+          total_tokens: usage.input_tokens + usage.output_tokens,
         },
       },
     },
@@ -213,7 +234,10 @@ function defaultProviderOutput(): string {
 function installProvider(
   responder: (
     invocation: ProviderInvocation,
-  ) => Promise<string> | string = defaultProviderOutput,
+  ) =>
+    | Promise<string | ProviderReply>
+    | string
+    | ProviderReply = defaultProviderOutput,
 ) {
   let sequence = 0;
   const calls: ProviderInvocation[] = [];
@@ -228,10 +252,15 @@ function installProvider(
           request: (await request.json()) as unknown,
         };
         calls.push(invocation);
-        const text = await responder(invocation);
-        return new HttpResponse(responsesSse(text, invocation.sequence), {
-          headers: { "content-type": "text/event-stream" },
-        });
+        const reply = await responder(invocation);
+        const { text, usage } =
+          typeof reply === "string" ? { text: reply, usage: undefined } : reply;
+        return new HttpResponse(
+          responsesSse(text, invocation.sequence, usage),
+          {
+            headers: { "content-type": "text/event-stream" },
+          },
+        );
       },
     ),
   );
@@ -302,10 +331,15 @@ async function stateAction(
   return response.body;
 }
 
-function createStorageFixture() {
+function createStorageFixture(
+  options: { readonly piMemoryEnabled?: boolean } = {},
+) {
   const memoryStorageId = randomUUID();
   const orgId = `org_pi_stage1_${randomUUID()}`;
   const userId = `user_pi_stage1_${randomUUID()}`;
+  // PiMemory is off for everyone by default; Stage 1 work only runs for
+  // owners whose explicit override enables it.
+  const piMemoryEnabled = options.piMemoryEnabled ?? true;
   const sourceHashes: string[] = [];
   const agentSessionIds: string[] = [];
   const owner = createFixtureOperationOwner(async () => {
@@ -317,12 +351,25 @@ function createStorageFixture() {
       source_history_hashes: [...new Set(sourceHashes)],
       agent_session_ids: agentSessionIds,
     });
+    if (piMemoryEnabled) {
+      await deleteFeatureSwitchesForUser(context, { orgId, userId });
+    }
   });
   const ownerScope = {
     memory_storage_id: memoryStorageId,
     org_id: orgId,
     user_id: userId,
   } as const;
+  let ownerSwitches: Promise<void> | undefined;
+
+  function enableOwnerPiMemory(): Promise<void> {
+    ownerSwitches ??= updateFeatureSwitchesForUser(
+      context,
+      { orgId, userId },
+      { [FeatureSwitchKey.PiMemory]: true },
+    );
+    return ownerSwitches;
+  }
 
   async function seed(args: {
     readonly raw: Buffer;
@@ -332,6 +379,9 @@ function createStorageFixture() {
     readonly retryCount?: number;
   }): Promise<CandidateFixture> {
     return await owner.run(async () => {
+      if (piMemoryEnabled) {
+        await enableOwnerPiMemory();
+      }
       const encoding = args.encoding ?? SESSION_HISTORY_ENCODING_IDENTITY;
       const piSessionId = args.piSessionId ?? randomUUID();
       const sourceHistoryHash = createHash("sha256")
@@ -344,7 +394,8 @@ function createStorageFixture() {
         pi_session_id: piSessionId,
         source_history_hash: sourceHistoryHash,
         source_completed_at:
-          args.sourceCompletedAt ?? new Date(now() - 60_000).toISOString(),
+          args.sourceCompletedAt ??
+          new Date(now() - 7 * 3_600_000).toISOString(),
         encoding,
         raw_size: args.raw.length,
         encoded_size: encoded.length,
@@ -457,6 +508,20 @@ async function inspectUsage(storage: ReturnType<typeof createStorageFixture>) {
   return (await storage.action({ action: "inspect-usage" })).usage ?? [];
 }
 
+async function inspectUsageCategories(
+  storage: ReturnType<typeof createStorageFixture>,
+): Promise<string[]> {
+  const usage = await inspectUsage(storage);
+  for (const row of usage) {
+    expect(row).toMatchObject({ run_id: null, provider: "gpt-5.6-luna" });
+  }
+  return usage
+    .map((row) => {
+      return row.category;
+    })
+    .sort();
+}
+
 function stage1Headers(secret = CRON_SECRET) {
   return { authorization: `Bearer ${secret}` };
 }
@@ -475,16 +540,91 @@ function stage1Client(
 }
 
 beforeEach(async () => {
+  mockEnv("PI_MEMORY_BACKGROUND_WORKERS_ENABLED", "true");
   mockEnv("R2_USER_STORAGES_BUCKET_NAME", BUCKET);
   mockEnv("CRON_SECRET", CRON_SECRET);
   context.sessionHistoryBlobs.clear();
   installS3Objects();
-  await seedBuiltInModelKey(context, "gpt-5.6-terra");
+  await seedBuiltInModelKey(context, "gpt-5.6-luna");
 });
 
 describe("Pi memory Stage 1 worker", () => {
+  it("leaves switch-off legacy work unclaimed before any download or provider call", async () => {
+    const enabledStorage = createStorageFixture();
+    const disabledStorage = createStorageFixture({ piMemoryEnabled: false });
+    const enabledSessionId = randomUUID();
+    const enabled = await enabledStorage.seed({
+      piSessionId: enabledSessionId,
+      raw: settledHistory(enabledSessionId, "enabled owner keeps learning"),
+    });
+    const disabledSessionId = randomUUID();
+    const disabled = await disabledStorage.seed({
+      piSessionId: disabledSessionId,
+      raw: settledHistory(
+        disabledSessionId,
+        "disabled owner never reaches the provider",
+      ),
+      retryCount: 2,
+    });
+    const provider = installProvider();
+
+    const result = await accept(
+      stage1Client([enabledStorage, disabledStorage]).extract({
+        headers: stage1Headers(),
+      }),
+      [200],
+    );
+
+    expect(result.body).toMatchObject({
+      success: true,
+      scanned: 1,
+      claimed: 1,
+      succeeded: 1,
+      succeededNoOutput: 0,
+      retryableFailure: 0,
+      terminalFailure: 0,
+      staleDiscarded: 0,
+    });
+    expect(provider.calls).toHaveLength(1);
+    const providerRequest = JSON.stringify(provider.calls[0]?.request);
+    expect(providerRequest).toContain("enabled owner keeps learning");
+    expect(providerRequest).not.toContain("disabled owner");
+    expect(
+      context.mocks.s3.send.mock.calls.some(([command]) => {
+        return (
+          command instanceof GetObjectCommand &&
+          command.input.Key === disabled.objectKey
+        );
+      }),
+    ).toBeFalsy();
+    await expect(inspect(enabled)).resolves.toMatchObject({
+      status: "succeeded",
+      retry_count: 0,
+      last_error_class: null,
+    });
+    // Unscheduled legacy work remains pending with its attempt count untouched.
+    await expect(inspect(disabled)).resolves.toStrictEqual({
+      status: "pending",
+      retry_count: 2,
+      retry_at: null,
+      last_error_class: null,
+      raw_memory: null,
+      rollout_summary: null,
+      rollout_slug: null,
+    });
+    await expect(inspectUsage(disabledStorage)).resolves.toStrictEqual([]);
+
+    // A settled switch-off candidate is not due again on the next tick.
+    await expect(runScoped(disabledStorage)).resolves.toMatchObject({
+      scanned: 0,
+      claimed: 0,
+      terminalFailure: 0,
+    });
+    expect(provider.calls).toHaveLength(1);
+  });
+
   it("selects the OpenRouter region from each work owner's switch in one batch", async () => {
-    const selectedModel = "gpt-5.6-terra";
+    const selectedModel = "gpt-5.6-luna";
     await seedBuiltInModelCandidateKeys(context, selectedModel);
     const primary = await resolveBuiltInModelRouteFixture(
       context,
@@ -540,7 +680,7 @@ describe("Pi memory Stage 1 worker", () => {
       });
       expect(invocation?.url).toBe(`https://${host}/api/v1/responses`);
       expect(invocation?.request).toMatchObject({
-        model: "openai/gpt-5.6-terra",
+        model: "openai/gpt-5.6-luna",
       });
     }
   });
@@ -598,7 +738,7 @@ describe("Pi memory Stage 1 worker", () => {
     expect(captured).not.toContain(CRON_SECRET);
   });
 
-  it("preserves Stage 1 route counters and results when enabled by default", async () => {
+  it("preserves Stage 1 route counters and results when explicitly enabled", async () => {
     const storage = createStorageFixture();
     const piSessionId = randomUUID();
     const fixture = await storage.seed({
@@ -630,85 +770,143 @@ describe("Pi memory Stage 1 worker", () => {
     });
   });
 
-  it("decodes every encoding, redacts both boundaries, and records background usage", async () => {
-    const storage = createStorageFixture();
-    const fixtures: CandidateFixture[] = [];
-    for (const encoding of [
-      SESSION_HISTORY_ENCODING_IDENTITY,
-      SESSION_HISTORY_ENCODING_GZIP,
-      SESSION_HISTORY_ENCODING_ZSTD,
-    ] as const) {
-      const piSessionId = randomUUID();
-      fixtures.push(
-        await storage.seed({
-          piSessionId,
-          raw: settledHistory(
+  it.each([
+    SESSION_HISTORY_ENCODING_IDENTITY,
+    SESSION_HISTORY_ENCODING_GZIP,
+    SESSION_HISTORY_ENCODING_ZSTD,
+  ] as const)(
+    "decodes %s, redacts both boundaries, and records background usage",
+    async (encoding) => {
+      const storage = createStorageFixture();
+      const fixtures: CandidateFixture[] = [];
+      {
+        const piSessionId = randomUUID();
+        fixtures.push(
+          await storage.seed({
             piSessionId,
-            `perform durable work with ${INPUT_SECRET}`,
-          ),
-          encoding,
-        }),
-      );
-    }
-    const provider = installProvider();
+            raw: settledHistory(
+              piSessionId,
+              `perform durable work with ${INPUT_SECRET}`,
+            ),
+            encoding,
+          }),
+        );
+      }
+      const provider = installProvider();
 
-    await expect(runScoped(storage)).resolves.toMatchObject({
-      scanned: 3,
-      claimed: 3,
-      succeeded: 3,
-      retryableFailure: 0,
-      terminalFailure: 0,
-    });
-    expect(provider.calls).toHaveLength(3);
-    for (const invocation of provider.calls) {
-      const serialized = JSON.stringify(invocation.request);
-      expect(serialized).not.toContain(INPUT_SECRET);
-      expect(serialized).not.toContain(fixtures[0]?.pi_session_id);
-      expect(invocation.request).toMatchObject({
-        model: "gpt-5.6-terra",
-        reasoning: { effort: "max" },
-        text: {
-          format: {
-            type: "json_schema",
-            strict: true,
-            schema: { additionalProperties: false },
+      await expect(runScoped(storage)).resolves.toMatchObject({
+        scanned: 1,
+        claimed: 1,
+        succeeded: 1,
+        retryableFailure: 0,
+        terminalFailure: 0,
+      });
+      expect(provider.calls).toHaveLength(1);
+      for (const invocation of provider.calls) {
+        const serialized = JSON.stringify(invocation.request);
+        expect(serialized).not.toContain(INPUT_SECRET);
+        expect(serialized).not.toContain(fixtures[0]?.pi_session_id);
+        expect(invocation.request).toMatchObject({
+          model: "gpt-5.6-luna",
+          reasoning: { effort: "low" },
+          text: {
+            format: {
+              type: "json_schema",
+              strict: true,
+              schema: { additionalProperties: false },
+            },
           },
+        });
+        expect(invocation.request).not.toHaveProperty("tools");
+      }
+      for (const fixture of fixtures) {
+        await expect(inspect(fixture)).resolves.toMatchObject({
+          status: "succeeded",
+          raw_memory: "safe surrounding text [REDACTED_SECRET]",
+          rollout_summary: "Authorization: [REDACTED_SECRET]",
+          rollout_slug: "pi-stage1-result",
+        });
+      }
+      const usage = await inspectUsage(storage);
+      expect(usage.length).toBeGreaterThanOrEqual(3);
+      expect(usage).toStrictEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            run_id: null,
+            provider: "gpt-5.6-luna",
+            category: "tokens.input",
+          }),
+          expect.objectContaining({
+            run_id: null,
+            provider: "gpt-5.6-luna",
+            category: "tokens.output",
+          }),
+        ]),
+      );
+      await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+    },
+  );
+
+  it("bills the luna long-context tier from the 272,001 total-input boundary", async () => {
+    const below = createStorageFixture();
+    const atBoundary = createStorageFixture();
+    const belowId = randomUUID();
+    const atBoundaryId = randomUUID();
+    await below.seed({
+      piSessionId: belowId,
+      raw: settledHistory(belowId, "total input below the boundary"),
+    });
+    await atBoundary.seed({
+      piSessionId: atBoundaryId,
+      raw: settledHistory(atBoundaryId, "total input at the boundary"),
+    });
+    // Responses usage includes cache reads and cache creation in `input_tokens`;
+    // the adapter separates them and the usage service recombines the total.
+    installProvider(({ request }) => {
+      const boundary = JSON.stringify(request).includes("at the boundary");
+      return {
+        text: defaultProviderOutput(),
+        usage: {
+          input_tokens: boundary ? 272_001 : 272_000,
+          output_tokens: 8,
+          cached_tokens: 1,
+          cache_write_tokens: 1,
         },
-      });
-      expect(invocation.request).not.toHaveProperty("tools");
-    }
-    for (const fixture of fixtures) {
-      await expect(inspect(fixture)).resolves.toMatchObject({
-        status: "succeeded",
-        raw_memory: "safe surrounding text [REDACTED_SECRET]",
-        rollout_summary: "Authorization: [REDACTED_SECRET]",
-        rollout_slug: "pi-stage1-result",
-      });
-    }
-    const usage = await inspectUsage(storage);
-    expect(usage.length).toBeGreaterThanOrEqual(9);
-    expect(usage).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          run_id: null,
-          provider: "gpt-5.6-terra",
-          category: "tokens.input",
-        }),
-        expect.objectContaining({
-          run_id: null,
-          provider: "gpt-5.6-terra",
-          category: "tokens.output",
-        }),
-      ]),
-    );
-    await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+      };
+    });
+
+    await expect(runScoped(below)).resolves.toMatchObject({ succeeded: 1 });
+    await expect(runScoped(atBoundary)).resolves.toMatchObject({
+      succeeded: 1,
+    });
+    await expect(inspectUsageCategories(below)).resolves.toStrictEqual([
+      "tokens.cache_creation",
+      "tokens.cache_read",
+      "tokens.input",
+      "tokens.output",
+    ]);
+    await expect(inspectUsageCategories(atBoundary)).resolves.toStrictEqual([
+      "tokens.cache_creation.long_context",
+      "tokens.cache_read.long_context",
+      "tokens.input.long_context",
+      "tokens.output.long_context",
+    ]);
   });
 
   it("isolates malformed and cyclic sources permanently before the provider", async () => {
     if (await runInIsolatedProcess(import.meta.url)) {
       return;
     }
-    const storage = createStorageFixture();
+    const storages: ReturnType<typeof createStorageFixture>[] = [];
+    const storage = {
+      seed: async (
+        args: Parameters<ReturnType<typeof createStorageFixture>["seed"]>[0],
+      ) => {
+        const owner = createStorageFixture();
+        storages.push(owner);
+        return await owner.seed(args);
+      },
+    };
     const futureId = randomUUID();
     const wrongExpectedId = randomUUID();
     const unsettledId = randomUUID();
@@ -775,7 +973,11 @@ describe("Pi memory Stage 1 worker", () => {
     });
     const provider = installProvider();
 
-    await expect(runScoped(storage)).resolves.toMatchObject({
+    const response = await accept(
+      stage1Client(storages).extract({ headers: stage1Headers() }),
+      [200],
+    );
+    expect(response.body).toMatchObject({
       claimed: 7,
       succeeded: 1,
       terminalFailure: 6,
@@ -869,17 +1071,17 @@ describe("Pi memory Stage 1 worker", () => {
     const provider = installProvider();
 
     await expect(runScoped(storage)).resolves.toMatchObject({
-      scanned: 3,
+      scanned: 1,
       claimed: 1,
-      sourceExpired: 1,
-      sourceActive: 1,
+      sourceExpired: 0,
+      sourceActive: 0,
       retryableFailure: 1,
-      terminalFailure: 1,
+      terminalFailure: 0,
     });
     expect(provider.calls).toHaveLength(0);
     await expect(inspect(expired)).resolves.toMatchObject({
-      status: "terminal_failure",
-      last_error_class: "source_expired",
+      status: "pending",
+      last_error_class: null,
     });
     await expect(inspect(active)).resolves.toMatchObject({ status: "pending" });
     await expect(inspect(retry)).resolves.toMatchObject({
@@ -894,8 +1096,8 @@ describe("Pi memory Stage 1 worker", () => {
     });
     await storage.action({ action: "make-retry-due", pi_session_id: retryId });
     await expect(runScoped(storage)).resolves.toMatchObject({
-      claimed: 2,
-      succeeded: 2,
+      claimed: 1,
+      succeeded: 1,
     });
   });
 
@@ -932,16 +1134,16 @@ describe("Pi memory Stage 1 worker", () => {
       settledHistory(piSessionId, "replacement generation"),
     );
     await expect(runScoped(storage, piSessionId)).resolves.toMatchObject({
-      claimed: 1,
-      succeeded: 1,
+      claimed: 0,
+      succeeded: 0,
     });
     oldReleased.resolve(undefined);
     await expect(oldWorker).resolves.toMatchObject({ staleDiscarded: 1 });
     await expect(inspect(replacement)).resolves.toMatchObject({
-      status: "succeeded",
-      raw_memory: "replacement source output",
+      status: "pending",
+      raw_memory: null,
     });
-    expect((await inspectUsage(storage)).length).toBeGreaterThanOrEqual(6);
+    expect((await inspectUsage(storage)).length).toBeGreaterThanOrEqual(3);
   });
 
   it("records consumed usage but cannot resurrect an owner deleted during provider work", async () => {
@@ -1075,7 +1277,7 @@ describe("Pi memory Stage 1 worker", () => {
     });
   });
 
-  it("claims at most eight candidates and starts at most eight providers", async () => {
+  it("claims only two threads for one user without refilling the daily batch", async () => {
     const storage = createStorageFixture();
     for (let index = 0; index < 9; index += 1) {
       const piSessionId = randomUUID();
@@ -1091,7 +1293,7 @@ describe("Pi memory Stage 1 worker", () => {
     const provider = installProvider(async () => {
       active += 1;
       maxActive = Math.max(maxActive, active);
-      if (active === 8) {
+      if (active === 2) {
         allStarted.resolve(undefined);
       }
       await released.promise;
@@ -1101,14 +1303,101 @@ describe("Pi memory Stage 1 worker", () => {
 
     const first = runScoped(storage);
     await allStarted.promise;
-    expect(provider.calls).toHaveLength(8);
-    expect(maxActive).toBe(8);
+    expect(provider.calls).toHaveLength(2);
+    expect(maxActive).toBe(2);
     released.resolve(undefined);
-    await expect(first).resolves.toMatchObject({ claimed: 8, succeeded: 8 });
+    await expect(first).resolves.toMatchObject({ claimed: 2, succeeded: 2 });
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      claimed: 0,
+      succeeded: 0,
+    });
+    expect(provider.calls).toHaveLength(2);
+  });
+
+  it("revalidates a fresh continuation after download and before the provider", async () => {
+    const storage = createStorageFixture();
+    const piSessionId = randomUUID();
+    const fixture = await storage.seed({
+      piSessionId,
+      raw: settledHistory(piSessionId, "frozen provider boundary"),
+    });
+    const entered = createDeferredPromise<void>(context.signal);
+    const released = createDeferredPromise<void>(context.signal);
+    const fallback = context.mocks.s3.send.getMockImplementation();
+    context.mocks.s3.send.mockImplementation(async (value: unknown) => {
+      if (
+        value instanceof GetObjectCommand &&
+        value.input.Key === fixture.objectKey
+      ) {
+        entered.resolve(undefined);
+        await released.promise;
+      }
+      return fallback ? await fallback(value) : {};
+    });
+    const provider = installProvider();
+    const worker = runScoped(storage);
+    await entered.promise;
+    await storage.createActive(fixture);
+    released.resolve(undefined);
+    await expect(worker).resolves.toMatchObject({
+      claimed: 1,
+      staleDiscarded: 1,
+    });
+    expect(provider.calls).toHaveLength(0);
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+  });
+
+  it("waits a full hour after a real failed provider attempt", async () => {
+    mockNow(new Date("2026-09-14T12:00:00Z"));
+    const storage = createStorageFixture();
+    const piSessionId = randomUUID();
+    const fixture = await storage.seed({
+      piSessionId,
+      raw: settledHistory(piSessionId, "hourly provider retry"),
+    });
+    const provider = installProvider(() => {
+      return "invalid structured output";
+    });
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      retryableFailure: 1,
+    });
+    await expect(inspect(fixture)).resolves.toMatchObject({
+      retry_at: "2026-09-14T13:00:00.000Z",
+    });
+    mockNow(new Date("2026-09-14T12:59:59.999Z"));
+    await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+    expect(provider.calls).toHaveLength(1);
+    mockNow(new Date("2026-09-14T13:00:00Z"));
     await expect(runScoped(storage)).resolves.toMatchObject({
       claimed: 1,
-      succeeded: 1,
+      retryableFailure: 1,
     });
+    expect(provider.calls).toHaveLength(2);
+  });
+
+  it("retains the independent eight-call global bound across nine owners", async () => {
+    const storages = [];
+    for (let index = 0; index < 9; index += 1) {
+      const storage = createStorageFixture();
+      const piSessionId = randomUUID();
+      await storage.seed({
+        piSessionId,
+        raw: settledHistory(piSessionId, "global capacity"),
+      });
+      storages.push(storage);
+    }
+    const provider = installProvider();
+    const first = await accept(
+      stage1Client(storages).extract({ headers: stage1Headers() }),
+      [200],
+    );
+    expect(first.body).toMatchObject({ claimed: 8, succeeded: 8 });
+    expect(provider.calls).toHaveLength(8);
+    const second = await accept(
+      stage1Client(storages).extract({ headers: stage1Headers() }),
+      [200],
+    );
+    expect(second.body).toMatchObject({ claimed: 1, succeeded: 1 });
     expect(provider.calls).toHaveLength(9);
   });
 

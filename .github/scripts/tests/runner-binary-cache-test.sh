@@ -303,38 +303,31 @@ assert_contains "$existing_out" "published=true"
 assert_contains "$existing_out" "publish-reason=existing-validated"
 
 printf 'not zstd\n' > "${TMPDIR}/store/object.zst"
-corrupt_out=$(run_publish "${TMPDIR}/corrupt")
-assert_contains "$corrupt_out" "published=false"
-assert_contains "$corrupt_out" "publish-reason=decompression-invalid"
-[ ! -e "${TMPDIR}/corrupt/manifest.json" ] || fail "corrupt R2 bytes must not be advertised"
+assert_publish_failure() {
+  local directory=$1 mode=$2 reason=$3 output
+  if output=$(run_publish "$directory" "$mode" 2>&1); then
+    fail "expected required publication failure: ${reason}"
+  fi
+  assert_contains "$output" "publication failed (${reason})"
+  [ ! -e "${directory}/manifest.json" ] || fail "failed publication must not advertise a manifest"
+  if grep -q 'supersecret' <<<"$output"; then
+    fail "publication diagnostics leaked AWS error query material"
+  fi
+}
+assert_publish_failure "${TMPDIR}/corrupt" success decompression-invalid
 
 printf 'different runner binary fixture\n' > "${TMPDIR}/different-runner"
 zstd -q -3 -f -o "${TMPDIR}/store/object.zst" "${TMPDIR}/different-runner"
-content_mismatch_out=$(run_publish "${TMPDIR}/publish-content-mismatch")
-assert_contains "$content_mismatch_out" "published=false"
-assert_contains "$content_mismatch_out" "publish-reason=retained-content-mismatch"
-[ ! -e "${TMPDIR}/publish-content-mismatch/manifest.json" ] ||
-  fail "mismatched R2 bytes must not be advertised"
+assert_publish_failure "${TMPDIR}/publish-content-mismatch" success retained-content-mismatch
 
 rm -f "${TMPDIR}/store/object.zst"
-put_failure=$(run_publish "${TMPDIR}/put-failure" put-fail 2>&1)
-assert_contains "$put_failure" "published=false"
-assert_contains "$put_failure" "publish-reason=put-failed"
-if grep -q 'supersecret' <<<"$put_failure"; then
-  fail "cache diagnostics leaked AWS error query material"
-fi
-[ ! -e "${TMPDIR}/put-failure/manifest.json" ] || fail "failed upload must not advertise a manifest"
+assert_publish_failure "${TMPDIR}/put-failure" put-fail put-failed
 
 zstd -q -3 -f -o "${TMPDIR}/store/object.zst" "$runner"
-oversized_out=$(run_publish "${TMPDIR}/oversized" oversized-head)
-assert_contains "$oversized_out" "published=false"
-assert_contains "$oversized_out" "publish-reason=retained-size-invalid"
+assert_publish_failure "${TMPDIR}/oversized" oversized-head retained-size-invalid
+assert_publish_failure "${TMPDIR}/malformed-head" malformed-head head-malformed
 
-malformed_head_out=$(run_publish "${TMPDIR}/malformed-head" malformed-head)
-assert_contains "$malformed_head_out" "published=false"
-assert_contains "$malformed_head_out" "publish-reason=head-malformed"
-
-missing_config=$(FRESH_METADATA_PATH="$fresh" \
+if missing_config=$(FRESH_METADATA_PATH="$fresh" \
   RUNNER_PATH="$runner" \
   EXPECTED_TARGET="$target" \
   EXPECTED_BINARY_INPUT_DIGEST="$input_digest" \
@@ -345,9 +338,10 @@ missing_config=$(FRESH_METADATA_PATH="$fresh" \
   PRODUCER_EVENT=pull_request \
   PRODUCER_HEAD_SHA="$head_sha" \
   PRODUCER_PR_NUMBER=123 \
-    "$CACHE" publish)
-assert_contains "$missing_config" "published=false"
-assert_contains "$missing_config" "publish-reason=missing-r2-config"
+    "$CACHE" publish 2>&1); then
+  fail "required publication must fail without R2 configuration"
+fi
+assert_contains "$missing_config" "publication failed (missing-r2-config)"
 
 main_head=$(printf 'c%.0s' {1..40})
 pr_head=$(printf 'd%.0s' {1..40})

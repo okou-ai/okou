@@ -5,6 +5,7 @@ import {
   MANAGED_SOCIALKIT_BILLING_CATEGORY,
   MANAGED_SOCIALKIT_TOOLS,
   socialKitTranscriptErrorReasonSchema,
+  socialKitCollectionSourceLimitSchema,
   type ManagedSocialKitTool,
   type ManagedSocialKitToolName,
   socialKitRequestSchema,
@@ -22,6 +23,7 @@ export {
   SOCIALKIT_TRANSCRIPT_ERROR_CODES,
   socialKitTranscriptErrorReasonSchema,
   socialKitRequestSchema,
+  socialKitSummaryFieldsSchema,
   type ManagedSocialKitCollection,
   type ManagedSocialKitCatalogBilling,
   type ManagedSocialKitCatalogProviderLimit,
@@ -41,6 +43,7 @@ export {
   type SocialKitTranscriptErrorCode,
   type SocialKitTranscriptErrorReason,
   type SocialKitRequest,
+  type SocialKitCollectionSourceLimit,
 } from "./social-tools";
 
 const c = initContract();
@@ -214,6 +217,42 @@ export type SocialKitDownloadResponse = z.infer<
   typeof socialKitDownloadResponseSchema
 >;
 
+export const socialKitDownloadListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  cursor: z.string().uuid().optional(),
+  status: z
+    .enum([...socialKitDownloadStatusSchema.options, "active"])
+    .optional(),
+});
+
+export const socialKitDownloadListResponseSchema = z.object({
+  downloads: z.array(
+    socialKitDownloadResponseSchema.extend({
+      request: socialKitDownloadRequestSchema,
+      resumeCommand: z.string().nullable(),
+    }),
+  ),
+  nextCursor: z.string().uuid().nullable(),
+});
+
+export const socialKitDownloadConflictSchema = apiErrorSchema.extend({
+  error: apiErrorSchema.shape.error.extend({
+    recovery: z
+      .object({
+        downloadId: z.string().uuid(),
+        resumeCommand: z.string(),
+      })
+      .optional(),
+  }),
+});
+
+export type SocialKitDownloadListQuery = z.infer<
+  typeof socialKitDownloadListQuerySchema
+>;
+export type SocialKitDownloadListResponse = z.infer<
+  typeof socialKitDownloadListResponseSchema
+>;
+
 export const socialKitCollectionProviderLimitedReasonSchema = z.enum([
   "reported_total_exceeds_page",
   "provider_ceiling",
@@ -259,6 +298,7 @@ const socialKitCollectionSchema = z
       itemsReturned: z.number().int().nonnegative(),
       reason: socialKitCollectionProviderLimitedReasonSchema.optional(),
       uncertainty: socialKitCollectionUncertaintySchema.optional(),
+      sourceLimit: socialKitCollectionSourceLimitSchema.optional(),
       reportedTotal: reportedTotalSchema.optional(),
     }),
   ])
@@ -462,6 +502,16 @@ export function projectPublicSocialResponse(
   }
 
   let collection = response.collection;
+  // New CLI -> old API compatibility. Remove this projection once every serving
+  // API and retained rollback target emits the fixed batch metadata (#34053).
+  if (tool.collection?.sourceLimit && collection) {
+    collection = {
+      state: "provider_limited",
+      itemsReturned: collection.itemsReturned,
+      reason: "provider_ceiling",
+      sourceLimit: tool.collection.sourceLimit,
+    };
+  }
   if (
     tool.collection?.emptyResult?.reliability === "unreliable" &&
     collection?.state === "complete" &&
@@ -495,7 +545,9 @@ export const socialContract = c.router({
   request: {
     method: "POST",
     path: "/api/social/request",
-    headers: authHeadersSchema,
+    headers: authHeadersSchema.extend({
+      "x-okou-instagram-views": z.literal("nullable").optional(),
+    }),
     body: socialKitRequestSchema,
     responses: {
       200: socialKitResponseSchema,
@@ -520,12 +572,26 @@ export const socialContract = c.router({
       401: apiErrorSchema,
       402: apiErrorSchema,
       403: apiErrorSchema,
-      409: apiErrorSchema,
+      409: socialKitDownloadConflictSchema,
       500: apiErrorSchema,
       502: apiErrorSchema,
       503: apiErrorSchema,
     },
     summary: "Start an Okou Social artifact download",
+  },
+  listDownloads: {
+    method: "GET",
+    path: "/api/social/downloads",
+    headers: authHeadersSchema,
+    query: socialKitDownloadListQuerySchema,
+    responses: {
+      200: socialKitDownloadListResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary: "List saved downloads for the current user and organization",
   },
   getDownload: {
     method: "GET",
