@@ -676,10 +676,11 @@ fn write_pi_langfuse_bootstrap_file(
         match std::fs::remove_file(&path) {
             Ok(()) => {}
             Err(cleanup_error) if cleanup_error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(cleanup_error) => log_warn!(
-                LOG_TAG,
-                "Pi Langfuse bootstrap cleanup failed after write error: {cleanup_error}"
-            ),
+            Err(cleanup_error) => {
+                return Err(AgentError::Execution(format!(
+                    "Pi Langfuse bootstrap cleanup failed: {cleanup_error}"
+                )));
+            }
         }
         log_warn!(
             LOG_TAG,
