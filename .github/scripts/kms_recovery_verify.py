@@ -336,6 +336,7 @@ def process_failure(path, database, result, seconds):
             "ERR_PACKAGE_PATH_NOT_EXPORTED",
             "ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL",
             "ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND",
+            "ERR_PNPM_BAD_PM_VERSION",
         )
         if re.search(rb"(?<![A-Z_])" + code.encode() + rb"(?![A-Z_])", output)
     ]
@@ -368,8 +369,6 @@ def verify_database(parsed, environment, deadline):
             result = subprocess.run(
                 [
                     "pnpm",
-                    "--dir",
-                    "turbo/packages/db",
                     "exec",
                     "tsx",
                     "scripts/migrations/013-kms-account-rotation/backfill.ts",
@@ -387,7 +386,9 @@ def verify_database(parsed, environment, deadline):
                     "--report-path",
                     str(report_path),
                 ],
-                cwd=root,
+                # Corepack resolves packageManager before pnpm parses --dir.
+                # Start inside the workspace that installed the locked tool.
+                cwd=root / "turbo/packages/db",
                 env=scoped,
                 check=False,
                 capture_output=True,

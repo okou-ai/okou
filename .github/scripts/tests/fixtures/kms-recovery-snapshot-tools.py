@@ -128,13 +128,18 @@ if Path(sys.argv[0]).name == "aws":
     raise SystemExit(0)
 
 if Path(sys.argv[0]).name == "pnpm":
-    assert sys.argv[1:6] == [
-        "--dir",
-        "turbo/packages/db",
+    assert sys.argv[1:4] == [
         "exec",
         "tsx",
         "scripts/migrations/013-kms-account-rotation/backfill.ts",
     ]
+    # Model Corepack's project lookup before the package manager parses argv.
+    manifests = [p / "package.json" for p in [Path.cwd(), *Path.cwd().parents]]
+    assert any(
+        p.is_file()
+        and json.loads(p.read_text()).get("packageManager", "").startswith("pnpm@")
+        for p in manifests
+    ), "ERR_PNPM_BAD_PM_VERSION"
     assert "--verify" in sys.argv and "--migrate" not in sys.argv
     assert "--cursor" not in sys.argv and "--preflight" not in sys.argv
     assert os.environ["AWS_ACCESS_KEY_ID"] == "fixture-temporary-access"
@@ -155,11 +160,17 @@ if Path(sys.argv[0]).name == "pnpm":
     assert "targetVerification" not in checkpoint["databases"][0]
     state["targetVerificationCalls"] = state.get("targetVerificationCalls", 0) + 1
     save()
-    if scenario in {"target-verification-failed", "target-loader-failed"}:
+    if scenario in {
+        "target-verification-failed",
+        "target-loader-failed",
+        "target-package-manager-failed",
+    }:
         sys.stderr.write("fixture-private-password")
         if scenario == "target-loader-failed":
             sys.stderr.write(" ERR_MODULE_NOT_FOUND fixture-private-password")
             print("ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL fixture-private-password")
+        if scenario == "target-package-manager-failed":
+            sys.stderr.write(" ERR_PNPM_BAD_PM_VERSION fixture-private-password")
         raise SystemExit(1)
     totals = {
         key: 0

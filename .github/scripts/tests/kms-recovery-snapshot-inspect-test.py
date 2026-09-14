@@ -465,6 +465,20 @@ class SnapshotInspectionTest(unittest.TestCase):
         self.assertEqual(len(report["databases"]), 1)
         self.assertTrue(report["cleanupComplete"])
 
+    def test_package_manager_mismatch_keeps_fixed_code_and_cleanup(self):
+        result, report, _ = self.invoke(
+            "target-package-manager-failed", {"VERIFY_TARGET_CIPHERTEXT": "true"}
+        )
+        self.assertEqual(result.returncode, 1)
+        details = report["targetVerificationFailure"]
+        self.assertEqual(details["loaderCodes"], ["ERR_PNPM_BAD_PM_VERSION"])
+        self.assertEqual(details["toolReport"], {"reportStatus": "missing"})
+        self.assertFalse(report["collectionComplete"])
+        self.assertFalse(report["cryptographicVerification"])
+        self.assertEqual(len(report["databases"]), 1)
+        self.assertTrue(report["cleanupComplete"])
+        self.assertTrue(report["snapshotSetUnchanged"])
+
     def test_untrusted_target_failure_report_is_not_retained(self):
         for scenario, status in [
             ("target-private-failure", "validated"),
