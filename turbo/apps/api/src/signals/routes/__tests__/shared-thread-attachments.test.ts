@@ -24,6 +24,10 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { copyPublicArtifactObject$ } from "../../external/s3";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { now } from "../../../lib/time";
+import {
+  createPreviousSharedThread$,
+  previousSharedThreadReadRoutes,
+} from "../../../test-fixtures/shared-thread-previous-api";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -211,6 +215,44 @@ test("publishes independent attachment bytes", async () => {
   ]) {
     expect(publicJson).not.toContain(value);
   }
+});
+
+test("previous API readers can serve newly shared attachment messages", async () => {
+  const f = await fixture();
+  const file = await f.upload("brief.pdf", "application/pdf", "file bytes");
+  const message = await f.send([
+    file.part,
+    { type: "text", text: "Read the brief" },
+  ]);
+  const created = await accept(f.share(message), [201]);
+  const previousApi = setupApp({
+    context,
+    routes: previousSharedThreadReadRoutes,
+  })(sharedThreadsContract);
+  const shared = await accept(
+    previousApi.get({ params: { id: created.body.id } }),
+    [200],
+  );
+  expect(shared.body.messages).toHaveLength(1);
+  expect(shared.body.messages[0]?.content).toBe("Read the brief");
+});
+
+test("serves shares written by the previous API after the migration", async () => {
+  const f = await fixture();
+  const content = "Text shared by the previous API";
+  const message = await f.send([{ type: "text", text: content }]);
+  const id = await createStore().set(
+    createPreviousSharedThread$,
+    { userId: f.actor.userId, threadId: message.threadId, content },
+    new AbortController().signal,
+  );
+  const shared = await accept(
+    api()(sharedThreadsContract).get({ params: { id } }),
+    [200],
+  );
+  expect(shared.body.messages).toStrictEqual([
+    { messageIndex: 0, role: "user", content },
+  ]);
 });
 
 // Provider-boundary coverage: normal chat sending currently resolves public

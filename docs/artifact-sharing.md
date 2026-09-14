@@ -157,6 +157,14 @@ artifact's access policy is unchanged. Other artifact references in shared-threa
 content retain their independent authorization. This change adds no organization-recipient
 Drive export or editing authority.
 
+Shared-thread attachment metadata is stored in `shared_threads.message_attachments`,
+keyed by the snapshot's message index. The existing `messages` JSON keeps its
+previous strict shape, so old API readers can still serve the text. The additive
+column defaults to an empty object for historical shares and old writers; no
+attachment backfill or cleanup phase is required. The current API combines these
+columns into the optional `messages[].attachments` response field. Apply the
+migration before promoting that API through the normal release workflow.
+
 ## Local verification for slice 4
 
 Targeted route tests use real HTTP handlers and PostgreSQL, with only storage

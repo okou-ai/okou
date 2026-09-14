@@ -9,6 +9,7 @@ import { artifacts } from "@okouai/db/schema/artifact";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { sharedThreads } from "@okouai/db/schema/shared-thread";
+import type { SharedThreadMessageAttachments } from "@okouai/db/jsonb-contracts/shared-thread";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { command, computed, type Computed } from "ccstate";
 
@@ -232,6 +233,19 @@ async function ownsSharedThreadSource(
   return thread !== undefined;
 }
 
+function sharedThreadMessageColumns(messages: readonly SharedMessage[]) {
+  // Previous API readers validate messages strictly. Keep attachment metadata
+  // outside that persisted shape so those readers can still serve the text.
+  const messageAttachments: SharedThreadMessageAttachments = {};
+  const persistedMessages = messages.map(({ attachments, ...message }) => {
+    if (attachments !== undefined) {
+      messageAttachments[message.messageIndex] = attachments;
+    }
+    return message;
+  });
+  return { messages: persistedMessages, messageAttachments };
+}
+
 export const createSharedThread$ = command(
   async (
     { get, set },
@@ -333,7 +347,7 @@ export const createSharedThread$ = command(
           userId: args.userId,
           sourceChatThreadId: args.threadId,
           title,
-          messages,
+          ...sharedThreadMessageColumns(messages),
           publicBrand: args.publicBrand,
           createdAt,
         })
@@ -374,6 +388,7 @@ export const readSharedThread$ = command(
         id: sharedThreads.id,
         title: sharedThreads.title,
         messages: sharedThreads.messages,
+        messageAttachments: sharedThreads.messageAttachments,
         publicBrand: sharedThreads.publicBrand,
       })
       .from(sharedThreads)
@@ -382,20 +397,24 @@ export const readSharedThread$ = command(
     signal.throwIfAborted();
     return row
       ? {
-          ...row,
+          id: row.id,
+          publicBrand: row.publicBrand,
           title: visiblePiMemoryCitationText(row.title),
           messages: row.messages.map((message) => {
-            return message.role === "assistant"
-              ? {
-                  ...message,
-                  content:
-                    message.runIndex === undefined &&
-                    message.runGroupIndex === undefined &&
-                    isRetiredGoalArchiveText(message.content)
-                      ? message.content
-                      : visiblePiMemoryCitationText(message.content),
-                }
-              : message;
+            const attachments = row.messageAttachments[message.messageIndex];
+            return {
+              ...message,
+              content:
+                message.role === "assistant" &&
+                !(
+                  message.runIndex === undefined &&
+                  message.runGroupIndex === undefined &&
+                  isRetiredGoalArchiveText(message.content)
+                )
+                  ? visiblePiMemoryCitationText(message.content)
+                  : message.content,
+              ...(attachments === undefined ? {} : { attachments }),
+            };
           }),
         }
       : null;
