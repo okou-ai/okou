@@ -9720,6 +9720,9 @@ function ComposerRunModelPickerControl({
             ? signals.model.menu
             : undefined
         }
+        // The effort control beside it carries the bolt when Fast is on, so the
+        // model keeps its own name.
+        fastShownByCaller
         flyoutLayout={modelFlyoutEnabled}
         onSelected={() => {
           setModelPickerOpen(false);

@@ -59,29 +59,28 @@ export function ChatEffortTrigger({
     policy.routeStatus === "valid" &&
     isCodexFastModeModel(policy.model);
   return (
-    <>
-      <Popover>
-        {/* A real composer control, not a bare trigger: the shared button owns
+    <Popover>
+      {/* A real composer control, not a bare trigger: the shared button owns
             the radius, height, hover and focus ring the rest of the row has. */}
-        <PopoverTrigger asChild>
-          <Button
-            variant="quiet"
-            size="sm"
-            aria-label={`${label}, ${displayValue}`}
-            className={triggerClassName}
-          >
-            {fast ? (
-              <Zap
-                size={15}
-                fill="currentColor"
-                className="text-amber-600 dark:text-amber-300"
-                aria-hidden="true"
-              />
-            ) : null}
-            {displayValue}
-          </Button>
-        </PopoverTrigger>
-        {/* Above the control and aligned to its trailing edge. The control sits
+      <PopoverTrigger asChild>
+        <Button
+          variant="quiet"
+          size="sm"
+          aria-label={`${label}, ${displayValue}`}
+          className={triggerClassName}
+        >
+          {fast ? (
+            <Zap
+              size={15}
+              fill="currentColor"
+              className="text-amber-600 dark:text-amber-300"
+              aria-hidden="true"
+            />
+          ) : null}
+          {displayValue}
+        </Button>
+      </PopoverTrigger>
+      {/* Above the control and aligned to its trailing edge. The control sits
             in a right-aligned row, so its leading edge moves as the level's name
             changes width while its trailing edge does not -- anchoring there is
             what keeps the panel still. `side="top"` follows the composer's other
@@ -91,32 +90,28 @@ export function ChatEffortTrigger({
             that puts the label 14px from the top edge. Effort and Fast are one
             decision about how this message runs, so they are separated by space
             rather than by a rule. */}
-        <PopoverContent
-          side="top"
-          align="end"
-          sideOffset={6}
-          className="w-63 px-1.5 py-0.5"
-        >
-          <div>
-            <ChatEffortSettings
+      <PopoverContent
+        side="top"
+        align="end"
+        sideOffset={6}
+        className="w-63 px-1.5 py-0.5"
+      >
+        <div>
+          <ChatEffortSettings
+            selection={value}
+            disabled={disabled}
+            onChange={onChange}
+          />
+          {fastAvailable ? (
+            <ChatFastSetting
               selection={value}
               disabled={disabled}
+              fastImpact={<ModelFastImpact policy={policy} />}
               onChange={onChange}
             />
-            {fastAvailable ? (
-              <ChatFastSetting
-                selection={value}
-                disabled={disabled}
-                fastImpact={<ModelFastImpact policy={policy} />}
-                onChange={onChange}
-              />
-            ) : null}
-          </div>
-        </PopoverContent>
-      </Popover>
-      {/* The separator belongs to this control rather than to the row, so a
-          model without effort levels does not leave a rule behind. */}
-      <div className="mx-0 h-5 w-px bg-divider/60 sm:mx-0.5" />
-    </>
+          ) : null}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }

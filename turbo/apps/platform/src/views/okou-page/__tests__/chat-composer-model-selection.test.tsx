@@ -899,6 +899,15 @@ test("Offer Fast beside effort on the composer for a Fast-capable model", async 
   expect(
     within(panel).getByRole("slider", { name: "Effort" }),
   ).not.toBeDisabled();
+  click(within(panel).getByRole("switch", { name: "Fast" }));
+  // Turning Fast on must not rename the model. The effort control beside it
+  // carries the bolt, so the word on the model would say it twice -- and the
+  // model's own name would change as a side effect of a speed setting.
+  const model = await findButton("GPT 5.6 Luna Fast");
+  await waitFor(() => {
+    expect(model).toHaveTextContent("GPT 5.6 Luna");
+  });
+  expect(model).not.toHaveTextContent(/Fast/u);
 });
 
 test("Adjust effort from the composer without opening the model picker", async () => {
