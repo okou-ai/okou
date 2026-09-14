@@ -6171,6 +6171,34 @@ export async function resolveCurrentPersonalSubscriptionBundleForApi(
   args: ModelProviderRuntimeSecretForApiArgs,
   signal: AbortSignal,
 ) {
+  const lookup = resolveModelProviderRuntimeSecretLookup(args);
+  if (!lookup || !isPersonalSubscriptionProviderType(lookup.providerType)) {
+    throw new Error("Expected a personal subscription credential lookup");
+  }
+  const bundleArgs = {
+    db: args.db,
+    orgId: args.orgId,
+    userId: lookup.userId,
+    type: lookup.providerType,
+    sourceId: lookup.metadata.sourceId,
+    runId: args.runId,
+    featureSwitchContext: args.featureSwitchContext,
+  };
+  const initial = await readPersonalSubscriptionCredentialBundle(
+    bundleArgs,
+    signal,
+  );
+  signal.throwIfAborted();
+  const refreshMetadata = getModelProviderRefreshMetadata(args.providerKey);
+  if (
+    initial &&
+    !initial.account.needsReconnect &&
+    initial.values.get(lookup.secretName)?.trim() &&
+    (!refreshMetadata?.refreshableSecrets.includes(lookup.secretName) ||
+      !tokenExpiresAtNeedsRefresh(initial.account.tokenExpiresAt))
+  ) {
+    return { status: "available" as const, values: initial.values };
+  }
   const current = await resolveCurrentModelProviderRuntimeSecretForApi(
     args,
     signal,
@@ -6178,20 +6206,8 @@ export async function resolveCurrentPersonalSubscriptionBundleForApi(
   if (current.status === "unavailable") {
     return current;
   }
-  const lookup = resolveModelProviderRuntimeSecretLookup(args);
-  if (!lookup || !isPersonalSubscriptionProviderType(lookup.providerType)) {
-    throw new Error("Expected a personal subscription credential lookup");
-  }
   const bundle = await readPersonalSubscriptionCredentialBundle(
-    {
-      db: args.db,
-      orgId: args.orgId,
-      userId: lookup.userId,
-      type: lookup.providerType,
-      sourceId: lookup.metadata.sourceId,
-      runId: args.runId,
-      featureSwitchContext: args.featureSwitchContext,
-    },
+    bundleArgs,
     signal,
   );
   return bundle && !bundle.account.needsReconnect

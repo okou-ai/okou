@@ -846,6 +846,9 @@ export async function upsertPersonalModelProviderAccount(
           ),
         )
         .limit(1);
+      if (!providerRow && identityProof) {
+        return notFound("Resource not found");
+      }
       const provider =
         providerRow ??
         (await createLogicalProvider(tx, {
@@ -854,10 +857,17 @@ export async function upsertPersonalModelProviderAccount(
           type: args.type,
           selectedModel: args.selectedModel,
         }));
-      const currentSnapshot = await lockSubscriptionCredentialSnapshot({
-        ...args,
-        db: tx,
-      });
+      // A provider inserted by this transaction cannot yet own visible accounts.
+      // Its first bundle is still published atomically through the same writer.
+      const currentSnapshot = providerRow
+        ? await lockSubscriptionCredentialSnapshot({ ...args, db: tx })
+        : {
+            provider,
+            accounts: [],
+            mirror: [],
+            accountSecrets: [],
+            active: undefined,
+          };
       if (!currentSnapshot) {
         throw new Error("Expected the connected provider snapshot");
       }
@@ -2117,17 +2127,74 @@ export async function readPersonalSubscriptionCredentialBundle(
   args: SubscriptionCredentialOwner,
   signal?: AbortSignal,
 ) {
+  const current = await readLockedPersonalSubscriptionBundle(args);
+  if (current !== false) {
+    return current;
+  }
+  // Only an opaque identity mismatch needs an unlocked profile round trip.
+  // Coherent bundles and locked Codex imports are already one atomic read.
   if (!(await coordinatePersonalSubscriptionCredentials(args, signal))) {
     return null;
   }
+  const coordinated = await readLockedPersonalSubscriptionBundle(args);
+  return coordinated === false ? null : coordinated;
+}
+
+async function readLockedPersonalSubscriptionBundle(
+  args: SubscriptionCredentialOwner,
+) {
   return await args.db.transaction(async (tx) => {
-    if (
-      !(await reconcileLockedPersonalSubscriptionCredentials({
-        ...args,
-        db: tx,
-      }))
-    ) {
+    const snapshot = await lockSubscriptionCredentialSnapshot({
+      ...args,
+      db: tx,
+    });
+    if (!snapshot) {
       return null;
+    }
+    const needsCoordination = snapshotNeedsCoordination(
+      snapshot,
+      args.sourceId,
+    );
+    const coherent =
+      !needsCoordination ||
+      (await subscriptionBundlesMatch(snapshot, args.featureSwitchContext));
+    if (coherent) {
+      if (needsCoordination) {
+        await reconcileCodexRefreshMetadata(tx, snapshot);
+      }
+      const account = snapshot.accounts.find((candidate) => {
+        return (
+          candidate.orgId === args.orgId &&
+          candidate.userId === args.userId &&
+          candidate.type === args.type &&
+          candidate.disconnectedAt === null &&
+          (args.sourceId ? candidate.id === args.sourceId : candidate.isActive)
+        );
+      });
+      if (account) {
+        const rows = snapshot.accountSecrets.filter((secret) => {
+          return secret.modelProviderAccountId === account.id;
+        });
+        return {
+          account:
+            args.type === CODEX_TYPE && account.id === snapshot.active?.id
+              ? {
+                  ...account,
+                  tokenExpiresAt: snapshot.provider.tokenExpiresAt,
+                  needsReconnect: snapshot.provider.needsReconnect,
+                  lastRefreshErrorCode: snapshot.provider.lastRefreshErrorCode,
+                }
+              : account,
+          values: await credentialValues(rows, args.featureSwitchContext),
+        };
+      }
+    } else if (
+      !(await reconcileLockedSubscriptionSnapshot(
+        { ...args, db: tx },
+        snapshot,
+      ))
+    ) {
+      return false as const;
     }
     const [account] = await tx
       .select()
