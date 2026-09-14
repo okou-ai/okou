@@ -23,6 +23,7 @@ import {
 } from "./chat-composer-test-helpers.ts";
 
 const WORKFLOW_NAME = "axiom-red";
+const SECOND_WORKFLOW_NAME = "axiom-status";
 
 function setupModels(): void {
   mockAgent();
@@ -51,11 +52,23 @@ function setupModels(): void {
         visibility: "public",
         shadowedBy: null,
       },
+      workflowSummary({
+        name: SECOND_WORKFLOW_NAME,
+        agentId: AGENT_ID,
+        displayName: null,
+        description: "Check Axiom service status",
+      }),
+      workflowSummary({
+        name: "axiom-traces",
+        agentId: AGENT_ID,
+        displayName: null,
+        description: "Inspect Axiom traces",
+      }),
     ]);
   });
 }
 
-async function openSlashMenu(panel: boolean): Promise<void> {
+async function openSlashMenu(panel: boolean, query = ""): Promise<void> {
   setupModels();
   mockChatLifecycle(context);
   await setupPage({
@@ -67,7 +80,7 @@ async function openSlashMenu(panel: boolean): Promise<void> {
     },
   });
   const editor = await findComposerEditor();
-  await fill(editor, "Draft /");
+  await fill(editor, `Draft /${query}`);
   await screen.findByTestId("slash-workflow-menu");
 }
 
@@ -159,6 +172,27 @@ test("Highlighting a workflow closes the pane instead of leaving a stale type op
     expect(detailPane()).toBeNull();
   });
 });
+
+test.each(["", "axi"])(
+  "Keyboard navigation continues from the hovered workflow for query '%s'",
+  async (query) => {
+    const user = userEvent.setup();
+    await openSlashMenu(true, query);
+    const editor = await findComposerEditor();
+    const workflow = await waitFor(() => {
+      return slashButton(`/${SECOND_WORKFLOW_NAME}`);
+    });
+
+    await user.hover(workflow);
+    await user.keyboard("{ArrowDown}{ArrowUp}{Enter}");
+
+    await waitFor(() => {
+      expect(editor).toHaveTextContent(`/${SECOND_WORKFLOW_NAME}`);
+    });
+    expect(editor).not.toHaveTextContent(`/${WORKFLOW_NAME}`);
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  },
+);
 
 test("The panel emphasizes the typed query inside a workflow name", async () => {
   setupModels();

@@ -40,9 +40,9 @@ interface SlashTemplatePanelProps {
   readonly categories: readonly SlashTemplateCategory[];
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
   readonly workflowsLoading: boolean;
-  /** The highlighted row, owned by the editor's keyboard handling. */
-  readonly highlighted: SlashTemplateCategory | null;
-  readonly onHighlight: (category: SlashTemplateCategory | null) => void;
+  /** Categories precede workflows in the editor's shared suggestion index. */
+  readonly selectedIndex: number;
+  readonly onHighlight: (index: number) => void;
   readonly onSelectCategory: (category: SlashTemplateCategory) => void;
   readonly onSelectTemplate: (preview: SlashTemplatePreview) => void;
   readonly onSelectWorkflow: (workflow: ComposerSlashWorkflowMatch) => void;
@@ -216,13 +216,15 @@ function SlashTemplateDetailPane({
 function SlashPanelWorkflowList({
   workflows,
   loading,
+  selectedIndex,
   onHighlight,
   onSelect,
   workflowOptionId,
 }: {
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
   readonly loading: boolean;
-  readonly onHighlight: (category: SlashTemplateCategory | null) => void;
+  readonly selectedIndex: number;
+  readonly onHighlight: (index: number) => void;
   readonly onSelect: (workflow: ComposerSlashWorkflowMatch) => void;
   readonly workflowOptionId: (workflowId: string) => string;
 }) {
@@ -247,17 +249,20 @@ function SlashPanelWorkflowList({
   }
   return (
     <div className="px-1">
-      {workflows.map((workflow) => {
+      {workflows.map((workflow, index) => {
         return (
           <button
             key={workflow.id}
             id={workflowOptionId(workflow.id)}
             type="button"
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-state-hover"
+            className={cn(
+              "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors",
+              selectedIndex === index
+                ? "bg-state-hover"
+                : "hover:bg-state-hover",
+            )}
             onMouseEnter={() => {
-              // A workflow has nothing to preview, so highlighting one closes
-              // the pane rather than leaving a stale type open.
-              onHighlight(null);
+              onHighlight(index);
             }}
             onMouseDown={(event) => {
               event.preventDefault();
@@ -284,7 +289,7 @@ export function SlashTemplatePanel({
   categories,
   workflows,
   workflowsLoading,
-  highlighted,
+  selectedIndex,
   onHighlight,
   onSelectCategory,
   onSelectTemplate,
@@ -294,6 +299,7 @@ export function SlashTemplatePanel({
   categoryOptionId,
 }: SlashTemplatePanelProps) {
   const { t } = useTranslation();
+  const highlighted = categories[selectedIndex] ?? null;
   // Narrowed here rather than inside the pane, so the pane has no unreachable
   // branch for a category that can never reach it.
   const detailCategory =
@@ -315,7 +321,7 @@ export function SlashTemplatePanel({
             })}
           </SectionLabel>
           <div className="px-1">
-            {categories.map((category) => {
+            {categories.map((category, index) => {
               const Icon = SLASH_TEMPLATE_CATEGORY_ICONS[category];
               const label = slashTemplateCategoryLabel(category);
               return (
@@ -331,7 +337,7 @@ export function SlashTemplatePanel({
                       : "hover:bg-state-hover",
                   )}
                   onMouseEnter={() => {
-                    onHighlight(category);
+                    onHighlight(index);
                   }}
                   onMouseDown={(event) => {
                     event.preventDefault();
@@ -356,7 +362,10 @@ export function SlashTemplatePanel({
           <SlashPanelWorkflowList
             workflows={workflows}
             loading={workflowsLoading}
-            onHighlight={onHighlight}
+            selectedIndex={selectedIndex - categories.length}
+            onHighlight={(index) => {
+              onHighlight(categories.length + index);
+            }}
             onSelect={onSelectWorkflow}
             workflowOptionId={workflowOptionId}
           />
