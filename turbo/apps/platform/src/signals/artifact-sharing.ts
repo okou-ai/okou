@@ -1,4 +1,4 @@
-import { command, computed, state } from "ccstate";
+import { command } from "ccstate";
 import {
   artifactReferencesContract,
   parseArtifactReference,
@@ -52,59 +52,6 @@ const resolveSharingTarget$ = command(
   },
 );
 
-interface PageArtifactShareStatuses {
-  readonly pageVersion: number;
-  readonly statuses: Readonly<Record<string, ArtifactShareStatus>>;
-}
-
-const pageStatusState$ = state<PageArtifactShareStatuses>({
-  pageVersion: -1,
-  statuses: {},
-});
-export const artifactShareStatuses$ = computed((get) => {
-  const current = get(pageStatusState$);
-  return current.pageVersion === get(pageVersion$) ? current.statuses : {};
-});
-
-function withArtifactShareStatus(
-  current: PageArtifactShareStatuses,
-  pageVersion: number,
-  url: string,
-  status: ArtifactShareStatus,
-): PageArtifactShareStatuses {
-  return {
-    pageVersion,
-    statuses: {
-      ...(current.pageVersion === pageVersion ? current.statuses : {}),
-      [url]: status,
-    },
-  };
-}
-
-export const loadArtifactShare$ = command(
-  async ({ get, set }, url: string, signal: AbortSignal) => {
-    const pageVersion = get(pageVersion$);
-    const target = await set(resolveSharingTarget$, url, signal);
-    if (!target) {
-      return;
-    }
-    const response = await accept(
-      get(apiClient$)(artifactSharesContract).status({
-        body: target,
-        fetchOptions: { signal },
-      }),
-      [200],
-      signal,
-    );
-    if (get(pageVersion$) !== pageVersion) {
-      return;
-    }
-    set(pageStatusState$, (current) => {
-      return withArtifactShareStatus(current, pageVersion, url, response.body);
-    });
-  },
-);
-
 export const shareArtifact$ = command(
   async (
     { get, set },
@@ -116,18 +63,28 @@ export const shareArtifact$ = command(
   ) => {
     signal.throwIfAborted();
     const pageVersion = get(pageVersion$);
-    const status = get(artifactShareStatuses$)[args.url];
+    const target = await set(resolveSharingTarget$, args.url, signal);
+    if (!target) {
+      return null;
+    }
+    const { body: status } = await accept(
+      get(apiClient$)(artifactSharesContract).status({
+        body: target,
+        fetchOptions: { signal },
+      }),
+      [200],
+      signal,
+    );
+    if (get(pageVersion$) !== pageVersion) {
+      return null;
+    }
     if (
-      status?.url &&
+      status.url &&
       status.audience === args.audience &&
       status.selectedTarget &&
       status.selectedVersion === status.candidateVersion
     ) {
       return status.url;
-    }
-    const target = await set(resolveSharingTarget$, args.url, signal);
-    if (!target) {
-      return null;
     }
     const response = await accept(
       get(apiClient$)(artifactSharesContract).update({
@@ -141,14 +98,6 @@ export const shareArtifact$ = command(
     if (get(pageVersion$) !== pageVersion) {
       return null;
     }
-    set(pageStatusState$, (current) => {
-      return withArtifactShareStatus(
-        current,
-        pageVersion,
-        args.url,
-        response.body,
-      );
-    });
     return response.body.url;
   },
 );

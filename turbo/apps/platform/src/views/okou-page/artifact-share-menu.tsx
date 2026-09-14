@@ -1,6 +1,6 @@
-import { useGet, useLastResolved } from "ccstate-react";
+import { useGet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Share2, Users, Globe } from "lucide-react";
+import { Share2, Users, Globe, Loader2 } from "lucide-react";
 import {
   Button,
   DropdownMenu,
@@ -9,11 +9,7 @@ import {
   DropdownMenuItem,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
-import {
-  artifactShareStatuses$,
-  shareArtifact$,
-  loadArtifactShare$,
-} from "../../signals/artifact-sharing.ts";
+import { shareArtifact$ } from "../../signals/artifact-sharing.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { copyAttachmentLinkToClipboard } from "./attachment-url.ts";
@@ -31,12 +27,8 @@ export function ArtifactShareMenu({
 }) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
-  const states = useLastResolved(artifactShareStatuses$);
-  const status = states?.[url];
-  const [loading, load] = useLoadableSet(loadArtifactShare$);
   const [sharing, share] = useLoadableSet(shareArtifact$);
-  const ready =
-    loading.state === "hasData" && sharing.state !== "loading" && status;
+  const sharingPending = sharing.state === "loading";
 
   const shareAndCopy = async (audience: "organization" | "public") => {
     const shareUrl = await share({ url, audience }, signal);
@@ -47,19 +39,10 @@ export function ArtifactShareMenu({
   };
 
   return (
-    <DropdownMenu
-      onOpenChange={(open) => {
-        if (open) {
-          detach(
-            load(url, signal),
-            Reason.DomCallback,
-            "read artifact sharing",
-          );
-        }
-      }}
-    >
+    <DropdownMenu>
       <DropdownMenuTrigger
-        disabled={sharing.state === "loading"}
+        disabled={sharingPending}
+        aria-busy={sharingPending ? "true" : undefined}
         aria-label={
           ariaLabel ??
           t(($) => {
@@ -68,11 +51,15 @@ export function ArtifactShareMenu({
         }
         render={<Button variant="quiet" size="icon-sm" className={className} />}
       >
-        <Share2 size={iconSize} />
+        {sharingPending ? (
+          <Loader2 size={iconSize} className="animate-spin" />
+        ) : (
+          <Share2 size={iconSize} />
+        )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuItem
-          disabled={!ready}
+          disabled={sharingPending}
           onClick={() => {
             detach(
               shareAndCopy("organization"),
@@ -87,7 +74,7 @@ export function ArtifactShareMenu({
           })}
         </DropdownMenuItem>
         <DropdownMenuItem
-          disabled={!ready}
+          disabled={sharingPending}
           onClick={() => {
             detach(
               shareAndCopy("public"),
