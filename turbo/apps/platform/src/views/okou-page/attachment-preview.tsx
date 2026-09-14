@@ -139,11 +139,11 @@ function AttachmentCardArtwork({
           testId={iconTestId}
         />
       </div>
-      <div className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-background/85 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground opacity-0 transition-opacity duration-200 group-hover/doc-preview:opacity-100">
+      <div className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-background/85 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground opacity-0 group-hover/doc-preview:opacity-100">
         {actionIcon}
         {actionLabel}
       </div>
-      <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/55 via-black/15 to-transparent px-2.5 py-2.5 text-white opacity-0 transition-opacity duration-200 group-hover/doc-preview:opacity-100">
+      <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/55 via-black/15 to-transparent px-2.5 py-2.5 text-white opacity-0 group-hover/doc-preview:opacity-100">
         <div className="min-w-0">
           <div className="truncate text-xs font-medium">{filename}</div>
         </div>
@@ -574,13 +574,13 @@ function VideoThumbnailPreview({
             <Play size={20} />
           </span>
         </span>
-        <div className="absolute right-2 top-2 z-30 inline-flex items-center gap-1 rounded-full bg-background/85 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground opacity-0 transition-opacity duration-200 group-hover/video-preview:opacity-100">
+        <div className="absolute right-2 top-2 z-30 inline-flex items-center gap-1 rounded-full bg-background/85 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground opacity-0 group-hover/video-preview:opacity-100">
           <Video size={10} />
           {t(($) => {
             return $.artifacts.preview.badge;
           })}
         </div>
-        <div className="absolute inset-x-0 bottom-0 z-30 flex items-end justify-between gap-2 bg-gradient-to-t from-black/65 via-black/20 to-transparent px-2.5 py-2.5 text-white opacity-0 transition-opacity duration-200 group-hover/video-preview:opacity-100">
+        <div className="absolute inset-x-0 bottom-0 z-30 flex items-end justify-between gap-2 bg-gradient-to-t from-black/65 via-black/20 to-transparent px-2.5 py-2.5 text-white opacity-0 group-hover/video-preview:opacity-100">
           <div className="min-w-0">
             <div className="truncate text-xs font-medium">{filename}</div>
           </div>

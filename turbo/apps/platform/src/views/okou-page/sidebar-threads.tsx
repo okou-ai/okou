@@ -284,7 +284,7 @@ function ChatThreadMenu({
             onClick={preventChatThreadMenuNavigation}
             variant="quiet"
             size="icon-2xs"
-            className={`group/thread-menu pointer-events-auto absolute left-1 top-1 cursor-pointer rounded-md transition-opacity duration-150 ${
+            className={`group/thread-menu pointer-events-auto absolute left-1 top-1 cursor-pointer rounded-md ${
               hasRestingIndicator
                 ? ""
                 : "md:invisible md:group-hover:visible md:data-popup-open:visible"
@@ -958,7 +958,7 @@ function ChatThreadsTitle({ showMarkAllRead }: { showMarkAllRead: boolean }) {
     >
       <span className="flex flex-1 items-center gap-1 truncate text-[13px] font-medium leading-4 text-nav-copy-muted group-hover:text-nav-copy transition-colors">
         {titleLabel}
-        <span className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+        <span className="shrink-0 opacity-0 group-hover:opacity-100">
           <ChevronRight
             className={`opacity-35 ${collapsed ? "" : "rotate-90"}`}
             size={12}

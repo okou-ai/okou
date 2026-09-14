@@ -92,6 +92,7 @@ export async function recordPiMemoryStage1Usage(
   const expected = usageEntries(args.usage).map((entry) => {
     return {
       runId: null,
+      billingContext: "runless",
       idempotencyKey: idempotencyKey(args, entry.category),
       orgId: args.orgId,
       userId: args.userId,

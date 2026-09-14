@@ -824,6 +824,8 @@ const handleFalImageCompletion$ = command(
     const result = await set(
       recordGeneratedImage$,
       {
+        billingRunId: args.job.billingRunId,
+        billingContext: args.job.billingContext,
         orgId: args.job.orgId,
         userId: args.job.userId,
         runId: args.job.runId ?? undefined,
@@ -915,6 +917,8 @@ const handleBytePlusVideoCompletion$ = command(
     const result = await set(
       recordGeneratedVideo$,
       {
+        billingRunId: args.job.billingRunId,
+        billingContext: args.job.billingContext,
         orgId: args.job.orgId,
         userId: args.job.userId,
         runId: args.job.runId ?? undefined,
@@ -1009,6 +1013,8 @@ const handleMiniMaxVideoCompletion$ = command(
     const result = await set(
       recordGeneratedVideo$,
       {
+        billingRunId: args.job.billingRunId,
+        billingContext: args.job.billingContext,
         orgId: args.job.orgId,
         userId: args.job.userId,
         runId: args.job.runId ?? undefined,
@@ -1099,6 +1105,8 @@ const handleFalVideoCompletion$ = command(
     const result = await set(
       recordGeneratedVideo$,
       {
+        billingRunId: args.job.billingRunId,
+        billingContext: args.job.billingContext,
         orgId: args.job.orgId,
         userId: args.job.userId,
         runId: args.job.runId ?? undefined,
@@ -1184,6 +1192,8 @@ const handleJoggAiAvatarVideoCompletion$ = command(
     const result = await set(
       recordGeneratedAvatarVideo$,
       {
+        billingRunId: args.job.billingRunId,
+        billingContext: args.job.billingContext,
         orgId: args.job.orgId,
         userId: args.job.userId,
         runId: args.job.runId ?? undefined,

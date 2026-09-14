@@ -5590,16 +5590,8 @@ describe("legacy subscription usage pack migration", () => {
         [200],
       );
       expect(confirmation.body.status).toBe("scheduled");
-      const legacyState = await accept(
-        migrationClient().get({
-          headers: { authorization: "Bearer clerk-session" },
-        }),
-        [200],
-      );
-      expect(legacyState.body).not.toHaveProperty("configuration");
       const scheduled = await accept(
         migrationClient().get({
-          query: { supportsFreeMembers: "true" },
           headers: { authorization: "Bearer clerk-session" },
         }),
         [200],

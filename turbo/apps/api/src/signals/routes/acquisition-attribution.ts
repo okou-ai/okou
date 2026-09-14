@@ -1,8 +1,8 @@
-import { marketingImpactEnabled } from "../../lib/impact-marketing";
 import {
-  legacyGoogleAdsAttribution,
-  normalizeGoogleAdsAttribution,
-} from "@okouai/core/google-ads-attribution";
+  marketingImpactEnabled,
+  retireImpactMetadata,
+} from "../../lib/impact-marketing";
+import { normalizeGoogleAdsAttribution } from "@okouai/core/google-ads-attribution";
 import { command } from "ccstate";
 import {
   googleAdsAccountForAttribution,
@@ -194,9 +194,9 @@ const recordSignupInner$ = command(
     }
     await clerk.users.updateUserMetadata(auth.userId, {
       privateMetadata: {
-        ...privateMetadata,
+        ...retireImpactMetadata(privateMetadata),
         [SIGNUP_ATTRIBUTION_KEY]: {
-          ...legacyGoogleAdsAttribution(attribution),
+          ...attribution,
           recorded_at: nowDate().toISOString(),
         },
       },

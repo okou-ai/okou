@@ -237,6 +237,10 @@ export const recordManagedUsage$ = command(
       .insert(usageEvent)
       .values({
         runId: run?.id ?? null,
+        // The live lookup may lose a deleted run; retain the supplied identity
+        // without changing this slice's existing settlement path.
+        billingRunId: args.actor.runId,
+        billingContext: args.actor.runId ? "missing_run" : "runless",
         idempotencyKey,
         orgId: args.actor.orgId,
         userId: args.actor.userId,

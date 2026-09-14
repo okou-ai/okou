@@ -6,13 +6,9 @@
 
 use crate::constants;
 use crate::error::AgentError;
-use crate::http::{
-    HttpAttemptFailureKind, HttpAttemptFinished, HttpAttemptObserver, HttpAttemptOutcome,
-    HttpAttemptStarted, HttpClient,
-};
+use crate::http::{HttpAttemptFinished, HttpAttemptObserver, HttpAttemptStarted, HttpClient};
 use guest_contracts::diagnostics::{
-    HeartbeatAttemptFailureKind, HeartbeatCompletedAttemptDiagnostic,
-    HeartbeatFailedCycleDiagnostic, HeartbeatFailureDiagnostic,
+    HeartbeatFailedCycleDiagnostic, HeartbeatFailureDiagnostic, HttpCompletedAttemptDiagnostic,
 };
 use guest_telemetry::{log_error, log_info, log_warn};
 use serde_json::json;
@@ -40,11 +36,11 @@ impl std::error::Error for HeartbeatFailure {}
 
 #[derive(Default)]
 struct HeartbeatAttemptCollector {
-    attempts: Mutex<Vec<HeartbeatCompletedAttemptDiagnostic>>,
+    attempts: Mutex<Vec<HttpCompletedAttemptDiagnostic>>,
 }
 
 impl HeartbeatAttemptCollector {
-    fn into_attempts(self) -> Vec<HeartbeatCompletedAttemptDiagnostic> {
+    fn into_attempts(self) -> Vec<HttpCompletedAttemptDiagnostic> {
         self.attempts
             .into_inner()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -57,33 +53,13 @@ impl HttpAttemptObserver for HeartbeatAttemptCollector {
     }
 
     fn attempt_finished(&self, attempt: HttpAttemptFinished) -> Result<(), AgentError> {
-        let HttpAttemptOutcome::Failure {
-            kind,
-            http_status,
-            timeout_observed,
-            connect_observed,
-        } = attempt.outcome
-        else {
+        let Some(diagnostic) = attempt.into_failure_diagnostic() else {
             return Ok(());
-        };
-        let failure_kind = match kind {
-            HttpAttemptFailureKind::Timeout => HeartbeatAttemptFailureKind::Timeout,
-            HttpAttemptFailureKind::Connect => HeartbeatAttemptFailureKind::Connect,
-            HttpAttemptFailureKind::HttpStatus => HeartbeatAttemptFailureKind::HttpStatus,
-            HttpAttemptFailureKind::Transport => HeartbeatAttemptFailureKind::Transport,
         };
         self.attempts
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .push(HeartbeatCompletedAttemptDiagnostic {
-                attempt: attempt.attempt,
-                client_request_id: attempt.client_request_id,
-                elapsed_ms: attempt.elapsed_ms,
-                failure_kind,
-                http_status,
-                timeout_observed,
-                connect_observed,
-            });
+            .push(diagnostic);
         Ok(())
     }
 }

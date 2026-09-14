@@ -121,3 +121,44 @@ test("ignores cached Apps submitting old Impact query/cookie attribution after c
   expect(response.body.recorded).toBeFalsy();
   expect(context.mocks.clerk.users.updateUserMetadata).not.toHaveBeenCalled();
 });
+
+test("does not copy retired Impact fields while recording normal signup metadata", async () => {
+  const userId = "user_signup";
+  mocks.clerk.session(userId, null);
+  context.mocks.clerk.users.getUserList.mockResolvedValue({
+    data: [
+      {
+        id: userId,
+        privateMetadata: {
+          unrelated: "preserved",
+          impact_attribution: {
+            clickId: "old",
+            capturedAt: nowDate().toISOString(),
+          },
+        },
+      },
+    ],
+  });
+  const response = await accept(
+    setupApp({ context, routes: acquisitionAttributionRoutes })(
+      acquisitionAttributionContract,
+    ).recordSignup({
+      headers,
+      body: { attribution: { ga_client_id: "123.456" } },
+    }),
+    [200],
+  );
+  expect(response.body.recorded).toBeTruthy();
+  expect(context.mocks.clerk.users.updateUserMetadata).toHaveBeenCalledWith(
+    userId,
+    {
+      privateMetadata: {
+        unrelated: "preserved",
+        signup_attribution: {
+          ga_client_id: "123.456",
+          recorded_at: expect.any(String),
+        },
+      },
+    },
+  );
+});

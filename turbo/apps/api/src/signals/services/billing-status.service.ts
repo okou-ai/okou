@@ -136,8 +136,6 @@ interface BillingStatusResponse {
   concurrencyPurchaseReviewAvailable: boolean;
   canBuyCredits: boolean;
   showUsagePack: boolean;
-  // Wire compatibility for outgoing Apps only; derived from status (#32575).
-  memberInvitationAllowed: boolean;
   autoRechargeAllowed: boolean;
   supportByok: boolean;
   restrictedBuiltInModels: boolean;
@@ -622,7 +620,6 @@ function billingStatusResponse(args: {
     canBuyCredits: args.canBuyCredits,
     showUsagePack: args.showUsagePack,
     status: args.status,
-    memberInvitationAllowed: args.status === "active",
     autoRechargeAllowed: args.autoRechargeAllowed,
     supportByok: args.supportByok,
     restrictedBuiltInModels: args.restrictedBuiltInModels,

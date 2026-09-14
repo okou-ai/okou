@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "1.255.3",
+  "version": "1.255.4",
   "private": true,
   "type": "module",
   "exports": {
@@ -28,10 +28,6 @@
       "import": "./src/operations/org-metadata-canonical-write.ts",
       "types": "./src/operations/org-metadata-canonical-write.ts"
     },
-    "./operations/org-plan-entitlement-canonical-write": {
-      "import": "./src/operations/org-plan-entitlement-canonical-write.ts",
-      "types": "./src/operations/org-plan-entitlement-canonical-write.ts"
-    },
     "./types": {
       "import": "./src/types.ts",
       "types": "./src/types.ts"
@@ -50,7 +46,7 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "db:reset": "tsx scripts/reset-db.ts",
-    "test:migration-consistency": "pnpm test:migration-runner && pnpm test:kms-rotation && pnpm test:pi-memory-checkpoint-settlement && pnpm test:pi-memory-citations && pnpm test:show-usage-pack-migration && pnpm test:member-invitation-retirement && pnpm test:reusable-ssh-credentials && pnpm test:morning-brief-enrollment-installation && tsx scripts/test-migration-consistency-schema.ts",
+    "test:migration-consistency": "pnpm test:migration-runner && pnpm test:kms-rotation && pnpm test:pi-memory-checkpoint-settlement && pnpm test:pi-memory-citations && pnpm test:show-usage-pack-migration && pnpm test:member-invitation-retirement && pnpm test:reusable-ssh-credentials && pnpm test:morning-brief-enrollment-installation && pnpm test:billing-attribution && tsx scripts/test-migration-consistency-schema.ts",
     "test:kms-rotation": "tsx scripts/migrations/013-kms-account-rotation/test.ts && tsx scripts/migrations/013-kms-account-rotation/test-business.ts",
     "test:show-usage-pack-migration": "tsx scripts/test-show-usage-pack-migration.ts",
     "test:migration-runner": "tsx scripts/test-migration-runner-timeouts.ts",
@@ -59,7 +55,9 @@
     "test:pi-memory-citations": "tsx scripts/test-pi-memory-citation-migration.ts",
     "test:member-invitation-retirement": "tsx scripts/test-member-invitation-retirement.ts",
     "test:reusable-ssh-credentials": "tsx scripts/test-reusable-ssh-credentials.ts",
-    "test:morning-brief-enrollment-installation": "tsx scripts/test-morning-brief-enrollment-installation.ts"
+    "test:morning-brief-enrollment-installation": "tsx scripts/test-morning-brief-enrollment-installation.ts",
+    "test:billing-attribution": "tsx scripts/test-billing-attribution.ts",
+    "billing:attribution": "tsx scripts/billing-attribution.ts"
   },
   "dependencies": {
     "@aws-sdk/client-kms": "^3.1127.0",
@@ -77,6 +75,7 @@
     "@okouai/typescript-config": "workspace:*",
     "drizzle-kit": "^0.31.9",
     "eslint": "^9.34.0",
+    "msw": "^2.13.2",
     "oxlint": "^1.75.0",
     "oxlint-tsgolint": "7.0.2001",
     "pg": "^8.23.0",

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.192.2](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.192.1...runner-rs-v0.192.2) (2026-09-14)
+
+
+### Bug Fixes
+
+* **python:** detect loop-carried metadata aliases ([#33890](https://github.com/vm0-ai/vm0/issues/33890)) ([ae04c7e](https://github.com/vm0-ai/vm0/commit/ae04c7e09f883569f77fba159d88d930629b5aaf))
+* **runner:** unify resolved auth header case handling ([#33937](https://github.com/vm0-ai/vm0/issues/33937)) ([a4588ed](https://github.com/vm0-ai/vm0/commit/a4588ed0307713cb2bff6b16937e45935ca618fa))
+
+
+### Performance Improvements
+
+* **runner:** release completed jsonl batches before idle ([#33935](https://github.com/vm0-ai/vm0/issues/33935)) ([b26d24d](https://github.com/vm0-ai/vm0/commit/b26d24d6bc759e51917d7ae4fb7cbc918d05a841))
+
 ## [0.192.1](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.192.0...runner-rs-v0.192.1) (2026-09-14)
 
 

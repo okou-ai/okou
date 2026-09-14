@@ -33,6 +33,7 @@ Notes:
   - Private file URLs require the owner's authentication; they do not grant public access
   - Use okou web download-file <id> to retrieve a private file
   - Max file size: 1 GB
+  - Markdown, TXT, CSV and TSV files use UTF-8 unless --content-type declares a charset
   - Allowed image types: png / jpeg / gif / webp / avif / svg / bmp / heic / heif / tiff / psd
   - Allowed video types: mp4 / webm / mov
   - Allowed audio types: aac / flac / m4a / mp3 / mp4 / mpga / ogg / opus / wav / webm
