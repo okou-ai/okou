@@ -257,7 +257,7 @@ export function OrgMembersTab() {
         )}
       </div>
 
-      <div className="overflow-hidden rounded-xl bg-card okou-border">
+      <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
         <MembersTableHeader showUsagePack={showUsagePack} />
         <div className="h-0 border-t border-t-gray-400 mx-5" />
 

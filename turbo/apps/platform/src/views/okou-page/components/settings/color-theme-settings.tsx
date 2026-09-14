@@ -87,7 +87,7 @@ export function ColorThemeSettings() {
   ];
 
   return (
-    <div className="flex flex-col gap-4 rounded-xl bg-card p-4 okou-border">
+    <div className="flex flex-col gap-4 rounded-xl bg-card p-4 border border-surface-border">
       <div className="flex items-center gap-4">
         <div className="flex h-7 w-7 shrink-0 items-center justify-center">
           <SwatchBook size={22} className="text-muted-foreground" />
