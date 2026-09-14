@@ -37,6 +37,8 @@ const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
 const MODEL = "claude-sonnet-5";
+const WELCOME_ASSET_BASE =
+  "https://static.vm0.io/vm0/welcome-thread/2026-09-14-4128f97d2754";
 
 function headers(actor: ApiTestUser) {
   createRouteMocks(context).clerk.session(
@@ -408,7 +410,18 @@ describe("POST /api/welcome-chat-threads", () => {
       expect(content).toContain(
         "https://static.vm0.io/vm0/artifact-templates/video/df99de74-8eea-420c-86d1-c104ba5ba6b6/video-df99de74.mp4",
       );
-      expect(content?.match(/```mermaid\nflowchart/gu)).toHaveLength(3);
+      expect(content).not.toContain("```mermaid");
+      for (const filename of [
+        "team-learning-loop.png",
+        "shared-workflow.png",
+        "slack-conversations.png",
+        "guide/cover.png",
+        "guide/okou-team-workflow-guide.html",
+        "guide/assets/okou-team-workflow-guide.pptx",
+      ]) {
+        expect(content).toContain(`${WELCOME_ASSET_BASE}/${filename}`);
+      }
+      expect(content).toContain("`okou-team-workflow-guide.pptx`");
       expect(content).toContain("`/okou`");
       expect(content).toContain("https://pr-33252-app.omby.ai/works");
       expect(content).toContain(

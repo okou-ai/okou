@@ -1,4 +1,5 @@
 import { screen, waitFor } from "@testing-library/react";
+import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
@@ -17,6 +18,10 @@ const DECK =
   "https://static.vm0.io/vm0/artifact-templates/presentation/daf7c2d1-5195-4c09-ad4b-8d85778fc104/playful-launch-presentation.html";
 const VIDEO =
   "https://static.vm0.io/vm0/artifact-templates/video/df99de74-8eea-420c-86d1-c104ba5ba6b6/video-df99de74.mp4";
+
+const WELCOME_ASSET_BASE =
+  "https://static.vm0.io/vm0/welcome-thread/2026-09-14-4128f97d2754";
+const WORKFLOW_GUIDE = `${WELCOME_ASSET_BASE}/guide/okou-team-workflow-guide.html`;
 
 function link(name: string) {
   const element = queryAllByRoleFast("link").find((candidate) => {
@@ -91,6 +96,65 @@ test.each([true, false])(
   },
 );
 
+test("Welcome diagrams and the workflow guide open without uploaded artifacts", async () => {
+  context.mocks.http.get(WORKFLOW_GUIDE, () => {
+    return HttpResponse.html(
+      '<!doctype html><html><body><main class="deck"><section class="slide">Share a workflow with your team</section></main></body></html>',
+    );
+  });
+  const diagrams = [
+    ["Team learning", "team-learning-loop.png"],
+    ["Shared workflow", "shared-workflow.png"],
+    ["Slack conversations", "slack-conversations.png"],
+  ] as const;
+  const chat = createMarkdownChatFixture(context);
+  const content = [
+    ...diagrams.map(([name, filename]) => {
+      return `[${name}](${WELCOME_ASSET_BASE}/${filename})`;
+    }),
+    `[![Workflow guide cover](${WELCOME_ASSET_BASE}/guide/cover.png)](${WORKFLOW_GUIDE})`,
+    `[View workflow guide](${WORKFLOW_GUIDE})`,
+  ].join("\n\n");
+  const row = chat.outputMessage(content, { seqId: 1 });
+  chat.install({
+    rows: () => {
+      return [
+        {
+          ...row,
+          runId: null,
+          runEventId: null,
+          runEventSequenceNumber: null,
+        },
+      ];
+    },
+  });
+  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+    return respond(200, { runs: [] });
+  });
+  await setupPage({ context, path: chat.path });
+  await screen.findByText("View workflow guide");
+  click(await screen.findByRole("img", { name: "Workflow guide cover" }));
+  expect(
+    (await screen.findByTestId("artifact-dialog-site-frame")).querySelector(
+      "iframe",
+    ),
+  ).toHaveAttribute("src", WORKFLOW_GUIDE);
+  await closePreview();
+  for (const [name, filename] of diagrams) {
+    click(link(name));
+    await expect(
+      screen.findByTestId("attachment-lightbox-image"),
+    ).resolves.toHaveAttribute("src", `${WELCOME_ASSET_BASE}/${filename}`);
+    await closePreview();
+  }
+  click(link("View workflow guide"));
+  expect(
+    (await screen.findByTestId("artifact-dialog-site-frame")).querySelector(
+      "iframe",
+    ),
+  ).toHaveAttribute("src", WORKFLOW_GUIDE);
+});
+
 test("Unlisted external HTML and altered catalog URLs keep ordinary link behavior", async () => {
   const urls = [
     "https://example.com/page.html",
@@ -99,6 +163,9 @@ test("Unlisted external HTML and altered catalog URLs keep ordinary link behavio
     `${DECK}?redirect=https://example.com`,
     DECK.replace("https://", "http://"),
     DECK.replace("https://", "https://user@"),
+    `${WELCOME_ASSET_BASE}/guide/unlisted.html`,
+    `${WORKFLOW_GUIDE}?redirect=https://example.com`,
+    WORKFLOW_GUIDE.replace("static.vm0.io", "static.vm0.io.evil.example"),
   ];
   const chat = createMarkdownChatFixture(context);
   chat.install({

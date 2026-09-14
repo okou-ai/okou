@@ -1,6 +1,7 @@
 import type { UserLocale } from "@okouai/api-contracts/contracts/user-preferences";
 import { derivePlatformServiceOrigin } from "@okouai/core/platform-service-origin";
 import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { WELCOME_THREAD_ASSETS } from "@okouai/core/welcome-thread-assets";
 
 import de from "./welcome-thread-content/de-DE.json";
 import en from "./welcome-thread-content/en-US.json";
@@ -19,13 +20,12 @@ interface WelcomeContent {
 }
 
 /**
- * Approved #33205 copy from #30147 at ae8708dbff466a35614f17d83bd849eee81f1ce7.
- * Only file labels and the two route-owned diagrams were adapted. This version
- * belongs to the source template; persisted messages are immutable, and their
- * retry identity must remain independent of this version and localized text.
+ * Copy and media for newly created welcome threads. This version belongs to
+ * the source template; persisted messages are immutable, and their retry
+ * identity must remain independent of this version and localized text.
  */
 const WELCOME_THREAD_TEMPLATE = Object.freeze({
-  version: 1,
+  version: 2,
   locales: {
     "en-US": en,
     "pt-BR": pt,
@@ -56,11 +56,13 @@ export function welcomeThreadContent(args: {
   const template = WELCOME_THREAD_TEMPLATE.locales[args.locale];
   const origin = new URL(args.appUrl).origin;
   const values: Readonly<Record<string, string>> = {
+    ...WELCOME_THREAD_ASSETS,
     assistantName: PUBLIC_BRAND_PRESENTATION.assistantName,
     imageUrl: IMAGE_URL,
     presentationPreviewUrl: PRESENTATION_URL,
     presentationUrl: PRESENTATION_URL,
     slideCount: "15",
+    workflowGuideSlideCount: "14",
     videoUrl: VIDEO_URL,
     worksUrl: `${origin}/works`,
     inviteUrl: `${origin}/?settings=people`,
