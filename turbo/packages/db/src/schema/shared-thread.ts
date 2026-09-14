@@ -1,4 +1,5 @@
 import {
+  boolean,
   index,
   jsonb,
   pgTable,
@@ -20,6 +21,11 @@ export const sharedThreads = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     userId: text("user_id").notNull(),
+    // Older message-only snapshots have no organization/resource policy.
+    orgId: text("org_id"),
+    hasArtifactSnapshot: boolean("has_artifact_snapshot")
+      .notNull()
+      .default(false),
     sourceChatThreadId: uuid("source_chat_thread_id").references(
       () => {
         return chatThreads.id;
@@ -40,6 +46,7 @@ export const sharedThreads = pgTable(
   },
   (table) => {
     return [
+      index("shared_threads_org_idx").on(table.orgId),
       index("shared_threads_user_created_idx").on(
         table.userId,
         table.createdAt.desc(),

@@ -13,6 +13,7 @@ import { type Db, writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { settle, tapError } from "../utils";
 import { ensureOrgLimitedFreeBootstrap$ } from "../services/org-limited-free-bootstrap.service";
+import { revokeSharedThreadArtifacts$ } from "../services/shared-thread-artifacts.service";
 import {
   cleanupClerkBannedUser$,
   cleanupClerkDeletedOrgBilling$,
@@ -419,6 +420,17 @@ function missingOrganizationDeletedIdResponse(data: unknown): Response {
 
 const handleOrganizationDeletedWebhook$ = command(
   async ({ set }, orgId: string, signal: AbortSignal): Promise<Response> => {
+    const revocation = await settle(
+      set(
+        revokeSharedThreadArtifacts$,
+        { kind: "organization", orgId },
+        signal,
+      ),
+      signal,
+    );
+    if (!revocation.ok) {
+      return jsonError("Organization artifact revocation failed", 503);
+    }
     const billingCleanup = await settle(
       set(cleanupClerkDeletedOrgBilling$, orgId, signal),
       signal,
@@ -646,6 +658,14 @@ const postClerkWebhook$ = command(
       if (!userId) {
         L.error("user.deleted event missing user ID", { data: event.data });
         return new Response("OK", { status: 200 });
+      }
+
+      const revocation = await settle(
+        set(revokeSharedThreadArtifacts$, { kind: "user", userId }, signal),
+        signal,
+      );
+      if (!revocation.ok) {
+        return jsonError("User artifact revocation failed", 503);
       }
 
       waitUntil(

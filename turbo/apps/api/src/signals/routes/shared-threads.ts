@@ -1,7 +1,8 @@
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { command } from "ccstate";
 
-import { notFound } from "../../lib/error";
+import { badRequestMessage, notFound } from "../../lib/error";
+import { deleteSharedThread$ } from "../services/shared-thread-artifacts.service";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { requestSignal$, setResHeader$ } from "../context/hono";
@@ -87,6 +88,11 @@ const createSharedThreadInner$ = command(
     if (result.kind === "attachments-forbidden") {
       return sharedThreadAttachmentsForbidden;
     }
+    if (result.kind === "artifact-unavailable") {
+      return badRequestMessage(
+        "A selected artifact or hosted dependency is unavailable for sharing",
+      );
+    }
     return { status: 201 as const, body: { id: result.id } };
   },
 );
@@ -114,13 +120,45 @@ const getSharedThreadMeta$ = command(
     set(
       setResHeader$,
       "Cache-Control",
-      "public, max-age=31536000, s-maxage=31536000, immutable",
+      row.hasArtifactSnapshot
+        ? "no-store"
+        : "public, max-age=31536000, s-maxage=31536000, immutable",
     );
-    return { status: 200 as const, body: row };
+    return {
+      status: 200 as const,
+      body: { title: row.title, publicBrand: row.publicBrand },
+    };
+  },
+);
+
+const deleteSharedThreadInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const { id } = get(pathParamsOf(sharedThreadsContract.delete));
+    set(setResHeader$, "Cache-Control", "private, no-store");
+    const deleted = await set(
+      deleteSharedThread$,
+      { id, userId: auth.userId, orgId: auth.orgId },
+      signal,
+    );
+    return deleted
+      ? { status: 204 as const, body: undefined }
+      : notFound("Shared conversation not found");
   },
 );
 
 export const sharedThreadRoutes: readonly RouteEntry[] = [
+  {
+    route: sharedThreadsContract.delete,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        requiredCapability: "chat-thread:write",
+      },
+      deleteSharedThreadInner$,
+    ),
+  },
   {
     route: sharedThreadsContract.create,
     handler: authRoute(

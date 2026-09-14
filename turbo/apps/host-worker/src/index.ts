@@ -9,6 +9,10 @@ import {
   artifactSharePolicySchema,
   type ArtifactSharePolicy,
 } from "@okouai/api-contracts/contracts/artifact-shares";
+import {
+  sharedThreadArtifactPolicyKey,
+  sharedThreadArtifactPolicySchema,
+} from "@okouai/api-contracts/contracts/shared-thread-artifacts";
 
 interface R2ObjectBody {
   readonly size: number;
@@ -489,6 +493,52 @@ function artifactFileAlias(
   return pathname.slice(1);
 }
 
+async function serveGrantedArtifactDelivery(
+  request: Request,
+  env: Env,
+  delivery: {
+    readonly record: Extract<
+      ArtifactDeliveryRecord,
+      { kind: "publication" | "thread-resource" }
+    >;
+    readonly pathname: string;
+    readonly fileHost: boolean;
+  },
+  execution: ExecutionContext,
+): Promise<Response> {
+  const { record, pathname, fileHost } = delivery;
+  if ((record.targetKind === "file") !== fileHost)
+    return privateResponse(notFoundResponse());
+  // The legacy one-year cache rule excludes only canonical share paths.
+  // Decoding or trimming a different path must not expose share bytes there.
+  if (
+    fileHost &&
+    !isArtifactPublicationFilePath(
+      `/${artifactFileAlias(new URL(request.url).pathname, env.PUBLIC_ARTIFACT_HOST)}`,
+    )
+  )
+    return privateResponse(notFoundResponse());
+  const policy =
+    record.kind === "thread-resource"
+      ? await readSharedThreadResource(env, record)
+      : await readPublicShare(
+          env,
+          [record.publicBrand],
+          record.shareId,
+          record.publicToken,
+        );
+  if (policy instanceof Response) return policy;
+  if (!policy || policy.target.kind !== record.targetKind)
+    return privateResponse(notFoundResponse());
+  return await serveAuthorizedArtifact(
+    request,
+    env,
+    fileHost ? "/" : pathname,
+    policy,
+    execution,
+  );
+}
+
 async function serveArtifactDelivery(
   request: Request,
   env: Env,
@@ -522,32 +572,11 @@ async function serveArtifactDelivery(
   );
   if (registered.length > 1) return privateResponse(notFoundResponse());
   const record = registered[0];
-  if (record?.kind === "publication") {
-    if ((record.targetKind === "file") !== fileHost)
-      return privateResponse(notFoundResponse());
-    // The legacy one-year cache rule excludes only canonical share paths.
-    // Decoding or trimming a different path must not expose share bytes there.
-    if (
-      fileHost &&
-      !isArtifactPublicationFilePath(
-        `/${artifactFileAlias(new URL(request.url).pathname, env.PUBLIC_ARTIFACT_HOST)}`,
-      )
-    )
-      return privateResponse(notFoundResponse());
-    const policy = await readPublicShare(
-      env,
-      [record.publicBrand],
-      record.shareId,
-      record.publicToken,
-    );
-    if (policy instanceof Response) return policy;
-    if (!policy || policy.target.kind !== record.targetKind)
-      return privateResponse(notFoundResponse());
-    return await serveAuthorizedArtifact(
+  if (record?.kind === "publication" || record?.kind === "thread-resource") {
+    return await serveGrantedArtifactDelivery(
       request,
       env,
-      fileHost ? "/" : pathname,
-      policy,
+      { record, pathname, fileHost },
       execution,
     );
   }
@@ -982,11 +1011,36 @@ async function readPublicShare(
 }
 
 /** Callers must read current authorization before every content-cache hit. */
+async function readSharedThreadResource(
+  env: Env,
+  record: Extract<ArtifactDeliveryRecord, { kind: "thread-resource" }>,
+): Promise<Pick<ArtifactSharePolicy, "publicBrand" | "target"> | null> {
+  const object = await env.HOSTED_SITES_BUCKET.get(
+    sharedThreadArtifactPolicyKey(record.publicBrand, record.threadId),
+  );
+  if (!object) return null;
+  const parsed = sharedThreadArtifactPolicySchema.safeParse(
+    await new Response(object.body).json(),
+  );
+  if (
+    !parsed.success ||
+    parsed.data.threadId !== record.threadId ||
+    parsed.data.publicBrand !== record.publicBrand ||
+    parsed.data.status !== "active"
+  )
+    return null;
+  const target = parsed.data.resources[record.publicToken];
+  return target?.kind === record.targetKind
+    ? { publicBrand: record.publicBrand, target }
+    : null;
+}
+
+/** Authorization is evaluated before reading these immutable cached bytes. */
 async function serveAuthorizedArtifact(
   request: Request,
   env: Env,
   pathname: string,
-  policy: ArtifactSharePolicy,
+  policy: Pick<ArtifactSharePolicy, "publicBrand" | "target">,
   execution: ExecutionContext,
 ): Promise<Response> {
   const denied = () => {
