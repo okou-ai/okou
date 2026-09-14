@@ -6160,6 +6160,9 @@
     "chooseFile": "Datei auswählen",
     "choosePrivateKeyFile": "Datei mit privatem Schlüssel auswählen",
     "connectionStatus": {
+      "accessProtocolFailure": "Cloudflare Access hat keinen SSH-Tunnel hergestellt. Prüfen Sie den veröffentlichten Hostnamen und das Tunnel-Routing.",
+      "accessRejected": "Cloudflare Access hat die Verbindung abgelehnt. Prüfen Sie das Service-Token und die Service-Auth-Richtlinie der Anwendung.",
+      "accessTlsFailure": "Die sichere Verbindung zu Cloudflare Access konnte nicht überprüft werden. Prüfen Sie den Hostnamen und das TLS-Zertifikat.",
       "attention_one": "{{count}} SSH-Host benötigt Aufmerksamkeit",
       "attention_other": "{{count}} SSH-Hosts benötigen Aufmerksamkeit",
       "authenticationFailed": "Die SSH-Authentifizierung ist fehlgeschlagen. Prüfen Sie Benutzername, privaten Schlüssel oder Passwort sowie Serverberechtigungen. Bearbeiten Sie die Zugangsdaten oder wählen Sie andere für diesen Host.",

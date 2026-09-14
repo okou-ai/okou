@@ -149,6 +149,40 @@ keys or automatically grant access. Browser notifications are separate from
 Runner authority invalidation and do not tighten
 the accepted Run-lifetime cache window.
 
+## Cloudflare Access backend preparation
+
+The backend foundation (#34077, parent #31996) adds user-owned Service Token
+configurations independently of SSH login credentials. It remains default-off
+behind `cloudflareAccess` and requires `sshAccess`; no new management UI or
+working Access transport is delivered by this slice.
+
+The canonical `/api/cloudflare-access/configs` endpoints create, list, rename,
+replace credentials, enable/disable and delete configurations. Client ID and
+Client Secret are write-only. Reads return metadata and referencing host IDs/names;
+updates/deletion require the expected edit revision, and referenced deletion is
+rejected. Names may change without invalidating Runs. Effective token or enabled
+changes advance a separate authority generation and all referencing SSH host
+generations.
+
+An SSH host explicitly selects a same-owner configuration, published DNS hostname
+and port 443. The origin SSH port belongs to Cloudflare, not this binding. Sharing
+a configuration across hosts does not share it across users or workspaces. The
+first configuration grants currently visible Agents for the owner's Runs; later
+additions preserve manual denials. Protected execution requires both the SSH and
+Access Agent grants. SSH username/key/password and server host-key trust remain
+independent of the Service Token.
+
+SSH management uses one canonical contract. Protected metadata includes
+`transport: {type: "cloudflare_access", configId}`. Direct hosts omit the binding.
+An omitted transport on edit preserves the current binding; switching to Direct
+must be explicit and requires the current host generation. Unrelated Direct hosts
+remain manageable when Access is off.
+
+See [private authority](runner-ssh-authority.md#cloudflare-access-authority-preparation)
+and the [activation gate](deployment-compatibility.md#cloudflare-access-for-ssh).
+The accepted missed-notification window still lasts until Run end; this feature
+does not promise immediate revocation.
+
 ## Recent connection failures
 
 After an actual SSH attempt, the host card can show the last reported connection

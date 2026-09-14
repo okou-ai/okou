@@ -85,7 +85,7 @@ const listHosts$ = command(async ({ get }, signal: AbortSignal) => {
   if (!(await isSshAccessAvailable(get(db$), auth, signal))) {
     return unavailable;
   }
-  const result = await listRunSshHosts(get(db$), auth);
+  const result = await listRunSshHosts(get(db$), auth, signal);
   signal.throwIfAborted();
   return result ? { status: 200 as const, body: result } : unavailable;
 });

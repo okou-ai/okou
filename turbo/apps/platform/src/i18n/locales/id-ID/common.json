@@ -6146,6 +6146,9 @@
     "chooseFile": "Pilih file",
     "choosePrivateKeyFile": "Pilih file kunci privat",
     "connectionStatus": {
+      "accessProtocolFailure": "Cloudflare Access tidak berhasil membuat terowongan SSH. Periksa nama host yang dipublikasikan dan perutean Tunnel.",
+      "accessRejected": "Cloudflare Access menolak koneksi. Periksa token layanan dan kebijakan Service Auth aplikasi.",
+      "accessTlsFailure": "Koneksi aman ke Cloudflare Access tidak dapat diverifikasi. Periksa nama host dan sertifikat TLS.",
       "attention_other": "{{count}} host SSH perlu diperhatikan",
       "authenticationFailed": "Autentikasi SSH gagal. Periksa nama pengguna, kunci privat atau kata sandi dan izin server. Edit kredensial atau pilih kredensial lain untuk host ini.",
       "credentialResourceLimit": "Kunci privat melebihi batas pemrosesan yang didukung. Ekspor ulang dengan enkripsi yang didukung, lalu ganti kredensial.",

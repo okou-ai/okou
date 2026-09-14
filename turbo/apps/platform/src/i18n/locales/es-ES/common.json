@@ -6221,6 +6221,9 @@
     "chooseFile": "Elegir archivo",
     "choosePrivateKeyFile": "Elegir archivo de clave privada",
     "connectionStatus": {
+      "accessProtocolFailure": "Cloudflare Access no estableció un túnel SSH. Revisa el nombre de host publicado y el enrutamiento del Tunnel.",
+      "accessRejected": "Cloudflare Access rechazó la conexión. Revisa el token de servicio y la política Service Auth de la aplicación.",
+      "accessTlsFailure": "No se pudo verificar la conexión segura con Cloudflare Access. Revisa el nombre de host y el certificado TLS.",
       "attention_one": "{{count}} host SSH requiere atención",
       "attention_many": "{{count}} hosts SSH requieren atención",
       "attention_other": "{{count}} hosts SSH requieren atención",

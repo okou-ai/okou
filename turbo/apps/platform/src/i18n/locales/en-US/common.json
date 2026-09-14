@@ -6152,6 +6152,9 @@
     "chooseFile": "Choose file",
     "choosePrivateKeyFile": "Choose private key file",
     "connectionStatus": {
+      "accessProtocolFailure": "Cloudflare Access did not establish an SSH tunnel. Check the published hostname and Tunnel routing.",
+      "accessRejected": "Cloudflare Access rejected the connection. Check the Service Token and the application's Service Auth policy.",
+      "accessTlsFailure": "The secure connection to Cloudflare Access could not be verified. Check the hostname and TLS certificate.",
       "attention_one": "{{count}} SSH host needs attention",
       "attention_other": "{{count}} SSH hosts need attention",
       "authenticationFailed": "SSH authentication failed. Check the selected credential's username, private key or password and the server's authorization. Edit the credential or select another one for this host.",

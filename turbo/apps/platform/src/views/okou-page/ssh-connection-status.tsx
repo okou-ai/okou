@@ -130,6 +130,21 @@ function failureDescription(
   reason: NonNullable<SshConnectionObservation["failureReason"]>,
 ): string {
   switch (reason) {
+    case "access_rejected": {
+      return i18n.t(($) => {
+        return $.ssh.connectionStatus.accessRejected;
+      });
+    }
+    case "access_tls_failure": {
+      return i18n.t(($) => {
+        return $.ssh.connectionStatus.accessTlsFailure;
+      });
+    }
+    case "access_protocol_failure": {
+      return i18n.t(($) => {
+        return $.ssh.connectionStatus.accessProtocolFailure;
+      });
+    }
     case "invalid_credential": {
       return i18n.t(($) => {
         return $.ssh.connectionStatus.invalidCredential;

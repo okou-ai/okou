@@ -1008,6 +1008,38 @@ These objects are contracts, not generic fallbacks. Verify the exact outgoing
 SQL against them, record the release they protect, and remove the functions,
 triggers, and views after that release drains.
 
+## Cloudflare Access for SSH
+
+The #31996 delivery adds a protected transport to the existing SSH host domain.
+#34077 is additive database/API authority preparation, including the minimal
+current Runner contract reader and Platform diagnostic translations.
+`sshAccess` is staff-only, and `cloudflareAccess` stays disabled, including for staff.
+Under the [pre-GA policy](fallback.md), this feature keeps one canonical contract:
+no profile selector, duplicate old/new DTO, or legacy diagnostic projection.
+
+Before the first protected configuration or binding is written in a deployed
+environment, every serving API must understand protected authority, Runners from
+#34080 must own new Run admission, and incompatible active Runs must have drained.
+#34081 owns Access management UI and full real-Run acceptance before activation.
+Native Service Auth interoperability must be verified; S1 contract tests are not
+provider E2E evidence. Do not use a production feature override as a test fixture.
+
+| State                                                              | Required behavior                                                                      |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| Existing Direct data after the additive migration                  | Hosts, credentials, pins, grants and observations remain unchanged; bindings are null. |
+| Current API and S1 Runner with protected handoff                   | Runner returns unavailable without dialing Direct SSH or forwarding the token.         |
+| Current API with an unauthorized or disabled protected host        | Private authority is unavailable; guest inventory omits that host.                     |
+| Pre-Access API with protected rows                                 | Forbidden: the old reader can interpret the row as Direct.                             |
+| Protected writes before the native carrier and real-Run acceptance | Forbidden outside controlled local tests.                                              |
+
+Feature disable does not make a protected row safe for a pre-Access reader.
+Do not deploy such a reader after protected writes exist; no automatic deletion
+or conversion is part of deployment.
+
+Run cache invalidations are best-effort and identifier-only. Token/grant changes
+may leave cached authority usable for the remainder of an active Run if a notice
+is missed. End those Runs when immediate revocation is required.
+
 ## Testing Expectations
 
 Tests should cover cross-version behavior when a change touches a deployment

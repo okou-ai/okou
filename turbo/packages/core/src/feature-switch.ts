@@ -453,6 +453,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.CloudflareAccess]: {
+    maintainer: "liangyou@okou.ai",
+    description: "Enable user-owned Cloudflare Access for saved SSH hosts",
+    enabled: false,
+  },
   [FeatureSwitchKey.ConnectorDirectory]: {
     maintainer: "tongx@okou.ai",
     description:

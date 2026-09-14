@@ -61,6 +61,7 @@ export enum FeatureSwitchKey {
   LarkIntegration = "_larkIntegration",
   CustomConnectorMcp = "customConnectorMcp",
   SshAccess = "sshAccess",
+  CloudflareAccess = "cloudflareAccess",
   PiLoop = "piLoop",
   PiMemory = "piMemory",
   OpenRouterUsRouting = "openRouterUsRouting",

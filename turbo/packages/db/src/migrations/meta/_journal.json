@@ -351,6 +351,13 @@
       "when": 1789426576977,
       "tag": "1127_shared_thread_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 1128,
+      "version": "7",
+      "when": 1789435561974,
+      "tag": "1128_cloudflare_access_authority",
+      "breakpoints": true
     }
   ]
 }

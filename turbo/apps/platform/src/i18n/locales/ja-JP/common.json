@@ -6146,6 +6146,9 @@
     "chooseFile": "ファイルを選択",
     "choosePrivateKeyFile": "秘密鍵ファイルを選択",
     "connectionStatus": {
+      "accessProtocolFailure": "Cloudflare Access が SSH トンネルを確立できませんでした。公開ホスト名と Tunnel のルーティングを確認してください。",
+      "accessRejected": "Cloudflare Access が接続を拒否しました。サービストークンとアプリケーションの Service Auth ポリシーを確認してください。",
+      "accessTlsFailure": "Cloudflare Access への安全な接続を検証できませんでした。ホスト名と TLS 証明書を確認してください。",
       "attention_other": "{{count}} 個の SSH ホストで対応が必要です",
       "authenticationFailed": "SSH 認証に失敗しました。認証情報のユーザー名、秘密鍵またはパスワードと、サーバーの権限を確認してください。認証情報を編集するか、このホストに別の認証情報を選択してください。",
       "credentialResourceLimit": "秘密鍵が対応する処理上限を超えています。対応する暗号化設定で再エクスポートし、認証情報を置き換えてください。",

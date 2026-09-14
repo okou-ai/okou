@@ -181,6 +181,58 @@ are unchanged.
 
 ## Deployment
 
+### Cloudflare Access authority preparation
+
+#34077 prepares the backend of #31996. It does not provide the native carrier or
+Access management UI. `cloudflareAccess` is default-off, including for staff, and
+requires `sshAccess`. Each protected host binds one same-owner `(orgId, userId)`
+Access configuration. The saved DNS hostname is the exact approved token recipient;
+its port is 443, while the origin SSH port is configured in Cloudflare. No guest
+URL, wildcard, alternate recipient list or Direct fallback exists.
+
+SSH has one canonical contract, without a version/profile selector or duplicate
+legacy DTO. Protected authority requires the existing SSH checks plus the current
+Access feature, enabled same-owner configuration and the Run user's Access grant
+for the visible Agent. Direct handoffs retain their actual key/password variants.
+
+The protected `resolved_access` outcome contains the saved host, port, username,
+host generation and learned key; `authentication` holds SSH key/password data,
+while `access` holds `configId`, effective `generation`, `clientId` and
+`clientSecret`. Both secret sets stay inside the official Runner boundary.
+Generated `ResolveResponse` uses bounded zeroizing secret fields and has no Debug,
+Clone or Serialize implementation. Until #34080 installs the native WSS carrier,
+the Runner rejects protected handoffs as unavailable without dialing Direct SSH.
+The carrier must require port 443 before sending a token; TLS/SNI and
+public-destination checks also belong to #34080.
+
+Pin and observation retain host-first locking and recheck protected authority
+through non-null config/grant joins with share locks. Owner mutations use the
+owner advisory lock, ordered affected-host locks, then configuration locks.
+Grant edits use that same order before locking the Agent. Token replacement and
+enable/disable advance both config generation and every referencing host
+generation atomically. Metadata rename advances only config revision. Host pins
+survive rotation, rebinding and every transition involving Access; explicit
+reset clears protected trust. Direct-to-Direct endpoint edits retain their
+existing behavior.
+
+Access mutations publish identifier-only invalidations for captured affected
+connection IDs, scoped to owner Runs and, for grant changes, the Agent. Direct
+hosts are not evicted by Access changes. Browser notifications use
+`cloudflare-access:changed` with `{orgId}`, plus `ssh:changed` where relevant.
+Rename does not interrupt runtime sessions. Notifications remain best effort;
+the accepted cached-authority lifetime is the remainder of the Run, not immediate
+revocation.
+
+Canonical observations accept `access_rejected`, `access_tls_failure` and
+`access_protocol_failure`. These are carrier-stage evidence, not SSH authentication
+failures. Platform translates them directly; there is no legacy projection.
+Guest inventory and CLI terminal enums are unchanged. Unauthorized protected
+hosts are omitted from inventory. DB/KMS failures and broken local references
+remain errors.
+
+See the [Cloudflare Access activation gate](deployment-compatibility.md#cloudflare-access-for-ssh)
+before writing protected configuration in any deployed environment.
+
 The observation table and endpoints are additive. Old Runners and clients do not
 use them and retain existing behavior. A new Runner treats an old API's missing
 observation endpoint as a dropped diagnostic; a new App shows diagnostic status

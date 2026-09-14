@@ -2,11 +2,14 @@ import { publishSshClientInvalidation } from "./ssh-client-invalidation.service"
 import {
   sshHostKeySchema,
   type RunnerSshResolveRequest,
-  type RunnerSshResolveResponse,
   type RunnerSshPinRequest,
   type RunnerSshPinResponse,
+  runnerSshAccessResolvedSchema,
+  type RunnerSshResolveResponse,
   type RunnerSshObservationRequest,
 } from "@okouai/api-contracts/contracts/runner-ssh";
+import { agentCloudflareAccess } from "@okouai/db/schema/agent-cloudflare-access";
+import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
@@ -16,22 +19,25 @@ import { agentSshAccess } from "@okouai/db/schema/agent-ssh-access";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { sshConnectionObservations } from "@okouai/db/schema/ssh-connection-observation";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
-import { and, eq, lt, ne, or, sql } from "drizzle-orm";
+import { and, eq, isNotNull, lt, ne, or, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 
-type SshResolveInput = RunnerSshResolveRequest & { readonly runId: string };
-type SshPinInput = RunnerSshPinRequest & { readonly runId: string };
+type SshResolveInput = RunnerSshResolveRequest & {
+  readonly runId: string;
+};
+type SshPinInput = RunnerSshPinRequest & {
+  readonly runId: string;
+};
 const unavailable = Object.freeze({ outcome: "unavailable" as const });
 
-async function currentConnection(
+function currentConnectionQuery(
   db: Pick<Db, "select">,
   input: SshResolveInput,
   lockAuthority: boolean,
-  signal: AbortSignal,
 ) {
   const query = db
     .select({
@@ -48,6 +54,15 @@ async function currentConnection(
       fingerprint: sshConnections.learnedHostKeyFingerprint,
       encryptedPrivateKey: sshCredentials.encryptedPrivateKey,
       encryptedPassphrase: sshCredentials.encryptedPassphrase,
+      accessId: sshConnections.cloudflareAccessId,
+      access: {
+        id: cloudflareAccessConfigs.id,
+        enabled: cloudflareAccessConfigs.enabled,
+        generation: cloudflareAccessConfigs.generation,
+        encryptedClientId: cloudflareAccessConfigs.encryptedClientId,
+        encryptedClientSecret: cloudflareAccessConfigs.encryptedClientSecret,
+      },
+      accessAgentId: agentCloudflareAccess.agentId,
     })
     .from(agentRuns)
     .innerJoin(
@@ -90,6 +105,23 @@ async function currentConnection(
         eq(sshCredentials.userId, agentRuns.userId),
       ),
     )
+    .leftJoin(
+      cloudflareAccessConfigs,
+      and(
+        eq(cloudflareAccessConfigs.id, sshConnections.cloudflareAccessId),
+        eq(cloudflareAccessConfigs.orgId, agentRuns.orgId),
+        eq(cloudflareAccessConfigs.userId, agentRuns.userId),
+      ),
+    )
+    .leftJoin(
+      agentCloudflareAccess,
+      and(
+        isNotNull(sshConnections.cloudflareAccessId),
+        eq(agentCloudflareAccess.agentId, agents.id),
+        eq(agentCloudflareAccess.orgId, agentRuns.orgId),
+        eq(agentCloudflareAccess.userId, agentRuns.userId),
+      ),
+    )
     .where(
       and(
         eq(agentRuns.id, input.runId),
@@ -101,11 +133,20 @@ async function currentConnection(
         ),
       ),
     );
-  const [row] = lockAuthority
-    ? await query.for("share", {
+  return lockAuthority
+    ? query.for("share", {
         of: [agentRuns, agentSessions, agents, agentSshAccess, sshCredentials],
       })
-    : await query;
+    : query;
+}
+
+async function currentConnection(
+  db: Pick<Db, "select">,
+  input: SshResolveInput,
+  lockAuthority: boolean,
+  signal: AbortSignal,
+) {
+  const [row] = await currentConnectionQuery(db, input, lockAuthority);
   signal.throwIfAborted();
   if (!row) {
     return null;
@@ -116,9 +157,53 @@ async function currentConnection(
     row.userId,
   );
   signal.throwIfAborted();
-  return isFeatureEnabled(FeatureSwitchKey.SshAccess, featureContext)
-    ? row
-    : null;
+  if (!isFeatureEnabled(FeatureSwitchKey.SshAccess, featureContext)) {
+    return null;
+  }
+  if (row.accessId === null) {
+    return row;
+  }
+  // The FK makes a missing local config a broken invariant, not an external miss.
+  if (row.access === null) {
+    throw new Error("SSH Cloudflare Access configuration is missing");
+  }
+  if (
+    !isFeatureEnabled(FeatureSwitchKey.CloudflareAccess, featureContext) ||
+    !row.access.enabled ||
+    row.accessAgentId === null
+  ) {
+    return null;
+  }
+  if (lockAuthority) {
+    // PostgreSQL cannot lock the nullable side of the outer joins above. The
+    // caller holds the host; lock only non-null protected authority rows here.
+    const [authority] = await db
+      .select({ id: cloudflareAccessConfigs.id })
+      .from(cloudflareAccessConfigs)
+      .innerJoin(
+        agentCloudflareAccess,
+        and(
+          eq(agentCloudflareAccess.orgId, row.orgId),
+          eq(agentCloudflareAccess.userId, row.userId),
+          eq(agentCloudflareAccess.agentId, row.accessAgentId),
+        ),
+      )
+      .where(
+        and(
+          eq(cloudflareAccessConfigs.id, row.accessId),
+          eq(cloudflareAccessConfigs.orgId, row.orgId),
+          eq(cloudflareAccessConfigs.userId, row.userId),
+          eq(cloudflareAccessConfigs.enabled, true),
+          eq(cloudflareAccessConfigs.generation, row.access.generation),
+        ),
+      )
+      .for("share", { of: [cloudflareAccessConfigs, agentCloudflareAccess] });
+    signal.throwIfAborted();
+    if (!authority) {
+      return null;
+    }
+  }
+  return row;
 }
 
 function learnedHostKey(row: {
@@ -152,6 +237,19 @@ export async function resolveRunnerSsh(
     generation: row.generation,
     learnedHostKey: hostKey,
   };
+  const access = row.accessId === null ? null : row.access;
+  const accessCredentials =
+    access === null
+      ? null
+      : {
+          configId: access.id,
+          generation: access.generation,
+          clientId: await decryptStoredSecretValue(access.encryptedClientId),
+          clientSecret: await decryptStoredSecretValue(
+            access.encryptedClientSecret,
+          ),
+        };
+  signal.throwIfAborted();
   if (row.authMethod === "password") {
     if (
       row.encryptedPassword === null ||
@@ -162,6 +260,14 @@ export async function resolveRunnerSsh(
     }
     const password = await decryptStoredSecretValue(row.encryptedPassword);
     signal.throwIfAborted();
+    if (accessCredentials) {
+      return runnerSshAccessResolvedSchema.parse({
+        outcome: "resolved_access",
+        ...common,
+        authentication: { method: "password", password },
+        access: accessCredentials,
+      });
+    }
     return { outcome: "resolved_password", ...common, password };
   }
   if (row.encryptedPrivateKey === null || row.encryptedPassword !== null) {
@@ -174,6 +280,14 @@ export async function resolveRunnerSsh(
       ? null
       : await decryptStoredSecretValue(row.encryptedPassphrase);
   signal.throwIfAborted();
+  if (accessCredentials) {
+    return runnerSshAccessResolvedSchema.parse({
+      outcome: "resolved_access",
+      ...common,
+      authentication: { method: "private_key", privateKey, passphrase },
+      access: accessCredentials,
+    });
+  }
   return { outcome: "resolved", ...common, privateKey, passphrase };
 }
 
@@ -249,12 +363,21 @@ export async function pinRunnerSsh(
 
 export async function recordRunnerSshObservation(
   db: Db,
-  input: RunnerSshObservationRequest & { readonly runId: string },
+  input: RunnerSshObservationRequest & {
+    readonly runId: string;
+  },
   signal: AbortSignal,
 ): Promise<{ readonly outcome: "recorded" | "ignored" | "unavailable" }> {
   const initial = await currentConnection(db, input, false, signal);
   if (!initial) {
     return unavailable;
+  }
+  if (
+    initial.accessId === null &&
+    input.failureReason !== null &&
+    input.failureReason.startsWith("access_")
+  ) {
+    return { outcome: "ignored" };
   }
   const observedAt = new Date(input.observedAt);
   // Fleet clocks need not be exact, but cannot poison future observation ordering.
