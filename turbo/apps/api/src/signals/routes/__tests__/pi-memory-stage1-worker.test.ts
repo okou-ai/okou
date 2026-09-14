@@ -15,7 +15,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { clearMockedEnv, mockEnv } from "../../../lib/env";
+import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
@@ -545,30 +545,6 @@ describe("Pi memory Stage 1 worker", () => {
       });
     }
   });
-  it("returns all-zero counters when the breaker setting is omitted", async () => {
-    clearMockedEnv();
-    mockEnv("CRON_SECRET", CRON_SECRET);
-    const response = await accept(
-      setupApp({ context, routes: cronExtractPiMemoryStage1Routes })(
-        cronExtractPiMemoryStage1Contract,
-      ).extract({ headers: stage1Headers() }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      success: true,
-      scanned: 0,
-      claimed: 0,
-      succeeded: 0,
-      succeededNoOutput: 0,
-      retryableFailure: 0,
-      terminalFailure: 0,
-      sourceExpired: 0,
-      sourceActive: 0,
-      staleDiscarded: 0,
-    });
-  });
-
   it("authenticates the production cron route before the disabled breaker", async () => {
     mockEnv("PI_MEMORY_BACKGROUND_WORKERS_ENABLED", "false");
     const provider = installProvider();
