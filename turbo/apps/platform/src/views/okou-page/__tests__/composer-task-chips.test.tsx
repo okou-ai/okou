@@ -46,12 +46,14 @@ async function setupChips(enabled = true): Promise<HTMLElement> {
   return await findComposerEditor();
 }
 
+// The selected task is one control: the chip itself removes the selection, so
+// it is addressed by that action rather than by a wrapping group.
 function selectedTask(editor: HTMLElement, task: string): HTMLElement {
   const card = editor.closest<HTMLElement>('[data-slot="chat-composer-card"]');
   if (!card) {
     throw new Error("Expected composer card");
   }
-  return within(card).getByRole("group", { name: task });
+  return within(card).getByRole("button", { name: `Remove ${task}` });
 }
 
 function ideaButtons(ideas: HTMLElement): HTMLElement[] {
@@ -305,7 +307,7 @@ test("Visualization preferences stay behind once another task is chosen", async 
     ),
   );
 
-  click(button("Remove Visualization", selectedTask(editor, "Visualization")));
+  click(selectedTask(editor, "Visualization"));
   click(
     button(
       "Website",
@@ -391,7 +393,7 @@ test("Task changes preserve uploaded files and the draft, and toggling off resto
   const tasks = screen.getByRole("group", { name: "Choose a task" });
   click(button("Image", tasks));
   await screen.findByRole("combobox", { name: "Image models" });
-  click(button("Remove Image", selectedTask(editor, "Image")));
+  click(selectedTask(editor, "Image"));
   const restoredTasks = await screen.findByRole("group", {
     name: "Choose a task",
   });
@@ -412,7 +414,7 @@ test("Task changes preserve uploaded files and the draft, and toggling off resto
   }
   click(portrait);
   await user.keyboard("{Escape}");
-  click(button("Remove Video", selectedTask(editor, "Video")));
+  click(selectedTask(editor, "Video"));
   await screen.findByRole("combobox", { name: "Claude Sonnet 4.6" });
   expect(screen.queryByTestId("composer-create-mode")).toBeNull();
   expect(editor).toHaveTextContent("Keep my draft");
@@ -664,7 +666,7 @@ test("More templates and Website open the existing library in the matching categ
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
-  click(button("Remove Presentation", selectedTask(editor, "Presentation")));
+  click(selectedTask(editor, "Presentation"));
   const restoredTasks = await screen.findByRole("group", {
     name: "Choose a task",
   });
