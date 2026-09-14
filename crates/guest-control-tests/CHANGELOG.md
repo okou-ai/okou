@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.7](https://github.com/vm0-ai/vm0/compare/guest-control-tests-v0.11.6...guest-control-tests-v0.11.7) (2026-09-14)
+
+
+### Bug Fixes
+
+* retain exec-control replies after guest deadlines ([#33839](https://github.com/vm0-ai/vm0/issues/33839)) ([70117f0](https://github.com/vm0-ai/vm0/commit/70117f01afcc1cb97297db62bf65b62caef6f06f))
+
 ## [0.11.6](https://github.com/vm0-ai/vm0/compare/guest-control-tests-v0.11.5...guest-control-tests-v0.11.6) (2026-09-12)
 
 ## [0.11.5](https://github.com/vm0-ai/vm0/compare/guest-control-tests-v0.11.4...guest-control-tests-v0.11.5) (2026-09-11)
