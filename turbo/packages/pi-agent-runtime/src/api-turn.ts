@@ -15,6 +15,9 @@ import type {
   PiApiAssistantMessage,
   PiApiFirstTurnArgs,
   PiApiFirstTurnResult,
+  PiApiTurnPreparationArgs,
+  PiApiTurnExecutionArgs,
+  PreparedPiApiTurn,
   PiObservedServiceTier,
 } from "./api-types";
 import { UnsupportedPiResourceSnapshotError } from "./errors";
@@ -109,11 +112,12 @@ export function projectPiApiAssistantMessage(
   return { ...projected, stopReason: message.stopReason };
 }
 
-/** Run exactly one provider request using Pi's official prompt and tool schemas. */
-export async function runPiApiFirstTurn(
-  args: PiApiFirstTurnArgs,
+/** Build the official session without any provider or publication authority. */
+export async function preparePiApiTurn(
+  args: PiApiTurnPreparationArgs,
   signal?: AbortSignal,
-): Promise<PiApiFirstTurnResult> {
+): Promise<PreparedPiApiTurn> {
+  signal?.throwIfAborted();
   const memorySession = measurePiPreparationSync(
     args.onPreparationTiming,
     "history",
@@ -163,6 +167,7 @@ export async function runPiApiFirstTurn(
     );
   }
   try {
+    signal?.throwIfAborted();
     measurePiPreparationSync(
       args.onPreparationTiming,
       "compaction_preflight",
@@ -175,43 +180,86 @@ export async function runPiApiFirstTurn(
       },
       signal,
     );
-    let observedServiceTier: PiObservedServiceTier;
-    const turn = await runPiFirstModelTurn({
-      model: shell.model,
-      session: memorySession,
-      stream: piAgentStreamForConfig(args.model),
-      systemPrompt: shell.session.systemPrompt,
-      tools: shell.session.agent.state.tools,
-      prompt: args.prompt,
-      thinkingLevel: args.model.thinkingLevel,
-      streamOptions: {
-        apiKey: args.model.apiKey,
-        signal,
-        ...(args.model.provider === "openrouter"
-          ? {
-              onObservedServiceTier: (serviceTier: PiObservedServiceTier) => {
-                observedServiceTier = serviceTier;
-              },
-            }
-          : {}),
-        ...(args.model.serviceTier === undefined
-          ? {}
-          : { serviceTier: args.model.serviceTier }),
-      },
-      ownership: args.ownership,
-      providerRequestBoundary: args.providerRequestBoundary,
-      onPreparationTiming: args.onPreparationTiming,
-    });
-    return {
-      assistantMessage: projectPiApiAssistantMessage(
-        turn.assistantMessage,
-        turn.responseStatus,
-      ),
-      handoffRequired: turn.handoffRequired,
-      observedServiceTier,
-      sessionJsonl: memorySession.toJsonl(),
-    };
-  } finally {
+  } catch (error) {
     shell.session.dispose();
+    throw error;
   }
+  let state: "ready" | "executing" | "disposed" = "ready";
+  return {
+    dispose() {
+      if (state === "ready") {
+        state = "disposed";
+        shell.session.dispose();
+      }
+    },
+    async execute(execution, executionSignal) {
+      if (state !== "ready") {
+        throw new Error(
+          "Pi prepared turn has already been consumed or disposed",
+        );
+      }
+      state = "executing";
+      try {
+        executionSignal?.throwIfAborted();
+        let observedServiceTier: PiObservedServiceTier;
+        const turn = await runPiFirstModelTurn({
+          model: shell.model,
+          session: memorySession,
+          stream: piAgentStreamForConfig(args.model),
+          systemPrompt: shell.session.systemPrompt,
+          tools: shell.session.agent.state.tools,
+          prompt: args.prompt,
+          thinkingLevel: args.model.thinkingLevel,
+          streamOptions: {
+            apiKey: args.model.apiKey,
+            signal: executionSignal,
+            ...(args.model.provider === "openrouter"
+              ? {
+                  onObservedServiceTier: (
+                    serviceTier: PiObservedServiceTier,
+                  ) => {
+                    observedServiceTier = serviceTier;
+                  },
+                }
+              : {}),
+            ...(args.model.serviceTier === undefined
+              ? {}
+              : { serviceTier: args.model.serviceTier }),
+          },
+          ownership: execution.ownership,
+          providerRequestBoundary: execution.providerRequestBoundary,
+          onPreparationTiming: args.onPreparationTiming,
+        });
+        return {
+          assistantMessage: projectPiApiAssistantMessage(
+            turn.assistantMessage,
+            turn.responseStatus,
+          ),
+          handoffRequired: turn.handoffRequired,
+          observedServiceTier,
+          sessionJsonl: memorySession.toJsonl(),
+        };
+      } finally {
+        state = "disposed";
+        shell.session.dispose();
+      }
+    },
+  };
+}
+
+export async function executePreparedPiApiTurn(
+  prepared: PreparedPiApiTurn,
+  args: PiApiTurnExecutionArgs,
+  signal?: AbortSignal,
+): Promise<PiApiFirstTurnResult> {
+  return await prepared.execute(args, signal);
+}
+
+/** Combined entry retained for callers without creator-owned preparation. */
+export async function runPiApiFirstTurn(
+  args: PiApiFirstTurnArgs,
+  signal?: AbortSignal,
+): Promise<PiApiFirstTurnResult> {
+  const prepared = await preparePiApiTurn(args, signal);
+  return await executePreparedPiApiTurn(prepared, args, signal);
 }

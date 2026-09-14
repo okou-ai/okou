@@ -325,7 +325,7 @@ function MediaParagraphRenderer({
   // Document cards contain block elements, which cannot live inside a <p>.
   if (node && containsBlockArtifact(node)) {
     return (
-      <div {...props} className="okou-markdown-card">
+      <div {...props} data-slot="markdown-card" className="okou-markdown-card">
         {children}
       </div>
     );
@@ -383,7 +383,7 @@ function MarkdownDivRenderer(props: MarkdownDivProps) {
   // consecutive cards sit border-to-border.
   if (data?.card) {
     return (
-      <div className="okou-markdown-card">
+      <div data-slot="markdown-card" className="okou-markdown-card">
         <MarkdownCardView card={data.card} />
       </div>
     );

@@ -30,6 +30,9 @@ surface; the index does not replace their detailed rules.
 
 ## Specialized Guidance
 
+- [Social download discovery](./social-download-discovery.md): bounded task
+  listing, scoped recovery hints, pagination, and CLI/API compatibility.
+
 - [Billing attribution foundation](./database/billing-attribution.md): immutable
   billing identity, writer inventory, bounded backfill and activation boundaries.
 - [Database trigger retirement](./database-trigger-retirement.md): explicit API
@@ -50,6 +53,8 @@ surface; the index does not replace their detailed rules.
   ownership, conversion actions, rollout compatibility, and historical recovery.
 - [Connector inspection JSON](./connector-inspection-json.md): command output
   contracts, current versus run evidence, account identity, and next actions.
+- [Social collection output](./social-collection-output.md): aggregate and
+  streaming terminal records, partial failures, accounting, and continuation hints.
 - [Platform lint boundaries](./platform-lint.md): current transport and lifecycle
   exceptions, polling policy, and retired configuration history.
 - [Clerk customization](./clerk-customize.md): hosted Clerk styling ownership,
@@ -62,8 +67,8 @@ surface; the index does not replace their detailed rules.
 - [Pi native provider preparation](./pi-native-provider-preparation.md): additive
   native readers, transport/auth ownership, accounting and activation gates.
 - [Pi candidate reference accounting](./database/pi-memory-candidate-accounting.md):
-  API B trigger compatibility, parent cleanup, lock order, read-only audit and
-  the two-release retirement gate.
+  explicit API ownership, guarded trigger retirement, parent cleanup, audit
+  receipts and the B rollback floor.
 - [Pi runtime architecture](./pi-runtime-architecture.md): launch, SDK/session,
   memory, accounting, retained compatibility, and patch ownership boundaries.
 - [Runner host configuration](./runner-host-configuration.md): configure and

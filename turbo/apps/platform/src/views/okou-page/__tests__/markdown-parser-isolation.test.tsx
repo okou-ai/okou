@@ -67,10 +67,7 @@ async function openInstructionsThenChat(): Promise<void> {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}?tab=instructions`,
-    featureSwitches: {
-      [FeatureSwitchKey.AgentMessageMath]: false,
-      [FeatureSwitchKey.OkouDebug]: true,
-    },
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
   });
 
   const editor = await screen.findByLabelText("Instructions editor");

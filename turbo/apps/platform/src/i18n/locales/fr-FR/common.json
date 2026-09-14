@@ -1028,7 +1028,8 @@
     "toasts": {
       "copyLinkFailed": "Échec de la copie du lien",
       "downloadFailed": "Échec du téléchargement",
-      "linkCopied": "Lien copié"
+      "linkCopied": "Lien copié",
+      "sharing": "Partage en cours…"
     }
   },
   "auth": {
@@ -1774,16 +1775,11 @@
       "selectModel": "Sélectionner le modèle",
       "slashPanel": {
         "browseAll": "Parcourir tous les modèles",
-        "illustrationDescription": "Une seule image, dans le style que vous choisissez",
         "make": "Créer",
-        "slidesDescription": "Une présentation HTML prête à projeter",
         "templateCount_one": "{{count}} modèle",
         "templateCount_many": "{{count}} modèles",
         "templateCount_other": "{{count}} modèles",
-        "useTemplate": "Utiliser le modèle {{title}}",
-        "videoDescription": "Du texte à la vidéo, avec les paramètres du modèle choisi",
-        "websiteDescription": "Un site statique que vous pouvez publier",
-        "workflowDescription": "Un workflow enregistré que vous pouvez lancer depuis le compositeur"
+        "useTemplate": "Utiliser le modèle {{title}}"
       },
       "temporarilySwitchTo": "Passer temporairement à",
       "threadSuggestions": "Conversations",

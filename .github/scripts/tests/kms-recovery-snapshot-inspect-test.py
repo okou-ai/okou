@@ -21,8 +21,9 @@ from pathlib import Path
 run = subprocess.run
 def process(command, **kwargs):
     result = run(command, **kwargs)
-    if command[0] == sys.argv[2]:
-        # Simulate the external process deadline without a 900-second sleep.
+    tool = command[2] if command[0] == "stdbuf" else command[0]
+    if tool == sys.argv[2]:
+        # Simulate the external deadline without waiting for the scan budget.
         # Internal inspection, decoding, reporting and cleanup remain real.
         empty = sys.argv[3] == "empty"
         output = None if empty else result.stdout.encode() + b'{"private":"fixture-private-password' + bytes([0xe4])
@@ -286,6 +287,20 @@ class SnapshotInspectionTest(unittest.TestCase):
                 "psqlExitCode": 3,
                 "sqlState": "57014",
                 "completedTables": 1,
+                "plannedTables": 2,
+                "completedChunks": 1,
+                "lastCompletedChunk": {
+                    "relationOid": 123,
+                    "firstBlock": 0,
+                    "endBlock": 1,
+                    "rows": 20,
+                },
+                "lastStartedBatch": {
+                    "relationOid": 456,
+                    "firstBlock": 0,
+                    "endBlock": 8192,
+                    "startedAt": "2026-09-14T08:42:00+00:00",
+                },
                 "lastStartedScan": {
                     "phase": "table",
                     "relationOid": 456,
@@ -322,8 +337,22 @@ class SnapshotInspectionTest(unittest.TestCase):
                 "databaseNameSha256": hashlib.sha256(b"neondb").hexdigest(),
                 "psqlExitCode": None,
                 "sqlState": None,
-                "processTimeoutSeconds": 900,
+                "processTimeoutSeconds": 3600,
                 "completedTables": 1,
+                "plannedTables": 2,
+                "completedChunks": 1,
+                "lastCompletedChunk": {
+                    "relationOid": 123,
+                    "firstBlock": 0,
+                    "endBlock": 1,
+                    "rows": 20,
+                },
+                "lastStartedBatch": {
+                    "relationOid": 456,
+                    "firstBlock": 0,
+                    "endBlock": 8192,
+                    "startedAt": "2026-09-14T08:42:00+00:00",
+                },
                 "lastStartedScan": {
                     "phase": "table",
                     "relationOid": 456,
@@ -346,8 +375,24 @@ class SnapshotInspectionTest(unittest.TestCase):
         self.assertEqual(report["failure"], "snapshot_database_scan_process_timeout")
         self.assertEqual(report["databaseScanFailure"]["completedTables"], 0)
         self.assertIsNone(report["databaseScanFailure"]["lastStartedScan"])
+        self.assertIsNone(report["databaseScanFailure"]["lastStartedBatch"])
+        self.assertIsNone(report["databaseScanFailure"]["lastCompletedChunk"])
+        self.assertIsNone(report["databaseScanFailure"]["plannedTables"])
         self.assertFalse(report["collectionComplete"])
         self.assertTrue(report["cleanupComplete"])
+
+    def test_invalid_batch_metadata_never_reaches_retained_evidence(self):
+        for scenario, error in [
+            ("invalid-batch-range", "invalid_scan_batch"),
+            ("invalid-batch-time", "invalid_batch_timestamp"),
+        ]:
+            with self.subTest(scenario=scenario):
+                result, report, _ = self.invoke(scenario)
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(report["failure"], error)
+                self.assertNotIn("databaseScanFailure", report)
+                self.assertFalse(report["collectionComplete"])
+                self.assertTrue(report["cleanupComplete"])
 
     def test_verification_timeout_is_distinct_from_a_marker_scan_failure(self):
         result, report, _ = self.invoke(

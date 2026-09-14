@@ -4,8 +4,6 @@
     "language-mermaid",
     "okou-app",
     "okou-blocks",
-    "okou-chat-bubble-assistant",
-    "okou-chat-bubble-user",
     "okou-chat-card",
     "okou-chat-frame",
     "okou-chat-skeleton-reveal",
@@ -573,34 +571,6 @@
       },
       {
         "atRules": [],
-        "selector": ".okou-app .okou-chat-bubble-user",
-        "property": "background-color",
-        "value": "hsl(var(--gray-200))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app .okou-chat-bubble-user",
-        "property": "color",
-        "value": "hsl(var(--foreground))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app .okou-chat-bubble-assistant",
-        "property": "background-color",
-        "value": "transparent",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app .okou-chat-bubble-assistant",
-        "property": "border",
-        "value": "none",
-        "important": false
-      },
-      {
-        "atRules": [],
         "selector": ".okou-app .okou-composer",
         "property": "--okou-composer-ring",
         "value": " var(--gray-500)",
@@ -730,27 +700,6 @@
         "selector": ".wmde-markdown p,.wmde-markdown .okou-markdown-card",
         "property": "margin-bottom",
         "value": "6px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-chat-bubble-assistant .wmde-markdown p,.okou-chat-bubble-user .wmde-markdown p,.okou-chat-bubble-assistant .wmde-markdown .okou-markdown-card,.okou-chat-bubble-user .wmde-markdown .okou-markdown-card",
-        "property": "margin-top",
-        "value": "8px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-chat-bubble-assistant .wmde-markdown p,.okou-chat-bubble-user .wmde-markdown p,.okou-chat-bubble-assistant .wmde-markdown .okou-markdown-card,.okou-chat-bubble-user .wmde-markdown .okou-markdown-card",
-        "property": "margin-bottom",
-        "value": "8px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-chat-bubble-assistant .wmde-markdown hr",
-        "property": "display",
-        "value": "none",
         "important": false
       },
       {
@@ -2606,13 +2555,8 @@
     "apps/platform/src/views/okou-page/chat-forward-dialog.tsx": {
       "okou-app": 1
     },
-    "apps/platform/src/views/okou-page/chat-message-surface.tsx": {
-      "okou-chat-bubble-assistant": 1,
-      "okou-chat-bubble-user": 1
-    },
     "apps/platform/src/views/okou-page/chat-thread-page.tsx": {
       "okou-blocks": 1,
-      "okou-chat-bubble-user": 2,
       "okou-chat-card": 2,
       "okou-chat-skeleton-reveal": 1,
       "okou-shimmer-text": 1,
@@ -2644,9 +2588,6 @@
     },
     "apps/platform/src/views/okou-page/replace-composer-draft-dialog.tsx": {
       "okou-app": 1
-    },
-    "apps/platform/src/views/okou-page/settings-tab.tsx": {
-      "okou-chat-bubble-assistant": 1
     },
     "apps/platform/src/views/okou-page/sidebar-dialogs.tsx": {
       "okou-app": 2

@@ -27,7 +27,6 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.SshAccess).toBe("sshAccess");
     expect(FeatureSwitchKey.PiLoop).toBe("piLoop");
     expect(FeatureSwitchKey.PiMemory).toBe("piMemory");
-    expect(FeatureSwitchKey.AgentMessageMath).toBe("agentMessageMath");
     expect(FeatureSwitchKey.ProgressiveArtifactPreview).toBe(
       "progressiveArtifactPreview",
     );
@@ -244,7 +243,6 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.Lab]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.OkouDebug]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.Banking]).toBe(false);
-    expect(staffOrgStates[FeatureSwitchKey.AgentMessageMath]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ProgressiveArtifactPreview]).toBe(
       true,
     );
@@ -271,7 +269,6 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.Lab]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.OkouDebug]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.Banking]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.AgentMessageMath]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.ProgressiveArtifactPreview]).toBe(
       false,
     );

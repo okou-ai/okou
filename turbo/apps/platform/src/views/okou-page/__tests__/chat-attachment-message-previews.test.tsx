@@ -580,7 +580,7 @@ test("User attachments appear before their message text", async () => {
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
 
   const text = await screen.findByText("Original message beneath the files");
-  const bubble = text.closest<HTMLElement>(".okou-chat-bubble-user");
+  const bubble = text.closest<HTMLElement>('[data-slot="chat-user-message"]');
   if (!bubble) {
     throw new Error("Expected the original text bubble");
   }
