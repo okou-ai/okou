@@ -107,8 +107,6 @@ const WEBSITE_IDEAS = [
   "linkPage",
   "bookingPage",
 ] as const;
-const CHIP_CLASS =
-  "gap-2 rounded-full border border-transparent px-3 font-normal hover:bg-gray-50";
 
 function ComposerTaskIdeas({
   signals,
@@ -252,7 +250,7 @@ export function ComposerTaskChips({
     >
       {selected === null && (
         <div
-          className="flex flex-wrap items-center justify-start gap-1.5"
+          className="flex flex-wrap items-center justify-start gap-2"
           role="group"
           aria-label={t(($) => {
             return $.chat.taskChips.chooseTask;
@@ -273,14 +271,16 @@ export function ComposerTaskChips({
                 <Button
                   key={task}
                   type="button"
-                  size="sm"
-                  variant="quiet"
-                  className={CHIP_CLASS}
+                  variant="neutral"
                   onClick={() => {
                     selectTask(task);
                   }}
                 >
-                  <Icon size={16} aria-hidden />
+                  <Icon
+                    size={16}
+                    className="text-muted-foreground"
+                    aria-hidden
+                  />
                   {labels[task]}
                 </Button>
               );
