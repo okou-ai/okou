@@ -11,7 +11,19 @@
     "outDir": "./.typecheck/core",
     "tsBuildInfoFile": "./.typecheck/core.tsbuildinfo"
   },
-  "include": ["src/**/*", "src/**/*.json"],
+  "include": [
+    "src/*.ts",
+    "src/lib/**/*",
+    "src/mocks/**/*",
+    "src/types/**/*",
+    "src/scripts/**/*",
+    "src/signals/*.ts",
+    "src/signals/auth/**/*",
+    "src/signals/context/**/*",
+    "src/signals/external/**/*",
+    "src/signals/services/**/*",
+    "src/**/*.json"
+  ],
   "exclude": [
     "node_modules",
     "dist",
@@ -36,7 +48,8 @@
     "src/signals/external/slack-block-kit.ts",
     "src/signals/external/slack-message-client.ts",
     "src/signals/external/slack-oauth-client.ts",
-    "src/signals/utils.ts"
+    "src/signals/utils.ts",
+    "src/signals/routes/**/*"
   ],
   "references": [{ "path": "./tsconfig.gateways.json" }]
 }

@@ -1,0 +1,23 @@
+{
+  "extends": "./tsconfig.core.json",
+  "compilerOptions": {
+    "outDir": "./.typecheck/routes",
+    "tsBuildInfoFile": "./.typecheck/routes.tsbuildinfo"
+  },
+  "include": ["src/signals/routes/**/*", "src/signals/routes/**/*.json"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/**/__benches__/**/*",
+    "src/**/__tests__/**/*",
+    "src/**/*.bench.ts",
+    "src/**/*.spec.ts",
+    "src/**/*.suite.ts",
+    "src/**/*.test.ts",
+    "src/test-fixtures/**/*"
+  ],
+  "references": [
+    { "path": "./tsconfig.gateways.json" },
+    { "path": "./tsconfig.core.json" }
+  ]
+}

@@ -43,6 +43,7 @@ interface ModelPickerMenuOption {
   readonly content: ReactNode;
   readonly disabled: boolean;
   readonly fastAvailable: boolean;
+  readonly fastImpact: ReactNode;
 }
 
 function useChatEffort(selection: ModelProviderSelection | null | undefined) {
@@ -403,9 +404,7 @@ function ChatModelSettings({
               })}
             </span>
             <p className="mt-1 text-[11px] text-muted-foreground">
-              {t(($) => {
-                return $.settings.models.picker.fastImpact;
-              })}
+              {option.fastImpact}
             </p>
           </div>
           <Switch

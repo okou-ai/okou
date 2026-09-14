@@ -31,6 +31,7 @@ import {
 const PRIVATE_ARTIFACT_CACHE_CONTROL =
   "private, max-age=31536000, must-revalidate";
 const PRIVATE_NO_STORE_CACHE_CONTROL = "private, no-store";
+const S3_DELETE_OBJECTS_LIMIT = 1000;
 
 export interface S3Object {
   readonly key: string;
@@ -170,6 +171,19 @@ interface S3Credentials {
 
 interface DownloadS3BufferOptions {
   readonly maxBytes?: number;
+  readonly onFailure?: (diagnostics: S3DownloadFailureDiagnostics) => void;
+}
+
+export interface S3DownloadFailureDiagnostics {
+  readonly stage: "get_object" | "read_body";
+  readonly stageDurationMs: number;
+  readonly receivedBytes: number;
+  readonly expectedBytes?: number;
+  readonly providerStatus?: number;
+  readonly providerRequestId?: string;
+  readonly providerAttempts?: number;
+  readonly providerRetryDelayMs?: number;
+  readonly signalAborted: boolean;
 }
 
 export type ConditionalS3BufferDownload =
@@ -418,20 +432,29 @@ export function deleteS3Objects(
       return;
     }
     const client = get(s3ClientForBucket(bucket));
-    const response = await client.send(
-      new DeleteObjectsCommand({
-        Bucket: bucket,
-        Delete: {
-          Objects: keys.map((Key) => {
-            return { Key };
-          }),
-        },
-      }),
-    );
-    if ((response.Errors?.length ?? 0) > 0) {
-      throw new Error(
-        `S3 object deletion failed for ${response.Errors?.length.toString() ?? "0"} object(s)`,
+    // Stop at the first failed batch. Retrying already deleted keys is safe.
+    for (
+      let offset = 0;
+      offset < keys.length;
+      offset += S3_DELETE_OBJECTS_LIMIT
+    ) {
+      const response = await client.send(
+        new DeleteObjectsCommand({
+          Bucket: bucket,
+          Delete: {
+            Objects: keys
+              .slice(offset, offset + S3_DELETE_OBJECTS_LIMIT)
+              .map((Key) => {
+                return { Key };
+              }),
+          },
+        }),
       );
+      if (response.Errors && response.Errors.length > 0) {
+        throw new Error(
+          `S3 object deletion failed for ${response.Errors.length.toString()} object(s)`,
+        );
+      }
     }
   });
 }
@@ -439,14 +462,22 @@ export function deleteS3Objects(
 export function downloadS3Buffer(
   bucket: string,
   key: string,
-  signal?: AbortSignal,
+  options?:
+    | AbortSignal
+    | {
+        readonly signal?: AbortSignal;
+        readonly onFailure?: DownloadS3BufferOptions["onFailure"];
+      },
 ): Computed<Promise<Buffer>> {
+  const downloadOptions = isAbortSignal(options)
+    ? { signal: options }
+    : options;
   return downloadS3BufferWithClient(
     s3ClientForBucket(bucket),
     bucket,
     key,
-    {},
-    signal,
+    { onFailure: downloadOptions?.onFailure },
+    downloadOptions?.signal,
   );
 }
 
@@ -567,11 +598,22 @@ function downloadS3BufferWithClient(
 ): Computed<Promise<Buffer>> {
   return computed(async (get): Promise<Buffer> => {
     const client = get(client$);
-    const response = await client.send(
-      new GetObjectCommand({ Bucket: bucket, Key: key }),
-      { abortSignal: signal },
+    const startedAt = performance.now();
+    const downloaded = await settle(
+      client.send(new GetObjectCommand({ Bucket: bucket, Key: key }), {
+        abortSignal: signal,
+      }),
     );
-    return await readS3ObjectBody(response, key, options, signal);
+    if (!downloaded.ok) {
+      options.onFailure?.({
+        stage: "get_object",
+        stageDurationMs: Math.round(performance.now() - startedAt),
+        receivedBytes: 0,
+        signalAborted: signal?.aborted ?? false,
+      });
+      throw downloaded.error;
+    }
+    return await readS3ObjectBody(downloaded.value, key, options, signal);
   });
 }
 
@@ -580,64 +622,85 @@ async function readS3ObjectBody(
     readonly Body?: unknown;
     readonly ContentLength?: number;
     readonly ETag?: string;
+    readonly $metadata?: GetObjectCommandOutput["$metadata"];
   },
   key: string,
   options: DownloadS3BufferOptions,
   signal?: AbortSignal,
 ): Promise<Buffer> {
-  if (!response.Body) {
-    throw new Error("S3 object body is empty");
-  }
-  if (!isAsyncIterableByteStream(response.Body)) {
-    closeS3Body(response.Body);
-    throw new Error("S3 object body is not an async byte stream");
-  }
-  if (signal?.aborted) {
-    closeS3Body(response.Body);
-    signal.throwIfAborted();
-  }
-  if (
-    options.maxBytes !== undefined &&
-    response.ContentLength !== undefined &&
-    response.ContentLength > options.maxBytes
-  ) {
-    closeS3Body(response.Body);
-    throw new S3ObjectSizeLimitError(
-      key,
-      response.ContentLength,
-      options.maxBytes,
-      response.ETag ?? null,
-    );
-  }
-  const chunks: Uint8Array[] = [];
+  const startedAt = performance.now();
   let totalLength = 0;
-  for await (const chunk of response.Body) {
-    if (signal?.aborted) {
-      closeS3Body(response.Body);
-      signal.throwIfAborted();
-    }
-    if (!(chunk instanceof Uint8Array)) {
-      closeS3Body(response.Body);
-      throw new Error("S3 object body yielded a non-byte chunk");
-    }
-    totalLength += chunk.length;
-    if (options.maxBytes !== undefined && totalLength > options.maxBytes) {
-      closeS3Body(response.Body);
-      throw new S3ObjectSizeLimitError(
-        key,
+  const downloaded = await settle(
+    (async () => {
+      if (!response.Body) {
+        throw new Error("S3 object body is empty");
+      }
+      if (!isAsyncIterableByteStream(response.Body)) {
+        closeS3Body(response.Body);
+        throw new Error("S3 object body is not an async byte stream");
+      }
+      if (signal?.aborted) {
+        closeS3Body(response.Body);
+        signal.throwIfAborted();
+      }
+      if (
+        options.maxBytes !== undefined &&
+        response.ContentLength !== undefined &&
+        response.ContentLength > options.maxBytes
+      ) {
+        closeS3Body(response.Body);
+        throw new S3ObjectSizeLimitError(
+          key,
+          response.ContentLength,
+          options.maxBytes,
+          response.ETag ?? null,
+        );
+      }
+      const chunks: Uint8Array[] = [];
+      for await (const chunk of response.Body) {
+        if (signal?.aborted) {
+          closeS3Body(response.Body);
+          signal.throwIfAborted();
+        }
+        if (!(chunk instanceof Uint8Array)) {
+          closeS3Body(response.Body);
+          throw new Error("S3 object body yielded a non-byte chunk");
+        }
+        totalLength += chunk.length;
+        if (options.maxBytes !== undefined && totalLength > options.maxBytes) {
+          closeS3Body(response.Body);
+          throw new S3ObjectSizeLimitError(
+            key,
+            totalLength,
+            options.maxBytes,
+            response.ETag ?? null,
+          );
+        }
+        chunks.push(chunk);
+      }
+      return Buffer.concat(
+        chunks.map((chunk) => {
+          return Buffer.from(chunk);
+        }),
         totalLength,
-        options.maxBytes,
-        response.ETag ?? null,
       );
-    }
-    chunks.push(chunk);
-  }
-  return Buffer.concat(
-    chunks.map((chunk) => {
-      return Buffer.from(chunk);
-    }),
-    totalLength,
+    })(),
   );
+  if (!downloaded.ok) {
+    options.onFailure?.({
+      stage: "read_body",
+      stageDurationMs: Math.round(performance.now() - startedAt),
+      receivedBytes: totalLength,
+      expectedBytes: response.ContentLength,
+      providerStatus: response.$metadata?.httpStatusCode,
+      providerRequestId: response.$metadata?.requestId,
+      providerAttempts: response.$metadata?.attempts,
+      providerRetryDelayMs: response.$metadata?.totalRetryDelay,
+      signalAborted: signal?.aborted ?? false,
+    });
+    throw downloaded.error;
+  }
+  return downloaded.value;
 }
 
 export function downloadHostedSitesS3Buffer(

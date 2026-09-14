@@ -1,5 +1,33 @@
 # Changelog
 
+## [9.326.0](https://github.com/vm0-ai/vm0/compare/cli-v9.325.3...cli-v9.326.0) (2026-09-14)
+
+
+### Features
+
+* **slack:** add paginated thread reply reads ([#33882](https://github.com/vm0-ai/vm0/issues/33882)) ([d637f53](https://github.com/vm0-ai/vm0/commit/d637f53f81c5fd78abec9b27ff4c7136a25f56cb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.435.0
+    * @okouai/core bumped to 8.661.1
+    * @okouai/pi-agent-runtime bumped to 1.27.5
+
+## [9.325.3](https://github.com/vm0-ai/vm0/compare/cli-v9.325.2...cli-v9.325.3) (2026-09-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.434.0
+    * @okouai/connectors bumped to 3.11.1
+    * @okouai/core bumped to 8.661.0
+    * @okouai/pi-agent-runtime bumped to 1.27.4
+
 ## [9.325.2](https://github.com/vm0-ai/vm0/compare/cli-v9.325.1...cli-v9.325.2) (2026-09-13)
 
 

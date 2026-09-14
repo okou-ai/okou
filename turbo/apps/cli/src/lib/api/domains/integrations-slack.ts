@@ -30,6 +30,8 @@ import {
   type SlackChannelListResponse,
   type SlackHistoryQuery,
   type SlackHistoryResponse,
+  type SlackRepliesQuery,
+  type SlackRepliesResponse,
 } from "@okouai/api-contracts/contracts/integrations-slack-read";
 
 export async function listSlackChannels(
@@ -54,6 +56,18 @@ export async function readSlackHistory(
   const result = await client.history({ query, headers: {} });
   if (result.status === 200) return result.body;
   handleError(result, "Failed to read Slack history");
+}
+
+export async function readSlackReplies(
+  query: SlackRepliesQuery,
+): Promise<SlackRepliesResponse> {
+  const client = initClient(
+    integrationsSlackReadContract,
+    await getClientConfig(),
+  );
+  const result = await client.replies({ query, headers: {} });
+  if (result.status === 200) return result.body;
+  handleError(result, "Failed to read Slack thread replies");
 }
 
 export async function sendSlackMessage(

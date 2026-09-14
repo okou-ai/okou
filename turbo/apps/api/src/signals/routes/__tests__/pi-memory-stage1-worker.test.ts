@@ -23,7 +23,10 @@ import {
   seedBuiltInModelCandidateKeys,
   resolveBuiltInModelRouteFixture,
 } from "./helpers/runtime-state";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  deleteFeatureSwitchesForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
 import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { createDeferredPromise } from "../../utils";
@@ -302,10 +305,15 @@ async function stateAction(
   return response.body;
 }
 
-function createStorageFixture() {
+function createStorageFixture(
+  options: { readonly piMemoryEnabled?: boolean } = {},
+) {
   const memoryStorageId = randomUUID();
   const orgId = `org_pi_stage1_${randomUUID()}`;
   const userId = `user_pi_stage1_${randomUUID()}`;
+  // PiMemory is off for everyone by default; Stage 1 work only runs for
+  // owners whose explicit override enables it.
+  const piMemoryEnabled = options.piMemoryEnabled ?? true;
   const sourceHashes: string[] = [];
   const agentSessionIds: string[] = [];
   const owner = createFixtureOperationOwner(async () => {
@@ -317,12 +325,25 @@ function createStorageFixture() {
       source_history_hashes: [...new Set(sourceHashes)],
       agent_session_ids: agentSessionIds,
     });
+    if (piMemoryEnabled) {
+      await deleteFeatureSwitchesForUser(context, { orgId, userId });
+    }
   });
   const ownerScope = {
     memory_storage_id: memoryStorageId,
     org_id: orgId,
     user_id: userId,
   } as const;
+  let ownerSwitches: Promise<void> | undefined;
+
+  function enableOwnerPiMemory(): Promise<void> {
+    ownerSwitches ??= updateFeatureSwitchesForUser(
+      context,
+      { orgId, userId },
+      { [FeatureSwitchKey.PiMemory]: true },
+    );
+    return ownerSwitches;
+  }
 
   async function seed(args: {
     readonly raw: Buffer;
@@ -332,6 +353,9 @@ function createStorageFixture() {
     readonly retryCount?: number;
   }): Promise<CandidateFixture> {
     return await owner.run(async () => {
+      if (piMemoryEnabled) {
+        await enableOwnerPiMemory();
+      }
       const encoding = args.encoding ?? SESSION_HISTORY_ENCODING_IDENTITY;
       const piSessionId = args.piSessionId ?? randomUUID();
       const sourceHistoryHash = createHash("sha256")
@@ -475,6 +499,7 @@ function stage1Client(
 }
 
 beforeEach(async () => {
+  mockEnv("PI_MEMORY_BACKGROUND_WORKERS_ENABLED", "true");
   mockEnv("R2_USER_STORAGES_BUCKET_NAME", BUCKET);
   mockEnv("CRON_SECRET", CRON_SECRET);
   context.sessionHistoryBlobs.clear();
@@ -483,6 +508,80 @@ beforeEach(async () => {
 });
 
 describe("Pi memory Stage 1 worker", () => {
+  it("settles switch-off work terminal before any download or provider call", async () => {
+    const enabledStorage = createStorageFixture();
+    const disabledStorage = createStorageFixture({ piMemoryEnabled: false });
+    const enabledSessionId = randomUUID();
+    const enabled = await enabledStorage.seed({
+      piSessionId: enabledSessionId,
+      raw: settledHistory(enabledSessionId, "enabled owner keeps learning"),
+    });
+    const disabledSessionId = randomUUID();
+    const disabled = await disabledStorage.seed({
+      piSessionId: disabledSessionId,
+      raw: settledHistory(
+        disabledSessionId,
+        "disabled owner never reaches the provider",
+      ),
+      retryCount: 2,
+    });
+    const provider = installProvider();
+
+    const result = await accept(
+      stage1Client([enabledStorage, disabledStorage]).extract({
+        headers: stage1Headers(),
+      }),
+      [200],
+    );
+
+    expect(result.body).toMatchObject({
+      success: true,
+      scanned: 2,
+      claimed: 2,
+      succeeded: 1,
+      succeededNoOutput: 0,
+      retryableFailure: 0,
+      terminalFailure: 1,
+      staleDiscarded: 0,
+    });
+    expect(provider.calls).toHaveLength(1);
+    const providerRequest = JSON.stringify(provider.calls[0]?.request);
+    expect(providerRequest).toContain("enabled owner keeps learning");
+    expect(providerRequest).not.toContain("disabled owner");
+    expect(
+      context.mocks.s3.send.mock.calls.some(([command]) => {
+        return (
+          command instanceof GetObjectCommand &&
+          command.input.Key === disabled.objectKey
+        );
+      }),
+    ).toBeFalsy();
+    await expect(inspect(enabled)).resolves.toMatchObject({
+      status: "succeeded",
+      retry_count: 0,
+      last_error_class: null,
+    });
+    // Terminal with the explicit class, and the seeded attempt count is
+    // untouched: no attempt was consumed.
+    await expect(inspect(disabled)).resolves.toStrictEqual({
+      status: "terminal_failure",
+      retry_count: 2,
+      last_error_class: "pi_memory_disabled",
+      raw_memory: null,
+      rollout_summary: null,
+      rollout_slug: null,
+    });
+    await expect(inspectUsage(disabledStorage)).resolves.toStrictEqual([]);
+
+    // A settled switch-off candidate is not due again on the next tick.
+    await expect(runScoped(disabledStorage)).resolves.toMatchObject({
+      scanned: 0,
+      claimed: 0,
+      terminalFailure: 0,
+    });
+    expect(provider.calls).toHaveLength(1);
+  });
+
   it("selects the OpenRouter region from each work owner's switch in one batch", async () => {
     const selectedModel = "gpt-5.6-terra";
     await seedBuiltInModelCandidateKeys(context, selectedModel);
@@ -598,7 +697,7 @@ describe("Pi memory Stage 1 worker", () => {
     expect(captured).not.toContain(CRON_SECRET);
   });
 
-  it("preserves Stage 1 route counters and results when enabled by default", async () => {
+  it("preserves Stage 1 route counters and results when explicitly enabled", async () => {
     const storage = createStorageFixture();
     const piSessionId = randomUUID();
     const fixture = await storage.seed({

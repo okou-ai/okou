@@ -3,6 +3,8 @@
 //! Each wire frame is a big-endian u32 length followed by strict envelope JSON.
 //! Method dispatch, authority checks and business outcomes belong to consumers.
 
+pub mod stream;
+
 use std::io;
 
 use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};

@@ -15,6 +15,7 @@ from flow_metadata_linter.ast_helpers import (
     _is_modeled_implicit_exception_operation,
     _iterable_is_statically_empty,
     _iteration_may_raise,
+    _literal_iteration_limit,
     _pattern_is_exhaustive,
     _pattern_names,
     _scope_bound_name_visitor,
@@ -163,7 +164,10 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
     named expressions introduce aliases; rebinding, deletion, imports, and Python
     scope bindings shadow or discard them. Ordinary branch joins include only exits
     that can fall through, while loops also retain zero-iteration and possible body
-    or ``else`` exits.
+    or ``else`` exits. Loop entries grow monotonically over the finite set of source
+    names until normal and continue backedges add no aliases. Each pass preserves
+    statement-level rebinding and retains newly discovered diagnostics. Direct
+    literal iterables also bound the number of body passes by their element count.
 
     Sequential body traversal requires every concrete statement visitor to report
     its normal-exit result explicitly. Expression visitors return ``None`` outside
@@ -511,23 +515,6 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         violation_messages = set(self._violation_messages)
         checked_node_ids = set(self._metadata_key_checked_node_ids)
         result = self._visit_branch_body(body, aliases)
-        del self.violations[violation_count:]
-        self._violation_messages = violation_messages
-        self._metadata_key_checked_node_ids = checked_node_ids
-        return result
-
-    def _visit_expression_state_only(
-        self, expression: ast.AST, aliases: set[str], *, truth_test: bool = False
-    ) -> set[str]:
-        violation_count = len(self.violations)
-        violation_messages = set(self._violation_messages)
-        checked_node_ids = set(self._metadata_key_checked_node_ids)
-        self._metadata_alias_scopes.append(set(aliases))
-        self.visit(expression)
-        if truth_test:
-            self._record_truth_test_exception(expression)
-        result = set(self._metadata_aliases)
-        self._metadata_alias_scopes.pop()
         del self.violations[violation_count:]
         self._violation_messages = violation_messages
         self._metadata_key_checked_node_ids = checked_node_ids
@@ -1072,6 +1059,19 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         self._replace_current_aliases(exit_aliases)
         return body_falls_through or orelse_falls_through
 
+    def _visit_loop_body(
+        self, body: list[ast.stmt], aliases: set[str]
+    ) -> tuple[set[str], bool, _LoopControlAliasState]:
+        loop_control_state = _LoopControlAliasState()
+        self._loop_control_alias_scopes.append(loop_control_state)
+        body_aliases, body_falls_through = self._visit_branch_body(body, aliases)
+        self._loop_control_alias_scopes.pop()
+        backedge_aliases = set(loop_control_state.continue_aliases)
+        if body_falls_through:
+            backedge_aliases.update(body_aliases)
+        may_repeat = body_falls_through or loop_control_state.may_continue
+        return backedge_aliases, may_repeat, loop_control_state
+
     def _visit_loop_else_and_join_exits(
         self,
         orelse: list[ast.stmt],
@@ -1110,22 +1110,28 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
                 orelse_falls_through = True
             self._replace_current_aliases(orelse_aliases)
             return orelse_falls_through
-        self._visit_assignment_target(node.target, direct_value_is_metadata_alias=False)
+        entry_aliases = set(base_aliases)
         loop_control_state = _LoopControlAliasState()
-        self._loop_control_alias_scopes.append(loop_control_state)
-        body_aliases, body_falls_through = self._visit_branch_body(
-            node.body, set(self._metadata_aliases)
+        remaining_iterations = (
+            _literal_iteration_limit(node.iter) if isinstance(node, ast.For) else None
         )
-        self._loop_control_alias_scopes.pop()
-        later_iteration_aliases = set(loop_control_state.continue_aliases)
-        if body_falls_through:
-            later_iteration_aliases.update(body_aliases)
-        if iteration_may_raise and (body_falls_through or loop_control_state.may_continue):
-            self._record_implicit_exception_aliases(later_iteration_aliases)
-        exhaustion_aliases = base_aliases | later_iteration_aliases
-        return self._visit_loop_else_and_join_exits(
-            node.orelse, exhaustion_aliases, loop_control_state
-        )
+        while True:
+            self._replace_current_aliases(entry_aliases)
+            self._visit_assignment_target(node.target, direct_value_is_metadata_alias=False)
+            backedge_aliases, may_repeat, body_control_state = self._visit_loop_body(
+                node.body, set(self._metadata_aliases)
+            )
+            loop_control_state.merge(body_control_state)
+            if iteration_may_raise and may_repeat:
+                self._record_implicit_exception_aliases(backedge_aliases)
+            if backedge_aliases <= entry_aliases:
+                break
+            entry_aliases.update(backedge_aliases)
+            if remaining_iterations is not None:
+                remaining_iterations -= 1
+                if remaining_iterations == 0:
+                    break
+        return self._visit_loop_else_and_join_exits(node.orelse, entry_aliases, loop_control_state)
 
     def visit_For(self, node: ast.For) -> bool:
         return self._visit_for_statement(node)
@@ -1148,22 +1154,23 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
                 orelse_falls_through = True
             self._replace_current_aliases(orelse_aliases)
             return orelse_falls_through
+        entry_aliases = set(base_aliases)
         loop_control_state = _LoopControlAliasState()
-        self._loop_control_alias_scopes.append(loop_control_state)
-        body_aliases, body_falls_through = self._visit_branch_body(node.body, base_aliases)
-        self._loop_control_alias_scopes.pop()
-        later_test_entry_aliases = set(loop_control_state.continue_aliases)
-        if body_falls_through:
-            later_test_entry_aliases.update(body_aliases)
-        later_test_aliases = (
-            self._visit_expression_state_only(node.test, later_test_entry_aliases, truth_test=True)
-            if body_falls_through or loop_control_state.may_continue
-            else set()
-        )
-        exhaustion_aliases = base_aliases | later_test_aliases
-        return self._visit_loop_else_and_join_exits(
-            node.orelse, exhaustion_aliases, loop_control_state
-        )
+        while True:
+            backedge_aliases, may_repeat, body_control_state = self._visit_loop_body(
+                node.body, entry_aliases
+            )
+            loop_control_state.merge(body_control_state)
+            if not may_repeat:
+                break
+            self._replace_current_aliases(backedge_aliases)
+            self.visit(node.test)
+            self._record_truth_test_exception(node.test)
+            later_test_aliases = set(self._metadata_aliases)
+            if later_test_aliases <= entry_aliases:
+                break
+            entry_aliases.update(later_test_aliases)
+        return self._visit_loop_else_and_join_exits(node.orelse, entry_aliases, loop_control_state)
 
     def _visit_with_items(self, items: list[ast.withitem], body: list[ast.stmt]) -> bool:
         item, *remaining_items = items

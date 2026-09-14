@@ -292,7 +292,7 @@ test("Direct Feishu settings require Feishu to be enabled", async () => {
   expect(screen.queryByText("Feishu bots")).not.toBeInTheDocument();
 });
 
-test("Direct Feishu settings wait for authoritative feature hydration", async () => {
+test("Direct Feishu settings wait for authoritative feature switches", async () => {
   mockFeishu(context);
   const featureResponse = createDeferredPromise<void>(context.signal);
   context.mocks.api(

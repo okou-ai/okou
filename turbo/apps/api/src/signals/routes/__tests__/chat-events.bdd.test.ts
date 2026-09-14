@@ -110,7 +110,6 @@ import { createApp } from "../../../app-factory";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
-import type { AgentEvent } from "../../../lib/event-consumer/verify";
 import {
   buildArtifactKeyV2,
   buildArtifactPrefixV2,
@@ -139,14 +138,11 @@ import {
   holdChatThreadRowLockFixture,
   holdOrgAdmissionLockFixture,
   holdPiApiFirstTurnLifecycleLockFixture,
-  holdRunOutputMaterializationRowFixture,
   holdThreadSessionBindingClearFixture,
   holdThreadSessionConversationChangesFixture,
   holdThreadSessionConversationClearFixture,
   insertPiApiFirstTurnUsageEventsFixture,
   readCanonicalChatEventStorageFixture,
-  readRunOutputLegacyPiEventsFixture,
-  readRunOutputMaterializationFixture,
   readRunOutputMemoryCitationsFixture,
   readRunUsageEventsFixture,
   releaseBddBuiltInModelKey,
@@ -1151,6 +1147,7 @@ interface ChatRunCompletionOptions {
 function frameworkMatchingCompletionOptions(
   threadId: string,
   cliAgentType: "claude-code" | "codex" | "pi",
+  userNote?: string,
 ): ChatRunCompletionOptions {
   if (cliAgentType !== "pi") {
     return { cliAgentType };
@@ -1159,6 +1156,9 @@ function frameworkMatchingCompletionOptions(
     cwd: "/home/user/workspace",
     id: threadId,
   });
+  if (userNote !== undefined) {
+    session.appendMessage({ role: "user", content: userNote, timestamp: 1 });
+  }
   session.appendMessage({
     role: "assistant",
     content: [{ type: "text", text: "BDD Pi completion checkpoint" }],
@@ -1174,7 +1174,7 @@ function frameworkMatchingCompletionOptions(
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     },
     stopReason: "stop",
-    timestamp: 1,
+    timestamp: userNote === undefined ? 1 : 2,
   });
   return {
     cliAgentType,
@@ -2736,6 +2736,7 @@ async function expectExactPrivatePiMemoryAdmission(args: {
 }
 
 async function extractOwnedThreadPiMemory(actor: ApiTestUser, runId: string) {
+  mockEnv("PI_MEMORY_BACKGROUND_WORKERS_ENABLED", "true");
   const scope = { orgId: requireOrgId(actor), userId: actor.userId };
   const candidate = await readPiMemoryStage1CandidateFixture(scope);
   if (!candidate) {
@@ -2968,6 +2969,7 @@ describe("thread-bound Pi Automation and Goal execution", () => {
         { ...actor, orgId },
         {
           [FeatureSwitchKey.PiLoop]: true,
+          [FeatureSwitchKey.PiMemory]: true,
         },
       );
       mockEnv("PI_MEMORY_STAGE1_IDLE_DELAY_MS", 60_000);
@@ -8018,6 +8020,7 @@ describe("CHAT-02: model-first provider policies", () => {
       { ...actor, orgId },
       {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
       },
     );
     mockPiResourceArchiveDownloads();
@@ -8166,7 +8169,10 @@ describe("CHAT-02: model-first provider policies", () => {
           ...actor,
           orgId: requireOrgId(actor),
         },
-        { [FeatureSwitchKey.PiLoop]: true },
+        {
+          [FeatureSwitchKey.PiLoop]: true,
+          [FeatureSwitchKey.PiMemory]: true,
+        },
       );
       await bdd.updateAgentInstructions(
         actor,
@@ -8438,7 +8444,10 @@ describe("CHAT-02: model-first provider policies", () => {
         ...actor,
         orgId: requireOrgId(actor),
       },
-      { [FeatureSwitchKey.PiLoop]: true },
+      {
+        [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
+      },
     );
     mockPiResourceArchiveDownloads();
     const objects = mockPiCheckpointObjectStore();
@@ -8718,6 +8727,7 @@ describe("CHAT-02: model-first provider policies", () => {
       { ...actor, orgId },
       {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
       },
     );
     mockPiResourceArchiveDownloads(true);
@@ -8776,6 +8786,7 @@ describe("CHAT-02: model-first provider policies", () => {
       { ...actor, orgId },
       {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
       },
     );
     mockPiResourceArchiveDownloads();
@@ -8854,6 +8865,108 @@ describe("CHAT-02: model-first provider policies", () => {
     await Promise.all([
       cancelChatRun(actor, frozenMiss.runId, frozenMissClaim.sandboxHeaders),
       cancelChatRun(actor, newSession.runId, newSessionClaim.sandboxHeaders),
+    ]);
+  }, 90_000);
+
+  it("injects no memory recall into a Pi launch while the owner's PiMemory is off", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const orgId = requireOrgId(actor);
+    const summary =
+      "# Gated summary\n\nOnly an owner with PiMemory on may see this.";
+    const memory = await commitMemoryVersion(context, actor, [
+      { path: "memory_summary.md", content: summary },
+    ]);
+    await seedReadyMemorySummaryProjection(context, actor, memory, summary);
+    const usagePricingResolution = await createGptUsagePricingResolution();
+    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      { [FeatureSwitchKey.PiLoop]: true },
+    );
+    mockPiResourceArchiveDownloads();
+    const checkpointObjects = mockPiCheckpointObjectStore();
+    const requestBodies: string[] = [];
+    server.use(
+      http.post("https://api.openai.com/v1/responses", async ({ request }) => {
+        requestBodies.push(await request.text());
+        return new HttpResponse(
+          piResponsesToolSse({
+            callId: `call_pi_memory_gate_${requestBodies.length}`,
+            name: "read",
+            arguments: { path: "/home/user/workspace/AGENTS.md" },
+            sequence: requestBodies.length,
+          }),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      }),
+    );
+    async function launchPiRun(prompt: string) {
+      const run = await sendChatRun(
+        actor,
+        { agentId, prompt, model: "gpt-5.6-terra" },
+        usagePricingResolution,
+      );
+      const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`;
+      await expect
+        .poll(() => {
+          return checkpointObjects.has(manifestKey);
+        })
+        .toBe(true);
+      return run;
+    }
+
+    // Off: the ready projection is never read, and the mount stays pinned.
+    const gated = await launchPiRun("launch Pi with PiMemory off");
+    expect(piResponsesDeveloperPrompt(requestBodies[0])).not.toContain(summary);
+    const gatedClaim = await claimChatRun(runnerGroup, gated.runId);
+    expect(gatedClaim.claim.piLaunchConfig).toMatchObject({
+      memoryRecall: {
+        status: "no-content",
+        memoryStorageId: memory.storageId,
+        storageVersionId: memory.versionId,
+      },
+    });
+    expect(
+      expectCanonicalStorageManifest(
+        gatedClaim.claim.storageManifest,
+      )?.storageMounts.filter((mount) => {
+        return mount.name === "memory" || mount.mountPath === PI_MEMORY_ROOT;
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({
+        name: "memory",
+        storageId: memory.storageId,
+        versionId: memory.versionId,
+        mountPath: PI_MEMORY_ROOT,
+        writeback: true,
+        archiveUrl: expect.any(String),
+      }),
+    ]);
+
+    // On for this owner only: the same projection is recalled as before.
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      { [FeatureSwitchKey.PiMemory]: true },
+    );
+    const enabled = await launchPiRun("launch Pi with PiMemory on");
+    expect(
+      occurrences(piResponsesDeveloperPrompt(requestBodies[1]), summary),
+    ).toBe(1);
+    const enabledClaim = await claimChatRun(runnerGroup, enabled.runId);
+    expect(enabledClaim.claim.piLaunchConfig).toMatchObject({
+      memoryRecall: {
+        status: "ready",
+        memoryStorageId: memory.storageId,
+        storageVersionId: memory.versionId,
+        content: summary,
+      },
+    });
+
+    await Promise.all([
+      cancelChatRun(actor, gated.runId, gatedClaim.sandboxHeaders),
+      cancelChatRun(actor, enabled.runId, enabledClaim.sandboxHeaders),
     ]);
   }, 90_000);
 
@@ -9031,7 +9144,10 @@ describe("CHAT-02: model-first provider policies", () => {
       await updateFeatureSwitchesForUser(
         context,
         { ...actor, orgId },
-        { [FeatureSwitchKey.PiLoop]: true },
+        {
+          [FeatureSwitchKey.PiLoop]: true,
+          [FeatureSwitchKey.PiMemory]: true,
+        },
       );
       await setRunLaunchSnapshotFixture(run.runId, snapshot);
       const completionOptions = frameworkMatchingCompletionOptions(
@@ -9063,7 +9179,10 @@ describe("CHAT-02: model-first provider policies", () => {
       await updateFeatureSwitchesForUser(
         context,
         { ...actor, orgId },
-        { [FeatureSwitchKey.PiLoop]: true },
+        {
+          [FeatureSwitchKey.PiLoop]: true,
+          [FeatureSwitchKey.PiMemory]: true,
+        },
       );
       await setRunLaunchSnapshotFixture(run.runId, snapshot);
       const completionOptions = frameworkMatchingCompletionOptions(
@@ -9165,6 +9284,113 @@ describe("CHAT-02: model-first provider policies", () => {
     }
   }, 90_000);
 
+  it("admits Pi completions only while the owner's PiMemory override is on", async () => {
+    mockEnv("PI_MEMORY_STAGE1_IDLE_DELAY_MS", 60_000);
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const orgId = requireOrgId(actor);
+    const scope = { orgId, userId: actor.userId };
+    async function completePiRun(threadId: string | undefined, note: string) {
+      const run = await sendChatRun(actor, {
+        agentId,
+        ...(threadId === undefined ? {} : { threadId }),
+        prompt: note,
+      });
+      const claimed = await claimChatRun(runnerGroup, run.runId);
+      await setRunLaunchSnapshotFixture(run.runId, {
+        schemaVersion: 3,
+        framework: "pi",
+        runnerProfile: DEFAULT_PROFILE,
+      });
+      const completionOptions = frameworkMatchingCompletionOptions(
+        run.threadId,
+        "pi",
+        note,
+      );
+      if (completionOptions.sessionHistory === undefined) {
+        throw new Error("Expected a settled Pi session history");
+      }
+      await completeChatRunOk(
+        run.runId,
+        claimed.sandboxHeaders,
+        completionOptions,
+      );
+      await flushWaitUntilForTest();
+      return {
+        ...run,
+        sourceHistoryHash: createHash("sha256")
+          .update(completionOptions.sessionHistory)
+          .digest("hex"),
+      };
+    }
+
+    // Off for everyone by default: no candidate is written, and readmitting
+    // the same completed Run stays skipped before any write.
+    const off = await completePiRun(undefined, "complete Pi with PiMemory off");
+    await expect(readPiMemoryStage1CandidateFixture(scope)).resolves.toBeNull();
+    await expect(
+      readmitPiMemoryStage1CandidateFixture(off.runId),
+    ).resolves.toStrictEqual({
+      outcome: "skipped",
+      reason: "pi_memory_disabled",
+    });
+    await expect(readPiMemoryStage1CandidateFixture(scope)).resolves.toBeNull();
+
+    // This owner's override admits the next completion exactly as before.
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      { [FeatureSwitchKey.PiMemory]: true },
+    );
+    const on = await completePiRun(
+      off.threadId,
+      "complete Pi with PiMemory on",
+    );
+    const admitted = await readPiMemoryStage1CandidateFixture(scope);
+    if (!admitted) {
+      throw new Error("Expected the enabled owner's completion to be admitted");
+    }
+    expect(admitted).toMatchObject({
+      memoryStorageName: "memory",
+      piSessionId: off.threadId,
+      sourceRunId: on.runId,
+      sourceHistoryHash: on.sourceHistoryHash,
+      status: "pending",
+    });
+    expect(
+      admitted.eligibleAt.getTime() - admitted.sourceCompletedAt.getTime(),
+    ).toBe(60_000);
+    await expect(
+      readmitPiMemoryStage1CandidateFixture(on.runId),
+    ).resolves.toMatchObject({ outcome: "exact_retry" });
+
+    // Turning the override off again replaces nothing, even for a newer
+    // exact history of the same session.
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      { [FeatureSwitchKey.PiMemory]: false },
+    );
+    const offAgain = await completePiRun(
+      off.threadId,
+      "complete Pi after PiMemory turned off again",
+    );
+    expect(offAgain.sourceHistoryHash).not.toBe(on.sourceHistoryHash);
+    await expect(
+      readmitPiMemoryStage1CandidateFixture(offAgain.runId),
+    ).resolves.toStrictEqual({
+      outcome: "skipped",
+      reason: "pi_memory_disabled",
+    });
+    await expect(
+      readPiMemoryStage1CandidateFixture(scope),
+    ).resolves.toMatchObject({
+      sourceRunId: on.runId,
+      sourceHistoryHash: on.sourceHistoryHash,
+      status: "pending",
+      updatedAt: admitted.updatedAt,
+    });
+  }, 90_000);
+
   it("admits an exact Pi history from an agent-authenticated same-owner chat send", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
@@ -9184,7 +9410,10 @@ describe("CHAT-02: model-first provider policies", () => {
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
-      { [FeatureSwitchKey.PiLoop]: true },
+      {
+        [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
+      },
     );
     mockPiResourceArchiveDownloads();
     mockPiCheckpointObjectStore();
@@ -9308,6 +9537,7 @@ describe("CHAT-02: model-first provider policies", () => {
       { ...actor, orgId },
       {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
       },
     );
     mockPiResourceArchiveDownloads();
@@ -12808,504 +13038,6 @@ describe("CHAT-02: model-first provider policies", () => {
     },
     30_000,
   );
-
-  it("classifies old Pi citations across real request caps, retries, replay, and ordering", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    await publishPendingPiInstructions(actor, agentId);
-    const resourceEntered = createDeferredPromise<void>(context.signal);
-    const releaseResource = createDeferredPromise<void>(context.signal);
-    onTestFinished(() => {
-      if (!releaseResource.settled()) {
-        releaseResource.resolve(undefined);
-      }
-    });
-    server.use(
-      http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, async ({ request }) => {
-        if (!resourceEntered.settled()) {
-          resourceEntered.resolve(undefined);
-        }
-        await releaseResource.promise;
-        const objectKey = new URL(request.url).searchParams.get("object");
-        if (!objectKey) {
-          throw new Error("Expected Pi resource archive object identity");
-        }
-        return new HttpResponse(piS3Object(objectKey), {
-          headers: { "content-type": "application/gzip" },
-        });
-      }),
-    );
-    let modelCalls = 0;
-    server.use(
-      http.post("https://api.openai.com/v1/responses", () => {
-        modelCalls += 1;
-        return new HttpResponse(
-          piResponsesTextSse("unexpected API-owned answer", modelCalls),
-          { headers: { "content-type": "text/event-stream" } },
-        );
-      }),
-    );
-    const consumedAgentEvents: Record<string, unknown>[] = [];
-    server.use(
-      http.post(
-        "https://api.axiom.co/v1/datasets/agent-run-events/ingest",
-        async ({ request }) => {
-          const events: unknown = await request.json();
-          if (!Array.isArray(events)) {
-            throw new Error("Expected an Axiom event array");
-          }
-          consumedAgentEvents.push(
-            ...events.filter((event): event is Record<string, unknown> => {
-              return typeof event === "object" && event !== null;
-            }),
-          );
-          return HttpResponse.json({
-            ingested: events.length,
-            failed: 0,
-            processedBytes: 123,
-          });
-        },
-      ),
-    );
-    const checkpointObjects = mockPiCheckpointObjectStore();
-    const { anchor, anchorClaim, run, usagePricingResolution } =
-      await queueCapabilityProvenPiRun({
-        actor,
-        agentId,
-        runnerGroup,
-        prompt: "classify one old Pi Guest stream across requests",
-      });
-
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
-    await resourceEntered.promise;
-    const claimed = await claimChatRun(runnerGroup, run.runId);
-    await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: run.threadId,
-        prompt: "transfer this in-flight turn to the old Sandbox Guest",
-        clientEventId: randomUUID(),
-      },
-      [201],
-    );
-    const reserved = await api.reserveRunnerActiveInputs(
-      claimed.claim.sandboxToken,
-      run.runId,
-    );
-    if (reserved.outcome !== "reserved") {
-      throw new Error("Expected one active input to transfer Pi ownership");
-    }
-    releaseResource.resolve(undefined);
-    const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`;
-    await expect
-      .poll(() => {
-        return checkpointObjects.get(manifestKey);
-      })
-      .toBeInstanceOf(Buffer);
-    const manifest = piApiFirstTurnManifestSchema.parse(
-      JSON.parse(checkpointObjects.get(manifestKey)?.toString("utf8") ?? "{}"),
-    );
-    expect(manifest.mode).toBe("sandbox-first");
-    expect(modelCalls).toBe(0);
-    await expect(
-      api.recordRunnerActiveInputDelivery(
-        claimed.claim.sandboxToken,
-        run.runId,
-        reserved.deliveryId,
-      ),
-    ).resolves.toStrictEqual({ outcome: "delivered" });
-
-    const rolloutId = "019c6e27-e55b-73d1-87d8-4e01f1f75043";
-    const privateValues = new Set<string>([rolloutId]);
-    const citation = (path: string, note: string): string => {
-      privateValues.add(path);
-      privateValues.add(note);
-      return `<oai-mem-citation><citation_entries>${path}:1-2|note=[${note}]</citation_entries><rollout_ids>${rolloutId}</rollout_ids></oai-mem-citation>`;
-    };
-    const assistant = (sequenceNumber: number, id: string, text: string) => {
-      return {
-        type: "assistant" as const,
-        sequenceNumber,
-        message: {
-          id,
-          content: [{ type: "text" as const, text }],
-        },
-      };
-    };
-    const separator = (sequenceNumber: number) => {
-      return {
-        type: "user" as const,
-        sequenceNumber,
-        message: { content: [] },
-      };
-    };
-    const result = (sequenceNumber: number, text: string) => {
-      return {
-        type: "result" as const,
-        sequenceNumber,
-        subtype: "success",
-        is_error: false,
-        result: text,
-      };
-    };
-    const sendOldGuestRequest = async (
-      events: readonly AgentEvent[],
-      statuses: readonly (200 | 503)[] = [200],
-    ) => {
-      return await webhooks.requestAgentEvents(
-        { runId: run.runId, events: [...events] },
-        claimed.sandboxHeaders,
-        statuses,
-      );
-    };
-    const runAxiomEvents = () => {
-      return consumedAgentEvents.filter((event) => {
-        return event.runId === run.runId;
-      });
-    };
-    const expectNoPrivatePublicOutput = async (): Promise<void> => {
-      const publicOutput = JSON.stringify({
-        axiom: runAxiomEvents(),
-        chat: eventBackedContents(
-          (await chat.listThreadEvents(actor, run.threadId)).events,
-          run.runId,
-        ),
-      });
-      expect(publicOutput).not.toContain("oai-mem-citation");
-      for (const privateValue of privateValues) {
-        expect(publicOutput).not.toContain(privateValue);
-      }
-    };
-    let sequence = manifest.sandboxEventSequenceStart;
-
-    const openerMarkup = citation(
-      "memory/request-opener.md",
-      "request opener split",
-    );
-    const openerBoundary = openerMarkup.indexOf("citation>");
-    const openerEvents = [
-      assistant(
-        sequence,
-        "request-opener",
-        `opener-before${openerMarkup.slice(0, openerBoundary)}`,
-      ),
-      assistant(
-        sequence + 1,
-        "request-opener",
-        `${openerMarkup.slice(openerBoundary)}opener-after`,
-      ),
-      separator(sequence + 2),
-    ];
-    await sendOldGuestRequest([openerEvents[0]!]);
-    await sendOldGuestRequest([openerEvents[1]!]);
-    expect(
-      (await readRunOutputLegacyPiEventsFixture(run.runId)).map((row) => {
-        return row.sequenceNumber;
-      }),
-    ).toStrictEqual([sequence, sequence + 1]);
-    expect(runAxiomEvents()).toHaveLength(0);
-    await sendOldGuestRequest([openerEvents[2]!]);
-    await flushWaitUntilForTest();
-    await expect(
-      readRunOutputLegacyPiEventsFixture(run.runId),
-    ).resolves.toStrictEqual([]);
-    const axiomCountBeforeReplay = runAxiomEvents().length;
-    await sendOldGuestRequest(openerEvents);
-    await flushWaitUntilForTest();
-    expect(runAxiomEvents()).toHaveLength(axiomCountBeforeReplay);
-    sequence += 3;
-
-    const bodyMarkup = citation("memory/request-body.md", "request body split");
-    const bodyBoundary = bodyMarkup.indexOf("body split") + 4;
-    await sendOldGuestRequest([
-      assistant(
-        sequence,
-        "request-body",
-        `body-before${bodyMarkup.slice(0, bodyBoundary)}`,
-      ),
-    ]);
-    await sendOldGuestRequest([
-      assistant(
-        sequence + 1,
-        "request-body",
-        `${bodyMarkup.slice(bodyBoundary)}body-after`,
-      ),
-    ]);
-    await sendOldGuestRequest([separator(sequence + 2)]);
-    sequence += 3;
-
-    const closerMarkup = citation(
-      "memory/request-closer.md",
-      "request closer split",
-    );
-    const closerBoundary = closerMarkup.indexOf("</oai-mem-citation>") + 10;
-    await sendOldGuestRequest([
-      assistant(
-        sequence,
-        "request-closer",
-        `closer-before${closerMarkup.slice(0, closerBoundary)}`,
-      ),
-    ]);
-    await sendOldGuestRequest([
-      assistant(
-        sequence + 1,
-        "request-closer",
-        `${closerMarkup.slice(closerBoundary)}closer-after`,
-      ),
-    ]);
-    await sendOldGuestRequest([separator(sequence + 2)]);
-    sequence += 3;
-
-    const orderedMarkup = citation(
-      "memory/request-order.md",
-      "out of order split",
-    );
-    const orderedBoundary = Math.floor(orderedMarkup.length / 2);
-    const orderedFirst = assistant(
-      sequence,
-      "request-order",
-      `order-before${orderedMarkup.slice(0, orderedBoundary)}`,
-    );
-    const orderedSecond = assistant(
-      sequence + 1,
-      "request-order",
-      `${orderedMarkup.slice(orderedBoundary)}order-after`,
-    );
-    await sendOldGuestRequest([orderedSecond]);
-    const axiomCountBeforeGapCompletion = runAxiomEvents().length;
-    const gapCompletion = await webhooks.requestAgentComplete(
-      {
-        runId: run.runId,
-        exitCode: 0,
-        lastEventSequence: sequence + 1,
-      },
-      claimed.sandboxHeaders,
-      [503],
-    );
-    expect(gapCompletion.body).toMatchObject({
-      error: { code: "EVENT_DELIVERY_UNAVAILABLE" },
-    });
-    await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-      status: "running",
-    });
-    expect(runAxiomEvents()).toHaveLength(axiomCountBeforeGapCompletion);
-    expect(
-      (await readRunOutputLegacyPiEventsFixture(run.runId)).map((row) => {
-        return row.sequenceNumber;
-      }),
-    ).toStrictEqual([sequence + 1]);
-    await sendOldGuestRequest([orderedFirst, orderedFirst]);
-    await sendOldGuestRequest([orderedFirst]);
-    const lockedMaterialization = await holdRunOutputMaterializationRowFixture({
-      runId: run.runId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      lockedMaterialization.release();
-      await lockedMaterialization.done;
-    });
-    await sendOldGuestRequest([separator(sequence + 2)], [503]);
-    lockedMaterialization.release();
-    await lockedMaterialization.done;
-    expect(
-      (await readRunOutputLegacyPiEventsFixture(run.runId)).map((row) => {
-        return row.sequenceNumber;
-      }),
-    ).toStrictEqual([sequence, sequence + 1]);
-    await sendOldGuestRequest([separator(sequence + 2)]);
-    sequence += 3;
-
-    const countMarkup = citation(
-      "memory/request-count.md",
-      "thirty two event split",
-    );
-    const countBoundary = Math.floor(countMarkup.length / 2);
-    const countBatch: AgentEvent[] = Array.from({ length: 31 }, (_, index) => {
-      return {
-        type: "system" as const,
-        sequenceNumber: sequence + index,
-        subtype: "request-count-padding",
-      };
-    });
-    countBatch.push(
-      assistant(
-        sequence + 31,
-        "request-count",
-        `count-before${countMarkup.slice(0, countBoundary)}`,
-      ),
-    );
-    expect(countBatch).toHaveLength(32);
-    await sendOldGuestRequest(countBatch);
-    await flushWaitUntilForTest();
-    expect(
-      (await readRunOutputLegacyPiEventsFixture(run.runId)).map((row) => {
-        return row.sequenceNumber;
-      }),
-    ).toStrictEqual([sequence + 31]);
-    await sendOldGuestRequest([
-      assistant(
-        sequence + 32,
-        "request-count",
-        `${countMarkup.slice(countBoundary)}count-after`,
-      ),
-      separator(sequence + 33),
-    ]);
-    sequence += 34;
-
-    const byteMarkup = citation(
-      "memory/request-bytes.md",
-      "four MiB request split",
-    );
-    const byteBoundary = Math.floor(byteMarkup.length / 2);
-    const largeSystemEvent = {
-      type: "system" as const,
-      sequenceNumber: sequence,
-      subtype: "request-byte-padding",
-      padding: "",
-    };
-    const byteFirst = assistant(
-      sequence + 1,
-      "request-bytes",
-      `bytes-before${byteMarkup.slice(0, byteBoundary)}`,
-    );
-    const byteSecond = assistant(
-      sequence + 2,
-      "request-bytes",
-      `${byteMarkup.slice(byteBoundary)}bytes-after`,
-    );
-    const requestCap = 4 * 1024 * 1024;
-    const singletonBytes = (event: object): number => {
-      return Buffer.byteLength(
-        JSON.stringify({ runId: run.runId, events: [event] }),
-      );
-    };
-    largeSystemEvent.padding = "x".repeat(
-      requestCap -
-        64 -
-        singletonBytes(largeSystemEvent) -
-        singletonBytes(byteFirst),
-    );
-    const atByteCap =
-      singletonBytes(largeSystemEvent) + singletonBytes(byteFirst);
-    expect(atByteCap).toBeLessThanOrEqual(requestCap);
-    expect(atByteCap + singletonBytes(byteSecond)).toBeGreaterThan(requestCap);
-    await sendOldGuestRequest([largeSystemEvent, byteFirst]);
-    await flushWaitUntilForTest();
-    expect(
-      (await readRunOutputLegacyPiEventsFixture(run.runId)).map((row) => {
-        return row.sequenceNumber;
-      }),
-    ).toStrictEqual([sequence + 1]);
-    await sendOldGuestRequest([byteSecond, separator(sequence + 3)]);
-    sequence += 4;
-
-    const citationOnlyMarkup = citation(
-      "memory/request-citation-only.md",
-      "citation only request",
-    );
-    await sendOldGuestRequest([
-      assistant(sequence, "request-citation-only", citationOnlyMarkup),
-    ]);
-    await sendOldGuestRequest([
-      result(sequence + 1, `callback-safe${citationOnlyMarkup}`),
-    ]);
-    sequence += 2;
-
-    const finalMarkup = citation(
-      "memory/request-completion.md",
-      "completion flush",
-    );
-    const finalBoundary = Math.floor(finalMarkup.length / 2);
-    await sendOldGuestRequest([
-      assistant(
-        sequence,
-        "request-completion",
-        `completion-before${finalMarkup.slice(0, finalBoundary)}`,
-      ),
-    ]);
-    await sendOldGuestRequest([
-      assistant(
-        sequence + 1,
-        "request-completion",
-        `${finalMarkup.slice(finalBoundary)}completion-after`,
-      ),
-    ]);
-    expect(
-      (await readRunOutputLegacyPiEventsFixture(run.runId)).map((row) => {
-        return row.sequenceNumber;
-      }),
-    ).toStrictEqual([sequence, sequence + 1]);
-    await expectNoPrivatePublicOutput();
-
-    await completeChatRunOk(run.runId, claimed.sandboxHeaders, {
-      ...frameworkMatchingCompletionOptions(run.threadId, "pi"),
-      activeInputDeliveryIds: [reserved.deliveryId],
-      lastEventSequence: sequence + 1,
-      usagePricingResolution,
-    });
-    await waitForRunStatus(actor, run.runId, "completed", 5000);
-    await flushWaitUntilForTest();
-
-    await expect(
-      readRunOutputLegacyPiEventsFixture(run.runId),
-    ).resolves.toStrictEqual([]);
-    await expect(
-      readRunOutputMaterializationFixture(run.runId),
-    ).resolves.toMatchObject({
-      processedThroughSequence: sequence + 1,
-      pendingSequenceNumbers: [],
-      latestResultText: "callback-safe",
-      latestOutputText: "callback-safe",
-    });
-    const persistedCitations = await readRunOutputMemoryCitationsFixture(
-      run.runId,
-    );
-    expect(
-      persistedCitations.map((item) => {
-        return item.sequenceNumber;
-      }),
-    ).toStrictEqual([
-      sequence - 51,
-      sequence - 48,
-      sequence - 45,
-      sequence - 42,
-      sequence - 8,
-      sequence - 4,
-      sequence - 2,
-      sequence + 1,
-    ]);
-    const serializedCitations = JSON.stringify(persistedCitations);
-    for (const privateValue of privateValues) {
-      expect(serializedCitations).toContain(privateValue);
-    }
-    const visibleOutput = eventBackedContents(
-      (await chat.listThreadEvents(actor, run.threadId)).events,
-      run.runId,
-    )
-      .map((event) => {
-        return event.content;
-      })
-      .join("|");
-    for (const visible of [
-      "opener-before",
-      "opener-after",
-      "body-before",
-      "body-after",
-      "closer-before",
-      "closer-after",
-      "order-before",
-      "order-after",
-      "count-before",
-      "count-after",
-      "bytes-before",
-      "bytes-after",
-      "completion-before",
-      "completion-after",
-    ]) {
-      expect(visibleOutput).toContain(visible);
-    }
-    await expectNoPrivatePublicOutput();
-  }, 90_000);
 
   it("transfers authoritative H0 when API ownership expires before provider transport", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -17178,6 +16910,7 @@ describe("CHAT-02: model-first provider policies", () => {
       { ...actor, orgId },
       {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
         [FeatureSwitchKey.ThreadActivitySummary]: enabled,
         [FeatureSwitchKey.CodexFastMode]: true,
       },
@@ -28776,6 +28509,7 @@ describe("shared native Pi route activation", () => {
       await configureBuiltInPiModel(actor, model);
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
         [FeatureSwitchKey.ChatReasoningEffort]: true,
       });
       const pricing = await createPiApiFirstTurnUsagePricingResolution(model);
@@ -28929,6 +28663,7 @@ describe("shared native Pi route activation", () => {
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
       });
       mockPiResourceArchiveDownloads();
       const objects = mockPiCheckpointObjectStore();
@@ -29150,6 +28885,7 @@ describe("shared native Pi route activation", () => {
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
       });
       mockPiResourceArchiveDownloads();
       const objects = mockPiCheckpointObjectStore();
@@ -29564,6 +29300,7 @@ describe("shared native Pi route activation", () => {
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
       });
       const pricing = await createPiApiFirstTurnUsagePricingResolution(model);
       const workflows = createWorkflowsBddApi(context);

@@ -3,6 +3,7 @@ import {
   slackHistoryMessageSchema,
   type SlackChannelListQuery,
   type SlackHistoryQuery,
+  type SlackRepliesQuery,
 } from "@okouai/api-contracts/contracts/integrations-slack-read";
 
 interface SlackApiError {
@@ -148,6 +149,22 @@ export async function readSlackHistoryPage(
 ) {
   return historyPageSchema.parse(
     await callSlackApi<unknown>(token, "conversations.history", query, signal),
+  );
+}
+
+export async function readSlackRepliesPage(
+  token: string,
+  query: SlackRepliesQuery,
+  signal: AbortSignal,
+) {
+  const { thread, ...params } = query;
+  return historyPageSchema.parse(
+    await callSlackApi<unknown>(
+      token,
+      "conversations.replies",
+      { ...params, ts: thread },
+      signal,
+    ),
   );
 }
 

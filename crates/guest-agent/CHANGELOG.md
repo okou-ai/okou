@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.89.7](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.6...guest-agent-v0.89.7) (2026-09-14)
+
+
+### Bug Fixes
+
+* **guest-agent:** retain codex initialization failure diagnostics ([#33833](https://github.com/vm0-ai/vm0/issues/33833)) ([a8ae14e](https://github.com/vm0-ai/vm0/commit/a8ae14e5e291db5404aac504f8512e5593059b24))
+
 ## [0.89.6](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.5...guest-agent-v0.89.6) (2026-09-12)
 
 ## [0.89.5](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.4...guest-agent-v0.89.5) (2026-09-11)

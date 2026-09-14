@@ -398,6 +398,52 @@ appearance. Leaving the separator to `TableRow` instead is not equivalent — a 
 border never wins that boundary, so the header rule simply disappears and every
 body row shifts up.
 
+### Desktop titlebar drag region — partially drained
+
+The `okou-desktop-no-drag` selector and its consumer have been removed. The
+sidebar header and both drag regions now spell their live treatment as
+utilities: `pt-1.5` for the header's `padding-top: 0.375rem`, `hidden` for the
+drag regions' `display: none`, and `[-webkit-app-region:no-drag]` for the
+header row. `-webkit-app-region` has no Tailwind utility, and it is a real
+declaration rather than a token decision, so it stays an arbitrary property.
+
+`okou-desktop-titlebar-drag-region` and `okou-sidebar-header` remain legacy
+selectors, and their class names remain on the two elements. The five
+declarations behind `.okou-app[data-desktop-shell]` inside
+`@media (min-width: 768px)` are deliberately left alone, so those class names
+are still the hooks that block selects. **Nothing in the repository sets that
+attribute**: it occurs only in the App stylesheet and in the baseline derived
+from it, so as shipped both drag regions are `display: none` and the header
+keeps its 6px inset. The header's `padding-top: 0` override is dead twice over,
+because its only consumer sits inside the mobile drawer `aside`, which is
+`md:hidden`.
+
+Splitting the batch this way is safe precisely because the retired rules and
+the remaining block were both unlayered. An unlayered `display: block` or
+`padding-top: 0` still wins over a utility in `@layer utilities`, so forcing
+`data-desktop-shell` on reproduces the old computed styles exactly —
+`display: block`, `height: 48px`, `-webkit-app-region: drag`, header
+`padding-top: 0px`. Keep that ordering in mind before moving either remaining
+declaration: a replacement utility would not override the block the way the
+block overrides it.
+
+The rest is not obviously abandoned. `buildDesktopWindowChromeOptions` asks
+Electron for `titleBarStyle: "hiddenInset"` with the traffic lights at
+`{ x: 16, y: 18 }` on darwin, which is precisely the layout a 48px drag region
+is written for, so the likelier reading is a live Desktop defect than
+deliberately inert CSS.
+
+Preserving that block verbatim as utilities is also mechanically unavailable.
+Reproducing `.okou-app[data-desktop-shell] &` needs an arbitrary variant that
+spells `okou-app` inside a `className`, and the class-usage scanner counts that
+as a dependency: the attempt fails `style-policy/growth` with `okou-app` usage
+growing from 0 to 9, and `pnpm lint:style:prune` refuses to authorize it.
+Dropping `.okou-app` from the condition, deleting the block with its two
+`aria-hidden` divs, or restoring the attribute to repair Desktop are all
+product decisions, and each one also constrains `okou-app` and
+`okou-workspace-bg`, which share this family and the same dead attribute.
+Resolve that before draining the last two tokens.
+
 ## Exception boundary
 
 Only two exception kinds exist:

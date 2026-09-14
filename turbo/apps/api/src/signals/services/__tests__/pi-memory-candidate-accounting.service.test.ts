@@ -7,6 +7,7 @@ import { Pool } from "pg";
 import { describe, expect, it, test, onTestFinished } from "vitest";
 import { z } from "zod";
 
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -21,6 +22,10 @@ import { testContext } from "../../../__tests__/test-context";
 import { executeRawRows } from "../../../lib/db-raw-rows";
 import type { ApiDb, Tx } from "../../../lib/db-types";
 import { env } from "../../../lib/env";
+import {
+  deleteFeatureSwitchesForUser,
+  updateFeatureSwitchesForUser,
+} from "../../routes/__tests__/helpers/feature-switches";
 import {
   admitPiMemoryStage1Candidate,
   commitPiMemoryStage1Candidate,
@@ -114,6 +119,16 @@ async function owner(db: ApiDb, orgId = randomUUID(), userId = randomUUID()) {
   const id = randomUUID();
   const row = { id, orgId, userId, name: "memory", s3Prefix: `${orgId}/${id}` };
   await db.insert(storages).values(row);
+  // Admission reads public.user_feature_switches, which the private schema
+  // does not shadow. PiMemory is off by default, so enable it for this owner.
+  await updateFeatureSwitchesForUser(
+    context,
+    { orgId, userId },
+    { [FeatureSwitchKey.PiMemory]: true },
+  );
+  onTestFinished(async () => {
+    await deleteFeatureSwitchesForUser(context, { orgId, userId });
+  });
   return row;
 }
 

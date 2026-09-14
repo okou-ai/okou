@@ -11,6 +11,45 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.893.9](https://github.com/vm0-ai/vm0/compare/app-v0.893.8...app-v0.893.9) (2026-09-14)
+
+
+### Bug Fixes
+
+* **api:** remove the morning brief data-source gate ([#33858](https://github.com/vm0-ai/vm0/issues/33858)) ([042e874](https://github.com/vm0-ai/vm0/commit/042e8744647369967585cb42b5c406f98290ca5d))
+
+
+### Refactoring
+
+* **app:** drain the live desktop titlebar declarations ([#33838](https://github.com/vm0-ai/vm0/issues/33838)) ([14451c7](https://github.com/vm0-ai/vm0/commit/14451c741c895b762d5d6af1636efb3adb179a3c))
+* **platform:** prepare chat diagrams with the render window ([#33781](https://github.com/vm0-ai/vm0/issues/33781)) ([1aec195](https://github.com/vm0-ai/vm0/commit/1aec195c60332e14a96b4e112bef481cc081004a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.435.0
+    * @okouai/core bumped to 8.661.1
+    * @okouai/ui bumped to 1.8.5
+
+## [0.893.8](https://github.com/vm0-ai/vm0/compare/app-v0.893.7...app-v0.893.8) (2026-09-14)
+
+
+### Refactoring
+
+* **app:** reuse platform API client for feature switches ([#33840](https://github.com/vm0-ai/vm0/issues/33840)) ([203ecd0](https://github.com/vm0-ai/vm0/commit/203ecd00d617e52193155f04258eba9a51256d8f))
+* remove markdown time feature switch ([#33831](https://github.com/vm0-ai/vm0/issues/33831)) ([29c2fa6](https://github.com/vm0-ai/vm0/commit/29c2fa6d0de7ce9a391d594af7b3c252ef396471))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.434.0
+    * @okouai/connectors bumped to 3.11.1
+    * @okouai/core bumped to 8.661.0
+
 ## [0.893.7](https://github.com/vm0-ai/vm0/compare/app-v0.893.6...app-v0.893.7) (2026-09-13)
 
 

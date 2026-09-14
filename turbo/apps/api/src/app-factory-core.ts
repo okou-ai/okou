@@ -519,12 +519,14 @@ function unhandledRequestErrorLogFields(
 ): UnhandledRequestErrorLogFields {
   const route = requestRouteTemplate(context);
   const errorCode = structuredErrorCode(error);
+  const download = context.get("webDownloadFailure");
   return {
     type: UNHANDLED_REQUEST_ERROR_TYPE,
     errorSummary: sanitizeErrorSummary(error),
     method: context.req.method,
     ...(route ? { route } : {}),
     ...(errorCode ? { errorCode } : {}),
+    ...(download ? { download } : {}),
     ...clientHeaderLogFields(context),
     error: serializeError(error),
   };

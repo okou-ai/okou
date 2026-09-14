@@ -163,8 +163,8 @@ export const recordConnectionHeartbeat$ = command(
 );
 
 export const requestTokenFromLatestConnection$ = command(
-  async ({ get }, signal: AbortSignal): Promise<string | null> => {
-    signal.throwIfAborted();
+  ({ get }, signal?: AbortSignal): Promise<string | null> => {
+    signal?.throwIfAborted();
     let connection: RegisteredConnection | undefined;
     let lastHeartbeatAt = Number.NEGATIVE_INFINITY;
     let lastHeartbeatOrder = Number.NEGATIVE_INFINITY;
@@ -188,7 +188,7 @@ export const requestTokenFromLatestConnection$ = command(
     if (!connection) {
       throw new Error("Shared database token requires a tab heartbeat");
     }
-    return await connection.getToken(signal);
+    return connection.getToken(signal);
   },
 );
 
