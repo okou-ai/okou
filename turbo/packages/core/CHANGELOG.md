@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.663.1](https://github.com/vm0-ai/vm0/compare/core-v8.663.0...core-v8.663.1) (2026-09-14)
+
+
+### Refactoring
+
+* remove voice input v2 feature switch ([#33884](https://github.com/vm0-ai/vm0/issues/33884)) ([be1af01](https://github.com/vm0-ai/vm0/commit/be1af014b3329820ca167fec5238e02c73d6bc7d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.438.1
+
 ## [8.663.0](https://github.com/vm0-ai/vm0/compare/core-v8.662.2...core-v8.663.0) (2026-09-14)
 
 

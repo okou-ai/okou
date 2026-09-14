@@ -8,6 +8,35 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.598.0](https://github.com/vm0-ai/vm0/compare/api-v1.597.0...api-v1.598.0) (2026-09-14)
+
+
+### Features
+
+* **pi-memory:** tier evidence and cap complete stage 1 requests ([#34112](https://github.com/vm0-ai/vm0/issues/34112)) ([3f48ba3](https://github.com/vm0-ai/vm0/commit/3f48ba3f8d20e03b7ccd4fafd661cfcddfda5f1f))
+
+
+### Bug Fixes
+
+* **social:** align download billing and delivered media metadata ([#34070](https://github.com/vm0-ai/vm0/issues/34070)) ([9c55bc9](https://github.com/vm0-ai/vm0/commit/9c55bc983c52f37369576d36eb32fbb0aec94994))
+
+
+### Refactoring
+
+* **api:** prepare explicit pending usage-pack writes ([#34110](https://github.com/vm0-ai/vm0/issues/34110)) ([3c8b18e](https://github.com/vm0-ai/vm0/commit/3c8b18edd7ed9d696bbdeddfc3ceed98c84036f4))
+* remove voice input v2 feature switch ([#33884](https://github.com/vm0-ai/vm0/issues/33884)) ([be1af01](https://github.com/vm0-ai/vm0/commit/be1af014b3329820ca167fec5238e02c73d6bc7d))
+* **voice:** finish voice input v2 cleanup ([#34119](https://github.com/vm0-ai/vm0/issues/34119)) ([6958a1e](https://github.com/vm0-ai/vm0/commit/6958a1e767281f3a958ee0e853b159fe56525f7d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.438.1
+    * @okouai/core bumped to 8.663.1
+    * @okouai/db bumped to 1.256.1
+    * @okouai/pi-agent-runtime bumped to 1.29.0
+
 ## [1.597.0](https://github.com/vm0-ai/vm0/compare/api-v1.596.0...api-v1.597.0) (2026-09-14)
 
 

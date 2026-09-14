@@ -11,6 +11,34 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.895.0](https://github.com/vm0-ai/vm0/compare/app-v0.894.0...app-v0.895.0) (2026-09-14)
+
+
+### Features
+
+* **app:** give every create type one cover shelf under the composer ([#34122](https://github.com/vm0-ai/vm0/issues/34122)) ([ce77b40](https://github.com/vm0-ai/vm0/commit/ce77b404c09d05b9c32a6d1e165d68f34ea9f983))
+
+
+### Bug Fixes
+
+* **platform:** drop the custom scope's breadcrumb and move its create action ([#34118](https://github.com/vm0-ai/vm0/issues/34118)) ([aac0d27](https://github.com/vm0-ai/vm0/commit/aac0d27ed25f898d387ae18fe1b79adb34bf368b))
+
+
+### Refactoring
+
+* **app:** draw the task chips as the neutral button ([#34115](https://github.com/vm0-ai/vm0/issues/34115)) ([f52f92f](https://github.com/vm0-ai/vm0/commit/f52f92f14ac3de7bb14ac9cfaec035953f495cad))
+* remove voice input v2 feature switch ([#33884](https://github.com/vm0-ai/vm0/issues/33884)) ([be1af01](https://github.com/vm0-ai/vm0/commit/be1af014b3329820ca167fec5238e02c73d6bc7d))
+* **voice:** finish voice input v2 cleanup ([#34119](https://github.com/vm0-ai/vm0/issues/34119)) ([6958a1e](https://github.com/vm0-ai/vm0/commit/6958a1e767281f3a958ee0e853b159fe56525f7d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.438.1
+    * @okouai/core bumped to 8.663.1
+    * @okouai/ui bumped to 1.8.7
+
 ## [0.894.0](https://github.com/vm0-ai/vm0/compare/app-v0.893.12...app-v0.894.0) (2026-09-14)
 
 

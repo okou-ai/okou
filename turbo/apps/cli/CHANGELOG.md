@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.328.1](https://github.com/vm0-ai/vm0/compare/cli-v9.328.0...cli-v9.328.1) (2026-09-14)
+
+
+### Bug Fixes
+
+* **social:** align download billing and delivered media metadata ([#34070](https://github.com/vm0-ai/vm0/issues/34070)) ([9c55bc9](https://github.com/vm0-ai/vm0/commit/9c55bc983c52f37369576d36eb32fbb0aec94994))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.438.1
+    * @okouai/core bumped to 8.663.1
+    * @okouai/pi-agent-runtime bumped to 1.29.0
+
 ## [9.328.0](https://github.com/vm0-ai/vm0/compare/cli-v9.327.0...cli-v9.328.0) (2026-09-14)
 
 

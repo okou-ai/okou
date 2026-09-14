@@ -1,6 +1,6 @@
 {
   "name": "@okouai/app-worker",
-  "version": "1.8.16",
+  "version": "1.8.17",
   "private": true,
   "type": "module",
   "scripts": {
