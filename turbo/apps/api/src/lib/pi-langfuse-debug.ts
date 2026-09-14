@@ -20,7 +20,7 @@ const LANGFUSE_USER_ID_ENV = "LANGFUSE_USER_ID";
 const PI_LANGFUSE_MAX_CHARS_ENV = "PI_LANGFUSE_MAX_CHARS";
 const DEFAULT_LANGFUSE_BASE_URL = "https://us.cloud.langfuse.com";
 const DEBUG_TRACING_ENVIRONMENT = "internal-debug";
-const MAX_CAPTURED_CHARS = "20000";
+export const PI_LANGFUSE_MAX_CAPTURED_CHARS = 20_000;
 
 interface PiLangfuseServerConfig {
   readonly publicKey: string;
@@ -98,7 +98,7 @@ export function piLangfuseDebugPlatformEnvironment(args: {
     [LANGFUSE_TRACING_ENVIRONMENT_ENV]: DEBUG_TRACING_ENVIRONMENT,
     [LANGFUSE_MEDIA_UPLOAD_ENABLED_ENV]: "false",
     [LANGFUSE_USER_ID_ENV]: piLangfuseDebugUserId(args.userId),
-    [PI_LANGFUSE_MAX_CHARS_ENV]: MAX_CAPTURED_CHARS,
+    [PI_LANGFUSE_MAX_CHARS_ENV]: String(PI_LANGFUSE_MAX_CAPTURED_CHARS),
   };
 }
 

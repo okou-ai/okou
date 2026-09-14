@@ -22,6 +22,7 @@ import {
 } from "@opentelemetry/api";
 
 import { safeSync, settleIncludingAbort } from "../signals/utils";
+import { PI_LANGFUSE_MAX_CAPTURED_CHARS } from "./pi-langfuse-debug";
 import { singleton } from "./singleton";
 
 const LANGFUSE_TRACE_NAME = "Pi Agent Run";
@@ -241,6 +242,74 @@ function errorName(error: unknown): string {
   return error instanceof Error ? error.name : "UnknownError";
 }
 
+const LANGFUSE_KEY_TOKEN = /\b[sp]k-lf-[\w-]+\b/g;
+const CAPTURE_REDACTION_MARK = "[redacted-langfuse-secret]";
+
+interface PiLangfuseTextMeta {
+  readonly truncated: boolean;
+  readonly orig_len: number;
+  readonly kept_len?: number;
+  readonly sha256?: string;
+}
+
+interface PiLangfuseTextCapture {
+  readonly text: string;
+  readonly meta: PiLangfuseTextMeta;
+}
+
+/** Mirror the official plugin's text shape and limit before shared export. */
+function capturePiLangfuseText(text: string): PiLangfuseTextCapture {
+  const redacted = text.replace(LANGFUSE_KEY_TOKEN, CAPTURE_REDACTION_MARK);
+  if (text.length <= PI_LANGFUSE_MAX_CAPTURED_CHARS) {
+    return {
+      text: redacted,
+      meta: { truncated: false, orig_len: text.length },
+    };
+  }
+  const captured = redacted.slice(0, PI_LANGFUSE_MAX_CAPTURED_CHARS);
+  return {
+    text: captured,
+    meta: {
+      truncated: true,
+      orig_len: text.length,
+      kept_len: captured.length,
+      sha256: createHash("sha256").update(text).digest("hex"),
+    },
+  };
+}
+
+function assistantGenerationOutput(result: PiApiFirstTurnResult): {
+  readonly value: unknown;
+  readonly textMeta: PiLangfuseTextMeta;
+  readonly toolCount: number;
+} {
+  const text = result.assistantMessage.content
+    .flatMap((content) => {
+      return content.type === "text" ? [content.text] : [];
+    })
+    .join("");
+  const capturedText = capturePiLangfuseText(text);
+  const toolCalls = result.assistantMessage.content.flatMap((content) => {
+    return content.type === "toolCall"
+      ? [
+          {
+            id: capturePiLangfuseText(content.id).text,
+            name: capturePiLangfuseText(content.name).text,
+          },
+        ]
+      : [];
+  });
+  return {
+    value: {
+      role: "assistant",
+      ...(capturedText.text ? { content: capturedText.text } : {}),
+      ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+    },
+    textMeta: capturedText.meta,
+    toolCount: toolCalls.length,
+  };
+}
+
 function assistantTextLength(result: PiApiFirstTurnResult): number {
   return result.assistantMessage.content.reduce((length, content) => {
     return content.type === "text" ? length + content.text.length : length;
@@ -322,14 +391,17 @@ function startGeneration(
 ): LangfuseGeneration | undefined {
   let generation: LangfuseGeneration | undefined;
   const started = safeSync(() => {
+    const input = capturePiLangfuseText(args.prompt);
     generation = root.startObservation(
       "API LLM Call",
       {
+        input: { role: "user", content: input.text },
         model: args.model,
         metadata: {
           provider: args.provider,
           prompt_chars: args.prompt.length,
-          content_capture: "metadata-only",
+          user_text_meta: input.meta,
+          content_capture: "official-plugin-parity",
         },
       },
       { asType: "generation" },
@@ -366,7 +438,9 @@ function updateGeneration(
   }
   safeSync(() => {
     const stopReason = result.assistantMessage.stopReason;
+    const output = assistantGenerationOutput(result);
     generation.update({
+      output: output.value,
       usageDetails: usageDetails(result),
       level:
         stopReason === "error" || stopReason === "aborted"
@@ -382,7 +456,9 @@ function updateGeneration(
         assistant_text_chars: assistantTextLength(result),
         assistant_content_blocks: result.assistantMessage.content.length,
         handoff_required: result.handoffRequired,
-        content_capture: "metadata-only",
+        assistant_text_meta: output.textMeta,
+        tool_count: output.toolCount,
+        content_capture: "official-plugin-parity",
       },
     });
   });
@@ -566,9 +642,10 @@ function updateApiTraceFailure(
 
 /**
  * Trace one API-first provider turn without changing ownership or error
- * semantics. The exported API observations are metadata-only because the same
- * global provider also feeds Axiom; the isolated Sandbox plugin owns opt-in
- * prompt and tool capture.
+ * semantics. API generation input/output mirrors the official Pi plugin's
+ * bounded user/assistant projection and intentionally travels through the
+ * shared global provider to both Axiom and Langfuse. Ancestor and terminal
+ * observations remain metadata-only.
  */
 export async function tracePiApiFirstTurn(
   args: PiApiFirstTurnTraceArgs,

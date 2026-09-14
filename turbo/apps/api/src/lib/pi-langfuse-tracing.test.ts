@@ -7,9 +7,11 @@ import {
 import {
   BasicTracerProvider,
   InMemorySpanExporter,
+  SimpleSpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import { describe, expect, it } from "vitest";
 
+import { PI_LANGFUSE_MAX_CAPTURED_CHARS } from "./pi-langfuse-debug";
 import {
   normalizePiLangfuseTraceId,
   piLangfuseIdGenerator,
@@ -57,13 +59,16 @@ function turnResult(handoffRequired: boolean): PiApiFirstTurnResult {
 }
 
 function installMemoryExporter(): {
+  readonly axiomExporter: InMemorySpanExporter;
   readonly exporter: InMemorySpanExporter;
   readonly provider: BasicTracerProvider;
 } {
+  const axiomExporter = new InMemorySpanExporter();
   const exporter = new InMemorySpanExporter();
   const provider = new BasicTracerProvider({
     idGenerator: piLangfuseIdGenerator,
     spanProcessors: [
+      new SimpleSpanProcessor(axiomExporter),
       new LangfuseSpanProcessor({
         exporter,
         publicKey: "pk-lf-test",
@@ -79,7 +84,56 @@ function installMemoryExporter(): {
     ],
   });
   setLangfuseTracerProvider(provider);
-  return { exporter, provider };
+  return { axiomExporter, exporter, provider };
+}
+
+type FinishedSpan = ReturnType<
+  InMemorySpanExporter["getFinishedSpans"]
+>[number];
+
+function requireFinishedSpan(
+  exporter: InMemorySpanExporter,
+  name: string,
+): FinishedSpan {
+  const span = exporter.getFinishedSpans().find((candidate) => {
+    return candidate.name === name;
+  });
+  expect(span).toBeDefined();
+  if (!span) {
+    throw new Error(`Expected ${name} span`);
+  }
+  return span;
+}
+
+function expectOfficialPluginPayload(
+  generation: FinishedSpan,
+  axiomGeneration: FinishedSpan,
+): void {
+  expect(
+    JSON.parse(
+      String(
+        generation.attributes[LangfuseOtelSpanAttributes.OBSERVATION_INPUT],
+      ),
+    ),
+  ).toStrictEqual({ role: "user", content: "inspect the repository" });
+  expect(
+    JSON.parse(
+      String(
+        generation.attributes[LangfuseOtelSpanAttributes.OBSERVATION_OUTPUT],
+      ),
+    ),
+  ).toStrictEqual({
+    role: "assistant",
+    tool_calls: [{ id: "tool-1", name: "read" }],
+  });
+  for (const attribute of [
+    LangfuseOtelSpanAttributes.OBSERVATION_INPUT,
+    LangfuseOtelSpanAttributes.OBSERVATION_OUTPUT,
+  ]) {
+    expect(axiomGeneration.attributes[attribute]).toBe(
+      generation.attributes[attribute],
+    );
+  }
 }
 
 describe("Pi API-first Langfuse tracing", () => {
@@ -138,7 +192,7 @@ describe("Pi run E2E Langfuse tracing", () => {
 
 describe("Pi API-first Langfuse tracing", () => {
   it("creates API, generation, and real ownership-transfer observations", async () => {
-    const { exporter, provider } = installMemoryExporter();
+    const { axiomExporter, exporter, provider } = installMemoryExporter();
     const result = await tracePiApiFirstTurn({
       enabled: true,
       runId: RUN_ID,
@@ -177,26 +231,10 @@ describe("Pi API-first Langfuse tracing", () => {
     });
     await provider.forceFlush();
 
-    const spans = exporter.getFinishedSpans();
-    const root = spans.find((span) => {
-      return span.name === "API First Turn";
-    });
-    const generation = spans.find((span) => {
-      return span.name === "API LLM Call";
-    });
-    const ownership = spans.find((span) => {
-      return span.name === "Ownership Transfer";
-    });
-    const runEndToEnd = spans.find((span) => {
-      return span.name === "Run End-to-End";
-    });
-    expect(root).toBeDefined();
-    expect(generation).toBeDefined();
-    expect(ownership).toBeDefined();
-    expect(runEndToEnd).toBeDefined();
-    if (!root || !generation || !ownership || !runEndToEnd) {
-      throw new Error("Expected a complete API-first transfer trace");
-    }
+    const root = requireFinishedSpan(exporter, "API First Turn");
+    const generation = requireFinishedSpan(exporter, "API LLM Call");
+    const ownership = requireFinishedSpan(exporter, "Ownership Transfer");
+    const runEndToEnd = requireFinishedSpan(exporter, "Run End-to-End");
 
     const traceId = normalizePiLangfuseTraceId(RUN_ID);
     expect(root.spanContext().traceId).toBe(traceId);
@@ -231,14 +269,71 @@ describe("Pi API-first Langfuse tracing", () => {
       "gen_ai.provider.name": "provider-1",
       "gen_ai.request.model": "model-1",
     });
-    expect(generation.attributes).not.toHaveProperty(
-      "langfuse.observation.input",
-    );
-    expect(generation.attributes).not.toHaveProperty(
-      "langfuse.observation.output",
+    expectOfficialPluginPayload(
+      generation,
+      requireFinishedSpan(axiomExporter, "API LLM Call"),
     );
   });
+});
 
+describe("Pi API-first Langfuse payloads", () => {
+  it("redacts and bounds shared API generation payloads", async () => {
+    const { axiomExporter, exporter, provider } = installMemoryExporter();
+    const inputSecret = "pk-lf-user-input-secret";
+    const outputSecret = "sk-lf-model-output-secret";
+    const longInput = `${inputSecret}:${"i".repeat(
+      PI_LANGFUSE_MAX_CAPTURED_CHARS * 2,
+    )}`;
+    const longOutput = `${outputSecret}:${"o".repeat(
+      PI_LANGFUSE_MAX_CAPTURED_CHARS * 2,
+    )}`;
+    const expected = turnResult(false);
+    const result = await tracePiApiFirstTurn({
+      enabled: true,
+      runId: RUN_ID,
+      sessionId: SESSION_ID,
+      userId: "user-1",
+      prompt: longInput,
+      model: "model-1",
+      provider: "provider-1",
+      execute() {
+        return Promise.resolve({
+          ...expected,
+          assistantMessage: {
+            ...expected.assistantMessage,
+            content: [{ type: "text", text: longOutput }],
+          },
+        });
+      },
+    });
+    result.traceContext?.end();
+    await provider.forceFlush();
+
+    for (const exported of [exporter, axiomExporter]) {
+      const generation = exported.getFinishedSpans().find((span) => {
+        return span.name === "API LLM Call";
+      });
+      const input = JSON.parse(
+        String(
+          generation?.attributes[LangfuseOtelSpanAttributes.OBSERVATION_INPUT],
+        ),
+      ) as { content: string };
+      const output = JSON.parse(
+        String(
+          generation?.attributes[LangfuseOtelSpanAttributes.OBSERVATION_OUTPUT],
+        ),
+      ) as { content: string };
+      expect(input.content).toHaveLength(PI_LANGFUSE_MAX_CAPTURED_CHARS);
+      expect(output.content).toHaveLength(PI_LANGFUSE_MAX_CAPTURED_CHARS);
+      expect(input.content).toContain("[redacted-langfuse-secret]");
+      expect(output.content).toContain("[redacted-langfuse-secret]");
+      expect(input.content).not.toContain(inputSecret);
+      expect(output.content).not.toContain(outputSecret);
+    }
+  });
+});
+
+describe("Pi API-first Langfuse transfer", () => {
   it("can transfer a settled API result when active input moves ownership", async () => {
     const { exporter, provider } = installMemoryExporter();
     const result = await tracePiApiFirstTurn({
