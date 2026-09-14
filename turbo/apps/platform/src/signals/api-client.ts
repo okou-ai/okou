@@ -41,6 +41,8 @@ export interface ApiClientOptions {
   readonly apiBase?: "auto" | "api" | OAuthApiBase;
   /** Pin an exchange to its freshly activated session, or make it unauthenticated. */
   readonly getToken?: (signal: AbortSignal) => Promise<string | null>;
+  /** Capture request auth state before a token read and validate it afterwards. */
+  readonly getTokenGuard?: () => () => void;
 }
 
 function rebaseApiPath(
@@ -81,6 +83,7 @@ export const apiClient$ = computed((get) => {
   return <T extends AppRouter>(contract: T, options?: ApiClientOptions) => {
     return createAuthedContractClient(contract, {
       getToken: options?.getToken ?? tokenOptions.getToken,
+      getTokenGuard: options?.getTokenGuard,
       baseUrl: runtime.apiBaseUrl,
       clientVersion,
       getRootSignal: () => {

@@ -22,7 +22,6 @@ import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
-import { saveSsh$ } from "../../../signals/ssh.ts";
 import { catalogConnectorFixture } from "../../team-page/__tests__/team-page-test-helpers.ts";
 import {
   getAction,
@@ -1362,15 +1361,7 @@ test("Changing owner while an SSH token is pending prevents the old mutation", a
   mockedClerk.sessionGetToken.mockImplementationOnce(() => {
     return token.promise;
   });
-  const form = dialog.querySelector("form");
-  if (!(form instanceof HTMLFormElement)) {
-    throw new Error("SSH dialog is missing its form");
-  }
-  const saving = context.store.set(
-    saveSsh$,
-    new FormData(form),
-    context.signal,
-  );
+  click(getAction("button", "Save", dialog));
   await waitFor(() => {
     expect(mockedClerk.sessionGetToken.mock.calls).toHaveLength(
       tokenRequestCount + 1,
@@ -1385,15 +1376,65 @@ test("Changing owner while an SSH token is pending prevents the old mutation", a
     );
     clerk.stateChanged();
   });
-  token.resolve("old-owner-token");
-  await expect(saving).rejects.toMatchObject({
-    message: "SSH owner changed",
-    name: "AbortError",
+  await act(async () => {
+    token.resolve("old-owner-token");
+    await token.promise;
   });
 
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+  expect(requests).toStrictEqual([]);
+});
+
+test("Leaving SSH while its token is pending cancels the old mutation", async () => {
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [] });
+  });
+  const requests: unknown[] = [];
+  context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
+    requests.push(body);
+    return respond(201, base);
+  });
+  await page();
+  await screen.findByText("0 hosts configured");
+  click(getAction("button", "Add host"));
+  const dialog = await screen.findByRole("dialog");
+  await fill(within(dialog).getByLabelText("Display name"), "Cancelled host");
+  await fill(
+    within(dialog).getByLabelText("Public hostname or IP address"),
+    "cancelled.example.com",
+  );
+  await fill(
+    within(dialog).getByLabelText("Credential name"),
+    "Cancelled credential",
+  );
+  await fill(within(dialog).getByLabelText("SSH username"), "cancelled");
+  await fill(within(dialog).getByLabelText("Private key"), "cancelled-key");
+
+  const token = new Promise<string>(() => {
+    // Remain pending so only the page-owned request signal can settle the save.
+  });
+  const tokenRequestCount = mockedClerk.sessionGetToken.mock.calls.length;
+  mockedClerk.sessionGetToken.mockImplementationOnce(() => {
+    return token;
+  });
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(mockedClerk.sessionGetToken.mock.calls).toHaveLength(
+      tokenRequestCount + 1,
+    );
+  });
+  expect(getAction("button", "Saving...", dialog)).toBeDisabled();
+
+  click(
+    getAction(
+      "link",
+      "Agents",
+      screen.getByRole("navigation", { name: "Sidebar" }),
+    ),
+  );
+  await screen.findByRole("heading", { name: "Agents" });
   expect(requests).toStrictEqual([]);
 });
 

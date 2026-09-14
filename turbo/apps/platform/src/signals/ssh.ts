@@ -144,15 +144,15 @@ const sshClients$ = computed(async (get) => {
     }
     return session;
   };
-  const getToken = async (): Promise<string | null> => {
+  const getTokenGuard = () => {
     const session = getSession();
-    const token = await session.getToken();
-    if (getSession().id !== session.id) {
-      throw new DOMException("SSH owner changed", "AbortError");
-    }
-    return token;
+    return () => {
+      if (getSession().id !== session.id) {
+        throw new DOMException("SSH owner changed", "AbortError");
+      }
+    };
   };
-  const options = { getToken };
+  const options = { getTokenGuard };
   return {
     identity,
     connections: createClient(sshConnectionsContract, options),
