@@ -302,6 +302,9 @@ test("Realtime authentication failure does not leave stale live updates", async 
   ).rejects.toThrow(/Ably connection failed/);
 });
 
+// These transport failures have no page action for controlling one subscriber's
+// lifetime or the registration/attach gap. Exercise the real realtime setup and
+// external Ably boundary here; template loading/recovery has page coverage.
 test("Cancelling a subscriber releases its pending channel attach wait", async () => {
   mockSignedInUser();
   await setupAuthAndRealtime();

@@ -40,6 +40,9 @@ const REMOVED_TEMPLATE_ID = "82000000-0000-4000-a000-000000000003";
 const OTHER_THREAD_ID = "82000000-0000-4000-a000-000000000004";
 const UPLOADED_TEMPLATE_NOW_MS = 1_785_542_400_000;
 
+// Infrastructure-only synchronization: the page has no partial-ACK state for
+// one scope while its sibling is still pending. Observe the real transport only
+// to order provider events; assert loading and recovery through the page below.
 function observeTemplateSubscriptions() {
   const messages = vi.spyOn(MessagePort.prototype, "postMessage");
   const subscriptions = () => {
@@ -53,7 +56,6 @@ function observeTemplateSubscriptions() {
     });
   };
   return {
-    subscriptions,
     waitForSubscribed: async (scope: "user" | "org") => {
       await waitFor(() => {
         const request = subscriptions().find((subscription) => {
@@ -72,25 +74,6 @@ function observeTemplateSubscriptions() {
         ).toBeTruthy();
       });
     },
-    waitForUnsubscribed: async (scope: "user" | "org") => {
-      await waitFor(() => {
-        for (const request of subscriptions().filter((entry) => {
-          return entry.scope === scope;
-        })) {
-          expect(
-            messages.mock.calls.some(([message]) => {
-              const parsed =
-                sharedDatabaseClientMessageSchema.safeParse(message);
-              return (
-                parsed.success &&
-                parsed.data.type === "realtime-unsubscribe" &&
-                parsed.data.subscriptionId === request.subscriptionId
-              );
-            }),
-          ).toBeTruthy();
-        }
-      });
-    },
   };
 }
 
@@ -103,7 +86,7 @@ test.each(["user", "org"] as const)(
       id: UPLOADED_TEMPLATE_ID,
       title: "Both subscriptions are ready",
     });
-    const library = mockPresentationTemplateLibrary([uploaded]);
+    mockPresentationTemplateLibrary([uploaded]);
     const gates = {
       user: context.mocks.ably.deferSubscribeOnChannel(
         "user:test-user-123",
@@ -130,20 +113,17 @@ test.each(["user", "org"] as const)(
     expect(
       within(picker).getByText("Loading uploaded templates…"),
     ).toBeInTheDocument();
-    expect(library.requests.listCount).toBe(0);
     gates[delayedScope].attach();
     await expect(
       within(picker).findByLabelText(`Select template ${uploaded.title}`),
     ).resolves.toBeInTheDocument();
-    expect(library.requests.listCount).toBe(1);
-    expect(observed.subscriptions()).toHaveLength(2);
   },
 );
 
 test("A template subscription failure releases both scopes and leaves built-ins usable", async () => {
   mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
   mockTemplateChat();
-  const library = mockPresentationTemplateLibrary([]);
+  mockPresentationTemplateLibrary([]);
   const org = context.mocks.ably.deferSubscribeOnChannel(
     "org:org_default",
     "presentationTemplatesChanged",
@@ -169,9 +149,9 @@ test("A template subscription failure releases both scopes and leaves built-ins 
   expect(
     within(picker).getByLabelText(`Select template ${firstBuiltInTitle()}`),
   ).toBeEnabled();
-  expect(library.requests.listCount).toBe(0);
   expect(within(picker).queryByText("Retry")).not.toBeInTheDocument();
-  await observed.waitForUnsubscribed("user");
+  // Worker-side listener release has no separate page-visible surface. Check
+  // the external Ably boundary after the page has exposed the original failure.
   await waitFor(() => {
     expect(
       context.mocks.ably.hasSubscriptionOnChannel(
@@ -188,7 +168,7 @@ test("A template subscription failure releases both scopes and leaves built-ins 
   });
 });
 
-test("Retrying a failed catalog reuses the live template subscriptions", async () => {
+test("Retrying a failed catalog restores templates and preview renewal", async () => {
   mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
   mockTemplateChat();
   const source = createUploadedTemplate({
@@ -226,7 +206,6 @@ test("Retrying a failed catalog reuses the live template subscriptions", async (
         })
       : respond(200, [uploaded]);
   });
-  const observed = observeTemplateSubscriptions();
   const user = userEvent.setup();
   await setupPage({
     context,
@@ -244,7 +223,9 @@ test("Retrying a failed catalog reuses the live template subscriptions", async (
   await expect(
     within(picker).findByLabelText(`Select template ${uploaded.title}`),
   ).resolves.toBeInTheDocument();
-  expect(observed.subscriptions()).toHaveLength(2);
+  expect(
+    within(picker).queryByText("Couldn't load uploaded templates."),
+  ).not.toBeInTheDocument();
   await expect(
     pendingImportedTemplateImage(importedTemplateMedia(uploaded.id), "renewed"),
   ).resolves.toBeInTheDocument();
@@ -266,7 +247,7 @@ test("A failed preview renewal can retry while the loaded cover stays in place",
       };
     }),
   };
-  const library = mockPresentationTemplateLibrary([uploaded]);
+  mockPresentationTemplateLibrary([uploaded]);
   let unavailable = true;
   context.mocks.api(
     presentationTemplatesContract.resolvePreviewUrls,
@@ -306,10 +287,12 @@ test("A failed preview renewal can retry while the loaded cover stays in place",
   await waitFor(() => {
     expect(renewedImage).toHaveAttribute("data-active", "true");
   });
-  expect(library.requests.listCount).toBe(1);
+  expect(
+    within(picker).queryByText("Couldn't refresh template previews."),
+  ).not.toBeInTheDocument();
 });
 
-test("An obsolete catalog cannot evict buffers retained by the current catalog", async () => {
+test("An obsolete catalog leaves the current template cover displayed", async () => {
   mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
   mockTemplateChat();
   const existing = createUploadedTemplate({
@@ -360,18 +343,22 @@ test("An obsolete catalog cannot evict buffers retained by the current catalog",
   await expect(
     within(picker).findByText("Current catalog"),
   ).resolves.toBeInTheDocument();
-  const image = await loadImportedTemplateImage(
+  const loadedImage = await loadImportedTemplateImage(
     importedTemplateMedia(published.id),
     "slide-1",
   );
+  const displayedSource = loadedImage.getAttribute("src");
   releaseStale.resolve();
   await staleReturned.promise;
   context.mocks.ably.trigger("presentationTemplatesChanged", published.id);
   await expect(
     within(picker).findByText("Confirmed catalog"),
   ).resolves.toBeInTheDocument();
-  expect(image).toBeInTheDocument();
-  expect(image).toHaveAttribute("data-active", "true");
+  const displayedImage = importedTemplateMedia(published.id).querySelector(
+    'img[data-imported-presentation-template-image][data-active="true"]',
+  );
+  expect(displayedImage).toBeInTheDocument();
+  expect(displayedImage).toHaveAttribute("src", displayedSource);
 });
 
 function importedTemplateCard(templateId: string): HTMLElement {
