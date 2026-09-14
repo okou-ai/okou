@@ -608,6 +608,9 @@ export default [
       // OAuth trigger presence, config-key movement and row-lock interleavings
       // require isolated PostgreSQL schemas outside the product API boundary.
       "src/signals/services/__tests__/custom-connector-oauth-write.service.test.ts",
+      // Hosting trigger coexistence, ownership locks and allocation rollback
+      // require isolated PostgreSQL schemas; route suites cover product APIs.
+      "src/signals/services/__tests__/hosted-site-scope.service.test.ts",
       // Trigger DDL, transaction snapshots and corrupt ledgers are not HTTP inputs.
       "src/signals/services/__tests__/pi-memory-candidate-accounting.service.test.ts",
       "src/signals/services/__tests__/workflow-automation-context.test.ts",
@@ -764,6 +767,9 @@ export default [
       // OAuth trigger presence, config-key movement and row-lock interleavings
       // require isolated PostgreSQL schemas outside the product API boundary.
       "src/signals/services/__tests__/custom-connector-oauth-write.service.test.ts",
+      // Hosting trigger coexistence, ownership locks and allocation rollback
+      // require isolated PostgreSQL schemas; route suites cover product APIs.
+      "src/signals/services/__tests__/hosted-site-scope.service.test.ts",
       // Trigger DDL, transaction snapshots and corrupt ledgers are not HTTP inputs.
       "src/signals/services/__tests__/pi-memory-candidate-accounting.service.test.ts",
       // The automatic welcome thread id is a permanent uuidv5 contract: it
