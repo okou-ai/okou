@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.23.83](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.82...guest-storage-apply-v0.23.83) (2026-09-14)
+
 ## [0.23.82](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.81...guest-storage-apply-v0.23.82) (2026-09-12)
 
 
