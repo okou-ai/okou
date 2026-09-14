@@ -17548,12 +17548,6 @@ describe("CHAT-02: model-first provider policies", () => {
     if (await runInIsolatedProcess(import.meta.url)) {
       return;
     }
-    context.mocks.ably.realtimeSubscribe.mockImplementation(
-      (_name, listener) => {
-        listener({ data: { metrics: { subscribers: 1 } } });
-        return Promise.resolve();
-      },
-    );
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     const usagePricingResolution = await createGptUsagePricingResolution();
@@ -17705,14 +17699,18 @@ describe("CHAT-02: model-first provider policies", () => {
     ]);
     await expect
       .poll(() => {
-        return context.mocks.ably.realtimePublish.mock.calls.length;
+        return context.mocks.ably.publish.mock.calls.filter(([topic]) => {
+          return topic === run.runId;
+        }).length;
       })
       .toBe(2);
-    const streamed = context.mocks.ably.realtimePublish.mock.calls.map(
-      ([_channel, _options, _topic, payload]) => {
+    const streamed = context.mocks.ably.publish.mock.calls
+      .filter(([topic]) => {
+        return topic === run.runId;
+      })
+      .map(([_topic, payload]) => {
         return sessionOutputDeltaSchema.parse(payload);
-      },
-    );
+      });
     expect(
       streamed.map((chunk) => {
         return chunk.delta;

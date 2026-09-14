@@ -3,6 +3,7 @@ import type { RunnerSshInvalidate } from "@okouai/api-contracts/contracts/runner
 import {
   sessionOutputChannelName,
   type BrowserSessionChangedPayload,
+  type SessionOutputDelta,
   type UserPreferenceChangedPayload,
 } from "@okouai/api-contracts/contracts/realtime";
 import type { RunnerPreference } from "@okouai/api-contracts/contracts/runners";
@@ -124,6 +125,18 @@ async function publishChatDatabaseSignalNow(
   const client = ablyClient();
   await client.channels.get(channelName).publish(topic, payload);
   L.debug(`Published "${topic}" to ${channelName}`);
+}
+
+export async function publishSessionOutputDelta(
+  target: { readonly userId: string; readonly orgId: string },
+  delta: SessionOutputDelta,
+): Promise<void> {
+  const channelName = sessionOutputChannelName(
+    target.userId,
+    target.orgId,
+    delta.runId,
+  );
+  await ablyClient().channels.get(channelName).publish(delta.runId, delta);
 }
 
 function publishChatDatabaseSignal(

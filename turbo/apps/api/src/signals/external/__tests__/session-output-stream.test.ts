@@ -11,25 +11,30 @@ const target = Object.freeze({
   runId: "d0000000-0000-4000-a000-000000000851",
 });
 
-// External SDK boundary: observe occupancy and publications without persisting
-// transient text or involving a provider call in the durable event pipeline.
-test("skips publication without viewers and preserves a late block's nonzero index", async () => {
-  let occupancy: ((message: { data: unknown }) => void) | undefined;
-  context.mocks.ably.realtimeSubscribe.mockImplementation((_name, listener) => {
-    occupancy = listener;
-    return Promise.resolve();
-  });
+// External SDK boundary: observe transient publications independently of the
+// durable event pipeline.
+test("publishes text immediately without a subscriber handshake", async () => {
   const stream = createSessionOutputStream(target, context.signal);
   const runEventId = `${stream.eventIdPrefix}:2`;
-  stream.onDelta({ runEventId, chunkIndex: 0, delta: "Missed start" });
-  expect(context.mocks.ably.realtimePublish).not.toHaveBeenCalled();
-  occupancy?.({ data: { metrics: { subscribers: 1 } } });
+  stream.onDelta({ runEventId, chunkIndex: 0, delta: "First text" });
   stream.onDelta({ runEventId, chunkIndex: 1, delta: "Later text" });
   stream.close();
   await flushWaitUntilForTest();
-  expect(context.mocks.ably.realtimePublish).toHaveBeenCalledWith(
+  expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
     `run-output:owner:org:${target.runId}`,
-    { modes: ["PUBLISH"], params: { occupancy: "metrics.subscribers" } },
+  );
+  expect(context.mocks.ably.publish).toHaveBeenNthCalledWith(
+    1,
+    target.runId,
+    expect.objectContaining({
+      runEventId,
+      chunkIndex: 0,
+      delta: "First text",
+      eventId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
+    }),
+  );
+  expect(context.mocks.ably.publish).toHaveBeenNthCalledWith(
+    2,
     target.runId,
     expect.objectContaining({
       runEventId,
@@ -38,15 +43,11 @@ test("skips publication without viewers and preserves a late block's nonzero ind
       eventId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
     }),
   );
-  expect(context.mocks.ably.realtimeClose).toHaveBeenCalledWith();
+  expect(context.mocks.ably.publish).toHaveBeenCalledTimes(2);
 });
 
 test("a stream transport failure leaves the run caller and cleanup successful", async () => {
-  context.mocks.ably.realtimeSubscribe.mockImplementation((_name, listener) => {
-    listener({ data: { metrics: { subscribers: 1 } } });
-    return Promise.resolve();
-  });
-  context.mocks.ably.realtimePublish.mockRejectedValue(
+  context.mocks.ably.publish.mockRejectedValue(
     new Error("transport unavailable"),
   );
   const stream = createSessionOutputStream(target, context.signal);
@@ -59,5 +60,5 @@ test("a stream transport failure leaves the run caller and cleanup successful", 
   }).not.toThrow();
   stream.close();
   await flushWaitUntilForTest();
-  expect(context.mocks.ably.realtimeClose).toHaveBeenCalledWith();
+  expect(context.mocks.ably.publish).toHaveBeenCalledOnce();
 });

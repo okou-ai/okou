@@ -67,8 +67,8 @@ when that optimistic event exists. A persistent event with the same ID always
 wins, including over late packets. Chunk indices have no gap detection or
 replay semantics. Refreshing after missing chunk zero waits for the normal
 durable output. Deltas are never written to the database, IndexedDB, or an
-event log. The API observes channel occupancy and skips publication without
-subscribers; its publisher attachment is not a subscriber.
+event log. The API publishes deltas through the shared Ably REST client;
+publication does not depend on frontend subscriptions.
 
 ## Review Checklist
 

@@ -126,14 +126,6 @@ export interface ApiTestMocks {
     readonly warn: SyncMock;
   };
   readonly ably: {
-    readonly realtimeSubscribe: Mock<
-      (
-        name: string,
-        listener: (message: { data: unknown }) => void,
-      ) => Promise<void>
-    >;
-    readonly realtimePublish: AsyncMock;
-    readonly realtimeClose: SyncMock;
     readonly channelGet: Mock<(channelName: string) => void>;
     readonly batchPublish: Mock<AblyBatchPublish>;
     readonly useRealBatchPublish: Mock<() => boolean>;
@@ -565,16 +557,6 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
       timeout: vi.fn<(milliseconds: number) => AbortSignal | undefined>(),
     },
     ably: {
-      realtimeSubscribe: vi
-        .fn<
-          (
-            name: string,
-            listener: (message: { data: unknown }) => void,
-          ) => Promise<void>
-        >()
-        .mockResolvedValue(undefined),
-      realtimePublish: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
-      realtimeClose: vi.fn<() => void>(),
       channelGet: vi.fn<(channelName: string) => void>(),
       batchPublish: vi.fn<AblyBatchPublish>(),
       useRealBatchPublish: vi.fn<() => boolean>(),
@@ -1063,26 +1045,7 @@ vi.mock("ably", async (importOriginal) => {
       },
     };
   }
-  class MockRealtime {
-    readonly close = apiTestMocks.ably.realtimeClose;
-    readonly channels = {
-      get: (name: string, options: unknown) => {
-        return {
-          on: () => {},
-          subscribe: (
-            _topic: string,
-            listener: (message: { data: unknown }) => void,
-          ) => {
-            return apiTestMocks.ably.realtimeSubscribe(name, listener);
-          },
-          publish: (...args: unknown[]) => {
-            return apiTestMocks.ably.realtimePublish(name, options, ...args);
-          },
-        };
-      },
-    };
-  }
-  return { default: { Rest: MockRest, Realtime: MockRealtime } };
+  return { default: { Rest: MockRest } };
 });
 
 vi.mock("@sentry/node", () => {
@@ -1576,11 +1539,6 @@ export function apiTestS3PresignedUrl(command: unknown): string {
 
 export function resetApiTestMocks(): void {
   apiTestMocks.abortSignal.timeout.mockReset();
-  apiTestMocks.ably.realtimeSubscribe.mockReset();
-  apiTestMocks.ably.realtimeSubscribe.mockResolvedValue(undefined);
-  apiTestMocks.ably.realtimePublish.mockReset();
-  apiTestMocks.ably.realtimePublish.mockResolvedValue(undefined);
-  apiTestMocks.ably.realtimeClose.mockReset();
   apiTestMocks.ably.channelGet.mockReset();
   apiTestMocks.ably.batchPublish.mockReset();
   apiTestMocks.ably.useRealBatchPublish.mockReset();

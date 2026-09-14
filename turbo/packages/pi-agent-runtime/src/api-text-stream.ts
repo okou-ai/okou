@@ -33,8 +33,8 @@ export function createPiApiTextStream(stream: PiApiTextStream) {
       if (!delta) {
         continue;
       }
-      // This advances even if the publisher has no subscribers. A late viewer
-      // must never receive a new chunk zero halfway through an existing block.
+      // Chunk zero belongs to the start of the block. A late viewer must never
+      // receive a new chunk zero halfway through an existing block.
       for (let offset = 0; offset < delta.length; offset += 4096) {
         const index = indices.get(source) ?? 0;
         indices.set(source, index + 1);
