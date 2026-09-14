@@ -8,6 +8,7 @@ import {
   type SocialKitDownloadResponse,
   type SocialKitRequest,
   type SocialKitResponse,
+  type SocialKitCollectionSourceLimit,
 } from "@okouai/api-contracts/contracts/social";
 import chalk from "chalk";
 import { Command, InvalidArgumentError } from "commander";
@@ -113,6 +114,8 @@ interface SocialCollectionOutput {
   readonly reason?: string;
   readonly uncertainty?: string;
   readonly nextInput?: SocialCollectionNextInput;
+  readonly sourceLimit?: SocialKitCollectionSourceLimit;
+  readonly callerLimited?: boolean;
 }
 
 interface SocialErrorDetails {
@@ -492,6 +495,22 @@ function progress(
 function collectionWarnings(
   collection: SocialCollectionOutput,
 ): readonly SocialWarning[] {
+  if (collection.sourceLimit) {
+    return [
+      {
+        code: "PROVIDER_LIMITED",
+        message: `Search exposes one anonymous batch of up to ${collection.sourceLimit.maxItems} results; this is not an exhaustive search.`,
+      },
+      ...(collection.callerLimited
+        ? [
+            {
+              code: "RESULT_LIMIT_REACHED",
+              message: "The returned batch was trimmed to the requested limit.",
+            },
+          ]
+        : []),
+    ];
+  }
   switch (collection.state) {
     case "caller_limited": {
       return [
@@ -675,6 +694,12 @@ function terminalCollectionOutput(
       : {}),
     ...(metadata.state === "provider_limited" && metadata.uncertainty
       ? { uncertainty: metadata.uncertainty.reason }
+      : {}),
+    ...(metadata.state === "provider_limited" && metadata.sourceLimit
+      ? {
+          sourceLimit: metadata.sourceLimit,
+          callerLimited: accumulator.itemsObserved > accumulator.itemsReturned,
+        }
       : {}),
   };
   return collectionOutput(
@@ -1082,7 +1107,7 @@ const searchCommand = new Command()
     "instagram, tiktok, or youtube",
     parseSocialPlatform,
   )
-  .option("--hashtag", "Treat a TikTok query as a hashtag")
+  .option("--hashtag", "Treat an Instagram or TikTok query as a hashtag")
   .option("--sort <sort>", "Platform-supported sort order")
   .option("--date <date>", "Platform-supported publication window")
   .option("--type <type>", "YouTube result type: video or shorts")
@@ -1294,6 +1319,7 @@ Examples:
   Details:     okou social posts https://www.youtube.com/@<channel> --full-details --limit 30 --json
   Reels:       okou social posts https://www.instagram.com/<user>/ --kind reels --limit 20 --json
   Search:      okou social search "product launch" --platform tiktok --limit 20 --json
+  Hashtag:     okou social search "#cats" --platform instagram --hashtag --json
   Comments:    okou social comments https://www.tiktok.com/@<user>/video/<id> --limit 20 --json
   Transcript:  okou social transcript https://youtu.be/<id> --json
   Summary:     okou social summarize https://youtu.be/<id> --json
@@ -1308,6 +1334,7 @@ Notes:
   - Collection --limit applies to the total returned result, not one provider page
   - YouTube posts --full-details requests exact dates and descriptions for at most 30 videos; it is slower than the default listing
   - Unavailable publication dates and descriptions remain null, empty, or missing
+  - Instagram search accepts up to 100 trimmed characters and exposes one anonymous batch of up to 12 reels
   - Collection output is aggregated unless --stream explicitly requests JSON Lines
   - --stream writes one kind=page record per fetched page, followed by one metadata-only kind=summary record
   - Handled collection failures retain accepted results and emit one terminal result/summary with error and progress

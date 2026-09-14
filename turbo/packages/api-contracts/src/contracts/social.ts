@@ -5,6 +5,7 @@ import {
   MANAGED_SOCIALKIT_BILLING_CATEGORY,
   MANAGED_SOCIALKIT_TOOLS,
   socialKitTranscriptErrorReasonSchema,
+  socialKitCollectionSourceLimitSchema,
   type ManagedSocialKitTool,
   type ManagedSocialKitToolName,
   socialKitRequestSchema,
@@ -41,6 +42,7 @@ export {
   type SocialKitTranscriptErrorCode,
   type SocialKitTranscriptErrorReason,
   type SocialKitRequest,
+  type SocialKitCollectionSourceLimit,
 } from "./social-tools";
 
 const c = initContract();
@@ -259,6 +261,7 @@ const socialKitCollectionSchema = z
       itemsReturned: z.number().int().nonnegative(),
       reason: socialKitCollectionProviderLimitedReasonSchema.optional(),
       uncertainty: socialKitCollectionUncertaintySchema.optional(),
+      sourceLimit: socialKitCollectionSourceLimitSchema.optional(),
       reportedTotal: reportedTotalSchema.optional(),
     }),
   ])
@@ -462,6 +465,16 @@ export function projectPublicSocialResponse(
   }
 
   let collection = response.collection;
+  // New CLI -> old API compatibility. Remove this projection once every serving
+  // API and retained rollback target emits the fixed batch metadata (#34053).
+  if (tool.collection?.sourceLimit && collection) {
+    collection = {
+      state: "provider_limited",
+      itemsReturned: collection.itemsReturned,
+      reason: "provider_ceiling",
+      sourceLimit: tool.collection.sourceLimit,
+    };
+  }
   if (
     tool.collection?.emptyResult?.reliability === "unreliable" &&
     collection?.state === "complete" &&

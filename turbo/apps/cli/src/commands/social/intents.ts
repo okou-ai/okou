@@ -106,7 +106,11 @@ export const SOCIAL_CAPABILITIES: readonly SocialCapability[] = [
       "summarize",
       "transcript",
     ],
-    notes: ["Posts supports posts and reels", "Search returns reels"],
+    notes: [
+      "Posts supports posts and reels",
+      "Search supports keywords and hashtags (up to 100 trimmed characters)",
+      "Search returns one anonymous batch of up to 12 reels; additional pages and exhaustive results are unavailable",
+    ],
   },
   {
     platform: "tiktok",
@@ -382,12 +386,26 @@ const INSTAGRAM_NON_PROFILE_PATHS = new Set([
 
 function instagramTargetKind(url: URL): SocialTargetKind {
   const segments = pathSegments(url);
-  const [first, second] = segments;
+  const [first, second, third] = segments;
   if (first === "p") {
     return second ? "post" : "unknown";
   }
   if (first === "reel" || first === "reels" || first === "tv") {
     return second ? "video" : "unknown";
+  }
+  if (
+    segments.length === 3 &&
+    first &&
+    /^[\w.]+$/u.test(first) &&
+    !INSTAGRAM_NON_PROFILE_PATHS.has(first) &&
+    third
+  ) {
+    if (second === "p") {
+      return "post";
+    }
+    if (second === "reel") {
+      return "video";
+    }
   }
   return segments.length === 1 &&
     first &&
@@ -840,13 +858,12 @@ function instagramSearchRequest(
   options: SearchOptions,
 ): SearchRequest {
   if (
-    options.hashtag ||
     options.sort !== undefined ||
     options.date !== undefined ||
     options.type !== undefined
   ) {
     return unsupported(
-      "Instagram search does not support hashtag, sort, date, or type filters",
+      "Instagram search does not support sort, date, or type filters",
     );
   }
   return { tool: "instagram_reels_search", input: { query } };
