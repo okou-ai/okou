@@ -344,3 +344,49 @@ test("production ownership includes JSON and rejects uncovered or overlapping in
   });
   rejected(guard(root), /exactly one Program|JSON.*overlap/);
 });
+
+test("aggregate entrypoint preserves stage order and stops at a failed command", (t) => {
+  const root = fixture(t);
+  copyFileSync(
+    join(import.meta.dirname, "check-types.mjs"),
+    join(root, "scripts/check-types.mjs"),
+  );
+  write(
+    root,
+    "scripts/stage.mjs",
+    `import { appendFileSync } from "node:fs";
+appendFileSync("stages.txt", process.argv[2] + "\\n");
+process.exit(Number(process.argv[3]));
+`,
+  );
+  const stages = [
+    "deps",
+    "boundaries",
+    "gateways",
+    "core",
+    "bootstrap",
+    "tests",
+    "bootstrap-wiring",
+  ];
+  const scripts = Object.fromEntries(
+    stages.map((stage) => {
+      return [`check-types:${stage}`, `node scripts/stage.mjs ${stage} 0`];
+    }),
+  );
+  write(root, "package.json", JSON.stringify({ scripts }));
+  const success = run(root, "check-types.mjs");
+  assert.equal(success.status, 0, success.stderr);
+  assert.equal(
+    readFileSync(join(root, "stages.txt"), "utf8"),
+    stages.join("\n") + "\n",
+  );
+  rmSync(join(root, "stages.txt"));
+  scripts["check-types:gateways"] = "node scripts/stage.mjs gateways 17";
+  write(root, "package.json", JSON.stringify({ scripts }));
+  const failure = run(root, "check-types.mjs");
+  assert.equal(failure.status, 17, failure.stderr);
+  assert.equal(
+    readFileSync(join(root, "stages.txt"), "utf8"),
+    "deps\nboundaries\ngateways\n",
+  );
+});

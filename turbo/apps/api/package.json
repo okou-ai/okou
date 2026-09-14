@@ -12,7 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "oxlint --deny-warnings && GOMAXPROCS=1 oxlint src --type-aware -c ../../.oxlintrc.typeaware.json --ignore-pattern '**/__tests__/**' --deny-warnings && GOMAXPROCS=1 oxlint $(find src -type d -name __tests__) --type-aware -c ../../.oxlintrc.typeaware.json --deny-warnings && eslint . --max-warnings 0",
-    "check-types": "pnpm run check-types:deps && pnpm run check-types:boundaries && pnpm run check-types:gateways && pnpm run check-types:core && pnpm run check-types:bootstrap && pnpm run check-types:tests && pnpm run check-types:bootstrap-wiring",
+    "check-types": "node scripts/check-types.mjs",
     "check-types:deps": "pnpm --filter @okouai/pi-agent-runtime run build",
     "check-types:boundaries": "node --test scripts/typecheck-projects.node-test.mjs && node scripts/prepare-typecheck-tests.mjs && node scripts/check-typecheck-boundaries.mjs",
     "check-types:gateways": "tsc -p tsconfig.gateways.json --checkers $(node ../../scripts/tsc-checkers.mjs)",

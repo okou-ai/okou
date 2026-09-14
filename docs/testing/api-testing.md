@@ -210,6 +210,11 @@ compiler exits before the next starts. The declaration-producing projects use
 projects set `disableSourceOfProjectReferenceRedirect` and consume those `.d.ts`
 outputs, keeping upstream implementation graphs out of later checks.
 
+The aggregate entrypoint uses `scripts/check-types.mjs` to execute the existing
+public stage commands synchronously in the package environment. It stops on the
+first nonzero exit or signal. This avoids launching a new pnpm process for every
+stage while retaining the public scripts as the command source of truth.
+
 | Project              | Root ownership                                                   | Declaration dependencies          |
 | -------------------- | ---------------------------------------------------------------- | --------------------------------- |
 | `gateways`           | The explicit SDK gateway files                                   | Pi runtime build                  |
