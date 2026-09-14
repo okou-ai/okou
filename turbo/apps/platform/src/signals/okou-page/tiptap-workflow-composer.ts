@@ -220,7 +220,6 @@ export interface WorkflowComposerSignals {
   >;
   readonly insertText$: Command<void, [string]>;
   readonly readVoiceContext$: Command<VoiceIoEditorContext, []>;
-  readonly appendText$: Command<void, [string]>;
   readonly selectOrAppendText$: Command<void, [string]>;
   readonly readInputForSubmission$: Command<
     Promise<WorkflowComposerSubmissionSnapshot>,
@@ -2345,9 +2344,6 @@ function createInsertTextCommands(editor: Editor) {
     editor.commands.insertContent(content);
   };
 
-  const appendText$ = command((_context, value: string) => {
-    appendText(value);
-  });
   const selectOrAppendText$ = command((_context, value: string) => {
     if (!selectText(value)) {
       appendText(value);
@@ -2358,7 +2354,6 @@ function createInsertTextCommands(editor: Editor) {
     readVoiceContext$,
     insertText$,
     insertPromptMarkdown$,
-    appendText$,
     selectOrAppendText$,
   };
 }

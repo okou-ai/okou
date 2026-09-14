@@ -2897,7 +2897,6 @@
       "storageFailed": "Audio could not be saved. Retry can recover only audio already saved on this device.",
       "textTakingShape": "Text is taking shape",
       "transcribing": "Transcribing",
-      "transcribingProgress": "Transcribing...",
       "transcriptionFailed": "Voice transcription failed. Try again."
     },
     "workflows": {

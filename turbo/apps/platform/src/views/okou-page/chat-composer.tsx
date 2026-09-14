@@ -273,7 +273,6 @@ import {
   modelPickerFlyoutEnabled$,
   modelPickerMenuEnabled$,
   customConnectorMcpEnabled$,
-  voiceInputV2Enabled$,
   featureSwitch$,
 } from "../../signals/external/feature-switch.ts";
 import { preferredChatReasoningEffort } from "../../signals/okou-page/model-reasoning-effort.ts";
@@ -305,10 +304,6 @@ import type {
 import {
   audioInputAvailable$,
   audioInputQuota$,
-  sttRecording$,
-  sttStarting$,
-  sttTranscribing$,
-  sttVoiceLevel$,
 } from "../../signals/voice-io/voice-io-stt.ts";
 import { readChatMessageFromClipboard } from "../../signals/okou-page/clipboard.ts";
 import { shouldUseUserMessage } from "../../signals/okou-page/user-message-document-codec.ts";
@@ -8699,26 +8694,14 @@ function ComputerUseDownloadDialog({
 // ---------------------------------------------------------------------------
 
 interface MicButtonStatus {
-  readonly recording: boolean;
   readonly starting: boolean;
-  readonly transcribing: boolean;
   readonly quotaLoading: boolean;
 }
 
 function micButtonAriaLabel(status: MicButtonStatus): string {
-  if (status.recording) {
-    return i18n.t(($) => {
-      return $.chat.voice.stopRecording;
-    });
-  }
   if (status.starting) {
     return i18n.t(($) => {
       return $.chat.voice.starting;
-    });
-  }
-  if (status.transcribing) {
-    return i18n.t(($) => {
-      return $.chat.voice.transcribing;
     });
   }
   if (status.quotaLoading) {
@@ -8732,19 +8715,9 @@ function micButtonAriaLabel(status: MicButtonStatus): string {
 }
 
 function micButtonTooltip(status: MicButtonStatus): string {
-  if (status.recording) {
-    return i18n.t(($) => {
-      return $.chat.voice.stopRecording;
-    });
-  }
   if (status.starting) {
     return i18n.t(($) => {
       return $.chat.voice.openingMicrophone;
-    });
-  }
-  if (status.transcribing) {
-    return i18n.t(($) => {
-      return $.chat.voice.transcribingProgress;
     });
   }
   if (status.quotaLoading) {
@@ -8757,17 +8730,6 @@ function micButtonTooltip(status: MicButtonStatus): string {
   });
 }
 
-function voiceDraftMicButtonStatus(
-  recording: boolean,
-  action: ComposerActions["voiceAction"],
-) {
-  return {
-    recording: recording && action !== "start",
-    starting: action === "start",
-    transcribing: action === "finish" || action === "retry",
-  };
-}
-
 function MicButton({
   signals,
   actions,
@@ -8778,32 +8740,16 @@ function MicButton({
   const available = useGet(audioInputAvailable$);
   const quotaState = useLoadableState(audioInputQuota$);
   const quotaResolved = useLastResolved(audioInputQuota$) !== undefined;
-  const voiceInputV2Enabled = useGet(voiceInputV2Enabled$);
   // The last resolved status keeps this control stable while a composer
   // target reads its stored draft; run$ awaits that read before acting.
   const voiceDraftStatus = useLastResolved(signals.voice.state$)?.status;
-  const sttRecording = useGet(sttRecording$);
-  const sttStarting = useGet(sttStarting$);
-  const sttTranscribing = useGet(sttTranscribing$);
-  const capture = useGet(signals.voice.capture$);
-  const { recording, starting, transcribing } = voiceInputV2Enabled
-    ? voiceDraftMicButtonStatus(capture !== null, actions.voiceAction)
-    : {
-        recording: sttRecording,
-        starting: sttStarting,
-        transcribing: sttTranscribing,
-      };
-  const voiceLevel = useGet(sttVoiceLevel$);
-  const voiceLevelFill = `${Math.round((voiceLevel / 3) * 100)}%`;
+  const starting = actions.voiceAction === "start";
 
   const signal = useGet(pageSignal$);
-  const draftLoading = voiceInputV2Enabled && voiceDraftStatus === undefined;
-  const actionDisabled =
-    starting || transcribing || (!recording && !quotaResolved);
+  const draftLoading = voiceDraftStatus === undefined;
+  const actionDisabled = starting || !quotaResolved;
   const status = {
-    recording,
     starting,
-    transcribing,
     quotaLoading: quotaState === "loading" && !quotaResolved,
   };
 
@@ -8828,37 +8774,20 @@ function MicButton({
               // Background draft checks should not dim the mic on thread switches.
               "disabled:opacity-100": draftLoading && !actionDisabled,
               "bg-[#2E9E9F] text-white hover:bg-[#279394] hover:text-white":
-                recording || starting || transcribing,
+                starting,
             })}
             data-composer-voice-toggle
             onClick={handleClick}
             disabled={actionDisabled || draftLoading}
             aria-label={micButtonAriaLabel(status)}
-            aria-busy={starting || transcribing}
-            aria-keyshortcuts={
-              voiceInputV2Enabled
-                ? COMPOSER_VOICE_INPUT_ARIA_KEY_SHORTCUTS
-                : undefined
-            }
+            aria-busy={starting}
+            aria-keyshortcuts={COMPOSER_VOICE_INPUT_ARIA_KEY_SHORTCUTS}
           >
-            {starting || transcribing ? (
+            {starting ? (
               <span
                 className="block size-[17px] rounded-full border-2 border-[rgb(255_255_255_/_0.35)] border-t-[#ffffff] pointer-events-none [transform:rotate(0deg)_translateZ(0)] origin-center [backface-visibility:hidden] [will-change:transform] animate-mic-starting-spin"
                 aria-hidden="true"
               />
-            ) : recording ? (
-              <>
-                <span
-                  className="absolute bottom-4 left-1/2 h-2 w-[5px] rounded-full bg-[rgb(255_255_255_/_0.18)] overflow-hidden pointer-events-none [transform:translateX(-50%)] after:absolute after:right-0 after:bottom-0 after:left-0 after:h-[var(--mic-volume-fill,0%)] after:rounded-[inherit] after:bg-[linear-gradient(to_top,#bdf9ff,#ffffff)] after:content-[''] after:transition-[height] after:duration-[0.12s] after:ease-[cubic-bezier(0.25,0.1,0.25,1)]"
-                  aria-hidden="true"
-                  style={
-                    {
-                      "--mic-volume-fill": voiceLevelFill,
-                    } as CSSProperties
-                  }
-                />
-                <Mic size={17} className="relative" />
-              </>
             ) : (
               <Mic size={18} />
             )}
@@ -8870,11 +8799,9 @@ function MicButton({
           className="flex flex-col items-center gap-1 py-1.5"
         >
           <span>{micButtonTooltip(status)}</span>
-          {voiceInputV2Enabled && (
-            <kbd className="whitespace-nowrap font-sans text-xs opacity-70">
-              {getShortcutLabel(COMPOSER_VOICE_INPUT_SHORTCUT)}
-            </kbd>
-          )}
+          <kbd className="whitespace-nowrap font-sans text-xs opacity-70">
+            {getShortcutLabel(COMPOSER_VOICE_INPUT_SHORTCUT)}
+          </kbd>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
@@ -10840,7 +10767,6 @@ function ComposerFooter({
   const createMode = useGet(signals.create.mode$);
   const narrowVideoGap =
     createMode === "video" ? "@max-[344px]/composer:gap-0" : undefined;
-  const voiceInputV2Enabled = useGet(voiceInputV2Enabled$);
   const voiceDraft = useResolved(signals.voice.state$);
   const capture = useGet(signals.voice.capture$);
   const status =
@@ -10857,7 +10783,6 @@ function ComposerFooter({
     ComposerVoiceInputStatus,
     "idle"
   > | null =
-    voiceInputV2Enabled &&
     status !== undefined &&
     status !== "idle" &&
     (status !== "recording" || capture !== null)

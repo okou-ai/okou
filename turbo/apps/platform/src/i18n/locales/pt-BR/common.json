@@ -2943,7 +2943,6 @@
       "storageFailed": "Não foi possível salvar o áudio. Tentar novamente recupera apenas o áudio já salvo neste dispositivo.",
       "textTakingShape": "O texto está tomando forma",
       "transcribing": "Transcrevendo",
-      "transcribingProgress": "Transcrevendo...",
       "transcriptionFailed": "Falha na transcrição de voz. Tente novamente."
     },
     "workflows": {

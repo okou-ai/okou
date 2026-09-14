@@ -2888,7 +2888,6 @@
       "storageFailed": "오디오를 저장하지 못했습니다. 재시도하면 이 기기에 이미 저장된 오디오만 복구됩니다.",
       "textTakingShape": "텍스트를 만드는 중",
       "transcribing": "전사 중",
-      "transcribingProgress": "전사 진행 중...",
       "transcriptionFailed": "음성 전사 실패. 다시 시도하세요."
     },
     "workflows": {

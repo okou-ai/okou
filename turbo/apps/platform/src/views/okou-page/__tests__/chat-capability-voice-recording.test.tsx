@@ -1,6 +1,4 @@
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import { openDB, type DBSchema } from "idb";
 import { HttpResponse } from "msw";
@@ -82,8 +80,6 @@ async function uploadedAudio(request: Request): Promise<ArrayBuffer> {
   return await file.arrayBuffer();
 }
 
-const flags = { [FeatureSwitchKey.VoiceInputV2]: true } as const;
-
 test.each([
   { path: RUN_PATH, reloadAt: "recording" },
   { path: NEW_CHAT_PATH, reloadAt: "recording" },
@@ -135,7 +131,6 @@ test.each([
       locale: "en-US",
       context: { ...context, signal: firstPage.signal },
       path,
-      featureSwitches: flags,
     });
     click(await findEnabledButton("Voice input"));
     const emit = await capture.promise;
@@ -155,7 +150,6 @@ test.each([
         locale: "en-US",
         context: secondContext,
         path,
-        featureSwitches: flags,
       });
     }
     for (const retry of retries) {
@@ -172,7 +166,6 @@ test.each([
         locale: "en-US",
         context: secondContext,
         path,
-        featureSwitches: flags,
       });
     }
     const retryButton = await findEnabledButton("Retry");
@@ -217,7 +210,7 @@ test.each([RUN_PATH, NEW_CHAT_PATH])(
         });
       },
     );
-    await setupPage({ context, path, featureSwitches: flags });
+    await setupPage({ context, path });
     click(await findEnabledButton("Voice input"));
     const emit = await capture.promise;
     emit(new Float32Array(4096).fill(0.25));
@@ -265,7 +258,6 @@ test.each([
     await setupPage({
       context: { ...context, signal: firstPage.signal },
       path,
-      featureSwitches: flags,
     });
     click(await findEnabledButton("Voice input"));
     click(await findEnabledButton("Stop recording"));
@@ -273,7 +265,7 @@ test.each([
     expect(queryButton("Retry")).toBeNull();
     expect(uploads).toHaveLength(1);
     unload(firstPage);
-    await setupPage({ context: secondContext, path, featureSwitches: flags });
+    await setupPage({ context: secondContext, path });
     await findEnabledButton("Voice input");
     expect(queryButton("Retry")).toBeNull();
     expect(queryButton("Stop recording")).toBeNull();
@@ -288,7 +280,7 @@ test("Stop capture and expose a failed chunk write without discarding the saved 
     onPcmCapture: capture.resolve,
   });
   const consoleErrors = installVoiceBoundaries();
-  await setupPage({ context, path: RUN_PATH, featureSwitches: flags });
+  await setupPage({ context, path: RUN_PATH });
   click(await findEnabledButton("Voice input"));
   const emit = await capture.promise;
   emit(new Float32Array(4096).fill(0.25));
@@ -329,44 +321,4 @@ test("Stop capture and expose a failed chunk write without discarding the saved 
       storageError,
     ],
   ]);
-});
-
-test("Restore audio when voice input v2 enables after the composer mounts", async () => {
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const firstPage = createChildAbortController(context.signal);
-  context.mocks.browser.voiceInput({ rms: 0.12 });
-  installVoiceBoundaries();
-  context.mocks.http.post("*/api/voice-io/transcribe/segment", () => {
-    return HttpResponse.json({ error: "Temporary outage" }, { status: 503 });
-  });
-  await setupPage({
-    context: { ...context, signal: firstPage.signal },
-    path: RUN_PATH,
-    featureSwitches: flags,
-  });
-  click(await findEnabledButton("Voice input"));
-  click(await findEnabledButton("Stop recording"));
-  await findEnabledButton("Retry");
-  unload(firstPage);
-  const enableVoice = context.mocks.deferred<void>();
-  context.mocks.api(featureSwitchesContract.get, async ({ respond }) => {
-    await enableVoice.promise;
-    return respond(200, { switches: flags, effectiveSwitches: flags });
-  });
-  await setupPage({
-    context: secondContext,
-    path: RUN_PATH,
-  });
-  await expect(findEnabledButton("Voice input")).resolves.not.toHaveAttribute(
-    "aria-keyshortcuts",
-  );
-  expect(queryButton("Retry")).toBeNull();
-  enableVoice.resolve();
-  await findEnabledButton("Retry");
-  expect(queryButton("Stop recording")).toBeNull();
-  click(await findEnabledButton("Remove voice draft"));
-  await expect(findEnabledButton("Voice input")).resolves.toHaveAttribute(
-    "aria-keyshortcuts",
-  );
-  await expect(savedRecording()).resolves.toBeNull();
 });

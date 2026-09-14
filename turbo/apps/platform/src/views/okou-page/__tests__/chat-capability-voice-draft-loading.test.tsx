@@ -1,7 +1,6 @@
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor } from "@testing-library/react";
 import * as idb from "idb";
 import { HttpResponse } from "msw";
@@ -22,7 +21,6 @@ import {
   RUN_THREAD_ID,
 } from "./chat-run-test-fixtures.ts";
 
-const flags = { [FeatureSwitchKey.VoiceInputV2]: true } as const;
 const OTHER_AGENT_ID = "c0000000-0000-4000-a000-000000000802";
 const OTHER_THREAD_ID = "b0000000-0000-4000-a000-000000000803";
 
@@ -70,7 +68,7 @@ test("Wait for nonempty PCM before showing the waveform and preserve the opening
       });
     },
   );
-  await setupPage({ context, path: RUN_PATH, featureSwitches: flags });
+  await setupPage({ context, path: RUN_PATH });
   click(await findEnabledButton("Voice input"));
   const emit = await connected.promise;
   // Flush startup work while the connected worklet supplies no real samples.
@@ -125,7 +123,7 @@ test("Release a connected capture when switching away before its first PCM batch
     onPcmDisconnect: disconnected.resolve,
     onPcmPortClose: portClosed.resolve,
   });
-  await setupPage({ context, path: NEW_CHAT_PATH, featureSwitches: flags });
+  await setupPage({ context, path: NEW_CHAT_PATH });
   click(await findEnabledButton("Voice input"));
   const emit = await connected.promise;
   await act(() => {
@@ -171,7 +169,7 @@ test("Keep composer controls visible while checking the local voice draft", asyn
     },
   );
 
-  await setupPage({ context, path: RUN_PATH, featureSwitches: flags });
+  await setupPage({ context, path: RUN_PATH });
   await requested.promise;
   await fill(screen.getByRole("textbox", { name: "Message" }), "Typed notes.");
   expect(queryButton("Attach")).toBeVisible();
@@ -204,7 +202,7 @@ test("Keep voice input available when switching between agent chat pages", async
     );
   });
 
-  await setupPage({ context, path: NEW_CHAT_PATH, featureSwitches: flags });
+  await setupPage({ context, path: NEW_CHAT_PATH });
   await findEnabledButton("Voice input");
   click(await findLink("Other Agent"));
   await waitFor(() => {
@@ -250,7 +248,7 @@ test("Do not show another agent's retryable recording while the current draft is
     return HttpResponse.json({ error: "Temporary outage" }, { status: 503 });
   });
 
-  await setupPage({ context, path: NEW_CHAT_PATH, featureSwitches: flags });
+  await setupPage({ context, path: NEW_CHAT_PATH });
   click(await findEnabledButton("Voice input"));
   click(await findEnabledButton("Stop recording"));
   await findEnabledButton("Retry");
@@ -296,7 +294,7 @@ test("Keep the toolbar visible throughout microphone startup", async () => {
     rms: 0.12,
     getUserMediaReady: microphoneReady.promise,
   });
-  await setupPage({ context, path: RUN_PATH, featureSwitches: flags });
+  await setupPage({ context, path: RUN_PATH });
   click(await findEnabledButton("Voice input"));
   await waitFor(() => {
     expect(queryButton("Starting voice input")).toBeDisabled();
@@ -343,7 +341,7 @@ test("Do not carry a pending transcription into another agent's composer", async
     });
   });
 
-  await setupPage({ context, path: NEW_CHAT_PATH, featureSwitches: flags });
+  await setupPage({ context, path: NEW_CHAT_PATH });
   click(await findEnabledButton("Voice input"));
   click(await findEnabledButton("Stop recording"));
   await requested.promise;
@@ -370,7 +368,7 @@ test("Preserve an explicit draft clear while the server baseline is pending", as
     await response.promise;
     return respond(200, textContinuityDraft("Old saved notes."));
   });
-  await setupPage({ context, path: NEW_CHAT_PATH, featureSwitches: flags });
+  await setupPage({ context, path: NEW_CHAT_PATH });
   await requested.promise;
   const editor = screen.getByRole("textbox", { name: "Message" });
   await fill(editor, "Temporary notes.");
@@ -425,7 +423,7 @@ test("Keep voice input enabled while switching conversations", async () => {
     );
   });
 
-  await setupPage({ context, path: RUN_PATH, featureSwitches: flags });
+  await setupPage({ context, path: RUN_PATH });
   await findEnabledButton("Voice input");
 
   const requested = context.mocks.deferred<void>();

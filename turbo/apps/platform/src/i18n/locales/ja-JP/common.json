@@ -2888,7 +2888,6 @@
       "storageFailed": "音声を保存できませんでした。再試行で復元できるのは、この端末に保存済みの音声のみです。",
       "textTakingShape": "テキストを作成中",
       "transcribing": "文字起こし",
-      "transcribingProgress": "転記中...",
       "transcriptionFailed": "音声の転写に失敗しました。もう一度やり直してください。"
     },
     "workflows": {
