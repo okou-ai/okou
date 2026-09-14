@@ -32,14 +32,12 @@ const THUMBNAIL_PREFIX =
 function mockExpiringArtifact({
   filename = "photo.png",
   contentType = "image/png",
-  firstLifetime = TTL,
   duplicate = false,
   denied = false,
   expiredResponse = false,
 }: {
   filename?: string;
   contentType?: string;
-  firstLifetime?: number;
   duplicate?: boolean;
   denied?: boolean;
   expiredResponse?: boolean;
@@ -78,15 +76,11 @@ function mockExpiringArtifact({
           error: { code: "FORBIDDEN", message: "Access denied" },
         });
       }
-      const expired = now() >= NOW + firstLifetime;
+      const expired = now() >= NOW + TTL;
       return respond(200, {
         url: expired ? nextUrl : firstUrl,
         expiresAt: new Date(
-          expiredResponse && expired
-            ? NOW
-            : expired
-              ? now() + TTL
-              : NOW + firstLifetime,
+          expiredResponse && expired ? NOW : expired ? now() + TTL : NOW + TTL,
         ).toISOString(),
         filename,
         contentType,
@@ -125,69 +119,35 @@ async function closePreview() {
   });
 }
 
-test("the expiry deadline renews once while loaded thumbnail and original stay stable", async () => {
-  const fixture = mockExpiringArtifact({ firstLifetime: 100 });
-  const image = await openChatImage(fixture.firstUrl);
-  const original = await openImage(image, fixture.firstUrl);
-  expect(fixture.resolutions).toHaveLength(1);
-
-  mockNow(NOW + 100, context.signal);
-  // The resolution itself is the contract: time passing must cause a request
-  // even when every mounted media element has already loaded successfully.
-  await waitFor(() => {
-    expect(fixture.resolutions).toHaveLength(2);
-  });
-  expect(image).toHaveAttribute(
-    "src",
-    `${THUMBNAIL_PREFIX}${fixture.firstUrl}`,
-  );
-  expect(original).toHaveAttribute("src", fixture.firstUrl);
-  expect(screen.queryByTestId("markdown-image-preview-loading")).toBeNull();
-
-  await closePreview();
-  await openImage(image, fixture.nextUrl);
-  expect(fixture.resolutions).toHaveLength(2);
-  expect(image).toHaveAttribute(
-    "src",
-    `${THUMBNAIL_PREFIX}${fixture.firstUrl}`,
-  );
-});
-
-test("foreground catch-up shares the renewal across mounted consumers without reloading them", async () => {
+test("expiry and returning to the tab leave loaded media alone until reopening", async () => {
   const fixture = mockExpiringArtifact();
   const visibility = context.mocks.browser.visibilityState("visible");
   const image = await openChatImage(fixture.firstUrl);
-  const original = await openImage(image, fixture.firstUrl);
-  visibility.changeTo("hidden");
-  mockNow(NOW + TTL, context.signal);
-  visibility.changeTo("visible");
-  await waitFor(() => {
-    expect(fixture.resolutions).toHaveLength(2);
-  });
-  expect(original).toHaveAttribute("src", fixture.firstUrl);
-  expect(image).toHaveAttribute(
-    "src",
-    `${THUMBNAIL_PREFIX}${fixture.firstUrl}`,
-  );
-  visibility.changeTo("hidden");
-  visibility.changeTo("visible");
-  await closePreview();
-  await openImage(image, fixture.nextUrl);
-  expect(fixture.resolutions).toHaveLength(2);
-});
-
-test("reopening checks expiry even before a delayed timer or visibility event runs", async () => {
-  const fixture = mockExpiringArtifact();
-  const image = await openChatImage(fixture.firstUrl);
   await openImage(image, fixture.firstUrl);
   await closePreview();
+  const original = await openImage(image, fixture.firstUrl);
+  expect(fixture.resolutions).toHaveLength(1);
+
+  visibility.changeTo("hidden");
   mockNow(NOW + TTL, context.signal);
+  visibility.changeTo("visible");
+  expect(original).toHaveAttribute("src", fixture.firstUrl);
+  await closePreview();
+  expect(fixture.resolutions).toHaveLength(1);
+  expect(image).toHaveAttribute(
+    "src",
+    `${THUMBNAIL_PREFIX}${fixture.firstUrl}`,
+  );
+
   await openImage(image, fixture.nextUrl);
   expect(fixture.resolutions).toHaveLength(2);
   expect(image).toHaveAttribute(
     "src",
     `${THUMBNAIL_PREFIX}${fixture.firstUrl}`,
   );
+  await closePreview();
+  await openImage(image, fixture.nextUrl);
+  expect(fixture.resolutions).toHaveLength(2);
 });
 
 test("concurrent expired image failures obtain one credential and recover the resource", async () => {
@@ -230,15 +190,13 @@ test("media failures during a valid credential do not reauthorize", async () => 
 });
 
 test.each(["denied", "expiredResponse"] as const)(
-  "%s renewal stops without falling back or retrying on more foreground events",
+  "%s renewal stops without falling back or retrying on repeated use",
   async (failure) => {
     const fixture = mockExpiringArtifact({ [failure]: true });
-    const visibility = context.mocks.browser.visibilityState("visible");
     const image = await openChatImage(fixture.firstUrl);
     const original = await openImage(image, fixture.firstUrl);
-    visibility.changeTo("hidden");
     mockNow(NOW + TTL, context.signal);
-    visibility.changeTo("visible");
+    fireEvent.error(image);
     await waitFor(() => {
       expect(fixture.resolutions).toHaveLength(2);
     });
@@ -246,13 +204,11 @@ test.each(["denied", "expiredResponse"] as const)(
     await closePreview();
     click(image);
     const dialog = await screen.findByTestId("attachment-lightbox");
-    visibility.changeTo("hidden");
-    visibility.changeTo("visible");
     fireEvent.error(image);
-    await closePreview();
     expect(
       within(dialog).queryByTestId("attachment-lightbox-image"),
     ).toBeNull();
+    await closePreview();
     expect(fixture.resolutions).toHaveLength(2);
     expect(image).toHaveAttribute(
       "src",
@@ -261,12 +217,11 @@ test.each(["denied", "expiredResponse"] as const)(
   },
 );
 
-test("credential renewal leaves the playing video's source and position unchanged", async () => {
+test("an expired video keeps playing and only replaces its source on a load error", async () => {
   const fixture = mockExpiringArtifact({
     filename: "demo.mp4",
     contentType: "video/mp4",
   });
-  const visibility = context.mocks.browser.visibilityState("visible");
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
   click(await findNamedLink("demo.mp4"));
   const stage = await screen.findByTestId("artifact-dialog-video-stage");
@@ -281,12 +236,8 @@ test("credential renewal leaves the playing video's source and position unchange
   video.currentTime = 17;
   fireEvent.play(video);
   const initialResolutions = fixture.resolutions.length;
-  visibility.changeTo("hidden");
   mockNow(NOW + TTL, context.signal);
-  visibility.changeTo("visible");
-  await waitFor(() => {
-    expect(fixture.resolutions.length).toBeGreaterThan(initialResolutions);
-  });
+  expect(fixture.resolutions).toHaveLength(initialResolutions);
   expect(video).toHaveAttribute("src", fixture.firstUrl);
   expect(video.currentTime).toBe(17);
   fireEvent.error(video);
@@ -298,36 +249,6 @@ test("credential renewal leaves the playing video's source and position unchange
   fireEvent.loadedMetadata(video);
   expect(video.currentTime).toBe(17);
   await closePreview();
-});
-
-test("closing the only credential consumer removes its expiry and wakeup work", async () => {
-  const fixture = mockExpiringArtifact({
-    filename: "notes.pdf",
-    contentType: "application/pdf",
-  });
-  const visibility = context.mocks.browser.visibilityState("visible");
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-  click(await findNamedLink("notes.pdf"));
-  const dialog = await screen.findByTestId("attachment-lightbox");
-  await waitFor(() => {
-    expect(dialog.querySelector("iframe")).toHaveAttribute(
-      "src",
-      `${fixture.firstUrl}#navpanes=0`,
-    );
-  });
-  await closePreview();
-  mockNow(NOW + TTL, context.signal);
-  visibility.changeTo("hidden");
-  visibility.changeTo("visible");
-  click(await findNamedLink("notes.pdf"));
-  const reopened = await screen.findByTestId("attachment-lightbox");
-  await waitFor(() => {
-    expect(reopened.querySelector("iframe")).toHaveAttribute(
-      "src",
-      `${fixture.nextUrl}#navpanes=0`,
-    );
-  });
-  expect(fixture.resolutions).toHaveLength(2);
 });
 
 test("an expired restored draft credential is replaced before its lightbox is used", async () => {
@@ -371,7 +292,7 @@ test("an expired restored draft credential is replaced before its lightbox is us
 });
 
 test.each(["reference", "private-deployment"] as const)(
-  "%s HTML grants renew while the mounted document stays stable, then reopen with its fragment",
+  "%s HTML keeps its loaded document and resolves a fresh grant only when reopened",
   async (entry) => {
     mockNow(NOW, context.signal);
     const canonical =
@@ -380,7 +301,6 @@ test.each(["reference", "private-deployment"] as const)(
         : `http://localhost/api/host/private-deployments/${FILE_ID}/view#slide-2`;
     const firstUrl = `https://pv-${"a".repeat(48)}.sites.vm7.io/`;
     const nextUrl = `https://pv-${"b".repeat(48)}.sites.vm7.io/`;
-    const visibility = context.mocks.browser.visibilityState("visible");
     mockAttachmentChat(context, {
       artifacts: [
         artifactFile("report.html", {
@@ -425,14 +345,10 @@ test.each(["reference", "private-deployment"] as const)(
     await waitFor(() => {
       expect(frame).toHaveAttribute("src", `${firstUrl}#slide-2`);
     });
-    visibility.changeTo("hidden");
     mockNow(NOW + TTL, context.signal);
-    visibility.changeTo("visible");
-    await waitFor(() => {
-      expect(grants).toContain(nextUrl);
-    });
     expect(frame).toHaveAttribute("src", `${firstUrl}#slide-2`);
     await closePreview();
+    expect(grants).not.toContain(nextUrl);
     click(await findNamedLink("Report"));
     await waitFor(() => {
       expect(screen.getByTestId("artifact-dialog-body-html")).toHaveAttribute(
@@ -443,7 +359,7 @@ test.each(["reference", "private-deployment"] as const)(
   },
 );
 
-test("uploaded image links use the renewed credential while the loaded thumbnail stays stable", async () => {
+test("opening an expired uploaded image renews its link without reloading the thumbnail", async () => {
   mockNow(NOW, context.signal);
   const firstUrl = `${R2_ORIGIN}/private/upload.png?X-Amz-Signature=first`;
   const nextUrl = `${R2_ORIGIN}/private/upload.png?X-Amz-Signature=next`;
@@ -497,10 +413,8 @@ test("uploaded image links use the renewed credential while the loaded thumbnail
   visibility.changeTo("hidden");
   mockNow(NOW + TTL, context.signal);
   visibility.changeTo("visible");
-  await waitFor(() => {
-    expect(link).toHaveAttribute("href", nextUrl);
-  });
-  expect(image).toHaveAttribute("src", `${THUMBNAIL_PREFIX}${firstUrl}`);
   await openImage(link, nextUrl);
+  expect(link).toHaveAttribute("href", nextUrl);
+  expect(image).toHaveAttribute("src", `${THUMBNAIL_PREFIX}${firstUrl}`);
   expect(resolutions).toHaveLength(2);
 });

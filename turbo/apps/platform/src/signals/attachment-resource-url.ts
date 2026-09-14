@@ -1,5 +1,4 @@
 import { command, computed, state, type Computed } from "ccstate";
-import { delay } from "signal-timers";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import { resolveArtifactImageTransformOrigin } from "../lib/platform-host.ts";
 import { publicAttachmentUrl } from "../views/okou-page/attachment-url.ts";
@@ -15,7 +14,7 @@ import { resolveApiBase } from "./api-base.ts";
 import { apiClient$ } from "./api-client.ts";
 import { now } from "../lib/time.ts";
 import { pageSignal$ } from "./page-signal.ts";
-import { onDomEventFn, onRef, setLoop, waitForOperation } from "./utils.ts";
+import { onDomEventFn, onRef, waitForOperation } from "./utils.ts";
 
 const AUTHENTICATED_FILE_PATH = "/api/web/download-file";
 
@@ -153,15 +152,13 @@ function createPreviewCredentials(
   url: string,
   resolvedToken?: AttachmentPresignedToken,
 ) {
-  const version$ = state(0);
-  const request$ = computed((get) => {
-    if (get(version$) === 0 && resolvedToken) {
-      return computed(() => {
-        return Promise.resolve(resolvedToken);
-      });
-    }
-    return createAttachmentPresignedToken$(url);
-  });
+  const request$ = state(
+    resolvedToken
+      ? computed(() => {
+          return Promise.resolve(resolvedToken);
+        })
+      : createAttachmentPresignedToken$(url),
+  );
   const freshRequest$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     const request = get(request$);
@@ -170,12 +167,9 @@ function createPreviewCredentials(
     if (token === null || Date.parse(token.expiresAt) > now()) {
       return request;
     }
-    // Only the first consumer of this expired request advances the shared
-    // computation. Concurrent mounts, errors and wakeups await its successor.
+    // Concurrent consumers share the first replacement, including its failure.
     if (get(request$) === request) {
-      set(version$, (version) => {
-        return version + 1;
-      });
+      set(request$, createAttachmentPresignedToken$(url));
     }
     const nextRequest = get(request$);
     await waitForOperation(get(nextRequest), signal);
@@ -280,46 +274,13 @@ function createPreviewPresentation(
             await set(retryExpiredResource$, event.target, signal);
           }
         });
-        const onVisibilityChange = onDomEventFn(async () => {
-          if (document.visibilityState === "visible") {
-            await set(credentials.freshRequest$, signal);
-          }
-        });
         element.addEventListener("error", onError, true);
-        document.addEventListener("visibilitychange", onVisibilityChange);
         signal.addEventListener(
           "abort",
           () => {
             element.removeEventListener("error", onError, true);
-            document.removeEventListener(
-              "visibilitychange",
-              onVisibilityChange,
-            );
           },
           { once: true },
-        );
-
-        await setLoop(
-          async () => {
-            const currentRequest = await set(credentials.freshRequest$, signal);
-            const token = await waitForOperation(get(currentRequest), signal);
-            if (token === null) {
-              return true;
-            }
-            // This is an expiry deadline, not a periodic poll. Cap credentials
-            // beyond the browser's timer limit and recheck the clock on wakeup.
-            await delay(
-              Math.min(
-                Math.max(0, Date.parse(token.expiresAt) - now()),
-                2_147_483_647,
-              ),
-              { signal },
-            );
-            return false;
-          },
-          0,
-          signal,
-          { retryTransientErrors: false },
         );
       },
     ),
