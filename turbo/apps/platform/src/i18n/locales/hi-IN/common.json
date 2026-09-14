@@ -2795,6 +2795,7 @@
     },
     "templates": {
       "categories": {
+        "brandMotion": "ब्रांड एनिमेशन",
         "illustration": "चित्रण",
         "presentation": "प्रस्तुति",
         "video": "वीडियो",

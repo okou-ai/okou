@@ -562,6 +562,56 @@ describe("chat thread generation template contract", () => {
     expect(parsed.success).toBe(false);
   });
 
+  it("preserves explicit brand motion selections in messages and drafts", () => {
+    const template = {
+      type: "brand-motion",
+      selection: { templateId: "brand-motion:brand-mask-sweep-lockup" },
+    } as const;
+    expect(generationTemplateRequestSchema.parse(template)).toStrictEqual(
+      template,
+    );
+    const userMessage = {
+      version: 1,
+      parts: [
+        { type: "text", text: "Animate my brand" },
+        { type: "template", titleSnapshot: "Mask Sweep", template },
+      ],
+    } as const;
+    expect(userMessageInputDocumentSchema.parse(userMessage)).toStrictEqual(
+      userMessage,
+    );
+    expect(userMessageDocumentSchema.parse(userMessage)).toStrictEqual(
+      userMessage,
+    );
+    expect(
+      chatThreadDraftSchema.parse({
+        draftUserMessage: userMessage,
+        draftAttachments: null,
+      }),
+    ).toMatchObject({ draftUserMessage: userMessage });
+  });
+
+  it.each([
+    {},
+    { templateId: "" },
+    { stylePresetId: "brand-motion:brand-mask-sweep-lockup" },
+    {
+      templateId: "brand-motion:brand-mask-sweep-lockup",
+      stylePresetId: "video-template:cinematic",
+    },
+    {
+      templateId: "brand-motion:brand-mask-sweep-lockup",
+      explainerOptions: {},
+    },
+  ])("rejects invalid brand motion selection fields %j", (selection) => {
+    expect(
+      generationTemplateRequestSchema.safeParse({
+        type: "brand-motion",
+        selection,
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts workflow template selections", () => {
     const parsed = generationTemplateRequestSchema.safeParse({
       type: "workflow",

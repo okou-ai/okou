@@ -32,7 +32,6 @@ export {
 export {
   BRAND_MOTION_TEMPLATE_ITEMS,
   findBrandMotionTemplateItem,
-  isBrandMotionTemplateId,
   isBrandMotionTemplateReady,
   type BrandMotionTemplateItem,
 } from "./brand-motion-template-items";

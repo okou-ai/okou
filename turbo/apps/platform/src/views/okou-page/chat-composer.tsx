@@ -37,6 +37,7 @@ import { useTranslation } from "react-i18next";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { i18n } from "../../i18n/index.ts";
 import { introVideoTemplateOptions } from "@okouai/core/intro-video-template";
+import { findBrandMotionTemplateItem } from "@okouai/core/brand-motion-template-items";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { IntroVideoPicker } from "./intro-video-picker.tsx";
 import {
@@ -6778,6 +6779,12 @@ function selectedComposerTemplateAttachment(
   value: GenerationTemplateRequest | undefined,
   importedTemplates: readonly PresentationTemplateSummary[] = [],
 ): ComposerTemplateAttachment | undefined {
+  if (value?.type === "brand-motion") {
+    const item = findBrandMotionTemplateItem(value.selection.templateId);
+    return item
+      ? { type: "brand-motion", category: "brand-motion", title: item.title }
+      : undefined;
+  }
   const introVideo = introVideoTemplateOptions(value);
   if (introVideo) {
     return {

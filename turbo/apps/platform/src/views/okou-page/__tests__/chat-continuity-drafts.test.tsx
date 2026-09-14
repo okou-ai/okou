@@ -168,6 +168,53 @@ test("Protect local edits while a saved draft is loading", async () => {
   expect(document.body).not.toHaveTextContent("older-notes.txt");
 });
 
+test("Restore a brand motion draft and preserve its type when editing the text", async () => {
+  const thread = continuityThread(12, 1, "Brand motion draft");
+  const templatePart = {
+    type: "template",
+    titleSnapshot: "Mask Sweep",
+    template: {
+      type: "brand-motion",
+      selection: { templateId: "brand-motion:brand-mask-sweep-lockup" },
+    },
+  } as const;
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 12,
+    threads: [thread],
+    drafts: new Map([
+      [
+        thread.id,
+        continuityDraft([
+          templatePart,
+          { type: "text", text: "Animate my brand" },
+        ]),
+      ],
+    ]),
+  });
+
+  await setupPage({
+    context,
+    path: `/chats/${thread.id}`,
+    ...workspace.pageOptions,
+  });
+
+  const composer = await messageComposer();
+  await waitFor(() => {
+    expect(composer).toHaveTextContent("Mask Sweep");
+    expect(composer).toHaveTextContent("Animate my brand");
+  });
+  await userEvent.type(composer, " for launch");
+  await waitFor(() => {
+    const saved = workspace.draftPatches.find((patch) => {
+      return (
+        patch.threadId === thread.id &&
+        draftPlainText(patch.draftUserMessage).includes("for launch")
+      );
+    });
+    expect(saved?.draftUserMessage?.parts).toContainEqual(templatePart);
+  });
+});
+
 test("Restore a rich saved draft when a chat opens", async () => {
   const thread = continuityThread(3, 1, "Rich draft conversation");
   const referenced = continuityThread(3, 2, "Referenced launch chat");

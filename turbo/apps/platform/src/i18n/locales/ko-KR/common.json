@@ -2786,6 +2786,7 @@
     },
     "templates": {
       "categories": {
+        "brandMotion": "브랜드 모션",
         "illustration": "일러스트",
         "presentation": "프레젠테이션",
         "video": "비디오",

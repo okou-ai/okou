@@ -396,6 +396,33 @@ test("A structured user message keeps its saved order and snapshots", async () =
   expect(screen.queryByText("renamed-launch.png")).toBeNull();
 });
 
+test("Sent brand motion references show their own category", async () => {
+  const userMessage = {
+    version: 1,
+    parts: [
+      { type: "text", text: "Animate my brand with " },
+      {
+        type: "template",
+        titleSnapshot: "Mask Sweep",
+        template: {
+          type: "brand-motion",
+          selection: { templateId: "brand-motion:brand-mask-sweep-lockup" },
+        },
+      },
+    ],
+  } satisfies UserMessageDocument;
+  installMessageExperienceChat({
+    threadId: context.resourceId,
+    chatEvents: [userEventWith(userMessage)],
+  });
+
+  await setupPage({ context, path: `/chats/${context.resourceId}` });
+
+  const reference = await screen.findByTitle("Brand motion · Mask Sweep");
+  expect(reference).toHaveTextContent("Mask Sweep");
+  expect(documentRoot()).toHaveTextContent("Animate my brand with Mask Sweep");
+});
+
 test("Sent template references stay inline and read-only", async () => {
   const templatePart = {
     type: "template" as const,

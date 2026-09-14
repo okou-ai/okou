@@ -1,7 +1,6 @@
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   brandMotionUnavailableInstructionLines,
-  isBrandMotionTemplateId,
   resolveBrandMotionTemplate,
 } from "@okouai/core/brand-motion-template-items";
 import {
@@ -58,12 +57,9 @@ export function resolveThreadGenerationTemplatePrompt(args: {
   // resource before delivery. Preserve the rejection in context so removing
   // executable guidance cannot silently turn it into generic video generation.
   for (const selection of selections) {
-    if (
-      selection.type === "video" &&
-      isBrandMotionTemplateId(selection.selection.stylePresetId)
-    ) {
+    if (selection.type === "brand-motion") {
       const resolved = resolveBrandMotionTemplate(
-        selection.selection.stylePresetId,
+        selection.selection.templateId,
         args.brandMotionEnabled,
       );
       if (resolved.status === "invalid") {

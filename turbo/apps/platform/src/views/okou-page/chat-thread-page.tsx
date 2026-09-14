@@ -5952,6 +5952,11 @@ function generationTemplateTypeLabel(
       return $.chat.templates.categories.video;
     });
   }
+  if (value.type === "brand-motion") {
+    return i18n.t(($) => {
+      return $.chat.templates.categories.brandMotion;
+    });
+  }
   if (value.type === "illustration") {
     return i18n.t(($) => {
       return $.chat.templates.categories.illustration;

@@ -2786,6 +2786,7 @@
     },
     "templates": {
       "categories": {
+        "brandMotion": "Animasi merek",
         "illustration": "Ilustrasi",
         "presentation": "Presentasi",
         "video": "Video",

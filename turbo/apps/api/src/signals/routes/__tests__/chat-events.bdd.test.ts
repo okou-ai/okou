@@ -22962,8 +22962,8 @@ describe("CHAT-02: generation templates and attachments", () => {
     const { actor, agentId } = await entitledChatActor();
     const scopedActor = { ...actor, orgId: requireOrgId(actor) };
     const brandMotion: GenerationTemplateRequest = {
-      type: "video",
-      selection: { stylePresetId: "brand-motion:brand-mask-sweep-lockup" },
+      type: "brand-motion",
+      selection: { templateId: "brand-motion:brand-mask-sweep-lockup" },
     };
     const ordinary = VIDEO_TEMPLATE_ITEMS[0]!;
     const ordinaryTemplate: GenerationTemplateRequest = {
@@ -22990,7 +22990,7 @@ describe("CHAT-02: generation templates and attachments", () => {
                 ...templates.map((template) => {
                   return {
                     type: "template" as const,
-                    titleSnapshot: "Selected video",
+                    titleSnapshot: "Selected template",
                     template,
                   };
                 }),
@@ -23018,14 +23018,30 @@ describe("CHAT-02: generation templates and attachments", () => {
         agentId,
         prompt: "Animate my brand",
         userMessage: userMessageWithTemplate("Animate my brand", {
-          type: "video",
-          selection: { stylePresetId: "brand-motion:unknown" },
+          type: "brand-motion",
+          selection: { templateId: "brand-motion:unknown" },
         }),
       },
       [400],
     );
     expectApiError(unknown.body);
     expect(unknown.body.error.message).toBe("Unknown brand motion template");
+
+    // A video selection never acquires Brand motion behavior from its ID.
+    const wrongType = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        prompt: "Animate my brand",
+        userMessage: userMessageWithTemplate("Animate my brand", {
+          type: "video",
+          selection: { stylePresetId: "brand-motion:brand-mask-sweep-lockup" },
+        }),
+      },
+      [400],
+    );
+    expectApiError(wrongType.body);
+    expect(wrongType.body.error.message).toBe("Unknown video template");
 
     // An enabled switch with unconfigured resources must not inject a missing
     // system skill into otherwise valid runs.

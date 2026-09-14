@@ -2795,6 +2795,7 @@
     },
     "templates": {
       "categories": {
+        "brandMotion": "Brand motion",
         "illustration": "Illustration",
         "presentation": "Presentation",
         "video": "Video",

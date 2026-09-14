@@ -35,7 +35,6 @@ import {
 } from "@okouai/core/intro-video-template";
 import {
   brandMotionInstructionLines,
-  isBrandMotionTemplateId,
   resolveBrandMotionTemplate,
 } from "@okouai/core/brand-motion-template-items";
 
@@ -65,6 +64,13 @@ interface VideoGenerationTemplateInput {
   };
 }
 
+interface BrandMotionGenerationTemplateInput {
+  readonly type: "brand-motion";
+  readonly selection: {
+    readonly templateId: string;
+  };
+}
+
 interface IllustrationGenerationTemplateInput {
   readonly type: "illustration";
   readonly selection: {
@@ -89,6 +95,7 @@ interface WebsiteGenerationTemplateInput {
 type GenerationTemplateInput =
   | PresentationGenerationTemplateInput
   | VideoGenerationTemplateInput
+  | BrandMotionGenerationTemplateInput
   | IllustrationGenerationTemplateInput
   | WorkflowGenerationTemplateInput
   | WebsiteGenerationTemplateInput;
@@ -106,12 +113,6 @@ type GenerationTemplatePromptResult =
 function generationTemplateTypeLabel(
   generationTemplate: GenerationTemplateInput,
 ): string {
-  if (
-    generationTemplate.type === "video" &&
-    isBrandMotionTemplateId(generationTemplate.selection.stylePresetId)
-  ) {
-    return "brand-motion";
-  }
   if (
     generationTemplate.type === "video" &&
     parseAvatarTemplateStylePresetId(
@@ -148,7 +149,16 @@ export function buildGenerationTemplatePrompt(
   }
 
   if (generationTemplate.type === "video") {
-    return buildVideoGenerationTemplatePrompt(generationTemplate, options);
+    return buildVideoGenerationTemplatePrompt(
+      generationTemplate,
+      options.introVideoEnabled === true,
+    );
+  }
+  if (generationTemplate.type === "brand-motion") {
+    return buildBrandMotionGenerationTemplatePrompt(
+      generationTemplate,
+      options.brandMotionEnabled === true,
+    );
   }
   if (generationTemplate.type === "illustration") {
     return buildIllustrationGenerationTemplatePrompt(generationTemplate);
@@ -380,33 +390,36 @@ function buildWebsiteTemplatePackagePrompt(
   };
 }
 
+function buildBrandMotionGenerationTemplatePrompt(
+  generationTemplate: BrandMotionGenerationTemplateInput,
+  enabled: boolean,
+): GenerationTemplatePromptResult {
+  const resolved = resolveBrandMotionTemplate(
+    generationTemplate.selection.templateId,
+    enabled,
+  );
+  if (resolved.status === "invalid") {
+    return resolved;
+  }
+  return {
+    status: "resolved",
+    prompt: [
+      ...templateFraming("a brand motion video"),
+      ...brandMotionInstructionLines(resolved.template),
+    ].join("\n"),
+  };
+}
+
 function buildVideoGenerationTemplatePrompt(
   generationTemplate: VideoGenerationTemplateInput,
-  options: GenerationTemplatePromptOptions,
+  introVideoEnabled: boolean,
 ): GenerationTemplatePromptResult {
-  const { stylePresetId } = generationTemplate.selection;
-  if (isBrandMotionTemplateId(stylePresetId)) {
-    const resolved = resolveBrandMotionTemplate(
-      stylePresetId,
-      options.brandMotionEnabled === true,
-    );
-    if (resolved.status === "invalid") {
-      return resolved;
-    }
-    return {
-      status: "resolved",
-      prompt: [
-        ...templateFraming("a brand motion video"),
-        ...brandMotionInstructionLines(resolved.template),
-      ].join("\n"),
-    };
-  }
   if (generationTemplate.selection.stylePresetId === INTRO_VIDEO_TEMPLATE_ID) {
-    if (options.introVideoEnabled !== true) {
+    if (!introVideoEnabled) {
       return { status: "invalid", message: "Intro video is not available" };
     }
-    const introOptions = generationTemplate.selection.explainerOptions;
-    if (!introOptions) {
+    const options = generationTemplate.selection.explainerOptions;
+    if (!options) {
       return {
         status: "invalid",
         message: "Intro video settings are missing",
@@ -416,7 +429,7 @@ function buildVideoGenerationTemplatePrompt(
       status: "resolved",
       prompt: [
         ...templateFraming("an intro video"),
-        ...introVideoInstructionLines(introOptions),
+        ...introVideoInstructionLines(options),
       ].join("\n"),
     };
   }

@@ -10,7 +10,6 @@ import {
   brandMotionInstructionLines,
   brandMotionUnavailableInstructionLines,
   findBrandMotionTemplateItem,
-  isBrandMotionTemplateId,
   isBrandMotionTemplateReady,
   resolveBrandMotionTemplate,
 } from "../brand-motion-template-items";
@@ -40,16 +39,14 @@ describe("brand motion catalog", () => {
       expect(findBrandMotionTemplateItem(item.id)).toBe(item);
       expect(findBrandMotionTemplateItem(item.slug)).toBeUndefined();
     }
-    expect(isBrandMotionTemplateId("brand-motion:unknown")).toBe(true);
     expect(findBrandMotionTemplateItem("brand-motion:unknown")).toBeUndefined();
-    expect(isBrandMotionTemplateId("video-template:reveal-mask")).toBe(false);
   });
 
-  it("round-trips existing video and message contracts without adding settings", () => {
+  it("round-trips an explicit brand motion selection and reports its identity", () => {
     const item = BRAND_MOTION_TEMPLATE_ITEMS[0]!;
     const selection: GenerationTemplateRequest = {
-      type: "video",
-      selection: { stylePresetId: item.id },
+      type: "brand-motion",
+      selection: { templateId: item.id },
     };
     expect(generationTemplateRequestSchema.parse(selection)).toEqual(selection);
     const draft = {
@@ -66,6 +63,15 @@ describe("brand motion catalog", () => {
       templateSlug: item.sourceTemplateId,
       source: "builtin",
     });
+  });
+
+  it("keeps video and avatar identities without inferring brand motion from an ID", () => {
+    expect(
+      generationTemplateIdentity({
+        type: "video",
+        selection: { stylePresetId: BRAND_MOTION_TEMPLATE_ITEMS[0]!.id },
+      }).category,
+    ).toBe("video");
     expect(
       generationTemplateIdentity({
         type: "video",

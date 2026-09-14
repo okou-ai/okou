@@ -486,6 +486,16 @@ const videoGenerationTemplateRequestSchema = z.object({
   }),
 });
 
+// Ship readers before enabling Brand motion selections in the picker.
+const brandMotionGenerationTemplateRequestSchema = z.object({
+  type: z.literal("brand-motion"),
+  selection: z
+    .object({
+      templateId: z.string().min(1),
+    })
+    .strict(),
+});
+
 const illustrationGenerationTemplateRequestSchema = z.object({
   type: z.literal("illustration"),
   selection: z.object({
@@ -512,6 +522,7 @@ const websiteGenerationTemplateRequestSchema = z.object({
 const generationTemplateRequestSchema = z.discriminatedUnion("type", [
   presentationGenerationTemplateRequestSchema,
   videoGenerationTemplateRequestSchema,
+  brandMotionGenerationTemplateRequestSchema,
   illustrationGenerationTemplateRequestSchema,
   workflowGenerationTemplateRequestSchema,
   websiteGenerationTemplateRequestSchema,

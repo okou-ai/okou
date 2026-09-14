@@ -1,7 +1,6 @@
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 
 import { parseAvatarTemplateStylePresetId } from "./avatar-template";
-import { isBrandMotionTemplateId } from "./brand-motion-template-items";
 import { isUserPresentationTemplateId } from "./presentation-template-selection";
 import { findWorkflowTemplateItem } from "./workflow-template-items";
 
@@ -114,8 +113,8 @@ function presentationIdentity(
 }
 
 /**
- * Avatar and Brand motion templates have their own reporting categories even
- * though they travel inside the video envelope.
+ * Avatar templates have their own reporting category even though they travel
+ * inside the video envelope.
  *
  * The contract reuses `type: "video"` for talking-avatar selections so that
  * bundles deployed before the split can still parse newer messages. Bucketing
@@ -125,9 +124,6 @@ function presentationIdentity(
 function videoIdentity(
   selection: Extract<GenerationTemplateRequest, { type: "video" }>["selection"],
 ): GenerationTemplateIdentity {
-  if (isBrandMotionTemplateId(selection.stylePresetId)) {
-    return builtinIdentity("brand-motion", selection.stylePresetId);
-  }
   const avatarId = parseAvatarTemplateStylePresetId(selection.stylePresetId);
   return builtinIdentity(
     avatarId === undefined ? "video" : "avatar",
@@ -167,6 +163,9 @@ export function generationTemplateIdentity(
     }
     case "video": {
       return videoIdentity(request.selection);
+    }
+    case "brand-motion": {
+      return builtinIdentity("brand-motion", request.selection.templateId);
     }
     case "illustration": {
       return builtinIdentity(

@@ -246,6 +246,7 @@ export type ComposerTemplateAttachmentType =
   | "presentation"
   | "illustration"
   | "video"
+  | "brand-motion"
   | "avatar"
   | "workflow"
   | "website";
@@ -794,6 +795,7 @@ function templateAttachmentNodeAttributes(
     (type !== "presentation" &&
       type !== "illustration" &&
       type !== "video" &&
+      type !== "brand-motion" &&
       type !== "avatar" &&
       type !== "workflow" &&
       type !== "website") ||
@@ -913,6 +915,11 @@ function templateAttachmentTypeLabel(
   if (type === "video") {
     return i18n.t(($) => {
       return $.chat.templates.categories.video;
+    });
+  }
+  if (type === "brand-motion") {
+    return i18n.t(($) => {
+      return $.chat.templates.categories.brandMotion;
     });
   }
   if (type === "avatar") {

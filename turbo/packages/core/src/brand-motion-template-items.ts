@@ -337,11 +337,6 @@ export const BRAND_MOTION_TEMPLATE_ITEMS: readonly BrandMotionTemplateItem[] = [
   };
 });
 
-/** Recognize the namespace, including unknown IDs so they never fall through. */
-export function isBrandMotionTemplateId(id: string): boolean {
-  return id.startsWith("brand-motion:");
-}
-
 export function findBrandMotionTemplateItem(
   id: string,
 ): BrandMotionTemplateItem | undefined {

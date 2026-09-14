@@ -2841,6 +2841,7 @@
     },
     "templates": {
       "categories": {
+        "brandMotion": "Animazione del brand",
         "illustration": "Illustrazione",
         "presentation": "Presentazione",
         "video": "Video",
