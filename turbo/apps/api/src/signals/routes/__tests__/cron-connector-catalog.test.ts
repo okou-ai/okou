@@ -2315,9 +2315,9 @@ describe("connector catalog valid lifecycle", () => {
     ).resolves.toHaveLength(0);
   });
 
-  it("applies compatibility, authored visibility, and request rollout filters", async () => {
+  it("applies compatibility and authored visibility to released connectors", async () => {
     configureSource();
-    const gated = publicAuthMethod({
+    const apiToken = publicAuthMethod({
       id: "api-token",
       grantKind: "manual",
       manual: true,
@@ -2337,13 +2337,13 @@ describe("connector catalog valid lifecycle", () => {
       version: "2026-07-15.external-request-filters",
       connectorSlug: "cal-com",
       mutateCatalog: (artifact) => {
-        setArtifactAuthMethods(artifact, [gated, visible, hidden]);
+        setArtifactAuthMethods(artifact, [apiToken, visible, hidden]);
       },
       mutateRuntime: (artifact) => {
         setArtifactAuthMethods(artifact, [
           manualPrivateAuthMethod({
             id: "api-token",
-            prefix: "GATED",
+            prefix: "API_TOKEN",
             access: "static",
             revoke: "none",
           }),
@@ -2372,53 +2372,12 @@ describe("connector catalog valid lifecycle", () => {
       context,
       routes: connectorCatalogRoutes,
     })(connectorCatalogContract);
-    const featureClient = setupApp({
-      context,
-      routes: featureSwitchesRoutes,
-    })(featureSwitchesContract);
-
     const released = await accept(catalogClient.list({ headers }), [200]);
     expect(
       released.body.connectors[0]?.authMethods.map((method) => {
         return method.id;
       }),
     ).toStrictEqual(["api-token", "cli"]);
-
-    await accept(
-      featureClient.update({
-        headers,
-        body: {
-          switches: { [FeatureSwitchKey.CalComConnector]: false },
-        },
-      }),
-      [200],
-    );
-    const disabled = await accept(catalogClient.list({ headers }), [200]);
-    expect(disabled.body.connectors[0]?.authMethods).toStrictEqual([
-      {
-        id: "cli",
-        label: "cli auth",
-        description: null,
-        grantKind: "manual",
-      },
-    ]);
-
-    await accept(
-      featureClient.update({
-        headers,
-        body: {
-          switches: { [FeatureSwitchKey.CalComConnector]: true },
-        },
-      }),
-      [200],
-    );
-    const enabled = await accept(catalogClient.list({ headers }), [200]);
-    expect(
-      enabled.body.connectors[0]?.authMethods.map((method) => {
-        return method.id;
-      }),
-    ).toStrictEqual(["api-token", "cli"]);
-    await accept(featureClient.delete({ headers }), [200]);
 
     const graduated = buildRelease({
       version: "2026-07-15.external-graduated-switch",

@@ -11,7 +11,6 @@ export enum FeatureSwitchKey {
   BillConnector = "billConnector",
   BentomlConnector = "bentomlConnector",
   CanvaConnector = "canvaConnector",
-  CalComConnector = "calComConnector",
   CalendlyOAuthConnector = "calendlyOAuthConnector",
   CopperConnector = "copperConnector",
   DatadogConnector = "datadogConnector",
