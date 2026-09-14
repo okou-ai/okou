@@ -5869,15 +5869,19 @@ describe("RUN-02: model provider selection and built-in admission", () => {
         OPENAI_MODEL: getBuiltInApiModel(model),
       });
       if (model === "deepseek-v4.1-flash") {
-        expect(claim.codexRuntimeConfig?.providerId).toBe("openrouter-codex");
-        expect(claim.codexRuntimeConfig?.modelCatalog?.models).toStrictEqual([
+        expect(claim.environment).toMatchObject({
+          OPENAI_BASE_URL: "https://api.deepseek.com/",
+          OPENAI_MODEL: "deepseek-flash",
+        });
+        expect(claim.codexRuntimeConfig?.providerId).toBe("deepseek");
+        expect(claim.codexRuntimeConfig?.modelCatalog?.models).toContainEqual(
           expect.objectContaining({
-            slug: "deepseek/deepseek-v4.1-flash",
+            slug: "deepseek-flash",
             context_window: 1_048_576,
             input_modalities: ["text", "image"],
-            apply_patch_tool_type: null,
+            apply_patch_tool_type: "freeform",
           }),
-        ]);
+        );
       }
       expect(claim.modelUsageProvider).toBe(model);
       await api.requestCancelRun(actor, sent.body.runId, [200]);
@@ -5928,7 +5932,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     const claim = await api.claimRunnerJob(run.runId);
     await expectBuiltInModelRunRuntimeRoute(run.runId, selectedModel);
     expect(claim.environment).toMatchObject({
-      OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
+      OPENAI_BASE_URL: "https://api.deepseek.com/",
     });
 
     expect(
