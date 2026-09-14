@@ -5,6 +5,8 @@ import {
 } from "@okouai/api-contracts/contracts/model-providers";
 import { useTranslation } from "react-i18next";
 
+import { formatLocalizedNumber } from "../../../i18n/format.ts";
+
 // ChatGPT speed guidance differs from OpenAI API Fast processing:
 // https://developers.openai.com/codex/speed
 // https://developers.openai.com/codex/changelog (CLI 0.153.2, Astra correction)
@@ -32,7 +34,7 @@ export function ModelFastImpact({ policy }: { policy: OrgModelPolicy }) {
       ($) => {
         return $.settings.models.picker.fastImpact.modelSpeed;
       },
-      { multiplier: chatGptSpeed },
+      { multiplier: formatLocalizedNumber(chatGptSpeed) },
     );
   } else if (provider === "openai-api-key") {
     // Only Sol has a model-specific API speed multiplier in the Fast guide:

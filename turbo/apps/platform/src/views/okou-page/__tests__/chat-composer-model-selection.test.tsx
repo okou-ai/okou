@@ -232,6 +232,73 @@ test("Show and dismiss Fast Codex speed and credit guidance on hover", async () 
   ).resolves.toBeVisible();
 });
 
+test.each([
+  {
+    model: "gpt-5.6-sol",
+    providerType: "openai-api-key",
+    guidance: "Fast · Up to 2.5× model speed · 2× API token cost",
+  },
+  {
+    model: "gpt-5.6-luna",
+    providerType: "openrouter-codex",
+    guidance: "Fast · Speed depends on provider · Usage depends on provider",
+  },
+] as const)(
+  "Show $providerType Fast guidance on hover",
+  async ({ model, providerType, guidance }) => {
+    const user = userEvent.setup({ delay: null });
+    installNewChat([model], model);
+    context.mocks.data.orgModelPolicies([
+      modelPolicy(model, 1, { default: true, providerType }),
+    ]);
+    await setupPage({
+      context,
+      path: NEW_CHAT_PATH,
+      featureSwitches: {
+        [FeatureSwitchKey.CodexFastMode]: true,
+        [FeatureSwitchKey.ChatPreference]: true,
+      },
+    });
+    await readyComposer();
+    const modelLabel = getCanonicalModelDisplayName(model);
+    await user.click(await modelPicker(modelLabel));
+    await user.hover(
+      await screen.findByRole("option", { name: `${modelLabel} Fast` }),
+    );
+    await expect(screen.findByText(guidance)).resolves.toBeVisible();
+  },
+);
+
+test("Localize fractional Fast speed guidance on hover", async () => {
+  const user = userEvent.setup({ delay: null });
+  installNewChat(["gpt-5.6-luna"], "gpt-5.6-luna");
+  context.mocks.data.orgModelPolicies([
+    modelPolicy("gpt-5.6-luna", 1, {
+      default: true,
+      providerType: "codex-oauth-token",
+    }),
+  ]);
+  await setupPage({
+    locale: "de-DE",
+    context,
+    path: NEW_CHAT_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.CodexFastMode]: true,
+      [FeatureSwitchKey.ChatPreference]: true,
+    },
+  });
+  await expect(screen.findByRole("textbox")).resolves.toBeVisible();
+  await user.click(await modelPicker("GPT 5.6 Luna"));
+  await user.hover(
+    await screen.findByRole("option", { name: "GPT 5.6 Luna Schnell" }),
+  );
+  await expect(
+    screen.findByText(
+      "Schnell · 1,5× Modellgeschwindigkeit · 2,5× ChatGPT-Verbrauch",
+    ),
+  ).resolves.toBeVisible();
+});
+
 test("Choose Fast then Standard Codex execution before changing models", async () => {
   const user = userEvent.setup({ delay: null });
   await openCodexExecutionChat();
