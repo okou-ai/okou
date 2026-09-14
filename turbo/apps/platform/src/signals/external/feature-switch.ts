@@ -8,13 +8,9 @@ import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isCodexFastModeEnabled } from "@okouai/core/model-feature-switch";
 import { clerk$ } from "../auth";
-import { appVersion$ } from "../app-version.ts";
+import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
-import { resolveApiBaseForTarget } from "../api-base.ts";
-import { getCapturedPreviewBypassForTarget } from "../../lib/preview-bypass-cookie.ts";
-import { createAuthedContractClient } from "../api-client-base.ts";
 import { rootSignal$ } from "../root-signal.ts";
-import { readClerkToken } from "../clerk-token.ts";
 import { writeConnectionDiagnostic$ } from "../connection-diagnostics.ts";
 import { syncShellDocumentAttributes$ } from "../theme.ts";
 import {
@@ -71,30 +67,6 @@ function isSameFeatureSwitchIdentity(
     left.userId === right.userId
   );
 }
-
-// Pinned to the API backend: feature switches bootstrap before the platform API
-// client is available.
-// eslint-disable-next-line ccstate/no-computed-signal -- migrate this computed away from AbortSignal ownership
-const apiFeatureSwitchClient$ = computed((get) => {
-  const apiBaseUrl = resolveApiBaseForTarget("api");
-  const clerkPromise = get(clerk$);
-  const rootSignal = get(rootSignal$);
-  return createAuthedContractClient(featureSwitchesContract, {
-    baseUrl: apiBaseUrl,
-    clientVersion: get(appVersion$),
-    getToken: async (signal) => {
-      const clerk = await clerkPromise;
-      signal.throwIfAborted();
-      return await readClerkToken(clerk, signal);
-    },
-    getRootSignal: () => {
-      return rootSignal;
-    },
-    getVercelProtectionBypass: () => {
-      return getCapturedPreviewBypassForTarget(apiBaseUrl) ?? undefined;
-    },
-  });
-});
 
 function applySwitches(
   result: Record<FeatureSwitchKey, boolean>,
@@ -177,7 +149,9 @@ const hydrateFeatureSwitch$ = command(
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
-    const client = get(apiFeatureSwitchClient$);
+    const client = get(apiClient$)(featureSwitchesContract, {
+      apiBase: "api",
+    });
     const result = await accept(
       client.get({ fetchOptions: { signal } }),
       [200],
@@ -276,7 +250,9 @@ export const setFeatureSwitch$ = command(
     overrides: Partial<Record<FeatureSwitchKey, boolean>>,
     signal: AbortSignal,
   ) => {
-    const client = get(apiFeatureSwitchClient$);
+    const client = get(apiClient$)(featureSwitchesContract, {
+      apiBase: "api",
+    });
     signal.throwIfAborted();
     await accept(
       client.update({
@@ -292,7 +268,9 @@ export const setFeatureSwitch$ = command(
 
 export const resetFeatureSwitches$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const client = get(apiFeatureSwitchClient$);
+    const client = get(apiClient$)(featureSwitchesContract, {
+      apiBase: "api",
+    });
     signal.throwIfAborted();
     await accept(client.delete({ fetchOptions: { signal } }), [200]);
     signal.throwIfAborted();
