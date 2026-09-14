@@ -36,6 +36,9 @@ the source or writing a candidate.
 Re-audited on September 14 against `main@394a3c3615d2b2485646f50f718f6cb28fb48c71`,
 then integrated `main@2cda87987eef35c4ae8fe75bad7c0b2dad1fff0d` after #33915 merged. Its billing migrations and
 permanent inventory are preserved; Drizzle regenerated retirement as 1120.
+The final integration includes `main@737e752d859154f921d599412c5754ff262078e1`
+and #33974: only human-interactive sources may enter admission, before the
+existing live PiMemory gate and explicit C accounting.
 
 | Path                                                                             | Ownership contract                                                                                                                                                                                                          |
 | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -63,7 +66,8 @@ Open overlaps at authoring were #33969 (Pi background model/worker tests) and
 #33974 (candidate admission source gating). #33929, #33915, #33911 and #33756
 also proposed new migration numbers; #33915 touches schema inventory. These
 are inventory, not merge-order dependencies. #33915 merged during this work;
-its new migration numbers required the 1120 regeneration above. The later merger
+its new migration numbers required the 1120 regeneration above. #33974 also
+merged; its source classification and route coverage are preserved. The later merger
 integrates canonical main and regenerates metadata when necessary.
 
 ## Historical B and the two-release boundary

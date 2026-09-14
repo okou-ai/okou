@@ -43,6 +43,14 @@ Color-theme presets in the App stylesheet share their anchor and companion color
 
 When `GradientColorThemes` is enabled on the document, each preset's HSL primary value supplies both its anchor color and the shared `--primary` token. Primary actions, including portaled dialog buttons, immediately use that fill and the preset's contrast-checked `--primary-foreground` in Light/Dark. Hover and pressed fills blend the anchor toward its companion using the existing filled-state alpha tokens. Disabled buttons retain the shared opacity treatment. Removing the document's color-theme attributes restores the shared Amber primary tokens.
 
+Auxiliary controls and previews revealed by hover or keyboard focus change
+opacity immediately. Do not add opacity transitions to message actions,
+sidebar controls, card overlays, or similar contextual affordances; temporary
+compositing layers can cause nearby content to flicker in Safari. Preserve
+their layout, focus visibility, touch behavior, and pointer-event rules. When
+other properties still animate, name those properties instead of using
+`transition-all`. This does not remove loading or popup lifecycle animations.
+
 ## Token and variant governance
 
 New tokens must represent a reusable semantic decision, have a documented consumer contract, and define their light and dark theme behavior in the canonical stylesheet. Shared tokens and variants belong to `@okouai/ui`; App-only tokens belong to the App token layer. A new alias for one component's hard-coded values is not a token contract.

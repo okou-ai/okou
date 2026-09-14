@@ -359,7 +359,7 @@ function SharedThreadHeader({
         <a
           href={homeUrl}
           aria-label={brandName}
-          className="shrink-0 text-foreground transition-opacity hover:opacity-70"
+          className="shrink-0 text-foreground hover:opacity-70"
         >
           <ProductBrandMark size="small" />
         </a>
