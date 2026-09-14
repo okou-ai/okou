@@ -8,6 +8,35 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.599.0](https://github.com/vm0-ai/vm0/compare/api-v1.598.1...api-v1.599.0) (2026-09-14)
+
+
+### Features
+
+* add social service status and capability limits ([#34073](https://github.com/vm0-ai/vm0/issues/34073)) ([2adf088](https://github.com/vm0-ai/vm0/commit/2adf088b05f825efd06bf0f2edce166821e2778e))
+* **pi-memory:** bind stage 1 credentials and billing to source sessions ([#34134](https://github.com/vm0-ai/vm0/issues/34134)) ([883bbd7](https://github.com/vm0-ai/vm0/commit/883bbd7cd3f8304266b068d9b1ad275ceccc378a))
+* **pi:** add gated langfuse tracing ([#33756](https://github.com/vm0-ai/vm0/issues/33756)) ([5f5f9f3](https://github.com/vm0-ai/vm0/commit/5f5f9f3434f7770b0db8b8ccd7d94c9f37282160))
+
+
+### Bug Fixes
+
+* **api:** keep subscription decryption outside final admission locks ([#34137](https://github.com/vm0-ai/vm0/issues/34137)) ([3aeba61](https://github.com/vm0-ai/vm0/commit/3aeba61d60379caa7eab873ff182e51d52b08705))
+
+
+### Refactoring
+
+* unify model selection feature switches ([#34133](https://github.com/vm0-ai/vm0/issues/34133)) ([252e116](https://github.com/vm0-ai/vm0/commit/252e1163a515c7f212cd0b31c7c59b3d385f3a38))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.439.0
+    * @okouai/core bumped to 8.664.0
+    * @okouai/db bumped to 1.257.0
+    * @okouai/pi-agent-runtime bumped to 1.30.0
+
 ## [1.598.1](https://github.com/vm0-ai/vm0/compare/api-v1.598.0...api-v1.598.1) (2026-09-14)
 
 

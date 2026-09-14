@@ -1,5 +1,25 @@
 # Changelog
 
+## [8.664.0](https://github.com/vm0-ai/vm0/compare/core-v8.663.2...core-v8.664.0) (2026-09-14)
+
+
+### Features
+
+* add social service status and capability limits ([#34073](https://github.com/vm0-ai/vm0/issues/34073)) ([2adf088](https://github.com/vm0-ai/vm0/commit/2adf088b05f825efd06bf0f2edce166821e2778e))
+* **pi:** add gated langfuse tracing ([#33756](https://github.com/vm0-ai/vm0/issues/33756)) ([5f5f9f3](https://github.com/vm0-ai/vm0/commit/5f5f9f3434f7770b0db8b8ccd7d94c9f37282160))
+
+
+### Refactoring
+
+* unify model selection feature switches ([#34133](https://github.com/vm0-ai/vm0/issues/34133)) ([252e116](https://github.com/vm0-ai/vm0/commit/252e1163a515c7f212cd0b31c7c59b3d385f3a38))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.439.0
+
 ## [8.663.2](https://github.com/vm0-ai/vm0/compare/core-v8.663.1...core-v8.663.2) (2026-09-14)
 
 

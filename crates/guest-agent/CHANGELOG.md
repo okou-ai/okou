@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.90.0](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.10...guest-agent-v0.90.0) (2026-09-14)
+
+
+### Features
+
+* **pi:** add gated langfuse tracing ([#33756](https://github.com/vm0-ai/vm0/issues/33756)) ([5f5f9f3](https://github.com/vm0-ai/vm0/commit/5f5f9f3434f7770b0db8b8ccd7d94c9f37282160))
+
 ## [0.89.10](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.9...guest-agent-v0.89.10) (2026-09-14)
 
 ## [0.89.9](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.8...guest-agent-v0.89.9) (2026-09-14)

@@ -11,6 +11,27 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.895.2](https://github.com/vm0-ai/vm0/compare/app-v0.895.1...app-v0.895.2) (2026-09-14)
+
+
+### Bug Fixes
+
+* **platform:** restore the effort control's agreed geometry and chrome ([#34120](https://github.com/vm0-ai/vm0/issues/34120)) ([76d7f69](https://github.com/vm0-ai/vm0/commit/76d7f69ba00d512c1f2d1810461f229ee59e54ef))
+* **platform:** retain template preview errors during renewal ([#34082](https://github.com/vm0-ai/vm0/issues/34082)) ([ee5a07d](https://github.com/vm0-ai/vm0/commit/ee5a07d91e603cfeccb379075e86bb26558819b7))
+
+
+### Refactoring
+
+* unify model selection feature switches ([#34133](https://github.com/vm0-ai/vm0/issues/34133)) ([252e116](https://github.com/vm0-ai/vm0/commit/252e1163a515c7f212cd0b31c7c59b3d385f3a38))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.439.0
+    * @okouai/core bumped to 8.664.0
+
 ## [0.895.1](https://github.com/vm0-ai/vm0/compare/app-v0.895.0...app-v0.895.1) (2026-09-14)
 
 

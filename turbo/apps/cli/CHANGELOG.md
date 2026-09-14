@@ -1,5 +1,22 @@
 # Changelog
 
+## [9.329.0](https://github.com/vm0-ai/vm0/compare/cli-v9.328.2...cli-v9.329.0) (2026-09-14)
+
+
+### Features
+
+* add social service status and capability limits ([#34073](https://github.com/vm0-ai/vm0/issues/34073)) ([2adf088](https://github.com/vm0-ai/vm0/commit/2adf088b05f825efd06bf0f2edce166821e2778e))
+* **pi:** add gated langfuse tracing ([#33756](https://github.com/vm0-ai/vm0/issues/33756)) ([5f5f9f3](https://github.com/vm0-ai/vm0/commit/5f5f9f3434f7770b0db8b8ccd7d94c9f37282160))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.439.0
+    * @okouai/core bumped to 8.664.0
+    * @okouai/pi-agent-runtime bumped to 1.30.0
+
 ## [9.328.2](https://github.com/vm0-ai/vm0/compare/cli-v9.328.1...cli-v9.328.2) (2026-09-14)
 
 
