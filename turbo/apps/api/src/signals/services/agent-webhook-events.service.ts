@@ -44,7 +44,6 @@ interface AgentEventsBody {
 interface ReceiveAgentEventsParams {
   readonly auth: SandboxAuth;
   readonly body: AgentEventsBody;
-  readonly source?: "api-first";
 }
 
 interface DispatchableConsumer {
@@ -52,7 +51,7 @@ interface DispatchableConsumer {
   readonly command$: ConsumerCommand;
 }
 
-export interface AcceptedAgentEvents {
+interface AcceptedAgentEvents {
   readonly payload: EventConsumerPayload;
   readonly chatProjection: MaterializedChatProjection | null;
 }
@@ -189,9 +188,6 @@ export const receiveAgentEvents$ = command(
           payload,
           suppliedCitations:
             params.body.piMemoryCitationTransport?.citations ?? [],
-          currentPiTransport:
-            params.source === "api-first" ||
-            params.body.piMemoryCitationTransport !== undefined,
         },
         signal,
       ),
@@ -266,14 +262,10 @@ export const receiveAgentEvents$ = command(
           ...range,
         },
       },
-      ...(projectionResult.value.payload.events.length > 0
-        ? {
-            acceptedEvents: {
-              payload: projectionResult.value.payload,
-              chatProjection: projectionResult.value.chatProjection,
-            },
-          }
-        : {}),
+      acceptedEvents: {
+        payload: projectionResult.value.payload,
+        chatProjection: projectionResult.value.chatProjection,
+      },
     };
   },
 );

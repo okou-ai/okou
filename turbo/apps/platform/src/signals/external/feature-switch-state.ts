@@ -15,7 +15,3 @@ export const setFeatureSwitchState$ = command(
     set(internalFeatureSwitchState$, switches);
   },
 );
-
-export const resetFeatureSwitchState$ = command(({ set }) => {
-  set(internalFeatureSwitchState$, getAllFeatureStates({}));
-});

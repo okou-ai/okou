@@ -4,10 +4,10 @@
 import hashlib
 import json
 import os
-from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE.parent / "kms-recovery-snapshot-inspect.py"
@@ -56,6 +56,7 @@ class SnapshotInspectionTest(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 timeout=20,
+                check=False,
             )
             raw = (root / "kms-recovery-snapshot.json").read_text()
             for value in (raw, result.stdout, result.stderr):
@@ -192,7 +193,7 @@ class SnapshotInspectionTest(unittest.TestCase):
         self.assertTrue(report["cleanupComplete"])
 
     def test_preview_with_only_replica_creates_and_pins_own_primary(self):
-        result, report, state = self.invoke("preview-replica-only")
+        result, report, _ = self.invoke("preview-replica-only")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(report["previewEndpointCountBeforeCreate"], 1)
         self.assertEqual(report["createdPreviewEndpointId"], "ep-preview")
@@ -233,6 +234,40 @@ class SnapshotInspectionTest(unittest.TestCase):
         self.assertEqual(report["failure"], "snapshot_database_scan_failed")
         self.assertTrue(report["cleanupComplete"])
         self.assertFalse(report["collectionComplete"])
+
+    def test_scan_timeout_reports_only_validated_progress_and_stops_verification(self):
+        result, report, state = self.invoke(
+            "sql-timeout", {"VERIFY_TARGET_CIPHERTEXT": "true"}
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(report["failure"], "snapshot_database_scan_failed")
+        self.assertEqual(
+            report["databaseScanFailure"],
+            {
+                "databaseNameSha256": hashlib.sha256(b"neondb").hexdigest(),
+                "psqlExitCode": 3,
+                "sqlState": "57014",
+                "completedTables": 1,
+                "lastStartedScan": {
+                    "phase": "table",
+                    "relationOid": 456,
+                    "relationBytes": 5368709120,
+                },
+            },
+        )
+        self.assertFalse(report["collectionComplete"])
+        self.assertFalse(report["cryptographicVerification"])
+        self.assertNotIn("targetVerificationCalls", state)
+        self.assertTrue(report["cleanupComplete"])
+        self.assertTrue(report["snapshotSetUnchanged"])
+
+    def test_invalid_progress_cannot_be_reported_as_trusted_scan_evidence(self):
+        result, report, _ = self.invoke("invalid-scan-progress")
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(report["failure"], "invalid_scan_counter")
+        self.assertNotIn("databaseScanFailure", report)
+        self.assertFalse(report["collectionComplete"])
+        self.assertTrue(report["cleanupComplete"])
 
     def test_cleanup_denial_is_incomplete_even_after_successful_scan(self):
         result, report, _ = self.invoke("cleanup-denied")

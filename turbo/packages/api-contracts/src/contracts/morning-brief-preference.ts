@@ -15,7 +15,6 @@ export const MORNING_BRIEF_PREFERENCES_PATH = `${MORNING_BRIEF_PREFERENCES_ROUTE
 export const morningBriefUnavailableReasonSchema = z.enum([
   "missing-timezone",
   "missing-default-agent",
-  "missing-data-source",
 ]);
 
 export const morningBriefPreferenceResponseSchema = z.object({
@@ -41,6 +40,9 @@ export type MorningBriefPreferenceUpdate = z.infer<
 export const morningBriefPreferenceErrorCodeSchema = z.enum([
   "MORNING_BRIEF_MISSING_TIMEZONE",
   "MORNING_BRIEF_MISSING_DEFAULT_AGENT",
+  // The enrollment now owns one installation, so the current API resolves
+  // per-Agent installs instead of rejecting them. Clients keep handling this
+  // code while an older API version can still serve them.
   "MORNING_BRIEF_MULTIPLE_INSTALLATIONS",
   "MORNING_BRIEF_STATE_CONFLICT",
 ]);

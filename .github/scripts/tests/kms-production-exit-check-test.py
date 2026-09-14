@@ -108,7 +108,7 @@ with open(os.environ["REQUEST_LOG"],"a") as f: f.write(json.dumps(url)+"\\n")
 path=urllib.parse.urlsplit(url).path
 if path.endswith("/branches"):
     if "cursor=page2" in url:
-        data={"branches":[{"id":"br-other","name":"other"}]}
+        data={"branches":json.loads(os.environ["BRANCHES_FIXTURE"]) if "BRANCHES_FIXTURE" in os.environ else [{"id":"br-other","name":"other"}]}
     else:
         data={"branches":[{"id":"br-prod","name":"production"}],"pagination":{"cursor":"page2"}}
 elif path.endswith("/snapshots"):
@@ -324,6 +324,68 @@ print(json.dumps(data)+"\\n200", end="")
         self.assertEqual(inventory["retainedSnapshotsRequiringKeyReview"], 2)
         self.assertFalse(inventory["databaseConnected"])
         self.assertNotIn("connection_uri", (self.root / "requests.jsonl").read_text())
+
+    def test_branch_origins_are_sanitized_without_assuming_creation_is_the_data_point(
+        self,
+    ):
+        self.fake_neon()
+        self.env["BRANCHES_FIXTURE"] = json.dumps(
+            [
+                {
+                    "id": "br-historical",
+                    "name": SECRET,
+                    "parent_id": "br-prod",
+                    "created_at": "2099-01-01T00:00:00Z",
+                    "parent_timestamp": "2025-01-01T00:00:00Z",
+                    "parent_lsn": "0/ABCD",
+                    "private": SECRET,
+                },
+                {
+                    "id": "br-inspection",
+                    "name": "kms-recovery-32264-12345-1",
+                    "parent_id": "br-historical",
+                },
+            ]
+        )
+        self.assertEqual(self.run_script("backups").returncode, 0)
+        report = json.loads((self.root / "kms-exit-backups.json").read_text())
+        inventory = report["inventory"]
+        self.assertTrue(inventory["branchMetadataCollected"])
+        self.assertEqual(inventory["otherBranchesNotInspected"], 2)
+        branches = {b["branchIdSha256"]: b for b in inventory["branches"]}
+        historical = branches[hashlib.sha256(b"br-historical").hexdigest()]
+        self.assertTrue(historical["parentIsProduction"])
+        self.assertTrue(historical["parentPointBeforeMigrationVerification"])
+        self.assertEqual(historical["reportedParentLsn"], "0/ABCD")
+        inspection = branches[hashlib.sha256(b"br-inspection").hexdigest()]
+        self.assertEqual(inspection["inspectionRunId"], "12345")
+        self.assertIsNone(inspection["parentPointBeforeMigrationVerification"])
+        self.assertEqual(
+            inspection["parentBranchIdSha256"], historical["branchIdSha256"]
+        )
+        self.assertTrue(
+            all(b["ciphertextVerified"] is False for b in branches.values())
+        )
+        self.assertFalse(report["retirementCleared"])
+        self.assertFalse(inventory["databaseConnected"])
+        self.assertNotIn("br-historical", json.dumps(report))
+
+    def test_invalid_or_duplicate_branch_metadata_fails_closed(self):
+        self.fake_neon()
+        branch = {"id": "br-other", "name": SECRET}
+        for records, failure in [
+            ([branch, branch], "invalid_branch_identity"),
+            ([{**branch, "parent_id": "br-other"}], "invalid_branch_identity"),
+            ([{**branch, "parent_id": SECRET}], "invalid_branch_id"),
+            ([{**branch, "parent_lsn": SECRET}], "invalid_branch_lsn"),
+            ([{**branch, "parent_timestamp": SECRET}], "invalid_metadata_timestamp"),
+        ]:
+            with self.subTest(failure=failure):
+                self.env["BRANCHES_FIXTURE"] = json.dumps(records)
+                self.assertEqual(self.run_script("backups").returncode, 1)
+                report = json.loads((self.root / "kms-exit-backups.json").read_text())
+                self.assertEqual(report["failure"], failure)
+                self.assertEqual(report["result"], "incomplete")
 
     def test_zero_history_window_does_not_clear_retained_snapshots(self):
         self.fake_neon()

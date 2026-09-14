@@ -44,6 +44,10 @@ const slackListedChannelSchema = z.object({
   channelUrl: z.string().url(),
 });
 
+export const slackRepliesQuerySchema = slackHistoryQuerySchema.safeExtend({
+  thread: timestampSchema,
+});
+
 // Preserve Slack's message variants, including blocks, files and attachments.
 export const slackHistoryMessageSchema = z.looseObject({
   type: z.string(),
@@ -67,6 +71,10 @@ const slackHistoryResponseSchema = z.object({
   messages: z.array(slackHistoryMessageSchema),
   hasMore: z.boolean(),
   nextCursor: z.string().nullable(),
+});
+
+const slackRepliesResponseSchema = slackHistoryResponseSchema.extend({
+  thread: z.string(),
 });
 
 /** Reads shared by the connected Slack user and organization bot. */
@@ -103,6 +111,23 @@ export const integrationsSlackReadContract = c.router({
     },
     summary: "Read shared channel or bot direct-message history",
   },
+  replies: {
+    method: "GET",
+    path: "/api/integrations/slack/replies",
+    headers: authHeadersSchema,
+    query: slackRepliesQuerySchema,
+    responses: {
+      200: slackRepliesResponseSchema,
+      400: slackReadErrorSchema,
+      401: apiErrorSchema,
+      403: slackReadErrorSchema,
+      404: slackReadErrorSchema,
+      429: slackReadErrorSchema,
+      502: slackReadErrorSchema,
+    },
+    summary:
+      "Read one thread page, including the parent when returned by Slack",
+  },
 });
 
 export type SlackChannelListQuery = z.infer<typeof slackChannelListQuerySchema>;
@@ -111,3 +136,5 @@ export type SlackChannelListResponse = z.infer<
   typeof slackChannelListResponseSchema
 >;
 export type SlackHistoryResponse = z.infer<typeof slackHistoryResponseSchema>;
+export type SlackRepliesQuery = z.infer<typeof slackRepliesQuerySchema>;
+export type SlackRepliesResponse = z.infer<typeof slackRepliesResponseSchema>;

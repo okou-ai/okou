@@ -5,12 +5,13 @@ import datetime as dt
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import subprocess
 import time
 import urllib.parse
+from pathlib import Path
 
+from kms_recovery_scan import ScanReportError, scan_records
 from kms_recovery_verify import (
     RecoveryVerificationError,
     target_session,
@@ -89,6 +90,7 @@ def api(suffix, method="GET", body=None, allow_missing=False):
         capture_output=True,
         text=True,
         timeout=seconds + 5,
+        check=False,
     )
     require(response.returncode == 0, "neon_request_outcome_unconfirmed")
     content, status = response.stdout.rsplit("\n", 1)
@@ -275,36 +277,9 @@ def inspect_database(database, endpoint, branch_id, target_environment=None):
         capture_output=True,
         text=True,
         timeout=seconds,
+        check=False,
     )
-    require(result.returncode == 0, "snapshot_database_scan_failed")
-    records = [json.loads(line) for line in result.stdout.splitlines() if line]
-    headers = [r for r in records if r.get("kind") == "database"]
-    require(
-        len(headers) == 1
-        and headers[0].get("readOnly") is True
-        and headers[0].get("isolation") == "repeatable read",
-        "read_only_transaction_unverified",
-    )
-    safe = []
-    fields = {
-        "database": {"largeObjects", "foreignTables"},
-        "table": {
-            "relationOid",
-            "rows",
-            "rowsWithEnvelopeMarker",
-            "rowsWithSourceReference",
-        },
-        "binary": {"relationOid", "columnNumber", "nonNullValues"},
-    }
-    for record in records:
-        kind = record.get("kind")
-        require(kind in fields, "unknown_scan_record")
-        item = {"kind": kind}
-        for field in fields[kind]:
-            value = record.get(field)
-            require(type(value) is int and value >= 0, "invalid_scan_counter")
-            item[field] = value
-        safe.append(item)
+    safe = scan_records(result, digest(name))
     scanned = {"databaseNameSha256": digest(name), "readOnly": True, "records": safe}
     if target_environment is not None:
         scanned["targetVerification"] = verify_database(
@@ -527,6 +502,7 @@ def main():
         report["collectionComplete"] = True
     except (
         InspectionError,
+        ScanReportError,
         RecoveryVerificationError,
         KeyError,
         ValueError,
@@ -536,9 +512,13 @@ def main():
     ) as error:
         report["failure"] = (
             str(error)
-            if isinstance(error, (InspectionError, RecoveryVerificationError))
+            if isinstance(
+                error, (InspectionError, ScanReportError, RecoveryVerificationError)
+            )
             else "inspection_failed"
         )
+        if isinstance(error, ScanReportError) and error.diagnostics is not None:
+            report["databaseScanFailure"] = error.diagnostics
     finally:
         # Reserve cleanup and preservation read-back time inside the job budget.
         DEADLINE = time.monotonic() + 5 * 60

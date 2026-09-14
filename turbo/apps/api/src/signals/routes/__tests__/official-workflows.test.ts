@@ -69,6 +69,7 @@ import { verifyOkouToken } from "../../auth/tokens";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
+import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
@@ -2335,7 +2336,7 @@ describe("Morning Brief preference", () => {
     }
   });
 
-  it("fails closed when generic installations already exist across Agents", async () => {
+  it("adopts the default Agent installation when installations exist across Agents", async () => {
     installCatalogStorageFixture();
     await syncDeployedCatalog();
     const { actor } = await workflowBdd.setupWorkflowOrg({
@@ -2357,20 +2358,13 @@ describe("Morning Brief preference", () => {
     await setOfficialWorkflowsEnabled(actor, true);
     await setMorningBriefEnabled(actor, false);
     const headers = authHeaders(actor);
-    const installations = await Promise.all(
-      [onboarding.defaultAgentId, alternate.agentId].map(async (agentId) => {
-        return await accept(
-          officialClient().install({
-            headers,
-            params: { definitionName: "morning-brief" },
-            body: {
-              agentId,
-              blueprints: [{ blueprintKey: "daily-delivery", bindings: [] }],
-            },
-          }),
-          [201],
-        );
-      }),
+    const onDefaultAgent = await installMorningBriefFromCatalog(
+      actor,
+      onboarding.defaultAgentId,
+    );
+    const onAlternateAgent = await installMorningBriefFromCatalog(
+      actor,
+      alternate.agentId,
     );
 
     const hiddenRead = await accept(
@@ -2378,45 +2372,245 @@ describe("Morning Brief preference", () => {
       [403],
     );
     expect(hiddenRead.body.error.code).toBe("FORBIDDEN");
-    const hiddenUpdate = await accept(
-      morningBriefPreferenceClient().update({
-        headers,
-        body: { enabled: false },
-      }),
-      [403],
-    );
-    expect(hiddenUpdate.body.error.code).toBe("FORBIDDEN");
 
     await setMorningBriefEnabled(actor, true);
 
     const read = await accept(
       morningBriefPreferenceClient().get({ headers }),
-      [409],
+      [200],
     );
-    expect(read.body.error.code).toBe("MORNING_BRIEF_MULTIPLE_INSTALLATIONS");
-    const update = await accept(
+    expect(read.body).toMatchObject({
+      enabled: true,
+      status: "enabled",
+      timezone: "Asia/Shanghai",
+      unavailableReason: null,
+    });
+
+    const paused = await accept(
       morningBriefPreferenceClient().update({
         headers,
         body: { enabled: false },
       }),
-      [409],
+      [200],
     );
-    expect(update.body.error.code).toBe("MORNING_BRIEF_MULTIPLE_INSTALLATIONS");
+    expect(paused.body).toMatchObject({
+      enabled: false,
+      status: "paused",
+      nextRunAt: null,
+    });
 
-    for (const installation of installations) {
-      const unchanged = await accept(
-        installationClient().get({
-          headers,
-          params: { workflowId: installation.body.workflow.id },
-        }),
-        [200],
-      );
-      expect(unchanged.body.workflow.automations).toMatchObject([
-        { enabled: true },
-      ]);
+    // The adopted installation follows the preference; the other one is left
+    // alone and keeps running.
+    await expect(
+      readMorningBriefAutomations(actor, onDefaultAgent),
+    ).resolves.toMatchObject([{ enabled: false }]);
+    await expect(
+      readMorningBriefAutomations(actor, onAlternateAgent),
+    ).resolves.toMatchObject([{ enabled: true }]);
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(2);
+  });
+
+  it("keeps the preference on its own installation after a catalog install on another Agent", async () => {
+    installCatalogStorageFixture();
+    await syncDeployedCatalog();
+    const { actor } = await workflowBdd.setupWorkflowOrg({
+      timezone: "Asia/Shanghai",
+    });
+    if (!actor.orgId) {
+      throw new Error("Expected organization-scoped actor");
     }
+    const onboarding = await bdd.readOnboardingStatus(actor);
+    if (!onboarding.defaultAgentId) {
+      throw new Error("Expected a default Agent");
+    }
+    const alternate = await workflowBdd.createAgent(actor);
+    onTestFinished(async () => {
+      installCatalogStorageFixture();
+      await bdd.deleteAgent(actor, alternate.agentId);
+      await cleanupCatalog();
+    });
+    await connectBriefSource(actor);
+    await setOfficialWorkflowsEnabled(actor, false);
+    await setMorningBriefEnabled(actor, true);
+    const headers = authHeaders(actor);
+
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const [managed] = await listMorningBriefInstallations(actor);
+    if (!managed) {
+      throw new Error("Expected a Preferences-managed installation");
+    }
+    expect(managed.agentId).toBe(onboarding.defaultAgentId);
+
+    await setOfficialWorkflowsEnabled(actor, true);
+    const onAlternateAgent = await installMorningBriefFromCatalog(
+      actor,
+      alternate.agentId,
+    );
+
+    const read = await accept(
+      morningBriefPreferenceClient().get({ headers }),
+      [200],
+    );
+    expect(read.body).toMatchObject({
+      enabled: true,
+      status: "enabled",
+      timezone: "Asia/Shanghai",
+      unavailableReason: null,
+    });
+
+    const paused = await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    expect(paused.body).toMatchObject({ enabled: false, status: "paused" });
+    await expect(
+      readMorningBriefAutomations(actor, managed.id),
+    ).resolves.toMatchObject([{ enabled: false }]);
+    await expect(
+      readMorningBriefAutomations(actor, onAlternateAgent),
+    ).resolves.toMatchObject([{ enabled: true }]);
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(2);
+  });
+
+  it("leaves an installed brief in place when the org default Agent changes", async () => {
+    installCatalogStorageFixture();
+    await syncDeployedCatalog();
+    const { actor } = await workflowBdd.setupWorkflowOrg({
+      timezone: "Asia/Shanghai",
+    });
+    const orgId = actor.orgId;
+    if (!orgId) {
+      throw new Error("Expected organization-scoped actor");
+    }
+    const onboarding = await bdd.readOnboardingStatus(actor);
+    const originalAgentId = onboarding.defaultAgentId;
+    if (!originalAgentId) {
+      throw new Error("Expected a default Agent");
+    }
+    const replacement = await workflowBdd.createAgent(actor);
+    onTestFinished(async () => {
+      installCatalogStorageFixture();
+      await setOrgDefaultAgentFixture({ orgId, agentId: originalAgentId });
+      await bdd.deleteAgent(actor, replacement.agentId);
+      await cleanupCatalog();
+    });
+    await connectBriefSource(actor);
+    await setOfficialWorkflowsEnabled(actor, false);
+    await setMorningBriefEnabled(actor, true);
+    const headers = authHeaders(actor);
+
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const [installed] = await listMorningBriefInstallations(actor);
+    if (!installed) {
+      throw new Error("Expected a Preferences-managed installation");
+    }
+    expect(installed.agentId).toBe(originalAgentId);
+
+    // Only the Clerk org-creation bootstrap writes `default_agent_id`, so no
+    // production endpoint can repoint an existing org at another Agent. This
+    // fixture is the narrow exception that makes the case reachable at all.
+    await setOrgDefaultAgentFixture({ orgId, agentId: replacement.agentId });
+
+    const read = await accept(
+      morningBriefPreferenceClient().get({ headers }),
+      [200],
+    );
+    expect(read.body).toMatchObject({
+      enabled: true,
+      status: "enabled",
+      timezone: "Asia/Shanghai",
+      unavailableReason: null,
+    });
+
+    // Logging in must not provision a second brief on the new default Agent.
+    await initializeBriefMember(actor);
+    await expect(listMorningBriefInstallations(actor)).resolves.toMatchObject([
+      { id: installed.id, agentId: originalAgentId },
+    ]);
+
+    // Ownership stays on the Agent the brief was installed on, even once the
+    // new default Agent carries a brief of its own.
+    await setOfficialWorkflowsEnabled(actor, true);
+    const onNewDefaultAgent = await installMorningBriefFromCatalog(
+      actor,
+      replacement.agentId,
+    );
+    const paused = await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    expect(paused.body).toMatchObject({ enabled: false, status: "paused" });
+    await expect(
+      readMorningBriefAutomations(actor, installed.id),
+    ).resolves.toMatchObject([{ enabled: false }]);
+    await expect(
+      readMorningBriefAutomations(actor, onNewDefaultAgent),
+    ).resolves.toMatchObject([{ enabled: true }]);
+
+    const reenabled = await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect(reenabled.body).toMatchObject({ enabled: true, status: "enabled" });
+    await expect(
+      readMorningBriefAutomations(actor, installed.id),
+    ).resolves.toMatchObject([{ enabled: true }]);
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(2);
   });
 });
+
+async function installMorningBriefFromCatalog(
+  actor: ApiTestUser,
+  agentId: string,
+): Promise<string> {
+  const response = await accept(
+    officialClient().install({
+      headers: authHeaders(actor),
+      params: { definitionName: "morning-brief" },
+      body: {
+        agentId,
+        blueprints: [{ blueprintKey: "daily-delivery", bindings: [] }],
+      },
+    }),
+    [201],
+  );
+  return response.body.workflow.id;
+}
+
+async function readMorningBriefAutomations(
+  actor: ApiTestUser,
+  workflowId: string,
+) {
+  const response = await accept(
+    installationClient().get({
+      headers: authHeaders(actor),
+      params: { workflowId },
+    }),
+    [200],
+  );
+  return response.body.workflow.automations;
+}
 
 function mockBriefMemberships(
   entries: readonly { readonly actor: ApiTestUser; readonly createdAt: Date }[],
@@ -2524,19 +2718,40 @@ async function prepareBriefMember({
 }
 
 describe("Morning Brief default onboarding", () => {
-  it("waits for a connected source, then retries through the cron worker without another visit", async () => {
+  it("installs without any connected source and stays single across concurrent cron ticks", async () => {
     const { actor } = await prepareBriefMember();
     await initializeBriefMember(actor, "Asia/Shanghai");
     expect((await readBriefPreference(actor)).body).toMatchObject({
       enabled: true,
-      status: "preparing",
-      unavailableReason: "missing-data-source",
-      nextRunAt: null,
+      status: "enabled",
+      timezone: "Asia/Shanghai",
+      unavailableReason: null,
     });
-    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
-    await connectBriefSource(actor);
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
     await Promise.all([tickBriefEnrollment(actor), tickBriefEnrollment(actor)]);
-    expect((await readBriefPreference(actor)).body).toMatchObject({
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
+  });
+
+  it("installs from the preference toggle without any connected source", async () => {
+    const { actor } = await prepareBriefMember();
+    const headers = authHeaders(actor);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: false },
+      }),
+      [200],
+    );
+    await initializeBriefMember(actor, "Asia/Shanghai");
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
+    const reenabled = await accept(
+      morningBriefPreferenceClient().update({
+        headers,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect(reenabled.body).toMatchObject({
       enabled: true,
       status: "enabled",
       timezone: "Asia/Shanghai",
@@ -2547,7 +2762,6 @@ describe("Morning Brief default onboarding", () => {
 
   it("preserves a cancellation before installation across late and duplicate membership events", async () => {
     const { actor, createdAt } = await prepareBriefMember();
-    await initializeBriefMember(actor, "Asia/Shanghai");
     await accept(
       morningBriefPreferenceClient().update({
         headers: authHeaders(actor),
@@ -2555,6 +2769,7 @@ describe("Morning Brief default onboarding", () => {
       }),
       [200],
     );
+    await initializeBriefMember(actor, "Asia/Shanghai");
     await connectBriefSource(actor);
     await deliverClerkOrganizationMembershipCreated(actor, createdAt);
     await tickBriefEnrollment(actor);
@@ -2712,6 +2927,13 @@ describe("Morning Brief default onboarding", () => {
       actor: bdd.user({ userId: first.actor.userId, email: first.actor.email }),
     });
     mockBriefMemberships([first, second]);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(second.actor),
+        body: { enabled: false },
+      }),
+      [200],
+    );
     await initializeBriefMember(first.actor, "Asia/Shanghai");
     await initializeBriefMember(second.actor, "America/Los_Angeles");
     await connectBriefSource(first.actor);
@@ -2721,16 +2943,10 @@ describe("Morning Brief default onboarding", () => {
       timezone: "Asia/Shanghai",
     });
     expect((await readBriefPreference(second.actor)).body).toMatchObject({
-      status: "preparing",
-      unavailableReason: "missing-data-source",
+      status: "paused",
+      enabled: false,
+      timezone: "America/Los_Angeles",
     });
-    await accept(
-      morningBriefPreferenceClient().update({
-        headers: authHeaders(second.actor),
-        body: { enabled: false },
-      }),
-      [200],
-    );
     await connectBriefSource(second.actor);
     await initializeBriefMember(second.actor);
     expect((await readBriefPreference(second.actor)).body).toMatchObject({
@@ -2748,7 +2964,7 @@ describe("Morning Brief default onboarding", () => {
 
   it("cancels pending enrollment when membership is removed, including a late created event", async () => {
     const { actor, createdAt } = await prepareBriefMember();
-    await initializeBriefMember(actor, "Asia/Shanghai");
+    await initializeBriefMember(actor);
     webhooks.configureClerkWebhookSecret();
     webhooks.verifyNextClerkWebhook({
       type: "organizationMembership.deleted",

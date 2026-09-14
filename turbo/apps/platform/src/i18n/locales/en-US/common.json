@@ -5471,7 +5471,17 @@
         "chatModels": "Chat models",
         "effort": "Reasoning effort",
         "fast": "Fast",
-        "fastImpact": "1.5× model speed · 2.5× credit usage",
+        "fastImpact": {
+          "apiCost": "2× API token cost",
+          "chatGptUsage": "2.5× ChatGPT usage",
+          "fasterResponses": "Faster model responses",
+          "modelSpeed": "{{multiplier}}× model speed",
+          "okouCredits": "2× Okou model credits",
+          "providerSpeed": "Speed depends on provider",
+          "providerUsage": "Usage depends on provider",
+          "solApiSpeed": "Up to 2.5× model speed",
+          "summary": "{{speed}} · {{usage}}"
+        },
         "generationPriceTiers": {
           "higher": "Higher cost per generation",
           "highest": "Highest cost per generation",
@@ -5746,7 +5756,6 @@
         "emailOff": "Email is off. Your brief will still appear in Chat.",
         "emailWhenReady": "You’ll receive an email when your brief is ready.",
         "loading": "Loading Morning Brief settings...",
-        "missingDataSource": "Connect Gmail, Google Calendar, GitHub, or Slack to start receiving your brief.",
         "missingDefaultAgent": "Choose a usable default Agent before enabling Morning Brief.",
         "missingTimezone": "Set a valid time zone before enabling Morning Brief.",
         "multipleInstallations": "Multiple Morning Brief installations exist. Resolve the conflict before changing this preference.",

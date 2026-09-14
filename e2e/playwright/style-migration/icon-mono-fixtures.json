@@ -36,7 +36,6 @@
       "supabaseConnector": false,
       "webflowConnector": false,
       "closeConnector": false,
-      "posthogConnector": false,
       "payPalConnector": false,
       "rampConnector": false,
       "mailchimpConnector": false,

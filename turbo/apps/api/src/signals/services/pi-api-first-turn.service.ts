@@ -439,7 +439,6 @@ const publishEvents$ = command(async function publishEvents(
     {
       auth: args.auth,
       body: { runId: args.auth.runId, events: args.events },
-      source: "api-first",
     },
     signal,
   );

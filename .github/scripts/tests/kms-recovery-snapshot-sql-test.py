@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """Run the actual aggregate SQL in an isolated local PostgreSQL cluster."""
 
+import hashlib
 import json
 import os
-from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from kms_recovery_scan import ScanReportError, scan_records
 
 SQL = Path(__file__).resolve().parents[1] / "kms-recovery-snapshot-inventory.sql"
 
@@ -60,6 +65,7 @@ class SnapshotSqlTest(unittest.TestCase):
                     capture_output=True,
                     text=True,
                     timeout=30,
+                    check=False,
                 )
 
             try:
@@ -77,6 +83,18 @@ class SnapshotSqlTest(unittest.TestCase):
                     CREATE SCHEMA "odd-schema";
                     CREATE TABLE "odd-schema"."quoted'name"(val text);
                     INSERT INTO "odd-schema"."quoted'name" VALUES('vm0secret:v1:quoted');
+                    CREATE TABLE public.chunk_probe(id int, value text);
+                    ALTER TABLE public.chunk_probe ALTER COLUMN value SET STORAGE PLAIN;
+                    INSERT INTO public.chunk_probe
+                      SELECT i, repeat('x',2000) || CASE
+                        WHEN i IN (1,1000,2000) THEN 'vm0secret:v1:chunk'
+                        WHEN i IN (700,1700) THEN 'a1b3922b-fab1-4ed3-aa9e-40f86f92a7a8'
+                        ELSE '' END FROM generate_series(1,2000) i;
+                    CREATE TABLE public.empty_probe(value text);
+                    CREATE TABLE public.inherit_parent(id int);
+                    CREATE TABLE public.inherit_child() INHERITS(public.inherit_parent);
+                    INSERT INTO public.inherit_parent VALUES(1);
+                    INSERT INTO public.inherit_child VALUES(2),(3);
                 """
                 )
                 self.assertEqual(fixture.returncode, 0, fixture.stderr)
@@ -85,11 +103,55 @@ class SnapshotSqlTest(unittest.TestCase):
                 records = [
                     json.loads(line) for line in result.stdout.splitlines() if line
                 ]
-                tables = [r for r in records if r["kind"] == "table"]
-                self.assertEqual(len(tables), 4)
-                self.assertEqual(sum(r["rows"] for r in tables), 6)
-                self.assertEqual(sum(r["rowsWithEnvelopeMarker"] for r in tables), 4)
-                self.assertEqual(sum(r["rowsWithSourceReference"] for r in tables), 1)
+                decoded = scan_records(result, hashlib.sha256(b"postgres").hexdigest())
+                tables = [r for r in decoded if r["kind"] == "table"]
+                self.assertEqual(len(tables), 8)
+                self.assertEqual(sum(r["rows"] for r in tables), 2009)
+                self.assertEqual(sum(r["rowsWithEnvelopeMarker"] for r in tables), 7)
+                self.assertEqual(sum(r["rowsWithSourceReference"] for r in tables), 3)
+                oid = int(
+                    psql("-c", "SELECT 'public.chunk_probe'::regclass::oid").stdout
+                )
+                chunks = [
+                    r
+                    for r in records
+                    if r["kind"] == "table-chunk" and r["relationOid"] == oid
+                ]
+                self.assertGreaterEqual(len(chunks), 3)
+                plan = json.loads(
+                    psql(
+                        "-c",
+                        "EXPLAIN (FORMAT JSON) SELECT count(*) FROM ONLY public.chunk_probe WHERE ctid >= '(0,0)'::tid AND ctid < '(128,0)'::tid",
+                    ).stdout
+                )
+                self.assertIn('"Node Type": "Tid Range Scan"', json.dumps(plan))
+                for corrupt, error in [
+                    (
+                        [r for r in records if r is not chunks[-1]],
+                        "incomplete_table_scan",
+                    ),
+                    (records + [chunks[0]], "noncontiguous_table_chunks"),
+                    (
+                        [r for r in records if r is not chunks[0]],
+                        "noncontiguous_table_chunks",
+                    ),
+                    (
+                        [
+                            r
+                            for r in records
+                            if not (
+                                r.get("relationOid") == oid
+                                and r["kind"] in {"table-plan", "table-chunk"}
+                            )
+                        ],
+                        "incomplete_table_scan",
+                    ),
+                ]:
+                    incomplete = subprocess.CompletedProcess(
+                        [], 0, "\n".join(json.dumps(r) for r in corrupt), ""
+                    )
+                    with self.assertRaisesRegex(ScanReportError, error):
+                        scan_records(incomplete, "test-database-hash")
                 self.assertEqual(
                     sum(r["nonNullValues"] for r in records if r["kind"] == "binary"), 1
                 )
@@ -103,6 +165,19 @@ class SnapshotSqlTest(unittest.TestCase):
                     ).stdout.strip(),
                     "3",
                 )
+                role = psql("-c", "CREATE ROLE snapshot_scan_reader LOGIN")
+                self.assertEqual(role.returncode, 0, role.stderr)
+                denied = psql("-U", "snapshot_scan_reader", "-f", str(SQL))
+                self.assertNotEqual(denied.returncode, 0)
+                self.assertNotIn("private-plaintext", denied.stdout + denied.stderr)
+                with self.assertRaises(ScanReportError) as raised:
+                    scan_records(denied, hashlib.sha256(b"postgres").hexdigest())
+                self.assertEqual(raised.exception.diagnostics["sqlState"], "42501")
+                self.assertEqual(
+                    raised.exception.diagnostics["lastStartedScan"]["relationOid"],
+                    tables[0]["relationOid"],
+                )
+                self.assertEqual(raised.exception.diagnostics["completedTables"], 0)
             finally:
                 subprocess.run(
                     [

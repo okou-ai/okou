@@ -507,7 +507,7 @@ export function createWebhookCallbackApi(context: TestContext) {
     async requestAgentComplete(
       body: AgentCompleteBody,
       headers: SandboxWebhookHeaders,
-      statuses: readonly (200 | 400 | 401 | 404 | 500 | 503)[],
+      statuses: readonly (200 | 400 | 401 | 404 | 500)[],
       signal?: AbortSignal,
       usagePricingResolution?: UsagePricingResolution,
     ) {
@@ -556,7 +556,7 @@ export function createWebhookCallbackApi(context: TestContext) {
     async requestAgentCompleteUnchecked(
       body: unknown,
       headers: SandboxWebhookHeaders,
-      statuses: readonly (400 | 401 | 404 | 500 | 503)[],
+      statuses: readonly (400 | 401 | 404 | 500)[],
     ) {
       return await accept(
         setupApp({ context, routes: webhooksAgentCompleteRoutes })(

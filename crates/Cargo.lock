@@ -1676,7 +1676,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.89.6"
+version = "0.89.7"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -1730,7 +1730,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-client"
-version = "0.20.6"
+version = "0.20.7"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -1770,7 +1770,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.11.6"
+version = "0.11.7"
 dependencies = [
  "guest-control-client",
  "guest-control-proto",
@@ -3391,7 +3391,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.191.3"
+version = "0.192.1"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3464,7 +3464,7 @@ dependencies = [
 
 [[package]]
 name = "runner-rpc-client"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "libc",
  "runner-rpc-proto",
@@ -3475,7 +3475,7 @@ dependencies = [
 
 [[package]]
 name = "runner-rpc-proto"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3720,7 +3720,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox"
-version = "0.22.6"
+version = "0.22.7"
 dependencies = [
  "async-trait",
  "serde",
@@ -3734,7 +3734,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.41.9"
+version = "0.42.0"
 dependencies = [
  "async-trait",
  "clap",
@@ -3769,7 +3769,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-mock"
-version = "0.10.35"
+version = "0.10.36"
 dependencies = [
  "async-trait",
  "guest-contracts",
