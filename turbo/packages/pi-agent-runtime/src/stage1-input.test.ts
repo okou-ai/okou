@@ -1,8 +1,10 @@
+import { zstdDecompressSync } from "node:zlib";
 import {
   fauxAssistantMessage,
   fauxToolCall,
   type Message,
 } from "@earendil-works/pi-ai";
+import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
 import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 import { encode } from "gpt-tokenizer/encoding/o200k_base";
 import { http, HttpResponse } from "msw";
@@ -19,6 +21,7 @@ import {
 
 import { MemoryPiSession } from "./session-memory";
 import {
+  PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
   projectPiMemoryStage1Evidence,
   runPiMemoryStage1Extraction,
 } from "./stage1-memory";
@@ -30,7 +33,10 @@ import {
   type PiMemoryStage1Evidence,
 } from "./stage1-input";
 import type { PiAgentModelConfig } from "./types";
-import { renderPiMemoryStage1Input } from "./stage1-prompts";
+import {
+  PI_MEMORY_STAGE1_SYSTEM_PROMPT,
+  renderPiMemoryStage1Input,
+} from "./stage1-prompts";
 
 const server = setupServer();
 beforeAll(() => {
@@ -67,11 +73,17 @@ function phase(value: string): string {
   return JSON.stringify({ v: 1, id: "private-provider-id", phase: value });
 }
 
-function captureBodies(): string[] {
+function captureBodies(url = "https://stage1.test/v1/responses"): string[] {
   const bodies: string[] = [];
   server.use(
-    http.post("https://stage1.test/v1/responses", async ({ request }) => {
-      bodies.push(await request.text());
+    http.post(url, async ({ request }) => {
+      const bytes = Buffer.from(await request.arrayBuffer());
+      bodies.push(
+        (request.headers.get("content-encoding") === "zstd"
+          ? zstdDecompressSync(bytes)
+          : bytes
+        ).toString("utf8"),
+      );
       const text = JSON.stringify({
         raw_memory: "memory",
         rollout_summary: "summary",
@@ -114,11 +126,20 @@ function captureBodies(): string[] {
         },
       ];
       return new HttpResponse(
-        events
-          .map((event) => {
-            return `data: ${JSON.stringify(event)}\n\n`;
-          })
-          .join(""),
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                events
+                  .map((event) => {
+                    return `data: ${JSON.stringify(event)}\n\n`;
+                  })
+                  .join(""),
+              ),
+            );
+            controller.close();
+          },
+        }),
         { headers: { "content-type": "text/event-stream" } },
       );
     }),
@@ -139,9 +160,13 @@ function config(
   };
 }
 
-function overrideCatalog(property: string, value: unknown): void {
+function overrideCatalog(
+  property: string,
+  value: unknown,
+  native = false,
+): void {
   // External SDK metadata fault injection; serialization and HTTP remain real.
-  const model = openaiProvider()
+  const model = (native ? openaiCodexProvider() : openaiProvider())
     .getModels()
     .find((item) => {
       return item.id === MODEL;
@@ -604,4 +629,109 @@ describe("Stage 1 evidence and complete request admission", () => {
       expect(bodies).toHaveLength(0);
     },
   );
+});
+
+const nativeConfig: PiAgentModelConfig = {
+  provider: "openai-codex",
+  model: MODEL,
+  baseUrl: "https://chatgpt.com/backend-api",
+  apiKey: "native-test-token",
+  accountId: "source-account",
+  dialect: "openai-codex-responses",
+  transport: "sse",
+};
+
+describe("Stage 1 native Codex complete request", () => {
+  it("serializes strict native instructions/schema and reserves the full catalog output", async () => {
+    const bodies = captureBodies(
+      "https://chatgpt.com/backend-api/codex/responses",
+    );
+    const evidence = boundStage1Evidence(
+      Array.from({ length: 80 }, (_, index) => {
+        return {
+          kind: "human",
+          content: `human-${index} ${'"\\汉😀 '.repeat(600)}`,
+        };
+      }),
+    );
+    await runPiMemoryStage1Extraction({
+      model: nativeConfig,
+      evidence,
+      requestId: "native-budget",
+    });
+    expect(bodies).toHaveLength(1);
+    const body = bodies[0] ?? "";
+    const parsed: unknown = JSON.parse(body);
+    expect(parsed).toMatchObject({
+      model: MODEL,
+      instructions: PI_MEMORY_STAGE1_SYSTEM_PROMPT,
+      reasoning: { effort: "low" },
+      text: {
+        verbosity: "low",
+        format: {
+          type: "json_schema",
+          name: "pi_memory_stage1",
+          strict: true,
+          schema: PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
+        },
+      },
+      input: [{ role: "user" }],
+    });
+    expect(parsed).not.toHaveProperty("max_output_tokens");
+    expect(parsed).not.toHaveProperty("service_tier");
+    expect(parsed).not.toHaveProperty("tools");
+    expect(count(body)).toBeGreaterThan(100_000);
+    expect(count(body)).toBeLessThanOrEqual(135_808);
+    expect(count(body) + 128_000 + 8_192).toBeLessThanOrEqual(272_000);
+    expect(body).toContain("human-79");
+    expect(body).not.toContain("human-0 ");
+  });
+
+  it.each([
+    ["contextWindow", undefined],
+    ["contextWindow", 0],
+    ["contextWindow", NaN],
+    ["contextWindow", 136_192],
+    ["maxTokens", undefined],
+    ["maxTokens", 0],
+    ["maxTokens", -1],
+    ["maxTokens", 1.5],
+    ["maxTokens", Infinity],
+  ])("rejects native %s=%s before HTTP", async (property, value) => {
+    overrideCatalog(String(property), value, true);
+    const bodies = captureBodies(
+      "https://chatgpt.com/backend-api/codex/responses",
+    );
+    await expect(
+      runPiMemoryStage1Extraction({
+        model: nativeConfig,
+        evidence: [],
+        requestId: "invalid-native",
+      }),
+    ).rejects.toMatchObject({ errorClass: "input_budget_invalid" });
+    expect(bodies).toStrictEqual([]);
+  });
+
+  it("measures a mapped public Responses alias against the logical Luna catalog", async () => {
+    const bodies = captureBodies();
+    await runPiMemoryStage1Extraction({
+      model: { ...config(), model: "gateway-luna", catalogModel: MODEL },
+      evidence: boundStage1Evidence(
+        Array.from({ length: 180 }, (_, index) => {
+          return {
+            kind: "human",
+            content: `${index} ${'"\\汉😀 '.repeat(600)}`,
+          };
+        }),
+      ),
+      requestId: "mapped-public",
+    });
+    const body = bodies[0] ?? "";
+    expect(JSON.parse(body)).toMatchObject({
+      model: "gateway-luna",
+      max_output_tokens: 32_768,
+    });
+    expect(count(body)).toBeGreaterThan(100_000);
+    expect(count(body)).toBeLessThanOrEqual(231_040);
+  });
 });

@@ -1,3 +1,9 @@
+import {
+  resolvePiMemoryStage1Credential,
+  PiMemoryStage1CredentialError,
+  PiMemoryStage1CredentialRefreshError,
+  type PiMemoryStage1CredentialResult,
+} from "./pi-memory-stage1-credential.service";
 import { piMemoryStage1Selections } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import {
   consumePiMemoryStage1Days,
@@ -12,17 +18,13 @@ import {
   SESSION_HISTORY_ENCODING_GZIP,
   SESSION_HISTORY_ENCODING_IDENTITY,
 } from "@okouai/api-contracts/contracts/runners";
-import { getModelProviderPiEndpoint } from "@okouai/api-contracts/contracts/model-provider-firewalls";
-import { getOpenRouterBaseUrl } from "@okouai/api-contracts/contracts/openrouter-routing";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { blobs } from "@okouai/db/schema/blob";
-import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storages } from "@okouai/db/schema/storage";
 import {
-  PI_MEMORY_STAGE1_MODEL,
   PiMemoryStage1ProviderError,
   PiMemoryStage1BudgetError,
   type PiMemoryStage1Evidence,
@@ -59,7 +61,6 @@ import {
   settle,
   settleIncludingAbort,
 } from "../utils";
-import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import { commitPiMemoryStage1Candidate } from "./pi-memory-stage1-candidate.service";
 import { recordPiMemoryStage1Usage } from "./pi-memory-stage1-usage.service";
 import {
@@ -144,6 +145,15 @@ interface PreparedWork {
   readonly work: ClaimedPiMemoryStage1Work;
   readonly evidence: readonly PiMemoryStage1Evidence[];
 }
+
+interface RoutedWork extends PreparedWork {
+  readonly credential: Extract<
+    PiMemoryStage1CredentialResult,
+    { status: "available" }
+  >;
+}
+
+class StaleWorkError extends Error {}
 
 interface WorkOutcome {
   readonly kind:
@@ -556,6 +566,7 @@ async function commitWorkResult(
     | { readonly kind: "succeeded_no_output" }
     | { readonly kind: "retryable_failure"; readonly errorClass: string }
     | { readonly kind: "terminal_failure"; readonly errorClass: string },
+  options?: { readonly revalidateSelection: boolean },
 ): Promise<boolean> {
   const committedAt = nowDate();
   const candidateResult =
@@ -574,6 +585,12 @@ async function commitWorkResult(
           }
       : result;
   return await db.transaction(async (tx) => {
+    if (
+      options?.revalidateSelection &&
+      !(await validatePiMemoryStage1Selection(tx, work.selection, committedAt))
+    ) {
+      return false;
+    }
     return await commitPiMemoryStage1Candidate(tx, {
       memoryStorageId: work.memoryStorageId,
       orgId: work.orgId,
@@ -659,6 +676,17 @@ function logOutcome(args: {
   });
 }
 
+function isCredentialFailure(
+  error: unknown,
+): error is
+  | PiMemoryStage1CredentialError
+  | PiMemoryStage1CredentialRefreshError {
+  return (
+    error instanceof PiMemoryStage1CredentialError ||
+    error instanceof PiMemoryStage1CredentialRefreshError
+  );
+}
+
 async function failWork(
   db: Db,
   work: ClaimedPiMemoryStage1Work,
@@ -668,10 +696,12 @@ async function failWork(
   const permanent =
     error instanceof PermanentSourceError ||
     error instanceof DisabledWorkError ||
+    error instanceof PiMemoryStage1CredentialError ||
     error instanceof PiMemoryStage1BudgetError;
   const errorClass =
     error instanceof PermanentSourceError ||
     error instanceof RetryableWorkError ||
+    isCredentialFailure(error) ||
     error instanceof PiMemoryStage1BudgetError ||
     error instanceof DisabledWorkError
       ? error.errorClass
@@ -685,6 +715,9 @@ async function failWork(
       permanent
         ? { kind: "terminal_failure", errorClass }
         : { kind: "retryable_failure", errorClass },
+      {
+        revalidateSelection: isCredentialFailure(error),
+      },
     ),
   );
   if (!committedResult.ok || !committedResult.value) {
@@ -720,91 +753,6 @@ async function retryOwnedWorkAfterAbort(
   );
 }
 
-function providerConfig(args: {
-  readonly route: NonNullable<
-    Awaited<ReturnType<typeof resolveBuiltInModelRuntimeRoute>>
-  >;
-  readonly apiKey: string;
-}) {
-  const endpoint = getModelProviderPiEndpoint(
-    args.route.providerType,
-    "openai-responses",
-  );
-  const provider =
-    args.route.providerType === "openai-api-key"
-      ? "openai"
-      : args.route.providerType === "openrouter-codex"
-        ? "openrouter"
-        : null;
-  if (!endpoint || provider === null) {
-    throw new RetryableWorkError("model_route_unavailable");
-  }
-  return {
-    provider,
-    baseUrl: endpoint.baseUrl,
-    apiKey: args.apiKey,
-    model: args.route.upstreamModel,
-    dialect: "openai-responses" as const,
-    transport: "sse" as const,
-  };
-}
-
-async function resolveStage1ProviderConfig(
-  db: Db,
-  signal: AbortSignal,
-): Promise<ReturnType<typeof providerConfig>> {
-  const route = await resolveBuiltInModelRuntimeRoute(
-    db,
-    PI_MEMORY_STAGE1_MODEL,
-  );
-  signal.throwIfAborted();
-  if (!route) {
-    throw new RetryableWorkError("model_route_unavailable");
-  }
-  const [key] = await db
-    .select({ apiKey: builtInModelKeys.apiKey })
-    .from(builtInModelKeys)
-    .where(eq(builtInModelKeys.id, route.modelKeyId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!key) {
-    throw new RetryableWorkError("model_route_unavailable");
-  }
-  return providerConfig({ route, apiKey: key.apiKey });
-}
-
-async function extractPreparedWork(
-  args: {
-    readonly db: Db;
-    readonly prepared: PreparedWork;
-    readonly model: ReturnType<typeof providerConfig>;
-  },
-  requestId: string,
-  signal: AbortSignal,
-): Promise<PiMemoryStage1ProviderResult> {
-  let model = args.model;
-  if (model.provider === "openrouter") {
-    const { orgId, userId } = args.prepared.work;
-    const context = await loadUserFeatureSwitchContext(args.db, orgId, userId);
-    signal.throwIfAborted();
-    model = {
-      ...model,
-      baseUrl: getOpenRouterBaseUrl("responses", {
-        credentialOwner: "builtin",
-        model: model.model,
-        usRoutingEnabled: isFeatureEnabled(
-          FeatureSwitchKey.OpenRouterUsRouting,
-          context,
-        ),
-      }),
-    };
-  }
-  return await runPiMemoryStage1Extraction(
-    { model, evidence: args.prepared.evidence, requestId },
-    signal,
-  );
-}
-
 async function partitionWorkByPiMemorySwitch(
   db: Db,
   claimed: readonly ClaimedPiMemoryStage1Work[],
@@ -831,17 +779,38 @@ async function partitionWorkByPiMemorySwitch(
   return { enabled, disabled };
 }
 
-async function processPreparedWork(
-  args: {
-    readonly db: Db;
-    readonly prepared: PreparedWork;
-    readonly model: ReturnType<typeof providerConfig>;
+const prepareSourceWork$ = command(
+  async (
+    { set },
+    { work }: { readonly work: ClaimedPiMemoryStage1Work },
+    signal: AbortSignal,
+  ): Promise<RoutedWork> => {
+    const history = await set(loadAndProjectHistory$, { work }, signal);
+    signal.throwIfAborted();
+    const credential = await resolvePiMemoryStage1Credential(
+      set(writeDb$),
+      {
+        sourceRunId: work.selection.sourceRunId,
+        orgId: work.orgId,
+        userId: work.userId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (credential.status === "skip") {
+      throw new PiMemoryStage1CredentialError(credential.reason);
+    }
+    return { ...history, credential };
   },
+);
+
+async function validatePreparedWork(
+  db: Db,
+  work: ClaimedPiMemoryStage1Work,
   signal: AbortSignal,
-): Promise<WorkOutcome> {
+): Promise<void> {
   const currentTime = nowDate();
-  const valid = await args.db.transaction(async (tx) => {
-    const work = args.prepared.work;
+  const valid = await db.transaction(async (tx) => {
     if (
       !(await validatePiMemoryStage1Selection(tx, work.selection, currentTime))
     ) {
@@ -867,29 +836,52 @@ async function processPreparedWork(
     return !!fenced;
   });
   signal.throwIfAborted();
-  if (
-    !valid ||
-    args.prepared.work.selection.day !== piMemoryStage1UtcDay(nowDate())
-  ) {
-    logOutcome({
-      work: args.prepared.work,
-      outcome: "stale_discarded",
-      durationMs: 0,
-      errorClass: "stale_selection",
-    });
-    return { kind: "stale_discarded" };
+  if (!valid || work.selection.day !== piMemoryStage1UtcDay(nowDate())) {
+    throw new StaleWorkError();
   }
+}
+
+async function processPreparedWork(
+  args: { readonly db: Db; readonly prepared: RoutedWork },
+  signal: AbortSignal,
+): Promise<WorkOutcome> {
   const startedAt = performance.now();
   const requestId = randomUUID();
   const provider = await settleIncludingAbort(
-    extractPreparedWork(args, requestId, signal),
+    runPiMemoryStage1Extraction(
+      {
+        model: args.prepared.credential.model,
+        evidence: args.prepared.evidence,
+        requestId,
+        beforeRequest: async (requestSignal) => {
+          await args.prepared.credential.validate(requestSignal);
+          await validatePreparedWork(
+            args.db,
+            args.prepared.work,
+            requestSignal,
+          );
+        },
+      },
+      signal,
+    ),
   );
   if (!provider.ok) {
+    if (provider.error instanceof StaleWorkError) {
+      logOutcome({
+        work: args.prepared.work,
+        outcome: "stale_discarded",
+        durationMs: performance.now() - startedAt,
+        errorClass: "stale_selection",
+      });
+      return { kind: "stale_discarded" };
+    }
     return await failWork(
       args.db,
       args.prepared.work,
       provider.error instanceof PiMemoryStage1ProviderError
-        ? new RetryableWorkError("provider_failure")
+        ? provider.error.status === 401 || provider.error.status === 403
+          ? new PiMemoryStage1CredentialError("credential_unavailable")
+          : new RetryableWorkError("provider_failure")
         : provider.error,
       startedAt,
     );
@@ -901,8 +893,7 @@ async function processPreparedWork(
       memoryStorageId: args.prepared.work.memoryStorageId,
       piSessionId: args.prepared.work.piSessionId,
       sourceHistoryHash: args.prepared.work.sourceHistoryHash,
-      orgId: args.prepared.work.orgId,
-      userId: args.prepared.work.userId,
+      billing: args.prepared.credential.billing,
       responseSourceId: providerResult.responseId ?? `request:${requestId}`,
       usage: providerResult.usage,
     }),
@@ -1062,43 +1053,14 @@ export const executePiMemoryStage1Work$ = command(
       );
     }
 
-    const resolvedModel = await settleIncludingAbort(
-      resolveStage1ProviderConfig(db, signal),
-    );
-    if (signal.aborted) {
-      await retryOwnedWorkAfterAbort(db, owned, signal.reason);
-      signal.throwIfAborted();
-    }
-    if (!resolvedModel.ok) {
-      outcomes.push(
-        ...(await Promise.all(
-          enabledWork.map(async (work) => {
-            return await failWork(
-              db,
-              work,
-              resolvedModel.error,
-              performance.now(),
-            );
-          }),
-        )),
-      );
-      signal.throwIfAborted();
-      owned.clear();
-      return logBatchResult(
-        countOutcomes(base, outcomes, claim.claimed.length),
-        startedAt,
-      );
-    }
-    const model = resolvedModel.value;
-
-    const prepared: PreparedWork[] = [];
+    const prepared: RoutedWork[] = [];
     // Deliberately serial: at most one encoded + decoded 128 MiB history is
     // resident. Provider concurrency is independent and begins only after raw
     // buffers have fallen out of scope.
     for (const work of enabledWork) {
       const workStartedAt = performance.now();
       const loaded = await settleIncludingAbort(
-        set(loadAndProjectHistory$, { work }, signal),
+        set(prepareSourceWork$, { work }, signal),
       );
       if (signal.aborted) {
         await retryOwnedWorkAfterAbort(db, owned, signal.reason);
@@ -1120,7 +1082,6 @@ export const executePiMemoryStage1Work$ = command(
             {
               db,
               prepared: item,
-              model,
             },
             signal,
           );

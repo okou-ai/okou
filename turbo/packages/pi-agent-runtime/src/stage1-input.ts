@@ -43,7 +43,10 @@ export class PiMemoryStage1BudgetError extends Error {
   }
 }
 
-export function stage1InputBudgets(contextWindow: number | null): {
+export function stage1InputBudgets(
+  contextWindow: number | null,
+  native?: { readonly maxTokens: number },
+): {
   history: number;
   request: number;
 } {
@@ -51,11 +54,15 @@ export function stage1InputBudgets(contextWindow: number | null): {
     contextWindow !== null &&
     Number.isSafeInteger(contextWindow) &&
     contextWindow > 0;
+  if (
+    native &&
+    (!valid || !Number.isSafeInteger(native.maxTokens) || native.maxTokens <= 0)
+  ) {
+    throw new PiMemoryStage1BudgetError("input_budget_invalid");
+  }
+  const output = native ? native.maxTokens : PI_MEMORY_STAGE1_OUTPUT_TOKENS;
   const request = valid
-    ? Math.min(
-        REQUEST_TOKEN_LIMIT,
-        contextWindow - PI_MEMORY_STAGE1_OUTPUT_TOKENS - CONTEXT_RESERVE,
-      )
+    ? Math.min(REQUEST_TOKEN_LIMIT, contextWindow - output - CONTEXT_RESERVE)
     : REQUEST_TOKEN_LIMIT;
   if (request <= 0) {
     throw new PiMemoryStage1BudgetError("input_budget_invalid");

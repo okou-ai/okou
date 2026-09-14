@@ -1,3 +1,5 @@
+import { modelProviders } from "@okouai/db/schema/model-provider";
+import { secrets } from "@okouai/db/schema/secret";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import {
@@ -59,7 +61,19 @@ const ownerSchema = z.object({
 const candidateScopeSchema = ownerSchema.extend({
   pi_session_id: z.string().uuid(),
 });
+const sourceBindingSchema = z.object({
+  modelProvider: z.string().nullable(),
+  modelProviderId: z.uuid().nullable(),
+  modelProviderCredentialScope: z.string().nullable(),
+  orgId: z.string().optional(),
+  userId: z.string().optional(),
+});
 const actionBodySchema = z.discriminatedUnion("action", [
+  ownerSchema.extend({
+    action: z.literal("historical-key-owner"),
+    provider_id: z.uuid(),
+    scope: z.enum(["org", "member"]),
+  }),
   candidateScopeSchema.extend({
     action: z.literal("seed"),
     source_history_hash: z.string().regex(/^[0-9a-f]{64}$/u),
@@ -68,6 +82,7 @@ const actionBodySchema = z.discriminatedUnion("action", [
     raw_size: z.number().int().positive(),
     encoded_size: z.number().int().positive(),
     retry_count: z.number().int().nonnegative().optional(),
+    source: sourceBindingSchema.optional(),
   }),
   candidateScopeSchema.extend({
     action: z.literal("replace"),
@@ -78,6 +93,23 @@ const actionBodySchema = z.discriminatedUnion("action", [
     encoded_size: z.number().int().positive(),
   }),
   candidateScopeSchema.extend({ action: z.literal("inspect") }),
+  candidateScopeSchema.extend({
+    action: z.literal("source-binding"),
+    source: sourceBindingSchema,
+  }),
+  candidateScopeSchema.extend({ action: z.literal("delete-source") }),
+  candidateScopeSchema.extend({
+    action: z.literal("record-usage"),
+    source_history_hash: z.string(),
+    response_source_id: z.string(),
+    billing_mode: z.enum(["builtin", "byok"]),
+    usage: z.object({
+      input: z.number(),
+      output: z.number(),
+      cacheRead: z.number(),
+      cacheWrite: z.number(),
+    }),
+  }),
   ownerSchema.extend({
     action: z.literal("run"),
     pi_session_id: z.string().uuid().optional(),
@@ -238,6 +270,10 @@ async function seedCandidate(
   };
   await db.insert(agentRuns).values({
     id: sourceRunId,
+    modelProvider: "built-in",
+    selectedModel: "gpt-6-astra",
+    reasoningEffort: "high",
+    codexServiceTier: "fast",
     sessionId,
     orgId: body.org_id,
     userId: body.user_id,
@@ -249,6 +285,7 @@ async function seedCandidate(
     launchSnapshot,
     createdAt: completedAt,
     completedAt,
+    ...body.source,
   });
   await db.insert(conversations).values({
     runId: sourceRunId,
@@ -295,6 +332,7 @@ async function seedCandidate(
   });
   signal.throwIfAborted();
   return actionOk({
+    run_id: sourceRunId,
     object_key: resumeSessionHistoryBlobKey(
       body.source_history_hash,
       body.encoding,
@@ -515,6 +553,93 @@ async function cleanupFixture(
   return actionOk();
 }
 
+async function mutateSource(
+  db: Db,
+  body: Extract<
+    TestPiMemoryStage1StateActionBody,
+    { action: "source-binding" | "delete-source" }
+  >,
+  signal: AbortSignal,
+) {
+  const [candidate] = await db
+    .select({ sourceRunId: piMemoryStage1Candidates.sourceRunId })
+    .from(piMemoryStage1Candidates)
+    .where(candidateCondition(body));
+  if (!candidate) {
+    throw new Error("Missing source fixture");
+  }
+  if (body.action === "source-binding") {
+    await db
+      .update(agentRuns)
+      .set(body.source)
+      .where(eq(agentRuns.id, candidate.sourceRunId));
+  } else {
+    await db.delete(agentRuns).where(eq(agentRuns.id, candidate.sourceRunId));
+  }
+  signal.throwIfAborted();
+  return actionOk();
+}
+
+// Personal API keys are historical rows: the current user API only creates
+// subscription accounts. Preserve that reader boundary without reviving a writer.
+async function historicalKeyOwner(
+  db: Db,
+  body: Extract<
+    TestPiMemoryStage1StateActionBody,
+    { action: "historical-key-owner" }
+  >,
+  signal: AbortSignal,
+) {
+  await db.transaction(async (tx) => {
+    const owner = body.scope === "org" ? "__org__" : body.user_id;
+    const [provider] = await tx
+      .update(modelProviders)
+      .set({ userId: owner })
+      .where(
+        and(
+          eq(modelProviders.id, body.provider_id),
+          eq(modelProviders.orgId, body.org_id),
+          inArray(modelProviders.userId, [body.user_id, "__org__"]),
+        ),
+      )
+      .returning({ secretId: modelProviders.secretId });
+    if (!provider?.secretId) {
+      throw new Error("Missing historical key fixture");
+    }
+    await tx
+      .update(secrets)
+      .set({ userId: owner })
+      .where(
+        and(eq(secrets.id, provider.secretId), eq(secrets.orgId, body.org_id)),
+      );
+  });
+  signal.throwIfAborted();
+  return actionOk();
+}
+
+const runScopedWorker$ = command(
+  async (
+    { set },
+    body: Extract<TestPiMemoryStage1StateActionBody, { action: "run" }>,
+    signal: AbortSignal,
+  ) => {
+    const worker: PiMemoryStage1WorkerResult = await set(
+      executePiMemoryStage1Work$,
+      {
+        scope: {
+          memoryStorageIds: [body.memory_storage_id],
+          ...(body.pi_session_id ? { piSessionId: body.pi_session_id } : {}),
+        },
+        currentTime: body.current_time
+          ? new Date(body.current_time)
+          : nowDate(),
+      },
+      signal,
+    );
+    return actionOk({ worker });
+  },
+);
+
 const action$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!isTestEndpointAllowed(get(request$))) {
     return testEndpointNotFoundResponse();
@@ -527,6 +652,29 @@ const action$ = command(async ({ get, set }, signal: AbortSignal) => {
   const db = set(writeDb$);
   const body = bodyResult.data;
   switch (body.action) {
+    case "historical-key-owner": {
+      return await historicalKeyOwner(db, body, signal);
+    }
+    case "source-binding":
+    case "delete-source": {
+      return await mutateSource(db, body, signal);
+    }
+    case "record-usage": {
+      await recordPiMemoryStage1Usage(db, {
+        memoryStorageId: body.memory_storage_id,
+        piSessionId: body.pi_session_id,
+        sourceHistoryHash: body.source_history_hash,
+        responseSourceId: body.response_source_id,
+        billing: {
+          mode: body.billing_mode,
+          orgId: body.org_id,
+          userId: body.user_id,
+        },
+        usage: body.usage,
+      });
+      signal.throwIfAborted();
+      return actionOk();
+    }
     case "seed": {
       return await seedCandidate(db, body, signal);
     }
@@ -537,20 +685,7 @@ const action$ = command(async ({ get, set }, signal: AbortSignal) => {
       return await inspectCandidate(db, body, signal);
     }
     case "run": {
-      const worker: PiMemoryStage1WorkerResult = await set(
-        executePiMemoryStage1Work$,
-        {
-          scope: {
-            memoryStorageIds: [body.memory_storage_id],
-            ...(body.pi_session_id ? { piSessionId: body.pi_session_id } : {}),
-          },
-          currentTime: body.current_time
-            ? new Date(body.current_time)
-            : nowDate(),
-        },
-        signal,
-      );
-      return actionOk({ worker });
+      return await set(runScopedWorker$, body, signal);
     }
     case "expire-lease": {
       return await updateCandidateTime(db, body, "leaseExpiresAt", signal);
@@ -574,8 +709,11 @@ const action$ = command(async ({ get, set }, signal: AbortSignal) => {
         memoryStorageId: body.memory_storage_id,
         piSessionId: body.pi_session_id,
         sourceHistoryHash: body.source_history_hash,
-        orgId: `${body.org_id}_collision`,
-        userId: `${body.user_id}_collision`,
+        billing: {
+          mode: "builtin",
+          orgId: `${body.org_id}_collision`,
+          userId: `${body.user_id}_collision`,
+        },
         responseSourceId: body.response_source_id,
         usage: { input: 10, output: 8, cacheRead: 2, cacheWrite: 3 },
       });

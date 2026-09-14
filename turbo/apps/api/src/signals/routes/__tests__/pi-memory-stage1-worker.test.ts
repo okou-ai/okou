@@ -1,5 +1,26 @@
+import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
+import {
+  modelProviderConnectionsMainContract,
+  modelProviderConnectionsByIdContract,
+} from "@okouai/api-contracts/contracts/model-provider-gateways";
+import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { modelProviderGatewayRoutes } from "../model-provider-gateways";
+import { meModelProviderAccountRoutes } from "../me-model-provider-accounts";
+import { createRouteMocks } from "./helpers/route-test";
+import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
+import { createBddApi } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import {
+  makeCodexAuthJson,
+  makeCodexJwt,
+  mockCodexDeviceAuthProvider,
+  createAuthDeviceApiActions,
+} from "./helpers/api-bdd-auth-device";
 import { createHash, randomUUID } from "node:crypto";
-import { gzipSync, zstdCompressSync } from "node:zlib";
+import { gzipSync, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { cronExtractPiMemoryStage1Contract } from "@okouai/api-contracts/contracts/cron";
@@ -27,7 +48,10 @@ import {
   deleteFeatureSwitchesForUser,
   updateFeatureSwitchesForUser,
 } from "./helpers/feature-switches";
-import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
+import {
+  withBuiltInModelRuntimeRouteCandidateUnavailableForTest,
+  withBuiltInModelRuntimeRouteUnavailableForTest,
+} from "../../../test-fixtures/built-in-model-runtime-route";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { createDeferredPromise } from "../../utils";
 import {
@@ -62,6 +86,7 @@ interface ProviderInvocation {
   readonly sequence: number;
   readonly request: unknown;
   readonly url: string;
+  readonly headers: Headers;
 }
 
 interface ProviderUsage {
@@ -243,20 +268,35 @@ function installProvider(
   const calls: ProviderInvocation[] = [];
   server.use(
     http.post(
-      /https:\/\/(?:api\.openai\.com|(?:us\.)?openrouter\.ai)\/.*\/responses/u,
+      /https:\/\/(?:api\.openai\.com|(?:us\.)?openrouter\.ai|chatgpt\.com|stage1-gateway\.example)\/.*\/responses/u,
       async ({ request }) => {
         sequence += 1;
         const invocation = {
           sequence,
           url: request.url,
-          request: (await request.json()) as unknown,
+          headers: request.headers,
+          request: JSON.parse(
+            (request.headers.get("content-encoding") === "zstd"
+              ? zstdDecompressSync(Buffer.from(await request.arrayBuffer()))
+              : Buffer.from(await request.arrayBuffer())
+            ).toString("utf8"),
+          ) as unknown,
         };
         calls.push(invocation);
         const reply = await responder(invocation);
         const { text, usage } =
           typeof reply === "string" ? { text: reply, usage: undefined } : reply;
         return new HttpResponse(
-          responsesSse(text, invocation.sequence, usage),
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(
+                new TextEncoder().encode(
+                  responsesSse(text, invocation.sequence, usage),
+                ),
+              );
+              controller.close();
+            },
+          }),
           {
             headers: { "content-type": "text/event-stream" },
           },
@@ -377,6 +417,10 @@ function createStorageFixture(
     readonly piSessionId?: string;
     readonly sourceCompletedAt?: string;
     readonly retryCount?: number;
+    readonly source?: Extract<
+      TestPiMemoryStage1StateActionBody,
+      { action: "seed" }
+    >["source"];
   }): Promise<CandidateFixture> {
     return await owner.run(async () => {
       if (piMemoryEnabled) {
@@ -399,6 +443,7 @@ function createStorageFixture(
         encoding,
         raw_size: args.raw.length,
         encoded_size: encoded.length,
+        ...(args.source ? { source: args.source } : {}),
         ...(args.retryCount === undefined
           ? {}
           : { retry_count: args.retryCount }),
@@ -1580,5 +1625,1001 @@ describe("Pi memory Stage 1 worker", () => {
       raw_memory: null,
       rollout_summary: null,
     });
+  });
+});
+
+function installSourceProvider(
+  responder?: Parameters<typeof installProvider>[0],
+) {
+  // The provider-management BDD helper owns its own S3 fixture; restore the
+  // checkpoint HTTP boundary only after management setup has completed.
+  installS3Objects();
+  return installProvider(responder);
+}
+
+type SourceBinding = NonNullable<
+  Extract<TestPiMemoryStage1StateActionBody, { action: "seed" }>["source"]
+>;
+type StorageFixture = ReturnType<typeof createStorageFixture>;
+
+function actorFor(storage: StorageFixture) {
+  return createBddApi(context).user({
+    userId: storage.user_id,
+    orgId: storage.org_id,
+    orgRole: "org:admin",
+  });
+}
+
+async function apiKeySource(
+  storage: StorageFixture,
+  key = "source-openai-key",
+  type: "openai-api-key" | "openrouter-codex" = "openai-api-key",
+  scope: "org" | "member" = "org",
+) {
+  const actor = actorFor(storage);
+  const misc = createMiscRoutesApi(context);
+  const result = await misc.upsertOrgModelProvider(
+    actor,
+    { type, secret: key },
+    [200, 201],
+  );
+  if (result.status !== 200 && result.status !== 201) {
+    throw new Error("Missing key fixture");
+  }
+  if (scope === "member") {
+    await storage.action({
+      action: "historical-key-owner",
+      provider_id: result.body.provider.id,
+      scope,
+    });
+  }
+  onTestFinished(async () => {
+    if (scope === "member") {
+      await storage.action({
+        action: "historical-key-owner",
+        provider_id: result.body.provider.id,
+        scope: "org",
+      });
+    }
+    await misc.deleteOrgModelProvider(actor, type, [204, 404]);
+  });
+  return {
+    modelProvider: type,
+    modelProviderId: result.body.provider.id,
+    modelProviderCredentialScope: scope,
+  } satisfies SourceBinding;
+}
+
+async function codexSource(
+  storage: StorageFixture,
+  identity = "source-account-a",
+  expired = false,
+) {
+  const actor = actorFor(storage);
+  await updateFeatureSwitchesForUser(
+    context,
+    { orgId: storage.org_id, userId: storage.user_id },
+    {
+      [FeatureSwitchKey.PiMemory]: true,
+      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+    },
+  );
+  const token = makeCodexJwt({
+    exp: Math.floor(now() / 1000) + (expired ? -60 : 7200),
+    identity,
+  });
+  const misc = createMiscRoutesApi(context);
+  const result = await misc.upsertPersonalModelProvider(
+    actor,
+    {
+      type: "codex-oauth-token",
+      authMethod: "auth_json",
+      secrets: {
+        CODEX_AUTH_JSON: makeCodexAuthJson({
+          accessToken: token,
+          accountId: identity,
+          refreshToken: `refresh-${identity}`,
+        }),
+      },
+    },
+    [200, 201],
+  );
+  if (result.status !== 200 && result.status !== 201) {
+    throw new Error("Missing subscription fixture");
+  }
+  onTestFinished(async () => {
+    await misc.deletePersonalModelProvider(
+      actor,
+      "codex-oauth-token",
+      [204, 404],
+    );
+  });
+  return {
+    token,
+    identity,
+    binding: {
+      modelProvider: "codex-oauth-token",
+      modelProviderId: result.body.provider.id,
+      modelProviderCredentialScope: "member",
+    } satisfies SourceBinding,
+  };
+}
+
+async function activateAnotherCodexAccount(
+  storage: StorageFixture,
+  identity: string,
+) {
+  const actor = actorFor(storage);
+  await updateFeatureSwitchesForUser(
+    context,
+    { orgId: storage.org_id, userId: storage.user_id },
+    {
+      [FeatureSwitchKey.PiMemory]: true,
+      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+    },
+  );
+  const auth = createAuthDeviceApiActions(context);
+  mockCodexDeviceAuthProvider({ tokenScope: "personal", accountId: identity });
+  const started = await auth.requestCodexStart(actor, "personal", [200], {
+    mode: "add",
+  });
+  if (started.status !== 200) {
+    throw new Error("Expected device auth start");
+  }
+  const result = await auth.requestCodexComplete(
+    actor,
+    started.body.sessionToken,
+    [200],
+  );
+  if (!("status" in result.body) || result.body.status !== "complete") {
+    throw new Error("Expected device auth completion");
+  }
+  await createAuthDeviceSupportApi(
+    context,
+  ).activatePersonalModelProviderAccount(actor, result.body.provider.id);
+}
+
+async function gatewaySource(storage: StorageFixture, mapsLuna = true) {
+  createRouteMocks(context).clerk.session(
+    storage.user_id,
+    storage.org_id,
+    "org:admin",
+  );
+  const created = await accept(
+    setupApp({ context, routes: modelProviderGatewayRoutes })(
+      modelProviderConnectionsMainContract,
+    ).create({
+      headers: { authorization: "Bearer clerk-session" },
+      body: {
+        displayName: "Stage 1 gateway",
+        secret: "gateway-only-secret",
+        surfaces: [
+          {
+            protocol: "openai-responses",
+            apiBaseUrl: "https://stage1-gateway.example/v1",
+            authHeaderName: "x-source-key",
+            authHeaderTemplate: "Key {{secret}}",
+            modelMappings: mapsLuna
+              ? { "gpt-5.6-luna": "mapped-luna" }
+              : { "deepseek-v4-flash": "deepseek-only" },
+          },
+        ],
+      },
+    }),
+    [201],
+  );
+  const surface = created.body.surfaces[0];
+  if (!surface) {
+    throw new Error("Missing gateway surface");
+  }
+  onTestFinished(async () => {
+    createRouteMocks(context).clerk.session(
+      storage.user_id,
+      storage.org_id,
+      "org:admin",
+    );
+    await accept(
+      setupApp({ context, routes: modelProviderGatewayRoutes })(
+        modelProviderConnectionsByIdContract,
+      ).delete({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { id: created.body.id },
+      }),
+      [204],
+    );
+  });
+  return {
+    modelProvider: "custom-openai-responses",
+    modelProviderId: surface.id,
+    modelProviderCredentialScope: "org",
+  } satisfies SourceBinding;
+}
+
+async function seedSource(
+  storage: StorageFixture,
+  source: SourceBinding,
+  content = "owned source evidence",
+) {
+  const piSessionId = randomUUID();
+  // Historical completed checkpoints, fixed bindings and cron state have no
+  // user write API. The existing test-only fixture owns this exception; actual
+  // provider creation, rotation, deletion, HTTP and result processing stay real.
+  return await storage.seed({
+    piSessionId,
+    raw: settledHistory(piSessionId, content),
+    source,
+  });
+}
+
+describe("Stage 1 source credentials", () => {
+  it("routes a mixed batch to each original source and charges only built-in", async () => {
+    const storages = Array.from({ length: 4 }, () => {
+      return createStorageFixture();
+    });
+    const [builtin, api, codex, gateway] = storages;
+    if (!builtin || !api || !codex || !gateway) {
+      throw new Error("Missing owners");
+    }
+    const subscription = await codexSource(codex);
+    await seedSource(
+      builtin,
+      {
+        modelProvider: "built-in",
+        modelProviderId: null,
+        modelProviderCredentialScope: null,
+      },
+      "builtin evidence",
+    );
+    await seedSource(api, await apiKeySource(api), "api evidence");
+    await seedSource(codex, subscription.binding, "codex evidence");
+    await seedSource(gateway, await gatewaySource(gateway), "gateway evidence");
+    const provider = installSourceProvider();
+    const result = await accept(
+      stage1Client(storages).extract({ headers: stage1Headers() }),
+      [200],
+    );
+    expect(result.body).toMatchObject({
+      succeeded: 4,
+      terminalFailure: 0,
+      retryableFailure: 0,
+    });
+    expect(provider.calls).toHaveLength(4);
+    const callFor = (content: string) => {
+      const call = provider.calls.find((call) => {
+        return JSON.stringify(call.request).includes(content);
+      });
+      if (!call) {
+        throw new Error("Missing source HTTP request");
+      }
+      return call;
+    };
+    const apiCall = callFor("api evidence");
+    expect(apiCall.url).toBe("https://api.openai.com/v1/responses");
+    expect(apiCall.headers.get("authorization")).toBe(
+      "Bearer source-openai-key",
+    );
+    const native = callFor("codex evidence");
+    expect(native.url).toBe("https://chatgpt.com/backend-api/codex/responses");
+    expect(native.headers.get("authorization")).toBe(
+      `Bearer ${subscription.token}`,
+    );
+    expect(native.headers.get("chatgpt-account-id")).toBe(
+      subscription.identity,
+    );
+    expect(native.request).toMatchObject({
+      instructions: expect.any(String),
+      text: { format: { type: "json_schema", strict: true } },
+    });
+    expect(native.request).not.toHaveProperty("max_output_tokens");
+    const custom = callFor("gateway evidence");
+    expect(custom.url).toBe("https://stage1-gateway.example/v1/responses");
+    expect(custom.headers.get("x-source-key")).toBe("Key gateway-only-secret");
+    expect(custom.headers.get("authorization")).toBeNull();
+    expect(custom.request).toMatchObject({ model: "mapped-luna" });
+    for (const call of provider.calls) {
+      expect(call.request).toMatchObject({ reasoning: { effort: "low" } });
+      expect(call.request).not.toHaveProperty("service_tier");
+      expect(call.request).not.toHaveProperty("tools");
+      if (call !== custom) {
+        expect(call.request).toMatchObject({ model: "gpt-5.6-luna" });
+      }
+    }
+    expect((await inspectUsage(builtin)).length).toBeGreaterThan(0);
+    for (const storage of [api, codex, gateway]) {
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    }
+  });
+
+  it("keeps the exact key after default changes and accepts surviving-key rotation", async () => {
+    const storage = createStorageFixture();
+    const source = await apiKeySource(storage, "original-key");
+    await seedSource(storage, source);
+    const rotated = await apiKeySource(storage, "rotated-key");
+    expect(rotated.modelProviderId).toBe(source.modelProviderId);
+    await apiKeySource(storage, "new-default-key", "openrouter-codex");
+    const provider = installSourceProvider();
+    await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
+    expect(provider.calls).toHaveLength(1);
+    expect(provider.calls[0]?.headers.get("authorization")).toBe(
+      "Bearer rotated-key",
+    );
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+  });
+
+  it("cannot replace a deleted API-key ID with a same-type provider", async () => {
+    const storage = createStorageFixture();
+    const source = await apiKeySource(storage);
+    const candidate = await seedSource(storage, source);
+    await createMiscRoutesApi(context).deleteOrgModelProvider(
+      actorFor(storage),
+      "openai-api-key",
+      [204],
+    );
+    const replacement = await apiKeySource(storage, "replacement-key");
+    expect(replacement.modelProviderId).not.toBe(source.modelProviderId);
+    const provider = installSourceProvider();
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      terminalFailure: 1,
+    });
+    expect(provider.calls).toHaveLength(0);
+    await expect(inspect(candidate)).resolves.toMatchObject({
+      last_error_class: "credential_unavailable",
+      successful_source_history_hash: null,
+    });
+    await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+  });
+
+  it("does not select today's active subscription for a historical account", async () => {
+    const storage = createStorageFixture();
+    const original = await codexSource(storage);
+    await seedSource(storage, original.binding);
+    await activateAnotherCodexAccount(storage, "source-account-b");
+    const provider = installSourceProvider();
+    await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
+    expect(provider.calls[0]?.headers.get("chatgpt-account-id")).toBe(
+      original.identity,
+    );
+    expect(provider.calls[0]?.headers.get("authorization")).toBe(
+      `Bearer ${original.token}`,
+    );
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+  });
+
+  it.each(["api", "codex", "gateway"] as const)(
+    "never writes %s model credits for no-output, malformed output and replay",
+    async (kind) => {
+      const storage = createStorageFixture();
+      const source =
+        kind === "api"
+          ? await apiKeySource(storage)
+          : kind === "codex"
+            ? (await codexSource(storage)).binding
+            : await gatewaySource(storage);
+      const candidate = await seedSource(storage, source);
+      installSourceProvider(() => {
+        return "not valid JSON";
+      });
+      await expect(runScoped(storage)).resolves.toMatchObject({
+        retryableFailure: 1,
+      });
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+      await storage.action({
+        action: "make-retry-due",
+        pi_session_id: candidate.pi_session_id,
+      });
+      installSourceProvider(() => {
+        return JSON.stringify({
+          raw_memory: "",
+          rollout_summary: "",
+          rollout_slug: null,
+        });
+      });
+      await expect(runScoped(storage)).resolves.toMatchObject({
+        succeededNoOutput: 1,
+      });
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+      // Writer boundary exception: deliberately replay reported vendor usage
+      // directly through the test route, independently from the worker's caller.
+      for (const usage of [
+        { input: 272_001, output: 5, cacheRead: 7, cacheWrite: 8 },
+        { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      ]) {
+        for (let replay = 0; replay < 2; replay += 1) {
+          await storage.action({
+            action: "record-usage",
+            pi_session_id: candidate.pi_session_id,
+            source_history_hash: candidate.source_history_hash,
+            response_source_id: "byok-replay",
+            billing_mode: "byok",
+            usage,
+          });
+        }
+      }
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    },
+  );
+
+  it.each([
+    "missing-provider",
+    "missing-id",
+    "missing-scope",
+    "wrong-scope",
+    "unsupported",
+    "deepseek-only",
+  ])(
+    "skips %s without a request, watermark or repeated attempt",
+    async (kind) => {
+      const storage = createStorageFixture();
+      const source: SourceBinding =
+        kind === "deepseek-only"
+          ? await gatewaySource(storage, false)
+          : kind === "wrong-scope"
+            ? {
+                ...(await apiKeySource(storage)),
+                modelProviderCredentialScope: "member",
+              }
+            : {
+                modelProvider:
+                  kind === "missing-provider"
+                    ? null
+                    : kind === "unsupported"
+                      ? "anthropic-api-key"
+                      : "openai-api-key",
+                modelProviderId: kind === "missing-id" ? null : randomUUID(),
+                modelProviderCredentialScope:
+                  kind === "missing-scope" ? null : "org",
+              };
+      const candidate = await seedSource(storage, source);
+      const provider = installSourceProvider();
+      await expect(runScoped(storage)).resolves.toMatchObject({
+        terminalFailure: 1,
+      });
+      expect(provider.calls).toHaveLength(0);
+      await expect(inspect(candidate)).resolves.toMatchObject({
+        successful_source_history_hash: null,
+        raw_memory: null,
+        status: "terminal_failure",
+      });
+      await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    },
+  );
+});
+
+async function disconnectCodex(storage: StorageFixture, id: string) {
+  createRouteMocks(context).clerk.session(
+    storage.user_id,
+    storage.org_id,
+    "org:admin",
+  );
+  await accept(
+    setupApp({ context, routes: meModelProviderAccountRoutes })(
+      personalModelProviderAccountsByIdContract,
+    ).delete({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { id },
+    }),
+    [204],
+  );
+}
+
+function installRefresh(
+  identity: string,
+  token: string,
+  beforeResponse?: () => Promise<void>,
+  revoke = false,
+) {
+  const requests: string[] = [];
+  server.use(
+    http.post("https://auth.openai.com/oauth/token", async ({ request }) => {
+      requests.push(await request.text());
+      await beforeResponse?.();
+      if (revoke) {
+        return HttpResponse.json(
+          { error: "invalid_grant", error_description: "refresh_token_reused" },
+          { status: 400 },
+        );
+      }
+      return HttpResponse.json({
+        access_token: token,
+        refresh_token: `refreshed-${identity}`,
+        token_type: "Bearer",
+        expires_in: 7200,
+        id_token: makeCodexJwt({
+          "https://api.openai.com/auth": {
+            chatgpt_account_id: identity,
+            chatgpt_plan_type: "plus",
+          },
+        }),
+      });
+    }),
+  );
+  return requests;
+}
+
+describe("Stage 1 credential lifecycle fences", () => {
+  it("keeps transient refresh failures on the existing hourly retry policy", async () => {
+    const storage = createStorageFixture();
+    const source = await codexSource(storage, "transient-refresh", true);
+    const candidate = await seedSource(storage, source.binding);
+    let refreshCalls = 0;
+    server.use(
+      http.post("https://auth.openai.com/oauth/token", () => {
+        refreshCalls += 1;
+        return HttpResponse.json({ error: "server_error" }, { status: 503 });
+      }),
+    );
+    const provider = installSourceProvider();
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      retryableFailure: 1,
+    });
+    expect(refreshCalls).toBe(1);
+    expect(provider.calls).toHaveLength(0);
+    await expect(inspect(candidate)).resolves.toMatchObject({
+      status: "retryable_failure",
+      last_error_class: "credential_refresh_failed",
+      successful_source_history_hash: null,
+    });
+    await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+    await storage.action({
+      action: "make-retry-due",
+      pi_session_id: candidate.pi_session_id,
+    });
+    installRefresh(
+      source.identity,
+      makeCodexJwt({ exp: Math.floor(now() / 1000) + 7200 }),
+    );
+    await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
+    expect(provider.calls).toHaveLength(1);
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+  });
+
+  it("refreshes the original subscription and then reads that same account ID", async () => {
+    const storage = createStorageFixture();
+    const original = await codexSource(storage, "refresh-account-a", true);
+    const candidate = await seedSource(storage, original.binding);
+    await activateAnotherCodexAccount(storage, "active-account-b");
+    const refreshed = makeCodexJwt({
+      exp: Math.floor(now() / 1000) + 7200,
+      identity: "refreshed-a",
+    });
+    const refreshes = installRefresh(original.identity, refreshed);
+    const provider = installSourceProvider();
+    await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
+    expect(refreshes).toHaveLength(1);
+    expect(refreshes[0]).toContain("refresh-refresh-account-a");
+    expect(provider.calls).toHaveLength(1);
+    expect(provider.calls[0]?.headers.get("authorization")).toBe(
+      `Bearer ${refreshed}`,
+    );
+    expect(provider.calls[0]?.headers.get("chatgpt-account-id")).toBe(
+      original.identity,
+    );
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    await expect(inspect(candidate)).resolves.toMatchObject({
+      status: "succeeded",
+    });
+  });
+
+  it.each(["disconnected", "refresh-revoked", "provider-revoked"])(
+    "settles %s without rapid retries or model credits",
+    async (mode) => {
+      const storage = createStorageFixture();
+      const original = await codexSource(
+        storage,
+        "revoked-account",
+        mode === "refresh-revoked",
+      );
+      const candidate = await seedSource(storage, original.binding);
+      // Keep account controls enabled after the checkpoint fixture's PiMemory setup.
+      await updateFeatureSwitchesForUser(
+        context,
+        { orgId: storage.org_id, userId: storage.user_id },
+        {
+          [FeatureSwitchKey.PiMemory]: true,
+          [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+          [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+        },
+      );
+      if (mode === "disconnected") {
+        await disconnectCodex(storage, original.binding.modelProviderId);
+      }
+      const refreshes = installRefresh(
+        original.identity,
+        "unused-token",
+        undefined,
+        true,
+      );
+      const provider = installSourceProvider();
+      let denied = 0;
+      if (mode === "provider-revoked") {
+        server.use(
+          http.post("https://chatgpt.com/backend-api/codex/responses", () => {
+            denied += 1;
+            return HttpResponse.json(
+              { error: { message: "revoked synthetic credential" } },
+              { status: 401 },
+            );
+          }),
+        );
+      }
+      await expect(runScoped(storage)).resolves.toMatchObject({
+        terminalFailure: 1,
+      });
+      await expect(inspect(candidate)).resolves.toMatchObject({
+        status: "terminal_failure",
+        last_error_class: "credential_unavailable",
+        successful_source_history_hash: null,
+      });
+      expect(provider.calls).toHaveLength(0);
+      expect(denied).toBe(mode === "provider-revoked" ? 1 : 0);
+      expect(refreshes).toHaveLength(mode === "refresh-revoked" ? 1 : 0);
+      await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    },
+  );
+
+  it.each(["cancel", "source-missing", "lease-expired", "new-source"])(
+    "sends no model request when %s wins during refresh",
+    async (race) => {
+      const storage = createStorageFixture();
+      const original = await codexSource(storage, "refresh-race", true);
+      const candidate = await seedSource(storage, original.binding);
+      await updateFeatureSwitchesForUser(
+        context,
+        { orgId: storage.org_id, userId: storage.user_id },
+        {
+          [FeatureSwitchKey.PiMemory]: true,
+          [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+          [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+        },
+      );
+      const controller = new AbortController();
+      onTestFinished(() => {
+        return controller.abort();
+      });
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      const refreshed = makeCodexJwt({ exp: Math.floor(now() / 1000) + 7200 });
+      const refreshes = installRefresh(
+        original.identity,
+        refreshed,
+        async () => {
+          entered.resolve();
+          await release.promise;
+        },
+      );
+      const provider = installSourceProvider();
+      const running = runScoped(storage, undefined, controller.signal);
+      const settled = running.then(
+        (value) => {
+          return { value };
+        },
+        (error) => {
+          return { error: String(error) };
+        },
+      );
+      await entered.promise;
+      if (race === "cancel") {
+        controller.abort();
+      }
+      if (race === "source-missing") {
+        await storage.action({
+          action: "delete-source",
+          pi_session_id: candidate.pi_session_id,
+        });
+      }
+      if (race === "lease-expired") {
+        await storage.action({
+          action: "expire-lease",
+          pi_session_id: candidate.pi_session_id,
+        });
+      }
+      if (race === "new-source") {
+        await storage.replace(
+          candidate,
+          settledHistory(candidate.pi_session_id, "new source revision"),
+        );
+      }
+      release.resolve();
+      await settled;
+      expect(refreshes).toHaveLength(1);
+      expect(provider.calls).toHaveLength(0);
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+      await expect(inspect(candidate)).resolves.toMatchObject({
+        raw_memory: null,
+        successful_source_history_hash: null,
+      });
+    },
+  );
+
+  it("preserves completed output after its source disappears", async () => {
+    const storage = createStorageFixture();
+    const candidate = await seedSource(storage, await apiKeySource(storage));
+    const provider = installSourceProvider();
+    await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
+    const before = await inspect(candidate);
+    await storage.action({
+      action: "delete-source",
+      pi_session_id: candidate.pi_session_id,
+    });
+    await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+    await expect(inspect(candidate)).resolves.toMatchObject({
+      raw_memory: before?.raw_memory,
+      status: "succeeded",
+    });
+    expect(provider.calls).toHaveLength(1);
+  });
+
+  it("does not refill a frozen daily slot when a selected source is unservable", async () => {
+    const storage = createStorageFixture();
+    for (let index = 0; index < 3; index += 1) {
+      await seedSource(storage, {
+        modelProvider: "anthropic-api-key",
+        modelProviderId: randomUUID(),
+        modelProviderCredentialScope: "org",
+      });
+    }
+    const provider = installSourceProvider();
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      claimed: 2,
+      terminalFailure: 2,
+    });
+    await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+    expect(provider.calls).toHaveLength(0);
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+  });
+});
+
+describe("Stage 1 source preparation identity", () => {
+  it.each(["orgId", "userId"] as const)(
+    "rejects a %s change while history is being prepared",
+    async (field) => {
+      const storage = createStorageFixture();
+      const source = await apiKeySource(storage);
+      const candidate = await seedSource(storage, source);
+      const provider = installSourceProvider();
+      const read = context.mocks.s3.send.getMockImplementation();
+      context.mocks.s3.send.mockImplementation(
+        async (commandValue: unknown) => {
+          if (
+            commandValue instanceof GetObjectCommand &&
+            commandValue.input.Key === candidate.objectKey
+          ) {
+            await storage.action({
+              action: "source-binding",
+              pi_session_id: candidate.pi_session_id,
+              source: { ...source, [field]: `changed-${randomUUID()}` },
+            });
+          }
+          return read ? await read(commandValue) : {};
+        },
+      );
+      await expect(runScoped(storage)).resolves.toMatchObject({
+        staleDiscarded: 1,
+      });
+      expect(provider.calls).toHaveLength(0);
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+      await expect(inspect(candidate)).resolves.toMatchObject({
+        raw_memory: null,
+        successful_source_history_hash: null,
+      });
+    },
+  );
+
+  it("revalidates an already prepared exact key after another history download", async () => {
+    const storage = createStorageFixture();
+    const source = await apiKeySource(storage, "prepared-key");
+    await seedSource(storage, source, "prepared source one");
+    await seedSource(storage, source, "prepared source two");
+    const provider = installSourceProvider();
+    const read = context.mocks.s3.send.getMockImplementation();
+    let downloads = 0;
+    context.mocks.s3.send.mockImplementation(async (commandValue: unknown) => {
+      if (commandValue instanceof GetObjectCommand) {
+        downloads += 1;
+        if (downloads === 2) {
+          const replacement = await apiKeySource(
+            storage,
+            "rotated-during-preparation",
+          );
+          expect(replacement.modelProviderId).toBe(source.modelProviderId);
+        }
+      }
+      return read ? await read(commandValue) : {};
+    });
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      succeeded: 1,
+      terminalFailure: 1,
+    });
+    expect(provider.calls).toHaveLength(1);
+    expect(provider.calls[0]?.headers.get("authorization")).toBe(
+      "Bearer rotated-during-preparation",
+    );
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+  });
+
+  it("keeps a missing-source candidate behind the existing selection fence", async () => {
+    const storage = createStorageFixture();
+    const candidate = await seedSource(storage, await apiKeySource(storage));
+    const provider = installSourceProvider();
+    const read = context.mocks.s3.send.getMockImplementation();
+    context.mocks.s3.send.mockImplementation(async (commandValue: unknown) => {
+      if (
+        commandValue instanceof GetObjectCommand &&
+        commandValue.input.Key === candidate.objectKey
+      ) {
+        await storage.action({
+          action: "delete-source",
+          pi_session_id: candidate.pi_session_id,
+        });
+      }
+      return read ? await read(commandValue) : {};
+    });
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      staleDiscarded: 1,
+    });
+    await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+    expect(provider.calls).toHaveLength(0);
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    await expect(inspect(candidate)).resolves.toMatchObject({
+      raw_memory: null,
+      successful_source_history_hash: null,
+    });
+  });
+});
+
+describe("Stage 1 background credential availability", () => {
+  it.each(["org", "member"] as const)(
+    "uses the exact %s key while company routing is unavailable",
+    async (scope) => {
+      const storage = createStorageFixture();
+      await seedSource(
+        storage,
+        await apiKeySource(storage, "exact-owned-key", "openai-api-key", scope),
+      );
+      const provider = installSourceProvider();
+      await expect(
+        withBuiltInModelRuntimeRouteUnavailableForTest(
+          "gpt-5.6-luna",
+          async () => {
+            return await runScoped(storage);
+          },
+        ),
+      ).resolves.toMatchObject({ succeeded: 1 });
+      expect(provider.calls).toHaveLength(1);
+      expect(provider.calls[0]?.headers.get("authorization")).toBe(
+        "Bearer exact-owned-key",
+      );
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    },
+  );
+
+  it("does not borrow an account retained for another active foreground run", async () => {
+    const storage = createStorageFixture();
+    const source = await codexSource(storage, "retained-foreground-account");
+    const candidate = await seedSource(storage, source.binding);
+    const actor = actorFor(storage);
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    const runnerGroup = runs.configureRunnerGroup();
+    await runs.grantProEntitlement(actor);
+    await updateFeatureSwitchesForUser(
+      context,
+      { orgId: storage.org_id, userId: storage.user_id },
+      {
+        [FeatureSwitchKey.PiLoop]: false,
+        [FeatureSwitchKey.PiMemory]: true,
+        [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+      },
+    );
+    await runs.updateOrgModelPolicies(actor, [
+      {
+        model: "gpt-5.6-luna",
+        isDefault: true,
+        defaultProviderType: "codex-oauth-token",
+        credentialScope: "member",
+        modelProviderId: null,
+      },
+    ]);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Retained source account",
+      visibility: "private",
+    });
+    const sent = await createChatFilesBddApi(context).requestSendEvent(
+      actor,
+      {
+        agentId: agent.agentId,
+        prompt: "active foreground source",
+        model: "gpt-5.6-luna",
+      },
+      [201],
+    );
+    if (sent.status !== 201 || !sent.body.runId) {
+      throw new Error("Expected admitted foreground run");
+    }
+    const runId = sent.body.runId;
+    onTestFinished(async () => {
+      await runs.requestCancelRun(actor, runId, [200]);
+    });
+    const foregroundState = await runs.readRun(actor, runId);
+    expect(foregroundState.status, JSON.stringify(foregroundState)).toBe(
+      "pending",
+    );
+    await runs.heartbeatRunner(runnerGroup);
+    const claim = await runs.claimRunnerJob(runId);
+    expect(
+      claim.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN?.sourceId,
+    ).toBe(source.binding.modelProviderId);
+    await disconnectCodex(storage, source.binding.modelProviderId);
+    if (!claim.encryptedSecrets) {
+      throw new Error("Expected retained runtime envelope");
+    }
+    // This suite uses a separate storage bucket, which is part of catalog identity.
+    await installApiTestConnectorCatalog();
+    const foreground = await createFirewallApi(context).requestFirewallAuth(
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      {
+        encryptedSecrets: claim.encryptedSecrets,
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
+          "ChatGPT-Account-ID": secretTemplate("CHATGPT_ACCOUNT_ID"),
+        },
+        secretConnectorMap: claim.secretConnectorMap ?? undefined,
+        secretConnectorMetadataMap:
+          claim.secretConnectorMetadataMap ?? undefined,
+      },
+      [200],
+    );
+    expect(foreground.body).toMatchObject({
+      headers: { "ChatGPT-Account-ID": source.identity },
+    });
+    const provider = installSourceProvider();
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      terminalFailure: 1,
+    });
+    expect(provider.calls).toHaveLength(0);
+    await expect(inspect(candidate)).resolves.toMatchObject({
+      last_error_class: "credential_unavailable",
+      successful_source_history_hash: null,
+    });
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+  });
+
+  it("rechecks disconnection after serial preparation and before native HTTP", async () => {
+    const storage = createStorageFixture();
+    const source = await codexSource(storage, "prepared-subscription");
+    await seedSource(storage, source.binding, "source one");
+    await seedSource(storage, source.binding, "source two");
+    await updateFeatureSwitchesForUser(
+      context,
+      { orgId: storage.org_id, userId: storage.user_id },
+      {
+        [FeatureSwitchKey.PiMemory]: true,
+        [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+      },
+    );
+    const provider = installSourceProvider();
+    const read = context.mocks.s3.send.getMockImplementation();
+    let downloads = 0;
+    context.mocks.s3.send.mockImplementation(async (commandValue: unknown) => {
+      if (commandValue instanceof GetObjectCommand && ++downloads === 2) {
+        await disconnectCodex(storage, source.binding.modelProviderId);
+      }
+      return read ? await read(commandValue) : {};
+    });
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      terminalFailure: 2,
+    });
+    expect(provider.calls).toHaveLength(0);
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
   });
 });

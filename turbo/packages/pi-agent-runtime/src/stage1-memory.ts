@@ -67,7 +67,7 @@ export interface PiMemoryStage1ProviderResult {
 }
 
 export class PiMemoryStage1ProviderError extends Error {
-  constructor() {
+  constructor(readonly status?: number) {
     super("Pi memory Stage 1 provider request failed");
     this.name = "PiMemoryStage1ProviderError";
   }
@@ -265,27 +265,43 @@ export function projectPiMemoryStage1Evidence(args: {
   return boundStage1Evidence(rows);
 }
 
-function shapeProviderPayload(
-  payload: unknown,
-  evidence: readonly PiMemoryStage1Evidence[],
-  contextWindow: number,
-): unknown {
-  // Normalize once so the exact object returned to the SDK is plain JSON.
-  const normalized: unknown = JSON.parse(serializeStage1Payload(payload));
-  if (
-    !isRecord(normalized) ||
-    !Array.isArray(normalized.input) ||
-    normalized.input.length !== 2 ||
-    normalized.max_output_tokens !== PI_MEMORY_STAGE1_OUTPUT_TOKENS ||
-    normalized.tools !== undefined
-  ) {
-    throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
+function stage1PayloadInput(
+  normalized: Record<string, unknown>,
+  input: readonly unknown[],
+  native: boolean,
+): Record<string, unknown> {
+  const format = {
+    type: "json_schema",
+    name: "pi_memory_stage1",
+    strict: true,
+    schema: PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
+  };
+  if (native) {
+    if (
+      normalized.instructions !== PI_MEMORY_STAGE1_SYSTEM_PROMPT ||
+      normalized.max_output_tokens !== undefined ||
+      !isRecord(normalized.text)
+    ) {
+      throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
+    }
+    // pi-ai 0.85.1's native adapter omits samplingParams. Upstream Codex
+    // phase1.rs/common.rs supplies strict text.format, but no output-token cap.
+    normalized.text.format = format;
+  } else {
+    const system: unknown = input[0];
+    if (
+      normalized.max_output_tokens !== PI_MEMORY_STAGE1_OUTPUT_TOKENS ||
+      !isRecord(system) ||
+      !["system", "developer"].includes(String(system.role)) ||
+      system.content !== PI_MEMORY_STAGE1_SYSTEM_PROMPT ||
+      !isRecord(normalized.text) ||
+      JSON.stringify(normalized.text.format) !== JSON.stringify(format)
+    ) {
+      throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
+    }
   }
-  const [system, user] = normalized.input;
+  const user: unknown = input[native ? 0 : 1];
   if (
-    !isRecord(system) ||
-    !["system", "developer"].includes(String(system.role)) ||
-    system.content !== PI_MEMORY_STAGE1_SYSTEM_PROMPT ||
     !isRecord(user) ||
     user.role !== "user" ||
     !Array.isArray(user.content) ||
@@ -301,12 +317,42 @@ function shapeProviderPayload(
   ) {
     throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
   }
-  const budget = stage1InputBudgets(contextWindow);
+  return part;
+}
+
+function shapeProviderPayload(
+  payload: unknown,
+  evidence: readonly PiMemoryStage1Evidence[],
+  model: NonNullable<ReturnType<typeof resolvePiAgentModel>>,
+): unknown {
+  // Normalize once so the exact object returned to the SDK is plain JSON.
+  const normalized: unknown = JSON.parse(serializeStage1Payload(payload));
+  const native = model.api === "openai-codex-responses";
+  if (
+    !isRecord(normalized) ||
+    !Array.isArray(normalized.input) ||
+    normalized.input.length !== (native ? 1 : 2) ||
+    normalized.tools !== undefined ||
+    normalized.model !== model.id ||
+    normalized.service_tier !== undefined
+  )
+    throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
+  const part = stage1PayloadInput(normalized, normalized.input, native);
+  const budget = stage1InputBudgets(
+    model.contextWindow,
+    native ? { maxTokens: model.maxTokens } : undefined,
+  );
   const overhead = stage1TokenCount(serializeStage1Payload(normalized));
   let allowance = budget.request - overhead - 32;
   let historyAllowance = budget.history;
   if (allowance <= 0)
     throw new PiMemoryStage1BudgetError("input_budget_exceeded");
+  if (
+    !isRecord(normalized.reasoning) ||
+    normalized.reasoning.effort !== PI_MEMORY_STAGE1_REASONING
+  ) {
+    throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
+  }
   // Boundary merges in BPE can change additive row counts. Re-select by tier
   // with a smaller budget; never apply a whole-history head/tail truncation.
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -337,11 +383,18 @@ export async function runPiMemoryStage1Extraction(
     readonly model: PiAgentModelConfig;
     readonly evidence: readonly PiMemoryStage1Evidence[];
     readonly requestId: string;
+    readonly beforeRequest?: (signal: AbortSignal) => Promise<void>;
   },
   signal?: AbortSignal,
 ): Promise<PiMemoryStage1ProviderResult> {
   const model = resolvePiAgentModel(args.model);
-  if (!model || model.api !== "openai-responses") {
+  if (
+    !model ||
+    (model.api !== "openai-responses" &&
+      model.api !== "openai-codex-responses") ||
+    args.model.serviceTier !== undefined ||
+    !args.model.apiKey.trim()
+  ) {
     throw new PiMemoryStage1ProviderError();
   }
   const context: Context = {
@@ -356,6 +409,8 @@ export async function runPiMemoryStage1Extraction(
     tools: [],
   };
   let budgetError: PiMemoryStage1BudgetError | undefined;
+  let preparationError: { readonly error: unknown } | undefined;
+  let responseStatus: number | undefined;
   const message = await consumeAssistantMessage(
     piAgentStreamForConfig(args.model)(model, context, {
       apiKey: args.model.apiKey,
@@ -371,13 +426,13 @@ export async function runPiMemoryStage1Extraction(
           },
         },
       },
-      onPayload: (payload) => {
+      onObservedResponseStatus: (status) => {
+        responseStatus = status;
+      },
+      onPayload: async (payload) => {
+        let shaped: unknown;
         try {
-          return shapeProviderPayload(
-            payload,
-            args.evidence,
-            model.contextWindow,
-          );
+          shaped = shapeProviderPayload(payload, args.evidence, model);
         } catch (error) {
           budgetError =
             error instanceof PiMemoryStage1BudgetError
@@ -385,6 +440,20 @@ export async function runPiMemoryStage1Extraction(
               : new PiMemoryStage1BudgetError("input_payload_unmeasurable");
           throw budgetError;
         }
+        try {
+          if (args.beforeRequest) {
+            if (!signal)
+              throw new Error(
+                "Stage 1 credential validation requires cancellation ownership",
+              );
+            await args.beforeRequest(signal);
+          }
+          signal?.throwIfAborted();
+        } catch (error) {
+          preparationError = { error };
+          throw error;
+        }
+        return shaped;
       },
       sessionId: args.requestId,
       signal,
@@ -392,8 +461,9 @@ export async function runPiMemoryStage1Extraction(
   );
   // The SDK folds onPayload exceptions into terminal stream messages.
   if (budgetError) throw budgetError;
+  if (preparationError) throw preparationError.error;
   if (message.stopReason !== "stop") {
-    throw new PiMemoryStage1ProviderError();
+    throw new PiMemoryStage1ProviderError(responseStatus);
   }
   if (
     message.content.some((item) => {
