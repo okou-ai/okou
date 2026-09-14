@@ -398,11 +398,15 @@ def decompress_body(
       exceed that soft threshold and are sliced to the exact cap.
 
     Returns the original data unchanged when the encoding is missing,
-    ``identity``, unrecognised, beyond the header inspection budget, or invalid
-    before any compressed member completes. Once a member has completed, later
-    invalid trailing data is ignored on this best-effort path. A valid frame
-    that decodes to an empty body returns ``b""`` — callers that short-circuit
-    via ``if not body`` rely on that (see #10287).
+    ``identity``, unrecognised, or beyond the header inspection budget.
+    On decoding errors, gzip/deflate return the original data if no member has
+    completed, or preserve the decoded prefix otherwise. Brotli/zstd decoder
+    exceptions return the original data; for Brotli, this includes errors from
+    further input inspected after a completed stream. Reaching the output cap
+    may return a decoded prefix without inspecting later input.
+
+    A valid frame that decodes to an empty body returns ``b""`` — callers that
+    short-circuit via ``if not body`` rely on that (see #10287).
     """
     return _decode_body_bounded(data, headers, max_output=max_output).body
 
@@ -585,12 +589,17 @@ def _decode_body_bounded(
 
     Missing and ``identity`` encodings return original bytes. Unsupported
     encodings also pass through original bytes because unsupported encoding is a
-    caller policy decision, not a codec failure. Supported invalid compressed
-    bodies return ``failed=True`` with original bytes when no compressed member
-    completed. Gzip/deflate trailing garbage after a completed member keeps the
-    decoded prefix. Truncated gzip/deflate may return partial decoded output.
+    caller policy decision, not a codec failure. Gzip/deflate decoding errors
+    return ``failed=True`` with original bytes before any member completes;
+    after a completed member, they preserve the decoded prefix without marking
+    failure. Truncated gzip/deflate may return partial decoded output.
+    Brotli/zstd decoder exceptions return ``failed=True`` with original bytes,
+    including Brotli errors from further input inspected after a completed
+    stream.
+
     Valid empty compressed frames return ``b""``. ``max_output`` caps decoded
-    output and may return a truncated decoded prefix without marking failure.
+    output and may return a truncated decoded prefix without inspecting later
+    input or marking failure.
     """
     encoding = content_encoding.read_folded(headers)
     if not encoding or encoding == "identity":
