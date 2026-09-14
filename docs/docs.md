@@ -30,6 +30,9 @@ surface; the index does not replace their detailed rules.
 
 ## Specialized Guidance
 
+- [Account telemetry and recovery erasure](./account-erasure-evidence.md):
+  dated sink/copy inventory, provider capability gaps, and the parent-worker
+  design in [ADR 0004](./adr/0004-account-telemetry-recovery-erasure.md).
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
   validation reasons, cached rejection records, retained snapshots and recovered
   publication-order evidence.

@@ -2,7 +2,7 @@ import { command, computed, state } from "ccstate";
 
 interface ApiClientRuntime {
   readonly apiBaseUrl: string;
-  readonly getToken: (signal: AbortSignal) => Promise<string | null>;
+  readonly getToken: (signal?: AbortSignal) => Promise<string | null>;
   readonly oauthApiBaseUrl: string;
   readonly vercelProtectionBypass?: string;
   readonly onForceUpgrade?: () => void;

@@ -31,6 +31,7 @@ import {
 const PRIVATE_ARTIFACT_CACHE_CONTROL =
   "private, max-age=31536000, must-revalidate";
 const PRIVATE_NO_STORE_CACHE_CONTROL = "private, no-store";
+const S3_DELETE_OBJECTS_LIMIT = 1000;
 
 export interface S3Object {
   readonly key: string;
@@ -431,20 +432,29 @@ export function deleteS3Objects(
       return;
     }
     const client = get(s3ClientForBucket(bucket));
-    const response = await client.send(
-      new DeleteObjectsCommand({
-        Bucket: bucket,
-        Delete: {
-          Objects: keys.map((Key) => {
-            return { Key };
-          }),
-        },
-      }),
-    );
-    if ((response.Errors?.length ?? 0) > 0) {
-      throw new Error(
-        `S3 object deletion failed for ${response.Errors?.length.toString() ?? "0"} object(s)`,
+    // Stop at the first failed batch. Retrying already deleted keys is safe.
+    for (
+      let offset = 0;
+      offset < keys.length;
+      offset += S3_DELETE_OBJECTS_LIMIT
+    ) {
+      const response = await client.send(
+        new DeleteObjectsCommand({
+          Bucket: bucket,
+          Delete: {
+            Objects: keys
+              .slice(offset, offset + S3_DELETE_OBJECTS_LIMIT)
+              .map((Key) => {
+                return { Key };
+              }),
+          },
+        }),
       );
+      if (response.Errors && response.Errors.length > 0) {
+        throw new Error(
+          `S3 object deletion failed for ${response.Errors.length.toString()} object(s)`,
+        );
+      }
     }
   });
 }

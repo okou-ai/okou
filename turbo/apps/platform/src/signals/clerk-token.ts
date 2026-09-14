@@ -63,9 +63,17 @@ function waitForToken<T>(token: Promise<T>, signal: AbortSignal): Promise<T> {
 
 export async function readClerkToken(
   clerk: ClerkTokenSource,
-  signal: AbortSignal,
+  signal?: AbortSignal,
   options: { readonly skipCache?: true } = {},
 ): Promise<string | null> {
+  if (!signal) {
+    return (
+      (await clerk.session?.getToken(
+        options.skipCache ? { skipCache: true } : undefined,
+      )) ?? null
+    );
+  }
+
   const session = await waitForClerkSession(clerk, signal);
   signal.throwIfAborted();
   if (session === null) {

@@ -3391,7 +3391,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.192.0"
+version = "0.192.1"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3464,7 +3464,7 @@ dependencies = [
 
 [[package]]
 name = "runner-rpc-client"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "libc",
  "runner-rpc-proto",
@@ -3475,7 +3475,7 @@ dependencies = [
 
 [[package]]
 name = "runner-rpc-proto"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3734,7 +3734,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.41.10"
+version = "0.42.0"
 dependencies = [
  "async-trait",
  "clap",

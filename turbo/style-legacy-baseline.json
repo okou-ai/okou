@@ -19,7 +19,6 @@
     "okou-chat-frame",
     "okou-chat-skeleton-reveal",
     "okou-composer",
-    "okou-desktop-no-drag",
     "okou-desktop-titlebar-drag-region",
     "okou-fixed-viewport-shell",
     "okou-managed-bottom-safe-area",
@@ -231,27 +230,6 @@
         "selector": ".okou-mobile-sidebar::before",
         "property": "bottom",
         "value": "calc(-1*var(--sab))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-sidebar-header",
-        "property": "padding-top",
-        "value": "0.375rem",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-desktop-titlebar-drag-region",
-        "property": "display",
-        "value": "none",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-desktop-no-drag",
-        "property": "-webkit-app-region",
-        "value": "no-drag",
         "important": false
       },
       {
@@ -3031,7 +3009,6 @@
       "okou-viewport-shell": 1
     },
     "apps/platform/src/views/okou-page/sidebar.tsx": {
-      "okou-desktop-no-drag": 1,
       "okou-desktop-titlebar-drag-region": 2,
       "okou-mobile-fixed-safe-area": 1,
       "okou-mobile-sidebar": 1,

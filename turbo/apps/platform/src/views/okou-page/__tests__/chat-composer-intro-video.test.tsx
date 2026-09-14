@@ -144,7 +144,7 @@ test.each([
 test.each([
   `/agents/${AGENT_ID}/chat?templatePicker=intro-video`,
   "/?templatePicker=intro-video",
-])("Intro video deep links wait for feature hydration at %s", async (path) => {
+])("Intro video deep links wait for feature switches at %s", async (path) => {
   installCatalogs();
   context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
   const featureResponse = createDeferredPromise<void>(context.signal);

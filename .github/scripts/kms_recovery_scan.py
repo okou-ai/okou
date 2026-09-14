@@ -17,16 +17,18 @@ def require(condition, code):
         raise ScanReportError(code)
 
 
+def counter(record, field):
+    value = record.get(field)
+    require(type(value) is int and value >= 0, "invalid_scan_counter")
+    return value
+
+
 def scan_records(result, database_hash):
     safe, headers, last_scan = [], [], None
+    plans = {}
+    row_fields = {"rows", "rowsWithEnvelopeMarker", "rowsWithSourceReference"}
     fields = {
-        "database": {"largeObjects", "foreignTables"},
-        "table": {
-            "relationOid",
-            "rows",
-            "rowsWithEnvelopeMarker",
-            "rowsWithSourceReference",
-        },
+        "database": {"largeObjects", "foreignTables", "plannedTables"},
         "binary": {"relationOid", "columnNumber", "nonNullValues"},
     }
     for line in result.stdout.splitlines():
@@ -35,25 +37,66 @@ def scan_records(result, database_hash):
         record = json.loads(line)
         require(isinstance(record, dict), "invalid_scan_record")
         kind = record.get("kind")
+        if kind == "table-plan":
+            oid, blocks = counter(record, "relationOid"), counter(record, "blocks")
+            require(oid not in plans and blocks > 0, "invalid_table_plan")
+            require(
+                record.get("heapAccessMethod") is True,
+                "unsupported_table_access_method",
+            )
+            plans[oid] = {
+                "blocks": blocks,
+                "nextBlock": 0,
+                "aggregate": {
+                    "kind": "table",
+                    "relationOid": oid,
+                    **dict.fromkeys(row_fields, 0),
+                },
+            }
+            continue
+        if kind == "table-chunk":
+            oid = counter(record, "relationOid")
+            require(oid in plans, "unplanned_table_chunk")
+            plan = plans[oid]
+            first, end = counter(record, "firstBlock"), counter(record, "endBlock")
+            require(
+                first == plan["nextBlock"]
+                and first < end
+                and end == min(first + 128, plan["blocks"]),
+                "noncontiguous_table_chunks",
+            )
+            counts = {field: counter(record, field) for field in row_fields}
+            require(
+                all(counts[field] <= counts["rows"] for field in row_fields),
+                "invalid_row_counts",
+            )
+            for field, value in counts.items():
+                plan["aggregate"][field] += value
+            plan["nextBlock"] = end
+            if end == plan["blocks"]:
+                safe.append(plan["aggregate"])
+            continue
         if kind == "scan-start":
             phase = record.get("phase")
             require(phase in {"table", "binary"}, "invalid_scan_phase")
             last_scan = {"phase": phase}
-            for field in ["relationOid", "relationBytes"] + (
-                ["columnNumber"] if phase == "binary" else []
+            for field in (
+                ["relationOid", "relationBytes"]
+                + (["columnNumber"] if phase == "binary" else [])
+                + (
+                    ["firstBlock", "endBlock"]
+                    if "firstBlock" in record or "endBlock" in record
+                    else []
+                )
             ):
-                value = record.get(field)
-                require(type(value) is int and value >= 0, "invalid_scan_counter")
-                last_scan[field] = value
+                last_scan[field] = counter(record, field)
             continue
         require(kind in fields, "unknown_scan_record")
         if kind == "database":
             headers.append(record)
         item = {"kind": kind}
         for field in fields[kind]:
-            value = record.get(field)
-            require(type(value) is int and value >= 0, "invalid_scan_counter")
-            item[field] = value
+            item[field] = counter(record, field)
         safe.append(item)
     if result.returncode != 0:
         # VERBOSITY=sqlstate produces a code-only ERROR line. Arbitrary stderr,
@@ -72,7 +115,13 @@ def scan_records(result, database_hash):
     require(
         len(headers) == 1
         and headers[0].get("readOnly") is True
-        and headers[0].get("isolation") == "repeatable read",
+        and headers[0].get("isolation") == "repeatable read"
+        and headers[0].get("supportsTidRangeScan") is True,
         "read_only_transaction_unverified",
+    )
+    require(
+        len(plans) == headers[0]["plannedTables"]
+        and all(plan["nextBlock"] == plan["blocks"] for plan in plans.values()),
+        "incomplete_table_scan",
     )
     return safe
