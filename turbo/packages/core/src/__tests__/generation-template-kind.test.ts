@@ -12,30 +12,29 @@ function videoTemplate(stylePresetId: string): GenerationTemplateRequest {
 
 describe("generationTemplateKind", () => {
   it("reports each non-video envelope as its own wire type", () => {
-    expect(
-      generationTemplateKind({
-        type: "presentation",
-        selection: { templateId: "template:crayon" },
-      }),
-    ).toBe("presentation");
-    expect(
-      generationTemplateKind({
-        type: "illustration",
-        selection: { illustrationStyleId: "image-style:prism" },
-      }),
-    ).toBe("illustration");
-    expect(
-      generationTemplateKind({
-        type: "workflow",
-        selection: { workflowTemplateId: "workflow-template:crm" },
-      }),
-    ).toBe("workflow");
-    expect(
-      generationTemplateKind({
-        type: "website",
-        selection: { websiteTemplateId: "website-template:landing" },
-      }),
-    ).toBe("website");
+    // Declared as full wire requests rather than bare `{ type }` literals so
+    // this also holds `GenerationTemplateRequest` to the source contract.
+    const presentation: GenerationTemplateRequest = {
+      type: "presentation",
+      selection: { templateId: "template:crayon" },
+    };
+    const illustration: GenerationTemplateRequest = {
+      type: "illustration",
+      selection: { illustrationStyleId: "image-style:prism" },
+    };
+    const workflow: GenerationTemplateRequest = {
+      type: "workflow",
+      selection: { workflowTemplateId: "workflow-template:crm" },
+    };
+    const website: GenerationTemplateRequest = {
+      type: "website",
+      selection: { websiteTemplateId: "website-template:landing" },
+    };
+
+    expect(generationTemplateKind(presentation)).toBe("presentation");
+    expect(generationTemplateKind(illustration)).toBe("illustration");
+    expect(generationTemplateKind(workflow)).toBe("workflow");
+    expect(generationTemplateKind(website)).toBe("website");
   });
 
   it("splits the three products that share the video envelope", () => {
