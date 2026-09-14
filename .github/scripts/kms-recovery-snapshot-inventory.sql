@@ -10,6 +10,12 @@ SELECT json_build_object(
   'kind', 'database',
   'readOnly', current_setting('transaction_read_only') = 'on',
   'isolation', current_setting('transaction_isolation'),
+  'supportsTidRangeScan', current_setting('server_version_num')::int >= 140000,
+  'plannedTables', (
+    SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE c.relkind IN ('r', 'm') AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'
+      AND n.nspname <> 'information_schema'
+  ),
   'largeObjects', (SELECT count(*) FROM pg_largeobject_metadata),
   'foreignTables', (
     SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -18,22 +24,53 @@ SELECT json_build_object(
   )
 );
 
--- Scan physical tables, including partition leaves, and materialized views.
--- Identifiers are quoted by PostgreSQL; gexec executes SQL, not psql commands.
--- Only aggregates leave the database. No rows, ciphertext or primary keys do.
+-- Acquire ACCESS SHARE locks without returning rows, before measuring blocks.
+-- This prevents truncation/rewrites while one read-only snapshot is scanned.
+-- ONLY counts inherited tables separately, as with partition leaves.
 SELECT format(
   'SELECT json_build_object(''kind'', ''scan-start'', ''phase'', ''table'',
     ''relationOid'', %s, ''relationBytes'', %s);
-   SELECT json_build_object(''kind'', ''table'', ''relationOid'', %s,
-    ''rows'', count(*),
-    ''rowsWithEnvelopeMarker'', count(*) FILTER (WHERE row_to_json(t)::text LIKE ''%%vm0secret:%%''),
-    ''rowsWithSourceReference'', count(*) FILTER (WHERE row_to_json(t)::text LIKE ''%%a1b3922b-fab1-4ed3-aa9e-40f86f92a7a8%%''))
-   FROM %I.%I t;', c.oid, pg_table_size(c.oid), c.oid, n.nspname, c.relname
+   SELECT 1 FROM ONLY %I.%I WHERE false;',
+  c.oid, pg_table_size(c.oid), n.nspname, c.relname
 )
 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE c.relkind IN ('r', 'm') AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'
   AND n.nspname <> 'information_schema'
 ORDER BY c.oid
+\gexec
+
+-- Scan at most 128 heap pages per statement; keep the 120s limit per chunk.
+-- PostgreSQL 14+ uses a Tid Range Scan, avoiding a full rescan for each chunk.
+-- The decoder requires each declared table's exact contiguous [0, blocks)
+-- coverage before returning a table aggregate. Empty relations scan [0, 1).
+WITH relations AS MATERIALIZED (
+  SELECT c.oid, n.nspname, c.relname, pg_table_size(c.oid) AS bytes,
+    c.relam = (SELECT oid FROM pg_am WHERE amname = 'heap') AS heap,
+    greatest(1, (pg_relation_size(c.oid) + current_setting('block_size')::int - 1)
+      / current_setting('block_size')::int) AS blocks
+  FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE c.relkind IN ('r', 'm') AND n.nspname NOT LIKE 'pg\_%' ESCAPE '\'
+    AND n.nspname <> 'information_schema'
+), commands AS (
+  SELECT oid, -1::bigint AS first_block, format(
+    'SELECT json_build_object(''kind'', ''table-plan'', ''relationOid'', %s,
+      ''blocks'', %s, ''heapAccessMethod'', %L::boolean);', oid, blocks, heap
+  ) AS command FROM relations
+  UNION ALL
+  SELECT oid, first_block, format(
+    'SELECT json_build_object(''kind'', ''scan-start'', ''phase'', ''table'',
+      ''relationOid'', %s, ''relationBytes'', %s, ''firstBlock'', %s, ''endBlock'', %s);
+     SELECT json_build_object(''kind'', ''table-chunk'', ''relationOid'', %s,
+      ''firstBlock'', %s, ''endBlock'', %s, ''rows'', count(*),
+      ''rowsWithEnvelopeMarker'', count(*) FILTER (WHERE row_to_json(t)::text LIKE ''%%vm0secret:%%''),
+      ''rowsWithSourceReference'', count(*) FILTER (WHERE row_to_json(t)::text LIKE ''%%a1b3922b-fab1-4ed3-aa9e-40f86f92a7a8%%''))
+     FROM ONLY %I.%I t WHERE ctid >= %L::tid AND ctid < %L::tid;',
+    oid, bytes, first_block, least(first_block + 128, blocks),
+    oid, first_block, least(first_block + 128, blocks), nspname, relname,
+    format('(%s,0)', first_block), format('(%s,0)', least(first_block + 128, blocks))
+  ) FROM relations CROSS JOIN LATERAL generate_series(0, blocks - 1, 128) AS first_block
+)
+SELECT command FROM commands ORDER BY oid, first_block
 \gexec
 
 -- Binary values may hide encodings that row_to_json renders as hex. Their
@@ -42,7 +79,7 @@ SELECT format(
   'SELECT json_build_object(''kind'', ''scan-start'', ''phase'', ''binary'',
     ''relationOid'', %s, ''relationBytes'', %s, ''columnNumber'', %s);
    SELECT json_build_object(''kind'', ''binary'', ''relationOid'', %s,
-    ''columnNumber'', %s, ''nonNullValues'', count(%I)) FROM %I.%I;',
+    ''columnNumber'', %s, ''nonNullValues'', count(%I)) FROM ONLY %I.%I;',
   c.oid, pg_table_size(c.oid), a.attnum, c.oid, a.attnum, a.attname, n.nspname, c.relname
 )
 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace

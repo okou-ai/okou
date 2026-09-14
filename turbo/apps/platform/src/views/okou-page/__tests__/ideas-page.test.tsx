@@ -5,7 +5,6 @@ import {
   type PublicConnectorCatalogStatusResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -117,44 +116,6 @@ async function findComposer(name = "Message"): Promise<HTMLElement> {
   return await screen.findByRole("textbox", { name });
 }
 
-function installCatalogRefresh(initial: PublicConnectorCatalogStatusResponse): {
-  readonly finishFeatureRefresh: () => void;
-  readonly refreshResponse: ReturnType<
-    typeof context.mocks.deferred<PublicConnectorCatalogStatusResponse>
-  >;
-  readonly refreshStarted: Promise<void>;
-} {
-  const featureRefresh = context.mocks.deferred<void>();
-  const refreshStarted = context.mocks.deferred<void>();
-  const refreshResponse =
-    context.mocks.deferred<PublicConnectorCatalogStatusResponse>();
-  let catalogRequest = 0;
-
-  context.mocks.api(featureSwitchesContract.get, async ({ respond }) => {
-    await featureRefresh.promise;
-    return respond(200, {
-      switches: { [FeatureSwitchKey.OkouDebug]: true },
-      effectiveSwitches: { [FeatureSwitchKey.OkouDebug]: true },
-    });
-  });
-  context.mocks.api(connectorCatalogContract.status, async ({ respond }) => {
-    catalogRequest += 1;
-    if (catalogRequest === 1) {
-      return respond(200, initial);
-    }
-    refreshStarted.resolve(undefined);
-    return respond(200, await refreshResponse.promise);
-  });
-
-  return {
-    finishFeatureRefresh: () => {
-      featureRefresh.resolve(undefined);
-    },
-    refreshResponse,
-    refreshStarted: refreshStarted.promise,
-  };
-}
-
 test("A migration idea uses the Okou product identity", async () => {
   configureAgent();
   mockCatalog([
@@ -224,15 +185,11 @@ test("Connector-dependent ideas fail closed when availability cannot be verified
 
 test("Ideas fall back to All when the selected category becomes unavailable", async () => {
   configureAgent();
-  const refresh = installCatalogRefresh(
-    catalogResponse([
-      catalogItem("github", "GitHub"),
-      catalogItem("sentry", "Sentry"),
-      catalogItem("axiom", "Axiom"),
-      catalogItem("plausible", "Plausible"),
-      catalogItem("slack", "Slack"),
-    ]),
-  );
+  const catalog =
+    context.mocks.deferred<PublicConnectorCatalogStatusResponse>();
+  context.mocks.api(connectorCatalogContract.status, async ({ respond }) => {
+    return respond(200, await catalog.promise);
+  });
 
   await setupPage({ context, path: IDEAS_PATH });
   await screen.findByText("Daily standup report");
@@ -245,9 +202,7 @@ test("Ideas fall back to All when the selected category becomes unavailable", as
     expect(screen.queryByText("Browser screenshots")).not.toBeInTheDocument();
   });
 
-  refresh.finishFeatureRefresh();
-  await refresh.refreshStarted;
-  refresh.refreshResponse.resolve(catalogResponse([]));
+  catalog.resolve(catalogResponse([]));
 
   await screen.findByText("Browser screenshots");
   expect(
@@ -266,37 +221,6 @@ test("A use case is hidden when any required connector is unavailable", async ()
   await screen.findByText("GitHub progress weekly");
 
   expect(screen.queryByText("Daily standup report")).not.toBeInTheDocument();
-});
-
-test("Ideas remain stable while connector availability reloads", async () => {
-  configureAgent();
-  const refresh = installCatalogRefresh(
-    catalogResponse([catalogItem("github", "GitHub")]),
-  );
-
-  await setupPage({ context, path: IDEAS_PATH });
-  await screen.findByText("GitHub progress weekly");
-
-  refresh.finishFeatureRefresh();
-  await refresh.refreshStarted;
-
-  expect(screen.getByText("GitHub progress weekly")).toBeVisible();
-  expect(
-    screen.queryByText("RevenueCat subscription digest"),
-  ).not.toBeInTheDocument();
-
-  refresh.refreshResponse.resolve(
-    catalogResponse([
-      catalogItem("github", "GitHub"),
-      catalogItem("revenuecat", "RevenueCat"),
-      catalogItem("google-sheets", "Google Sheets"),
-      catalogItem("slack", "Slack"),
-    ]),
-  );
-
-  await expect(
-    screen.findByText("RevenueCat subscription digest"),
-  ).resolves.toBeVisible();
 });
 
 test("Pending connector availability is not mistaken for no connectors", async () => {

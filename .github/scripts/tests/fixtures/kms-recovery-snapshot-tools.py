@@ -214,6 +214,8 @@ if Path(sys.argv[0]).name == "psql":
                 "kind": "database",
                 "readOnly": True,
                 "isolation": "repeatable read",
+                "supportsTidRangeScan": True,
+                "plannedTables": 1,
                 "largeObjects": 0,
                 "foreignTables": 0,
             }
@@ -222,8 +224,20 @@ if Path(sys.argv[0]).name == "psql":
     print(
         json.dumps(
             {
-                "kind": "table",
+                "kind": "table-plan",
                 "relationOid": 123,
+                "blocks": 1,
+                "heapAccessMethod": True,
+            }
+        )
+    )
+    print(
+        json.dumps(
+            {
+                "kind": "table-chunk",
+                "relationOid": 123,
+                "firstBlock": 0,
+                "endBlock": 1,
                 "rows": 20,
                 "rowsWithEnvelopeMarker": 3,
                 "rowsWithSourceReference": 0,

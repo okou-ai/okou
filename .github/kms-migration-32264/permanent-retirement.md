@@ -64,6 +64,15 @@ and operational identifiers leave the database. Foreign tables, large objects,
 and binary fields are reported as coverage limitations. Provider and SQL errors
 never export their bodies.
 
+Table marker scans use contiguous ranges of at most 128 heap pages per query
+on PostgreSQL 14 or newer. All table locks and range measurements belong to one
+read-only, repeatable-read transaction, preventing rewrites or truncation while
+the scan runs. Inherited tables are counted separately with `ONLY`, including
+partition leaves. The decoder requires the declared table count and complete,
+nonoverlapping range coverage before accepting aggregates; unsupported table
+access methods and missing or repeated chunks fail the check. The 120-second
+statement timeout, total inspection budget and cleanup reserve are unchanged.
+
 Finally, it deletes only the newly created and revalidated preview, checks that
 it is no longer live, and separately inspects its provider recovery window.
 A deleted but recoverable copy still belongs in the retirement inventory.
@@ -108,6 +117,7 @@ time; the default marker-only mode keeps its 20-minute inspection budget.
 When a database scan fails, `databaseScanFailure` retains the PostgreSQL
 SQLSTATE when available, the process exit code, the number of completed tables,
 and the last started table or binary-column scan's relation OID and size.
+For table chunks it also retains the starting and exclusive ending block.
 These diagnostics contain no table contents, SQL text, database names or raw
 error messages. Partial scan progress is not a complete inventory or evidence
 of zero dependencies. Inspect the failure and verify preview cleanup before
@@ -153,3 +163,13 @@ external-boundary CLI scenarios and real isolated PostgreSQL aggregate tests.
 
 Do not substitute `DisableKey`, a successful metadata job, configured expiration,
 or an empty denied query for these dependency checks.
+
+The exit inventory includes metadata for every branch returned by the existing
+paginated project listing: hashed IDs and names, parent relationships, creation
+time, and any reported parent timestamp or LSN. It identifies the exact
+`kms-recovery-32264-<run>-<attempt>` inspection naming pattern without exporting
+other branch names. A recent creation time does not prove a recent data point;
+missing parent timestamps remain unknown. `otherBranchesNotInspected` and each
+branch's `ciphertextVerified: false` remain explicit until separate data
+verification resolves those dependencies. This collection adds no API requests,
+database connections, resource mutations or retirement clearance.

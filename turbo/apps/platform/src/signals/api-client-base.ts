@@ -22,8 +22,7 @@ import { onRejection } from "./utils.ts";
 interface AuthedClientOptions {
   readonly baseUrl: string;
   readonly clientVersion: string;
-  readonly getRootSignal: () => AbortSignal;
-  readonly getToken: (signal: AbortSignal) => Promise<string | null>;
+  readonly getToken: (signal?: AbortSignal) => Promise<string | null>;
   readonly getTokenGuard?: () => () => void;
   readonly getVercelProtectionBypass: () => string | undefined;
   readonly onForceUpgrade?: () => void;
@@ -107,15 +106,15 @@ export function createAuthedContractClient<T extends AppRouter>(
     // Validation is handled below so errors include the actual response body.
     validateResponse: false,
     api: async (args: ApiFetcherArgs) => {
-      const signal = args.fetchOptions?.signal ?? options.getRootSignal();
+      const signal = args.fetchOptions?.signal ?? undefined;
       const path = options.resolvePath
         ? await options.resolvePath(args.path, { method: args.route.method })
         : args.path;
-      signal.throwIfAborted();
+      signal?.throwIfAborted();
 
       const requestWithToken = (
         token: string | null,
-        requestSignal: AbortSignal,
+        requestSignal?: AbortSignal,
       ) => {
         const headers = new Headers(args.headers);
         if (token) {
@@ -131,7 +130,7 @@ export function createAuthedContractClient<T extends AppRouter>(
           fetchOptions: {
             ...args.fetchOptions,
             credentials: "include",
-            signal: requestSignal,
+            ...(requestSignal ? { signal: requestSignal } : {}),
           },
           headers,
           path,
@@ -148,7 +147,7 @@ export function createAuthedContractClient<T extends AppRouter>(
         (await (async () => {
           const validateToken = options.getTokenGuard?.();
           const token = await options.getToken(signal);
-          signal.throwIfAborted();
+          signal?.throwIfAborted();
           validateToken?.();
           const measurement = startClientTelemetryMeasurement();
           const requestTelemetry = {

@@ -274,6 +274,13 @@
       "when": 1789224005319,
       "tag": "1116_heygen_hyperframes_render_pricing",
       "breakpoints": true
+    },
+    {
+      "idx": 1117,
+      "version": "7",
+      "when": 1789356747970,
+      "tag": "1117_morning_brief_enrollment_installation",
+      "breakpoints": true
     }
   ]
 }

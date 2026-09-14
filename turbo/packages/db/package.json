@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "1.255.2",
+  "version": "1.255.3",
   "private": true,
   "type": "module",
   "exports": {
@@ -50,7 +50,7 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "db:reset": "tsx scripts/reset-db.ts",
-    "test:migration-consistency": "pnpm test:migration-runner && pnpm test:kms-rotation && pnpm test:pi-memory-checkpoint-settlement && pnpm test:pi-memory-citations && pnpm test:show-usage-pack-migration && pnpm test:member-invitation-retirement && pnpm test:reusable-ssh-credentials && tsx scripts/test-migration-consistency-schema.ts",
+    "test:migration-consistency": "pnpm test:migration-runner && pnpm test:kms-rotation && pnpm test:pi-memory-checkpoint-settlement && pnpm test:pi-memory-citations && pnpm test:show-usage-pack-migration && pnpm test:member-invitation-retirement && pnpm test:reusable-ssh-credentials && pnpm test:morning-brief-enrollment-installation && tsx scripts/test-migration-consistency-schema.ts",
     "test:kms-rotation": "tsx scripts/migrations/013-kms-account-rotation/test.ts && tsx scripts/migrations/013-kms-account-rotation/test-business.ts",
     "test:show-usage-pack-migration": "tsx scripts/test-show-usage-pack-migration.ts",
     "test:migration-runner": "tsx scripts/test-migration-runner-timeouts.ts",
@@ -58,7 +58,8 @@
     "test:pi-memory-checkpoint-settlement": "tsx scripts/test-pi-memory-checkpoint-settlement.ts",
     "test:pi-memory-citations": "tsx scripts/test-pi-memory-citation-migration.ts",
     "test:member-invitation-retirement": "tsx scripts/test-member-invitation-retirement.ts",
-    "test:reusable-ssh-credentials": "tsx scripts/test-reusable-ssh-credentials.ts"
+    "test:reusable-ssh-credentials": "tsx scripts/test-reusable-ssh-credentials.ts",
+    "test:morning-brief-enrollment-installation": "tsx scripts/test-morning-brief-enrollment-installation.ts"
   },
   "dependencies": {
     "@aws-sdk/client-kms": "^3.1127.0",

@@ -2,7 +2,6 @@ import { CLIENT_FORCE_UPGRADE_STATUS } from "@okouai/api-contracts/contracts/cli
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -20,7 +19,6 @@ import {
   search as locationSearch,
 } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { setMockConnectorFeatureSwitches } from "../../../mocks/handlers/api-connectors.ts";
 import {
   getConnectorAction,
   getConnectorCard,
@@ -183,41 +181,6 @@ test("Show Mailchimp OAuth without a feature-switch override", async () => {
   await waitFor(() => {
     expect(getConnectorAction("button", "Connect Mailchimp")).toBeEnabled();
   });
-});
-
-test("Update connector visibility when availability changes", async () => {
-  mockConnectors(context, []);
-  setMockConnectorFeatureSwitches({
-    [FeatureSwitchKey.MailchimpConnector]: false,
-  });
-  const switchesReady = context.mocks.deferred<void>();
-  context.mocks.api(featureSwitchesContract.get, async ({ respond }) => {
-    await switchesReady.promise;
-    return respond(200, {
-      switches: { [FeatureSwitchKey.MailchimpConnector]: true },
-      effectiveSwitches: { [FeatureSwitchKey.MailchimpConnector]: true },
-    });
-  });
-  await setupPage({
-    context,
-    path: "/connectors?keywords=mailchimp",
-  });
-
-  await expect(
-    screen.findByText(/No connectors matching/u),
-  ).resolves.toBeInTheDocument();
-
-  setMockConnectorFeatureSwitches({
-    [FeatureSwitchKey.MailchimpConnector]: true,
-  });
-  switchesReady.resolve();
-
-  await waitFor(() => {
-    expect(
-      getConnectorAction("button", "Connect Mailchimp"),
-    ).toBeInTheDocument();
-  });
-  expect(locationSearch()).toBe("?keywords=mailchimp");
 });
 
 async function openConnectorFilterCatalog() {

@@ -12,7 +12,7 @@ import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollm
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { delay } from "signal-timers";
 import { z } from "zod";
 
@@ -101,7 +101,7 @@ export type EnsureMorningBriefDefaultEnabledResult =
 function conflict(
   code: Extract<
     MorningBriefPreferenceErrorCode,
-    "MORNING_BRIEF_MULTIPLE_INSTALLATIONS" | "MORNING_BRIEF_STATE_CONFLICT"
+    "MORNING_BRIEF_STATE_CONFLICT"
   >,
   message: string,
 ): MorningBriefPreferenceFailure {
@@ -174,16 +174,24 @@ async function loadDefaultAgentId(
   return defaultAgent.id;
 }
 
-async function loadMorningBriefWorkflowIds(
+interface MorningBriefInstallation {
+  readonly id: string;
+  readonly agentId: string;
+  readonly installationState: "installing" | "installed" | null;
+}
+
+interface MorningBriefOwnership {
+  readonly enrollment: Awaited<ReturnType<typeof loadMorningBriefEnrollment>>;
+  /** The single installation the preference surface manages, if any. */
+  readonly installation: MorningBriefInstallation | undefined;
+  readonly installationCount: number;
+}
+
+/** Oldest first, so the adoption tie-break reads the head of this list. */
+async function loadMorningBriefInstallations(
   db: ReadonlyDb,
   args: MorningBriefPreferenceArgs,
-): Promise<
-  readonly {
-    readonly id: string;
-    readonly agentId: string;
-    readonly installationState: "installing" | "installed" | null;
-  }[]
-> {
+): Promise<readonly MorningBriefInstallation[]> {
   return await db
     .select({
       id: workflows.id,
@@ -201,7 +209,46 @@ async function loadMorningBriefWorkflowIds(
           MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
         ),
       ),
-    );
+    )
+    .orderBy(asc(workflows.createdAt), asc(workflows.id));
+}
+
+/**
+ * Resolve the one installation the enrollment owns.
+ *
+ * The catalog installs Morning Brief per Agent, so a member may legally hold
+ * several installations. The enrollment records which one the preference
+ * surface manages. That record can be absent — rows written before the column
+ * existed, or a member who never enrolled — and it can be stale once its
+ * installation is uninstalled, so fall back to the adoption rule: the
+ * installation on the org's current default Agent, otherwise the oldest.
+ * Installations that are not adopted keep running untouched.
+ */
+async function loadMorningBriefOwnership(
+  db: ReadonlyDb,
+  args: MorningBriefPreferenceArgs,
+): Promise<MorningBriefOwnership> {
+  const enrollment = await loadMorningBriefEnrollment(db, {
+    orgId: args.orgId,
+    userId: args.member.userId,
+  });
+  const installations = await loadMorningBriefInstallations(db, args);
+  const installationCount = installations.length;
+  if (installationCount <= 1) {
+    return { enrollment, installation: installations[0], installationCount };
+  }
+  const owned = installations.find(({ id }) => {
+    return id === enrollment?.workflowId;
+  });
+  if (owned) {
+    return { enrollment, installation: owned, installationCount };
+  }
+  const defaultAgentId = await loadDefaultAgentId(db, args);
+  const adopted =
+    installations.find(({ agentId }) => {
+      return agentId === defaultAgentId;
+    }) ?? installations[0];
+  return { enrollment, installation: adopted, installationCount };
 }
 
 async function loadPendingPreference(
@@ -239,18 +286,10 @@ async function loadInstalledPreference(
   db: ReadonlyDb,
   args: MorningBriefPreferenceArgs,
 ): Promise<MorningBriefPreferenceResult & { readonly workflowId?: string }> {
-  const installations = await loadMorningBriefWorkflowIds(db, args);
-  if (installations.length > 1) {
-    return conflict(
-      "MORNING_BRIEF_MULTIPLE_INSTALLATIONS",
-      "Multiple Morning Brief installations exist. Resolve the conflict before changing this preference.",
-    );
-  }
-  const installation = installations[0];
-  const enrollment = await loadMorningBriefEnrollment(db, {
-    orgId: args.orgId,
-    userId: args.member.userId,
-  });
+  const { enrollment, installation } = await loadMorningBriefOwnership(
+    db,
+    args,
+  );
   if (
     !installation ||
     (installation.installationState !== "installed" && enrollment !== undefined)
@@ -491,25 +530,22 @@ const installMorningBriefEnrollment$ = command(
         }
         return { outcome: "skipped", reason: "membership-unavailable" };
       }
-      await completeMorningBriefEnrollment(db, identity);
+      await completeMorningBriefEnrollment(db, identity, installed.workflowId);
       signal.throwIfAborted();
       await publishMorningBriefChangedSafely(identity);
       signal.throwIfAborted();
       return { outcome: "installed", workflowId: installed.workflowId };
     }
 
-    const racedInstallations = await loadMorningBriefWorkflowIds(db, args);
+    const raced = await loadMorningBriefOwnership(db, args);
     signal.throwIfAborted();
-    if (
-      racedInstallations.length === 1 &&
-      racedInstallations[0]?.installationState === "installed"
-    ) {
-      await completeMorningBriefEnrollment(db, identity);
+    if (raced.installation?.installationState === "installed") {
+      await completeMorningBriefEnrollment(db, identity, raced.installation.id);
       signal.throwIfAborted();
       return {
         outcome: "unchanged",
         reason: "existing-installation",
-        installationCount: racedInstallations.length,
+        installationCount: raced.installationCount,
       };
     }
     return {
@@ -528,30 +564,22 @@ const ensureMorningBriefWhileLocked$ = command(
     signal: AbortSignal,
   ): Promise<EnsureMorningBriefDefaultEnabledResult> => {
     const db = set(writeDb$);
-    const installations = await loadMorningBriefWorkflowIds(db, args);
+    const { installation, installationCount } = await loadMorningBriefOwnership(
+      db,
+      args,
+    );
     signal.throwIfAborted();
     const identity = { orgId: args.orgId, userId: args.member.userId };
-    if (
-      installations.length === 1 &&
-      installations[0]?.installationState === "installed"
-    ) {
-      await completeMorningBriefEnrollment(db, identity);
+    if (installation?.installationState === "installed") {
+      await completeMorningBriefEnrollment(db, identity, installation.id);
       signal.throwIfAborted();
       return {
         outcome: "unchanged",
         reason: "existing-installation",
-        installationCount: installations.length,
+        installationCount,
       };
     }
 
-    if (installations.length > 1) {
-      return {
-        outcome: "failed",
-        reason: "installation-failed",
-        failureKind: "conflict",
-        message: "Multiple Morning Brief installations exist",
-      };
-    }
     const qualification = await set(
       qualifyMorningBriefMembership$,
       args,
@@ -576,7 +604,7 @@ const ensureMorningBriefWhileLocked$ = command(
     const unavailableReason = await loadUnavailableReason(
       db,
       args,
-      installations[0]?.agentId,
+      installation?.agentId,
     );
     signal.throwIfAborted();
     if (unavailableReason !== null) {
@@ -584,7 +612,7 @@ const ensureMorningBriefWhileLocked$ = command(
     }
 
     const agentId =
-      installations[0]?.agentId ?? (await loadDefaultAgentId(db, args));
+      installation?.agentId ?? (await loadDefaultAgentId(db, args));
     signal.throwIfAborted();
     if (agentId === null) {
       return { outcome: "skipped", reason: "missing-default-agent" };
@@ -683,7 +711,7 @@ const createMorningBriefFromPreference$ = command(
             "Morning Brief could not be installed. Retry the preference update.",
           );
     }
-    await completeMorningBriefEnrollment(db, identity);
+    await completeMorningBriefEnrollment(db, identity, installed.workflowId);
     signal.throwIfAborted();
     return await loadInstalledPreference(db, args);
   },
@@ -696,19 +724,12 @@ const updateMorningBriefWhileLocked$ = command(
     signal: AbortSignal,
   ): Promise<MorningBriefPreferenceResult> => {
     const db = set(writeDb$);
-    const installations = await loadMorningBriefWorkflowIds(db, args);
+    const { installation } = await loadMorningBriefOwnership(db, args);
     signal.throwIfAborted();
-    if (installations.length > 1) {
-      return conflict(
-        "MORNING_BRIEF_MULTIPLE_INSTALLATIONS",
-        "Multiple Morning Brief installations exist. Resolve the conflict before changing this preference.",
-      );
-    }
 
     const identity = { orgId: args.orgId, userId: args.member.userId };
     await recordMorningBriefChoice(db, identity, args.enabled);
     signal.throwIfAborted();
-    const installation = installations[0];
     if (!installation) {
       return await set(createMorningBriefFromPreference$, args, signal);
     }
@@ -743,7 +764,7 @@ const updateMorningBriefWhileLocked$ = command(
     }
     if (current.preference.enabled === args.enabled) {
       if (args.enabled) {
-        await completeMorningBriefEnrollment(db, identity);
+        await completeMorningBriefEnrollment(db, identity, current.workflowId);
         signal.throwIfAborted();
       }
       return current;
@@ -777,7 +798,7 @@ const updateMorningBriefWhileLocked$ = command(
       );
     }
     if (args.enabled) {
-      await completeMorningBriefEnrollment(db, identity);
+      await completeMorningBriefEnrollment(db, identity, current.workflowId);
       signal.throwIfAborted();
     }
     return await loadInstalledPreference(db, args);
@@ -824,11 +845,11 @@ export const synchronizeMorningBriefTimezone$ = command(
       if (!timezone || !isValidTimeZone(timezone)) {
         return;
       }
-      const installations = await loadMorningBriefWorkflowIds(db, args);
-      if (installations.length !== 1 || !installations[0]) {
+      const { installation } = await loadMorningBriefOwnership(db, args);
+      if (!installation) {
         return;
       }
-      const workflowId = installations[0].id;
+      const workflowId = installation.id;
       await db.transaction(async (tx) => {
         const rows = await tx
           .select()

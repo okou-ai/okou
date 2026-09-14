@@ -130,9 +130,6 @@ function startRuntime(
     return createAuthedContractClient(contract, {
       baseUrl: location.origin,
       clientVersion: WORKER_APP_VERSION,
-      getRootSignal: () => {
-        return context.signal;
-      },
       getToken: () => {
         return Promise.resolve("initial-token");
       },

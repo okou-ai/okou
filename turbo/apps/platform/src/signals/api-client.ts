@@ -13,7 +13,6 @@ import type {
 import { appVersion$ } from "./app-version.ts";
 import { createAuthedContractClient } from "./api-client-base.ts";
 import { apiClientRuntime$ } from "./api-client-runtime.ts";
-import { rootSignal$ } from "./root-signal.ts";
 
 /**
  * Type alias for the factory function returned by `get(apiClient$)`.
@@ -40,7 +39,7 @@ export const OAUTH_API_BASE = "oauth" as OAuthApiBase;
 export interface ApiClientOptions {
   readonly apiBase?: "auto" | "api" | OAuthApiBase;
   /** Pin an exchange to its freshly activated session, or make it unauthenticated. */
-  readonly getToken?: (signal: AbortSignal) => Promise<string | null>;
+  readonly getToken?: (signal?: AbortSignal) => Promise<string | null>;
   /** Capture request auth state before a token read and validate it afterwards. */
   readonly getTokenGuard?: () => () => void;
 }
@@ -72,11 +71,9 @@ function rebaseApiPath(
  * }
  * ```
  */
-// eslint-disable-next-line ccstate/no-computed-signal -- migrate this computed away from AbortSignal ownership
 export const apiClient$ = computed((get) => {
   const runtime = get(apiClientRuntime$);
   const clientVersion = get(appVersion$);
-  const rootSignal = get(rootSignal$);
   const tokenOptions = {
     getToken: runtime.getToken,
   };
@@ -86,9 +83,6 @@ export const apiClient$ = computed((get) => {
       getTokenGuard: options?.getTokenGuard,
       baseUrl: runtime.apiBaseUrl,
       clientVersion,
-      getRootSignal: () => {
-        return rootSignal;
-      },
       resolvePath: (path) => {
         if (options?.apiBase === "api") {
           return rebaseApiPath(path, runtime.apiBaseUrl, runtime.apiBaseUrl);
