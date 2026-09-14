@@ -249,21 +249,24 @@ test("A failed preview renewal can retry while the loaded cover stays in place",
   };
   mockPresentationTemplateLibrary([uploaded]);
   let unavailable = true;
+  const releaseRenewal = context.mocks.deferred<void>();
   context.mocks.api(
     presentationTemplatesContract.resolvePreviewUrls,
-    ({ respond }) => {
-      return unavailable
-        ? respond(500, {
-            error: {
-              code: "INTERNAL_SERVER_ERROR",
-              message: "Preview renewal unavailable",
-            },
-          })
-        : respond(200, {
-            assets: source.previewAssets.map((asset) => {
-              return { ...asset, url: `${asset.url}?renewed` };
-            }),
-          });
+    async ({ respond }) => {
+      if (unavailable) {
+        return respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Preview renewal unavailable",
+          },
+        });
+      }
+      await releaseRenewal.promise;
+      return respond(200, {
+        assets: source.previewAssets.map((asset) => {
+          return { ...asset, url: `${asset.url}?renewed` };
+        }),
+      });
     },
   );
   const user = userEvent.setup();
@@ -281,6 +284,14 @@ test("A failed preview renewal can retry while the loaded cover stays in place",
   expect(screen.queryAllByText("Preview renewal unavailable")).toHaveLength(0);
   unavailable = false;
   click(buttonNamed("Retry", picker));
+  await waitFor(() => {
+    expect(buttonNamed("Retry", picker)).toBeDisabled();
+  });
+  expect(
+    within(picker).getByText("Couldn't refresh template previews."),
+  ).toBeInTheDocument();
+  expect(previousImage).toHaveAttribute("data-active", "true");
+  releaseRenewal.resolve();
   const renewedImage = await pendingImportedTemplateImage(media, "renewed");
   expect(previousImage).toHaveAttribute("data-active", "true");
   fireEvent.load(renewedImage);

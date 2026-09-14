@@ -5784,7 +5784,8 @@ function ImportedPresentationTemplateLibraryStatus({
   const realtime = useLoadable(
     signals.template.presentationTemplatesRealtimeReady$,
   );
-  const previews = useLoadable(
+  // Keep the error and retry control in place until renewal succeeds.
+  const previews = useLastLoadable(
     signals.template.importedPresentationTemplatePreviewAssets$,
   );
   const retryCatalog = useSet(
