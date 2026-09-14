@@ -13068,11 +13068,23 @@ describe("CHAT-02: model-first provider policies", () => {
       {
         content: copiedArchiveNotice,
         sequenceNumber: 0,
-        runEventId: "event:0",
+        runEventId: expect.stringMatching(/^api-first:[0-9a-f-]{36}:0$/u),
       },
-      { content: "beta", sequenceNumber: 1, runEventId: "event:1" },
-      { content: "gamma", sequenceNumber: 2, runEventId: "event:2" },
-      { content: "delta", sequenceNumber: 3, runEventId: "event:3" },
+      {
+        content: "beta",
+        sequenceNumber: 1,
+        runEventId: expect.stringMatching(/^api-first:[0-9a-f-]{36}:1$/u),
+      },
+      {
+        content: "gamma",
+        sequenceNumber: 2,
+        runEventId: expect.stringMatching(/^api-first:[0-9a-f-]{36}:2$/u),
+      },
+      {
+        content: "delta",
+        sequenceNumber: 3,
+        runEventId: expect.stringMatching(/^api-first:[0-9a-f-]{36}:3$/u),
+      },
     ]);
   }, 90_000);
 
