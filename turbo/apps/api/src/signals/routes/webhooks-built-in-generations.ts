@@ -43,6 +43,10 @@ import {
   type RunBuiltInAdmission,
 } from "../services/run-built-in-admission.service";
 import {
+  withImageReferenceSourceMarker,
+  withoutImageReferenceSourceMarker,
+} from "../services/image-reference-generation.service";
+import {
   verifyBuiltInGenerationProviderWebhookToken,
   verifyJoggAiWebhookSignature,
 } from "../services/built-in-generation-provider-webhooks.service";
@@ -189,12 +193,21 @@ const completeAdmissionForJob$ = command(
   },
 );
 
-function parseJobImageOptions(job: BuiltInGenerationWebhookJob): ImageOptions {
-  const options = parseImageOptions(job.request);
+function parseJobImageOptions(job: BuiltInGenerationWebhookJob): {
+  readonly options: ImageOptions;
+  readonly hasImageReference: boolean;
+} {
+  const internal = readBuiltInGenerationRequestInternal(job.request);
+  const hasImageReference = internal.imageReferenceCount === 1;
+  const options = parseImageOptions(
+    hasImageReference
+      ? withImageReferenceSourceMarker(job.request)
+      : job.request,
+  );
   if (isErrorResponse(options)) {
     throw new Error(options.body.error.message);
   }
-  return options;
+  return { options, hasImageReference };
 }
 
 function parseJobVideoOptions(job: BuiltInGenerationWebhookJob) {
@@ -749,7 +762,7 @@ const handleFalImageCompletion$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const options = parseJobImageOptions(args.job);
+    const { options, hasImageReference } = parseJobImageOptions(args.job);
     const falResult = parseFalImageResult(args.payload);
     if (isErrorResponse(falResult)) {
       await set(
@@ -805,6 +818,14 @@ const handleFalImageCompletion$ = command(
       signal.throwIfAborted();
       return;
     }
+    const recordableGeneration = hasImageReference
+      ? {
+          ...generation,
+          sourceImageUrls: withoutImageReferenceSourceMarker(
+            generation.sourceImageUrls,
+          ),
+        }
+      : generation;
     const imagePricing = await get(imagePricing$);
     signal.throwIfAborted();
     const pricing = activeImagePricing(imagePricing, options);
@@ -832,7 +853,7 @@ const handleFalImageCompletion$ = command(
         publicBrand: builtInGenerationPublicBrand(args.job.request),
         privateArtifacts: builtInGenerationIsPrivate(args.job.request),
         pricing,
-        generation,
+        generation: recordableGeneration,
         usageIdempotency: {
           generationId: args.job.id,
           scope: "image",

@@ -1,12 +1,16 @@
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 
 import {
+  DeleteObjectsCommand,
+  GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
   type PutObjectCommandInput,
 } from "@aws-sdk/client-s3";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
 import { onTestFinished } from "vitest";
@@ -29,7 +33,11 @@ import { createDeferredPromise } from "../../utils";
 import { webhooksBuiltInGenerationRoutes } from "../webhooks-built-in-generations";
 import { billingStatusRoutes } from "../billing-status";
 import { builtInGenerationRoutes } from "../built-in-generation";
+import { featureSwitchesRoutes } from "../feature-switches";
 import { imageIoGenerateRoutes } from "../image-io-generate";
+import { imageReferencesRoutes } from "../image-references";
+import { uploadsCompleteRoutes } from "../uploads-complete";
+import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { usageRecordRoutes } from "../usage-record";
 import {
   createUsagePricingFixture,
@@ -59,7 +67,12 @@ const context = testContext();
 const store = createStore();
 const mocks = createRouteMocks(context);
 const TEST_BUCKET = "test-user-artifacts";
+const PRIVATE_ARTIFACTS_BUCKET = "test-private-artifacts";
 const IMAGE_BYTES = Buffer.from("fake image bytes");
+const REFERENCE_IMAGE_BYTES = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Z0YQAAAAASUVORK5CYII=",
+  "base64",
+);
 const IMAGE_IO_MODEL = "gpt-image-1";
 const FAL_GPT_IMAGE_1_URL =
   "https://queue.fal.run/fal-ai/gpt-image-1/text-to-image";
@@ -177,6 +190,14 @@ const GPT_IMAGE_2_5_PRICING = GPT_IMAGE_2_5_MODELS.flatMap((provider) => {
   });
 }) satisfies readonly UsagePricingRow[];
 
+interface StoredReferenceObject {
+  readonly id: string;
+  readonly bucket: string;
+  readonly key: string;
+  readonly contentType: string;
+  readonly body: Buffer;
+}
+
 const tokenRequest = Object.freeze({
   keyName: "test-key",
   timestamp: 1_700_000_000_000,
@@ -228,10 +249,243 @@ function createImageIoTestApp(
       ...imageIoGenerateRoutes,
       ...webhooksBuiltInGenerationRoutes,
       ...billingStatusRoutes,
+      ...featureSwitchesRoutes,
+      ...uploadsPrepareRoutes,
+      ...uploadsCompleteRoutes,
+      ...imageReferencesRoutes,
       ...usageRecordRoutes,
     ],
     usagePricingResolution,
   });
+}
+
+type ImageIoTestApp = ReturnType<typeof createImageIoTestApp>;
+
+interface ImageReferenceActor {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly orgRole?: "org:admin" | "org:member";
+}
+
+interface CreatedImageReference {
+  readonly id: string;
+  readonly title: string;
+  readonly sourceKey: string;
+}
+
+function storedReferenceIdentity(bucket: string, key: string): string {
+  return `${bucket}\u0000${key}`;
+}
+
+function s3CommandInput(command: unknown): Record<string, unknown> {
+  if (
+    typeof command === "object" &&
+    command !== null &&
+    "input" in command &&
+    typeof command.input === "object" &&
+    command.input !== null
+  ) {
+    return command.input as Record<string, unknown>;
+  }
+  return {};
+}
+
+function deleteStoredReferenceObjects(
+  storedObjects: Map<string, StoredReferenceObject>,
+  bucket: string,
+  deletion: unknown,
+): void {
+  if (
+    typeof deletion !== "object" ||
+    deletion === null ||
+    !("Objects" in deletion) ||
+    !Array.isArray(deletion.Objects)
+  ) {
+    return;
+  }
+  for (const candidate of deletion.Objects) {
+    const key =
+      typeof candidate === "object" &&
+      candidate !== null &&
+      "Key" in candidate &&
+      typeof candidate.Key === "string"
+        ? candidate.Key
+        : null;
+    if (key) {
+      storedObjects.delete(storedReferenceIdentity(bucket, key));
+    }
+  }
+}
+
+function installReferenceStorageMock(): {
+  readonly events: string[];
+  readonly storedObjects: Map<string, StoredReferenceObject>;
+} {
+  const events: string[] = [];
+  const storedObjects = new Map<string, StoredReferenceObject>();
+  let sequence = 0;
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    const input = s3CommandInput(command);
+    const bucket = typeof input.Bucket === "string" ? input.Bucket : "";
+    const key = typeof input.Key === "string" ? input.Key : "";
+    const object = storedObjects.get(storedReferenceIdentity(bucket, key));
+    if (command instanceof HeadObjectCommand) {
+      if (!object) {
+        return Promise.reject(
+          Object.assign(new Error("Missing test object"), { name: "NotFound" }),
+        );
+      }
+      return Promise.resolve({
+        ContentLength: object.body.byteLength,
+        ContentType: object.contentType,
+        LastModified: new Date("2026-01-01T00:00:00.000Z"),
+        Metadata: { "artifact-id": object.id },
+      });
+    }
+    if (command instanceof GetObjectCommand) {
+      if (!object) {
+        return Promise.reject(
+          Object.assign(new Error("Missing test object"), {
+            name: "NoSuchKey",
+          }),
+        );
+      }
+      return Promise.resolve({
+        ContentLength: object.body.byteLength,
+        ContentType: object.contentType,
+        Body: Readable.from([object.body]),
+      });
+    }
+    if (command instanceof DeleteObjectsCommand) {
+      deleteStoredReferenceObjects(storedObjects, bucket, input.Delete);
+      return Promise.resolve({});
+    }
+    return Promise.resolve({});
+  });
+  context.mocks.s3.getSignedUrl.mockImplementation(
+    (_client: unknown, command: unknown) => {
+      sequence += 1;
+      const base = new URL(apiTestS3PresignedUrl(command));
+      base.searchParams.set("sequence", sequence.toString());
+      const url = base.toString();
+      if (command instanceof GetObjectCommand) {
+        events.push("presign-get");
+      }
+      return Promise.resolve(url);
+    },
+  );
+  return { events, storedObjects };
+}
+
+function useImageReferenceActor(actor: ImageReferenceActor): void {
+  mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole ?? "org:admin");
+}
+
+async function setReferenceImagesEnabled(
+  app: ImageIoTestApp,
+  actor: ImageReferenceActor,
+  enabled: boolean,
+): Promise<void> {
+  useImageReferenceActor(actor);
+  const response = await app.request("/api/feature-switches", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({
+      switches: { [FeatureSwitchKey.ReferenceImages]: enabled },
+    }),
+  });
+  expect(response.status).toBe(200);
+}
+
+async function createImageReferenceViaApi(
+  app: ImageIoTestApp,
+  actor: ImageReferenceActor,
+  storage: ReturnType<typeof installReferenceStorageMock>,
+  options?: {
+    readonly visibility?: "private" | "public";
+    readonly title?: string;
+  },
+): Promise<CreatedImageReference> {
+  useImageReferenceActor(actor);
+  const title = options?.title ?? "Generation reference";
+  const prepare = await app.request("/api/image-references/uploads/prepare", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({
+      filename: "reference.png",
+      contentType: "image/png",
+      size: REFERENCE_IMAGE_BYTES.byteLength,
+    }),
+  });
+  expect(prepare.status).toBe(200);
+  const prepared: unknown = await prepare.json();
+  if (
+    typeof prepared !== "object" ||
+    prepared === null ||
+    !("sourceFileId" in prepared) ||
+    typeof prepared.sourceFileId !== "string"
+  ) {
+    throw new Error("Expected a prepared reference upload");
+  }
+  const uploadCommand = context.mocks.s3.getSignedUrl.mock.calls
+    .map((call) => {
+      return call[1];
+    })
+    .reverse()
+    .find((command: unknown) => {
+      const input = s3CommandInput(command);
+      const metadata = input.Metadata;
+      return (
+        command instanceof PutObjectCommand &&
+        typeof metadata === "object" &&
+        metadata !== null &&
+        "artifact-id" in metadata &&
+        metadata["artifact-id"] === prepared.sourceFileId
+      );
+    });
+  const uploadInput = s3CommandInput(uploadCommand);
+  const bucket =
+    typeof uploadInput.Bucket === "string" ? uploadInput.Bucket : null;
+  const key = typeof uploadInput.Key === "string" ? uploadInput.Key : null;
+  if (!bucket || !key) {
+    throw new Error("Expected a private reference upload target");
+  }
+  expect(bucket).toBe(PRIVATE_ARTIFACTS_BUCKET);
+  storage.storedObjects.set(storedReferenceIdentity(bucket, key), {
+    id: prepared.sourceFileId,
+    bucket,
+    key,
+    contentType: "image/png",
+    body: REFERENCE_IMAGE_BYTES,
+  });
+
+  const complete = await app.request("/api/uploads/complete", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ id: prepared.sourceFileId }),
+  });
+  expect(complete.status).toBe(200);
+
+  const create = await app.request("/api/image-references", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({
+      sourceFileId: prepared.sourceFileId,
+      title,
+      visibility: options?.visibility ?? "private",
+    }),
+  });
+  expect(create.status).toBe(201);
+  const created: unknown = await create.json();
+  if (
+    typeof created !== "object" ||
+    created === null ||
+    !("id" in created) ||
+    typeof created.id !== "string"
+  ) {
+    throw new Error("Expected a created image reference");
+  }
+  return { id: created.id, title, sourceKey: key };
 }
 
 function currentSecond(): number {
@@ -4490,6 +4744,467 @@ describe("POST /api/image-io/generate", () => {
     });
     expect(falCalls).toBe(0);
     await expect(orgCredits(fixture)).resolves.toBe(1000);
+  });
+
+  it("gates saved references and makes inaccessible ids indistinguishable", async () => {
+    const owner = await seedImageFixture({ credits: 1000 });
+    const member = {
+      userId: `user_${randomUUID()}`,
+      orgId: owner.orgId,
+      orgRole: "org:member" as const,
+    };
+    await store.set(
+      seedOrgMembership$,
+      { orgId: owner.orgId, userId: member.userId, role: "member" },
+      context.signal,
+    );
+    const storage = installReferenceStorageMock();
+    const app = createImageIoTestApp();
+    await setReferenceImagesEnabled(app, owner, true);
+    const reference = await createImageReferenceViaApi(app, owner, storage);
+
+    let falCalls = 0;
+    server.use(
+      http.post(FAL_QWEN_IMAGE_3_EDIT_URL, () => {
+        falCalls += 1;
+        return HttpResponse.json({});
+      }),
+    );
+    const generate = async (actor: ImageReferenceActor) => {
+      useImageReferenceActor(actor);
+      return await app.request("/api/image-io/generate", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          prompt: "Use an unavailable reference",
+          model: "qwen-image-3",
+          imageReferenceIds: [reference.id],
+        }),
+      });
+    };
+
+    useImageReferenceActor(owner);
+    for (const imageReferenceIds of [
+      ["not-a-uuid"],
+      [reference.id, randomUUID()],
+    ]) {
+      const invalid = await app.request("/api/image-io/generate", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          prompt: "Invalid saved reference input",
+          model: "qwen-image-3",
+          imageReferenceIds,
+        }),
+      });
+      expect(invalid.status).toBe(400);
+      expect(JSON.stringify(await invalid.json())).not.toContain(reference.id);
+    }
+
+    await setReferenceImagesEnabled(app, owner, false);
+    const disabled = await generate(owner);
+    expect(disabled.status).toBe(403);
+    await expect(disabled.json()).resolves.toStrictEqual({
+      error: {
+        message: "Reference images are not enabled",
+        code: "FORBIDDEN",
+      },
+    });
+
+    await setReferenceImagesEnabled(app, owner, true);
+    const privateNonOwner = await generate(member);
+    expect(privateNonOwner.status).toBe(404);
+    const notFoundBody = await privateNonOwner.json();
+    expect(notFoundBody).toStrictEqual({
+      error: { message: "Image reference not found", code: "NOT_FOUND" },
+    });
+    expect(JSON.stringify(notFoundBody)).not.toContain(reference.id);
+
+    useImageReferenceActor(owner);
+    const shared = await app.request(`/api/image-references/${reference.id}`, {
+      method: "PATCH",
+      headers: authHeaders(),
+      body: JSON.stringify({ visibility: "public" }),
+    });
+    expect(shared.status).toBe(200);
+    const revoked = await app.request(`/api/image-references/${reference.id}`, {
+      method: "PATCH",
+      headers: authHeaders(),
+      body: JSON.stringify({ visibility: "private" }),
+    });
+    expect(revoked.status).toBe(200);
+    const revokedMember = await generate(member);
+    expect(revokedMember.status).toBe(404);
+    await expect(revokedMember.json()).resolves.toStrictEqual(notFoundBody);
+
+    const otherOrg = await seedImageFixture({ credits: 1000 });
+    await setReferenceImagesEnabled(app, otherOrg, true);
+    const crossOrg = await generate(otherOrg);
+    expect(crossOrg.status).toBe(404);
+    await expect(crossOrg.json()).resolves.toStrictEqual(notFoundBody);
+
+    await seedOrgMetadata({ orgId: owner.orgId, tier: "free", credits: 0 });
+    const signedUrlCallsBeforeInsufficientCredits =
+      context.mocks.s3.getSignedUrl.mock.calls.length;
+    const insufficientCreditsResponse = await generate(owner);
+    expect(insufficientCreditsResponse.status).toBe(402);
+    await expect(insufficientCreditsResponse.json()).resolves.toStrictEqual({
+      error: {
+        message: "Insufficient credits. Please add credits to continue.",
+        code: "INSUFFICIENT_CREDITS",
+      },
+    });
+    expect(context.mocks.s3.getSignedUrl.mock.calls).toHaveLength(
+      signedUrlCallsBeforeInsufficientCredits,
+    );
+
+    useImageReferenceActor(owner);
+    const deleted = await app.request(`/api/image-references/${reference.id}`, {
+      method: "DELETE",
+      headers: authHeaders(),
+    });
+    expect(deleted.status).toBe(204);
+    const deletedReference = await generate(owner);
+    expect(deletedReference.status).toBe(404);
+    await expect(deletedReference.json()).resolves.toStrictEqual(notFoundBody);
+    expect(falCalls).toBe(0);
+  });
+
+  it("redacts private reference values when provider URL preparation fails", async () => {
+    const fixture = await seedImageFixture({ credits: 1000 });
+    const pricingFixture = await createScopedImagePricing({
+      configured: QWEN_IMAGE_3_PRICING,
+    });
+    const storage = installReferenceStorageMock();
+    const app = createImageIoTestApp(pricingFixture.resolution);
+    await setReferenceImagesEnabled(app, fixture, true);
+    const reference = await createImageReferenceViaApi(app, fixture, storage, {
+      title: "Private error-path title",
+    });
+    const syntheticProviderUrl = `https://private.example/${reference.sourceKey}?signature=secret`;
+    context.mocks.s3.getSignedUrl.mockRejectedValueOnce(
+      new Error(
+        `${reference.id} ${reference.title} ${reference.sourceKey} ${syntheticProviderUrl}`,
+      ),
+    );
+
+    let falCalls = 0;
+    server.use(
+      http.post(FAL_QWEN_IMAGE_3_EDIT_URL, () => {
+        falCalls += 1;
+        return HttpResponse.json({});
+      }),
+    );
+    useImageReferenceActor(fixture);
+    const response = await app.request("/api/image-io/generate", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        prompt: "Use the private reference",
+        model: "qwen-image-3",
+        imageReferenceIds: [reference.id],
+      }),
+    });
+    expect(response.status).toBe(503);
+    const responseBody: unknown = await response.json();
+    expect(responseBody).toStrictEqual({
+      error: {
+        message: "Image reference is temporarily unavailable",
+        code: "PROVIDER_UNAVAILABLE",
+      },
+    });
+    expect(falCalls).toBe(0);
+
+    const generationId = readPublishedGenerationId(
+      context.mocks.ably.publish.mock.calls,
+    );
+    const statusResponse = await app.request(
+      `/api/built-in-generations/${generationId}`,
+      { headers: authHeaders() },
+    );
+    expect(statusResponse.status).toBe(200);
+    const statusBody: unknown = await statusResponse.json();
+    expect(statusBody).toMatchObject({
+      generationId,
+      type: "image",
+      status: "failed",
+      error: {
+        message: "Image reference is temporarily unavailable",
+        code: "PROVIDER_UNAVAILABLE",
+      },
+    });
+    const publicSurfaces = JSON.stringify({
+      responseBody,
+      statusBody,
+      realtime: context.mocks.ably.publish.mock.calls,
+    });
+    for (const privateValue of [
+      reference.id,
+      reference.title,
+      reference.sourceKey,
+      syntheticProviderUrl,
+    ]) {
+      expect(publicSurfaces).not.toContain(privateValue);
+    }
+  });
+
+  it("appends an owner reference just in time for Fal without persisting private values", async () => {
+    const fixture = await seedImageFixture({ credits: 1000 });
+    const pricingFixture = await createScopedImagePricing({
+      configured: QWEN_IMAGE_3_PRICING,
+    });
+    const storage = installReferenceStorageMock();
+    const app = createImageIoTestApp(pricingFixture.resolution);
+    await setReferenceImagesEnabled(app, fixture, true);
+    const reference = await createImageReferenceViaApi(app, fixture, storage, {
+      visibility: "public",
+      title: "Confidential campaign style",
+    });
+    storage.events.length = 0;
+
+    const explicitUrls = [MOCKUP_IMAGE_URL, SECOND_MOCKUP_IMAGE_URL];
+    let falCalls = 0;
+    let observedBody: Record<string, unknown> | null = null;
+    let observedRequestUrl: string | null = null;
+    server.use(
+      http.post(FAL_QWEN_IMAGE_3_EDIT_URL, async ({ request }) => {
+        falCalls += 1;
+        storage.events.push("fal-submit");
+        observedRequestUrl = request.url;
+        observedBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(
+          falQueueHandle("saved-reference-qwen-image-3-request"),
+        );
+      }),
+      http.get(FAL_QWEN_IMAGE_3_MEDIA_URL, () => {
+        return new HttpResponse(IMAGE_BYTES, {
+          headers: { "Content-Type": "image/png" },
+        });
+      }),
+    );
+
+    useImageReferenceActor(fixture);
+    const response = await app.request("/api/image-io/generate", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        prompt: "Restyle the subject using the saved visual language",
+        model: "qwen-image-3",
+        imageUrls: explicitUrls,
+        imageReferenceIds: [reference.id],
+      }),
+    });
+    expect(response.status).toBe(202);
+    const acceptedBody: unknown = await response.json();
+    const generationId = readAcceptedGenerationId(
+      acceptedBody,
+      "image",
+      fixture.userId,
+    );
+
+    expect(falCalls).toBe(1);
+    expect(storage.events).toStrictEqual(["presign-get", "fal-submit"]);
+    const providerImageUrls = (
+      observedBody as unknown as Record<string, unknown> | null
+    )?.["image_urls"];
+    expect(Array.isArray(providerImageUrls)).toBeTruthy();
+    if (!Array.isArray(providerImageUrls)) {
+      throw new Error("Expected mixed Fal image references");
+    }
+    expect(providerImageUrls.slice(0, 2)).toStrictEqual(explicitUrls);
+    const providerReferenceUrl = String(providerImageUrls[2]);
+    const parsedProviderReferenceUrl = new URL(providerReferenceUrl);
+    expect(parsedProviderReferenceUrl.origin).toBe("https://r2.example.com");
+    expect(parsedProviderReferenceUrl.searchParams.get("object")).toBe(
+      `${PRIVATE_ARTIFACTS_BUCKET}/${reference.sourceKey}`,
+    );
+    const providerPresignCall = [...context.mocks.s3.getSignedUrl.mock.calls]
+      .reverse()
+      .find((call: unknown[]) => {
+        const input = s3CommandInput(call[1]);
+        return (
+          call[1] instanceof GetObjectCommand &&
+          input.Bucket === PRIVATE_ARTIFACTS_BUCKET &&
+          input.Key === reference.sourceKey
+        );
+      });
+    expect(s3CommandInput(providerPresignCall?.[1])).toMatchObject({
+      Bucket: PRIVATE_ARTIFACTS_BUCKET,
+      Key: reference.sourceKey,
+      ResponseCacheControl: "private, no-store",
+    });
+    expect(providerPresignCall?.[2]).toStrictEqual({ expiresIn: 60 * 60 });
+
+    expect(JSON.stringify(acceptedBody)).not.toContain(reference.id);
+    expect(JSON.stringify(acceptedBody)).not.toContain(providerReferenceUrl);
+
+    const rejected = await app.request("/api/image-io/generate", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        prompt: "Too many mixed references",
+        model: "qwen-image-3",
+        imageUrls: [
+          MOCKUP_IMAGE_URL,
+          SECOND_MOCKUP_IMAGE_URL,
+          THIRD_MOCKUP_IMAGE_URL,
+        ],
+        imageReferenceIds: [reference.id],
+      }),
+    });
+    expect(rejected.status).toBe(400);
+    await expect(rejected.json()).resolves.toStrictEqual({
+      error: {
+        message: "imageUrls supports at most 3 images",
+        code: "BAD_REQUEST",
+      },
+    });
+    expect(falCalls).toBe(1);
+
+    await postFalWebhook(app, observedRequestUrl, {
+      images: [
+        {
+          url: FAL_QWEN_IMAGE_3_MEDIA_URL,
+          width: 1024,
+          height: 768,
+          content_type: "image/png",
+        },
+      ],
+    });
+    await flushWaitUntilForTest();
+    const statusResponse = await app.request(
+      `/api/built-in-generations/${generationId}`,
+      { headers: authHeaders() },
+    );
+    expect(statusResponse.status).toBe(200);
+    const statusBody: unknown = await statusResponse.json();
+    expect(readGenerationResult(statusBody)).toMatchObject({
+      creditsCharged: FAL_QWEN_IMAGE_3_STANDARD_TIER_CREDITS,
+      sourceImageUrls: explicitUrls,
+    });
+    const publicSurface = JSON.stringify(statusBody);
+    for (const privateValue of [
+      reference.id,
+      reference.title,
+      reference.sourceKey,
+      providerReferenceUrl,
+    ]) {
+      expect(publicSurface).not.toContain(privateValue);
+    }
+    await expect(orgCredits(fixture)).resolves.toBe(
+      1000 - FAL_QWEN_IMAGE_3_STANDARD_TIER_CREDITS,
+    );
+  });
+
+  it("submits a shared reference through BytePlus and bills it exactly once", async () => {
+    const owner = await seedImageFixture({ credits: 1000 });
+    const member = {
+      userId: `user_${randomUUID()}`,
+      orgId: owner.orgId,
+      orgRole: "org:member" as const,
+    };
+    await store.set(
+      seedOrgMembership$,
+      { orgId: owner.orgId, userId: member.userId, role: "member" },
+      context.signal,
+    );
+    const pricingFixture = await createScopedImagePricing({
+      configured: SEEDREAM_5_PRO_IMAGE_PRICING,
+    });
+    const storage = installReferenceStorageMock();
+    const app = createImageIoTestApp(pricingFixture.resolution);
+    await setReferenceImagesEnabled(app, owner, true);
+    const reference = await createImageReferenceViaApi(app, owner, storage, {
+      visibility: "public",
+      title: "Shared private-source reference",
+    });
+    storage.events.length = 0;
+
+    let observedBody: Record<string, unknown> | null = null;
+    server.use(
+      http.post(BYTEPLUS_IMAGE_GENERATIONS_URL, async ({ request }) => {
+        storage.events.push("byteplus-submit");
+        observedBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({
+          created: 1_700_000_000,
+          model: "dola-seedream-5-0-pro-260628",
+          data: [
+            {
+              url: BYTEPLUS_SEEDREAM_5_PRO_LOW_MEDIA_URL,
+              size: "1536x1536",
+              output_format: "jpeg",
+            },
+          ],
+        });
+      }),
+      http.get(BYTEPLUS_SEEDREAM_5_PRO_LOW_MEDIA_URL, () => {
+        return new HttpResponse(IMAGE_BYTES, {
+          headers: { "Content-Type": "image/jpeg" },
+        });
+      }),
+    );
+
+    useImageReferenceActor(member);
+    const response = await app.request("/api/image-io/generate", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({
+        prompt: "Use the organization reference after the explicit subject",
+        model: "seedream5-pro",
+        size: "1.5K",
+        outputFormat: "jpeg",
+        imageUrls: [MOCKUP_IMAGE_URL],
+        imageReferenceIds: [reference.id],
+      }),
+    });
+    expect(response.status).toBe(202);
+    const acceptedBody: unknown = await response.json();
+    const generationId = readAcceptedGenerationId(
+      acceptedBody,
+      "image",
+      member.userId,
+    );
+    await flushWaitUntilForTest();
+
+    expect(storage.events).toStrictEqual(["presign-get", "byteplus-submit"]);
+    const providerImages = observedBody?.["image"];
+    expect(Array.isArray(providerImages)).toBeTruthy();
+    if (!Array.isArray(providerImages)) {
+      throw new Error("Expected BytePlus image references");
+    }
+    expect(providerImages[0]).toBe(MOCKUP_IMAGE_URL);
+    const providerReferenceUrl = String(providerImages[1]);
+    const parsedProviderReferenceUrl = new URL(providerReferenceUrl);
+    expect(parsedProviderReferenceUrl.searchParams.get("object")).toBe(
+      `${PRIVATE_ARTIFACTS_BUCKET}/${reference.sourceKey}`,
+    );
+
+    const statusResponse = await app.request(
+      `/api/built-in-generations/${generationId}`,
+      { headers: authHeaders() },
+    );
+    expect(statusResponse.status).toBe(200);
+    const statusBody: unknown = await statusResponse.json();
+    expect(readGenerationResult(statusBody)).toMatchObject({
+      creditsCharged: 60,
+      billingCategory: "provider_cost_usd_micros",
+      billingQuantity: 48_000,
+      sourceImageUrls: [MOCKUP_IMAGE_URL],
+    });
+    const nonProviderSurfaces = JSON.stringify({
+      acceptedBody,
+      statusBody,
+      realtime: context.mocks.ably.publish.mock.calls,
+    });
+    for (const privateValue of [
+      reference.id,
+      reference.title,
+      reference.sourceKey,
+      providerReferenceUrl,
+    ]) {
+      expect(nonProviderSurfaces).not.toContain(privateValue);
+    }
+    await expect(orgCredits(owner)).resolves.toBe(940);
   });
 
   it("records a failed job when fal image generation fails", async () => {

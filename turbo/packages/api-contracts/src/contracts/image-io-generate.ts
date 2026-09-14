@@ -10,6 +10,7 @@ const stringOrStringArraySchema = z.union([
   z.array(z.string()).readonly(),
 ]);
 const numberOrStringSchema = z.union([z.number(), z.string()]);
+const imageReferenceIdsSchema = z.array(z.string().uuid()).max(1).readonly();
 
 export const imageIoGenerateRequestSchema = z
   .object({
@@ -28,6 +29,7 @@ export const imageIoGenerateRequestSchema = z
     image_url: stringOrStringArraySchema.optional(),
     imageUrls: stringOrStringArraySchema.optional(),
     image_urls: stringOrStringArraySchema.optional(),
+    imageReferenceIds: imageReferenceIdsSchema.optional(),
     maskImageUrl: z.string().optional(),
     mask_image_url: z.string().optional(),
     inputFidelity: z.string().optional(),
@@ -86,6 +88,7 @@ export const imageIoGenerateContract = c.router({
       401: apiErrorSchema,
       402: apiErrorSchema,
       403: apiErrorSchema,
+      404: apiErrorSchema,
       500: apiErrorSchema,
       502: apiErrorSchema,
       503: apiErrorSchema,

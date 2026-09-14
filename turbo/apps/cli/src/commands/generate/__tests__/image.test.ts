@@ -17,6 +17,7 @@ import { DEFAULT_IMAGE_MODEL_ENV } from "@okouai/core/image-model-catalog";
 
 const IMAGE_URL = "http://localhost:3000/api/image-io/generate";
 const IMAGE_GENERATION_ID = "00000000-0000-4000-8000-000000000001";
+const IMAGE_REFERENCE_ID = "00000000-0000-4000-8000-000000000002";
 const IMAGE_STATUS_URL = `http://localhost:3000/api/built-in-generations/${IMAGE_GENERATION_ID}`;
 const IMAGE_RESULT = {
   id: "image-file-id",
@@ -538,6 +539,91 @@ describe("okou generate image command", () => {
     expect(stdout).toContain("Provider: fal");
   });
 
+  it("should serialize one saved reference after explicit image URLs", async () => {
+    let capturedBody: unknown;
+    server.use(
+      http.post(IMAGE_URL, async ({ request }) => {
+        capturedBody = await request.json();
+        return HttpResponse.json(IMAGE_RESULT);
+      }),
+    );
+
+    await generateCommand.parseAsync([
+      "node",
+      "cli",
+      "image",
+      "--raw-prompt",
+      "Use the saved visual language for a new subject",
+      "--model",
+      "nano-banana-2",
+      "--image-url",
+      "https://example.com/subject.png",
+      "--image-reference-id",
+      IMAGE_REFERENCE_ID,
+    ]);
+
+    expect(capturedBody).toEqual({
+      prompt: "Use the saved visual language for a new subject",
+      model: "nano-banana-2",
+      size: "auto",
+      quality: "medium",
+      background: "auto",
+      outputFormat: "png",
+      moderation: "auto",
+      safetyTolerance: "4",
+      imageUrls: ["https://example.com/subject.png"],
+      imageReferenceIds: [IMAGE_REFERENCE_ID],
+    });
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).not.toContain(
+      IMAGE_REFERENCE_ID,
+    );
+  });
+
+  it.each([
+    {
+      name: "a malformed saved reference id",
+      args: ["--image-reference-id", "not-a-uuid"],
+      message: "--image-reference-id must be a valid UUID",
+    },
+    {
+      name: "more than one saved reference id",
+      args: [
+        "--image-reference-id",
+        IMAGE_REFERENCE_ID,
+        "--image-reference-id",
+        "00000000-0000-4000-8000-000000000003",
+      ],
+      message: "--image-reference-id can be specified at most once",
+    },
+    {
+      name: "a connector-backed saved reference request",
+      args: ["--image-reference-id", IMAGE_REFERENCE_ID, "--provider", "fal"],
+      message:
+        "--image-reference-id is only supported by the built-in provider",
+    },
+    {
+      name: "a saved reference in compile mode",
+      args: ["--image-reference-id", IMAGE_REFERENCE_ID, "--compile"],
+      message:
+        "--image-reference-id is only available for direct image generation",
+    },
+  ])("should reject $name", async ({ args, message }) => {
+    await expect(async () => {
+      await generateCommand.parseAsync([
+        "node",
+        "cli",
+        "image",
+        "--raw-prompt",
+        "A new subject",
+        ...args,
+      ]);
+    }).rejects.toThrow("process.exit called");
+
+    expect(mockConsoleError).toHaveBeenCalledWith(
+      expect.stringContaining(message),
+    );
+  });
+
   it("should pass Nano Banana 2 edit controls to the image API", async () => {
     let capturedBody: unknown;
     server.use(
@@ -1036,6 +1122,7 @@ describe("okou generate image command", () => {
     expect(helpOutput).toContain("--seed");
     expect(helpOutput).toContain("--safety-tolerance");
     expect(helpOutput).toContain("--image-url");
+    expect(helpOutput).toContain("--image-reference-id <uuid>");
     expect(helpOutput).toContain("--image-prompt-strength");
     expect(helpOutput).toContain(
       "Nano Banana 2 models and Seedream 5 Lite accept up to 14",

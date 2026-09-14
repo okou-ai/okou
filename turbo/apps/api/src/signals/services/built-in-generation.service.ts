@@ -60,6 +60,8 @@ interface BuiltInGenerationRequestInternal {
   readonly providerStatusUrl?: string;
   readonly providerResponseUrl?: string;
   readonly providerTask?: string;
+  readonly imageReferenceCount?: number;
+  readonly imageReferenceSource?: "owner" | "organization";
   readonly presentation?: unknown;
 }
 
@@ -126,6 +128,8 @@ export function builtInGenerationRequestWithInternal(
       providerStatusUrl: internal.providerStatusUrl,
       providerResponseUrl: internal.providerResponseUrl,
       providerTask: internal.providerTask,
+      imageReferenceCount: internal.imageReferenceCount,
+      imageReferenceSource: internal.imageReferenceSource,
       presentation: internal.presentation,
     }),
   };
@@ -140,6 +144,25 @@ function parsePrivateArtifactsPolicy(value: unknown): boolean | undefined {
     throw new Error("Invalid built-in generation artifact storage policy");
   }
   return value;
+}
+
+function optionalImageReferenceCount(value: unknown): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === 1) {
+    return value;
+  }
+  throw new Error("Invalid built-in generation image reference count");
+}
+
+function optionalImageReferenceSource(
+  value: unknown,
+): "owner" | "organization" | undefined {
+  if (value === undefined || value === "owner" || value === "organization") {
+    return value;
+  }
+  throw new Error("Invalid built-in generation image reference source");
 }
 
 export function readBuiltInGenerationRequestInternal(
@@ -192,6 +215,10 @@ export function readBuiltInGenerationRequestInternal(
         : undefined,
     providerTask:
       typeof value.providerTask === "string" ? value.providerTask : undefined,
+    imageReferenceCount: optionalImageReferenceCount(value.imageReferenceCount),
+    imageReferenceSource: optionalImageReferenceSource(
+      value.imageReferenceSource,
+    ),
     presentation: value.presentation,
   };
 }

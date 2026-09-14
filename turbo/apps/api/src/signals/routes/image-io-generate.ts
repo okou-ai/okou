@@ -53,6 +53,13 @@ import {
   startRunBuiltInAdmission$,
   type RunBuiltInAdmission,
 } from "../services/run-built-in-admission.service";
+import {
+  authorizeImageReferenceForGeneration$,
+  resolveImageReferenceProviderUrl$,
+  withImageReferenceSourceMarker,
+  withoutImageReferenceSourceMarker,
+  type ImageReferenceGenerationFailure,
+} from "../services/image-reference-generation.service";
 import { resolveProviderReferenceUrls$ } from "../services/provider-reference-url.service";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
@@ -79,9 +86,77 @@ interface ImageJobArgs {
   readonly publicBrand: PublicBrand;
   readonly privateArtifacts: boolean;
   readonly admission: RunBuiltInAdmission | null;
+  readonly imageReferenceId: string | undefined;
   readonly options: ImageOptions;
   readonly pricing: ImagePricing;
 }
+
+type ImageReferenceSource = "owner" | "organization";
+type ImageProviderReferencesResolution =
+  | ReturnType<typeof badRequestMessage>
+  | ImageReferenceGenerationFailure
+  | {
+      readonly kind: "resolved";
+      readonly references: ImageProviderReferences;
+      readonly imageReferenceSource: ImageReferenceSource | undefined;
+    };
+
+function imageReferenceAccessError(
+  access: ImageReferenceGenerationFailure,
+): GenerationErrorResponse {
+  if (access.kind === "disabled") {
+    return {
+      status: 403,
+      body: {
+        error: {
+          message: "Reference images are not enabled",
+          code: "FORBIDDEN",
+        },
+      },
+    };
+  }
+  if (access.kind === "unavailable") {
+    return {
+      status: 503,
+      body: {
+        error: {
+          message: "Image reference is temporarily unavailable",
+          code: "PROVIDER_UNAVAILABLE",
+        },
+      },
+    };
+  }
+  return {
+    status: 404,
+    body: {
+      error: {
+        message: "Image reference not found",
+        code: "NOT_FOUND",
+      },
+    },
+  };
+}
+
+const preflightImageReference$ = command(
+  async (
+    { get, set },
+    referenceId: string | undefined,
+    signal: AbortSignal,
+  ): Promise<GenerationErrorResponse | null> => {
+    if (!referenceId) {
+      return null;
+    }
+    const auth = get(organizationAuthContext$);
+    const access = await set(
+      authorizeImageReferenceForGeneration$,
+      { orgId: auth.orgId, userId: auth.userId, referenceId },
+      signal,
+    );
+    return access.kind === "authorized"
+      ? null
+      : imageReferenceAccessError(access);
+  },
+);
 
 async function loadRunImageModelDefault(
   db: ReadonlyDb,
@@ -135,7 +210,10 @@ function isErrorResponse(value: unknown): value is GenerationErrorResponse {
   );
 }
 
-function imageRequestRecord(options: ImageOptions): Record<string, unknown> {
+function imageRequestRecord(
+  options: ImageOptions,
+  hasImageReference: boolean,
+): Record<string, unknown> {
   return {
     model: options.model,
     provider: options.provider,
@@ -151,7 +229,9 @@ function imageRequestRecord(options: ImageOptions): Record<string, unknown> {
     ...(options.seed !== undefined ? { seed: options.seed } : {}),
     safetyTolerance: options.safetyTolerance,
     enhancePrompt: options.enhancePrompt,
-    sourceImageUrls: options.sourceImageUrls,
+    sourceImageUrls: hasImageReference
+      ? withoutImageReferenceSourceMarker(options.sourceImageUrls)
+      : options.sourceImageUrls,
     maskImageUrl: options.maskImageUrl,
     inputFidelity: options.inputFidelity,
     imagePromptStrength: options.imagePromptStrength,
@@ -176,14 +256,18 @@ function acceptedImageResponse(
 const resolveImageProviderReferences$ = command(
   async (
     { set },
-    args: Pick<ImageJobArgs, "orgId" | "userId" | "options">,
+    args: Pick<
+      ImageJobArgs,
+      "orgId" | "userId" | "imageReferenceId" | "options"
+    >,
     signal: AbortSignal,
-  ): Promise<
-    ImageProviderReferences | ReturnType<typeof badRequestMessage>
-  > => {
-    const sourceCount = args.options.sourceImageUrls.length;
+  ): Promise<ImageProviderReferencesResolution> => {
+    const sourceImageUrls = args.imageReferenceId
+      ? withoutImageReferenceSourceMarker(args.options.sourceImageUrls)
+      : args.options.sourceImageUrls;
+    const sourceCount = sourceImageUrls.length;
     const urls = [
-      ...args.options.sourceImageUrls,
+      ...sourceImageUrls,
       ...(args.options.maskImageUrl ? [args.options.maskImageUrl] : []),
     ];
     const resolved = await set(
@@ -194,11 +278,40 @@ const resolveImageProviderReferences$ = command(
     if ("status" in resolved) {
       return resolved;
     }
+    const referenceId = args.imageReferenceId;
+    if (!referenceId) {
+      return {
+        kind: "resolved",
+        references: {
+          sourceImageUrls: resolved.slice(0, sourceCount),
+          maskImageUrl: args.options.maskImageUrl
+            ? resolved[sourceCount]
+            : undefined,
+        },
+        imageReferenceSource: undefined,
+      };
+    }
+
+    const savedReference = await set(
+      resolveImageReferenceProviderUrl$,
+      { orgId: args.orgId, userId: args.userId, referenceId },
+      signal,
+    );
+    if (savedReference.kind !== "resolved") {
+      return savedReference;
+    }
     return {
-      sourceImageUrls: resolved.slice(0, sourceCount),
-      maskImageUrl: args.options.maskImageUrl
-        ? resolved[sourceCount]
-        : undefined,
+      kind: "resolved",
+      references: {
+        sourceImageUrls: [
+          ...resolved.slice(0, sourceCount),
+          savedReference.url,
+        ],
+        maskImageUrl: args.options.maskImageUrl
+          ? resolved[sourceCount]
+          : undefined,
+      },
+      imageReferenceSource: savedReference.referenceSource,
     };
   },
 );
@@ -218,18 +331,39 @@ const submitImageProviderWebhookJob$ = command(
         "NOT_CONFIGURED",
       );
     }
-    const references = await set(resolveImageProviderReferences$, args, signal);
-    if ("status" in references) {
+    const resolution = await set(resolveImageProviderReferences$, args, signal);
+    if ("status" in resolution) {
       await set(
         failBuiltInGenerationJob$,
-        { generationId: args.generationId, error: references.body.error },
+        { generationId: args.generationId, error: resolution.body.error },
         signal,
       );
-      return references;
+      return resolution;
+    }
+    if (resolution.kind !== "resolved") {
+      const error = imageReferenceAccessError(resolution);
+      await set(
+        failBuiltInGenerationJob$,
+        { generationId: args.generationId, error: error.body.error },
+        signal,
+      );
+      return error;
+    }
+    if (resolution.imageReferenceSource) {
+      await set(
+        mergeBuiltInGenerationJobInternal$,
+        {
+          generationId: args.generationId,
+          internal: {
+            imageReferenceSource: resolution.imageReferenceSource,
+          },
+        },
+        signal,
+      );
     }
     const handle = await submitFalImageQueueGeneration(
       args.options,
-      references,
+      resolution.references,
       falKey,
       falBuiltInGenerationWebhookUrl({ generationId: args.generationId }),
       signal,
@@ -286,16 +420,51 @@ const executeDirectImageProviderJob$ = command(
       return;
     }
 
-    const references = await set(resolveImageProviderReferences$, args, signal);
-    const generation =
-      "status" in references
-        ? references
-        : await (isOpenAi ? generateOpenAiImage : generateBytePlusImage)(
-            args.options,
-            references,
-            apiKey,
-            signal,
-          );
+    const resolution = await set(resolveImageProviderReferences$, args, signal);
+    if ("status" in resolution) {
+      await set(
+        failBuiltInGenerationJob$,
+        { generationId: args.generationId, error: resolution.body.error },
+        signal,
+      );
+      signal.throwIfAborted();
+      await set(completeRunBuiltInAdmission$, {
+        admission: args.admission,
+        status: "failed",
+      });
+      signal.throwIfAborted();
+      return;
+    }
+    if (resolution.kind !== "resolved") {
+      const error = imageReferenceAccessError(resolution);
+      await set(
+        failBuiltInGenerationJob$,
+        { generationId: args.generationId, error: error.body.error },
+        signal,
+      );
+      signal.throwIfAborted();
+      await set(completeRunBuiltInAdmission$, {
+        admission: args.admission,
+        status: "failed",
+      });
+      signal.throwIfAborted();
+      return;
+    }
+    if (resolution.imageReferenceSource) {
+      await set(
+        mergeBuiltInGenerationJobInternal$,
+        {
+          generationId: args.generationId,
+          internal: {
+            imageReferenceSource: resolution.imageReferenceSource,
+          },
+        },
+        signal,
+      );
+    }
+    const generation = await (
+      isOpenAi ? generateOpenAiImage : generateBytePlusImage
+    )(args.options, resolution.references, apiKey, signal);
     signal.throwIfAborted();
     if (isErrorResponse(generation)) {
       await set(
@@ -312,6 +481,14 @@ const executeDirectImageProviderJob$ = command(
       return;
     }
 
+    const recordableGeneration = args.imageReferenceId
+      ? {
+          ...generation,
+          sourceImageUrls: withoutImageReferenceSourceMarker(
+            generation.sourceImageUrls,
+          ),
+        }
+      : generation;
     const result = await set(
       recordGeneratedImage$,
       {
@@ -323,7 +500,7 @@ const executeDirectImageProviderJob$ = command(
         publicBrand: args.publicBrand,
         privateArtifacts: args.privateArtifacts,
         pricing: args.pricing,
-        generation,
+        generation: recordableGeneration,
         usageIdempotency: {
           generationId: args.generationId,
           scope: "image",
@@ -405,9 +582,41 @@ const startImageProviderJob$ = command(
   },
 );
 
+function imageProviderConfigurationError(options: ImageOptions) {
+  if (options.provider === "fal" && !env("FAL_KEY")) {
+    return serviceUnavailable(
+      "Fal image generation is not configured",
+      "NOT_CONFIGURED",
+    );
+  }
+  if (options.provider === "byteplus" && !env("BYTEPLUS_API_KEY")) {
+    return serviceUnavailable(
+      "BytePlus image generation is not configured",
+      "NOT_CONFIGURED",
+    );
+  }
+  if (options.provider === "openai" && !env("OPENAI_API_KEY")) {
+    return serviceUnavailable(
+      "OpenAI image generation is not configured",
+      "NOT_CONFIGURED",
+    );
+  }
+  return null;
+}
+
+function parseImageRequestOptions(
+  body: unknown,
+  imageReferenceId: string | undefined,
+  defaultModel: ImageModel,
+) {
+  return parseImageOptions(
+    imageReferenceId ? withImageReferenceSourceMarker(body) : body,
+    { defaultModel },
+  );
+}
+
 const postImageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const db = get(db$);
   const bodyResult = await get(imageBody$);
   signal.throwIfAborted();
   if (!bodyResult.ok) {
@@ -418,19 +627,30 @@ const postImageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     auth.tokenType === "agent" || auth.tokenType === "sandbox"
       ? auth.runId
       : undefined;
-  const publicBrand = PUBLIC_BRAND;
   const runImageModelDefault = await loadRunImageModelDefault(
-    db,
+    get(db$),
     auth.orgId,
     auth.userId,
     runId,
     signal,
   );
-  const options = parseImageOptions(bodyResult.data, {
-    defaultModel: runImageModelDefault ?? DEFAULT_IMAGE_MODEL,
-  });
+  const imageReferenceId = bodyResult.data.imageReferenceIds?.[0];
+  const options = parseImageRequestOptions(
+    bodyResult.data,
+    imageReferenceId,
+    runImageModelDefault ?? DEFAULT_IMAGE_MODEL,
+  );
   if ("status" in options) {
     return options;
+  }
+
+  const referenceError = await set(
+    preflightImageReference$,
+    imageReferenceId,
+    signal,
+  );
+  if (referenceError) {
+    return referenceError;
   }
 
   const hasCredits = await set(
@@ -456,23 +676,9 @@ const postImageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
 
-  if (options.provider === "fal" && !env("FAL_KEY")) {
-    return serviceUnavailable(
-      "Fal image generation is not configured",
-      "NOT_CONFIGURED",
-    );
-  }
-  if (options.provider === "byteplus" && !env("BYTEPLUS_API_KEY")) {
-    return serviceUnavailable(
-      "BytePlus image generation is not configured",
-      "NOT_CONFIGURED",
-    );
-  }
-  if (options.provider === "openai" && !env("OPENAI_API_KEY")) {
-    return serviceUnavailable(
-      "OpenAI image generation is not configured",
-      "NOT_CONFIGURED",
-    );
+  const providerConfigurationError = imageProviderConfigurationError(options);
+  if (providerConfigurationError) {
+    return providerConfigurationError;
   }
 
   const generationId = randomUUID();
@@ -499,12 +705,13 @@ const postImageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       userId: auth.userId,
       runId,
       request: builtInGenerationRequestWithInternal(
-        imageRequestRecord(options),
+        imageRequestRecord(options, imageReferenceId !== undefined),
         {
           admissionId: admission?.id,
-          publicBrand,
+          publicBrand: PUBLIC_BRAND,
           provider: options.provider,
           providerTask: "image",
+          imageReferenceCount: imageReferenceId ? 1 : undefined,
         },
       ),
     },
@@ -518,9 +725,10 @@ const postImageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       orgId: auth.orgId,
       userId: auth.userId,
       runId,
-      publicBrand,
+      publicBrand: PUBLIC_BRAND,
       privateArtifacts,
       admission,
+      imageReferenceId,
       options,
       pricing,
     },
