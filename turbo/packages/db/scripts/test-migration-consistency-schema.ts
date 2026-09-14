@@ -1390,13 +1390,6 @@ const EXPECTED_PERMANENT_TRIGGERS = [
   },
   {
     definition:
-      "CREATE TRIGGER pi_memory_stage1_candidate_blob_ref_count_trigger AFTER INSERT OR DELETE OR UPDATE OF source_history_hash ON public.pi_memory_stage1_candidates FOR EACH ROW EXECUTE FUNCTION pi_memory_stage1_candidate_blob_ref_count()",
-    schemaName: "public",
-    tableName: "pi_memory_stage1_candidates",
-    triggerName: "pi_memory_stage1_candidate_blob_ref_count_trigger",
-  },
-  {
-    definition:
       "CREATE TRIGGER run_uploaded_files_delete_artifact_registry AFTER DELETE ON public.run_uploaded_files FOR EACH ROW EXECUTE FUNCTION delete_artifact_registry_entity('file')",
     schemaName: "public",
     tableName: "run_uploaded_files",
@@ -1566,13 +1559,6 @@ const EXPECTED_PERMANENT_FUNCTIONS = [
   {
     bodyHash: "6e1e9c59353aa29b1e0ba58f1406e875",
     functionName: "queue_artifact_catalog_file",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "576154890be37fff1ec9f9f4c318428c",
-    functionName: "pi_memory_stage1_candidate_blob_ref_count",
     identityArguments: "",
     kind: "f",
     schemaName: "public",
@@ -1979,139 +1965,6 @@ async function validatePermanentArtifactTriggerBehavior(
     await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [
       fixture.agentId,
     ]);
-    await client.end();
-  }
-}
-
-async function validatePermanentPiMemoryStage1BlobRetentionBehavior(
-  dbUrl: string,
-): Promise<void> {
-  console.log(
-    "=== Phase 2.5.2.1: Validate permanent Pi memory blob retention behavior ===\n",
-  );
-  const client = new Client({ connectionString: dbUrl });
-  await client.connect();
-
-  const fixture = {
-    storageId: "00000000-0000-4000-8000-000000310831",
-    sourceRunId: "00000000-0000-4000-8000-000000310832",
-    orgId: "pi-memory-stage1-trigger-org",
-    userId: "pi-memory-stage1-trigger-user",
-    piSessionId: "pi-memory-stage1-trigger-session",
-    firstHash: "a".repeat(64),
-    secondHash: "b".repeat(64),
-  } as const;
-
-  const readBlobRefs = async () => {
-    return await client.query<{
-      readonly hash: string;
-      readonly refCount: number;
-    }>(
-      `
-        SELECT "hash", "ref_count" AS "refCount"
-        FROM "blobs"
-        WHERE "hash" = ANY($1::varchar[])
-        ORDER BY "hash"
-      `,
-      [[fixture.firstHash, fixture.secondHash]],
-    );
-  };
-
-  try {
-    await client.query(
-      `
-        INSERT INTO "blobs" (
-          "hash", "raw_size", "ref_count", "encoding", "encoded_size"
-        )
-        VALUES
-          ($1, 0, 1, 'identity', 0),
-          ($2, 0, 1, 'identity', 0)
-      `,
-      [fixture.firstHash, fixture.secondHash],
-    );
-    await client.query(
-      `
-        INSERT INTO "storages" (
-          "id", "org_id", "user_id", "name", "s3_prefix"
-        )
-        VALUES ($1, $2, $3, 'memory', $4)
-      `,
-      [
-        fixture.storageId,
-        fixture.orgId,
-        fixture.userId,
-        `${fixture.orgId}/${fixture.storageId}`,
-      ],
-    );
-    await client.query(
-      `
-        INSERT INTO "pi_memory_stage1_candidates" (
-          "memory_storage_id",
-          "org_id",
-          "user_id",
-          "pi_session_id",
-          "source_run_id",
-          "source_history_hash",
-          "source_completed_at",
-          "eligible_at"
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
-      `,
-      [
-        fixture.storageId,
-        fixture.orgId,
-        fixture.userId,
-        fixture.piSessionId,
-        fixture.sourceRunId,
-        fixture.firstHash,
-      ],
-    );
-    assert.deepEqual((await readBlobRefs()).rows, [
-      { hash: fixture.firstHash, refCount: 2 },
-      { hash: fixture.secondHash, refCount: 1 },
-    ]);
-
-    await client.query(
-      `
-        UPDATE "pi_memory_stage1_candidates"
-        SET "source_history_hash" = $1
-        WHERE "memory_storage_id" = $2
-          AND "pi_session_id" = $3
-      `,
-      [fixture.secondHash, fixture.storageId, fixture.piSessionId],
-    );
-    assert.deepEqual((await readBlobRefs()).rows, [
-      { hash: fixture.firstHash, refCount: 1 },
-      { hash: fixture.secondHash, refCount: 2 },
-    ]);
-
-    await client.query(`DELETE FROM "storages" WHERE "id" = $1`, [
-      fixture.storageId,
-    ]);
-    const remainingCandidate = await client.query<{ readonly exists: boolean }>(
-      `
-        SELECT EXISTS (
-          SELECT 1
-          FROM "pi_memory_stage1_candidates"
-          WHERE "memory_storage_id" = $1
-        ) AS "exists"
-      `,
-      [fixture.storageId],
-    );
-    assert.equal(remainingCandidate.rows[0]?.exists, false);
-    assert.deepEqual((await readBlobRefs()).rows, [
-      { hash: fixture.firstHash, refCount: 1 },
-      { hash: fixture.secondHash, refCount: 1 },
-    ]);
-
-    await client.query(
-      `DELETE FROM "blobs" WHERE "hash" = ANY($1::varchar[])`,
-      [[fixture.firstHash, fixture.secondHash]],
-    );
-    console.log(
-      "   ✅ Candidate insert, source replacement, and Storage cascade retain and release exact blob references\n",
-    );
-  } finally {
     await client.end();
   }
 }
@@ -3806,7 +3659,6 @@ async function main(): Promise<void> {
     await validatePermanentMarketingPrivacyState(dbUrl1);
     await validatePermanentUsagePackPendingSnapshotState(dbUrl1);
     await validatePermanentArtifactTriggerBehavior(dbUrl1);
-    await validatePermanentPiMemoryStage1BlobRetentionBehavior(dbUrl1);
     await validatePermanentAgentRunMetadataState(dbUrl1);
     await validatePermanentBuiltInModelCooldownState(dbUrl1);
     await validatePermanentBuiltInModelKeyState(dbUrl1);
@@ -3878,7 +3730,7 @@ async function main(): Promise<void> {
         "   ✅ Permanent artifact triggers preserve cascade, queue, and scope behavior",
       );
       console.log(
-        "   ✅ Pi memory candidates retain and release exact source blob references",
+        "   ✅ Permanent inventory matches API-owned Pi candidate accounting",
       );
       console.log("   ✅ Draining API avatar writes receive preset defaults");
       console.log("   ✅ Consecutive database resets replay all migrations");
