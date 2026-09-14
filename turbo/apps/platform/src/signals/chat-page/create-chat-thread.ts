@@ -2012,8 +2012,48 @@ function markPendingEventTreesFailed(
   return failed;
 }
 
+/**
+ * Re-parse one failed rich body. Preparation is push-based, so the retry also
+ * lays out the body's diagrams; nothing else visits this event until the
+ * render window moves.
+ */
+function createRetryRichEventTree({
+  internalEventTrees$,
+  ensureEventTrees$,
+  diagramCodesForEvents$,
+  ensureDiagrams$,
+}: {
+  readonly internalEventTrees$: State<ReadonlyMap<string, EventTree>>;
+  readonly ensureEventTrees$: Command<
+    Promise<void>,
+    [readonly ChatEvent[], AbortSignal]
+  >;
+  readonly diagramCodesForEvents$: Command<
+    readonly string[],
+    [readonly ChatEvent[]]
+  >;
+  readonly ensureDiagrams$: MermaidDiagramRegistry["ensureDiagrams$"];
+}): Command<Promise<void>, [ChatEvent, AbortSignal]> {
+  return command(
+    async ({ get, set }, event: ChatEvent, signal: AbortSignal) => {
+      const current = get(internalEventTrees$);
+      const entry = current.get(event.id);
+      const content = chatEventTreeContent(event);
+      if (!entry?.error || content === null || entry.content !== content) {
+        return;
+      }
+      const next = new Map(current);
+      next.delete(event.id);
+      set(internalEventTrees$, next);
+      await set(ensureEventTrees$, [event], signal);
+      signal.throwIfAborted();
+      await set(ensureDiagrams$, set(diagramCodesForEvents$, [event]), signal);
+    },
+  );
+}
+
 function createEventTreeSignals(registries: EventTreeRegistries) {
-  const { chatActionContext } = registries;
+  const { chatActionContext, mermaidDiagrams } = registries;
 
   const internalEventTrees$ = state<ReadonlyMap<string, EventTree>>(new Map());
   const eventTrees$ = computed((get): ReadonlyMap<string, Root> => {
@@ -2116,25 +2156,6 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
     },
   );
 
-  const retryRichEventTree$ = command(
-    async (
-      { get, set },
-      event: ChatEvent,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      const current = get(internalEventTrees$);
-      const entry = current.get(event.id);
-      const content = chatEventTreeContent(event);
-      if (!entry?.error || content === null || entry.content !== content) {
-        return;
-      }
-      const next = new Map(current);
-      next.delete(event.id);
-      set(internalEventTrees$, next);
-      await set(ensureEventTrees$, [event], signal);
-    },
-  );
-
   const diagramCodesForEvents$ = command(
     ({ get }, events: readonly ChatEvent[]): readonly string[] => {
       const trees = get(internalEventTrees$);
@@ -2143,6 +2164,13 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
       });
     },
   );
+
+  const retryRichEventTree$ = createRetryRichEventTree({
+    internalEventTrees$,
+    ensureEventTrees$,
+    diagramCodesForEvents$,
+    ensureDiagrams$: mermaidDiagrams.ensureDiagrams$,
+  });
 
   return {
     eventTrees$,

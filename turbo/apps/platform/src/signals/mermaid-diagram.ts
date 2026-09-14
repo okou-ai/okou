@@ -167,13 +167,6 @@ function svgFile(markup: string): File {
 }
 
 /**
- * Pure factory for a diagram's signals. `ownerSignal` must match the consumer
- * surface. Streaming surfaces use `MermaidDiagramRegistry` so reparsing a
- * growing message preserves signal identities. Immutable surfaces such as a
- * shared thread or preview tree can instead use a factory-scoped resolver and
- * reuse its signals when that tree is prepared again.
- */
-/**
  * Lay out one diagram and return it as an SVG file. Pure: the caller decides
  * which lifetime owns the blob URL made from it.
  */
@@ -283,11 +276,11 @@ export interface MermaidDiagramRegistry {
 }
 
 /**
- * A per-surface registry keyed by diagram source. The map is a `state` written
- * only by `register$` and never leaves the registry: the command that parses a
- * tree embeds each entry on its marker node. `owner` owns every entry's blob
- * URLs, so tearing the surface down releases its diagrams. It is read at
- * registration because a diagram outlives the parse that produced it.
+ * A per-surface registry keyed by diagram source. `register$` hands the parse
+ * command a signals object to embed on the marker node; it allocates nothing.
+ * `ensureDiagrams$` lays the diagrams out and owns their blob URLs through the
+ * signal of the run that prepared them, so a diagram outlives the parse that
+ * produced it but not the surface that showed it.
  */
 export function createMermaidDiagramRegistry(): MermaidDiagramRegistry {
   // Keyed by theme and source. The source itself is the key rather than a
