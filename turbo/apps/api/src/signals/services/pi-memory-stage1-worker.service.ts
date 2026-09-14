@@ -162,6 +162,16 @@ class RetryableWorkError extends Error {
   }
 }
 
+/** Terminal, non-retryable: the owner has PiMemory off, so the work is moot. */
+class DisabledWorkError extends Error {
+  readonly errorClass = "pi_memory_disabled";
+
+  constructor() {
+    super("Pi memory is disabled for the Stage 1 work owner");
+    this.name = "DisabledWorkError";
+  }
+}
+
 function scopeCondition(scope: PiMemoryStage1Scope | undefined) {
   return scope
     ? and(
@@ -639,9 +649,12 @@ async function failWork(
   error: unknown,
   startedAt: number,
 ): Promise<WorkOutcome> {
-  const permanent = error instanceof PermanentSourceError;
+  const permanent =
+    error instanceof PermanentSourceError || error instanceof DisabledWorkError;
   const errorClass =
-    error instanceof PermanentSourceError || error instanceof RetryableWorkError
+    error instanceof PermanentSourceError ||
+    error instanceof RetryableWorkError ||
+    error instanceof DisabledWorkError
       ? error.errorClass
       : error instanceof DOMException && error.name === "AbortError"
         ? "abort"
@@ -772,6 +785,32 @@ async function extractPreparedWork(
     { model, projectedHistory: args.prepared.projectedHistory, requestId },
     signal,
   );
+}
+
+async function partitionWorkByPiMemorySwitch(
+  db: Db,
+  claimed: readonly ClaimedPiMemoryStage1Work[],
+  signal: AbortSignal,
+): Promise<{
+  readonly enabled: readonly ClaimedPiMemoryStage1Work[];
+  readonly disabled: readonly ClaimedPiMemoryStage1Work[];
+}> {
+  const enabled: ClaimedPiMemoryStage1Work[] = [];
+  const disabled: ClaimedPiMemoryStage1Work[] = [];
+  for (const work of claimed) {
+    // Each candidate's own owner decides, never the cron caller.
+    const context = await loadUserFeatureSwitchContext(
+      db,
+      work.orgId,
+      work.userId,
+    );
+    signal.throwIfAborted();
+    (isFeatureEnabled(FeatureSwitchKey.PiMemory, context)
+      ? enabled
+      : disabled
+    ).push(work);
+  }
+  return { enabled, disabled };
 }
 
 async function processPreparedWork(
@@ -928,6 +967,43 @@ export const executePiMemoryStage1Work$ = command(
       return logBatchResult({ ...base, claimed: 0 }, startedAt);
     }
 
+    // Switch-off work settles terminal before any provider route, download,
+    // or provider call, so it consumes no attempt and is never re-leased.
+    const gated = await settleIncludingAbort(
+      partitionWorkByPiMemorySwitch(db, claim.claimed, signal),
+    );
+    if (signal.aborted) {
+      await retryOwnedWorkAfterAbort(db, owned, signal.reason);
+      signal.throwIfAborted();
+    }
+    if (!gated.ok) {
+      const outcomes = await Promise.all(
+        claim.claimed.map(async (work) => {
+          return await failWork(db, work, gated.error, performance.now());
+        }),
+      );
+      signal.throwIfAborted();
+      owned.clear();
+      return logBatchResult(
+        countOutcomes(base, outcomes, claim.claimed.length),
+        startedAt,
+      );
+    }
+    const outcomes: WorkOutcome[] = [];
+    for (const work of gated.value.disabled) {
+      outcomes.push(
+        await failWork(db, work, new DisabledWorkError(), performance.now()),
+      );
+      owned.delete(work);
+    }
+    const enabledWork = gated.value.enabled;
+    if (enabledWork.length === 0) {
+      return logBatchResult(
+        countOutcomes(base, outcomes, claim.claimed.length),
+        startedAt,
+      );
+    }
+
     const resolvedModel = await settleIncludingAbort(
       resolveStage1ProviderConfig(db, signal),
     );
@@ -936,15 +1012,17 @@ export const executePiMemoryStage1Work$ = command(
       signal.throwIfAborted();
     }
     if (!resolvedModel.ok) {
-      const outcomes = await Promise.all(
-        claim.claimed.map(async (work) => {
-          return await failWork(
-            db,
-            work,
-            resolvedModel.error,
-            performance.now(),
-          );
-        }),
+      outcomes.push(
+        ...(await Promise.all(
+          enabledWork.map(async (work) => {
+            return await failWork(
+              db,
+              work,
+              resolvedModel.error,
+              performance.now(),
+            );
+          }),
+        )),
       );
       signal.throwIfAborted();
       owned.clear();
@@ -957,11 +1035,10 @@ export const executePiMemoryStage1Work$ = command(
 
     const contextWindow = resolvePiMemoryStage1ContextWindow(model);
     const prepared: PreparedWork[] = [];
-    const outcomes: WorkOutcome[] = [];
     // Deliberately serial: at most one encoded + decoded 128 MiB history is
     // resident. Provider concurrency is independent and begins only after raw
     // buffers have fallen out of scope.
-    for (const work of claim.claimed) {
+    for (const work of enabledWork) {
       const workStartedAt = performance.now();
       const loaded = await settleIncludingAbort(
         set(loadAndProjectHistory$, { work, contextWindow }, signal),
