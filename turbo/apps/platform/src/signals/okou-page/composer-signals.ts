@@ -1,4 +1,3 @@
-import { stopAndTranscribe$ } from "../voice-io/voice-io-stt.ts";
 import {
   createComposerTaskChipsSignals,
   type ComposerTaskChipsSignals,
@@ -78,7 +77,6 @@ type ComposerEditorSignals = Pick<
   | "insertPromptMarkdown$"
   | "insertUserMessage$"
   | "insertText$"
-  | "appendText$"
   | "selectOrAppendText$"
 > & {
   readonly singleLineOnMobile: boolean;
@@ -345,7 +343,6 @@ function composerEditorSignals(
     insertPromptMarkdown$: composer.insertPromptMarkdown$,
     insertUserMessage$: composer.insertUserMessage$,
     insertText$: composer.insertText$,
-    appendText$: composer.appendText$,
     selectOrAppendText$: composer.selectOrAppendText$,
   };
 }
@@ -522,7 +519,6 @@ function createComposerVoiceInput(
     },
   );
   return createComposerVoiceInputSignals(
-    workflowComposer.appendText$,
     deliverText$,
     workflowComposer.readVoiceContext$,
     lastAssistantMessage$,
@@ -853,8 +849,6 @@ function createSubmitCurrentInput({
       if (action !== "send" && action !== "queue") {
         return false;
       }
-      await set(stopAndTranscribe$, signal);
-      signal.throwIfAborted();
       if (!get(draft.attachmentUploadsReady$)) {
         return false;
       }

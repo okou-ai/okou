@@ -22,6 +22,7 @@ import {
   commitErasureInventoryPage,
   executeErasureWork,
   finalizeErasureJob,
+  lockErasureSubjects,
   projectErasureDecision,
   renewErasureLease,
   retireErasureProjectionPage,
@@ -35,6 +36,7 @@ import {
   type ErasureLease,
   type ErasureProof,
   type ErasureSink,
+  type ErasureUnresolved,
 } from "@okouai/db/operations/account-erasure";
 
 // Explicit external-behavior exception: B1 has no HTTP/cron/worker entry point.
@@ -216,6 +218,908 @@ describe("dormant account erasure persistence", () => {
       .set({ leaseExpiresAt: sql`clock_timestamp() - interval '1 second'` })
       .where(eq(work.id, lease.workId));
   }
+
+  function noncanonicalUuid(value: string): string {
+    const uppercase = value.toUpperCase();
+    // Digit-only UUIDs have no uppercase variant. Braces preserve the same
+    // PostgreSQL identity while still violating the canonical input contract.
+    return uppercase === value ? `{${value}}` : uppercase;
+  }
+
+  async function erasureFixture() {
+    const source = sink();
+    const { job } = await inventory([source]);
+    const [capture] = await claimErasureWork(db, job.id, "inventory");
+    if (!capture) {
+      throw new Error("missing capture");
+    }
+    await commitErasureInventoryPage(
+      db,
+      capture,
+      completePage([target(source.sinkId)]),
+    );
+    const sealed = await seal(job);
+    const claims = await claimErasureWork(db, job.id, "verification");
+    const lease = claims.find((claim) => {
+      return claim.item.kind === "erase";
+    });
+    const collector = claims.find((claim) => {
+      return claim.item.kind === "inventory";
+    });
+    if (!lease || !collector) {
+      throw new Error("missing claims");
+    }
+    await executeErasureWork(
+      db,
+      collector,
+      handler(source.collectorVersion),
+      context.signal,
+    );
+    return { job: sealed, source, lease };
+  }
+
+  it.each([
+    ["pending", false],
+    ["retryable_failure", false],
+    ["pending", true],
+    ["retryable_failure", true],
+  ] as const)(
+    "retains a %s receipt across the deadline (null: %s)",
+    async (outcome, noNewReceipt) => {
+      const { job, source, lease } = await erasureFixture();
+      const previousRef = randomUUID();
+      const requestRef = noNewReceipt ? null : randomUUID();
+      await db
+        .update(work)
+        .set({ requestRef: previousRef })
+        .where(eq(work.id, lease.workId));
+      const entered = deferred<void>();
+      const returned = deferred<ErasureUnresolved>();
+      const result = Promise.allSettled([
+        executeErasureWork(
+          db,
+          lease,
+          handler(source.collectorVersion, {
+            erase: async () => {
+              entered.resolve();
+              return await returned.promise;
+            },
+            verify: () => {
+              throw new Error("unexpected verification");
+            },
+          }),
+          context.signal,
+        ),
+      ]);
+      await entered.promise;
+      // Explicit infrastructure state: the job deadline crosses while the provider
+      // owns the request, but the lease still has its original valid expiry.
+      await db
+        .update(jobs)
+        .set({ deadlineAt: sql`clock_timestamp() - interval '1 second'` })
+        .where(eq(jobs.id, job.id));
+      returned.resolve({
+        outcome,
+        errorCode: "verification_failed",
+        requestRef,
+      });
+      await expect(result).resolves.toMatchObject([{ status: "fulfilled" }]);
+      await expect(
+        db.select().from(work).where(eq(work.id, lease.workId)),
+      ).resolves.toMatchObject([
+        {
+          state: "capability_unresolved",
+          errorCode: "deadline_exceeded",
+          requestRef: requestRef ?? previousRef,
+          evidenceRef: null,
+          leaseId: null,
+        },
+      ]);
+      await expect(finalizeErasureJob(db, job.id, job)).rejects.toThrow(
+        "work_unresolved",
+      );
+    },
+  );
+
+  it.each(["acknowledged", "pending", "retryable_failure"] as const)(
+    "retains a %s receipt after abort without starting verification",
+    async (outcome) => {
+      const { job, source, lease } = await erasureFixture();
+      const controller = new AbortController();
+      const entered = deferred<void>();
+      const returned = deferred<Awaited<ReturnType<ErasureHandler["erase"]>>>();
+      const requestRef = randomUUID();
+      let verified = false;
+      const result = Promise.allSettled([
+        executeErasureWork(
+          db,
+          lease,
+          handler(source.collectorVersion, {
+            erase: async () => {
+              entered.resolve();
+              return await returned.promise;
+            },
+            verify: (current) => {
+              verified = true;
+              return Promise.resolve(proof(current));
+            },
+          }),
+          controller.signal,
+        ),
+      ]);
+      await entered.promise;
+      controller.abort();
+      returned.resolve(
+        outcome === "acknowledged"
+          ? { requestRef }
+          : { outcome, requestRef, errorCode: "verification_failed" },
+      );
+      await expect(result).resolves.toMatchObject([
+        {
+          status: "rejected",
+          reason: expect.objectContaining({ name: "AbortError" }),
+        },
+      ]);
+      expect(verified).toBeFalsy();
+      await expect(
+        db.select().from(work).where(eq(work.id, lease.workId)),
+      ).resolves.toMatchObject([
+        {
+          requestRef,
+          evidenceRef: null,
+          state: outcome === "acknowledged" ? "pending" : outcome,
+        },
+      ]);
+      await expect(finalizeErasureJob(db, job.id, job)).rejects.toThrow(
+        "work_unresolved",
+      );
+    },
+  );
+
+  it("starts no provider work for pre-aborted execution and rejects proof returned after abort", async () => {
+    const { job, source, lease } = await erasureFixture();
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      executeErasureWork(
+        db,
+        lease,
+        handler(source.collectorVersion, {
+          erase: () => {
+            throw new Error("unexpected submission");
+          },
+        }),
+        controller.signal,
+      ),
+    ).rejects.toThrow("This operation was aborted");
+    const verifying = new AbortController();
+    const requestRef = randomUUID();
+    await expect(
+      executeErasureWork(
+        db,
+        lease,
+        handler(source.collectorVersion, {
+          erase: () => {
+            return Promise.resolve({ requestRef });
+          },
+          verify: (current) => {
+            verifying.abort();
+            return Promise.resolve(proof(current));
+          },
+        }),
+        verifying.signal,
+      ),
+    ).rejects.toThrow("This operation was aborted");
+    await expect(
+      db.select().from(work).where(eq(work.id, lease.workId)),
+    ).resolves.toMatchObject([
+      {
+        state: "pending",
+        requestRef,
+        evidenceRef: null,
+      },
+    ]);
+    await expect(finalizeErasureJob(db, job.id, job)).rejects.toThrow(
+      "work_unresolved",
+    );
+  });
+
+  it.each([
+    "expired",
+    "replaced",
+    "generation",
+    "capture",
+    "inventory",
+    "boundary",
+  ] as const)(
+    "rejects a returned receipt from an owner invalidated by %s",
+    async (change) => {
+      const { job, source, lease } = await erasureFixture();
+      const previousRef = randomUUID();
+      await db
+        .update(work)
+        .set({ requestRef: previousRef })
+        .where(eq(work.id, lease.workId));
+      const entered = deferred<void>();
+      const returned = deferred<ErasureUnresolved>();
+      const result = Promise.allSettled([
+        executeErasureWork(
+          db,
+          lease,
+          handler(source.collectorVersion, {
+            erase: async () => {
+              entered.resolve();
+              return await returned.promise;
+            },
+            verify: () => {
+              throw new Error("unexpected verification");
+            },
+          }),
+          context.signal,
+        ),
+      ]);
+      await entered.promise;
+      let replacement: ErasureLease | undefined;
+      if (change === "expired" || change === "replaced") {
+        await expire(lease);
+        if (change === "replaced") {
+          [replacement] = await claimErasureWork(db, job.id, "verification");
+          expect(replacement?.workId).toBe(lease.workId);
+        }
+      } else if (change === "generation") {
+        await project(
+          decision({
+            subjectKind: job.subjectKind,
+            subjectId: job.subjectId,
+            authorityId: job.authorityId,
+            generation: job.generation + 1,
+            decisionSequence: job.decisionSequence + 1n,
+            decisionRef: randomUUID(),
+            previousDecisionRef: job.decisionRef,
+          }),
+        );
+      } else {
+        // Separate revision fixtures prove each CAS term remains required.
+        await db
+          .update(jobs)
+          .set(
+            change === "capture"
+              ? { captureRevision: job.captureRevision + 1 }
+              : change === "inventory"
+                ? { inventoryRevision: job.inventoryRevision + 1 }
+                : { producerBoundaryRef: randomUUID() },
+          )
+          .where(eq(jobs.id, job.id));
+      }
+      returned.resolve({
+        outcome: "pending",
+        errorCode: "verification_failed",
+        requestRef: randomUUID(),
+      });
+      const code =
+        change === "generation"
+          ? "stale_generation"
+          : change === "boundary"
+            ? "stale_boundary"
+            : change === "capture" || change === "inventory"
+              ? "stale_revision"
+              : "lease_lost";
+      await expect(result).resolves.toMatchObject([
+        { status: "rejected", reason: new Error(`account_erasure:${code}`) },
+      ]);
+      await expect(
+        db.select().from(work).where(eq(work.id, lease.workId)),
+      ).resolves.toMatchObject([
+        {
+          requestRef: previousRef,
+          evidenceRef: null,
+          state: "pending",
+          leaseId: replacement?.leaseId ?? lease.leaseId,
+        },
+      ]);
+    },
+  );
+
+  it.each([
+    "authorityId",
+    "decisionRef",
+    "confirmationRef",
+    "previousDecisionRef",
+  ] as const)(
+    "rejects noncanonical decision %s before persistence and preserves canonical replay",
+    async (field) => {
+      const first = decision();
+      const original = await project(first);
+      const canonical =
+        field === "previousDecisionRef"
+          ? {
+              ...first,
+              generation: 2,
+              decisionSequence: 2n,
+              decisionRef: randomUUID(),
+              previousDecisionRef: first.decisionRef,
+            }
+          : decision();
+      const value = canonical[field];
+      if (!value) {
+        throw new Error("missing reference");
+      }
+      const invalid = { ...canonical, [field]: noncanonicalUuid(value) };
+      await expect(project(invalid)).rejects.toThrow("invalid_reference");
+      await expect(
+        db
+          .select()
+          .from(jobs)
+          .where(eq(jobs.decisionRef, canonical.decisionRef)),
+      ).resolves.toHaveLength(0);
+      const accepted = await project(canonical);
+      expect((await project(canonical)).id).toBe(accepted.id);
+      await expect(
+        project({ ...canonical, confirmationRef: randomUUID() }),
+      ).rejects.toThrow("conflicting_decision");
+      expect((await project(first)).id).toBe(original.id);
+    },
+  );
+
+  it("preserves case-sensitive subject identity and rejects a conflicting subject replay", async () => {
+    const input = decision({ subjectId: `CaseSensitive_${randomUUID()}` });
+    const original = await project(input);
+    const lower = input.subjectId.toLowerCase();
+    await expect(project({ ...input, subjectId: lower })).rejects.toThrow(
+      "conflicting_decision",
+    );
+    const distinct = await project(decision({ subjectId: lower }));
+    expect(distinct.id).not.toBe(original.id);
+    expect(original.subjectId).toBe(input.subjectId);
+  });
+
+  it.each([
+    "sinkId",
+    "collectorVersion",
+    "dependencySink",
+    "dependencyItem",
+  ] as const)(
+    "rejects noncanonical %s before revising sink inventory",
+    async (field) => {
+      const source = sink();
+      const dependency = {
+        sinkId: source.sinkId,
+        itemKey: source.sinkId,
+        obligation: "erasure" as const,
+      };
+      const canonical = { ...source, dependencies: [dependency] };
+      const initial = await project();
+      const invalid =
+        field === "sinkId" || field === "collectorVersion"
+          ? { ...canonical, [field]: noncanonicalUuid(canonical[field]) }
+          : {
+              ...canonical,
+              dependencies: [
+                {
+                  ...dependency,
+                  [field === "dependencySink" ? "sinkId" : "itemKey"]:
+                    noncanonicalUuid(source.sinkId),
+                },
+              ],
+            };
+      await expect(
+        reviseErasureInventory(db, initial.id, initial, [invalid]),
+      ).rejects.toThrow("invalid_reference");
+      await expect(
+        db.select().from(jobs).where(eq(jobs.id, initial.id)),
+      ).resolves.toMatchObject([
+        {
+          captureRevision: initial.captureRevision,
+          inventoryRevision: initial.inventoryRevision,
+        },
+      ]);
+      await expect(
+        db.select().from(sinks).where(eq(sinks.jobId, initial.id)),
+      ).resolves.toHaveLength(0);
+      const accepted = await reviseErasureInventory(db, initial.id, initial, [
+        canonical,
+      ]);
+      const revised = await reviseErasureInventory(db, initial.id, accepted, [
+        canonical,
+      ]);
+      await expect(
+        db.select().from(work).where(eq(work.jobId, initial.id)),
+      ).resolves.toHaveLength(1);
+      await expect(
+        reviseErasureInventory(db, initial.id, revised, [
+          { ...canonical, domain: "providers" },
+        ]),
+      ).rejects.toThrow("sink_removal");
+    },
+  );
+
+  it.each([
+    "pageKey",
+    "enumerationRef",
+    "sinkId",
+    "itemKey",
+    "dependencySink",
+    "dependencyItem",
+  ] as const)(
+    "rejects noncanonical page %s without losing canonical page/dependency replay",
+    async (field) => {
+      const { job, required } = await inventory();
+      const [lease] = await claimErasureWork(db, job.id, "inventory");
+      const source = required[0];
+      if (!lease || !source) {
+        throw new Error("missing fixture");
+      }
+      const item = target(source.sinkId);
+      const dependency = {
+        sinkId: item.sinkId,
+        itemKey: item.itemKey,
+        obligation: "erasure" as const,
+      };
+      const canonical = completePage([{ ...item, dependencies: [dependency] }]);
+      const invalid =
+        field === "pageKey" || field === "enumerationRef"
+          ? { ...canonical, [field]: noncanonicalUuid(canonical[field]) }
+          : {
+              ...canonical,
+              items: [
+                field === "sinkId" || field === "itemKey"
+                  ? {
+                      ...item,
+                      [field]: noncanonicalUuid(item[field]),
+                      dependencies: [dependency],
+                    }
+                  : {
+                      ...item,
+                      dependencies: [
+                        {
+                          ...dependency,
+                          [field === "dependencySink" ? "sinkId" : "itemKey"]:
+                            noncanonicalUuid(
+                              field === "dependencySink"
+                                ? item.sinkId
+                                : item.itemKey,
+                            ),
+                        },
+                      ],
+                    },
+              ],
+            };
+      await expect(
+        commitErasureInventoryPage(db, lease, invalid),
+      ).rejects.toThrow("invalid_reference");
+      await expect(
+        db.select().from(pages).where(eq(pages.workId, lease.workId)),
+      ).resolves.toHaveLength(0);
+      await expect(
+        db.select().from(work).where(eq(work.jobId, job.id)),
+      ).resolves.toHaveLength(1);
+      await commitErasureInventoryPage(db, lease, canonical);
+      await commitErasureInventoryPage(db, lease, canonical);
+      await expect(
+        commitErasureInventoryPage(db, lease, { ...canonical, items: [] }),
+      ).rejects.toThrow("conflicting_page");
+      await expect(
+        db.select().from(pages).where(eq(pages.workId, lease.workId)),
+      ).resolves.toHaveLength(1);
+      await expect(
+        db.select().from(work).where(eq(work.jobId, job.id)),
+      ).resolves.toHaveLength(2);
+    },
+  );
+
+  it.each(["inventory", "verification"] as const)(
+    "retains an unresolved %s receipt returned after abort",
+    async (phase) => {
+      const { job, required } = await inventory();
+      const [capture] = await claimErasureWork(db, job.id, "inventory");
+      const source = required[0];
+      if (!capture || !source) {
+        throw new Error("missing fixture");
+      }
+      let lease = capture;
+      if (phase === "verification") {
+        await commitErasureInventoryPage(db, capture, completePage());
+        await seal(job);
+        const [claim] = await claimErasureWork(db, job.id, "verification");
+        if (!claim) {
+          throw new Error("missing claim");
+        }
+        lease = claim;
+      }
+      const controller = new AbortController();
+      const requestRef = randomUUID();
+      const result: ErasureUnresolved = {
+        outcome: "pending",
+        requestRef,
+        errorCode: "verification_failed",
+      };
+      const interrupted = () => {
+        controller.abort();
+        return Promise.resolve(result);
+      };
+      await expect(
+        executeErasureWork(
+          db,
+          lease,
+          handler(source.collectorVersion, {
+            inventory: interrupted,
+            verify: interrupted,
+          }),
+          controller.signal,
+        ),
+      ).rejects.toThrow("This operation was aborted");
+      await expect(
+        db.select().from(work).where(eq(work.id, lease.workId)),
+      ).resolves.toMatchObject([
+        {
+          requestRef,
+          evidenceRef: null,
+          state: "pending",
+          leaseId: null,
+        },
+      ]);
+    },
+  );
+
+  it("rejects terminal proof when cancellation arrives while its commit waits for ownership", async () => {
+    const { job, source, lease } = await erasureFixture();
+    const controller = new AbortController();
+    const entered = deferred<void>();
+    const returned = deferred<ErasureProof>();
+    const requestRef = randomUUID();
+    const result = Promise.allSettled([
+      executeErasureWork(
+        db,
+        lease,
+        handler(source.collectorVersion, {
+          erase: () => {
+            return Promise.resolve({ requestRef });
+          },
+          verify: async () => {
+            entered.resolve();
+            return await returned.promise;
+          },
+        }),
+        controller.signal,
+      ),
+    ]);
+    await entered.promise;
+    const locked = deferred<void>();
+    const release = deferred<void>();
+    const blocker = db.transaction(async (tx) => {
+      await lockErasureSubjects(tx, [job]);
+      locked.resolve();
+      await release.promise;
+    });
+    onTestFinished(async () => {
+      if (!release.settled()) {
+        release.resolve();
+      }
+      await blocker;
+    });
+    await locked.promise;
+    returned.resolve(proof(lease));
+    await waitForAdvisoryWaiter();
+    controller.abort();
+    release.resolve();
+    await blocker;
+    await expect(result).resolves.toMatchObject([
+      {
+        status: "rejected",
+        reason: expect.objectContaining({ name: "AbortError" }),
+      },
+    ]);
+    await expect(
+      db.select().from(work).where(eq(work.id, lease.workId)),
+    ).resolves.toMatchObject([
+      {
+        state: "pending",
+        requestRef,
+        evidenceRef: null,
+        leaseId: lease.leaseId,
+      },
+    ]);
+    await expect(finalizeErasureJob(db, job.id, job)).rejects.toThrow(
+      "work_unresolved",
+    );
+  });
+
+  it("rejects noncanonical job, lease, and handler references before changing ownership or invoking an adapter", async () => {
+    const { job, source, lease } = await erasureFixture();
+    await expect(
+      claimErasureWork(db, noncanonicalUuid(job.id), "verification"),
+    ).rejects.toThrow("invalid_reference");
+    for (const key of [
+      "jobId",
+      "workId",
+      "leaseId",
+      "producerBoundaryRef",
+    ] as const) {
+      const value = lease[key];
+      if (!value) {
+        throw new Error("missing reference");
+      }
+      await expect(
+        renewErasureLease(db, { ...lease, [key]: noncanonicalUuid(value) }),
+      ).rejects.toThrow("invalid_reference");
+    }
+    await expect(
+      executeErasureWork(
+        db,
+        lease,
+        handler(noncanonicalUuid(source.collectorVersion), {
+          erase: () => {
+            throw new Error("unexpected submission");
+          },
+        }),
+        context.signal,
+      ),
+    ).rejects.toThrow("invalid_reference");
+    await expect(
+      db.select().from(work).where(eq(work.id, lease.workId)),
+    ).resolves.toMatchObject([
+      {
+        requestRef: null,
+        evidenceRef: null,
+        leaseId: lease.leaseId,
+        leaseExpiresAt: lease.item.leaseExpiresAt,
+      },
+    ]);
+    await renewErasureLease(db, lease);
+  });
+
+  it.each(["acknowledged", "unresolved", "deadline"] as const)(
+    "rejects a noncanonical %s request receipt without replacing an earlier reference",
+    async (response) => {
+      const { job, source, lease } = await erasureFixture();
+      const previousRef = randomUUID();
+      await db
+        .update(work)
+        .set({ requestRef: previousRef })
+        .where(eq(work.id, lease.workId));
+      await expect(
+        executeErasureWork(
+          db,
+          lease,
+          handler(source.collectorVersion, {
+            erase: async () => {
+              if (response === "deadline") {
+                await db
+                  .update(jobs)
+                  .set({
+                    deadlineAt: sql`clock_timestamp() - interval '1 second'`,
+                  })
+                  .where(eq(jobs.id, job.id));
+              }
+              const requestRef = "aBcdef01-2345-6789-abcd-ef0123456789";
+              return response === "acknowledged"
+                ? { requestRef }
+                : {
+                    outcome: "pending",
+                    errorCode: "verification_failed",
+                    requestRef,
+                  };
+            },
+            verify: () => {
+              throw new Error("unexpected verification");
+            },
+          }),
+          context.signal,
+        ),
+      ).rejects.toThrow("invalid_reference");
+      await expect(
+        db.select().from(work).where(eq(work.id, lease.workId)),
+      ).resolves.toMatchObject([
+        {
+          requestRef: previousRef,
+          evidenceRef: null,
+          state: "pending",
+          leaseId: lease.leaseId,
+        },
+      ]);
+    },
+  );
+
+  it("rejects noncanonical proof references while retaining the acknowledged submission", async () => {
+    const { job, source, lease } = await erasureFixture();
+    const requestRef = randomUUID();
+    const valid = proof(lease);
+    for (const key of [
+      "workId",
+      "sinkId",
+      "producerBoundaryRef",
+      "evidenceRef",
+      "authenticatedReaderRef",
+      "enumerationRef",
+    ] as const) {
+      await expect(
+        executeErasureWork(
+          db,
+          lease,
+          handler(source.collectorVersion, {
+            erase: () => {
+              return Promise.resolve({ requestRef });
+            },
+            verify: () => {
+              return Promise.resolve({
+                ...valid,
+                [key]: noncanonicalUuid(valid[key]),
+              });
+            },
+          }),
+          context.signal,
+        ),
+      ).rejects.toThrow("invalid_reference");
+      await expect(
+        db.select().from(work).where(eq(work.id, lease.workId)),
+      ).resolves.toMatchObject([
+        {
+          requestRef,
+          evidenceRef: null,
+          state: "pending",
+          leaseId: lease.leaseId,
+        },
+      ]);
+    }
+    await executeErasureWork(
+      db,
+      lease,
+      handler(source.collectorVersion),
+      context.signal,
+    );
+    expect((await finalizeErasureJob(db, job.id, job)).state).toBe(
+      "verified_erased",
+    );
+    await expect(
+      retireErasureSelector(db, job.id, noncanonicalUuid(lease.workId), job),
+    ).rejects.toThrow("invalid_reference");
+  });
+
+  it("rejects noncanonical producer and source-capture references before changing the capture barrier", async () => {
+    const { job, required } = await inventory();
+    const [lease] = await claimErasureWork(db, job.id, "inventory");
+    const source = required[0];
+    if (!lease || !source) {
+      throw new Error("missing fixture");
+    }
+    const item = target(source.sinkId);
+    await commitErasureInventoryPage(db, lease, completePage([item]));
+    const boundary = { ...job, jobId: job.id, reference: randomUUID() };
+    for (const key of ["jobId", "reference"] as const) {
+      await expect(
+        sealErasureCapture(
+          db,
+          job.id,
+          job,
+          {
+            verify: () => {
+              return Promise.resolve({
+                ...boundary,
+                [key]: noncanonicalUuid(boundary[key]),
+              });
+            },
+          },
+          context.signal,
+        ),
+      ).rejects.toThrow("invalid_reference");
+      await expect(
+        db.select().from(jobs).where(eq(jobs.id, job.id)),
+      ).resolves.toMatchObject([
+        {
+          sealedCaptureRevision: null,
+          producerBoundaryRef: null,
+        },
+      ]);
+    }
+    const sealed = await sealErasureCapture(
+      db,
+      job.id,
+      job,
+      {
+        verify: () => {
+          return Promise.resolve(boundary);
+        },
+      },
+      context.signal,
+    );
+    const expected = { ...sealed, producerBoundaryRef: boundary.reference };
+    for (const key of ["sinkId", "itemKey"] as const) {
+      await expect(
+        db.transaction(async (tx) => {
+          await assertErasureSourceCaptured(tx, job, job.id, expected, [
+            { ...item, [key]: noncanonicalUuid(item[key]) },
+          ]);
+        }),
+      ).rejects.toThrow("invalid_reference");
+    }
+    await expect(
+      db.transaction(async (tx) => {
+        await assertErasureSourceCaptured(
+          tx,
+          job,
+          job.id,
+          {
+            ...expected,
+            producerBoundaryRef: noncanonicalUuid(boundary.reference),
+          },
+          [item],
+        );
+      }),
+    ).rejects.toThrow("invalid_reference");
+    await db.transaction(async (tx) => {
+      await assertErasureSourceCaptured(tx, job, job.id, expected, [item]);
+    });
+  });
+
+  it("keeps a submitted receipt unresolved when verification returns terminal proof after the deadline", async () => {
+    const { job, source, lease } = await erasureFixture();
+    const requestRef = randomUUID();
+    const entered = deferred<void>();
+    const returned = deferred<ErasureProof>();
+    const result = Promise.allSettled([
+      executeErasureWork(
+        db,
+        lease,
+        handler(source.collectorVersion, {
+          erase: () => {
+            return Promise.resolve({ requestRef });
+          },
+          verify: async () => {
+            entered.resolve();
+            return await returned.promise;
+          },
+        }),
+        context.signal,
+      ),
+    ]);
+    await entered.promise;
+    await db
+      .update(jobs)
+      .set({ deadlineAt: sql`clock_timestamp() - interval '1 second'` })
+      .where(eq(jobs.id, job.id));
+    returned.resolve(proof(lease));
+    await expect(result).resolves.toMatchObject([{ status: "fulfilled" }]);
+    await expect(
+      db.select().from(work).where(eq(work.id, lease.workId)),
+    ).resolves.toMatchObject([
+      {
+        requestRef,
+        evidenceRef: null,
+        state: "capability_unresolved",
+        errorCode: "deadline_exceeded",
+        leaseId: null,
+      },
+    ]);
+    await expect(finalizeErasureJob(db, job.id, job)).rejects.toThrow(
+      "work_unresolved",
+    );
+  });
+
+  it("rejects a trailing newline in an adapter UUID before persisting a missing-handler outcome", async () => {
+    const { source, lease } = await erasureFixture();
+    await expect(
+      executeErasureWork(
+        db,
+        lease,
+        handler(`${source.collectorVersion}\n`, {
+          erase: () => {
+            throw new Error("unexpected submission");
+          },
+        }),
+        context.signal,
+      ),
+    ).rejects.toThrow("invalid_reference");
+    await expect(
+      db.select().from(work).where(eq(work.id, lease.workId)),
+    ).resolves.toMatchObject([
+      {
+        state: "pending",
+        errorCode: null,
+        requestRef: null,
+        leaseId: lease.leaseId,
+      },
+    ]);
+  });
 
   it("rejects a snapshot-isolated writer before it can miss a concurrent closure", async () => {
     await expect(
@@ -787,6 +1691,55 @@ describe("dormant account erasure persistence", () => {
         });
       },
     };
+    const release = await verifier.verify();
+    for (const key of [
+      "reference",
+      "jobId",
+      "decisionRef",
+      "coveringDecisionRef",
+    ] as const) {
+      await expect(
+        retireErasureProjectionPage(
+          db,
+          job.id,
+          {
+            verify: () => {
+              return Promise.resolve({
+                ...release,
+                [key]: noncanonicalUuid(release[key]),
+              });
+            },
+          },
+          context.signal,
+        ),
+      ).rejects.toThrow("invalid_reference");
+    }
+    for (const key of ["jobId", "reference"] as const) {
+      await expect(
+        retireErasureProjectionPage(
+          db,
+          job.id,
+          {
+            verify: () => {
+              return Promise.resolve({
+                ...release,
+                covering: {
+                  ...release.covering,
+                  [key]: noncanonicalUuid(release.covering[key]),
+                },
+              });
+            },
+          },
+          context.signal,
+        ),
+      ).rejects.toThrow("invalid_reference");
+    }
+    await expect(
+      db.select().from(jobs).where(eq(jobs.id, job.id)),
+    ).resolves.toMatchObject([{ retirementReleaseRef: null }]);
+    await expect(
+      db.select().from(work).where(eq(work.jobId, job.id)),
+    ).resolves.toHaveLength(3);
     await expect(
       retireErasureProjectionPage(db, job.id, verifier, context.signal),
     ).resolves.toBe("pending");

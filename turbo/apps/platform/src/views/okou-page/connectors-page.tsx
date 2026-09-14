@@ -39,7 +39,10 @@ import {
   CustomConnectorsPanel,
 } from "./components/settings/custom-connectors-panel.tsx";
 import { filteredDirectoryCustomConnectors$ } from "../../signals/okou-page/settings/connector-directory-custom.ts";
-import { ConnectorsDirectoryContent } from "./connectors-directory-content.tsx";
+import {
+  ConnectorsDirectoryContent,
+  NewCustomConnectorButton,
+} from "./connectors-directory-content.tsx";
 import {
   connectorDirectoryCustomScope$,
   connectorsScope$,
@@ -794,6 +797,7 @@ function ConnectorsDirectoryToolbar({
   scope,
   setScope,
   badge,
+  isAdmin,
   agents,
   connectionFilter,
   setConnectionFilter,
@@ -807,6 +811,7 @@ function ConnectorsDirectoryToolbar({
   readonly scope: ConnectorsScope;
   readonly setScope: (value: ConnectorsScope) => void;
   readonly badge: ConnectorsScopeBadge;
+  readonly isAdmin: boolean;
   readonly agents: readonly AgentResponse[];
   readonly connectionFilter: ConnectorsConnectionFilter;
   readonly setConnectionFilter: (value: ConnectorsConnectionFilter) => void;
@@ -822,11 +827,9 @@ function ConnectorsDirectoryToolbar({
   const active = categories.find((section) => {
     return section.category === categoryFilter;
   });
-  const breadcrumb = customScope
-    ? t(($) => {
-        return $.connectors.catalog.directory.custom;
-      })
-    : active?.label;
+  // Custom is a scope, and the segment above already names the open one. Only a
+  // category needs a trail, because a category is a place inside the catalog.
+  const breadcrumb = customScope ? undefined : active?.label;
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center">
@@ -873,7 +876,9 @@ function ConnectorsDirectoryToolbar({
             value={connectionFilter}
             onChange={setConnectionFilter}
           />
-        ) : scope === "custom" ? null : (
+        ) : scope === "custom" ? (
+          isAdmin && <NewCustomConnectorButton />
+        ) : (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -2107,6 +2112,7 @@ export function ConnectorsPage() {
                 scope={scope}
                 setScope={setScope}
                 badge={scopeBadge}
+                isAdmin={isAdmin}
                 agents={agents}
                 connectionFilter={connectionFilter}
                 setConnectionFilter={setConnectionFilter}

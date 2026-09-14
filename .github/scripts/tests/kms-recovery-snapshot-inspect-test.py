@@ -26,10 +26,12 @@ def process(command, **kwargs):
         # Simulate the external deadline without waiting for the scan budget.
         # Internal inspection, decoding, reporting and cleanup remain real.
         empty = sys.argv[3] == "empty"
-        output = None if empty else result.stdout.encode() + b'{"private":"fixture-private-password' + bytes([0xe4])
+        stdout = result.stdout.encode() if isinstance(result.stdout, str) else result.stdout
+        stderr = result.stderr.encode() if isinstance(result.stderr, str) else result.stderr
+        output = None if empty else stdout + b'{"private":"fixture-private-password' + bytes([0xe4])
         raise subprocess.TimeoutExpired(
             command, kwargs["timeout"], output=output,
-            stderr=None if empty else result.stderr.encode(),
+            stderr=None if empty else stderr,
         )
     return result
 
@@ -101,6 +103,7 @@ class SnapshotInspectionTest(unittest.TestCase):
             for value in (raw, result.stdout, result.stderr):
                 for secret in (
                     "fixture-private-password",
+                    "fixture-private-cursor",
                     "fixture-private-token",
                     "fixture-private-oidc",
                     "fixture-private-session-secret",
@@ -401,9 +404,101 @@ class SnapshotInspectionTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertEqual(report["lastDatabaseStage"]["phase"], "target_verification")
         self.assertNotIn("databaseScanFailure", report)
+        self.assertEqual(
+            report["failure"], "target_recovery_verification_process_timeout"
+        )
+        self.assertIsNone(report["targetVerificationFailure"]["exitCode"])
+        self.assertGreater(
+            report["targetVerificationFailure"]["processTimeoutSeconds"], 0
+        )
+        self.assertEqual(
+            report["targetVerificationFailure"]["toolReport"]["reportStatus"],
+            "validated",
+        )
+        self.assertEqual(len(report["databases"]), 1)
+        self.assertNotIn("targetVerification", report["databases"][0])
         self.assertFalse(report["cryptographicVerification"])
         self.assertFalse(report["collectionComplete"])
         self.assertTrue(report["cleanupComplete"])
+
+    def test_failed_target_process_keeps_validated_progress_without_private_values(
+        self,
+    ):
+        result, report, _ = self.invoke(
+            "target-partial-failure", {"VERIFY_TARGET_CIPHERTEXT": "true"}
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(report["failure"], "target_recovery_verification_failed")
+        details = report["targetVerificationFailure"]
+        self.assertEqual(details["exitCode"], 1)
+        self.assertIsNone(details["processTimeoutSeconds"])
+        self.assertEqual(details["toolReport"]["reportStatus"], "validated")
+        self.assertEqual(details["toolReport"]["totals"]["verified"], 1)
+        self.assertTrue(details["toolReport"]["cursorPresent"])
+        self.assertEqual(
+            details["toolReport"]["failureDetails"],
+            {"stage": "process_rows", "code": "AccessDeniedException"},
+        )
+        self.assertNotIn("fields", details["toolReport"])
+        self.assertNotIn("cursor", details["toolReport"])
+        self.assertEqual(len(report["databases"]), 1)
+        self.assertTrue(report["databases"][0]["readOnly"])
+        self.assertTrue(report["databases"][0]["records"])
+        self.assertNotIn("targetVerification", report["databases"][0])
+        self.assertFalse(report["collectionComplete"])
+        self.assertFalse(report["cryptographicVerification"])
+        self.assertIsNone(report["kmsCallsMade"])
+        self.assertTrue(report["cleanupComplete"])
+        self.assertTrue(report["snapshotSetUnchanged"])
+
+    def test_target_loader_failure_reports_only_fixed_codes_and_missing_report(self):
+        result, report, _ = self.invoke(
+            "target-loader-failed", {"VERIFY_TARGET_CIPHERTEXT": "true"}
+        )
+        self.assertEqual(result.returncode, 1)
+        details = report["targetVerificationFailure"]
+        self.assertEqual(
+            details["loaderCodes"],
+            ["ERR_MODULE_NOT_FOUND", "ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL"],
+        )
+        self.assertEqual(details["toolReport"], {"reportStatus": "missing"})
+        self.assertEqual(len(report["databases"]), 1)
+        self.assertTrue(report["cleanupComplete"])
+
+    def test_package_manager_mismatch_keeps_fixed_code_and_cleanup(self):
+        result, report, _ = self.invoke(
+            "target-package-manager-failed", {"VERIFY_TARGET_CIPHERTEXT": "true"}
+        )
+        self.assertEqual(result.returncode, 1)
+        details = report["targetVerificationFailure"]
+        self.assertEqual(details["loaderCodes"], ["ERR_PNPM_BAD_PM_VERSION"])
+        self.assertEqual(details["toolReport"], {"reportStatus": "missing"})
+        self.assertFalse(report["collectionComplete"])
+        self.assertFalse(report["cryptographicVerification"])
+        self.assertEqual(len(report["databases"]), 1)
+        self.assertTrue(report["cleanupComplete"])
+        self.assertTrue(report["snapshotSetUnchanged"])
+
+    def test_untrusted_target_failure_report_is_not_retained(self):
+        for scenario, status in [
+            ("target-private-failure", "validated"),
+            ("target-invalid-report", "invalid_json"),
+            ("target-bad-binding-failure", "invalid_binding"),
+        ]:
+            with self.subTest(scenario=scenario):
+                result, report, _ = self.invoke(
+                    scenario, {"VERIFY_TARGET_CIPHERTEXT": "true"}
+                )
+                self.assertEqual(result.returncode, 1)
+                safe = report["targetVerificationFailure"]["toolReport"]
+                self.assertEqual(safe["reportStatus"], status)
+                self.assertNotIn("failureDetails", safe)
+                if status == "validated":
+                    self.assertEqual(safe["failure"], "unclassified_error")
+                else:
+                    self.assertNotIn("totals", safe)
+                self.assertTrue(report["cleanupComplete"])
+                self.assertFalse(report["collectionComplete"])
 
     def test_cleanup_denial_is_incomplete_even_after_successful_scan(self):
         result, report, _ = self.invoke("cleanup-denied")

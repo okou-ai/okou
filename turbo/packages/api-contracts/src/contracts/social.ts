@@ -48,9 +48,33 @@ export {
 
 const c = initContract();
 
+export const socialErrorReasonSchema = z.enum([
+  ...socialKitTranscriptErrorReasonSchema.options,
+  "content_restricted",
+  "content_unavailable",
+  "no_transcript",
+  "transcript_not_ready",
+  "media_not_ready",
+  "upstream_failure",
+  "rate_limited",
+  "provider_quota_exhausted",
+  "provider_authentication",
+  "invalid_input",
+]);
+
+export type SocialErrorReason = z.infer<typeof socialErrorReasonSchema>;
+
+export const socialRetryAfterSecondsSchema = z
+  .number()
+  .int()
+  .min(0)
+  .max(2_147_483_647);
+
 export const socialKitErrorSchema = apiErrorSchema.extend({
   error: apiErrorSchema.shape.error.extend({
-    reason: socialKitTranscriptErrorReasonSchema.optional(),
+    reason: socialErrorReasonSchema.optional(),
+    retryable: z.boolean().optional(),
+    retryAfterSeconds: socialRetryAfterSecondsSchema.optional(),
   }),
 });
 
@@ -137,6 +161,13 @@ export const socialKitDownloadQualitySchema = z.enum([
 
 export const socialKitDownloadFormatSchema = z.enum(["mp4", "m4a"]);
 
+// Delivered resolutions include source renditions such as TikTok's 576p.
+export const socialKitDownloadDeliveredQualitySchema = z
+  .string()
+  .regex(/^[1-9]\d{0,3}p$/u);
+
+const socialKitDownloadArtifactFormatSchema = z.enum(["mp4", "m4a", "mp3"]);
+
 export const socialKitDownloadRequestSchema = z
   .object({
     platform: socialKitDownloadPlatformSchema,
@@ -170,6 +201,8 @@ const socialKitDownloadProviderResultSchema = z.object({
   durationSeconds: z.number().int().nonnegative(),
   fileSizeMB: z.number().nonnegative(),
   creditsCost: z.number().int().positive(),
+  quality: socialKitDownloadDeliveredQualitySchema.optional(),
+  format: socialKitDownloadFormatSchema.optional(),
   title: z.string().max(1000).optional(),
   thumbnail: z.url().max(4096).optional(),
 });
@@ -180,14 +213,29 @@ const socialKitDownloadArtifactSchema = z.object({
   filename: z.string().min(1),
   contentType: z.string().min(1),
   sizeBytes: z.number().int().positive(),
+  format: socialKitDownloadArtifactFormatSchema.nullable().optional(),
 });
 
 export const socialKitDownloadResponseSchema = z.object({
   downloadId: z.string().uuid(),
   status: socialKitDownloadStatusSchema,
   platform: socialKitDownloadPlatformSchema,
+  // Retain the request aliases for already selected commit-addressed CLIs.
   quality: socialKitDownloadQualitySchema,
   format: socialKitDownloadFormatSchema,
+  // Optional while older API artifacts remain supported rollout/rollback targets.
+  requested: z
+    .object({
+      quality: socialKitDownloadQualitySchema,
+      format: socialKitDownloadFormatSchema,
+    })
+    .optional(),
+  delivered: z
+    .object({
+      quality: socialKitDownloadDeliveredQualitySchema.nullable(),
+      format: socialKitDownloadArtifactFormatSchema.nullable(),
+    })
+    .optional(),
   maxDuration: z.number().int().positive(),
   billingCategory: z.literal(MANAGED_SOCIALKIT_BILLING_CATEGORY),
   provider: socialKitDownloadProviderResultSchema.nullable(),
@@ -204,6 +252,10 @@ export const socialKitDownloadResponseSchema = z.object({
       message: z.string(),
       retryable: z.boolean(),
       billed: z.boolean(),
+      reason: socialErrorReasonSchema.optional(),
+      retryAfterSeconds: socialRetryAfterSecondsSchema.optional(),
+      // A terminal job cannot resume; this advice applies to a new submission.
+      resubmitRetryable: z.boolean().optional(),
     })
     .nullable(),
   createdAt: z.iso.datetime(),
@@ -556,6 +608,8 @@ export const socialContract = c.router({
       402: socialKitErrorSchema,
       403: socialKitErrorSchema,
       404: socialKitErrorSchema,
+      422: socialKitErrorSchema,
+      429: socialKitErrorSchema,
       502: socialKitErrorSchema,
       503: socialKitErrorSchema,
     },
@@ -568,14 +622,17 @@ export const socialContract = c.router({
     body: socialKitDownloadRequestSchema,
     responses: {
       202: socialKitDownloadResponseSchema,
-      400: apiErrorSchema,
+      400: socialKitErrorSchema,
       401: apiErrorSchema,
       402: apiErrorSchema,
       403: apiErrorSchema,
+      404: socialKitErrorSchema,
       409: socialKitDownloadConflictSchema,
+      422: socialKitErrorSchema,
+      429: socialKitErrorSchema,
       500: apiErrorSchema,
-      502: apiErrorSchema,
-      503: apiErrorSchema,
+      502: socialKitErrorSchema,
+      503: socialKitErrorSchema,
     },
     summary: "Start an Okou Social artifact download",
   },

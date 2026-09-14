@@ -275,12 +275,19 @@ test("A failed preview renewal can retry while the loaded cover stays in place",
   const picker = await openTemplatePicker(user, "Presentation");
   const media = importedTemplateMedia(uploaded.id);
   const previousImage = await loadImportedTemplateImage(media, "slide-1");
-  await expect(
-    within(picker).findByText("Couldn't refresh template previews."),
-  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      within(picker).getByText("Couldn't refresh template previews."),
+    ).toBeInTheDocument();
+  });
   expect(screen.queryAllByText("Preview renewal unavailable")).toHaveLength(0);
+  const retryButton = await waitFor(() => {
+    const button = buttonNamed("Retry", picker);
+    expect(button).toBeEnabled();
+    return button;
+  });
   unavailable = false;
-  click(buttonNamed("Retry", picker));
+  click(retryButton);
   const renewedImage = await pendingImportedTemplateImage(media, "renewed");
   expect(previousImage).toHaveAttribute("data-active", "true");
   fireEvent.load(renewedImage);

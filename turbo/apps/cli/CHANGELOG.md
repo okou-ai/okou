@@ -1,5 +1,59 @@
 # Changelog
 
+## [9.328.2](https://github.com/vm0-ai/vm0/compare/cli-v9.328.1...cli-v9.328.2) (2026-09-14)
+
+
+### Bug Fixes
+
+* preserve structured social errors and download retry guidance ([#34072](https://github.com/vm0-ai/vm0/issues/34072)) ([add4b57](https://github.com/vm0-ai/vm0/commit/add4b57c3a8d4282a4b04563f7aeb5b845e17d2a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.438.2
+    * @okouai/core bumped to 8.663.2
+    * @okouai/pi-agent-runtime bumped to 1.29.1
+
+## [9.328.1](https://github.com/vm0-ai/vm0/compare/cli-v9.328.0...cli-v9.328.1) (2026-09-14)
+
+
+### Bug Fixes
+
+* **social:** align download billing and delivered media metadata ([#34070](https://github.com/vm0-ai/vm0/issues/34070)) ([9c55bc9](https://github.com/vm0-ai/vm0/commit/9c55bc983c52f37369576d36eb32fbb0aec94994))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.438.1
+    * @okouai/core bumped to 8.663.1
+    * @okouai/pi-agent-runtime bumped to 1.29.0
+
+## [9.328.0](https://github.com/vm0-ai/vm0/compare/cli-v9.327.0...cli-v9.328.0) (2026-09-14)
+
+
+### Features
+
+* **cli:** add youtube transcript and summary refresh ([#34064](https://github.com/vm0-ai/vm0/issues/34064)) ([0284de5](https://github.com/vm0-ai/vm0/commit/0284de5799f4f7417f3f0e8d0774800a4568297b))
+* **cli:** expose custom social summary fields ([#34058](https://github.com/vm0-ai/vm0/issues/34058)) ([d801adf](https://github.com/vm0-ai/vm0/commit/d801adfd7b353b8de32fcb1b69f2a6be4f121072))
+
+
+### Bug Fixes
+
+* preserve nullable instagram views and support strict lookup ([#34062](https://github.com/vm0-ai/vm0/issues/34062)) ([9f3dc06](https://github.com/vm0-ai/vm0/commit/9f3dc06e3d778115e935f22370daa18f34dc05f1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.438.0
+    * @okouai/core bumped to 8.663.0
+    * @okouai/pi-agent-runtime bumped to 1.28.2
+
 ## [9.327.0](https://github.com/vm0-ai/vm0/compare/cli-v9.326.2...cli-v9.327.0) (2026-09-14)
 
 

@@ -2424,6 +2424,14 @@
       "moreTemplates": "Mais modelos",
       "presentationTemplates": "Modelos de apresentação",
       "removeTask": "Remover {{task}}",
+      "shelf": {
+        "browseStyles": "Ver todos os estilos",
+        "browseTemplates": "Ver todos os modelos",
+        "image": "Estilos de imagem",
+        "nextTemplates": "Próximos modelos",
+        "video": "Modelos de vídeo",
+        "website": "Modelos de site"
+      },
       "tasks": {
         "image": "Imagem",
         "presentation": "Slides",
@@ -2954,7 +2962,6 @@
       "storageFailed": "Não foi possível salvar o áudio. Tentar novamente recupera apenas o áudio já salvo neste dispositivo.",
       "textTakingShape": "O texto está tomando forma",
       "transcribing": "Transcrevendo",
-      "transcribingProgress": "Transcrevendo...",
       "transcriptionFailed": "Falha na transcrição de voz. Tente novamente."
     },
     "workflows": {

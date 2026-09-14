@@ -211,8 +211,8 @@ same reason the running indicator does: its keyframes animate `transform`, and
 Tailwind's `rotate-*` utility sets the individual `rotate` property, which would
 compose with the animation rather than be replaced by it.
 
-`--mic-volume-fill` stays a component-set runtime value, read through
-`after:h-[var(--mic-volume-fill,0%)]`.
+The legacy mic volume meter has since been retired; the voice draft tray owns
+the recording waveform.
 
 The `mic-starting-spinner` and `mic-volume-icon-meter` selectors have been
 removed; the `mic-starting-spin` keyframes remain.
@@ -272,12 +272,19 @@ retired `okou-btn-morandi` selector owned. Language, timezone, and voice-input
 settings all use the select variant. Dimensions, padding, and radius remain
 with the existing component and caller.
 
-The neutral button adds the existing outline interaction fills
-(`hover:bg-state-hover active:bg-state-pressed`) to the shared surface, keeping
-the hover overlay above those fills. Select triggers retain the opaque surface
-and hover overlay. The existing recovery links and Add automation trigger
-preserve that same interaction treatment with `hover:bg-control-surface
-active:bg-control-surface` on their `Button` instances.
+The neutral button states both interactions as overlays
+(`[&:hover]:bg-state-hover-overlay [&:active]:bg-state-pressed-overlay`) above
+that surface, and select triggers do the same for hover. It previously also
+carried the outline fills `hover:bg-state-hover active:bg-state-pressed`, which
+is the contradiction the state-layer note above describes: those utilities set
+`background-color`, so they replaced `bg-control-surface` rather than sitting on
+it. `gray-50` is a warm stop (hue 15°, saturation 40%) and the state layer is
+neutral, so hovering measured `#FCF9F8` → `#F1F0F0` and dropped the warm cast
+the resting fill carries. Overlays alone measure `#F5F2F1`, which stays in the
+same family. The existing recovery links and Add automation trigger keep
+`hover:bg-control-surface active:bg-control-surface` on their `Button`
+instances; those overrides used to cancel the replacing fill and are now
+redundant, and they render identically either way.
 
 Preserve consumer-specific interaction colors when extracting shared styles.
 The official workflow Configure button, for example, retains its existing

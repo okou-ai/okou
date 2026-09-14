@@ -15,16 +15,16 @@ export { MemoryPiSession } from "./session-memory";
 export {
   PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
   PiMemoryStage1ProviderError,
-  projectPiMemoryStage1History,
-  redactPiMemoryStage1Secrets,
-  resolvePiMemoryStage1ContextWindow,
+  projectPiMemoryStage1Evidence,
   runPiMemoryStage1Extraction,
-  truncatePiMemoryStage1History,
 } from "./stage1-memory";
 export type {
   PiMemoryStage1ProviderResult,
   PiMemoryStage1ProviderUsage,
 } from "./stage1-memory";
+export { PiMemoryStage1BudgetError } from "./stage1-input";
+export type { PiMemoryStage1Evidence } from "./stage1-input";
+export { redactPiMemoryStage1Secrets } from "./stage1-secrets";
 export {
   PI_MEMORY_STAGE1_SYSTEM_PROMPT,
   PI_MEMORY_STAGE1_UPSTREAM_INPUT_TEMPLATE,

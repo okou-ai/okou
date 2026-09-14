@@ -100,7 +100,7 @@ import { createPiApiFirstTurnCheckpoint$ } from "./agent-webhook-checkpoints.ser
 import {
   isTerminalChatgptRefreshErrorCode,
   readModelProviderRuntimeReconnectStateForApi,
-  resolveCurrentModelProviderRuntimeSecretForApi,
+  resolveCurrentPersonalSubscriptionBundleForApi,
   resolveModelProviderRuntimeSecretForApi,
 } from "./agent-webhook-firewall-auth.service";
 import {
@@ -942,7 +942,7 @@ async function resolveCodexSubscriptionCredentials(
   signal: AbortSignal,
 ): Promise<ReadonlyMap<string, string>> {
   const accessTokenResolution = await settle(
-    resolveCurrentModelProviderRuntimeSecretForApi(
+    resolveCurrentPersonalSubscriptionBundleForApi(
       runtimeCredentialLookupArgs(args, references.accessToken),
       signal,
     ),
@@ -976,23 +976,13 @@ async function resolveCodexSubscriptionCredentials(
     );
   }
 
-  // Deliberately read only after access-token refresh, using the already
-  // validated immutable sourceId rather than resolving the active account.
-  const accountIdResolution = await settle(
-    resolveModelProviderRuntimeSecretForApi(
-      runtimeCredentialLookupArgs(args, references.accountId),
-    ),
+  const token = accessToken.values.get(
+    references.accessToken.binding.secretName,
   );
-  signal.throwIfAborted();
-  if (!accountIdResolution.ok) {
-    throw piApiFirstTurnError(
-      "PI_API_MODEL_CREDENTIAL_INVALID",
-      "Pi API first-turn subscription account lookup failed",
-      accountIdResolution.error,
-    );
-  }
-  const accountId = accountIdResolution.value;
-  if (!accessToken.value.trim() || !accountId?.trim()) {
+  const accountId = accessToken.values.get(
+    references.accountId.binding.secretName,
+  );
+  if (!token?.trim() || !accountId?.trim()) {
     throw piApiFirstTurnError(
       "PI_API_MODEL_CREDENTIAL_INVALID",
       "Pi API first-turn subscription credential is unavailable",
@@ -1000,8 +990,9 @@ async function resolveCodexSubscriptionCredentials(
       "reconnect_required",
     );
   }
+
   return new Map([
-    [references.accessToken.binding.secretName, accessToken.value],
+    [references.accessToken.binding.secretName, token],
     [references.accountId.binding.secretName, accountId],
   ]);
 }

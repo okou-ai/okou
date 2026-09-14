@@ -66,7 +66,6 @@ export enum FeatureSwitchKey {
   LangfuseTrace = "_langfuseTrace",
   IntroVideo = "introVideo",
   ChatTranslation = "chatTranslation",
-  VoiceInputV2 = "voiceInputV2",
   ComposerCreateCommands = "composerCreateCommands",
   ComposerTaskChips = "composerTaskChips",
   ComposerImageAnnotation = "composerImageAnnotation",

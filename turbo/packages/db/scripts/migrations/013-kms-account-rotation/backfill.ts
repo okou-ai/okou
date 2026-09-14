@@ -55,6 +55,7 @@ interface Report {
   complete: boolean;
   databaseVerifiedOnTarget: boolean;
   failure: string | null;
+  failureDetails?: { stage: string; code: string };
   cursor: string | null;
   totals: Counts;
   fields: Record<string, Counts>;
@@ -143,6 +144,76 @@ function verificationConcurrency(
     throw new Error("verify_concurrency_requires_verify_mode");
   }
   return integer(value, 1, 16);
+}
+
+function failureCode(error: unknown): string {
+  // Retain only fixed codes, never provider messages, SQL, or input values.
+  const cause =
+    error instanceof Error && error.message === "verification_failed_at_cursor"
+      ? error.cause
+      : error;
+  if (!(cause instanceof Error)) {
+    return "unclassified_error";
+  }
+  const codes = new Set([
+    "storage_manifest_mismatch",
+    "primary_key_manifest_mismatch",
+    "untracked_encrypted_columns",
+    "unknown_queue_payload_version",
+    "unexpected_key_reference",
+    "unexpected_decrypt_response",
+    "invalid_data_key_size",
+    "invalid_object",
+    "invalid_string",
+    "invalid_base64",
+    "invalid_envelope_prefix",
+    "invalid_envelope_encoding",
+    "invalid_envelope_shape",
+    "invalid_data_key",
+    "invalid_direct_ciphertext",
+    "invalid_ciphertext_blocks_migration",
+    "AccessDeniedException",
+    "InvalidCiphertextException",
+    "IncorrectKeyException",
+    "DisabledException",
+    "NotFoundException",
+    "KMSInvalidStateException",
+    "ThrottlingException",
+    "DependencyTimeoutException",
+    "ExpiredTokenException",
+    "CredentialsProviderError",
+    "TimeoutError",
+    "SyntaxError",
+    "ECONNREFUSED",
+    "ECONNRESET",
+    "ETIMEDOUT",
+    "ENOTFOUND",
+    "CERT_HAS_EXPIRED",
+    "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+    "SELF_SIGNED_CERT_IN_CHAIN",
+    "ERR_TLS_CERT_ALTNAME_INVALID",
+    "08006",
+    "28P01",
+    "3D000",
+    "42501",
+    "42703",
+    "42P01",
+    "57014",
+    "53300",
+    "55P03",
+    "40001",
+    "40P01",
+  ]);
+  for (const candidate of [
+    "code" in cause ? cause.code : undefined,
+    cause.name,
+    cause.message,
+  ]) {
+    if (typeof candidate === "string" && codes.has(candidate)) {
+      return candidate;
+    }
+  }
+  return "unclassified_error";
 }
 
 async function main(): Promise<void> {
@@ -299,8 +370,11 @@ async function main(): Promise<void> {
     maxAttempts: 2,
     requestHandler: { connectionTimeout: 10_000, requestTimeout: 30_000 },
   });
-  await db.connect();
+  let stage = "connect";
   try {
+    await checkpoint();
+    await db.connect();
+    stage = "session";
     await db.query("SET statement_timeout = '15s'");
     await db.query("SET lock_timeout = '1s'");
     // Enforced by PostgreSQL for every query, including verification mode.
@@ -370,6 +444,7 @@ async function main(): Promise<void> {
       }
       return missing;
     }
+    stage = "storage_manifest";
     const missing = await inspectStorage();
 
     async function transformQueue(
@@ -520,7 +595,9 @@ async function main(): Promise<void> {
           );
           for (const result of results) {
             if (result.status === "rejected") {
-              throw new Error("verification_failed_at_cursor");
+              throw new Error("verification_failed_at_cursor", {
+                cause: result.reason,
+              });
             }
             record(result.value);
           }
@@ -545,12 +622,14 @@ async function main(): Promise<void> {
       const fieldCounts = report.fields[fieldName(field)] ?? counts();
       report.fields[fieldName(field)] = fieldCounts;
       const size = Math.min(batchSize, maxRows - report.totals.rows);
+      stage = "read_batch";
       const rows: unknown[] = (
         await db.query(
           `SELECT ${quoted(field.primaryKey)}::text AS id, ${expression(field)} AS value FROM public.${quoted(field.table)} WHERE ${expression(field)} IS NOT NULL ${afterId === null ? "" : `AND ${quoted(field.primaryKey)} > $2`} ORDER BY ${quoted(field.primaryKey)} LIMIT $1`,
           afterId === null ? [size] : [size, afterId],
         )
       ).rows;
+      stage = "process_rows";
       await processRows(rows, field, fieldCounts);
       if (rows.length < size) {
         fieldIndex++;
@@ -579,8 +658,9 @@ async function main(): Promise<void> {
     if (report.totals.invalid || report.totals.unknownKey) {
       process.exitCode = 2;
     }
-  } catch {
-    // Provider/SQL errors can include input data. Persist only the safe cursor.
+  } catch (error) {
+    // Provider/SQL errors can include input data. Retain fixed codes only.
+    report.failureDetails = { stage, code: failureCode(error) };
     report.failure = "migration_failed_at_cursor";
     await checkpoint();
     throw new Error("migration_failed_at_cursor");

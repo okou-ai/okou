@@ -34,12 +34,16 @@ const activateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const params = get(
     pathParamsOf(personalModelProviderAccountsByIdContract.activate),
   );
-  const result = await activatePersonalModelProviderAccount({
-    db: set(writeDb$),
-    orgId: auth.orgId,
-    userId: auth.userId,
-    id: params.id,
-  });
+  const result = await activatePersonalModelProviderAccount(
+    {
+      featureSwitchContext,
+      db: set(writeDb$),
+      orgId: auth.orgId,
+      userId: auth.userId,
+      id: params.id,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   return isNotFoundResponse(result)
     ? result

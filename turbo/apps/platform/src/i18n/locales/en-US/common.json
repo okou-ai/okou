@@ -2378,6 +2378,14 @@
       "moreTemplates": "More templates",
       "presentationTemplates": "Presentation templates",
       "removeTask": "Remove {{task}}",
+      "shelf": {
+        "browseStyles": "Browse all styles",
+        "browseTemplates": "Browse all templates",
+        "image": "Image styles",
+        "nextTemplates": "Next templates",
+        "video": "Video templates",
+        "website": "Website templates"
+      },
       "tasks": {
         "image": "Image",
         "presentation": "Presentation",
@@ -2908,7 +2916,6 @@
       "storageFailed": "Audio could not be saved. Retry can recover only audio already saved on this device.",
       "textTakingShape": "Text is taking shape",
       "transcribing": "Transcribing",
-      "transcribingProgress": "Transcribing...",
       "transcriptionFailed": "Voice transcription failed. Try again."
     },
     "workflows": {

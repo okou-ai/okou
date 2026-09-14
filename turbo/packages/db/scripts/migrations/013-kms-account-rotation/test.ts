@@ -169,6 +169,7 @@ async function cli(
   args: string[] = [],
   reverse = false,
   expectedFailure = false,
+  databaseUrl = input.toString(),
 ): Promise<Record<string, unknown>> {
   const reportPath = join(directory, `${name}.json`);
   const command = [
@@ -191,7 +192,7 @@ async function cli(
       timeout: 30_000,
       env: {
         ...process.env,
-        DATABASE_URL: input.toString(),
+        DATABASE_URL: databaseUrl,
         AWS_ACCESS_KEY_ID: "synthetic",
         AWS_SECRET_ACCESS_KEY: "synthetic",
         AWS_SESSION_TOKEN: "",
@@ -390,6 +391,41 @@ try {
   }
   for (const [table, columns] of tables) {
     await db.query(`CREATE TABLE "${table}" (${columns.join(", ")})`);
+  }
+  const missingDatabase = new URL(input);
+  missingDatabase.pathname = `/missing_${randomUUID().replaceAll("-", "")}`;
+  const connectionFailure = await cli(
+    "connection-failure",
+    ["--verify"],
+    false,
+    true,
+    missingDatabase.toString(),
+  );
+  assert.deepEqual(connectionFailure.failureDetails, {
+    stage: "connect",
+    code: "3D000",
+  });
+  assert.equal(connectionFailure.complete, false);
+  assert.equal(object(connectionFailure.totals).verified, 0);
+  await db.query(
+    "ALTER TABLE secrets RENAME COLUMN encrypted_value TO fixture_missing_column",
+  );
+  try {
+    const manifestFailure = await cli(
+      "manifest-failure",
+      ["--verify"],
+      false,
+      true,
+    );
+    assert.deepEqual(manifestFailure.failureDetails, {
+      stage: "storage_manifest",
+      code: "storage_manifest_mismatch",
+    });
+    assert.equal(manifestFailure.complete, false);
+  } finally {
+    await db.query(
+      "ALTER TABLE secrets RENAME COLUMN fixture_missing_column TO encrypted_value",
+    );
   }
   const workflowCiphertext = encode(
     await encrypt(kms, Buffer.from(secret), source),
@@ -605,6 +641,10 @@ try {
     assert.ok(releaseFirst);
     releaseFirst();
   }
+  assert.deepEqual(concurrentFailure.failureDetails, {
+    stage: "process_rows",
+    code: "InvalidCiphertextException",
+  });
   assert.equal(concurrentFailure.complete, false);
   assert.equal(object(concurrentFailure.totals).rows, 1);
   assert.equal(object(concurrentFailure.totals).verified, 1);
@@ -773,6 +813,10 @@ try {
     false,
     true,
   );
+  assert.deepEqual(failure.failureDetails, {
+    stage: "process_rows",
+    code: "AccessDeniedException",
+  });
   assert.equal(failure.complete, false);
   assert.ok(failure.cursor);
   failRewrap = false;

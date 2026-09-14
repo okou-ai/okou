@@ -617,6 +617,9 @@ export default [
       // Hosting trigger coexistence, ownership locks and allocation rollback
       // require isolated PostgreSQL schemas; route suites cover product APIs.
       "src/signals/services/__tests__/hosted-site-scope.service.test.ts",
+      // Pending guard coexistence, repair and row-lock races require private
+      // PostgreSQL schemas; route suites exercise checkout/webhook/cron.
+      "src/signals/services/__tests__/usage-pack-pending-snapshot.service.test.ts",
       // Trigger DDL, transaction snapshots and corrupt ledgers are not HTTP inputs.
       "src/signals/services/__tests__/pi-memory-candidate-accounting.service.test.ts",
       // #34044 requires real transactions, UTC clock, deletion and old-writer races.
@@ -780,6 +783,9 @@ export default [
       // Hosting trigger coexistence, ownership locks and allocation rollback
       // require isolated PostgreSQL schemas; route suites cover product APIs.
       "src/signals/services/__tests__/hosted-site-scope.service.test.ts",
+      // Pending guard coexistence, repair and row-lock races require private
+      // PostgreSQL schemas; route suites exercise checkout/webhook/cron.
+      "src/signals/services/__tests__/usage-pack-pending-snapshot.service.test.ts",
       // Trigger DDL, transaction snapshots and corrupt ledgers are not HTTP inputs.
       "src/signals/services/__tests__/pi-memory-candidate-accounting.service.test.ts",
       // #34044 requires real transactions, UTC clock, deletion and old-writer races.

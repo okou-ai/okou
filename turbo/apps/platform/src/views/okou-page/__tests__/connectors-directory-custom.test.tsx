@@ -50,9 +50,7 @@ test("Show Custom and contextual creation without built-in shelves", async () =>
     name: "Custom",
   });
   expect(within(section).getByText("Acme Reports")).toBeVisible();
-  expect(
-    getConnectorAction("button", "New custom connector", section),
-  ).toBeVisible();
+  expect(getConnectorAction("button", "New custom connector")).toBeVisible();
   expect(queryConnectorAction("button", "New connector")).toBeNull();
 });
 
@@ -128,21 +126,23 @@ test("Honor Custom deep links, scoped search, and returning to All", async () =>
     expect(getConnectorCard("Acme Reports")).toBeVisible();
   });
   expect(queryConnectorCard("GitHub")).toBeNull();
-  expect(
-    screen.getByText("Custom", {
-      selector: '[aria-current="page"]',
-    }),
-  ).toBeVisible();
+  // The segment says which scope is open, so the scope carries no breadcrumb.
+  expect(screen.getByTestId("connectors-scope-custom")).toHaveAttribute(
+    "data-checked",
+  );
+  expect(screen.queryByText("Discover / Custom")).toBeNull();
   await fill(screen.getByPlaceholderText("Find custom connectors"), "missing");
   await expect(
     screen.findByText("No custom connectors match your search."),
   ).resolves.toBeVisible();
   expect(getConnectorAction("button", "New custom connector")).toBeVisible();
-  click(getConnectorAction("button", "Discover"));
-  await expect(
-    screen.findByText('No connectors matching "missing"'),
-  ).resolves.toBeVisible();
-  expect(locationSearch()).not.toContain("tab=");
+  // Leaving a scope drops the controls that belonged to it, search included.
+  click(screen.getByTestId("connectors-scope-discover"));
+  await waitFor(() => {
+    expect(getConnectorCard("GitHub")).toBeInTheDocument();
+  });
+  expect(locationSearch()).not.toContain("scope=");
+  expect(locationSearch()).not.toContain("keywords=");
   expect(locationSearch()).not.toContain("category=");
   window.history.back();
   await expect(
@@ -311,6 +311,7 @@ test("Wait for pending Custom results before declaring search empty", async () =
   });
   await expect(screen.findByText("Loading connectors…")).resolves.toBeVisible();
   expect(screen.queryByText(/No connectors matching/u)).toBeNull();
+  click(screen.getByTestId("connectors-scope-custom"));
   click(getConnectorAction("button", "New custom connector"));
   const dialog = await screen.findByRole("dialog", {
     name: "New custom connector",
@@ -320,8 +321,10 @@ test("Wait for pending Custom results before declaring search empty", async () =
     expect(getConnectorCard("Acme Reports")).toBeInTheDocument();
   });
   expect(dialog).toBeVisible();
+  // Cancelling leaves the location exactly as the scope left it.
+  const beforeCancel = locationSearch();
   click(getConnectorAction("button", "Cancel", dialog));
-  expect(locationSearch()).toContain("keywords=acme");
+  expect(locationSearch()).toBe(beforeCancel);
 });
 
 test("Keep SSH and Custom in separate sections and scope Remote access", async () => {

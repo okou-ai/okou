@@ -72,7 +72,6 @@
       "introVideo": false,
       "chatTranslation": false,
       "chatTouchSelection": false,
-      "voiceInputV2": false,
       "composerCreateCommands": false,
       "composerTaskChips": false,
       "composerImageAnnotation": false,

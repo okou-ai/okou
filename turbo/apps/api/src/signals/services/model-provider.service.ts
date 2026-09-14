@@ -38,6 +38,7 @@ import {
   deletePersonalModelProviderAccount,
   isPersonalSubscriptionProviderType,
   captureActivePersonalModelProviderAccount,
+  identifyPersonalSubscriptionAccountsBeforeDisconnect,
   upsertPersonalModelProviderAccount,
   visiblePersonalModelProviderCondition,
 } from "./model-provider-account.service";
@@ -145,6 +146,64 @@ export function modelProviders(
 
 type NotFoundResponse = ReturnType<typeof notFound>;
 
+async function disconnectPersonalSubscriptionProvider(
+  args: {
+    readonly db: Db;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly type: "claude-code-oauth-token" | "codex-oauth-token";
+    readonly featureSwitchContext: FeatureSwitchContext;
+  },
+  signal: AbortSignal,
+): Promise<NotFoundResponse | undefined> {
+  const subscriptionType = args.type;
+  // Seed before the all-accounts transaction. Opaque identity requests must
+  // not hold the provider lock across network I/O. The removal itself still
+  // serializes the complete connected set with new connections.
+  await captureActivePersonalModelProviderAccount(
+    {
+      ...args,
+      type: subscriptionType,
+      modelProviderId: null,
+      featureSwitchContext: args.featureSwitchContext,
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+  await identifyPersonalSubscriptionAccountsBeforeDisconnect(args, signal);
+  signal.throwIfAborted();
+  return await args.db.transaction(async (tx) => {
+    await lockModelProviderState(tx, args);
+    const accounts = await tx
+      .select({ id: modelProviderAccounts.id })
+      .from(modelProviderAccounts)
+      .where(
+        and(
+          eq(modelProviderAccounts.orgId, args.orgId),
+          eq(modelProviderAccounts.userId, args.userId),
+          eq(modelProviderAccounts.type, subscriptionType),
+          isNull(modelProviderAccounts.disconnectedAt),
+        ),
+      );
+    if (accounts.length === 0) {
+      return notFound("Resource not found");
+    }
+    for (const account of accounts) {
+      await deletePersonalModelProviderAccount(
+        {
+          ...args,
+          db: tx,
+          disconnectAll: true,
+          id: account.id,
+          featureSwitchContext: args.featureSwitchContext,
+        },
+        signal,
+      );
+    }
+    return undefined;
+  });
+}
+
 /**
  * Delete a user-level model provider and cascade-delete its secrets.
  *
@@ -182,45 +241,10 @@ export const deleteUserModelProvider$ = command(
         featureSwitchContext,
       )
     ) {
-      const subscriptionType = args.type;
-      // Keep all type-based disconnect mutations under the same lock, including
-      // the single-account UI, so a connection cannot slip between removals.
-      return await writeDb.transaction(async (tx) => {
-        await lockModelProviderState(tx, args);
-        await captureActivePersonalModelProviderAccount({
-          db: tx,
-          ...args,
-          type: subscriptionType,
-          modelProviderId: null,
-          featureSwitchContext,
-        });
-        const accounts = await tx
-          .select({ id: modelProviderAccounts.id })
-          .from(modelProviderAccounts)
-          .where(
-            and(
-              eq(modelProviderAccounts.orgId, args.orgId),
-              eq(modelProviderAccounts.userId, args.userId),
-              eq(modelProviderAccounts.type, subscriptionType),
-              isNull(modelProviderAccounts.disconnectedAt),
-            ),
-          );
-        if (accounts.length === 0) {
-          return notFound("Resource not found");
-        }
-        for (const account of accounts) {
-          await deletePersonalModelProviderAccount(
-            {
-              db: tx,
-              ...args,
-              id: account.id,
-              featureSwitchContext,
-            },
-            signal,
-          );
-        }
-        return undefined;
-      });
+      return await disconnectPersonalSubscriptionProvider(
+        { db: writeDb, ...args, type: args.type, featureSwitchContext },
+        signal,
+      );
     }
 
     return await writeDb.transaction(async (tx) => {

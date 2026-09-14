@@ -36,6 +36,18 @@ describe("Button", () => {
     expect(button).toBeDisabled();
   });
 
+  it("states the neutral fill with overlays so the fill survives", () => {
+    // A translucent `bg-state-*` sets `background-color` and would replace
+    // `bg-control-surface`, dropping the fill's warm cast on hover.
+    render(<Button variant="neutral">Neutral</Button>);
+    const button = screen.getByRole("button");
+    expect(button).toHaveClass("bg-control-surface");
+    expect(button).toHaveClass("[&:hover]:bg-state-hover-overlay");
+    expect(button).toHaveClass("[&:active]:bg-state-pressed-overlay");
+    expect(button).not.toHaveClass("hover:bg-state-hover");
+    expect(button).not.toHaveClass("active:bg-state-pressed");
+  });
+
   it("shows the accessible label in a tooltip", async () => {
     const user = userEvent.setup();
     render(

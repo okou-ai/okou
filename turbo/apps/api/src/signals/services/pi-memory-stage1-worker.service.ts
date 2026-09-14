@@ -24,11 +24,11 @@ import { storages } from "@okouai/db/schema/storage";
 import {
   PI_MEMORY_STAGE1_MODEL,
   PiMemoryStage1ProviderError,
-  projectPiMemoryStage1History,
+  PiMemoryStage1BudgetError,
+  type PiMemoryStage1Evidence,
+  projectPiMemoryStage1Evidence,
   redactPiMemoryStage1Secrets,
-  resolvePiMemoryStage1ContextWindow,
   runPiMemoryStage1Extraction,
-  truncatePiMemoryStage1History,
   type PiMemoryStage1ProviderResult,
 } from "@okouai/pi-agent-runtime/api";
 import { command } from "ccstate";
@@ -80,8 +80,6 @@ const PI_MEMORY_STAGE1_PROVIDER_CONCURRENCY = 8;
 const PI_MEMORY_STAGE1_LEASE_MS = 60 * 60 * 1000;
 const PI_MEMORY_STAGE1_MAX_ATTEMPTS = 5;
 const PI_MEMORY_STAGE1_RETRY_DELAY_MS = 60 * 60 * 1000;
-const PI_MEMORY_STAGE1_FALLBACK_TOKEN_LIMIT = 150_000;
-const PI_MEMORY_STAGE1_PROJECTED_HISTORY_MAX_BYTES = 8 * 1024 * 1024;
 
 const RAW_MEMORY_MAX_BYTES = 64 * 1024;
 const ROLLOUT_SUMMARY_MAX_BYTES = 16 * 1024;
@@ -144,8 +142,7 @@ export interface PiMemoryStage1WorkerResult {
 
 interface PreparedWork {
   readonly work: ClaimedPiMemoryStage1Work;
-  readonly projectedHistory: string;
-  readonly inputTokens: number;
+  readonly evidence: readonly PiMemoryStage1Evidence[];
 }
 
 interface WorkOutcome {
@@ -486,7 +483,6 @@ const loadAndProjectHistory$ = command(
     { get },
     args: {
       readonly work: ClaimedPiMemoryStage1Work;
-      readonly contextWindow: number | null;
     },
     signal: AbortSignal,
   ): Promise<PreparedWork> => {
@@ -532,26 +528,18 @@ const loadAndProjectHistory$ = command(
       throw new PermanentSourceError("source_utf8_invalid");
     }
     const projection = safeSync(() => {
-      return projectPiMemoryStage1History({
+      return projectPiMemoryStage1Evidence({
         jsonl: decodedJsonl.ok,
         expectedSessionId: args.work.piSessionId,
       });
     });
     if (!("ok" in projection)) {
+      if (projection.error instanceof PiMemoryStage1BudgetError) {
+        throw projection.error;
+      }
       throw new PermanentSourceError("source_pi_session_invalid");
     }
-    const redacted = redactPiMemoryStage1Secrets(projection.ok);
-    const truncated = truncatePiMemoryStage1History({
-      projectedHistory: redacted,
-      contextWindow: args.contextWindow,
-      fallbackTokenLimit: PI_MEMORY_STAGE1_FALLBACK_TOKEN_LIMIT,
-      maxBytes: PI_MEMORY_STAGE1_PROJECTED_HISTORY_MAX_BYTES,
-    });
-    return {
-      work: args.work,
-      projectedHistory: truncated.content,
-      inputTokens: truncated.tokenCount,
-    };
+    return { work: args.work, evidence: projection.ok };
   },
 );
 
@@ -678,10 +666,13 @@ async function failWork(
   startedAt: number,
 ): Promise<WorkOutcome> {
   const permanent =
-    error instanceof PermanentSourceError || error instanceof DisabledWorkError;
+    error instanceof PermanentSourceError ||
+    error instanceof DisabledWorkError ||
+    error instanceof PiMemoryStage1BudgetError;
   const errorClass =
     error instanceof PermanentSourceError ||
     error instanceof RetryableWorkError ||
+    error instanceof PiMemoryStage1BudgetError ||
     error instanceof DisabledWorkError
       ? error.errorClass
       : error instanceof DOMException && error.name === "AbortError"
@@ -809,7 +800,7 @@ async function extractPreparedWork(
     };
   }
   return await runPiMemoryStage1Extraction(
-    { model, projectedHistory: args.prepared.projectedHistory, requestId },
+    { model, evidence: args.prepared.evidence, requestId },
     signal,
   );
 }
@@ -1100,7 +1091,6 @@ export const executePiMemoryStage1Work$ = command(
     }
     const model = resolvedModel.value;
 
-    const contextWindow = resolvePiMemoryStage1ContextWindow(model);
     const prepared: PreparedWork[] = [];
     // Deliberately serial: at most one encoded + decoded 128 MiB history is
     // resident. Provider concurrency is independent and begins only after raw
@@ -1108,7 +1098,7 @@ export const executePiMemoryStage1Work$ = command(
     for (const work of enabledWork) {
       const workStartedAt = performance.now();
       const loaded = await settleIncludingAbort(
-        set(loadAndProjectHistory$, { work, contextWindow }, signal),
+        set(loadAndProjectHistory$, { work }, signal),
       );
       if (signal.aborted) {
         await retryOwnedWorkAfterAbort(db, owned, signal.reason);

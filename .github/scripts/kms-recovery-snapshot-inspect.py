@@ -214,7 +214,9 @@ def validate_preview(branch, name, snapshot_id, existing_ids):
     return branch_id
 
 
-def inspect_database(database, endpoint, branch_id, target_environment, record_stage):
+def inspect_database(
+    database, endpoint, branch_id, target_environment, record_stage, record_scan
+):
     name, owner = database.get("name"), database.get("owner_name")
     require(database.get("branch_id") == branch_id, "database_branch_mismatch")
     require(
@@ -291,6 +293,7 @@ def inspect_database(database, endpoint, branch_id, target_environment, record_s
         result = error
     safe = scan_records(result, database_hash)
     scanned = {"databaseNameSha256": database_hash, "readOnly": True, "records": safe}
+    record_scan(scanned)
     if target_environment is not None:
         record_stage(database_hash, "target_verification")
         scanned["targetVerification"] = verify_database(
@@ -330,6 +333,10 @@ def main():
             "databaseNameSha256": database_hash,
             "phase": phase,
         }
+        checkpoint()
+
+    def record_scan(scanned):
+        report["databases"].append(scanned)
         checkpoint()
 
     preview_id = None
@@ -504,10 +511,13 @@ def main():
                     report["kmsCallsMade"] = None
                 report["targetVerificationStarted"] = True
                 checkpoint()
-            report["databases"].append(
-                inspect_database(
-                    database, endpoint, preview_id, target_environment, record_stage
-                )
+            inspect_database(
+                database,
+                endpoint,
+                preview_id,
+                target_environment,
+                record_stage,
+                record_scan,
             )
             if target_environment is not None:
                 report["kmsCallsMade"] = any(
@@ -538,6 +548,11 @@ def main():
         )
         if isinstance(error, ScanReportError) and error.diagnostics is not None:
             report["databaseScanFailure"] = error.diagnostics
+        if (
+            isinstance(error, RecoveryVerificationError)
+            and error.diagnostics is not None
+        ):
+            report["targetVerificationFailure"] = error.diagnostics
     finally:
         # Reserve cleanup and preservation read-back time inside the job budget.
         DEADLINE = time.monotonic() + 5 * 60

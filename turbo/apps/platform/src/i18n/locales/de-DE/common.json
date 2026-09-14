@@ -2378,6 +2378,14 @@
       "moreTemplates": "Weitere Vorlagen",
       "presentationTemplates": "Präsentationsvorlagen",
       "removeTask": "{{task}} entfernen",
+      "shelf": {
+        "browseStyles": "Alle Stile durchsuchen",
+        "browseTemplates": "Alle Vorlagen durchsuchen",
+        "image": "Bildstile",
+        "nextTemplates": "Weitere Vorlagen anzeigen",
+        "video": "Videovorlagen",
+        "website": "Website-Vorlagen"
+      },
       "tasks": {
         "image": "Bild",
         "presentation": "Folien",
@@ -2908,7 +2916,6 @@
       "storageFailed": "Audio konnte nicht gespeichert werden. Erneut versuchen stellt nur bereits auf diesem Gerät gespeichertes Audio wieder her.",
       "textTakingShape": "Der Text nimmt Form an",
       "transcribing": "Transkribieren",
-      "transcribingProgress": "Transkribieren...",
       "transcriptionFailed": "Die Sprachtranskription ist fehlgeschlagen. Versuchen Sie es erneut."
     },
     "workflows": {

@@ -10,10 +10,10 @@ OpenRouter/fal provider, and generic chat/image/LLM consumers retain their routi
 
 ## Configuration
 
-Google Cloud routing is fully rolled out for all users with voice input access.
-The existing `voiceInputV2` access switch must be enabled; both voice API routes
-resolve that access on every request. All Gemini voice steps, including
-independent text polish, use Google Cloud without a routing override. GPT Audio
+Voice input and Google Cloud routing are fully rolled out. Both voice API routes
+require a signed-in user with an active organization; audio-input quota and
+request limits continue to apply. All Gemini voice steps, including independent
+text polish, use Google Cloud without a routing override. GPT Audio
 recognition and dedicated ASR retain their selected providers. Failures never
 change the selected provider.
 

@@ -2424,6 +2424,14 @@
       "moreTemplates": "Autres modèles",
       "presentationTemplates": "Modèles de présentation",
       "removeTask": "Retirer {{task}}",
+      "shelf": {
+        "browseStyles": "Parcourir tous les styles",
+        "browseTemplates": "Parcourir tous les modèles",
+        "image": "Styles d'image",
+        "nextTemplates": "Modèles suivants",
+        "video": "Modèles de vidéo",
+        "website": "Modèles de site web"
+      },
       "tasks": {
         "image": "Image",
         "presentation": "Diapositives",
@@ -2954,7 +2962,6 @@
       "storageFailed": "Impossible de sauvegarder le son. Réessayer ne récupère que le son déjà enregistré sur cet appareil.",
       "textTakingShape": "Le texte prend forme",
       "transcribing": "Transcription",
-      "transcribingProgress": "Transcription en cours...",
       "transcriptionFailed": "Échec de la transcription vocale. Réessayez."
     },
     "workflows": {

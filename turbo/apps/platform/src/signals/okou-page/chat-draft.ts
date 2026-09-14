@@ -8,13 +8,7 @@ import {
   type State,
 } from "ccstate";
 import { delay } from "signal-timers";
-import {
-  onRejection,
-  resetSignal,
-  setLoop,
-  settle,
-  tapError,
-} from "../utils.ts";
+import { resetSignal, setLoop, settle, tapError } from "../utils.ts";
 import {
   createImageLoadSignals,
   type ImageLoadSignals,
@@ -74,36 +68,6 @@ const log = logger("chat-draft");
 const MULTIPART_UPLOAD_THRESHOLD_BYTES = 5 * 1024 * 1024;
 const MAX_PART_UPLOAD_ATTEMPTS = 5;
 const PART_UPLOAD_RETRY_BASE_DELAY_MS = 250;
-const MULTIPART_ABORT_TIMEOUT_MS = 5000;
-interface MultipartUploadReference {
-  id: string;
-  filename: string;
-  uploadId: string;
-}
-
-const abortMultipartUpload$ = command(
-  async (
-    { get },
-    upload: MultipartUploadReference,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const client = get(apiClient$)(uploadsContract);
-    await tapError(
-      accept(
-        client.abortMultipart({
-          body: upload,
-          fetchOptions: {
-            keepalive: true,
-            signal,
-          },
-        }),
-        [200],
-        signal,
-        { showErrorToast: false },
-      ),
-    );
-  },
-);
 
 function uploadContentTypeByExtension(ext: string): string | undefined {
   const contentTypeByExtension: Record<string, string | undefined> = {
@@ -255,7 +219,7 @@ async function uploadPartWithRetry(
  * app runtime in either case.
  */
 const uploadFileToStorage$ = command(
-  async ({ get, set }, file: File, signal: AbortSignal): Promise<FileInfo> => {
+  async ({ get }, file: File, signal: AbortSignal): Promise<FileInfo> => {
     const createClient = get(apiClient$);
     const client = createClient(uploadsContract);
     const contentType = inferUploadContentType(file);
@@ -280,56 +244,32 @@ const uploadFileToStorage$ = command(
 
     if ("multipart" in prepared.body) {
       const multipart = prepared.body.multipart;
-      let completionStarted = false;
-      return await onRejection(
-        (async () => {
-          signal.throwIfAborted();
-          for (const part of multipart.parts) {
-            const start = (part.partNumber - 1) * multipart.partSize;
-            const end = Math.min(start + multipart.partSize, file.size);
-            await uploadPartWithRetry(
-              part.uploadUrl,
-              file.slice(start, end, prepared.body.contentType),
-              prepared.body.contentType,
-              signal,
-            );
-          }
+      for (const part of multipart.parts) {
+        const start = (part.partNumber - 1) * multipart.partSize;
+        const end = Math.min(start + multipart.partSize, file.size);
+        await uploadPartWithRetry(
+          part.uploadUrl,
+          file.slice(start, end, prepared.body.contentType),
+          prepared.body.contentType,
+          signal,
+        );
+      }
 
-          signal.throwIfAborted();
-          completionStarted = true;
-          const completed = await accept(
-            client.completeMultipart({
-              body: {
-                id: prepared.body.id,
-                filename: prepared.body.filename,
-                uploadId: multipart.uploadId,
-                partCount: multipart.parts.length,
-              },
-              fetchOptions: { signal },
-            }),
-            [200],
-          );
-          signal.throwIfAborted();
-          return uploadFileInfo(completed.body, prepared.body.contentType);
-        })(),
-        async () => {
-          // Aborting after completion starts can remove the upload while R2
-          // is still finalizing it, so only clean up pre-completion failures.
-          if (completionStarted) {
-            return;
-          }
-          const cleanupSignal = AbortSignal.timeout(MULTIPART_ABORT_TIMEOUT_MS);
-          await set(
-            abortMultipartUpload$,
-            {
-              id: prepared.body.id,
-              filename: prepared.body.filename,
-              uploadId: multipart.uploadId,
-            },
-            cleanupSignal,
-          );
-        },
+      signal.throwIfAborted();
+      const completed = await accept(
+        client.completeMultipart({
+          body: {
+            id: prepared.body.id,
+            filename: prepared.body.filename,
+            uploadId: multipart.uploadId,
+            partCount: multipart.parts.length,
+          },
+          fetchOptions: { signal },
+        }),
+        [200],
       );
+      signal.throwIfAborted();
+      return uploadFileInfo(completed.body, prepared.body.contentType);
     }
 
     signal.throwIfAborted();

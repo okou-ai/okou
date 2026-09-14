@@ -122,10 +122,6 @@ export const customConnectorMcpEnabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.CustomConnectorMcp] ?? false;
 });
 
-export const voiceInputV2Enabled$ = computed((get): boolean => {
-  return get(featureSwitch$)[FeatureSwitchKey.VoiceInputV2] ?? false;
-});
-
 export const applyFeatureSwitches$ = command(
   ({ set }, switches: Record<FeatureSwitchKey, boolean>) => {
     set(setFeatureSwitchState$, switches);

@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
@@ -14,7 +13,6 @@ import {
 } from "./chat-run-test-fixtures.ts";
 
 const refreshedContext = testContext();
-const flags = { [FeatureSwitchKey.VoiceInputV2]: true } as const;
 const endpoint = "*/api/voice-io/transcribe/segment";
 
 test("Keep transcription pending until server recovery succeeds without reporting an error", async () => {
@@ -34,7 +32,7 @@ test("Keep transcription pending until server recovery succeeds without reportin
       language: "en",
     });
   });
-  await setupPage({ context, path: RUN_PATH, featureSwitches: flags });
+  await setupPage({ context, path: RUN_PATH });
   click(await findEnabledButton("Voice input"));
   click(await findEnabledButton("Stop recording"));
   await started.promise;
@@ -84,7 +82,6 @@ test("Keep recording after an incremental segment fails and finish in order", as
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: flags,
   });
   click(await findEnabledButton("Voice input"));
   const emit = await capture.promise;
@@ -153,7 +150,6 @@ test("Resume a completed segment after reload without retranscribing its audio",
     locale: "en-US",
     context: { ...context, signal: page.signal },
     path: RUN_PATH,
-    featureSwitches: flags,
   });
   click(await findEnabledButton("Voice input"));
   const emit = await capture.promise;
@@ -171,7 +167,6 @@ test("Resume a completed segment after reload without retranscribing its audio",
     locale: "en-US",
     context: refreshedContext,
     path: RUN_PATH,
-    featureSwitches: flags,
   });
   click(await findEnabledButton("Retry"));
   await waitFor(() => {
@@ -218,7 +213,7 @@ test("Stop during transcription and finalize the saved prefix without retranscri
       language: "en",
     });
   });
-  await setupPage({ context, path: RUN_PATH, featureSwitches: flags });
+  await setupPage({ context, path: RUN_PATH });
   click(await findEnabledButton("Voice input"));
   const emit = await capture.promise;
   emit(new Float32Array(60 * 16_000).fill(0.1));
@@ -266,7 +261,7 @@ test.each([
       language: "en",
     });
   });
-  await setupPage({ context, path: RUN_PATH, featureSwitches: flags });
+  await setupPage({ context, path: RUN_PATH });
   click(await findEnabledButton("Voice input"));
   click(await findEnabledButton("Stop recording"));
   await findEnabledButton("Retry");
@@ -304,7 +299,7 @@ test.each([
       { status },
     );
   });
-  await setupPage({ context, path: RUN_PATH, featureSwitches: flags });
+  await setupPage({ context, path: RUN_PATH });
   click(await findEnabledButton("Voice input"));
   click(await findEnabledButton("Stop recording"));
   await findEnabledButton("Retry");
@@ -371,7 +366,7 @@ test("Abort pending transcription when removing a recording after a storage fail
       language: "en",
     });
   });
-  await setupPage({ context, path: RUN_PATH, featureSwitches: flags });
+  await setupPage({ context, path: RUN_PATH });
   click(await findEnabledButton("Voice input"));
   const emit = await capture.promise;
   emit(new Float32Array(60 * 16_000).fill(0.1));

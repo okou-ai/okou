@@ -318,7 +318,7 @@ async function fetchClaudeCodeJson(
   return await response.json();
 }
 
-async function fetchProfileMetadata(
+export async function fetchClaudeCodeProfileMetadata(
   args: {
     readonly accessToken: string;
   },
@@ -396,7 +396,7 @@ export async function fetchClaudeCodeSubscriptionMetadata(
   signal: AbortSignal,
 ): Promise<ClaudeCodeSubscriptionMetadata | undefined> {
   const [profile, usage] = await Promise.allSettled([
-    fetchProfileMetadata(args, signal),
+    fetchClaudeCodeProfileMetadata(args, signal),
     fetchUsageMetadata(args, signal),
   ]);
   signal.throwIfAborted();

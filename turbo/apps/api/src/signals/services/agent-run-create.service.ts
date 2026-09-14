@@ -299,6 +299,8 @@ import { lockModelProviderState } from "./auth-state-lock.service";
 import {
   activePersonalModelProviderAccount,
   ensurePersonalModelProviderAccount,
+  coordinatePersonalSubscriptionCredentials,
+  reconcileLockedPersonalSubscriptionCredentials,
   isPersonalSubscriptionProviderType,
   personalModelProviderAccountById,
 } from "./model-provider-account.service";
@@ -2873,13 +2875,33 @@ async function resolveExactPersonalModelProviderAccount(
     orgId: args.orgId,
     userId: args.userId,
   });
-  if (!account) {
+  if (
+    !account ||
+    !isPersonalSubscriptionProviderType(account.type) ||
+    !(await coordinatePersonalSubscriptionCredentials({
+      db,
+      orgId: args.orgId,
+      userId: args.userId,
+      type: account.type,
+      sourceId: account.id,
+      featureSwitchContext: args.featureSwitchContext,
+    }))
+  ) {
+    return null;
+  }
+  const currentAccount = await personalModelProviderAccountById({
+    db,
+    id: account.id,
+    orgId: args.orgId,
+    userId: args.userId,
+  });
+  if (!currentAccount) {
     return null;
   }
   const [provider] = await db
     .select({ selectedModel: modelProviders.selectedModel })
     .from(modelProviders)
-    .where(eq(modelProviders.id, account.modelProviderId))
+    .where(eq(modelProviders.id, currentAccount.modelProviderId))
     .limit(1);
   if (!provider) {
     return null;
@@ -2887,7 +2909,7 @@ async function resolveExactPersonalModelProviderAccount(
   return await resolvePersonalModelProviderAccountEnvironment(
     db,
     args,
-    account,
+    currentAccount,
     provider.selectedModel,
   );
 }
@@ -2914,11 +2936,14 @@ async function resolveActivePersonalModelProviderAccountEnvironment(
   if (!provider || !isPersonalSubscriptionProviderType(provider.type)) {
     return null;
   }
-  await ensurePersonalModelProviderAccount({
+  const ready = await ensurePersonalModelProviderAccount({
     db,
     provider,
     featureSwitchContext: args.featureSwitchContext,
   });
+  if (!ready) {
+    return null;
+  }
   const account = await activePersonalModelProviderAccount({
     db,
     modelProviderId: row.id,
@@ -8456,7 +8481,7 @@ async function validateThreadSessionSnapshot(
 > {
   const resolution = args.createArgs.threadSessionResolution;
   const chatThreadId = args.createArgs.chatThreadId;
-  if (!resolution || !chatThreadId) {
+  if (!chatThreadId) {
     return undefined;
   }
 
@@ -8477,6 +8502,11 @@ async function validateThreadSessionSnapshot(
   );
   if (!thread) {
     throw new Error("Chat thread not found while validating session snapshot");
+  }
+  // Even callers without a prepared snapshot later bind this thread. Take its
+  // row lock before the provider lock, just like completion and timeout.
+  if (!resolution) {
+    return undefined;
   }
   if (
     thread.agentSessionId !== resolution.expected.agentSessionId ||
@@ -8612,6 +8642,7 @@ async function bindPreparedPiMemoryPhase2MaintenanceRun(
 async function validateCapturedSubscriptionAccount(
   tx: Tx,
   args: CommitPreparedLaunchArgs,
+  validatedThreadSession: ValidatedThreadSessionSnapshot | undefined,
 ) {
   const provider = args.context.modelProvider;
   if (
@@ -8619,19 +8650,43 @@ async function validateCapturedSubscriptionAccount(
     isPersonalSubscriptionProviderType(provider.type) &&
     provider.credentialOwner === "member"
   ) {
+    if (
+      !args.identity.shouldCreateSession &&
+      (!validatedThreadSession ||
+        args.createArgs.threadSessionResolution?.expected.sessionId !==
+          args.identity.sessionId)
+    ) {
+      // Unvalidated/session-only launches still acquire this FK lock when
+      // inserting the run. A completion can hold the session before cleanup,
+      // so acquire it before the provider lock too.
+      await tx
+        .select({ id: agentSessions.id })
+        .from(agentSessions)
+        .where(eq(agentSessions.id, args.identity.sessionId))
+        .for("key share");
+    }
     await lockModelProviderState(tx, {
       orgId: args.createArgs.orgId,
       userId: args.createArgs.userId,
       type: provider.type,
     });
-    const account = provider.id
-      ? await personalModelProviderAccountById({
-          db: tx,
-          orgId: args.createArgs.orgId,
-          userId: args.createArgs.userId,
-          id: provider.id,
-        })
-      : null;
+    const coherent = await reconcileLockedPersonalSubscriptionCredentials({
+      db: tx,
+      orgId: args.createArgs.orgId,
+      userId: args.createArgs.userId,
+      type: provider.type,
+      sourceId: provider.id ?? undefined,
+      featureSwitchContext: args.context.featureSwitchContext,
+    });
+    const account =
+      coherent && provider.id
+        ? await personalModelProviderAccountById({
+            db: tx,
+            orgId: args.createArgs.orgId,
+            userId: args.createArgs.userId,
+            id: provider.id,
+          })
+        : null;
     if (!account || account.type !== provider.type) {
       return conflict(
         "The selected subscription account was disconnected. Reconnect it before starting another run.",
@@ -8642,18 +8697,6 @@ async function validateCapturedSubscriptionAccount(
 }
 
 async function commitPreparedLaunchUnderLock(
-  tx: DbTransaction,
-  args: CommitPreparedLaunchArgs,
-  payload: RunnerJobPayload,
-): Promise<AtomicLaunchCommitResult | CreateRunErrorResult> {
-  const failure = await validateCapturedSubscriptionAccount(tx, args);
-  if (failure) {
-    return failure;
-  }
-  return await commitValidatedPreparedLaunch(tx, args, payload);
-}
-
-async function commitValidatedPreparedLaunch(
   tx: DbTransaction,
   args: CommitPreparedLaunchArgs,
   payload: RunnerJobPayload,
@@ -8678,6 +8721,32 @@ async function commitValidatedPreparedLaunch(
     identity: args.identity,
     timing: args.timing,
   });
+  if (threadSessionValidation?.kind !== "thread-session-snapshot-stale") {
+    const failure = await validateCapturedSubscriptionAccount(
+      tx,
+      args,
+      threadSessionValidation,
+    );
+    if (failure) {
+      return failure;
+    }
+  }
+  return await commitValidatedPreparedLaunch(
+    tx,
+    args,
+    payload,
+    threadSessionValidation,
+  );
+}
+
+async function commitValidatedPreparedLaunch(
+  tx: DbTransaction,
+  args: CommitPreparedLaunchArgs,
+  payload: RunnerJobPayload,
+  threadSessionValidation: Awaited<
+    ReturnType<typeof validateThreadSessionSnapshot>
+  >,
+): Promise<AtomicLaunchCommitResult | CreateRunErrorResult> {
   if (threadSessionValidation?.kind === "thread-session-snapshot-stale") {
     const queueFirstAdmission = await resolveQueueFirstAdmissionForLaunch({
       tx,

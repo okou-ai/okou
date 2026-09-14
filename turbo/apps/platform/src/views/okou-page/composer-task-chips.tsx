@@ -1,9 +1,11 @@
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
+  ArrowRight,
   ArrowUpRight,
   CalendarDays,
   ChartNoAxesCombined,
+  ChevronRight,
   FileText,
   Globe,
   Image,
@@ -17,14 +19,20 @@ import {
   Workflow,
 } from "lucide-react";
 import { Button } from "@okouai/ui";
+import { cn } from "@okouai/ui/lib/utils";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type {
-  ComposerIdeaTask,
   ComposerTask,
+  ComposerTemplateTask,
 } from "../../signals/okou-page/composer-task-chips.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ComposerPresentationRecommendations } from "./chat-composer.tsx";
+import {
+  slashTemplatePreviewGroup,
+  type SlashTemplatePreview,
+  type SlashTemplatePreviewCategory,
+} from "./composer-template-catalog.ts";
 import { ComposerWorkflowRecommendations } from "./composer-workflow-recommendations.tsx";
 import { ComposerVisualizationOptions } from "./composer-visualization-options.tsx";
 
@@ -107,15 +115,214 @@ const WEBSITE_IDEAS = [
   "linkPage",
   "bookingPage",
 ] as const;
-const CHIP_CLASS =
-  "gap-2 rounded-full border border-transparent px-3 font-normal hover:bg-gray-50";
+const TEMPLATES_PER_PAGE = 5;
+/**
+ * Both rows are a single line that usually overruns the 900px column. The rail
+ * hides the overrun and the mask dissolves its last 56px, so the row ends in a
+ * fade instead of a hard cut through a chip or a cover. Focus lifts the mask:
+ * the page is fixed, so a keyboard user could otherwise land on a control that
+ * the fade has dimmed.
+ */
+const ROW_RAIL = "min-w-0 flex-1 overflow-hidden";
+const ROW_FADE = cn(
+  "[-webkit-mask-image:linear-gradient(to_right,#000_calc(100%_-_56px),transparent)]",
+  "[mask-image:linear-gradient(to_right,#000_calc(100%_-_56px),transparent)]",
+  "focus-within:[-webkit-mask-image:none] focus-within:[mask-image:none]",
+);
+/**
+ * The pager sits outside the rail, so it always has an unmasked surface. It is
+ * the `icon` counterpart of the default-size neutral control the rows use.
+ */
+const ROW_PAGER = "shrink-0";
+/**
+ * Illustration styles run 20 portrait, 9 square and 3 landscape, so their own
+ * proportions cannot line up. One 4:5 tile centre-crops them into a single
+ * rhythm; a style sample is judged on texture and palette, and the uncropped
+ * artwork is still what the picker dialog shows. The other two catalogs are
+ * screenshots of 16:9 artifacts and keep that ratio.
+ */
+const TASK_TEMPLATE_SHELF = {
+  image: {
+    category: "illustration",
+    width: "w-[118px]",
+    ratio: "aspect-[4/5]",
+  },
+  video: { category: "video", width: "w-[200px]", ratio: "aspect-video" },
+  website: { category: "website", width: "w-[200px]", ratio: "aspect-video" },
+} as const satisfies Record<
+  ComposerTemplateTask,
+  {
+    readonly category: SlashTemplatePreviewCategory;
+    readonly width: string;
+    readonly ratio: string;
+  }
+>;
+
+/**
+ * One cover. Selecting it attaches the template to the composer the same way
+ * the slash panel does; the catalog already pairs each preview with the
+ * attachment its chip stores.
+ */
+function ComposerTemplateCover({
+  preview,
+  width,
+  ratio,
+  onSelect,
+}: {
+  readonly preview: SlashTemplatePreview;
+  readonly width: string;
+  readonly ratio: string;
+  readonly onSelect: (preview: SlashTemplatePreview) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Button
+      type="button"
+      variant="quiet"
+      className={cn(
+        "group/cover block h-auto shrink-0 rounded-lg p-0 text-left font-normal",
+        width,
+      )}
+      aria-label={t(
+        ($) => {
+          return $.chat.composer.slashPanel.useTemplate;
+        },
+        { title: preview.title },
+      )}
+      onClick={() => {
+        onSelect(preview);
+      }}
+    >
+      <span
+        className={cn(
+          "block overflow-hidden rounded-lg border border-border bg-muted",
+          ratio,
+        )}
+      >
+        <img
+          src={preview.coverUrl}
+          alt=""
+          loading="lazy"
+          className="h-full w-full object-cover object-center transition-transform duration-200 group-hover/cover:scale-[1.04]"
+        />
+      </span>
+      <span className="mt-2 block truncate text-[12px] leading-4">
+        {preview.title}
+      </span>
+    </Button>
+  );
+}
+
+/**
+ * The cover shelf for a type. Its header owns the two actions that used to
+ * float in a column of their own: the catalog link stays on the title line,
+ * and paging stays beside the covers it moves.
+ */
+function ComposerTemplateShelf({
+  signals,
+  task,
+}: {
+  readonly signals: ComposerSignals;
+  readonly task: ComposerTemplateTask;
+}) {
+  const { t } = useTranslation();
+  const { category, width, ratio } = TASK_TEMPLATE_SHELF[task];
+  const group = slashTemplatePreviewGroup(category);
+  const page = useGet(signals.taskChips.templatePages$)[task];
+  const nextTemplates = useSet(signals.taskChips.nextTemplates$);
+  const insertTemplate = useSet(signals.template.insertTemplate$);
+  const openTemplates = useSet(signals.template.openTemplatePicker$);
+  const saveDraft = useSet(signals.draft.save$);
+  const pageSignal = useGet(pageSignal$);
+  const pageCount = Math.ceil(group.previews.length / TEMPLATES_PER_PAGE);
+  // Named one key at a time: the extractor only keeps keys it can see.
+  const labels = {
+    image: t(($) => {
+      return $.chat.taskChips.shelf.image;
+    }),
+    video: t(($) => {
+      return $.chat.taskChips.shelf.video;
+    }),
+    website: t(($) => {
+      return $.chat.taskChips.shelf.website;
+    }),
+  };
+  const label = labels[task];
+  const pagePreviews = group.previews.slice(
+    page * TEMPLATES_PER_PAGE,
+    (page + 1) * TEMPLATES_PER_PAGE,
+  );
+  return (
+    <div
+      className="flex min-w-0 flex-col gap-3"
+      role="group"
+      aria-label={label}
+    >
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <p className="min-w-0 truncate text-[13px] font-medium">{label}</p>
+        <Button
+          type="button"
+          variant="quiet"
+          size="xs"
+          className="shrink-0 gap-1.5 font-normal"
+          onClick={() => {
+            openTemplates({ kind: "insert", category });
+          }}
+        >
+          {t(($) => {
+            return task === "image"
+              ? $.chat.taskChips.shelf.browseStyles
+              : $.chat.taskChips.shelf.browseTemplates;
+          })}
+          <ArrowRight className="size-3" aria-hidden />
+        </Button>
+      </div>
+      <div className="flex min-w-0 items-center gap-2">
+        <div className={cn(ROW_RAIL, ROW_FADE)}>
+          <div className="flex w-max items-start gap-3">
+            {pagePreviews.map((preview) => {
+              return (
+                <ComposerTemplateCover
+                  key={preview.slug}
+                  preview={preview}
+                  width={width}
+                  ratio={ratio}
+                  onSelect={() => {
+                    insertTemplate(preview.template, preview.attachment);
+                    detach(saveDraft(pageSignal), Reason.DomCallback);
+                  }}
+                />
+              );
+            })}
+          </div>
+        </div>
+        {pageCount > 1 && (
+          <Button
+            type="button"
+            variant="neutral"
+            size="icon"
+            className={ROW_PAGER}
+            aria-label={t(($) => {
+              return $.chat.taskChips.shelf.nextTemplates;
+            })}
+            onClick={() => {
+              nextTemplates(task, pageCount);
+            }}
+          >
+            <ChevronRight className="size-4" aria-hidden />
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function ComposerTaskIdeas({
   signals,
   task,
 }: {
   readonly signals: ComposerSignals;
-  readonly task: Exclude<ComposerIdeaTask, "workflow">;
+  readonly task: ComposerTemplateTask;
 }) {
   const { t } = useTranslation();
   const copy = t(
@@ -140,83 +347,59 @@ function ComposerTaskIdeas({
   const insertPrompt = useSet(signals.editor.selectOrAppendText$);
   const saveDraft = useSet(signals.draft.save$);
   const pageSignal = useGet(pageSignal$);
-  const openTemplates = useSet(signals.template.openTemplatePicker$);
   const icons = IDEA_ICONS[task];
   const pageIdeas = Array.from({ length: IDEAS_PER_PAGE }, (_, index) => {
     return ideas[(page * IDEAS_PER_PAGE + index) % ideas.length]!;
   });
   return (
     <div
-      className="grid min-w-0 grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-[minmax(0,1fr)_auto]"
+      className="flex min-w-0 items-center gap-2"
       role="group"
       aria-label={t(($) => {
         return $.chat.taskChips.ideasLabel;
       })}
     >
-      <div className="grid min-w-0 grid-cols-1 gap-1">
-        {pageIdeas.map((idea, index) => {
-          const ideaIndex = (page * IDEAS_PER_PAGE + index) % ideas.length;
-          const Icon = icons[ideaIndex % icons.length]!;
-          return (
-            <Button
-              key={idea.label}
-              type="button"
-              variant="quiet"
-              size="sm"
-              className="group h-auto min-h-11 min-w-0 justify-start gap-3 px-3 py-2 text-left font-normal hover:bg-gray-50"
-              onClick={() => {
-                insertPrompt(idea.prompt);
-                detach(saveDraft(pageSignal), Reason.DomCallback);
-              }}
-            >
-              <Icon
-                size={16}
-                className="shrink-0 text-muted-foreground"
-                aria-hidden
-              />
-              <span className="min-w-0 flex-1 whitespace-normal text-[13px] leading-5">
+      <div className={cn(ROW_RAIL, ROW_FADE)}>
+        <div className="flex w-max items-center gap-2">
+          {pageIdeas.map((idea, index) => {
+            const ideaIndex = (page * IDEAS_PER_PAGE + index) % ideas.length;
+            const Icon = icons[ideaIndex % icons.length]!;
+            return (
+              <Button
+                key={idea.label}
+                type="button"
+                variant="neutral"
+                className="shrink-0"
+                onClick={() => {
+                  insertPrompt(idea.prompt);
+                  detach(saveDraft(pageSignal), Reason.DomCallback);
+                }}
+              >
+                <Icon
+                  size={16}
+                  className="shrink-0 text-muted-foreground"
+                  aria-hidden
+                />
                 {idea.label}
-              </span>
-              <ArrowUpRight
-                size={14}
-                className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
-                aria-hidden
-              />
-            </Button>
-          );
-        })}
-      </div>
-      <div className="flex flex-col items-end gap-1 sm:pt-2">
-        <Button
-          type="button"
-          variant="quiet"
-          size="xs"
-          className="gap-2 font-normal hover:bg-gray-50"
-          onClick={() => {
-            nextIdeas(task, Math.ceil(ideas.length / IDEAS_PER_PAGE));
-          }}
-        >
-          <RefreshCw size={14} aria-hidden />
-          {t(($) => {
-            return $.chat.taskChips.moreIdeas;
+              </Button>
+            );
           })}
-        </Button>
-        {task === "website" && (
-          <Button
-            type="button"
-            variant="quiet"
-            size="xs"
-            className="font-normal hover:bg-gray-50"
-            onClick={() => {
-              openTemplates({ kind: "insert", category: "website" });
-            }}
-          >
-            {t(($) => {
-              return $.chat.taskChips.moreTemplates;
-            })}
-          </Button>
-        )}
+        </div>
       </div>
+      <Button
+        type="button"
+        variant="neutral"
+        size="icon"
+        className={ROW_PAGER}
+        aria-label={t(($) => {
+          return $.chat.taskChips.moreIdeas;
+        })}
+        onClick={() => {
+          nextIdeas(task, Math.ceil(ideas.length / IDEAS_PER_PAGE));
+        }}
+      >
+        <ChevronRight className="size-4" aria-hidden />
+      </Button>
     </div>
   );
 }
@@ -252,7 +435,7 @@ export function ComposerTaskChips({
     >
       {selected === null && (
         <div
-          className="flex flex-wrap items-center justify-start gap-1.5"
+          className="flex flex-wrap items-center justify-start gap-2"
           role="group"
           aria-label={t(($) => {
             return $.chat.taskChips.chooseTask;
@@ -273,14 +456,16 @@ export function ComposerTaskChips({
                 <Button
                   key={task}
                   type="button"
-                  size="sm"
-                  variant="quiet"
-                  className={CHIP_CLASS}
+                  variant="neutral"
                   onClick={() => {
                     selectTask(task);
                   }}
                 >
-                  <Icon size={16} aria-hidden />
+                  <Icon
+                    size={16}
+                    className="text-muted-foreground"
+                    aria-hidden
+                  />
                   {labels[task]}
                 </Button>
               );
@@ -300,7 +485,10 @@ export function ComposerTaskChips({
         selected !== "presentation" &&
         selected !== "workflow" &&
         selected !== "visualization" && (
-          <ComposerTaskIdeas signals={signals} task={selected} />
+          <>
+            <ComposerTaskIdeas signals={signals} task={selected} />
+            <ComposerTemplateShelf signals={signals} task={selected} />
+          </>
         )}
     </section>
   );

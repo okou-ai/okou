@@ -1110,6 +1110,7 @@ interface AgentRunAfterPreCreate {
 async function captureSubscriptionAccount(
   db: Db,
   input: AgentRunAfterPreCreate,
+  signal: AbortSignal,
 ): Promise<AgentRunAfterPreCreate | ReturnType<typeof conflict>> {
   const { command } = input;
   const pin = command.agentRunModelPin;
@@ -1121,14 +1122,17 @@ async function captureSubscriptionAccount(
   ) {
     return input;
   }
-  const account = await captureActivePersonalModelProviderAccount({
-    type: pin.modelProvider,
-    db,
-    orgId: command.auth.orgId,
-    userId: command.auth.userId,
-    modelProviderId: pin.modelProviderId,
-    featureSwitchContext: input.featureSwitchContext,
-  });
+  const account = await captureActivePersonalModelProviderAccount(
+    {
+      type: pin.modelProvider,
+      db,
+      orgId: command.auth.orgId,
+      userId: command.auth.userId,
+      modelProviderId: pin.modelProviderId,
+      featureSwitchContext: input.featureSwitchContext,
+    },
+    signal,
+  );
   if (!account) {
     return conflict(
       "The selected subscription account is unavailable. Reconnect it before starting another run.",
@@ -1207,7 +1211,7 @@ const THREAD_SESSION_PREPARATION_ATTEMPTS = 3;
 const createAgentRunAfterPreCreate$ = command(
   async ({ set }, input: AgentRunAfterPreCreate, signal: AbortSignal) => {
     const db = set(writeDb$);
-    const capturedInput = await captureSubscriptionAccount(db, input);
+    const capturedInput = await captureSubscriptionAccount(db, input, signal);
     signal.throwIfAborted();
     if ("status" in capturedInput) {
       return capturedInput;

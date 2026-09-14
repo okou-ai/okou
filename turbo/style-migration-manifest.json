@@ -561,30 +561,6 @@
       "evidence": []
     },
     {
-      "id": "mic-motion",
-      "family": "motion-and-injection",
-      "tokens": ["mic-starting-spinner", "mic-volume-icon-meter"],
-      "consumers": ["apps/platform/src/views/okou-page/chat-composer.tsx"],
-      "cases": ["mic-light", "mic-dark", "mic-light-retina", "mic-dark-retina"],
-      "status": "verified",
-      "evidence": [
-        {
-          "kind": "before-and-unchanged-aa-with-normal-motion",
-          "url": "https://a.okou.io/tu82fjalef.zip",
-          "sha256": "cb2d57ff2c022af59fa893e08f72e4c538f4d4459ac35d9665950894ea0959c2",
-          "commit": "f3ae0b78c34b93d6a528c64851a8ac726ff8697f"
-        },
-        {
-          "kind": "after-with-before-raw-diffs-and-normal-motion",
-          "url": "https://a.okou.io/s75ljvx543.zip",
-          "sha256": "23a02bd90b48702a8dea2f292eede718627685f08dc671de4e205478892ed716",
-          "commit": "99b0374201651de592a1ded743ef8ebe74145e88"
-        }
-      ],
-      "pullRequest": "https://github.com/vm0-ai/vm0/pull/33345",
-      "mergeCommit": null
-    },
-    {
       "id": "neutral-control-surface",
       "family": "local-controls",
       "tokens": ["okou-btn-morandi"],
@@ -890,7 +866,6 @@
     "../e2e/playwright/style-migration/running-indicator-cases.json",
     "../e2e/playwright/style-migration/swatch-cases.json",
     "../e2e/playwright/style-migration/shared-recipe-cases.json",
-    "../e2e/playwright/style-migration/mic-motion-cases.json",
     "../e2e/playwright/style-migration/control-surface-cases.json",
     "../e2e/playwright/style-migration/hairline-rule-cases.json",
     "../e2e/playwright/style-migration/sidebar-thread-title-cases.json",
