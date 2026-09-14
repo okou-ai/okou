@@ -83,7 +83,7 @@ async function harness(enabled = true) {
   }
   const migration = await readFile(
     new URL(
-      "../../../../../../packages/db/src/migrations/1124_pi_memory_stage1_daily_batches.sql",
+      "../../../../../../packages/db/src/migrations/1125_pi_memory_stage1_daily_batches.sql",
       import.meta.url,
     ),
     "utf8",
