@@ -47,9 +47,7 @@ import {
   inArray,
   isNotNull,
   isNull,
-  notExists,
   or,
-  type SQL,
   sql,
 } from "drizzle-orm";
 
@@ -58,7 +56,10 @@ import type { Tx } from "../../lib/db-types";
 import { now, nowDate } from "../../lib/time";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
 import { inferMimetype } from "./chat-event-shared.service";
-import { latestRunFinishEventSubquery } from "./chat-thread-read-state-query";
+import {
+  latestRunFinishEventSubquery,
+  unreadChatThreadsQuery,
+} from "./chat-thread-read-state-query";
 import {
   appendChatThreadEvent,
   chatThreadServiceTierFromCodex,
@@ -247,21 +248,6 @@ const INDICATOR_UNREAD_LIMIT = 50;
 const INDICATOR_UNREAD_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
 const indicatorDecoder = zodEnumDriverValueDecoder(indicatorSchema);
 
-function noActiveRunsForCurrentThreadCondition(db: Pick<Db, "select">): SQL {
-  return notExists(
-    db
-      .select({ id: agentRuns.id })
-      .from(agentRuns)
-      .where(
-        and(
-          eq(agentRuns.chatThreadId, chatThreads.id),
-          inArray(agentRuns.status, ACTIVE_RUN_STATUSES),
-          isNotNull(agentRuns.triggerSource),
-        ),
-      ),
-  );
-}
-
 function ownedChatThreadDetail(
   threadId: string,
   userId: string,
@@ -317,28 +303,7 @@ export function chatThreadUnreads(args: {
   readonly agentId: string;
 }): Computed<Promise<readonly { threadId: string; unreadAt: string }[]>> {
   return computed(async (get) => {
-    const db = get(db$);
-    const lastRunFinish = latestRunFinishEventSubquery(db, chatThreads.id);
-    const rows = await db
-      .select({
-        threadId: chatThreads.id,
-        unreadAt: lastRunFinish.createdAt,
-      })
-      .from(chatThreads)
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-      .crossJoinLateral(lastRunFinish)
-      .where(
-        and(
-          eq(chatThreads.userId, args.userId),
-          eq(agents.orgId, args.orgId),
-          eq(chatThreads.agentId, args.agentId),
-          or(
-            isNull(chatThreads.lastReadAt),
-            gt(lastRunFinish.createdAt, chatThreads.lastReadAt),
-          ),
-          noActiveRunsForCurrentThreadCondition(db),
-        ),
-      );
+    const rows = await unreadChatThreadsQuery(get(db$), args);
     return rows.map((row) => {
       return { threadId: row.threadId, unreadAt: row.unreadAt.toISOString() };
     });

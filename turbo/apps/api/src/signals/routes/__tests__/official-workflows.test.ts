@@ -1828,6 +1828,7 @@ async function completeSuccessfulRun(
   runnerGroup: string,
   runId: string,
   output: string,
+  beforeCompletion?: () => Promise<void>,
 ): Promise<void> {
   await runs.heartbeatRunner(runnerGroup);
   const claim = await runs.claimRunnerJob(runId);
@@ -1840,6 +1841,7 @@ async function completeSuccessfulRun(
     headers,
     [200],
   );
+  await beforeCompletion?.();
   await webhooks.requestAgentComplete(
     {
       runId,
@@ -2072,6 +2074,253 @@ beforeEach(async () => {
   );
   await installApiTestConnectorCatalog();
   await cleanupCatalog();
+});
+
+async function setupMorningBriefDelivery() {
+  installCatalogStorageFixture();
+  await syncDeployedCatalog();
+  const { actor } = await workflowBdd.setupWorkflowOrg({
+    timezone: "Asia/Shanghai",
+  });
+  await setMorningBriefEnabled(actor, true);
+  const headers = authHeaders(actor);
+  await accept(
+    morningBriefPreferenceClient().update({
+      headers,
+      body: { enabled: true },
+    }),
+    [200],
+  );
+  const [workflow] = await listMorningBriefInstallations(actor);
+  if (!workflow) {
+    throw new Error("Expected Morning Brief installation");
+  }
+  const [automation] = await readMorningBriefAutomations(actor, workflow.id);
+  if (!automation?.nextRunAt) {
+    throw new Error("Expected scheduled Morning Brief");
+  }
+  configureResultEmailRecipient(actor);
+  const runnerGroup = runs.configureRunnerGroup();
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  onTestFinished(async () => {
+    installCatalogStorageFixture();
+    await bdd.deleteAgent(actor, workflow.agentId);
+    await cleanupCatalog();
+  });
+  return { actor, headers, workflow, automation, runnerGroup };
+}
+
+async function morningBriefRunIds(automationId: string): Promise<string[]> {
+  const automation = await workflowBdd.readAutomation(automationId);
+  if (!automation.chatThreadId) {
+    return [];
+  }
+  const events = await workflowBdd.readThreadEvents(automation.chatThreadId);
+  return events.flatMap((event) => {
+    return event.eventType === "input.prompt" && event.runId
+      ? [event.runId]
+      : [];
+  });
+}
+
+describe("Morning Brief delivery", () => {
+  it("skips empty schedules without disabling delivery and resumes after a connector is connected", async () => {
+    const scenario = await setupMorningBriefDelivery();
+    let nextRunAt = scenario.automation.nextRunAt;
+    for (let day = 0; day < 4; day++) {
+      if (!nextRunAt) {
+        throw new Error("Expected Morning Brief to remain scheduled");
+      }
+      const fireAt = new Date(nextRunAt);
+      const tick = await withMockNowForTest(fireAt, async () => {
+        return await accept(
+          automationExecutionClient().execute({
+            body: { automation_id: scenario.automation.id },
+          }),
+          [200],
+        );
+      });
+      expect(tick.body).toMatchObject({ executed: 0, skipped: 1 });
+      const current = await workflowBdd.readAutomation(scenario.automation.id);
+      expect(current).toMatchObject({
+        enabled: true,
+        lastRunAt: null,
+        chatThreadId: null,
+      });
+      expect(new Date(current.nextRunAt!).getTime()).toBeGreaterThan(
+        fireAt.getTime(),
+      );
+      nextRunAt = current.nextRunAt;
+    }
+
+    await connectBriefSource(scenario.actor);
+    await withMockNowForTest(new Date(nextRunAt!), async () => {
+      const tick = await accept(
+        automationExecutionClient().execute({
+          body: { automation_id: scenario.automation.id },
+        }),
+        [200],
+      );
+      expect(tick.body).toMatchObject({ executed: 1, skipped: 0 });
+      const runIds = await morningBriefRunIds(scenario.automation.id);
+      expect(runIds).toHaveLength(1);
+      const [runId] = runIds;
+      if (!runId) {
+        throw new Error("Expected a Morning Brief Run after connecting Gmail");
+      }
+      await completeSuccessfulRun(
+        scenario.runnerGroup,
+        runId,
+        "Review the customer's request in Gmail.",
+      );
+      const source = await outbox.findSourceState({
+        sourceRunId: runId,
+        sourceWorkflowAutomationId: scenario.automation.id,
+      });
+      expect(source.items).toHaveLength(1);
+    });
+  });
+
+  it.each(["unread", "read", "active"])(
+    "uses canonical %s chat state across agents when no connector is connected",
+    async (threadState) => {
+      const scenario = await setupMorningBriefDelivery();
+      const { agentId } = await workflowBdd.createAgent(scenario.actor);
+      onTestFinished(async () => {
+        await bdd.deleteAgent(scenario.actor, agentId);
+      });
+      const sent = await chat.requestSendEvent(
+        scenario.actor,
+        { agentId, prompt: "Prepare today's customer follow-up" },
+        [201],
+      );
+      if (sent.status !== 201 || !sent.body.runId) {
+        throw new Error("Expected a Chat Run");
+      }
+      await completeSuccessfulRun(
+        scenario.runnerGroup,
+        sent.body.runId,
+        "The customer follow-up is ready to review.",
+      );
+      if (threadState === "read") {
+        await chat.markThreadRead(scenario.actor, sent.body.threadId);
+      }
+      if (threadState === "active") {
+        const active = await chat.requestSendEvent(
+          scenario.actor,
+          {
+            agentId,
+            threadId: sent.body.threadId,
+            prompt: "Continue the follow-up",
+          },
+          [201],
+        );
+        if (active.status !== 201 || !active.body.runId) {
+          throw new Error("Expected a follow-up Chat Run");
+        }
+        const activeRunId = active.body.runId;
+        onTestFinished(async () => {
+          await runs.requestCancelRun(scenario.actor, activeRunId, [200, 400]);
+        });
+      }
+
+      await withMockNowForTest(
+        new Date(scenario.automation.nextRunAt!),
+        async () => {
+          const tick = await accept(
+            automationExecutionClient().execute({
+              body: { automation_id: scenario.automation.id },
+            }),
+            [200],
+          );
+          expect(tick.body).toMatchObject(
+            threadState === "unread"
+              ? { executed: 1, skipped: 0 }
+              : { executed: 0, skipped: 1 },
+          );
+          const runIds = await morningBriefRunIds(scenario.automation.id);
+          if (threadState !== "unread") {
+            expect(runIds).toStrictEqual([]);
+            return;
+          }
+          expect(runIds).toHaveLength(1);
+          const [runId] = runIds;
+          if (!runId) {
+            throw new Error("Expected an unread-chat Morning Brief Run");
+          }
+          await completeSuccessfulRun(
+            scenario.runnerGroup,
+            runId,
+            "Your customer follow-up is ready in an unread chat.",
+          );
+          const source = await outbox.findSourceState({
+            sourceRunId: runId,
+            sourceWorkflowAutomationId: scenario.automation.id,
+          });
+          expect(source.items).toHaveLength(1);
+        },
+      );
+    },
+  );
+
+  it.each(["never connected", "disconnected during the run"])(
+    "suppresses delivery when connectors were %s and ignores the brief's own unread result",
+    async (connectorState) => {
+      const scenario = await setupMorningBriefDelivery();
+      if (connectorState === "disconnected during the run") {
+        await connectBriefSource(scenario.actor);
+      }
+      const started = await accept(
+        automationClient().run({
+          headers: scenario.headers,
+          params: { id: scenario.automation.id },
+        }),
+        [201],
+      );
+      if (!started.body.runId) {
+        throw new Error("Expected an explicit Morning Brief Run");
+      }
+      await completeSuccessfulRun(
+        scenario.runnerGroup,
+        started.body.runId,
+        "No current work was found.",
+        async () => {
+          if (connectorState === "disconnected during the run") {
+            await connectors.deleteDefaultBuiltinConnectorAccount(
+              scenario.actor,
+              "gmail",
+            );
+          }
+        },
+      );
+      const source = await outbox.findSourceState({
+        sourceRunId: started.body.runId,
+        sourceWorkflowAutomationId: scenario.automation.id,
+      });
+      expect(source.items).toStrictEqual([]);
+      const current = await workflowBdd.readAutomation(scenario.automation.id);
+      await expect(
+        chat.listThreadUnreads(scenario.actor, scenario.workflow.agentId),
+      ).resolves.toStrictEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ threadId: current.chatThreadId }),
+        ]),
+      );
+      await withMockNowForTest(new Date(current.nextRunAt!), async () => {
+        const tick = await accept(
+          automationExecutionClient().execute({
+            body: { automation_id: scenario.automation.id },
+          }),
+          [200],
+        );
+        expect(tick.body).toMatchObject({ executed: 0, skipped: 1 });
+      });
+      await expect(
+        morningBriefRunIds(scenario.automation.id),
+      ).resolves.toStrictEqual([started.body.runId]);
+    },
+  );
 });
 
 describe("Morning Brief preference", () => {

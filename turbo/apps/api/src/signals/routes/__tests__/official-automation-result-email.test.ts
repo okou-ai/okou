@@ -23,6 +23,10 @@ import {
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import type { ApiTestUser } from "./helpers/api-bdd";
+import {
+  createConnectorBddApi,
+  mockGmailConnectorOAuth,
+} from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
@@ -45,6 +49,7 @@ const webhooks = createWebhookCallbackApi(context);
 const workflows = createWorkflowsBddApi(context);
 const outbox = createEmailOutboxStateApi(context);
 const misc = createMiscRoutesApi(context);
+const connectors = createConnectorBddApi(context);
 
 const WORKFLOW_NAME = "official-result-email-fixture";
 const RESULT_CALLBACK_KIND = "workflow-automation:result-email";
@@ -347,6 +352,20 @@ describe("Official Automation result email callbacks", () => {
 
   it("links Morning Brief management to Preferences without changing account unsubscribe", async () => {
     const scenario = await setupScenario();
+    mockGmailConnectorOAuth();
+    const started = await connectors.startOauth(
+      scenario.actor,
+      "gmail",
+      "oauth",
+    );
+    const state = new URL(started.authorizationUrl).searchParams.get("state");
+    if (!state) {
+      throw new Error("Expected Gmail OAuth state");
+    }
+    await connectors.completeOauthCallback("gmail", {
+      code: "brief-code",
+      state,
+    });
     const runId = await startRun(scenario, "https://app.okou.ai");
     await seedResultCallback({
       runId,

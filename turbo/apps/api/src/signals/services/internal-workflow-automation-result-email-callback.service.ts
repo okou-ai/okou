@@ -34,6 +34,7 @@ import type {
 } from "./internal-run-callback";
 import { readAcceptedOfficialWorkflowRevision } from "./official-workflow-catalog-read.service";
 import { getRunOutputText } from "./run-output.service";
+import { hasMorningBriefSources } from "./morning-brief-sources.service";
 
 const log = logger("api:official-automation-result-email");
 const EMPTY_RESULT_FALLBACK = "This run completed without a text result.";
@@ -130,17 +131,24 @@ function boundedResultText(output: string | undefined): string {
   );
 }
 
-interface WorkflowAutomationManageUrlArgs {
+interface WorkflowAutomationEmailContextArgs {
   readonly automationId: string;
   readonly userId: string;
+  readonly orgId: string;
+  readonly chatThreadId: string | null;
+  readonly workflowName: string;
+  readonly officialWorkflowProvenance: AgentRunOfficialWorkflowProvenance | null;
   readonly productUrl: string;
 }
 
-async function workflowAutomationManageUrl(
+async function workflowAutomationEmailContext(
   db: Db,
-  args: WorkflowAutomationManageUrlArgs,
+  args: WorkflowAutomationEmailContextArgs,
   signal: AbortSignal,
-): Promise<string> {
+): Promise<{
+  readonly manageUrl: string;
+  readonly shouldSend: boolean;
+}> {
   const [automation] = await db
     .select({
       workflowId: workflowAutomations.workflowId,
@@ -156,17 +164,38 @@ async function workflowAutomationManageUrl(
     )
     .limit(1);
   signal.throwIfAborted();
-  if (
+  const isMorningBrief =
     automation?.officialDefinitionName ===
-    MORNING_BRIEF_OFFICIAL_DEFINITION_NAME
-  ) {
-    return `${args.productUrl}${MORNING_BRIEF_PREFERENCES_PATH}`;
-  }
-  return automation
-    ? `${args.productUrl}/workflows/${encodeURIComponent(
-        automation.workflowId,
-      )}/automations?automationId=${encodeURIComponent(args.automationId)}`
-    : `${args.productUrl}/workflows`;
+      MORNING_BRIEF_OFFICIAL_DEFINITION_NAME ||
+    args.officialWorkflowProvenance?.definitions.some((definition) => {
+      return (
+        definition.name === args.workflowName &&
+        definition.name === MORNING_BRIEF_OFFICIAL_DEFINITION_NAME
+      );
+    });
+  const shouldSend =
+    !isMorningBrief ||
+    (await hasMorningBriefSources(
+      db,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        excludedThreadId: args.chatThreadId,
+      },
+      signal,
+    ));
+  return {
+    manageUrl:
+      automation?.officialDefinitionName ===
+      MORNING_BRIEF_OFFICIAL_DEFINITION_NAME
+        ? `${args.productUrl}${MORNING_BRIEF_PREFERENCES_PATH}`
+        : automation
+          ? `${args.productUrl}/workflows/${encodeURIComponent(
+              automation.workflowId,
+            )}/automations?automationId=${encodeURIComponent(args.automationId)}`
+          : `${args.productUrl}/workflows`,
+    shouldSend,
+  };
 }
 
 export async function handleWorkflowAutomationResultEmailInternalCallback(
@@ -190,6 +219,8 @@ export async function handleWorkflowAutomationResultEmailInternalCallback(
     .select({
       status: agentRuns.status,
       userId: agentRuns.userId,
+      orgId: agentRuns.orgId,
+      chatThreadId: agentRuns.chatThreadId,
       officialWorkflowProvenance: agentRuns.officialWorkflowProvenance,
     })
     .from(agentRuns)
@@ -205,6 +236,21 @@ export async function handleWorkflowAutomationResultEmailInternalCallback(
     return { success: true, skipped: true };
   }
 
+  const productUrl = env("APP_URL");
+  const emailContext = await workflowAutomationEmailContext(
+    db,
+    {
+      ...run,
+      automationId: payload.data.automationId,
+      workflowName: payload.data.workflowName,
+      productUrl,
+    },
+    signal,
+  );
+  if (!emailContext.shouldSend) {
+    return { success: true, skipped: true };
+  }
+
   const clerk = createStore().get(clerk$);
   const userEmail = await getUserEmail(db, clerk, run.userId);
   signal.throwIfAborted();
@@ -217,16 +263,6 @@ export async function handleWorkflowAutomationResultEmailInternalCallback(
     db,
     payload.data.workflowName,
     run.officialWorkflowProvenance ?? null,
-    signal,
-  );
-  const productUrl = env("APP_URL");
-  const manageUrl = await workflowAutomationManageUrl(
-    db,
-    {
-      automationId: payload.data.automationId,
-      userId: run.userId,
-      productUrl,
-    },
     signal,
   );
   const enqueued = await db.transaction(async (tx) => {
@@ -286,7 +322,7 @@ export async function handleWorkflowAutomationResultEmailInternalCallback(
           // Keep the persisted props shape rollout-compatible while changing
           // manageUrl from the legacy account unsubscribe destination to the
           // originating automation deep link.
-          manageUrl,
+          manageUrl: emailContext.manageUrl,
         },
       },
       sourceRunId: envelope.runId,

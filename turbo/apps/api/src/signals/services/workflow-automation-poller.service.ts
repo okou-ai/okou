@@ -1,3 +1,4 @@
+import { MORNING_BRIEF_OFFICIAL_DEFINITION_NAME } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import {
@@ -26,6 +27,7 @@ import {
 import { workflowAutomationCanFire } from "./workflow-automation-access.service";
 import { buildWorkflowScheduleAutomationBrief } from "./workflow-automation-brief.service";
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
+import { hasMorningBriefSources } from "./morning-brief-sources.service";
 
 const log = logger("WorkflowAutomationPoller");
 
@@ -42,6 +44,7 @@ interface DueWorkflowAutomationRow {
   readonly agentId: string;
   readonly workflowName: string;
   readonly workflowDisplayName: string | null;
+  readonly officialDefinitionName: string | null;
   readonly chatThreadId: string | null;
   readonly userTimezone: string | null;
 }
@@ -158,23 +161,19 @@ async function claimAutomation(
   return claimed ?? null;
 }
 
-function advanceAfterPreRunFailure(
+function nextRunAfterSkippedExecution(
   automation: AutomationRow,
-  failureTime: Date,
-  shouldDisable: boolean,
+  after: Date,
 ): Date | null {
-  if (shouldDisable) {
-    return null;
-  }
   if (automation.scheduleType === "cron" && automation.cronExpression) {
     return calculateNextRun(
       automation.cronExpression,
       automation.timezone,
-      failureTime,
+      after,
     );
   }
   if (automation.scheduleType === "loop" && automation.intervalSeconds) {
-    return new Date(failureTime.getTime() + automation.intervalSeconds * 1000);
+    return new Date(after.getTime() + automation.intervalSeconds * 1000);
   }
   return null;
 }
@@ -205,11 +204,9 @@ async function recordPreRunFailure(
     : automation.consecutiveFailures + 1;
   const shouldDisable =
     !isCreditError && newFailureCount >= MAX_CONSECUTIVE_FAILURES;
-  const nextRunAt = advanceAfterPreRunFailure(
-    automation,
-    failureTime,
-    shouldDisable,
-  );
+  const nextRunAt = shouldDisable
+    ? null
+    : nextRunAfterSkippedExecution(automation, failureTime);
   const automationIsStillEligible =
     automation.scheduleType === "once"
       ? eq(workflowAutomations.id, automation.id)
@@ -269,6 +266,7 @@ async function dueWorkflowAutomationRows(
       agentId: workflows.agentId,
       workflowName: workflows.name,
       workflowDisplayName: workflows.displayName,
+      officialDefinitionName: workflows.officialDefinitionName,
       chatThreadId: workflowUserAutomationThreads.chatThreadId,
       userTimezone: orgMembersMetadata.timezone,
     })
@@ -308,6 +306,46 @@ async function dueWorkflowAutomationRows(
     .limit(DUE_BATCH_LIMIT);
   signal.throwIfAborted();
   return rows;
+}
+
+async function skipEmptyMorningBrief(
+  db: Db,
+  row: DueWorkflowAutomationRow,
+  currentTime: Date,
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (
+    row.officialDefinitionName !== MORNING_BRIEF_OFFICIAL_DEFINITION_NAME ||
+    !row.automation.nextRunAt ||
+    (await hasMorningBriefSources(
+      db,
+      {
+        orgId: row.automation.orgId,
+        userId: row.automation.ownerUserId,
+        excludedThreadId: row.chatThreadId,
+      },
+      signal,
+    ))
+  ) {
+    return false;
+  }
+  // Advance only this occurrence. No Run was attempted, so preserve the
+  // last-run history and failure count and keep future delivery enabled.
+  await db
+    .update(workflowAutomations)
+    .set({
+      nextRunAt: nextRunAfterSkippedExecution(row.automation, currentTime),
+      updatedAt: currentTime,
+    })
+    .where(
+      and(
+        eq(workflowAutomations.id, row.automation.id),
+        eq(workflowAutomations.enabled, true),
+        eq(workflowAutomations.nextRunAt, row.automation.nextRunAt),
+      ),
+    );
+  signal.throwIfAborted();
+  return true;
 }
 
 async function executeDueWorkflowAutomations(
@@ -372,6 +410,11 @@ async function executeDueWorkflowAutomations(
         orgId: row.automation.orgId,
         userId: row.automation.ownerUserId,
       });
+      skipped++;
+      continue;
+    }
+
+    if (await skipEmptyMorningBrief(args.db, row, currentTime, signal)) {
       skipped++;
       continue;
     }
