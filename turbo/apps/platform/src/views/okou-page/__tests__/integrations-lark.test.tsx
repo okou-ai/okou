@@ -43,7 +43,10 @@ test("Lark has an independent integration card and guided setup", async () => {
     screen.findByText("Create an enterprise custom app"),
   ).resolves.toBeInTheDocument();
   const consoleLink = getAction("link", "Lark developer console");
-  expect(consoleLink).toHaveAttribute("href", "https://open.larksuite.com/app");
+  expect(consoleLink).toHaveAttribute(
+    "href",
+    "https://open.larksuite.com/page/launcher?from=backend_oneclick",
+  );
   expect(getAction("link", "Download the optional Okou icon")).toHaveAttribute(
     "download",
     "okou-lark-app-icon.png",
