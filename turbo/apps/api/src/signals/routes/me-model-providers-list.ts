@@ -39,12 +39,15 @@ const listInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     FeatureSwitchKey.PersonalModelProviderAccounts,
     featureSwitchContext,
   );
-  const result = await listPersonalModelProviderAccounts({
-    db: set(writeDb$),
-    orgId: auth.orgId,
-    userId: auth.userId,
-    featureSwitchContext,
-  });
+  const result = await listPersonalModelProviderAccounts(
+    {
+      db: set(writeDb$),
+      orgId: auth.orgId,
+      userId: auth.userId,
+      featureSwitchContext,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   if (!accountsEnabled) {
     result.modelProviders = result.modelProviders.filter((provider) => {

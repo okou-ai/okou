@@ -1,6 +1,13 @@
+import {
+  createHistoricalPinnedSubscriptionRunFixture,
+  historicalClaudeSecretFirstFixture,
+  historicalCodexReconnectFixture,
+  historicalCodexRefreshFixture,
+  historicalDeleteSubscriptionFixture,
+} from "../../../test-fixtures/historical-subscription-writer";
 import { createHash, randomUUID } from "node:crypto";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it, onTestFinished, test } from "vitest";
 import { countWaitingPersonalSubscriptionMutationsFixture } from "../../../test-fixtures/personal-subscription";
 import { readPiMemoryStage1DayFixture } from "../../../test-fixtures/pi-memory-stage1-candidates";
 import { createDeferredPromise } from "../../utils";
@@ -104,6 +111,7 @@ async function fixture(
   type: SubscriptionType,
   accountsEnabled = true,
   priorityEnabled = true,
+  historicalFirst = false,
 ) {
   const bdd = createBddApi(context);
   const actor = bdd.user();
@@ -118,7 +126,9 @@ async function fixture(
     [FeatureSwitchKey.PersonalSubscriptionPriority]: priorityEnabled,
   });
   mockClaudeCodeTokenEndpoint();
-  const connected = await connect(actor, type, "identity-a");
+  const connected = historicalFirst
+    ? await writeHistoricalSubscription(actor, type, "identity-a", 1)
+    : await connect(actor, type, "identity-a");
   const model: "gpt-5.6-luna" | "claude-sonnet-5" =
     type === "codex-oauth-token" ? "gpt-5.6-luna" : "claude-sonnet-5";
   await runs.updateOrgModelPolicies(actor, [
@@ -801,4 +811,742 @@ describe("personal subscription run identity", () => {
     ).toMatchObject({ modelProviders: [] });
     await runs.requestCancelRun(f.actor, runId, [200]);
   });
+});
+
+function historicalClaudeProfiles() {
+  server.use(
+    http.get("https://api.anthropic.com/api/oauth/profile", ({ request }) => {
+      const identity = request.headers
+        .get("authorization")
+        ?.replace("Bearer sk-ant-oat-", "")
+        .replace(/-v[0-9]+$/, "");
+      return HttpResponse.json({
+        account: { uuid: identity, email: `${identity}@example.com` },
+        organization: { uuid: `org-${identity}`, name: identity },
+      });
+    }),
+  );
+}
+
+async function writeHistoricalSubscription(
+  actor: ApiTestUser,
+  type: SubscriptionType,
+  identity: string,
+  version: number,
+) {
+  if (type === "claude-code-oauth-token") {
+    historicalClaudeProfiles();
+    const token = `sk-ant-oat-${identity}-v${version}`;
+    const writer = await historicalClaudeSecretFirstFixture(actor, {
+      accessToken: token,
+      workspaceName: identity,
+    });
+    return { id: await writer.completeProviderWrite(), token };
+  }
+  const token = makeCodexJwt({
+    exp: Math.floor(now() / 1000) + 7200,
+    identity,
+    version,
+    nonce: randomUUID(),
+  });
+  const id = await historicalCodexReconnectFixture(actor, {
+    accessToken: token,
+    accountId: identity,
+    refreshToken: `refresh-${identity}-v${version}`,
+    idToken: makeCodexJwt({ email: `${identity}@example.com` }),
+    expiresAt: new Date(now() + 7_200_000),
+  });
+  return { id, token };
+}
+
+describe("actual historical subscription writers", () => {
+  it.each([
+    ["claude-code-oauth-token", false, false],
+    ["claude-code-oauth-token", true, false],
+    ["codex-oauth-token", false, false],
+    ["codex-oauth-token", true, false],
+    ["claude-code-oauth-token", false, true],
+    ["claude-code-oauth-token", true, true],
+    ["codex-oauth-token", false, true],
+    ["codex-oauth-token", true, true],
+  ] as const)(
+    "uses the old %s same-identity update without visiting settings (accounts %s, priority %s)",
+    async (type, accounts, priority) => {
+      // Infrastructure exception: only the named fixture can manufacture an old
+      // server artifact's singleton SQL after today's API seeds the concrete row.
+      const f = await fixture(type, accounts, priority, true);
+      const first = await f.start();
+      const firstClaim = await f.claim(first);
+      const captured = accountId(firstClaim, type);
+      const updated = await writeHistoricalSubscription(
+        f.actor,
+        type,
+        "identity-a",
+        2,
+      );
+      const second = await f.start();
+      const secondClaim = await f.claim(second);
+      expect(accountId(secondClaim, type)).toBe(captured);
+      for (const claim of [firstClaim, secondClaim]) {
+        await expect(resolve(claim, type)).resolves.toMatchObject({
+          Authorization: `Bearer ${updated.token}`,
+          ...(type === "codex-oauth-token"
+            ? { "ChatGPT-Account-ID": "identity-a" }
+            : {}),
+        });
+      }
+      await runs.requestCancelRun(f.actor, first, [200]);
+      await runs.requestCancelRun(f.actor, second, [200]);
+    },
+  );
+
+  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
+    "never redirects an existing exact %s source to a legacy different identity",
+    async (type) => {
+      const f = await fixture(type);
+      const first = await f.start();
+      const oldClaim = await f.claim(first);
+      const captured = accountId(oldClaim, type);
+      const replacement = await writeHistoricalSubscription(
+        f.actor,
+        type,
+        "identity-b",
+        2,
+      );
+      const second = await f.start();
+      const newClaim = await f.claim(second);
+      expect(accountId(newClaim, type)).not.toBe(captured);
+      await expect(resolve(newClaim, type)).resolves.toMatchObject({
+        Authorization: `Bearer ${replacement.token}`,
+      });
+      await expect(resolve(oldClaim, type)).resolves.toMatchObject({
+        Authorization: `Bearer ${f.connected.token}`,
+      });
+      expect(
+        (
+          await support.resetPersonalModelProviderAccount(
+            f.actor,
+            captured,
+            randomUUID(),
+            [404],
+          )
+        ).status,
+      ).toBe(404);
+      await runs.requestCancelRun(f.actor, first, [200]);
+      await runs.requestCancelRun(f.actor, second, [200]);
+    },
+  );
+
+  it("imports a real old source-less rotation before a concurrent exact request consumes the rotating input", async () => {
+    const f = await fixture("codex-oauth-token");
+    const runId = await f.start();
+    const claim = await f.claim(runId);
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    const submitted: string[] = [];
+    server.use(
+      http.post("https://auth.openai.com/oauth/token", async ({ request }) => {
+        const body = await request.json();
+        if (
+          typeof body !== "object" ||
+          body === null ||
+          !("refresh_token" in body)
+        ) {
+          throw new Error("Expected a refresh request");
+        }
+        submitted.push(String(body.refresh_token));
+        entered.resolve(undefined);
+        await release.promise;
+        return HttpResponse.json({
+          access_token: "historically-refreshed-a",
+          refresh_token: "historically-rotated-a",
+          expires_in: 3600,
+        });
+      }),
+    );
+    const oldRefresh = historicalCodexRefreshFixture(f.actor, context.signal);
+    onTestFinished(async () => {
+      if (!release.settled()) {
+        release.resolve(undefined);
+      }
+      await oldRefresh;
+    });
+    await entered.promise;
+    const current = resolve(claim, f.type);
+    onTestFinished(async () => {
+      if (!release.settled()) {
+        release.resolve(undefined);
+      }
+      await current;
+    });
+    await expect
+      .poll(() => {
+        return countWaitingPersonalSubscriptionMutationsFixture({
+          orgId: f.actor.orgId ?? "",
+          userId: f.actor.userId,
+          type: f.type,
+        });
+      })
+      .toBeGreaterThan(0);
+    release.resolve(undefined);
+    await oldRefresh;
+    await expect(current).resolves.toMatchObject({
+      Authorization: "Bearer historically-refreshed-a",
+      "ChatGPT-Account-ID": "identity-a",
+    });
+    expect(submitted).toStrictEqual(["refresh-identity-a"]);
+    const cached = await firewall.requestFirewallAuth(
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      authBody(claim, f.type),
+      [200],
+    );
+    if (cached.status !== 200) {
+      throw new Error("Expected current auth cache metadata");
+    }
+    expect(cached.body.expiresAt).toBeGreaterThan(
+      Math.floor(now() / 1000) + 3590,
+    );
+    expect(cached.body.expiresAt).toBeLessThanOrEqual(
+      Math.floor(now() / 1000) + 3600,
+    );
+    await runs.requestCancelRun(f.actor, runId, [200]);
+  });
+
+  it("reflects old reconnect-required state and keeps a later canonical recovery", async () => {
+    const f = await fixture("codex-oauth-token");
+    const runId = await f.start();
+    const claim = await f.claim(runId);
+    firewall.mockCodexTokenRefresh(() => {
+      return HttpResponse.json(
+        { error: { code: "refresh_token_reused" } },
+        { status: 400 },
+      );
+    });
+    await historicalCodexRefreshFixture(f.actor, context.signal);
+    const denied = await firewall.requestFirewallAuth(
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      authBody(claim, f.type),
+      [502],
+    );
+    expect(denied.body).toMatchObject({
+      error: {
+        code: "TOKEN_REFRESH_FAILED",
+        failureReason: "reconnect_required",
+      },
+    });
+    expect(
+      (await support.listPersonalModelProviders(f.actor, [200])).body,
+    ).toMatchObject({
+      modelProviders: [
+        expect.objectContaining({
+          needsReconnect: true,
+          lastRefreshErrorCode: "refresh_token_reused",
+        }),
+      ],
+    });
+    const recovered = await connect(f.actor, f.type, "identity-a");
+    expect(recovered.id).toBe(accountId(claim, f.type));
+    await expect(resolve(claim, f.type)).resolves.toMatchObject({
+      Authorization: `Bearer ${recovered.token}`,
+      "ChatGPT-Account-ID": "identity-a",
+    });
+    await runs.requestCancelRun(f.actor, runId, [200]);
+  });
+
+  it("keeps canonical C when old Claude B completes its second autocommit late", async () => {
+    const f = await fixture("claude-code-oauth-token");
+    const writer = await historicalClaudeSecretFirstFixture(f.actor, {
+      accessToken: "sk-ant-oat-identity-b",
+      workspaceName: "identity-b",
+    });
+    const c = await connect(f.actor, f.type, "identity-c");
+    await writer.completeProviderWrite();
+    const runId = await f.start();
+    const claim = await f.claim(runId);
+    expect(accountId(claim, f.type)).toBe(c.id);
+    await expect(resolve(claim, f.type)).resolves.toMatchObject({
+      Authorization: `Bearer ${c.token}`,
+    });
+    expect(
+      (await support.listPersonalModelProviders(f.actor, [200])).body,
+    ).toMatchObject({
+      modelProviders: [
+        expect.objectContaining({ id: c.id, workspaceName: "identity-c" }),
+      ],
+    });
+    await runs.requestCancelRun(f.actor, runId, [200]);
+  });
+
+  it.each(["connect", "delete"] as const)(
+    "discards delayed Claude identity proof when %s wins",
+    async (winner) => {
+      const f = await fixture("claude-code-oauth-token");
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      await writeHistoricalSubscription(f.actor, f.type, "identity-b", 2);
+      server.use(
+        http.get(
+          "https://api.anthropic.com/api/oauth/profile",
+          async ({ request }) => {
+            if (
+              request.headers.get("authorization") ===
+              "Bearer sk-ant-oat-identity-b-v2"
+            ) {
+              entered.resolve(undefined);
+              await release.promise;
+            }
+            return HttpResponse.json({
+              account: { uuid: "identity-b", email: "b@example.com" },
+              organization: { uuid: "org-b", name: "b" },
+            });
+          },
+        ),
+      );
+      const sending = createChatFilesBddApi(context).requestSendEvent(
+        f.actor,
+        { agentId: f.agentId, model: f.model, prompt: "capture the old write" },
+        [409],
+      );
+      onTestFinished(async () => {
+        if (!release.settled()) {
+          release.resolve(undefined);
+        }
+        await sending;
+      });
+      await entered.promise;
+      if (winner === "connect") {
+        await connect(f.actor, f.type, "identity-c");
+      } else {
+        await historicalDeleteSubscriptionFixture(f.actor, f.type);
+      }
+      release.resolve(undefined);
+      expect((await sending).status).toBe(409);
+      const listed = await support.listPersonalModelProviders(f.actor, [200]);
+      expect(listed.body).toMatchObject({
+        modelProviders:
+          winner === "delete"
+            ? []
+            : [expect.objectContaining({ workspaceName: "identity-c" })],
+      });
+    },
+  );
+
+  it("fails opaque identity ambiguity even when usage metadata succeeds", async () => {
+    const f = await fixture("claude-code-oauth-token", false, false, true);
+    const first = await f.start();
+    const claim = await f.claim(first);
+    await writeHistoricalSubscription(f.actor, f.type, "identity-b", 2);
+    server.use(
+      http.get("https://api.anthropic.com/api/oauth/profile", () => {
+        return HttpResponse.json({}, { status: 503 });
+      }),
+    );
+    const denied = await firewall.requestFirewallAuth(
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      authBody(claim, f.type),
+      [424],
+    );
+    expect(denied.status).toBe(424);
+    const next = await createChatFilesBddApi(context).requestSendEvent(
+      f.actor,
+      { agentId: f.agentId, model: f.model, prompt: "unknown identity" },
+      [409],
+    );
+    expect(next.status).toBe(409);
+    await runs.requestCancelRun(f.actor, first, [200]);
+  });
+
+  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
+    "fails a pre-stability %s context after actual old hard deletion and recovers a fresh selection",
+    async (type) => {
+      const f = await fixture(type, true, false);
+      const first = await f.start();
+      const original = await f.claim(first);
+      await historicalDeleteSubscriptionFixture(f.actor, type);
+      const replacement = await writeHistoricalSubscription(
+        f.actor,
+        type,
+        "identity-b",
+        2,
+      );
+      const next = await f.start();
+      const current = await f.claim(next);
+      expect(accountId(current, type)).not.toBe(accountId(original, type));
+      await expect(resolve(current, type)).resolves.toMatchObject({
+        Authorization: `Bearer ${replacement.token}`,
+      });
+      expect(
+        (
+          await firewall.requestFirewallAuth(
+            { authorization: `Bearer ${original.sandboxToken}` },
+            authBody(original, type),
+            [424],
+          )
+        ).status,
+      ).toBe(424);
+      await runs.requestCancelRun(f.actor, first, [200]);
+      await runs.requestCancelRun(f.actor, next, [200]);
+    },
+  );
+});
+
+describe("historical writer consumer fences", () => {
+  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
+    "rejects the original %s capture when the old writer wins final admission",
+    async (type) => {
+      const f = await fixture(type);
+      if (!f.actor.orgId) {
+        throw new Error("Expected an organization");
+      }
+      const lock = await holdOrgAdmissionLockFixture({
+        orgId: f.actor.orgId,
+        signal: context.signal,
+      });
+      onTestFinished(async () => {
+        lock.release();
+        await lock.done;
+      });
+      const sending = createChatFilesBddApi(context).requestSendEvent(
+        f.actor,
+        { agentId: f.agentId, model: f.model, prompt: "late old write" },
+        [409],
+      );
+      onTestFinished(async () => {
+        lock.release();
+        await sending;
+      });
+      await expect.poll(lock.waiterCount).toBe(1);
+      await writeHistoricalSubscription(f.actor, type, "identity-b", 2);
+      lock.release();
+      expect((await sending).status).toBe(409);
+      expect((await runs.readRunQueue(f.actor)).body.queue).toHaveLength(0);
+    },
+  );
+
+  it("refreshes retained A without importing active B or republishing over B's legacy update", async () => {
+    const f = await fixture("codex-oauth-token");
+    const first = await f.start();
+    const a = await f.claim(first);
+    await connect(f.actor, f.type, "identity-a", true);
+    await connect(f.actor, f.type, "identity-b");
+    const currentB = await writeHistoricalSubscription(
+      f.actor,
+      f.type,
+      "identity-b",
+      2,
+    );
+    const submitted: string[] = [];
+    server.use(
+      http.post("https://auth.openai.com/oauth/token", async ({ request }) => {
+        const input = await request.json();
+        if (
+          typeof input !== "object" ||
+          input === null ||
+          !("refresh_token" in input)
+        ) {
+          throw new Error("Expected refresh input");
+        }
+        submitted.push(String(input.refresh_token));
+        return HttpResponse.json({
+          access_token: "inactive-refreshed-a",
+          refresh_token: "inactive-rotated-a",
+          expires_in: 7200,
+        });
+      }),
+    );
+    await expect(resolve(a, f.type)).resolves.toMatchObject({
+      Authorization: "Bearer inactive-refreshed-a",
+      "ChatGPT-Account-ID": "identity-a",
+    });
+    expect(submitted).toStrictEqual(["refresh-identity-a"]);
+    const second = await f.start();
+    const b = await f.claim(second);
+    await expect(resolve(b, f.type)).resolves.toMatchObject({
+      Authorization: `Bearer ${currentB.token}`,
+      "ChatGPT-Account-ID": "identity-b",
+    });
+    await runs.requestCancelRun(f.actor, first, [200]);
+    await runs.requestCancelRun(f.actor, second, [200]);
+  });
+
+  it("uses the updated complete Codex bundle for settings usage and account reset", async () => {
+    const f = await fixture("codex-oauth-token");
+    const runId = await f.start();
+    const claim = await f.claim(runId);
+    const captured = accountId(claim, f.type);
+    const updated = await writeHistoricalSubscription(
+      f.actor,
+      f.type,
+      "identity-a",
+      2,
+    );
+    const requests: {
+      path: string;
+      token: string | null;
+      account: string | null;
+    }[] = [];
+    for (const [method, path] of [
+      ["get", "usage"],
+      ["post", "rate-limit-reset-credits/consume"],
+    ] as const) {
+      server.use(
+        http[method](
+          `https://chatgpt.com/backend-api/wham/${path}`,
+          ({ request }) => {
+            requests.push({
+              path,
+              token: request.headers.get("authorization"),
+              account: request.headers.get("chatgpt-account-id"),
+            });
+            return HttpResponse.json(
+              method === "post"
+                ? { code: "reset", windows_reset: 1 }
+                : {
+                    plan_type: "plus",
+                    rate_limit_reset_credits: { available_count: 1 },
+                  },
+            );
+          },
+        ),
+      );
+    }
+    const reset = await support.resetPersonalModelProviderAccount(
+      f.actor,
+      captured,
+      randomUUID(),
+      [200],
+    );
+    expect(reset.status).toBe(200);
+    await support.listPersonalModelProviders(f.actor, [200]);
+    expect(requests).toStrictEqual(
+      expect.arrayContaining([
+        {
+          path: "usage",
+          token: `Bearer ${updated.token}`,
+          account: "identity-a",
+        },
+        {
+          path: "rate-limit-reset-credits/consume",
+          token: `Bearer ${updated.token}`,
+          account: "identity-a",
+        },
+      ]),
+    );
+    expect(
+      requests.every((request) => {
+        return (
+          request.token === `Bearer ${updated.token}` &&
+          request.account === "identity-a"
+        );
+      }),
+    ).toBeTruthy();
+    await runs.requestCancelRun(f.actor, runId, [200]);
+  });
+});
+
+describe("historical exact selection and retained-only parent", () => {
+  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
+    "coordinates a direct concrete %s admission before environment materialization",
+    async (type) => {
+      const f = await fixture(type);
+      const updated = await writeHistoricalSubscription(
+        f.actor,
+        type,
+        "identity-a",
+        2,
+      );
+      const result = await createHistoricalPinnedSubscriptionRunFixture(
+        {
+          owner: f.actor,
+          agentId: f.agentId,
+          accountId: f.connected.id,
+          type,
+          model: f.model,
+        },
+        context.signal,
+      );
+      if (result.status !== 201) {
+        throw new Error("Expected pinned subscription admission");
+      }
+      const claim = await f.claim(result.body.runId);
+      expect(accountId(claim, type)).toBe(f.connected.id);
+      await expect(resolve(claim, type)).resolves.toMatchObject({
+        Authorization: `Bearer ${updated.token}`,
+      });
+      await runs.requestCancelRun(f.actor, result.body.runId, [200]);
+    },
+  );
+
+  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
+    "recognizes an old %s reconnect after the last connected account was retired",
+    async (type) => {
+      const f = await fixture(type);
+      const first = await f.start();
+      const a = await f.claim(first);
+      await support.deletePersonalModelProviderAccount(
+        f.actor,
+        accountId(a, type),
+      );
+      const b = await writeHistoricalSubscription(
+        f.actor,
+        type,
+        "identity-b",
+        2,
+      );
+      const second = await f.start();
+      const selected = await f.claim(second);
+      expect(accountId(selected, type)).not.toBe(accountId(a, type));
+      await expect(resolve(a, type)).resolves.toMatchObject({
+        Authorization: `Bearer ${f.connected.token}`,
+      });
+      await expect(resolve(selected, type)).resolves.toMatchObject({
+        Authorization: `Bearer ${b.token}`,
+      });
+      await runs.requestCancelRun(f.actor, first, [200]);
+      await runs.requestCancelRun(f.actor, second, [200]);
+    },
+  );
+
+  it("does not probe profile or usage for an already coherent Claude runtime bundle", async () => {
+    const f = await fixture("claude-code-oauth-token");
+    const sameBytes = await historicalClaudeSecretFirstFixture(f.actor, {
+      accessToken: f.connected.token,
+      workspaceName: "late display metadata",
+    });
+    await sameBytes.completeProviderWrite();
+    const requested: string[] = [];
+    server.use(
+      http.get("https://api.anthropic.com/api/oauth/:path", ({ request }) => {
+        requested.push(request.url);
+        return HttpResponse.json({}, { status: 503 });
+      }),
+    );
+    const runId = await f.start();
+    const claim = await f.claim(runId);
+    await expect(resolve(claim, f.type)).resolves.toMatchObject({
+      Authorization: `Bearer ${f.connected.token}`,
+    });
+    expect(requested).toStrictEqual([]);
+    await runs.requestCancelRun(f.actor, runId, [200]);
+  });
+});
+
+test("discards a delayed legacy Claude profile when explicit account activation wins", async () => {
+  const f = await fixture("claude-code-oauth-token");
+  const auth = createAuthDeviceApiActions(context);
+  mockClaudeCodeTokenEndpoint({
+    accountEmail: "c@example.com",
+    organizationName: "Workspace C",
+  });
+  const started = await auth.requestClaudeCodeStart(
+    f.actor,
+    "personal",
+    [200],
+    { mode: "add" },
+  );
+  if (started.status !== 200) {
+    throw new Error("Expected OAuth start");
+  }
+  const state = new URL(started.body.browserUrl).searchParams.get("state");
+  if (!state) {
+    throw new Error("Expected OAuth state");
+  }
+  const completed = await auth.requestClaudeCodeComplete(
+    f.actor,
+    started.body.sessionToken,
+    `code#${state}`,
+    [200],
+  );
+  if (completed.status !== 200) {
+    throw new Error("Expected OAuth completion");
+  }
+  const c = completed.body.provider.id;
+  await writeHistoricalSubscription(f.actor, f.type, "identity-b", 2);
+  const entered = createDeferredPromise<void>(context.signal);
+  const release = createDeferredPromise<void>(context.signal);
+  server.use(
+    http.get(
+      "https://api.anthropic.com/api/oauth/profile",
+      async ({ request }) => {
+        if (
+          request.headers.get("authorization") ===
+          "Bearer sk-ant-oat-identity-b-v2"
+        ) {
+          entered.resolve(undefined);
+          await release.promise;
+        }
+        return HttpResponse.json({
+          account: { uuid: "b", email: "b@example.com" },
+          organization: { uuid: "org-b", name: "B" },
+        });
+      },
+    ),
+  );
+  const sending = createChatFilesBddApi(context).requestSendEvent(
+    f.actor,
+    {
+      agentId: f.agentId,
+      model: f.model,
+      prompt: "capture B before activation",
+    },
+    [409],
+  );
+  onTestFinished(async () => {
+    if (!release.settled()) {
+      release.resolve(undefined);
+    }
+    await sending;
+  });
+  await entered.promise;
+  await support.activatePersonalModelProviderAccount(f.actor, c);
+  release.resolve(undefined);
+  expect((await sending).status).toBe(409);
+  const runId = await f.start();
+  const claim = await f.claim(runId);
+  expect(accountId(claim, f.type)).toBe(c);
+  await expect(resolve(claim, f.type)).resolves.toMatchObject({
+    Authorization: "Bearer claude-code-access-token",
+  });
+  await runs.requestCancelRun(f.actor, runId, [200]);
+});
+
+test("keeps a seeded Claude identity shared after a type-wide disconnect and reconnect", async () => {
+  const f = await fixture("claude-code-oauth-token", true, true, true);
+  const runId = await f.start();
+  const claim = await f.claim(runId);
+  const captured = accountId(claim, f.type);
+  await support.deletePersonalModelProvider(f.actor, f.type, [204]);
+  const restored = await connect(f.actor, f.type, "identity-a");
+  expect(restored.id).toBe(captured);
+  await expect(resolve(claim, f.type)).resolves.toMatchObject({
+    Authorization: `Bearer ${restored.token}`,
+  });
+  await runs.requestCancelRun(f.actor, runId, [200]);
+});
+
+describe("canonical preparation identity", () => {
+  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
+    "does not replace a captured %s identity when retention is off",
+    async (type) => {
+      const f = await fixture(type, false, false);
+      const runId = await f.start();
+      const claim = await f.claim(runId);
+      const captured = accountId(claim, type);
+      const b = await connect(f.actor, type, "identity-b");
+      const denied = await firewall.requestFirewallAuth(
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        authBody(claim, type),
+        [424],
+      );
+      expect(denied.status).toBe(424);
+      const second = await f.start();
+      const next = await f.claim(second);
+      expect(accountId(next, type)).not.toBe(captured);
+      await expect(resolve(next, type)).resolves.toMatchObject({
+        Authorization: `Bearer ${b.token}`,
+      });
+      await runs.requestCancelRun(f.actor, runId, [200]);
+      await runs.requestCancelRun(f.actor, second, [200]);
+    },
+  );
 });

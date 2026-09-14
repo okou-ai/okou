@@ -293,6 +293,8 @@ import { lockModelProviderState } from "./auth-state-lock.service";
 import {
   activePersonalModelProviderAccount,
   ensurePersonalModelProviderAccount,
+  coordinatePersonalSubscriptionCredentials,
+  reconcileLockedPersonalSubscriptionCredentials,
   isPersonalSubscriptionProviderType,
   personalModelProviderAccountById,
 } from "./model-provider-account.service";
@@ -2867,13 +2869,33 @@ async function resolveExactPersonalModelProviderAccount(
     orgId: args.orgId,
     userId: args.userId,
   });
-  if (!account) {
+  if (
+    !account ||
+    !isPersonalSubscriptionProviderType(account.type) ||
+    !(await coordinatePersonalSubscriptionCredentials({
+      db,
+      orgId: args.orgId,
+      userId: args.userId,
+      type: account.type,
+      sourceId: account.id,
+      featureSwitchContext: args.featureSwitchContext,
+    }))
+  ) {
+    return null;
+  }
+  const currentAccount = await personalModelProviderAccountById({
+    db,
+    id: account.id,
+    orgId: args.orgId,
+    userId: args.userId,
+  });
+  if (!currentAccount) {
     return null;
   }
   const [provider] = await db
     .select({ selectedModel: modelProviders.selectedModel })
     .from(modelProviders)
-    .where(eq(modelProviders.id, account.modelProviderId))
+    .where(eq(modelProviders.id, currentAccount.modelProviderId))
     .limit(1);
   if (!provider) {
     return null;
@@ -2881,7 +2903,7 @@ async function resolveExactPersonalModelProviderAccount(
   return await resolvePersonalModelProviderAccountEnvironment(
     db,
     args,
-    account,
+    currentAccount,
     provider.selectedModel,
   );
 }
@@ -2908,11 +2930,14 @@ async function resolveActivePersonalModelProviderAccountEnvironment(
   if (!provider || !isPersonalSubscriptionProviderType(provider.type)) {
     return null;
   }
-  await ensurePersonalModelProviderAccount({
+  const ready = await ensurePersonalModelProviderAccount({
     db,
     provider,
     featureSwitchContext: args.featureSwitchContext,
   });
+  if (!ready) {
+    return null;
+  }
   const account = await activePersonalModelProviderAccount({
     db,
     modelProviderId: row.id,
@@ -8601,14 +8626,23 @@ async function validateCapturedSubscriptionAccount(
       userId: args.createArgs.userId,
       type: provider.type,
     });
-    const account = provider.id
-      ? await personalModelProviderAccountById({
-          db: tx,
-          orgId: args.createArgs.orgId,
-          userId: args.createArgs.userId,
-          id: provider.id,
-        })
-      : null;
+    const coherent = await reconcileLockedPersonalSubscriptionCredentials({
+      db: tx,
+      orgId: args.createArgs.orgId,
+      userId: args.createArgs.userId,
+      type: provider.type,
+      sourceId: provider.id ?? undefined,
+      featureSwitchContext: args.context.featureSwitchContext,
+    });
+    const account =
+      coherent && provider.id
+        ? await personalModelProviderAccountById({
+            db: tx,
+            orgId: args.createArgs.orgId,
+            userId: args.createArgs.userId,
+            id: provider.id,
+          })
+        : null;
     if (!account || account.type !== provider.type) {
       return conflict(
         "The selected subscription account was disconnected. Reconnect it before starting another run.",

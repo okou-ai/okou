@@ -772,7 +772,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     }
     expect(deduplicated.body.modelProviders).toHaveLength(1);
     expect(deduplicated.body.modelProviders[0]).toMatchObject({
-      id: accountAId,
+      id: accountBId,
       isActive: true,
       workspaceName: "Account B reconnected",
     });
@@ -803,7 +803,14 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       throw new Error("Expected account C device auth to complete");
     }
 
-    await support.deletePersonalModelProviderAccount(member, accountAId);
+    // Reconnecting A with B updates B's credential record; A never becomes B.
+    await support.resetPersonalModelProviderAccount(
+      member,
+      accountAId,
+      randomUUID(),
+      [404],
+    );
+    await support.deletePersonalModelProviderAccount(member, accountBId);
     const afterActiveDelete = await support.listPersonalModelProviders(
       member,
       [200],
