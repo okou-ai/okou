@@ -544,7 +544,9 @@ export const socialContract = c.router({
   request: {
     method: "POST",
     path: "/api/social/request",
-    headers: authHeadersSchema,
+    headers: authHeadersSchema.extend({
+      "x-okou-instagram-views": z.literal("nullable").optional(),
+    }),
     body: socialKitRequestSchema,
     responses: {
       200: socialKitResponseSchema,

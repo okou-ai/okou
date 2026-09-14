@@ -273,26 +273,6 @@ function isInputChatEvent(
 // Thinking-indicator constants and helpers
 // ---------------------------------------------------------------------------
 
-const BLOCK_COLORS = [
-  "#e8a0b4",
-  "#c4705a",
-  "#f5b88a",
-  "#a8b560",
-  "#6bb5a0",
-  "#7baed4",
-  "#b09eda",
-  "#d4a87b",
-  "#e07878",
-  "#82c4c2",
-] as const;
-
-function shuffleBlockColors(): [string, string, string] {
-  const shuffled = [...BLOCK_COLORS].sort(() => {
-    return Math.random() - 0.5;
-  });
-  return [shuffled[0]!, shuffled[1]!, shuffled[2]!];
-}
-
 const THINKING_PHRASE_COUNT = 10;
 const DONE_PHRASE_COUNT = 8;
 
@@ -3697,10 +3677,6 @@ function createThinkingIndicatorSignals(
   activity: ReturnType<typeof createThreadActivitySummarySignals>,
   messages: Pick<MessageListSignals, "thinkingText$" | "thinkingEventId$">,
 ) {
-  const blockColors = shuffleBlockColors();
-  const blockColors$ = computed(() => {
-    return blockColors;
-  });
   const thinkingPhraseIndex = Math.floor(Math.random() * THINKING_PHRASE_COUNT);
   const thinkingPhrase$ = computed((get) => {
     get(locale$);
@@ -3742,7 +3718,7 @@ function createThinkingIndicatorSignals(
       ? get(activity.thinkingRunId$)
       : await get(messages.thinkingEventId$);
   });
-  return { blockColors$, thinkingPhrase$, thinkingSummaries$, thinkingRunId$ };
+  return { thinkingPhrase$, thinkingSummaries$, thinkingRunId$ };
 }
 
 // ---------------------------------------------------------------------------

@@ -384,26 +384,6 @@
     {
       "file": "apps/platform/src/views/css/index.css",
       "atRules": [],
-      "selector": ".wmde-markdown pre .copied",
-      "kind": "third-party-dom-adapter",
-      "owner": "frontend-platform",
-      "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
-      "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
-    },
-    {
-      "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
-      "selector": ".wmde-markdown pre:hover .copied:hover",
-      "kind": "third-party-dom-adapter",
-      "owner": "frontend-platform",
-      "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
-      "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
-    },
-    {
-      "file": "apps/platform/src/views/css/index.css",
-      "atRules": [],
       "selector": ".wmde-markdown kbd",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",

@@ -120,7 +120,10 @@ export async function callSocialKit(
   const config = await getClientConfig();
   const client = initClient(socialContract, config);
   const result = await client.request({
-    headers: {},
+    headers:
+      body.tool === "instagram_stats"
+        ? { "x-okou-instagram-views": "nullable" }
+        : {},
     body: effectivePublicSocialRequest(body),
     fetchOptions: { signal: AbortSignal.timeout(SOCIALKIT_API_TIMEOUT_MS) },
   });

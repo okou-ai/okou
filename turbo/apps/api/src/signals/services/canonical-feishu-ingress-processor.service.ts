@@ -11,6 +11,7 @@ import { logger } from "../../lib/log";
 import { env } from "../../lib/env";
 import { buildFeishuNoticeMessage } from "../../lib/feishu-message-card";
 import { inferMimetype } from "../../lib/mimetype";
+import type { FeishuPromptFile } from "../../lib/feishu-message-content";
 import {
   replyWithFeishuMessage,
   sendFeishuMessage,
@@ -51,7 +52,6 @@ import {
   type FeishuDispatchConnection,
   type FeishuDispatchInstallation,
   type FeishuInboundMessage,
-  type FeishuPromptFile,
 } from "./feishu-dispatch.service";
 
 const L = logger("CanonicalFeishuIngressProcessor");
@@ -80,7 +80,7 @@ const feishuInboundMessageSchema = z.object({
   openId: z.string(),
   text: z.string(),
   promptText: z.string(),
-  file: feishuPromptFileSchema.nullable(),
+  files: z.array(feishuPromptFileSchema),
 });
 
 function canonicalThreadId(args: {
@@ -301,10 +301,7 @@ function canonicalFeishuLaunchContext(args: {
   return {
     conversationHistory: args.conversationHistory,
     messageText: args.message.promptText,
-    messageFiles: [
-      ...(args.message.file ? [args.message.file] : []),
-      ...args.files,
-    ].map((file) => {
+    messageFiles: [...args.message.files, ...args.files].map((file) => {
       return {
         fileId: file.fileId,
         messageId: file.messageId,
@@ -334,8 +331,8 @@ function feishuInboundUserMessage(
   chatOpenUrl: string,
 ) {
   return createUserMessageDocument({
-    text: message.file ? null : message.promptText,
-    files: (message.file ? [message.file] : []).map((file) => {
+    text: message.files.length ? message.text : message.promptText,
+    files: message.files.map((file) => {
       return {
         id: file.fileId,
         filename: file.filename,

@@ -195,6 +195,36 @@ raises the frontend compatibility floor, rolling the frontend below that floor
 also requires rolling back the backend floor. Rolling the backend back to the
 dual-protocol preparation release remains safe for canonical clients.
 
+#### Instagram nullable views
+
+Instagram stats accepts provider `views` as a nonnegative integer, null, or
+omitted. New CLI packages send `x-okou-instagram-views: nullable` on stats
+requests so explicit null survives through inspection output. Zero is a verified
+count; null is unavailable and is never converted to zero. The optional
+`requireViews` input requests the provider's bounded recovery. Its documented
+missing-view HTTP 503 returns without managed billing or automatic retries.
+
+The API retains the old response format for callers without that header: only
+explicit null views are omitted, preserving engagement, author data, extensions,
+and numeric zero. This projection applies to session/PAT and agent/sandbox
+requests, alongside the existing provider-identity redaction boundary.
+
+- Old CLI -> new API: unchanged requests receive numeric or omitted views,
+  which the pinned older reader accepts. This legacy format cannot distinguish
+  unavailable null from an originally omitted field.
+- New CLI -> new API: null, omitted, zero, and positive views stay distinct.
+- New CLI -> old API: the additional header does not change the old request
+  body. Numeric/omitted successes remain readable; the old API can still reject
+  provider null. The new strict input is rejected before provider I/O until the
+  supporting API is deployed. Deploy that API before selecting the new package.
+
+Keep the old response projection until the backend selects a capable
+commit-addressed CLI artifact and the maximum queue, execution, and finalization
+lifetimes have passed. Confirm no pre-deployment context or supported external
+caller still depends on the old format before removing it in a later release.
+CLI semantic versions and runner binary drain alone are insufficient evidence.
+Removal is tracked in [#34047](https://github.com/vm0-ai/vm0/issues/34047).
+
 ### Instagram search collection limits
 
 Instagram Reels Search exposes one anonymous batch of up to 12 results. The

@@ -53,7 +53,6 @@ export enum FeatureSwitchKey {
   PrivateArtifacts = "privateArtifacts",
   ArtifactViewer = "artifactViewer",
   ProgressiveArtifactPreview = "progressiveArtifactPreview",
-  ChatThinkingSpinner = "chatThinkingSpinner",
   SidebarSubscriptionUsage = "_sidebarSubscriptionUsage",
   PersonalModelProviderAccounts = "_multipleSubscriptions",
   FeishuIntegration = "_feishuIntegration",

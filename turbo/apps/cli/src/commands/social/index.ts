@@ -52,6 +52,7 @@ interface OutputOptions {
 }
 
 interface InspectOptions extends OutputOptions {
+  readonly requireViews?: boolean;
   readonly thread?: boolean;
 }
 
@@ -1070,12 +1071,19 @@ const inspectCommand = new Command()
   .description("Inspect one public social profile, channel, post, or video")
   .argument("<url>", "Public social URL")
   .option("--thread", "Inspect an X post as a thread")
+  .option(
+    "--require-views",
+    "Require verified Instagram post/reel views; unavailable views fail without a charge",
+  )
   .option("--json", "Print compact JSON")
   .action(async (url: string, options: InspectOptions) => {
     await runSocialAction(options.json === true, async () => {
       const target = parseSocialTarget(url);
       await printIntent(
-        inspectIntent(target, { thread: options.thread }),
+        inspectIntent(target, {
+          thread: options.thread,
+          requireViews: options.requireViews,
+        }),
         options.json === true,
       );
     });
@@ -1424,6 +1432,7 @@ export const socialCommand = new Command()
 Examples:
   Discover:    okou social capabilities instagram --json
   Inspect:     okou social inspect https://www.instagram.com/p/<id>/ --json
+  With views:  okou social inspect https://www.instagram.com/reel/<id>/ --require-views --json
   Posts:       okou social posts https://www.instagram.com/<user>/ --limit 20 --json
   Details:     okou social posts https://www.youtube.com/@<channel> --full-details --limit 30 --json
   Reels:       okou social posts https://www.instagram.com/<user>/ --kind reels --limit 20 --json

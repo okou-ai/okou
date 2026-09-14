@@ -32,6 +32,10 @@
       "import": "./src/types.ts",
       "types": "./src/types.ts"
     },
+    "./operations/account-erasure": {
+      "import": "./src/operations/account-erasure.ts",
+      "types": "./src/operations/account-erasure.ts"
+    },
     "./migrations/014-goal-archive-search": {
       "import": "./scripts/migrations/014-goal-archive-search/recover.ts",
       "types": "./scripts/migrations/014-goal-archive-search/recover.ts"
