@@ -21,7 +21,9 @@ const VIDEO =
 
 const WELCOME_ASSET_BASE =
   "https://static.vm0.io/vm0/welcome-thread/2026-09-14-4128f97d2754";
-const WORKFLOW_GUIDE = `${WELCOME_ASSET_BASE}/guide/okou-team-workflow-guide.html`;
+const WELCOME_GUIDE_BASE =
+  "https://static.vm0.io/vm0/welcome-thread/2026-09-14-e894e2da8d9e/guide";
+const WORKFLOW_GUIDE = `${WELCOME_GUIDE_BASE}/okou-team-workflow-guide.html`;
 
 function link(name: string) {
   const element = queryAllByRoleFast("link").find((candidate) => {
@@ -112,7 +114,7 @@ test("Welcome diagrams and the workflow guide open without uploaded artifacts", 
     ...diagrams.map(([name, filename]) => {
       return `[${name}](${WELCOME_ASSET_BASE}/${filename})`;
     }),
-    `[![Workflow guide cover](${WELCOME_ASSET_BASE}/guide/cover.png)](${WORKFLOW_GUIDE})`,
+    `[![Workflow guide cover](${WELCOME_GUIDE_BASE}/cover.png)](${WORKFLOW_GUIDE})`,
     `[View workflow guide](${WORKFLOW_GUIDE})`,
   ].join("\n\n");
   const row = chat.outputMessage(content, { seqId: 1 });
@@ -163,7 +165,7 @@ test("Unlisted external HTML and altered catalog URLs keep ordinary link behavio
     `${DECK}?redirect=https://example.com`,
     DECK.replace("https://", "http://"),
     DECK.replace("https://", "https://user@"),
-    `${WELCOME_ASSET_BASE}/guide/unlisted.html`,
+    `${WELCOME_GUIDE_BASE}/unlisted.html`,
     `${WORKFLOW_GUIDE}?redirect=https://example.com`,
     WORKFLOW_GUIDE.replace("static.vm0.io", "static.vm0.io.evil.example"),
   ];

@@ -39,6 +39,8 @@ const runs = createRunsApi(context);
 const MODEL = "claude-sonnet-5";
 const WELCOME_ASSET_BASE =
   "https://static.vm0.io/vm0/welcome-thread/2026-09-14-4128f97d2754";
+const WELCOME_GUIDE_BASE =
+  "https://static.vm0.io/vm0/welcome-thread/2026-09-14-e894e2da8d9e/guide";
 
 function headers(actor: ApiTestUser) {
   createRouteMocks(context).clerk.session(
@@ -415,11 +417,15 @@ describe("POST /api/welcome-chat-threads", () => {
         "team-learning-loop.png",
         "shared-workflow.png",
         "slack-conversations.png",
-        "guide/cover.png",
-        "guide/okou-team-workflow-guide.html",
-        "guide/assets/okou-team-workflow-guide.pptx",
       ]) {
         expect(content).toContain(`${WELCOME_ASSET_BASE}/${filename}`);
+      }
+      for (const filename of [
+        "cover.png",
+        "okou-team-workflow-guide.html",
+        "assets/okou-team-workflow-guide.pptx",
+      ]) {
+        expect(content).toContain(`${WELCOME_GUIDE_BASE}/${filename}`);
       }
       expect(content).toContain("`okou-team-workflow-guide.pptx`");
       expect(content).toContain("`/okou`");
