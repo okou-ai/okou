@@ -309,7 +309,7 @@ index c3d9348029445772f711a923b1f1b01aa20f8acc..dd2b9351fefe1ed85be028adf654ab78
          timeout?: number;
          env?: NodeJS.ProcessEnv;
 diff --git a/dist/core/tools/bash.js b/dist/core/tools/bash.js
-index b71057ddcf98b8500371f7b91f8ca10f52e7a78d..90ba1f40504224f58f38fedf4b17a153351d978a 100644
+index b71057ddcf98b8500371f7b91f8ca10f52e7a78d..f37476dd73901eafc27c08efabef3d67eebcacc3 100644
 --- a/dist/core/tools/bash.js
 +++ b/dist/core/tools/bash.js
 @@ -34,7 +34,7 @@ export const bashToolSystemPromptContribution = {
@@ -479,7 +479,7 @@ index b71057ddcf98b8500371f7b91f8ca10f52e7a78d..90ba1f40504224f58f38fedf4b17a153
                  return snapshot;
              };
              const formatOutput = (snapshot, emptyText = "(no output)") => {
-@@ -236,37 +268,51 @@ export function createShellToolDefinition(cwd, config, options) {
+@@ -236,37 +268,53 @@ export function createShellToolDefinition(cwd, config, options) {
              };
              const appendStatus = (text, status) => `${text ? `${text}\n\n` : ""}${status}`;
              try {
@@ -523,6 +523,8 @@ index b71057ddcf98b8500371f7b91f8ca10f52e7a78d..90ba1f40504224f58f38fedf4b17a153
 +                execution.signal.throwIfAborted();
                  const { text: outputText, details } = formatOutput(snapshot);
 -                if (exitCode !== 0 && exitCode !== null) {
++                // Upstream: https://github.com/earendil-works/pi/issues/9577
++                // Once this coding-agent path is fixed, upgrade Pi and remove this signal-result workaround.
 +                if (exitCode === null) {
 +                    throw new Error(appendStatus(outputText, "Command terminated by signal"));
 +                }
