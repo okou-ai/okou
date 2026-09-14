@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.42.0](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.41.10...sandbox-firecracker-v0.42.0) (2026-09-14)
+
+
+### Features
+
+* **runner:** add bounded binary guest rpc streaming ([#33879](https://github.com/vm0-ai/vm0/issues/33879)) ([bb81a9c](https://github.com/vm0-ai/vm0/commit/bb81a9ccd884e0dc907bc06c00983c07e7bea95e))
+
+
+### Documentation
+
+* **rust:** clarify balloon deflate-on-oom limits ([#33874](https://github.com/vm0-ai/vm0/issues/33874)) ([a944f45](https://github.com/vm0-ai/vm0/commit/a944f45cd6ca386fc9faf8de1652c19be5999a3b))
+
 ## [0.41.10](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.41.9...sandbox-firecracker-v0.41.10) (2026-09-14)
 
 ## [0.41.9](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.41.8...sandbox-firecracker-v0.41.9) (2026-09-12)

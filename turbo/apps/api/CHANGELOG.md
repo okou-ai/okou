@@ -8,6 +8,34 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.593.0](https://github.com/vm0-ai/vm0/compare/api-v1.592.0...api-v1.593.0) (2026-09-14)
+
+
+### Features
+
+* **slack:** add paginated thread reply reads ([#33882](https://github.com/vm0-ai/vm0/issues/33882)) ([d637f53](https://github.com/vm0-ai/vm0/commit/d637f53f81c5fd78abec9b27ff4c7136a25f56cb))
+
+
+### Bug Fixes
+
+* **api:** disable pi memory background workers by default ([#33875](https://github.com/vm0-ai/vm0/issues/33875)) ([4f8b16e](https://github.com/vm0-ai/vm0/commit/4f8b16eaadc33a317c87f21c9dc093fd41b5dc54))
+* **api:** remove the morning brief data-source gate ([#33858](https://github.com/vm0-ai/vm0/issues/33858)) ([042e874](https://github.com/vm0-ai/vm0/commit/042e8744647369967585cb42b5c406f98290ca5d))
+
+
+### Refactoring
+
+* **api:** retire legacy pi citation materializer bridge ([#33877](https://github.com/vm0-ai/vm0/issues/33877)) ([76ba5bf](https://github.com/vm0-ai/vm0/commit/76ba5bf16de6cc134408e1c7dc21f2c5e165cfd3)), closes [#31964](https://github.com/vm0-ai/vm0/issues/31964)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.435.0
+    * @okouai/core bumped to 8.661.1
+    * @okouai/db bumped to 1.255.3
+    * @okouai/pi-agent-runtime bumped to 1.27.5
+
 ## [1.592.0](https://github.com/vm0-ai/vm0/compare/api-v1.591.2...api-v1.592.0) (2026-09-14)
 
 
