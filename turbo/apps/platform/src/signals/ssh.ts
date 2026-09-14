@@ -24,7 +24,6 @@ import {
 } from "@okouai/api-contracts/contracts/ssh-connections";
 import { clerk$, currentOrgInfo$, user$ } from "./auth.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
-import { readClerkToken } from "./clerk-token.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
 import { apiClient$ } from "./api-client.ts";
 import { currentAgent$, agents$ } from "./agent.ts";
@@ -131,31 +130,29 @@ export const sshIdentity$ = computed(async (get) => {
   return user ? `${identity.orgId}:${user.id}` : null;
 });
 const reload$ = state(0);
-// eslint-disable-next-line ccstate/no-computed-signal -- migrate this computed away from AbortSignal ownership
 const sshClients$ = computed(async (get) => {
-  const identity = await get(sshIdentity$);
-  const clerk = await get(clerk$);
+  const [identity, clerk] = await Promise.all([get(sshIdentity$), get(clerk$)]);
   const createClient = get(apiClient$);
-  const assertIdentity = (sessionId: string | undefined) => {
+  const getSession = () => {
+    const session = clerk.session;
     if (
       !identity ||
-      !sessionId ||
-      sessionId !== clerk.session?.id ||
+      !session ||
       identity !== `${clerk.organization?.id}:${clerk.user?.id}`
     ) {
       throw new DOMException("SSH owner changed", "AbortError");
     }
+    return session;
   };
-  const options = {
-    getToken: async (signal: AbortSignal) => {
-      const sessionId = clerk.session?.id;
-      assertIdentity(sessionId);
-      const token = await readClerkToken(clerk, signal);
-      signal.throwIfAborted();
-      assertIdentity(sessionId);
-      return token;
-    },
+  const getToken = async (): Promise<string | null> => {
+    const session = getSession();
+    const token = await session.getToken();
+    if (getSession().id !== session.id) {
+      throw new DOMException("SSH owner changed", "AbortError");
+    }
+    return token;
   };
+  const options = { getToken };
   return {
     identity,
     connections: createClient(sshConnectionsContract, options),
