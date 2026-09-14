@@ -100,19 +100,8 @@ const runImpactHandoff$ = command(
         },
         origin,
       );
-      if (await complete) {
-        signal.throwIfAborted();
-        await accept(
-          client.sync({
-            body: {},
-            fetchOptions: {
-              signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
-            },
-          }),
-          [200],
-        );
-        signal.throwIfAborted();
-      }
+      await complete;
+      signal.throwIfAborted();
       // Keep the bridge alive for returning subscribers and consent changes.
       // The timer also renews expired identity proofs after transient failures.
       await waitForMessage(

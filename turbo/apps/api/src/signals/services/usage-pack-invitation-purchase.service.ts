@@ -1,3 +1,4 @@
+import { marketingImpactEnabled } from "../../lib/impact-marketing";
 import type {
   OrgInvitationPurchasePreviewResponse,
   OrgRole,
@@ -417,11 +418,16 @@ async function emailAlreadyBelongsToOrg(
   );
 }
 
-function checkoutMetadata(purchaseId: string): Record<string, string> {
+function checkoutMetadata(
+  purchase: UsagePackInvitationPurchaseRow,
+): Record<string, string> {
   return {
     ...stripePreviewMetadata(),
     purpose: PURPOSE,
-    [PURCHASE_ID_METADATA_KEY]: purchaseId,
+    [PURCHASE_ID_METADATA_KEY]: purchase.id,
+    ...(marketingImpactEnabled()
+      ? { purchaseCreatedAt: purchase.createdAt.toISOString() }
+      : {}),
   };
 }
 
@@ -456,7 +462,6 @@ async function insertPendingInvitationPurchase(
         normalizedEmail: args.email,
         role: args.role,
         inviterUserId: args.inviterUserId,
-        impactCaptureId: impact.impact_capture_id ?? null,
         impactClickId: impact.impact_click_id ?? null,
         impactClickAt: impact.impact_click_at
           ? new Date(impact.impact_click_at)
@@ -1255,7 +1260,7 @@ async function refundPurchase(
     {
       payment_intent: purchase.stripePaymentIntentId,
       amount: purchase.amountPaidCents,
-      metadata: checkoutMetadata(purchase.id),
+      metadata: checkoutMetadata(purchase),
     },
     {
       idempotencyKey: `usage-pack-invitation:${purchase.id}:refund:${purchase.refundAttempt}`,
@@ -1606,12 +1611,11 @@ async function createInvitationPurchaseInvoice(
         ? stripeBillingPurchasePaymentParams(args.paymentMethod)
         : {}),
       metadata: {
-        ...checkoutMetadata(purchase.id),
-        ...(purchase.impactClickId && purchase.impactClickAt
+        ...checkoutMetadata(purchase),
+        ...(!marketingImpactEnabled() &&
+        purchase.impactClickId &&
+        purchase.impactClickAt
           ? {
-              ...(purchase.impactCaptureId
-                ? { impact_capture_id: purchase.impactCaptureId }
-                : {}),
               impact_click_id: purchase.impactClickId,
               impact_click_at: purchase.impactClickAt.toISOString(),
             }

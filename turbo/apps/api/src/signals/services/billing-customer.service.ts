@@ -1,3 +1,4 @@
+import { retireImpactMetadata } from "../../lib/impact-marketing";
 import { compatibleGoogleAdsAttribution } from "@okouai/core/google-ads-attribution";
 import { command } from "ccstate";
 import { sql, eq } from "drizzle-orm";
@@ -59,7 +60,9 @@ export const getOrCreateStripeCustomer$ = command(
       const stripe = getStripeClient();
       const metadata: Record<string, string> = { orgId: args.orgId };
       for (const [key, value] of Object.entries(
-        compatibleGoogleAdsAttribution(args.metadata ?? {}),
+        compatibleGoogleAdsAttribution(
+          retireImpactMetadata(args.metadata ?? {}),
+        ),
       )) {
         if (value) {
           metadata[key] = value;

@@ -1,13 +1,19 @@
-import { settle } from "../signals/utils";
 import { createHmac, randomUUID } from "node:crypto";
-import { z } from "zod";
 import { optionalEnv } from "./env";
 import { nowDate } from "./time";
-import { logger } from "./log";
 
-const log = logger("impact-marketing");
 export function marketingImpactEnabled(): boolean {
   return optionalEnv("IMPACT_MARKETING_ATTRIBUTION") === "true";
+}
+
+export function retireImpactMetadata<T>(
+  metadata: Readonly<Record<string, T>>,
+): Record<string, T> {
+  return Object.fromEntries(
+    Object.entries(metadata).filter(([key]) => {
+      return !marketingImpactEnabled() || !key.startsWith("impact_");
+    }),
+  );
 }
 function config() {
   const origin = new URL(
@@ -56,58 +62,4 @@ export function createImpactHandoff(identity: {
     nonce,
     iframeUrl: `${origin}/finish-onboarding`,
   };
-}
-
-const lookupSchema = z.object({
-  metadata: z.union([
-    z
-      .object({
-        impact_capture_id: z.string().regex(/^[a-f0-9]{64}$/u),
-        impact_click_id: z.string().regex(/^[A-Za-z0-9._~-]{1,128}$/u),
-        impact_click_at: z.iso.datetime(),
-      })
-      .strict(),
-    z.object({}).strict(),
-  ]),
-});
-
-async function fetchMarketingImpact(
-  orgId: string,
-  signal: AbortSignal,
-): Promise<Record<string, string>> {
-  const { origin, secret } = config();
-  const response = await fetch(`${origin}/api/marketing/impact/lookup`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${secret}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ orgId }),
-    redirect: "error",
-    signal: AbortSignal.any([signal, AbortSignal.timeout(2000)]),
-  });
-  signal.throwIfAborted();
-  if (!response.ok) {
-    throw new Error("Marketing attribution lookup unavailable");
-  }
-  const result = lookupSchema.safeParse(await response.json());
-  signal.throwIfAborted();
-  if (!result.success) {
-    throw new Error("Invalid Marketing attribution response");
-  }
-  return result.data.metadata;
-}
-
-export async function readMarketingImpact(
-  orgId: string,
-  signal: AbortSignal,
-): Promise<Record<string, string>> {
-  const result = await settle(fetchMarketingImpact(orgId, signal), signal);
-  if (result.ok) {
-    return result.value;
-  }
-  log.warn(
-    "Marketing Impact attribution unavailable; omitting billing attribution",
-  );
-  return {};
 }

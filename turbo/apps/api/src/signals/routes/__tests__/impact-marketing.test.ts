@@ -1,6 +1,5 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { beforeEach, expect, test, onTestFinished } from "vitest";
-import { http, HttpResponse } from "msw";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { impactMarketingContract } from "@okouai/api-contracts/contracts/impact-marketing";
 import { acquisitionAttributionContract } from "@okouai/api-contracts/contracts/acquisition-attribution";
@@ -8,7 +7,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
-import { server } from "../../../mocks/server";
 import { impactMarketingRoutes } from "../impact-marketing";
 import { acquisitionAttributionRoutes } from "../acquisition-attribution";
 import { createRouteMocks } from "./helpers/route-test";
@@ -66,13 +64,15 @@ test("issues a dedicated short-lived proof for the authenticated identity", asyn
   const claims: unknown = JSON.parse(
     Buffer.from(payload ?? "", "base64url").toString(),
   );
-  expect(claims).toMatchObject({
+  expect(claims).toStrictEqual({
     sub: actor.userId,
     org: actor.orgId,
     admin: true,
     aud: "https://www.okou.ai",
     parent: "https://app.okou.ai",
     nonce: response.body.handoff?.nonce,
+    iat: expect.any(Number),
+    exp: expect.any(Number),
   });
   const timestamps = claims as { iat: number; exp: number };
   expect(timestamps.exp - timestamps.iat).toBe(120);
@@ -86,25 +86,6 @@ test("ordinary members receive no authority to alter organization billing attrib
   expect(
     JSON.parse(Buffer.from(payload, "base64url").toString()),
   ).toMatchObject({ admin: false });
-  const result = await accept(client().sync({ headers, body: {} }), [200]);
-  expect(result.body).toStrictEqual({ synced: false });
-});
-test("resolves consented billing metadata only by the authenticated org", async () => {
-  const actor = await enabledActor();
-  let requestedOrg: unknown;
-  server.use(
-    http.post(
-      "https://www.okou.ai/api/marketing/impact/lookup",
-      async ({ request }) => {
-        expect(request.headers.get("authorization")).toBe(`Bearer ${secret}`);
-        requestedOrg = await request.json();
-        return HttpResponse.json({ metadata: {} });
-      },
-    ),
-  );
-  const result = await accept(client().sync({ headers, body: {} }), [200]);
-  expect(requestedOrg).toStrictEqual({ orgId: actor.orgId });
-  expect(result.body.synced).toBeFalsy();
 });
 test("ignores cached Apps submitting old Impact query/cookie attribution after cutover", async () => {
   const userId = "user_legacy";

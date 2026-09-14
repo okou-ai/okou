@@ -1,7 +1,4 @@
-import {
-  marketingImpactEnabled,
-  readMarketingImpact,
-} from "../../lib/impact-marketing";
+import { marketingImpactEnabled } from "../../lib/impact-marketing";
 import { command } from "ccstate";
 import { eq, isNull, lt, or, sql } from "drizzle-orm";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -35,7 +32,11 @@ const persistOrgImpactAttribution$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const auth = get(authContext$);
-    if (auth.orgId !== orgId || auth.orgRole !== "admin") {
+    if (
+      marketingImpactEnabled() ||
+      auth.orgId !== orgId ||
+      auth.orgRole !== "admin"
+    ) {
       return;
     }
     const capturedAt = new Date(attribution.capturedAt);
@@ -68,7 +69,7 @@ export async function readOrgImpactMetadata(
   signal: AbortSignal,
 ): Promise<Record<string, string>> {
   if (marketingImpactEnabled()) {
-    return readMarketingImpact(orgId, signal);
+    return {};
   }
   const [row] = await db
     .select({
@@ -96,14 +97,15 @@ export const impactStripeMetadata$ = command(
     signal: AbortSignal,
   ): Promise<Record<string, string>> => {
     const auth = get(authContext$);
-    if (auth.orgId !== orgId || auth.orgRole !== "admin") {
+    if (
+      marketingImpactEnabled() ||
+      auth.orgId !== orgId ||
+      auth.orgRole !== "admin"
+    ) {
       return {};
     }
     if (clerkAttributionDisabled()) {
       return {};
-    }
-    if (marketingImpactEnabled()) {
-      return readMarketingImpact(orgId, signal);
     }
     const result = await settle(
       get(clerk$).users.getUserList(
@@ -139,6 +141,9 @@ export async function updateImpactCustomer(
   metadata: Readonly<Record<string, string>>,
   signal: AbortSignal,
 ): Promise<void> {
+  if (marketingImpactEnabled()) {
+    return;
+  }
   const capturedAt = metadata.impact_click_at;
   if (!metadata.impact_click_id || !capturedAt) {
     return;
@@ -195,7 +200,7 @@ export const syncImpactStripeCustomer$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const auth = get(authContext$);
-    if (!auth.orgId || auth.orgRole !== "admin") {
+    if (marketingImpactEnabled() || !auth.orgId || auth.orgRole !== "admin") {
       return;
     }
     const orgId = auth.orgId;
@@ -206,7 +211,7 @@ export const syncImpactStripeCustomer$ = command(
       },
       nowDate().getTime(),
     );
-    if (impact && !marketingImpactEnabled()) {
+    if (impact) {
       await set(persistOrgImpactAttribution$, orgId, impact, signal);
     }
     if (!optionalEnv("STRIPE_SECRET_KEY")) {
@@ -224,9 +229,7 @@ export const syncImpactStripeCustomer$ = command(
         .limit(1);
       signal.throwIfAborted();
       if (row?.stripeCustomerId) {
-        const current = marketingImpactEnabled()
-          ? metadata
-          : await readOrgImpactMetadata(tx, orgId, signal);
+        const current = await readOrgImpactMetadata(tx, orgId, signal);
         await updateImpactCustomer(row.stripeCustomerId, current, signal);
       }
     });

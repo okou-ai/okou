@@ -1,3 +1,4 @@
+import { retireImpactMetadata } from "../../lib/impact-marketing";
 import { randomUUID } from "node:crypto";
 
 import { command } from "ccstate";
@@ -377,7 +378,9 @@ function schedulePhaseItems(
       price,
       quantity,
       ...(discounts.length > 0 ? { discounts } : {}),
-      ...(item.metadata ? { metadata: { ...item.metadata } } : {}),
+      ...(item.metadata
+        ? { metadata: retireImpactMetadata(item.metadata) }
+        : {}),
       ...(taxRates.length > 0 ? { tax_rates: taxRates } : {}),
     };
   });
@@ -535,7 +538,7 @@ function schedulePhaseParams(
       end_date: period.end,
       ...(phase.currency ? { currency: phase.currency } : {}),
       items: args.items,
-      ...(metadata ? { metadata: { ...metadata } } : {}),
+      ...(metadata ? { metadata: retireImpactMetadata(metadata) } : {}),
       proration_behavior: phase.proration_behavior ?? "none",
     },
     scheduleDiscounts(phase.discounts ?? []),

@@ -1,4 +1,3 @@
-import { initialFeatureSwitchHydration$ } from "../external/feature-switch-hydration.ts";
 import {
   legacyGoogleAdsAttribution,
   compatibleGoogleAdsAttribution,
@@ -80,8 +79,6 @@ export const recordSignupAttribution$ = command(
     }
 
     const storedAttribution = set(readStoredAdAttributionMetadata$);
-    await get(initialFeatureSwitchHydration$);
-    signal.throwIfAborted();
     const impactAttribution = set(recordImpactAttribution$);
     const recentlyCreatedUser = isRecentlyCreatedUser(user);
     const attribution: AdAttributionMetadata | undefined =

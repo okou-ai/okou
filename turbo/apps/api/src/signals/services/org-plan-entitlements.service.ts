@@ -1,3 +1,4 @@
+import { retireImpactMetadata } from "../../lib/impact-marketing";
 import type { OrgTier } from "@okouai/api-contracts/contracts/orgs";
 import type { OrgPlanEntitlementSourceMetadata } from "@okouai/db/jsonb-contracts/org-plan-entitlement";
 import { orgPlanEntitlementsCanonicalWrites } from "@okouai/db/operations/org-plan-entitlement-canonical-write";
@@ -49,7 +50,7 @@ async function resolveStripeSubscriptionSnapshot(
     "orgId" | "stripeSubscriptionId" | "sourceMetadata"
   >,
 ): Promise<ResolvedStripeSubscriptionSnapshot> {
-  const sourceMetadata = args.sourceMetadata ?? {};
+  const sourceMetadata = retireImpactMetadata(args.sourceMetadata ?? {});
   const stripeSubscriptionId = args.stripeSubscriptionId ?? null;
   if (!stripeSubscriptionId) {
     return { stripeSubscriptionId: null, sourceMetadata };

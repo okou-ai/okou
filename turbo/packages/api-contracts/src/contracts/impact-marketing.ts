@@ -22,18 +22,4 @@ export const impactMarketingContract = c.router({
     summary:
       "Issue a short-lived identity proof for the Marketing Impact iframe",
   },
-  sync: {
-    method: "POST",
-    path: "/api/attribution/impact/sync",
-    headers: authHeadersSchema,
-    body: z.object({}).strict(),
-    responses: {
-      200: z.object({ synced: z.boolean() }),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary:
-      "Refresh future billing snapshots from consented Marketing attribution",
-  },
 });

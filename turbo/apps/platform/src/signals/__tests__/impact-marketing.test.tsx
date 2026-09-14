@@ -18,7 +18,6 @@ const IFRAME_URL = "https://www.okou.ai/finish-onboarding";
 test("The authenticated app remains usable while Marketing binds consented attribution", async () => {
   mockOrgModelRoutes("claude-sonnet-4-6");
   mockAgent();
-  let syncs = 0;
   context.mocks.api(impactMarketingContract.handoff, ({ respond }) => {
     return respond(200, {
       handoff: {
@@ -27,10 +26,6 @@ test("The authenticated app remains usable while Marketing binds consented attri
         iframeUrl: IFRAME_URL,
       },
     });
-  });
-  context.mocks.api(impactMarketingContract.sync, ({ respond }) => {
-    syncs++;
-    return respond(200, { synced: true });
   });
   context.mocks.browser.cookie(
     `okou_impact=${encodeURIComponent(JSON.stringify({ clickId: "old-cookie", capturedAt: nowDate().toISOString() }))}`,
@@ -53,7 +48,7 @@ test("The authenticated app remains usable while Marketing binds consented attri
   });
   expect(context.store.get(retiredStorage.get$)).toBeNull();
   // The shared happy-dom setup disables iframe loading. Supply the browser
-  // boundary here while exercising the real App handoff and API synchronization.
+  // boundary here while exercising the real identity-only App handoff.
   const frameWindow = vi
     .spyOn(frame, "contentWindow", "get")
     .mockReturnValue(window);
@@ -92,7 +87,7 @@ test("The authenticated app remains usable while Marketing binds consented attri
     }),
   );
   await Promise.resolve();
-  expect(syncs).toBe(0);
+  expect(posted).toHaveBeenCalledTimes(1);
   window.dispatchEvent(
     new MessageEvent("message", {
       data: { type: "okou:impact:complete", nonce: "expected-nonce" },
@@ -100,9 +95,8 @@ test("The authenticated app remains usable while Marketing binds consented attri
       source: frame.contentWindow,
     }),
   );
-  await waitFor(() => {
-    return expect(syncs).toBe(1);
-  });
+  expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
+  expect(posted).toHaveBeenCalledTimes(1);
   posted.mockRestore();
   frameWindow.mockRestore();
   context.mocks.browser.cookie("");
