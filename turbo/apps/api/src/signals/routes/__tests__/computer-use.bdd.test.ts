@@ -19,6 +19,7 @@ import { mockEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { generateSandboxToken } from "../../auth/tokens";
 import { testContext } from "../../../__tests__/test-context";
+import { computerUseRoutes } from "../computer-use";
 import { testComputerUseStateRoutes } from "../test-computer-use-state";
 import {
   createBddApi,
@@ -29,6 +30,7 @@ import {
   createComputerUseBddApi,
   computerUseToken,
 } from "./helpers/api-bdd-computer-use";
+import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { readRunLaunchSnapshotFixture } from "./helpers/runtime-state";
@@ -1726,5 +1728,199 @@ describe("FILE-03 desktop computer-use runtime", () => {
       throw new Error("Expected the second cleanup sweep to run");
     }
     expect(resweep.body.cleaned).toBe(0);
+  });
+});
+
+/*
+ * AUTH-05 covers the Clerk classification boundary in `getMemberRoleAndUpdateCache$`
+ * and `requiredAuthContext$` through the route that escaped as an unhandled
+ * request error in production (#33822): `GET /api/computer-use/commands/:commandId`
+ * authenticated with a CLI PAT. The membership read happens before the handler,
+ * so the command id never has to exist for the classification to be observable.
+ *
+ * The negative controls are the point of the suite: exactly one predicate may
+ * produce `identity_not_found` and exactly one may produce the 503, so every
+ * other Clerk or database failure has to keep reaching the unhandled path.
+ */
+class ClerkApiResponseTestError extends Error {
+  static readonly kind = "ClerkAPIResponseError";
+
+  constructor(
+    readonly status: number,
+    readonly retryAfter = 1,
+  ) {
+    super(`Clerk Backend API request failed with status ${status}`);
+  }
+}
+
+function membershipReadMock() {
+  return context.mocks.clerk.users.getOrganizationMembershipList;
+}
+
+/** Fail the next membership read, from a clean call/delay/capture baseline. */
+function failMembershipRead(error: unknown): void {
+  membershipReadMock().mockReset();
+  membershipReadMock().mockRejectedValue(error);
+  context.mocks.signalTimers.delay.mockReset();
+  context.mocks.signalTimers.delay.mockResolvedValue(undefined);
+  context.mocks.sentry.captureException.mockClear();
+}
+
+function commandStatusRequest(token: string): Promise<Response> {
+  const app = createAppWithRoutes({
+    signal: context.signal,
+    routes: computerUseRoutes,
+  });
+  return Promise.resolve(
+    app.request(
+      new Request(`http://api.test/api/computer-use/commands/${randomUUID()}`, {
+        method: "GET",
+        headers: { authorization: `Bearer ${token}` },
+      }),
+    ),
+  );
+}
+
+/**
+ * Observe whether the warmed `org_members_cache` row survived, using only the
+ * route's own behavior. Time returns to within MEMBER_ROLE_CACHE_TTL_MS of the
+ * warm-up write while Clerk still reports the identity as gone, so a surviving
+ * row answers from cache and reaches the handler (404 command-not-found) while
+ * a dropped row must consult Clerk again and fails closed (401).
+ */
+async function statusAfterCacheProbe(token: string): Promise<number> {
+  clearMockNow();
+  failMembershipRead(new ClerkApiResponseTestError(404));
+  const response = await commandStatusRequest(token);
+  return response.status;
+}
+
+/** A PAT whose org role is cached, so the next read must re-consult Clerk. */
+async function patWithWarmMembershipCache(
+  actor: ApiTestUser,
+): Promise<{ readonly token: string }> {
+  const { token } =
+    await createAuthOrgAgentsBddApi(context).createCliToken(actor);
+  mockClerkMembership(context, actor, "org:admin");
+
+  const warmed = await commandStatusRequest(token);
+  // Authentication resolved; only the command itself is missing.
+  expect(warmed.status).toBe(404);
+
+  // Expire the cached role without touching MEMBER_ROLE_CACHE_TTL_MS itself.
+  mockNow(now() + 61_000);
+  return { token };
+}
+
+describe("AUTH-05 computer-use auth boundary Clerk classification", () => {
+  it("maps a deleted Clerk identity to 401 and drops the stale membership cache row", async () => {
+    const actor = bdd.user();
+    const { token } = await patWithWarmMembershipCache(actor);
+    failMembershipRead(new ClerkApiResponseTestError(404));
+
+    const response = await commandStatusRequest(token);
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toStrictEqual({
+      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
+    });
+    // A 404 is terminal: it is neither retried nor reported as unhandled.
+    expect(membershipReadMock()).toHaveBeenCalledOnce();
+    expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
+    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+    // The stale row is gone, so cached organization authority cannot be
+    // reused by the deleted identity on the next request.
+    await expect(statusAfterCacheProbe(token)).resolves.toBe(401);
+  });
+
+  it("maps an exhausted Clerk provider read to a non-cacheable 503", async () => {
+    const actor = bdd.user();
+    const { token } = await patWithWarmMembershipCache(actor);
+    failMembershipRead(new ClerkApiResponseTestError(521));
+
+    const response = await commandStatusRequest(token);
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toStrictEqual({
+      error: {
+        message: "Authentication provider is temporarily unavailable",
+        code: "PROVIDER_UNAVAILABLE",
+      },
+    });
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(membershipReadMock()).toHaveBeenCalledTimes(3);
+    expect(context.mocks.signalTimers.delay).toHaveBeenCalledTimes(2);
+    // An exhausted provider read is a controlled response, not a crash, so the
+    // actionable signal is the error-level provider_unavailable record.
+    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+    // A provider outage says nothing about the identity, so the cached role
+    // survives for the next attempt.
+    await expect(statusAfterCacheProbe(token)).resolves.toBe(404);
+  });
+
+  it("leaves a Clerk rate-limited membership read on its existing path", async () => {
+    const actor = bdd.user();
+    const { token } = await patWithWarmMembershipCache(actor);
+    failMembershipRead(new ClerkApiResponseTestError(429));
+
+    const response = await commandStatusRequest(token);
+
+    expect(response.status).toBe(500);
+    expect(membershipReadMock()).toHaveBeenCalledOnce();
+    expect(context.mocks.signalTimers.delay).not.toHaveBeenCalled();
+    expect(context.mocks.sentry.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 429 }),
+    );
+    await expect(statusAfterCacheProbe(token)).resolves.toBe(404);
+  });
+
+  it("propagates every other Clerk and database membership failure unchanged", async () => {
+    const actor = bdd.user();
+    const { token } = await patWithWarmMembershipCache(actor);
+
+    // A Clerk 4xx that is not a resource-not-found must not be absorbed by the
+    // identity classification.
+    failMembershipRead(new ClerkApiResponseTestError(403));
+    const forbidden = await commandStatusRequest(token);
+    expect(forbidden.status).toBe(500);
+    expect(membershipReadMock()).toHaveBeenCalledOnce();
+    expect(context.mocks.sentry.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 403 }),
+    );
+
+    // A non-Clerk failure raised by the same read keeps escaping too.
+    failMembershipRead(new Error("membership read failed"));
+    const unrelated = await commandStatusRequest(token);
+    expect(unrelated.status).toBe(500);
+    expect(context.mocks.sentry.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "membership read failed" }),
+    );
+
+    // Neither failure may clear cached organization authority.
+    await expect(statusAfterCacheProbe(token)).resolves.toBe(404);
+  });
+
+  it("keeps a non-member identity on the degraded user-only context", async () => {
+    const actor = bdd.user();
+    const authOrg = createAuthOrgAgentsBddApi(context);
+    const { token } = await patWithWarmMembershipCache(actor);
+
+    // The identity exists; it simply holds no role in this organization.
+    membershipReadMock().mockReset();
+    membershipReadMock().mockResolvedValue({ data: [] });
+
+    const degraded = await authOrg.requestReadMeWithBearer(token, actor, [200]);
+
+    expect(degraded.body).toMatchObject({
+      userId: actor.userId,
+      orgId: null,
+    });
+
+    // The same PAT on the same route fails closed once the identity is gone.
+    failMembershipRead(new ClerkApiResponseTestError(404));
+    const deleted = await authOrg.requestReadMeWithBearer(token, actor, [401]);
+
+    expectApiError(deleted.body);
+    expect(deleted.body.error.code).toBe("UNAUTHORIZED");
   });
 });
