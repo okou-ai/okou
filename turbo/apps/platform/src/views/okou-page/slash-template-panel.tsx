@@ -19,6 +19,7 @@ import { i18n } from "../../i18n/index.ts";
 import { PRESENTATION_TEMPLATE_IMPORT_ACCEPT } from "../../signals/okou-page/presentation-template-import.ts";
 import type { ComposerSlashWorkflowMatch } from "../../signals/okou-page/workflow-composer-domain.ts";
 import {
+  isSlashTemplateNativeAspectCategory,
   isSlashTemplatePreviewCategory,
   slashTemplatePreviewGroup,
   type SlashTemplateCategory,
@@ -184,6 +185,66 @@ function SlashTemplateImportCard({
   );
 }
 
+/**
+ * One cover. `aspect` is present only for categories that show the artwork
+ * uncropped, and then it drives an inline ratio rather than the shared tile —
+ * the same thing the picker dialog's illustration card does.
+ */
+function SlashTemplateCover({
+  preview,
+  onSelectTemplate,
+}: {
+  readonly preview: SlashTemplatePreview;
+  readonly onSelectTemplate: (preview: SlashTemplatePreview) => void;
+}) {
+  const { t } = useTranslation();
+  const aspect = preview.aspect;
+  return (
+    <button
+      type="button"
+      className={cn(
+        "group min-w-0 text-left",
+        aspect && "mb-2.5 block w-full break-inside-avoid",
+      )}
+      aria-label={t(
+        ($) => {
+          return $.chat.composer.slashPanel.useTemplate;
+        },
+        { title: preview.title },
+      )}
+      onMouseDown={(event) => {
+        // Keep the editor focused; the panel never takes selection.
+        event.preventDefault();
+        onSelectTemplate(preview);
+      }}
+    >
+      <span
+        className={cn(
+          "block overflow-hidden rounded-lg bg-muted ring-1 ring-border/60",
+          !aspect && "aspect-video",
+        )}
+        style={
+          aspect
+            ? {
+                aspectRatio: `${String(aspect.width)} / ${String(aspect.height)}`,
+              }
+            : undefined
+        }
+      >
+        <img
+          src={preview.coverUrl}
+          alt=""
+          loading="lazy"
+          className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.04]"
+        />
+      </span>
+      <span className="mt-1 block truncate text-[12px] text-muted-foreground">
+        {preview.title}
+      </span>
+    </button>
+  );
+}
+
 function SlashTemplateDetailPane({
   category,
   onSelectTemplate,
@@ -195,6 +256,7 @@ function SlashTemplateDetailPane({
 }) {
   const { t } = useTranslation();
   const group = slashTemplatePreviewGroup(category);
+  const nativeAspect = isSlashTemplateNativeAspectCategory(category);
   const Icon = SLASH_TEMPLATE_CATEGORY_ICONS[category];
   return (
     <div
@@ -247,40 +309,29 @@ function SlashTemplateDetailPane({
           bleed off that edge.
         */}
         <div className="mt-[11px] -ml-px -mr-4 min-h-0 flex-1 overflow-y-auto pl-px pr-4 pt-px">
-          <div className="grid grid-cols-2 gap-2.5 pb-4">
+          {/*
+            Illustration keeps each cover's own proportion, so its covers go in
+            a CSS multi-column masonry — the same shape the picker dialog uses.
+            Every other category's cover really is 16:9, so those stay a grid
+            with level rows.
+          */}
+          <div
+            className={cn(
+              nativeAspect
+                ? "columns-2 gap-2.5 pb-4"
+                : "grid grid-cols-2 gap-2.5 pb-4",
+            )}
+          >
             {category === "slides" && (
               <SlashTemplateImportCard onImportDeck={onImportDeck} />
             )}
             {group.previews.map((preview) => {
               return (
-                <button
+                <SlashTemplateCover
                   key={preview.slug}
-                  type="button"
-                  className="group min-w-0 text-left"
-                  aria-label={t(
-                    ($) => {
-                      return $.chat.composer.slashPanel.useTemplate;
-                    },
-                    { title: preview.title },
-                  )}
-                  onMouseDown={(event) => {
-                    // Keep the editor focused; the panel never takes selection.
-                    event.preventDefault();
-                    onSelectTemplate(preview);
-                  }}
-                >
-                  <span className="block aspect-video overflow-hidden rounded-lg bg-muted ring-1 ring-border/60">
-                    <img
-                      src={preview.coverUrl}
-                      alt=""
-                      loading="lazy"
-                      className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.04]"
-                    />
-                  </span>
-                  <span className="mt-1 block truncate text-[12px] text-muted-foreground">
-                    {preview.title}
-                  </span>
-                </button>
+                  preview={preview}
+                  onSelectTemplate={onSelectTemplate}
+                />
               );
             })}
           </div>

@@ -6,6 +6,7 @@ import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-t
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
+import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import {
   fill,
   queryAllByRoleFast,
@@ -133,6 +134,38 @@ test("The pane carries more than one row of covers, so later templates are reach
     throw new Error("Expected an eighth presentation template");
   }
   expect(within(pane).getByText(later.title)).toBeInTheDocument();
+});
+
+test("Illustration covers keep their own proportion; decks keep the 16:9 tile", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu(true);
+
+  // A deck cover really is a slide, so it still asks for the 16:9 box.
+  const deckCover = detailPane()?.querySelector("img");
+  expect(deckCover?.getAttribute("src")).toContain("height=158");
+
+  await user.hover(slashButton("Illustration"));
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "illustration");
+  });
+  const pane = detailPane();
+  if (!pane) {
+    throw new Error("Expected the detail pane");
+  }
+  const [style] = ILLUSTRATION_TEMPLATE_ITEMS;
+  if (!style) {
+    throw new Error("Expected an illustration style");
+  }
+  const cover = pane.querySelector("img");
+  // Width only: passing a 16:9 height too made the transform fit a portrait
+  // style inside it, so the card received a picture far smaller than it paints.
+  expect(cover?.getAttribute("src")).toContain("width=280");
+  expect(cover?.getAttribute("src")).not.toContain("height=");
+  // The tile declares the catalog's own ratio rather than a shared one, which
+  // is what stops the artwork being cropped.
+  expect(cover?.parentElement?.getAttribute("style")).toContain(
+    `${String(style.width)} / ${String(style.height)}`,
+  );
 });
 
 test("Highlighting a website row swaps the pane to the website catalog", async () => {
