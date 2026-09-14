@@ -25,7 +25,7 @@ import { cn } from "../../lib/utils";
  * key/value chips from wrapping.
  */
 const badgeClassName =
-  "inline-flex items-center gap-1 rounded-md border border-surface-border bg-gray-0 px-2 py-0.5 align-middle leading-snug [&>svg]:size-3";
+  "inline-flex items-center gap-1 rounded-md border border-surface-border bg-gray-0 px-2 py-0.5 align-middle [&>svg]:size-3";
 
 export type BadgeProps = useRender.ComponentProps<"span">;
 
@@ -36,7 +36,9 @@ export function Badge({ className, render, ref, ...props }: BadgeProps) {
     props: {
       "data-slot": "badge",
       ...props,
-      className: cn(badgeClassName, className),
+      // Font-size utilities remove earlier leading utilities during merging.
+      // Keep the badge's own line height after caller typography.
+      className: cn(badgeClassName, className, "leading-snug"),
     },
     ref,
     render,
