@@ -30,6 +30,7 @@ import {
 } from "../../test/mocks/sentry-behavior.ts";
 import {
   deferNextAblySubscribe,
+  deferAblySubscribeOnChannel,
   getAuthTokenHistory,
   hasChannelSubscription,
   hasChannelSubscriptionOnChannel,
@@ -658,6 +659,9 @@ export function createTestMocks(getSignal: () => AbortSignal) {
       },
     },
     ably: {
+      deferSubscribeOnChannel: (channelName: string, topic: string) => {
+        return deferAblySubscribeOnChannel(channelName, topic, getSignal());
+      },
       deferNextSubscribe: () => {
         return deferNextAblySubscribe(getSignal());
       },

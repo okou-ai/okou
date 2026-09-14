@@ -5668,7 +5668,8 @@ function ImportedPresentationTemplatePreviewPage({
   const loadedDetail =
     currentDetail?.id === summary.id
       ? currentDetail
-      : lastResolvedDetail?.id === summary.id
+      : detailLoadable.state === "loading" &&
+          lastResolvedDetail?.id === summary.id
         ? lastResolvedDetail
         : null;
   const detail =
@@ -5744,10 +5745,18 @@ function ImportedPresentationTemplatePreviewPage({
 function useImportedPresentationTemplatePickerItems(
   signals: ComposerSignals,
 ): readonly ImportedPresentationTemplatePickerItem[] {
+  const current = useLoadable(
+    signals.template.importedPresentationTemplatePickerItems$,
+  );
+  const lastResolved = useLastResolved(
+    signals.template.importedPresentationTemplatePickerItems$,
+  );
   const items =
-    useLastResolved(
-      signals.template.importedPresentationTemplatePickerItems$,
-    ) ?? [];
+    current.state === "hasData"
+      ? current.data
+      : current.state === "loading"
+        ? (lastResolved ?? [])
+        : [];
   const deletedTemplateIds = useGet(
     signals.template.importedPresentationTemplateDeletedIds$,
   );
@@ -5756,6 +5765,93 @@ function useImportedPresentationTemplatePickerItems(
     : items.filter((item) => {
         return !deletedTemplateIds.has(item.template.id);
       });
+}
+
+function ImportedPresentationTemplateLibraryStatus({
+  signals,
+}: {
+  readonly signals: ComposerSignals;
+}) {
+  const { t } = useTranslation();
+  const templates = useLoadable(
+    signals.template.importedPresentationTemplatePickerItems$,
+  );
+  const lastResolvedTemplates = useLastResolved(
+    signals.template.importedPresentationTemplatePickerItems$,
+  );
+  const realtime = useLoadable(
+    signals.template.presentationTemplatesRealtimeReady$,
+  );
+  const previews = useLoadable(
+    signals.template.importedPresentationTemplatePreviewAssets$,
+  );
+  const retryCatalog = useSet(
+    signals.template.retryImportedPresentationTemplates$,
+  );
+  const [refreshing, refreshPreviews] = useLoadableSet(
+    signals.template.refreshImportedPresentationTemplateUrlsIfExpiring$,
+  );
+  const signal = useGet(pageSignal$);
+  let message: string;
+  let retry: (() => void) | undefined;
+  if (templates.state === "loading") {
+    if (lastResolvedTemplates?.length) {
+      return null;
+    }
+    message = t(($) => {
+      return $.chat.templates.importedLoading;
+    });
+  } else if (templates.state === "hasError") {
+    if (realtime.state === "hasError") {
+      message = t(($) => {
+        return $.chat.templates.importedUnavailable;
+      });
+    } else {
+      message = t(($) => {
+        return $.chat.templates.importedLoadFailed;
+      });
+      retry = retryCatalog;
+    }
+  } else if (previews.state === "hasError") {
+    message = t(($) => {
+      return $.chat.templates.previewRefreshFailed;
+    });
+    retry = () => {
+      detach(refreshPreviews(signal), Reason.DomCallback);
+    };
+  } else if (templates.data.length === 0) {
+    message = t(($) => {
+      return $.chat.templates.importedEmpty;
+    });
+  } else {
+    return null;
+  }
+  return (
+    <div
+      className="col-span-full flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
+      role={
+        templates.state === "hasError" ||
+        (templates.state === "hasData" && previews.state === "hasError")
+          ? "alert"
+          : "status"
+      }
+    >
+      <span>{message}</span>
+      {retry ? (
+        <Button
+          type="button"
+          variant="quiet"
+          size="sm"
+          disabled={refreshing.state === "loading"}
+          onClick={retry}
+        >
+          {t(($) => {
+            return $.chat.templates.retry;
+          })}
+        </Button>
+      ) : null}
+    </div>
+  );
 }
 
 function useImportedPresentationTemplates(
@@ -5841,6 +5937,7 @@ export function ComposerPresentationRecommendations({
         </Button>
       </div>
       <div className="grid min-w-0 grid-cols-2 items-start gap-4 sm:grid-cols-4">
+        <ImportedPresentationTemplateLibraryStatus signals={signals} />
         <PptImportCard
           signals={signals}
           compact
@@ -5921,6 +6018,7 @@ function PptTemplateGrid({
   // then the built-in templates.
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <ImportedPresentationTemplateLibraryStatus signals={signals} />
       <PptImportCard signals={signals} onImported={onImported} />
       {importedItems.map(({ imageBuffers, template }) => {
         return (
