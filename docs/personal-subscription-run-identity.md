@@ -123,7 +123,24 @@ trigger acquires a provider lock. Ordinary profile requests happen after the
 snapshot transaction commits. The second transaction compares the complete
 provider, active selection, account identities, secret IDs and ciphertext
 bundle; a winning write, activation or deletion discards the delayed result.
-Final admission does no identity HTTP: it rejects an invalid fixed capture.
+Final admission is database-only; stored-secret decryption belongs to
+preparation. After environment/launch preparation,
+`preparePersonalSubscriptionAdmission` captures
+the encrypted snapshot in a short provider/credential transaction, releases its
+locks, then proves complete bundle equivalence outside every admission lock.
+The operation-local proof contains the fixed source ID and exact serialized
+encrypted snapshot; it is never written to run metadata or queue payloads.
+This also accepts independent KMS re-encryption of equivalent complete bundles.
+
+The final transaction retains the organization and A1 lifecycle fences, locks
+the same provider and bounded credential rows, compares the exact snapshot, and
+rechecks the connected account with its fixed org/user/type before inserting
+the run. It cannot call general reconciliation, KMS or a profile endpoint.
+Changes to row IDs, account identity/selection, state or any ciphertext reject
+the original capture with existing guidance. Even equivalent re-encryption
+after the proof invalidates it; a fresh request can prove the new snapshot.
+The same proof is retained across the queue-payload encryption retry outside
+the final transaction. There is no sibling/account/model/payment reselection.
 Rotating refresh retains its existing single transaction/provider owner and
 checks the locked current bundle before spending the refresh token.
 

@@ -1985,9 +1985,8 @@ async function reconcileLockedSubscriptionSnapshot(
   );
 }
 
-/** Final admission and refresh already own their transaction. Claude identity
- * work must have finished before entering it; a late mismatch rejects the
- * captured identity, without HTTP, retries or reselection under lifecycle locks. */
+/** Refresh and settings mutations own their provider transaction. This helper
+ * can decrypt through KMS; final admission must use its database-only validator. */
 export async function reconcileLockedPersonalSubscriptionCredentials(
   args: SubscriptionCredentialOwner,
 ): Promise<boolean> {
@@ -1996,6 +1995,58 @@ export async function reconcileLockedPersonalSubscriptionCredentials(
     snapshot !== null &&
     (await reconcileLockedSubscriptionSnapshot(args, snapshot))
   );
+}
+
+export interface PreparedPersonalSubscriptionAdmission {
+  readonly sourceId: string;
+  readonly snapshot: string;
+}
+
+/** Capture only encrypted state under the provider/credential locks, then
+ * release them before proving complete plaintext equivalence (KMS rotation can
+ * encrypt the two stores independently). Earlier capture/environment preparation
+ * owns legacy identity import; a mismatch here rejects that fixed capture.
+ * This proof is operation-local and never enters a persisted run/queue payload. */
+export async function preparePersonalSubscriptionAdmission(
+  args: SubscriptionCredentialOwner & { readonly sourceId: string },
+  signal: AbortSignal,
+): Promise<PreparedPersonalSubscriptionAdmission | null> {
+  const snapshot = await args.db.transaction(async (tx) => {
+    return await lockSubscriptionCredentialSnapshot({ ...args, db: tx });
+  });
+  signal.throwIfAborted();
+  if (!snapshot) {
+    return null;
+  }
+  const coherent =
+    !snapshotNeedsCoordination(snapshot, args.sourceId) ||
+    (await subscriptionBundlesMatch(snapshot, args.featureSwitchContext));
+  signal.throwIfAborted();
+  return coherent
+    ? { sourceId: args.sourceId, snapshot: JSON.stringify(snapshot) }
+    : null;
+}
+
+/** Called after the existing lifecycle fences, in the run-insert transaction.
+ * Compare every row ID, identity, selection, state and encrypted cell without
+ * decryption or legacy import. A winning writer invalidates this proof even if
+ * its new ciphertext might decrypt to the same bytes. A new request can prepare
+ * that new snapshot outside the locks; this admission never reselects. */
+export async function validatePersonalSubscriptionAdmission(
+  args: SubscriptionCredentialOwner,
+  prepared: PreparedPersonalSubscriptionAdmission | null,
+): Promise<boolean> {
+  if (!prepared || prepared.sourceId !== args.sourceId) {
+    return false;
+  }
+  const snapshot = await lockSubscriptionCredentialSnapshot(args);
+  if (!snapshot || JSON.stringify(snapshot) !== prepared.snapshot) {
+    return false;
+  }
+  if (snapshotNeedsCoordination(snapshot, args.sourceId)) {
+    await reconcileCodexRefreshMetadata(args.db, snapshot);
+  }
+  return true;
 }
 
 function hasClaudeIdentity(identity: PersonalProviderAccountMetadata): boolean {

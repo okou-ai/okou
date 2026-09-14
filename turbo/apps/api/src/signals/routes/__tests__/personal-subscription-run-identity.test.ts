@@ -4,6 +4,7 @@ import {
   historicalCodexReconnectFixture,
   historicalCodexRefreshFixture,
   historicalDeleteSubscriptionFixture,
+  reencryptSubscriptionStoresFixture,
 } from "../../../test-fixtures/historical-subscription-writer";
 import { createHash, randomUUID } from "node:crypto";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
@@ -20,6 +21,7 @@ import { server } from "../../../mocks/server";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
+import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { testContext } from "../../../__tests__/test-context";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -254,7 +256,7 @@ async function finish(
         ...(status === "completed"
           ? {
               checkpoint: {
-                cliAgentType: "codex" as const,
+                cliAgentType: claim.cliAgentType,
                 cliAgentSessionId: `subscription-${runId}`,
                 cliAgentSessionHistoryHash: createHash("sha256")
                   .update(`subscription history ${runId}`)
@@ -1191,6 +1193,376 @@ describe("actual historical subscription writers", () => {
 });
 
 describe("historical writer consumer fences", () => {
+  it.each([
+    ["claude-code-oauth-token", "unchanged"],
+    ["codex-oauth-token", "unchanged"],
+    ["claude-code-oauth-token", "reconnect"],
+    ["codex-oauth-token", "reencrypt"],
+    ["claude-code-oauth-token", "delete"],
+    ["codex-oauth-token", "revoke"],
+  ] as const)(
+    "keeps %s proof decryption outside lifecycle locks and fences a winning %s",
+    async (type, winner) => {
+      const f = await fixture(type);
+      const captured = f.connected.id;
+      const kmsEntered = createDeferredPromise<void>(context.signal);
+      const releaseKms = createDeferredPromise<Uint8Array>(context.signal);
+      let holdNextDecrypt = false;
+      useSecretKmsProbe(undefined, () => {
+        if (holdNextDecrypt) {
+          holdNextDecrypt = false;
+          kmsEntered.resolve(undefined);
+          return releaseKms.promise;
+        }
+        return undefined;
+      });
+      let rotateAtSigner = true;
+      // The real external signer is after environment materialization. Make
+      // the two stores independently encrypted before admission prepares its
+      // proof, then hold the next external decrypt of that equivalent bundle.
+      context.mocks.s3.getSignedUrl.mockImplementation(
+        async (_client, command) => {
+          if (
+            rotateAtSigner &&
+            command instanceof GetObjectCommand &&
+            command.input.Key?.endsWith("/archive.tar.gz")
+          ) {
+            rotateAtSigner = false;
+            await reencryptSubscriptionStoresFixture(f.actor, type);
+            holdNextDecrypt = true;
+          }
+          return apiTestS3PresignedUrl(command);
+        },
+      );
+      const sending = createChatFilesBddApi(context).requestSendEvent(
+        f.actor,
+        {
+          agentId: f.agentId,
+          model: f.model,
+          prompt: "prove without lifecycle locks",
+        },
+        winner === "unchanged" ? [201] : [409],
+      );
+      const sendingSettled = Promise.allSettled([sending]);
+      onTestFinished(async () => {
+        holdNextDecrypt = false;
+        if (!releaseKms.settled()) {
+          releaseKms.resolve(Buffer.from("0123456789abcdef0123456789abcdef"));
+        }
+        await sendingSettled;
+      });
+      await expect(
+        Promise.race([
+          kmsEntered.promise.then(() => {
+            return "kms";
+          }),
+          sending.then(() => {
+            return "settled";
+          }),
+        ]),
+      ).resolves.toBe("kms");
+      // These real writers must finish while the proof's KMS response is held.
+      // They need the provider/credential locks, which preparation has released.
+      if (winner === "reconnect") {
+        expect((await connect(f.actor, type, "identity-a")).id).toBe(captured);
+      } else if (winner === "reencrypt") {
+        await reencryptSubscriptionStoresFixture(f.actor, type);
+      } else if (winner === "delete") {
+        await historicalDeleteSubscriptionFixture(f.actor, type);
+      } else if (winner === "revoke") {
+        const webhooks = createWebhookCallbackApi(context);
+        webhooks.configureClerkWebhookSecret();
+        webhooks.verifyNextClerkWebhook({
+          type: "organizationMembership.deleted",
+          data: { organization_id: f.actor.orgId, user_id: f.actor.userId },
+        });
+        await webhooks.requestClerkWebhook("{}", {}, [200]);
+        await flushWaitUntilForTest();
+      }
+      releaseKms.resolve(Buffer.from("0123456789abcdef0123456789abcdef"));
+      const result = await sending;
+      if (winner === "unchanged") {
+        if (result.status !== 201 || result.body.runId === null) {
+          throw new Error(
+            "Expected an unchanged proof to admit the captured account",
+          );
+        }
+        const claim = await f.claim(result.body.runId);
+        expect(accountId(claim, type)).toBe(captured);
+        await expect(resolve(claim, type)).resolves.toMatchObject({
+          Authorization: `Bearer ${f.connected.token}`,
+        });
+        await runs.requestCancelRun(f.actor, result.body.runId, [200]);
+      } else {
+        expect(result.status).toBe(409);
+        if (winner === "reencrypt" || winner === "reconnect") {
+          // A stale proof is rejected, but a fresh request can prove the new
+          // encrypted snapshot. Rotation must never strand a valid account.
+          const next = await f.start();
+          const claim = await f.claim(next);
+          expect(accountId(claim, type)).toBe(captured);
+          await expect(resolve(claim, type)).resolves.toMatchObject({
+            Authorization: `Bearer ${f.connected.token}`,
+          });
+          await runs.requestCancelRun(f.actor, next, [200]);
+        }
+      }
+    },
+    20_000,
+  );
+
+  it.each([
+    ["claude-code-oauth-token", false, "chat"],
+    ["codex-oauth-token", true, "chat"],
+    ["claude-code-oauth-token", true, "direct"],
+    ["codex-oauth-token", false, "direct"],
+    ["claude-code-oauth-token", false, "queued"],
+    ["codex-oauth-token", true, "queued"],
+    ["claude-code-oauth-token", true, "session"],
+    ["codex-oauth-token", false, "session"],
+  ] as const)(
+    "admits equivalent reencrypted %s bundles with priority %s through %s without final KMS",
+    async (type, priority, mode) => {
+      const f = await fixture(type, priority, priority);
+      const initial = await createHistoricalPinnedSubscriptionRunFixture(
+        {
+          owner: f.actor,
+          agentId: f.agentId,
+          accountId: f.connected.id,
+          type,
+          model: f.model,
+        },
+        context.signal,
+      );
+      if (initial.status !== 201) {
+        throw new Error("Expected an initial subscription session");
+      }
+      const first = initial.body;
+      const firstClaim = await f.claim(first.runId);
+      const captured = accountId(firstClaim, type);
+      const firstSessionId = first.sessionId;
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        {
+          runId: first.runId,
+          exitCode: 0,
+          checkpoint: {
+            cliAgentType: firstClaim.cliAgentType,
+            cliAgentSessionId: `subscription-${first.runId}`,
+            cliAgentSessionHistoryDisposition: "discarded_oversized",
+          },
+        },
+        { authorization: `Bearer ${firstClaim.sandboxToken}` },
+        [200],
+      );
+      const occupied: string[] = [];
+      let sessionId: string | undefined;
+      if (mode === "queued") {
+        occupied.push(await f.start(), await f.start());
+      } else if (mode === "session") {
+        sessionId = firstSessionId;
+      }
+      await reencryptSubscriptionStoresFixture(f.actor, type);
+      if (!f.actor.orgId) {
+        throw new Error("Expected an organization");
+      }
+      const lock = await holdOrgAdmissionLockFixture({
+        orgId: f.actor.orgId,
+        signal: context.signal,
+      });
+      const kmsEntered = createDeferredPromise<void>(context.signal);
+      const releaseKms = createDeferredPromise<Uint8Array>(context.signal);
+      let holdKms = false;
+      const kms = useSecretKmsProbe(undefined, () => {
+        if (holdKms) {
+          if (!kmsEntered.settled()) {
+            kmsEntered.resolve(undefined);
+          }
+          return releaseKms.promise;
+        }
+        return undefined;
+      });
+      const sending =
+        mode === "direct" || mode === "session"
+          ? createHistoricalPinnedSubscriptionRunFixture(
+              {
+                owner: f.actor,
+                agentId: f.agentId,
+                accountId: captured,
+                sessionId,
+                type,
+                model: f.model,
+              },
+              context.signal,
+            )
+          : createChatFilesBddApi(context).requestSendEvent(
+              f.actor,
+              {
+                agentId: f.agentId,
+                model: f.model,
+                prompt: "equivalent independently encrypted subscription",
+              },
+              [201],
+            );
+      const sendingSettled = Promise.allSettled([sending]);
+      onTestFinished(async () => {
+        holdKms = false;
+        if (!releaseKms.settled()) {
+          releaseKms.resolve(Buffer.from("0123456789abcdef0123456789abcdef"));
+        }
+        lock.release();
+        await lock.done;
+        await sendingSettled;
+      });
+      await expect.poll(lock.waiterCount).toBe(1);
+      const preparedDecrypts = kms.decryptCalls;
+      holdKms = true;
+      lock.release();
+      await expect(
+        Promise.race([
+          sending.then(() => {
+            return "settled";
+          }),
+          kmsEntered.promise.then(() => {
+            return "kms";
+          }),
+        ]),
+      ).resolves.toBe("settled");
+      expect(kms.decryptCalls).toBe(preparedDecrypts);
+      const result = await sending;
+      if (result.status !== 201 || result.body.runId === null) {
+        throw new Error("Expected the same reencrypted account to be admitted");
+      }
+      holdKms = false;
+      const runId = result.body.runId;
+      if (mode === "session") {
+        expect(result.body).toMatchObject({ sessionId: firstSessionId });
+      }
+      if (mode === "queued") {
+        expect((await runs.readRun(f.actor, runId)).status).toBe("queued");
+        for (const occupiedId of occupied) {
+          await runs.requestCancelRun(f.actor, occupiedId, [200]);
+        }
+        await expect
+          .poll(async () => {
+            return (await runs.readRun(f.actor, runId)).status;
+          })
+          .toBe("pending");
+      }
+      const claim = await f.claim(runId);
+      expect(accountId(claim, type)).toBe(captured);
+      await expect(resolve(claim, type)).resolves.toMatchObject({
+        Authorization: `Bearer ${f.connected.token}`,
+      });
+      await runs.requestCancelRun(f.actor, runId, [200]);
+    },
+    20_000,
+  );
+
+  it.each([
+    [false, "completed"],
+    [true, "completed"],
+    [false, "timeout"],
+    [true, "timeout"],
+  ] as const)(
+    "rejects a late old Codex writer without waiting for KMS or blocking %s/%s cleanup",
+    async (priority, terminalStatus) => {
+      const f = await fixture("codex-oauth-token", true, priority);
+      const runId = await f.start();
+      const claim = await f.claim(runId);
+      if (!f.actor.orgId) {
+        throw new Error("Expected an organization");
+      }
+      const lock = await holdOrgAdmissionLockFixture({
+        orgId: f.actor.orgId,
+        signal: context.signal,
+      });
+      const kmsEntered = createDeferredPromise<void>(context.signal);
+      const releaseKms = createDeferredPromise<Uint8Array>(context.signal);
+      let holdKms = false;
+      const kms = useSecretKmsProbe(undefined, () => {
+        if (holdKms) {
+          if (!kmsEntered.settled()) {
+            kmsEntered.resolve(undefined);
+          }
+          return releaseKms.promise;
+        }
+        return undefined;
+      });
+      const sending = createChatFilesBddApi(context).requestSendEvent(
+        f.actor,
+        {
+          agentId: f.agentId,
+          model: f.model,
+          prompt: "late old writer with held KMS",
+        },
+        [409],
+      );
+      const sendingSettled = Promise.allSettled([sending]);
+      onTestFinished(async () => {
+        holdKms = false;
+        if (!releaseKms.settled()) {
+          releaseKms.resolve(Buffer.from("0123456789abcdef0123456789abcdef"));
+        }
+        lock.release();
+        await lock.done;
+        await sendingSettled;
+      });
+      // Actual PostgreSQL admission waiter: capture and all outside-lock
+      // preparation have finished. Replay the immutable old transaction now.
+      await expect.poll(lock.waiterCount).toBe(1);
+      await writeHistoricalSubscription(f.actor, f.type, "identity-b", 2);
+      const preparedDecrypts = kms.decryptCalls;
+      holdKms = true;
+      lock.release();
+      const boundary = await Promise.race([
+        sending.then(() => {
+          return "settled" as const;
+        }),
+        kmsEntered.promise.then(() => {
+          return "kms" as const;
+        }),
+      ]);
+      let terminalSettled = false;
+      const completing = finish(f.actor, runId, claim, terminalStatus).then(
+        () => {
+          terminalSettled = true;
+        },
+      );
+      const completingSettled = Promise.allSettled([completing]);
+      onTestFinished(async () => {
+        holdKms = false;
+        if (!releaseKms.settled()) {
+          releaseKms.resolve(Buffer.from("0123456789abcdef0123456789abcdef"));
+        }
+        await completingSettled;
+      });
+      // On the old implementation the external decrypt owns the provider lock
+      // and real terminal cleanup waits behind it. Observe that exact wait,
+      // rather than using a timeout or an arbitrary sleep as proof of blocking.
+      await expect
+        .poll(async () => {
+          if (terminalSettled) {
+            return "settled";
+          }
+          return (await countWaitingPersonalSubscriptionMutationsFixture({
+            orgId: f.actor.orgId!,
+            userId: f.actor.userId,
+            type: f.type,
+          })) > 0
+            ? "blocked"
+            : "pending";
+        })
+        .not.toBe("pending");
+      expect(terminalSettled).toBeTruthy();
+      expect(boundary).toBe("settled");
+      expect(kms.decryptCalls).toBe(preparedDecrypts);
+      expect((await sending).status).toBe(409);
+      expect((await runs.readRun(f.actor, runId)).status).toBe(terminalStatus);
+      expect((await runs.readRunQueue(f.actor)).body.queue).toHaveLength(0);
+    },
+    20_000,
+  );
+
   it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
     "rejects the original %s capture when the old writer wins final admission",
     async (type) => {

@@ -1,6 +1,10 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { modelProviders } from "@okouai/db/schema/model-provider";
+import {
+  modelProviderAccounts,
+  modelProviderAccountSecrets,
+} from "@okouai/db/schema/model-provider-account";
 import { secrets } from "@okouai/db/schema/secret";
 import { db } from "../lib/db";
 import { createStore } from "ccstate";
@@ -24,6 +28,89 @@ function fixtureOwner(owner: HistoricalWriterOwner) {
     );
   }
   return { orgId: owner.orgId, userId: owner.userId };
+}
+
+/** Infrastructure exception: no API runs the bounded KMS migration. Reproduce
+ * its independent encrypted-cell CAS updates in both stores for a test-owned
+ * subscription, preserving the complete plaintext and all identity/state. */
+export async function reencryptSubscriptionStoresFixture(
+  owner: HistoricalWriterOwner,
+  type: "claude-code-oauth-token" | "codex-oauth-token",
+) {
+  const owned = fixtureOwner(owner);
+  const mirror = await db()
+    .select()
+    .from(secrets)
+    .where(
+      and(
+        eq(secrets.orgId, owned.orgId),
+        eq(secrets.userId, owned.userId),
+        eq(secrets.type, "model-provider"),
+        inArray(
+          secrets.name,
+          type === "claude-code-oauth-token"
+            ? ["CLAUDE_CODE_OAUTH_TOKEN"]
+            : [
+                "CHATGPT_ACCESS_TOKEN",
+                "CHATGPT_REFRESH_TOKEN",
+                "CHATGPT_ACCOUNT_ID",
+                "CHATGPT_ID_TOKEN",
+              ],
+        ),
+      ),
+    );
+  const accounts = await db()
+    .select({ id: modelProviderAccounts.id })
+    .from(modelProviderAccounts)
+    .where(
+      and(
+        eq(modelProviderAccounts.orgId, owned.orgId),
+        eq(modelProviderAccounts.userId, owned.userId),
+        eq(modelProviderAccounts.type, type),
+      ),
+    );
+  if (accounts.length === 0 || mirror.length === 0) {
+    throw new Error("Expected both test-owned subscription stores");
+  }
+  const accountSecrets = await db()
+    .select()
+    .from(modelProviderAccountSecrets)
+    .where(
+      inArray(
+        modelProviderAccountSecrets.modelProviderAccountId,
+        accounts.map((account) => {
+          return account.id;
+        }),
+      ),
+    );
+  for (const row of mirror) {
+    const encryptedValue = encryptSecretForTests(
+      await decryptStoredSecretValue(row.encryptedValue, owned),
+    );
+    await db()
+      .update(secrets)
+      .set({ encryptedValue })
+      .where(
+        and(
+          eq(secrets.id, row.id),
+          eq(secrets.encryptedValue, row.encryptedValue),
+        ),
+      );
+  }
+  for (const row of accountSecrets) {
+    const encryptedValue = encryptSecretForTests(
+      await decryptStoredSecretValue(row.encryptedValue, owned),
+    );
+    await db()
+      .update(modelProviderAccountSecrets)
+      .set({ encryptedValue })
+      .where(
+        and(
+          eq(modelProviderAccountSecrets.id, row.id),
+          eq(modelProviderAccountSecrets.encryptedValue, row.encryptedValue),
+        ),
+      );
+  }
 }
 
 /** Infrastructure exception: current endpoints cannot execute the immutable
@@ -307,6 +394,7 @@ export async function createHistoricalPinnedSubscriptionRunFixture(
     readonly owner: HistoricalWriterOwner;
     readonly agentId: string;
     readonly accountId: string;
+    readonly sessionId?: string;
     readonly type: "claude-code-oauth-token" | "codex-oauth-token";
     readonly model: string;
   },
@@ -318,7 +406,9 @@ export async function createHistoricalPinnedSubscriptionRunFixture(
     {
       auth: { ...owned, tokenType: "session", orgRole: "admin" },
       body: {
-        agentId: args.agentId,
+        ...(args.sessionId
+          ? { sessionId: args.sessionId }
+          : { agentId: args.agentId }),
         prompt: "continue an exact historical subscription selection",
       },
       apiStartTime: now(),
