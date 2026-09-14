@@ -226,6 +226,9 @@ importers:
         specifier: ^4.3.6
         version: 4.5.4
     devDependencies:
+      '@earendil-works/pi-coding-agent':
+        specifier: 0.85.1
+        version: 0.85.1(patch_hash=d73715c0523d394c8fb3a06b21f3efd36d074095d5a8077e2a618cce831fa1e2)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
       '@hono/node-server-v1':
         specifier: npm:@hono/node-server@1.19.14
         version: '@hono/node-server@1.19.14(hono@4.13.5)'

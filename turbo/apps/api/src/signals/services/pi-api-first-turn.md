@@ -78,3 +78,47 @@ The empty-message terminal default differs intentionally. Existing shared
 `pi-memory-citations.json` parser cases and route lifecycle/late-usage tests retain
 their separate boundaries. No persisted/wire format, reader, billing writer,
 deadline, byte limit, provider policy or release authority changes here.
+
+## Creator-owned admission overlap
+
+After request authorization and final payload construction, the creation command
+issues a private creator-authorized preparation input through the configured
+dispatch seam. It starts snapshot and credential reads concurrently, preserving
+resource-error precedence, then loads authenticated H0 and prepares the official
+SDK session. Metadata-only large-history and slash-input checks precede resource
+work. `preparePiApiTurn` receives no provider ownership or publication callback;
+`executePreparedPiApiTurn` consumes its session once. The combined runtime entry
+remains available.
+
+The atomic run/session/full Runner job/input-claim transaction is unchanged.
+Only its pending winner transfers the in-memory preparation handle to activation.
+Runner notification and the create response do not join preparation. Queued,
+claim-lost, stale and failed admissions abort their private preparation and give
+its eventual disposal to `waitUntil`; a retry or promotion prepares fresh inputs.
+Request cancellation during admission does not decide ownership: the actual
+transaction result does. The handle is absent from persisted activation/context
+JSON, wire formats and shared caches.
+
+The public coordinator still reads canonical `triggerSource` before adopting an
+early handle or starting a promoted attempt. Adoption checks the entire captured
+activation, including final prompt, resource/memory/H0 identity, account, route,
+effort/tier and original deadlines. An early failure keeps its original typed
+classification only after successful identity validation. Final lifecycle,
+cancellation and active-input checks still precede provider transport. The
+43-second model/initialization boundary (45 seconds minus commit budget),
+45-second API budget and 55-second coordination cap stay anchored to the captured
+API start. SDK initialization that outlives abort remains joined by an explicit
+cleanup owner, outside the lifecycle lock; eventual sessions are disposed once.
+
+`pi_admission_preparation` records bounded `started`, `ready`, `failed`, `adopted`,
+`discarded` and `released` boundaries, with a separate discard reason for queued,
+claim-lost, stale, admission-failed and finished activation. Existing `pi_prepare_*`
+children remain. Correlate their absolute timestamps with admission and the
+actual provider HTTP span; overlapping intervals must not be summed as serial
+latency. Discarded preparation is work, not a canonical run publication. These
+observations establish scheduling behavior, not a measured production speedup.
+
+No database migration or changed persisted job, manifest, Runner or CLI reader is
+needed. Old queued contexts use the same complete payload and the existing
+promotion deadline refresh. API/runtime internals ship together; old and new
+API/Runner combinations continue to exchange the same contracts.

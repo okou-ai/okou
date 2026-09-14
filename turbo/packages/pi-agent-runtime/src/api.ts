@@ -12,7 +12,11 @@ import {
   PiApiModelRequestError,
   type PiApiModelFailureDiagnostic,
 } from "./api-failure";
-import { runPiApiFirstTurn as runPiApiFirstTurnImpl } from "./api-turn";
+import {
+  runPiApiFirstTurn as runPiApiFirstTurnImpl,
+  preparePiApiTurn as preparePiApiTurnImpl,
+  executePreparedPiApiTurn as executePreparedPiApiTurnImpl,
+} from "./api-turn";
 import { MemoryPiSession } from "./session-memory";
 import type {
   PiApiAssistantContent,
@@ -20,6 +24,9 @@ import type {
   PiApiAssistantStopReason,
   PiApiAssistantTextContent,
   PiApiAssistantToolCallContent,
+  PiApiTurnPreparationArgs,
+  PiApiTurnExecutionArgs,
+  PreparedPiApiTurn,
   PiApiFirstTurnArgs,
   PiApiFirstTurnResult,
   PiObservedServiceTier,
@@ -86,6 +93,9 @@ export type {
   PiApiAssistantStopReason,
   PiApiAssistantTextContent,
   PiApiAssistantToolCallContent,
+  PiApiTurnPreparationArgs,
+  PiApiTurnExecutionArgs,
+  PreparedPiApiTurn,
   PiApiFirstTurnArgs,
   PiApiFirstTurnResult,
   PiObservedServiceTier,
@@ -102,6 +112,16 @@ export type {
   PiMemoryStage1ProviderResult,
   PiMemoryStage1ProviderUsage,
 };
+
+export const preparePiApiTurn: (
+  args: PiApiTurnPreparationArgs,
+  signal?: AbortSignal,
+) => Promise<PreparedPiApiTurn> = preparePiApiTurnImpl;
+export const executePreparedPiApiTurn: (
+  prepared: PreparedPiApiTurn,
+  args: PiApiTurnExecutionArgs,
+  signal?: AbortSignal,
+) => Promise<PiApiFirstTurnResult> = executePreparedPiApiTurnImpl;
 
 /** Run one provider turn without exposing Pi's native declaration surface. */
 export const runPiApiFirstTurn: RunPiApiFirstTurn = runPiApiFirstTurnImpl;

@@ -70,6 +70,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.85.1",
     "@hono/node-server-v1": "npm:@hono/node-server@1.19.14",
     "@hono/vite-build": "^1.11.1",
     "@opentelemetry/context-async-hooks": "2.11.0",
