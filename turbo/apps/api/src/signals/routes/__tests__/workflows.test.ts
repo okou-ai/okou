@@ -2826,37 +2826,38 @@ describe("workflow owner profile cancellation and capacity", () => {
         },
       );
       const client = collectionClient();
-      const lanes = await Promise.all(
-        agents.map(async (agent, lane) => {
-          const others: { owner: ApiTestUser; workflowId: string }[] = [];
-          for (let index = lane; index < 512; index += agents.length) {
-            const another = user({ orgId: owner.orgId });
-            const authorization = `Bearer ${another.userId}`;
-            // Bind auth to the request, rather than changing one shared session
-            // while other fixture requests are still in flight.
-            actors.set(authorization, another);
-            const created = await accept(
-              client.create({
-                headers: { authorization },
-                body: {
-                  agentId: agent.agentId,
-                  name: `bounded-${lane}-${index}`,
-                  visibility: "public",
-                },
-              }),
-              [201],
-            );
-            if (created.body.ownerUserId !== another.userId) {
-              throw new Error(
-                "Workflow capacity fixture used an unexpected owner",
-              );
-            }
-            others.push({ owner: another, workflowId: created.body.id });
+      const others = await Promise.all(
+        Array.from({ length: 512 }, async (_, index) => {
+          const targetAgent = agents[index % agents.length];
+          if (!targetAgent) {
+            throw new Error("Missing workflow capacity fixture agent");
           }
-          return others;
+          const another = user({ orgId: owner.orgId });
+          const authorization = `Bearer ${another.userId}`;
+          // Bind auth to the request, rather than changing one shared session
+          // while other fixture requests are still in flight. Await the entire
+          // fixture together; production row locks and the DB pool bound writes.
+          actors.set(authorization, another);
+          const created = await accept(
+            client.create({
+              headers: { authorization },
+              body: {
+                agentId: targetAgent.agentId,
+                name: `bounded-${index}`,
+                visibility: "public",
+              },
+            }),
+            [201],
+          );
+          if (created.body.ownerUserId !== another.userId) {
+            throw new Error(
+              "Workflow capacity fixture used an unexpected owner",
+            );
+          }
+          return { owner: another, workflowId: created.body.id };
         }),
       );
-      profiles = [{ owner, workflowId: workflow.id }, ...lanes.flat()];
+      profiles = [{ owner, workflowId: workflow.id }, ...others];
       mockNow(now() + 16 * 60 * 1000);
     });
 
