@@ -161,7 +161,8 @@ mv "$object" "${test_root}/valid-binary.zst"
 expect_failure "${test_root}/missing-binary" "$TRANSPORT" download
 head -c 8 "${test_root}/valid-binary.zst" > "$object"
 expect_failure "${test_root}/truncated-binary" "$TRANSPORT" download
-printf 'different valid compressed bytes\n' | zstd -q -c > "$object"
+# Keep the decoded size valid so this exercises the hash check, not just size.
+head -c "$(stat -c '%s' "$RUNNER_PATH")" /dev/zero | zstd -q -c > "$object"
 jq --argjson size "$(stat -c '%s' "$object")" '.object.sizeBytes = $size' \
   "${test_root}/valid-manifest.json" > "$reference"
 expect_failure "${test_root}/hash-mismatch" "$TRANSPORT" download
