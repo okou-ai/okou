@@ -2808,6 +2808,8 @@
       "removeWorkflow": "Workflow-Vorlage {{title}} entfernen",
       "videoOptions": "Videooptionen",
       "videoOptionsAudio": "Audio erzeugen",
+      "videoOptionsAudioOff": "Audio aus",
+      "videoOptionsAudioOn": "Audio an",
       "videoOptionsDuration": "Dauer",
       "videoOptionsLabel": "Videooptionen {{spec}}",
       "videoOptionsModel": "Modell",

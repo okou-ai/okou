@@ -602,6 +602,9 @@ export default [
       // through the production API. This focused PostgreSQL test proves the
       // exact Agent Draft writer through both rollout targets.
       "src/signals/services/__tests__/agent-draft-write.service.test.ts",
+      // Trigger presence is a deployment boundary, not an HTTP input. Private
+      // schemas exercise the entitlement writer, rollback, and actual locks.
+      "src/signals/services/__tests__/org-plan-entitlements.service.test.ts",
       // Trigger DDL, transaction snapshots and corrupt ledgers are not HTTP inputs.
       "src/signals/services/__tests__/pi-memory-candidate-accounting.service.test.ts",
       "src/signals/services/__tests__/workflow-automation-context.test.ts",
@@ -752,6 +755,9 @@ export default [
       // through the production API. This focused PostgreSQL test proves the
       // exact Agent Draft writer through both rollout targets.
       "src/signals/services/__tests__/agent-draft-write.service.test.ts",
+      // Trigger presence is a deployment boundary, not an HTTP input. Private
+      // schemas exercise the entitlement writer, rollback, and actual locks.
+      "src/signals/services/__tests__/org-plan-entitlements.service.test.ts",
       // Trigger DDL, transaction snapshots and corrupt ledgers are not HTTP inputs.
       "src/signals/services/__tests__/pi-memory-candidate-accounting.service.test.ts",
       // The automatic welcome thread id is a permanent uuidv5 contract: it

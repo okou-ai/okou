@@ -44,6 +44,7 @@ import {
   testEndpointNotFoundResponse,
 } from "./test-endpoint-helpers";
 import type { Tx } from "../../lib/db-types";
+import { writeOrgMetadataWithDefaultPlanEntitlement } from "../services/org-plan-entitlements.service";
 
 const DEFAULT_TEST_EMAIL = "dev+clerk_test+serial@vm0-e2e.ai";
 const DEFAULT_WORKSPACE_NAME = "E2E Test Workspace";
@@ -199,13 +200,23 @@ async function seedDefaultAgent(
 
   await db.transaction(async (tx) => {
     await ensureStarterCreditGrant(tx, input.orgId);
-    await tx
-      .insert(orgMetadataCanonicalWrites)
-      .values({ orgId: input.orgId, defaultAgentId: agent.id })
-      .onConflictDoUpdate({
-        target: orgMetadataCanonicalWrites.orgId,
-        set: { defaultAgentId: agent.id, updatedAt: nowDate() },
-      });
+    await writeOrgMetadataWithDefaultPlanEntitlement(
+      tx,
+      input.orgId,
+      async (writeTx) => {
+        return await writeTx
+          .insert(orgMetadataCanonicalWrites)
+          .values({ orgId: input.orgId, defaultAgentId: agent.id })
+          .onConflictDoUpdate({
+            target: orgMetadataCanonicalWrites.orgId,
+            set: { defaultAgentId: agent.id, updatedAt: nowDate() },
+          })
+          .returning({
+            orgId: orgMetadataCanonicalWrites.orgId,
+            tier: orgMetadataCanonicalWrites.tier,
+          });
+      },
+    );
   });
 
   await seedBuiltInModelKeys(db, agent.id);
@@ -289,23 +300,33 @@ async function ensureStarterCreditGrant(
     return;
   }
 
-  await tx
-    .insert(orgMetadataCanonicalWrites)
-    .values({
-      orgId,
-      credits: STARTER_GRANT_AMOUNT,
-      tier: "free",
-      createdAt: sql`now()`,
-      updatedAt: sql`now()`,
-    })
-    .onConflictDoUpdate({
-      target: orgMetadataCanonicalWrites.orgId,
-      set: {
-        credits: sql`${orgMetadata.credits} + ${STARTER_GRANT_AMOUNT}`,
-        tier: "free",
-        updatedAt: sql`now()`,
-      },
-    });
+  await writeOrgMetadataWithDefaultPlanEntitlement(
+    tx,
+    orgId,
+    async (writeTx) => {
+      return await writeTx
+        .insert(orgMetadataCanonicalWrites)
+        .values({
+          orgId,
+          credits: STARTER_GRANT_AMOUNT,
+          tier: "free",
+          createdAt: sql`now()`,
+          updatedAt: sql`now()`,
+        })
+        .onConflictDoUpdate({
+          target: orgMetadataCanonicalWrites.orgId,
+          set: {
+            credits: sql`${orgMetadata.credits} + ${STARTER_GRANT_AMOUNT}`,
+            tier: "free",
+            updatedAt: sql`now()`,
+          },
+        })
+        .returning({
+          orgId: orgMetadataCanonicalWrites.orgId,
+          tier: orgMetadataCanonicalWrites.tier,
+        });
+    },
+  );
 }
 
 async function slackInstallation(db: ReadonlyDb, teamId: string) {

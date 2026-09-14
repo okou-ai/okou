@@ -13,7 +13,7 @@ type NativeRoute<T = PiModelConfigV4> = T extends PiModelConfigV4
 
 type ResponsesRoute = Omit<
   PiModelConfigLegacy,
-  "api" | "apiKeyEnv" | "credentialSecretName" | "credentialHeader"
+  "apiKeyEnv" | "credentialSecretName" | "credentialHeader"
 >;
 
 type CredentialBinding<K extends PiAgentCredentialReference["kind"]> =
@@ -48,14 +48,8 @@ export function normalizePiExecutionRoute(
 ): PiExecutionRoute {
   const config = piModelConfigSchema.parse(wire);
   if (!("schemaVersion" in config)) {
-    // Historical Gen1 api values all mean public Responses (#31085).
-    const {
-      api: _api,
-      apiKeyEnv,
-      credentialSecretName,
-      credentialHeader,
-      ...route
-    } = config;
+    const { apiKeyEnv, credentialSecretName, credentialHeader, ...route } =
+      config;
     return {
       ...route,
       dialect: "openai-responses",

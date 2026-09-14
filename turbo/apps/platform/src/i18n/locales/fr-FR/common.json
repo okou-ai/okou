@@ -2854,6 +2854,8 @@
       "removeWorkflow": "Supprimer le modèle de workflow {{title}}",
       "videoOptions": "Options vidéo",
       "videoOptionsAudio": "Générer l'audio",
+      "videoOptionsAudioOff": "Audio désactivé",
+      "videoOptionsAudioOn": "Audio activé",
       "videoOptionsDuration": "Durée",
       "videoOptionsLabel": "Options vidéo {{spec}}",
       "videoOptionsModel": "Modèle",

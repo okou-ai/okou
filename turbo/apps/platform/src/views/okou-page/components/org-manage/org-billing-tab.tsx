@@ -1718,7 +1718,7 @@ function ConcurrencyBillingSection({
           return $.billing.concurrency.title;
         })}
       </h3>
-      <div className="overflow-hidden rounded-xl bg-card okou-border">
+      <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
         <div className="px-5 py-4">
           <p className="text-2xl font-medium tracking-tight text-foreground tabular-nums">
             {i18n.t(
@@ -1852,7 +1852,7 @@ function UsagePackMigrationAvailability({
           )}
         </p>
       </div>
-      <div className="flex items-center justify-between gap-4 rounded-xl bg-card px-5 py-4 okou-border">
+      <div className="flex items-center justify-between gap-4 rounded-xl bg-card px-5 py-4 border border-surface-border">
         <p className="text-sm text-muted-foreground">
           {configurable
             ? i18n.t(($) => {
@@ -2352,7 +2352,7 @@ export function OrgBillingTab({
             return $.billing.plans.sectionTitle;
           })}
         </h3>
-        <div className="overflow-hidden rounded-xl bg-card okou-border">
+        <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
           {statusLoading && !status ? (
             <div className="flex items-center justify-between gap-4 px-5 py-4">
               <div className="min-w-0">

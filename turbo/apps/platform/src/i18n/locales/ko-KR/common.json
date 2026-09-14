@@ -2799,6 +2799,8 @@
       "removeWorkflow": "워크플로 템플릿 삭제 {{title}}",
       "videoOptions": "동영상 옵션",
       "videoOptionsAudio": "오디오 생성",
+      "videoOptionsAudioOff": "오디오 꺼짐",
+      "videoOptionsAudioOn": "오디오 켜짐",
       "videoOptionsDuration": "길이",
       "videoOptionsLabel": "동영상 옵션 {{spec}}",
       "videoOptionsModel": "모델",

@@ -2808,6 +2808,8 @@
       "removeWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} हटाएँ",
       "videoOptions": "वीडियो विकल्प",
       "videoOptionsAudio": "ऑडियो बनाएँ",
+      "videoOptionsAudioOff": "ऑडियो बंद",
+      "videoOptionsAudioOn": "ऑडियो चालू",
       "videoOptionsDuration": "अवधि",
       "videoOptionsLabel": "वीडियो विकल्प {{spec}}",
       "videoOptionsModel": "मॉडल",

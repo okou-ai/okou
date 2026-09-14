@@ -10,6 +10,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from fixtures.kms_snapshot_pg_proxy import PgQueryProxy
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from kms_recovery_scan import ScanReportError, scan_records
 
@@ -57,11 +59,11 @@ class SnapshotSqlTest(unittest.TestCase):
                 {"PGHOST": str(root), "PGPORT": "5432", "PGDATABASE": "postgres"}
             )
 
-            def psql(*args, sql=None):
+            def psql(*args, sql=None, extra_env=None):
                 return subprocess.run(
                     ["psql", "-X", "-qAt", "-v", "ON_ERROR_STOP=1", *args],
                     input=sql,
-                    env=environment,
+                    env={**environment, **(extra_env or {})},
                     capture_output=True,
                     text=True,
                     timeout=30,
@@ -87,9 +89,9 @@ class SnapshotSqlTest(unittest.TestCase):
                     ALTER TABLE public.chunk_probe ALTER COLUMN value SET STORAGE PLAIN;
                     INSERT INTO public.chunk_probe
                       SELECT i, repeat('x',2000) || CASE
-                        WHEN i IN (1,1000,2000) THEN 'vm0secret:v1:chunk'
-                        WHEN i IN (700,1700) THEN 'a1b3922b-fab1-4ed3-aa9e-40f86f92a7a8'
-                        ELSE '' END FROM generate_series(1,2000) i;
+                        WHEN i IN (1,20000,40000) THEN 'vm0secret:v1:chunk'
+                        WHEN i IN (700,35000) THEN 'a1b3922b-fab1-4ed3-aa9e-40f86f92a7a8'
+                        ELSE '' END FROM generate_series(1,40000) i;
                     CREATE TABLE public.empty_probe(value text);
                     CREATE TABLE public.inherit_parent(id int);
                     CREATE TABLE public.inherit_child() INHERITS(public.inherit_parent);
@@ -98,7 +100,9 @@ class SnapshotSqlTest(unittest.TestCase):
                 """
                 )
                 self.assertEqual(fixture.returncode, 0, fixture.stderr)
-                result = psql("-f", str(SQL))
+                with PgQueryProxy(root) as proxy:
+                    result = psql("-f", str(SQL), extra_env=proxy.environment)
+                self.assertEqual(proxy.errors, [])
                 self.assertEqual(result.returncode, 0, result.stderr)
                 records = [
                     json.loads(line) for line in result.stdout.splitlines() if line
@@ -106,7 +110,7 @@ class SnapshotSqlTest(unittest.TestCase):
                 decoded = scan_records(result, hashlib.sha256(b"postgres").hexdigest())
                 tables = [r for r in decoded if r["kind"] == "table"]
                 self.assertEqual(len(tables), 8)
-                self.assertEqual(sum(r["rows"] for r in tables), 2009)
+                self.assertEqual(sum(r["rows"] for r in tables), 40009)
                 self.assertEqual(sum(r["rowsWithEnvelopeMarker"] for r in tables), 7)
                 self.assertEqual(sum(r["rowsWithSourceReference"] for r in tables), 3)
                 oid = int(
@@ -117,7 +121,25 @@ class SnapshotSqlTest(unittest.TestCase):
                     for r in records
                     if r["kind"] == "table-chunk" and r["relationOid"] == oid
                 ]
-                self.assertGreaterEqual(len(chunks), 3)
+                self.assertGreater(len(chunks), 64)
+                all_chunks = [r for r in records if r["kind"] == "table-chunk"]
+                self.assertEqual(sum(proxy.chunk_counts), len(all_chunks))
+                self.assertLessEqual(max(proxy.chunk_counts), 64)
+                self.assertLess(len(proxy.chunk_counts), len(all_chunks) / 4)
+                # A batch keeps per-statement deadlines, and an error prevents
+                # later statements from returning misleading successful output.
+                clock = psql(
+                    "-c",
+                    "SET statement_timeout='500ms'; SELECT pg_sleep(0.2); SELECT pg_sleep(0.2); SELECT pg_sleep(0.2); SELECT 'complete';",
+                )
+                self.assertEqual(clock.returncode, 0, clock.stderr)
+                self.assertIn("complete", clock.stdout)
+                timed_out = psql(
+                    "-c",
+                    "SET statement_timeout='50ms'; SELECT pg_sleep(0.2); SELECT 'must-not-run';",
+                )
+                self.assertNotEqual(timed_out.returncode, 0)
+                self.assertNotIn("must-not-run", timed_out.stdout)
                 plan = json.loads(
                     psql(
                         "-c",

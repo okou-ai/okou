@@ -1,5 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import type {
   ChatRunOptionsRequest,
@@ -106,18 +107,23 @@ async function openVideoOptions(expectedSpec: string): Promise<HTMLElement> {
   const chip = await waitFor(() => {
     return fastControl("button", `Video options ${expectedSpec}`);
   });
-  click(chip);
+  if (chip.getAttribute("aria-expanded") !== "true") {
+    click(chip);
+  }
   return await screen.findByLabelText("Video options");
 }
 
-function optionRadio(group: HTMLElement, label: string): HTMLElement {
-  const radio = queryAllByRoleFast("radio", group).find((candidate) => {
-    return candidate.textContent?.trim() === label;
+async function selectToolbarOption(
+  label: string,
+  value: string,
+): Promise<void> {
+  click(await screen.findByRole("combobox", { name: label }));
+  click(await screen.findByRole("option", { name: value }));
+  await waitFor(() => {
+    expect(screen.getByRole("combobox", { name: label })).toHaveTextContent(
+      value,
+    );
   });
-  if (!radio) {
-    throw new Error(`${label} video option not found`);
-  }
-  return radio;
 }
 
 function sendButton(): HTMLElement {
@@ -199,7 +205,7 @@ function installVideoSubmissionCapture(): SubmittedMessage[] {
 }
 
 test.each([false, true])(
-  "Show default video option controls with Create enabled: %s",
+  "Keep video settings collapsed until requested with Create enabled: %s",
   async (enabled) => {
     installVideoSubmissionCapture();
     await setupPage({
@@ -207,8 +213,17 @@ test.each([false, true])(
       path: `/agents/${AGENT_ID}/chat`,
       featureSwitches: { [FeatureSwitchKey.ComposerCreateCommands]: enabled },
     });
-    await enterVideoMode("Claude Fable 5.1");
     await selectVideoTemplate();
+    for (const label of ["Ratio", "Resolution", "Duration"]) {
+      expect(screen.getByRole("combobox", { name: label })).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+    }
+    expect(
+      fastControl("button", "Video options 16:9 · 8s · 720p"),
+    ).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
     await expect(
       openVideoOptions("16:9 · 8s · 720p"),
     ).resolves.toBeInTheDocument();
@@ -244,18 +259,45 @@ test.each([false, true])(
           selection: { stylePresetId: template.id },
         },
       });
-      expect(submissions[0]?.runOptions).toBeUndefined();
-      expect(submissions[0]?.userMessage?.parts).not.toContainEqual(
-        expect.objectContaining({ type: "additional_info" }),
-      );
     });
+    expect(
+      submissions[0]?.userMessage?.parts.find((part) => {
+        return part.type === "additional_info";
+      }),
+    ).toStrictEqual(
+      enabled
+        ? {
+            type: "additional_info",
+            text: [
+              "# Video Generation Defaults",
+              "The user set these for videos generated in this run:",
+              "- Aspect ratio: 16:9",
+              "- Duration: 8s",
+              "- Resolution: 720p",
+              "- Audio: on",
+              "Where this run's message asks for something else, the message wins, for that parameter only.",
+            ].join("\n"),
+          }
+        : undefined,
+    );
+    expect(submissions[0]?.runOptions).toStrictEqual(
+      enabled
+        ? undefined
+        : {
+            video: {
+              aspectRatio: "16:9",
+              duration: "8s",
+              resolution: "720p",
+              generateAudio: true,
+            },
+          },
+    );
   },
 );
 
 test.each([false, true])(
   "Submit a selected video ratio with Create enabled: %s",
   async (enabled) => {
-    const user = userEvent.setup({ delay: null });
     const submissions = installVideoSubmissionCapture();
     await setupPage({
       locale: "en-US",
@@ -268,11 +310,7 @@ test.each([false, true])(
     const editor = await enterText(prompt);
     await enterVideoMode("Claude Fable 5.1");
     const template = await selectVideoTemplate();
-    const options = await openVideoOptions("16:9 · 8s · 720p");
-    const ratioGroup = screen.getByRole("radiogroup", { name: "Ratio" });
-    expect(options).toContainElement(ratioGroup);
-    click(optionRadio(ratioGroup, "9:16"));
-    await user.keyboard("{Escape}");
+    await selectToolbarOption("Ratio", "9:16");
     await sendCurrent(editor, prompt);
 
     await waitFor(() => {
@@ -299,14 +337,220 @@ test.each([false, true])(
               "# Video Generation Defaults",
               "The user set these for videos generated in this run:",
               "- Aspect ratio: 9:16",
+              "- Duration: 8s",
+              "- Resolution: 720p",
+              "- Audio: on",
               "Where this run's message asks for something else, the message wins, for that parameter only.",
             ].join("\n"),
           }
         : undefined,
     );
     expect(submissions[0]?.runOptions).toStrictEqual(
-      enabled ? undefined : { video: { aspectRatio: "9:16" } },
+      enabled
+        ? undefined
+        : {
+            video: {
+              aspectRatio: "9:16",
+              duration: "8s",
+              resolution: "720p",
+              generateAudio: true,
+            },
+          },
     );
     await expect(screen.findByText(prompt)).resolves.toBeVisible();
   },
 );
+
+test.each(["task", "command"] as const)(
+  "Submit the current model's defaults without a template through the video %s",
+  async (entry) => {
+    const submissions = installVideoSubmissionCapture();
+    await setupPage({
+      locale: "en-US",
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      featureSwitches: {
+        [FeatureSwitchKey.ComposerCreateCommands]: entry === "command",
+        [FeatureSwitchKey.ComposerTaskChips]: entry === "task",
+      },
+    });
+    const prompt = "Generate a video without a template.";
+    const editor = await enterText(prompt);
+    if (entry === "task") {
+      click(
+        fastControl(
+          "button",
+          "Video",
+          screen.getByRole("group", { name: "Choose a task" }),
+        ),
+      );
+    } else {
+      await fill(editor, "/create video");
+      await userEvent.setup({ delay: null }).keyboard("{Enter}");
+      await enterText(prompt);
+    }
+    click(await screen.findByRole("combobox", { name: "Video models" }));
+    click(await screen.findByRole("option", { name: "MiniMax H3" }));
+    await waitFor(() => {
+      expect(
+        screen.getByRole("combobox", { name: "Resolution" }),
+      ).toHaveTextContent("2k");
+    });
+    await sendCurrent(editor, prompt);
+    await waitFor(() => {
+      expect(submissions).toHaveLength(1);
+    });
+    expect(videoTemplatePart(submissions[0]!)).toBeUndefined();
+    expect(submissions[0]?.runOptions).toBeUndefined();
+    expect(submissions[0]?.userMessage?.parts).toContainEqual({
+      type: "additional_info",
+      text: [
+        "# Video Generation Defaults",
+        "The user set these for videos generated in this run:",
+        "- Aspect ratio: 16:9",
+        "- Duration: 8s",
+        "- Resolution: 2k",
+        "- Audio: on",
+        "Where this run's message asks for something else, the message wins, for that parameter only.",
+        "",
+        "Create a video.",
+      ].join("\n"),
+    });
+  },
+);
+
+test("Selecting a video model alone keeps Creative Video settings hidden and unsent", async () => {
+  const submissions = installVideoSubmissionCapture();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+  });
+  await enterVideoMode("Claude Fable 5.1");
+  expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button").some((button) => {
+      return button.getAttribute("aria-label")?.startsWith("Video options ");
+    }),
+  ).toBeFalsy();
+  const prompt = "Explain how video models differ.";
+  const editor = await enterText(prompt);
+  await sendCurrent(editor, prompt);
+  await waitFor(() => {
+    expect(submissions).toHaveLength(1);
+  });
+  expect(submissions[0]?.runOptions).toBeUndefined();
+  expect(submissions[0]?.userMessage?.parts).not.toContainEqual(
+    expect.objectContaining({ type: "additional_info" }),
+  );
+});
+
+test("Changing a Creative Video style retains settings without reopening the panel", async () => {
+  installVideoSubmissionCapture();
+  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  const editor = await enterText("Keep this scene description");
+  await selectVideoTemplate();
+  await selectToolbarOption("Ratio", "9:16");
+  await selectToolbarOption("Resolution", "1080p");
+  await selectToolbarOption("Duration", "10s");
+  click(fastControl("button", "Generate audio"));
+  expect(fastControl("button", "Generate audio")).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  const summary = fastControl("button", "Video options 9:16 · 10s · 1080p");
+  expect(summary).toHaveAttribute("aria-description", "Audio off");
+  const edit = composerInlineTemplates()[0]?.querySelector("button");
+  if (!edit) {
+    throw new Error("Template edit button missing");
+  }
+  click(edit);
+  const dialog = await screen.findByRole("dialog");
+  expect(
+    queryAllByRoleFast("tab", dialog).map((tab) => {
+      return tab.textContent?.trim();
+    }),
+  ).toStrictEqual(["Video"]);
+  await userEvent.setup({ delay: null }).click(tabByText("Video"));
+  await userEvent.setup({ delay: null }).keyboard("{End}{ArrowDown}");
+  expect(tabByText("Video")).toHaveAttribute("aria-selected", "true");
+  const template = VIDEO_TEMPLATE_ITEMS[1]!;
+  click(
+    fastControl("button", `Select video template ${template.title}`, dialog),
+  );
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(editor).toHaveTextContent(template.title);
+  });
+  expect(editor).toHaveTextContent("Keep this scene description");
+  expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
+  expect(
+    fastControl("button", "Video options 9:16 · 10s · 1080p"),
+  ).toHaveAttribute("aria-description", "Audio off");
+  expect(screen.getByRole("combobox", { name: "Ratio" })).toHaveTextContent(
+    "9:16",
+  );
+  expect(
+    screen.getByRole("combobox", { name: "Resolution" }),
+  ).toHaveTextContent("1080p");
+  expect(screen.getByRole("combobox", { name: "Duration" })).toHaveTextContent(
+    "10s",
+  );
+});
+
+async function restoreVideoDraft(stylePresetId: string): Promise<HTMLElement> {
+  installVideoSubmissionCapture();
+  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+    return respond(200, {
+      draftUserMessage: {
+        version: 1,
+        parts: [
+          { type: "text", text: "Continue this video " },
+          {
+            type: "template",
+            titleSnapshot: "Saved style",
+            template: {
+              type: "video",
+              selection: { stylePresetId },
+            },
+          },
+        ],
+      },
+      draftAttachments: null,
+    });
+  });
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: {
+      [FeatureSwitchKey.IntroVideo]: true,
+      [FeatureSwitchKey.ComposerCreateCommands]: true,
+      [FeatureSwitchKey.ComposerTaskChips]: true,
+    },
+  });
+  const editor = await screen.findByRole("textbox", { name: "Message" });
+  await waitFor(() => {
+    expect(editor).toHaveTextContent("Saved style");
+  });
+  return editor;
+}
+
+test("A restored Creative Video draft keeps settings collapsed until requested", async () => {
+  await restoreVideoDraft(VIDEO_TEMPLATE_ITEMS[0]!.id);
+  expect(
+    fastControl("button", "Video options 16:9 · 8s · 720p"),
+  ).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
+  await expect(openVideoOptions("16:9 · 8s · 720p")).resolves.toBeVisible();
+});
+
+test("A legacy Intro Video draft excludes settings even after choosing Create video", async () => {
+  await restoreVideoDraft("explainer-video");
+  const tasks = screen.getByRole("group", { name: "Choose a task" });
+  click(fastControl("button", "Video", tasks));
+  expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button").some((button) => {
+      return button.getAttribute("aria-label")?.startsWith("Video options ");
+    }),
+  ).toBeFalsy();
+});

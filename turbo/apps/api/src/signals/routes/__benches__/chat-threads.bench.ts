@@ -57,6 +57,7 @@ import { meModelProvidersListRoutes } from "../me-model-providers-list";
 import { meModelProvidersUpsertRoutes } from "../me-model-providers-upsert";
 import { orgReadRoutes } from "../org-read";
 import { userPreferencesRoutes } from "../user-preferences";
+import { ensureOrgMetadataPlanEntitlement } from "../../services/org-plan-entitlements.service";
 
 const personalModelProvidersMainTestRoutes = Object.freeze([
   ...meModelProvidersListRoutes,
@@ -638,14 +639,25 @@ async function seedSideEffectFreeGetData(
     context.signal,
   );
 
-  await db.insert(orgMetadataCanonicalWrites).values({
-    orgId: fixture.orgId,
-    credits: 125_000,
-    tier: "pro",
-    stripeCustomerId: `cus_${randomUUID()}`,
-    stripeSubscriptionId: `sub_${randomUUID()}`,
-    subscriptionStatus: "active",
-    currentPeriodEnd: new Date("2099-01-01T00:00:00.000Z"),
+  await db.transaction(async (tx) => {
+    const metadataRows = await tx
+      .insert(orgMetadataCanonicalWrites)
+      .values({
+        orgId: fixture.orgId,
+        credits: 125_000,
+        tier: "pro",
+        stripeCustomerId: `cus_${randomUUID()}`,
+        stripeSubscriptionId: `sub_${randomUUID()}`,
+        subscriptionStatus: "active",
+        currentPeriodEnd: new Date("2099-01-01T00:00:00.000Z"),
+      })
+      .returning({
+        orgId: orgMetadataCanonicalWrites.orgId,
+        tier: orgMetadataCanonicalWrites.tier,
+      });
+    for (const metadata of metadataRows) {
+      await ensureOrgMetadataPlanEntitlement(tx, metadata);
+    }
   });
   await db.insert(creditExpiresRecord).values({
     orgId: fixture.orgId,

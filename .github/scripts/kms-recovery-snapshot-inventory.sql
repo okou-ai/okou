@@ -70,7 +70,14 @@ WITH relations AS MATERIALIZED (
     format('(%s,0)', first_block), format('(%s,0)', least(first_block + 128, blocks))
   ) FROM relations CROSS JOIN LATERAL generate_series(0, blocks - 1, 128) AS first_block
 )
-SELECT command FROM commands ORDER BY oid, first_block
+-- Send at most 64 chunks together instead of waiting for a network round trip
+-- per chunk. PostgreSQL 14+ applies statement_timeout to each statement in a
+-- simple-query message; every chunk still emits its own progress and result.
+-- Keep each table plan separate and before its contiguous chunk batches.
+SELECT string_agg(command, E'\n' ORDER BY first_block)
+FROM commands
+GROUP BY oid, CASE WHEN first_block < 0 THEN -1 ELSE first_block / (128 * 64) END
+ORDER BY oid, min(first_block)
 \gexec
 
 -- Binary values may hide encodings that row_to_json renders as hex. Their

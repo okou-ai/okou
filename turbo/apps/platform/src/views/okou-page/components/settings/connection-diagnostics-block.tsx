@@ -209,7 +209,7 @@ export function ConnectionDiagnosticsPanel({
   readonly title: string;
 }) {
   return (
-    <details className="group overflow-hidden rounded-xl bg-card okou-border">
+    <details className="group overflow-hidden rounded-xl bg-card border border-surface-border">
       <ConnectionDiagnosticsSummary
         description={description}
         diagnostics={diagnostics}

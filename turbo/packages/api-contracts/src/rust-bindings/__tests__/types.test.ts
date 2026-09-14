@@ -368,7 +368,6 @@ describe("Rust type bindings", () => {
     );
     expect(firstRender).toContain("pub struct PiModelConfig {");
     expect(firstRender).toContain("pub enum PiModelConfigProvider {");
-    expect(firstRender).toContain("pub enum PiModelConfigApi {");
     expect(firstRender).toContain("pub enum PiModelConfigThinkingLevel {");
     expect(firstRender).toContain("pub enum PiModelConfigServiceTier {");
     expect(firstRender).toContain("pub enum PiModelConfigApiKeyEnv {");
@@ -566,13 +565,6 @@ describe("Rust type bindings", () => {
             "ANTHROPIC_AUTH_TOKEN",
             "OPENAI_API_KEY",
             "CHATGPT_ACCESS_TOKEN",
-          ],
-        },
-        api: {
-          enum: [
-            "openai-completions",
-            "openai-responses",
-            "openai-codex-responses",
           ],
         },
         thinkingLevel: {

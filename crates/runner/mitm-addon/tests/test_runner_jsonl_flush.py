@@ -2,6 +2,7 @@
 
 import json
 import os
+import sys
 import threading
 import time
 from collections.abc import Iterator
@@ -15,6 +16,7 @@ import pytest
 import jsonl_writer
 import logging_utils
 import runner_flush_lifecycle
+import runner_flush_request
 import state_file
 import usage
 from tests.process_log_helpers import capture_addon_process_events
@@ -109,6 +111,65 @@ def running_jsonl_flush_worker(files: RunnerJsonlFlushFiles) -> Iterator[None]:
 
 class TestRunnerJsonlFlush:
     """Tests for the independently polled JSONL flush protocol."""
+
+    @pytest.mark.filterwarnings("error::pytest.PytestUnhandledThreadExceptionWarning")
+    def test_jsonl_watcher_recovers_from_overlong_integer(
+        self, runner_jsonl_flush_files: RunnerJsonlFlushFiles
+    ) -> None:
+        files = runner_jsonl_flush_files
+        digit_count = 5000
+        assert 0 < sys.get_int_max_str_digits() < digit_count
+        marker_bytes = b'{"requestedAtMs":' + b"1" * digit_count + b"}"
+        assert len(marker_bytes) < runner_flush_request.MAX_RUNNER_FLUSH_REQUEST_BYTES
+        # The typed Rust producer cannot create this corrupt local state file.
+        files.jsonl_flush_request_path.write_bytes(marker_bytes)
+        malformed_marker_read = threading.Event()
+        original_read_bytes = state_file.OpenedStateFile.read_bytes
+
+        def observe_marker_read(opened_file: state_file.OpenedStateFile, max_bytes: int) -> bytes:
+            data = original_read_bytes(opened_file, max_bytes)
+            if opened_file.path == files.jsonl_flush_request_path and data == marker_bytes:
+                # Observe captured bytes without replacing the reader or decoder.
+                malformed_marker_read.set()
+            return data
+
+        with (
+            patch.object(state_file.OpenedStateFile, "read_bytes", new=observe_marker_read),
+            patch.object(
+                logging_utils, "flush_log_path", wraps=logging_utils.flush_log_path
+            ) as flush_log_path,
+            capture_addon_process_events(),
+            running_jsonl_flush_worker(files),
+        ):
+            assert malformed_marker_read.wait(timeout=1)
+            worker = runner_flush_lifecycle._jsonl_flush_worker
+            assert worker is not None
+            flush_log_path.assert_not_called()
+            assert not files.jsonl_flush_state_path.exists()
+
+            logging_utils.log_network_entry(str(files.network_log_path), {"action": "ALLOW"})
+            state_file.AtomicJsonPublisher().publish(
+                files.jsonl_flush_request_path,
+                {
+                    "usageStateId": _RUNNER_USAGE_STATE_ID,
+                    "flushRequestId": _DEFAULT_JSONL_FLUSH_REQUEST_ID,
+                    "requestedAtMs": _REQUESTED_AT_MS,
+                    "path": str(files.network_log_path),
+                },
+            )
+            state = wait_for_jsonl_flush_state(files, pending=0)
+            assert runner_flush_lifecycle._jsonl_flush_worker is worker
+            assert worker.is_alive()
+
+        flush_log_path.assert_called_once_with(
+            str(files.network_log_path),
+            timeout=runner_flush_lifecycle.RUNNER_JSONL_FLUSH_TIMEOUT_SECONDS,
+        )
+        assert state["usageStateId"] == _RUNNER_USAGE_STATE_ID
+        assert state["flushRequestId"] == _DEFAULT_JSONL_FLUSH_REQUEST_ID
+        assert state["path"] == str(files.network_log_path)
+        assert state["pending"] == 0
+        assert json.loads(files.network_log_path.read_text())["action"] == "ALLOW"
 
     def test_jsonl_watcher_acknowledges_request_in_startup_directory(
         self, runner_jsonl_flush_files: RunnerJsonlFlushFiles

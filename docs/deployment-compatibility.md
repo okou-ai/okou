@@ -195,6 +195,28 @@ raises the frontend compatibility floor, rolling the frontend below that floor
 also requires rolling back the backend floor. Rolling the backend back to the
 dual-protocol preparation release remains safe for canonical clients.
 
+### Pi Gen1 wire-field retirement
+
+[#33966](https://github.com/vm0-ai/vm0/issues/33966) removes only the optional
+Gen1 `piModelConfig.api` field. Slice 1
+[#32632](https://github.com/vm0-ai/vm0/pull/32632) stopped writing it while keeping
+readers tolerant. The [September 14 controller receipt](https://github.com/vm0-ai/vm0/issues/31085#issuecomment-5660026283)
+accepted the writer-cutoff release, supported rollback targets, executable
+context census, retained callers and Runner/Sandbox/CLI drain. Its
+[dispatch admission](https://github.com/vm0-ai/vm0/issues/33966#issuecomment-5660179289)
+reconciled all 17 Pi runs among 50 nonterminal runs and both empty queues. These
+are dated complete observations, not current counters.
+
+Old cutoff-safe writers and new readers share the field-absent Gen1 shape;
+new writers remain readable by the retained cutoff-safe readers. Strict
+TypeScript boundaries reject a Gen1 object containing `api`. Rust keeps its
+existing general unknown-field policy, discarding unknown fields during decode;
+the generated Gen1 DTO no longer represents, emits or retains this key. Gen1
+itself, Gen2/3/4, active subscription dialects and upstream Pi `Model.api` are
+unchanged. No stored context rewrite, migration, backfill or rollback-floor
+change is required or included. Parent #31085 still owns independent acceptance,
+release and final production verification.
+
 ### Pi native session history
 
 Pi checkpoint persistence shares the Runner's 128 MiB raw and encoded history
