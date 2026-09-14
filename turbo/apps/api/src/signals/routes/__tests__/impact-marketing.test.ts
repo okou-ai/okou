@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
 import { beforeEach, expect, test, onTestFinished } from "vitest";
 import { http, HttpResponse } from "msw";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -20,7 +20,7 @@ import {
 const context = testContext();
 const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
-const secret = "test-only-marketing-attribution-signing-secret";
+const secret = randomBytes(32).toString("hex");
 function client() {
   return setupApp({ context, routes: impactMarketingRoutes })(
     impactMarketingContract,
