@@ -3179,9 +3179,11 @@
       },
       "filterWith": "Filtro: {{category}}",
       "iconUnavailable": "Icono del conector no disponible",
+      "mcpAccess": "El acceso del Agent se aplica a todas las herramientas que ofrece este servidor MCP. Los permisos del conector de API HTTP se gestionan por separado.",
       "newConnector": "Nuevo conector",
       "noConnectorsAlt": "Sin conectores",
       "otherCategory": "Otro",
+      "protocolLabel": "Protocolo del conector integrado",
       "remoteAccess": "Acceso remoto",
       "scope": {
         "aria": "Ámbito de conectores",
@@ -3614,6 +3616,7 @@
           "sourceUnavailable": "Fuente no disponible",
           "stale": "Obsoleto",
           "unchanged": "Sin cambios",
+          "unsupportedGenericStrategy": "Estrategia de autenticación no compatible",
           "unsupportedSchema": "Esquema no soportado"
         }
       },

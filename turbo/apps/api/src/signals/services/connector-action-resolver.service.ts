@@ -8,6 +8,9 @@ import type {
   PublicConnectorCatalogDetail,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorAuthMethodRuntimeConfig } from "@okouai/connectors/connector-config";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { userFeatureSwitchContext } from "./feature-switches.service";
 
 import { logger } from "../../lib/log";
 import { db$ } from "../external/db";
@@ -82,8 +85,8 @@ export type ConnectorSlugsResolution =
 /**
  * Resolves connector execution contracts, never connector discovery policy.
  *
- * Feature switches only filter UI/discovery projections. They are not
- * authorization or compatibility boundaries and are never read here. Authored
+ * HTTP feature switches only filter UI/discovery projections. Builtin MCP has
+ * a separate rollout admission gate for new connections. Authored
  * method visibility is separate: it controls new actions through
  * resolveNewActionMethod, while resolveMethod deliberately lets in-flight and
  * persisted credentials continue. Execution fails closed when the connector or
@@ -171,6 +174,7 @@ function executableMethod(args: {
 
 function createConnectorActionResolver(
   snapshot: ConnectorRuntimeSnapshot,
+  builtinMcpEnabled: boolean,
 ): ConnectorActionResolver {
   const resolveSlug: ConnectorActionResolver["resolveSlug"] = (input) => {
     const runtimeConnector = getConnectorRuntimeConnector(
@@ -241,6 +245,9 @@ function createConnectorActionResolver(
         snapshot,
         input.connectorSlug,
       );
+      if (runtimeConnector?.mcp !== undefined && !builtinMcpEnabled) {
+        return { ok: false, reason: "hidden_auth_method" };
+      }
       const catalogMethod = runtimeConnector?.catalogConnector.authMethods.find(
         (method) => {
           return method.id === input.authMethodId;
@@ -274,12 +281,20 @@ function createConnectorActionResolver(
   };
 }
 
-export function connectorActionResolver(): Computed<
-  Promise<ConnectorActionResolver>
-> {
+export function connectorActionResolver(actor?: {
+  readonly orgId: string;
+  readonly userId: string;
+}): Computed<Promise<ConnectorActionResolver>> {
   return computed(async (get): Promise<ConnectorActionResolver> => {
     const snapshot = await loadConnectorRuntimeSnapshot(get(db$));
-    return createConnectorActionResolver(snapshot);
+    const builtinMcpEnabled =
+      actor === undefined
+        ? false
+        : isFeatureEnabled(
+            FeatureSwitchKey.BuiltinConnectorMcp,
+            await get(userFeatureSwitchContext(actor.orgId, actor.userId)),
+          );
+    return createConnectorActionResolver(snapshot, builtinMcpEnabled);
   });
 }
 
@@ -287,6 +302,6 @@ export function connectorActionResolverForSnapshot(
   snapshot: ConnectorRuntimeSnapshot,
 ): Computed<ConnectorActionResolver> {
   return computed((): ConnectorActionResolver => {
-    return createConnectorActionResolver(snapshot);
+    return createConnectorActionResolver(snapshot, false);
   });
 }

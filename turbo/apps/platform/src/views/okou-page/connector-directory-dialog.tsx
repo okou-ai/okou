@@ -1,5 +1,6 @@
 import { useLastLoadable, useLoadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
+import { BuiltinConnectorProtocolTabs } from "./components/settings/builtin-connector-protocol-tabs.tsx";
 import { ArrowRight, Plus, Search, TriangleAlert } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
@@ -629,6 +630,7 @@ function DirectoryBody({
 
 function DirectoryBrowseView({
   tab,
+  protocol,
   search,
   category,
   categoryCounts,
@@ -639,6 +641,7 @@ function DirectoryBrowseView({
   onConnectCustom,
 }: {
   readonly tab: ConnectorDirectoryTab;
+  readonly protocol: "http" | "mcp";
   readonly search: string;
   readonly category: string | null;
   readonly categoryCounts: Readonly<Record<string, number>> | undefined;
@@ -689,6 +692,22 @@ function DirectoryBrowseView({
           });
         }}
       />
+      {tab === "discover" && (
+        <div className="px-6 pb-3">
+          <BuiltinConnectorProtocolTabs
+            value={protocol}
+            onChange={(next) => {
+              onUpdateState({
+                directoryProtocol: next,
+                directoryCategory: null,
+                addDialogSearch: "",
+                directoryActiveIndex: 0,
+                directoryDetailSlug: null,
+              });
+            }}
+          />
+        </div>
+      )}
       {tab === "discover" && (
         <DirectoryCategoryChips
           sections={sections}
@@ -946,10 +965,13 @@ export function ConnectorDirectoryDialog({
   const search = state.addDialogSearch;
   const tab = state.directoryTab;
   const category = state.directoryCategory;
+  const matchesProtocol = (connector: PlatformConnectorCatalogStatusItem) => {
+    return (connector.protocol ?? "http") === state.directoryProtocol;
+  };
   const model = buildConnectorDirectoryModel({
-    connected,
-    unconnected,
-    chipCatalog,
+    connected: connected.filter(matchesProtocol),
+    unconnected: unconnected.filter(matchesProtocol),
+    chipCatalog: chipCatalog.filter(matchesProtocol),
     connectedCustom,
     unconnectedCustom,
     search,
@@ -1027,6 +1049,7 @@ export function ConnectorDirectoryDialog({
         ) : (
           <DirectoryBrowseView
             tab={tab}
+            protocol={state.directoryProtocol}
             search={search}
             category={category}
             categoryCounts={categoryCounts}

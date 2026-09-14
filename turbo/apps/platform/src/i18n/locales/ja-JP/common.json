@@ -3116,9 +3116,11 @@
       },
       "filterWith": "フィルタ: {{category}}",
       "iconUnavailable": "コネクタアイコンが使用不可",
+      "mcpAccess": "Agent のアクセス権は、この MCP サーバーが提供するすべてのツールに適用されます。HTTP API コネクタの権限は個別に管理されます。",
       "newConnector": "新しいコネクタ",
       "noConnectorsAlt": "コネクターなし",
       "otherCategory": "その他",
+      "protocolLabel": "組み込みコネクタのプロトコル",
       "remoteAccess": "リモートアクセス",
       "scope": {
         "aria": "コネクタの表示範囲",
@@ -3547,6 +3549,7 @@
           "sourceUnavailable": "ソースが利用できません",
           "stale": "古い",
           "unchanged": "変わらない",
+          "unsupportedGenericStrategy": "サポートされていない認証方式",
           "unsupportedSchema": "サポートされていないスキーマ"
         }
       },

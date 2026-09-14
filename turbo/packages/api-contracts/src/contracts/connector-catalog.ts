@@ -13,12 +13,25 @@ export { CONNECTOR_CATALOG_MAX_RAW_BYTES } from "@okouai/connectors/connector-ca
 
 const c = initContract();
 
+export const connectorCatalogProtocolScopeSchema = z.enum([
+  "http",
+  "mcp",
+  "all",
+]);
+export type ConnectorCatalogProtocolScope = z.infer<
+  typeof connectorCatalogProtocolScopeSchema
+>;
+const connectorCatalogScopeQuerySchema = z.object({
+  protocol: connectorCatalogProtocolScopeSchema.optional(),
+});
+
 const publicConnectorCatalogAuthMethodSummarySchema = z.object({
   id: connectorAuthMethodIdSchema,
   label: z.string(),
   description: z.string().nullable(),
   grantKind: z.enum([
     "none",
+    "automatic",
     "manual",
     "auth-code",
     "openid-auth",
@@ -60,6 +73,8 @@ const publicConnectorCatalogCategoryMetadataSchema = z.object({
 });
 
 const publicConnectorCatalogItemSchema = z.object({
+  /** HTTP deliberately omits this tag; it is not inferred from a requested scope. */
+  protocol: z.literal("mcp").optional(),
   slug: connectorSlugSchema,
   label: z.string(),
   description: z.string(),
@@ -265,6 +280,7 @@ export const connectorCatalogContract = c.router({
     method: "GET",
     path: "/api/connector-catalog",
     headers: authHeadersSchema,
+    query: connectorCatalogScopeQuerySchema,
     responses: {
       200: publicConnectorCatalogListResponseSchema,
       401: apiErrorSchema,
@@ -277,6 +293,7 @@ export const connectorCatalogContract = c.router({
     method: "GET",
     path: "/api/connector-catalog/status",
     headers: authHeadersSchema,
+    query: connectorCatalogScopeQuerySchema,
     responses: {
       200: publicConnectorCatalogStatusResponseSchema,
       401: apiErrorSchema,
@@ -289,7 +306,7 @@ export const connectorCatalogContract = c.router({
     method: "GET",
     path: "/api/connector-catalog/discovery",
     headers: authHeadersSchema,
-    query: z.object({
+    query: connectorCatalogScopeQuerySchema.extend({
       keyword: z.string().optional(),
       /**
        * Browse one category in full instead of the per-category slice. The

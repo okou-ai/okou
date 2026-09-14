@@ -1,7 +1,10 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
-import type { PublicConnectorCatalogCategoryMetadata } from "@okouai/api-contracts/contracts/connector-catalog";
+import type {
+  PublicConnectorCatalogCategoryMetadata,
+  PublicConnectorCatalogDiscoveryResponse,
+} from "@okouai/api-contracts/contracts/connector-catalog";
 import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import {
   agentCustomConnectorsContract,
@@ -22,7 +25,10 @@ import type {
   PlatformConnectorPermissionMetadata,
   PlatformUserPermissionGrant,
 } from "../connector-domain.ts";
-import { relatedConnectorCatalog } from "../external/connectors.ts";
+import {
+  builtinConnectorMcpEnabled$,
+  relatedConnectorCatalog,
+} from "../external/connectors.ts";
 import {
   customConnectors$,
   customConnectorAuthorizationReloadVersion$,
@@ -60,6 +66,7 @@ export interface ComposerConnectorUiState {
   readonly popoverSortOrder: readonly string[] | null;
   readonly permissionConnectorSlug: ConnectorSlug | null;
   readonly directoryTab: ConnectorDirectoryTab;
+  readonly directoryProtocol: "http" | "mcp";
   readonly directoryCategory: string | null;
   readonly directoryDetailSlug: ConnectorSlug | null;
   /** Index into the connectors the arrow keys currently walk through. */
@@ -95,6 +102,9 @@ interface ComposerConnectorData {
 
 export interface ComposerConnectorSignals {
   readonly data$: Computed<Promise<ComposerConnectorData>>;
+  readonly directoryCatalog$: Computed<
+    Promise<PublicConnectorCatalogDiscoveryResponse>
+  >;
   readonly connectorAuthorization$: Computed<
     Promise<ComposerConnectorAuthorizationState>
   >;
@@ -126,10 +136,6 @@ const emptyCatalogKeyword$ = computed(() => {
 });
 
 const composerRelatedCatalog$ = relatedConnectorCatalog(emptyCatalogKeyword$);
-
-const composerRelatedCatalogItems$ = computed(async (get) => {
-  return (await get(composerRelatedCatalog$)).connectors;
-});
 
 interface AgentCustomConnectorAuthorizationRequestBroker {
   load(params: {
@@ -218,6 +224,7 @@ function initialComposerConnectorUiState(): ComposerConnectorUiState {
     popoverSortOrder: null,
     permissionConnectorSlug: null,
     directoryTab: "discover",
+    directoryProtocol: "http",
     directoryCategory: null,
     directoryDetailSlug: null,
     directoryActiveIndex: 0,
@@ -385,6 +392,7 @@ function createConnectorUiSignals(): Pick<
       showAddDialog: true,
       addDialogSearch: "",
       directoryTab: "discover",
+      directoryProtocol: "http",
       directoryCategory: null,
       directoryDetailSlug: null,
       directoryActiveIndex: 0,
@@ -423,7 +431,21 @@ export function createComposerConnectorSignals(
   const addDialogCategory$ = computed((get) => {
     return get(ui.connectorUiState$).directoryCategory;
   });
-  const searchedCatalog$ = relatedConnectorCatalog(addDialogKeyword$);
+  const directoryProtocol$ = computed((get) => {
+    return get(builtinConnectorMcpEnabled$)
+      ? get(ui.connectorUiState$).directoryProtocol
+      : "http";
+  });
+  const directoryCatalog$ = relatedConnectorCatalog(
+    emptyCatalogKeyword$,
+    undefined,
+    directoryProtocol$,
+  );
+  const searchedCatalog$ = relatedConnectorCatalog(
+    addDialogKeyword$,
+    undefined,
+    directoryProtocol$,
+  );
   /**
    * A chosen category is fetched by name, so the directory holds all of it.
    * The browse response carries a slice per category, which is what the
@@ -433,6 +455,7 @@ export function createComposerConnectorSignals(
   const categoryCatalog$ = relatedConnectorCatalog(
     emptyCatalogKeyword$,
     addDialogCategory$,
+    directoryProtocol$,
   );
   const addDialogCatalogItems$ = computed(async (get) => {
     if (get(addDialogKeyword$).trim()) {
@@ -441,7 +464,7 @@ export function createComposerConnectorSignals(
     if (get(addDialogCategory$)) {
       return (await get(categoryCatalog$)).connectors;
     }
-    return await get(composerRelatedCatalogItems$);
+    return (await get(directoryCatalog$)).connectors;
   });
   const connectorPermissionMetadata$ = computed(async (get) => {
     const connectorSlug = get(ui.connectorUiState$).permissionConnectorSlug;
@@ -458,6 +481,7 @@ export function createComposerConnectorSignals(
 
   return {
     data$,
+    directoryCatalog$,
     connectorAuthorization$: authorization$,
     addDialogCatalogItems$,
     setConnectorAuthorization$: createConnectorAuthorizationCommand(

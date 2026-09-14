@@ -34,6 +34,7 @@ import {
   type Loadable,
 } from "ccstate-react";
 import { useTranslation } from "react-i18next";
+import { BuiltinConnectorProtocolTabs } from "./components/settings/builtin-connector-protocol-tabs.tsx";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { i18n } from "../../i18n/index.ts";
 import { introVideoTemplateOptions } from "@okouai/core/intro-video-template";
@@ -7181,7 +7182,10 @@ function AddConnectorsDialog({
   const dismissProgress = useSet(dismissConnectorConnectionProgress$);
   const search = connectorUi.addDialogSearch;
   const filtered = unconnected.filter((item) => {
-    return matchesConnectorSearch(search, item);
+    return (
+      (item.protocol ?? "http") === connectorUi.directoryProtocol &&
+      matchesConnectorSearch(search, item)
+    );
   });
   const filteredCustom = unconnectedCustom.filter((item) => {
     return matchesCustomConnectorSearch(search, item);
@@ -7231,6 +7235,16 @@ function AddConnectorsDialog({
             </p>
           )}
         </DialogHeader>
+        <BuiltinConnectorProtocolTabs
+          value={connectorUi.directoryProtocol}
+          onChange={(next) => {
+            updateConnectorUi({
+              directoryProtocol: next,
+              addDialogSearch: "",
+              directoryCategory: null,
+            });
+          }}
+        />
         <div className="shrink-0">
           <Input
             type="text"
@@ -10569,6 +10583,16 @@ function useComposerComputerUse(signals: ComposerSignals): ComposerComputerUse {
   };
 }
 
+function useConnectorDirectoryCatalog(signals: ComposerSignals["connector"]) {
+  const items = useLoadable(signals.addDialogCatalogItems$);
+  const catalog = useLoadable(signals.directoryCatalog$);
+  return {
+    items: items.state === "hasData" ? items.data : [],
+    catalog: catalog.state === "hasData" ? catalog.data : undefined,
+    loading: items.state === "loading" || catalog.state === "loading",
+  };
+}
+
 function ComposerConnectorsSlot({
   signals,
   actions,
@@ -10582,8 +10606,8 @@ function ComposerConnectorsSlot({
   const connectorDirectoryEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ConnectorDirectory] === true;
   const connectorData = useLastResolved(signals.connector.data$);
-  const addDialogCatalogItems =
-    useLastResolved(signals.connector.addDialogCatalogItems$) ?? [];
+  const directory = useConnectorDirectoryCatalog(signals.connector);
+  const addDialogCatalogItems = directory.items;
   const agents = useLastResolved(agents$) ?? [];
   const connectorUi = useGet(signals.connector.connectorUiState$);
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
@@ -10791,10 +10815,10 @@ function ComposerConnectorsSlot({
           <ConnectorDirectoryDialog
             state={connectorUi}
             onUpdateState={updateConnectorUi}
-            categoryCounts={connectorData?.categoryConnectorCounts}
-            categoryMetadata={connectorData?.categoryMetadata}
-            loading={connectorData === undefined}
-            chipCatalog={connectorData?.relatedCatalogItems ?? []}
+            categoryCounts={directory.catalog?.categoryConnectorCounts}
+            categoryMetadata={directory.catalog?.categoryMetadata}
+            loading={directory.loading}
+            chipCatalog={directory.catalog?.connectors ?? []}
             connected={agentConnectors}
             unconnected={unconnectedConnectors}
             connectedCustom={agentCustomConnectors}

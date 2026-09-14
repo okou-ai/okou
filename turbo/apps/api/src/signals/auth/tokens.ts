@@ -7,6 +7,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { z } from "zod";
+import { connectorSlugSchema } from "@okouai/connectors/connector-identity";
 
 import { env } from "../../lib/env";
 import { now } from "../../lib/time";
@@ -42,6 +43,7 @@ interface OkouTokenOptions {
   readonly cloudBrowserEnabled?: boolean;
   readonly imageRecognitionAvailable?: boolean;
   readonly customConnectorSourceIds?: Readonly<Record<string, string>>;
+  readonly builtinMcpSourceIds?: Readonly<Record<string, string>>;
 }
 
 const jwtBaseSchema = z.object({
@@ -83,6 +85,7 @@ const okouTokenPayloadSchema = jwtBaseSchema.extend({
   customConnectorSourceIds: z
     .record(z.string().uuid(), z.string().uuid())
     .optional(),
+  builtinMcpSourceIds: z.record(connectorSlugSchema, z.uuid()).optional(),
 });
 
 type OkouTokenClaims = Omit<z.infer<typeof okouTokenPayloadSchema>, "scope">;
@@ -273,6 +276,9 @@ export function verifyOkouToken(token: string): AgentAuth | null {
     ...(parsed.data.customConnectorSourceIds
       ? { customConnectorSourceIds: parsed.data.customConnectorSourceIds }
       : {}),
+    ...(parsed.data.builtinMcpSourceIds
+      ? { builtinMcpSourceIds: parsed.data.builtinMcpSourceIds }
+      : {}),
   };
 }
 
@@ -369,6 +375,9 @@ function buildOkouTokenClaims(
       : {}),
     ...(options?.customConnectorSourceIds
       ? { customConnectorSourceIds: options.customConnectorSourceIds }
+      : {}),
+    ...(options?.builtinMcpSourceIds
+      ? { builtinMcpSourceIds: options.builtinMcpSourceIds }
       : {}),
     iat: nowSeconds,
     exp: nowSeconds + 2 * 60 * 60,

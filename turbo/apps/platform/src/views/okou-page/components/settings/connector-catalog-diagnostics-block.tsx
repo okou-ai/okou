@@ -31,6 +31,12 @@ function emptyValue(): string {
 const DIAGNOSTIC_ENUM_VALUE_TRANSLATIONS: Readonly<
   Record<DiagnosticEnumValue, () => string>
 > = {
+  "unsupported-generic-strategy": () => {
+    return i18n.t(($) => {
+      return $.connectors.providerSettings.catalogDiagnostics.values
+        .unsupportedGenericStrategy;
+    });
+  },
   accepted: () => {
     return i18n.t(($) => {
       return $.connectors.providerSettings.catalogDiagnostics.values.accepted;

@@ -3121,9 +3121,11 @@
       },
       "filterWith": "Filter: {{category}}",
       "iconUnavailable": "Connector icon unavailable",
+      "mcpAccess": "Agent access applies to all tools exposed by this MCP server. HTTP API connector permissions are managed separately.",
       "newConnector": "New connector",
       "noConnectorsAlt": "No connectors",
       "otherCategory": "Other",
+      "protocolLabel": "Built-in connector protocol",
       "remoteAccess": "Remote access",
       "scope": {
         "aria": "Connector scope",
@@ -3552,6 +3554,7 @@
           "sourceUnavailable": "Source unavailable",
           "stale": "Stale",
           "unchanged": "Unchanged",
+          "unsupportedGenericStrategy": "Unsupported authentication strategy",
           "unsupportedSchema": "Unsupported schema"
         }
       },

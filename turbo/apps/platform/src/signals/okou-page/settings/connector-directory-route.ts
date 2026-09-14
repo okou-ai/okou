@@ -3,6 +3,24 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../external/feature-switch.ts";
 import { pathname$, searchParams$, updateSearchParams$ } from "../../route.ts";
 import { onRef } from "../../utils.ts";
+import { builtinConnectorMcpEnabled$ } from "../../external/connectors.ts";
+
+export const builtinConnectorProtocol$ = computed((get): "http" | "mcp" => {
+  return get(builtinConnectorMcpEnabled$) &&
+    get(searchParams$).get("protocol") === "mcp"
+    ? "mcp"
+    : "http";
+});
+
+export const setBuiltinConnectorProtocol$ = command(
+  ({ get, set }, protocol: "http" | "mcp") => {
+    const params = new URLSearchParams(get(searchParams$));
+    params.set("protocol", protocol);
+    params.delete("keywords");
+    params.delete("category");
+    set(updateSearchParams$, params);
+  },
+);
 
 export const connectorDirectoryEnabled$ = computed((get) => {
   return get(featureSwitch$)[FeatureSwitchKey.ConnectorDirectory] === true;

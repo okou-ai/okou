@@ -162,6 +162,7 @@ export function mockConnectors(
 }
 
 export function publicStatusItem(args: {
+  readonly protocol?: "mcp";
   readonly connectorSlug: ConnectorSlug;
   readonly label: string;
   readonly description?: string;
@@ -181,6 +182,7 @@ export function publicStatusItem(args: {
 }): PublicConnectorCatalogStatusItem {
   return {
     slug: args.connectorSlug,
+    ...(args.protocol === undefined ? {} : { protocol: args.protocol }),
     label: args.label,
     ...(args.popularityRank === undefined
       ? {}
@@ -247,18 +249,24 @@ export function mockPublicConnectorStatus(
   context.mocks.api(
     connectorCatalogContract.discovery,
     ({ query, respond }) => {
+      const protocolScoped = connectors.filter((connector) => {
+        return (
+          query.protocol === "all" ||
+          (connector.protocol ?? "http") === (query.protocol ?? "http")
+        );
+      });
       // Production answers a named category with the whole category, and a
       // keyword-free browse with every connected connector plus a slice of
       // each category. The fixture does the same, or the category view is
       // tested against a response the API never returns.
       const scoped = query.category
-        ? connectors.filter((connector) => {
+        ? protocolScoped.filter((connector) => {
             return connector.category === query.category;
           })
-        : browseSlice(connectors);
+        : browseSlice(protocolScoped);
       return respond(200, {
         connectors: [...scoped],
-        totalConnectorCount: connectors.length,
+        totalConnectorCount: protocolScoped.length,
         ...(categoryMetadata ? { categoryMetadata } : {}),
         ...(categoryConnectorCounts ? { categoryConnectorCounts } : {}),
       });

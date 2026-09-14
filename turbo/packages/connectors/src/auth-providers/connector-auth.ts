@@ -247,6 +247,9 @@ export type ConnectorAuthProviderRegistryCapabilities = Readonly<
 >;
 
 export const CONNECTOR_GENERIC_AUTH_CAPABILITY_VERSIONS = {
+  noneGrant: 1,
+  automaticGrant: 0,
+  automaticAccess: 0,
   manualGrant: 1,
   staticAccess: 1,
   noneRevoke: 1,

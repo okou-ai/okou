@@ -25,6 +25,61 @@ const GITHUB_SLUG = "github" as ConnectorSlug;
 const GMAIL_SLUG = "gmail" as ConnectorSlug;
 const NOTION_SLUG = "notion" as ConnectorSlug;
 
+test("Browse builtin MCP separately and explain independent tool access", async () => {
+  const user = userEvent.setup({ delay: null });
+  installComposerConnectorFixture({
+    catalog: [
+      builtinConnector({ slug: "clickup", label: "ClickUp", connected: false }),
+      builtinConnector({
+        slug: "clickup-mcp",
+        label: "ClickUp",
+        protocol: "mcp",
+        connected: true,
+      }),
+    ],
+  });
+  await setupPage({
+    context,
+    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    featureSwitches: {
+      [FeatureSwitchKey.ConnectorDirectory]: true,
+      [FeatureSwitchKey.BuiltinConnectorMcp]: true,
+    },
+  });
+  const dialog = await openDirectory(user);
+  await expect(
+    within(dialog).findByText("ClickUp · HTTP API"),
+  ).resolves.toBeVisible();
+  const mcp = queryAllByRoleFast("tab", dialog).find((tab) => {
+    return tab.textContent === "MCP";
+  });
+  if (!mcp) {
+    throw new Error("Expected MCP protocol control");
+  }
+  await user.click(mcp);
+  await fill(
+    within(dialog).getByPlaceholderText("Find connectors..."),
+    "ClickUp",
+  );
+  await expect(
+    within(dialog).findByText("ClickUp · MCP"),
+  ).resolves.toBeVisible();
+  expect(
+    within(dialog).queryByText("ClickUp · HTTP API"),
+  ).not.toBeInTheDocument();
+  await user.click(dialogButton(dialog, "Open ClickUp · MCP details"));
+  await expect(
+    within(dialog).findByText(
+      "Agent access applies to all tools exposed by this MCP server. HTTP API connector permissions are managed separately.",
+    ),
+  ).resolves.toBeVisible();
+  expect(
+    queryAllByRoleFast("button", dialog).some((button) => {
+      return button.textContent === "Configure";
+    }),
+  ).toBeFalsy();
+});
+
 function directoryCatalog() {
   // Discovery ranks what it returns, so a fixture without ranks would describe
   // a response the API does not produce.

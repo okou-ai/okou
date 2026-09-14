@@ -3129,9 +3129,11 @@
       },
       "filterWith": "Filter: {{category}}",
       "iconUnavailable": "Integrationssymbol nicht verfügbar",
+      "mcpAccess": "Der Agent-Zugriff gilt für alle Tools, die dieser MCP-Server bereitstellt. Die Berechtigungen des HTTP-API-Connectors werden separat verwaltet.",
       "newConnector": "Neue Integration",
       "noConnectorsAlt": "Keine Integrationen",
       "otherCategory": "Andere",
+      "protocolLabel": "Protokoll des integrierten Connectors",
       "remoteAccess": "Fernzugriff",
       "scope": {
         "aria": "Connector-Bereich",
@@ -3560,6 +3562,7 @@
           "sourceUnavailable": "Quelle nicht verfügbar",
           "stale": "Veraltet",
           "unchanged": "Unverändert",
+          "unsupportedGenericStrategy": "Nicht unterstützte Authentifizierungsstrategie",
           "unsupportedSchema": "Nicht unterstütztes Schema"
         }
       },

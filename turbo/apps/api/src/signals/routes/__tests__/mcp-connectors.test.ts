@@ -247,6 +247,7 @@ describe("GET /api/mcp-connectors", () => {
       connectors: [
         {
           id: selected.id,
+          kind: "custom",
           slug: "_selected-mcp",
           displayName: "Selected MCP",
           transport: "streamable-http",
@@ -503,7 +504,7 @@ describe("GET /api/mcp-connectors", () => {
   });
 });
 
-describe("POST /api/mcp-connectors/:id/oauth2/reauthorize", () => {
+describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
   it.each(["cimd", "dcr"] as const)(
     "reauthorizes the exact Automatic OAuth account pinned to the run with %s",
     async (registration) => {
@@ -606,8 +607,10 @@ describe("POST /api/mcp-connectors/:id/oauth2/reauthorize", () => {
       const response = await accept(
         client().reauthorizeOAuth({
           headers: headers(okouToken),
-          params: { id: connector.id },
-          body: { scopes: ["admin"] },
+          body: {
+            target: { kind: "custom", customConnectorId: connector.id },
+            scopes: ["admin"],
+          },
         }),
         [200],
       );
@@ -652,8 +655,10 @@ describe("POST /api/mcp-connectors/:id/oauth2/reauthorize", () => {
       const removedIssuer = await accept(
         client().reauthorizeOAuth({
           headers: headers(okouToken),
-          params: { id: connector.id },
-          body: { scopes: ["owner"] },
+          body: {
+            target: { kind: "custom", customConnectorId: connector.id },
+            scopes: ["owner"],
+          },
         }),
         [409],
       );
@@ -725,8 +730,10 @@ describe("POST /api/mcp-connectors/:id/oauth2/reauthorize", () => {
     const response = await accept(
       client().reauthorizeOAuth({
         headers: headers(okouToken),
-        params: { id: connector.id },
-        body: { scopes: ["admin"] },
+        body: {
+          target: { kind: "custom", customConnectorId: connector.id },
+          scopes: ["admin"],
+        },
       }),
       [409],
     );
@@ -744,8 +751,10 @@ describe("POST /api/mcp-connectors/:id/oauth2/reauthorize", () => {
     const unauthenticated = await accept(
       client().reauthorizeOAuth({
         headers: {},
-        params: { id: connectorId },
-        body: { scopes: ["admin"] },
+        body: {
+          target: { kind: "custom", customConnectorId: connectorId },
+          scopes: ["admin"],
+        },
       }),
       [401],
     );
@@ -754,8 +763,10 @@ describe("POST /api/mcp-connectors/:id/oauth2/reauthorize", () => {
         headers: headers(
           runs.okouTokenForRunWithCapabilities(actor, runId, []),
         ),
-        params: { id: connectorId },
-        body: { scopes: ["admin"] },
+        body: {
+          target: { kind: "custom", customConnectorId: connectorId },
+          scopes: ["admin"],
+        },
       }),
       [403],
     );
@@ -763,8 +774,10 @@ describe("POST /api/mcp-connectors/:id/oauth2/reauthorize", () => {
     const session = await accept(
       client().reauthorizeOAuth({
         headers: headers("clerk-session"),
-        params: { id: connectorId },
-        body: { scopes: ["admin"] },
+        body: {
+          target: { kind: "custom", customConnectorId: connectorId },
+          scopes: ["admin"],
+        },
       }),
       [403],
     );
@@ -775,8 +788,10 @@ describe("POST /api/mcp-connectors/:id/oauth2/reauthorize", () => {
             "connector:write",
           ]),
         ),
-        params: { id: connectorId },
-        body: { scopes: ["admin"] },
+        body: {
+          target: { kind: "custom", customConnectorId: connectorId },
+          scopes: ["admin"],
+        },
       }),
       [409],
     );
@@ -787,8 +802,10 @@ describe("POST /api/mcp-connectors/:id/oauth2/reauthorize", () => {
             "connector:write",
           ]),
         ),
-        params: { id: connectorId },
-        body: { scopes: ["invalid scope"] },
+        body: {
+          target: { kind: "custom", customConnectorId: connectorId },
+          scopes: ["invalid scope"],
+        },
       }),
       [400],
     );

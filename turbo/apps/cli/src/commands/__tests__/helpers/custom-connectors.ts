@@ -72,9 +72,10 @@ export function stubCustomConnectors(
 }
 
 export function runMcpConnector(
-  overrides: Partial<McpConnector> = {},
+  overrides: Partial<Extract<McpConnector, { kind: "custom" }>> = {},
 ): McpConnector {
   return {
+    kind: "custom",
     id: "44444444-4444-4444-8444-444444444444",
     slug: "_acme-mcp",
     displayName: "Acme MCP",

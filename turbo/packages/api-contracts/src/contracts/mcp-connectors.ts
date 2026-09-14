@@ -2,17 +2,25 @@ import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { customConnectorMcpResponseCoreSchema } from "./custom-connectors";
+import { connectorAccountTargetSchema } from "./connector-accounts";
+import { connectorSlugSchema } from "./connector-identity";
 
 const c = initContract();
 
-export const mcpConnectorSchema = customConnectorMcpResponseCoreSchema.pick({
-  id: true,
+const mcpConnectorCoreSchema = customConnectorMcpResponseCoreSchema.pick({
   slug: true,
   displayName: true,
   transport: true,
   endpoint: true,
   connected: true,
 });
+export const mcpConnectorSchema = z.discriminatedUnion("kind", [
+  mcpConnectorCoreSchema.extend({
+    kind: z.literal("builtin"),
+    slug: connectorSlugSchema,
+  }),
+  mcpConnectorCoreSchema.extend({ kind: z.literal("custom"), id: z.uuid() }),
+]);
 export type McpConnector = z.infer<typeof mcpConnectorSchema>;
 
 export const mcpConnectorListResponseSchema = z.object({
@@ -34,6 +42,7 @@ export const mcpOAuthScopeListSchema = z
   }, "MCP OAuth scopes must be unique");
 
 export const mcpConnectorOAuthReauthorizationRequestSchema = z.object({
+  target: connectorAccountTargetSchema,
   scopes: mcpOAuthScopeListSchema,
 });
 export type McpConnectorOAuthReauthorizationRequest = z.infer<
@@ -63,9 +72,8 @@ export const mcpConnectorsContract = c.router({
   },
   reauthorizeOAuth: {
     method: "POST",
-    path: "/api/mcp-connectors/:id/oauth2/reauthorize",
+    path: "/api/mcp-connectors/oauth2/reauthorize",
     headers: authHeadersSchema,
-    pathParams: z.object({ id: z.string().uuid() }),
     body: mcpConnectorOAuthReauthorizationRequestSchema,
     responses: {
       200: mcpConnectorOAuthReauthorizationResponseSchema,

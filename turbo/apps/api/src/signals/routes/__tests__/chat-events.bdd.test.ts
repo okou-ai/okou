@@ -1632,6 +1632,100 @@ function setThreadConnectorCatalogReadHook(hook: () => Promise<void>): void {
 }
 
 describe("CHAT-02: thread connector account selection", () => {
+  it("admits independently selected non-default builtin HTTP and MCP accounts", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    await connectors.updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.BuiltinConnectorMcp]: true,
+    });
+    const identities = [
+      {
+        slug: "gitlab",
+        values: { accessToken: "http-account" },
+        alias: "GITLAB_TOKEN",
+      },
+      {
+        slug: "test-headers-mcp",
+        values: { token: "mcp-account" },
+        alias: "TEST_MCP_HEADERS_TOKEN",
+      },
+    ] as const;
+    const thread = await chat.createThread(actor, {
+      agentId,
+      title: "Independent builtin protocols",
+    });
+    const selected = [];
+    for (const identity of identities) {
+      await connectors.connectManualGrant(
+        actor,
+        identity.slug,
+        "api-token",
+        identity.values,
+      );
+      const second = await connectors.connectManualGrant(
+        actor,
+        identity.slug,
+        "api-token",
+        identity.values,
+        undefined,
+        { intent: "add", displayName: "Thread account" },
+      );
+      selected.push({ ...identity, id: second.id });
+    }
+    await api.enableAgentConnectors(
+      actor,
+      agentId,
+      identities.map((identity) => {
+        return identity.slug;
+      }),
+    );
+    for (const identity of selected) {
+      await accept(
+        chatThreadConnectorSelectionsClient().update({
+          headers: sessionHeaders(actor),
+          params: { id: thread.id },
+          body: {
+            connectionId: identity.id,
+            target: { kind: "builtin", connectorSlug: identity.slug },
+          },
+        }),
+        [200],
+      );
+    }
+    const run = await sendChatRun(actor, {
+      agentId,
+      threadId: thread.id,
+      prompt: "Use both independent accounts",
+    });
+    const { claim, sandboxHeaders } = await claimChatRun(
+      runnerGroup,
+      run.runId,
+    );
+    for (const identity of selected) {
+      expect(claim.firewalls).toContainEqual(
+        expect.objectContaining({
+          kind: "builtin",
+          name: identity.slug,
+          sourceId: identity.id,
+        }),
+      );
+      expect(claim.secretConnectorMetadataMap?.[identity.alias]).toMatchObject({
+        sourceId: identity.id,
+      });
+      expect(claim.secretConnectorMap?.[identity.alias]).toBe(identity.slug);
+    }
+    expect(claim.environment).not.toHaveProperty("TEST_MCP_HEADERS_TOKEN");
+    expect(claim.appendSystemPrompt).toContain("`test-headers-mcp`");
+    await cancelChatRun(actor, run.runId, sandboxHeaders);
+    const selections = await accept(
+      chatThreadConnectorSelectionsClient().get({
+        headers: sessionHeaders(actor),
+        params: { id: thread.id },
+      }),
+      [200],
+    );
+    expect(selections.body.selections).toHaveLength(2);
+  });
+
   it.each(["missing", "incomplete"] as const)(
     "reads the selected account when the catalog projection is %s",
     async (projectionState) => {

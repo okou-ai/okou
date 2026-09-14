@@ -1,5 +1,6 @@
 import type { ConnectorSearchItem } from "@okouai/api-contracts/contracts/connectors";
 import type {
+  ConnectorCatalogProtocolScope,
   PublicConnectorCatalogListResponse,
   PublicConnectorCatalogDiscoveryResponse,
   PublicConnectorCatalogPermissionDetail,
@@ -25,6 +26,7 @@ export function isConnectorCatalogUnavailableError(error: unknown): boolean {
 }
 
 interface ConnectorCatalogReadArgs {
+  readonly protocol?: ConnectorCatalogProtocolScope;
   readonly db: ReadonlyDb;
   readonly featureStates: ConnectorFeatureStates;
 }

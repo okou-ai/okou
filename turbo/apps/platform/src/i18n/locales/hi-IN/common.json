@@ -3129,9 +3129,11 @@
       },
       "filterWith": "फ़िल्टर: {{category}}",
       "iconUnavailable": "कनेक्टर आइकन अनुपलब्ध",
+      "mcpAccess": "Agent की पहुँच इस MCP सर्वर द्वारा उपलब्ध कराए गए सभी टूल पर लागू होती है। HTTP API कनेक्टर की अनुमतियाँ अलग से प्रबंधित की जाती हैं।",
       "newConnector": "नया कनेक्टर",
       "noConnectorsAlt": "कोई कनेक्टर नहीं",
       "otherCategory": "अन्य",
+      "protocolLabel": "बिल्ट-इन कनेक्टर प्रोटोकॉल",
       "remoteAccess": "रिमोट एक्सेस",
       "scope": {
         "aria": "कनेक्टर दायरा",
@@ -3560,6 +3562,7 @@
           "sourceUnavailable": "स्रोत अनुपलब्ध",
           "stale": "बासी",
           "unchanged": "स्थिर",
+          "unsupportedGenericStrategy": "असमर्थित प्रमाणीकरण विधि",
           "unsupportedSchema": "असमर्थित स्कीमा"
         }
       },

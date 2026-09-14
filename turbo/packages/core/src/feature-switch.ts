@@ -468,6 +468,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.BuiltinConnectorMcp]: {
+    maintainer: "liangyou@okou.ai",
+    description:
+      "Enable independently connected builtin Streamable HTTP MCP connectors.",
+    enabled: false,
+  },
   [FeatureSwitchKey.SshAccess]: {
     maintainer: "liangyou@okou.ai",
     description: "Enable standalone Runner-mediated SSH configuration",

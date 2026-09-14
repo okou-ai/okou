@@ -69,6 +69,7 @@ import { IconTooltipButton } from "../../../components/icon-tooltip.tsx";
 import { MercuryDisclosure } from "./mercury-disclosure.tsx";
 
 interface ConnectorAccessManagementDialogProps {
+  readonly protocol?: "mcp";
   readonly connectorSlug: ConnectorSlug;
   readonly connectorLabel: string;
   readonly allowAccessIncrease: boolean;
@@ -465,6 +466,7 @@ function AgentPermissionDialog({
 }
 
 export function ConnectorAccessManagementDialog({
+  protocol,
   connectorSlug,
   connectorLabel,
   allowAccessIncrease,
@@ -546,7 +548,13 @@ export function ConnectorAccessManagementDialog({
           setPermissionAgentId(row.agent.agentId);
         }}
         footer={
-          connectorSlug === "mercury" ? (
+          protocol === "mcp" ? (
+            <p className="shrink-0 border-t border-border/50 pt-3 text-sm text-muted-foreground">
+              {t(($) => {
+                return $.connectors.catalog.mcpAccess;
+              })}
+            </p>
+          ) : connectorSlug === "mercury" ? (
             <MercuryDisclosure className="shrink-0 border-t border-border/50 pt-3" />
           ) : undefined
         }

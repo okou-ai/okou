@@ -107,6 +107,8 @@ function sourceGrant(method: ConnectorCatalogAuthMethod): ConnectorGrantSource {
         }),
       };
     }
+    case "none":
+    case "automatic":
     case "auth-code":
     case "external-code":
     case "openid-auth": {
@@ -146,6 +148,7 @@ function validateConnectorSemantics(artifact: ConnectorCatalogArtifact): void {
       );
     }
     const source = connectorSourceSchema.parse({
+      ...(connector.mcp === undefined ? {} : { mcp: connector.mcp }),
       label: connector.label,
       description: connector.description,
       category: connector.category,
@@ -232,6 +235,9 @@ function validateFirewallBindings(args: {
 }): void {
   const knownEnvironmentNames = new Set<string>();
   for (const method of args.connector.authMethods) {
+    if (method.access.kind === "automatic") {
+      continue;
+    }
     for (const name of Object.keys(method.access.envBindings)) {
       knownEnvironmentNames.add(name);
     }
@@ -347,6 +353,7 @@ export function deriveConnectorCatalogFirewallRouting(
 
 function validateFirewallSemantics(artifact: ConnectorCatalogArtifact): void {
   for (const connector of artifact.connectors) {
+    validateMcpFirewall(connector);
     if (connector.firewall.kind === "none") {
       continue;
     }
@@ -375,6 +382,50 @@ function validateFirewallSemantics(artifact: ConnectorCatalogArtifact): void {
           `Firewall fixed host is invalid: ${connector.slug}`,
         );
       }
+    }
+  }
+}
+
+function validateMcpFirewall(
+  connector: ConnectorCatalogArtifactConnector,
+): void {
+  if (connector.mcp === undefined) {
+    return;
+  }
+  if (
+    connector.firewall.kind !== "generated" ||
+    connector.firewall.config.apis.length !== 1 ||
+    connector.firewall.config.apis.some((api) => {
+      return (
+        api.base !== connector.mcp?.endpoint ||
+        (api.permissions?.length ?? 0) > 0 ||
+        api.hostPolicy?.kind !== "publicDestination"
+      );
+    }) ||
+    connector.firewall.defaultUnknownPolicy !== "allow" ||
+    connector.firewall.categories !== null ||
+    connector.firewall.defaultAllowed !== null
+  ) {
+    throw new ConnectorCatalogRelationshipError(
+      "mcp-firewall-endpoint",
+      "MCP requires an endpoint-scoped public firewall without API permissions",
+    );
+  }
+  for (const api of connector.firewall.config.apis) {
+    if (
+      api.auth.base !== undefined ||
+      api.auth.awsSigv4 !== undefined ||
+      (connector.authMethods.some((method) => {
+        return (
+          method.grant.kind === "none" || method.grant.kind === "automatic"
+        );
+      }) &&
+        firewallAuthInjectsCredentials(api.auth))
+    ) {
+      throw new ConnectorCatalogRelationshipError(
+        "mcp-firewall-auth",
+        "MCP authentication must match its declared account strategy",
+      );
     }
   }
 }

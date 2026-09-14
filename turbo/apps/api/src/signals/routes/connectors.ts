@@ -271,7 +271,7 @@ const connectManualGrantConnectorInner$ = command(
       return notFound(agentTarget.message);
     }
 
-    const resolver = await get(connectorActionResolver());
+    const resolver = await get(connectorActionResolver(auth));
     signal.throwIfAborted();
     const resolved = await resolver.resolveNewActionMethod({
       connectorSlug: params.connectorSlug,
@@ -353,7 +353,7 @@ const connectNoAuthConnectorInner$ = command(
       return notFound(agentTarget.message);
     }
 
-    const resolver = await get(connectorActionResolver());
+    const resolver = await get(connectorActionResolver(auth));
     signal.throwIfAborted();
     const resolved = await resolver.resolveNewActionMethod({
       connectorSlug: params.connectorSlug,

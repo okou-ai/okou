@@ -237,7 +237,7 @@ function runnerPreference(job: RunnerJob | null | undefined) {
 }
 
 const CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET = "okou web upload-file -f <path>";
-const MCP_CONNECTOR_PROMPT_HEADING = "# MCP Custom Connectors";
+const MCP_CONNECTOR_PROMPT_HEADING = "# MCP Connectors";
 const MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT = 20;
 
 function mcpConnectorPromptSection(prompt: string): string | undefined {

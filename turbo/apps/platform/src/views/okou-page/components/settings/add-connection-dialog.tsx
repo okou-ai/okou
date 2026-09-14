@@ -1220,6 +1220,10 @@ function getConnectMethodContentComponent(
     case "managed": {
       return null;
     }
+    case "automatic": {
+      // Executable builtin Automatic OAuth is introduced separately from its schema.
+      return null;
+    }
   }
 }
 
@@ -1525,6 +1529,7 @@ export function ConnectModal({
   accountMode?: ConnectorAccountConnectMode;
   reconnectAuthMethod?: ConnectorAuthMethodId;
 }) {
+  const { t } = useTranslation();
   const clearConnectorOAuthDeviceAuth = useSet(clearConnectorOAuthDeviceAuth$);
   const clearConnectorExternalCode = useSet(clearConnectorExternalCode$);
   const connectFlowConnectorSlug = useGet(connectFlowConnectorSlug$);
@@ -1576,6 +1581,13 @@ export function ConnectModal({
             <DialogTitle>{item.label}</DialogTitle>
           </div>
         </DialogHeader>
+        {item.protocol === "mcp" && (
+          <p className="text-sm text-muted-foreground">
+            {t(($) => {
+              return $.connectors.catalog.mcpAccess;
+            })}
+          </p>
+        )}
 
         {item.connected && !accountMode && (
           <p className="wrap-anywhere text-sm text-muted-foreground">

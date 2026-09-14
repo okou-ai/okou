@@ -331,11 +331,17 @@ export function installComposerConnectorFixture(
     connectorCatalogContract.discovery,
     ({ query, respond }) => {
       const keyword = query.keyword?.trim().toLowerCase();
+      const scopedCatalog = catalog.filter((connector) => {
+        return (
+          query.protocol === "all" ||
+          (connector.protocol ?? "http") === (query.protocol ?? "http")
+        );
+      });
       const featured = options.featuredConnectorSlugs
-        ? catalog.filter((connector) => {
+        ? scopedCatalog.filter((connector) => {
             return options.featuredConnectorSlugs?.includes(connector.slug);
           })
-        : catalog;
+        : scopedCatalog;
       // Production answers a named category with the whole category, and a
       // keyword-free browse with every connected connector plus a slice of
       // each category. The fixture does the same, or a category view is
@@ -346,7 +352,7 @@ export function installComposerConnectorFixture(
           })
         : browseSlice(featured);
       const connectors = keyword
-        ? catalog.filter((connector) => {
+        ? scopedCatalog.filter((connector) => {
             return [connector.slug, connector.label, ...connector.tags].some(
               (value) => {
                 return value.toLowerCase().includes(keyword);
@@ -356,7 +362,7 @@ export function installComposerConnectorFixture(
         : browsed;
       return respond(200, {
         connectors,
-        totalConnectorCount: catalog.length,
+        totalConnectorCount: scopedCatalog.length,
         ...(options.categoryConnectorCounts === undefined
           ? {}
           : { categoryConnectorCounts: options.categoryConnectorCounts }),
@@ -680,6 +686,7 @@ export function noAuthMethod(): PublicConnectorCatalogAuthMethodDetail {
 }
 
 export function builtinConnector(args: {
+  readonly protocol?: "mcp";
   readonly slug: ConnectorSlug;
   readonly label: string;
   readonly connected?: boolean;
@@ -702,6 +709,7 @@ export function builtinConnector(args: {
   const authMethod = authMethods[0]?.id ?? "oauth";
   return {
     slug: args.slug,
+    ...(args.protocol === undefined ? {} : { protocol: args.protocol }),
     label: args.label,
     description: `${args.label} connector`,
     icon: {

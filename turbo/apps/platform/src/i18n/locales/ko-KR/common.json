@@ -3116,9 +3116,11 @@
       },
       "filterWith": "필터: {{category}}",
       "iconUnavailable": "커넥터 아이콘을 사용할 수 없습니다",
+      "mcpAccess": "Agent 접근 권한은 이 MCP 서버가 제공하는 모든 도구에 적용됩니다. HTTP API 커넥터 권한은 별도로 관리됩니다.",
       "newConnector": "새 커넥터",
       "noConnectorsAlt": "커넥터 없음",
       "otherCategory": "기타",
+      "protocolLabel": "기본 제공 커넥터 프로토콜",
       "remoteAccess": "원격 액세스",
       "scope": {
         "aria": "커넥터 범위",
@@ -3547,6 +3549,7 @@
           "sourceUnavailable": "소스 사용 불가",
           "stale": "오래됨",
           "unchanged": "변경 없음",
+          "unsupportedGenericStrategy": "지원되지 않는 인증 방식",
           "unsupportedSchema": "지원되지 않는 스키마"
         }
       },

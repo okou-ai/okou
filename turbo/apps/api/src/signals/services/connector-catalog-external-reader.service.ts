@@ -1,4 +1,5 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ConnectorCatalogSyncFailureCode } from "@okouai/api-contracts/contracts/connector-catalog-diagnostics";
 import type { ConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import type { ConnectorSearchItem } from "@okouai/api-contracts/contracts/connectors";
@@ -114,6 +115,7 @@ interface EffectiveConnector {
 }
 
 interface ExternalCatalogReadArgs {
+  readonly protocol?: "http" | "mcp" | "all";
   readonly db: ReadonlyDb;
   readonly featureStates: ConnectorFeatureStates;
 }
@@ -249,6 +251,8 @@ function requestedScopes(
     case "external-code": {
       return method.grant.scopes;
     }
+    case "none":
+    case "automatic":
     case "manual":
     case "openid-auth": {
       return [];
@@ -640,10 +644,21 @@ function featureSwitchEnabled(
 }
 
 function effectiveConnectors(args: {
+  readonly protocol?: "http" | "mcp" | "all";
   readonly catalog: AcceptedConnectorCatalogSnapshot;
   readonly featureStates: ConnectorFeatureStates;
 }): readonly EffectiveConnector[] {
   return args.catalog.artifact.connectors.flatMap((connector) => {
+    const protocol = connector.mcp === undefined ? "http" : "mcp";
+    if (
+      (args.protocol !== undefined &&
+        args.protocol !== "all" &&
+        args.protocol !== protocol) ||
+      (connector.mcp !== undefined &&
+        args.featureStates?.[FeatureSwitchKey.BuiltinConnectorMcp] !== true)
+    ) {
+      return [];
+    }
     const authMethods = connector.authMethods.filter((method) => {
       if (
         args.catalog.filteredMethodKeys.has(
@@ -788,6 +803,9 @@ function connectorCatalogItem(
   );
   return {
     slug: effective.connector.slug,
+    ...(effective.connector.mcp === undefined
+      ? {}
+      : { protocol: "mcp" as const }),
     label: effective.connector.label,
     description: effective.connector.description,
     icon: iconForCatalog(effective.connector),
@@ -1019,6 +1037,7 @@ export async function listExternalPublicConnectorCatalog(
 ): Promise<PublicConnectorCatalogListResponse> {
   const catalog = await loadAcceptedConnectorCatalogSnapshot(args.db);
   const connectors = effectiveConnectors({
+    protocol: args.protocol,
     catalog,
     featureStates: args.featureStates,
   });
@@ -1219,6 +1238,7 @@ export async function listExternalPublicConnectorCatalogStatus(
 ): Promise<ConnectorCatalogStatusRead> {
   const catalog = await loadAcceptedConnectorCatalogSnapshot(args.db);
   const effective = effectiveConnectors({
+    protocol: args.protocol,
     catalog,
     featureStates: args.featureStates,
   });
@@ -1235,6 +1255,7 @@ export async function discoverExternalPublicConnectorCatalogStatus(
 ): Promise<ConnectorCatalogDiscoveryRead> {
   const catalog = await loadAcceptedConnectorCatalogSnapshot(args.db);
   const effective = effectiveConnectors({
+    protocol: args.protocol,
     catalog,
     featureStates: args.featureStates,
   });

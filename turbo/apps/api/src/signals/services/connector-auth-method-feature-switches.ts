@@ -11,6 +11,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 const FEATURE_SWITCH_BY_AUTH_METHOD = Object.freeze<
   Record<string, FeatureSwitchKey | undefined>
 >({
+  "clickup-mcp\0automatic": FeatureSwitchKey.BuiltinConnectorMcp,
   "ahrefs\0oauth": FeatureSwitchKey.AhrefsConnector,
   "bentoml\0api-token": FeatureSwitchKey.BentomlConnector,
   "bill\0api-token": FeatureSwitchKey.BillConnector,

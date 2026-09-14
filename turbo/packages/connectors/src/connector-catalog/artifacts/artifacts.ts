@@ -12,6 +12,8 @@ import {
   firewallPolicyValueSchema,
 } from "./firewall";
 import {
+  automaticGrantSourceSchema,
+  noneGrantSourceSchema,
   catalogSourceSchema,
   connectorAccessSourceSchema,
   connectorAuthClientSourceSchema,
@@ -23,6 +25,7 @@ import {
   publicFieldIdSchema,
 } from "./source";
 import { isConnectorCatalogIconKey } from "./icon";
+import { connectorMcpSchema } from "./mcp";
 
 export const SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION = 3;
 export const CONNECTOR_CATALOG_ACTIVE_KEY = `connectors/v${SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION}/active.json`;
@@ -93,6 +96,8 @@ const connectorCatalogDeviceStartOptionSchema = z
   .strict();
 
 const connectorCatalogGrantSchema = z.discriminatedUnion("kind", [
+  noneGrantSourceSchema,
+  automaticGrantSourceSchema,
   z
     .object({
       kind: z.literal("manual"),
@@ -191,6 +196,7 @@ const connectorCatalogFirewallSchema = z.discriminatedUnion("kind", [
 
 export const connectorCatalogArtifactConnectorSchema = z
   .object({
+    mcp: connectorMcpSchema.optional(),
     slug: connectorSlugSchema,
     label: z.string().min(1),
     description: z.string().min(1),

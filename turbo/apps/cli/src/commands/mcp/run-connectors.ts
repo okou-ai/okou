@@ -16,8 +16,9 @@ export async function resolveRunMcpConnector(
     connectorSlug,
     (candidate) => {
       return {
-        kind: "custom",
-        id: candidate.id,
+        ...(candidate.kind === "builtin"
+          ? { kind: "builtin" as const }
+          : { kind: "custom" as const, id: candidate.id }),
         slug: candidate.slug,
         label: candidate.displayName,
       };

@@ -79,6 +79,7 @@ export interface ConnectorRuntimeMethod {
 }
 
 export interface ConnectorRuntimeConnector {
+  readonly mcp?: ConnectorCatalogArtifactConnector["mcp"];
   readonly connectorSlug: ConnectorSlug;
   readonly catalogConnector: PublicConnectorCatalogDetail;
   readonly methods: ReadonlyMap<ConnectorAuthMethodId, ConnectorRuntimeMethod>;
@@ -244,6 +245,11 @@ function platformSecretName(value: string): ConnectorPlatformSecretName {
 function runtimeAccess(
   access: ConnectorCatalogAuthMethod["access"],
 ): ConnectorAccessConfig {
+  if (access.kind === "automatic") {
+    throw new Error(
+      "Unsupported Automatic access passed executable capability filtering",
+    );
+  }
   const envBindings: Record<string, ConnectorEnvBindingValue> = {};
   for (const [name, binding] of Object.entries(access.envBindings)) {
     envBindings[name] = envBindingValue(binding);
@@ -375,6 +381,19 @@ function runtimeMethod(
   };
 
   switch (method.grant.kind) {
+    case "automatic": {
+      throw new Error(
+        "Unsupported Automatic grant passed executable capability filtering",
+      );
+    }
+    case "none": {
+      return {
+        storage,
+        grant: { kind: "none" },
+        access: { kind: "none" },
+        revoke: { kind: "none" },
+      };
+    }
     case "manual": {
       return {
         storage,
@@ -507,6 +526,7 @@ function runtimeConnector(
     methods,
     authoredVisibleMethodIds,
     skill: connector.skill,
+    ...(connector.mcp === undefined ? {} : { mcp: connector.mcp }),
   };
 }
 

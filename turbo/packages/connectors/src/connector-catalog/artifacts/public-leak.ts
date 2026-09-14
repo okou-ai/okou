@@ -82,8 +82,12 @@ function connectorCatalogSensitiveValues(
       for (const field of authMethod.grant.fields) {
         addSensitiveValue(field.privateName, values);
       }
-    } else {
+    } else if ("outputs" in authMethod.grant) {
       addBindingValues(authMethod.grant.outputs, values);
+    }
+    if (authMethod.access.kind === "automatic") {
+      addBindingValues(authMethod.access.inputs, values);
+      continue;
     }
     for (const [name, binding] of Object.entries(
       authMethod.access.envBindings,
@@ -248,6 +252,8 @@ function publicGrant(
         }),
       };
     }
+    case "none":
+    case "automatic":
     case "auth-code":
     case "external-code":
     case "openid-auth": {
@@ -258,6 +264,7 @@ function publicGrant(
 
 function publicConnector(connector: ConnectorCatalogArtifactConnector) {
   return {
+    ...(connector.mcp === undefined ? {} : { mcp: connector.mcp }),
     slug: connector.slug,
     label: connector.label,
     description: connector.description,

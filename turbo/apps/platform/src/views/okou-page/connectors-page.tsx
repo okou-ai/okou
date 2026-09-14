@@ -32,8 +32,11 @@ import { isOrgAdmin$ } from "../../signals/org.ts";
 import { agents$ } from "../../signals/agent.ts";
 import { CustomConnectorsPanel } from "./components/settings/custom-connectors-panel.tsx";
 import { ConnectorsDirectoryContent } from "./connectors-directory-content.tsx";
+import { BuiltinConnectorProtocolTabs } from "./components/settings/builtin-connector-protocol-tabs.tsx";
 import {
   connectorDirectoryCustomScope$,
+  builtinConnectorProtocol$,
+  setBuiltinConnectorProtocol$,
   connectorsScope$,
   openConnectorDirectoryScope$,
   setConnectorsScope$,
@@ -1649,6 +1652,11 @@ function ManagedConnectorAccessDialog() {
     <ConnectorAccessManagementDialog
       connectorSlug={connectorSlug}
       connectorLabel={connectorLabel}
+      protocol={
+        catalogItemsLoadable.data.find((item) => {
+          return item.slug === connectorSlug;
+        })?.protocol
+      }
       allowAccessIncrease={(accountSummary?.accountCount ?? 0) > 0}
       onClose={close}
     />
@@ -1762,13 +1770,19 @@ function builtinListData(
 
 export function ConnectorsPage() {
   const { t } = useTranslation();
+  const protocol = useGet(builtinConnectorProtocol$);
+  const setProtocol = useSet(setBuiltinConnectorProtocol$);
+  const builtinMcpEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.BuiltinConnectorMcp] === true;
   const shelfEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ConnectorDirectory] === true;
   const relatedCatalogItemsLoadable = useLastLoadable(relatedCatalogItems$);
-  const filteredCatalogItemsLoadable = useFilteredCatalogItems(shelfEnabled);
+  const filteredCatalogItemsLoadable = useFilteredCatalogItems(
+    shelfEnabled || builtinMcpEnabled,
+  );
   const sshSummary = useLoadable(sshSummary$);
   const filteredSshSummary = useLoadable(filteredSshSummary$);
-  const catalogStatusLoadable = useLastLoadable(connectorCatalogDiscovery$);
+  const catalogStatusLoadable = useLoadable(connectorCatalogDiscovery$);
   const accountSummariesLoadable = useLoadable(
     connectorAccountSummaryByTarget$,
   );
@@ -2080,6 +2094,12 @@ export function ConnectorsPage() {
               </div>
             )}
 
+            {activeTab === "builtin" && (
+              <BuiltinConnectorProtocolTabs
+                value={protocol}
+                onChange={setProtocol}
+              />
+            )}
             <ConnectorsPagePanels
               shelfEnabled={shelfEnabled}
               scope={scope}

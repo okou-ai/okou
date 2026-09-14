@@ -10,6 +10,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db$ } from "../external/db";
 import { customConnectorDefinitionSelection } from "./custom-connector-definition-selection";
 import { loadCurrentCustomConnectorStoredValues } from "./custom-connector-credential-access.service";
+import { loadRunBuiltinMcpConnectors } from "./run-builtin-mcp-connectors.service";
 import {
   normaliseCustomConnectorRow,
   serialiseCustomConnector,
@@ -20,18 +21,22 @@ export function runMcpConnectorList(args: {
   readonly userId: string;
   readonly runId: string;
   readonly customConnectorSourceIds?: Readonly<Record<string, string>>;
+  readonly builtinMcpSourceIds?: Readonly<Record<string, string>>;
 }): Computed<Promise<readonly McpConnector[]>> {
   return computed(async (get): Promise<readonly McpConnector[]> => {
     const memberConnectorIdsByCustomConnectorId = new Map(
       Object.entries(args.customConnectorSourceIds ?? {}),
     );
     const connectorIds = [...memberConnectorIdsByCustomConnectorId.keys()];
-    if (connectorIds.length === 0) {
+    if (
+      connectorIds.length === 0 &&
+      Object.keys(args.builtinMcpSourceIds ?? {}).length === 0
+    ) {
       return [];
     }
     const db = get(db$);
-    const rows = await db
-      .select({ connector: customConnectorDefinitionSelection() })
+    const [ownedRun] = await db
+      .select({ id: agentRuns.id })
       .from(agentRuns)
       .innerJoin(
         agentSessions,
@@ -41,18 +46,33 @@ export function runMcpConnectorList(args: {
           eq(agentSessions.userId, args.userId),
         ),
       )
-      .innerJoin(
-        orgCustomConnectors,
-        and(
-          eq(orgCustomConnectors.orgId, agentRuns.orgId),
-          inArray(orgCustomConnectors.id, connectorIds),
-        ),
-      )
       .where(
         and(
           eq(agentRuns.id, args.runId),
           eq(agentRuns.orgId, args.orgId),
           eq(agentRuns.userId, args.userId),
+        ),
+      )
+      .limit(1);
+    if (ownedRun === undefined) {
+      return [];
+    }
+    const builtin = await loadRunBuiltinMcpConnectors({
+      db,
+      orgId: args.orgId,
+      userId: args.userId,
+      sourceIds: args.builtinMcpSourceIds ?? {},
+    });
+    if (connectorIds.length === 0) {
+      return builtin;
+    }
+    const rows = await db
+      .select({ connector: customConnectorDefinitionSelection() })
+      .from(orgCustomConnectors)
+      .where(
+        and(
+          eq(orgCustomConnectors.orgId, args.orgId),
+          inArray(orgCustomConnectors.id, connectorIds),
           eq(orgCustomConnectors.enabled, true),
           eq(orgCustomConnectors.mcpTransport, "streamable-http"),
         ),
@@ -73,7 +93,7 @@ export function runMcpConnectorList(args: {
       memberConnectorIdsByCustomConnectorId,
     });
 
-    return rows.map(({ connector }) => {
+    const custom = rows.map(({ connector }): McpConnector => {
       const access = storage.accesses.get(connector.id);
       if (!access) {
         throw new Error("Expected MCP connector credential access");
@@ -103,6 +123,7 @@ export function runMcpConnectorList(args: {
         throw new Error("Run MCP connector query returned a non-MCP connector");
       }
       return {
+        kind: "custom",
         id: response.id,
         slug: response.slug,
         displayName: response.displayName,
@@ -111,5 +132,6 @@ export function runMcpConnectorList(args: {
         connected: response.connected,
       };
     });
+    return [...builtin, ...custom];
   });
 }

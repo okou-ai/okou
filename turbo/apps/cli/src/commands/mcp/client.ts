@@ -188,7 +188,9 @@ async function insufficientScopeError(
   }
   try {
     const authorization = await reauthorizeRunMcpConnectorOAuth(
-      connector.id,
+      connector.kind === "builtin"
+        ? { kind: "builtin", connectorSlug: connector.slug }
+        : { kind: "custom", customConnectorId: connector.id },
       scopes,
       deadlineSignal,
     );
@@ -264,7 +266,10 @@ async function runMcpOperation<T>(
   const deadlineController = new AbortController();
   const deadlineAt = Date.now() + timeoutSeconds * 1_000;
   const transport = new StreamableHTTPClientTransport(endpoint, {
-    fetch: createMcpFetch(connector.id, deadlineController.signal),
+    fetch: createMcpFetch(
+      connector.kind === "builtin" ? connector.slug : connector.id,
+      deadlineController.signal,
+    ),
     requestInit: { redirect: "error" },
     reconnectionOptions: {
       initialReconnectionDelay: 1_000,

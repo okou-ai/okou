@@ -3116,9 +3116,11 @@
       },
       "filterWith": "Filter: {{category}}",
       "iconUnavailable": "Ikon konektor tidak tersedia",
+      "mcpAccess": "Akses Agent berlaku untuk semua alat yang disediakan oleh server MCP ini. Izin konektor HTTP API dikelola secara terpisah.",
       "newConnector": "Konektor baru",
       "noConnectorsAlt": "Tidak ada konektor",
       "otherCategory": "Lainnya",
+      "protocolLabel": "Protokol konektor bawaan",
       "remoteAccess": "Akses jarak jauh",
       "scope": {
         "aria": "Cakupan konektor",
@@ -3547,6 +3549,7 @@
           "sourceUnavailable": "Sumber tidak tersedia",
           "stale": "Usang",
           "unchanged": "Tidak berubah",
+          "unsupportedGenericStrategy": "Strategi autentikasi tidak didukung",
           "unsupportedSchema": "Skema tidak didukung"
         }
       },

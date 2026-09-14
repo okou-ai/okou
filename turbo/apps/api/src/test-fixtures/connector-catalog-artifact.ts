@@ -17,7 +17,10 @@ type DeviceStartOption = Extract<
   ConnectorCatalogAuthMethod["grant"],
   { readonly kind: "device-auth" }
 >["startOptions"][number];
-type EnvironmentBindings = ConnectorCatalogAuthMethod["access"]["envBindings"];
+type EnvironmentBindings = Extract<
+  ConnectorCatalogAuthMethod["access"],
+  { readonly kind: "static" }
+>["envBindings"];
 type GeneratedFirewall = Extract<
   ConnectorCatalogArtifactConnector["firewall"],
   { readonly kind: "generated" }
@@ -495,6 +498,7 @@ function bearerApi(
 }
 
 interface ConnectorArgs {
+  readonly mcp?: ConnectorCatalogArtifactConnector["mcp"];
   readonly connectorSlug: string;
   readonly label: string;
   readonly authMethods: readonly ConnectorCatalogAuthMethod[];
@@ -509,6 +513,7 @@ interface ConnectorArgs {
 function connector(args: ConnectorArgs): ConnectorCatalogArtifactConnector {
   return {
     slug: args.connectorSlug,
+    ...(args.mcp === undefined ? {} : { mcp: args.mcp }),
     label: args.label,
     description:
       args.description ?? `${args.label} accepted-catalog test fixture.`,
@@ -2256,6 +2261,124 @@ const connectors = [
   }),
 ] satisfies readonly ConnectorCatalogArtifactConnector[];
 
+const builtinMcpConnectors = [
+  connector({
+    connectorSlug: "test-no-auth-mcp",
+    label: "Public Tools",
+    mcp: {
+      transport: "streamable-http",
+      endpoint: "https://public-tools.example.test/mcp",
+    },
+    authMethods: [
+      {
+        id: "none",
+        label: "Connect",
+        description: null,
+        visible: true,
+        storage: { version: 1, secrets: [], variables: [] },
+        grant: { kind: "none" },
+        access: { kind: "static", envBindings: {} },
+        revoke: { kind: "none" },
+      },
+    ],
+    firewall: generatedFirewall([
+      {
+        base: "https://public-tools.example.test/mcp",
+        hostPolicy: { kind: "publicDestination" },
+        auth: {},
+        permissions: [],
+      },
+    ]),
+  }),
+  ...(["headers", "query"] as const).map((kind) => {
+    const alias = `TEST_MCP_${kind.toUpperCase()}_TOKEN`;
+    return connector({
+      connectorSlug: `test-${kind}-mcp`,
+      label: `Test ${kind}`,
+      mcp: {
+        transport: "streamable-http",
+        endpoint: `https://${kind}.example.test/mcp`,
+      },
+      authMethods: [
+        manualMethod({
+          fields: [
+            manualField({
+              privateName: `${alias}_STORED`,
+              publicId: "token",
+              label: "API Key",
+              storage: "secret",
+            }),
+          ],
+          envBindings: { [alias]: secret(`${alias}_STORED`) },
+        }),
+      ],
+      firewall: generatedFirewall(
+        [
+          {
+            base: `https://${kind}.example.test/mcp`,
+            hostPolicy: { kind: "publicDestination" },
+            permissions: [],
+            auth:
+              kind === "headers"
+                ? {
+                    headers: {
+                      Authorization: `Bearer ${secretTemplate(alias)}`,
+                    },
+                  }
+                : { query: { api_key: secretTemplate(alias) } },
+          },
+        ],
+        { placeholders: { [alias]: `fixture-${kind}-credential` } },
+      ),
+    });
+  }),
+  connector({
+    connectorSlug: "test-automatic-mcp",
+    label: "Automatic Tools",
+    mcp: {
+      transport: "streamable-http",
+      endpoint: "https://automatic.example.test/mcp",
+    },
+    authMethods: [
+      {
+        id: "automatic",
+        label: "Automatic",
+        description: null,
+        visible: true,
+        storage: {
+          version: 1,
+          secrets: ["TEST_AUTOMATIC_MCP_ACCESS", "TEST_AUTOMATIC_MCP_REFRESH"],
+          variables: [],
+        },
+        grant: {
+          kind: "automatic",
+          callbackOrigin: "api",
+          outputs: {
+            access_token: secret("TEST_AUTOMATIC_MCP_ACCESS"),
+            refresh_token: secret("TEST_AUTOMATIC_MCP_REFRESH"),
+          },
+        },
+        access: {
+          kind: "automatic",
+          inputs: {
+            access_token: secret("TEST_AUTOMATIC_MCP_ACCESS"),
+            refresh_token: secret("TEST_AUTOMATIC_MCP_REFRESH"),
+          },
+        },
+        revoke: { kind: "none" },
+      },
+    ],
+    firewall: generatedFirewall([
+      {
+        base: "https://automatic.example.test/mcp",
+        hostPolicy: { kind: "publicDestination" },
+        auth: {},
+        permissions: [],
+      },
+    ]),
+  }),
+] satisfies readonly ConnectorCatalogArtifactConnector[];
+
 export const API_TEST_CONNECTOR_CATALOG_ARTIFACT = {
   artifactSchemaVersion: 3,
   catalogVersion: "api-test-v3",
@@ -2270,5 +2393,5 @@ export const API_TEST_CONNECTOR_CATALOG_ARTIFACT = {
     ],
     groups: [{ id: "test", label: "Test", menuLabel: "Test" }],
   },
-  connectors,
+  connectors: [...connectors, ...builtinMcpConnectors],
 } satisfies ConnectorCatalogArtifact;

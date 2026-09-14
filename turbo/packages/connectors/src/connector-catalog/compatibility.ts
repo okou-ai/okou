@@ -23,6 +23,7 @@ import {
 } from "./contracts";
 
 const COMPATIBILITY_REASON_ORDER = [
+  "unsupported-generic-strategy",
   "missing-grant-provider",
   "missing-access-provider",
   "missing-revoke-provider",
@@ -129,8 +130,11 @@ function methodClientContract(
 function methodContract(
   method: ConnectorCatalogAuthMethod,
 ): ConnectorAuthProviderMethodContract {
+  if (method.grant.kind === "automatic" || method.access.kind === "automatic") {
+    throw new Error("Automatic is not a provider-backed auth contract");
+  }
   const grantOutputNames =
-    method.grant.kind === "manual"
+    method.grant.kind === "manual" || method.grant.kind === "none"
       ? []
       : Object.keys(method.grant.outputs).sort(compareStrings);
   const startOptionNames =
@@ -183,6 +187,7 @@ function addProviderReasons(
 ): void {
   if (
     method.grant.kind !== "manual" &&
+    method.grant.kind !== "none" &&
     registration?.handlers.grant !== method.grant.kind
   ) {
     reasons.add("missing-grant-provider");
@@ -218,6 +223,12 @@ function evaluateMethod(args: {
     | undefined;
   readonly configuredNames: ReadonlySet<string>;
 }): ConnectorCatalogCompatibilityReason[] {
+  if (
+    args.method.grant.kind === "automatic" ||
+    args.method.access.kind === "automatic"
+  ) {
+    return ["unsupported-generic-strategy"];
+  }
   const reasons = new Set<ConnectorCatalogCompatibilityReason>();
   addProviderReasons(reasons, args.method, args.registration);
 

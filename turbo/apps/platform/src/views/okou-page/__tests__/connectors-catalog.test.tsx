@@ -34,6 +34,87 @@ import {
 
 const context = testContext();
 
+test("Do not classify an old HTTP-only discovery response as MCP", async () => {
+  const connector = publicStatusItem({
+    connectorSlug: "clickup",
+    label: "ClickUp",
+    authMethods: [oauthMethod()],
+  });
+  mockConnectors(context, []);
+  mockPublicConnectorStatus(context, [connector]);
+  context.mocks.api(connectorCatalogContract.discovery, ({ respond }) => {
+    return respond(200, { connectors: [connector], totalConnectorCount: 1 });
+  });
+  await setupPage({
+    context,
+    path: "/connectors?protocol=mcp&keywords=ClickUp",
+    featureSwitches: {
+      [FeatureSwitchKey.BuiltinConnectorMcp]: true,
+      [FeatureSwitchKey.ConnectorDirectory]: true,
+    },
+  });
+  await expect(
+    screen.findByText('No connectors matching "ClickUp"'),
+  ).resolves.toBeVisible();
+  expect(queryConnectorCard("ClickUp · MCP")).toBeNull();
+  expect(queryConnectorCard("ClickUp · HTTP API")).toBeNull();
+});
+
+test.each([false, true])(
+  "Separate builtin protocols and restore the URL selection (directory=%s)",
+  async (directory) => {
+    mockConnectors(context, []);
+    mockPublicConnectorStatus(context, [
+      publicStatusItem({
+        connectorSlug: "clickup",
+        label: "ClickUp",
+        authMethods: [oauthMethod()],
+      }),
+      publicStatusItem({
+        connectorSlug: "clickup-mcp",
+        label: "ClickUp",
+        protocol: "mcp",
+        authMethods: [oauthMethod()],
+      }),
+    ]);
+    await setupPage({
+      context,
+      path: "/connectors?protocol=mcp",
+      featureSwitches: {
+        [FeatureSwitchKey.BuiltinConnectorMcp]: true,
+        [FeatureSwitchKey.ConnectorDirectory]: directory,
+      },
+    });
+    await waitFor(() => {
+      expect(queryConnectorCard("ClickUp · MCP")).toBeVisible();
+      expect(queryConnectorCard("ClickUp · HTTP API")).toBeNull();
+    });
+    const httpTab = queryAllByRoleFast("tab").find((tab) => {
+      return tab.textContent === "HTTP API";
+    });
+    if (!httpTab) {
+      throw new Error("Expected HTTP API protocol tab");
+    }
+    click(httpTab);
+    await waitFor(() => {
+      expect(queryConnectorCard("ClickUp · HTTP API")).toBeVisible();
+      expect(queryConnectorCard("ClickUp · MCP")).toBeNull();
+      expect(locationSearch()).toContain("protocol=http");
+    });
+    const mcpTab = queryAllByRoleFast("tab").find((tab) => {
+      return tab.textContent === "MCP";
+    });
+    if (!mcpTab) {
+      throw new Error("Expected MCP protocol tab");
+    }
+    click(mcpTab);
+    await waitFor(() => {
+      expect(queryConnectorCard("ClickUp · MCP")).toBeVisible();
+      expect(queryConnectorCard("ClickUp · HTTP API")).toBeNull();
+    });
+  },
+);
+
 function oauthMethod() {
   return {
     id: "oauth",

@@ -142,8 +142,12 @@ describe("connector catalog relationship failure details", () => {
           };
         }
         if (rule === "undeclared-storage-reference") {
-          method.access.envBindings.SERVICE_TOKEN =
-            "$secrets.UNDECLARED_PRIVATE_TOKEN";
+          method.access = {
+            kind: "static",
+            envBindings: {
+              SERVICE_TOKEN: "$secrets.UNDECLARED_PRIVATE_TOKEN",
+            },
+          };
         }
       }
       if (

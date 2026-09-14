@@ -62,6 +62,7 @@ import { isConnectorChangedPayloadFor } from "../../connector-change.ts";
 import { i18n } from "../../../i18n/index.ts";
 import {
   connectorDirectoryEnabled$,
+  builtinConnectorProtocol$,
   connectorDirectoryCustomScope$,
   connectorsScope$,
   openConnectorDirectoryScope$,
@@ -523,6 +524,7 @@ export const setConnectorsCategoryFilter$ = command(
 export const connectorCatalogDiscovery$ = relatedConnectorCatalog(
   connectorsSearch$,
   connectorsCategoryFilter$,
+  builtinConnectorProtocol$,
 );
 
 export const relatedCatalogItems$ = computed(async (get) => {

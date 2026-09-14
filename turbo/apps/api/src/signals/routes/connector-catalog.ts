@@ -83,12 +83,14 @@ const connectorCatalogRequestContext$ = command(async ({ get }) => {
 });
 
 const listConnectorCatalogInner$ = command(
-  async ({ set }, signal: AbortSignal) => {
+  async ({ get, set }, signal: AbortSignal) => {
     const context = await set(connectorCatalogRequestContext$);
     signal.throwIfAborted();
 
     const catalog = await settleConnectorCatalogRead(
       listPublicConnectorCatalog({
+        protocol:
+          get(queryOf(connectorCatalogContract.list)).protocol ?? "http",
         db: context.db,
         featureStates: context.featureStates,
       }),
@@ -124,6 +126,8 @@ const listConnectorCatalogStatusInner$ = command(
 
     const catalog = await settleConnectorCatalogRead(
       listPublicConnectorCatalogStatus({
+        protocol:
+          get(queryOf(connectorCatalogContract.status)).protocol ?? "http",
         db: context.db,
         featureStates: context.featureStates,
         connections: connectorState.value,
@@ -161,6 +165,7 @@ const discoverConnectorCatalogInner$ = command(
 
     const catalog = await settleConnectorCatalogRead(
       discoverPublicConnectorCatalogStatus({
+        protocol: query.protocol ?? "http",
         db: context.db,
         featureStates: context.featureStates,
         connections: connectorState.value,

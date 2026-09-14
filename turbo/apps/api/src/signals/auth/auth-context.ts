@@ -152,6 +152,9 @@ const agentAuth$ = command(
       ...(agentAuth.customConnectorSourceIds
         ? { customConnectorSourceIds: agentAuth.customConnectorSourceIds }
         : {}),
+      ...(agentAuth.builtinMcpSourceIds
+        ? { builtinMcpSourceIds: agentAuth.builtinMcpSourceIds }
+        : {}),
     };
 
     const membership = await set(

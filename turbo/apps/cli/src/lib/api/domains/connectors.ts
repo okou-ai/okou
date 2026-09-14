@@ -161,7 +161,7 @@ export async function listConnectorCatalog(): Promise<ConnectorCatalogListRespon
   const config = await getClientConfig();
   const client = initClient(connectorCatalogContract, config);
 
-  const result = await client.list({ headers: {} });
+  const result = await client.list({ headers: {}, query: { protocol: "all" } });
 
   if (result.status === 200) {
     return result.body;
@@ -174,7 +174,10 @@ export async function listConnectorCatalogStatus(): Promise<ConnectorCatalogStat
   const config = await getClientConfig();
   const client = initClient(connectorCatalogContract, config);
 
-  const result = await client.status({ headers: {} });
+  const result = await client.status({
+    headers: {},
+    query: { protocol: "all" },
+  });
 
   if (result.status === 200) {
     return result.body;
@@ -337,7 +340,7 @@ export async function listRunMcpConnectors(): Promise<McpConnector[]> {
 }
 
 export async function reauthorizeRunMcpConnectorOAuth(
-  connectorId: string,
+  target: ConnectorAccountTarget,
   scopes: readonly string[],
   signal: AbortSignal,
 ): Promise<McpConnectorOAuthReauthorizationResponse | null> {
@@ -345,8 +348,7 @@ export async function reauthorizeRunMcpConnectorOAuth(
   const client = initClient(mcpConnectorsContract, config);
   const result = await client.reauthorizeOAuth({
     headers: {},
-    params: { id: connectorId },
-    body: { scopes: [...scopes] },
+    body: { target, scopes: [...scopes] },
     fetchOptions: { signal },
   });
   if (result.status === 200) {

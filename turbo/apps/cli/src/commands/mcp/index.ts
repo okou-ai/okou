@@ -30,12 +30,16 @@ function printCleanupWarning(cleanupWarning: boolean): void {
 
 const listCommand = new Command()
   .name("list")
-  .description("List MCP Custom Connectors authorized for this Agent")
+  .description(
+    "List builtin and custom MCP connectors authorized for this Agent",
+  )
   .option("--json", "Print compact JSON")
   .action(
     withErrorHandler(async (options: JsonOptions) => {
       const connectors = (await listRunMcpConnectors()).map((connector) => {
         return {
+          kind: connector.kind,
+          ...(connector.kind === "custom" ? { id: connector.id } : {}),
           slug: connector.slug,
           displayName: connector.displayName,
           transport: connector.transport,
@@ -66,6 +70,7 @@ const listCommand = new Command()
         chalk.dim(
           [
             "SLUG".padEnd(slugWidth),
+            "KIND".padEnd(7),
             "STATUS".padEnd(statusWidth),
             "TRANSPORT",
             "ENDPOINT",
@@ -77,6 +82,7 @@ const listCommand = new Command()
         console.log(
           [
             connector.slug.padEnd(slugWidth),
+            connector.kind.padEnd(7),
             status.padEnd(statusWidth),
             connector.transport,
             connector.endpoint,
@@ -91,7 +97,7 @@ const listToolsCommand = new Command()
   .description("List tools exposed by an authorized MCP connector")
   .argument(
     "<selector>",
-    "MCP custom connector slug, UUID, or unique display name; custom: prefix accepted",
+    "MCP connector slug, custom UUID, or unique display name; builtin: and custom: prefixes accepted",
   )
   .option("--json", "Print compact JSON")
   .action(
@@ -147,7 +153,7 @@ const callCommand = new Command()
   .description("Call one tool on an authorized MCP connector")
   .argument(
     "<selector>",
-    "MCP custom connector slug, UUID, or unique display name; custom: prefix accepted",
+    "MCP connector slug, custom UUID, or unique display name; builtin: and custom: prefixes accepted",
   )
   .argument("<tool-name>", "Exact MCP tool name")
   .addOption(inputOption)

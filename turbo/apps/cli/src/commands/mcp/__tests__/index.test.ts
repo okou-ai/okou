@@ -246,6 +246,78 @@ describe("okou mcp command", () => {
     await rm(inputDirectory, { recursive: true, force: true });
   });
 
+  it("uses a builtin slug for private firewall intent throughout MCP requests", async () => {
+    server.use(
+      stubRunMcpConnectors([
+        {
+          kind: "builtin",
+          slug: "acme-mcp",
+          displayName: "Acme MCP",
+          endpoint: MCP_ENDPOINT,
+          transport: "streamable-http",
+          connected: true,
+        },
+      ]),
+    );
+    const seen = stubMcpServer({
+      era: "modern",
+      pages: [[{ name: "echo", inputSchema: { type: "object" } }]],
+    });
+    await mcpCommand.parseAsync([
+      "node",
+      "okou",
+      "call",
+      "builtin:acme-mcp",
+      "echo",
+      "--input",
+      "{}",
+    ]);
+    expect(
+      seen.some((request) => {
+        return request.method === "tools/call";
+      }),
+    ).toBe(true);
+    expect(
+      seen.every((request) => {
+        return request.intent === "acme-mcp";
+      }),
+    ).toBe(true);
+  });
+
+  it("requires explicit identity for a builtin/custom name collision", async () => {
+    server.use(
+      stubRunMcpConnectors([
+        {
+          kind: "builtin",
+          slug: "acme-mcp",
+          displayName: "Acme MCP",
+          endpoint: MCP_ENDPOINT,
+          transport: "streamable-http",
+          connected: true,
+        },
+        runMcpConnector({ slug: "acme-mcp" }),
+      ]),
+    );
+    const seen = stubMcpServer({ era: "modern" });
+    await expect(
+      mcpCommand.parseAsync(["node", "okou", "list-tools", "acme-mcp"]),
+    ).rejects.toThrow("process.exit called");
+    expect(seen).toHaveLength(0);
+    expect(outputText(consoleError)).toContain("builtin:acme-mcp");
+    expect(outputText(consoleError)).toContain(`custom:${CONNECTOR_ID}`);
+    await mcpCommand.parseAsync([
+      "node",
+      "okou",
+      "list-tools",
+      `custom:${CONNECTOR_ID}`,
+    ]);
+    expect(
+      seen.every((request) => {
+        return request.intent === CONNECTOR_ID;
+      }),
+    ).toBe(true);
+  });
+
   it("lists server-authorized MCP definitions with safe JSON fields", async () => {
     const secondId = "55555555-5555-4555-8555-555555555555";
     server.use(
@@ -267,6 +339,8 @@ describe("okou mcp command", () => {
       JSON.stringify({
         connectors: [
           {
+            kind: "custom",
+            id: secondId,
             slug: "_alpha",
             displayName: "Alpha MCP",
             transport: "streamable-http",
@@ -274,6 +348,8 @@ describe("okou mcp command", () => {
             connected: false,
           },
           {
+            kind: "custom",
+            id: CONNECTOR_ID,
             slug: "_zulu",
             displayName: "Acme MCP",
             transport: "streamable-http",
@@ -628,7 +704,7 @@ describe("okou mcp command", () => {
     let requestedScopes: unknown;
     server.use(
       http.post(
-        `http://localhost:3000/api/mcp-connectors/${CONNECTOR_ID}/oauth2/reauthorize`,
+        "http://localhost:3000/api/mcp-connectors/oauth2/reauthorize",
         async ({ request }) => {
           requestedScopes = await request.json();
           return HttpResponse.json({
@@ -643,7 +719,10 @@ describe("okou mcp command", () => {
       mcpCommand.parseAsync(["node", "okou", "list-tools", "_acme-mcp"]),
     ).rejects.toThrow("process.exit called");
 
-    expect(requestedScopes).toStrictEqual({ scopes: ["read", "write"] });
+    expect(requestedScopes).toStrictEqual({
+      target: { kind: "custom", customConnectorId: CONNECTOR_ID },
+      scopes: ["read", "write"],
+    });
     expect(
       seen.filter((request) => {
         return request.method === "tools/list";
@@ -669,7 +748,7 @@ describe("okou mcp command", () => {
     });
     server.use(
       http.post(
-        `http://localhost:3000/api/mcp-connectors/${CONNECTOR_ID}/oauth2/reauthorize`,
+        "http://localhost:3000/api/mcp-connectors/oauth2/reauthorize",
         () => {
           return HttpResponse.json({ error: "Not found" }, { status: 404 });
         },
@@ -700,7 +779,7 @@ describe("okou mcp command", () => {
     });
     server.use(
       http.post(
-        `http://localhost:3000/api/mcp-connectors/${CONNECTOR_ID}/oauth2/reauthorize`,
+        "http://localhost:3000/api/mcp-connectors/oauth2/reauthorize",
         async () => {
           await delay(2_000);
           return HttpResponse.json({
@@ -744,7 +823,7 @@ describe("okou mcp command", () => {
     let apiCalls = 0;
     server.use(
       http.post(
-        `http://localhost:3000/api/mcp-connectors/${CONNECTOR_ID}/oauth2/reauthorize`,
+        "http://localhost:3000/api/mcp-connectors/oauth2/reauthorize",
         () => {
           apiCalls += 1;
           return HttpResponse.json({

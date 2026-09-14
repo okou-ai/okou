@@ -477,9 +477,9 @@ function buildMcpConnectorPrompt(
   }
 
   return [
-    "# MCP Custom Connectors",
+    "# MCP Connectors",
     "",
-    "The following MCP Custom Connectors were admitted when this Run started:",
+    "The following MCP connectors were admitted when this Run started:",
     ...inventory,
     "",
     "Use the Okou CLI to discover and invoke their tools:",
@@ -954,6 +954,7 @@ type BuiltinRuntimeTargetRegistration = Extract<
 >;
 
 interface PermissionManifest {
+  readonly builtinMcpSourceIds?: Readonly<Record<string, string>>;
   readonly firewalls: ExecutionFirewalls;
   readonly networkPolicies: NetworkPolicies;
   readonly builtinRuntimeTargets?: readonly BuiltinRuntimeTargetRegistration[];
@@ -3382,6 +3383,7 @@ function filterSecretConnectorMetadataMap(args: {
 }
 
 interface StoredConnectorRuntimeRow {
+  readonly mcp: boolean;
   readonly access: ConnectorCredentialAccess;
   readonly connectorSlug: ConnectorSlug;
   readonly connectorStateRevision: bigint;
@@ -3416,6 +3418,7 @@ const storedConnectorVariableValuesDecoder = zodDriverValueDecoder(
 );
 
 interface ConnectorEnvBindingSet {
+  readonly mcp: boolean;
   readonly access: ConnectorCredentialAccess;
   readonly connectorSlug: ConnectorSlug;
   readonly connectorStateRevision: bigint;
@@ -3492,6 +3495,7 @@ function allowedStoredConnectorRows(
     return [
       {
         access,
+        mcp: snapshot.connectors.get(access.connectorSlug)?.mcp !== undefined,
         connectorSlug: access.runtimeMethod.connectorSlug,
         connectorStateRevision: row.connectorStateRevision,
         authMethod: access.runtimeMethod.authMethodId,
@@ -3530,6 +3534,7 @@ function connectorEnvBindingSets(
     );
     return {
       access: row.access,
+      mcp: row.mcp,
       connectorSlug: row.connectorSlug,
       connectorStateRevision: row.connectorStateRevision,
       authMethod: row.authMethod,
@@ -3735,7 +3740,10 @@ function storedConnectorRuntimeVariables(
   connectorVariables: Record<string, string>,
 ): Record<string, string> {
   const vars: Record<string, string> = {};
-  for (const { runtimeBindings } of bindingSets) {
+  for (const { runtimeBindings, mcp } of bindingSets) {
+    if (mcp) {
+      continue;
+    }
     for (const { envName, source } of runtimeBindings) {
       if (source.kind !== "connector-variable") {
         continue;
@@ -3764,7 +3772,10 @@ function resolveStoredConnectorSecrets(
   connectorSecrets: Record<string, string>,
 ): Record<string, string> {
   const secrets: Record<string, string> = {};
-  for (const { runtimeBindings } of bindingSets) {
+  for (const { runtimeBindings, mcp } of bindingSets) {
+    if (mcp) {
+      continue;
+    }
     for (const { envName, source } of runtimeBindings) {
       if (source.kind !== "connector-secret") {
         continue;
@@ -3789,8 +3800,13 @@ function resolveStoredConnectorMetadata(
     {};
   const environment: Record<string, string> = {};
 
-  for (const { access, connectorSlug, runtimeBindings } of bindingSets) {
+  for (const { access, connectorSlug, runtimeBindings, mcp } of bindingSets) {
     for (const { envName, valueRef, optional, source } of runtimeBindings) {
+      // MCP auth is resolved from the exact account by the firewall outside
+      // the guest. Its authored aliases must never export credentials to env.
+      if (mcp) {
+        continue;
+      }
       switch (source.kind) {
         case "connector-secret": {
           if (availableSecretNames.has(source.name) || !optional) {
@@ -3955,7 +3971,10 @@ function eagerStoredConnectorSecretNames(args: {
 }): ReadonlySet<string> {
   const names = new Set<string>();
 
-  for (const { runtimeBindings } of args.snapshot.bindingSets) {
+  for (const { runtimeBindings, mcp } of args.snapshot.bindingSets) {
+    if (mcp) {
+      continue;
+    }
     for (const { envName, source } of runtimeBindings) {
       const isNeededByStoredEnvironment =
         args.storedEnvironment?.[envName] !== undefined;
@@ -5552,6 +5571,26 @@ function mergePermissionManifests(args: {
   const builtinRuntimeTargets = args.connectorManifest.firewalls.map(
     builtinRuntimeTargetRegistration,
   );
+  // These entries were built with the account binding selected for this run,
+  // not the current default or the diagnostic runtime registration.
+  const builtinMcpSourceIds = Object.fromEntries(
+    args.connectorManifest.firewalls.flatMap((firewall) => {
+      if (
+        firewall.kind !== "builtin" ||
+        firewall.sourceId === undefined ||
+        args.connectorCatalogSelection.kind === "empty"
+      ) {
+        return [];
+      }
+      const connector = getConnectorRuntimeConnector(
+        args.connectorCatalogSelection.selection,
+        firewall.name,
+      );
+      return connector?.mcp === undefined
+        ? []
+        : [[firewall.name, firewall.sourceId]];
+    }),
+  );
   const firewalls = [
     ...(args.providerManifest?.firewalls ?? []),
     ...args.connectorManifest.firewalls,
@@ -5578,6 +5617,9 @@ function mergePermissionManifests(args: {
   return {
     firewalls,
     builtinRuntimeTargets,
+    ...(Object.keys(builtinMcpSourceIds).length === 0
+      ? {}
+      : { builtinMcpSourceIds }),
     ...(connectorPermissionBaseline ? { connectorPermissionBaseline } : {}),
     environmentSecretPlaceholders: mergeRecords(
       args.providerManifest?.environmentSecretPlaceholders,
@@ -7541,6 +7583,11 @@ function preparedRunnerJobBody(
         : {}),
       cloudBrowserEnabled: args.okouTokenCloudBrowserEnabled === true,
       imageRecognitionAvailable: args.imageRecognitionAvailable,
+      ...(args.permissionManifest?.builtinMcpSourceIds === undefined
+        ? {}
+        : {
+            builtinMcpSourceIds: args.permissionManifest.builtinMcpSourceIds,
+          }),
       ...(customConnectorSourceEntries.length === 0
         ? {}
         : {
@@ -9111,7 +9158,19 @@ async function loadRunConnectorContexts(
           {
             orgId: args.orgId,
             userId: args.userId,
-            allowedConnectorSlugs: args.connectorScope.allowedConnectorSlugs,
+            allowedConnectorSlugs:
+              args.connectorScope.allowedConnectorSlugs.filter((slug) => {
+                return (
+                  getConnectorRuntimeConnector(
+                    args.connectorCatalogSnapshot,
+                    slug,
+                  )?.mcp === undefined ||
+                  isFeatureEnabled(
+                    FeatureSwitchKey.BuiltinConnectorMcp,
+                    args.featureSwitchContext,
+                  )
+                );
+              }),
             connectorIdCandidatesBySlug:
               args.threadConnectorSelectionIds?.connectorIdCandidatesBySlug,
             scopeSource: args.connectorScope.source,
@@ -10698,8 +10757,12 @@ function finalizePreparedRunContext(
       chatThreadId: prepared.args.chatThreadId,
       imageRecognitionAvailable: prepared.context.imageRecognitionAvailable,
       connectorSlugs: prepared.context.connectorContext.connectorSlugs,
-      mcpConnectorSlugs:
-        prepared.context.customConnectorContext.mcpConnectorSlugs,
+      mcpConnectorSlugs: [
+        ...Object.keys(
+          prepared.context.permissionManifest?.builtinMcpSourceIds ?? {},
+        ),
+        ...prepared.context.customConnectorContext.mcpConnectorSlugs,
+      ],
       selectedImageModel: prepared.context.selectedImageModel,
       cliAvailable: prepared.args.includeOkouTokenSecret === true,
     }),
