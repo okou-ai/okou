@@ -52,6 +52,7 @@ import {
   piLangfuseDebugUserId,
 } from "../../lib/pi-langfuse-debug";
 import {
+  piLangfuseSandboxFirstParent,
   startPiLangfuseOwnershipTransfer,
   tracePiApiFirstTurn,
   type PiApiFirstTurnTraceContext,
@@ -1652,6 +1653,13 @@ const publishSandboxFallback$ = command(async function publishSandboxFallback(
     );
     const manifest = ownershipTransferManifest({
       mode: "sandbox-first",
+      langfuseParent: piLangfuseSandboxFirstParent({
+        enabled: isPiLangfuseDebugRunEnvironment(
+          executionContext.platformEnvironment,
+        ),
+        runId: args.activation.runId,
+        sessionId,
+      }),
       baseSession: launchConfig.baseSession,
       session: {
         sessionId,

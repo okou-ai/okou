@@ -142,6 +142,27 @@ function runEndToEndSpanContext(traceId: string): SpanContext {
   };
 }
 
+/** Join sandbox-first spans to the retrospective run root before it is emitted. */
+export function piLangfuseSandboxFirstParent(args: {
+  readonly enabled: boolean;
+  readonly runId: string;
+  readonly sessionId: string;
+}): PiLangfuseParent | undefined {
+  if (!args.enabled) {
+    return undefined;
+  }
+  const traceId = normalizePiLangfuseTraceId(args.runId);
+  if (!traceId) {
+    return undefined;
+  }
+  return {
+    traceId,
+    spanId: runEndToEndSpanId(traceId),
+    traceFlags: 1,
+    sessionId: args.sessionId,
+  };
+}
+
 function traceAttributes(args: {
   readonly sessionId: string;
   readonly userId: string;

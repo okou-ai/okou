@@ -29,7 +29,6 @@ import {
 } from "@okouai/pi-agent-runtime/node";
 
 import {
-  consumePiLangfuseBootstrapConfig,
   piSandboxAgentConfigFromEnv,
   recordPiMemoryToolSourceUse,
   runPiSandboxAgentLoop,
@@ -952,38 +951,38 @@ describe("sandbox Pi agent loop", () => {
     });
   });
 
-  it("consumes and unlinks the private Langfuse bootstrap before model setup", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "okou-pi-langfuse-config-"));
-    const path = join(directory, "langfuse-bootstrap.json");
-    await writeFile(
-      path,
-      JSON.stringify({
-        publicKey: "pk-lf-private",
-        secretKey: "sk-lf-private",
-        baseUrl: "https://us.cloud.langfuse.com",
-        userId: "anonymous-user",
-        environment: "internal-debug",
-      }),
-      { mode: 0o600 },
-    );
-    const env = { OKOU_PI_LANGFUSE_CONFIG_FILE: path };
-
-    await expect(consumePiLangfuseBootstrapConfig(env)).resolves.toStrictEqual({
-      publicKey: "pk-lf-private",
-      secretKey: "sk-lf-private",
-      baseUrl: "https://us.cloud.langfuse.com",
-      userId: "anonymous-user",
-      environment: "internal-debug",
-    });
-    expect(env).not.toHaveProperty("OKOU_PI_LANGFUSE_CONFIG_FILE");
-    await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
-    await rm(directory, { recursive: true, force: true });
-  });
-
   it("resolves the Pi session, launch payload file, and model credential", async () => {
     await expect(
       piSandboxAgentConfigFromEnv(piEnv({ OKOU_RUN_ID: RUN_ID })),
     ).resolves.toEqual(CONFIG);
+  });
+
+  it("uses run authentication and the first-party relay without Langfuse keys", async () => {
+    const env = piEnv({ OKOU_RUN_ID: RUN_ID });
+    Object.assign(env, {
+      OKOU_PI_LANGFUSE_DEBUG_ENABLED: "true",
+      OKOU_PI_LANGFUSE_RELAY_ENABLED: "true",
+      OKOU_API_BACKEND_URL: "https://api.okou.test",
+      OKOU_TOKEN: "run-scoped-token",
+      LANGFUSE_BASE_URL: "https://user-langfuse.example",
+      LANGFUSE_PUBLIC_KEY: "user-project",
+      LANGFUSE_SECRET_KEY: "user-secret",
+      LANGFUSE_USER_ID: "anonymous-user",
+      LANGFUSE_TRACING_ENVIRONMENT: "internal-debug",
+    });
+    const resolved = await piSandboxAgentConfigFromEnv(env);
+    expect(resolved.langfuseConfig).toStrictEqual({
+      relay: {
+        endpoint: `https://api.okou.test/api/webhooks/agent/${RUN_ID}/langfuse/traces`,
+        token: "run-scoped-token",
+      },
+      userId: "anonymous-user",
+      environment: "internal-debug",
+    });
+    env.OKOU_PI_LANGFUSE_DEBUG_ENABLED = "false";
+    expect(
+      (await piSandboxAgentConfigFromEnv(env)).langfuseConfig,
+    ).toBeUndefined();
   });
 
   it("carries the frozen memory epoch through the private launch file", async () => {

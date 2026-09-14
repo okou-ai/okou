@@ -27,9 +27,7 @@ export type PiSandboxOwnershipTransferMode =
   | "settled-session-continuation";
 
 export interface PiLangfuseRuntimeConfig {
-  readonly publicKey: string;
-  readonly secretKey: string;
-  readonly baseUrl?: string;
+  readonly relay: { readonly endpoint: string; readonly token: string };
   readonly userId?: string;
   readonly environment?: string;
 }
@@ -48,6 +46,8 @@ const LANGFUSE_CONFIG_ENVIRONMENT = {
   baseUrl: "LANGFUSE_BASE_URL",
   userId: "LANGFUSE_USER_ID",
   environment: "LANGFUSE_TRACING_ENVIRONMENT",
+  relayEndpoint: "OKOU_PI_LANGFUSE_OTLP_ENDPOINT",
+  relayToken: "OKOU_PI_LANGFUSE_OTLP_TOKEN",
 } as const;
 
 export function installLangfuseRuntimeEnvironment(
@@ -69,11 +69,9 @@ export function installLangfuseRuntimeEnvironment(
     delete process.env[name];
   }
   if (enabled && config) {
-    process.env[LANGFUSE_CONFIG_ENVIRONMENT.publicKey] = config.publicKey;
-    process.env[LANGFUSE_CONFIG_ENVIRONMENT.secretKey] = config.secretKey;
-    if (config.baseUrl) {
-      process.env[LANGFUSE_CONFIG_ENVIRONMENT.baseUrl] = config.baseUrl;
-    }
+    process.env[LANGFUSE_CONFIG_ENVIRONMENT.relayEndpoint] =
+      config.relay.endpoint;
+    process.env[LANGFUSE_CONFIG_ENVIRONMENT.relayToken] = config.relay.token;
     if (config.userId) {
       process.env[LANGFUSE_CONFIG_ENVIRONMENT.userId] = config.userId;
     }

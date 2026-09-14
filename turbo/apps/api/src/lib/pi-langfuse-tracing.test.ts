@@ -15,6 +15,7 @@ import { PI_LANGFUSE_MAX_CAPTURED_CHARS } from "./pi-langfuse-debug";
 import {
   normalizePiLangfuseTraceId,
   piLangfuseIdGenerator,
+  piLangfuseSandboxFirstParent,
   PI_LANGFUSE_API_OBSERVATION_NAMES,
   recordPiLangfuseRunEndToEnd,
   startPiLangfuseOwnershipTransfer,
@@ -161,6 +162,12 @@ describe("Pi run E2E Langfuse tracing", () => {
     const apiStartedAt = Date.parse("2026-09-13T23:57:22.208Z");
     const terminalCommittedAt = Date.parse("2026-09-13T23:57:31.186Z");
 
+    const sandboxParent = piLangfuseSandboxFirstParent({
+      enabled: true,
+      runId: RUN_ID,
+      sessionId: SESSION_ID,
+    });
+
     recordPiLangfuseRunEndToEnd({
       enabled: true,
       runId: RUN_ID,
@@ -177,6 +184,12 @@ describe("Pi run E2E Langfuse tracing", () => {
     const [e2e] = spans;
     expect(e2e?.name).toBe("Run End-to-End");
     expect(e2e?.spanContext().traceId).toBe(normalizePiLangfuseTraceId(RUN_ID));
+    expect(sandboxParent).toStrictEqual({
+      traceId: e2e?.spanContext().traceId,
+      spanId: e2e?.spanContext().spanId,
+      traceFlags: 1,
+      sessionId: SESSION_ID,
+    });
     expect(e2e?.parentSpanContext).toBeUndefined();
     expect(epochMillis(e2e?.startTime ?? [0, 0])).toBe(apiStartedAt);
     expect(epochMillis(e2e?.endTime ?? [0, 0])).toBe(terminalCommittedAt);

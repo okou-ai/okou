@@ -86,13 +86,12 @@ export function piLangfuseDebugUserId(userId: string): string {
 }
 
 export function piLangfuseDebugPlatformEnvironment(args: {
-  readonly config: PiLangfuseServerConfig;
   readonly userId: string;
 }): Readonly<Record<string, string>> {
   return {
     [PI_LANGFUSE_DEBUG_ENABLED_ENV]: "true",
+    OKOU_PI_LANGFUSE_RELAY_ENABLED: "true",
     [LANGFUSE_TRACING_ENABLED_ENV]: "true",
-    [LANGFUSE_BASE_URL_ENV]: args.config.baseUrl,
     [LANGFUSE_TRACING_ENVIRONMENT_ENV]: DEBUG_TRACING_ENVIRONMENT,
     [LANGFUSE_MEDIA_UPLOAD_ENABLED_ENV]: "false",
     [LANGFUSE_USER_ID_ENV]: piLangfuseDebugUserId(args.userId),
@@ -100,17 +99,7 @@ export function piLangfuseDebugPlatformEnvironment(args: {
   };
 }
 
-/** Keep injected credentials in the encrypted claim-time secret set. */
-export function piLangfuseDebugSecretEnvironment(
-  config: PiLangfuseServerConfig,
-): Readonly<Record<string, string>> {
-  return {
-    [LANGFUSE_PUBLIC_KEY_ENV]: config.publicKey,
-    [LANGFUSE_SECRET_KEY_ENV]: config.secretKey,
-  };
-}
-
-/** Select only a complete Langfuse credential pair at a trusted boundary. */
+/** Read legacy queued contexts until their commit-pinned CLIs have drained. */
 export function piLangfuseDebugCredentialsFromEnvironment(
   environment: Readonly<Record<string, string>>,
 ): Readonly<Record<string, string>> | undefined {

@@ -1,5 +1,10 @@
 import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
 import {
+  PI_LANGFUSE_RELAY_MAX_BYTES,
+  piLangfuseTracesContract,
+} from "@okouai/api-contracts/contracts/pi-langfuse";
+import { webhooksAgentLangfuseRoutes } from "../webhooks-agent-langfuse";
+import {
   PI_NATIVE_CREDENTIAL_PLACEHOLDER,
   piModelConfigV4Schema,
   piNativeInferenceUrl,
@@ -8134,16 +8139,17 @@ describe("CHAT-02: model-first provider policies", () => {
     );
   });
 
-  it("persists Langfuse trace admission after runner claim", async () => {
+  it("relays admitted run traces with platform credentials after runner claim", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     await publishPendingPiInstructions(actor, agentId);
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
     const usagePricingResolution = await createGptUsagePricingResolution();
     mockPiResourceArchiveDownloads(true);
-    mockPiCheckpointObjectStore();
+    const checkpointObjects = mockPiCheckpointObjectStore();
     mockOptionalEnv("LANGFUSE_PUBLIC_KEY", "pk-lf-bdd-trace-admission");
     mockOptionalEnv("LANGFUSE_SECRET_KEY", "sk-lf-bdd-trace-admission");
+    mockOptionalEnv("LANGFUSE_BASE_URL", "https://langfuse.example");
     server.use(
       http.post("https://api.openai.com/v1/responses", () => {
         return new HttpResponse(
@@ -8187,6 +8193,7 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     expect(queuedContext.platformEnvironment).toMatchObject({
       OKOU_PI_LANGFUSE_DEBUG_ENABLED: "true",
+      OKOU_PI_LANGFUSE_RELAY_ENABLED: "true",
       LANGFUSE_TRACING_ENABLED: "true",
     });
     expect(queuedContext.platformEnvironment).not.toHaveProperty(
@@ -8195,27 +8202,153 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(queuedContext.platformEnvironment).not.toHaveProperty(
       "LANGFUSE_SECRET_KEY",
     );
-    expect(queuedContext.encryptedSecrets).toMatchObject({
-      LANGFUSE_PUBLIC_KEY: "pk-lf-bdd-trace-admission",
-      LANGFUSE_SECRET_KEY: "sk-lf-bdd-trace-admission",
-    });
+    expect(queuedContext.encryptedSecrets ?? {}).not.toHaveProperty(
+      "LANGFUSE_PUBLIC_KEY",
+    );
+    expect(queuedContext.encryptedSecrets ?? {}).not.toHaveProperty(
+      "LANGFUSE_SECRET_KEY",
+    );
 
     const claimed = await claimChatRun(runnerGroup, run.runId);
     expect(claimed.claim.cliAgentType).toBe("pi");
-    expect(claimed.claim.platformEnvironment).toMatchObject({
-      LANGFUSE_PUBLIC_KEY: "pk-lf-bdd-trace-admission",
-      LANGFUSE_SECRET_KEY: "sk-lf-bdd-trace-admission",
-    });
-    expect(claimed.claim.secretValues).toStrictEqual(
-      expect.arrayContaining([
-        "pk-lf-bdd-trace-admission",
-        "sk-lf-bdd-trace-admission",
-      ]),
+    expect(claimed.claim.platformEnvironment).not.toHaveProperty(
+      "LANGFUSE_PUBLIC_KEY",
+    );
+    expect(claimed.claim.platformEnvironment).not.toHaveProperty(
+      "LANGFUSE_SECRET_KEY",
+    );
+    expect(claimed.claim.secretValues).not.toContain(
+      "sk-lf-bdd-trace-admission",
     );
     await expect(
       readRunLangfuseTraceEnabledFixture(run.runId),
     ).resolves.toBeTruthy();
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      {
+        [FeatureSwitchKey.LangfuseTrace]: false,
+      },
+    );
+    const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`;
+    const manifest = piApiFirstTurnManifestSchema.parse(
+      JSON.parse(checkpointObjects.get(manifestKey)?.toString("utf8") ?? "{}"),
+    );
+    if (
+      manifest.schemaVersion !== 3 ||
+      manifest.outcome !== "ownership-transfer" ||
+      !manifest.langfuseParent
+    ) {
+      throw new Error("Expected an admitted sandbox-first trace parent");
+    }
+    expect(manifest).toMatchObject({
+      mode: "sandbox-first",
+      langfuseParent: {
+        traceId: run.runId.replaceAll("-", ""),
+        spanId: expect.stringMatching(/^[a-f0-9]{16}$/u),
+        sessionId: run.threadId,
+      },
+    });
+    const payload = JSON.stringify({
+      resourceSpans: [
+        {
+          scopeSpans: [
+            {
+              spans: [
+                {
+                  traceId: run.runId.replaceAll("-", ""),
+                  spanId: "a".repeat(16),
+                  parentSpanId: manifest.langfuseParent.spanId,
+                  name: "Sandbox Continuation",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const exports: { headers: Headers; body: string }[] = [];
+    server.use(
+      http.post(
+        "https://langfuse.example/api/public/otel/v1/traces",
+        async ({ request }) => {
+          exports.push({
+            headers: request.headers,
+            body: await request.text(),
+          });
+          return HttpResponse.json({});
+        },
+      ),
+    );
+    const relay = setupApp({ context, routes: webhooksAgentLangfuseRoutes })(
+      piLangfuseTracesContract,
+    );
+    const request = {
+      params: { runId: run.runId },
+      headers: {
+        authorization: `Bearer ${claimed.claim.platformEnvironment.OKOU_TOKEN}`,
+      },
+      extraHeaders: {
+        "content-type": "application/json",
+        "x-langfuse-public-key": "user-selected-dev-project",
+        "x-untrusted-header": "must-not-be-forwarded",
+      },
+      body: payload,
+    };
+    await accept(relay.export(request), [200]);
+    expect(exports).toHaveLength(1);
+    expect(exports[0]?.body).toBe(payload);
+    expect(exports[0]?.headers.get("authorization")).toBe(
+      `Basic ${Buffer.from("pk-lf-bdd-trace-admission:sk-lf-bdd-trace-admission").toString("base64")}`,
+    );
+    expect(exports[0]?.headers.get("x-langfuse-public-key")).toBeNull();
+    expect(exports[0]?.headers.get("x-untrusted-header")).toBeNull();
+    await accept(
+      relay.export({
+        ...request,
+        body: "x".repeat(PI_LANGFUSE_RELAY_MAX_BYTES + 1),
+      }),
+      [413],
+    );
+    await accept(
+      relay.export({
+        ...request,
+        extraHeaders: { "content-type": "text/plain" },
+      }),
+      [415],
+    );
+    expect(exports).toHaveLength(1);
+    server.use(
+      http.post("https://langfuse.example/api/public/otel/v1/traces", () => {
+        return new HttpResponse("private upstream diagnostic", { status: 429 });
+      }),
+    );
+    const rejected = await accept(relay.export(request), [503]);
+    expect(rejected.body.error.message).toBe("Trace export failed");
     await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
+
+    const untraced = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "run without trace admission",
+        model: "gpt-5.6-terra",
+      },
+      usagePricingResolution,
+    );
+    await flushWaitUntilForTest();
+    const untracedClaim = await claimChatRun(runnerGroup, untraced.runId);
+    await accept(
+      relay.export({
+        ...request,
+        params: { runId: untraced.runId },
+        headers: {
+          authorization: `Bearer ${untracedClaim.claim.platformEnvironment.OKOU_TOKEN}`,
+        },
+      }),
+      [403],
+    );
+    await cancelChatRun(actor, untraced.runId, untracedClaim.sandboxHeaders);
   });
 
   it("pins recall-enabled Pi memory through API completion and Sandbox handoff", async () => {

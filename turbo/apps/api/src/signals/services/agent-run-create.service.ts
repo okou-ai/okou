@@ -216,7 +216,6 @@ import { piModelConfigObservation } from "../../lib/pi-model-config-observation"
 import {
   isPiLangfuseDebugRunEnvironment,
   piLangfuseDebugPlatformEnvironment,
-  piLangfuseDebugSecretEnvironment,
   resolvePiLangfuseDebugConfig,
 } from "../../lib/pi-langfuse-debug";
 import { generateOkouToken } from "../auth/tokens";
@@ -6613,7 +6612,6 @@ function piLangfuseExecutionEnvironment(args: {
   readonly userId: string;
 }): {
   readonly platformEnvironment?: Readonly<Record<string, string>>;
-  readonly secrets?: Readonly<Record<string, string>>;
 } {
   if (!args.includeOkouTokenSecret || args.piSandbox === undefined) {
     return {};
@@ -6624,10 +6622,8 @@ function piLangfuseExecutionEnvironment(args: {
   }
   return {
     platformEnvironment: piLangfuseDebugPlatformEnvironment({
-      config,
       userId: args.userId,
     }),
-    secrets: piLangfuseDebugSecretEnvironment(config),
   };
 }
 
@@ -6729,8 +6725,7 @@ async function buildStoredExecutionContextDraft(args: {
       vars: args.connectorContext.vars ?? null,
       resumeSession: args.resolved.resumeSession ?? null,
       encryptedSecrets: await encryptPersistentSecretsMap(
-        mergeRecords(executionSecrets.secrets, langfuseEnvironment.secrets) ??
-          null,
+        executionSecrets.secrets ?? null,
         args.featureSwitchContext,
       ),
       secretConnectorMap: executionSecrets.secretConnectorMap,

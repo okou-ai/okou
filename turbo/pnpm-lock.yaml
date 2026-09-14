@@ -30,7 +30,7 @@ patchedDependencies:
     hash: d73715c0523d394c8fb3a06b21f3efd36d074095d5a8077e2a618cce831fa1e2
     path: patches/@earendil-works__pi-coding-agent@0.85.1.patch
   '@langfuse/pi-observability-plugin@0.1.2':
-    hash: dc7e22a26586801953b0ce8970d9a3a5dcad860606de7feff21a0f0616b157f6
+    hash: 59ae4c58cb878fe0848e0a95ad9a73c0bde36f9c80ae15e708db80ca7de87194
     path: patches/@langfuse__pi-observability-plugin@0.1.2.patch
   '@testing-library/jest-dom@6.9.1':
     hash: 82080105f6adaf176f58b0ec2d5017702df2a069e46194cd9e1b0054f392a8bf
@@ -1128,7 +1128,7 @@ importers:
         version: 0.85.1(patch_hash=d73715c0523d394c8fb3a06b21f3efd36d074095d5a8077e2a618cce831fa1e2)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
       '@langfuse/pi-observability-plugin':
         specifier: 0.1.2
-        version: 0.1.2(patch_hash=dc7e22a26586801953b0ce8970d9a3a5dcad860606de7feff21a0f0616b157f6)(@earendil-works/pi-coding-agent@0.85.1(patch_hash=d73715c0523d394c8fb3a06b21f3efd36d074095d5a8077e2a618cce831fa1e2)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4))(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))
+        version: 0.1.2(patch_hash=59ae4c58cb878fe0848e0a95ad9a73c0bde36f9c80ae15e708db80ca7de87194)(@earendil-works/pi-coding-agent@0.85.1(patch_hash=d73715c0523d394c8fb3a06b21f3efd36d074095d5a8077e2a618cce831fa1e2)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4))(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))
       '@okouai/api-contracts':
         specifier: workspace:*
         version: link:../api-contracts
@@ -12883,7 +12883,7 @@ snapshots:
       '@opentelemetry/exporter-trace-otlp-http': 0.222.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base': 2.11.0(@opentelemetry/api@1.9.1)
 
-  '@langfuse/pi-observability-plugin@0.1.2(patch_hash=dc7e22a26586801953b0ce8970d9a3a5dcad860606de7feff21a0f0616b157f6)(@earendil-works/pi-coding-agent@0.85.1(patch_hash=d73715c0523d394c8fb3a06b21f3efd36d074095d5a8077e2a618cce831fa1e2)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4))(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))':
+  '@langfuse/pi-observability-plugin@0.1.2(patch_hash=59ae4c58cb878fe0848e0a95ad9a73c0bde36f9c80ae15e708db80ca7de87194)(@earendil-works/pi-coding-agent@0.85.1(patch_hash=d73715c0523d394c8fb3a06b21f3efd36d074095d5a8077e2a618cce831fa1e2)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4))(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))':
     dependencies:
       '@earendil-works/pi-coding-agent': 0.85.1(patch_hash=d73715c0523d394c8fb3a06b21f3efd36d074095d5a8077e2a618cce831fa1e2)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
       '@langfuse/otel': 5.10.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.221.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.11.0(@opentelemetry/api@1.9.1))

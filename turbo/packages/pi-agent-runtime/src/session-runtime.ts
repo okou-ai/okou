@@ -49,8 +49,8 @@ import {
 async function createLangfuseDebugExtension(pi: ExtensionAPI): Promise<void> {
   try {
     if (
-      !process.env.LANGFUSE_PUBLIC_KEY?.trim() ||
-      !process.env.LANGFUSE_SECRET_KEY?.trim()
+      !process.env.OKOU_PI_LANGFUSE_OTLP_ENDPOINT?.trim() ||
+      !process.env.OKOU_PI_LANGFUSE_OTLP_TOKEN?.trim()
     ) {
       return;
     }
@@ -60,10 +60,12 @@ async function createLangfuseDebugExtension(pi: ExtensionAPI): Promise<void> {
   } catch {
     // Optional debug telemetry must not prevent the Pi runtime from starting.
   } finally {
-    // The official plugin captures both credentials in its extension closure.
-    // Remove them before any model or tool execution can inherit the CLI env.
+    // The plugin captures relay authentication in its extension closure.
+    // Remove temporary exporter settings before model or tool execution.
     delete process.env.LANGFUSE_PUBLIC_KEY;
     delete process.env.LANGFUSE_SECRET_KEY;
+    delete process.env.OKOU_PI_LANGFUSE_OTLP_ENDPOINT;
+    delete process.env.OKOU_PI_LANGFUSE_OTLP_TOKEN;
   }
 }
 
