@@ -1,5 +1,4 @@
 import { voiceIoPolishContract } from "@okouai/api-contracts/contracts/voice-io-polish";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -7,9 +6,7 @@ import { stubTestVercelRuntimeToken } from "../../../__tests__/env-stub";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { createBddApi } from "./helpers/api-bdd";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   mockGoogleVoice,
@@ -34,20 +31,13 @@ function client() {
   );
 }
 
-async function enableVoicePolish() {
+function setupVoicePolish() {
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   const actor = createBddApi(context).user();
   if (!actor.orgId) {
     throw new Error("Voice draft tests require an organization");
   }
   mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId: actor.userId, orgId: actor.orgId, orgRole: "org:admin" },
-    {
-      [FeatureSwitchKey.VoiceInputV2]: true,
-    },
-  );
 }
 
 describe("POST /api/voice-io/polish", () => {
@@ -58,7 +48,7 @@ describe("POST /api/voice-io/polish", () => {
   ])(
     "classifies a Google body I/O failure with $code",
     async ({ code, status }) => {
-      await enableVoicePolish();
+      setupVoicePolish();
       let calls = 0;
       server.use(
         http.post(VERTEX_VOICE_URL, () => {
@@ -89,7 +79,7 @@ describe("POST /api/voice-io/polish", () => {
   );
 
   it("classifies a Google connection failure without replaying generation", async () => {
-    await enableVoicePolish();
+    setupVoicePolish();
     let calls = 0;
     server.use(
       http.post(VERTEX_VOICE_URL, () => {
@@ -109,7 +99,7 @@ describe("POST /api/voice-io/polish", () => {
   });
 
   it("retains the maximum text contract with JSON escaping and rejects oversize output", async () => {
-    await enableVoicePolish();
+    setupVoicePolish();
     const text = `a${"\u0001".repeat(262_142)}z`;
     server.use(
       http.post(VERTEX_VOICE_URL, () => {
@@ -151,7 +141,7 @@ describe("POST /api/voice-io/polish", () => {
   });
 
   it("recovers a temporary Google polish failure on the same model", async () => {
-    await enableVoicePolish();
+    setupVoicePolish();
     const urls: string[] = [];
     server.use(
       http.post(VERTEX_VOICE_URL, ({ request }) => {
@@ -213,7 +203,7 @@ describe("POST /api/voice-io/polish", () => {
     },
     { reason: "invalid_response", body: { candidates: [{ finishReason: 7 }] } },
   ])("rejects unusable Google output for $reason", async ({ body }) => {
-    await enableVoicePolish();
+    setupVoicePolish();
     server.use(
       http.post(VERTEX_VOICE_URL, () => {
         return HttpResponse.json(body);
@@ -230,7 +220,7 @@ describe("POST /api/voice-io/polish", () => {
   });
 
   it("preserves public provider errors, respects long Retry-After, and rejects incomplete polish", async () => {
-    await enableVoicePolish();
+    setupVoicePolish();
     const cases = [
       {
         status: 400,
@@ -328,7 +318,7 @@ describe("POST /api/voice-io/polish", () => {
   });
 
   it("cancels the provider request when the client disconnects", async () => {
-    await enableVoicePolish();
+    setupVoicePolish();
     const controller = new AbortController();
     context.signal.addEventListener(
       "abort",
@@ -370,20 +360,11 @@ describe("POST /api/voice-io/polish", () => {
 
   it("turns raw dictation into send-ready text without charging usage", async () => {
     mockOptionalEnv("OPENROUTER_API_KEY", undefined);
-    const actor = createBddApi(context).user({
-      orgId: createUniqueStaffOrgIdFixture(),
-    });
+    const actor = createBddApi(context).user();
     if (!actor.orgId) {
       throw new Error("Voice draft tests require an organization");
     }
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId: actor.orgId, orgRole: "org:admin" },
-      {
-        [FeatureSwitchKey.VoiceInputV2]: true,
-      },
-    );
     let requestBody: unknown;
     server.use(
       http.post(VERTEX_VOICE_URL, async ({ request }) => {
@@ -447,64 +428,11 @@ describe("POST /api/voice-io/polish", () => {
     expect(requestBody).not.toHaveProperty("generationConfig.responseMimeType");
   });
 
-  it("requires session auth and the voice draft switch for staff", async () => {
+  it("requires session auth", async () => {
     const unauthenticated = await client().post({
       headers: {},
       body: { text: "Hello" },
     });
     expect(unauthenticated.status).toBe(401);
-
-    const actor = createBddApi(context).user({
-      orgId: createUniqueStaffOrgIdFixture(),
-    });
-    if (!actor.orgId) {
-      throw new Error("Voice draft tests require an organization");
-    }
-    mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId: actor.orgId, orgRole: "org:admin" },
-      { [FeatureSwitchKey.VoiceInputV2]: false },
-    );
-    const disabled = await client().post({
-      headers: { authorization: "Bearer clerk-session" },
-      body: { text: "Hello" },
-    });
-    expect(disabled.status).toBe(403);
-  });
-
-  it("lets non-staff users enable polishing through their Lab override", async () => {
-    mockOptionalEnv("OPENROUTER_API_KEY", undefined);
-    const actor = createBddApi(context).user();
-    if (!actor.orgId) {
-      throw new Error("Voice draft tests require an organization");
-    }
-    mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId: actor.orgId, orgRole: "org:admin" },
-      {
-        [FeatureSwitchKey.VoiceInputV2]: true,
-      },
-    );
-    server.use(
-      http.post(VERTEX_VOICE_URL, () => {
-        return HttpResponse.json({
-          candidates: [
-            { finishReason: "STOP", content: { parts: [{ text: "Hello." }] } },
-          ],
-        });
-      }),
-    );
-
-    const response = await accept(
-      client().post({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { text: "Hello" },
-      }),
-      [200],
-    );
-
-    expect(response.body.text).toBe("Hello.");
   });
 });

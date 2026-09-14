@@ -1996,9 +1996,6 @@ test("Show current shortcuts without stacking help over workspace search", async
   await setupSidebarPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.VoiceInputV2]: true,
-    },
   });
 
   await waitFor(() => {

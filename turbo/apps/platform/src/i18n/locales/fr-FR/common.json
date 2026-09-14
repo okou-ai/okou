@@ -2962,7 +2962,6 @@
       "storageFailed": "Impossible de sauvegarder le son. Réessayer ne récupère que le son déjà enregistré sur cet appareil.",
       "textTakingShape": "Le texte prend forme",
       "transcribing": "Transcription",
-      "transcribingProgress": "Transcription en cours...",
       "transcriptionFailed": "Échec de la transcription vocale. Réessayez."
     },
     "workflows": {

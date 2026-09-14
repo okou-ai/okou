@@ -116,8 +116,6 @@ const WEBSITE_IDEAS = [
   "bookingPage",
 ] as const;
 const TEMPLATES_PER_PAGE = 5;
-const CHIP_CLASS =
-  "gap-2 rounded-full border border-transparent px-3 font-normal hover:bg-gray-50";
 /**
  * Both rows are a single line that usually overruns the 900px column. The rail
  * hides the overrun and the mask dissolves its last 56px, so the row ends in a
@@ -131,7 +129,10 @@ const ROW_FADE = cn(
   "[mask-image:linear-gradient(to_right,#000_calc(100%_-_56px),transparent)]",
   "focus-within:[-webkit-mask-image:none] focus-within:[mask-image:none]",
 );
-/** The pager sits outside the rail, so it always has an unmasked surface. */
+/**
+ * The pager sits outside the rail, so it always has an unmasked surface. It is
+ * the `icon` counterpart of the default-size neutral control the rows use.
+ */
 const ROW_PAGER = "shrink-0";
 /**
  * Illustration styles run 20 portrait, 9 square and 3 landscape, so their own
@@ -299,7 +300,7 @@ function ComposerTemplateShelf({
           <Button
             type="button"
             variant="neutral"
-            size="icon-sm"
+            size="icon"
             className={ROW_PAGER}
             aria-label={t(($) => {
               return $.chat.taskChips.shelf.nextTemplates;
@@ -359,7 +360,7 @@ function ComposerTaskIdeas({
       })}
     >
       <div className={cn(ROW_RAIL, ROW_FADE)}>
-        <div className="flex w-max items-center gap-1.5">
+        <div className="flex w-max items-center gap-2">
           {pageIdeas.map((idea, index) => {
             const ideaIndex = (page * IDEAS_PER_PAGE + index) % ideas.length;
             const Icon = icons[ideaIndex % icons.length]!;
@@ -367,16 +368,19 @@ function ComposerTaskIdeas({
               <Button
                 key={idea.label}
                 type="button"
-                variant="quiet"
-                size="sm"
-                className="shrink-0 gap-2 rounded-full border border-border px-3 font-normal"
+                variant="neutral"
+                className="shrink-0"
                 onClick={() => {
                   insertPrompt(idea.prompt);
                   detach(saveDraft(pageSignal), Reason.DomCallback);
                 }}
               >
-                <Icon size={14} className="shrink-0" aria-hidden />
-                <span className="text-[13px] leading-5">{idea.label}</span>
+                <Icon
+                  size={16}
+                  className="shrink-0 text-muted-foreground"
+                  aria-hidden
+                />
+                {idea.label}
               </Button>
             );
           })}
@@ -385,7 +389,7 @@ function ComposerTaskIdeas({
       <Button
         type="button"
         variant="neutral"
-        size="icon-sm"
+        size="icon"
         className={ROW_PAGER}
         aria-label={t(($) => {
           return $.chat.taskChips.moreIdeas;
@@ -431,7 +435,7 @@ export function ComposerTaskChips({
     >
       {selected === null && (
         <div
-          className="flex flex-wrap items-center justify-start gap-1.5"
+          className="flex flex-wrap items-center justify-start gap-2"
           role="group"
           aria-label={t(($) => {
             return $.chat.taskChips.chooseTask;
@@ -452,14 +456,16 @@ export function ComposerTaskChips({
                 <Button
                   key={task}
                   type="button"
-                  size="sm"
-                  variant="quiet"
-                  className={CHIP_CLASS}
+                  variant="neutral"
                   onClick={() => {
                     selectTask(task);
                   }}
                 >
-                  <Icon size={16} aria-hidden />
+                  <Icon
+                    size={16}
+                    className="text-muted-foreground"
+                    aria-hidden
+                  />
                   {labels[task]}
                 </Button>
               );

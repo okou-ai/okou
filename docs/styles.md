@@ -211,8 +211,8 @@ same reason the running indicator does: its keyframes animate `transform`, and
 Tailwind's `rotate-*` utility sets the individual `rotate` property, which would
 compose with the animation rather than be replaced by it.
 
-`--mic-volume-fill` stays a component-set runtime value, read through
-`after:h-[var(--mic-volume-fill,0%)]`.
+The legacy mic volume meter has since been retired; the voice draft tray owns
+the recording waveform.
 
 The `mic-starting-spinner` and `mic-volume-icon-meter` selectors have been
 removed; the `mic-starting-spin` keyframes remain.

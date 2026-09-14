@@ -2916,7 +2916,6 @@
       "storageFailed": "Audio konnte nicht gespeichert werden. Erneut versuchen stellt nur bereits auf diesem Gerät gespeichertes Audio wieder her.",
       "textTakingShape": "Der Text nimmt Form an",
       "transcribing": "Transkribieren",
-      "transcribingProgress": "Transkribieren...",
       "transcriptionFailed": "Die Sprachtranskription ist fehlgeschlagen. Versuchen Sie es erneut."
     },
     "workflows": {

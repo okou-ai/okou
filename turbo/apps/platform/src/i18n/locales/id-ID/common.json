@@ -2907,7 +2907,6 @@
       "storageFailed": "Audio tidak dapat disimpan. Coba lagi hanya memulihkan audio yang sudah tersimpan di perangkat ini.",
       "textTakingShape": "Teks sedang terbentuk",
       "transcribing": "Mentranskripsi",
-      "transcribingProgress": "Mentranskripsi...",
       "transcriptionFailed": "Transkripsi suara gagal. Coba lagi."
     },
     "workflows": {
