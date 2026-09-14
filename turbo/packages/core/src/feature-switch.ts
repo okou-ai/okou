@@ -100,12 +100,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Canva design connector",
     enabled: false,
   },
-  [FeatureSwitchKey.CalendlyOAuthConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable Calendly OAuth connections",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.CopperConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Copper CRM connector",
