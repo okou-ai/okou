@@ -1,18 +1,12 @@
 import { useRender } from "@base-ui/react/use-render";
 import { cn } from "@okouai/ui";
 
-type ChatCardProps = useRender.ComponentProps<"div"> & {
-  /** Paints the shared card fill. Turn it off to own the background. */
-  readonly filled?: boolean;
-};
+type ChatCardProps = useRender.ComponentProps<"div">;
 
 /**
  * Cards inside the chat transcript: notice cards, action cards, artifact and
  * media frames. One surface, one border, one shadow, one radius — before this
  * the transcript carried two radii, four border tokens and three fills.
- *
- * `filled={false}` is the same recipe without the fill, for the frames that own
- * their background (a video stage is black, not white).
  *
  * The radius and shadow read the App-owned `--okou-chat-card-*` variables,
  * which are declared on `.okou-app`. Every consumer renders inside that shell,
@@ -41,21 +35,14 @@ type ChatCardProps = useRender.ComponentProps<"div"> & {
  *
  * Renders a `div` unless `render` supplies another element.
  */
-export function ChatCard({
-  className,
-  filled = true,
-  render,
-  ref,
-  ...props
-}: ChatCardProps) {
+export function ChatCard({ className, render, ref, ...props }: ChatCardProps) {
   return useRender({
     defaultTagName: "div",
     props: {
       "data-slot": "chat-card",
       ...props,
       className: cn(
-        "rounded-[var(--okou-chat-card-radius)] border-[1px] border-gray-400 shadow-[var(--okou-chat-card-shadow)]",
-        filled && "bg-card",
+        "rounded-[var(--okou-chat-card-radius)] border-[1px] border-gray-400 bg-card shadow-[var(--okou-chat-card-shadow)]",
         className,
       ),
     },

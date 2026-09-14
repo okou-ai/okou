@@ -814,15 +814,14 @@ The hovered fill carries `:not(:active)` because Tailwind decides the order the 
 
 Measured against `main` with the App's own Tailwind compiler in Chromium over CDP, on the ancestor chain captured from the real chat thread page: 28 states — both fence shapes at rest, fence-hovered, control-hovered and pressed, in Light and Dark, on a fine and a coarse pointer — report zero changed pixels and zero computed-style or geometry differences. Negative controls that drop the control's padding, shift its offset by one spacing step and drop the reveal variant report 7,818, 3,579 and 9,164 changed pixels, so the zeros are not degenerate.
 
-### Chat transcript cards — partially drained
+### Chat transcript cards
 
 `ChatCard` in `turbo/apps/platform/src/views/okou-page/components/chat-card.tsx`
 owns the surface shared by transcript notice cards, action cards and media
 frames. It follows `Badge`'s `useRender` shape, so a caller picks the host
-element with `render` and gets no wrapper. `filled={false}` is the same recipe
-without the fill, for a frame that owns its own background. It is App-owned
-rather than shared, because its radius and shadow read the App-only
-`--okou-chat-card-*` variables declared on `.okou-app`.
+element with `render` and gets no wrapper. It is App-owned rather than shared, because its radius and
+shadow read the App-only `--okou-chat-card-*` variables declared on
+`.okou-app`.
 
 The border is deliberately `border-[1px] border-gray-400` rather than the shared
 `border` hairline and a semantic border token. The retired rule pinned a whole
@@ -854,18 +853,24 @@ One consequence is that `tailwind-merge` cannot classify an arbitrary
 named `shadow-*` scale in `cn()` would restore that, and is the documented route
 if a consumer ever needs it.
 
-The five remaining consumers are in `attachment-chips.tsx` and are **not**
-migrated. They render only inside the artifact preview dialog, and
-`DialogContent` portals to `document.body`, so the `.okou-app` ancestor that
-`.okou-app .okou-chat-card` requires is never present: measured on the rendered
-page, `artifact-dialog-document-frame.closest(".okou-app")` is `null` and the
-rule paints nothing there. Adopting `ChatCard` would add a border, radius,
-shadow and fill the artifact preview does not have today, and deleting the inert
-class names instead would freeze its current treatment-free appearance. Both are
-visual decisions, so the class names and all four declarations are left exactly
-as found and the batch stays `blocked` in the migration manifest.
-`okou-chat-frame` has only that one consumer and cannot drain until this is
-resolved.
+The `okou-chat-card` and `okou-chat-frame` selectors and their consumers have
+been removed.
+
+Five of the eighteen consumers never rendered that treatment. They live in the
+artifact preview dialog, and `DialogContent` portals to `document.body`, so the
+`.okou-app` ancestor `.okou-app .okou-chat-card` requires was never present and
+the rule painted nothing there. Measured on the rendered page before the change,
+all five report `closest(".okou-app") === null` while a transcript card reports
+`true`. Their class names were therefore deleted rather than replaced: the
+container keeps the treatment-free appearance it actually had. Giving the
+artifact preview a card surface is a separate visual decision, and it is not a
+one-line one — those two custom properties are scoped to `.okou-app`, so a
+`ChatCard` rendered in the portal resolves to a square, shadowless border
+instead. Measured on the portaled surface, adopting the shared base there would
+change 734,605 pixels.
+
+`okou-chat-frame` had exactly one consumer, that dialog's video stage, so it
+carried no live declaration anywhere.
 
 ## Exception boundary
 

@@ -873,8 +873,7 @@
         "chat-transcript-card-narrow",
         "chat-transcript-card-narrow-dark"
       ],
-      "status": "blocked",
-      "blockedReason": "Partially drained. The 13 transcript consumption sites moved to the shared ChatCard component in views/okou-page/components/chat-card.tsx, which reproduces the retired recipe as Tailwind utilities and lets cn() drop a conflicting base utility instead of relying on @layer components to lose to it. A local Chromium equivalence harness over the reconstructed ancestor chain reports 0 changed pixels and 0 computed-style or geometry differences across 80 states, with negative controls resolving on the same channel. The remaining 5 sites are all in attachment-chips.tsx and are blocked on a design decision: they render only inside the artifact preview dialog, which DialogContent portals to document.body, so the .okou-app ancestor that .okou-app .okou-chat-card requires is never present and the rule paints nothing there. Measured on the rendered page, artifact-dialog-document-frame.closest('.okou-app') is null. Adopting ChatCard at those sites would add a border, radius, shadow and card fill that the artifact preview does not have today; deleting the inert class names instead would freeze the current treatment-free appearance. Both are visual product decisions, so the class names, the CSS rule and its four declarations are left exactly as found. okou-chat-frame has only that one consumer, so it cannot drain until this is resolved.",
+      "status": "implemented",
       "evidence": []
     }
   ],
