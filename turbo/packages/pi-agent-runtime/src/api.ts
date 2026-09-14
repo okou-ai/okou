@@ -38,6 +38,7 @@ import {
   UnsupportedPiResourceSnapshotError,
   UnsupportedPiSessionVersionError,
 } from "./errors";
+import { PI_MEMORY_STAGE1_MODEL } from "./memory-background-config";
 import { piMemoryPhase2SelectionDigest } from "./phase2-memory-selection";
 import { createPiApiFirstTurnOwnership } from "./provider-ownership";
 import type {
@@ -61,6 +62,7 @@ export {
   piMemoryPhase2SelectionDigest,
   classifyPiApiProviderFailure,
   PiApiModelRequestError,
+  PI_MEMORY_STAGE1_MODEL,
   PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
   PiMemoryStage1ProviderError,
   projectPiMemoryStage1History,

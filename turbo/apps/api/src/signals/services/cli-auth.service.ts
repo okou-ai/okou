@@ -13,6 +13,7 @@ import { generateCliToken } from "../auth/tokens";
 import { clerk$ } from "../external/clerk";
 import { db$, writeDb$, type Db } from "../external/db";
 import { nowDate } from "../../lib/time";
+import { writeOrgMetadataWithDefaultPlanEntitlement } from "./org-plan-entitlements.service";
 
 export const DEFAULT_TEST_EMAIL = "dev+clerk_test+serial@vm0-e2e.ai";
 const CLI_TOKEN_EXPIRES_IN_SECONDS = 90 * 24 * 60 * 60;
@@ -173,24 +174,33 @@ async function ensureTestOrgBillingRow(
   writeDb: Db,
   orgId: string,
 ): Promise<void> {
-  await writeDb
-    .insert(orgMetadataCanonicalWrites)
-    .values({
+  await writeDb.transaction(async (tx) => {
+    await writeOrgMetadataWithDefaultPlanEntitlement(
+      tx,
       orgId,
-      tier: "pro",
-      credits: TEST_ORG_CREDITS,
-      updatedAt: nowDate(),
-    })
-    .onConflictDoUpdate({
-      target: orgMetadataCanonicalWrites.orgId,
-      set: {
-        tier: "pro",
-        credits: sql`
-          GREATEST(COALESCE(${orgMetadata.credits}, 0), ${TEST_ORG_CREDITS})
-        `,
-        updatedAt: nowDate(),
+      async (writeTx) => {
+        return await writeTx
+          .insert(orgMetadataCanonicalWrites)
+          .values({
+            orgId,
+            tier: "pro",
+            credits: TEST_ORG_CREDITS,
+            updatedAt: nowDate(),
+          })
+          .onConflictDoUpdate({
+            target: orgMetadataCanonicalWrites.orgId,
+            set: {
+              tier: "pro",
+              credits: sql`
+            GREATEST(COALESCE(${orgMetadata.credits}, 0), ${TEST_ORG_CREDITS})
+          `,
+              updatedAt: nowDate(),
+            },
+          })
+          .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
       },
-    });
+    );
+  });
 }
 
 export const ensureTestOrg$ = command(

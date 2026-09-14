@@ -862,7 +862,6 @@ async function launch(fault: Fault, noDiff = false, cleanupMode?: CleanupMode) {
       piModelConfig: JSON.stringify({
         provider: "openai",
         model: "gpt-5.6-terra",
-        api: "openai-responses",
         baseUrl: `${baseUrl}/v1`,
         apiKeyEnv: "OPENAI_API_KEY",
         credentialSecretName: "OPENAI_API_KEY",

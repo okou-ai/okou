@@ -48,6 +48,7 @@ import {
 } from "./test-endpoint-helpers";
 import { ensureAgentInstructionsStorageFixture } from "./test-agent-instructions-storage";
 import type { Tx } from "../../lib/db-types";
+import { writeOrgMetadataWithDefaultPlanEntitlement } from "../services/org-plan-entitlements.service";
 
 const testTelegramStateQuery$ = queryOf(testTelegramStateContract.get);
 const deleteTestTelegramStateQuery$ = queryOf(testTelegramStateContract.delete);
@@ -485,18 +486,30 @@ async function seedOrgDefaultAgentForAction(
   });
   signal.throwIfAborted();
 
-  await db
-    .insert(orgMetadataCanonicalWrites)
-    .values({
+  await db.transaction(async (tx) => {
+    await writeOrgMetadataWithDefaultPlanEntitlement(
+      tx,
       orgId,
-      defaultAgentId: agentId,
-      tier: "free",
-      credits: 10_000,
-    })
-    .onConflictDoUpdate({
-      target: orgMetadataCanonicalWrites.orgId,
-      set: { defaultAgentId: agentId, tier: "free", credits: 10_000 },
-    });
+      async (writeTx) => {
+        return await writeTx
+          .insert(orgMetadataCanonicalWrites)
+          .values({
+            orgId,
+            defaultAgentId: agentId,
+            tier: "free",
+            credits: 10_000,
+          })
+          .onConflictDoUpdate({
+            target: orgMetadataCanonicalWrites.orgId,
+            set: { defaultAgentId: agentId, tier: "free", credits: 10_000 },
+          })
+          .returning({
+            orgId: orgMetadataCanonicalWrites.orgId,
+            tier: orgMetadataCanonicalWrites.tier,
+          });
+      },
+    );
+  });
   signal.throwIfAborted();
 
   return actionOk({ compose_id: agentId });
@@ -761,18 +774,34 @@ async function seedTelegramPostDefaultAgent(
   seed: TelegramPostFixtureSeed,
   signal: AbortSignal,
 ): Promise<void> {
-  await db
-    .insert(orgMetadataCanonicalWrites)
-    .values({
-      orgId: seed.orgId,
-      defaultAgentId: seed.composeId,
-      tier: "free",
-      credits: 100_000,
-    })
-    .onConflictDoUpdate({
-      target: orgMetadataCanonicalWrites.orgId,
-      set: { defaultAgentId: seed.composeId, tier: "free", credits: 100_000 },
-    });
+  await db.transaction(async (tx) => {
+    await writeOrgMetadataWithDefaultPlanEntitlement(
+      tx,
+      seed.orgId,
+      async (writeTx) => {
+        return await writeTx
+          .insert(orgMetadataCanonicalWrites)
+          .values({
+            orgId: seed.orgId,
+            defaultAgentId: seed.composeId,
+            tier: "free",
+            credits: 100_000,
+          })
+          .onConflictDoUpdate({
+            target: orgMetadataCanonicalWrites.orgId,
+            set: {
+              defaultAgentId: seed.composeId,
+              tier: "free",
+              credits: 100_000,
+            },
+          })
+          .returning({
+            orgId: orgMetadataCanonicalWrites.orgId,
+            tier: orgMetadataCanonicalWrites.tier,
+          });
+      },
+    );
+  });
   signal.throwIfAborted();
 }
 
@@ -1440,23 +1469,34 @@ async function ensureStarterCreditGrant(
     return;
   }
 
-  await tx
-    .insert(orgMetadataCanonicalWrites)
-    .values({
-      orgId,
-      credits: STARTER_GRANT_AMOUNT,
-      tier: "free",
-      createdAt: sql`now()`,
-      updatedAt: sql`now()`,
-    })
-    .onConflictDoUpdate({
-      target: orgMetadataCanonicalWrites.orgId,
-      set: {
-        credits: sql`${orgMetadata.credits} + ${STARTER_GRANT_AMOUNT}`,
-        tier: "free",
-        updatedAt: sql`now()`,
-      },
-    });
+  await writeOrgMetadataWithDefaultPlanEntitlement(
+    tx,
+    orgId,
+    async (writeTx) => {
+      return await writeTx
+        .insert(orgMetadataCanonicalWrites)
+        .values({
+          orgId,
+          credits: STARTER_GRANT_AMOUNT,
+          tier: "free",
+          createdAt: sql`now()`,
+          updatedAt: sql`now()`,
+        })
+        .onConflictDoUpdate({
+          target: orgMetadataCanonicalWrites.orgId,
+          set: {
+            credits: sql`${orgMetadata.credits} + ${STARTER_GRANT_AMOUNT}`,
+            tier: "free",
+            updatedAt: sql`now()`,
+          },
+        })
+        .returning({
+          orgId: orgMetadataCanonicalWrites.orgId,
+          tier: orgMetadataCanonicalWrites.tier,
+        });
+    },
+  );
+
   signal.throwIfAborted();
 }
 
@@ -1507,13 +1547,24 @@ async function seedDefaultAgent(
   await db.transaction(async (tx) => {
     await ensureStarterCreditGrant(tx, input.orgId, signal);
     signal.throwIfAborted();
-    await tx
-      .insert(orgMetadataCanonicalWrites)
-      .values({ orgId: input.orgId, defaultAgentId: agent.id })
-      .onConflictDoUpdate({
-        target: orgMetadataCanonicalWrites.orgId,
-        set: { defaultAgentId: agent.id, updatedAt: nowDate() },
-      });
+    await writeOrgMetadataWithDefaultPlanEntitlement(
+      tx,
+      input.orgId,
+      async (writeTx) => {
+        return await writeTx
+          .insert(orgMetadataCanonicalWrites)
+          .values({ orgId: input.orgId, defaultAgentId: agent.id })
+          .onConflictDoUpdate({
+            target: orgMetadataCanonicalWrites.orgId,
+            set: { defaultAgentId: agent.id, updatedAt: nowDate() },
+          })
+          .returning({
+            orgId: orgMetadataCanonicalWrites.orgId,
+            tier: orgMetadataCanonicalWrites.tier,
+          });
+      },
+    );
+
     signal.throwIfAborted();
   });
   signal.throwIfAborted();

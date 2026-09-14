@@ -35,8 +35,9 @@ the source or writing a candidate.
 
 Re-audited on September 14 against `main@394a3c3615d2b2485646f50f718f6cb28fb48c71`,
 then integrated `main@2cda87987eef35c4ae8fe75bad7c0b2dad1fff0d` after #33915 merged. Its billing migrations and
-permanent inventory are preserved; Drizzle regenerated retirement as 1120.
-The final integration includes `main@737e752d859154f921d599412c5754ff262078e1`
+permanent inventory are preserved. Retirement is now migration 1121 after
+Drizzle regeneration on `main@eb5e83ff1f4c9f65a3f56de5dae362ceedce26be` preserves #33911's Lark migration 1120.
+The integration retains `main@737e752d859154f921d599412c5754ff262078e1`
 and #33974: only human-interactive sources may enter admission, before the
 existing live PiMemory gate and explicit C accounting.
 
@@ -66,9 +67,10 @@ Open overlaps at authoring were #33969 (Pi background model/worker tests) and
 #33974 (candidate admission source gating). #33929, #33915, #33911 and #33756
 also proposed new migration numbers; #33915 touches schema inventory. These
 are inventory, not merge-order dependencies. #33915 merged during this work;
-its new migration numbers required the 1120 regeneration above. #33974 also
-merged; its source classification and route coverage are preserved. The later merger
-integrates canonical main and regenerates metadata when necessary.
+its new migration numbers initially required retirement number 1120. #33974
+also merged; its source classification and route coverage are preserved. The
+protected queue then detected an actual metadata conflict after #33911 consumed 1120. Integrating canonical main and regenerating retirement as 1121 preserves
+that migration and leaves the guarded retirement SQL byte-for-byte unchanged.
 
 ## Historical B and the two-release boundary
 
@@ -106,7 +108,7 @@ or restore the verified B artifact; API rollback does not restore schema.
 
 ## Atomic retirement guard and receipt
 
-Migration `1120_retire_pi_candidate_reference_trigger` is ordinary transactional
+Migration `1121_retire_pi_candidate_reference_trigger` is ordinary transactional
 SQL under the unchanged runner's **1s lock / 10s statement** limits. Its journal
 entry commits in the same transaction. It performs these operations:
 

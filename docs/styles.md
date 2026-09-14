@@ -134,6 +134,10 @@ Tests scope badges through `data-slot="badge"`, which carries no styles. The ico
 
 Line height belongs to the badge because a font-size utility with an arbitrary value carries no paired line height. A badge that declared only `text-[11px]` therefore took its box from whatever `line-height` an ancestor happened to set: the same badge measured 22px, 26px, or 34px tall across four ancestors. It reuses the page-surface border tokens rather than declaring badge-specific aliases, so one hairline decision keeps one owner.
 
+Merge the badge's line height **after** caller classes. `tailwind-merge` removes an earlier line-height utility when a later font-size utility appears: `text-xs` replaces it with its paired line height, while `text-[10px]` leaves line height inherited. The badge keeps `leading-snug` last so both named and arbitrary font sizes retain the same unitless ratio. Callers choose the font size, not a separate line height.
+
+Control typography is a joint decision about font size, line height, height, and padding. Keep that decision in the shared component; fixed-height buttons and segments retain their own size scales. A line-height ratio is not a promise to center every label's ink: capitals, descenders, and fallback fonts have different extents. Verify stable baselines, descender clearance, icon alignment, and long-label wrapping in a browser across representative Latin and Chinese labels. Do not shift individual labels or impose a font-metric threshold on every control to make one word look centered.
+
 The `okou-badge`, `okou-pill`, and `okou-border-r` selectors and their consumers have been removed. `okou-pill` was scoped to `.okou-app` and set the muted foreground; its only consumer now spells that foreground itself. `okou-border-r` was a single settings-dialog divider and became `border-r border-r-gray-300` on that nav, keeping its lighter Gray 300 stroke while its width joins the shared hairline token.
 
 ### Icon controls and dialog bodies
@@ -432,6 +436,41 @@ alongside their existing `border-0`. That still paints, because Tailwind emits
 `border-width` before `border-top-width` inside the utilities layer; previously
 the legacy rule won only by sitting outside every layer. Tests continue to
 select both separators through `data-slot`.
+
+### The all-round hairline
+
+`okou-border` is the four-sided sibling of the rule above: one declaration,
+`border: 0.7px solid hsl(var(--gray-400))`, carried by settings cards,
+diagnostic panels, org-management tables, the queue drawer's plan cards, the
+instructions editor's bubble menu and a handful of pills and chips. Twenty-eight
+of its consumption sites now write `border border-surface-border`; the two that
+already spelled a bare `border` add only the colour.
+
+`--color-surface-border` is `hsl(var(--gray-400))`, the same runtime variable the
+retired rule read, so every Dark and gradient-palette override still applies
+without a per-theme branch. It is the registered name for this decision — the
+page-surface and badge tables above already point at it — which is why these
+consumers take it rather than the raw `border-gray-400` ramp stop the horizontal
+rules kept. `border-border` would be wrong here: `--border` is `--gray-300`, one
+stop lighter.
+
+The width joins the shared hairline exactly as `okou-btn-morandi` and
+`okou-border-t` did. Measured in Blink, `0.7px`, `0.5px` and `1px` all resolve to
+a used width of `1px` and paint 1, 2 and 3 device pixels at device scale factors
+1, 2 and 3 respectively — the same count for all three — so dropping the
+hard-coded `0.7px` is invisible there and layout is unchanged. WebKit may draw
+the true hairline on a high-density display, which is the product behaviour the
+shared token already describes.
+
+The selector itself stays for now. `buy-credits-section.tsx` reaches for it from
+a function that returns a class string rather than from a `className` attribute,
+so neither the legacy baseline nor `no-unknown-classes` counts it, and that one
+consumer is not mechanically drainable: the retired rule is unlayered, so its
+`border` shorthand outranks the sibling `hover:border-muted-foreground/30` on the
+same element and that hover colour never paints. Replacing only the legacy class
+activates it. Deciding between keeping a hover the tile has never had and
+deleting a utility the consumer spells is a visual decision, not an equivalence,
+and it is reviewed separately.
 
 ### Page layouts
 

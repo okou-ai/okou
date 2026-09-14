@@ -49,6 +49,7 @@ import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
 } from "./test-endpoint-helpers";
+import { ensureOrgMetadataPlanEntitlement } from "../services/org-plan-entitlements.service";
 
 const actionBody$ = bodyResultOf(testCronCleanupSandboxesStateContract.action);
 const cleanupBody$ = bodyResultOf(
@@ -150,14 +151,23 @@ async function seedRunForAction(
     return actionBadRequest("failed to seed Agent");
   }
 
-  await db
-    .insert(orgMetadataCanonicalWrites)
-    .values({
-      orgId,
-      tier: "free",
-      credits: 10_000,
-    })
-    .onConflictDoNothing();
+  await db.transaction(async (tx) => {
+    const metadataRows = await tx
+      .insert(orgMetadataCanonicalWrites)
+      .values({
+        orgId,
+        tier: "free",
+        credits: 10_000,
+      })
+      .onConflictDoNothing()
+      .returning({
+        orgId: orgMetadataCanonicalWrites.orgId,
+        tier: orgMetadataCanonicalWrites.tier,
+      });
+    for (const metadata of metadataRows) {
+      await ensureOrgMetadataPlanEntitlement(tx, metadata);
+    }
+  });
   signal.throwIfAborted();
 
   const [session] = await db

@@ -22,6 +22,7 @@ import {
   resolveFeishuConnectorAccountMutation,
 } from "../services/feishu-custom-connector.service";
 import {
+  isFeishuInstallationEnabled,
   feishuBotOpenUrl,
   feishuOAuthAppCallbackUrl,
 } from "../services/feishu-config";
@@ -83,6 +84,8 @@ const startFeishuAccountOAuth$ = command(
     const [installation] = await db
       .select({
         orgId: feishuOrgInstallations.orgId,
+        platform: feishuOrgInstallations.platform,
+        ownerUserId: feishuOrgInstallations.ownerUserId,
         botName: feishuOrgInstallations.botName,
         publicBrand: feishuOrgInstallations.publicBrand,
         setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
@@ -96,6 +99,9 @@ const startFeishuAccountOAuth$ = command(
     }
     if (args.orgId !== installation.orgId) {
       return { kind: "wrong_organization" };
+    }
+    if (!(await isFeishuInstallationEnabled(db, installation))) {
+      return { kind: "installation_not_found" };
     }
     if (!installation.setupCompletedAt) {
       return { kind: "setup_incomplete" };
@@ -125,7 +131,7 @@ const startFeishuAccountOAuth$ = command(
         orgId: args.orgId,
         userId: args.userId,
         connectorId,
-        redirectUri: feishuOAuthAppCallbackUrl(),
+        redirectUri: feishuOAuthAppCallbackUrl(installation.platform),
         publicBrand: installation.publicBrand,
         account,
         feishuContext: {
@@ -158,17 +164,16 @@ function legacyConnectResult(result: FeishuConnectResult): Response {
       return worksRedirect({ feishuError: "Invalid or expired connect link" });
     }
     case "installation_not_found": {
-      return worksRedirect({ feishuError: "Feishu installation not found" });
+      return worksRedirect({ feishuError: "Bot installation not found" });
     }
     case "setup_incomplete": {
       return worksRedirect({
-        feishuError: "Finish setting up this Feishu bot before connecting",
+        feishuError: "Finish setting up this bot before connecting",
       });
     }
     case "wrong_organization": {
       return worksRedirect({
-        feishuError:
-          "Switch to the organization connected to this Feishu tenant",
+        feishuError: "Switch to the organization connected to this bot",
       });
     }
     case "success": {
@@ -192,7 +197,7 @@ const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   if (!auth.orgId) {
     return worksRedirect({
-      feishuError: "Switch to the organization connected to this Feishu tenant",
+      feishuError: "Switch to the organization connected to this bot",
     });
   }
   const result = await set(
@@ -233,23 +238,20 @@ const connectFromApp$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   switch (result.kind) {
     case "invalid": {
-      return badRequestMessage("Invalid or expired Feishu connect link");
+      return badRequestMessage("Invalid or expired bot connect link");
     }
     case "installation_not_found": {
-      return notFound("Feishu installation not found");
+      return notFound("Bot installation not found");
     }
     case "setup_incomplete": {
-      return badRequestMessage(
-        "Finish setting up this Feishu bot before connecting",
-      );
+      return badRequestMessage("Finish setting up this bot before connecting");
     }
     case "wrong_organization": {
       return {
         status: 403 as const,
         body: {
           error: {
-            message:
-              "Switch to the organization connected to this Feishu tenant",
+            message: "Switch to the organization connected to this bot",
             code: "FORBIDDEN" as const,
           },
         },
@@ -280,13 +282,15 @@ const getStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
       signature: query.sig,
     })
   ) {
-    return badRequestMessage("Invalid or expired Feishu connect link");
+    return badRequestMessage("Invalid or expired bot connect link");
   }
 
   const db = set(writeDb$);
   const [installation] = await db
     .select({
       orgId: feishuOrgInstallations.orgId,
+      platform: feishuOrgInstallations.platform,
+      ownerUserId: feishuOrgInstallations.ownerUserId,
       appId: feishuOrgInstallations.appId,
       botName: feishuOrgInstallations.botName,
     })
@@ -295,14 +299,17 @@ const getStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
     .limit(1);
   signal.throwIfAborted();
   if (!installation) {
-    return notFound("Feishu installation not found");
+    return notFound("Bot installation not found");
+  }
+  if (!(await isFeishuInstallationEnabled(db, installation))) {
+    return notFound("Bot integration is unavailable");
   }
   if (installation.orgId !== auth.orgId) {
     return {
       status: 403 as const,
       body: {
         error: {
-          message: "Switch to the organization connected to this Feishu tenant",
+          message: "Switch to the organization connected to this bot",
           code: "FORBIDDEN" as const,
         },
       },
@@ -323,7 +330,7 @@ const getStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
     .limit(1);
   signal.throwIfAborted();
   if (connection && connection.userId !== auth.userId) {
-    return conflict("This Feishu account is already connected");
+    return conflict("This account is already connected");
   }
   const isConnected =
     connection?.userId === auth.userId &&
@@ -340,7 +347,7 @@ const getStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
     body: {
       isConnected,
       botName: installation.botName,
-      openUrl: feishuBotOpenUrl(installation.appId),
+      openUrl: feishuBotOpenUrl(installation.appId, installation.platform),
     },
   };
 });

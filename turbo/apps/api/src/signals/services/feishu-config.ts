@@ -1,3 +1,9 @@
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import {
+  FEISHU_PLATFORMS,
+  type FeishuPlatform,
+} from "@okouai/core/feishu-platform";
 import { eq } from "drizzle-orm";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 
@@ -12,6 +18,7 @@ export interface FeishuInstallationConfig {
   readonly orgId: string;
   readonly ownerUserId: string | null;
   readonly appId: string;
+  readonly platform: FeishuPlatform;
   readonly botOpenId: string | null;
   readonly encryptedAppSecret: string;
   readonly appSecret: string;
@@ -30,6 +37,7 @@ export async function loadFeishuInstallationConfig(
       orgId: feishuOrgInstallations.orgId,
       ownerUserId: feishuOrgInstallations.ownerUserId,
       appId: feishuOrgInstallations.appId,
+      platform: feishuOrgInstallations.platform,
       botOpenId: feishuOrgInstallations.botOpenId,
       encryptedAppSecret: feishuOrgInstallations.encryptedAppSecret,
       encryptedVerificationToken:
@@ -40,7 +48,7 @@ export async function loadFeishuInstallationConfig(
     .from(feishuOrgInstallations)
     .where(eq(feishuOrgInstallations.id, installationId))
     .limit(1);
-  if (!installation) {
+  if (!installation || !(await isFeishuInstallationEnabled(db, installation))) {
     return null;
   }
   const context = { orgId: installation.orgId };
@@ -57,6 +65,7 @@ export async function loadFeishuInstallationConfig(
     orgId: installation.orgId,
     ownerUserId: installation.ownerUserId,
     appId: installation.appId,
+    platform: installation.platform,
     botOpenId: installation.botOpenId,
     encryptedAppSecret: installation.encryptedAppSecret,
     appSecret,
@@ -91,8 +100,13 @@ export function feishuOAuthCallbackUrl(): string {
   ).toString();
 }
 
-export function feishuOAuthAppCallbackUrl(): string {
-  return new URL("/connectors/feishu/callback", env("APP_URL")).toString();
+export function feishuOAuthAppCallbackUrl(
+  platform: FeishuPlatform = "feishu",
+): string {
+  return new URL(
+    FEISHU_PLATFORMS[platform].callbackPath,
+    env("APP_URL"),
+  ).toString();
 }
 
 /**
@@ -109,14 +123,48 @@ export function feishuOAuthConnectUrl(state: string): string {
   return url.toString();
 }
 
-export function feishuBotOpenUrl(appId: string): string {
-  const url = new URL("https://applink.feishu.cn/client/bot/open");
+export function feishuBotOpenUrl(
+  appId: string,
+  platform: FeishuPlatform = "feishu",
+): string {
+  const url = new URL(
+    "/client/bot/open",
+    FEISHU_PLATFORMS[platform].appLinkOrigin,
+  );
   url.searchParams.set("appId", appId);
   return url.toString();
 }
 
-export function buildFeishuChatOpenUrl(chatId: string): string {
-  const url = new URL("https://applink.feishu.cn/client/chat/open");
+export function buildFeishuChatOpenUrl(
+  chatId: string,
+  platform: FeishuPlatform = "feishu",
+): string {
+  const url = new URL(
+    "/client/chat/open",
+    FEISHU_PLATFORMS[platform].appLinkOrigin,
+  );
   url.searchParams.set("openChatId", chatId);
   return url.toString();
+}
+
+export async function isFeishuInstallationEnabled(
+  db: Db,
+  installation: {
+    readonly platform: FeishuPlatform;
+    readonly orgId: string;
+    readonly ownerUserId: string | null;
+  },
+): Promise<boolean> {
+  if (installation.platform === "feishu") {
+    return true;
+  }
+  if (!installation.ownerUserId) {
+    return false;
+  }
+  const context = await loadUserFeatureSwitchContext(
+    db,
+    installation.orgId,
+    installation.ownerUserId,
+  );
+  return isFeatureEnabled(FEISHU_PLATFORMS.lark.featureSwitch, context);
 }

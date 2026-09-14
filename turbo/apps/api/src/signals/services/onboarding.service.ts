@@ -19,6 +19,7 @@ import {
   type EnsureMorningBriefDefaultEnabledResult,
 } from "./morning-brief-preference.service";
 import type { WorkflowMember } from "./workflow-data.service";
+import { writeOrgMetadataWithDefaultPlanEntitlement } from "./org-plan-entitlements.service";
 
 const L = logger("onboarding.service");
 
@@ -41,23 +42,32 @@ type CompleteOnboardingResponse = {
 
 async function markOnboardingComplete(db: Db, orgId: string): Promise<boolean> {
   const updatedAt = nowDate();
-  const rows = await db
-    .insert(orgMetadataCanonicalWrites)
-    .values({
+  return await db.transaction(async (tx) => {
+    const rows = await writeOrgMetadataWithDefaultPlanEntitlement(
+      tx,
       orgId,
-      onboardingComplete: true,
-      updatedAt,
-    })
-    .onConflictDoUpdate({
-      target: orgMetadataCanonicalWrites.orgId,
-      set: {
-        onboardingComplete: true,
-        updatedAt,
+      async (writeTx) => {
+        return await writeTx
+          .insert(orgMetadataCanonicalWrites)
+          .values({
+            orgId,
+            onboardingComplete: true,
+            updatedAt,
+          })
+          .onConflictDoUpdate({
+            target: orgMetadataCanonicalWrites.orgId,
+            set: {
+              onboardingComplete: true,
+              updatedAt,
+            },
+            setWhere: eq(orgMetadataCanonicalWrites.onboardingComplete, false),
+          })
+          .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
       },
-      setWhere: eq(orgMetadataCanonicalWrites.onboardingComplete, false),
-    })
-    .returning({ orgId: orgMetadataCanonicalWrites.orgId });
-  return rows.length > 0;
+    );
+
+    return rows.length > 0;
+  });
 }
 
 type TimezoneFallbackOutcome = "missing" | "invalid" | "stored" | "preserved";

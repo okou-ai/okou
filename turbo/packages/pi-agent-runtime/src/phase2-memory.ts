@@ -42,7 +42,6 @@ import {
   type Phase2MemoryToolTestHooks,
 } from "./phase2-memory-tools";
 import {
-  PI_MEMORY_PHASE2_MAINTENANCE_REASONING,
   PiMemoryPhase2EngineError,
   type PiMemoryPhase2LocalConsolidationArgs,
   type PiMemoryPhase2ConsolidationResult,
@@ -50,6 +49,7 @@ import {
   type PiMemoryPhase2FailureCounts,
   type PiMemoryPhase2ProviderUsage,
 } from "./phase2-memory-types";
+import { PI_MEMORY_PHASE2_MAINTENANCE_REASONING } from "./memory-background-config";
 import { resolvePiAgentModel } from "./model";
 import {
   createPiModelRuntime,

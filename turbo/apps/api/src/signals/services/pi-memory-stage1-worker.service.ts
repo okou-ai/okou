@@ -17,6 +17,7 @@ import { conversations } from "@okouai/db/schema/conversation";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storages } from "@okouai/db/schema/storage";
 import {
+  PI_MEMORY_STAGE1_MODEL,
   PiMemoryStage1ProviderError,
   projectPiMemoryStage1History,
   redactPiMemoryStage1Secrets,
@@ -59,7 +60,6 @@ import {
 
 const log = logger("PiMemoryStage1Worker");
 
-const PI_MEMORY_STAGE1_MODEL = "gpt-5.6-terra";
 const PI_MEMORY_STAGE1_SCAN_LIMIT = 5000;
 const PI_MEMORY_STAGE1_CLAIM_LIMIT = 8;
 const PI_MEMORY_STAGE1_PROVIDER_CONCURRENCY = 8;
@@ -727,7 +727,6 @@ function providerConfig(args: {
     model: args.route.upstreamModel,
     dialect: "openai-responses" as const,
     transport: "sse" as const,
-    thinkingLevel: "max" as const,
   };
 }
 

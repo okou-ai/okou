@@ -86,6 +86,7 @@ def running_jsonl_flush_worker(files: RunnerFlushRequestFiles) -> Iterator[None]
 class TestRunnerFlushRequest:
     """Tests for the marker envelope shared by runner flush consumers."""
 
+    @pytest.mark.filterwarnings("error::pytest.PytestUnhandledThreadExceptionWarning")
     @pytest.mark.parametrize("consumer", ["usage", "jsonl"])
     @pytest.mark.parametrize(
         "marker_bytes",
@@ -93,6 +94,10 @@ class TestRunnerFlushRequest:
             pytest.param(None, id="missing"),
             pytest.param(b"\xff", id="invalid-utf8"),
             pytest.param(b"not-json", id="invalid-json"),
+            pytest.param(
+                b'{"requestedAtMs":' + b"1" * 5000 + b"}",
+                id="overlong-integer",
+            ),
             pytest.param(b"[]", id="non-object"),
             pytest.param(
                 json.dumps(
@@ -139,6 +144,7 @@ class TestRunnerFlushRequest:
             else runner_flush_request_files.jsonl_flush_request_path
         )
         if marker_bytes is not None:
+            assert len(marker_bytes) <= runner_flush_request.MAX_RUNNER_FLUSH_REQUEST_BYTES
             marker_path.write_bytes(marker_bytes)
 
         if consumer == "usage":

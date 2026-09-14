@@ -20,6 +20,7 @@ import { clerk$ } from "../external/clerk";
 import { nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
 import { settle } from "../utils";
+import { writeOrgMetadataWithDefaultPlanEntitlement } from "./org-plan-entitlements.service";
 
 const log = logger("impact-attribution");
 
@@ -35,25 +36,36 @@ const persistOrgImpactAttribution$ = command(
       return;
     }
     const capturedAt = new Date(attribution.capturedAt);
-    await set(writeDb$)
-      .insert(orgMetadataCanonicalWrites)
-      .values({
+    await set(writeDb$).transaction(async (tx) => {
+      await writeOrgMetadataWithDefaultPlanEntitlement(
+        tx,
         orgId,
-        impactClickId: attribution.clickId,
-        impactClickAt: capturedAt,
-      })
-      .onConflictDoUpdate({
-        target: orgMetadataCanonicalWrites.orgId,
-        set: {
-          impactClickId: attribution.clickId,
-          impactClickAt: capturedAt,
-          updatedAt: nowDate(),
+        async (writeTx) => {
+          return await writeTx
+            .insert(orgMetadataCanonicalWrites)
+            .values({
+              orgId,
+              impactClickId: attribution.clickId,
+              impactClickAt: capturedAt,
+            })
+            .onConflictDoUpdate({
+              target: orgMetadataCanonicalWrites.orgId,
+              set: {
+                impactClickId: attribution.clickId,
+                impactClickAt: capturedAt,
+                updatedAt: nowDate(),
+              },
+              setWhere: or(
+                isNull(orgMetadata.impactClickAt),
+                lt(orgMetadata.impactClickAt, capturedAt),
+              ),
+            })
+            .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
         },
-        setWhere: or(
-          isNull(orgMetadata.impactClickAt),
-          lt(orgMetadata.impactClickAt, capturedAt),
-        ),
-      });
+      );
+
+      signal.throwIfAborted();
+    });
     signal.throwIfAborted();
   },
 );

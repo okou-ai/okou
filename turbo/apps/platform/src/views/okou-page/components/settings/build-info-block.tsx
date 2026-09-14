@@ -87,7 +87,7 @@ export function BuildInfoBlock() {
     : formatBuildInfoValue(backendBuildInfo?.backendVersion, unavailable);
 
   return (
-    <div className="flex items-start gap-4 rounded-xl bg-card p-4 okou-border">
+    <div className="flex items-start gap-4 rounded-xl bg-card p-4 border border-surface-border">
       <div className="shrink-0">
         <div className="flex h-7 w-7 items-center justify-center">
           <GitCommit size={22} className="text-muted-foreground" />

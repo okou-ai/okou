@@ -55,7 +55,7 @@ They do not expose the private project URL or platform key.
 
 The API stores a digest-addressed immutable input snapshot in
 `R2_USER_STORAGES_BUCKET_NAME`, under
-`intro-video-render-inputs/<generationId>/<sha256>.zip`. The job records the
+`intro-video-render-inputs/<generationId>/<sha256>.zip`. Every job requires the
 actual bucket and key in its private `renderState.projectStorage`, alongside
 the exact provider payload. Queued jobs renew access to that recorded location
 even if the bucket selected for new jobs changes. A signed input URL lasts
@@ -85,14 +85,6 @@ of a provider-reconciled terminal job, at least 26 hours after completion, once
 no pending retrieval or recovery needs it. Retain queued, active, and unresolved
 jobs. No automatic per-job cleanup worker or bucket lifecycle configuration is
 installed by this change.
-
-Admitted jobs written before this storage change have no `projectStorage`.
-Before their first submission, recovery uses their original
-`R2_PRIVATE_ARTIFACTS_BUCKET_NAME` and digest-based key, then saves that location.
-Keep that bucket, its credentials, and its inputs available while those jobs
-drain. Already attempted submissions retain their exact original URL and body.
-Remove the legacy location reader only after all pre-cutover jobs have drained
-and the previous API is outside the rollback window.
 
 The provider idempotency key is `okou:hf:<generationId>`. After the first
 submission attempt, both the key and body remain fixed. HeyGen documents a
@@ -172,14 +164,8 @@ acceptance test must use the deployed API and platform account: enable
 `IntroVideo`, submit a preserved-page project, resume the same ID, and verify
 one provider render, one ledger charge, and a playable permanent artifact.
 
-For the input-storage cutover, pause new creation during API traffic promotion
-and resume it on the updated API. Do not roll back to an API that reconstructs
-every input location from the dedicated private bucket while new user-storage
-jobs can still need their first submission. No database schema migration or
-CLI/template change is required for this cutover.
-
 Before production acceptance, verify authenticated write/read and denied
 anonymous access at the new prefix, including any configured public domains.
-Inspect bucket lifecycle rules against the retention requirements above and
-inventory unfinished pre-cutover jobs. Use one existing project for the cloud
-render smoke test; regenerating voice or presenter assets is unnecessary.
+Inspect bucket lifecycle rules against the retention requirements above. Use
+one existing project for the cloud render smoke test; regenerating voice or
+presenter assets is unnecessary.

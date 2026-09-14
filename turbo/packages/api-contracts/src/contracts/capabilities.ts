@@ -11,6 +11,7 @@ export const CAPABILITIES = [
   "slack:read",
   "slack:write",
   "feishu:write",
+  "lark:write",
   "teams:write",
   "phone:read",
   "phone:write",
@@ -81,6 +82,10 @@ export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
   "feishu:write": {
     group: "Integrations",
     label: "Send Feishu messages and files",
+  },
+  "lark:write": {
+    group: "Integrations",
+    label: "Send Lark messages and files",
   },
   "teams:write": {
     group: "Integrations",

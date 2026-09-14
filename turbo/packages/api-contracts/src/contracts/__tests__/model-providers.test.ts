@@ -559,7 +559,7 @@ describe("model-first canonical catalog", () => {
       getProviderRuntimeModel("openrouter-codex", "deepseek-v4.1-flash"),
     ).toBe("deepseek/deepseek-v4.1-flash");
     expect(getProviderRuntimeModel("built-in", "deepseek-v4.1-flash")).toBe(
-      "deepseek/deepseek-v4.1-flash",
+      "deepseek-flash",
     );
     expect(getProviderRuntimeModel("openrouter-api-key", "custom/model")).toBe(
       "custom/model",
@@ -583,8 +583,14 @@ describe("model-first canonical catalog", () => {
     ]);
   });
 
-  it("routes DeepSeek V4.1 Flash through OpenRouter", () => {
+  it("routes DeepSeek V4.1 Flash through DeepSeek with an OpenRouter fallback", () => {
     expect(getBuiltInModelRouteCandidates("deepseek-v4.1-flash")).toEqual([
+      {
+        selectedModel: "deepseek-v4.1-flash",
+        providerType: "deepseek",
+        upstreamModel: "deepseek-flash",
+        vendor: "deepseek",
+      },
       {
         selectedModel: "deepseek-v4.1-flash",
         providerType: "openrouter-codex",
@@ -593,9 +599,9 @@ describe("model-first canonical catalog", () => {
       },
     ]);
     expect(getBuiltInConcreteProviderType("deepseek-v4.1-flash")).toBe(
-      "openrouter-codex",
+      "deepseek",
     );
-    expect(getBuiltInVendor("deepseek-v4.1-flash")).toBe("openrouter");
+    expect(getBuiltInVendor("deepseek-v4.1-flash")).toBe("deepseek");
   });
 
   it.each(["deepseek-v4-flash", "deepseek-v4-pro"] as const)(
@@ -649,7 +655,7 @@ describe("model-first canonical catalog", () => {
 
     for (const model of ACTIVE_RUN_MODELS) {
       const candidates = getBuiltInModelRouteCandidates(model);
-      expect(candidates).toHaveLength(model === "deepseek-v4.1-flash" ? 1 : 2);
+      expect(candidates).toHaveLength(2);
       expect(candidates[0]?.providerType).toBe(
         getBuiltInConcreteProviderType(model),
       );
@@ -921,6 +927,7 @@ describe("deepseek Responses provider", () => {
     expect(getFrameworkForType("deepseek")).toBe("codex");
     expect(getSecretNameForType("deepseek")).toBe("DEEPSEEK_API_KEY");
     expect(getModels("deepseek")).toEqual([
+      "deepseek-flash",
       "deepseek-v4-flash",
       "deepseek-v4-pro",
     ]);
@@ -938,6 +945,13 @@ describe("deepseek Responses provider", () => {
       supportsWebsockets: false,
       modelCatalog: {
         models: [
+          expect.objectContaining({
+            slug: "deepseek-flash",
+            display_name: "DeepSeek-V4.1-Flash",
+            context_window: 1_048_576,
+            input_modalities: ["text", "image"],
+            apply_patch_tool_type: "freeform",
+          }),
           expect.objectContaining({
             slug: "deepseek-v4-flash",
             default_reasoning_level: "high",

@@ -1290,3 +1290,46 @@ export const integrationsSlackUploadCompleteContract = c.router({
     summary: "Finalize Slack file upload and share to channel",
   },
 });
+
+// Lark uses separate endpoints so older APIs fail closed instead of routing to Feishu.
+export const integrationsLarkMessageContract = c.router({
+  sendMessage: {
+    ...integrationsFeishuMessageContract.sendMessage,
+    summary: integrationsFeishuMessageContract.sendMessage.summary.replaceAll(
+      "Feishu",
+      "Lark",
+    ),
+    path: "/api/integrations/lark/message",
+  },
+});
+export const integrationsLarkDownloadFileContract = c.router({
+  download: {
+    ...integrationsFeishuDownloadFileContract.download,
+    summary: integrationsFeishuDownloadFileContract.download.summary.replaceAll(
+      "Feishu",
+      "Lark",
+    ),
+    path: "/api/integrations/lark/download-file",
+  },
+});
+export const integrationsLarkUploadInitContract = c.router({
+  init: {
+    ...integrationsFeishuUploadInitContract.init,
+    summary: integrationsFeishuUploadInitContract.init.summary.replaceAll(
+      "Feishu",
+      "Lark",
+    ),
+    path: "/api/integrations/lark/upload-file/init",
+  },
+});
+export const integrationsLarkUploadCompleteContract = c.router({
+  complete: {
+    ...integrationsFeishuUploadCompleteContract.complete,
+    summary:
+      integrationsFeishuUploadCompleteContract.complete.summary.replaceAll(
+        "Feishu",
+        "Lark",
+      ),
+    path: "/api/integrations/lark/upload-file/complete",
+  },
+});

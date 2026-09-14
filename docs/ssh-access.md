@@ -227,20 +227,52 @@ For work spanning several CLI calls, use a managed session:
 
 ```sh
 okou ssh session start <connection-id> --command 'sleep 90; uname -a' --json
-okou ssh session status <session-id> --json
-okou ssh session read <session-id> --cursor 0 --json
+okou ssh session read <session-id>
+# Follow next_command; use --json for exact base64 chunks and structured metadata.
+okou ssh session read <session-id> --cursor <next_cursor> --wait 0 --max-bytes 32768 --json
 okou ssh session close <session-id> --json
 ```
 
-Start returns a session ID immediately; status reports setup failure, running
-state, or observed exit. `--shell` starts a persistent shell instead of a command;
+Start returns a session ID immediately; read includes setup failure, running
+state, or observed exit, so a separate status poll is unnecessary. `--shell`
+starts a persistent shell instead of a command;
 later `write --text <text>` calls share its working directory, environment and
 stdin. Include newlines when submitting shell commands. Optional `--pty` requests
 a terminal. `write --base64 <data>` preserves binary input, and `--eof` closes
 stdin after the submitted bytes. Use `signal --signal TERM` to submit a signal.
 
+Read waits up to 10 seconds for output or terminal state, not process completion.
+`--wait` accepts 0–30 seconds with millisecond precision; `--wait 0` reads
+immediately. Available pages are collected without further waits until caught up
+or a budget is reached. `--max-bytes` defaults to 16384 (range 1–65536). Each
+invocation is also limited to 256 chunks, 64 page requests and 35 seconds
+collecting. Reporting gets at most 5 seconds, or 1 second after collection
+timeout/cancellation. Only two reads per Run may wait concurrently.
+
+Plain output shows readable UTF-8 on its original stream and labels binary or
+terminal-control bytes with base64 and their cursor range. Adjacent same-stream
+pieces are joined before decoding; a code point spanning separate reads may be
+shown as base64. JSON preserves the exact ordered base64 chunks. Both forms
+include the latest verified state, `next_cursor`, lost ranges and a continuation
+command when meaningful. JSON `more_available` is relative to that snapshot,
+not a guarantee about future output. Before any valid page, state and
+`more_available` are null. After a reader failure, prior pages and their cursor
+remain valid observations, not proof of current authority or state.
+
+`stop_reason` distinguishes `caught_up`, `wait_elapsed`, `byte_limit`,
+`chunk_limit`, `request_limit`, `time_limit`, `terminal` and `failed`. Terminal
+means the remote terminal state was observed **and its output was drained**;
+terminal backlog still gets a continuation. CLI exit 0 means reading succeeded,
+including quiet wait expiry and remote nonzero exit; reader/RPC/output failures
+exit 1. Inspect the separate remote exit or failure before deciding work succeeded.
+Cancelling a read or exhausting its budget does not stop the remote process.
+A disconnected reader may hold its Runner request/guest park reservation until
+the requested wait expires (up to 30 seconds plus bounded terminal reserve).
+If the output pipe fails, a complete result may be undeliverable; reuse a
+previously confirmed cursor, never replay the remote command to recover output.
+
 Continue output reads with the returned `next_cursor`. Reading does not consume
-output, and a `lost` range explicitly identifies discarded bytes. `session list`
+output, and the `lost` array explicitly identifies discarded byte ranges. `session list`
 recovers the current Run's IDs after a lost start reply. All session commands
 require `ssh:write`. There are eight retained sessions per current Run; completed
 records remain for five minutes or until closed. Running sessions last at most
@@ -248,8 +280,9 @@ two hours and always end with their Run; they cannot resume in another Run.
 
 Input/signal submission and closing SSH do not prove the remote process stopped
 or its effects completed. Never automatically replay uncertain starts or input.
-An older Runner returns `unknown_method`; there is no automatic conversion into
-independent exec calls. Observed authorization-notification disconnects cancel
+This staff-gated session-read contract replaces the earlier defaults and payload
+without an old-reader compatibility path or automatic conversion into independent
+exec calls. Observed authorization-notification disconnects cancel
 managed sessions and prevent new starts until the subscription recovers.
 
 ### File upload and download

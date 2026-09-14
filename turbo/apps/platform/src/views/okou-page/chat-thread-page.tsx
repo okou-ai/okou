@@ -4024,7 +4024,7 @@ function RecommendedFollowupList({
             type="button"
             title={followup.prompt}
             className={cn(
-              "group relative flex text-left transition-colors",
+              "group flex text-left transition-colors",
               // A quick reply sizes to its own text, so a short suggestion
               // stays small and more than one fits on screen. The rail equalises
               // their heights, which is why the contents align to the top: a
@@ -4076,7 +4076,7 @@ function RecommendedFollowupList({
               aria-hidden
               size={16}
               className={cn(
-                "pointer-events-none absolute right-2 top-1/2 box-content -translate-y-1/2 bg-state-hover pl-3 text-muted-foreground/60 opacity-0 transition-colors group-hover:text-foreground group-hover:opacity-100",
+                "pointer-events-none ml-3 shrink-0 text-muted-foreground/60 opacity-0 transition-colors group-hover:text-foreground group-hover:opacity-100",
                 showFollowupCards && "hidden",
               )}
             />
@@ -6049,6 +6049,9 @@ function SourceMessageAnnotation({
     );
   }
   const { part } = renderPart;
+  const isLark =
+    part.kind === "feishu" &&
+    part.href?.startsWith("https://applink.larksuite.com/") === true;
   const sourceLabel =
     part.kind === "slack"
       ? t(($) => {
@@ -6056,7 +6059,7 @@ function SourceMessageAnnotation({
         })
       : part.kind === "feishu"
         ? t(($) => {
-            return $.chat.origins.feishu;
+            return $.chat.origins[isLark ? "lark" : "feishu"];
           })
         : part.kind === "teams"
           ? t(($) => {
@@ -6088,7 +6091,7 @@ function SourceMessageAnnotation({
         })
       : part.kind === "feishu"
         ? t(($) => {
-            return $.chat.origins.openFeishuChat;
+            return $.chat.origins[isLark ? "openLarkChat" : "openFeishuChat"];
           })
         : part.kind === "teams"
           ? t(($) => {

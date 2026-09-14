@@ -33,7 +33,7 @@ expired transition validator must be deleted.
 ### Active transition validators
 
 - `scripts/test-pi-candidate-trigger-retirement.ts` protects migration
-  `1120_retire_pi_candidate_reference_trigger` (#33975): original catalog
+  `1121_retire_pi_candidate_reference_trigger` (#33975): original catalog
   identity, single-snapshot candidate ownership, narrowly classified #33973
   residuals, default timeouts, post-drop/journal rollback and content-free
   migration receipts. Test-only B lock/decision coverage lives in the API

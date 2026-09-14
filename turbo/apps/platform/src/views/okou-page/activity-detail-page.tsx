@@ -344,7 +344,10 @@ export function ActivityHeaderCard({
                   })}
                 </span>
                 <span className="text-foreground whitespace-nowrap">
-                  {getTriggerSourceLabel(triggerSource)}
+                  {getTriggerSourceLabel(
+                    triggerSource,
+                    logDetail?.appendSystemPrompt,
+                  )}
                 </span>
               </div>
               <span

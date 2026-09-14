@@ -27,7 +27,7 @@ const directory = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../src/migrations",
 );
-const tag = "1120_retire_pi_candidate_reference_trigger";
+const tag = "1121_retire_pi_candidate_reference_trigger";
 const journal = JSON.parse(
   await readFile(join(directory, "meta/_journal.json"), "utf8"),
 ) as {

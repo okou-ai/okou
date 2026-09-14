@@ -1,4 +1,8 @@
 import {
+  FEISHU_PLATFORMS,
+  type FeishuPlatform,
+} from "@okouai/core/feishu-platform";
+import {
   createCipheriv,
   createHash,
   createHmac,
@@ -25,7 +29,10 @@ import {
   customConnectorsContract,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import { feishuConnectContract } from "@okouai/api-contracts/contracts/feishu-connect";
+import {
+  feishuConnectContract,
+  larkConnectContract,
+} from "@okouai/api-contracts/contracts/feishu-connect";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -110,9 +117,9 @@ const APP_SECRET = "feishu-test-secret";
 const TENANT_KEY = "tenant_feishu_integration_test";
 const BOT_OPEN_ID = "ou_feishu_bot";
 
-function feishuConnectClient() {
+function feishuConnectClient(platform: FeishuPlatform) {
   return setupApp({ context, routes: feishuConnectRoutes })(
-    feishuConnectContract,
+    platform === "lark" ? larkConnectContract : feishuConnectContract,
   );
 }
 
@@ -680,6 +687,7 @@ function groupMessage(
 }
 
 async function enableFeishuIntegration(
+  platform: FeishuPlatform,
   actor: {
     readonly userId: string;
     readonly orgId: string | null;
@@ -693,13 +701,16 @@ async function enableFeishuIntegration(
     context,
     { userId: actor.userId, orgId: actor.orgId },
     {
-      [FeatureSwitchKey.FeishuIntegration]: true,
+      [FEISHU_PLATFORMS[platform].featureSwitch]: true,
       ...extraSwitches,
     },
   );
 }
 
-describe("Feishu integration", () => {
+describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
+  const provider = FEISHU_PLATFORMS[platform];
+  const connectContract =
+    platform === "lark" ? larkConnectContract : feishuConnectContract;
   let oauthUserOpenId: string;
   let outboundMessages: CapturedFeishuMessage[];
   let addedReactions: string[];
@@ -725,7 +736,7 @@ describe("Feishu integration", () => {
 
     server.use(
       http.post(
-        "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+        `${provider.apiOrigin}/open-apis/auth/v3/tenant_access_token/internal`,
         () => {
           return HttpResponse.json({
             code: 0,
@@ -734,7 +745,7 @@ describe("Feishu integration", () => {
           });
         },
       ),
-      http.get("https://open.feishu.cn/open-apis/bot/v3/info", () => {
+      http.get(`${provider.apiOrigin}/open-apis/bot/v3/info`, () => {
         return HttpResponse.json({
           code: 0,
           bot: {
@@ -744,7 +755,7 @@ describe("Feishu integration", () => {
           },
         });
       }),
-      http.get("https://open.feishu.cn/open-apis/authen/v1/user_info", () => {
+      http.get(`${provider.apiOrigin}/open-apis/authen/v1/user_info`, () => {
         return HttpResponse.json({
           code: 0,
           data: {
@@ -768,7 +779,7 @@ describe("Feishu integration", () => {
     oauthRefreshTokens = [];
     server.use(
       http.post(
-        "https://open.feishu.cn/open-apis/authen/v2/oauth/token",
+        `${provider.apiOrigin}/open-apis/authen/v2/oauth/token`,
         async ({ request }) => {
           const body: unknown = await request.json();
           if (
@@ -815,7 +826,7 @@ describe("Feishu integration", () => {
         },
       ),
       http.post(
-        "https://open.feishu.cn/open-apis/im/v1/messages/:messageId/reply",
+        `${provider.apiOrigin}/open-apis/im/v1/messages/:messageId/reply`,
         async ({ params, request }) => {
           const body = (await request.json()) as FeishuMessageRequestBody;
           outboundMessages.push({
@@ -838,7 +849,7 @@ describe("Feishu integration", () => {
         },
       ),
       http.post(
-        "https://open.feishu.cn/open-apis/im/v1/messages",
+        `${provider.apiOrigin}/open-apis/im/v1/messages`,
         async ({ request }) => {
           const body = (await request.json()) as FeishuMessageRequestBody;
           const failedContentIndex = failedSendContentFragments.findIndex(
@@ -883,14 +894,14 @@ describe("Feishu integration", () => {
           });
         },
       ),
-      http.get("https://open.feishu.cn/open-apis/im/v1/messages", () => {
+      http.get(`${provider.apiOrigin}/open-apis/im/v1/messages`, () => {
         return HttpResponse.json({
           code: 0,
           data: { items: historyMessages, has_more: false },
         });
       }),
       http.post(
-        "https://open.feishu.cn/open-apis/im/v1/messages/:messageId/reactions",
+        `${provider.apiOrigin}/open-apis/im/v1/messages/:messageId/reactions`,
         ({ params }) => {
           addedReactions.push(String(params.messageId));
           return HttpResponse.json({
@@ -900,7 +911,7 @@ describe("Feishu integration", () => {
         },
       ),
       http.delete(
-        "https://open.feishu.cn/open-apis/im/v1/messages/:messageId/reactions/:reactionId",
+        `${provider.apiOrigin}/open-apis/im/v1/messages/:messageId/reactions/:reactionId`,
         ({ params }) => {
           removedReactions.push(String(params.messageId));
           return HttpResponse.json({ code: 0 });
@@ -922,7 +933,7 @@ describe("Feishu integration", () => {
       orgRole: "org:admin",
     });
     const runnerGroup = runsApi.configureRunnerGroup();
-    await enableFeishuIntegration(actor, {
+    await enableFeishuIntegration(platform, actor, {
       [FeatureSwitchKey.OkouDebug]: true,
     });
     authOrgApi.acceptAgentStorageWrites();
@@ -959,7 +970,7 @@ describe("Feishu integration", () => {
     await runsApi.ensureOrgModelProvider(actor);
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     const configured = await accept(
       client.setup({
@@ -1029,7 +1040,7 @@ describe("Feishu integration", () => {
       throw new Error("Expected Feishu OAuth authorization URL");
     }
     const authorizationUrl = new URL(responseBody.openUrl);
-    expect(authorizationUrl.origin).toBe("https://accounts.feishu.cn");
+    expect(authorizationUrl.origin).toBe(`${provider.accountsOrigin}`);
     return authorizationUrl;
   }
 
@@ -1126,7 +1137,7 @@ describe("Feishu integration", () => {
       { intent: "add" },
     );
     expect(completionUrl.toString()).toBe(
-      `https://applink.feishu.cn/client/bot/open?appId=${fixture.appId}`,
+      `${provider.appLinkOrigin}/client/bot/open?appId=${fixture.appId}`,
     );
     const connectBody = feishuConnectBody(connectUrl);
     const statusResponse = await connectApp.request(
@@ -1234,7 +1245,7 @@ describe("Feishu integration", () => {
       fixture.actor.orgRole,
     );
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     await accept(
       client.removeInstallation({
@@ -1285,11 +1296,11 @@ describe("Feishu integration", () => {
       orgId: survivor.orgId,
       orgRole: "org:member",
     });
-    await enableFeishuIntegration(doomed);
+    await enableFeishuIntegration(platform, doomed);
     await connectFixtureUser(fixture, doomed, "ou_feishu_doomed");
 
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     mocks.clerk.session(doomed.userId, doomed.orgId, "org:member");
     const connectedBeforeDeletion = await accept(
@@ -1348,7 +1359,7 @@ describe("Feishu integration", () => {
     });
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
 
     const response = await accept(
@@ -1360,7 +1371,7 @@ describe("Feishu integration", () => {
 
     expect(response.body.error).toStrictEqual({
       code: "FORBIDDEN",
-      message: "Feishu integration is not enabled",
+      message: `${provider.name} integration is not enabled`,
     });
   });
 
@@ -1374,14 +1385,14 @@ describe("Feishu integration", () => {
       orgRole: "org:admin",
     });
     authOrgApi.acceptAgentStorageWrites();
-    await enableFeishuIntegration(actor);
+    await enableFeishuIntegration(platform, actor);
     const agent = await authOrgApi.createAgent(actor, {
       displayName: "Feishu plaintext callback agent",
       visibility: "public",
     });
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     const configured = await accept(
       client.setup({
@@ -1438,14 +1449,14 @@ describe("Feishu integration", () => {
       orgRole: "org:admin",
     });
     authOrgApi.acceptAgentStorageWrites();
-    await enableFeishuIntegration(actor);
+    await enableFeishuIntegration(platform, actor);
     const agent = await authOrgApi.createAgent(actor, {
       displayName: "Feishu single-bot agent",
       visibility: "public",
     });
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
 
     await accept(
@@ -1487,7 +1498,7 @@ describe("Feishu integration", () => {
       [409],
     );
     expect(secondSetup.body.error.message).toBe(
-      "This workspace already has a Feishu bot",
+      `This workspace already has a ${provider.name} bot`,
     );
     const conflict = await accept(
       client.checkAppId({
@@ -1497,7 +1508,7 @@ describe("Feishu integration", () => {
       [409],
     );
     expect(conflict.body.error.message).toBe(
-      "This Feishu App ID is already registered in Okou",
+      `This ${provider.name} App ID is already registered in Okou`,
     );
     await accept(
       client.checkAppId({
@@ -1539,14 +1550,14 @@ describe("Feishu integration", () => {
       orgRole: "org:admin",
     });
     authOrgApi.acceptAgentStorageWrites();
-    await enableFeishuIntegration(actor);
+    await enableFeishuIntegration(platform, actor);
     const agent = await authOrgApi.createAgent(actor, {
       displayName: "Feishu concurrent setup agent",
       visibility: "public",
     });
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     const bothTokenRequestsStarted = createDeferredPromise<void>(
       context.signal,
@@ -1555,7 +1566,7 @@ describe("Feishu integration", () => {
     let tokenRequestCount = 0;
     server.use(
       http.post(
-        "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+        `${provider.apiOrigin}/open-apis/auth/v3/tenant_access_token/internal`,
         async () => {
           tokenRequestCount += 1;
           if (tokenRequestCount === 2) {
@@ -1627,14 +1638,14 @@ describe("Feishu integration", () => {
       orgRole: "org:admin",
     });
     authOrgApi.acceptAgentStorageWrites();
-    await enableFeishuIntegration(actor);
+    await enableFeishuIntegration(platform, actor);
     const agent = await authOrgApi.createAgent(actor, {
       displayName: "Feishu connector retry agent",
       visibility: "public",
     });
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     context.mocks.s3.send.mockRejectedValue(
       new Error("Managed connector skill upload failed"),
@@ -1642,7 +1653,7 @@ describe("Feishu integration", () => {
 
     const failedSetup = await requestFeishuConfigurationFailure({
       method: "POST",
-      path: feishuConnectContract.setup.path,
+      path: connectContract.setup.path,
       body: {
         appId: `cli_${randomUUID()}`,
         appSecret: APP_SECRET,
@@ -1751,14 +1762,14 @@ describe("Feishu integration", () => {
       orgRole: "org:admin",
     });
     authOrgApi.acceptAgentStorageWrites();
-    await enableFeishuIntegration(actor);
+    await enableFeishuIntegration(platform, actor);
     const agent = await authOrgApi.createAgent(actor, {
       displayName: "Feishu unlinked removal agent",
       visibility: "public",
     });
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     const configured = await accept(
       client.setup({
@@ -1827,14 +1838,14 @@ describe("Feishu integration", () => {
       orgRole: "org:admin",
     });
     authOrgApi.acceptAgentStorageWrites();
-    await enableFeishuIntegration(actor);
+    await enableFeishuIntegration(platform, actor);
     const agent = await authOrgApi.createAgent(actor, {
       displayName: "Feishu connector repair agent",
       visibility: "public",
     });
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     const configured = await accept(
       client.setup({
@@ -1878,7 +1889,7 @@ describe("Feishu integration", () => {
 
     const failedRepair = await requestFeishuConfigurationFailure({
       method: "PATCH",
-      path: feishuConnectContract.updateInstallation.path.replace(
+      path: connectContract.updateInstallation.path.replace(
         ":installationId",
         installationId,
       ),
@@ -1923,14 +1934,14 @@ describe("Feishu integration", () => {
       orgRole: "org:admin",
     });
     authOrgApi.acceptAgentStorageWrites();
-    await enableFeishuIntegration(actor);
+    await enableFeishuIntegration(platform, actor);
     const agent = await authOrgApi.createAgent(actor, {
       displayName: "Feishu managed bot agent",
       visibility: "public",
     });
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
 
     const configured = await accept(
@@ -2034,8 +2045,8 @@ describe("Feishu integration", () => {
       orgRole: "org:member",
     });
     authOrgApi.acceptAgentStorageWrites();
-    await enableFeishuIntegration(admin);
-    await enableFeishuIntegration(member);
+    await enableFeishuIntegration(platform, admin);
+    await enableFeishuIntegration(platform, member);
     const agent = await authOrgApi.createAgent(admin, {
       displayName: "Feishu OAuth agent",
       visibility: "public",
@@ -2043,7 +2054,7 @@ describe("Feishu integration", () => {
     mockAuthoritativeOrganizationMembers([admin, member]);
     mocks.clerk.session(admin.userId, admin.orgId, "org:admin");
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     clearConnectorInvalidationMocks();
     const configured = await accept(
@@ -2094,9 +2105,9 @@ describe("Feishu integration", () => {
       "Expected setup to create a managed Feishu custom connector",
     );
     expect(managedConnector).toMatchObject({
-      slug: `_feishu-${installationId}`,
-      displayName: "Feishu-Okou Feishu",
-      prefixTemplates: ["https://open.feishu.cn/open-apis/"],
+      slug: `_${platform}-${installationId}`,
+      displayName: `${provider.name}-Okou Feishu`,
+      prefixTemplates: [`${provider.apiOrigin}/open-apis/`],
       headerInjections: [
         {
           name: "Authorization",
@@ -2110,9 +2121,8 @@ describe("Feishu integration", () => {
       oauthConfig: {
         providerAdapter: "feishu",
         clientId: appId,
-        authorizationUrl:
-          "https://accounts.feishu.cn/open-apis/authen/v1/authorize",
-        tokenUrl: "https://open.feishu.cn/open-apis/authen/v2/oauth/token",
+        authorizationUrl: `${provider.accountsOrigin}/open-apis/authen/v1/authorize`,
+        tokenUrl: `${provider.apiOrigin}/open-apis/authen/v2/oauth/token`,
         tokenEndpointAuthMethod: "client_secret_post",
         pkceMethod: "none",
         scopes: [...EXPECTED_FEISHU_OAUTH_SCOPES],
@@ -2133,12 +2143,12 @@ describe("Feishu integration", () => {
       owner: "organization",
     });
     const skillMarkdown = uploadedSkillMarkdown();
-    expect(skillMarkdown).toContain("---\nname: feishu\n");
+    expect(skillMarkdown).toContain(`---\nname: ${platform}\n`);
     expect(skillMarkdown).toContain(
-      "description: Feishu OpenAPI for user-authorized messaging, people search, cloud",
+      `description: ${provider.name} OpenAPI for user-authorized messaging, people search, cloud`,
     );
     expect(skillMarkdown).toContain(
-      "documents, calendars, and tasks. Use when the user asks to work with Feishu.",
+      `documents, calendars, and tasks. Use when the user asks to work with ${provider.name}.`,
     );
     expect(skillMarkdown).not.toContain("Okou Feishu");
     expect(skillMarkdown).not.toContain(managedConnector.id);
@@ -2188,7 +2198,7 @@ describe("Feishu integration", () => {
       userId: admin.userId,
       customConnectorId: managedConnector.id,
       storageVersion: managedConnector.storageVersion,
-      redirectUri: `${APP_ORIGIN}/connectors/feishu/callback`,
+      redirectUri: `${APP_ORIGIN}${provider.callbackPath}`,
       oauthContext: {
         version: 2,
         authMode: "oauth",
@@ -2338,7 +2348,7 @@ describe("Feishu integration", () => {
     const connectUrl = status.body.installations?.[0]?.connectUrl;
     expect(connectUrl).toBeDefined();
     expect(status.body.oauthRedirectUrl).toBe(
-      `${APP_ORIGIN}/connectors/feishu/callback`,
+      `${APP_ORIGIN}${provider.callbackPath}`,
     );
     expect(status.body.oauthScopes).toStrictEqual([
       ...EXPECTED_FEISHU_OAUTH_SCOPES,
@@ -2367,7 +2377,7 @@ describe("Feishu integration", () => {
       new URL(
         legacyConnectResponse.headers.get("location") ?? "",
       ).searchParams.get("redirect_uri"),
-    ).toBe(`${APP_ORIGIN}/connectors/feishu/callback`);
+    ).toBe(`${APP_ORIGIN}${provider.callbackPath}`);
 
     const appConnectUrl = new URL(connectUrl);
     appConnectUrl.searchParams.set("callbackTarget", "app");
@@ -2376,10 +2386,10 @@ describe("Feishu integration", () => {
     const authorizationUrl = new URL(
       connectResponse.headers.get("location") ?? "",
     );
-    expect(authorizationUrl.origin).toBe("https://accounts.feishu.cn");
+    expect(authorizationUrl.origin).toBe(`${provider.accountsOrigin}`);
     expect(authorizationUrl.searchParams.get("client_id")).toBe(appId);
     expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      `${APP_ORIGIN}/connectors/feishu/callback`,
+      `${APP_ORIGIN}${provider.callbackPath}`,
     );
     expect(
       authorizationUrl.searchParams.get("scope")?.split(" "),
@@ -2403,7 +2413,7 @@ describe("Feishu integration", () => {
     expect(handoffResponse.status).toBe(307);
     const handoffUrl = new URL(handoffResponse.headers.get("location") ?? "");
     expect(handoffUrl.origin).toBe(APP_ORIGIN);
-    expect(handoffUrl.pathname).toBe("/connectors/feishu/callback");
+    expect(handoffUrl.pathname).toBe(`${provider.callbackPath}`);
     expect(handoffUrl.searchParams.get("code")).toBe("feishu-oauth-code");
     expect(handoffUrl.searchParams.get("state")).toBe(state);
 
@@ -2418,10 +2428,10 @@ describe("Feishu integration", () => {
     expect(callbackResponse.status).toBe(200);
     expectCustomConnectorInvalidations([member.userId]);
     await expect(callbackResponse.json()).resolves.toStrictEqual({
-      redirectUrl: `https://applink.feishu.cn/client/bot/open?appId=${appId}`,
+      redirectUrl: `${provider.appLinkOrigin}/client/bot/open?appId=${appId}`,
     });
     expect(oauthTokenRedirectUris).toStrictEqual([
-      `${APP_ORIGIN}/connectors/feishu/callback`,
+      `${APP_ORIGIN}${provider.callbackPath}`,
     ]);
 
     const linkedMemberState = await readFeishuMemberConnectorState(context, {
@@ -2469,7 +2479,7 @@ describe("Feishu integration", () => {
     expect(legacyCallbackResponse.status).toBe(200);
     expectCustomConnectorInvalidations([member.userId]);
     expect(oauthTokenRedirectUris).toStrictEqual([
-      `${APP_ORIGIN}/connectors/feishu/callback`,
+      `${APP_ORIGIN}${provider.callbackPath}`,
       `${FEISHU_CALLBACK_ORIGIN}/api/integrations/feishu/oauth/callback`,
     ]);
     await expect(
@@ -2601,7 +2611,7 @@ describe("Feishu integration", () => {
       fixture.actor.orgRole,
     );
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     const status = await accept(
       client.getStatus({
@@ -2610,7 +2620,7 @@ describe("Feishu integration", () => {
       }),
       [200],
     );
-    const appCallbackUrl = `${appOrigin}/connectors/feishu/callback`;
+    const appCallbackUrl = `${appOrigin}${provider.callbackPath}`;
     expect(status.body.oauthRedirectUrl).toBe(appCallbackUrl);
     expect(status.body.installations?.[0]?.oauthRedirectUrl).toBe(
       appCallbackUrl,
@@ -2658,7 +2668,7 @@ describe("Feishu integration", () => {
     expect(handoffResponse.status).toBe(307);
     const handoffUrl = new URL(handoffResponse.headers.get("location") ?? "");
     expect(handoffUrl.origin).toBe(appOrigin);
-    expect(handoffUrl.pathname).toBe("/connectors/feishu/callback");
+    expect(handoffUrl.pathname).toBe(`${provider.callbackPath}`);
 
     const failureResponse = await oauthApp.request(
       `${feishuOauthContract.callback.path}?${new URLSearchParams({
@@ -2672,7 +2682,7 @@ describe("Feishu integration", () => {
     };
     const failureUrl = new URL(failureBody.redirectUrl);
     expect(failureUrl.origin).toBe(appOrigin);
-    expect(failureUrl.pathname).toBe("/settings/feishu");
+    expect(failureUrl.pathname).toBe(`${provider.settingsPath}`);
     expect(failureUrl.searchParams.get("error")).toBe("Provider denied access");
 
     const retryResponse = await oauthApp.request(connectUrl);
@@ -2686,7 +2696,7 @@ describe("Feishu integration", () => {
       { intent: "add" },
     );
     expect(completionUrl.toString()).toBe(
-      `https://applink.feishu.cn/client/bot/open?appId=${fixture.appId}`,
+      `${provider.appLinkOrigin}/client/bot/open?appId=${fixture.appId}`,
     );
     expect(oauthTokenRedirectUris).toStrictEqual([appCallbackUrl]);
   });
@@ -2735,7 +2745,7 @@ describe("Feishu integration", () => {
     });
     const authorizationUrl = await feishuAuthorizationUrlFromResponse(response);
     expect(authorizationUrl.searchParams.get("redirect_uri")).toBe(
-      "https://app.okou.ai/connectors/feishu/callback",
+      `https://app.okou.ai${provider.callbackPath}`,
     );
     expect(authorizationUrl.searchParams.get("state")).toMatch(
       /^[0-9a-f]{64}$/u,
@@ -2746,10 +2756,10 @@ describe("Feishu integration", () => {
       { intent: "add" },
     );
     expect(completionUrl.toString()).toBe(
-      `https://applink.feishu.cn/client/bot/open?appId=${fixture.appId}`,
+      `${provider.appLinkOrigin}/client/bot/open?appId=${fixture.appId}`,
     );
     expect(oauthTokenRedirectUris).toStrictEqual([
-      "https://app.okou.ai/connectors/feishu/callback",
+      `https://app.okou.ai${provider.callbackPath}`,
     ]);
   });
 
@@ -2761,14 +2771,14 @@ describe("Feishu integration", () => {
       orgRole: "org:admin",
     });
     authOrgApi.acceptAgentStorageWrites();
-    await enableFeishuIntegration(actor);
+    await enableFeishuIntegration(platform, actor);
     const agent = await authOrgApi.createAgent(actor, {
       displayName: "Feishu callback agent",
       visibility: "public",
     });
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     const configured = await accept(
       client.setup({
@@ -2846,14 +2856,14 @@ describe("Feishu integration", () => {
       orgRole: "org:admin",
     });
     authOrgApi.acceptAgentStorageWrites();
-    await enableFeishuIntegration(actor);
+    await enableFeishuIntegration(platform, actor);
     const agent = await authOrgApi.createAgent(actor, {
       displayName: "Feishu compatibility agent",
       visibility: "public",
     });
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     const configured = await accept(
       client.setup({
@@ -2961,7 +2971,7 @@ describe("Feishu integration", () => {
     async (phase) => {
       mockEnv("APP_URL", "https://app.okou.ai");
       server.use(
-        http.get("https://open.feishu.cn/open-apis/bot/v3/info", () => {
+        http.get(`${provider.apiOrigin}/open-apis/bot/v3/info`, () => {
           return HttpResponse.json({
             code: 0,
             bot: {
@@ -2979,7 +2989,7 @@ describe("Feishu integration", () => {
         fixture.actor.orgRole,
       );
       const client = setupApp({ context, routes: feishuConnectRoutes })(
-        feishuConnectContract,
+        connectContract,
       );
 
       if (phase === "installation status") {
@@ -3012,7 +3022,7 @@ describe("Feishu integration", () => {
           .map(messageContent)
           .join("\n");
         expect(unconnectedContent).toContain("Owner Managed Bot commands");
-        expect(unconnectedContent).toContain("To use Okou in Feishu");
+        expect(unconnectedContent).toContain(`To use Okou in ${provider.name}`);
         const connectUrl = requireValue(
           unconnectedContent.match(/https:\/\/[^"\\]+/u)?.[0],
           "Expected branded Feishu connect URL",
@@ -3037,7 +3047,7 @@ describe("Feishu integration", () => {
           .join("\n");
         expect(connectedContent).toContain("Owner Managed Bot commands");
         expect(connectedContent).toContain(
-          "Your Feishu account is already connected to Okou",
+          `Your ${provider.name} account is already connected to Okou`,
         );
       }
       mocks.clerk.session(
@@ -3200,7 +3210,7 @@ describe("Feishu integration", () => {
         fixture.actor.orgRole,
       );
       const client = setupApp({ context, routes: feishuConnectRoutes })(
-        feishuConnectContract,
+        connectContract,
       );
       const customConnectorClient = setupApp({
         context,
@@ -3298,7 +3308,7 @@ describe("Feishu integration", () => {
         fixture.actor.orgId,
         fixture.actor.orgRole,
       );
-      const client = feishuConnectClient();
+      const client = feishuConnectClient(platform);
       const customConnectorClient = setupApp({
         context,
         routes: customConnectorsRoutes,
@@ -3383,7 +3393,7 @@ describe("Feishu integration", () => {
   it("rejects an in-place setup update that resolves to a different provider bot", async () => {
     const fixture = await setupFeishuRunFixture();
     server.use(
-      http.get("https://open.feishu.cn/open-apis/bot/v3/info", () => {
+      http.get(`${provider.apiOrigin}/open-apis/bot/v3/info`, () => {
         return HttpResponse.json({
           code: 0,
           bot: {
@@ -3400,7 +3410,7 @@ describe("Feishu integration", () => {
       fixture.actor.orgRole,
     );
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     const rejected = await accept(
       client.updateInstallation({
@@ -3461,14 +3471,14 @@ describe("Feishu integration", () => {
     const firstReplyContent = firstReply ? messageContent(firstReply) : "";
     expect(firstReplyContent).toContain("Connect your account");
     expect(firstReplyContent).toContain(
-      "To use Okou in Feishu, please connect your account first.",
+      `To use Okou in ${provider.name}, please connect your account first.`,
     );
     const connectUrl = requireValue(
       firstReplyContent.match(/https:\/\/[^"]+/u)?.[0],
       "Expected Feishu to send a connect URL",
     );
     expect(`${new URL(connectUrl).origin}${new URL(connectUrl).pathname}`).toBe(
-      `${APP_ORIGIN}/settings/feishu`,
+      `${APP_ORIGIN}${provider.settingsPath}`,
     );
   });
 
@@ -3476,7 +3486,7 @@ describe("Feishu integration", () => {
     const fixture = await setupFeishuRunFixture();
     const { actor, appId, defaultAgentId } = fixture;
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     const connectUrl = await requestFeishuConnectUrl(fixture);
 
@@ -3505,7 +3515,7 @@ describe("Feishu integration", () => {
       { intent: "add" },
     );
     expect(completionUrl.toString()).toBe(
-      `https://applink.feishu.cn/client/bot/open?appId=${appId}`,
+      `${provider.appLinkOrigin}/client/bot/open?appId=${appId}`,
     );
     expect(context.mocks.ably.publish).toHaveBeenCalledWith(
       "feishu:changed",
@@ -3611,7 +3621,7 @@ describe("Feishu integration", () => {
     const { actor, appId, callbackUrl, defaultAgentId } = fixture;
     const connectUrl = await connectFixtureUser(fixture);
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     const connectApp = createAppWithRoutes({
       signal: context.signal,
@@ -3648,9 +3658,9 @@ describe("Feishu integration", () => {
       "ou_feishu_user",
       { intent: "add" },
     );
-    expect(rebindCompletionUrl.pathname).toBe("/settings/feishu");
+    expect(rebindCompletionUrl.pathname).toBe(`${provider.settingsPath}`);
     expect(rebindCompletionUrl.searchParams.get("error")).toBe(
-      "This Feishu account is already connected.",
+      `This ${provider.name} account is already connected.`,
     );
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
 
@@ -3691,7 +3701,7 @@ describe("Feishu integration", () => {
       ),
     );
     expect(replacementAuthorizationUrl.origin).toBe(
-      "https://accounts.feishu.cn",
+      `${provider.accountsOrigin}`,
     );
     await completeFeishuAuthorization(
       replacementAuthorizationUrl,
@@ -3764,7 +3774,7 @@ describe("Feishu integration", () => {
     const { appId, callbackUrl } = fixture;
     await connectFixtureUser(fixture);
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     for (const command of [
       "/help",
@@ -3901,7 +3911,7 @@ describe("Feishu integration", () => {
     );
     await flushWaitUntilForTest();
 
-    const feishuFilePrompt = "[Feishu file] quarterly-report.pdf";
+    const feishuFilePrompt = `[${provider.name} file] quarterly-report.pdf`;
     const listed = await runsApi.listAgentRuns(actor, { limit: 20 });
     const run = requireValue(
       listed.runs.find((candidate) => {
@@ -3930,7 +3940,7 @@ describe("Feishu integration", () => {
         name: internalName,
         apis: [
           {
-            base: "https://open.feishu.cn/open-apis/",
+            base: `${provider.apiOrigin}/open-apis/`,
             auth: {
               headers: {
                 Authorization: expect.stringContaining("secrets."),
@@ -4047,8 +4057,12 @@ describe("Feishu integration", () => {
     expect(fileId?.length).toBeLessThan(64);
     expect(claim.prompt).not.toContain(fileKey);
     expect(claim.prompt).toContain(`   [FILE_KEY] ${fileId}`);
-    expect(claim.appendSystemPrompt).toContain("okou feishu download-file -h");
-    expect(claim.appendSystemPrompt).toContain("okou feishu upload-file -h");
+    expect(claim.appendSystemPrompt).toContain(
+      `okou ${platform} download-file -h`,
+    );
+    expect(claim.appendSystemPrompt).toContain(
+      `okou ${platform} upload-file -h`,
+    );
 
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const threadEvents = await accept(
@@ -4085,7 +4099,7 @@ describe("Feishu integration", () => {
             {
               type: "source",
               kind: "feishu",
-              href: "https://applink.feishu.cn/client/chat/open?openChatId=oc_feishu_dm",
+              href: `${provider.appLinkOrigin}/client/chat/open?openChatId=oc_feishu_dm`,
             },
           ],
         },
@@ -4095,7 +4109,7 @@ describe("Feishu integration", () => {
     const fileBytes = Buffer.from("feishu file bytes");
     server.use(
       http.get(
-        "https://open.feishu.cn/open-apis/im/v1/messages/:messageId/resources/:fileKey",
+        `${provider.apiOrigin}/open-apis/im/v1/messages/:messageId/resources/:fileKey`,
         ({ params, request }) => {
           expect(params.messageId).toBe("om_file_message");
           expect(params.fileKey).toBe(fileKey);
@@ -4117,7 +4131,7 @@ describe("Feishu integration", () => {
       routes: integrationsFeishuFileRoutes,
     });
     const downloadResponse = await app.request(
-      `/api/integrations/feishu/download-file?${new URLSearchParams({
+      `/api/integrations/${platform}/download-file?${new URLSearchParams({
         message_id: "om_misquoted_by_model",
         file_key: fileId ?? "",
         type: "image",
@@ -4127,7 +4141,7 @@ describe("Feishu integration", () => {
           authorization: `Bearer ${runsApi.okouTokenForRunWithCapabilities(
             actor,
             run.id,
-            ["feishu:write"],
+            [`${platform}:write`],
           )}`,
         },
       },
@@ -4141,7 +4155,7 @@ describe("Feishu integration", () => {
     ).toBeTruthy();
 
     const wrongRunResponse = await app.request(
-      `/api/integrations/feishu/download-file?${new URLSearchParams({
+      `/api/integrations/${platform}/download-file?${new URLSearchParams({
         message_id: "om_file_message",
         file_key: fileId ?? "",
         type: "file",
@@ -4151,7 +4165,7 @@ describe("Feishu integration", () => {
           authorization: `Bearer ${runsApi.okouTokenForRunWithCapabilities(
             actor,
             randomUUID(),
-            ["feishu:write"],
+            [`${platform}:write`],
           )}`,
         },
       },
@@ -4164,7 +4178,7 @@ describe("Feishu integration", () => {
     const { actor, runnerGroup, appId, callbackUrl } = fixture;
     await connectFixtureUser(fixture);
     server.use(
-      http.get("https://open.feishu.cn/open-apis/im/v1/messages", () => {
+      http.get(`${provider.apiOrigin}/open-apis/im/v1/messages`, () => {
         return HttpResponse.json(
           { code: 99_999, msg: "history unavailable" },
           { status: 500 },
@@ -4186,7 +4200,9 @@ describe("Feishu integration", () => {
     expect(claim.prompt).toBe(prompt);
     expect(claim.appendSystemPrompt).toContain("Scope: Direct message");
     expect(claim.appendSystemPrompt).not.toContain("# Recent Channel Messages");
-    expect(claim.appendSystemPrompt).not.toContain("# Feishu Thread Context");
+    expect(claim.appendSystemPrompt).not.toContain(
+      `# ${provider.name} Thread Context`,
+    );
     await runsApi.requestCancelRun(actor, run.id, [200]);
     await flushWaitUntilForTest();
   });
@@ -4194,7 +4210,7 @@ describe("Feishu integration", () => {
   it("uses the exact Feishu source without persisting a thread override", async () => {
     const fixture = await setupFeishuRunFixture();
     const { actor, runnerGroup, appId, callbackUrl } = fixture;
-    await enableFeishuIntegration(actor, {
+    await enableFeishuIntegration(platform, actor, {
       [FeatureSwitchKey.OkouDebug]: true,
     });
     await connectFixtureUser(fixture);
@@ -4453,7 +4469,7 @@ describe("Feishu integration", () => {
             {
               type: "source",
               kind: "feishu",
-              href: "https://applink.feishu.cn/client/chat/open?openChatId=oc_feishu_dm",
+              href: `${provider.appLinkOrigin}/client/chat/open?openChatId=oc_feishu_dm`,
             },
           ],
         },
@@ -4464,14 +4480,23 @@ describe("Feishu integration", () => {
     expect(claim.prompt).toBe("do the Feishu task");
     expect(claim.platformEnvironment.OKOU_AGENT_ID).toBe(alternateAgentId);
     expect(claim.appendSystemPrompt).toContain(
-      "You are currently running inside: Feishu",
+      `You are currently running inside: ${provider.name}`,
     );
     expect(claim.appendSystemPrompt).toContain("# Current User Info");
     expect(claim.appendSystemPrompt).toContain(
-      "Feishu display name: Feishu User",
+      `${provider.name} messaging and files: use \`okou ${platform} --help\``,
+    );
+    expect(claim.appendSystemPrompt).not.toContain(
+      `${platform === "lark" ? "Feishu" : "Lark"} messaging and files:`,
+    );
+    expect(claim.appendSystemPrompt).not.toContain(
+      `${platform === "lark" ? "Feishu" : "Lark"} open ID:`,
     );
     expect(claim.appendSystemPrompt).toContain(
-      "Feishu open ID: ou_feishu_user",
+      `${provider.name} display name: Feishu User`,
+    );
+    expect(claim.appendSystemPrompt).toContain(
+      `${provider.name} open ID: ou_feishu_user`,
     );
     expect(claim.appendSystemPrompt).toContain("Scope: Direct message");
     expect(claim.appendSystemPrompt).toContain(`Tenant key: ${TENANT_KEY}`);
@@ -4484,26 +4509,32 @@ describe("Feishu integration", () => {
       "Earlier Feishu conversation context",
     );
     expect(claim.appendSystemPrompt).toContain(
-      "[Feishu file] history-report.pdf",
+      `[${provider.name} file] history-report.pdf`,
     );
     const historyFileId = (claim.appendSystemPrompt ?? "").match(
       / {3}\[FILE_KEY\] (feishu_file_[A-Za-z0-9_-]{22})/u,
     )?.[1];
     expect(historyFileId).toBeTruthy();
     expect(claim.appendSystemPrompt).not.toContain(historyFileKey);
-    expect(claim.appendSystemPrompt).toContain("# Feishu Thread Context");
     expect(claim.appendSystemPrompt).toContain(
-      "The messages below are from a Feishu conversation",
+      `# ${provider.name} Thread Context`,
+    );
+    expect(claim.appendSystemPrompt).toContain(
+      `The messages below are from a ${provider.name} conversation`,
     );
     expect(claim.appendSystemPrompt).toContain("- RELATIVE_INDEX: -1");
     expect(claim.appendSystemPrompt).toContain(
       "- SENDER: {id: ou_previous_user, name: Previous User}",
     );
     expect(claim.appendSystemPrompt).toContain(
-      "okou feishu message send --help",
+      `okou ${platform} message send --help`,
     );
-    expect(claim.appendSystemPrompt).toContain("okou feishu download-file -h");
-    expect(claim.appendSystemPrompt).toContain("okou feishu upload-file -h");
+    expect(claim.appendSystemPrompt).toContain(
+      `okou ${platform} download-file -h`,
+    );
+    expect(claim.appendSystemPrompt).toContain(
+      `okou ${platform} upload-file -h`,
+    );
 
     const cliAgentSessionId = `bdd-feishu-cli-${run.id}`;
     await completeRunSession({
@@ -4526,7 +4557,7 @@ describe("Feishu integration", () => {
             part.type === "source" &&
             part.kind === "feishu" &&
             part.href ===
-              "https://applink.feishu.cn/client/chat/open?openChatId=oc_feishu_dm"
+              `${provider.appLinkOrigin}/client/chat/open?openChatId=oc_feishu_dm`
           );
         })
       );
@@ -4590,7 +4621,7 @@ describe("Feishu integration", () => {
     expect(removedReactions).toHaveLength(1);
 
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     await accept(
       client.removeInstallation({
@@ -4625,7 +4656,7 @@ describe("Feishu integration", () => {
     });
 
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     await accept(
       client.removeInstallation({
@@ -4682,7 +4713,7 @@ describe("Feishu integration", () => {
     expect(completedQuotedReply?.replyInThread).toBeFalsy();
 
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     await accept(
       client.removeInstallation({
@@ -4727,7 +4758,7 @@ describe("Feishu integration", () => {
     await flushWaitUntilForTest();
 
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     await accept(
       client.removeInstallation({
@@ -4801,7 +4832,7 @@ describe("Feishu integration", () => {
     await flushWaitUntilForTest();
 
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     await accept(
       client.removeInstallation({
@@ -4900,7 +4931,7 @@ describe("Feishu integration", () => {
     await flushWaitUntilForTest();
 
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     await accept(
       client.removeInstallation({
@@ -4968,7 +4999,7 @@ describe("Feishu integration", () => {
     }
     await flushWaitUntilForTest();
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     await accept(
       client.removeInstallation({
@@ -5285,7 +5316,7 @@ describe("Feishu integration", () => {
       orgId: actor.orgId,
       orgRole: "org:member",
     });
-    await enableFeishuIntegration(secondActor, {
+    await enableFeishuIntegration(platform, secondActor, {
       [FeatureSwitchKey.OkouDebug]: true,
     });
 
@@ -5419,7 +5450,7 @@ describe("Feishu integration", () => {
 
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const client = setupApp({ context, routes: feishuConnectRoutes })(
-      feishuConnectContract,
+      connectContract,
     );
     await accept(
       client.removeInstallation({
@@ -5526,12 +5557,14 @@ describe("Feishu integration", () => {
     );
     expect(groupClaim.appendSystemPrompt).toContain("Chat ID: oc_feishu_group");
     expect(groupClaim.appendSystemPrompt).toContain(
-      "Group ID: oc_feishu_group (same as Chat ID; use it directly as the `--chat` value for `okou feishu message send`)",
+      `Group ID: oc_feishu_group (same as Chat ID; use it directly as the \`--chat\` value for \`okou ${platform} message send\`)`,
     );
     expect(groupClaim.appendSystemPrompt).toContain(
       "# Recent Channel Messages",
     );
-    expect(groupClaim.appendSystemPrompt).toContain("# Feishu Thread Context");
+    expect(groupClaim.appendSystemPrompt).toContain(
+      `# ${provider.name} Thread Context`,
+    );
     expect(groupClaim.appendSystemPrompt).toContain(
       "- SENDER: {id: ou_recent_user, name: Recent User}",
     );
@@ -5593,7 +5626,7 @@ describe("Feishu integration", () => {
       orgId: fixture.actor.orgId,
       orgRole: "org:member",
     });
-    await enableFeishuIntegration(secondActor, {
+    await enableFeishuIntegration(platform, secondActor, {
       [FeatureSwitchKey.OkouDebug]: true,
     });
     await connectFixtureUser(fixture, secondActor, secondOpenId);

@@ -44,7 +44,7 @@ function CaptureNetworkBodiesBlock() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-4 bg-card p-4 rounded-xl okou-border">
+      <div className="flex items-center gap-4 bg-card p-4 rounded-xl border border-surface-border">
         <div className="shrink-0">
           <div className="flex h-7 w-7 items-center justify-center">
             <Bug size={22} className="text-muted-foreground" />

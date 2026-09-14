@@ -6,7 +6,6 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import { delay } from "signal-timers";
 import {
   MAX_PRESENTATION_TEMPLATE_PAGES,
   presentationTemplatesContract,
@@ -21,9 +20,15 @@ import {
 import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
-import { setAblyLoop$ } from "../realtime.ts";
-import { rootSignal$ } from "../root-signal.ts";
-import { createDeferredPromise, onRef, setLoop } from "../utils.ts";
+import type { SharedDatabaseBridge } from "../../shared-database/bridge.ts";
+import {
+  onRef,
+  onRejection,
+  retryTransientLoad,
+  settle,
+  setLoop,
+  waitForOperation,
+} from "../utils.ts";
 
 export type { PresentationTemplateDetail, PresentationTemplateSummary };
 
@@ -33,13 +38,16 @@ type ImportedPresentationTemplateDetailLookup = (
 
 interface ImportedPresentationTemplateDetailResolver {
   readonly resolve: ImportedPresentationTemplateDetailLookup;
-  readonly evict: (templateId: string) => void;
 }
 
 const presentationTemplatesVersion$ = state(0);
-// eslint-disable-next-line ccstate/no-computed-signal -- migrate this computed away from AbortSignal ownership
+const presentationTemplatesSubscription$ = state<Promise<boolean> | null>(null);
 const presentationTemplatesRealtimeReady$ = computed((get) => {
-  return createDeferredPromise<void>(get(rootSignal$));
+  const subscription = get(presentationTemplatesSubscription$);
+  if (subscription === null) {
+    throw new Error("Presentation template subscriptions were not initialized");
+  }
+  return subscription;
 });
 /**
  * A successful local delete permanently removes the database row. Keep its ID
@@ -70,12 +78,16 @@ interface CachedImportedPresentationTemplateCatalog {
  */
 const importedPresentationTemplateCatalog$ = computed(
   async (get): Promise<ImportedPresentationTemplateCatalog> => {
+    get(presentationTemplatesVersion$);
     // Attach realtime before the baseline fetch so an update cannot be lost
     // between loading the catalog and starting its subscription.
-    await get(presentationTemplatesRealtimeReady$).promise;
-    get(presentationTemplatesVersion$);
+    if (!(await get(presentationTemplatesRealtimeReady$))) {
+      return { templates: [], loadedAtMs: now() };
+    }
     const client = get(apiClient$)(presentationTemplatesContract);
-    const result = await accept(client.list(), [200]);
+    const result = await retryTransientLoad(() => {
+      return accept(client.list(), [200], undefined, { showErrorToast: false });
+    });
     return { templates: result.body, loadedAtMs: now() };
   },
 );
@@ -88,15 +100,8 @@ const refreshPresentationTemplates$ = command(({ get, set }) => {
 const refreshAndLoadPresentationTemplates$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
     set(refreshPresentationTemplates$);
-    await get(importedPresentationTemplateCatalog$);
+    await waitForOperation(get(importedPresentationTemplateCatalog$), signal);
     signal.throwIfAborted();
-  },
-);
-
-const refreshPresentationTemplatesFromRealtime$ = command(
-  async ({ set }, signal: AbortSignal): Promise<boolean> => {
-    await set(refreshAndLoadPresentationTemplates$, signal);
-    return false;
   },
 );
 
@@ -106,42 +111,73 @@ const refreshPresentationTemplatesFromRealtime$ = command(
  * navigation cannot strand a newly published deck in the thread that started
  * the analysis.
  */
+const acquirePresentationTemplateSubscriptions$ = command(
+  async (
+    { set },
+    initialization: Promise<SharedDatabaseBridge | null>,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const bridge = await waitForOperation(initialization, signal);
+    signal.throwIfAborted();
+    if (!bridge) {
+      return false;
+    }
+    const subscriptionIds = [crypto.randomUUID(), crypto.randomUUID()];
+    let disposed = false;
+    const dispose = () => {
+      if (disposed) {
+        return;
+      }
+      disposed = true;
+      signal.removeEventListener("abort", dispose);
+      for (const subscriptionId of subscriptionIds) {
+        bridge.unsubscribeRealtime(subscriptionId);
+      }
+    };
+    const invalidate = () => {
+      if (!disposed) {
+        set(refreshPresentationTemplates$);
+      }
+    };
+    signal.addEventListener("abort", dispose, { once: true });
+    await onRejection(async () => {
+      await Promise.all(
+        subscriptionIds.map(async (subscriptionId, index) => {
+          await bridge.subscribeRealtime(
+            subscriptionId,
+            index === 0 ? "user" : "org",
+            "presentationTemplatesChanged",
+            invalidate,
+            invalidate,
+          );
+        }),
+      );
+      signal.throwIfAborted();
+    }, dispose);
+    signal.throwIfAborted();
+    return true;
+  },
+);
+
 export const subscribePresentationTemplatesChanged$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const realtimeReady = get(presentationTemplatesRealtimeReady$);
-    await Promise.all([
-      set(
-        setAblyLoop$,
-        {
-          topic: "presentationTemplatesChanged",
-          loopCommand$: refreshPresentationTemplatesFromRealtime$,
-          options: {
-            onSubscribed: () => {
-              if (!realtimeReady.settled()) {
-                realtimeReady.resolve();
-              }
-            },
-          },
-        },
-        signal,
-      ),
-      set(
-        setAblyLoop$,
-        {
-          scope: "org",
-          topic: "presentationTemplatesChanged",
-          loopCommand$: refreshPresentationTemplatesFromRealtime$,
-        },
-        signal,
-      ),
-    ]);
+  (
+    { set },
+    initialization: Promise<SharedDatabaseBridge | null>,
+    signal: AbortSignal,
+  ) => {
+    const subscription = set(
+      acquirePresentationTemplateSubscriptions$,
+      initialization,
+      signal,
+    );
+    set(presentationTemplatesSubscription$, subscription);
+    return subscription;
   },
 );
 
 async function resolvePresentationTemplatePreviewAssets(
   createClient: ApiClientFactory,
   previewAssetIds: readonly string[],
-  signal: AbortSignal,
 ): Promise<readonly PresentationTemplatePreviewAsset[]> {
   const uniquePreviewAssetIds = [...new Set(previewAssetIds)];
   const batches: string[][] = [];
@@ -160,13 +196,16 @@ async function resolvePresentationTemplatePreviewAssets(
   const client = createClient(presentationTemplatesContract);
   const responses = await Promise.all(
     batches.map(async (previewAssetIdBatch) => {
-      return await accept(
-        client.resolvePreviewUrls({
-          body: { previewAssetIds: previewAssetIdBatch },
-          fetchOptions: { signal },
-        }),
-        [200],
-      );
+      return await retryTransientLoad(() => {
+        return accept(
+          client.resolvePreviewUrls({
+            body: { previewAssetIds: previewAssetIdBatch },
+          }),
+          [200],
+          undefined,
+          { showErrorToast: false },
+        );
+      });
     }),
   );
   return responses.flatMap((response) => {
@@ -175,6 +214,10 @@ async function resolvePresentationTemplatePreviewAssets(
 }
 
 interface ImportedPresentationTemplateCache {
+  readonly detailByTemplateId: Map<
+    string,
+    Computed<Promise<PresentationTemplateDetail | null>>
+  >;
   readonly previewAssetIdsByTemplateId: Map<string, readonly string[]>;
   readonly previewUrlByAssetId: Map<string, PresentationTemplatePreviewAsset>;
   /**
@@ -378,6 +421,7 @@ function evictImportedPresentationTemplateCache(
     cache.previewAssetIdsByTemplateId.get(templateId);
   cache.previewAssetIdsByTemplateId.delete(templateId);
   cache.imageBuffersByTemplateId.delete(templateId);
+  cache.detailByTemplateId.delete(templateId);
   if (removedPreviewAssetIds === undefined) {
     return;
   }
@@ -479,7 +523,16 @@ function createImportedPresentationTemplatePickerItems$(
 ) {
   return computed(
     async (get): Promise<readonly ImportedPresentationTemplatePickerItem[]> => {
-      const templates = await get(templates$);
+      const pendingTemplates = get(templates$);
+      const templates = await pendingTemplates;
+      if (pendingTemplates !== get(templates$)) {
+        // ccstate discards this obsolete result. In particular, it must not
+        // create buffers for a template removed by the newer calculation.
+        return templates.flatMap((template) => {
+          const imageBuffers = cache.imageBuffersByTemplateId.get(template.id);
+          return imageBuffers ? [{ template, imageBuffers }] : [];
+        });
+      }
       return templates.map((template) => {
         const imageBuffers =
           synchronizeImportedPresentationTemplateImageBuffers(
@@ -501,12 +554,32 @@ function createCachedImportedPresentationTemplateCatalog$(
 ) {
   return computed(
     async (get): Promise<CachedImportedPresentationTemplateCatalog> => {
-      get(previewUrlsVersion$);
+      const previewUrlsVersion = get(previewUrlsVersion$);
       const deletedTemplateIds = get(deletedTemplateIds$);
-      const catalog = await get(catalog$);
+      const pendingCatalog = get(catalog$);
+      const catalog = await pendingCatalog;
       const retainedTemplates = catalog.templates.filter((template) => {
         return !deletedTemplateIds.has(template.id);
       });
+      if (
+        pendingCatalog !== get(catalog$) ||
+        previewUrlsVersion !== get(previewUrlsVersion$) ||
+        deletedTemplateIds !== get(deletedTemplateIds$)
+      ) {
+        // An obsolete async calculation still runs after ccstate invalidates
+        // it. Only the current calculation may reconcile the shared maps.
+        return {
+          ...catalog,
+          templates: retainedTemplates.map((template) => {
+            return {
+              ...template,
+              pageUrls: template.previewAssets.map((asset) => {
+                return asset.url;
+              }),
+            };
+          }),
+        };
+      }
       return {
         ...catalog,
         templates: synchronizeImportedPresentationTemplateCache(
@@ -560,11 +633,9 @@ function createImportedPresentationTemplates$(
  */
 function createImportedPresentationTemplateDetailResolver(
   catalog$: Computed<Promise<CachedImportedPresentationTemplateCatalog>>,
+  cache: ImportedPresentationTemplateCache,
 ): ImportedPresentationTemplateDetailResolver {
-  const detailByTemplateId = new Map<
-    string,
-    Computed<Promise<PresentationTemplateDetail | null>>
-  >();
+  const { detailByTemplateId } = cache;
   return {
     resolve: (templateId) => {
       const existing = detailByTemplateId.get(templateId);
@@ -582,9 +653,6 @@ function createImportedPresentationTemplateDetailResolver(
       );
       detailByTemplateId.set(templateId, detail$);
       return detail$;
-    },
-    evict: (templateId) => {
-      detailByTemplateId.delete(templateId);
     },
   };
 }
@@ -629,28 +697,47 @@ function expiringPresentationTemplatePreviewAssetIds(
     });
 }
 
-function presentationTemplatePreviewRefreshDelayMs(
+function createImportedPresentationTemplatePreviewAssets$(
+  catalog$: Computed<Promise<CachedImportedPresentationTemplateCatalog>>,
   cache: ImportedPresentationTemplateCache,
-  catalogLoadedAtMs: number,
-): number {
-  const requestedAt = now();
-  const expirations = [...cache.previewUrlByAssetId.values()].map((asset) => {
-    return Date.parse(asset.expiresAt);
-  });
-  if (expirations.length === 0) {
-    return Math.max(
-      0,
-      catalogLoadedAtMs +
-        PRESENTATION_TEMPLATE_CATALOG_REVALIDATE_AGE_MS -
-        requestedAt,
+  refreshVersion$: State<number>,
+) {
+  return computed(async (get) => {
+    const version = get(refreshVersion$);
+    if (version === 0) {
+      return null;
+    }
+    const pendingCatalog = get(catalog$);
+    await pendingCatalog;
+    const previewAssetIds = expiringPresentationTemplatePreviewAssetIds(
+      cache,
+      now(),
     );
-  }
-  return Math.max(
-    0,
-    Math.min(...expirations) -
-      PRESENTATION_TEMPLATE_PREVIEW_URL_SAFETY_MS -
-      requestedAt,
-  );
+    const assets = await resolvePresentationTemplatePreviewAssets(
+      get(apiClient$),
+      previewAssetIds,
+    );
+    if (version !== get(refreshVersion$) || pendingCatalog !== get(catalog$)) {
+      return { version, pendingCatalog, previewAssetIds, assets };
+    }
+    if (
+      assets.some((asset) => {
+        const expiresAt = Date.parse(asset.expiresAt);
+        const previous = cache.previewUrlByAssetId.get(asset.previewAssetId);
+        return (
+          !Number.isFinite(expiresAt) ||
+          expiresAt <= now() + PRESENTATION_TEMPLATE_PREVIEW_URL_SAFETY_MS ||
+          (previous !== undefined &&
+            expiresAt <= Date.parse(previous.expiresAt))
+        );
+      })
+    ) {
+      throw new Error(
+        "Presentation template preview expiration did not advance",
+      );
+    }
+    return { version, pendingCatalog, previewAssetIds, assets };
+  });
 }
 
 function createImportedPresentationTemplateUrlRefreshSignals(
@@ -658,10 +745,17 @@ function createImportedPresentationTemplateUrlRefreshSignals(
   cache: ImportedPresentationTemplateCache,
   previewUrlsVersion$: State<number>,
 ) {
+  const refreshVersion$ = state(0);
+  const importedPresentationTemplatePreviewAssets$ =
+    createImportedPresentationTemplatePreviewAssets$(
+      catalog$,
+      cache,
+      refreshVersion$,
+    );
   const refreshImportedPresentationTemplateUrlsIfExpiring$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
       if (cache.previewUrlByAssetId.size === 0) {
-        const catalog = await get(catalog$);
+        const catalog = await waitForOperation(get(catalog$), signal);
         signal.throwIfAborted();
         if (
           now() - catalog.loadedAtMs >=
@@ -678,19 +772,29 @@ function createImportedPresentationTemplateUrlRefreshSignals(
       if (previewAssetIds.length === 0) {
         return;
       }
-      const assets = await resolvePresentationTemplatePreviewAssets(
-        get(apiClient$),
-        previewAssetIds,
+      set(refreshVersion$, (version) => {
+        return version + 1;
+      });
+      const refreshed = await waitForOperation(
+        get(importedPresentationTemplatePreviewAssets$),
         signal,
       );
       signal.throwIfAborted();
+      if (
+        refreshed === null ||
+        refreshed.version !== get(refreshVersion$) ||
+        refreshed.pendingCatalog !== get(catalog$)
+      ) {
+        return;
+      }
+      const { assets, previewAssetIds: requestedPreviewAssetIds } = refreshed;
       const resolvedPreviewAssetIds = new Set(
         assets.map((asset) => {
           return asset.previewAssetId;
         }),
       );
       if (
-        previewAssetIds.some((previewAssetId) => {
+        requestedPreviewAssetIds.some((previewAssetId) => {
           return !resolvedPreviewAssetIds.has(previewAssetId);
         })
       ) {
@@ -723,32 +827,41 @@ function createImportedPresentationTemplateUrlRefreshSignals(
       ): Promise<void> => {
         await setLoop(
           async (loopSignal) => {
-            const catalogLoadedAtMs =
-              cache.previewUrlByAssetId.size === 0
-                ? (await get(catalog$)).loadedAtMs
-                : now();
-            loopSignal.throwIfAborted();
-            await delay(
-              presentationTemplatePreviewRefreshDelayMs(
-                cache,
-                catalogLoadedAtMs,
-              ),
-              { signal: loopSignal },
+            const catalog = await settle(
+              waitForOperation(get(catalog$), loopSignal),
+              loopSignal,
             );
-            await set(
-              refreshImportedPresentationTemplateUrlsIfExpiring$,
+            loopSignal.throwIfAborted();
+            if (!catalog.ok) {
+              // The query exposes its error through a loadable. Keep the
+              // existing owner alive so a later catalog retry can recover.
+              return false;
+            }
+            // A failed read remains visible through its loadable. The timer
+            // keeps its owner and retries on the next bounded interval.
+            await settle(
+              set(
+                refreshImportedPresentationTemplateUrlsIfExpiring$,
+                loopSignal,
+              ),
               loopSignal,
             );
             return false;
           },
-          0,
+          // Check often enough to renew within the safety window, including
+          // when a new catalog introduces an earlier expiration.
+          PRESENTATION_TEMPLATE_PREVIEW_URL_SAFETY_MS / 3,
           signal,
-          { retryTransientErrors: false },
+          { retryTransientErrors: false, testIntervalMs: 25 },
         );
       },
     ),
   );
-  return { importedPresentationTemplateUrlRefreshLifecycleRef$ };
+  return {
+    importedPresentationTemplateUrlRefreshLifecycleRef$,
+    importedPresentationTemplatePreviewAssets$,
+    refreshImportedPresentationTemplateUrlsIfExpiring$,
+  };
 }
 
 function createImportedPresentationTemplateDetailSignals(
@@ -812,38 +925,9 @@ function createUpdateImportedPresentationTemplate$(
   );
 }
 
-/** Dialog-scoped state and mutations for persisted uploaded templates. */
-export function createImportedPresentationTemplateSignals() {
-  const cache: ImportedPresentationTemplateCache = {
-    previewAssetIdsByTemplateId: new Map(),
-    previewUrlByAssetId: new Map(),
-    imageBuffersByTemplateId: new Map(),
-  };
-  const internalPreviewUrlsVersion$ = state(0);
-  const catalog$ = createCachedImportedPresentationTemplateCatalog$(
-    importedPresentationTemplateCatalog$,
-    cache,
-    internalPreviewUrlsVersion$,
-    deletedPresentationTemplateIds$,
-  );
-  const internalUpdatedTemplates$ = state<
-    readonly PresentationTemplateSummary[]
-  >([]);
-  const importedPresentationTemplates$ = createImportedPresentationTemplates$(
-    catalog$,
-    deletedPresentationTemplateIds$,
-    internalUpdatedTemplates$,
-  );
-  const detailResolver =
-    createImportedPresentationTemplateDetailResolver(catalog$);
-  const urlRefresh = createImportedPresentationTemplateUrlRefreshSignals(
-    catalog$,
-    cache,
-    internalPreviewUrlsVersion$,
-  );
-  const { internalRequestedTemplateId$, ...detailSignals } =
-    createImportedPresentationTemplateDetailSignals(detailResolver.resolve);
-
+function createImportedPresentationTemplatePreviewSignals(
+  internalRequestedTemplateId$: State<string | null>,
+) {
   const internalPreviewTemplateId$ = state<string | null>(null);
   const importedPresentationTemplatePreviewId$ = computed((get) => {
     return get(internalPreviewTemplateId$);
@@ -868,6 +952,58 @@ export function createImportedPresentationTemplateSignals() {
       set(internalPreviewSlideIndex$, index);
     },
   );
+  return {
+    internalPreviewTemplateId$,
+    internalPreviewSlideIndex$,
+    importedPresentationTemplatePreviewId$,
+    importedPresentationTemplatePreviewSlideIndex$,
+    openImportedPresentationTemplatePreview$,
+    closeImportedPresentationTemplatePreview$,
+    selectImportedPresentationTemplatePreviewSlide$,
+  };
+}
+
+/** Dialog-scoped state and mutations for persisted uploaded templates. */
+export function createImportedPresentationTemplateSignals() {
+  const cache: ImportedPresentationTemplateCache = {
+    detailByTemplateId: new Map(),
+    previewAssetIdsByTemplateId: new Map(),
+    previewUrlByAssetId: new Map(),
+    imageBuffersByTemplateId: new Map(),
+  };
+  const internalPreviewUrlsVersion$ = state(0);
+  const catalog$ = createCachedImportedPresentationTemplateCatalog$(
+    importedPresentationTemplateCatalog$,
+    cache,
+    internalPreviewUrlsVersion$,
+    deletedPresentationTemplateIds$,
+  );
+  const internalUpdatedTemplates$ = state<
+    readonly PresentationTemplateSummary[]
+  >([]);
+  const importedPresentationTemplates$ = createImportedPresentationTemplates$(
+    catalog$,
+    deletedPresentationTemplateIds$,
+    internalUpdatedTemplates$,
+  );
+  const detailResolver = createImportedPresentationTemplateDetailResolver(
+    catalog$,
+    cache,
+  );
+  const urlRefresh = createImportedPresentationTemplateUrlRefreshSignals(
+    catalog$,
+    cache,
+    internalPreviewUrlsVersion$,
+  );
+  const { internalRequestedTemplateId$, ...detailSignals } =
+    createImportedPresentationTemplateDetailSignals(detailResolver.resolve);
+  const {
+    internalPreviewTemplateId$,
+    internalPreviewSlideIndex$,
+    ...previewSignals
+  } = createImportedPresentationTemplatePreviewSignals(
+    internalRequestedTemplateId$,
+  );
 
   const {
     internalCardHover$,
@@ -881,8 +1017,10 @@ export function createImportedPresentationTemplateSignals() {
       {
         resolveDetail$: detailResolver.resolve,
         cardHover$: importedPresentationTemplateCardHover$,
-        previewTemplateId$: importedPresentationTemplatePreviewId$,
-        previewSlideIndex$: importedPresentationTemplatePreviewSlideIndex$,
+        previewTemplateId$:
+          previewSignals.importedPresentationTemplatePreviewId$,
+        previewSlideIndex$:
+          previewSignals.importedPresentationTemplatePreviewSlideIndex$,
       },
     );
 
@@ -905,7 +1043,6 @@ export function createImportedPresentationTemplateSignals() {
       );
       signal.throwIfAborted();
       evictImportedPresentationTemplateCache(cache, templateId);
-      detailResolver.evict(templateId);
       set(internalUpdatedTemplates$, (updatedTemplates) => {
         return updatedTemplates.filter((template) => {
           return template.id !== templateId;
@@ -930,16 +1067,14 @@ export function createImportedPresentationTemplateSignals() {
   });
 
   return {
+    presentationTemplatesRealtimeReady$,
+    retryImportedPresentationTemplates$: refreshPresentationTemplates$,
     importedPresentationTemplates$,
     importedPresentationTemplatePickerItems$,
     importedPresentationTemplateDeletedIds$,
     ...detailSignals,
     ...urlRefresh,
-    importedPresentationTemplatePreviewId$,
-    importedPresentationTemplatePreviewSlideIndex$,
-    openImportedPresentationTemplatePreview$,
-    closeImportedPresentationTemplatePreview$,
-    selectImportedPresentationTemplatePreviewSlide$,
+    ...previewSignals,
     importedPresentationTemplateCardHover$,
     setImportedPresentationTemplateCardHover$,
     updateImportedPresentationTemplate$,
