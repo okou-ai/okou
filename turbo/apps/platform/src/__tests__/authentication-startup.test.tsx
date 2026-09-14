@@ -22,24 +22,22 @@ async function waitForReadySignIn(): Promise<void> {
 }
 
 function installEarlyBootstrap(options: {
-  readonly clerk?: typeof mockedClerk;
-  readonly loaded?: Promise<void>;
+  readonly clerk: typeof mockedClerk;
+  readonly loaded: Promise<void>;
 }): void {
   context.mocks.clerk();
   const originalBootstrap = window.__okouClerkBootstrap;
   const originalClerk = Reflect.get(globalThis, "Clerk");
-  Reflect.set(globalThis, "Clerk", options.clerk ?? mockedClerk);
+  Reflect.set(globalThis, "Clerk", options.clerk);
   const bootstrap: NonNullable<Window["__okouClerkBootstrap"]> = {
-    loadOptions: PRIMARY_LOAD_OPTIONS,
-    loaded: options.loaded,
-    publishableKey: "test_production_key",
     resolveClerkUI: () => {
       return;
     },
+    runtime: Promise.resolve({
+      clerk: options.clerk,
+      loaded: options.loaded,
+    }),
   };
-  if (options.clerk) {
-    Reflect.set(bootstrap, "clerk", options.clerk);
-  }
   window.__okouClerkBootstrap = bootstrap;
   context.signal.addEventListener(
     "abort",
@@ -196,26 +194,6 @@ test("Authentication startup is reused without a duplicate load", async () => {
   ).resolves.toBeInTheDocument();
   expect(clerk.loads).toHaveLength(1);
   expect(clerk.uiRequests).toStrictEqual([]);
-});
-
-test("Authentication startup retries after an early failure", async () => {
-  const clerk = context.mocks.clerk();
-  installEarlyBootstrap({});
-
-  await setupPage({
-    context,
-    host: "app.okou.ai",
-    path: "/sign-in",
-    auth: null,
-  });
-
-  await waitForReadySignIn();
-  expect(clerk.resourceRequests).toStrictEqual([]);
-  expect(clerk.loads).toHaveLength(1);
-  expect(clerk.uiRequests).toStrictEqual([
-    "https://app.example.test/assets/clerk-ui-test.js",
-  ]);
-  expect(window.__okouClerkBootstrap?.loaded).toBeUndefined();
 });
 
 test("Startup onboarding follows the current account and workspace", async () => {

@@ -7,7 +7,7 @@ import {
   isOkouProductionHostname,
   type PlatformService,
 } from "@okouai/core/platform-service-origin";
-import { startClerkBrowserRuntime } from "../lib/clerk-runtime.ts";
+import { readClerkBrowserRuntime } from "../lib/clerk-runtime.ts";
 import { clearSentryUser, setSentryUser } from "../lib/sentry.ts";
 import {
   clearPostHogUser,
@@ -15,12 +15,8 @@ import {
   setPostHogUser,
 } from "../lib/posthog.ts";
 import { appendCapturedPreviewBypassToUrl } from "../lib/preview-bypass-cookie.ts";
-import {
-  resolvePlatformEnvironment,
-  resolvePlatformRuntimeConfig,
-} from "../lib/platform-host.ts";
+import { resolvePlatformEnvironment } from "../lib/platform-host.ts";
 import { BRAND_NAME, type BrandName } from "./branding.ts";
-import { rootSignal$ } from "./root-signal.ts";
 import {
   bestEffort,
   createDeferredPromise,
@@ -347,20 +343,8 @@ export function buildAuthModeSwitchUrl(
   return `${path}${search ? `?${search}` : ""}${hash}`;
 }
 
-// eslint-disable-next-line ccstate/no-computed-signal -- migrate this computed away from AbortSignal ownership
-const clerkRuntime$ = computed(async (get) => {
-  const { clerkPublishableKey } = resolvePlatformRuntimeConfig();
-  return await startClerkBrowserRuntime(
-    {
-      loadOptions: {
-        afterSignOutUrl: resolveAppAuthUrl("/sign-in"),
-        signInUrl: resolveAppAuthUrl("/sign-in"),
-        signUpUrl: resolveAppAuthUrl("/sign-up"),
-      },
-      publishableKey: clerkPublishableKey,
-    },
-    get(rootSignal$),
-  );
+const clerkRuntime$ = computed(() => {
+  return readClerkBrowserRuntime();
 });
 
 /** Loaded Clerk instance for consumers that need authentication state. */
