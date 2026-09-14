@@ -141,6 +141,7 @@ if Path(sys.argv[0]).name == "pnpm":
         for p in manifests
     ), "ERR_PNPM_BAD_PM_VERSION"
     assert "--verify" in sys.argv and "--migrate" not in sys.argv
+    assert "--recovery-schema" in sys.argv
     assert "--cursor" not in sys.argv and "--preflight" not in sys.argv
     assert os.environ["AWS_ACCESS_KEY_ID"] == "fixture-temporary-access"
     assert os.environ["AWS_SECRET_ACCESS_KEY"] == "fixture-private-session-secret"
@@ -201,6 +202,7 @@ if Path(sys.argv[0]).name == "pnpm":
         "mode": "verify",
         "source": source,
         "target": target,
+        "recoverySchema": scenario != "target-legacy-manifest",
         "database": "wrong" if scenario == "target-report-wrong-database" else database,
         "manifest": "a" * 64,
         "complete": True,

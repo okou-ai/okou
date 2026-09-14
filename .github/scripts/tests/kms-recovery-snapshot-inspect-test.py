@@ -182,6 +182,7 @@ class SnapshotInspectionTest(unittest.TestCase):
             "target-verification-failed",
             "target-nested-source",
             "target-report-wrong-database",
+            "target-legacy-manifest",
         ]:
             with self.subTest(scenario=scenario):
                 result, report, _ = self.invoke(

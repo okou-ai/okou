@@ -427,6 +427,161 @@ try {
       "ALTER TABLE secrets RENAME COLUMN fixture_missing_column TO encrypted_value",
     );
   }
+  // Retained databases can have either SSH schema or both during migration.
+  // Exercise the CLI against real catalog changes and authenticated ciphertext.
+  const sshTarget = encode(await encrypt(kms, Buffer.from(secret), target));
+  const sshSource = encode(await encrypt(kms, Buffer.from(secret), source));
+  await db.query(
+    "INSERT INTO ssh_connection_credentials VALUES ('historical', $1, $1)",
+    [sshTarget],
+  );
+  const historicalRecovery = await cli("recovery-historical-ssh", [
+    "--verify",
+    "--recovery-schema",
+  ]);
+  assert.equal(historicalRecovery.databaseVerifiedOnTarget, true);
+  assert.equal(historicalRecovery.recoverySchema, true);
+  assert.equal(object(historicalRecovery.totals).verified, 2);
+  await db.query(
+    "CREATE TABLE ssh_credentials (id uuid PRIMARY KEY, encrypted_private_key text, encrypted_passphrase text, encrypted_password text, CHECK ((encrypted_private_key IS NOT NULL AND encrypted_password IS NULL) OR (encrypted_private_key IS NULL AND encrypted_passphrase IS NULL AND encrypted_password IS NOT NULL)))",
+  );
+  const credentialId = randomUUID();
+  const passwordCredentialId = randomUUID();
+  await db.query(
+    "INSERT INTO ssh_credentials VALUES ($1, $2, $2, NULL), ($3, NULL, NULL, $2)",
+    [credentialId, sshTarget, passwordCredentialId],
+  );
+  const bothRecovery = await cli("recovery-both-ssh-tables", [
+    "--verify",
+    "--recovery-schema",
+  ]);
+  assert.equal(bothRecovery.databaseVerifiedOnTarget, true);
+  assert.equal(object(bothRecovery.totals).verified, 5);
+  assert.equal(object(bothRecovery.totals).updated, 0);
+  const currentBefore: unknown[] = (
+    await db.query("SELECT * FROM ssh_credentials ORDER BY id")
+  ).rows;
+  await db.query("DROP TABLE ssh_connection_credentials");
+  try {
+    const currentRecovery = await cli("recovery-current-ssh", [
+      "--verify",
+      "--recovery-schema",
+    ]);
+    assert.equal(currentRecovery.databaseVerifiedOnTarget, true);
+    assert.equal(object(currentRecovery.totals).verified, 3);
+    assert.equal(object(currentRecovery.totals).updated, 0);
+    assert.deepEqual(
+      (await db.query("SELECT * FROM ssh_credentials ORDER BY id")).rows,
+      currentBefore,
+      "Recovery verification must preserve current SSH ciphertext",
+    );
+    await db.query(
+      "UPDATE ssh_credentials SET encrypted_password = $1 WHERE id = $2",
+      [sshSource, passwordCredentialId],
+    );
+    const oldPassword = await cli("recovery-source-password", [
+      "--verify",
+      "--recovery-schema",
+    ]);
+    assert.equal(oldPassword.databaseVerifiedOnTarget, false);
+    assert.equal(object(oldPassword.totals).source, 1);
+    assert.equal(object(oldPassword.totals).updated, 0);
+    await db.query(
+      "UPDATE ssh_credentials SET encrypted_password = $1 WHERE id = $2",
+      [sshTarget, passwordCredentialId],
+    );
+
+    for (const [column, code] of [
+      ["encrypted_password", "storage_manifest_mismatch"],
+      ["id", "primary_key_manifest_mismatch"],
+    ]) {
+      await db.query(
+        `ALTER TABLE ssh_credentials RENAME COLUMN "${column}" TO fixture_missing_column`,
+      );
+      try {
+        const malformedSchema = await cli(
+          "recovery-missing-" + column,
+          ["--verify", "--recovery-schema"],
+          false,
+          true,
+        );
+        assert.equal(malformedSchema.complete, false);
+        assert.deepEqual(malformedSchema.failureDetails, {
+          stage: "storage_manifest",
+          code,
+        });
+      } finally {
+        await db.query(
+          `ALTER TABLE ssh_credentials RENAME COLUMN fixture_missing_column TO "${column}"`,
+        );
+      }
+    }
+    await db.query("DROP TABLE ssh_credentials");
+    const beforeMissing = kmsRequests;
+    const missingSsh = await cli(
+      "recovery-no-ssh-table",
+      ["--verify", "--recovery-schema"],
+      false,
+      true,
+    );
+    assert.equal(missingSsh.databaseVerifiedOnTarget, false);
+    assert.equal(missingSsh.complete, false);
+    assert.deepEqual(missingSsh.failureDetails, {
+      stage: "storage_manifest",
+      code: "storage_manifest_mismatch",
+    });
+    assert.equal(kmsRequests, beforeMissing);
+  } finally {
+    await db.query("DROP TABLE IF EXISTS ssh_credentials");
+    await db.query(
+      "CREATE TABLE ssh_connection_credentials (connection_id text PRIMARY KEY, encrypted_private_key text, encrypted_passphrase text)",
+    );
+  }
+  for (const [index, modeArgs] of [[], ["--migrate"]].entries()) {
+    const rejectedReport = join(
+      directory,
+      `rejected-recovery-mode-${index}.json`,
+    );
+    await assert.rejects(
+      execute(
+        "pnpm",
+        [
+          "exec",
+          "tsx",
+          script,
+          "--source-key",
+          source,
+          "--target-key",
+          target,
+          "--recovery-schema",
+          "--report-path",
+          rejectedReport,
+          "--preflight",
+          join(directory, "recovery-both-ssh-tables.json"),
+          ...modeArgs,
+        ],
+        {
+          timeout: 30_000,
+          env: {
+            ...process.env,
+            DATABASE_URL: input.toString(),
+            AWS_ACCESS_KEY_ID: "synthetic",
+            AWS_SECRET_ACCESS_KEY: "synthetic",
+            AWS_SESSION_TOKEN: "",
+            AWS_ENDPOINT_URL_KMS: endpoint,
+          },
+        },
+      ),
+      (error: unknown) => {
+        const failure = object(error);
+        assert.equal(failure.code, 1);
+        assert.ok(string(failure.stderr).includes("KMS rotation failed"));
+        assert.ok(!string(failure.stderr).includes(secret));
+        return true;
+      },
+    );
+    await assert.rejects(readFile(rejectedReport), { code: "ENOENT" });
+  }
   const workflowCiphertext = encode(
     await encrypt(kms, Buffer.from(secret), source),
   );

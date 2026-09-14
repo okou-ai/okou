@@ -377,6 +377,7 @@ def verify_database(parsed, environment, deadline):
                     "--target-key",
                     TARGET,
                     "--verify",
+                    "--recovery-schema",
                     "--verify-concurrency",
                     "8",
                     "--batch-size",
@@ -431,6 +432,7 @@ def verify_database(parsed, environment, deadline):
 def validated_report(report, database):
     require(
         report.get("mode") == "verify"
+        and report.get("recoverySchema") is True
         and report.get("source") == SOURCE
         and report.get("target") == TARGET
         and report.get("database") == database

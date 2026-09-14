@@ -8,7 +8,12 @@ import { parseArgs } from "node:util";
 import { KMSClient } from "@aws-sdk/client-kms";
 import { Client } from "pg";
 
-import { fieldName, fields, type Field } from "./fields";
+import {
+  fieldName,
+  fields as migrationFields,
+  recoveryFields,
+  type Field,
+} from "./fields";
 import {
   decode,
   decrypt,
@@ -45,6 +50,7 @@ interface Counts {
 interface Report {
   version: number;
   mode: Mode;
+  recoverySchema: boolean;
   source: string;
   target: string;
   database: string;
@@ -146,6 +152,16 @@ function verificationConcurrency(
   return integer(value, 1, 16);
 }
 
+function storageFields(mode: Mode, recoverySchema: boolean): readonly Field[] {
+  if (!recoverySchema) {
+    return migrationFields;
+  }
+  if (mode !== "verify") {
+    throw new Error("recovery_schema_requires_verify_mode");
+  }
+  return recoveryFields;
+}
+
 function failureCode(error: unknown): string {
   // Retain only fixed codes, never provider messages, SQL, or input values.
   const cause =
@@ -227,6 +243,7 @@ async function main(): Promise<void> {
       "report-path": { type: "string" },
       cursor: { type: "string" },
       verify: { type: "boolean", default: false },
+      "recovery-schema": { type: "boolean", default: false },
       migrate: { type: "boolean", default: false },
       preflight: { type: "string" },
     },
@@ -237,6 +254,12 @@ async function main(): Promise<void> {
   if (values.verify && values.migrate) {
     throw new Error("invalid_mode");
   }
+  const mode: Mode = values.migrate
+    ? "migrate"
+    : values.verify
+      ? "verify"
+      : "inventory";
+  const fields = storageFields(mode, values["recovery-schema"]);
   const connectionString = string(process.env.DATABASE_URL);
   const url = new URL(connectionString);
   if (url.hostname.includes("-pooler.")) {
@@ -248,11 +271,6 @@ async function main(): Promise<void> {
   const manifest = createHash("sha256")
     .update(JSON.stringify(fields))
     .digest("hex");
-  const mode: Mode = values.migrate
-    ? "migrate"
-    : values.verify
-      ? "verify"
-      : "inventory";
   const batchSize = integer(values["batch-size"], 100, 500);
   const maxRows = integer(
     values["max-rows"],
@@ -322,6 +340,7 @@ async function main(): Promise<void> {
   const report: Report = {
     version: 1,
     mode,
+    recoverySchema: values["recovery-schema"],
     source,
     target,
     database,
@@ -396,6 +415,17 @@ async function main(): Promise<void> {
         };
       });
       const missing = new Set<string>();
+      if (
+        values["recovery-schema"] &&
+        !catalog.some((column) => {
+          return (
+            column.table === "ssh_connection_credentials" ||
+            column.table === "ssh_credentials"
+          );
+        })
+      ) {
+        throw new Error("storage_manifest_mismatch");
+      }
       for (const field of fields) {
         const column = catalog.find((candidate) => {
           return (
