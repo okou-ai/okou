@@ -56,6 +56,7 @@ interface CollectionOptions extends OutputOptions {
 }
 
 interface PostsOptions extends CollectionOptions {
+  readonly fullDetails?: boolean;
   readonly kind?: string;
 }
 
@@ -987,6 +988,10 @@ const postsCommand = new Command()
   .argument("<url>", "Public profile, channel, company, or playlist URL")
   .option("--kind <kind>", "Instagram content kind: posts or reels")
   .option(
+    "--full-details",
+    "YouTube channel/playlist exact dates and descriptions (slower; --limit at most 30)",
+  )
+  .option(
     "--limit <count>",
     "Maximum total items to return",
     positiveInteger,
@@ -1000,7 +1005,11 @@ const postsCommand = new Command()
       async () => {
         const target = parseSocialTarget(url);
         await printCollectionIntent(
-          postsIntent(target, { kind: options.kind, limit: options.limit }),
+          postsIntent(target, {
+            fullDetails: options.fullDetails,
+            kind: options.kind,
+            limit: options.limit,
+          }),
           options,
         );
       },
@@ -1225,6 +1234,7 @@ Examples:
   Discover:    okou social capabilities instagram --json
   Inspect:     okou social inspect https://www.instagram.com/p/<id>/ --json
   Posts:       okou social posts https://www.instagram.com/<user>/ --limit 20 --json
+  Details:     okou social posts https://www.youtube.com/@<channel> --full-details --limit 30 --json
   Reels:       okou social posts https://www.instagram.com/<user>/ --kind reels --limit 20 --json
   Search:      okou social search "product launch" --platform tiktok --limit 20 --json
   Comments:    okou social comments https://www.tiktok.com/@<user>/video/<id> --limit 20 --json
@@ -1239,6 +1249,8 @@ Notes:
   - Authenticates via OKOU_TOKEN (requires social:read capability) or a CLI token
   - Provider credentials remain on the Okou API server
   - Collection --limit applies to the total returned result, not one provider page
+  - YouTube posts --full-details requests exact dates and descriptions for at most 30 videos; it is slower than the default listing
+  - Unavailable publication dates and descriptions remain null, empty, or missing
   - Collection output is aggregated unless --stream explicitly requests JSON Lines
   - --stream writes one kind=page record per fetched page, followed by one metadata-only kind=summary record
   - Partial collection results are explicit and exit with status 2

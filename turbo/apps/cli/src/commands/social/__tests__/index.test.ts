@@ -158,6 +158,7 @@ describe("okou social command", () => {
     for (const command of socialCommand.commands) {
       command.setOptionValue("json", undefined);
       command.setOptionValue("thread", undefined);
+      command.setOptionValue("fullDetails", undefined);
       command.setOptionValue("kind", undefined);
       command.setOptionValue("limit", 10);
       command.setOptionValue("stream", undefined);
@@ -379,9 +380,205 @@ describe("okou social command", () => {
           ? 30
           : 100,
     );
+    expect(requestBody).not.toHaveProperty("input.full_details");
     expect(outputRequest()).toStrictEqual(
       kind === undefined ? { limit: 250 } : { limit: 250, kind },
     );
+  });
+
+  it.each([
+    {
+      source: "channel",
+      url: "https://www.youtube.com/@example",
+      limit: undefined,
+    },
+    {
+      source: "channel",
+      url: "https://www.youtube.com/@example",
+      limit: 1,
+    },
+    {
+      source: "playlist",
+      url: "https://www.youtube.com/playlist?list=example",
+      limit: 30,
+    },
+  ])(
+    "requests full details for a $source with limit $limit",
+    async ({ source, url, limit }) => {
+      let requestBody: unknown;
+      const results = [
+        {
+          videoId: "older-video",
+          title: "An older video",
+          publishedTime: "12 years ago",
+          publishedAt: "2014-01-01T12:00:00.000Z",
+          description: "The complete older video description",
+        },
+      ];
+      server.use(
+        http.post(
+          "http://localhost:3000/api/social/request",
+          async ({ request }) => {
+            requestBody = await request.json();
+            return HttpResponse.json(
+              socialResponse(
+                "youtube_videos",
+                { state: "complete", itemsReturned: results.length },
+                { type: source, url, results },
+              ),
+            );
+          },
+        ),
+      );
+      const args = ["node", "okou", "posts", url, "--full-details", "--json"];
+      if (limit !== undefined) {
+        args.push("--limit", String(limit));
+      }
+
+      await socialCommand.parseAsync(args);
+
+      expect(requestBody).toStrictEqual({
+        tool: "youtube_videos",
+        input: { url, limit: limit ?? 10, full_details: true },
+      });
+      expect(JSON.parse(output()) as unknown).toMatchObject({
+        status: "complete",
+        request: { limit: limit ?? 10, fullDetails: true },
+        data: { items: results, context: { type: source, url } },
+      });
+    },
+  );
+
+  it.each([false, true])(
+    "preserves unavailable YouTube metadata with full details %s",
+    async (fullDetails) => {
+      const results = [
+        { videoId: "unavailable", publishedAt: null, description: "" },
+        { videoId: "missing" },
+      ];
+      server.use(
+        http.post("http://localhost:3000/api/social/request", () => {
+          return HttpResponse.json(
+            socialResponse(
+              "youtube_videos",
+              { state: "complete", itemsReturned: results.length },
+              { type: "playlist", results },
+            ),
+          );
+        }),
+      );
+      const args = [
+        "node",
+        "okou",
+        "posts",
+        "https://youtube.com/playlist?list=example",
+        "--json",
+      ];
+      if (fullDetails) {
+        args.push("--full-details");
+      }
+
+      await socialCommand.parseAsync(args);
+
+      const result = JSON.parse(output()) as { readonly data: unknown };
+      expect(result.data).toStrictEqual({
+        items: results,
+        context: { type: "playlist" },
+      });
+    },
+  );
+
+  it("includes full-details intent in streamed pages and the summary", async () => {
+    server.use(
+      http.post("http://localhost:3000/api/social/request", () => {
+        return HttpResponse.json(
+          socialResponse(
+            "youtube_videos",
+            { state: "complete", itemsReturned: 1 },
+            { results: [{ videoId: "example", publishedAt: null }] },
+          ),
+        );
+      }),
+    );
+
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "posts",
+      "https://youtube.com/playlist?list=example",
+      "--full-details",
+      "--stream",
+    ]);
+
+    const records: unknown = output()
+      .split("\n")
+      .map((line) => {
+        return JSON.parse(line) as unknown;
+      });
+    expect(records).toEqual([
+      expect.objectContaining({
+        kind: "page",
+        request: { limit: 10, fullDetails: true },
+      }),
+      expect.objectContaining({
+        kind: "summary",
+        request: { limit: 10, fullDetails: true },
+      }),
+    ]);
+  });
+
+  it.each([31, 250])(
+    "rejects full details with limit %s before HTTP",
+    async (limit) => {
+      let apiRequests = 0;
+      server.use(
+        http.post("http://localhost:3000/api/social/request", () => {
+          apiRequests += 1;
+          return HttpResponse.json(socialResponse("youtube_videos", null, {}));
+        }),
+      );
+
+      await expect(
+        socialCommand.parseAsync([
+          "node",
+          "okou",
+          "posts",
+          "https://youtube.com/@example",
+          "--full-details",
+          "--limit",
+          String(limit),
+          "--json",
+        ]),
+      ).rejects.toThrow("process.exit called");
+
+      expect(apiRequests).toBe(0);
+      expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+        status: "error",
+        error: {
+          kind: "invalid_input",
+          code: "INVALID_INPUT",
+          message:
+            "--full-details supports at most 30 videos; use --limit 30 or less, or omit --full-details for the fast listing",
+        },
+      });
+    },
+  );
+
+  it("discovers YouTube full-details constraints without HTTP", async () => {
+    vi.stubEnv("OKOU_TOKEN", "");
+
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "capabilities",
+      "youtube",
+      "--json",
+    ]);
+
+    expect(output()).toContain("channels and playlists");
+    expect(output()).toContain("--full-details");
+    expect(output()).toContain("slower; --limit at most 30");
+    expect(output()).toContain("null, empty, or missing");
   });
 
   it.each([
@@ -937,6 +1134,17 @@ describe("okou social command", () => {
     ],
     ["missing required option", ["search", "launch", "--json"]],
     ["invalid argument value", ["capabilities", "unsupported", "--json"]],
+    [
+      "nonpositive full-details limit",
+      [
+        "posts",
+        "https://youtube.com/@example",
+        "--full-details",
+        "--limit",
+        "0",
+        "--json",
+      ],
+    ],
     ["invalid resume ID", ["download", "--resume", "not-a-uuid", "--json"]],
     [
       "streaming option value",
@@ -1045,6 +1253,13 @@ describe("okou social command", () => {
   it.each([
     ["inspect", "https://instagram.com/p/example", "--thread"],
     ["posts", "https://x.com/example", "--kind", "reels"],
+    ["posts", "https://x.com/example", "--full-details"],
+    ["posts", "https://instagram.com/example", "--full-details"],
+    ["posts", "https://tiktok.com/@example", "--full-details"],
+    ["posts", "https://facebook.com/example", "--full-details"],
+    ["posts", "https://linkedin.com/company/example", "--full-details"],
+    ["posts", "https://youtube.com/watch?v=example", "--full-details"],
+    ["posts", "https://youtu.be/example", "--full-details"],
     [
       "search",
       "launch",
@@ -1493,6 +1708,11 @@ describe("okou social command", () => {
     expect(help).toContain("inspect");
     expect(help).toContain("comments");
     expect(postsHelp).toContain("Maximum total items to return");
+    expect(postsHelp).toContain("--full-details");
+    expect(postsHelp).toContain("YouTube channel/playlist");
+    expect(postsHelp).toContain("slower; --limit at most 30");
+    expect(renderedHelp).toContain("--full-details --limit 30 --json");
+    expect(renderedHelp).toContain("null, empty, or missing");
     expect(renderedHelp).toContain(
       "Provider credentials remain on the Okou API server",
     );
