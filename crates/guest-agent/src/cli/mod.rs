@@ -660,7 +660,7 @@ fn write_pi_langfuse_bootstrap_file(
         .to_str()
         .ok_or_else(|| AgentError::Execution("Pi Langfuse bootstrap path is invalid".into()))?
         .to_string();
-    let payload = serde_json::to_vec(&PiLangfuseBootstrapConfig {
+    let mut payload = serde_json::to_vec(&PiLangfuseBootstrapConfig {
         public_key,
         secret_key,
         base_url: nonempty_user_env_value(runtime.user_env, LANGFUSE_BASE_URL_ENV_KEY),
@@ -670,7 +670,9 @@ fn write_pi_langfuse_bootstrap_file(
             LANGFUSE_TRACING_ENVIRONMENT_ENV_KEY,
         ),
     })?;
-    if let Err(error) = paths::write_private(&path, payload) {
+    let write_result = paths::write_private(&path, &payload);
+    payload.fill(0);
+    if let Err(error) = write_result {
         match std::fs::remove_file(&path) {
             Ok(()) => {}
             Err(cleanup_error) if cleanup_error.kind() == std::io::ErrorKind::NotFound => {}
