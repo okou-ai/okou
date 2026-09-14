@@ -489,6 +489,11 @@ test("Intro Video never displays or submits the preceding Creative Video setting
   const editor = await screen.findByRole("textbox", { name: "Message" });
   const tasks = screen.getByRole("group", { name: "Choose a task" });
   click(control("Video", tasks));
+  click(
+    await waitFor(() => {
+      return control("Video options 16:9 · 8s · 720p");
+    }),
+  );
   const ratios = await screen.findByRole("radiogroup", { name: "Ratio" });
   const portrait = queryAllByRoleFast("radio", ratios).find((radio) => {
     return radio.textContent?.trim() === "9:16";

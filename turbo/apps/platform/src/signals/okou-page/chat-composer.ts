@@ -348,9 +348,8 @@ function createBasicComposerUiSignals() {
  * over with the composer rather than following the thread.
  */
 function createVideoRunOptionsUiSignals() {
-  // The Creative Video control mounts only in a compatible draft. Its first
-  // appearance opens the panel; closing it keeps later appearances compact.
-  const internalVideoOptionsOpen$ = state(true);
+  // Keep the summary compact until the user opens the settings panel.
+  const internalVideoOptionsOpen$ = state(false);
   const internalVideoRunOptions$ = state<VideoRunOptionsPatch>({});
   const videoOptionsOpen$ = computed((get) => {
     return get(internalVideoOptionsOpen$);
@@ -365,7 +364,7 @@ function createVideoRunOptionsUiSignals() {
     set(internalVideoRunOptions$, next);
   });
   const resetVideoRunOptions$ = command(({ set }) => {
-    set(internalVideoOptionsOpen$, true);
+    set(internalVideoOptionsOpen$, false);
     set(internalVideoRunOptions$, {});
   });
   return {

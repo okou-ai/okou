@@ -397,6 +397,12 @@ test("Task changes preserve uploaded files and the draft, and toggling off resto
   });
   click(button("Video", restoredTasks));
   await screen.findByRole("combobox", { name: "Video models" });
+  const options = await waitFor(() => {
+    return button("Video options 16:9 · 8s · 720p");
+  });
+  expect(options).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
+  click(options);
   const ratios = await screen.findByRole("radiogroup", { name: "Ratio" });
   const portrait = queryAllByRoleFast("radio", ratios).find((radio) => {
     return radio.textContent?.trim() === "9:16";

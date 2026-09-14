@@ -144,6 +144,11 @@ test("Choose a video through the consolidated Create entry with the keyboard and
     name: "Video models",
   });
   expect(videoPicker).toHaveTextContent("Seedance 2.0");
+  click(
+    await waitFor(() => {
+      return button("Video options 16:9 · 8s · 720p");
+    }),
+  );
   const ratios = await screen.findByRole("radiogroup", { name: "Ratio" });
   const portrait = queryAllByRoleFast("radio", ratios).find((radio) => {
     return radio.textContent?.trim() === "9:16";

@@ -202,7 +202,7 @@ function installVideoSubmissionCapture(): SubmittedMessage[] {
 }
 
 test.each([false, true])(
-  "Show default video option controls with Create enabled: %s",
+  "Keep video settings collapsed until requested with Create enabled: %s",
   async (enabled) => {
     installVideoSubmissionCapture();
     await setupPage({
@@ -211,9 +211,10 @@ test.each([false, true])(
       featureSwitches: { [FeatureSwitchKey.ComposerCreateCommands]: enabled },
     });
     await selectVideoTemplate();
-    await expect(
-      screen.findByLabelText("Video options"),
-    ).resolves.toBeVisible();
+    expect(
+      fastControl("button", "Video options 16:9 · 8s · 720p"),
+    ).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
     await expect(
       openVideoOptions("16:9 · 8s · 720p"),
     ).resolves.toBeInTheDocument();
@@ -336,7 +337,7 @@ test("Changing a Creative Video style retains settings without reopening the pan
   await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
   const editor = await enterText("Keep this scene description");
   await selectVideoTemplate();
-  await screen.findByLabelText("Video options");
+  await openVideoOptions("16:9 · 8s · 720p");
   click(optionRadio(screen.getByRole("radiogroup", { name: "Ratio" }), "9:16"));
   click(screen.getByRole("switch", { name: "Generate audio" }));
   await userEvent.setup({ delay: null }).keyboard("{Escape}");
@@ -408,9 +409,13 @@ async function restoreVideoDraft(stylePresetId: string): Promise<HTMLElement> {
   return editor;
 }
 
-test("A restored Creative Video draft exposes its settings", async () => {
+test("A restored Creative Video draft keeps settings collapsed until requested", async () => {
   await restoreVideoDraft(VIDEO_TEMPLATE_ITEMS[0]!.id);
-  await expect(screen.findByLabelText("Video options")).resolves.toBeVisible();
+  expect(
+    fastControl("button", "Video options 16:9 · 8s · 720p"),
+  ).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
+  await expect(openVideoOptions("16:9 · 8s · 720p")).resolves.toBeVisible();
 });
 
 test("A legacy Intro Video draft excludes settings even after choosing Create video", async () => {
