@@ -260,7 +260,9 @@ test.each([
     await waitFor(() => {
       return expect(redirect).toHaveBeenCalledWith(`${temporary}#slide-2`);
     });
-    expect(document.querySelector("iframe")).toBeNull();
+    // The background identity bridge can exist without loading a document.
+    // Artifact handoff must navigate instead of embedding any content.
+    expect(document.querySelector("iframe[src], iframe[srcdoc]")).toBeNull();
   },
 );
 
@@ -278,7 +280,7 @@ test("denied links display no artifact metadata or content", async () => {
   expect(
     screen.getByText("This artifact is unavailable or you do not have access."),
   ).toBeInTheDocument();
-  expect(document.querySelector("iframe")).toBeNull();
+  expect(document.querySelector("iframe[src], iframe[srcdoc]")).toBeNull();
 });
 
 test("logged-out recipients use the existing login with a same-origin artifact return URL", async () => {
