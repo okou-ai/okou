@@ -1908,10 +1908,8 @@ async function buildClaimResponseBody(
     storedSecretValues === null && langfuseCredentials === undefined
       ? null
       : [
-          ...new Set([
-            ...(storedSecretValues ?? []),
-            ...Object.values(langfuseCredentials ?? {}),
-          ]),
+          ...(storedSecretValues ?? []),
+          ...Object.values(langfuseCredentials ?? {}),
         ];
   return await args.timing.measure(
     "claim_route_response_assembly",
