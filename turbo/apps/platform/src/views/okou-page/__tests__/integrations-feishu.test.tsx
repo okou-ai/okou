@@ -649,9 +649,9 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       screen.getByText("Why is publishing the app waiting for approval?"),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(
-        new RegExp(`${provider.name} sends the approval request`, "u"),
-      ),
+      screen.getByText((content) => {
+        return content.includes(`${provider.name} sends the approval request`);
+      }),
     ).toBeInTheDocument();
   });
 });
