@@ -58,10 +58,8 @@ const concurrencySubscriptionSchema = z.object({
   // It stays optional so a new app reaching a draining older API still parses
   // the response; no client branches on its absence since #26152.
   canChangeInApp: z.boolean().optional(),
-  // Optional while older API deployments can still serve an already-loaded
-  // web/app client during rollout.
-  scheduledQuantity: z.number().int().positive().nullable().optional(),
-  scheduledChangeAt: z.string().nullable().optional(),
+  scheduledQuantity: z.number().int().positive().nullable(),
+  scheduledChangeAt: z.string().nullable(),
 });
 
 const usageAllowanceWindowSchema = z.object({
@@ -1213,8 +1211,9 @@ const invoiceSchema = z.object({
 
 const billingInvoicesResponseSchema = z.object({
   invoices: z.array(invoiceSchema),
-  // Optional while the frontend can overlap with API deployments that do not expose ZIP downloads yet.
-  receiptDownloadsSupported: z.literal(true).optional(),
+  // Apps older than this release gate the receipt download UI on this flag.
+  // Keep emitting it until the App client-version floor excludes those builds.
+  receiptDownloadsSupported: z.literal(true),
 });
 
 const billingReceiptsMonthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/u);
