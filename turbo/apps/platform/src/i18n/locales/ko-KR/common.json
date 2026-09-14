@@ -5466,7 +5466,17 @@
         "chatModels": "채팅 모델",
         "effort": "추론 강도",
         "fast": "빠름",
-        "fastImpact": "모델 속도 1.5× · 크레딧 사용량 2.5×",
+        "fastImpact": {
+          "apiCost": "API 토큰 비용 2×",
+          "chatGptUsage": "ChatGPT 사용량 2.5×",
+          "fasterResponses": "더 빠른 모델 응답",
+          "modelSpeed": "모델 속도 {{multiplier}}×",
+          "okouCredits": "Okou 모델 크레딧 사용량 2×",
+          "providerSpeed": "속도는 제공업체에 따라 다름",
+          "providerUsage": "사용량은 제공업체에 따라 다름",
+          "solApiSpeed": "모델 속도 최대 2.5×",
+          "summary": "{{speed}} · {{usage}}"
+        },
         "generationPriceTiers": {
           "higher": "생성당 비용 높음",
           "highest": "생성당 비용 가장 높음",
@@ -5740,7 +5750,6 @@
         "emailOff": "이메일이 꺼져 있습니다. 브리핑은 계속 채팅에 표시됩니다.",
         "emailWhenReady": "브리핑이 준비되면 이메일을 받게 됩니다.",
         "loading": "Morning Brief 설정을 불러오는 중...",
-        "missingDataSource": "Gmail, Google Calendar, GitHub 또는 Slack을 연결하면 브리프를 받을 수 있습니다.",
         "missingDefaultAgent": "Morning Brief를 활성화하기 전에 사용 가능한 기본 Agent를 선택하세요.",
         "missingTimezone": "Morning Brief를 활성화하기 전에 유효한 시간대를 설정하세요.",
         "multipleInstallations": "Morning Brief 설치가 여러 개 있습니다. 이 환경설정을 변경하기 전에 충돌을 해결하세요.",

@@ -196,8 +196,8 @@ try {
     "INSERT INTO usage_event_hourly_rollup (run_id, org_id, user_id, processed_hour, quantity, credits_charged, allowance_units) VALUES ($1, 'org', 'user', '2026-08-02', 9007199254740993, 100, 23)",
     [rollupRun],
   );
-  await migrate("1117_billing_run_attribution");
-  await migrate("1118_billing_attribution_capture");
+  await migrate("1118_billing_run_attribution");
+  await migrate("1119_billing_attribution_capture");
 
   // Both a legacy INSERT RETURNING and the canonical data-modifying CTE capture
   // the same minimal identity in the transaction that publishes the run.

@@ -1,0 +1,195 @@
+def for_body(flow):
+    metadata = {}
+    for _ in range(3):
+        metadata["sandbox_run_id"] = "run-1"
+        metadata = flow.metadata
+
+
+def for_continue(flow):
+    metadata = {}
+    for _ in range(3):
+        metadata["sandbox_run_id"] = "run-1"
+        metadata = flow.metadata
+        continue
+        flow.metadata["sandbox_token"] = "unreachable"
+
+
+async def rows():
+    for index in range(3):
+        yield index
+
+
+async def async_for_body(flow):
+    metadata = {}
+    async for _ in rows():
+        metadata["sandbox_run_id"] = "run-1"
+        metadata = flow.metadata
+
+
+async def async_for_continue(flow):
+    metadata = {}
+    async for _ in rows():
+        metadata["sandbox_run_id"] = "run-1"
+        metadata = flow.metadata
+        continue
+
+
+def while_body(flow):
+    metadata = {}
+    remaining = 3
+    while remaining:
+        metadata["sandbox_run_id"] = "run-1"
+        metadata = flow.metadata
+        remaining -= 1
+
+
+def while_continue(flow):
+    metadata = {}
+    remaining = 3
+    while remaining:
+        metadata["sandbox_run_id"] = "run-1"
+        metadata = flow.metadata
+        remaining -= 1
+        continue
+
+
+def while_condition(flow):
+    metadata = {}
+    remaining = 3
+    while remaining and metadata.get("sandbox_run_id") is None:
+        metadata = flow.metadata
+        remaining -= 1
+
+
+def alias_chain(flow):
+    first, second, third = {}, {}, {}
+    for _ in range(5):
+        first["sandbox_run_id"] = "run-1"
+        first = second
+        second = third
+        third = flow.metadata
+
+
+def for_target_access(flow):
+    metadata = {}
+    for metadata["sandbox_run_id"] in range(3):
+        metadata = flow.metadata
+
+
+def finally_continue(flow):
+    metadata = {}
+    for _ in range(3):
+        metadata["sandbox_run_id"] = "run-1"
+        try:
+            continue
+        finally:
+            metadata = flow.metadata
+
+
+def inner_break_reaches_outer_backedge(flow):
+    metadata = {}
+    for _ in range(3):
+        metadata["sandbox_run_id"] = "run-1"
+        for _ in range(2):
+            metadata = flow.metadata
+            break
+
+
+def alias_before_loop(flow):
+    metadata = flow.metadata
+    for _ in range(3):
+        metadata["sandbox_run_id"] = "run-1"
+
+
+def ordinary_dictionary(flow):
+    metadata = {}
+    for _ in range(3):
+        metadata["sandbox_run_id"] = "ordinary"
+
+
+def rebind_before_access(flow):
+    metadata = flow.metadata
+    for _ in range(3):
+        metadata = {}
+        metadata["sandbox_run_id"] = "ordinary"
+        metadata = flow.metadata
+
+
+def target_rebinds(flow):
+    for metadata in ({}, {}):
+        metadata["sandbox_run_id"] = "ordinary"
+        metadata = flow.metadata
+
+
+async def async_target_rebinds(flow):
+    async for metadata in rows():
+        metadata = {}
+        metadata["sandbox_run_id"] = "ordinary"
+        metadata = flow.metadata
+
+
+def condition_rebinds(flow):
+    metadata = flow.metadata
+    remaining = 3
+    while (metadata := {}) or remaining:
+        metadata["sandbox_run_id"] = "ordinary"
+        metadata = flow.metadata
+        remaining -= 1
+
+
+def empty_loop(flow):
+    metadata = flow.metadata
+    for _ in ():
+        metadata["sandbox_run_id"] = "unreachable"
+
+
+def false_loop(flow):
+    metadata = flow.metadata
+    while False:
+        metadata["sandbox_run_id"] = "unreachable"
+
+
+def break_has_no_backedge(flow):
+    metadata = {}
+    for _ in range(3):
+        metadata["sandbox_run_id"] = "ordinary"
+        metadata = flow.metadata
+        break
+
+
+def while_break_has_no_backedge(flow):
+    metadata = {}
+    while True:
+        metadata["sandbox_run_id"] = "ordinary"
+        metadata = flow.metadata
+        break
+
+
+def return_has_no_backedge(flow):
+    metadata = {}
+    for _ in range(3):
+        metadata["sandbox_run_id"] = "ordinary"
+        metadata = flow.metadata
+        return
+
+
+def raise_has_no_backedge(flow):
+    metadata = {}
+    try:
+        for _ in range(3):
+            metadata["sandbox_run_id"] = "ordinary"
+            metadata = flow.metadata
+            raise RuntimeError()
+    except RuntimeError:
+        pass
+
+
+def finally_kills_backedge(flow):
+    metadata = {}
+    for _ in range(3):
+        metadata["sandbox_run_id"] = "ordinary"
+        try:
+            metadata = flow.metadata
+            continue
+        finally:
+            metadata = {}

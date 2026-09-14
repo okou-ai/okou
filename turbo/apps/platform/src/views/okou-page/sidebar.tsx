@@ -246,9 +246,12 @@ function ExpandedHeader() {
     return $.appShell.sidebar.collapse;
   });
   return (
-    <div className="okou-sidebar-header shrink-0 px-2 pb-0">
-      <div className="okou-desktop-titlebar-drag-region" aria-hidden="true" />
-      <div className="okou-desktop-no-drag flex items-center justify-between gap-2 rounded-lg py-0.5">
+    <div className="okou-sidebar-header shrink-0 px-2 pt-1.5 pb-0">
+      <div
+        className="okou-desktop-titlebar-drag-region hidden"
+        aria-hidden="true"
+      />
+      <div className="flex items-center justify-between gap-2 rounded-lg py-0.5 [-webkit-app-region:no-drag]">
         <div className="min-w-0 flex-1">
           <OrgSwitcher />
         </div>
@@ -638,7 +641,10 @@ function LabeledNavRail() {
   };
   return (
     <aside data-testid="labeled-nav-rail" className={RAIL_FRAME}>
-      <div className="okou-desktop-titlebar-drag-region" aria-hidden="true" />
+      <div
+        className="okou-desktop-titlebar-drag-region hidden"
+        aria-hidden="true"
+      />
       <div className="mb-3 shrink-0">
         <OrgSwitcherCompact />
       </div>

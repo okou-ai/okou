@@ -186,7 +186,7 @@ describe("GET /api/connector-catalog", () => {
     expect(response.body.error.code).toBe("UNAUTHORIZED");
   });
 
-  it("returns public catalog metadata without a catalog feature switch", async () => {
+  it("returns public catalog metadata including PostHog OAuth", async () => {
     mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
 
     const client = setupApp({ context, routes: connectorCatalogRoutes })(
@@ -199,7 +199,14 @@ describe("GET /api/connector-catalog", () => {
 
     assertPublicConnectorCatalogHasNoPrivateFields(response.body);
     assertCategoryMetadataMatchesVisibleConnectors(response.body);
-    expect(response.body.connectors.length).toBeGreaterThan(0);
+    expect(response.body.connectors).toContainEqual(
+      expect.objectContaining({
+        slug: "posthog",
+        authMethods: expect.arrayContaining([
+          expect.objectContaining({ id: "oauth", grantKind: "auth-code" }),
+        ]),
+      }),
+    );
   });
 
   it("returns compact public connector metadata", async () => {

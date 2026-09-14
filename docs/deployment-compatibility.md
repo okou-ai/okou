@@ -949,8 +949,8 @@ release process.
 
 The new API can load the old confidential-client catalog. Its capability
 filter hides only the incompatible PostHog OAuth method until the companion
-catalog is published; the personal API-key method remains available. The
-existing PostHog OAuth feature switch still controls exposure.
+catalog is published; the personal API-key method remains available. PostHog
+OAuth is available to all users when its catalog method is compatible and visible.
 
 OAuth storage version 2 adds the account's region and API base URL and changes
 the client identity. Version 1 OAuth accounts must reconnect through the

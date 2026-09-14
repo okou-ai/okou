@@ -355,6 +355,95 @@ alongside their existing `border-0`. That still paints, because Tailwind emits
 the legacy rule won only by sitting outside every layer. Tests continue to
 select both separators through `data-slot`.
 
+### Table header rules and the global scrollbar treatment
+
+The `table-wrapper` selector and its injected stylesheet have been removed. It
+was the last `jsx-style` injection in `@okouai/ui`: a `dangerouslySetInnerHTML`
+`<style>` element that `Table` rendered on every mount, carrying eight rules at
+one consumption site.
+
+Five of those eight rules were the scrollbar treatment — `scrollbar-width`,
+`scrollbar-color`, and the three `::-webkit-scrollbar*` rules. The App stylesheet
+already applies exactly those declarations to `*`, with identical values, so the
+wrapper's copies were duplicates of a rule that already covered them. They are
+not respelled as utilities; removing them is enough. `@okouai/ui` is consumed
+only by the App, which imports that stylesheet, so no consumer loses the
+treatment. Reach for the scrollbar utilities only where a surface wants
+something other than the global treatment, as `DialogBody` does.
+
+The `tbody tr:last-child` rule was also redundant: `TableRow` already spells
+`last:!border-b-0`, and a layered important declaration outranks an unlayered
+one, so the row utility was already deciding that border.
+
+The two load-bearing rules were the header separator and its suppression on the
+header row. `TableHeader` now writes `border-b border-b-border
+[&_tr]:border-b-0`. The retired rule hard-coded `1px`, and the replacement takes
+the shared hairline instead of naming a width, the same way the retired
+`okou-border-t` and `okou-btn-morandi` borders did.
+
+Here that is not even a hairline trade. Tailwind's Preflight sets
+`border-collapse: collapse` on tables, and a collapsed border resolves to a whole
+CSS pixel: measured in Chromium, a `<thead>` with the 0.5px
+`--default-border-width` and one with a literal `1px` both report a computed
+`border-bottom-width` of `1px`, both leave the table 92.5px tall, and both paint
+one device row at device scale 1 and two at device scale 2. The hairline's
+half-ink behaviour described above applies to separate borders, not to a
+collapsed table edge.
+
+`[&_tr]:border-b-0` is currently redundant for the same collapsing reason: the
+header row's own `border-b` loses to the row-group border at the same boundary,
+and dropping the utility changes no pixels. It is kept because the retired rule
+declared it, so a header row that later carries a wider border keeps today's
+appearance. Leaving the separator to `TableRow` instead is not equivalent — a row
+border never wins that boundary, so the header rule simply disappears and every
+body row shifts up.
+
+### Desktop titlebar drag region — partially drained
+
+The `okou-desktop-no-drag` selector and its consumer have been removed. The
+sidebar header and both drag regions now spell their live treatment as
+utilities: `pt-1.5` for the header's `padding-top: 0.375rem`, `hidden` for the
+drag regions' `display: none`, and `[-webkit-app-region:no-drag]` for the
+header row. `-webkit-app-region` has no Tailwind utility, and it is a real
+declaration rather than a token decision, so it stays an arbitrary property.
+
+`okou-desktop-titlebar-drag-region` and `okou-sidebar-header` remain legacy
+selectors, and their class names remain on the two elements. The five
+declarations behind `.okou-app[data-desktop-shell]` inside
+`@media (min-width: 768px)` are deliberately left alone, so those class names
+are still the hooks that block selects. **Nothing in the repository sets that
+attribute**: it occurs only in the App stylesheet and in the baseline derived
+from it, so as shipped both drag regions are `display: none` and the header
+keeps its 6px inset. The header's `padding-top: 0` override is dead twice over,
+because its only consumer sits inside the mobile drawer `aside`, which is
+`md:hidden`.
+
+Splitting the batch this way is safe precisely because the retired rules and
+the remaining block were both unlayered. An unlayered `display: block` or
+`padding-top: 0` still wins over a utility in `@layer utilities`, so forcing
+`data-desktop-shell` on reproduces the old computed styles exactly —
+`display: block`, `height: 48px`, `-webkit-app-region: drag`, header
+`padding-top: 0px`. Keep that ordering in mind before moving either remaining
+declaration: a replacement utility would not override the block the way the
+block overrides it.
+
+The rest is not obviously abandoned. `buildDesktopWindowChromeOptions` asks
+Electron for `titleBarStyle: "hiddenInset"` with the traffic lights at
+`{ x: 16, y: 18 }` on darwin, which is precisely the layout a 48px drag region
+is written for, so the likelier reading is a live Desktop defect than
+deliberately inert CSS.
+
+Preserving that block verbatim as utilities is also mechanically unavailable.
+Reproducing `.okou-app[data-desktop-shell] &` needs an arbitrary variant that
+spells `okou-app` inside a `className`, and the class-usage scanner counts that
+as a dependency: the attempt fails `style-policy/growth` with `okou-app` usage
+growing from 0 to 9, and `pnpm lint:style:prune` refuses to authorize it.
+Dropping `.okou-app` from the condition, deleting the block with its two
+`aria-hidden` divs, or restoring the attribute to repair Desktop are all
+product decisions, and each one also constrains `okou-app` and
+`okou-workspace-bg`, which share this family and the same dead attribute.
+Resolve that before draining the last two tokens.
+
 ## Exception boundary
 
 Only two exception kinds exist:

@@ -894,6 +894,19 @@ def _iteration_may_raise(node: ast.AST, *, advances: bool) -> bool:
     return not (isinstance(node, ast.Constant) and isinstance(node.value, (bytes, str)))
 
 
+def _literal_iteration_limit(node: ast.AST) -> int | None:
+    """Bound iteration of direct literals without evaluating or expanding their contents."""
+    if isinstance(node, (ast.List, ast.Set, ast.Tuple)) and not any(
+        isinstance(element, ast.Starred) for element in node.elts
+    ):
+        return len(node.elts)
+    if isinstance(node, ast.Dict) and all(key is not None for key in node.keys):
+        return len(node.keys)
+    if isinstance(node, ast.Constant) and isinstance(node.value, (bytes, str)):
+        return len(node.value)
+    return None
+
+
 def _iterable_is_statically_empty(node: ast.AST) -> bool:
     if isinstance(node, (ast.List, ast.Set, ast.Tuple)):
         return not node.elts

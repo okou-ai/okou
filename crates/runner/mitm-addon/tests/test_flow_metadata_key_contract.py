@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import inspect
+import itertools
 import os
+import runpy
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import flow_metadata_key_linter
 import pytest
@@ -314,6 +318,142 @@ def test_registered_flow_metadata_guard_tracks_for_statement_variants(tmp_path):
     assert _normalized_violations(source_path, violations) == _expected_lines(
         "for_statement_flow.expected.txt"
     )
+
+
+def test_registered_flow_metadata_guard_tracks_loop_carried_aliases(tmp_path):
+    source_path = tmp_path / "loop_carried_aliases.py"
+    _write_python_source(source_path, "loop_carried_aliases.base.py.txt")
+
+    violations = flow_metadata_key_linter.metadata_key_violations(source_path)
+
+    assert _normalized_violations(source_path, violations) == _expected_lines(
+        "loop_carried_aliases.expected.txt"
+    )
+
+
+@pytest.mark.parametrize(
+    ("iterable", "reaches_metadata"),
+    [
+        ("(None,)", False),
+        ("[None]", False),
+        ("{None}", False),
+        ("{None: None}", False),
+        ('"x"', False),
+        ('b"x"', False),
+        ("(None, None)", False),
+        ("(None, None, None)", True),
+        ("[*(None, None, None)]", True),
+        ("{**{1: None, 2: None, 3: None}}", True),
+    ],
+)
+def test_loop_alias_diagnostics_respect_literal_iteration_limits(
+    tmp_path, iterable, reaches_metadata
+):
+    source_path = tmp_path / "literal_loop.py"
+    source_path.write_text(
+        "def exercise(flow):\n"
+        "    first = second = {}\n"
+        f"    for _ in {iterable}:\n"
+        '        first["sandbox_run_id"] = "run-1"\n'
+        "        first = second\n"
+        "        second = flow.metadata\n",
+        encoding="utf-8",
+    )
+
+    violations = flow_metadata_key_linter.metadata_key_violations(source_path)
+
+    assert _normalized_violations(source_path, violations) == (
+        ["literal_loop.py:4: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access"]
+        if reaches_metadata
+        else []
+    )
+
+
+@pytest.mark.parametrize("loop", ["for _ in rows:", "async for _ in rows:", "while rows:"])
+def test_check_flow_metadata_keys_cli_converges_for_long_loop_alias_chains(tmp_path, loop):
+    addon_root = tmp_path / "mitm-addon"
+    check_script = _copy_linter_scripts(addon_root)
+    src_root = addon_root / "src"
+    src_root.mkdir()
+    (src_root / "flow_metadata_keys.py").write_text(
+        'SANDBOX_RUN_ID = "sandbox_run_id"\n', encoding="utf-8"
+    )
+    names = [f"alias_{index}" for index in range(32)]
+    transfers = "".join(
+        f"        {target} = {value}\n" for target, value in itertools.pairwise(names)
+    )
+    (src_root / "chain.py").write_text(
+        "async def exercise(flow, rows):\n"
+        f"    {' = '.join(names)} = {{}}\n"
+        f"    {loop}\n"
+        '        alias_0["sandbox_run_id"] = "run-1"\n'
+        f"{transfers}"
+        f"        {names[-1]} = flow.metadata\n",
+        encoding="utf-8",
+    )
+
+    result = _run_check_script(check_script, addon_root, tmp_path, timeout_seconds=2)
+
+    assert result.returncode == 1
+    assert result.stdout == (
+        "src/chain.py:4: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access\n"
+    )
+    assert result.stderr == ""
+
+
+class _TrackedMetadata(dict[str, object]):
+    def __init__(self):
+        super().__init__()
+        self.accesses: list[str] = []
+
+    def __setitem__(self, key: str, value: object) -> None:
+        self.accesses.append(key)
+        super().__setitem__(key, value)
+
+    def get(self, key: str, default: object = None) -> object:
+        self.accesses.append(key)
+        return super().get(key, default)
+
+
+@pytest.mark.parametrize(
+    ("case", "access_count"),
+    [
+        ("for_body", 2),
+        ("for_continue", 2),
+        ("async_for_body", 2),
+        ("async_for_continue", 2),
+        ("while_body", 2),
+        ("while_continue", 2),
+        ("while_condition", 2),
+        ("alias_chain", 2),
+        ("for_target_access", 2),
+        ("finally_continue", 2),
+        ("inner_break_reaches_outer_backedge", 2),
+        ("alias_before_loop", 3),
+        ("ordinary_dictionary", 0),
+        ("rebind_before_access", 0),
+        ("target_rebinds", 0),
+        ("async_target_rebinds", 0),
+        ("condition_rebinds", 0),
+        ("empty_loop", 0),
+        ("false_loop", 0),
+        ("break_has_no_backedge", 0),
+        ("while_break_has_no_backedge", 0),
+        ("return_has_no_backedge", 0),
+        ("raise_has_no_backedge", 0),
+        ("finally_kills_backedge", 0),
+    ],
+)
+async def test_loop_alias_fixture_matches_runtime_metadata_accesses(case, access_count):
+    # Execute only this checked-in, bounded fixture to validate the diagnostic oracle.
+    namespace = runpy.run_path(str(_FIXTURE_ROOT / "loop_carried_aliases.base.py.txt"))
+    metadata = _TrackedMetadata()
+
+    result = namespace[case](SimpleNamespace(metadata=metadata))
+    if inspect.isawaitable(result):
+        await result
+
+    assert metadata.accesses == ["sandbox_run_id"] * access_count
 
 
 def test_registered_flow_metadata_guard_tracks_break_statement_exits(tmp_path):

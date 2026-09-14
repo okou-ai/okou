@@ -21,6 +21,8 @@ import { createAppWithRoutes } from "../app-factory-core";
 import { mockEnv } from "../lib/env";
 import webClientCompatibility from "../lib/web-client-compatibility.json";
 import { flushWaitUntilForTest } from "../signals/context/wait-until";
+import { recordWebDownloadFailure$ } from "../signals/context/hono";
+import { downloadS3Buffer } from "../signals/external/s3";
 import { healthRoutes } from "../signals/routes/health";
 import { mailRoutes } from "../signals/routes/mail";
 import { accept, testContext } from "./test-context";
@@ -107,6 +109,14 @@ const errorTestContract = c.router({
       500: z.object({ error: z.string() }),
     },
   },
+  storageDownload: {
+    method: "GET",
+    path: "/__test/storage-download",
+    responses: {
+      200: z.string(),
+      500: z.object({ error: z.string() }),
+    },
+  },
   pathIdentity: {
     method: "GET",
     path: "/api/test/path-identity",
@@ -182,6 +192,103 @@ describe("createApp", () => {
     expect(response.body).toStrictEqual({ error: "Internal server error" });
     expect(context.mocks.sentry.captureException).toHaveBeenCalledWith(error);
   });
+
+  it.each(["get_object", "read_body"] as const)(
+    "includes %s download progress in the owning error log",
+    async (stage) => {
+      const error = Object.assign(new Error("aborted"), { code: "ECONNRESET" });
+      if (stage === "get_object") {
+        context.mocks.s3.send.mockRejectedValue(error);
+      } else {
+        context.mocks.s3.send.mockResolvedValue({
+          Body: (async function* interruptedBody(): AsyncIterable<Uint8Array> {
+            yield Buffer.from("data");
+            throw error;
+          })(),
+          ContentLength: 12,
+          $metadata: {
+            httpStatusCode: 200,
+            requestId: "storage-request-id",
+            attempts: 2,
+            totalRetryDelay: 100,
+          },
+        });
+      }
+      const handler$ = computed(async (get) => {
+        const recordFailure = get(recordWebDownloadFailure$);
+        const buffer = await get(
+          downloadS3Buffer("private-bucket", "private/path.zip", {
+            onFailure: (diagnostics) => {
+              recordFailure({
+                ...diagnostics,
+                storageScope: "user_artifact",
+                objectFingerprint: "opaque-object-fingerprint",
+                objectSize: 12,
+                requestAborted: false,
+              });
+            },
+          }),
+        );
+        return { status: 200 as const, body: buffer.toString() };
+      });
+      const unrelatedError$ = computed((): never => {
+        throw new Error("unrelated request failure");
+      });
+      const client = setupApp({
+        context,
+        routes: [
+          { route: errorTestContract.storageDownload, handler: handler$ },
+          { route: errorTestContract.boom, handler: unrelatedError$ },
+        ],
+      })(errorTestContract);
+
+      const response = await accept(
+        client.storageDownload({
+          extraHeaders: { "X-Client-Request-Id": "download-request-id" },
+        }),
+        [500],
+      );
+
+      expect(response.body).toStrictEqual({ error: "Internal server error" });
+      expect(
+        context.mocks.sentry.captureException,
+      ).toHaveBeenCalledExactlyOnceWith(error);
+      const [message, fields] =
+        context.mocks.axiomLogging.error.mock.calls.at(-1) ?? [];
+      expect(message).toBe("Unhandled request error: aborted");
+      expect(fields).toMatchObject({
+        errorCode: "ECONNRESET",
+        x_client_request_id: "download-request-id",
+        download: {
+          stage,
+          stageDurationMs: expect.any(Number),
+          receivedBytes: stage === "read_body" ? 4 : 0,
+          signalAborted: false,
+          storageScope: "user_artifact",
+          objectFingerprint: "opaque-object-fingerprint",
+          objectSize: 12,
+          requestAborted: false,
+          ...(stage === "read_body"
+            ? {
+                expectedBytes: 12,
+                providerStatus: 200,
+                providerRequestId: "storage-request-id",
+                providerAttempts: 2,
+                providerRetryDelayMs: 100,
+              }
+            : {}),
+        },
+      });
+      const serialized = JSON.stringify(fields);
+      expect(serialized).not.toContain("private-bucket");
+      expect(serialized).not.toContain("private/path.zip");
+
+      await accept(client.boom(), [500]);
+      const unrelatedFields =
+        context.mocks.axiomLogging.error.mock.calls.at(-1)?.[1];
+      expect(unrelatedFields).not.toHaveProperty("download");
+    },
+  );
 
   it("handles non-Error thrown values while logging unhandled errors", async () => {
     const thrownValue = 1n;

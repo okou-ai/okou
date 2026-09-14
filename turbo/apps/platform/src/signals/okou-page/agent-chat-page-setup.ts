@@ -29,10 +29,7 @@ import {
   desktopRecordingHandoffFeatureEnabled,
   hasDesktopRecordingHandoff,
 } from "./desktop-recording-handoff.ts";
-import {
-  featureSwitch$,
-  initialFeatureSwitchHydration$,
-} from "../external/feature-switch.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 
 export const setupAgentChatPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -83,8 +80,6 @@ export const setupAgentChatPage$ = command(
 
     await set(checkUnifiedSettingsParam$, signal);
 
-    await get(initialFeatureSwitchHydration$);
-    signal.throwIfAborted();
     const params = get(searchParams$);
     const prompt = params.get("prompt");
     const queue = params.get("queue");

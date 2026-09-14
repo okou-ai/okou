@@ -83,23 +83,6 @@ export const isAbortError = (error: unknown): boolean => {
   return false;
 };
 
-/**
- * Treat cancellation by a nested lifecycle as successful completion while
- * preserving parent cancellation and unrelated failures.
- */
-export function completeOnLocalAbort(
-  completion: Promise<void>,
-  localSignal: AbortSignal,
-  parentSignal: AbortSignal,
-): Promise<void> {
-  return completion.then(undefined, (error) => {
-    parentSignal.throwIfAborted();
-    if (!localSignal.aborted || !isAbortError(error)) {
-      throw error;
-    }
-  });
-}
-
 export function throwIfAbort(e: unknown) {
   if (isAbortError(e)) {
     throw e;

@@ -29,15 +29,12 @@ test("uses a matching bootstrap response once before falling back to the network
     networkRequestCount += 1;
     return Response.json(networkBody);
   });
-  const getToken = vi.fn<(signal: AbortSignal) => Promise<string>>(() => {
+  const getToken = vi.fn<(signal?: AbortSignal) => Promise<string>>(() => {
     return Promise.resolve("network-token");
   });
   const client = createAuthedContractClient(featureSwitchesContract, {
     baseUrl: "https://api.okou.ai",
     clientVersion: "bootstrap-test",
-    getRootSignal: () => {
-      return context.signal;
-    },
     getToken,
     getVercelProtectionBypass: () => {
       return undefined;
@@ -52,6 +49,14 @@ test("uses a matching bootstrap response once before falling back to the network
 
   const second = await client.get({ headers: {} });
   expect(second).toMatchObject({ status: 200, body: networkBody });
-  expect(getToken).toHaveBeenCalledOnce();
+  expect(getToken).toHaveBeenCalledExactlyOnceWith(undefined);
   expect(networkRequestCount).toBe(1);
+
+  const third = await client.get({
+    headers: {},
+    fetchOptions: { signal: context.signal },
+  });
+  expect(third).toMatchObject({ status: 200, body: networkBody });
+  expect(getToken).toHaveBeenNthCalledWith(2, context.signal);
+  expect(networkRequestCount).toBe(2);
 });
