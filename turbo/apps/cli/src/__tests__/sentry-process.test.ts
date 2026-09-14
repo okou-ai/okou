@@ -9,8 +9,10 @@ import { z } from "zod";
 
 let directory: string;
 beforeAll(async () => {
-  // Keep the SDK external so the child uses the same locked SDK as production.
-  directory = await mkdtemp(join(process.cwd(), ".sentry-process-"));
+  // Resolve the locked CLI SDK from the fixture even when Vitest runs at root.
+  directory = await mkdtemp(
+    fileURLToPath(new URL("../../.sentry-process-", import.meta.url)),
+  );
   await build({
     config: false,
     entry: [
@@ -20,6 +22,9 @@ beforeAll(async () => {
     ],
     outDir: directory,
     format: ["esm"],
+    outExtension: () => {
+      return { js: ".mjs" };
+    },
     splitting: false,
     dts: false,
     silent: true,
@@ -92,7 +97,7 @@ test.each([
         throw new Error("Expected a TCP test endpoint");
       const child = spawn(
         process.execPath,
-        [join(directory, "sentry-process.js"), mode],
+        [join(directory, "sentry-process.mjs"), mode],
         {
           env: {
             ...process.env,
