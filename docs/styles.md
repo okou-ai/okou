@@ -541,6 +541,63 @@ product decisions, and each one also constrains `okou-app` and
 `okou-workspace-bg`, which share this family and the same dead attribute.
 Resolve that before draining the last two tokens.
 
+### Third-party attribution of borrowed class names
+
+A class that looks like a vendor's is not automatically that vendor's. The
+exception boundary follows who authors the element, not who the name resembles.
+
+The queue drawer's check icon was a hand-written SVG in
+`queue-page/queue-drawer.tsx` that spelled `lucide` in its own `className`.
+Lucide never rendered it; the class was there to opt into the first-party
+`svg[class*="lucide"][stroke-width="2"]:not([data-stroke])` rule that normalizes
+the vendor's default stroke. A first-party element borrowing a vendor
+fingerprint to reach a first-party rule is legacy debt, not an adapter, so it
+takes a utility instead, and the icon stroke token moves into the namespace that
+already owns that decision. Tailwind resolves `stroke-*` against `--stroke-width-*`
+before it falls back to a bare number, so renaming `--icon-stroke-width` to
+`--stroke-width-icon` turns the token into the plain named utility `stroke-icon`,
+which emits the same `stroke-width: var(--stroke-width-icon)` the retired rule
+matched into. That is the shape the emoji spans ended at with
+`font-family-emoji`: a registered token read through its own namespace, not a
+custom property threaded through an arbitrary or data-type-hinted utility. Bare
+`stroke-2` keeps working, because the namespace lookup only precedes the numeric
+fallback. The element's own `strokeWidth="2"` presentation attribute stays,
+because CSS outranks it either way and the retired rule keyed on it. Both lucide
+rules remain for the real `lucide-react` DOM, including the allowlisted
+`svg.lucide-ellipsis circle` entry.
+
+`toaster` in `components/ui/sonner.tsx` is the mirror case. Sonner neither
+defines nor requires that class; the component invents it, hands it to Sonner's
+`className` prop, and then anchors its own `group-[.toaster]:` variants on it.
+Sonner's actual contract is the `[data-sonner-toaster]` attribute it puts on its
+own list element. There is also no mechanism to authorize this kind of
+dependency: `turbo/style-allowlist.json` holds CSS selectors, style injections
+and vendored files, so a legacy class named in a component's `className` can only
+be drained or left in the shrink-only baseline — never allowlisted.
+
+### Toast styling is decided by cascade layers, not specificity
+
+Sonner injects its stylesheet into `document.head` at module load, unlayered.
+Unlayered rules outrank every layer, so a `@layer utilities` declaration loses to
+`[data-sonner-toast][data-styled="true"]` no matter how specific the variant is.
+That is why the toast class string carries `!` on most of its utilities, and it
+is why the four that lack it — `bg-popover`, `text-foreground`, `border-border`
+and `shadow-lg` — have never applied. Measured on the real Sonner runtime, a dark
+toast computes `rgb(255, 255, 255)` on `rgb(23, 23, 23)` while `--color-popover`
+is `hsl(20 2.9% 20.2%)`: the panel stays light in Dark. The component also passes
+no `theme` prop, so Sonner itself is permanently in its `light` palette. The
+`description`, `actionButton` and `cancelButton` entries are inert for the same
+reason.
+
+Restoring those declarations is a visual decision, not an equivalence repair, and
+it is tracked separately. Marking the four important does fix Dark, but it also
+moves the Light foreground, border and shadow, and — because `!important` beats
+Sonner's unlayered `:focus-visible` rule — it replaces the toast's focus ring
+with the resting shadow. Adopting Sonner's supported `theme` prop instead takes
+Sonner's palette rather than the App's popover tokens. Draining `toaster` is
+blocked behind that choice, because whichever repair wins rewrites the same class
+string.
+
 ## Exception boundary
 
 Only two exception kinds exist:

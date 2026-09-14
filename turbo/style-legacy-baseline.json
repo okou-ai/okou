@@ -4,7 +4,6 @@
     "copied",
     "icon-tooltip-trigger",
     "language-mermaid",
-    "lucide",
     "mermaid-block",
     "mermaid-diagram-expand",
     "mermaid-diagram-image",
@@ -3001,7 +3000,6 @@
       "owf-diagram-wrap": 1
     },
     "apps/platform/src/views/queue-page/queue-drawer.tsx": {
-      "lucide": 1,
       "okou-border": 3
     },
     "apps/platform/src/views/shared-thread-page/shared-thread-page.tsx": {
