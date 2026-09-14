@@ -67,6 +67,7 @@ import {
 } from "../../../test-fixtures/org-plan-entitlement";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import {
+  API_TEST_CONNECTOR_CATALOG,
   API_TEST_CONNECTOR_FIREWALL_CONFIGS,
   apiTestConnectorCatalogValidationAuthority,
   clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements,
@@ -12547,13 +12548,17 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     });
     // Nintendo Store owns a catalog skill, so enabling it without its account
     // intentionally fails run preparation before firewall policy assembly.
-    const broadConnectorScope = API_TEST_CONNECTOR_FIREWALL_CONFIGS.filter(
-      (firewall) => {
-        return firewall.name !== "nintendo-store";
-      },
-    ).map((firewall) => {
-      return firewall.name;
-    });
+    const broadConnectorScope = API_TEST_CONNECTOR_CATALOG.connectors
+      .filter((connector) => {
+        return (
+          connector.mcp === undefined &&
+          connector.firewall.kind === "generated" &&
+          connector.slug !== "nintendo-store"
+        );
+      })
+      .map((connector) => {
+        return connector.slug;
+      });
     expect(broadConnectorScope.length).toBeGreaterThanOrEqual(17);
     await api.enableAgentConnectors(actor, agentId, broadConnectorScope);
 
