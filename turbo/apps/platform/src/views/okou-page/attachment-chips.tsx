@@ -1300,6 +1300,7 @@ function ArtifactPreviewDialogContent({
 }) {
   const { t } = useTranslation();
   const dialogMountRef = useSet(lightboxDialogMountRef$);
+  const mountPreview = useSet(preview.mountPreview$);
   const dialogElement = useSet(lightboxDialogElement$);
   const completeDialogExit = useSet(completeLightboxDialogExit$);
   const registerConnectionDialog = useSet(registerConnectorConnectionDialog$);
@@ -1370,7 +1371,10 @@ function ArtifactPreviewDialogContent({
               />
             )}
           </div>
-          <DialogBody className="overflow-hidden bg-background">
+          <DialogBody
+            ref={mountPreview}
+            className="overflow-hidden bg-background"
+          >
             {connectionProgressActive ? (
               <div className="flex h-full items-center justify-center p-6">
                 <ConnectorConnectionStatus />
@@ -1637,6 +1641,7 @@ function ComposerImagePreviewImage({
   const markLoaded = useSet(load.loaded$);
   const markFailed = useSet(load.failed$);
   const resolvedUrl = useLastResolved(preview.thumbnailUrl$) ?? null;
+  const mountPreview = useSet(preview.mountPreview$);
 
   if (resolvedUrl === null) {
     return null;
@@ -1645,6 +1650,7 @@ function ComposerImagePreviewImage({
   return (
     <img
       key={url}
+      ref={mountPreview}
       src={resolvedUrl}
       alt=""
       loading="lazy"
