@@ -1,10 +1,12 @@
 # Platform OpenRouter US routing
 
-`OpenRouterUsRouting` (`openRouterUsRouting`) is disabled by default, including
-for staff. It uses the existing per-user feature-switch overrides. Enabling it
-selects `https://us.openrouter.ai` only for platform-owned keys and the verified
-model/API pairs in `openrouter-routing.ts`. BYOK, connection presets, saved URLs,
-direct providers, model defaults and provider-selection policy are unchanged.
+`OpenRouterUsRouting` (`openRouterUsRouting`) is enabled by default for staff
+organizations and disabled by default for other users. Existing per-user
+feature-switch overrides take precedence, including an explicit `false` for
+staff. When enabled, it selects `https://us.openrouter.ai` only for platform-owned
+keys and the verified model/API pairs in `openrouter-routing.ts`. BYOK,
+connection presets, saved URLs, direct providers, model defaults and
+provider-selection policy are unchanged.
 
 The 2026-09-13 tests and official US catalog comparison in
 [#33565](https://github.com/vm0-ai/vm0/issues/33565) support four Claude Messages
@@ -36,10 +38,11 @@ retry, error handling, billing and provider selection remain in place.
 
 ## Deployment and rollback
 
-Deploy with the switch off. Confirm the platform keys' Business/Enterprise
-in-region entitlement and compatible API, commit-pinned CLI and Runner native
-readers before enabling an override. The earlier live probes used the authorized
-connector key; they do not establish entitlement for every platform key.
+The staff default takes effect when this revision is deployed. Confirm the
+platform keys' Business/Enterprise in-region entitlement and compatible API,
+commit-pinned CLI and Runner native readers for that rollout. The earlier live
+probes used the authorized connector key; they do not establish entitlement for
+every platform key.
 
 GA Claude Code/Codex consumers use existing environment, runtime configuration
 and inline-firewall contracts; no new job fields or database migration are
@@ -54,4 +57,5 @@ writer policy while keeping the readers that understand captured US contexts.
 PiLoop remains non-GA, with a
 staff-default rollout, and no additional compatibility path is introduced.
 Follow [deployment compatibility](deployment-compatibility.md) when planning
-rollout or rollback; this implementation does not activate or publish it.
+rollout or rollback. Changing the registry default does not itself deploy this
+revision.
