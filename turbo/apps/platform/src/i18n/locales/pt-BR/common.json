@@ -5683,7 +5683,7 @@
         "categoryImage": "Imagem",
         "categoryVideo": "Vídeo",
         "chatModels": "Modelos de chat",
-        "effort": "Esforço de raciocínio",
+        "effort": "Esforço",
         "fast": "Rápido",
         "fastImpact": {
           "apiCost": "2× o custo de tokens da API",

@@ -1,5 +1,4 @@
 import { orgModelPolicies$ } from "../../../signals/external/org-model-policies.ts";
-import { Slider } from "@okouai/ui/components/ui/slider";
 import { featureSwitch$ } from "../../../signals/external/feature-switch.ts";
 import {
   availableChatReasoningEfforts,
@@ -15,8 +14,17 @@ import {
   Cpu,
   MessageCircle,
   SlidersHorizontal,
+  Zap,
 } from "lucide-react";
-import { Button, Switch, cn } from "@okouai/ui";
+import {
+  Button,
+  Switch,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+  cn,
+} from "@okouai/ui";
 import {
   getCanonicalModelDisplayName,
   type SupportedRunModel,
@@ -25,6 +33,7 @@ import { useTranslation } from "react-i18next";
 import type { ModelPickerMenuSignals } from "../../../signals/okou-page/model-picker-menu.ts";
 import { pageSignal$ } from "../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../signals/utils.ts";
+import { ChatEffortSlider } from "./chat-effort-slider.tsx";
 import { PriceTierBadge } from "./model-picker-price-tier.tsx";
 import {
   getMediaModelPriceTierLabel,
@@ -335,15 +344,12 @@ function ChatReasoningEffortSettings({
         <span className="font-medium text-foreground">{displayValue}</span>
       </div>
       {index !== -1 ? (
-        <Slider
-          ticks
-          min={0}
-          max={efforts.length - 1}
-          step={1}
+        <ChatEffortSlider
+          steps={efforts.length}
           value={index}
           disabled={disabled}
-          aria-label={label}
-          aria-valuetext={displayValue ?? undefined}
+          label={label}
+          valueText={displayValue ?? value}
           onValueChange={(next) => {
             const effort = efforts[next];
             if (effort !== undefined) {
@@ -397,16 +403,28 @@ function ChatModelSettings({
       />
       {option?.fastAvailable && (
         <div className="flex items-center justify-between gap-3 px-2 py-4">
-          <div>
-            <span className="text-[13px]">
-              {t(($) => {
-                return $.settings.models.picker.fast;
-              })}
-            </span>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              {option.fastImpact}
-            </p>
-          </div>
+          {/* The bolt says what Fast is and carries its cost, the same icon and
+              treatment the model rows already use for it. Spelling the cost out
+              underneath put two lines of small print in a row the user reads
+              as a single switch. */}
+          <TooltipProvider delayDuration={300}>
+            <Tooltip>
+              <TooltipTrigger className="flex cursor-default items-center gap-2 text-[13px]">
+                <Zap
+                  size={18}
+                  fill="currentColor"
+                  className="text-amber-600 dark:text-amber-300"
+                  aria-hidden="true"
+                />
+                {t(($) => {
+                  return $.settings.models.picker.fast;
+                })}
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">
+                {option.fastImpact}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           <Switch
             size="compact"
             aria-label={t(($) => {

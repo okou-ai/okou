@@ -5625,7 +5625,7 @@
         "categoryImage": "Bild",
         "categoryVideo": "Video",
         "chatModels": "Chatmodelle",
-        "effort": "Denkaufwand",
+        "effort": "Aufwand",
         "fast": "Schnell",
         "fastImpact": {
           "apiCost": "2× API-Tokenkosten",

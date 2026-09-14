@@ -5612,7 +5612,7 @@
         "categoryImage": "Gambar",
         "categoryVideo": "Video",
         "chatModels": "Model chat",
-        "effort": "Upaya penalaran",
+        "effort": "Upaya",
         "fast": "Cepat",
         "fastImpact": {
           "apiCost": "2× biaya token API",

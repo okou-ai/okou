@@ -5612,7 +5612,7 @@
         "categoryImage": "이미지",
         "categoryVideo": "동영상",
         "chatModels": "채팅 모델",
-        "effort": "추론 강도",
+        "effort": "강도",
         "fast": "빠름",
         "fastImpact": {
           "apiCost": "API 토큰 비용 2×",

@@ -5612,7 +5612,7 @@
         "categoryImage": "画像",
         "categoryVideo": "動画",
         "chatModels": "チャットモデル",
-        "effort": "推論の強度",
+        "effort": "強度",
         "fast": "速い",
         "fastImpact": {
           "apiCost": "APIトークン料金 2×",
