@@ -113,6 +113,7 @@ describe("connector catalog relationship failure details", () => {
     "auth-code-client-registration",
     "undeclared-storage-reference",
     "duplicate-storage-secret-owner",
+    "duplicate-runtime-environment-owner",
     "unknown-firewall-binding",
     "firewall-permission-categories",
   ])("preserves the safe %s rule without private error content", (rule) => {
@@ -180,11 +181,27 @@ describe("connector catalog relationship failure details", () => {
         };
       }
     }
-    if (rule === "duplicate-storage-secret-owner") {
-      for (const connector of catalogArtifact("Another description")
-        .connectors) {
+    if (
+      rule === "duplicate-storage-secret-owner" ||
+      rule === "duplicate-runtime-environment-owner"
+    ) {
+      const duplicate = catalogArtifact(
+        "Another description",
+        rule === "duplicate-storage-secret-owner"
+          ? PRIVATE_NAME
+          : "OTHER_PRIVATE_FIELD",
+      );
+      for (const connector of duplicate.connectors) {
         connector.slug = "another-connector";
         connector.skill = { kind: "none" };
+        if (rule === "duplicate-storage-secret-owner") {
+          for (const method of connector.authMethods) {
+            method.access = {
+              kind: "static",
+              envBindings: { OTHER_SERVICE_TOKEN: VALUE_REF },
+            };
+          }
+        }
         artifact.connectors.push(connector);
       }
     }
@@ -325,6 +342,12 @@ describe("connector catalog public projection", () => {
     for (const connector of second.connectors) {
       connector.slug = "another-connector";
       connector.skill = { kind: "none" };
+      for (const method of connector.authMethods) {
+        method.access = {
+          kind: "static",
+          envBindings: { OTHER_SERVICE_TOKEN: "$secrets.SECOND_PRIVATE_FIELD" },
+        };
+      }
       first.connectors.push(connector);
     }
     expect(decodeCatalog(first)).toEqual(first);

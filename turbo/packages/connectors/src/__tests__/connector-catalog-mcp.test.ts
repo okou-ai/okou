@@ -178,6 +178,36 @@ describe("builtin MCP catalog", () => {
     );
   });
 
+  it("rejects shared credential aliases across independent HTTP and MCP owners", () => {
+    const input = artifact("manual");
+    const http = structuredClone(input.connectors[0]!);
+    http.slug = "tools-http";
+    delete http.mcp;
+    const authMethod = http.authMethods[0]!;
+    if (
+      authMethod.grant.kind !== "manual" ||
+      authMethod.access.kind !== "static"
+    ) {
+      throw new Error("Expected manual fixture authentication");
+    }
+    authMethod.storage.secrets = ["HTTP_CREDENTIAL"];
+    authMethod.grant.fields[0]!.privateName = "HTTP_CREDENTIAL";
+    authMethod.access.envBindings.MCP_TOKEN = "$secrets.HTTP_CREDENTIAL";
+    input.connectors.push(http);
+    expect(() => {
+      return decode(input);
+    }).toThrow();
+    // The same services remain valid with independent runtime aliases.
+    authMethod.access.envBindings = { HTTP_TOKEN: "$secrets.HTTP_CREDENTIAL" };
+    if (http.firewall.kind !== "generated") {
+      throw new Error("Expected generated fixture firewall");
+    }
+    http.firewall.config.apis[0]!.auth = {
+      headers: { Authorization: "Bearer ${{ secrets.HTTP_TOKEN }}" },
+    };
+    expect(decode(input)).toStrictEqual(input);
+  });
+
   it.each([
     "http://tools.example.com/mcp",
     "https://127.0.0.1/mcp",

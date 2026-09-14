@@ -24,6 +24,7 @@ export type ConnectorCatalogRelationshipRule =
   | "duplicate-skill-version-owner"
   | "duplicate-storage-secret-owner"
   | "duplicate-storage-variable-owner"
+  | "duplicate-runtime-environment-owner"
   | "unknown-firewall-binding"
   | "conflicting-firewall-host-policies"
   | "missing-generated-firewall"

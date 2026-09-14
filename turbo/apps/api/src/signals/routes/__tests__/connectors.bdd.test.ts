@@ -24,13 +24,18 @@ import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import { extractFileFromTarGz } from "../../../lib/tar";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import {
+  API_TEST_CONNECTOR_CATALOG,
   installApiTestConnectorCatalog,
   replaceApiTestConnectorCatalogFilteredAuthMethods,
 } from "../../../test-fixtures/connector-catalog";
+import {
+  connectorCatalogExecutableCapabilityState,
+  evaluateConnectorCatalogCompatibility,
+} from "@okouai/connectors/connector-catalog/compatibility";
 import { generateOkouToken } from "../../auth/tokens";
 import { createDeferredPromise } from "../../utils";
 import {
@@ -88,9 +93,24 @@ async function installCatalogWithUnavailableMethods(args: {
 }): Promise<void> {
   mockOptionalEnv(args.capabilityIdentityEnvName, undefined);
   await installApiTestConnectorCatalog();
-  await replaceApiTestConnectorCatalogFilteredAuthMethods(
-    args.filteredAuthMethods,
+  const unavailableMethods = new Map(
+    [
+      ...evaluateConnectorCatalogCompatibility({
+        artifact: API_TEST_CONNECTOR_CATALOG,
+        capability: connectorCatalogExecutableCapabilityState({
+          isConfigured: (name) => {
+            return optionalEnv(name) !== undefined;
+          },
+        }),
+      }),
+      ...args.filteredAuthMethods,
+    ].map((method) => {
+      return [`${method.connectorSlug}\0${method.authMethodId}`, method];
+    }),
   );
+  await replaceApiTestConnectorCatalogFilteredAuthMethods([
+    ...unavailableMethods.values(),
+  ]);
 }
 
 function mockAuthoritativeOrganizationMembers(

@@ -4,6 +4,9 @@ Builtin MCP uses the existing builtin account, Agent grant, thread selection,
 and firewall mechanisms. An HTTP API offering and an MCP offering are separate
 catalog slugs, even when they belong to the same service. Their accounts,
 defaults, grants, and thread overrides are independent.
+Runtime credential aliases must also have a single connector owner. Catalog
+validation rejects cross-connector alias reuse so the run's alias maps cannot
+substitute a sibling's credentials; methods within one connector may share aliases.
 
 ## Catalog and authentication
 

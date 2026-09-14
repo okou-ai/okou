@@ -383,12 +383,19 @@ describe("builtin MCP catalog and runs", () => {
       await connectors.updateFeatureSwitches(foreign, {
         [FeatureSwitchKey.BuiltinConnectorMcp]: true,
       });
-      const foreignAccount = await connectors.connectManualGrant(
+      await connectors.connectManualGrant(
         foreign,
         "test-headers-mcp",
         "api-token",
         { token: "foreign" },
       );
+      const [foreignAccount] = await connectors.listBuiltinConnectorAccounts(
+        foreign,
+        "test-headers-mcp",
+      );
+      if (!foreignAccount) {
+        throw new Error("Expected the persisted foreign account");
+      }
       const { run } = await start(prepared);
       const seconds = Math.floor(now() / 1000);
       if (!prepared.actor.orgId) {

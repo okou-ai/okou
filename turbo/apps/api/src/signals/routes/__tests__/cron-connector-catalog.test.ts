@@ -5047,10 +5047,9 @@ describe("connector catalog valid lifecycle", () => {
           recordValue(conflictingMethod.grant, "grant").fields,
           "grant.fields",
         ).privateName = conflictingPrivateName;
-        recordValue(
-          recordValue(conflictingMethod.access, "access").envBindings,
-          "envBindings",
-        ).SERVICE_TOKEN = `$secrets.${conflictingPrivateName}`;
+        recordValue(conflictingMethod.access, "access").envBindings = {
+          ATOMIC_SKILL_B_RUNTIME_TOKEN: `$secrets.${conflictingPrivateName}`,
+        };
         conflictingConnector.skill = conflictingSkill.descriptor;
       },
     });
@@ -6275,10 +6274,9 @@ describe("connector catalog rejection and latest-valid retention", () => {
         );
         secondField.privateName = "SECOND_API_KEY";
         secondField.placeholder = null;
-        recordValue(
-          recordValue(secondMethod.access, "access").envBindings,
-          "envBindings",
-        ).SERVICE_TOKEN = "$secrets.SECOND_API_KEY";
+        recordValue(secondMethod.access, "access").envBindings = {
+          OTHER_SERVICE_TOKEN: "$secrets.SECOND_API_KEY",
+        };
         connectors.push(second);
       },
     });
@@ -6354,17 +6352,22 @@ describe("connector catalog rejection and latest-valid retention", () => {
           recordValue(secondMethod.grant, "grant").fields,
           "grant.fields",
         ).privateName = "SECOND_SECRET_TOKEN";
-        recordValue(
-          recordValue(secondMethod.access, "access").envBindings,
-          "envBindings",
-        ).SERVICE_TOKEN = "$secrets.SECOND_SECRET_TOKEN";
+        recordValue(secondMethod.access, "access").envBindings = {
+          SECOND_SERVICE_TOKEN: "$secrets.SECOND_SECRET_TOKEN",
+        };
         const secondFirewall = recordValue(second.firewall, "firewall");
         const secondConfig = recordValue(
           secondFirewall.config,
           "firewall.config",
         );
-        firstRecord(secondConfig.apis, "firewall.apis").base =
-          "https://firewall-placeholder.vm3.ai/collision-b/hook";
+        const secondApi = firstRecord(secondConfig.apis, "firewall.apis");
+        secondApi.base = "https://firewall-placeholder.vm3.ai/collision-b/hook";
+        secondApi.auth = {
+          base: catalogTemplate("secrets.SECOND_SERVICE_TOKEN"),
+          headers: {
+            Authorization: `Bearer ${catalogTemplate("secrets.SECOND_SERVICE_TOKEN")}`,
+          },
+        };
         connectors.push(second);
         connectors.reverse();
       },

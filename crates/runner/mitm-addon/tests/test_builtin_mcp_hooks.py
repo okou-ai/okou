@@ -1,6 +1,5 @@
 """Builtin MCP uses endpoint-scoped firewall admission, not tool permissions."""
 
-import inspect
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -116,7 +115,7 @@ async def test_builtin_mcp_auth_and_private_intent_through_hooks(
         ) as fetch_auth,
     ):
         result = mitm_addon.requestheaders(flow)
-        if inspect.isawaitable(result):
+        if result is not None:
             await result
         await mitm_addon.request(flow)
     assert flow.response is None

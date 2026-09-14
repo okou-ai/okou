@@ -131,6 +131,7 @@ function validateConnectorSemantics(artifact: ConnectorCatalogArtifact): void {
   );
   const secretOwners = new Map<string, string>();
   const variableOwners = new Map<string, string>();
+  const environmentOwners = new Map<string, string>();
   const skillStorageOwners = new Map<string, string>();
   const skillVersionOwners = new Map<string, string>();
 
@@ -194,6 +195,18 @@ function validateConnectorSemantics(artifact: ConnectorCatalogArtifact): void {
     }
 
     for (const method of connector.authMethods) {
+      if (method.access.kind !== "automatic") {
+        for (const name of Object.keys(method.access.envBindings)) {
+          const owner = environmentOwners.get(name);
+          if (owner !== undefined && owner !== connector.slug) {
+            throw new ConnectorCatalogRelationshipError(
+              "duplicate-runtime-environment-owner",
+              `Connector runtime alias ${name} is claimed by ${owner} and ${connector.slug}`,
+            );
+          }
+          environmentOwners.set(name, connector.slug);
+        }
+      }
       for (const secretName of method.storage.secrets) {
         const owner = secretOwners.get(secretName);
         if (owner !== undefined && owner !== connector.slug) {
