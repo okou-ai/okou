@@ -26,6 +26,12 @@ import { cn, CopyButton } from "@okouai/ui";
  * `text-[12px]` names the size rather than taking `text-xs`, because `text-xs`
  * carries a paired line height the retired declaration did not set; the
  * control's own line height stays whatever it resolves to at 12px.
+ *
+ * The transition names its three properties rather than taking the retired
+ * `all`. This is an auxiliary control revealed by hover, so the style guide
+ * asks for the animating properties by name; only these three ever change, and
+ * `visibility` has to stay among them because it is what holds the control on
+ * screen while it fades out of reach.
  */
 export function CodeBlockCopyButton({ code }: { readonly code: string }) {
   return (
@@ -36,7 +42,7 @@ export function CodeBlockCopyButton({ code }: { readonly code: string }) {
       className={cn(
         "invisible absolute top-1.5 right-1.5 flex cursor-pointer",
         "rounded-md bg-gray-200 p-1.5 text-[12px] text-muted-foreground",
-        "transition-all duration-300 ease-[ease]",
+        "transition-[visibility,background-color,color] duration-300 ease-[ease]",
         "[pre:hover_&]:visible",
         "[pre:hover_&:hover:not(:active)]:bg-gray-300",
         "[pre:hover_&:hover:not(:active)]:text-foreground",

@@ -668,27 +668,29 @@ The replacement therefore reproduces the vendored declarations as well as the
 App's own overrides, because both were load-bearing and only the App's half
 could be deleted:
 
-| Retired declaration                                | Owner  | Replacement                               |
-| -------------------------------------------------- | ------ | ----------------------------------------- |
-| `visibility: hidden`                               | vendor | `invisible`                               |
-| `pre:hover` → `visibility: visible`                | vendor | `[pre:hover_&]:visible`                   |
-| `display: flex`                                    | vendor | `flex`                                    |
-| `position: absolute; top: 6px; right: 6px`         | vendor | `absolute top-1.5 right-1.5`              |
-| `cursor: pointer`                                  | vendor | `cursor-pointer`                          |
-| `padding: 6px`                                     | vendor | `p-1.5`                                   |
-| `font-size: 12px`                                  | vendor | `text-[12px]`                             |
-| `transition: all 0.3s`                             | vendor | `transition-all duration-300 ease-[ease]` |
-| `border-radius: 6px`                               | App    | `rounded-md`                              |
-| `background: hsl(var(--gray-200))`                 | App    | `bg-gray-200`                             |
-| `color: hsl(var(--muted-foreground))`              | App    | `text-muted-foreground`                   |
-| `pre:hover .copied:hover` → gray-300 / foreground  | App    | `[pre:hover_&:hover:not(:active)]:…`      |
-| `pre:hover .copied:active` → gray-400 / foreground | App    | `[pre:hover_&:active]:…`                  |
+| Retired declaration                                | Owner  | Replacement                                                               |
+| -------------------------------------------------- | ------ | ------------------------------------------------------------------------- |
+| `visibility: hidden`                               | vendor | `invisible`                                                               |
+| `pre:hover` → `visibility: visible`                | vendor | `[pre:hover_&]:visible`                                                   |
+| `display: flex`                                    | vendor | `flex`                                                                    |
+| `position: absolute; top: 6px; right: 6px`         | vendor | `absolute top-1.5 right-1.5`                                              |
+| `cursor: pointer`                                  | vendor | `cursor-pointer`                                                          |
+| `padding: 6px`                                     | vendor | `p-1.5`                                                                   |
+| `font-size: 12px`                                  | vendor | `text-[12px]`                                                             |
+| `transition: all 0.3s`                             | vendor | `transition-[visibility,background-color,color] duration-300 ease-[ease]` |
+| `border-radius: 6px`                               | App    | `rounded-md`                                                              |
+| `background: hsl(var(--gray-200))`                 | App    | `bg-gray-200`                                                             |
+| `color: hsl(var(--muted-foreground))`              | App    | `text-muted-foreground`                                                   |
+| `pre:hover .copied:hover` → gray-300 / foreground  | App    | `[pre:hover_&:hover:not(:active)]:…`                                      |
+| `pre:hover .copied:active` → gray-400 / foreground | App    | `[pre:hover_&:active]:…`                                                  |
 
 Four of those need stating.
 
 `rounded-md` is exactly the retired 6px: `--radius-md` is `calc(var(--radius) - 2px)` over a `0.5rem` radius. `p-1.5` replaces the shared control's own `p-2` through `cn()`, which is not a change of value — the unlayered vendored `padding: 6px` already outranked that utility, so 6px is what the control has always painted.
 
-`text-[12px]` names the size rather than taking `text-xs`, for the reason the badge batch records: an arbitrary font-size utility emits `font-size` alone, and `text-xs` would add a paired line height the retired declaration never set. `ease-[ease]` is needed for the same kind of reason — `transition-all` supplies Tailwind's own `--default-transition-timing-function`, while `transition: all 0.3s` left the timing function at its `ease` initial value.
+`text-[12px]` names the size rather than taking `text-xs`, for the reason the badge batch records: an arbitrary font-size utility emits `font-size` alone, and `text-xs` would add a paired line height the retired declaration never set. `ease-[ease]` is needed for the same kind of reason — a Tailwind transition utility supplies Tailwind's own `--default-transition-timing-function`, while `transition: all 0.3s` left the timing function at its `ease` initial value.
+
+The transition is the one declaration deliberately not reproduced verbatim. This is an auxiliary control revealed by hover, so the rule above applies: name the properties that animate rather than taking `all`. Only `visibility`, `background-color` and `color` ever change on this control, and `visibility` has to stay in the list, because with it the control remains painted for the transition's duration after the pointer leaves and without it the control vanishes instantly. Measured, narrowing the list changes zero pixels in all 28 states and changes exactly one observation, `transition-property`, on the control itself.
 
 The reveal and both interaction fills spell `pre:hover &` rather than reaching for `group-hover:`. The retired rules were unlayered and ungated, so they also fired on a coarse pointer where a tap leaves a sticky hover; the arbitrary variants generate the same unconditional descendant selector. Spelling the ancestor also raises specificity above the shared control's own `hover:` fill, so the two stop racing inside one Tailwind layer.
 
