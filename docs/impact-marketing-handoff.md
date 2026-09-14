@@ -9,7 +9,7 @@ remaining App Google tags are subsequent slices.
 With cutover enabled, neither the App browser nor the canonical App API retrieves
 Impact attribution from Marketing. Marketing owns consented cookies, capture
 history, order attribution decisions, submission state and refund receipts in its
-operational Cloudflare D1 database. No new Impact fields are written to App
+dedicated Neon PostgreSQL database. No new Impact fields are written to App
 purchase records, Clerk, or Stripe metadata, and no App DB migration is needed.
 Existing legacy fields are ignored after cutover; this change does not erase
 historical billing data.
@@ -55,7 +55,7 @@ Customer metadata changes and webhook retries cannot rewrite that decision.
 
 Marketing rechecks consent and order eligibility before each new Impact submission.
 The existing program, trackers, 30-day referral window, amounts, stable order IDs,
-retries and refund calculations remain. Only Marketing D1 stores new submission
+retries and refund calculations remain. Only Marketing PostgreSQL stores new submission
 receipts and adjustments. Historical Stripe submission receipts can be read for
 deduplication/refunds; their old click or consent fields are never imported.
 Refunds may correct known submissions after withdrawal, but never create a sale.
@@ -65,7 +65,7 @@ Refunds may correct known submissions after withdrawal, but never create a sale.
 The App mounts the bridge for every authenticated user with an organization,
 without an App feature switch. The API and Marketing retain server cutover
 configuration. Production activation requires both releases, a dedicated Marketing
-D1 database and matching signing secrets.
+Neon PostgreSQL database and matching signing secrets.
 There is no production data, credential, provider or live-switch change in this PR.
 
 API configuration:
@@ -79,7 +79,8 @@ API configuration:
 - `IMPACT_APP_ORIGIN`: defaults to `https://app.okou.ai`, independently of the
   older generic `APP_URL`/Clerk auth domain.
 
-Follow the Marketing runbook to provision its D1 binding and deploy its migration.
+Follow the Marketing runbook to provision its separate Neon project, configure
+its database URL and deploy its PostgreSQL migration.
 Verify Termly opt-in advertising consent in every supported region, cookie
 classification and GPC behavior. Enable Marketing server cutover first, then API
 cutover. The App bridge is enabled for all authenticated organizations. During
@@ -96,8 +97,9 @@ bypass the consent ledger.
 Focused tests cover identity-only handoff, legacy/cutover/new purchase combinations,
 retired metadata propagation, original purchase times, delayed and out-of-order
 webhooks, immutable attribution decisions, consent withdrawal, duplicate deliveries
-and refunds. Marketing tests execute the real D1 schema with SQLite. App/API tests
-use isolated PostgreSQL; no schema change is introduced.
+and refunds. Marketing tests exercise the Neon HTTP driver against isolated real
+PostgreSQL schemas. App/API tests use isolated PostgreSQL; no App schema change
+is introduced.
 
 Before production activation, validate Chrome/Safari Marketing -> authentication ->
 onboarding on paired HTTPS origins under the same registrable site. Current App
