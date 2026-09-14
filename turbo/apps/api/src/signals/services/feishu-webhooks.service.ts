@@ -1,4 +1,3 @@
-import type { FeishuPlatform } from "@okouai/core/feishu-platform";
 import { createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
 
 import { command } from "ccstate";
@@ -18,19 +17,18 @@ import {
 } from "../external/feishu-client";
 import { writeDb$, type Db } from "../external/db";
 import { now, nowDate } from "../../lib/time";
-import { safeJsonParse, safeSync, tapError } from "../utils";
+import { safeSync, tapError } from "../utils";
 import { processCanonicalFeishuIngress$ } from "./canonical-feishu-ingress-processor.service";
 import { admitFeishuChatEvent } from "./feishu-chat-ingress.service";
 import {
   loadFeishuInstallationConfig,
   type FeishuInstallationConfig,
 } from "./feishu-config";
+import type { FeishuInboundMessage } from "./feishu-dispatch.service";
 import {
-  feishuPromptFile,
-  formatFeishuFileContext,
-  type FeishuInboundMessage,
-  type FeishuPromptFile,
-} from "./feishu-dispatch.service";
+  formatFeishuMessageContent,
+  parseFeishuMessageContent,
+} from "../../lib/feishu-message-content";
 import { publishFeishuOrgChanged } from "./feishu-realtime.service";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
@@ -78,17 +76,7 @@ const v2MessageEventSchema = z.object({
       .optional(),
   }),
 });
-const textContentSchema = z.object({ text: z.string() });
 const FEISHU_REPLAY_WINDOW_SECONDS = 60 * 5;
-
-type FeishuEventMessage = z.infer<typeof v2MessageEventSchema>["message"];
-type FeishuEventMention = NonNullable<FeishuEventMessage["mentions"]>[number];
-
-interface FeishuInboundContent {
-  readonly text: string;
-  readonly promptText: string;
-  readonly file: FeishuPromptFile | null;
-}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -169,38 +157,6 @@ function decryptPayload(encrypted: string, encryptKey: string): unknown {
   return JSON.parse(decrypted) as unknown;
 }
 
-function inboundMessageContent(
-  message: FeishuEventMessage,
-  botMention: FeishuEventMention | undefined,
-  platform: FeishuPlatform,
-): FeishuInboundContent {
-  if (message.message_type !== "text") {
-    const file = feishuPromptFile({
-      messageId: message.message_id,
-      messageType: message.message_type,
-      content: message.content,
-    });
-    const text = file ? formatFeishuFileContext(file, platform) : "";
-    return { text, promptText: text, file };
-  }
-  const content = textContentSchema.safeParse(safeJsonParse(message.content));
-  if (!content.success) {
-    return { text: "", promptText: "", file: null };
-  }
-  return {
-    promptText: botMention
-      ? content.data.text.replaceAll(
-          botMention.key,
-          botMention.name ? `@${botMention.name}` : botMention.key,
-        )
-      : content.data.text,
-    text: botMention
-      ? content.data.text.replaceAll(botMention.key, "")
-      : content.data.text,
-    file: null,
-  };
-}
-
 function inboundMessage(
   config: FeishuInstallationConfig,
   envelope: z.infer<typeof v2EnvelopeSchema>,
@@ -229,13 +185,30 @@ function inboundMessage(
   if (chatType !== "p2p" && !botMention) {
     return null;
   }
-  const content = inboundMessageContent(
-    event.data.message,
-    botMention,
+  const content = parseFeishuMessageContent({
+    messageId: event.data.message.message_id,
+    messageType: event.data.message.message_type,
+    content: event.data.message.content,
+  });
+  if (!content) {
+    return null;
+  }
+  const text = (
+    botMention ? content.text.replaceAll(botMention.key, "") : content.text
+  ).trim();
+  const promptText = formatFeishuMessageContent(
+    {
+      text: botMention
+        ? content.text.replaceAll(
+            botMention.key,
+            botMention.name ? `@${botMention.name}` : botMention.key,
+          )
+        : content.text,
+      files: content.files,
+    },
     config.platform,
-  );
-  const text = content.text.trim();
-  if (!content.promptText.trim()) {
+  ).trim();
+  if (!promptText) {
     return null;
   }
   return {
@@ -252,8 +225,8 @@ function inboundMessage(
     threadId: event.data.message.thread_id ?? null,
     openId: event.data.sender.sender_id.open_id,
     text,
-    promptText: content.promptText.trim(),
-    file: content.file,
+    promptText,
+    files: content.files,
   };
 }
 

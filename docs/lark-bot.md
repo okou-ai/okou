@@ -20,6 +20,26 @@ API requests, OAuth endpoints, and deep links always use that provider.
 The wizard uses the existing Feishu console screenshots as labeled reference
 images. All actions link to the Lark developer console.
 
+## Message context
+
+Feishu and Lark share the same decoder for incoming messages and conversation
+history. Rich-text `post` messages retain their title, text, links, mentions,
+and all image/file resources. Repeated references to the same resource within
+one message share a download alias. The canonical input keeps both the text and
+attachments, and each resource remains downloadable by the receiving run.
+
+History requests use `card_msg_content_type=user_card_content` to retrieve
+original card JSON. The default rendered representation can replace assistant
+Markdown and artifact links with an image preview. Both original card schemas
+are decoded, preserving reply text, Markdown links, button URLs, and resources.
+Context follows the Slack format: chronological messages, sender identities,
+relative indices, and attachments, with separate thread and recent group context.
+
+The gated integrations store incoming resources in a `files` array. This replaces
+the internal ingress payload's singular `file` field; pending payloads from the
+previous staff-only version are not dual-read. Persisted canonical launch
+contexts already contain a `messageFiles` array and keep their existing format.
+
 ## Deployment and compatibility
 
 Migration `1120_lark_bot_platform` adds a non-null `platform` column defaulting
