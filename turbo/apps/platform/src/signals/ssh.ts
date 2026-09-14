@@ -147,11 +147,11 @@ const sshClients$ = computed(async (get) => {
     }
   };
   const options = {
-    getToken: async (signal: AbortSignal) => {
+    getToken: async (signal?: AbortSignal) => {
       const sessionId = clerk.session?.id;
       assertIdentity(sessionId);
       const token = await readClerkToken(clerk, signal);
-      signal.throwIfAborted();
+      signal?.throwIfAborted();
       assertIdentity(sessionId);
       return token;
     },

@@ -278,8 +278,15 @@
     {
       "idx": 1117,
       "version": "7",
-      "when": 1789355426125,
-      "tag": "1117_lark_bot_platform",
+      "when": 1789356747970,
+      "tag": "1117_morning_brief_enrollment_installation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1118,
+      "version": "7",
+      "when": 1789365674403,
+      "tag": "1118_lark_bot_platform",
       "breakpoints": true
     }
   ]

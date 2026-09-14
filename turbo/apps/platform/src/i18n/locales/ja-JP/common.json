@@ -5888,7 +5888,6 @@
         "emailOff": "メールはオフです。ブリーフは引き続きチャットに表示されます。",
         "emailWhenReady": "ブリーフの準備ができるとメールが届きます。",
         "loading": "Morning Brief の設定を読み込んでいます...",
-        "missingDataSource": "Gmail、Google カレンダー、GitHub、Slack のいずれかを接続すると配信が始まります。",
         "missingDefaultAgent": "Morning Brief を有効にする前に、使用可能なデフォルト Agent を選択してください。",
         "missingTimezone": "Morning Brief を有効にする前に、有効なタイムゾーンを設定してください。",
         "multipleInstallations": "Morning Brief のインストールが複数あります。この設定を変更する前に競合を解決してください。",

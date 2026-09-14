@@ -29,7 +29,6 @@ import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
 import { feishuOrgEvents } from "@okouai/db/schema/feishu-org-event";
 import { githubChatThreadRoutes } from "@okouai/db/schema/github-chat-thread-route";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
-import { runOutputLegacyPiEvents } from "@okouai/db/schema/run-output-legacy-pi-event";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { runOutputMemoryCitations } from "@okouai/db/schema/run-output-memory-citation";
 import { usageEvent } from "@okouai/db/schema/usage-event";
@@ -2570,34 +2569,6 @@ export async function readRunOutputMemoryCitationsFixture(runId: string) {
     .from(runOutputMemoryCitations)
     .where(eq(runOutputMemoryCitations.runId, runId))
     .orderBy(asc(runOutputMemoryCitations.sequenceNumber));
-}
-
-export async function readRunOutputLegacyPiEventsFixture(runId: string) {
-  return await db()
-    .select({
-      sequenceNumber: runOutputLegacyPiEvents.sequenceNumber,
-      serializedEvent: runOutputLegacyPiEvents.serializedEvent,
-    })
-    .from(runOutputLegacyPiEvents)
-    .where(eq(runOutputLegacyPiEvents.runId, runId))
-    .orderBy(asc(runOutputLegacyPiEvents.sequenceNumber));
-}
-
-export async function readRunOutputMaterializationFixture(runId: string) {
-  const [row] = await db()
-    .select({
-      processedThroughSequence:
-        runOutputMaterializations.processedThroughSequence,
-      pendingSequenceNumbers: runOutputMaterializations.pendingSequenceNumbers,
-      latestResultSequence: runOutputMaterializations.latestResultSequence,
-      latestResultText: runOutputMaterializations.latestResultText,
-      latestOutputSequence: runOutputMaterializations.latestOutputSequence,
-      latestOutputText: runOutputMaterializations.latestOutputText,
-    })
-    .from(runOutputMaterializations)
-    .where(eq(runOutputMaterializations.runId, runId))
-    .limit(1);
-  return row ?? null;
 }
 
 /** Starts one event insert with reservation and persistence in one transaction. */

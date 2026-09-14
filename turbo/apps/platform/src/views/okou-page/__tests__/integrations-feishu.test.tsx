@@ -407,7 +407,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     expect(screen.queryByText(`${provider.name} bots`)).not.toBeInTheDocument();
   });
 
-  it(`Direct ${provider.name} settings wait for authoritative feature hydration`, async () => {
+  it(`Direct ${provider.name} settings wait for authoritative feature switches`, async () => {
     mockBot();
     const featureResponse = createDeferredPromise<void>(context.signal);
     context.mocks.api(

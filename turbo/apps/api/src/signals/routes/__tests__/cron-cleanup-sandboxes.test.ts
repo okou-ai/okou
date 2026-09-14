@@ -1549,6 +1549,58 @@ describe("sandbox cleanup", () => {
     await expect(findQueueEntry(fixture.runId)).resolves.toBeNull();
   });
 
+  it.each(["request rejection", "per-key error"] as const)(
+    "preserves expired export jobs for retry when S3 deletion returns a %s",
+    async (failure) => {
+      const s3Key = `exports/${randomUUID()}.zip`;
+      const expiredJob = await trackExportJob(
+        insertExportJob({
+          status: "completed",
+          createdAt: minutesAgo(30),
+          expiresAt: minutesAgo(1),
+          s3Key,
+        }),
+      );
+      if (failure === "request rejection") {
+        context.mocks.s3.send.mockRejectedValueOnce(
+          new Error("S3 request failed"),
+        );
+      } else {
+        context.mocks.s3.send.mockResolvedValueOnce({
+          Errors: [{ Key: s3Key, Code: "AccessDenied" }],
+        });
+      }
+
+      const app = createAppWithRoutes({
+        signal: context.signal,
+        routes: testCronCleanupSandboxesStateRoutes,
+      });
+      const failed = await app.request(
+        "/api/test/cron-cleanup-sandboxes-state/cleanup",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            chatThreadIds: [],
+            runIds: [],
+            orgIds: [],
+            exportJobIds: [expiredJob.id],
+          }),
+        },
+      );
+
+      expect(failed.status).toBe(500);
+      await expect(findExportJob(expiredJob.id)).resolves.toStrictEqual({
+        status: "completed",
+        error: null,
+      });
+
+      const retried = await cleanupRegisteredFixtures();
+      expect(retried.body.exportJobsCleaned).toBe(1);
+      await expect(findExportJob(expiredJob.id)).resolves.toBeNull();
+    },
+  );
+
   it("cleans expired export jobs and fails stuck export jobs", async () => {
     const expiredJob = await trackExportJob(
       insertExportJob({

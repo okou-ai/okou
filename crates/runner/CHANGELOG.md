@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.192.1](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.192.0...runner-rs-v0.192.1) (2026-09-14)
+
+
+### Performance Improvements
+
+* **runner:** bound capture header dependency traversal ([#33885](https://github.com/vm0-ai/vm0/issues/33885)) ([ad39560](https://github.com/vm0-ai/vm0/commit/ad39560e1e84e67bf5a8f46795cbc037f74a554c))
+
+## [0.192.0](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.191.3...runner-rs-v0.192.0) (2026-09-14)
+
+
+### Features
+
+* **model-provider:** gate supported platform openrouter us routing ([#33768](https://github.com/vm0-ai/vm0/issues/33768)) ([a19d5ea](https://github.com/vm0-ai/vm0/commit/a19d5ea87246eac8595cb3a8163feae856f4835f))
+
 ## [0.191.3](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.191.2...runner-rs-v0.191.3) (2026-09-13)
 
 

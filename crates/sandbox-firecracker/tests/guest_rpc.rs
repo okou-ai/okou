@@ -191,5 +191,90 @@ async fn exercise_requests(sandbox: &dyn Sandbox, run: &str) -> TestResult<()> {
         }
         drop(writer);
     }
+    exercise_stream_request(sandbox, run).await
+}
+
+async fn exercise_stream_request(sandbox: &dyn Sandbox, run: &str) -> TestResult<()> {
+    use runner_rpc_proto::stream::{Frame, Reader, Writer};
+
+    let acceptor = sandbox
+        .guest_rpc(run)
+        .ok_or_else(|| io::Error::other("missing streaming RPC acceptor"))?;
+    let request =
+        runner_rpc_proto::parse_request(br#"{"version":1,"method":"fixture.stream","params":{}}"#)?;
+    let expected = [0, 255, 128, 10].repeat(4096);
+    let mut input = Vec::new();
+    runner_rpc_proto::write_request(&mut input, &request).await?;
+    let mut input_writer = Writer::input(&mut input);
+    input_writer.send(&Frame::Data(expected.clone())).await?;
+    input_writer.send(&Frame::End).await?;
+    let exec_request = ExecRequest {
+        cmd: "/usr/local/bin/runner-rpc-client --stream",
+        timeout: Duration::from_secs(10),
+        env: &[],
+        sudo: false,
+        expected_exit_codes: &[],
+        stdin_bytes: Some(&input),
+        output_limits: EXEC_OUTPUT_LIMIT_64_KIB,
+    };
+    let guest = sandbox.exec(&exec_request);
+    let host = async {
+        let mut accepted = acceptor.accept().await?;
+        let received = runner_rpc_proto::read_request(&mut accepted.stream).await?;
+        if received.method != "fixture.stream" || accepted.sandbox_id != sandbox.id() {
+            return Err(io::Error::other(
+                "unexpected streaming RPC identity or method",
+            ));
+        }
+        let mut reader = Reader::input(&mut accepted.stream);
+        let mut bytes = Vec::new();
+        while let Some(frame) = reader.next().await? {
+            match frame {
+                Frame::Data(data) => bytes.extend(data),
+                Frame::End => (),
+                Frame::Control(_) => return Err(io::Error::other("unexpected input control")),
+            }
+        }
+        if bytes != expected {
+            return Err(io::Error::other("native streaming upload mismatch"));
+        }
+        let mut writer = Writer::responses(accepted.stream);
+        writer.send(&Frame::Data(bytes)).await?;
+        writer.send(&Frame::End).await?;
+        writer
+            .send(&Frame::Control(Response::Result {
+                data: received.params,
+            }))
+            .await?;
+        // Preserve the accepted reservation until guest completion. End cannot
+        // substitute for host EOF, including after snapshot restoration.
+        Ok::<_, io::Error>(writer)
+    };
+    let (guest, host) =
+        tokio::time::timeout(Duration::from_secs(15), async { tokio::join!(guest, host) }).await?;
+    let writer = host?;
+    let guest = guest?;
+    if !matches!(guest.termination, ExecTermination::Exited { exit_code: 0 })
+        || !guest.stderr.is_empty()
+        || guest.stdout_truncated
+        || guest.stderr_truncated
+    {
+        return Err(io::Error::other("native streaming helper failed").into());
+    }
+    let mut reader = Reader::responses(guest.stdout.as_slice());
+    let mut bytes = Vec::new();
+    let mut completed = false;
+    while let Some(frame) = reader.next().await? {
+        match frame {
+            Frame::Data(data) => bytes.extend(data),
+            Frame::End => (),
+            Frame::Control(Response::Result { .. }) => completed = true,
+            _ => return Err(io::Error::other("unexpected native stream response").into()),
+        }
+    }
+    if bytes != expected || !completed {
+        return Err(io::Error::other("native streaming download mismatch").into());
+    }
+    drop(writer);
     Ok(())
 }

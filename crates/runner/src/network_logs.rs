@@ -37,8 +37,8 @@ const NETWORK_LOG_UPLOAD_ENTRY_OVERHEAD_BYTES: usize = 1;
 const NETWORK_LOG_UPLOAD_ERROR_BODY_MAX_BYTES: usize = 2048;
 const NETWORK_LOG_UPLOAD_ERROR_FIELD_MAX_CHARS: usize = 512;
 // Complement the per-request limits with finite per-run local, remote, and elapsed work.
-const NETWORK_LOG_UPLOAD_MAX_SOURCE_BYTES: u64 = 32 * 1024 * 1024;
-const NETWORK_LOG_UPLOAD_MAX_BATCHES: usize = 32;
+const NETWORK_LOG_UPLOAD_MAX_SOURCE_BYTES: u64 = 64 * 1024 * 1024;
+const NETWORK_LOG_UPLOAD_MAX_BATCHES: usize = 64;
 // Allow cumulative batch latency without extending HttpClient's per-request timeout.
 const NETWORK_LOG_UPLOAD_MAX_DURATION: Duration = Duration::from_secs(30);
 
@@ -1147,9 +1147,9 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn upload_network_logs_completes_incident_sized_file_within_batch_budget() {
-        const INCIDENT_SOURCE_BYTES: usize = 15_175_970;
-        const INCIDENT_ENTRY_COUNT: usize = 48_060;
-        const INCIDENT_BODY_BYTES: usize = 252;
+        const INCIDENT_SOURCE_BYTES: usize = 42_772_957;
+        const INCIDENT_ENTRY_COUNT: usize = 98_129;
+        const INCIDENT_BODY_BYTES: usize = 372;
 
         let dir = tempfile::tempdir().unwrap();
         let path = network_log_file(&dir);
@@ -1184,6 +1184,12 @@ mod tests {
                 let estimated_bytes = estimated_batch_bytes(&run_id, logs);
                 assert!(logs.len() <= NETWORK_LOG_UPLOAD_MAX_BATCH_ENTRIES);
                 assert!(estimated_bytes <= NETWORK_LOG_UPLOAD_MAX_BATCH_BYTES);
+                assert_eq!(payload["runId"], run_id.to_string());
+                for (offset, log) in logs.iter().enumerate() {
+                    assert_eq!(log["sequence"], received_entry_count + offset);
+                    assert_eq!(log["body"], body);
+                    assert_eq!(log["timestamp"], "2026-02-15T10:00:00Z");
+                }
                 received_batch_count += 1;
                 received_entry_count += logs.len();
                 stream
@@ -1211,7 +1217,7 @@ mod tests {
         .await;
         stop_server.notify_one();
         let (received_batch_count, received_entry_count) = server_task.await.unwrap();
-        assert!(received_batch_count > 0);
+        assert!(received_batch_count > 32);
         assert!(received_batch_count <= NETWORK_LOG_UPLOAD_MAX_BATCHES);
         assert_eq!(received_entry_count, INCIDENT_ENTRY_COUNT);
         let uploaded = captured_event(&events, "uploaded network logs");

@@ -10,7 +10,7 @@ the transport itself does not grant SSH access.
 
 ## Guest boundary
 
-`/usr/local/bin/runner-rpc-client` takes no arguments. Its stdin is one JSON envelope
+The default, no-argument `/usr/local/bin/runner-rpc-client` mode takes one JSON envelope on stdin,
 terminated by EOF:
 
 ```json
@@ -153,6 +153,88 @@ guarantee remote process termination.
 This dedicated guest-initiated channel does not change the ordinary
 host-to-guest control protocol. `process-control-ipc` remains guest-local
 process control/placement IPC, not this cross-VM transport.
+
+## Opt-in binary streaming foundation
+
+#33856 (under #33847) adds `/usr/local/bin/runner-rpc-client --stream` for
+future binary consumers. It does **not** enable SSH upload/download: #33857 owns
+those methods, SFTP and CLI file semantics. The current production dispatcher
+still rejects those unknown methods before resolving authority. Existing exec,
+session and no-argument helper contracts are unchanged.
+
+Streaming stdin starts with one length-delimited, ordinary version-1 Request
+frame, followed by binary frames. The helper rejects caller-supplied
+`remaining_ms` and supplies its own remaining wall time. The fixed CID, port,
+one-connection and no-replay rules still apply. This mode neither opens local
+files nor chooses destinations, credentials, Run identity or business methods.
+
+Every frame uses the existing big-endian u32 body length. After the Request:
+
+| Frame   | Body                                 | Allowed direction |
+| ------- | ------------------------------------ | ----------------- |
+| Data    | byte `0`, then 1–65,536 opaque bytes | Input or response |
+| End     | exactly byte `1`                     | Input or response |
+| Control | existing strict JSON Response object | Response only     |
+
+End explicitly finishes one binary stream; an empty stream uses End without
+Data. Input reading stops at End, without waiting for stdin or guest transport
+EOF or draining trailing bytes. Those bytes cannot start another operation.
+Method handlers select the streaming contract explicitly; the helper mode does
+not change how existing one-shot handlers treat bytes after their Request.
+
+Responses can interleave control events and Data, then End and a terminal
+result/error. A Result after any Data requires End. A control-only Result is
+also valid at the transport layer. Errors can interrupt an unfinished stream;
+they must use `delivery: unknown` after Data, End or a control event. Missing
+End before a Result, duplicate End, Data after End, missing/duplicate terminal,
+and trailing response bytes fail. As in the default mode, the helper withholds
+the terminal until host EOF proves uniqueness. A valid Result is still RPC
+completion, not proof of complete file transfer or other business success.
+
+| Resource                                            |                                                Bound |
+| --------------------------------------------------- | ---------------------------------------------------: |
+| Initial Request                                     |                                              400 KiB |
+| Data per frame                                      |                                               64 KiB |
+| Total Data per direction                            |                                                1 GiB |
+| Data/End frames per direction                       |              65,536, including reserved End capacity |
+| Individual response Control                         |                                               24 KiB |
+| Aggregate response Control including length headers |                          4 MiB, reserving a terminal |
+| Streaming helper total lifetime                     | 15 minutes, reserving the final 100 ms for reporting |
+
+Binary counters are separate from control counters. Readers check advertised
+sizes and remaining capacity before allocating bodies; writers validate before
+transmission. The bridge buffers only bounded frames and concurrently forwards
+input and responses. Slow output applies backpressure. An early remote terminal
+ends pending input work, including a stalled producer. A future upload handler
+must therefore verify its own input End, expected size and completion before
+reporting success; the helper cannot establish those business facts.
+
+All input, connect, socket and stdout work belongs to the helper's one deadline.
+The streaming budget does not extend existing methods: current handlers still
+clamp their deadline to 60 seconds. New long-running handlers must clamp the
+untrusted hint, enforce their own admission limits, and observe exact current
+Run/lifecycle cancellation throughout. Splitting I/O does not release the owned
+GuestRpcStream or its park reservation; retain it through live guest I/O, and
+retain separate host-work permits until cleanup actually completes.
+
+Failed/cancelled partial frame I/O poisons the reader/writer. Never resume it or
+append a replacement terminal to partially written stdout. Locally rejected
+input before request transmission is not dispatched; failure after an attempted
+request can hide effects, even when no Data was forwarded. No disconnect,
+timeout or missing acknowledgement causes reconnection or replay.
+
+Runner and its bundled helper are one artifact, including rootfs/snapshot
+identity. No cross-version helper/Runner negotiation is added. Independently
+selected older CLI packages keep the unchanged no-argument interface. A future
+stream-aware CLI on an old helper must report an unsupported invocation without
+exec fallback. An unavailable method returns the existing JSON unknown-method
+error, which the streaming response reader accepts without binary frames.
+
+Real-socket codec/helper tests exercise greater-than-4-MiB bidirectional data,
+binary/empty streams, bounds, early rejection, backpressure, corrupt/partial
+frames and terminal/EOF failure. The native test also invokes the packaged
+streaming helper in fresh/restored/reassigned Firecracker sandboxes; compile-only
+checks are not a claim that this metal-host test ran locally.
 
 ## SSH consumer ownership and delivery
 

@@ -1,5 +1,5 @@
 {
-  "id": "b900334f-f6bf-4d19-9677-ac23e797f5ed",
+  "id": "99f5e182-7219-4e81-8298-7ca37ecc8cbf",
   "prevId": "296b6cca-c00f-4598-95a6-bd7c158e1ce5",
   "version": "7",
   "dialect": "postgresql",
@@ -11718,13 +11718,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "platform": {
-          "name": "platform",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'feishu'"
-        },
         "app_id": {
           "name": "app_id",
           "type": "varchar(255)",
@@ -16317,6 +16310,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "workflow_id": {
+          "name": "workflow_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "membership_id": {
           "name": "membership_id",

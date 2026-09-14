@@ -52,7 +52,7 @@ beforeEach(() => {
     oauthApiBaseUrl: location.origin,
     getToken: async (signal) => {
       const resolvedClerk = await clerk;
-      signal.throwIfAborted();
+      signal?.throwIfAborted();
       return await readClerkToken(resolvedClerk, signal);
     },
   });

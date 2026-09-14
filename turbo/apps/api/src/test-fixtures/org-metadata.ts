@@ -108,6 +108,28 @@ export async function readOrgAcquisitionAttributionFixture(
   return row;
 }
 
+/**
+ * Repoint the org default Agent.
+ *
+ * The Clerk org-creation bootstrap is the only writer of
+ * `org_metadata.default_agent_id`, so a later default-Agent change — which
+ * Morning Brief ownership must survive — has no product path to reproduce.
+ */
+export async function setOrgDefaultAgentFixture(values: {
+  readonly orgId: string;
+  readonly agentId: string;
+}): Promise<void> {
+  const rows = await createStore()
+    .set(writeDb$)
+    .update(orgMetadata)
+    .set({ defaultAgentId: values.agentId, updatedAt: sql`now()` })
+    .where(eq(orgMetadata.orgId, values.orgId))
+    .returning({ orgId: orgMetadata.orgId });
+  if (rows.length !== 1) {
+    throw new Error("Expected one org metadata row to repoint");
+  }
+}
+
 export async function setOnboardingPaymentPendingFixture(values: {
   readonly orgId: string;
   readonly onboardingPaymentPending: boolean;

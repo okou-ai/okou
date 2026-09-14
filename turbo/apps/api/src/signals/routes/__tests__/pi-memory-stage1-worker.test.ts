@@ -475,6 +475,7 @@ function stage1Client(
 }
 
 beforeEach(async () => {
+  mockEnv("PI_MEMORY_BACKGROUND_WORKERS_ENABLED", "true");
   mockEnv("R2_USER_STORAGES_BUCKET_NAME", BUCKET);
   mockEnv("CRON_SECRET", CRON_SECRET);
   context.sessionHistoryBlobs.clear();
@@ -598,7 +599,7 @@ describe("Pi memory Stage 1 worker", () => {
     expect(captured).not.toContain(CRON_SECRET);
   });
 
-  it("preserves Stage 1 route counters and results when enabled by default", async () => {
+  it("preserves Stage 1 route counters and results when explicitly enabled", async () => {
     const storage = createStorageFixture();
     const piSessionId = randomUUID();
     const fixture = await storage.seed({

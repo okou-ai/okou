@@ -5902,7 +5902,6 @@
         "emailOff": "E-Mail ist deaktiviert. Dein Briefing erscheint weiterhin im Chat.",
         "emailWhenReady": "Du erhältst eine E-Mail, sobald dein Briefing bereit ist.",
         "loading": "Morning-Brief-Einstellungen werden geladen...",
-        "missingDataSource": "Verbinden Sie Gmail, Google Kalender, GitHub oder Slack, um Ihren Bericht zu erhalten.",
         "missingDefaultAgent": "Wählen Sie einen verwendbaren Standard-Agenten aus, bevor Sie Morning Brief aktivieren.",
         "missingTimezone": "Legen Sie eine gültige Zeitzone fest, bevor Sie Morning Brief aktivieren.",
         "multipleInstallations": "Es sind mehrere Morning-Brief-Installationen vorhanden. Beheben Sie den Konflikt, bevor Sie diese Einstellung ändern.",
