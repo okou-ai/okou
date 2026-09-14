@@ -10852,9 +10852,10 @@ function ComposerFooter({
   actions: ComposerActions;
   connectorActions: ComposerConnectorActions;
 }) {
-  const createMode = useGet(signals.create.mode$);
-  const narrowVideoGap =
-    createMode === "video" ? "@max-[344px]/composer:gap-0" : undefined;
+  const creativeVideo = useGet(signals.create.creativeVideo$);
+  const narrowVideoGap = creativeVideo
+    ? "@max-[344px]/composer:gap-0"
+    : undefined;
   const voiceInputV2Enabled = useGet(voiceInputV2Enabled$);
   const voiceDraft = useResolved(signals.voice.state$);
   const capture = useGet(signals.voice.capture$);
@@ -10881,10 +10882,13 @@ function ComposerFooter({
   return withChatScrollLayout(
     <div
       className={cn(
-        "flex shrink-0 flex-wrap items-center justify-between gap-1 sm:gap-2",
+        "shrink-0 items-center justify-between gap-1 sm:gap-2",
+        creativeVideo && !activeVoiceDraftStatus
+          ? "grid grid-cols-[minmax(0,1fr)_auto] @min-[640px]/composer:flex"
+          : "flex",
         activeVoiceDraftStatus ? "px-2 pb-3 pt-3" : "px-4 pb-4 pt-1",
         narrowVideoGap,
-        createMode === "video" && "@max-[344px]/composer:px-3",
+        creativeVideo && "@max-[344px]/composer:px-3",
       )}
     >
       {activeVoiceDraftStatus ? (

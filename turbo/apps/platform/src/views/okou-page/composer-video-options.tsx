@@ -438,7 +438,7 @@ export function ComposerVideoOptionsChip({
     return null;
   }
   return (
-    <div className="order-first w-full text-muted-foreground @min-[640px]/composer:order-none @min-[640px]/composer:w-auto">
+    <div className="order-first col-span-2 row-start-1 w-full text-muted-foreground @min-[640px]/composer:order-none @min-[640px]/composer:w-auto">
       <ComposerVideoOptionsChipBody
         signals={signals}
         videoModelSignals={videoModelSignals}
