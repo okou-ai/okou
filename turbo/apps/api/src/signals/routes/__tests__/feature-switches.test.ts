@@ -17,6 +17,50 @@ function client() {
 }
 
 describe("/api/feature-switches", () => {
+  it("keeps subscription priority off for staff and applies overrides consistently across an organization", async () => {
+    const clerk = createRouteMocks(context).clerk;
+    const headers = { authorization: "Bearer clerk-session" };
+    const userId = `user_${randomUUID()}`;
+    clerk.session(userId, "org_3ANttyrbWYJk6JKRSTRLEsbsDLe", "org:member");
+    const staff = await accept(client().get({ headers }), [200]);
+    expect(
+      staff.body.effectiveSwitches[
+        FeatureSwitchKey.PersonalSubscriptionPriority
+      ],
+    ).toBeFalsy();
+    const orgId = `org_${randomUUID()}`;
+    clerk.session(userId, orgId, "org:member");
+    const ordinary = await accept(client().get({ headers }), [200]);
+    expect(
+      ordinary.body.effectiveSwitches[
+        FeatureSwitchKey.PersonalSubscriptionPriority
+      ],
+    ).toBeFalsy();
+    await accept(
+      client().update({
+        headers,
+        body: {
+          switches: { [FeatureSwitchKey.PersonalSubscriptionPriority]: true },
+        },
+      }),
+      [200],
+    );
+    clerk.session(`user_${randomUUID()}`, orgId, "org:member");
+    const peer = await accept(client().get({ headers }), [200]);
+    expect(
+      peer.body.effectiveSwitches[
+        FeatureSwitchKey.PersonalSubscriptionPriority
+      ],
+    ).toBeTruthy();
+    clerk.session(userId, `org_${randomUUID()}`, "org:member");
+    const elsewhere = await accept(client().get({ headers }), [200]);
+    expect(
+      elsewhere.body.effectiveSwitches[
+        FeatureSwitchKey.PersonalSubscriptionPriority
+      ],
+    ).toBeFalsy();
+  });
+
   it("enables SSH by default only in the staff organization", async () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };

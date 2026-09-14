@@ -1,4 +1,5 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
+import { apiErrorSchema } from "../errors";
 
 import {
   managedSocialKitToolCatalog,
@@ -9,6 +10,7 @@ import {
   publicSocialErrorMessage,
   redactSocialProviderIdentity,
   socialKitErrorSchema,
+  socialKitDownloadConflictSchema,
   socialKitRequestSchema,
   socialKitResponseSchema,
   SOCIALKIT_TRANSCRIPT_ERROR_CODES,
@@ -16,6 +18,30 @@ import {
 } from "../social";
 
 describe("managed SocialKit contract", () => {
+  it("preserves old conflict readers and accepts scoped conflicts without recovery metadata", () => {
+    const legacy = {
+      error: {
+        code: "DOWNLOAD_IN_PROGRESS",
+        message: "Another social media download is already in progress",
+      },
+    };
+    const enriched = {
+      error: {
+        ...legacy.error,
+        recovery: {
+          downloadId: "6bdc3449-41ef-4624-a525-45bce09c67f0",
+          resumeCommand:
+            "okou social download --resume 6bdc3449-41ef-4624-a525-45bce09c67f0",
+        },
+      },
+    };
+    expect(apiErrorSchema.parse(enriched)).toStrictEqual(legacy);
+    expect(socialKitDownloadConflictSchema.parse(legacy)).toStrictEqual(legacy);
+    expect(socialKitDownloadConflictSchema.parse(enriched)).toStrictEqual(
+      enriched,
+    );
+  });
+
   it("publishes one typed input and output schema per reviewed tool", () => {
     const catalog = managedSocialKitToolCatalog();
 

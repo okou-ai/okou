@@ -1,3 +1,4 @@
+import { personalSubscriptionAccountAccessCondition } from "./model-provider-account.service";
 import { Buffer } from "node:buffer";
 import { performance } from "node:perf_hooks";
 
@@ -461,6 +462,7 @@ async function resolveBillableFirewallCacheExpiry(params: {
 }
 
 interface SecretTokenLookupArgs {
+  readonly runId?: string;
   readonly db: Db;
   readonly accessSourceKey: string;
   readonly orgId: string;
@@ -994,6 +996,7 @@ async function getConnectorSecretValues(args: {
 }
 
 async function getSecretValue(args: {
+  readonly runId?: string;
   readonly connectorAccess?: ConnectorCredentialAccess;
   readonly db: Db;
   readonly orgId: string;
@@ -1015,13 +1018,12 @@ async function getSecretValue(args: {
     });
     return values.get(args.name) ?? null;
   }
-  // Rollout fallback: a run admitted before `PersonalModelProviderAccounts` was
-  // enabled for its user carries no exact-account `sourceId`, so it keeps
-  // resolving through the org/user `secrets` lookup below. Surface: existing
-  // runner and sandbox instances, up to 2 hours (`JOB_TIMEOUT` in
-  // `crates/runner/src/executor/mod.rs`). Remove the `sourceId`-less
-  // model-provider path once the switch is GA and every pre-feature run has
-  // drained.
+  // Compatibility for subscription contexts created before #34012, including
+  // queued/pending work with a pre-preparation singleton credential source.
+  // Never backfill their identity from today's active account. Keep retention
+  // disabled until all such nonterminal contexts and old API writers drain.
+  // Remove this reader under #34010 after those contexts and retained rollback
+  // APIs are gone; two hours after disconnect is not the queue lifetime.
   if (args.type === "model-provider" && args.sourceId) {
     const [row] = await args.db
       .select({ encryptedValue: modelProviderAccountSecrets.encryptedValue })
@@ -1036,6 +1038,7 @@ async function getSecretValue(args: {
       .where(
         and(
           eq(modelProviderAccounts.id, args.sourceId),
+          personalSubscriptionAccountAccessCondition(args.db, args.runId),
           eq(modelProviderAccounts.orgId, args.orgId),
           eq(modelProviderAccounts.userId, args.userId),
           eq(modelProviderAccountSecrets.name, args.name),
@@ -1105,6 +1108,7 @@ async function upsertModelProviderSecretValue(
     readonly name: string;
     readonly value: string;
     readonly sourceId?: string;
+    readonly runId?: string;
     readonly featureSwitchContext: FeatureSwitchContext;
   },
 ): Promise<void> {
@@ -1119,6 +1123,7 @@ async function upsertModelProviderSecretValue(
       .where(
         and(
           eq(modelProviderAccounts.id, args.sourceId),
+          personalSubscriptionAccountAccessCondition(db, args.runId),
           eq(modelProviderAccounts.orgId, args.orgId),
           eq(modelProviderAccounts.userId, args.userId),
         ),
@@ -1148,6 +1153,30 @@ async function upsertModelProviderSecretValue(
     if (!account.isActive) {
       return;
     }
+  }
+  if (!args.sourceId) {
+    await db
+      .update(modelProviderAccountSecrets)
+      .set({ encryptedValue, updatedAt: nowDate() })
+      .where(
+        and(
+          eq(modelProviderAccountSecrets.name, args.name),
+          inArray(
+            modelProviderAccountSecrets.modelProviderAccountId,
+            db
+              .select({ id: modelProviderAccounts.id })
+              .from(modelProviderAccounts)
+              .where(
+                and(
+                  eq(modelProviderAccounts.orgId, args.orgId),
+                  eq(modelProviderAccounts.userId, args.userId),
+                  eq(modelProviderAccounts.isActive, true),
+                  isNull(modelProviderAccounts.disconnectedAt),
+                ),
+              ),
+          ),
+        ),
+      );
   }
   await db
     .insert(secretsTable)
@@ -1301,6 +1330,7 @@ async function getCurrentAccessSecrets(
         name: secretName,
         type: args.sourceType,
         sourceId: args.sourceId,
+        runId: args.runId,
         featureSwitchContext: args.featureSwitchContext,
       });
       if (value !== null) {
@@ -2096,6 +2126,7 @@ async function loadModelProviderRefreshStateRow(
       .where(
         and(
           eq(modelProviderAccounts.id, args.sourceId),
+          personalSubscriptionAccountAccessCondition(db, args.runId),
           eq(modelProviderAccounts.orgId, args.orgId),
           eq(modelProviderAccounts.userId, context.secretUserId),
           eq(
@@ -2221,6 +2252,7 @@ async function loadRefreshState(
       name: secretName,
       type: args.sourceType,
       sourceId: args.sourceId,
+      runId: args.runId,
       featureSwitchContext: args.featureSwitchContext,
     });
   }
@@ -2237,6 +2269,7 @@ async function loadRefreshState(
             name: inputSource.name,
             type: args.sourceType,
             sourceId: args.sourceId,
+            runId: args.runId,
             featureSwitchContext: args.featureSwitchContext,
           })
         : await getVariableValue({
@@ -2279,6 +2312,7 @@ async function persistRefreshOutputValues(
             name: target.name,
             value,
             sourceId: args.sourceId,
+            runId: args.runId,
             featureSwitchContext: args.featureSwitchContext,
           });
         } else {
@@ -2378,6 +2412,29 @@ async function markRefreshSuccess(
       return Object.fromEntries(returnedSecretValues);
     }
     await args.db
+      .update(modelProviderAccounts)
+      .set({
+        tokenExpiresAt: expiresAt,
+        needsReconnect: false,
+        lastRefreshErrorCode: null,
+        updatedAt: sql`clock_timestamp()`,
+      })
+      .where(
+        and(
+          eq(modelProviderAccounts.orgId, args.orgId),
+          eq(modelProviderAccounts.userId, context.secretUserId),
+          eq(
+            modelProviderAccounts.type,
+            requiredModelProviderMetadataKey({
+              providerKey: args.accessSourceKey,
+              metadataKey: args.metadataKey,
+            }),
+          ),
+          eq(modelProviderAccounts.isActive, true),
+          isNull(modelProviderAccounts.disconnectedAt),
+        ),
+      );
+    await args.db
       .update(modelProviders)
       .set({
         tokenExpiresAt: expiresAt,
@@ -2463,6 +2520,24 @@ async function markRefreshFailure(
       }
       return;
     }
+    await args.db
+      .update(modelProviderAccounts)
+      .set(updates)
+      .where(
+        and(
+          eq(modelProviderAccounts.orgId, args.orgId),
+          eq(modelProviderAccounts.userId, context.secretUserId),
+          eq(
+            modelProviderAccounts.type,
+            requiredModelProviderMetadataKey({
+              providerKey: args.accessSourceKey,
+              metadataKey: args.metadataKey,
+            }),
+          ),
+          eq(modelProviderAccounts.isActive, true),
+          isNull(modelProviderAccounts.disconnectedAt),
+        ),
+      );
     await args.db
       .update(modelProviders)
       .set(updates)
@@ -3287,6 +3362,7 @@ async function syncStoredConnectorRuntimeSecrets(args: {
 }
 
 async function getModelProviderRuntimeSecretValue(args: {
+  readonly runId?: string;
   readonly db: Db;
   readonly orgId: string;
   readonly userId: string;
@@ -3309,6 +3385,7 @@ async function getModelProviderRuntimeSecretValue(args: {
       .where(
         and(
           eq(modelProviderAccounts.id, args.sourceId),
+          personalSubscriptionAccountAccessCondition(args.db, args.runId),
           eq(modelProviderAccounts.orgId, args.orgId),
           eq(modelProviderAccounts.userId, args.userId),
           eq(modelProviderAccounts.type, args.providerType),
@@ -3375,6 +3452,7 @@ async function getModelProviderRuntimeSecretValue(args: {
 }
 
 interface ModelProviderRuntimeSecretForApiArgs {
+  readonly runId?: string;
   readonly db: Db;
   readonly orgId: string;
   readonly userId: string;
@@ -3506,6 +3584,7 @@ async function readModelProviderRuntimeSecretForApi(
     providerType: lookup.providerType,
     secretName: lookup.secretName,
     sourceId: lookup.metadata.sourceId,
+    runId: args.runId,
     featureSwitchContext: args.featureSwitchContext,
   });
 }
@@ -3611,6 +3690,7 @@ export async function resolveCurrentModelProviderRuntimeSecretForApi(
     sourceType: "model-provider",
     sourceUserId: lookup.metadata.sourceUserId,
     sourceId: lookup.metadata.sourceId,
+    runId: args.runId,
     metadataKey: lookup.metadata.metadataKey,
     connectorSecrets: {},
     accessEnvVars: [args.key],
@@ -3637,6 +3717,7 @@ export async function resolveCurrentModelProviderRuntimeSecretForApi(
 }
 
 async function syncModelProviderRuntimeSecrets(args: {
+  readonly runId?: string;
   readonly db: Db;
   readonly orgId: string;
   readonly userId: string;
@@ -3709,6 +3790,7 @@ async function syncModelProviderRuntimeSecrets(args: {
         providerType: lookup.providerType,
         secretName: lookup.secretName,
         sourceId: lookup.sourceId,
+        runId: args.runId,
         featureSwitchContext: args.featureSwitchContext,
       });
       if (value === null || value.trim().length === 0) {
@@ -3784,6 +3866,7 @@ async function syncFirewallRuntimeSecrets(args: {
   });
   await syncModelProviderRuntimeSecrets({
     db: args.db,
+    runId: args.auth.runId,
     orgId: args.orgId,
     userId: args.auth.userId,
     secrets: args.secrets,
@@ -4499,6 +4582,7 @@ async function refreshSelectedTokens(
         sourceType: metadata.sourceType,
         sourceUserId: metadata.sourceUserId,
         sourceId: metadata.sourceId,
+        runId: context.auth.runId,
         metadataKey: metadata.metadataKey,
         connectorSecrets: context.secrets,
         accessEnvVars: context.envVarsByAccessSource.get(accessSourceKey) ?? [],
@@ -4569,6 +4653,7 @@ async function syncSkippedTokens(
           sourceType: metadata.sourceType,
           sourceUserId: metadata.sourceUserId,
           sourceId: metadata.sourceId,
+          runId: context.auth.runId,
           metadataKey: metadata.metadataKey,
           metadata,
           accessEnvVars:

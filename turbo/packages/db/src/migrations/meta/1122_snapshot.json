@@ -1,5 +1,5 @@
 {
-  "id": "d87c533f-9bf0-4755-ac71-dbf459204c62",
+  "id": "0de5d8c0-93df-4656-aca5-8090d22d32dc",
   "prevId": "590204f9-e509-4dcb-a738-12315689f2f5",
   "version": "7",
   "dialect": "postgresql",
@@ -15721,6 +15721,12 @@
           "notNull": true,
           "default": false
         },
+        "disconnected_at": {
+          "name": "disconnected_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
         "external_account_id": {
           "name": "external_account_id",
           "type": "varchar(255)",
@@ -18460,6 +18466,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "morning_brief_default_eligible_at": {
+          "name": "morning_brief_default_eligible_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
         },
         "capture_network_bodies_remaining": {
           "name": "capture_network_bodies_remaining",

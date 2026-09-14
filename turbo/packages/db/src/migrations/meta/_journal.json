@@ -313,8 +313,8 @@
     {
       "idx": 1122,
       "version": "7",
-      "when": 1789384075261,
-      "tag": "1122_drop_morning_brief_default_eligibility",
+      "when": 1789382751019,
+      "tag": "1122_personal_subscription_disconnect",
       "breakpoints": true
     }
   ]
