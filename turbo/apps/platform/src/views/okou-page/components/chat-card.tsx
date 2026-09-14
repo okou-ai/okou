@@ -12,7 +12,12 @@ import { cn } from "@okouai/ui";
  * The radius and shadow read the App-owned `--okou-chat-card-*` variables,
  * which are declared on `.okou-app`. Every consumer renders inside that shell,
  * so both resolve through normal inheritance, including the gradient themes'
- * shadow override.
+ * shadow override. They are spelled `rounded-[var(…)]` / `shadow-[var(…)]` to
+ * match the page-level `--okou-card-*` siblings, which are read that way at 19
+ * call sites. `tailwind-merge` cannot classify an arbitrary `shadow-[var(…)]`
+ * as a box-shadow, so it would not drop this base for a caller's own
+ * `shadow-*`; no consumer overrides the shadow, and the paired `rounded-[…]`
+ * and every colour and width utility below still merge normally.
  *
  * The border is deliberately `border-[1px] border-gray-400` rather than the
  * shared `border` hairline and a semantic border token that `docs/styles.md`
@@ -30,7 +35,7 @@ import { cn } from "@okouai/ui";
  * layer ordering.
  */
 const chatCardClassName =
-  "rounded-(--okou-chat-card-radius) border-[1px] border-gray-400 shadow-(--okou-chat-card-shadow)";
+  "rounded-[var(--okou-chat-card-radius)] border-[1px] border-gray-400 shadow-[var(--okou-chat-card-shadow)]";
 const chatCardFillClassName = "bg-card";
 
 type ChatCardProps = useRender.ComponentProps<"div"> & {

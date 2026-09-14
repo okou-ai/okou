@@ -842,10 +842,17 @@ selected-hover borders are identical before and after, and a control that drops
 the hover override moves 5,236 pixels, so the override is load-bearing rather
 than inert.
 
-`shadow-(--okou-chat-card-shadow)` composes Tailwind's `--tw-shadow` chain, so
-the serialized `box-shadow` carries four fully transparent placeholders the
-retired shorthand did not. The painted result is identical; a comparison should
+The radius and shadow use `rounded-[var(…)]` and `shadow-[var(…)]`, matching the
+19 call sites that read the page-level `--okou-card-*` siblings the same way.
+Tailwind's shadow utility composes `--tw-shadow` in either spelling, so the
+serialized `box-shadow` carries four fully transparent placeholders the retired
+shorthand did not. The painted result is identical; a comparison should
 normalize those placeholders away rather than treat the string as the contract.
+One consequence is that `tailwind-merge` cannot classify an arbitrary
+`shadow-[var(…)]` as a box-shadow and so will not drop it for a caller's own
+`shadow-*`. No consumer overrides the shadow. Registering `@theme` tokens and a
+named `shadow-*` scale in `cn()` would restore that, and is the documented route
+if a consumer ever needs it.
 
 The five remaining consumers are in `attachment-chips.tsx` and are **not**
 migrated. They render only inside the artifact preview dialog, and
