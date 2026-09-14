@@ -93,7 +93,6 @@ import {
   chatReasoningEffortEnabled$,
   codexFastModeEnabled$,
   featureSwitch$,
-  initialFeatureSwitchHydration$,
 } from "../external/feature-switch.ts";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
 import { userModelPreference$ } from "../external/user-model-preference.ts";
@@ -2450,13 +2449,6 @@ function createChatEventPresentationLifecycle({
   readonly enableSidebarEntryAnimations$: Command<void, []>;
   readonly initialEventsReady$: State<boolean>;
 }) {
-  const syncHydratedEventTrees$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      await get(initialFeatureSwitchHydration$);
-      signal.throwIfAborted();
-      await set(syncVisibleEventTrees$, false, signal);
-    },
-  );
   const setup$ = command(
     async ({ set }, signal: AbortSignal): Promise<void> => {
       set(
@@ -2483,7 +2475,7 @@ function createChatEventPresentationLifecycle({
       }
     },
   );
-  return { setup$, catchUp$, syncHydratedEventTrees$ };
+  return { setup$, catchUp$ };
 }
 
 function createReadyScrollAfterRenderRequest(
@@ -2701,7 +2693,6 @@ interface RunTrackingDeps {
   threadId: string;
   setupChatEvents$: Command<Promise<void>, [AbortSignal]>;
   catchUpChatEvents$: Command<Promise<void>, [AbortSignal]>;
-  syncHydratedEventTrees$: Command<Promise<void>, [AbortSignal]>;
   reloadArtifacts$: Command<void, []>;
   subscribeBrowserSessions$: Command<Promise<void>, [AbortSignal]>;
   subscribeThinkingSummaries$: ThreadActivitySummarySignals["subscribe$"];
@@ -3064,7 +3055,6 @@ function createRunTracking({
   threadId,
   setupChatEvents$,
   catchUpChatEvents$,
-  syncHydratedEventTrees$,
   reloadArtifacts$,
   subscribeBrowserSessions$,
   subscribeThinkingSummaries$,
@@ -3088,7 +3078,6 @@ function createRunTracking({
     signal.throwIfAborted();
 
     await Promise.all([
-      set(syncHydratedEventTrees$, signal),
       set(subscribeBrowserSessions$, signal),
       set(subscribeThinkingSummaries$, thinkingSummarySubscription, signal),
       set(
@@ -4042,7 +4031,6 @@ export function createChatPanelSignals(
     threadId,
     setupChatEvents$: messages.setup$,
     catchUpChatEvents$: messages.catchUp$,
-    syncHydratedEventTrees$: messagePipeline.syncHydratedEventTrees$,
     reloadArtifacts$: messages.reloadArtifacts$,
     subscribeBrowserSessions$: messages.subscribeBrowserSessions$,
     subscribeThinkingSummaries$: activity.subscribe$,

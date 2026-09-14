@@ -1,4 +1,4 @@
-import { command, computed } from "ccstate";
+import { command, computed, state } from "ccstate";
 import type { BrowserClerk as Clerk } from "@clerk/shared/types";
 import {
   getAllFeatureStates,
@@ -10,31 +10,18 @@ import { isCodexFastModeEnabled } from "@okouai/core/model-feature-switch";
 import { clerk$ } from "../auth";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
-import { rootSignal$ } from "../root-signal.ts";
 import { writeConnectionDiagnostic$ } from "../connection-diagnostics.ts";
 import { syncShellDocumentAttributes$ } from "../theme.ts";
 import {
   featureSwitchState$,
-  resetFeatureSwitchState$,
   setFeatureSwitchState$,
 } from "./feature-switch-state.ts";
-import {
-  completeOnLocalAbort,
-  createChildAbortController,
-  createDeferredPromise,
-  onRejection,
-  withCleanup,
-} from "../utils.ts";
 
-type FeatureSwitchClerk = Pick<
-  Clerk,
-  "addListener" | "organization" | "session" | "user"
->;
+type FeatureSwitchClerk = Pick<Clerk, "organization" | "session" | "user">;
 
 interface FeatureSwitchIdentity {
   readonly email: string | undefined;
   readonly orgId: string;
-  readonly sessionId: string;
   readonly userId: string;
 }
 
@@ -50,22 +37,8 @@ function readFeatureSwitchIdentity(
   return {
     email: user.primaryEmailAddress?.emailAddress,
     orgId: organization.id,
-    sessionId: session.id,
     userId: user.id,
   };
-}
-
-function isSameFeatureSwitchIdentity(
-  left: FeatureSwitchIdentity,
-  right: FeatureSwitchIdentity | null,
-): boolean {
-  return (
-    right !== null &&
-    left.email === right.email &&
-    left.orgId === right.orgId &&
-    left.sessionId === right.sessionId &&
-    left.userId === right.userId
-  );
 }
 
 function applySwitches(
@@ -82,22 +55,35 @@ function applySwitches(
   }
 }
 
+const internalReloadFeatureSwitches$ = state(0);
+
+/** The authoritative feature switches for the active workspace. */
+export const featureSwitches$ = computed(async (get) => {
+  get(internalReloadFeatureSwitches$);
+  const createClient = get(apiClient$);
+  const clerk = await get(clerk$);
+  const identity = readFeatureSwitchIdentity(clerk);
+  if (!identity) {
+    return getAllFeatureStates({});
+  }
+
+  const client = createClient(featureSwitchesContract, {
+    apiBase: "api",
+  });
+  const result = await accept(client.get(), [200]);
+  const combined = getAllFeatureStates({
+    userId: identity.userId,
+    email: identity.email,
+    orgId: identity.orgId,
+  });
+  applySwitches(combined, result.body.effectiveSwitches ?? result.body.switches);
+  applySwitches(combined, getEmailEnabledFeatureStates(identity.email));
+  applySwitches(combined, result.body.switches);
+  return combined;
+});
+
 export const featureSwitch$ = computed((get) => {
   return get(featureSwitchState$);
-});
-
-// eslint-disable-next-line ccstate/no-computed-signal -- migrate this computed away from AbortSignal ownership
-const initialFeatureSwitchHydrationDeferred$ = computed((get) => {
-  return createDeferredPromise<void>(get(rootSignal$));
-});
-
-/**
- * Resolves after the first authoritative feature-switch read for this app
- * lifetime. Consumers that turn a switch into immutable parsed state await
- * this boundary instead of committing repository defaults permanently.
- */
-export const initialFeatureSwitchHydration$ = computed((get) => {
-  return get(initialFeatureSwitchHydrationDeferred$).promise;
 });
 
 export const composerImageAnnotationEnabled$ = computed((get): boolean => {
@@ -141,106 +127,26 @@ export const voiceInputV2Enabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.VoiceInputV2] ?? false;
 });
 
-const hydrateFeatureSwitch$ = command(
-  async (
-    { get, set },
-    clerk: FeatureSwitchClerk,
-    identity: FeatureSwitchIdentity,
-    signal: AbortSignal,
-  ) => {
-    signal.throwIfAborted();
-    const client = get(apiClient$)(featureSwitchesContract, {
-      apiBase: "api",
-    });
-    const result = await accept(
-      client.get({ fetchOptions: { signal } }),
-      [200],
-    );
-    signal.throwIfAborted();
-
-    if (
-      !isSameFeatureSwitchIdentity(identity, readFeatureSwitchIdentity(clerk))
-    ) {
-      return;
-    }
-
-    const combined = getAllFeatureStates({
-      userId: identity.userId,
-      email: identity.email,
-      orgId: identity.orgId,
-    });
-    applySwitches(
-      combined,
-      result.body.effectiveSwitches ?? result.body.switches,
-    );
-    applySwitches(combined, getEmailEnabledFeatureStates(identity.email));
-    applySwitches(combined, result.body.switches);
-    set(setFeatureSwitchState$, combined);
+export const applyFeatureSwitches$ = command(
+  ({ set }, switches: Record<FeatureSwitchKey, boolean>) => {
+    set(setFeatureSwitchState$, switches);
     set(syncShellDocumentAttributes$);
     set(writeConnectionDiagnostic$, {
       action: "set-enabled",
-      enabled: combined[FeatureSwitchKey.OkouDebug],
+      enabled: switches[FeatureSwitchKey.OkouDebug],
     });
-  },
-);
-
-const refreshFeatureSwitchState$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const clerk = await get(clerk$);
-    signal.throwIfAborted();
-    const identity = readFeatureSwitchIdentity(clerk);
-    if (!identity) {
-      set(resetFeatureSwitchState$);
-      set(syncShellDocumentAttributes$);
-      set(writeConnectionDiagnostic$, {
-        action: "set-enabled",
-        enabled: false,
-      });
-      return;
-    }
-
-    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-    const requestController = createChildAbortController(signal);
-    const abortIfIdentityChanged = () => {
-      if (
-        !isSameFeatureSwitchIdentity(identity, readFeatureSwitchIdentity(clerk))
-      ) {
-        requestController.abort();
-      }
-    };
-    const unsubscribe = clerk.addListener(abortIfIdentityChanged, {
-      skipInitialEmit: true,
-    });
-    abortIfIdentityChanged();
-    await withCleanup(
-      completeOnLocalAbort(
-        set(hydrateFeatureSwitch$, clerk, identity, requestController.signal),
-        requestController.signal,
-        signal,
-      ),
-      () => {
-        unsubscribe();
-        requestController.abort();
-      },
-    );
   },
 );
 
 export const reloadFeatureSwitch$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const initialHydration = get(initialFeatureSwitchHydrationDeferred$);
-    await onRejection(
-      set(refreshFeatureSwitchState$, signal),
-      (error: unknown) => {
-        if (!initialHydration.settled()) {
-          initialHydration.reject(error);
-        }
-      },
-    );
     signal.throwIfAborted();
-    if (!initialHydration.settled()) {
-      initialHydration.resolve(undefined);
-    }
+    set(internalReloadFeatureSwitches$, (value) => {
+      return value + 1;
+    });
+    const switches = await get(featureSwitches$);
+    signal.throwIfAborted();
+    set(applyFeatureSwitches$, switches);
   },
 );
 

@@ -1525,11 +1525,7 @@ interface WorkflowComposerRuntime {
   replaceFeedbackItems(items: readonly FeedbackItem[]): void;
   removeFeedback(id: number): void;
   localizedUi: Set<() => void>;
-  /**
-   * Read on every chip render rather than captured once: the authoritative
-   * feature-switch read resolves after the composer mounts, so a value latched
-   * at mount time would always be the pre-hydration default.
-   */
+  /** Read on every chip render so Lab updates apply without remounting. */
   templateChipCover: () => boolean;
 }
 

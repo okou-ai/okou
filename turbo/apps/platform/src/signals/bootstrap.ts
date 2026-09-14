@@ -104,8 +104,9 @@ import { setupSharedThreadPage$ } from "./shared-thread-page/shared-thread-page-
 import { setupGlobalKeyboardShortcuts$ } from "./okou-page/nav.ts";
 import { bootstrapOnboardingGuard$ } from "./okou-page/onboard-guard.ts";
 import {
+  applyFeatureSwitches$,
   featureSwitch$,
-  reloadFeatureSwitch$,
+  featureSwitches$,
 } from "./external/feature-switch.ts";
 import {
   setupConnectionDiagnostics$,
@@ -504,11 +505,12 @@ const setupRoutes$ = command(async ({ set }, signal: AbortSignal) => {
   await set(initRoutes$, ROUTE_CONFIG, signal);
 });
 
-const setupFeatureSwitches$ = command(async ({ set }, signal: AbortSignal) => {
-  await set(reloadFeatureSwitch$, signal);
-  await set(syncLocalePreference$, signal);
-  await set(syncColorThemePreference$, signal);
-});
+const syncInitialPreferences$ = command(
+  async ({ set }, signal: AbortSignal) => {
+    await set(syncLocalePreference$, signal);
+    await set(syncColorThemePreference$, signal);
+  },
+);
 
 function notificationChatThreadId(data: unknown): string | null {
   if (
@@ -549,7 +551,11 @@ const setupNotificationListener$ = command(({ set }, signal: AbortSignal) => {
 });
 
 const completeBootstrap$ = command(
-  async ({ set }, render: () => void, signal: AbortSignal): Promise<void> => {
+  async (
+    { get, set },
+    render: () => void,
+    signal: AbortSignal,
+  ): Promise<void> => {
     await set(initLocale$, signal);
     signal.throwIfAborted();
     set(markBootstrapLocaleInitCompleted$);
@@ -571,6 +577,11 @@ const completeBootstrap$ = command(
 
     set(handleSlackRedirect$);
 
+    // Route setup may make one-time feature-gated decisions.
+    const featureSwitches = await get(featureSwitches$);
+    signal.throwIfAborted();
+    set(applyFeatureSwitches$, featureSwitches);
+
     await Promise.all([
       set(setupAuthenticatedBootstrapData$, signal),
       set(setupRoutes$, signal),
@@ -581,7 +592,7 @@ const completeBootstrap$ = command(
 
       set(setupGlobalKeyboardShortcuts$, signal),
       set(watchOrgSwitch$, signal),
-      set(setupFeatureSwitches$, signal),
+      set(syncInitialPreferences$, signal),
     ]);
 
     signal.throwIfAborted();
