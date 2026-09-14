@@ -88,6 +88,7 @@ import {
 import { createPiApiFirstTurnCheckpoint$ } from "./agent-webhook-checkpoints.service";
 import {
   isTerminalChatgptRefreshErrorCode,
+  readModelProviderRuntimeReconnectStateForApi,
   resolveCurrentModelProviderRuntimeSecretForApi,
   resolveModelProviderRuntimeSecretForApi,
 } from "./agent-webhook-firewall-auth.service";
@@ -1122,6 +1123,40 @@ async function validateApiFirstTurnCredentialSources(
 ): Promise<void> {
   signal.throwIfAborted();
   const executionContext = args.activation.executionContext;
+  const subscriptionReferences = codexSubscriptionCredentialReferences({
+    activation: args.activation,
+    executionContext,
+    route: args.route,
+  });
+  if (subscriptionReferences) {
+    const state = await settle(
+      readModelProviderRuntimeReconnectStateForApi(
+        runtimeCredentialLookupArgs(args, subscriptionReferences.accessToken),
+      ),
+    );
+    signal.throwIfAborted();
+    if (!state.ok) {
+      throw piApiFirstTurnError(
+        "PI_API_MODEL_CREDENTIAL_INVALID",
+        "Pi API first-turn subscription access token lookup failed",
+        state.error,
+      );
+    }
+    if (
+      state.value?.needsReconnect &&
+      isTerminalChatgptRefreshErrorCode(state.value.lastRefreshErrorCode)
+    ) {
+      throw new PiApiFirstTurnCodexReconnectRequiredError();
+    }
+    if (!state.value) {
+      throw piApiFirstTurnError(
+        "PI_API_MODEL_CREDENTIAL_INVALID",
+        "Pi API first-turn subscription access token is unavailable",
+        undefined,
+        "reconnect_required",
+      );
+    }
+  }
   for (const binding of args.route.credentialBindings) {
     const providerKey =
       executionContext.secretConnectorMap?.[binding.secretName];
@@ -1156,6 +1191,8 @@ async function validateApiFirstTurnCredentialSources(
       throw piApiFirstTurnError(
         "PI_API_MODEL_CREDENTIAL_INVALID",
         "Pi API first-turn model credential is unavailable",
+        undefined,
+        subscriptionReferences ? "reconnect_required" : undefined,
       );
     }
   }

@@ -106,7 +106,9 @@ effort/tier and original deadlines. An early failure keeps its original typed
 classification only after successful identity validation. Prepared credentials
 do not retain a revoked provider grant: execution revalidates managed credential
 sources using the captured account identity, without refreshing or replacing the
-prepared values. These reads remain outside the lifecycle lock. Final lifecycle,
+prepared values. Subscription checks retain terminal reconnect state and the
+existing reconnect-required failure classification. These reads remain outside
+the lifecycle lock. Final lifecycle,
 cancellation and active-input checks still precede provider transport. The
 43-second model/initialization boundary (45 seconds minus commit budget),
 45-second API budget and 55-second coordination cap stay anchored to the captured
