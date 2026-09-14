@@ -357,7 +357,7 @@ select both separators through `data-slot`.
 
 ### Page viewport shells
 
-`Shell` in `views/components/shell.tsx` renders the page's existing `div` and owns
+`ViewportShell` in `views/components/viewport-shell.tsx` renders the page's existing `div` and owns
 border-box sizing, full parent height constraints, overflow clipping, and the
 bottom safe-area inset through Tailwind utilities. It forwards native div props,
 including refs and theme attributes, without adding a wrapper. The documented

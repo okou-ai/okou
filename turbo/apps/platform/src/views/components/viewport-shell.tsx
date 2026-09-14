@@ -1,16 +1,16 @@
 import type { ComponentProps } from "react";
 import { cn } from "@okouai/ui";
 
-interface ShellProps extends ComponentProps<"div"> {
+interface ViewportShellProps extends ComponentProps<"div"> {
   /** Content-owned insets let workspace scrollports reach the viewport edge. */
   readonly bottomSafeArea?: "shell" | "content";
 }
 
-export function Shell({
+export function ViewportShell({
   className,
   bottomSafeArea = "shell",
   ...props
-}: ShellProps) {
+}: ViewportShellProps) {
   return (
     <div
       data-slot="viewport-shell"
