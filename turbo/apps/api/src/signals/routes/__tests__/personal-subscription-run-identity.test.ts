@@ -1,13 +1,18 @@
 import { createHash, randomUUID } from "node:crypto";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { countWaitingPersonalSubscriptionMutationsFixture } from "../../../test-fixtures/personal-subscription";
 import { createDeferredPromise } from "../../utils";
-import { holdOrgAdmissionLockFixture } from "../../../test-fixtures/chat-events";
+import {
+  holdAgentRunRowLockFixture,
+  holdOrgAdmissionLockFixture,
+} from "../../../test-fixtures/chat-events";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { testContext } from "../../../__tests__/test-context";
+import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -255,6 +260,138 @@ async function finish(
 }
 
 describe("personal subscription run identity", () => {
+  it.each([
+    [false, "completed"],
+    [true, "completed"],
+    [false, "timeout"],
+    [true, "timeout"],
+  ] as const)(
+    "settles the canonical run with priority %s and %s while a second dispatcher prepares the same head",
+    async (priority, terminalStatus) => {
+      const f = await fixture("codex-oauth-token", true, priority);
+      const chat = createChatFilesBddApi(context);
+      const thread = await chat.createThread(f.actor, { agentId: f.agentId });
+      const firstPrepared = createDeferredPromise<void>(context.signal);
+      const secondPrepared = createDeferredPromise<void>(context.signal);
+      const releaseFirst = createDeferredPromise<void>(context.signal);
+      const releaseSecond = createDeferredPromise<void>(context.signal);
+      onTestFinished(() => {
+        if (!releaseFirst.settled()) {
+          releaseFirst.resolve(undefined);
+        }
+        if (!releaseSecond.settled()) {
+          releaseSecond.resolve(undefined);
+        }
+      });
+      let archiveKey: string | undefined;
+      let preparations = 0;
+      // The external storage signer suspends real launch preparation. Both
+      // dispatchers must capture the same unclaimed head before either commits.
+      context.mocks.s3.getSignedUrl.mockImplementation(
+        async (_client, command) => {
+          if (
+            command instanceof GetObjectCommand &&
+            command.input.Key?.endsWith("/archive.tar.gz")
+          ) {
+            archiveKey ??= command.input.Key;
+            if (command.input.Key === archiveKey) {
+              preparations += 1;
+              if (preparations === 1) {
+                firstPrepared.resolve(undefined);
+                await releaseFirst.promise;
+              } else if (preparations === 2) {
+                secondPrepared.resolve(undefined);
+                await releaseSecond.promise;
+              }
+            }
+          }
+          return apiTestS3PresignedUrl(command);
+        },
+      );
+      const headId = randomUUID();
+      const sending = chat.requestSendEvent(
+        f.actor,
+        {
+          agentId: f.agentId,
+          threadId: thread.id,
+          clientEventId: headId,
+          prompt: "one canonical subscription input",
+          model: f.model,
+        },
+        [201],
+      );
+      await firstPrepared.promise;
+      const tailId = randomUUID();
+      const draining = chat.requestSendEvent(
+        f.actor,
+        {
+          agentId: f.agentId,
+          threadId: thread.id,
+          clientEventId: tailId,
+          prompt: "wake another dispatcher",
+          model: f.model,
+        },
+        [201],
+      );
+      const drainSettled = Promise.allSettled([draining]);
+      await secondPrepared.promise;
+      // Recall only the wake-up message; the second dispatcher is already
+      // preparing the first message through the production queue drainer.
+      await chat.requestSendEvent(
+        f.actor,
+        {
+          agentId: f.agentId,
+          threadId: thread.id,
+          clientEventId: randomUUID(),
+          revokesEventId: tailId,
+        },
+        [201],
+      );
+      releaseFirst.resolve(undefined);
+      const admitted = await sending;
+      if (admitted.status !== 201 || admitted.body.runId === null) {
+        throw new Error("Expected the first dispatcher to admit the head");
+      }
+      const runId = admitted.body.runId;
+      const claim = await f.claim(runId);
+      // Infrastructure exception: hold the run row so completion first owns
+      // the thread and waits here. The stale admission must then wait behind
+      // completion without holding its provider lock. No endpoint exposes this
+      // PostgreSQL scheduling boundary; all product assertions use APIs.
+      const runLock = await holdAgentRunRowLockFixture({
+        runId,
+        signal: context.signal,
+      });
+      onTestFinished(async () => {
+        runLock.release();
+        await runLock.done;
+      });
+      const completing = finish(f.actor, runId, claim, terminalStatus);
+      const completionSettled = Promise.allSettled([completing]);
+      await expect.poll(runLock.waiterCount).toBe(1);
+      releaseSecond.resolve(undefined);
+      await expect.poll(runLock.waiterCount).toBe(2);
+      runLock.release();
+      await completionSettled;
+      await completing;
+      await drainSettled;
+      expect((await draining).body).toMatchObject({ runId: null });
+      await flushWaitUntilForTest();
+      const events = (await chat.listThreadEvents(f.actor, thread.id)).events;
+      expect(
+        events.filter((event) => {
+          return (
+            event.eventType === "input.prompt" &&
+            event.revokesEventId === headId
+          );
+        }),
+      ).toStrictEqual([expect.objectContaining({ runId })]);
+      expect((await runs.readRun(f.actor, runId)).status).toBe(terminalStatus);
+      expect((await runs.readRunQueue(f.actor)).body.queue).toHaveLength(0);
+    },
+    20_000,
+  );
+
   it("fails captured admission when disconnect commits before run insertion", async () => {
     const f = await fixture("codex-oauth-token");
     if (!f.actor.orgId) {

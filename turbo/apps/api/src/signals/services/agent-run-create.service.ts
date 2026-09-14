@@ -8411,7 +8411,7 @@ async function validateThreadSessionSnapshot(
 > {
   const resolution = args.createArgs.threadSessionResolution;
   const chatThreadId = args.createArgs.chatThreadId;
-  if (!resolution || !chatThreadId) {
+  if (!chatThreadId) {
     return undefined;
   }
 
@@ -8432,6 +8432,11 @@ async function validateThreadSessionSnapshot(
   );
   if (!thread) {
     throw new Error("Chat thread not found while validating session snapshot");
+  }
+  // Even callers without a prepared snapshot later bind this thread. Take its
+  // row lock before the provider lock, just like completion and timeout.
+  if (!resolution) {
+    return undefined;
   }
   if (
     thread.agentSessionId !== resolution.expected.agentSessionId ||
@@ -8567,6 +8572,7 @@ async function bindPreparedPiMemoryPhase2MaintenanceRun(
 async function validateCapturedSubscriptionAccount(
   tx: Tx,
   args: CommitPreparedLaunchArgs,
+  validatedThreadSession: ValidatedThreadSessionSnapshot | undefined,
 ) {
   const provider = args.context.modelProvider;
   if (
@@ -8574,6 +8580,21 @@ async function validateCapturedSubscriptionAccount(
     isPersonalSubscriptionProviderType(provider.type) &&
     provider.credentialOwner === "member"
   ) {
+    if (
+      !args.identity.shouldCreateSession &&
+      (!validatedThreadSession ||
+        args.createArgs.threadSessionResolution?.expected.sessionId !==
+          args.identity.sessionId)
+    ) {
+      // Unvalidated/session-only launches still acquire this FK lock when
+      // inserting the run. A completion can hold the session before cleanup,
+      // so acquire it before the provider lock too.
+      await tx
+        .select({ id: agentSessions.id })
+        .from(agentSessions)
+        .where(eq(agentSessions.id, args.identity.sessionId))
+        .for("key share");
+    }
     await lockModelProviderState(tx, {
       orgId: args.createArgs.orgId,
       userId: args.createArgs.userId,
@@ -8601,18 +8622,6 @@ async function commitPreparedLaunchUnderLock(
   args: CommitPreparedLaunchArgs,
   payload: RunnerJobPayload,
 ): Promise<AtomicLaunchCommitResult | CreateRunErrorResult> {
-  const failure = await validateCapturedSubscriptionAccount(tx, args);
-  if (failure) {
-    return failure;
-  }
-  return await commitValidatedPreparedLaunch(tx, args, payload);
-}
-
-async function commitValidatedPreparedLaunch(
-  tx: DbTransaction,
-  args: CommitPreparedLaunchArgs,
-  payload: RunnerJobPayload,
-): Promise<AtomicLaunchCommitResult | CreateRunErrorResult> {
   const officialAdmissionFailure = await validateOfficialWorkflowRunForInsert(
     tx,
     {
@@ -8633,6 +8642,32 @@ async function commitValidatedPreparedLaunch(
     identity: args.identity,
     timing: args.timing,
   });
+  if (threadSessionValidation?.kind !== "thread-session-snapshot-stale") {
+    const failure = await validateCapturedSubscriptionAccount(
+      tx,
+      args,
+      threadSessionValidation,
+    );
+    if (failure) {
+      return failure;
+    }
+  }
+  return await commitValidatedPreparedLaunch(
+    tx,
+    args,
+    payload,
+    threadSessionValidation,
+  );
+}
+
+async function commitValidatedPreparedLaunch(
+  tx: DbTransaction,
+  args: CommitPreparedLaunchArgs,
+  payload: RunnerJobPayload,
+  threadSessionValidation: Awaited<
+    ReturnType<typeof validateThreadSessionSnapshot>
+  >,
+): Promise<AtomicLaunchCommitResult | CreateRunErrorResult> {
   if (threadSessionValidation?.kind === "thread-session-snapshot-stale") {
     const queueFirstAdmission = await resolveQueueFirstAdmissionForLaunch({
       tx,

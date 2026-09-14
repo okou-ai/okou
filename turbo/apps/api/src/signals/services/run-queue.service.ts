@@ -3,6 +3,8 @@ import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/mode
 import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
+import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatEvents } from "@okouai/db/schema/chat-event";
 import {
   and,
   count,
@@ -71,6 +73,40 @@ async function effectiveOrgConcurrencyState(
 }
 
 type DbTransaction = Tx;
+
+async function lockQueuedRunThreads(
+  tx: DbTransaction,
+  runIds: readonly string[],
+): Promise<void> {
+  if (runIds.length === 0) {
+    return;
+  }
+  // Terminal cleanup takes the provider lock. Queue-marker revocation later
+  // writes thread sequence numbers, so own those threads before locking runs
+  // or providers, in the same order as completion and final launch admission.
+  // Include marker parents for historical runs without a thread binding.
+  await tx
+    .select({ id: chatThreads.id })
+    .from(chatThreads)
+    .where(
+      inArray(
+        chatThreads.id,
+        tx
+          .select({ id: agentRuns.chatThreadId })
+          .from(agentRuns)
+          .where(inArray(agentRuns.id, runIds))
+          .union(
+            tx
+              .select({ id: chatEvents.chatThreadId })
+              .from(chatEvents)
+              .where(inArray(chatEvents.runId, runIds)),
+          ),
+      ),
+    )
+    .orderBy(chatThreads.id)
+    .for("update");
+}
+
 type QueuedRunnerJobPayload = NonNullable<
   Awaited<ReturnType<typeof decryptQueuedRunnerJobPayload>>
 >;
@@ -472,6 +508,7 @@ async function promoteQueuedCandidateInTransaction(
     return complete({ status: "full" });
   }
 
+  await lockQueuedRunThreads(tx, [args.row.runId]);
   const [lockedRun] = await tx
     .select({
       status: agentRuns.status,
@@ -694,7 +731,7 @@ export const cleanupExpiredQueueEntries$ = command(
           ),
         );
 
-      const candidates = await tx
+      const discovered = await tx
         .select({
           runId: agentRuns.id,
         })
@@ -705,13 +742,21 @@ export const cleanupExpiredQueueEntries$ = command(
             eq(agentRuns.status, "queued"),
           ),
         )
-        .orderBy(agentRuns.createdAt, agentRuns.id)
-        .for("update");
+        .orderBy(agentRuns.createdAt, agentRuns.id);
       signal.throwIfAborted();
 
-      const candidateRunIds = candidates.map((candidate) => {
+      const candidateRunIds = discovered.map((candidate) => {
         return candidate.runId;
       });
+      await lockQueuedRunThreads(tx, candidateRunIds);
+      if (candidateRunIds.length > 0) {
+        await tx
+          .select({ id: agentRuns.id })
+          .from(agentRuns)
+          .where(inArray(agentRuns.id, candidateRunIds))
+          .orderBy(agentRuns.createdAt, agentRuns.id)
+          .for("update");
+      }
 
       const timedOut =
         candidateRunIds.length === 0
@@ -725,6 +770,7 @@ export const cleanupExpiredQueueEntries$ = command(
               conditions: [
                 inArray(agentRuns.id, candidateRunIds),
                 eq(agentRuns.status, "queued"),
+                inArray(agentRuns.id, expiredRunIds),
               ],
             });
       const timedOutRuns = await timedOutQueuedRunsWithMarkerNotifications(
@@ -809,8 +855,7 @@ export const cleanupQueuedRunLaunchOrphans$ = command(
             ),
           ),
         )
-        .orderBy(agentRuns.createdAt, agentRuns.id)
-        .for("update");
+        .orderBy(agentRuns.createdAt, agentRuns.id);
       signal.throwIfAborted();
 
       if (candidates.length === 0) {
@@ -820,6 +865,13 @@ export const cleanupQueuedRunLaunchOrphans$ = command(
       const candidateRunIds = candidates.map((candidate) => {
         return candidate.runId;
       });
+      await lockQueuedRunThreads(tx, candidateRunIds);
+      await tx
+        .select({ id: agentRuns.id })
+        .from(agentRuns)
+        .where(inArray(agentRuns.id, candidateRunIds))
+        .orderBy(agentRuns.createdAt, agentRuns.id)
+        .for("update");
 
       // Queue persistence locks the run before inserting agent_run_queue. If
       // this transaction waited for that lock, re-check the queue table with a
