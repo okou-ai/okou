@@ -30,6 +30,13 @@ export {
   type VideoTemplateItem,
 } from "./video-template-items";
 export {
+  BRAND_MOTION_TEMPLATE_ITEMS,
+  findBrandMotionTemplateItem,
+  isBrandMotionTemplateId,
+  isBrandMotionTemplateReady,
+  type BrandMotionTemplateItem,
+} from "./brand-motion-template-items";
+export {
   WEBSITE_TEMPLATE_ITEMS,
   findWebsiteTemplateItem,
   type WebsiteTemplateItem,

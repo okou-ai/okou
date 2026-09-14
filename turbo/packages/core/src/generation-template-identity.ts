@@ -1,6 +1,7 @@
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 
 import { parseAvatarTemplateStylePresetId } from "./avatar-template";
+import { isBrandMotionTemplateId } from "./brand-motion-template-items";
 import { isUserPresentationTemplateId } from "./presentation-template-selection";
 import { findWorkflowTemplateItem } from "./workflow-template-items";
 
@@ -14,6 +15,7 @@ import { findWorkflowTemplateItem } from "./workflow-template-items";
  */
 export type GenerationTemplateCategory =
   | "avatar"
+  | "brand-motion"
   | "illustration"
   | "presentation"
   | "video"
@@ -27,9 +29,9 @@ export type GenerationTemplateSource = "builtin" | "user-imported";
  * One template selection, normalised into a shape that is comparable across
  * categories.
  *
- * The six built-in catalogues each name their templates differently
+ * The built-in catalogues each name their templates differently
  * (`template:`, `website-template:`, `image-style:`, `video-template:`,
- * `workflow-template:`, `avatar-template:`). Reporting
+ * `workflow-template:`, `avatar-template:`, `brand-motion:`). Reporting
  * on the raw selection would produce one incomparable property per category, so
  * every consumer reads this instead.
  */
@@ -112,8 +114,8 @@ function presentationIdentity(
 }
 
 /**
- * Avatar templates are reported as their own category even though they travel
- * inside the video envelope.
+ * Avatar and Brand motion templates have their own reporting categories even
+ * though they travel inside the video envelope.
  *
  * The contract reuses `type: "video"` for talking-avatar selections so that
  * bundles deployed before the split can still parse newer messages. Bucketing
@@ -123,6 +125,9 @@ function presentationIdentity(
 function videoIdentity(
   selection: Extract<GenerationTemplateRequest, { type: "video" }>["selection"],
 ): GenerationTemplateIdentity {
+  if (isBrandMotionTemplateId(selection.stylePresetId)) {
+    return builtinIdentity("brand-motion", selection.stylePresetId);
+  }
   const avatarId = parseAvatarTemplateStylePresetId(selection.stylePresetId);
   return builtinIdentity(
     avatarId === undefined ? "video" : "avatar",

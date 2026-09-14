@@ -1,5 +1,10 @@
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import {
+  brandMotionUnavailableInstructionLines,
+  isBrandMotionTemplateId,
+  resolveBrandMotionTemplate,
+} from "@okouai/core/brand-motion-template-items";
+import {
   generationTemplateIdentity,
   type GenerationTemplateIdentity,
 } from "@okouai/core/generation-template-identity";
@@ -14,7 +19,8 @@ import {
  * `identities` is what usage reporting counts. It is empty whenever the prompt
  * is empty: a selection the builder rejected — a switch that is off, a private
  * package this run does not mount — never becomes guidance the agent can act
- * on, so reporting it as used would overstate the template's reach.
+ * on, so reporting it as used would overstate the template's reach. An
+ * unavailable Brand motion contributes only an explanation, never a usage.
  */
 interface ResolvedThreadGenerationTemplates {
   readonly prompt: string;
@@ -36,14 +42,43 @@ export function resolveThreadGenerationTemplatePrompt(args: {
   readonly explicit: GenerationTemplateRequest | null | undefined;
   readonly explicitTemplates?: readonly GenerationTemplateRequest[];
   readonly introVideoEnabled: boolean;
+  readonly brandMotionEnabled: boolean;
   /**
    * Private template row ids whose packages the run being built will mount.
    * Required rather than optional so every caller states what its run carries.
    */
   readonly mountedUserPresentationTemplateIds: readonly string[];
 }): ResolvedThreadGenerationTemplates {
+  const selections = args.explicitTemplates?.length
+    ? args.explicitTemplates
+    : args.explicit
+      ? [args.explicit]
+      : [];
+  // A previously admitted queued/steered selection may lose access or its
+  // resource before delivery. Preserve the rejection in context so removing
+  // executable guidance cannot silently turn it into generic video generation.
+  for (const selection of selections) {
+    if (
+      selection.type === "video" &&
+      isBrandMotionTemplateId(selection.selection.stylePresetId)
+    ) {
+      const resolved = resolveBrandMotionTemplate(
+        selection.selection.stylePresetId,
+        args.brandMotionEnabled,
+      );
+      if (resolved.status === "invalid") {
+        return {
+          prompt: brandMotionUnavailableInstructionLines(resolved.message).join(
+            "\n",
+          ),
+          identities: [],
+        };
+      }
+    }
+  }
   const options = {
     introVideoEnabled: args.introVideoEnabled,
+    brandMotionEnabled: args.brandMotionEnabled,
     mountedUserPresentationTemplateIds: args.mountedUserPresentationTemplateIds,
   };
   if (args.explicitTemplates && args.explicitTemplates.length > 0) {

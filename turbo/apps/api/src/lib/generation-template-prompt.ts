@@ -33,6 +33,11 @@ import {
   INTRO_VIDEO_TEMPLATE_ID,
   introVideoInstructionLines,
 } from "@okouai/core/intro-video-template";
+import {
+  brandMotionInstructionLines,
+  isBrandMotionTemplateId,
+  resolveBrandMotionTemplate,
+} from "@okouai/core/brand-motion-template-items";
 
 interface PresentationGenerationTemplateInput {
   readonly type: "presentation";
@@ -103,6 +108,12 @@ function generationTemplateTypeLabel(
 ): string {
   if (
     generationTemplate.type === "video" &&
+    isBrandMotionTemplateId(generationTemplate.selection.stylePresetId)
+  ) {
+    return "brand-motion";
+  }
+  if (
+    generationTemplate.type === "video" &&
     parseAvatarTemplateStylePresetId(
       generationTemplate.selection.stylePresetId,
     ) !== undefined
@@ -124,6 +135,7 @@ function generationTemplateTypeLabel(
  */
 interface GenerationTemplatePromptOptions {
   readonly introVideoEnabled?: boolean;
+  readonly brandMotionEnabled?: boolean;
   readonly mountedUserPresentationTemplateIds?: readonly string[];
 }
 
@@ -136,10 +148,7 @@ export function buildGenerationTemplatePrompt(
   }
 
   if (generationTemplate.type === "video") {
-    return buildVideoGenerationTemplatePrompt(
-      generationTemplate,
-      options.introVideoEnabled === true,
-    );
+    return buildVideoGenerationTemplatePrompt(generationTemplate, options);
   }
   if (generationTemplate.type === "illustration") {
     return buildIllustrationGenerationTemplatePrompt(generationTemplate);
@@ -373,14 +382,31 @@ function buildWebsiteTemplatePackagePrompt(
 
 function buildVideoGenerationTemplatePrompt(
   generationTemplate: VideoGenerationTemplateInput,
-  introVideoEnabled: boolean,
+  options: GenerationTemplatePromptOptions,
 ): GenerationTemplatePromptResult {
+  const { stylePresetId } = generationTemplate.selection;
+  if (isBrandMotionTemplateId(stylePresetId)) {
+    const resolved = resolveBrandMotionTemplate(
+      stylePresetId,
+      options.brandMotionEnabled === true,
+    );
+    if (resolved.status === "invalid") {
+      return resolved;
+    }
+    return {
+      status: "resolved",
+      prompt: [
+        ...templateFraming("a brand motion video"),
+        ...brandMotionInstructionLines(resolved.template),
+      ].join("\n"),
+    };
+  }
   if (generationTemplate.selection.stylePresetId === INTRO_VIDEO_TEMPLATE_ID) {
-    if (!introVideoEnabled) {
+    if (options.introVideoEnabled !== true) {
       return { status: "invalid", message: "Intro video is not available" };
     }
-    const options = generationTemplate.selection.explainerOptions;
-    if (!options) {
+    const introOptions = generationTemplate.selection.explainerOptions;
+    if (!introOptions) {
       return {
         status: "invalid",
         message: "Intro video settings are missing",
@@ -390,7 +416,7 @@ function buildVideoGenerationTemplatePrompt(
       status: "resolved",
       prompt: [
         ...templateFraming("an intro video"),
-        ...introVideoInstructionLines(options),
+        ...introVideoInstructionLines(introOptions),
       ].join("\n"),
     };
   }

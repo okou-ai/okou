@@ -344,6 +344,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.BrandMotion]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Enable Brand motion template selection and execution once its skill resources are available.",
+    enabled: false,
+  },
   [FeatureSwitchKey.AvatarNeckSweater]: {
     maintainer: "ming@okou.ai",
     description:

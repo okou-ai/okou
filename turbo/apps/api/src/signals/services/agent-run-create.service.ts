@@ -133,6 +133,11 @@ import {
 } from "@okouai/core/storage-names";
 import { INTRO_VIDEO_SKILL_NAME, SEED_SKILLS } from "@okouai/core/seed-skills";
 import {
+  BRAND_MOTION_SKILL_NAME,
+  BRAND_MOTION_TEMPLATE_ITEMS,
+  isBrandMotionTemplateReady,
+} from "@okouai/core/brand-motion-template-items";
+import {
   expandVariables,
   expandVariablesInString,
   extractAndGroupVariables,
@@ -1410,6 +1415,7 @@ function buildInjectedSkillVolumes(
   args: {
     readonly injectSkillVolumes: CreateAgentRunArgs["injectSkillVolumes"];
     readonly introVideoEnabled: boolean;
+    readonly brandMotionEnabled: boolean;
     readonly systemSkillStorageResolution: SystemSkillStorageResolution;
     readonly allowedConnectorSlugs: readonly ConnectorSlug[];
     readonly connectorCatalogSelection: RunConnectorCatalogSelection;
@@ -1436,6 +1442,16 @@ function buildInjectedSkillVolumes(
     ...(args.introVideoEnabled
       ? buildLegacySystemSkillVolumes(
           [INTRO_VIDEO_SKILL_NAME],
+          skillsRoot,
+          args.systemSkillStorageResolution,
+        ).map((volume) => {
+          return { volume, source: "system_skill" as const };
+        })
+      : []),
+    ...(args.brandMotionEnabled &&
+    BRAND_MOTION_TEMPLATE_ITEMS.some(isBrandMotionTemplateReady)
+      ? buildLegacySystemSkillVolumes(
+          [BRAND_MOTION_SKILL_NAME],
           skillsRoot,
           args.systemSkillStorageResolution,
         ).map((volume) => {
@@ -9291,6 +9307,10 @@ function preparedRunAdditionalVolumes(args: {
     {
       injectSkillVolumes: args.createArgs.injectSkillVolumes,
       systemSkillStorageResolution: args.systemSkillStorageResolution,
+      brandMotionEnabled: isFeatureEnabled(
+        FeatureSwitchKey.BrandMotion,
+        args.featureSwitchContext,
+      ),
       introVideoEnabled:
         args.createArgs.introVideoEnabled ??
         isFeatureEnabled(

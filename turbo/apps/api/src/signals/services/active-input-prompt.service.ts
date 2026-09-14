@@ -4,7 +4,11 @@ import {
   chatEvents,
   type ChatEventUserMessage,
 } from "@okouai/db/schema/chat-event";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { and, asc, eq, inArray } from "drizzle-orm";
 
 import type { Db } from "../external/db";
@@ -298,6 +302,10 @@ async function materializeActiveInputPrompt(
     );
   }
   const generationTemplates = resolveThreadGenerationTemplatePrompt({
+    brandMotionEnabled: isFeatureEnabled(
+      FeatureSwitchKey.BrandMotion,
+      args.featureSwitchContext,
+    ),
     introVideoEnabled: loadIntroVideoTemplateAccess(
       projection.templates,
       args.featureSwitchContext,

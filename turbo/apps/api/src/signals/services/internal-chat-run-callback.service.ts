@@ -3057,6 +3057,7 @@ function resolveQueuedMessageGenerationTemplatePrompt(args: {
     | ReturnType<typeof projectUserMessage>
     | undefined;
   readonly introVideoEnabled: boolean;
+  readonly brandMotionEnabled: boolean;
   readonly mountedUserPresentationTemplateIds: readonly string[];
 }) {
   return measureChatCallbackPreCreateTiming(
@@ -3066,6 +3067,7 @@ function resolveQueuedMessageGenerationTemplatePrompt(args: {
     () => {
       return resolveThreadGenerationTemplatePrompt({
         introVideoEnabled: args.introVideoEnabled,
+        brandMotionEnabled: args.brandMotionEnabled,
         explicit: args.userMessageProjection?.primaryTemplate,
         explicitTemplates: args.userMessageProjection?.templates,
         mountedUserPresentationTemplateIds:
@@ -3112,6 +3114,10 @@ async function resolveQueuedMessageTemplateContext(args: {
     await resolveQueuedMessageGenerationTemplatePrompt({
       input: args.input,
       userMessageProjection: args.userMessageProjection,
+      brandMotionEnabled: isFeatureEnabled(
+        FeatureSwitchKey.BrandMotion,
+        args.featureSwitchContext,
+      ),
       introVideoEnabled: loadIntroVideoTemplateAccess(
         args.userMessageProjection?.templates ?? [],
         args.featureSwitchContext,

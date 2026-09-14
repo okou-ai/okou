@@ -473,6 +473,7 @@ interface NormalSendFeatureSwitches {
   readonly reasoningEffortEnabled: boolean;
   readonly codexFastModeEnabled: boolean;
   readonly introVideoEnabled: boolean;
+  readonly brandMotionEnabled: boolean;
   /**
    * Carried whole so downstream checks can read it without reloading the
    * switches this request already read.
@@ -1125,6 +1126,7 @@ async function resolveNormalSendFeatureSwitches(
       context,
     ),
     introVideoEnabled: loadIntroVideoTemplateAccess(templates, context),
+    brandMotionEnabled: isFeatureEnabled(FeatureSwitchKey.BrandMotion, context),
     featureSwitchContext: context,
   };
 }
@@ -1144,6 +1146,7 @@ function resolveSelectedTemplateContext(
 } {
   const resolved = resolveThreadGenerationTemplatePrompt({
     introVideoEnabled: featureSwitches.introVideoEnabled,
+    brandMotionEnabled: featureSwitches.brandMotionEnabled,
     explicit: runtimeBody.primaryTemplate,
     explicitTemplates: runtimeBody.templates,
     mountedUserPresentationTemplateIds,
@@ -1180,6 +1183,7 @@ async function validateGenerationTemplatePrompt(
   for (const template of generationTemplates) {
     const validation = buildGenerationTemplatePrompt(template, {
       introVideoEnabled: featureSwitches.introVideoEnabled,
+      brandMotionEnabled: featureSwitches.brandMotionEnabled,
       mountedUserPresentationTemplateIds: selectedIds,
     });
     if (validation.status === "invalid") {

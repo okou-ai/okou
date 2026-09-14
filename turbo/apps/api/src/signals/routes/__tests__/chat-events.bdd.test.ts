@@ -22958,6 +22958,88 @@ describe("CHAT-02: prior rounds and thread titles", () => {
 });
 
 describe("CHAT-02: generation templates and attachments", () => {
+  it("rejects disabled or pending brand motion before creating events and preserves video sends", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    const scopedActor = { ...actor, orgId: requireOrgId(actor) };
+    const brandMotion: GenerationTemplateRequest = {
+      type: "video",
+      selection: { stylePresetId: "brand-motion:brand-mask-sweep-lockup" },
+    };
+    const ordinary = VIDEO_TEMPLATE_ITEMS[0]!;
+    const ordinaryTemplate: GenerationTemplateRequest = {
+      type: "video",
+      selection: { stylePresetId: ordinary.id },
+    };
+    for (const enabled of [false, true]) {
+      await updateFeatureSwitchesForUser(context, scopedActor, {
+        [FeatureSwitchKey.BrandMotion]: enabled,
+      });
+      for (const templates of [
+        [brandMotion],
+        [ordinaryTemplate, brandMotion],
+      ]) {
+        const rejected = await chat.requestSendEvent(
+          actor,
+          {
+            agentId,
+            prompt: "Animate my brand",
+            userMessage: {
+              version: 1,
+              parts: [
+                { type: "text", text: "Animate my brand" },
+                ...templates.map((template) => {
+                  return {
+                    type: "template" as const,
+                    titleSnapshot: "Selected video",
+                    template,
+                  };
+                }),
+              ],
+            },
+          },
+          [400],
+        );
+        expectApiError(rejected.body);
+        expect(rejected.body.error.message).toBe(
+          enabled
+            ? "Brand motion template resources are not available yet"
+            : "Brand motion is not available",
+        );
+      }
+    }
+    const events = await chat.requestThreadEvents(actor, {}, [200]);
+    if (events.status !== 200) {
+      throw new Error("Expected thread events to load");
+    }
+    expect(events.body.events).toStrictEqual([]);
+    const unknown = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        prompt: "Animate my brand",
+        userMessage: userMessageWithTemplate("Animate my brand", {
+          type: "video",
+          selection: { stylePresetId: "brand-motion:unknown" },
+        }),
+      },
+      [400],
+    );
+    expectApiError(unknown.body);
+    expect(unknown.body.error.message).toBe("Unknown brand motion template");
+
+    // An enabled switch with unconfigured resources must not inject a missing
+    // system skill into otherwise valid runs.
+    const video = await sendChatRun(actor, {
+      agentId,
+      prompt: "Make a creative scene",
+      template: ordinaryTemplate,
+    });
+    const prompt = (await api.readRun(actor, video.runId)).appendSystemPrompt;
+    expect(prompt).toContain(ordinary.id);
+    expect(prompt).not.toContain("Use the $brand-motion skill");
+    await cancelChatRun(actor, video.runId);
+  }, 90_000);
+
   const introVideoTemplate: GenerationTemplateRequest = {
     type: "video",
     selection: {
