@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.663.0](https://github.com/vm0-ai/vm0/compare/core-v8.662.2...core-v8.663.0) (2026-09-14)
+
+
+### Features
+
+* **app:** add a standalone artifact viewer ([#34088](https://github.com/vm0-ai/vm0/issues/34088)) ([c49b23f](https://github.com/vm0-ai/vm0/commit/c49b23f072d00dd9e51d2279ebd606f0b83556e2))
+
+
+### Refactoring
+
+* remove chat thinking spinner feature switch ([#34069](https://github.com/vm0-ai/vm0/issues/34069)) ([379454f](https://github.com/vm0-ai/vm0/commit/379454fc8965991e2898f6a9d8530db140c378b2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.438.0
+
 ## [8.662.2](https://github.com/vm0-ai/vm0/compare/core-v8.662.1...core-v8.662.2) (2026-09-14)
 
 

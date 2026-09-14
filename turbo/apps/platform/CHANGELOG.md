@@ -11,6 +11,35 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.894.0](https://github.com/vm0-ai/vm0/compare/app-v0.893.12...app-v0.894.0) (2026-09-14)
+
+
+### Features
+
+* **app:** add a standalone artifact viewer ([#34088](https://github.com/vm0-ai/vm0/issues/34088)) ([c49b23f](https://github.com/vm0-ai/vm0/commit/c49b23f072d00dd9e51d2279ebd606f0b83556e2))
+* **platform:** give custom connectors their own scope on the connectors page ([#34083](https://github.com/vm0-ai/vm0/issues/34083)) ([9866bc0](https://github.com/vm0-ai/vm0/commit/9866bc0c72322c5ca4ab02e22bb4363219e72b34))
+* **platform:** redesign the chat reasoning-effort bar ([#34104](https://github.com/vm0-ai/vm0/issues/34104)) ([deec8ae](https://github.com/vm0-ai/vm0/commit/deec8aeeb647d3dede5182ce551d9c3d070ae767))
+
+
+### Bug Fixes
+
+* **app:** align lark app creation link with feishu ([#34094](https://github.com/vm0-ai/vm0/issues/34094)) ([b27dc6c](https://github.com/vm0-ai/vm0/commit/b27dc6c0437714290cf7d2e1f12cf4ebe8888c0a))
+* **app:** refresh expired artifact previews on demand ([#34085](https://github.com/vm0-ai/vm0/issues/34085)) ([2bf1efd](https://github.com/vm0-ai/vm0/commit/2bf1efd3716e811f396e7b4abe58841fd3441bc3))
+
+
+### Refactoring
+
+* **platform:** retire the markdown code-fence copy contract ([#34059](https://github.com/vm0-ai/vm0/issues/34059)) ([2a91b89](https://github.com/vm0-ai/vm0/commit/2a91b894841c3de5d4834a0f1efac0519849b416))
+* remove chat thinking spinner feature switch ([#34069](https://github.com/vm0-ai/vm0/issues/34069)) ([379454f](https://github.com/vm0-ai/vm0/commit/379454fc8965991e2898f6a9d8530db140c378b2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.438.0
+    * @okouai/core bumped to 8.663.0
+
 ## [0.893.12](https://github.com/vm0-ai/vm0/compare/app-v0.893.11...app-v0.893.12) (2026-09-14)
 
 
