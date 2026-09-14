@@ -972,6 +972,8 @@
       ],
       "consumers": [
         "apps/platform/src/views/onboarding/onboarding-workflow-diagram.tsx",
+        "apps/platform/src/views/onboarding/onboarding-workflow-picker-page.tsx",
+        "apps/platform/src/views/onboarding/onboarding-workflow-run-page.tsx",
         "apps/platform/src/views/onboarding/__tests__/onboarding-flow.test.tsx"
       ],
       "cases": [
@@ -980,10 +982,16 @@
         "owf-diagram-light-retina",
         "owf-diagram-dark-retina",
         "owf-diagram-narrow",
-        "owf-diagram-narrow-dark"
+        "owf-diagram-narrow-dark",
+        "owf-diagram-run-light",
+        "owf-diagram-run-dark",
+        "owf-diagram-run-light-retina",
+        "owf-diagram-run-dark-retina",
+        "owf-diagram-run-narrow",
+        "owf-diagram-run-narrow-dark"
       ],
       "status": "blocked",
-      "blockedReason": "The onboarding workflow preview diagram needs design decisions this migration cannot make. Five rules hand-write a 1px/1.5px border that --default-border-width already owns: keeping the pixels needs border-[1px], which docs/styles.md forbids, while the compliant border changes 140316 pixels across eight measured states at device scale factor 2. Inlining the 21-variable --workflow-* calc chain leaves 7 of 22 consumption sites above 200 characters and 19 above three arbitrary values. The dot grid resolves a raw gray-500 ramp stop, and the reduced-motion branch also changes opacity, so it cannot take the motion-safe form the guide prescribes. Measurement also found two defects that need design review before any migration: the Okou avatar image is forced to 34x34 by .owf-diagram-icon-box img despite its own size-full, and .owf-diagram-vertical-control::after is dead. Separately, owf-diagram-avatar reaches the DOM through an iconClassName prop that scripts/style-class-usage.mjs does not scan, so the baseline tracks 25 of the 26 production consumption sites.",
+      "blockedReason": "The onboarding workflow preview diagram, rendered by WorkflowPreview on both /onboarding/workflow-picker and /onboarding/workflow-run, needs design decisions this migration cannot make. Five rules hand-write a 1px/1.5px border that --default-border-width already owns: keeping the pixels needs border-[1px], which docs/styles.md forbids, while the compliant border changes 140316 pixels across eight measured states at device scale factor 2. Inlining the 21-variable --workflow-* calc chain leaves 7 of 22 consumption sites above 200 characters and 19 above three arbitrary values. The dot grid resolves a raw gray-500 ramp stop, and the reduced-motion branch also changes opacity, so it cannot take the motion-safe form the guide prescribes. Measurement also found two defects that need design review before any migration: the Okou avatar image is forced to 34x34 by .owf-diagram-icon-box img despite its own size-full, and .owf-diagram-vertical-control::after is dead. Separately, owf-diagram-avatar reaches the DOM through an iconClassName prop that scripts/style-class-usage.mjs does not scan, so the baseline tracks 25 of the 26 production consumption sites.",
       "evidence": [],
       "pullRequest": null,
       "mergeCommit": null

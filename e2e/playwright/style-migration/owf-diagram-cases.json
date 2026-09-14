@@ -65,6 +65,70 @@
       "deviceScaleFactor": 2,
       "hasTouch": true,
       "isMobile": true
+    },
+    {
+      "id": "owf-diagram-run-light",
+      "path": "/onboarding/workflow-run",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "owf-diagram-run-dark",
+      "path": "/onboarding/workflow-run",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "owf-diagram-run-light-retina",
+      "path": "/onboarding/workflow-run",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 2
+    },
+    {
+      "id": "owf-diagram-run-dark-retina",
+      "path": "/onboarding/workflow-run",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 2
+    },
+    {
+      "id": "owf-diagram-run-narrow",
+      "path": "/onboarding/workflow-run",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "deviceScaleFactor": 2,
+      "hasTouch": true,
+      "isMobile": true
+    },
+    {
+      "id": "owf-diagram-run-narrow-dark",
+      "path": "/onboarding/workflow-run",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "deviceScaleFactor": 2,
+      "hasTouch": true,
+      "isMobile": true
     }
   ]
 }
