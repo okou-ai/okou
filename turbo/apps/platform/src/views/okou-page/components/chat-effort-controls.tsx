@@ -42,7 +42,7 @@ export function useChatEffort(
  * not say. The only thing this changes is the case: a level is a label in the
  * interface, not the raw enum it happens to be on the wire.
  */
-export function formatChatEffort(_model: string | undefined, effort: string) {
+export function formatChatEffort(effort: string) {
   return effort.charAt(0).toUpperCase() + effort.slice(1);
 }
 
@@ -67,7 +67,7 @@ export function ChatEffortSettings({
   if (efforts.length === 0 || value === undefined) {
     return null;
   }
-  const displayValue = formatChatEffort(selection.selectedModel, value);
+  const displayValue = formatChatEffort(value);
   const index = efforts.findIndex((effort) => {
     return effort === value;
   });

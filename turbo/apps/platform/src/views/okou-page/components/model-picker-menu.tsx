@@ -239,7 +239,7 @@ function ModelPickerOverview({
               selectedOption?.fastAvailable ? speedLabel : undefined,
               savedEffort === undefined
                 ? undefined
-                : formatChatEffort(value?.selectedModel, savedEffort),
+                : formatChatEffort(savedEffort),
             ]
               .filter(Boolean)
               .join(" · ") || undefined
@@ -312,21 +312,19 @@ function ChatModelSettings({
           getCanonicalModelDisplayName(selection.selectedModel)}
       </div>
       {/* Effort and Fast belong together, so space separates them, not a rule. */}
-      <div>
-        <ChatEffortSettings
+      <ChatEffortSettings
+        selection={selection}
+        disabled={option?.disabled ?? true}
+        onChange={onChange}
+      />
+      {option?.fastAvailable && (
+        <ChatFastSetting
           selection={selection}
-          disabled={option?.disabled ?? true}
+          disabled={option.disabled}
+          fastImpact={option.fastImpact}
           onChange={onChange}
         />
-        {option?.fastAvailable && (
-          <ChatFastSetting
-            selection={selection}
-            disabled={option.disabled}
-            fastImpact={option.fastImpact}
-            onChange={onChange}
-          />
-        )}
-      </div>
+      )}
     </>
   );
 }

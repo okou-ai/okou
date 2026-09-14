@@ -50,7 +50,7 @@ export function ChatEffortTrigger({
   const label = t(($) => {
     return $.settings.models.picker.effort;
   });
-  const displayValue = formatChatEffort(value.selectedModel, effort);
+  const displayValue = formatChatEffort(effort);
   const fast = value.codexServiceTier === "fast";
   const disabled = policy?.routeStatus !== "valid";
   const fastAvailable =
@@ -96,21 +96,19 @@ export function ChatEffortTrigger({
         sideOffset={6}
         className="w-63 px-1.5 py-0.5"
       >
-        <div>
-          <ChatEffortSettings
+        <ChatEffortSettings
+          selection={value}
+          disabled={disabled}
+          onChange={onChange}
+        />
+        {fastAvailable ? (
+          <ChatFastSetting
             selection={value}
             disabled={disabled}
+            fastImpact={<ModelFastImpact policy={policy} />}
             onChange={onChange}
           />
-          {fastAvailable ? (
-            <ChatFastSetting
-              selection={value}
-              disabled={disabled}
-              fastImpact={<ModelFastImpact policy={policy} />}
-              onChange={onChange}
-            />
-          ) : null}
-        </div>
+        ) : null}
       </PopoverContent>
     </Popover>
   );
