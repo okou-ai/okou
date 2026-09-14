@@ -83,6 +83,18 @@ class SnapshotSqlTest(unittest.TestCase):
                     CREATE SCHEMA "odd-schema";
                     CREATE TABLE "odd-schema"."quoted'name"(val text);
                     INSERT INTO "odd-schema"."quoted'name" VALUES('vm0secret:v1:quoted');
+                    CREATE TABLE public.chunk_probe(id int, value text);
+                    ALTER TABLE public.chunk_probe ALTER COLUMN value SET STORAGE PLAIN;
+                    INSERT INTO public.chunk_probe
+                      SELECT i, repeat('x',2000) || CASE
+                        WHEN i IN (1,1000,2000) THEN 'vm0secret:v1:chunk'
+                        WHEN i IN (700,1700) THEN 'a1b3922b-fab1-4ed3-aa9e-40f86f92a7a8'
+                        ELSE '' END FROM generate_series(1,2000) i;
+                    CREATE TABLE public.empty_probe(value text);
+                    CREATE TABLE public.inherit_parent(id int);
+                    CREATE TABLE public.inherit_child() INHERITS(public.inherit_parent);
+                    INSERT INTO public.inherit_parent VALUES(1);
+                    INSERT INTO public.inherit_child VALUES(2),(3);
                 """
                 )
                 self.assertEqual(fixture.returncode, 0, fixture.stderr)
@@ -91,11 +103,55 @@ class SnapshotSqlTest(unittest.TestCase):
                 records = [
                     json.loads(line) for line in result.stdout.splitlines() if line
                 ]
-                tables = [r for r in records if r["kind"] == "table"]
-                self.assertEqual(len(tables), 4)
-                self.assertEqual(sum(r["rows"] for r in tables), 6)
-                self.assertEqual(sum(r["rowsWithEnvelopeMarker"] for r in tables), 4)
-                self.assertEqual(sum(r["rowsWithSourceReference"] for r in tables), 1)
+                decoded = scan_records(result, hashlib.sha256(b"postgres").hexdigest())
+                tables = [r for r in decoded if r["kind"] == "table"]
+                self.assertEqual(len(tables), 8)
+                self.assertEqual(sum(r["rows"] for r in tables), 2009)
+                self.assertEqual(sum(r["rowsWithEnvelopeMarker"] for r in tables), 7)
+                self.assertEqual(sum(r["rowsWithSourceReference"] for r in tables), 3)
+                oid = int(
+                    psql("-c", "SELECT 'public.chunk_probe'::regclass::oid").stdout
+                )
+                chunks = [
+                    r
+                    for r in records
+                    if r["kind"] == "table-chunk" and r["relationOid"] == oid
+                ]
+                self.assertGreaterEqual(len(chunks), 3)
+                plan = json.loads(
+                    psql(
+                        "-c",
+                        "EXPLAIN (FORMAT JSON) SELECT count(*) FROM ONLY public.chunk_probe WHERE ctid >= '(0,0)'::tid AND ctid < '(128,0)'::tid",
+                    ).stdout
+                )
+                self.assertIn('"Node Type": "Tid Range Scan"', json.dumps(plan))
+                for corrupt, error in [
+                    (
+                        [r for r in records if r is not chunks[-1]],
+                        "incomplete_table_scan",
+                    ),
+                    (records + [chunks[0]], "noncontiguous_table_chunks"),
+                    (
+                        [r for r in records if r is not chunks[0]],
+                        "noncontiguous_table_chunks",
+                    ),
+                    (
+                        [
+                            r
+                            for r in records
+                            if not (
+                                r.get("relationOid") == oid
+                                and r["kind"] in {"table-plan", "table-chunk"}
+                            )
+                        ],
+                        "incomplete_table_scan",
+                    ),
+                ]:
+                    incomplete = subprocess.CompletedProcess(
+                        [], 0, "\n".join(json.dumps(r) for r in corrupt), ""
+                    )
+                    with self.assertRaisesRegex(ScanReportError, error):
+                        scan_records(incomplete, "test-database-hash")
                 self.assertEqual(
                     sum(r["nonNullValues"] for r in records if r["kind"] == "binary"), 1
                 )
