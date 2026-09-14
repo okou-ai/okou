@@ -1,3 +1,8 @@
+import { isFeishuInstallationEnabled } from "../services/feishu-config";
+import {
+  FEISHU_PLATFORMS,
+  type FeishuPlatform,
+} from "@okouai/core/feishu-platform";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
@@ -9,7 +14,6 @@ import {
   encryptPersistentSecretValue,
 } from "../services/crypto.utils";
 
-const FEISHU_API_ORIGIN = "https://open.feishu.cn";
 const TOKEN_REFRESH_WINDOW_MS = 3 * 60 * 1000;
 
 const tenantAccessTokenResponseSchema = z.object({
@@ -153,7 +157,7 @@ interface FeishuOAuthToken {
 export class FeishuApiError extends Error {
   constructor(
     message: string,
-    readonly routeStatus: 400 | 502,
+    readonly routeStatus: 400 | 403 | 502,
   ) {
     super(message);
   }
@@ -197,12 +201,13 @@ async function readJson(response: Response): Promise<unknown> {
 export async function fetchFeishuTenantAccessToken(
   args: {
     readonly appId: string;
+    readonly platform?: FeishuPlatform;
     readonly appSecret: string;
   },
   signal: AbortSignal,
 ): Promise<FeishuTenantAccessToken> {
   const response = await fetch(
-    `${FEISHU_API_ORIGIN}/open-apis/auth/v3/tenant_access_token/internal`,
+    `${FEISHU_PLATFORMS[args.platform ?? "feishu"].apiOrigin}/open-apis/auth/v3/tenant_access_token/internal`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -236,16 +241,20 @@ export async function fetchFeishuTenantAccessToken(
 export async function fetchFeishuBotInfo(
   args: {
     readonly tenantAccessToken: string;
+    readonly platform?: FeishuPlatform;
   },
   signal: AbortSignal,
 ): Promise<FeishuBotInfo> {
-  const response = await fetch(`${FEISHU_API_ORIGIN}/open-apis/bot/v3/info`, {
-    headers: {
-      authorization: `Bearer ${args.tenantAccessToken}`,
-      "content-type": "application/json; charset=utf-8",
+  const response = await fetch(
+    `${FEISHU_PLATFORMS[args.platform ?? "feishu"].apiOrigin}/open-apis/bot/v3/info`,
+    {
+      headers: {
+        authorization: `Bearer ${args.tenantAccessToken}`,
+        "content-type": "application/json; charset=utf-8",
+      },
+      signal,
     },
-    signal,
-  });
+  );
   const parsed = feishuBotInfoResponseSchema.parse(await readJson(response));
   if (parsed.code !== 0) {
     throw new FeishuApiError(
@@ -267,6 +276,7 @@ export async function fetchFeishuBotInfo(
 export async function exchangeFeishuOAuthCode(
   args: {
     readonly appId: string;
+    readonly platform?: FeishuPlatform;
     readonly appSecret: string;
     readonly code: string;
     readonly redirectUri: string;
@@ -274,7 +284,7 @@ export async function exchangeFeishuOAuthCode(
   signal: AbortSignal,
 ): Promise<FeishuOAuthToken> {
   const response = await fetch(
-    `${FEISHU_API_ORIGIN}/open-apis/authen/v2/oauth/token`,
+    `${FEISHU_PLATFORMS[args.platform ?? "feishu"].apiOrigin}/open-apis/authen/v2/oauth/token`,
     {
       method: "POST",
       headers: { "content-type": "application/json; charset=utf-8" },
@@ -310,13 +320,14 @@ export async function exchangeFeishuOAuthCode(
 export async function refreshFeishuOAuthToken(
   args: {
     readonly appId: string;
+    readonly platform?: FeishuPlatform;
     readonly appSecret: string;
     readonly refreshToken: string;
   },
   signal: AbortSignal,
 ): Promise<FeishuOAuthToken> {
   const response = await fetch(
-    `${FEISHU_API_ORIGIN}/open-apis/authen/v2/oauth/token`,
+    `${FEISHU_PLATFORMS[args.platform ?? "feishu"].apiOrigin}/open-apis/authen/v2/oauth/token`,
     {
       method: "POST",
       headers: { "content-type": "application/json; charset=utf-8" },
@@ -353,11 +364,12 @@ export async function refreshFeishuOAuthToken(
 export async function fetchFeishuUserInfo(
   args: {
     readonly userAccessToken: string;
+    readonly platform?: FeishuPlatform;
   },
   signal: AbortSignal,
 ): Promise<FeishuUserInfo> {
   const response = await fetch(
-    `${FEISHU_API_ORIGIN}/open-apis/authen/v1/user_info`,
+    `${FEISHU_PLATFORMS[args.platform ?? "feishu"].apiOrigin}/open-apis/authen/v1/user_info`,
     {
       headers: {
         authorization: `Bearer ${args.userAccessToken}`,
@@ -383,13 +395,13 @@ export async function fetchFeishuUserInfo(
   };
 }
 
-export async function getFeishuTenantAccessToken(
+async function getFeishuRequestContext(
   args: {
     readonly db: Db;
     readonly installationId: string;
   },
   signal: AbortSignal,
-): Promise<string> {
+): Promise<{ readonly token: string; readonly apiOrigin: string }> {
   const [installation] = await args.db
     .select()
     .from(feishuOrgInstallations)
@@ -399,15 +411,21 @@ export async function getFeishuTenantAccessToken(
   if (!installation) {
     throw new Error("Feishu installation not found");
   }
+  if (!(await isFeishuInstallationEnabled(args.db, installation))) {
+    throw new FeishuApiError("Lark integration is not enabled", 403);
+  }
   const context = { orgId: installation.orgId };
   if (
     installation.encryptedTenantAccessToken &&
     tokenIsFresh(installation.tenantAccessTokenExpiresAt)
   ) {
-    return await decryptPersistentSecretValue(
-      installation.encryptedTenantAccessToken,
-      context,
-    );
+    return {
+      token: await decryptPersistentSecretValue(
+        installation.encryptedTenantAccessToken,
+        context,
+      ),
+      apiOrigin: FEISHU_PLATFORMS[installation.platform].apiOrigin,
+    };
   }
 
   const appSecret = await decryptPersistentSecretValue(
@@ -417,6 +435,7 @@ export async function getFeishuTenantAccessToken(
   const token = await fetchFeishuTenantAccessToken(
     {
       appId: installation.appId,
+      platform: installation.platform,
       appSecret,
     },
     signal,
@@ -436,7 +455,10 @@ export async function getFeishuTenantAccessToken(
     })
     .where(eq(feishuOrgInstallations.id, args.installationId));
   signal.throwIfAborted();
-  return token.token;
+  return {
+    token: token.token,
+    apiOrigin: FEISHU_PLATFORMS[installation.platform].apiOrigin,
+  };
 }
 
 export async function downloadFeishuMessageResource(
@@ -449,9 +471,9 @@ export async function downloadFeishuMessageResource(
   },
   signal: AbortSignal,
 ): Promise<Response> {
-  const token = await getFeishuTenantAccessToken(args, signal);
+  const { token, apiOrigin } = await getFeishuRequestContext(args, signal);
   const url = new URL(
-    `${FEISHU_API_ORIGIN}/open-apis/im/v1/messages/${encodeURIComponent(args.messageId)}/resources/${encodeURIComponent(args.fileKey)}`,
+    `${apiOrigin}/open-apis/im/v1/messages/${encodeURIComponent(args.messageId)}/resources/${encodeURIComponent(args.fileKey)}`,
   );
   url.searchParams.set("type", args.resourceType);
   const response = await fetch(url, {
@@ -477,7 +499,7 @@ export async function uploadFeishuFile(
   },
   signal: AbortSignal,
 ): Promise<string> {
-  const token = await getFeishuTenantAccessToken(args, signal);
+  const { token, apiOrigin } = await getFeishuRequestContext(args, signal);
   const form = new FormData();
   form.set("file_type", "stream");
   form.set("file_name", args.filename);
@@ -486,7 +508,7 @@ export async function uploadFeishuFile(
     new Blob([Uint8Array.from(args.content)], { type: args.contentType }),
     args.filename,
   );
-  const response = await fetch(`${FEISHU_API_ORIGIN}/open-apis/im/v1/files`, {
+  const response = await fetch(`${apiOrigin}/open-apis/im/v1/files`, {
     method: "POST",
     headers: { authorization: `Bearer ${token}` },
     body: form,
@@ -540,8 +562,8 @@ export async function sendFeishuMessage(
   },
   signal: AbortSignal,
 ): Promise<FeishuSentMessage> {
-  const token = await getFeishuTenantAccessToken(args, signal);
-  const url = new URL(`${FEISHU_API_ORIGIN}/open-apis/im/v1/messages`);
+  const { token, apiOrigin } = await getFeishuRequestContext(args, signal);
+  const url = new URL(`${apiOrigin}/open-apis/im/v1/messages`);
   url.searchParams.set("receive_id_type", args.receiveIdType);
   const response = await fetch(url, {
     method: "POST",
@@ -572,9 +594,9 @@ export async function replyWithFeishuMessage(
   },
   signal: AbortSignal,
 ): Promise<FeishuSentMessage> {
-  const token = await getFeishuTenantAccessToken(args, signal);
+  const { token, apiOrigin } = await getFeishuRequestContext(args, signal);
   const response = await fetch(
-    `${FEISHU_API_ORIGIN}/open-apis/im/v1/messages/${encodeURIComponent(args.messageId)}/reply`,
+    `${apiOrigin}/open-apis/im/v1/messages/${encodeURIComponent(args.messageId)}/reply`,
     {
       method: "POST",
       headers: {
@@ -603,9 +625,9 @@ export async function addFeishuMessageReaction(
   },
   signal: AbortSignal,
 ): Promise<string> {
-  const token = await getFeishuTenantAccessToken(args, signal);
+  const { token, apiOrigin } = await getFeishuRequestContext(args, signal);
   const response = await fetch(
-    `${FEISHU_API_ORIGIN}/open-apis/im/v1/messages/${encodeURIComponent(args.messageId)}/reactions`,
+    `${apiOrigin}/open-apis/im/v1/messages/${encodeURIComponent(args.messageId)}/reactions`,
     {
       method: "POST",
       headers: {
@@ -643,9 +665,9 @@ export async function removeFeishuMessageReaction(
   },
   signal: AbortSignal,
 ): Promise<void> {
-  const token = await getFeishuTenantAccessToken(args, signal);
+  const { token, apiOrigin } = await getFeishuRequestContext(args, signal);
   const response = await fetch(
-    `${FEISHU_API_ORIGIN}/open-apis/im/v1/messages/${encodeURIComponent(args.messageId)}/reactions/${encodeURIComponent(args.reactionId)}`,
+    `${apiOrigin}/open-apis/im/v1/messages/${encodeURIComponent(args.messageId)}/reactions/${encodeURIComponent(args.reactionId)}`,
     {
       method: "DELETE",
       headers: {
@@ -673,8 +695,8 @@ export async function listFeishuChatMessages(
   },
   signal: AbortSignal,
 ): Promise<readonly FeishuHistoryMessage[]> {
-  const token = await getFeishuTenantAccessToken(args, signal);
-  const url = new URL(`${FEISHU_API_ORIGIN}/open-apis/im/v1/messages`);
+  const { token, apiOrigin } = await getFeishuRequestContext(args, signal);
+  const url = new URL(`${apiOrigin}/open-apis/im/v1/messages`);
   url.searchParams.set("container_id_type", "chat");
   url.searchParams.set("container_id", args.chatId);
   url.searchParams.set("sort_type", "ByCreateTimeDesc");
@@ -697,4 +719,11 @@ export async function listFeishuChatMessages(
     );
   }
   return parsed.data?.items ?? [];
+}
+
+export async function getFeishuTenantAccessToken(
+  args: { readonly db: Db; readonly installationId: string },
+  signal: AbortSignal,
+): Promise<string> {
+  return (await getFeishuRequestContext(args, signal)).token;
 }

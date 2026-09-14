@@ -1,3 +1,5 @@
+import { isFeishuInstallationEnabled } from "./feishu-config";
+import type { FeishuPlatform } from "@okouai/core/feishu-platform";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
@@ -39,6 +41,7 @@ type FeishuLaunchContextRow = Pick<
   | "publicBrand"
 > & {
   readonly tenantKey: string | null;
+  readonly platform: FeishuPlatform;
   readonly routeThreadId: string;
   readonly feishuDisplayName: string | null;
   readonly installationPublicBrand: PublicBrand;
@@ -103,6 +106,8 @@ async function loadFeishuLaunchContext(
       messageFiles: chatFeishuContext.messageFiles,
       chatType: chatFeishuContext.chatType,
       tenantKey: feishuOrgInstallations.feishuTenantKey,
+      platform: feishuOrgInstallations.platform,
+      ownerUserId: feishuOrgInstallations.ownerUserId,
       chatId: chatFeishuContext.chatId,
       messageId: chatFeishuContext.messageId,
       threadId: chatFeishuContext.threadId,
@@ -160,6 +165,12 @@ async function loadFeishuLaunchContext(
       ),
     )
     .limit(1);
+  if (
+    row &&
+    !(await isFeishuInstallationEnabled(db, { ...row, orgId: args.orgId }))
+  ) {
+    return null;
+  }
   return requiredFeishuLaunchContext(row);
 }
 
@@ -179,6 +190,7 @@ export async function loadFeishuQueuedLaunchMaterial(
   return {
     prompt: context.messageText,
     appendSystemPrompt: buildFeishuSystemPrompt({
+      platform: context.platform,
       chatType: context.chatType,
       installationId: context.installationId,
       tenantKey: context.tenantKey,

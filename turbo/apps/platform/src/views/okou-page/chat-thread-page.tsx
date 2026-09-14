@@ -6049,6 +6049,9 @@ function SourceMessageAnnotation({
     );
   }
   const { part } = renderPart;
+  const isLark =
+    part.kind === "feishu" &&
+    part.href?.startsWith("https://applink.larksuite.com/") === true;
   const sourceLabel =
     part.kind === "slack"
       ? t(($) => {
@@ -6056,7 +6059,7 @@ function SourceMessageAnnotation({
         })
       : part.kind === "feishu"
         ? t(($) => {
-            return $.chat.origins.feishu;
+            return $.chat.origins[isLark ? "lark" : "feishu"];
           })
         : part.kind === "teams"
           ? t(($) => {
@@ -6088,7 +6091,7 @@ function SourceMessageAnnotation({
         })
       : part.kind === "feishu"
         ? t(($) => {
-            return $.chat.origins.openFeishuChat;
+            return $.chat.origins[isLark ? "openLarkChat" : "openFeishuChat"];
           })
         : part.kind === "teams"
           ? t(($) => {

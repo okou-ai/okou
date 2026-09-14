@@ -353,6 +353,7 @@
       "feishu": "Feishu",
       "github": "GitHub",
       "goal": "लक्ष्य",
+      "lark": "Lark",
       "slack": "Slack",
       "teams": "टीमें",
       "telegram": "Telegram",
@@ -2000,9 +2001,11 @@
       "agentphone": "AgentPhone",
       "feishu": "Feishu",
       "github": "GitHub",
+      "lark": "Lark",
       "openChat": "चैट खोलें",
       "openFeishuChat": "Feishu में मूल चैट खोलें",
       "openGithubMessage": "GitHub में मूल इश्यू या पुल अनुरोध खोलें",
+      "openLarkChat": "Lark में मूल चैट खोलें",
       "openMessage": "संदेश खोलें",
       "openSlackMessage": "मूल संदेश को Slack में खोलें",
       "openTeamsMessage": "Microsoft Teams में मूल संदेश खोलें",
@@ -3417,6 +3420,9 @@
         "wrongOrganizationDescription": "आपका सक्रिय संगठन इस GitHub इंस्टॉलेशन से मेल नहीं खाता है। सही संगठन पर जाएँ और लिंक को दोबारा खोलें।",
         "wrongOrganizationTitle": "संगठन बदलें"
       },
+      "lark": {
+        "connectTitle": "Lark से कनेक्ट करें"
+      },
       "slack": {
         "connectDescription": "अपने खाते को इस Slack वर्कस्पेस से लिंक करें ताकि आप Slack से सीधे अपने एजेंट से बातचीत कर सकें।",
         "connectTitle": "Slack से कनेक्ट करें",
@@ -3671,6 +3677,12 @@
           "verifying": "सत्यापन किया जा रहा है...",
           "waiting": "कॉलबैक का इंतजार है"
         },
+        "toasts": {
+          "botInstalled": "Feishu बॉट सफलतापूर्वक स्थापित हुआ",
+          "botUninstalled": "Feishu बॉट अनइंस्टॉल किया गया",
+          "connected": "Feishu सफलतापूर्वक कनेक्ट हुआ",
+          "disconnected": "Feishu से डिस्कनेक्ट हो गया"
+        },
         "tokens": {
           "descriptionAfter": ", आपके द्वारा अभी बनाया गया ऐप चुनें और उसका कॉन्फ़िगरेशन पृष्ठ दर्ज करें। इवेंट कॉन्फ़िगरेशन → एन्क्रिप्शन रणनीति खोलें, फिर एन्क्रिप्ट कुंजी और सत्यापन टोकन की प्रतिलिपि बनाएँ।",
           "descriptionBefore": "खोलें",
@@ -3682,6 +3694,136 @@
         "uninstallDescription": "यह वर्कस्पेस से {{bot}} को अनइंस्टॉल करता है और इसका उपयोग करने वाले प्रत्येक {{brandName}} खाते को डिस्कनेक्ट कर देता है। इस एक्शन को वापस नहीं किया जा सकता।",
         "uninstallTargetFallback": "यह बॉट",
         "uninstallTitle": "Feishu बॉट अनइंस्टॉल करें?"
+      },
+      "lark": {
+        "addBot": "बॉट जोड़ें",
+        "addDialogDescription": "एक एंटरप्राइज़ कस्टम ऐप बनाएं, उसके बॉट को सक्षम करें और Lark डेवलपर कंसोल में इन चरणों को पूरा करें।",
+        "addDialogTitle": "एक Lark बॉट जोड़ें",
+        "agentDescription": "वह एजेंट चुनें जो इस बॉट को भेजे गए संदेशों को संभाले।",
+        "backToIntegrations": "एकीकरण पर वापस जाएँ",
+        "botFallback": "Lark बॉट",
+        "botIconAlt": "{{bot}} बॉट आइकन",
+        "bots": "Lark बॉट",
+        "callbackStatusVerified": "कॉलबैक सत्यापित",
+        "callbackStatusWaiting": "कॉलबैक का इंतजार है",
+        "configured": "कॉन्फ़िगर किया गया",
+        "copied": "{{label}} कॉपी किया गया",
+        "copy": "प्रतिलिपि",
+        "create": {
+          "descriptionAfter": ", अपनी पसंद के नाम और आइकन के साथ एक एंटरप्राइज़ कस्टम ऐप बनाएं, फिर बॉट क्षमता जोड़ें।",
+          "descriptionBefore": "में",
+          "downloadIcon": "वैकल्पिक {{brandName}} आइकन डाउनलोड करें",
+          "iconAlt": "वैकल्पिक {{brandName}} ऐप आइकन",
+          "iconHint": ", या अपनी पसंद के किसी भी आइकन का उपयोग करें।",
+          "iconTitle": "वैकल्पिक {{brandName}} ऐप आइकन",
+          "imageAlt": "Feishu ऐप निर्माण फॉर्म जिसमें ऐप का नाम, आइकन और क्रिएट बटन हाइलाइट किया गया है",
+          "title": "एक एंटरप्राइज़ कस्टम ऐप बनाएं"
+        },
+        "credentials": {
+          "appId": "ऐप ID",
+          "appSecret": "ऐप सीक्रेट",
+          "description": "क्रेडेंशियल और बुनियादी जानकारी से ऐप ID और ऐप सीक्रेट को कॉपी करें।",
+          "imageAlt": "Feishu ऐप निर्माण परिणाम दिखा रहा है कि ऐप ID और ऐप सीक्रेट कहां खोजें",
+          "title": "ऐप क्रेडेंशियल जोड़ें"
+        },
+        "defaultAgent": "डिफ़ॉल्ट एजेंट",
+        "defaultAgentAria": "{{appId}} के लिए डिफ़ॉल्ट एजेंट",
+        "developerConsole": "Lark डेवलपर कंसोल",
+        "dialogAdminRequired": "संगठन व्यवस्थापक को ऐप को कॉन्फ़िगर करना होगा. सेटअप पूरा होने के बाद आप Lark बॉट सूची से अपना खाता कनेक्ट कर सकते हैं।",
+        "documentTitle": "Lark",
+        "emptyAdmin": "किसी एजेंट को Lark संदेशों को रूट करने के लिए एक कस्टम ऐप जोड़ें।",
+        "emptyMember": "किसी संगठन व्यवस्थापक से Lark बॉट जोड़ने के लिए कहें।",
+        "emptyTitle": "अभी तक कोई Lark बॉट नहीं है",
+        "events": {
+          "callbackLabel": "कॉलबैक URL",
+          "continue": "Lark कॉलबैक URL को सत्यापित करने और संदेश ईवेंट की सदस्यता लेने के बाद जारी रखें।",
+          "description": "इवेंट कॉन्फ़िगरेशन खोलें. सदस्यता मोड के अंतर्गत, \"डेवलपर के सर्वर पर सूचनाएं भेजें\" चुनें। फिर कॉलबैक कॉन्फ़िगरेशन खोलें और कॉलबैक URL पेस्ट करें। Lark द्वारा इसे सत्यापित करने के बाद, \"संदेश प्राप्त करें v1\" ईवेंट जोड़ें।",
+          "requestAlt": "अनुरोध URL फ़ील्ड के साथ Feishu इवेंट कॉन्फ़िगरेशन स्क्रीन हाइलाइट की गई है",
+          "requestLabel": "कॉलबैक अनुरोध URL जोड़ें",
+          "subscriptionAlt": "सदस्यता मोड संपादन नियंत्रण हाइलाइट के साथ Feishu इवेंट कॉन्फ़िगरेशन स्क्रीन",
+          "subscriptionLabel": "इवेंट सदस्यता मोड का चयन करें",
+          "title": "इवेंट डिलीवरी कॉन्फ़िगर करें"
+        },
+        "faq": {
+          "approvalAnswer": "यदि उपलब्धता सभी सदस्यों पर सेट है, तो Lark व्यवस्थापक को रिलीज़ को मंजूरी देनी होगी। Lark एक व्यवस्थापक को सीधे संदेश में अनुमोदन अनुरोध भेजता है, और जब तक व्यवस्थापक समीक्षा पूरी नहीं कर लेता, तब तक ऐप लंबित रहता है।",
+          "approvalQuestion": "ऐप को प्रकाशित करने के लिए अनुमोदन की प्रतीक्षा क्यों की जा रही है?",
+          "challengeAnswer": "इसका आमतौर पर मतलब है कि टोकन चरण के दौरान सहेजी गई एन्क्रिप्ट कुंजी या सत्यापन टोकन गलत है। टोकन चरण पर लौटें, इवेंट कॉन्फ़िगरेशन → एन्क्रिप्शन रणनीति से दोनों मान फिर से दर्ज करें, उन्हें सहेजें, और अनुरोध URL पुनः प्रयास करें।",
+          "challengeQuestion": "Lark \"चैलेंज कोड को प्रतिक्रिया नहीं मिली\" क्यों दिखाता है?",
+          "title": "सेटअप FAQ"
+        },
+        "guideReference": "स्क्रीनशॉट में संदर्भ के लिए Feishu कंसोल दिखाया गया है। इन चरणों को Lark Developer Console में पूरा करें।",
+        "loadError": "Lark सेटिंग लोड नहीं हो सकी.",
+        "manage": "प्रबंधित करना",
+        "manageDialogTitle": "Lark बॉट प्रबंधित करें",
+        "moreOptions": "{{bot}} के लिए अधिक विकल्प",
+        "pageDescription": "इस वर्कस्पेस के लिए बॉट रूटिंग प्रबंधित करें",
+        "permissions": {
+          "description": "Lark डेवलपर कंसोल में Permissions & Scopes खोलें, Batch Import/Export > Import चुनें और नीचे दिया गया JSON पेस्ट करें। इससे मैनेज्ड कनेक्टर के सभी स्कोप User identity के अंतर्गत इंपोर्ट हो जाते हैं। ये इंटीग्रेशन के काम करने के लिए ज़रूरी न्यूनतम अनुमतियाँ हैं।",
+          "hint": "इंपोर्ट की गई सभी User identity अनुमतियाँ बनाए रखें, फिर नया ऐप संस्करण बनाएँ और प्रकाशित करें ताकि OAuth सहमति स्क्रीन उन्हें प्रदान कर सके। किसी भी अनुमति को हटाने पर इंटीग्रेशन काम नहीं करेगा और Lark एडमिन की मंज़ूरी की ज़रूरत पड़ सकती है।",
+          "label": "यूज़र टोकन स्कोप JSON",
+          "menuAlt": "Feishu Permissions & Scopes पेज, जिसमें Batch import/export scopes मेन्यू हाइलाइट किया गया है",
+          "menuLabel": "Batch import/export scopes खोलें",
+          "reviewAlt": "Feishu Batch import/export scopes डायलॉग, जिसमें इंपोर्ट किया गया JSON और रिव्यू बटन हाइलाइट हैं",
+          "reviewLabel": "JSON पेस्ट करें और नए स्कोप रिव्यू करें",
+          "title": "यूज़र टोकन स्कोप इंपोर्ट करें"
+        },
+        "publish": {
+          "allMembersAlt": "सभी सदस्यों के साथ Feishu उपलब्धता सेटिंग्स चयनित",
+          "allMembersLabel": "ऐप को सभी सदस्यों के लिए उपलब्ध कराएं",
+          "createVersionAlt": "Feishu संस्करण प्रबंधन पृष्ठ पर एक संस्करण बनाएं बटन पर प्रकाश डाला गया है",
+          "createVersionLabel": "एक ऐप संस्करण बनाएं",
+          "description": "ऐप संस्करण बनाएं और प्रकाशित करें, फिर इसकी उपलब्धता सेटिंग्स संपादित करें और सभी सदस्यों का चयन करें। ऐप का उपयोग आपके संगठन के अन्य सदस्यों द्वारा केवल आपके द्वारा उन्हें एक्सेस प्रदान करने के बाद ही किया जा सकता है।",
+          "editAvailabilityAlt": "Feishu संस्करण विवरण पृष्ठ पर उपलब्धता सेटिंग्स संपादन कार्रवाई पर प्रकाश डाला गया है",
+          "editAvailabilityLabel": "उपलब्धता सेटिंग संपादित करें",
+          "title": "ऐप प्रकाशित करें"
+        },
+        "redirect": {
+          "descriptionAfter": ", Development Configuration → Security Settings खोलें। Redirect URLs के अंतर्गत नीचे URL जोड़ें ताकि वर्कस्पेस सदस्य अपने Lark खाते को {{brandName}} से जोड़ सकें।",
+          "descriptionBefore": "में",
+          "imageAlt": "Feishu सुरक्षा सेटिंग्स पृष्ठ दिखा रहा है कि OAuth रीडायरेक्ट URL कहां जोड़ना है",
+          "label": "OAuth पुनर्निर्देशन URL",
+          "title": "OAuth रीडायरेक्ट URL कॉन्फ़िगर करें"
+        },
+        "reviewGuide": "समीक्षा मार्गदर्शिका",
+        "reviewGuideDescription": "इस Lark बॉट के लिए पूर्ण सेटअप चरणों की समीक्षा करें।",
+        "reviewGuideTitle": "Lark समीक्षा मार्गदर्शिका",
+        "routeDescription": "Lark संदेशों को एजेंटों तक रूट करें",
+        "selectAgent": "एक एजेंट चुनें",
+        "setupIncomplete": "सेटअप अधूरा",
+        "steps": {
+          "back": "पीछे",
+          "checking": "जाँच हो रही है...",
+          "close": "बंद करना",
+          "create": "बनाएं",
+          "credentials": "साख",
+          "done": "हो गया",
+          "events": "घटनाएँ",
+          "next": "अगला",
+          "permissions": "स्कोप",
+          "publish": "प्रकाशित करना",
+          "redirect": "पुनर्निर्देशन",
+          "tokens": "टोकन",
+          "verify": "सत्यापित करें और जारी रखें",
+          "verifying": "सत्यापन किया जा रहा है...",
+          "waiting": "कॉलबैक का इंतजार है"
+        },
+        "toasts": {
+          "botInstalled": "Lark बॉट सफलतापूर्वक स्थापित हुआ",
+          "botUninstalled": "Lark बॉट अनइंस्टॉल किया गया",
+          "connected": "Lark सफलतापूर्वक कनेक्ट हुआ",
+          "disconnected": "Lark से डिस्कनेक्ट हो गया"
+        },
+        "tokens": {
+          "descriptionAfter": ", आपके द्वारा अभी बनाया गया ऐप चुनें और उसका कॉन्फ़िगरेशन पृष्ठ दर्ज करें। इवेंट कॉन्फ़िगरेशन → एन्क्रिप्शन रणनीति खोलें, फिर एन्क्रिप्ट कुंजी और सत्यापन टोकन की प्रतिलिपि बनाएँ।",
+          "descriptionBefore": "खोलें",
+          "encryptKey": "एन्क्रिप्ट कुंजी",
+          "imageAlt": "Feishu एन्क्रिप्शन रणनीति स्क्रीन एन्क्रिप्ट कुंजी और सत्यापन टोकन दिखा रही है",
+          "title": "ईवेंट सत्यापन टोकन जोड़ें",
+          "verificationToken": "सत्यापन टोकन"
+        },
+        "uninstallDescription": "यह वर्कस्पेस से {{bot}} को अनइंस्टॉल करता है और इसका उपयोग करने वाले प्रत्येक {{brandName}} खाते को डिस्कनेक्ट कर देता है। इस एक्शन को वापस नहीं किया जा सकता।",
+        "uninstallTargetFallback": "यह बॉट",
+        "uninstallTitle": "Lark बॉट अनइंस्टॉल करें?"
       },
       "telegram": {
         "addBot": "बॉट जोड़ें",
@@ -3761,10 +3903,6 @@
       "toasts": {
         "agentphoneConnected": "AgentPhone जुड़ा",
         "agentphoneDisconnected": "AgentPhone डिस्कनेक्ट हो गया",
-        "feishuBotInstalled": "Feishu बॉट सफलतापूर्वक स्थापित हुआ",
-        "feishuBotUninstalled": "Feishu बॉट अनइंस्टॉल किया गया",
-        "feishuConnected": "Feishu सफलतापूर्वक कनेक्ट हुआ",
-        "feishuDisconnected": "Feishu से डिस्कनेक्ट हो गया",
         "slackConnected": "Slack सफलतापूर्वक कनेक्ट हुआ",
         "slackDisconnected": "Slack से डिस्कनेक्ट हो गया",
         "slackInstalled": "Slack सफलतापूर्वक स्थापित हुआ",

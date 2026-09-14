@@ -51,6 +51,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   github: ["github:read", "github:write"],
   slack: ["slack:read", "slack:write"],
   feishu: "feishu:write",
+  lark: "lark:write",
   teams: "teams:write",
   telegram: ["telegram:read", "telegram:write"],
   phone: ["phone:read", "phone:write"],
@@ -200,6 +201,13 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       "List channels, read history, send messages, and transfer files as the Slack bot",
     load: async () => {
       return (await import("./commands/slack")).slackCommand;
+    },
+  },
+  {
+    name: "lark",
+    description: "Send messages and transfer files through Lark",
+    load: async () => {
+      return (await import("./commands/feishu")).createFeishuCommand("lark");
     },
   },
   {

@@ -371,7 +371,7 @@ function buildIntegrationToolsPrompt(
     case "agent": {
       return [
         "- Web chat files: use `okou web download-file -h` when a web chat message includes a `[Web file]` block. `okou web upload-file -h` can share a local file back to the web chat user when file delivery is needed.",
-        "- Cross-integration messages from web chat: if the user explicitly asks you to send or post through another integration, use the integration CLI and ask for the destination when it is missing. Feishu: `okou feishu message send --help` for chats, DMs, and replies. Microsoft Teams: `okou teams message send --help` for conversations and thread replies. Telegram: `okou telegram bot list` to choose the bot, then `okou telegram message send --help` for chats, replies, and forum topics. AgentPhone/SMS: `okou phone message --help`. GitHub does not currently have a dedicated Okou message-send command, so do not invent `okou github message` commands.",
+        "- Cross-integration messages from web chat: if the user explicitly asks you to send or post through another integration, use the integration CLI and ask for the destination when it is missing. Feishu: `okou feishu message send --help`; Lark: `okou lark message send --help` for chats, DMs, and replies. Microsoft Teams: `okou teams message send --help` for conversations and thread replies. Telegram: `okou telegram bot list` to choose the bot, then `okou telegram message send --help` for chats, replies, and forum topics. AgentPhone/SMS: `okou phone message --help`. GitHub does not currently have a dedicated Okou message-send command, so do not invent `okou github message` commands.",
         "- Email from web chat: use the Gmail skill and `GMAIL_TOKEN` to create the draft directly in Gmail. Before composing, list `GET /gmail/v1/users/me/settings/sendAs`; select the entry matching the message's From address, or the `isDefault` entry when no From address is specified. Include a `multipart/alternative` body with plain-text and HTML versions. Keep each plain-text paragraph on one logical line, never hard-wrap prose to a fixed column width, and use HTML paragraph elements so Gmail wraps the message naturally. If the selected entry has a non-empty HTML `signature`, append that signature exactly once to the HTML body and include a readable text equivalent in the plain-text body. For attachments, upload a valid RFC822 multipart message through Gmail's draft media-upload endpoint. Never call `messages.send` or `drafts.send`. After Gmail returns the draft ID, run `okou mail link <gmail-draft-id>` and return the link from the command to the user.",
         "- Email draft revisions: a linked draft stays editable until the user sends it. When the user asks to change the sender, add or remove attachments, or rewrite the content, update that same Gmail draft in place with `PUT /gmail/v1/users/me/drafts/<gmail-draft-id>` and reuse the existing link instead of creating a second draft. When you hand a draft over, tell the user they can ask you for those changes.",
         "- Email send handoff: after `okou mail link` returns the review URL, share it and end the turn so the user can review and send the draft. Do not add a mail callback prompt.",
@@ -391,6 +391,7 @@ function buildIntegrationToolsPrompt(
     case "feishu": {
       return [
         "- Feishu messaging and files: use `okou feishu --help`. Normal replies are automatically sent to the originating conversation, so Feishu commands are for a different chat, DM, reply target, or explicit extra message/file. Use `okou feishu message send --help` for extra messages, `okou feishu download-file -h` for `[Feishu file]` blocks, and `okou feishu upload-file -h` when file delivery is needed. The current installation, chat, message, and sender IDs are in the integration context. Specify `--installation` when the organization has multiple Feishu bots.",
+        "- For Lark conversations, use `okou lark --help`, `okou lark message send --help`, `okou lark download-file -h` for `[Lark file]` blocks, and `okou lark upload-file -h`. The current integration context identifies whether the bot uses Feishu or Lark; always use the matching command and installation.",
         ...localFileContextLines,
       ];
     }
@@ -493,6 +494,7 @@ function buildAgentToolsPrompt(args: {
         ]
       : []),
     "- Feishu messages: when the task explicitly asks to send or post to Feishu, use `okou feishu message send --help` for chats, DMs, and replies.",
+    "- Lark messages: when the task explicitly asks to send or post to Lark, use `okou lark message send --help` for chats, DMs, and replies.",
     ...buildIntegrationToolsPrompt(args.triggerSource),
     "- Maps, geocoding, directions, and places: use `okou maps --help`.",
     "- Current weather, forecasts, and recent history: use `okou weather --help`.",

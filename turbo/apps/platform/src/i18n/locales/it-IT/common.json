@@ -367,6 +367,7 @@
       "feishu": "Feishu",
       "github": "GitHub",
       "goal": "Obiettivo",
+      "lark": "Lark",
       "slack": "Slack",
       "teams": "Microsoft Teams",
       "telegram": "Telegram",
@@ -2037,9 +2038,11 @@
       "agentphone": "AgentPhone",
       "feishu": "Feishu",
       "github": "GitHub",
+      "lark": "Lark",
       "openChat": "Apri la chat",
       "openFeishuChat": "Apri la chat originale in Feishu",
       "openGithubMessage": "Apri il problema o la pull request originale in GitHub",
+      "openLarkChat": "Apri la chat originale in Lark",
       "openMessage": "Apri il messaggio",
       "openSlackMessage": "Apri il messaggio originale in Slack",
       "openTeamsMessage": "Apri il messaggio originale in Microsoft Teams",
@@ -3471,6 +3474,9 @@
         "wrongOrganizationDescription": "La tua organizzazione attiva non corrisponde a questa installazione GitHub. Passa all'organizzazione corretta e apri nuovamente il collegamento.",
         "wrongOrganizationTitle": "Cambia organizzazione"
       },
+      "lark": {
+        "connectTitle": "Connetti a Lark"
+      },
       "slack": {
         "connectDescription": "Collega il tuo account a questa area di lavoro Slack per interagire con il tuo agente direttamente da Slack.",
         "connectTitle": "Connetti a Slack",
@@ -3725,6 +3731,12 @@
           "verifying": "Verifica…",
           "waiting": "In attesa di richiamata"
         },
+        "toasts": {
+          "botInstalled": "Feishu bot installato correttamente",
+          "botUninstalled": "Feishu bot disinstallato",
+          "connected": "Feishu si è connesso correttamente",
+          "disconnected": "Disconnesso da Feishu"
+        },
         "tokens": {
           "descriptionAfter": ", seleziona l'app appena creata e accedi alla sua pagina di configurazione. Apri Configurazione evento → Strategia di crittografia, quindi copia la chiave di crittografia e il token di verifica.",
           "descriptionBefore": "Apri il ",
@@ -3736,6 +3748,136 @@
         "uninstallDescription": "Questa operazione disinstalla {{bot}} dall'area di lavoro e disconnette ogni account {{brandName}} che lo utilizza. Non può essere annullata.",
         "uninstallTargetFallback": "questo bot",
         "uninstallTitle": "Disinstallare Feishu bot?"
+      },
+      "lark": {
+        "addBot": "Aggiungi bot",
+        "addDialogDescription": "Crea un'app aziendale personalizzata, abilita il relativo bot e completa questi passaggi nella Lark console per sviluppatori.",
+        "addDialogTitle": "Aggiungi un bot Lark",
+        "agentDescription": "Scegli l'agente che dovrà gestire i messaggi inviati a questo bot.",
+        "backToIntegrations": "Torniamo alle integrazioni",
+        "botFallback": "Lark bot",
+        "botIconAlt": "{{bot}} icona del bot",
+        "bots": "Lark bot",
+        "callbackStatusVerified": "Richiamata verificata",
+        "callbackStatusWaiting": "In attesa di richiamata",
+        "configured": "Configurato",
+        "copied": "{{label}} copiato",
+        "copy": "Copia",
+        "create": {
+          "descriptionAfter": ", crea un'app aziendale personalizzata con il nome e l'icona che preferisci, quindi aggiungi la funzionalità Bot.",
+          "descriptionBefore": "Nel ",
+          "downloadIcon": "Scarica l'icona {{brandName}} facoltativa",
+          "iconAlt": "Icona facoltativa dell'app {{brandName}}",
+          "iconHint": "oppure utilizza l'icona che preferisci.",
+          "iconTitle": "Icona facoltativa dell'app {{brandName}}",
+          "imageAlt": "Feishu modulo di creazione dell'app con il nome dell'app, l'icona e il pulsante Crea evidenziati",
+          "title": "Creare un'app aziendale personalizzata"
+        },
+        "credentials": {
+          "appId": "Applicazione ID",
+          "appSecret": "Segreto dell'app",
+          "description": "Copia l'app ID e il segreto dell'app da Credenziali e informazioni di base.",
+          "imageAlt": "Risultato della creazione dell'app Feishu che mostra dove trovare l'app ID e il segreto dell'app",
+          "title": "Aggiungi le credenziali dell'app"
+        },
+        "defaultAgent": "Agente predefinito",
+        "defaultAgentAria": "Agente predefinito per {{appId}}",
+        "developerConsole": "Lark console per sviluppatori",
+        "dialogAdminRequired": "Un amministratore dell'organizzazione deve configurare l'app. Puoi connettere il tuo account dall'elenco dei bot Lark una volta completata la configurazione.",
+        "documentTitle": "Lark",
+        "emptyAdmin": "Aggiungi un'app personalizzata per instradare i messaggi Lark a un agente.",
+        "emptyMember": "Chiedi a un amministratore dell'organizzazione di aggiungere un bot Lark.",
+        "emptyTitle": "Nessun bot Lark ancora",
+        "events": {
+          "callbackLabel": "Richiamata URL",
+          "continue": "Continua dopo che Lark ha verificato la richiamata URL e l'evento del messaggio è stato sottoscritto.",
+          "description": "Apri Configurazione evento. In Modalità abbonamento, seleziona \"Invia notifiche al server dello sviluppatore\". Quindi apri Configurazione richiamata e incolla la richiamata URL. Dopo che Lark lo ha verificato, aggiungi l'evento \"Ricevi messaggio v1\".",
+          "requestAlt": "Schermata Feishu Configurazione evento con il campo Richiesta URL evidenziato",
+          "requestLabel": "Aggiungi la richiesta di richiamata URL",
+          "subscriptionAlt": "Feishu Schermata Configurazione evento con il controllo di modifica della modalità di abbonamento evidenziato",
+          "subscriptionLabel": "Seleziona la modalità di iscrizione all'evento",
+          "title": "Configura la consegna degli eventi"
+        },
+        "faq": {
+          "approvalAnswer": "Se la disponibilità è impostata su Tutti i membri, un amministratore Lark deve approvare la versione. Lark invia la richiesta di approvazione a un amministratore in un messaggio diretto e l'app rimane in sospeso finché un amministratore non completa la revisione.",
+          "approvalQuestion": "Perché la pubblicazione dell'app è in attesa di approvazione?",
+          "challengeAnswer": "Ciò in genere significa che la chiave di crittografia o il token di verifica salvato durante il passaggio Token non è corretto. Torna al passaggio Token, inserisci nuovamente entrambi i valori da Configurazione evento → Strategia di crittografia, salvali e riprova a eseguire la richiesta URL.",
+          "challengeQuestion": "Perché Lark mostra \"Il codice di sfida non ha ricevuto risposta\"?",
+          "title": "Domande frequenti sulla configurazione"
+        },
+        "guideReference": "Gli screenshot mostrano la console Feishu come riferimento. Segui questi passaggi nella console sviluppatori Lark.",
+        "loadError": "Impossibile caricare le impostazioni Lark.",
+        "manage": "Gestisci",
+        "manageDialogTitle": "Gestisci Lark bot",
+        "moreOptions": "Altre opzioni per {{bot}}",
+        "pageDescription": "Gestisci il routing dei bot per questa area di lavoro",
+        "permissions": {
+          "description": "Nella console per sviluppatori di Lark, apri Autorizzazioni e ambiti, scegli Importazione/esportazione in blocco > Importa e incolla il JSON seguente. Verranno importati tutti gli ambiti del connettore gestito per l'identità utente. Queste sono le autorizzazioni minime necessarie per il funzionamento dell'integrazione.",
+          "hint": "Mantieni tutte le autorizzazioni importate per l'identità utente, quindi crea e pubblica una nuova versione dell'app affinché la schermata di consenso OAuth possa concederle. La rimozione di qualsiasi autorizzazione impedirà il funzionamento dell'integrazione e potrebbe essere necessaria l'approvazione di un amministratore Lark.",
+          "label": "JSON degli ambiti del token utente",
+          "menuAlt": "Pagina Autorizzazioni e ambiti di Feishu con il menu di importazione/esportazione in blocco degli ambiti evidenziato",
+          "menuLabel": "Apri l'importazione/esportazione in blocco degli ambiti",
+          "reviewAlt": "Finestra di importazione/esportazione in blocco degli ambiti di Feishu con il JSON importato e il pulsante di revisione evidenziato",
+          "reviewLabel": "Incolla il JSON e rivedi i nuovi ambiti",
+          "title": "Importa gli ambiti del token utente"
+        },
+        "publish": {
+          "allMembersAlt": "Impostazioni di disponibilità Feishu con Tutti i membri selezionati",
+          "allMembersLabel": "Rendi l'app disponibile a tutti i membri",
+          "createVersionAlt": "Feishu Pagina Gestione versione con il pulsante Crea una versione evidenziato",
+          "createVersionLabel": "Crea una versione dell'app",
+          "description": "Crea e pubblica una versione dell'app, quindi modifica le relative impostazioni di disponibilità e seleziona Tutti i membri. L'app può essere utilizzata solo da altri membri della tua organizzazione dopo aver concesso loro l'accesso.",
+          "editAvailabilityAlt": "Pagina dei dettagli della versione Feishu con l'azione di modifica delle impostazioni di disponibilità evidenziata",
+          "editAvailabilityLabel": "Modifica le impostazioni di disponibilità",
+          "title": "Pubblica l'app"
+        },
+        "redirect": {
+          "descriptionAfter": ", aprire Configurazione di sviluppo → Impostazioni di sicurezza. Aggiungi URL di seguito in URL di reindirizzamento in modo che i membri dell'area di lavoro possano connettere il proprio account Lark a {{brandName}}.",
+          "descriptionBefore": "Nel ",
+          "imageAlt": "Feishu Pagina Impostazioni di sicurezza che mostra dove aggiungere un OAuth reindirizzamento URL",
+          "label": "OAuth reindirizza URL",
+          "title": "Configura il OAuth reindirizzamento URL"
+        },
+        "reviewGuide": "Guida alla revisione",
+        "reviewGuideDescription": "Esamina i passaggi di configurazione completati per questo bot Lark.",
+        "reviewGuideTitle": "Lark guida alla revisione",
+        "routeDescription": "Instrada i messaggi Lark agli agenti",
+        "selectAgent": "Seleziona un agente",
+        "setupIncomplete": "Configurazione incompleta",
+        "steps": {
+          "back": "Indietro",
+          "checking": "Controllo…",
+          "close": "Chiudi",
+          "create": "Crea",
+          "credentials": "Credenziali",
+          "done": "Fatto",
+          "events": "Eventi",
+          "next": "Avanti",
+          "permissions": "Ambiti",
+          "publish": "Pubblica",
+          "redirect": "Reindirizzamento",
+          "tokens": "Gettoni",
+          "verify": "Verifica e continua",
+          "verifying": "Verifica…",
+          "waiting": "In attesa di richiamata"
+        },
+        "toasts": {
+          "botInstalled": "Lark bot installato correttamente",
+          "botUninstalled": "Lark bot disinstallato",
+          "connected": "Lark si è connesso correttamente",
+          "disconnected": "Disconnesso da Lark"
+        },
+        "tokens": {
+          "descriptionAfter": ", seleziona l'app appena creata e accedi alla sua pagina di configurazione. Apri Configurazione evento → Strategia di crittografia, quindi copia la chiave di crittografia e il token di verifica.",
+          "descriptionBefore": "Apri il ",
+          "encryptKey": "Chiave crittografata",
+          "imageAlt": "Feishu Schermata Strategia di crittografia che mostra la chiave di crittografia e il token di verifica",
+          "title": "Aggiungi i token di verifica dell'evento",
+          "verificationToken": "Token di verifica"
+        },
+        "uninstallDescription": "Questa operazione disinstalla {{bot}} dall'area di lavoro e disconnette ogni account {{brandName}} che lo utilizza. Non può essere annullata.",
+        "uninstallTargetFallback": "questo bot",
+        "uninstallTitle": "Disinstallare Lark bot?"
       },
       "telegram": {
         "addBot": "Aggiungi bot",
@@ -3815,10 +3957,6 @@
       "toasts": {
         "agentphoneConnected": "AgentPhone connesso",
         "agentphoneDisconnected": "AgentPhone disconnesso",
-        "feishuBotInstalled": "Feishu bot installato correttamente",
-        "feishuBotUninstalled": "Feishu bot disinstallato",
-        "feishuConnected": "Feishu si è connesso correttamente",
-        "feishuDisconnected": "Disconnesso da Feishu",
         "slackConnected": "Slack si è connesso correttamente",
         "slackDisconnected": "Disconnesso da Slack",
         "slackInstalled": "Slack installato correttamente",

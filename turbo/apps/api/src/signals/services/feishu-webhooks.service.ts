@@ -1,3 +1,4 @@
+import type { FeishuPlatform } from "@okouai/core/feishu-platform";
 import { createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
 
 import { command } from "ccstate";
@@ -171,6 +172,7 @@ function decryptPayload(encrypted: string, encryptKey: string): unknown {
 function inboundMessageContent(
   message: FeishuEventMessage,
   botMention: FeishuEventMention | undefined,
+  platform: FeishuPlatform,
 ): FeishuInboundContent {
   if (message.message_type !== "text") {
     const file = feishuPromptFile({
@@ -178,7 +180,7 @@ function inboundMessageContent(
       messageType: message.message_type,
       content: message.content,
     });
-    const text = file ? formatFeishuFileContext(file) : "";
+    const text = file ? formatFeishuFileContext(file, platform) : "";
     return { text, promptText: text, file };
   }
   const content = textContentSchema.safeParse(safeJsonParse(message.content));
@@ -227,13 +229,18 @@ function inboundMessage(
   if (chatType !== "p2p" && !botMention) {
     return null;
   }
-  const content = inboundMessageContent(event.data.message, botMention);
+  const content = inboundMessageContent(
+    event.data.message,
+    botMention,
+    config.platform,
+  );
   const text = content.text.trim();
   if (!content.promptText.trim()) {
     return null;
   }
   return {
     installationId: config.id,
+    platform: config.platform,
     eventId: envelope.header.event_id,
     tenantKey: envelope.header.tenant_key,
     appId: envelope.header.app_id,
@@ -280,6 +287,7 @@ async function ensureInboundBotIdentity(
       );
       return await fetchFeishuBotInfo(
         {
+          platform: args.config.platform,
           tenantAccessToken,
         },
         signal,

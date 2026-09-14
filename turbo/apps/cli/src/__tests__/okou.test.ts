@@ -61,6 +61,7 @@ describe("Okou CLI program", () => {
       "workflow",
       "slack",
       "feishu",
+      "lark",
       "teams",
       "telegram",
       "github",
@@ -122,8 +123,8 @@ describe("Okou CLI program", () => {
     expect(canonicalCommandNames).not.toContain("__intro-video-voice");
   });
 
-  it("should have exactly 40 canonical commands", () => {
-    expect(canonicalCommandNames).toHaveLength(40);
+  it("should have exactly 41 canonical commands", () => {
+    expect(canonicalCommandNames).toHaveLength(41);
   });
 });
 
@@ -147,7 +148,25 @@ describe("Okou CLI lazy command loading", () => {
     },
   );
 
+  it.each([[], ["feishu:write"], ["lark:write"]])(
+    "shows Lark only with its own capability: %j",
+    (...capabilities: string[]) => {
+      vi.stubEnv("OKOU_TOKEN", buildOkouToken(capabilities));
+      const cli = new Command("okou");
+      registerCommands(cli);
+      expect(cli.helpInformation().includes("lark")).toBe(
+        capabilities.includes("lark:write"),
+      );
+    },
+  );
+
   it.each([
+    {
+      label: "Lark help invocation",
+      argv: ["node", "okou", "lark", "--help"],
+      expectedName: "lark",
+      expectedHelpCode: "commander.helpDisplayed",
+    },
     {
       label: "direct canonical invocation",
       argv: ["node", "okou", "image-recognition", "--help"],
@@ -163,7 +182,12 @@ describe("Okou CLI lazy command loading", () => {
   ])(
     "should lazy-load $label",
     async ({ argv, expectedName, expectedHelpCode }) => {
-      vi.stubEnv("OKOU_TOKEN", buildOkouToken(["image-recognition:write"]));
+      vi.stubEnv(
+        "OKOU_TOKEN",
+        buildOkouToken([
+          expectedName === "lark" ? "lark:write" : "image-recognition:write",
+        ]),
+      );
       let helpOutput = "";
       const prog = new Command()
         .name("okou")

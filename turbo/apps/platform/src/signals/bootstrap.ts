@@ -265,6 +265,10 @@ const ROUTE_CONFIG = [
     setup: setupConnectorCallbackPage$,
   },
   {
+    path: ROUTES.larkOAuthCallback,
+    setup: setupFeishuOAuthCallbackPage$,
+  },
+  {
     path: ROUTES.feishuOAuthCallback,
     setup: setupFeishuOAuthCallbackPage$,
   },
@@ -362,6 +366,10 @@ const ROUTE_CONFIG = [
   },
   {
     path: ROUTES.settingsFeishu,
+    setup: setupAuthSidebarPageWrapper(setupFeishuSettingsPage$),
+  },
+  {
+    path: ROUTES.settingsLark,
     setup: setupAuthSidebarPageWrapper(setupFeishuSettingsPage$),
   },
   {

@@ -1,5 +1,6 @@
 import {
   feishuConnectContract,
+  larkConnectContract,
   type FeishuConnectStatus,
 } from "@okouai/api-contracts/contracts/feishu-connect";
 import {
@@ -101,7 +102,10 @@ export function mockTeams(
 export function mockFeishu(
   context: TestContext,
   overrides: Partial<FeishuConnectStatus> = {},
+  platform: "feishu" | "lark" = "feishu",
 ): void {
+  const contract =
+    platform === "lark" ? larkConnectContract : feishuConnectContract;
   const defaults: FeishuConnectStatus = {
     publicBrand: "vm0",
     isConnected: false,
@@ -116,10 +120,10 @@ export function mockFeishu(
     defaultAgentId: null,
     defaultAgentName: "Okou",
   };
-  context.mocks.api(feishuConnectContract.getStatus, ({ respond }) => {
+  context.mocks.api(contract.getStatus, ({ respond }) => {
     return respond(200, { ...defaults, ...overrides });
   });
-  context.mocks.api(feishuConnectContract.checkAppId, ({ respond }) => {
+  context.mocks.api(contract.checkAppId, ({ respond }) => {
     return respond(200, { available: true });
   });
 }
