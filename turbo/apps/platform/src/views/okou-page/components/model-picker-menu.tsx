@@ -311,19 +311,22 @@ function ChatModelSettings({
         {option?.content ??
           getCanonicalModelDisplayName(selection.selectedModel)}
       </div>
-      <ChatEffortSettings
-        selection={selection}
-        disabled={option?.disabled ?? true}
-        onChange={onChange}
-      />
-      {option?.fastAvailable && (
-        <ChatFastSetting
+      {/* Effort and Fast belong together, so space separates them, not a rule. */}
+      <div>
+        <ChatEffortSettings
           selection={selection}
-          disabled={option.disabled}
-          fastImpact={option.fastImpact}
+          disabled={option?.disabled ?? true}
           onChange={onChange}
         />
-      )}
+        {option?.fastAvailable && (
+          <ChatFastSetting
+            selection={selection}
+            disabled={option.disabled}
+            fastImpact={option.fastImpact}
+            onChange={onChange}
+          />
+        )}
+      </div>
     </>
   );
 }
