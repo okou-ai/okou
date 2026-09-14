@@ -3186,9 +3186,11 @@
       "scope": {
         "aria": "Escopo dos conectores",
         "attention": "Requer atenção",
+        "connected": "Conectados",
+        "custom": "Personalizados",
         "discover": "Descobrir",
-        "mine": "Seus conectores",
-        "searchMine": "Buscar seus conectores"
+        "searchConnected": "Buscar conectores conectados",
+        "searchCustom": "Buscar conectores personalizados"
       },
       "search": "Buscar conectores",
       "shelf": {

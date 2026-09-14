@@ -3123,9 +3123,11 @@
       "scope": {
         "aria": "コネクタの表示範囲",
         "attention": "対応が必要",
+        "connected": "接続済み",
+        "custom": "カスタム",
         "discover": "探す",
-        "mine": "あなたのコネクタ",
-        "searchMine": "あなたのコネクタを検索"
+        "searchConnected": "接続済みのコネクタを検索",
+        "searchCustom": "カスタムコネクタを検索"
       },
       "search": "コネクターを検索",
       "shelf": {

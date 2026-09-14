@@ -3186,9 +3186,11 @@
       "scope": {
         "aria": "Portée des connecteurs",
         "attention": "Nécessite votre attention",
+        "connected": "Connecté",
+        "custom": "Personnalisés",
         "discover": "Découvrir",
-        "mine": "Vos connecteurs",
-        "searchMine": "Trouver vos connecteurs"
+        "searchConnected": "Trouver les connecteurs connectés",
+        "searchCustom": "Trouver les connecteurs personnalisés"
       },
       "search": "Trouver des connecteurs",
       "shelf": {

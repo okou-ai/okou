@@ -3123,9 +3123,11 @@
       "scope": {
         "aria": "Cakupan konektor",
         "attention": "Perlu perhatian",
+        "connected": "Terhubung",
+        "custom": "Kustom",
         "discover": "Jelajahi",
-        "mine": "Konektor Anda",
-        "searchMine": "Cari konektor Anda"
+        "searchConnected": "Cari konektor yang terhubung",
+        "searchCustom": "Cari konektor kustom"
       },
       "search": "Cari konektor",
       "shelf": {
