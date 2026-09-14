@@ -196,6 +196,41 @@ async function openManagedBrowserChat() {
   };
 }
 
+/**
+ * The unavailable card is the fail-closed branch: the browser does not belong to
+ * this chat or has been removed, so its control must not be actionable. Its
+ * `disabled`, label and markers reach the DOM through `ChatCard`'s render-prop
+ * merge rather than as direct JSX attributes, so the page-level guarantee is
+ * asserted here. A status outside the session fetch's accepted `200`/`404` is
+ * what drives the component into that branch.
+ */
+test("Keep the unavailable browser card inert when the session cannot be read", async () => {
+  installCapabilityChat({
+    events: completedConversation(
+      `[Research session](https://app.okou.ai/browsers/${RUN_THREAD_ID})`,
+    ),
+  });
+  context.mocks.api(browserContract.get, ({ params, respond }) => {
+    expect(params.threadId).toBe(RUN_THREAD_ID);
+    return respond(503, {
+      error: { code: "BROWSER_UNAVAILABLE", message: "Browser unavailable" },
+    });
+  });
+
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  await readyChat();
+
+  const card = await findButton("Browser unavailable");
+  expect(card).toBeDisabled();
+  expect(card).toHaveTextContent("Cloud browser");
+  expect(card).toHaveAttribute("data-browser-session-status", "unavailable");
+
+  click(card);
+  expect(
+    screen.queryByRole("complementary", { name: "Live browser" }),
+  ).toBeNull();
+});
+
 test("Render a managed browser card from loading to live", async () => {
   const { sessionReady } = await openManagedBrowserChat();
   const renderAppStyles = await createRenderedAppStyles(context.signal);
