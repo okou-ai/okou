@@ -21,7 +21,6 @@ import {
   type SocialKitRequest,
 } from "@okouai/api-contracts/contracts/social";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
@@ -52,7 +51,6 @@ import {
 } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { reconcileSocialKitDownloadsForTest } from "./helpers/runtime-state";
 
 const context = testContext();
@@ -189,19 +187,6 @@ async function setActorCredits(
 async function fundActor(actor: ApiTestUser): Promise<void> {
   await bootstrapOnboarding(actor);
   await setActorCredits(actor, 10_000);
-}
-
-async function enableDownloadDiscovery(actor: ApiTestUser): Promise<void> {
-  if (!actor.orgId) {
-    throw new Error("Download discovery requires an organization");
-  }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    {
-      [FeatureSwitchKey.SocialDownloadDiscovery]: true,
-    },
-  );
 }
 
 async function credits(actor: ApiTestUser): Promise<number> {
@@ -2088,7 +2073,6 @@ describe("managed SocialKit route", () => {
     configureProvider();
     const pricing = await setupConfiguredPricing();
     await fundActor(actor);
-    await enableDownloadDiscovery(actor);
     const beforeCredits = await credits(actor);
     mockNow(Date.UTC(2000, 0, 1));
     const payload = new TextEncoder().encode("downloaded social video");
@@ -2804,6 +2788,10 @@ describe("managed SocialKit route", () => {
     expect(blocked.body.error).toStrictEqual({
       code: "DOWNLOAD_IN_PROGRESS",
       message: "Another social media download is already in progress",
+      recovery: {
+        downloadId: first.body.downloadId,
+        resumeCommand: `okou social download --resume ${first.body.downloadId}`,
+      },
     });
     expect(first.body.status).toBe("processing");
     expect(providerStarts).toBe(1);
@@ -3117,7 +3105,6 @@ describe("managed SocialKit route", () => {
     configureProvider();
     const pricing = await setupConfiguredPricing();
     await fundActor(actor);
-    await enableDownloadDiscovery(actor);
     const beforeCredits = await credits(actor);
     const payload = new TextEncoder().encode("retryable social video");
     const providerJobId = `provider-retry-${randomUUID()}`;

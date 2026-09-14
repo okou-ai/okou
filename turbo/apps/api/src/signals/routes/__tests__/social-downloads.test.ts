@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import { socialContract } from "@okouai/api-contracts/contracts/social";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 
@@ -24,7 +23,6 @@ import {
   type ApiTestUser,
   type ApiTestUserOptions,
 } from "./helpers/api-bdd";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -54,12 +52,6 @@ function authenticate(user: ApiTestUser) {
   return { authorization: "Bearer clerk-session" };
 }
 
-function enableDiscovery(user: ReturnType<typeof actor>, enabled = true) {
-  return updateFeatureSwitchesForUser(context, user, {
-    [FeatureSwitchKey.SocialDownloadDiscovery]: enabled,
-  });
-}
-
 async function configuredClient(user: ReturnType<typeof actor>) {
   await accept(createBddApi(context).completeOnboarding(user), [200]);
   await seedOrgMetadata({ orgId: user.orgId, tier: "pro", credits: 10_000 });
@@ -78,7 +70,6 @@ async function configuredClient(user: ReturnType<typeof actor>) {
   onTestFinished(async () => {
     await pricing.cleanup();
   });
-  await enableDiscovery(user);
   return setupAppWithRoutes({
     context,
     routes: socialRoutes,
@@ -118,7 +109,7 @@ function providerDownloads(status: "processing" | "failed") {
 }
 
 describe("social download discovery", () => {
-  it("requires authentication, an organization, a capability, and the rollout switch", async () => {
+  it("requires authentication, an organization, and the social capability", async () => {
     const client = basicClient();
     context.mocks.clerk.authenticateRequest.mockResolvedValue({
       isAuthenticated: false,
@@ -131,11 +122,6 @@ describe("social download discovery", () => {
     );
     const owner = actor();
     await accept(createBddApi(context).completeOnboarding(owner), [200]);
-    await accept(
-      client.listDownloads({ headers: authenticate(owner), query: {} }),
-      [403],
-    );
-    await enableDiscovery(owner);
     const seconds = Math.floor(now() / 1000);
     const token = signSandboxJwtForTests({
       scope: "okou",
@@ -161,11 +147,6 @@ describe("social download discovery", () => {
       [200],
     );
     expect(empty.body).toStrictEqual({ downloads: [], nextCursor: null });
-    await enableDiscovery(owner, false);
-    await accept(
-      client.listDownloads({ headers: authenticate(owner), query: {} }),
-      [403],
-    );
   });
 
   it.each([
@@ -177,7 +158,6 @@ describe("social download discovery", () => {
     "status=invalid",
   ])("rejects invalid page query %s", async (query) => {
     const owner = actor();
-    await enableDiscovery(owner);
     const app = createAppWithRoutes({
       signal: context.signal,
       routes: socialRoutes,
@@ -331,18 +311,6 @@ describe("social download discovery", () => {
     expect(processingConflict.body.error.recovery?.downloadId).toBe(
       created.body.downloadId,
     );
-    await enableDiscovery(owner, false);
-    const disabled = await accept(
-      client.createDownload({
-        headers: authenticate(owner),
-        body: requestBody,
-      }),
-      [409],
-    );
-    expect(disabled.body.error).toStrictEqual({
-      code: "DOWNLOAD_IN_PROGRESS",
-      message: "Another social media download is already in progress",
-    });
     const known = await accept(
       client.getDownload({
         headers: authenticate(owner),
@@ -375,7 +343,6 @@ describe("social download discovery", () => {
       credits: 10_000,
     });
     for (const other of [otherUser, otherOrg]) {
-      await enableDiscovery(other);
       const empty = await accept(
         client.listDownloads({ headers: authenticate(other), query: {} }),
         [200],

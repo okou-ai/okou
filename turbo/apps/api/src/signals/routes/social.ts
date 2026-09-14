@@ -6,17 +6,13 @@ import {
   socialContract,
   socialKitResponseSchema,
 } from "@okouai/api-contracts/contracts/social";
-import { command, computed } from "ccstate";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { command } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import { notFound } from "../../lib/error";
-import { db$ } from "../external/db";
-import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
 import { socialKitRequest$ } from "../services/social.service";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
@@ -32,25 +28,6 @@ const socialKitRequestBody$ = bodyResultOf(socialContract.request);
 const socialKitDownloadBody$ = bodyResultOf(socialContract.createDownload);
 const socialKitDownloadPathParams$ = pathParamsOf(socialContract.getDownload);
 const socialKitDownloadNotFound = notFound("SocialKit download not found");
-const socialDownloadDiscoveryDisabled = Object.freeze({
-  status: 403 as const,
-  body: Object.freeze({
-    error: Object.freeze({
-      code: "FORBIDDEN",
-      message: "Social download discovery is not enabled",
-    }),
-  }),
-});
-
-const socialDownloadDiscoveryEnabled$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const context = await loadUserFeatureSwitchContext(
-    get(db$),
-    auth.orgId,
-    auth.userId,
-  );
-  return isFeatureEnabled(FeatureSwitchKey.SocialDownloadDiscovery, context);
-});
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -155,33 +132,29 @@ const createSocialKitDownloadInner$ = command(
       );
     }
     if (response.status === 409) {
-      const enabled = await get(socialDownloadDiscoveryEnabled$);
-      signal.throwIfAborted();
-      if (enabled) {
-        const active = await set(
-          listSocialKitDownloads$,
-          {
-            orgId: auth.orgId,
-            userId: auth.userId,
-            query: { limit: 1, status: "active" },
-          },
-          signal,
-        );
-        const download = active.downloads[0];
-        if (download?.resumeCommand) {
-          return agentSafeResponse(auth, {
-            ...response,
-            body: {
-              error: {
-                ...response.body.error,
-                recovery: {
-                  downloadId: download.downloadId,
-                  resumeCommand: download.resumeCommand,
-                },
+      const active = await set(
+        listSocialKitDownloads$,
+        {
+          orgId: auth.orgId,
+          userId: auth.userId,
+          query: { limit: 1, status: "active" },
+        },
+        signal,
+      );
+      const download = active.downloads[0];
+      if (download?.resumeCommand) {
+        return agentSafeResponse(auth, {
+          ...response,
+          body: {
+            error: {
+              ...response.body.error,
+              recovery: {
+                downloadId: download.downloadId,
+                resumeCommand: download.resumeCommand,
               },
             },
-          });
-        }
+          },
+        });
       }
     }
     return agentSafeResponse(auth, response);
@@ -190,11 +163,6 @@ const createSocialKitDownloadInner$ = command(
 
 const listSocialKitDownloadsInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const enabled = await get(socialDownloadDiscoveryEnabled$);
-    signal.throwIfAborted();
-    if (!enabled) {
-      return socialDownloadDiscoveryDisabled;
-    }
     const auth = get(organizationAuthContext$);
     const response = await set(
       listSocialKitDownloads$,

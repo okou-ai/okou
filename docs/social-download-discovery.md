@@ -18,8 +18,8 @@ It does not cancel upstream processing or prevent billing.
 
 GET `/api/social/downloads` requires the same organization, owner and
 `social:read` capability boundary as GET `/api/social/downloads/:downloadId`.
-`SocialDownloadDiscovery` controls the new endpoint and conflict hints, with a
-staff default and per-user overrides. A disabled list endpoint returns 403.
+Discovery and accessible conflict recovery are available to all authorized
+callers without a feature switch.
 
 Query parameters:
 
@@ -43,8 +43,8 @@ URLs, credentials, or other owners' task details are returned.
 
 POST `/api/social/downloads` still enforces one active task per user across
 organizations. It retains HTTP 409, `DOWNLOAD_IN_PROGRESS`, and the existing
-message. When discovery is enabled and an active task remains accessible in
-the current organization, `error.recovery` adds `downloadId` and `resumeCommand`.
+message. When an active task remains accessible in the current organization,
+`error.recovery` adds `downloadId` and `resumeCommand`.
 Otherwise the error has no recovery fields, including when the conflicting task
 has already stopped being active. The server does not retry the submission.
 CLI human and JSON errors preserve these hints without automatically selecting
