@@ -106,11 +106,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.CalComConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Cal.com scheduling connector",
-    enabled: true,
-  },
   [FeatureSwitchKey.CopperConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Copper CRM connector",

@@ -956,16 +956,33 @@ impl JobProvider for ApiProvider {
                     let will_retry = retryable && attempt < MAX_ATTEMPTS;
 
                     if will_retry {
-                        warn!(
-                            run_id = %run_id,
-                            error = %e,
-                            attempt,
-                            max_attempts = MAX_ATTEMPTS,
-                            will_retry,
-                            status,
-                            failure_kind,
-                            "completion report failed, retrying"
-                        );
+                        if matches!(
+                            &e,
+                            RunnerError::ApiTransport(error)
+                                if error.failure_kind == ApiFailureKind::Timeout
+                        ) {
+                            info!(
+                                run_id = %run_id,
+                                error = %e,
+                                attempt,
+                                max_attempts = MAX_ATTEMPTS,
+                                will_retry,
+                                status,
+                                failure_kind,
+                                "completion report failed, retrying"
+                            );
+                        } else {
+                            warn!(
+                                run_id = %run_id,
+                                error = %e,
+                                attempt,
+                                max_attempts = MAX_ATTEMPTS,
+                                will_retry,
+                                status,
+                                failure_kind,
+                                "completion report failed, retrying"
+                            );
+                        }
                         tokio::time::sleep(RETRY_DELAY).await;
                         continue;
                     }
@@ -5952,6 +5969,109 @@ mod tests {
 
         complete_task.await.unwrap();
         server.assert_finished().await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn api_provider_complete_timeout_retry_is_info_and_exhaustion_is_error() {
+        for repeated_timeout in [false, true] {
+            let (first_release, first_response) = tokio::sync::oneshot::channel();
+            let (second_release, second_response) = tokio::sync::oneshot::channel();
+            let mut server = RawHttpTestServer::spawn(vec![
+                RawHttpAction::WaitThenRespond {
+                    release: first_response,
+                    response: Vec::new(),
+                },
+                RawHttpAction::WaitThenRespond {
+                    release: second_response,
+                    response: if repeated_timeout {
+                        Vec::new()
+                    } else {
+                        status_response(200)
+                    },
+                },
+            ])
+            .await;
+            let run_id = RunId::nil();
+            let provider = api_provider_for_test(
+                server.url(),
+                CancellationToken::new(),
+                Arc::new(PollWakeups::new(false)),
+            );
+            let captured = CapturedEvents::default();
+            let subscriber = tracing_subscriber::registry().with(captured.clone());
+            let completion = provider
+                .complete(
+                    complete_request(run_id),
+                    CompletionAuth::sandbox_token(run_id, "sandbox-token".to_string()),
+                )
+                .with_subscriber(subscriber);
+            tokio::pin!(completion);
+
+            let first_request = tokio::select! {
+                () = &mut completion => panic!("completion returned before the first request"),
+                request = server.next_request("completion request to time out") => request,
+            };
+            assert_complete_authorization(&first_request, "sandbox-token");
+            // Expire the real HTTP client's deadline after the server receives the request.
+            tokio::time::advance(Duration::from_secs(10) + Duration::from_millis(1)).await;
+            std::future::poll_fn(|cx| {
+                assert!(completion.as_mut().poll(cx).is_pending());
+                if captured.entries().iter().any(|event| {
+                    event
+                        .fields
+                        .get("message")
+                        .is_some_and(|message| message == "completion report failed, retrying")
+                }) {
+                    std::task::Poll::Ready(())
+                } else {
+                    std::task::Poll::Pending
+                }
+            })
+            .await;
+            // Close the timed-out connection without sending a response.
+            first_release.send(()).unwrap();
+            tokio::time::advance(Duration::from_secs(2)).await;
+            let second_request = tokio::select! {
+                () = &mut completion => panic!("completion returned before the retry request"),
+                request = server.next_request("retried completion request") => request,
+            };
+            assert_complete_authorization(&second_request, "sandbox-token");
+            assert_eq!(
+                first_request.split_once("\r\n\r\n").unwrap().1,
+                second_request.split_once("\r\n\r\n").unwrap().1,
+            );
+            if repeated_timeout {
+                tokio::time::advance(Duration::from_secs(10) + Duration::from_millis(1)).await;
+                completion.await;
+                second_release.send(()).unwrap();
+            } else {
+                second_release.send(()).unwrap();
+                completion.await;
+            }
+            server.assert_finished().await;
+
+            let events = captured.entries();
+            let retry_event = captured_event(&events, "completion report failed, retrying");
+            assert_eq!(retry_event.level, Level::INFO);
+            assert_eq!(event_field(retry_event, "attempt"), "1");
+            assert_eq!(event_field(retry_event, "will_retry"), "true");
+            assert_eq!(event_field(retry_event, "failure_kind"), "timeout");
+            let terminal_events: Vec<_> = events
+                .iter()
+                .filter(|event| event.level == Level::WARN || event.level == Level::ERROR)
+                .collect();
+            if repeated_timeout {
+                assert_eq!(terminal_events.len(), 1, "{events:#?}");
+                let final_event =
+                    captured_event(&events, "failed to report completion after retry");
+                assert_eq!(final_event.level, Level::ERROR);
+                assert_eq!(event_field(final_event, "attempt"), "2");
+                assert_eq!(event_field(final_event, "will_retry"), "false");
+                assert_eq!(event_field(final_event, "failure_kind"), "timeout");
+            } else {
+                assert!(terminal_events.is_empty(), "{events:#?}");
+            }
+        }
     }
 
     #[tokio::test(start_paused = true)]

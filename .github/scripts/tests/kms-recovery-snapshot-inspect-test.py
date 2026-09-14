@@ -22,7 +22,7 @@ class SnapshotInspectionTest(unittest.TestCase):
             root = Path(directory)
             binary = root / "bin"
             binary.mkdir()
-            for name in ["curl", "psql"]:
+            for name in ["curl", "psql", "aws", "pnpm"]:
                 tool = binary / name
                 tool.write_text(TOOLS.read_text())
                 tool.chmod(0o700)
@@ -44,6 +44,10 @@ class SnapshotInspectionTest(unittest.TestCase):
                 "NEON_API_KEY": "fixture-private-token",
                 "SNAPSHOT_SHA256": hashlib.sha256(b"snapshot-manual").hexdigest(),
                 "EXPECTED_CREATED_AT": "2026-02-16T05:57:00Z",
+                "VERIFY_TARGET_CIPHERTEXT": "false",
+                "KMS_MIGRATION_ROLE_ARN": "arn:aws:iam::251964670836:role/vm0-kms-migration-github-32264",
+                "ACTIONS_ID_TOKEN_REQUEST_URL": "https://test.actions.githubusercontent.com/token",
+                "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "fixture-private-oidc-request",
                 **(overrides or {}),
             }
             result = subprocess.run(
@@ -55,12 +59,19 @@ class SnapshotInspectionTest(unittest.TestCase):
             )
             raw = (root / "kms-recovery-snapshot.json").read_text()
             for value in (raw, result.stdout, result.stderr):
-                for secret in ("fixture-private-password", "fixture-private-token"):
+                for secret in (
+                    "fixture-private-password",
+                    "fixture-private-token",
+                    "fixture-private-oidc",
+                    "fixture-private-session-secret",
+                    "fixture-private-session-token",
+                ):
                     self.assertNotIn(secret, value)
             report = json.loads(raw)
             state = json.loads(state_path.read_text())
             self.assertFalse(report["retirementCleared"])
-            self.assertFalse(report["kmsCallsMade"])
+            if environment["VERIFY_TARGET_CIPHERTEXT"] != "true":
+                self.assertFalse(report["kmsCallsMade"])
             self.assertFalse(report["restoreFinalized"])
             self.assertFalse(report["productionDatabaseConnected"])
             for call in state["calls"]:
@@ -99,6 +110,45 @@ class SnapshotInspectionTest(unittest.TestCase):
         self.assertEqual(report["failure"], "snapshot_identity_mismatch")
         self.assertTrue(all(c["method"] == "GET" for c in state["calls"]))
 
+    def test_target_only_session_verifies_restored_ciphertext_and_cleans_up(self):
+        result, report, state = self.invoke(
+            overrides={"VERIFY_TARGET_CIPHERTEXT": "true"}
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(report["cryptographicVerification"])
+        self.assertTrue(report["nestedPayloadInspection"])
+        self.assertTrue(report["cleanupComplete"])
+        self.assertTrue(report["targetSession"]["onlyTargetDecryptAllowed"])
+        self.assertEqual(
+            report["databases"][0]["targetVerification"]["totals"]["verified"], 3
+        )
+        self.assertEqual(state["targetVerificationCalls"], 1)
+
+    def test_session_denial_or_wrong_identity_prevents_restore(self):
+        for scenario in ["target-session-denied", "wrong-target-identity"]:
+            with self.subTest(scenario=scenario):
+                result, report, state = self.invoke(
+                    scenario, {"VERIFY_TARGET_CIPHERTEXT": "true"}
+                )
+                self.assertEqual(result.returncode, 1)
+                self.assertFalse(report["previewCreated"])
+                self.assertTrue(all(c["method"] == "GET" for c in state["calls"]))
+
+    def test_failed_or_mismatched_target_proof_does_not_clear_recovery(self):
+        for scenario in [
+            "target-verification-failed",
+            "target-nested-source",
+            "target-report-wrong-database",
+        ]:
+            with self.subTest(scenario=scenario):
+                result, report, _ = self.invoke(
+                    scenario, {"VERIFY_TARGET_CIPHERTEXT": "true"}
+                )
+                self.assertEqual(result.returncode, 1)
+                self.assertFalse(report["cryptographicVerification"])
+                self.assertFalse(report["collectionComplete"])
+                self.assertTrue(report["cleanupComplete"])
+
     def test_created_endpoint_is_read_back_without_project_list_visibility(self):
         result, report, state = self.invoke("endpoint-absent-from-project-list")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -115,13 +165,53 @@ class SnapshotInspectionTest(unittest.TestCase):
         self.assertTrue(report["cleanupComplete"])
         self.assertNotIn("sqlCalls", state)
 
-    def test_multiple_preview_endpoints_report_count_without_connecting(self):
+    def test_multiple_preview_primaries_report_count_without_connecting(self):
         result, report, state = self.invoke("ambiguous-preview-endpoints")
         self.assertEqual(result.returncode, 1)
-        self.assertEqual(report["failure"], "preview_endpoint_not_unique")
+        self.assertEqual(report["failure"], "preview_primary_endpoint_not_unique")
         self.assertEqual(report["previewEndpointCountBeforeCreate"], 2)
         self.assertTrue(report["cleanupComplete"])
         self.assertNotIn("sqlCalls", state)
+
+    def test_preview_primary_with_replica_pins_primary_without_creating_compute(self):
+        result, report, state = self.invoke("preview-primary-and-replica")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(report["previewEndpointCountBeforeCreate"], 2)
+        self.assertEqual(
+            report["previewEndpointTypeCountsBeforeCreate"],
+            {"read_write": 1, "read_only": 1},
+        )
+        self.assertEqual(report["selectedPreviewEndpointId"], "ep-preview")
+        self.assertEqual(report["selectedPreviewEndpointType"], "read_write")
+        self.assertFalse(
+            any(
+                c["method"] == "POST" and c["path"] == "/endpoints"
+                for c in state["calls"]
+            )
+        )
+        self.assertTrue(report["cleanupComplete"])
+
+    def test_preview_with_only_replica_creates_and_pins_own_primary(self):
+        result, report, state = self.invoke("preview-replica-only")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(report["previewEndpointCountBeforeCreate"], 1)
+        self.assertEqual(report["createdPreviewEndpointId"], "ep-preview")
+        self.assertEqual(report["selectedPreviewEndpointType"], "read_write")
+        self.assertTrue(report["cleanupComplete"])
+
+    def test_duplicate_endpoint_ids_fail_before_connection(self):
+        result, report, state = self.invoke("duplicate-preview-endpoint")
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(report["failure"], "duplicate_preview_endpoint_id")
+        self.assertNotIn("sqlCalls", state)
+        self.assertTrue(report["cleanupComplete"])
+
+    def test_primary_readback_cannot_change_to_replica(self):
+        result, report, state = self.invoke("endpoint-readback-replica")
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(report["failure"], "preview_endpoint_identity_mismatch")
+        self.assertNotIn("sqlCalls", state)
+        self.assertTrue(report["cleanupComplete"])
 
     def test_production_returned_as_preview_never_connects_or_deletes(self):
         result, report, state = self.invoke("production-returned")

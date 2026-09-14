@@ -24,6 +24,10 @@ use super::types::{
     SupervisedExecStartTiming, exec_control_status_error,
 };
 
+// Leave time for dispatch and transport of the Guest's deadline result without
+// extending the Guest-local sink delivery budget.
+const EXEC_CONTROL_RESPONSE_ALLOWANCE: Duration = Duration::from_millis(250);
+
 /// Handle for a host-side exec operation.
 ///
 /// Dropping the handle removes the host-side registration only. It never sends
@@ -875,9 +879,13 @@ impl ExecControlHandle {
     ///
     /// `message_id` must be non-empty and fit the protocol string length
     /// bound. `payload` must fit the exec-control payload limit. Invalid
-    /// inputs fail before the request frame is written. The timeout is encoded
-    /// for guest-side control delivery and also bounds the host wait for a
-    /// response after the request frame is written.
+    /// inputs fail before the request frame is written. `timeout` is the
+    /// Guest-local control delivery budget, encoded in whole milliseconds:
+    /// zero stays zero, positive sub-millisecond values become 1 ms, and large
+    /// values saturate at `u32::MAX` ms. After writing the request frame, the
+    /// Host waits for this encoded budget plus a 250 ms response allowance so
+    /// it can retain the Guest's deadline result. This does not bound earlier
+    /// write queuing or the frame write itself.
     ///
     /// Only [`ExecControlOutcome::Delivered`] is returned as an
     /// [`ExecControlAck`]. Guest statuses and guest error responses are
@@ -1135,6 +1143,8 @@ pub(in crate::exec_operation) async fn exec_control_on_shared(
     write_observer: FrameWriteObserver,
 ) -> io::Result<ExecControlOutcome> {
     let request_timeout_ms = duration_to_request_timeout_ms(timeout);
+    let response_timeout =
+        Duration::from_millis(u64::from(request_timeout_ms)) + EXEC_CONTROL_RESPONSE_ALLOWANCE;
     let target_seq = target_route_id.wire_seq();
     guest_control_proto::validate_exec_control(
         target_seq,
@@ -1196,7 +1206,7 @@ pub(in crate::exec_operation) async fn exec_control_on_shared(
                 "connection closed",
             ))?
         }
-        _ = tokio::time::sleep(timeout) => {
+        _ = tokio::time::sleep(response_timeout) => {
             Err(io::Error::new(io::ErrorKind::TimedOut, "request timeout"))
         }
     }
