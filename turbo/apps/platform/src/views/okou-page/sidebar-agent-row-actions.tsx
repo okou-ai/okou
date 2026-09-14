@@ -52,7 +52,7 @@ function triggerClassName(
   isPrimarySelected: boolean,
 ) {
   if (variant === "sidebar") {
-    return `peer pointer-events-auto absolute left-1 top-1 z-10 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md transition-opacity duration-150 group-hover:opacity-100! focus-visible:opacity-100! data-popup-open:opacity-100! data-popup-open:bg-state-selected-hover data-popup-open:text-foreground disabled:cursor-not-allowed disabled:opacity-50 ${
+    return `peer pointer-events-auto absolute left-1 top-1 z-10 flex h-6 w-6 cursor-pointer items-center justify-center rounded-md group-hover:opacity-100! focus-visible:opacity-100! data-popup-open:opacity-100! data-popup-open:bg-state-selected-hover data-popup-open:text-foreground disabled:cursor-not-allowed disabled:opacity-50 ${
       isPrimarySelected
         ? "text-sidebar-foreground/80 hover:text-foreground hover:bg-state-selected-hover"
         : "text-sidebar-foreground/80 hover:text-foreground hover:bg-state-selected-hover"
@@ -179,8 +179,7 @@ export function AgentRowContextActions({
 }
 
 function unreadClassName(hasMenuActions: boolean): string {
-  const base =
-    "pointer-events-none flex items-center justify-center transition-opacity duration-150";
+  const base = "pointer-events-none flex items-center justify-center";
   return hasMenuActions
     ? `${base} group-hover:opacity-0! peer-focus-visible:opacity-0! peer-data-popup-open:opacity-0!`
     : base;

@@ -367,7 +367,7 @@ function StartCard({
           buttons take clicks — the rest of the overlay, and all of it on a
           touch device where `hover` never resolves, falls through to the card.
           */}
-      <div className="pointer-events-none absolute inset-x-4 bottom-4 flex h-14 items-end gap-1 bg-gradient-to-t from-card from-[57%] to-transparent opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 group-focus-within:[&>button]:pointer-events-auto group-hover:[&>button]:pointer-events-auto">
+      <div className="pointer-events-none absolute inset-x-4 bottom-4 flex h-14 items-end gap-1 bg-gradient-to-t from-card from-[57%] to-transparent opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 group-focus-within:[&>button]:pointer-events-auto group-hover:[&>button]:pointer-events-auto">
         {/* Peers that split the card: one starts the run from this card's
             prompt, the other opens the picker. Neither leads, so they take
             equal widths rather than each hugging its own label. */}
