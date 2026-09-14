@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.6](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.5...guest-control-server-v0.21.6) (2026-09-14)
+
+
+### Refactoring
+
+* **rust:** centralize exec process diagnostic labels ([#33938](https://github.com/vm0-ai/vm0/issues/33938)) ([cd8acd3](https://github.com/vm0-ai/vm0/commit/cd8acd3a7019ece7f5ba031529e508d929b0a1b1))
+
 ## [0.21.5](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.4...guest-control-server-v0.21.5) (2026-09-11)
 
 ## [0.21.4](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.3...guest-control-server-v0.21.4) (2026-09-11)

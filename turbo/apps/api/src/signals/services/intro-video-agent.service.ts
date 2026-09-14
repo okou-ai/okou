@@ -645,6 +645,8 @@ const persistAgentCompletion$ = command(
       .insert(usageEvent)
       .values({
         runId: args.job.runId,
+        billingRunId: args.job.billingRunId,
+        billingContext: args.job.billingContext,
         idempotencyKey: builtInGenerationUsageIdempotencyKey({
           generationId: args.job.id,
           scope: PROVIDER_TASK,

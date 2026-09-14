@@ -1,7 +1,6 @@
 import type { OrgTier } from "@okouai/api-contracts/contracts/orgs";
 import type { OrgPlanEntitlementSourceMetadata } from "@okouai/db/jsonb-contracts/org-plan-entitlement";
-import { orgPlanEntitlementsCanonicalWrites } from "@okouai/db/operations/org-plan-entitlement-canonical-write";
-import { orgPlanEntitlements } from "@okouai/db/schema/org-plan-entitlement";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { eq } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { ORG_PLAN_ENTITLEMENT_TIER_VALUES } from "./org-plan-entitlement-tier-values";
@@ -105,9 +104,6 @@ export async function upsertOrgPlanEntitlement(
     baseConcurrencyLimit: limits.baseConcurrencyLimit,
     canBuyConcurrency: limits.canBuyConcurrency,
     canBuyCredits: limits.canBuyCredits,
-    // Mirror for outgoing and rollback API readers. Retire this write with the
-    // legacy column after the serving and rollback gates in #32575 pass.
-    legacyMemberInviteUsagePackRequired: showUsagePack,
     showUsagePack,
     autoRechargeAllowed: limits.autoRechargeAllowed,
     supportByok: limits.supportByok,
@@ -127,10 +123,10 @@ export async function upsertOrgPlanEntitlement(
     updatedAt,
   };
   await tx
-    .insert(orgPlanEntitlementsCanonicalWrites)
+    .insert(orgPlanEntitlements)
     .values(values)
     .onConflictDoUpdate({
-      target: orgPlanEntitlementsCanonicalWrites.orgId,
+      target: orgPlanEntitlements.orgId,
       set: {
         planKey: values.planKey,
         planRank: values.planRank,
@@ -139,7 +135,6 @@ export async function upsertOrgPlanEntitlement(
         baseConcurrencyLimit: values.baseConcurrencyLimit,
         canBuyConcurrency: values.canBuyConcurrency,
         canBuyCredits: values.canBuyCredits,
-        legacyMemberInviteUsagePackRequired: showUsagePack,
         showUsagePack,
         autoRechargeAllowed: values.autoRechargeAllowed,
         supportByok: values.supportByok,

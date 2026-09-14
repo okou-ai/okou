@@ -497,6 +497,8 @@ const settleRenderCredits$ = command(
       .insert(usageEvent)
       .values({
         runId: job.runId,
+        billingRunId: job.billingRunId,
+        billingContext: job.billingContext,
         idempotencyKey,
         orgId: job.orgId,
         userId: job.userId,

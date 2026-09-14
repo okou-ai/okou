@@ -118,6 +118,13 @@ When a database scan fails, `databaseScanFailure` retains the PostgreSQL
 SQLSTATE when available, the process exit code, the number of completed tables,
 and the last started table or binary-column scan's relation OID and size.
 For table chunks it also retains the starting and exclusive ending block.
+If the separate 900-second `psql` process deadline expires, the failure is
+`snapshot_database_scan_process_timeout`. The report keeps that deadline and
+validated progress from complete output lines; a truncated final JSON or UTF-8
+fragment is discarded. The process exit code remains unknown, and partial
+output is never accepted as completed coverage. `lastDatabaseStage` is saved
+before connection metadata, marker scanning and target verification so failures
+in those phases can be distinguished even when no database result is returned.
 These diagnostics contain no table contents, SQL text, database names or raw
 error messages. Partial scan progress is not a complete inventory or evidence
 of zero dependencies. Inspect the failure and verify preview cleanup before

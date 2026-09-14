@@ -461,12 +461,6 @@ class TestOpenAIResponsesSseUsageExtractor:
         parse, usage = create_openai_responses_sse_usage_extractor()
         large_delta = b'{"type":"response.output_text.delta","delta":"' + b"x" * 100_000 + b'"}'
 
-        assert (
-            openai_responses._classify_responses_event_type(
-                large_delta[: openai_responses._RESPONSES_EVENT_PREFILTER_MAX_BYTES]
-            )
-            == openai_responses._RESPONSES_EVENT_KNOWN_NON_USAGE
-        )
         parse(b"event: response.future_delta\n")
         parse(b"data: " + large_delta + b"\n\n")
 
@@ -608,12 +602,6 @@ class TestOpenAIResponsesSseUsageExtractor:
         parse, usage = create_openai_responses_sse_usage_extractor()
         delta_payload = b'{"type":"response.output_text.delta","delta":"' + b"x" * 100_000 + b'"}'
 
-        assert (
-            openai_responses._classify_responses_event_type(
-                delta_payload[: openai_responses._RESPONSES_EVENT_PREFILTER_MAX_BYTES]
-            )
-            == openai_responses._RESPONSES_EVENT_KNOWN_NON_USAGE
-        )
         parse(
             b"data: "
             + delta_payload
@@ -691,11 +679,12 @@ class TestOpenAIResponsesSseUsageExtractor:
         assert probed_prefixes == [payload]
 
     @pytest.mark.parametrize(
-        ("event_prefix", "payload"),
+        ("event_prefix", "payload", "expected_evidence"),
         [
             pytest.param(
                 b"",
                 b'{"type":"response.output_text.delta","delta":"hello"}',
+                [],
                 id="eventless-event-end",
             ),
             pytest.param(
@@ -703,12 +692,19 @@ class TestOpenAIResponsesSseUsageExtractor:
                 b'{"type":"response.output_text.delta","padding":"'
                 + b"x" * openai_responses._RESPONSES_EVENT_PREFILTER_MAX_BYTES
                 + b'"}',
+                [
+                    ModelHttpFailureEvidence(
+                        event_name="vendor.delta",
+                        payload_type="response.output_text.delta",
+                        is_valid=True,
+                    ),
+                ],
                 id="named-prefix-cap",
             ),
         ],
     )
     def test_failure_filter_probes_known_non_usage_prefix_once(
-        self, event_prefix, payload, monkeypatch
+        self, event_prefix, payload, expected_evidence, monkeypatch
     ):
         real_probe = openai_responses._probe_responses_event_type
         probed_prefixes: list[bytes] = []
@@ -726,7 +722,7 @@ class TestOpenAIResponsesSseUsageExtractor:
 
         assert probed_prefixes == [payload[: openai_responses._RESPONSES_EVENT_PREFILTER_MAX_BYTES]]
         assert usage == {}
-        assert failure_observer.observed == []
+        assert failure_observer.observed == expected_evidence
 
     def test_eventless_incomplete_terminal_reports_parse_error(self):
         parse_errors: list[tuple[str, str]] = []

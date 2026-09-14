@@ -84,13 +84,27 @@ const compactionRowSchema = z.object({
 // idx_usage_event_processed_org_user index. Eligible rows are always non-null.
 const oldestProcessedEventOrder = sql`${asc(event.processedAt)} NULLS FIRST`;
 
-function eligibleRawPredicate(cutoff: string): SQL {
+function eligibleRawPredicate(cutoff: string, orgId?: string): SQL {
   return sql`${and(
     eq(event.status, sql`'processed'`),
+    orgId === undefined ? undefined : eq(event.orgId, orgId),
     isNotNull(event.processedAt),
     lt(event.processedAt, sql`${cutoff}::timestamp`),
     isNull(event.billingError),
   )}`;
+}
+
+function billingGrainColumns(alias: string): SQL {
+  const source = sql.identifier(alias);
+  return sql`${source}.billing_run_id, ${source}.billing_anchor_at, ${source}.billing_context`;
+}
+
+function billingGrainPredicate(source: typeof event | typeof hourly) {
+  return and(
+    sql`${source.billingRunId} IS NOT DISTINCT FROM grain.billing_run_id`,
+    sql`${source.billingAnchorAt} IS NOT DISTINCT FROM grain.billing_anchor_at`,
+    eq(source.billingContext, sql`grain.billing_context`),
+  );
 }
 
 function physicalGrainColumns(alias: string): SQL {
@@ -100,6 +114,7 @@ function physicalGrainColumns(alias: string): SQL {
     ${source}.org_id,
     ${source}.user_id,
     ${source}.run_id,
+    ${billingGrainColumns(alias)},
     ${source}.kind,
     ${source}.provider,
     ${source}.category,
@@ -115,6 +130,9 @@ function physicalGrainOrder(alias: string): SQL {
     ${source}.org_id ASC,
     ${source}.user_id ASC,
     ${source}.run_id ASC NULLS FIRST,
+    ${source}.billing_run_id ASC NULLS FIRST,
+    ${source}.billing_anchor_at ASC NULLS FIRST,
+    ${source}.billing_context ASC,
     ${source}.kind ASC,
     ${source}.provider ASC,
     ${source}.category ASC,
@@ -126,6 +144,7 @@ function physicalGrainOrder(alias: string): SQL {
 function candidateCtes(args: {
   readonly cutoff: string;
   readonly rawSeedLimit: number;
+  readonly orgId: string | undefined;
 }): SQL {
   return sql`
     raw_seed AS MATERIALIZED (
@@ -135,6 +154,7 @@ function candidateCtes(args: {
         event.org_id,
         event.user_id,
         event.run_id,
+        ${billingGrainColumns("event")},
         event.kind,
         event.provider,
         event.category,
@@ -143,7 +163,7 @@ function candidateCtes(args: {
       FROM ${usageEvent} ${event}
       LEFT JOIN ${usageAllowanceAllocations} ${allocation}
         ON ${eq(allocation.usageEventId, event.id)}
-      WHERE ${eligibleRawPredicate(args.cutoff)}
+      WHERE ${eligibleRawPredicate(args.cutoff, args.orgId)}
       ORDER BY ${oldestProcessedEventOrder}
       LIMIT ${args.rawSeedLimit}
       FOR UPDATE OF event
@@ -169,6 +189,7 @@ function lockedSourceCtes(cutoff: string): SQL {
         event.org_id,
         event.user_id,
         event.run_id,
+        ${billingGrainColumns("event")},
         event.kind,
         event.provider,
         event.category,
@@ -184,6 +205,7 @@ function lockedSourceCtes(cutoff: string): SQL {
           eq(event.orgId, sql`grain.org_id`),
           eq(event.userId, sql`grain.user_id`),
           sql`${event.runId} IS NOT DISTINCT FROM grain.run_id`,
+          billingGrainPredicate(event),
           eq(event.kind, sql`grain.kind`),
           eq(event.provider, sql`grain.provider`),
           eq(event.category, sql`grain.category`),
@@ -213,6 +235,7 @@ function lockedSourceCtes(cutoff: string): SQL {
         event.org_id,
         event.user_id,
         event.run_id,
+        ${billingGrainColumns("event")},
         event.kind,
         event.provider,
         event.category,
@@ -232,6 +255,7 @@ function lockedSourceCtes(cutoff: string): SQL {
         hourly.org_id,
         hourly.user_id,
         hourly.run_id,
+        ${billingGrainColumns("hourly")},
         hourly.kind,
         hourly.provider,
         hourly.category,
@@ -247,6 +271,7 @@ function lockedSourceCtes(cutoff: string): SQL {
           eq(hourly.orgId, sql`grain.org_id`),
           eq(hourly.userId, sql`grain.user_id`),
           sql`${hourly.runId} IS NOT DISTINCT FROM grain.run_id`,
+          billingGrainPredicate(hourly),
           eq(hourly.kind, sql`grain.kind`),
           eq(hourly.provider, sql`grain.provider`),
           eq(hourly.category, sql`grain.category`),
@@ -298,6 +323,9 @@ function mutationCtes(): SQL {
         org_id,
         user_id,
         run_id,
+        billing_run_id,
+        billing_anchor_at,
+        billing_context,
         kind,
         provider,
         category,
@@ -318,6 +346,9 @@ function mutationCtes(): SQL {
         org_id,
         user_id,
         run_id,
+        billing_run_id,
+        billing_anchor_at,
+        billing_context,
         kind,
         provider,
         category,
@@ -483,6 +514,7 @@ function compactionSummarySelect(): SQL {
 function compactUsageEventsSql(args: {
   readonly cutoff: string;
   readonly rawSeedLimit: number;
+  readonly orgId: string | undefined;
 }): SQL {
   return sql`
     WITH
@@ -519,6 +551,7 @@ async function loadHoldProbe(
   db: Pick<Db, "execute">,
   cutoff: string,
   rawSeedLimit: number,
+  orgId: string | undefined,
 ): Promise<z.output<typeof holdProbeRowSchema>> {
   const rows = await executeRawRows(
     db,
@@ -528,6 +561,7 @@ async function loadHoldProbe(
         FROM ${usageEvent} ${event}
         WHERE ${and(
           eq(event.status, sql`'processed'`),
+          orgId === undefined ? undefined : eq(event.orgId, orgId),
           isNotNull(event.processedAt),
           lt(event.processedAt, sql`${cutoff}::timestamp`),
         )}
@@ -554,17 +588,19 @@ async function loadHoldProbe(
 async function hasRemainingRawUsage(
   db: Pick<Db, "select">,
   cutoff: string,
+  orgId: string | undefined,
 ): Promise<boolean> {
   const [remaining] = await db
     .select({ id: event.id })
     .from(event)
-    .where(eligibleRawPredicate(cutoff))
+    .where(eligibleRawPredicate(cutoff, orgId))
     .limit(1);
   return remaining !== undefined;
 }
 
 async function compactUsageEventBatch(
   db: UsageEventCompactionDb,
+  orgId: string | undefined,
   signal: AbortSignal,
 ): Promise<Omit<UsageEventCompactionStats, "durationMs">> {
   const rawSeedLimit = USAGE_EVENT_COMPACTION_RAW_SEED_LIMIT;
@@ -576,10 +612,10 @@ async function compactUsageEventBatch(
 
     const cutoffDate = await loadCompactionCutoff(tx);
     const cutoff = timestampWithoutTimeZone(cutoffDate);
-    const holdProbe = await loadHoldProbe(tx, cutoff, rawSeedLimit);
+    const holdProbe = await loadHoldProbe(tx, cutoff, rawSeedLimit, orgId);
     const rows = await executeRawRows(
       tx,
-      compactUsageEventsSql({ cutoff, rawSeedLimit }),
+      compactUsageEventsSql({ cutoff, rawSeedLimit, orgId }),
       compactionRowSchema,
     );
     const compaction = rows[0];
@@ -599,7 +635,7 @@ async function compactUsageEventBatch(
       throw new Error("Usage event compaction reconciliation failed");
     }
     signal.throwIfAborted();
-    const hasMoreRaw = await hasRemainingRawUsage(tx, cutoff);
+    const hasMoreRaw = await hasRemainingRawUsage(tx, cutoff, orgId);
     signal.throwIfAborted();
 
     return {
@@ -625,9 +661,13 @@ async function compactUsageEventBatch(
 }
 
 export const compactUsageEvents$ = command(
-  async ({ set }, signal: AbortSignal): Promise<UsageEventCompactionStats> => {
+  async (
+    { set },
+    orgId: string | undefined,
+    signal: AbortSignal,
+  ): Promise<UsageEventCompactionStats> => {
     const startedAt = performance.now();
-    const result = await compactUsageEventBatch(set(writeDb$), signal);
+    const result = await compactUsageEventBatch(set(writeDb$), orgId, signal);
     const stats = {
       ...result,
       durationMs: Math.round(performance.now() - startedAt),

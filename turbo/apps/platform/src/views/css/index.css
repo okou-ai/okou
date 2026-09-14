@@ -34,6 +34,13 @@
   --color-nav-copy: var(--nav-copy, var(--color-sidebar-foreground));
   --color-nav-copy-muted: var(--nav-copy-muted, var(--color-muted-foreground));
 
+  /* Nav chrome, on the same contract as the nav copy above: the gradient color
+     themes define the raw values at :root and the nav resolves to them, while
+     everywhere else they are unset and each consumer falls back to the shared
+     sidebar token it already read. */
+  --color-nav-border: var(--nav-border, var(--color-sidebar-border));
+  --color-nav-rail: var(--nav-rail, var(--color-sidebar-rail));
+
   /* Credit balance breakdown segment colors (usage bar chart) */
   --color-credit-free: #008d76;
   --color-credit-promotional: #ff6030;
@@ -542,25 +549,10 @@ body {
   border: 0.5px solid hsl(var(--gray-400));
 }
 
-/* Left nav */
-.okou-nav {
-  --color-sidebar-border: hsl(var(--gray-200));
-}
-
 /* The sidebars take the site's own two greys. */
 .okou-app {
   --color-sidebar: hsl(var(--sidebar));
   --color-sidebar-rail: hsl(var(--sidebar-rail));
-}
-.okou-app[data-gradient-color-themes] .okou-nav {
-  --color-sidebar: hsl(var(--sidebar));
-  --color-sidebar-border: hsl(var(--border) / 0.5);
-}
-.okou-app[data-gradient-color-themes] .okou-nav.okou-nav-rail {
-  background-color: hsl(var(--okou-nav-rail));
-}
-:where([data-theme="dark"]) .okou-nav {
-  --color-sidebar: hsl(var(--sidebar));
 }
 
 /* The travel a sidebar thread title is scrolled by while its row is hovered or
@@ -1058,84 +1050,6 @@ body {
 /* Code block scrollbar */
 .wmde-markdown pre > code::-webkit-scrollbar-thumb {
   background: hsl(var(--gray-400));
-}
-
-/* --- Mermaid Diagrams --------------------------------------------------- */
-.wmde-markdown .mermaid-block {
-  margin-bottom: 16px;
-}
-
-/* The box is reserved at this size before the render starts, so every diagram
-   in a thread is the same height and none of them changes the height of the
-   message it sits in once it appears. Below the max width the box keeps its
-   ratio, so diagrams stay equally tall as the column narrows. */
-.wmde-markdown .mermaid-block > .icon-tooltip-trigger {
-  display: block;
-  width: 100%;
-  max-width: 420px;
-}
-
-.wmde-markdown .mermaid-diagram-expand {
-  position: relative;
-  display: block;
-  width: 100%;
-  max-width: 420px;
-  aspect-ratio: 4 / 3;
-  margin: 4px 0;
-  padding: 8px;
-  border: 1px solid hsl(var(--foreground) / 0.1);
-  border-radius: 8px;
-  background: hsl(var(--muted) / 0.3);
-  overflow: hidden;
-  cursor: zoom-in;
-}
-
-.wmde-markdown .mermaid-diagram-expand:disabled {
-  cursor: default;
-}
-
-/* The image and state indicators are taken out of flow so none can size the
-   box: the diagram is serialized at lightbox scale, and an in-flow image that
-   wide would win over `aspect-ratio` through its content-based minimum size.
-   Letterboxed rather than stretched, since a single box can only hold diagrams
-   of different aspect ratios undistorted by leaving margins. */
-.wmde-markdown .mermaid-diagram-image,
-.wmde-markdown .mermaid-diagram-pending {
-  /* Inset by the box's own padding: an absolutely positioned child is placed
-     against the padding box, which the padding would otherwise not clear. */
-  position: absolute;
-  inset: 8px;
-}
-
-.wmde-markdown .mermaid-diagram-image {
-  /* An absolutely positioned <img> whose width and height are `auto` is laid
-     out at its own intrinsic size, so `inset` alone leaves the diagram at
-     lightbox scale and `object-fit` has nothing to fit into. The size is
-     therefore stated: `calc` rather than `100%`, since a percentage resolves
-     against the padding box, which the box's own padding would not clear. */
-  width: calc(100% - 16px);
-  height: calc(100% - 16px);
-  object-fit: contain;
-  /* github-markdown-css paints every image on an opaque canvas colour, which
-     would cover the box behind the letterboxed diagram. */
-  background: none;
-}
-
-.wmde-markdown .mermaid-diagram-pending {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: hsl(var(--muted-foreground));
-}
-
-.wmde-markdown .mermaid-diagram-source > summary {
-  cursor: pointer;
-  color: hsl(var(--muted-foreground));
-  font-size: 0.8125rem;
-}
-
-.wmde-markdown .mermaid-diagram-source > pre {
-  margin-top: 8px;
 }
 
 /* --- Code Block Copy Button --------------------------------------------- */
@@ -1729,7 +1643,8 @@ details > summary {
      card as well as backing the chat column, and a full-strength tint around a
      white sheet overpowers it. The rail keeps its depth and stays the anchor. */
   --sidebar: var(--okou-color-theme-hue) 30% 98.4%;
-  --okou-nav-rail: var(--okou-color-theme-hue) 36% 93.5%;
+  --nav-rail: hsl(var(--okou-color-theme-hue) 36% 93.5%);
+  --nav-border: hsl(var(--border) / 0.5);
   --nav-copy: hsl(var(--okou-color-theme-hue) 24% 18%);
   --nav-copy-muted: hsl(var(--okou-color-theme-hue) 18% 38%);
   --background-50: var(--gray-50);
@@ -1770,7 +1685,8 @@ details > summary {
   --input: var(--gray-200);
   --ring: var(--okou-color-theme-hue) 45% 62%;
   --sidebar: var(--okou-color-theme-hue) 14% 12%;
-  --okou-nav-rail: var(--okou-color-theme-hue) 18% 8%;
+  --nav-rail: hsl(var(--okou-color-theme-hue) 18% 8%);
+  --nav-border: hsl(var(--border) / 0.5);
   --nav-copy: hsl(var(--okou-color-theme-hue) 22% 90%);
   --nav-copy-muted: hsl(var(--okou-color-theme-hue) 16% 64%);
   --background-50: var(--gray-50);

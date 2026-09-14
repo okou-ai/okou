@@ -314,7 +314,7 @@ test.each([
   { source: "url", brand: "vm0" },
   { source: "cookie", brand: "vm0" },
 ])(
-  "$brand campaign IDs from the $source reach signup in the stable API fields",
+  "$brand campaign IDs from the $source reach signup in the canonical API fields",
   async ({ source, brand }) => {
     mockNow(NOW, context.signal);
     let recordedAttribution: AdAttributionMetadata | undefined;
@@ -346,11 +346,9 @@ test.each([
     await waitForAgentsPage();
     expect(recordedAttribution).toMatchObject({
       gclid: "original-click",
-      vm0_campaign_id: "24220469665",
-      vm0_ad_group_id: "123456",
+      okou_campaign_id: "24220469665",
+      okou_ad_group_id: "123456",
     });
-    expect(recordedAttribution).not.toHaveProperty("okou_campaign_id");
-    expect(recordedAttribution).not.toHaveProperty("okou_ad_group_id");
   },
 );
 
@@ -399,8 +397,8 @@ test.each([
       "im_ref=partner-click&gclid=original-click&okou_campaign_id=24220469665&okou_ad_group_id=123456",
     acquisition: {
       gclid: "original-click",
-      vm0_campaign_id: "24220469665",
-      vm0_ad_group_id: "123456",
+      okou_campaign_id: "24220469665",
+      okou_ad_group_id: "123456",
     },
   },
 ])(

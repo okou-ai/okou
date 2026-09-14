@@ -561,6 +561,7 @@ test("Configure member packages from personal Credit balance", async () => {
   });
   context.mocks.api(billingUsagePackManagementContract.get, ({ respond }) => {
     return respond(200, {
+      supportsFreeMembers: true,
       tier: "pro",
       currentPeriodEnd: "2026-04-01T00:00:00.000Z",
       allocations: [
@@ -576,6 +577,7 @@ test("Configure member packages from personal Credit balance", async () => {
   });
   context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
     return respond(200, {
+      supportsFreeMembers: true,
       usagePacks: [
         {
           usagePackUsd: 20,

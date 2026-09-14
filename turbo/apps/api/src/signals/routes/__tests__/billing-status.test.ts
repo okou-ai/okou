@@ -450,9 +450,7 @@ describe("GET /api/billing/status", () => {
     expect(response.body.canBuyConcurrency).toBeTruthy();
     expect(response.body.canBuyCredits).toBeFalsy();
     expect(response.body.showUsagePack).toBeTruthy();
-    expect(response.body).not.toHaveProperty("memberInviteUsagePackRequired");
     expect(response.body.status).toBe("active");
-    expect(response.body.memberInvitationAllowed).toBeTruthy();
     expect(response.body.autoRechargeAllowed).toBeFalsy();
     expect(response.body.supportByok).toBeFalsy();
     // Both names are optional on the contract, so `toBeFalsy` alone would also
@@ -1279,7 +1277,6 @@ describe("GET /api/billing/status", () => {
 
     expect(response.body.tier).toBe("pro-suspend");
     expect(response.body.status).toBe("suspended");
-    expect(response.body.memberInvitationAllowed).toBeFalsy();
     expect(response.body.credits).toBe(0);
     expect(response.body.hasSubscription).toBeFalsy();
   });

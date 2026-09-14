@@ -2,14 +2,8 @@
   "version": 1,
   "legacyClassTokens": [
     "copied",
-    "icon-tooltip-trigger",
     "language-mermaid",
     "lucide",
-    "mermaid-block",
-    "mermaid-diagram-expand",
-    "mermaid-diagram-image",
-    "mermaid-diagram-pending",
-    "mermaid-diagram-source",
     "okou-app",
     "okou-blocks",
     "okou-border",
@@ -24,7 +18,6 @@
     "okou-markdown-card",
     "okou-mobile-fixed-safe-area",
     "okou-mobile-sidebar",
-    "okou-nav",
     "okou-pwa-fixed-cover",
     "okou-shimmer-text",
     "okou-sidebar-header",
@@ -541,13 +534,6 @@
       },
       {
         "atRules": [],
-        "selector": ".okou-nav",
-        "property": "--color-sidebar-border",
-        "value": " hsl(var(--gray-200))",
-        "important": false
-      },
-      {
-        "atRules": [],
         "selector": ".okou-app",
         "property": "--color-sidebar",
         "value": " hsl(var(--sidebar))",
@@ -558,34 +544,6 @@
         "selector": ".okou-app",
         "property": "--color-sidebar-rail",
         "value": " hsl(var(--sidebar-rail))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app[data-gradient-color-themes] .okou-nav",
-        "property": "--color-sidebar",
-        "value": " hsl(var(--sidebar))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app[data-gradient-color-themes] .okou-nav",
-        "property": "--color-sidebar-border",
-        "value": " hsl(var(--border) / 0.5)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app[data-gradient-color-themes] .okou-nav.okou-nav-rail",
-        "property": "background-color",
-        "value": "hsl(var(--okou-nav-rail))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ":where([data-theme=\"dark\"]) .okou-nav",
-        "property": "--color-sidebar",
-        "value": " hsl(var(--sidebar))",
         "important": false
       },
       {
@@ -796,223 +754,6 @@
         "selector": ".okou-chat-bubble-assistant .wmde-markdown hr",
         "property": "display",
         "value": "none",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-block",
-        "property": "margin-bottom",
-        "value": "16px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-block>.icon-tooltip-trigger",
-        "property": "display",
-        "value": "block",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-block>.icon-tooltip-trigger",
-        "property": "width",
-        "value": "100%",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-block>.icon-tooltip-trigger",
-        "property": "max-width",
-        "value": "420px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "position",
-        "value": "relative",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "display",
-        "value": "block",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "width",
-        "value": "100%",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "max-width",
-        "value": "420px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "aspect-ratio",
-        "value": "4/3",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "margin",
-        "value": "4px 0",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "padding",
-        "value": "8px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "border",
-        "value": "1px solid hsl(var(--foreground)/0.1)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "border-radius",
-        "value": "8px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "background",
-        "value": "hsl(var(--muted)/0.3)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "overflow",
-        "value": "hidden",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand",
-        "property": "cursor",
-        "value": "zoom-in",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-expand:disabled",
-        "property": "cursor",
-        "value": "default",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-image,.wmde-markdown .mermaid-diagram-pending",
-        "property": "position",
-        "value": "absolute",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-image,.wmde-markdown .mermaid-diagram-pending",
-        "property": "inset",
-        "value": "8px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-image",
-        "property": "width",
-        "value": "calc(100% - 16px)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-image",
-        "property": "height",
-        "value": "calc(100% - 16px)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-image",
-        "property": "object-fit",
-        "value": "contain",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-image",
-        "property": "background",
-        "value": "none",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-pending",
-        "property": "display",
-        "value": "flex",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-pending",
-        "property": "align-items",
-        "value": "center",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-pending",
-        "property": "justify-content",
-        "value": "center",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-pending",
-        "property": "color",
-        "value": "hsl(var(--muted-foreground))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-source>summary",
-        "property": "cursor",
-        "value": "pointer",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-source>summary",
-        "property": "color",
-        "value": "hsl(var(--muted-foreground))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-source>summary",
-        "property": "font-size",
-        "value": "0.8125rem",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown .mermaid-diagram-source>pre",
-        "property": "margin-top",
-        "value": "8px",
         "important": false
       },
       {
@@ -2845,9 +2586,6 @@
       "okou-app": 1,
       "okou-fixed-viewport-shell": 1
     },
-    "apps/platform/src/views/components/icon-tooltip.tsx": {
-      "icon-tooltip-trigger": 1
-    },
     "apps/platform/src/views/components/instatus-status-notice.tsx": {
       "okou-app": 1,
       "okou-composer": 1
@@ -2858,12 +2596,7 @@
     },
     "apps/platform/src/views/components/mermaid-diagram.tsx": {
       "copied": 1,
-      "language-mermaid": 1,
-      "mermaid-block": 1,
-      "mermaid-diagram-expand": 1,
-      "mermaid-diagram-image": 1,
-      "mermaid-diagram-pending": 1,
-      "mermaid-diagram-source": 1
+      "language-mermaid": 1
     },
     "apps/platform/src/views/components/rich-markdown.tsx": {
       "copied": 1,
@@ -2992,7 +2725,6 @@
       "okou-desktop-titlebar-drag-region": 2,
       "okou-mobile-fixed-safe-area": 1,
       "okou-mobile-sidebar": 1,
-      "okou-nav": 3,
       "okou-sidebar-header": 1
     },
     "apps/platform/src/views/okou-page/tiptap-instructions-editor.tsx": {

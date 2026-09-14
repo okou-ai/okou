@@ -164,6 +164,46 @@ describe("multipart user artifact uploads", () => {
     });
   });
 
+  it("stores the declared text charset when preparing a multipart artifact", async () => {
+    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+    context.mocks.s3.send.mockImplementation((command) => {
+      if (command instanceof ListObjectsV2Command) {
+        return Promise.resolve({ Contents: [] });
+      }
+      if (command instanceof PutObjectCommand) {
+        expect(JSON.parse(String(command.input.Body))).toMatchObject({
+          kind: "legacy-file",
+          contentType: "text/csv; charset=utf-8",
+        });
+        return Promise.resolve({});
+      }
+      if (command instanceof CreateMultipartUploadCommand) {
+        expect(command.input.ContentType).toBe("text/csv; charset=utf-8");
+        return Promise.resolve({ UploadId: "text-multipart-upload" });
+      }
+      throw new Error("Unexpected storage command");
+    });
+
+    const response = await accept(
+      apiClient().prepare({
+        headers: authHeaders(),
+        body: {
+          filename: "report.csv",
+          contentType: 'Text/CSV; Charset="UTF-8"',
+          size: 6 * 1024 * 1024,
+          purpose: "artifact",
+          multipart: true,
+        },
+      }),
+      [200],
+    );
+
+    expect(response.body).toMatchObject({
+      contentType: "text/csv; charset=utf-8",
+      multipart: { uploadId: "text-multipart-upload" },
+    });
+  });
+
   it("keeps the legacy single PUT response for small multipart requests", async () => {
     const userId = `user_${randomUUID()}`;
     const orgId = `org_${randomUUID()}`;

@@ -4,9 +4,7 @@
 mod common;
 
 use guest_agent::masker::SecretMasker;
-use guest_contracts::diagnostics::{
-    EventDeliveryAcceptanceOutcome, EventDeliveryAttemptFailureKind,
-};
+use guest_contracts::diagnostics::{EventDeliveryAcceptanceOutcome, HttpAttemptFailureKind};
 use serde_json::json;
 use std::io;
 use std::time::Duration;
@@ -128,7 +126,7 @@ async fn nonretryable_client_rejection_records_one_attempt()
     );
     assert_eq!(
         failed_batch.attempts[0].failure_kind,
-        EventDeliveryAttemptFailureKind::HttpStatus
+        HttpAttemptFailureKind::HttpStatus
     );
     assert_eq!(failed_batch.attempts[0].http_status, Some(400));
     assert_eq!(failed_batch.attempts[0].timeout_observed, None);

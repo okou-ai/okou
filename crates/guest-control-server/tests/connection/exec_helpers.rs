@@ -59,14 +59,37 @@ pub(super) fn read_exec_started(stream: &mut impl std::io::Read, seq: u32) -> u3
         .pid
 }
 
-pub(super) fn read_exec_agent_ready(
+pub(super) fn read_exec_agent_ready_and_stdout(
     stream: &mut impl std::io::Read,
     seq: u32,
+    expected_stdout: &[u8],
 ) -> guest_control_proto::ExecAgentReadyTiming {
-    let msg = read_message(stream);
-    assert_eq!(msg.msg_type, MSG_EXEC_AGENT_READY);
-    assert_eq!(msg.seq, seq);
-    guest_control_proto::decode_exec_agent_ready(&msg.payload).unwrap()
+    let mut ready = None;
+    let mut stdout = Vec::new();
+    let mut output_seq = 0;
+    while ready.is_none() || stdout.len() < expected_stdout.len() {
+        let msg = read_message(stream);
+        assert_eq!(msg.seq, seq);
+        match msg.msg_type {
+            MSG_EXEC_AGENT_READY => {
+                assert!(ready.is_none(), "duplicate exec agent-ready frame");
+                ready = Some(guest_control_proto::decode_exec_agent_ready(&msg.payload).unwrap());
+            }
+            MSG_EXEC_OUTPUT => {
+                let decoded = guest_control_proto::decode_exec_output(&msg.payload).unwrap();
+                assert_eq!(decoded.stream, ExecOutputStream::Stdout);
+                assert_eq!(decoded.output_seq, output_seq);
+                assert!(!decoded.truncated);
+                assert!(!decoded.chunk.is_empty());
+                assert!(stdout.len() + decoded.chunk.len() <= expected_stdout.len());
+                stdout.extend_from_slice(decoded.chunk);
+                output_seq += 1;
+            }
+            other => panic!("unexpected exec startup response type: 0x{other:02X}"),
+        }
+    }
+    assert_eq!(stdout, expected_stdout);
+    ready.unwrap()
 }
 
 pub(super) fn read_exec_stdout_output(stream: &mut impl std::io::Read, seq: u32) -> Vec<u8> {

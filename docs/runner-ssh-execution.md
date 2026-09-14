@@ -116,6 +116,66 @@ snapshot also retires sessions using that snapshot. The documented
 missed-notification window still applies; close/revocation
 does not guarantee remote process-tree termination.
 
+## File RPCs
+
+#33857 adds `ssh.file.upload` and `ssh.file.download` using the opt-in binary
+[RPC stream](runner-rpc-transport.md#opt-in-binary-streaming-foundation).
+Upload params are exactly `{sshConnectionId, remotePath, size, overwrite}`;
+download params are exactly `{sshConnectionId, remotePath}`. IDs are hyphenated
+UUIDs and paths are bounded literal UTF-8 (4096 bytes, no NUL or empty/dot final
+component). No Runner-local path or caller-supplied authority is accepted.
+
+Only these validated methods extend the helper work envelope to at most 900,000
+ms; initial request and connection/SFTP setup retain their 60-second bounds.
+Two Run-local transfer permits cover active transfer and owned staging cleanup,
+within the existing eight RPC and 24 physical limits. A two-second reserve
+bounds cleanup and final reporting. Retained notification-backed authority is
+required, including uncached watchers at cache saturation. Delivered
+invalidation, observed notification disconnect and Run/sandbox end interrupt
+the whole operation. File channels always retire their exclusive pool lease.
+
+A private sequential SFTP v3 client requests only the `sftp` subsystem after
+authentication. It has one outstanding request, monotonically checked IDs,
+32 KiB data chunks, a 64 KiB maximum packet checked before allocation, and
+bounded fields, attributes, extensions and opaque byte handles. Failed/partial
+exchanges are never resumed. Server status diagnostics are discarded; v3's
+generic failure remains `file_operation_failed` when a more precise reason is
+not available. There are no detached SFTP tasks or unbounded request queues.
+
+Upload accepts exact announced bytes plus End, hashes the stream, verifies
+staging attributes and close, then publishes atomically. Download checks source
+lstat/open/fstat, streams and hashes bytes, verifies EOF/count/final attributes,
+then returns End and a typed result. A failed download after Data still emits
+End before its failed result; this is not business success. The Runner's
+download result has `effects: not_started`; only the CLI can assert completed
+local publication. Upload `effects` tracks acknowledged remote publication.
+See [file semantics and limits](ssh-access.md#file-upload-and-download).
+After half-closing a terminal response, the Runner drains pending input within
+the same short reporting budget to avoid resetting the native vsock bridge
+before an early rejection reaches the guest. The CLI stops writing on closed
+input but still requires a validated terminal, EOF and helper exit.
+
+File failures add `invalid_path`, `file_too_large`, `transfer_limit`, `path_not_found`,
+`permission_denied`, `destination_exists`, `not_regular_file`, `source_changed`,
+`subsystem_unavailable`, `unsupported_operation` and `file_operation_failed`.
+The CLI additionally classifies local I/O, invalid paths and missing helpers.
+Missing extensions fail before staging writes. Lost creation/publication ACKs
+leave explicit possible residue; only the same healthy channel cleans its
+acknowledged private staging. Authenticated file-operation failures remain
+successful connection observations, not connectivity warnings.
+
+Runner and helper ship together. Older CLIs retain exec/session behavior; a new
+CLI receiving an unsupported helper/method fails explicitly, without a legacy
+file path. The existing `sshAccess` staff gate applies, with no extra switch,
+schema, credential or grant. Tests enter the actual dispatcher through a real
+SSH peer and temporary filesystem. Run the independent OpenSSH lane explicitly
+where `/usr/lib/openssh/sftp-server` is installed:
+
+```sh
+cargo test --manifest-path crates/Cargo.toml --profile local -p runner --bin runner \
+  ssh::tests::files::openssh_server_interoperability -- --ignored --exact
+```
+
 ## Idle connection reuse
 
 #33465 reuses healthy authenticated transports between independent exec/session

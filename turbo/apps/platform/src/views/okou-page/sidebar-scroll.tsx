@@ -53,7 +53,7 @@ export function OverlayScrollArea({
         </ScrollArea.Content>
       </ScrollArea.Viewport>
       <ScrollArea.Scrollbar
-        className="pointer-events-none m-px flex w-3 justify-center opacity-0 transition-opacity duration-150 data-hovering:pointer-events-auto data-hovering:opacity-100 data-scrolling:pointer-events-auto data-scrolling:opacity-100 data-scrolling:duration-0"
+        className="pointer-events-none m-px flex w-3 justify-center opacity-0 data-hovering:pointer-events-auto data-hovering:opacity-100 data-scrolling:pointer-events-auto data-scrolling:opacity-100"
         data-testid="sidebar-scrollbar"
       >
         <ScrollArea.Thumb
