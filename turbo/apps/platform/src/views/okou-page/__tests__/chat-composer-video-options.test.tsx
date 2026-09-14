@@ -349,7 +349,9 @@ test("Changing a Creative Video style retains settings without reopening the pan
   click(edit);
   const dialog = await screen.findByRole("dialog");
   expect(
-    queryAllByRoleFast("tab", dialog).map((tab) => tab.textContent?.trim()),
+    queryAllByRoleFast("tab", dialog).map((tab) => {
+      return tab.textContent?.trim();
+    }),
   ).toStrictEqual(["Video"]);
   await userEvent.setup({ delay: null }).click(tabByText("Video"));
   await userEvent.setup({ delay: null }).keyboard("{End}{ArrowDown}");
@@ -371,8 +373,8 @@ test("Changing a Creative Video style retains settings without reopening the pan
 
 async function restoreVideoDraft(stylePresetId: string): Promise<HTMLElement> {
   installVideoSubmissionCapture();
-  context.mocks.api(agentDraftContract.get, ({ respond }) =>
-    respond(200, {
+  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+    return respond(200, {
       draftUserMessage: {
         version: 1,
         parts: [
@@ -388,8 +390,8 @@ async function restoreVideoDraft(stylePresetId: string): Promise<HTMLElement> {
         ],
       },
       draftAttachments: null,
-    }),
-  );
+    });
+  });
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
@@ -417,8 +419,8 @@ test("A legacy Intro Video draft excludes settings even after choosing Create vi
   click(fastControl("button", "Video", tasks));
   expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
   expect(
-    queryAllByRoleFast("button").some((button) =>
-      button.getAttribute("aria-label")?.startsWith("Video options "),
-    ),
+    queryAllByRoleFast("button").some((button) => {
+      return button.getAttribute("aria-label")?.startsWith("Video options ");
+    }),
   ).toBeFalsy();
 });

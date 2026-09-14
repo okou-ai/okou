@@ -2644,7 +2644,9 @@ function createTemplateSelectionSignals(
     const previous = get(nodes$);
     if (
       nodes.length !== previous.length ||
-      nodes.some((node, index) => node !== previous[index])
+      nodes.some((node, index) => {
+        return node !== previous[index];
+      })
     ) {
       set(nodes$, nodes);
     }

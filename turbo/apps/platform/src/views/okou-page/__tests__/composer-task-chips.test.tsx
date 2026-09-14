@@ -398,9 +398,9 @@ test("Task changes preserve uploaded files and the draft, and toggling off resto
   click(button("Video", restoredTasks));
   await screen.findByRole("combobox", { name: "Video models" });
   const ratios = await screen.findByRole("radiogroup", { name: "Ratio" });
-  const portrait = queryAllByRoleFast("radio", ratios).find(
-    (radio) => radio.textContent?.trim() === "9:16",
-  );
+  const portrait = queryAllByRoleFast("radio", ratios).find((radio) => {
+    return radio.textContent?.trim() === "9:16";
+  });
   if (!portrait) {
     throw new Error("Portrait ratio missing");
   }

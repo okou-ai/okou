@@ -145,9 +145,9 @@ test("Choose a video through the consolidated Create entry with the keyboard and
   });
   expect(videoPicker).toHaveTextContent("Seedance 2.0");
   const ratios = await screen.findByRole("radiogroup", { name: "Ratio" });
-  const portrait = queryAllByRoleFast("radio", ratios).find(
-    (radio) => radio.textContent?.trim() === "9:16",
-  );
+  const portrait = queryAllByRoleFast("radio", ratios).find((radio) => {
+    return radio.textContent?.trim() === "9:16";
+  });
   if (!portrait) {
     throw new Error("Portrait ratio missing");
   }

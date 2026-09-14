@@ -490,9 +490,9 @@ test("Intro Video never displays or submits the preceding Creative Video setting
   const tasks = screen.getByRole("group", { name: "Choose a task" });
   click(control("Video", tasks));
   const ratios = await screen.findByRole("radiogroup", { name: "Ratio" });
-  const portrait = queryAllByRoleFast("radio", ratios).find(
-    (radio) => radio.textContent?.trim() === "9:16",
-  );
+  const portrait = queryAllByRoleFast("radio", ratios).find((radio) => {
+    return radio.textContent?.trim() === "9:16";
+  });
   if (!portrait) {
     throw new Error("Portrait ratio missing");
   }
@@ -511,9 +511,9 @@ test("Intro Video never displays or submits the preceding Creative Video setting
   await expectInlineTemplate("Intro video");
   expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
   expect(
-    queryAllByRoleFast("button").some((button) =>
-      button.getAttribute("aria-label")?.startsWith("Video options "),
-    ),
+    queryAllByRoleFast("button").some((button) => {
+      return button.getAttribute("aria-label")?.startsWith("Video options ");
+    }),
   ).toBeFalsy();
   expect(
     screen.queryByRole("combobox", { name: "Video models" }),
@@ -527,8 +527,8 @@ test("Intro Video never displays or submits the preceding Creative Video setting
     expect.objectContaining({ stylePresetId: "explainer-video" }),
   );
   expect(
-    capture.sentMessages[0]?.parts.some(
-      (part) => part.type === "additional_info",
-    ),
+    capture.sentMessages[0]?.parts.some((part) => {
+      return part.type === "additional_info";
+    }),
   ).toBeFalsy();
 });
