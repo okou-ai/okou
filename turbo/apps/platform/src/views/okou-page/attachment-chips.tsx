@@ -1324,7 +1324,9 @@ function ArtifactPreviewDialogContent({
         ref={dialogMountRef}
         initialFocus={dialogElement}
         showCloseButton={false}
-        overlayClassName="okou-pwa-fixed-cover bg-gray-900/45 dark:bg-gray-900/45"
+        // The backdrop is fixed, so a standalone PWA clips it above the bottom
+        // safe inset; extending `bottom` keeps it covering the screen edge.
+        overlayClassName="[@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))] bg-gray-900/45 dark:bg-gray-900/45"
         maxWidth={1440}
         height={1000}
         surface="canvas"

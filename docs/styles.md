@@ -444,6 +444,80 @@ product decisions, and each one also constrains `okou-app` and
 `okou-workspace-bg`, which share this family and the same dead attribute.
 Resolve that before draining the last two tokens.
 
+### Safe-area covers and the unlayered shell padding
+
+The `okou-pwa-fixed-cover` and `okou-managed-bottom-safe-area` selectors and
+their consumers have been removed. Both were single declarations about the
+bottom safe inset, and they show the two shapes this family keeps producing.
+
+`okou-pwa-fixed-cover` was `bottom: calc(-1 * var(--sab))` inside
+`@media (display-mode: standalone)`, on the mobile drawer scrim and on the
+artifact-preview dialog backdrop. Both are `fixed inset-0`, and a fixed cover is
+clipped by the visual viewport, so in a standalone PWA it stops short of the
+bottom inset; extending `bottom` paints it to the physical edge. Each consumer
+now writes
+`[@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))]`. Tailwind has
+no `display-mode` variant, and this is a genuine environment condition rather
+than a token decision, so it stays an arbitrary variant over an arbitrary value —
+the same shape the `[@media(hover:hover)]:` call sites already use. The utility
+has to win against the `inset-0` on the same element; it does, because Tailwind
+emits `inset` before the `bottom` longhand inside `@layer utilities`, and
+`cn()` keeps both because a modifier-prefixed `bottom-*` never conflicts with an
+unprefixed `inset-0`.
+
+`okou-managed-bottom-safe-area` was `padding-bottom: 0`, and it existed only to
+cancel the `padding-bottom: var(--sab)` that `okou-viewport-shell` sets on the
+same element, because the workspace scrollports reach the physical viewport edge
+and their scroll content, composer and other bottom interactions own that inset
+instead. Its consumer now writes `!pb-0`. The important marker is load-bearing,
+not decoration: `okou-viewport-shell` is still an unlayered legacy selector, so
+it outranks any normal declaration in `@layer utilities`, and a plain `pb-0`
+loses to it. This is the same ordering trap the titlebar block above describes,
+and the same remedy `TableRow`'s `last:!border-b-0` already uses. Measured, the
+non-important form regresses the shell by the full bottom inset; drop the marker
+when `okou-viewport-shell` itself migrates.
+
+Measured against `main` with the App's own Tailwind compiler in Chromium over
+CDP: 216 states per pointer mode — two fixtures (the shell with its drawer and
+scrim, and the portaled dialog backdrop) across the default palette plus the
+eight gradient palettes in Light and Dark, at 1440x900, 390x844 DPR 2 and 767px,
+each with and without a standalone display mode. Zero changed pixels and zero
+computed-style or geometry differences in both the fine-pointer and
+coarse-pointer runs.
+
+Two details make those zeros meaningful. `--sat`/`--sar`/`--sab`/`--sal` come
+from `env(safe-area-inset-*)` and resolve to `0px` in a desktop Chromium, which
+would make every padding under test measure zero and report a false no-change,
+so the harness injects non-zero insets on both sides and asserts them at every
+capture. And `display-mode` cannot be emulated: in Chromium 152
+`Emulation.setEmulatedMedia` accepts `{name:"display-mode",value:"standalone"}`
+without error while `matchMedia` still reports `browser`, for features-only,
+with `media:"screen"`, with `media:""`, and for value `fullscreen`. A window
+launched with `--app=<url>` against a served web app manifest reports a real
+standalone display mode, so the standalone states run there rather than against
+a substituted media condition.
+
+A pixel diff alone also cannot accept `okou-pwa-fixed-cover`, because its whole
+effect is paint below the visual viewport: on-screen pixels are identical whether
+it applies or not. Geometry is its channel, and the negative controls check both
+channels separately — dropping the migrated bottom extension moves the scrim and
+backdrop boxes, while dropping their background fills changes pixels.
+
+`okou-mobile-sidebar` and `okou-mobile-fixed-safe-area` remain legacy selectors.
+They sit together on the mobile drawer `aside`, and spelling them as utilities
+takes that element from 301 to 512 characters of class list and from two to six
+bracketed arbitrary values. Whether a six-declaration `::before` paint layer and
+a four-value safe-area padding belong inline there, behind a shared safe-area
+decision, or inside a drawer-surface component is a token-layer design call, so
+the batch is recorded `blocked` rather than resolved. The mechanics are
+otherwise clear: both rules are unlayered but nothing else on the element sets
+`isolation`, `::before`, padding or `box-sizing`, so no important marker would be
+needed. One difference would not be exact — Tailwind's `max-md` emits
+`@media (width < 48rem)` while the retired rule stopped at `max-width: 767px`,
+so between 767px and 768px the padding would newly apply. The element already
+gates its whole fixed-drawer geometry on `max-md`, so the two spellings disagree
+there today.
+
 ## Exception boundary
 
 Only two exception kinds exist:

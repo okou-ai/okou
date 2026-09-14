@@ -181,12 +181,6 @@ body {
   padding-bottom: var(--sab);
 }
 
-/* Workspace scrollports reach the physical viewport edge. Their scroll content,
-   composer, and other bottom interactions own the safe inset instead. */
-.okou-managed-bottom-safe-area {
-  padding-bottom: 0;
-}
-
 .okou-fixed-viewport-shell {
   box-sizing: border-box;
   height: var(--okou-viewport-height);
@@ -194,12 +188,6 @@ body {
   max-height: var(--okou-viewport-height);
   overflow: hidden;
   padding: var(--sat) var(--sar) var(--sab) var(--sal);
-}
-
-@media (display-mode: standalone) {
-  .okou-pwa-fixed-cover {
-    bottom: calc(-1 * var(--sab));
-  }
 }
 
 @media (max-width: 767px) {
