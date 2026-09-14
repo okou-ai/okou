@@ -95,6 +95,38 @@ pub enum ExecProcessRole {
     CodexSessionCleanup,
 }
 
+impl ExecProcessRole {
+    /// Stable process-class label used by host and guest exec diagnostics.
+    pub const fn process_class(self) -> &'static str {
+        match self {
+            Self::Workload => "contained_workload",
+            Self::Agent => "controlled_agent",
+            Self::SessionHistoryIdentityVerifier => "session_history_identity_verifier",
+            Self::CodexSessionCleanup => "codex_session_cleanup",
+        }
+    }
+
+    /// Stable operation-kind label used by host and guest exec diagnostics.
+    ///
+    /// Unsupported role/lifecycle combinations retain the `invalid` label.
+    /// This classification does not validate the process contract; admission
+    /// must still use [`validate_exec_process_contract`].
+    pub const fn operation_kind(self, lifecycle: ExecLifecyclePolicy) -> &'static str {
+        match (self, lifecycle) {
+            (Self::Workload, ExecLifecyclePolicy::OneShot) => "exec",
+            (Self::Workload, ExecLifecyclePolicy::Supervised) => "start_process",
+            (Self::Agent, ExecLifecyclePolicy::Supervised) => "start_agent_process",
+            (Self::Agent, ExecLifecyclePolicy::OneShot) => "invalid",
+            (Self::SessionHistoryIdentityVerifier, ExecLifecyclePolicy::OneShot) => {
+                "verify_session_history_identity"
+            }
+            (Self::SessionHistoryIdentityVerifier, ExecLifecyclePolicy::Supervised) => "invalid",
+            (Self::CodexSessionCleanup, ExecLifecyclePolicy::OneShot) => "cleanup_codex_session",
+            (Self::CodexSessionCleanup, ExecLifecyclePolicy::Supervised) => "invalid",
+        }
+    }
+}
+
 /// Exec timeout policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecTimeoutPolicy {
