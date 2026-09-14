@@ -407,7 +407,7 @@ const instagramStatsResultSchema = providerObject({
   shortcode: z.string(),
   title: z.string(),
   description: z.string(),
-  views: countSchema,
+  views: countSchema.nullable(),
   likes: countSchema,
   comments: countSchema,
   publishedAt: z.string(),
@@ -905,7 +905,14 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     name: "instagram_stats",
     description: "Get engagement statistics for a public Instagram post.",
     path: "/instagram/stats",
-    inputSchema: urlInput(),
+    inputSchema: urlInput().extend({
+      requireViews: z
+        .boolean()
+        .optional()
+        .describe(
+          "Require verified video views; unavailable views fail without a charge",
+        ),
+    }),
     resultSchema: instagramStatsResultSchema,
   }),
   defineTool({
@@ -1160,7 +1167,14 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     name: "youtube_transcript",
     description: "Extract the transcript from a public YouTube video.",
     path: "/youtube/transcript",
-    inputSchema: urlInput(),
+    inputSchema: urlInput().extend({
+      no_cache: z
+        .boolean()
+        .optional()
+        .describe(
+          "Bypass YouTube extraction caches, including cached caption absence; captions may still be unavailable",
+        ),
+    }),
     resultSchema: videoTranscriptResultSchema,
     availability: "transcript",
   }),
@@ -1248,7 +1262,14 @@ export const MANAGED_SOCIALKIT_TOOLS = [
     name: "youtube_summarize",
     description: "Summarize a public YouTube video.",
     path: "/youtube/summarize",
-    inputSchema: summaryInputSchema,
+    inputSchema: summaryInputSchema.extend({
+      no_cache: z
+        .boolean()
+        .optional()
+        .describe(
+          "Bypass YouTube extraction caches, not the summary-result cache; combine with cache=false for a fresh summary. Captions may still be unavailable",
+        ),
+    }),
     resultSchema: summaryResultSchema,
   }),
 ] as const;

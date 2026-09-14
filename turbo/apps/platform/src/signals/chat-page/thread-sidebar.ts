@@ -1,5 +1,6 @@
 import {
   createAttachmentPreviewSignals,
+  createAttachmentPreviewSession,
   type AttachmentPreviewSignals,
 } from "../attachment-resource-url.ts";
 import {
@@ -22,7 +23,7 @@ import {
   isTextPreviewKind,
   type TextPreviewComputed,
 } from "../text-preview.ts";
-import { resetSignal } from "../utils.ts";
+import { onRef, resetSignal } from "../utils.ts";
 import {
   createMarkdownPreviewTree,
   type MarkdownPreviewTreeComputed,
@@ -65,6 +66,7 @@ export type ArtifactPreviewKind =
   | "file";
 
 export type ArtifactRef = {
+  readonly mountPreview$: AttachmentPreviewSignals["mountPreview$"];
   readonly resourceUrl$: Computed<Promise<string | null>>;
   readonly shareUrl$: Computed<Promise<string | null>>;
   readonly url: string;
@@ -137,7 +139,9 @@ function materializeArtifactRef(
     return withTextPreview(
       {
         url: input.url,
-        ...(input.preview ?? createAttachmentPreviewSignals(input.url)),
+        ...(input.preview
+          ? createAttachmentPreviewSession(input.preview)
+          : createAttachmentPreviewSignals(input.url)),
         kind: classifyChatAttachment({
           contentType: input.contentType,
           filename: input.filename,
@@ -196,6 +200,9 @@ export interface ThreadSidebarSignals {
   readonly target$: Computed<ThreadSidebarTarget | null>;
   readonly open$: Command<void, [ThreadSidebarOpenTarget, AbortSignal]>;
   readonly openAttachment$: Command<void, [ArtifactRefInput, AbortSignal]>;
+  readonly selectedArtifactMountPreview$: Computed<
+    AttachmentPreviewSignals["mountPreview$"]
+  >;
   readonly selectedArtifactResourceUrl$: Computed<Promise<string | null>>;
   readonly selectedArtifactShareUrl$: Computed<Promise<string | null>>;
   readonly close$: Command<void, []>;
@@ -244,6 +251,27 @@ function createCatalogArtifactPreviewSignals(
       : null;
   });
 
+  const mountSelectedPreview$ = command(
+    async ({ get, set }, element: HTMLElement, signal: AbortSignal) => {
+      const preview = await get(selectedArtifactPreview$);
+      signal.throwIfAborted();
+      if (preview) {
+        const cleanup = set(preview.mountPreview$, element);
+        signal.addEventListener(
+          "abort",
+          () => {
+            cleanup?.();
+          },
+          { once: true },
+        );
+      }
+    },
+  );
+  const mountPreview$ = computed((get) => {
+    get(internalArtifactPreviewVersion$);
+    return onRef(mountSelectedPreview$);
+  });
+
   const resourceUrl$ = computed(async (get) => {
     const preview = await get(selectedArtifactPreview$);
     return preview ? await get(preview.resourceUrl$) : null;
@@ -274,6 +302,7 @@ function createCatalogArtifactPreviewSignals(
   );
 
   return {
+    mountPreview$,
     resourceUrl$,
     shareUrl$,
     text$: selectedArtifactText$,
@@ -413,6 +442,7 @@ export function createThreadSidebarSignals(
     artifactCatalog,
     selectedArtifactText$: preview.text$,
     selectedArtifactMarkdownTree$: preview.markdownTree$,
+    selectedArtifactMountPreview$: preview.mountPreview$,
     selectedArtifactResourceUrl$: preview.resourceUrl$,
     selectedArtifactShareUrl$: preview.shareUrl$,
   };

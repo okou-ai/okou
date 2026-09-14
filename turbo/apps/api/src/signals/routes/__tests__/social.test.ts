@@ -394,6 +394,358 @@ describe("managed SocialKit route", () => {
     expect(providerRequests).toBe(1);
   });
 
+  it.each(["session", "sandbox"] as const)(
+    "preserves Instagram views and legacy reader compatibility for %s callers",
+    async (tokenType) => {
+      const actor = createBddApi(context).user();
+      if (!actor.orgId) {
+        throw new Error("Social test actor must belong to an organization");
+      }
+      configureProvider();
+      const pricing = await setupConfiguredPricing();
+      await fundActor(actor);
+      const beforeCredits = await credits(actor);
+      const seconds = Math.floor(now() / 1000);
+      const headers =
+        tokenType === "session"
+          ? authenticate(actor)
+          : {
+              authorization: `Bearer ${signSandboxJwtForTests({
+                scope: "okou",
+                userId: actor.userId,
+                orgId: actor.orgId,
+                runId: randomUUID(),
+                capabilities: ["social:read"],
+                iat: seconds,
+                exp: seconds + 60,
+              })}`,
+            };
+      let providerRequests = 0;
+
+      for (const nullable of [false, true]) {
+        for (const views of [null, undefined, 0, 12]) {
+          const availableData = {
+            likes: 4,
+            comments: 2,
+            author: "example",
+            videoUrl: "https://media.example/video.mp4",
+          };
+          server.use(
+            http.get(`${SOCIALKIT_BASE}/instagram/stats`, ({ request }) => {
+              providerRequests += 1;
+              expect(
+                new URL(request.url).searchParams.has("requireViews"),
+              ).toBeFalsy();
+              return HttpResponse.json(
+                providerResponse({
+                  ...availableData,
+                  ...(views === undefined ? {} : { views }),
+                }),
+              );
+            }),
+          );
+
+          const response = await accept(
+            client(pricing.resolution)(socialContract).request({
+              headers: {
+                ...headers,
+                ...(nullable
+                  ? { "x-okou-instagram-views": "nullable" as const }
+                  : {}),
+              },
+              body: {
+                tool: "instagram_stats",
+                input: { url: "https://www.instagram.com/reel/example/" },
+              },
+            }),
+            [200],
+          );
+
+          expect(response.body.result).toStrictEqual({
+            ...availableData,
+            ...(views === undefined || (views === null && !nullable)
+              ? {}
+              : { views }),
+          });
+          expect(response.body.provider).toBe(
+            tokenType === "session" ? "socialkit" : undefined,
+          );
+          expect(response.body.creditsCharged).toBe(SOCIALKIT_REQUEST_CREDITS);
+        }
+      }
+      expect(providerRequests).toBe(8);
+      expect(beforeCredits - (await credits(actor))).toBe(
+        8 * SOCIALKIT_REQUEST_CREDITS,
+      );
+    },
+  );
+
+  it.each([false, true])(
+    "forwards Instagram requireViews=%s and bills verified zero once",
+    async (requireViews) => {
+      const actor = createBddApi(context).user();
+      configureProvider();
+      const pricing = await setupConfiguredPricing();
+      await fundActor(actor);
+      const beforeCredits = await credits(actor);
+      const observed: (string | null)[] = [];
+      server.use(
+        http.get(`${SOCIALKIT_BASE}/instagram/stats`, ({ request }) => {
+          observed.push(new URL(request.url).searchParams.get("requireViews"));
+          return HttpResponse.json(providerResponse({ views: 0, likes: 4 }));
+        }),
+      );
+
+      const response = await accept(
+        client(pricing.resolution)(socialContract).request({
+          headers: {
+            ...authenticate(actor),
+            "x-okou-instagram-views": "nullable",
+          },
+          body: {
+            tool: "instagram_stats",
+            input: {
+              url: "https://www.instagram.com/reel/example/",
+              requireViews,
+            },
+          },
+        }),
+        [200],
+      );
+
+      expect(response.body.result).toStrictEqual({ views: 0, likes: 4 });
+      expect(observed).toStrictEqual([String(requireViews)]);
+      expect(beforeCredits - (await credits(actor))).toBe(
+        SOCIALKIT_REQUEST_CREDITS,
+      );
+    },
+  );
+
+  it("preserves only the documented strict Instagram 503 without billing or retry", async () => {
+    const actor = createBddApi(context).user();
+    configureProvider();
+    const pricing = await setupConfiguredPricing();
+    await fundActor(actor);
+    const beforeCredits = await credits(actor);
+    const missingViews =
+      "Instagram view count is temporarily unavailable. Please retry.";
+    const cases = [
+      {
+        status: 503,
+        message: missingViews,
+        requireViews: true,
+        apiStatus: 503,
+      },
+      {
+        status: 503,
+        message: missingViews,
+        requireViews: false,
+        apiStatus: 502,
+      },
+      {
+        status: 500,
+        message: missingViews,
+        requireViews: true,
+        apiStatus: 502,
+      },
+      {
+        status: 503,
+        message:
+          "The upstream service is temporarily unavailable. Please retry later.",
+        requireViews: true,
+        apiStatus: 502,
+      },
+    ] as const;
+    let providerRequests = 0;
+    for (const fixture of cases) {
+      server.use(
+        http.get(`${SOCIALKIT_BASE}/instagram/stats`, ({ request }) => {
+          providerRequests += 1;
+          expect(new URL(request.url).searchParams.get("requireViews")).toBe(
+            String(fixture.requireViews),
+          );
+          return HttpResponse.json(
+            { success: false, message: fixture.message },
+            { status: fixture.status },
+          );
+        }),
+      );
+
+      const response = await rawSocialRequest(
+        actor,
+        {
+          tool: "instagram_stats",
+          input: {
+            url: "https://www.instagram.com/reel/example/",
+            requireViews: fixture.requireViews,
+          },
+        },
+        { usagePricingResolution: pricing.resolution },
+      );
+      const body: unknown = await response.json();
+
+      expect(response.status).toBe(fixture.apiStatus);
+      expect(body).toMatchObject({
+        error: {
+          code:
+            fixture.apiStatus === 503
+              ? "SOCIALKIT_VIEWS_UNAVAILABLE"
+              : "SOCIALKIT_UPSTREAM_ERROR",
+        },
+      });
+      if (fixture.apiStatus === 503) {
+        expect(body).toMatchObject({
+          error: {
+            message: expect.stringContaining("No credits were charged"),
+          },
+        });
+      } else {
+        expect(JSON.stringify(body)).not.toContain("No credits were charged");
+      }
+    }
+    expect(providerRequests).toBe(cases.length);
+    await expect(credits(actor)).resolves.toBe(beforeCredits);
+  });
+
+  it("rejects requireViews on an unsupported managed tool before provider I/O", async () => {
+    const actor = createBddApi(context).user();
+    let providerRequests = 0;
+    server.use(
+      http.get(`${SOCIALKIT_BASE}/youtube/stats`, () => {
+        providerRequests += 1;
+        return HttpResponse.json(providerResponse({ views: 0 }));
+      }),
+    );
+
+    const response = await rawSocialRequest(actor, {
+      tool: "youtube_stats",
+      input: { url: "https://youtu.be/example", requireViews: true },
+    });
+
+    expect(response.status).toBe(400);
+    expect(providerRequests).toBe(0);
+  });
+
+  it.each(["youtube_transcript", "youtube_summarize"] as const)(
+    "serializes %s extraction refresh independently of result caching",
+    async (tool) => {
+      const actor = createBddApi(context).user();
+      configureProvider();
+      const pricing = await setupConfiguredPricing();
+      await fundActor(actor);
+      const requests: Record<string, string>[] = [];
+      server.use(
+        http.get(
+          `${SOCIALKIT_BASE}/youtube/${tool === "youtube_transcript" ? "transcript" : "summarize"}`,
+          ({ request }) => {
+            requests.push(
+              Object.fromEntries(new URL(request.url).searchParams),
+            );
+            return HttpResponse.json(
+              providerResponse(
+                tool === "youtube_transcript"
+                  ? { transcript: "Current captions" }
+                  : { summary: "Current summary" },
+              ),
+            );
+          },
+        ),
+      );
+
+      const url = "https://youtu.be/video123";
+      const inputs = [
+        { url },
+        { url, no_cache: false },
+        { url, no_cache: true },
+        { url, no_cache: true, cache: false },
+        { url, no_cache: true, cache: true, cache_ttl: 3600 },
+      ];
+      for (const input of inputs) {
+        const response = await accept(
+          client(pricing.resolution)(socialContract).request({
+            headers: authenticate(actor),
+            body: { tool, input },
+          }),
+          [200],
+        );
+        expect(response.body).toMatchObject({
+          tool,
+          result:
+            tool === "youtube_transcript"
+              ? { transcript: "Current captions" }
+              : { summary: "Current summary" },
+        });
+      }
+
+      expect(requests).toStrictEqual([
+        { url },
+        { url, no_cache: "false" },
+        { url, no_cache: "true" },
+        { url, no_cache: "true", cache: "false" },
+        { url, no_cache: "true", cache: "true", cache_ttl: "3600" },
+      ]);
+    },
+  );
+
+  it("rejects unsupported extraction refresh before a provider request", async () => {
+    const actor = createBddApi(context).user();
+    configureProvider();
+    let providerRequests = 0;
+    server.use(
+      providerHandler("GET", "/instagram/summarize", () => {
+        providerRequests += 1;
+        return HttpResponse.json(providerResponse({ summary: "Unexpected" }));
+      }),
+    );
+
+    const response = await rawSocialRequest(actor, {
+      tool: "instagram_summarize",
+      input: { url: "https://instagram.com/reel/example", no_cache: true },
+    });
+
+    expect(response.status).toBe(400);
+    expect(providerRequests).toBe(0);
+  });
+
+  it("preserves structured caption absence after refreshing extraction", async () => {
+    const actor = createBddApi(context).user();
+    configureProvider();
+    const pricing = await setupConfiguredPricing();
+    await fundActor(actor);
+    const beforeCredits = await credits(actor);
+    const refreshParameters: (string | null)[] = [];
+    server.use(
+      http.get(`${SOCIALKIT_BASE}/youtube/transcript`, ({ request }) => {
+        refreshParameters.push(
+          new URL(request.url).searchParams.get("no_cache"),
+        );
+        return HttpResponse.json(
+          { message: "No transcript available for this video" },
+          { status: 404 },
+        );
+      }),
+    );
+
+    const response = await rawSocialRequest(
+      actor,
+      {
+        tool: "youtube_transcript",
+        input: { url: "https://youtu.be/video123", no_cache: true },
+      },
+      { usagePricingResolution: pricing.resolution },
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: SOCIALKIT_TRANSCRIPT_ERROR_CODES.TRANSCRIPT_UNAVAILABLE,
+        reason: "transcript_unavailable",
+      },
+    });
+    expect(refreshParameters).toStrictEqual(["true"]);
+    await expect(credits(actor)).resolves.toBe(beforeCredits);
+  });
+
   it("applies reviewed TikTok limits while preserving raw session results", async () => {
     const actor = createBddApi(context).user();
     configureProvider();

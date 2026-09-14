@@ -11,6 +11,7 @@ import { command } from "ccstate";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
+import { request$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
 import { notFound } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
@@ -101,6 +102,21 @@ const socialKitRequestInner$ = command(
       { auth, body: bodyResult.data },
       signal,
     );
+    if (
+      response.status === 200 &&
+      response.body.tool === "instagram_stats" &&
+      response.body.result.views === null &&
+      get(request$).header("x-okou-instagram-views") !== "nullable"
+    ) {
+      // Pinned older CLI packages only accept numeric or omitted views.
+      // Retire after the CLI-context drain in docs/deployment-compatibility.md.
+      const result = { ...response.body.result };
+      delete result.views;
+      return agentSafeResponse(auth, {
+        ...response,
+        body: { ...response.body, result },
+      });
+    }
     return agentSafeResponse(auth, response);
   },
 );

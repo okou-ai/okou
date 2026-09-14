@@ -78,7 +78,6 @@
         "mic-volume-icon-meter",
         "motion-safe:animate-in",
         "motion-safe:fade-in",
-        "okou-blocks",
         "okou-chat-skeleton-reveal",
         "okou-realtime-cloud-flow",
         "okou-realtime-status-reconnecting",
@@ -856,6 +855,27 @@
       "evidence": [],
       "pullRequest": "https://github.com/vm0-ai/vm0/pull/34076",
       "mergeCommit": null
+    },
+    {
+      "id": "code-fence-copy-control",
+      "family": "external-contract-audit",
+      "tokens": ["copied"],
+      "consumers": [
+        "apps/platform/src/views/components/rich-markdown.tsx",
+        "apps/platform/src/views/components/mermaid-diagram.tsx"
+      ],
+      "cases": [
+        "code-fence-copy-light",
+        "code-fence-copy-dark",
+        "code-fence-copy-light-retina",
+        "code-fence-copy-dark-retina",
+        "code-fence-copy-narrow",
+        "code-fence-copy-narrow-dark"
+      ],
+      "status": "implemented",
+      "evidence": [],
+      "pullRequest": "https://github.com/vm0-ai/vm0/pull/34059",
+      "mergeCommit": null
     }
   ],
   "caseFiles": [
@@ -878,6 +898,7 @@
     "../e2e/playwright/style-migration/nav-chrome-cases.json",
     "../e2e/playwright/style-migration/okou-border-hairline-cases.json",
     "../e2e/playwright/style-migration/external-contract-audit-cases.json",
-    "../e2e/playwright/style-migration/chat-bubble-cases.json"
+    "../e2e/playwright/style-migration/chat-bubble-cases.json",
+    "../e2e/playwright/style-migration/code-fence-copy-cases.json"
   ]
 }

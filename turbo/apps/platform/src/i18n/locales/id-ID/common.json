@@ -1010,6 +1010,10 @@
       "downloadFailed": "Gagal mengunduh",
       "linkCopied": "Tautan disalin",
       "sharing": "Membagikan…"
+    },
+    "viewer": {
+      "continuePrompt": "Bantu saya mengerjakan artefak ini: {{url}}",
+      "continueWithBrand": "Lanjutkan dengan {{brandName}}"
     }
   },
   "auth": {

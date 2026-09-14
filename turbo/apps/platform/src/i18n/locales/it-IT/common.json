@@ -1030,6 +1030,10 @@
       "downloadFailed": "Download non riuscito",
       "linkCopied": "Collegamento copiato",
       "sharing": "Condivisione in corso…"
+    },
+    "viewer": {
+      "continuePrompt": "Aiutami a lavorare con questo artefatto: {{url}}",
+      "continueWithBrand": "Continua con {{brandName}}"
     }
   },
   "auth": {

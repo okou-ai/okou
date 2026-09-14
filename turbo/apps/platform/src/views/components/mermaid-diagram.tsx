@@ -1,24 +1,18 @@
 import { withChatScrollLayout } from "./chat-scroll-layout.tsx";
-import { CopyButton } from "@okouai/ui";
 import { useLoadable, useSet } from "ccstate-react";
 import { Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type { MermaidDiagramSignals } from "../../signals/mermaid-diagram.ts";
 import { openImageLightbox$ } from "../../signals/okou-page/attachment-chips.ts";
+import { CodeBlockCopyButton } from "./code-block-copy-button.tsx";
 import { IconTooltipButton } from "./icon-tooltip.tsx";
 
 function MermaidCodeBlock({ signals }: { signals: MermaidDiagramSignals }) {
   return (
     <pre>
       <code className="language-mermaid">{signals.code}</code>
-      <CopyButton
-        type="button"
-        text={signals.code}
-        showTooltip={false}
-        className="copied"
-        data-code={signals.code}
-      />
+      <CodeBlockCopyButton code={signals.code} />
     </pre>
   );
 }

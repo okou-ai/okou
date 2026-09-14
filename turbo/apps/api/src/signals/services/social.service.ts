@@ -184,7 +184,21 @@ function providerHttpError(
   status: number,
   body: unknown,
   tool: ManagedSocialKitTool,
+  request: SocialKitRequest,
 ): SocialKitErrorResponse {
+  if (
+    status === 503 &&
+    request.tool === "instagram_stats" &&
+    request.input.requireViews === true &&
+    normalizedProviderErrorMessage(body) ===
+      "instagram view count is temporarily unavailable. please retry."
+  ) {
+    return errorResponse(
+      503,
+      "Instagram view count is temporarily unavailable. No credits were charged. Retry later, or omit --require-views to use other available data.",
+      "SOCIALKIT_VIEWS_UNAVAILABLE",
+    );
+  }
   if (tool.availability === "transcript") {
     const transcriptError = transcriptProviderHttpError(status, body);
     if (transcriptError) {
@@ -364,6 +378,7 @@ async function fetchSocialKit(
         settled.value.response.status,
         settled.value.body,
         tool,
+        request,
       ),
     );
   }

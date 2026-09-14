@@ -1011,6 +1011,10 @@
       "downloadFailed": "Der Download ist fehlgeschlagen",
       "linkCopied": "Link kopiert",
       "sharing": "Wird geteilt…"
+    },
+    "viewer": {
+      "continuePrompt": "Hilf mir, mit diesem Artefakt zu arbeiten: {{url}}",
+      "continueWithBrand": "Mit {{brandName}} fortfahren"
     }
   },
   "auth": {

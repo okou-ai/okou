@@ -570,6 +570,12 @@ export default [
     // exception to the service-directory ban is not an exception to the
     // diagnostics gate, so these files carry those selectors too.
     files: [
+      // B1 deliberately has no production deletion/selector endpoint. This
+      // exact codec suite verifies its minimum-data KMS envelope boundary.
+      "src/signals/services/__tests__/account-erasure-selector.test.ts",
+      // The dormant persistence boundary has no HTTP ingress. Real PostgreSQL
+      // sessions exercise first closure, lease recovery, and selector retirement.
+      "src/signals/services/__tests__/account-erasure.service.test.ts",
       // Content hashes are a byte-identical cryptographic contract shared with
       // guest-agent; route behavior cannot pin the serializer's full corpus.
       "src/signals/services/__tests__/storage-content-hash.service.test.ts",
@@ -753,6 +759,8 @@ export default [
       "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
       "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-job.test-fixture.ts",
+      // No production endpoint can construct B1's dormant jobs or DB races.
+      "src/signals/services/__tests__/account-erasure.service.test.ts",
       // Preview job-ref aliases are process environment state, and both Stripe
       // metadata entry points must share one value-free resolution matrix that
       // cannot be observed completely through a single production API route.

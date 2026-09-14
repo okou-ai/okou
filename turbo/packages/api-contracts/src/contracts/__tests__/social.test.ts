@@ -42,6 +42,89 @@ describe("managed SocialKit contract", () => {
     );
   });
 
+  it.each(["youtube_transcript", "youtube_summarize"] as const)(
+    "preserves opt-in extraction refresh independently of result caching for %s",
+    (tool) => {
+      const url = "https://youtu.be/example";
+      for (const input of [
+        { url },
+        { url, no_cache: true },
+        { url, no_cache: false },
+        { url, no_cache: true, cache: false },
+        { url, no_cache: true, cache: true, cache_ttl: 3600 },
+      ]) {
+        expect(socialKitRequestSchema.parse({ tool, input })).toStrictEqual({
+          tool,
+          input,
+        });
+      }
+      expect(
+        socialKitRequestSchema.safeParse({
+          tool,
+          input: { url, no_cache: "true" },
+        }).success,
+      ).toBe(false);
+    },
+  );
+
+  it.each(["instagram_transcript", "instagram_summarize", "youtube_stats"])(
+    "rejects extraction refresh for unsupported tool %s",
+    (tool) => {
+      expect(
+        socialKitRequestSchema.safeParse({
+          tool,
+          input: { url: "https://example.com/video", no_cache: true },
+        }).success,
+      ).toBe(false);
+    },
+  );
+
+  it("accepts nullable Instagram views without widening other counts", () => {
+    const resultSchema = MANAGED_SOCIALKIT_TOOLS.find((tool) => {
+      return tool.name === "instagram_stats";
+    })!.resultSchema;
+    for (const result of [
+      { views: null, likes: 4, author: "example" },
+      { likes: 4, author: "example" },
+      { views: 0, likes: 4, author: "example" },
+      { views: 12, likes: 4, author: "example" },
+    ]) {
+      expect(resultSchema.parse(result)).toStrictEqual(result);
+    }
+    for (const views of [-1, 1.5, "0"]) {
+      expect(resultSchema.safeParse({ views }).success).toBe(false);
+    }
+    expect(resultSchema.safeParse({ views: null, likes: null }).success).toBe(
+      false,
+    );
+  });
+
+  it("accepts requireViews only as an Instagram stats boolean", () => {
+    for (const requireViews of [false, true]) {
+      const request = {
+        tool: "instagram_stats",
+        input: { url: "https://www.instagram.com/reel/example/", requireViews },
+      };
+      expect(socialKitRequestSchema.parse(request)).toStrictEqual(request);
+    }
+    for (const [tool, requireViews] of [
+      ["instagram_stats", "true"],
+      ["instagram_stats", null],
+      ["instagram_channel_stats", true],
+      ["youtube_stats", true],
+    ]) {
+      expect(
+        socialKitRequestSchema.safeParse({
+          tool,
+          input: {
+            url: "https://www.instagram.com/reel/example/",
+            requireViews,
+          },
+        }).success,
+      ).toBe(false);
+    }
+  });
+
   it("publishes one typed input and output schema per reviewed tool", () => {
     const catalog = managedSocialKitToolCatalog();
 

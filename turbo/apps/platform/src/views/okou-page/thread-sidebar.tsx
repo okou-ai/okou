@@ -266,6 +266,7 @@ function ThreadArtifactDetail({
 }) {
   const { t } = useTranslation();
   const sidebar = thread.sidebar;
+  const mountPreview$ = useGet(sidebar.selectedArtifactMountPreview$);
   const fullscreen = useGet(sidebar.fullscreen$);
   const toggleFullscreen = useSet(sidebar.toggleFullscreen$);
   const close = useSet(sidebar.close$);
@@ -356,6 +357,7 @@ function ThreadArtifactDetail({
     <ArtifactSidebar
       artifactRef={{
         url: preview.url,
+        mountPreview$,
         resourceUrl$: sidebar.selectedArtifactResourceUrl$,
         shareUrl$: sidebar.selectedArtifactShareUrl$,
         kind: preview.kind,

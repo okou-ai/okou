@@ -52,6 +52,7 @@ interface OutputOptions {
 }
 
 interface InspectOptions extends OutputOptions {
+  readonly requireViews?: boolean;
   readonly thread?: boolean;
 }
 
@@ -77,7 +78,11 @@ interface CommentsOptions extends CollectionOptions {
   readonly sort?: string;
 }
 
-interface SummarizeOptions extends OutputOptions {
+interface TranscriptOptions extends OutputOptions {
+  readonly refresh?: boolean;
+}
+
+interface SummarizeOptions extends TranscriptOptions {
   readonly prompt?: string;
 }
 
@@ -1066,12 +1071,19 @@ const inspectCommand = new Command()
   .description("Inspect one public social profile, channel, post, or video")
   .argument("<url>", "Public social URL")
   .option("--thread", "Inspect an X post as a thread")
+  .option(
+    "--require-views",
+    "Require verified Instagram post/reel views; unavailable views fail without a charge",
+  )
   .option("--json", "Print compact JSON")
   .action(async (url: string, options: InspectOptions) => {
     await runSocialAction(options.json === true, async () => {
       const target = parseSocialTarget(url);
       await printIntent(
-        inspectIntent(target, { thread: options.thread }),
+        inspectIntent(target, {
+          thread: options.thread,
+          requireViews: options.requireViews,
+        }),
         options.json === true,
       );
     });
@@ -1186,11 +1198,18 @@ const transcriptCommand = new Command()
   .name("transcript")
   .description("Extract the transcript from one public social video")
   .argument("<url>", "Public social video URL")
+  .option(
+    "--refresh",
+    "Bypass YouTube extraction caches; captions may still be unavailable",
+  )
   .option("--json", "Print compact JSON")
-  .action(async (url: string, options: OutputOptions) => {
+  .action(async (url: string, options: TranscriptOptions) => {
     await runSocialAction(options.json === true, async () => {
       const target = parseSocialTarget(url);
-      await printIntent(transcriptIntent(target), options.json === true);
+      await printIntent(
+        transcriptIntent(target, { refresh: options.refresh }),
+        options.json === true,
+      );
     });
   });
 
@@ -1199,12 +1218,23 @@ const summarizeCommand = new Command()
   .description("Summarize one public social video")
   .argument("<url>", "Public social video URL")
   .option("--prompt <text>", "Additional summary instructions")
+  .option(
+    "--refresh",
+    "Bypass YouTube extraction caches; summary-result caching is unchanged",
+  )
   .option("--json", "Print compact JSON")
+  .addHelpText(
+    "after",
+    "\nRefresh bypasses cached caption absence but does not guarantee captions exist.\nExtraction refresh and summary-result caching are separate controls.",
+  )
   .action(async (url: string, options: SummarizeOptions) => {
     await runSocialAction(options.json === true, async () => {
       const target = parseSocialTarget(url);
       await printIntent(
-        summarizeIntent(target, options.prompt),
+        summarizeIntent(target, {
+          prompt: options.prompt,
+          refresh: options.refresh,
+        }),
         options.json === true,
       );
     });
@@ -1402,6 +1432,7 @@ export const socialCommand = new Command()
 Examples:
   Discover:    okou social capabilities instagram --json
   Inspect:     okou social inspect https://www.instagram.com/p/<id>/ --json
+  With views:  okou social inspect https://www.instagram.com/reel/<id>/ --require-views --json
   Posts:       okou social posts https://www.instagram.com/<user>/ --limit 20 --json
   Details:     okou social posts https://www.youtube.com/@<channel> --full-details --limit 30 --json
   Reels:       okou social posts https://www.instagram.com/<user>/ --kind reels --limit 20 --json

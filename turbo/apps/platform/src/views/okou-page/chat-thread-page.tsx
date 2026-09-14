@@ -1,7 +1,6 @@
 import type { ThinkingSummaries } from "../../signals/chat-page/thread-activity-summary.ts";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import type {
-  CSSProperties,
   FormEvent,
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
@@ -4299,54 +4298,30 @@ function ThinkingLabel({
   return <ShimmerText>{thinkingLabel}</ShimmerText>;
 }
 
-function ThinkingLoader({
-  blockStyle,
-  spinnerEnabled,
-}: {
-  blockStyle: CSSProperties;
-  spinnerEnabled: boolean;
-}) {
-  if (spinnerEnabled) {
-    return (
-      <span
-        aria-hidden
-        data-thinking-loader="spinner"
-        className="okou-thinking-spinner-frame inline-flex size-4 shrink-0 items-center justify-center"
-      >
-        <img
-          src={thinkingSpinnerImg}
-          alt=""
-          // The 48px asset has a 4px inset. A 17px canvas makes its visible
-          // mark match the perceived size of the 16px line icons.
-          className="okou-thinking-spinner size-[17px] max-w-none shrink-0 animate-spin motion-reduce:animate-none"
-        />
-      </span>
-    );
-  }
-
+function ThinkingLoader() {
   return (
     <span
-      data-thinking-loader="blocks"
-      className="okou-blocks size-4 shrink-0 place-content-center"
-      style={blockStyle}
+      aria-hidden
+      data-thinking-loader="spinner"
+      className="okou-thinking-spinner-frame inline-flex size-4 shrink-0 items-center justify-center"
     >
-      <span />
-      <span />
-      <span />
+      <img
+        src={thinkingSpinnerImg}
+        alt=""
+        // The 48px asset has a 4px inset. A 17px canvas makes its visible
+        // mark match the perceived size of the 16px line icons.
+        className="okou-thinking-spinner size-[17px] max-w-none shrink-0 animate-spin motion-reduce:animate-none"
+      />
     </span>
   );
 }
 
 function InlineThinkingRow({
-  blockStyle,
   isQueued,
-  spinnerEnabled,
   thinkingLabel,
   serverThinkingLabel,
 }: {
-  blockStyle: CSSProperties;
   isQueued: boolean;
-  spinnerEnabled: boolean;
   thinkingLabel: string;
   serverThinkingLabel?: ServerThinkingLabel;
 }) {
@@ -4358,10 +4333,7 @@ function InlineThinkingRow({
       )}
     >
       <span className={CHAT_THREAD_RESPONSE_LEADING_ICON_CLASS}>
-        <ThinkingLoader
-          blockStyle={blockStyle}
-          spinnerEnabled={spinnerEnabled}
-        />
+        <ThinkingLoader />
       </span>
       <ThinkingLabel
         isQueued={isQueued}
@@ -4417,17 +4389,13 @@ function FinishedRunRow({
 
 function WaitingForAssistantResponse({
   thread,
-  blockStyle,
   isQueued,
-  spinnerEnabled,
   thinkingLabel,
   serverThinkingLabel,
   inAssistantGroup,
 }: {
   thread: ChatPanelSignals;
-  blockStyle: CSSProperties;
   isQueued: boolean;
-  spinnerEnabled: boolean;
   thinkingLabel: string;
   serverThinkingLabel?: ServerThinkingLabel;
   inAssistantGroup: boolean;
@@ -4444,9 +4412,7 @@ function WaitingForAssistantResponse({
         className="okou-thinking-enter min-w-0"
       >
         <InlineThinkingRow
-          blockStyle={blockStyle}
           isQueued={isQueued}
-          spinnerEnabled={spinnerEnabled}
           thinkingLabel={thinkingLabel}
           serverThinkingLabel={serverThinkingLabel}
         />
@@ -4470,9 +4436,7 @@ function WaitingForAssistantResponse({
         >
           <ChatAssistantMessageBody>
             <InlineThinkingRow
-              blockStyle={blockStyle}
               isQueued={isQueued}
-              spinnerEnabled={spinnerEnabled}
               thinkingLabel={thinkingLabel}
               serverThinkingLabel={serverThinkingLabel}
             />
@@ -4485,9 +4449,7 @@ function WaitingForAssistantResponse({
 
 function AssistantThinkingStatusRow({
   active,
-  blockStyle,
   isQueued,
-  spinnerEnabled,
   thinkingLabel,
   serverThinkingLabel,
   thread,
@@ -4495,9 +4457,7 @@ function AssistantThinkingStatusRow({
   inAssistantGroup,
 }: {
   active: boolean;
-  blockStyle: CSSProperties;
   isQueued: boolean;
-  spinnerEnabled: boolean;
   thinkingLabel: string;
   serverThinkingLabel?: ServerThinkingLabel;
   thread: ChatPanelSignals;
@@ -4509,9 +4469,7 @@ function AssistantThinkingStatusRow({
 
   const content = active ? (
     <InlineThinkingRow
-      blockStyle={blockStyle}
       isQueued={isQueued}
-      spinnerEnabled={spinnerEnabled}
       thinkingLabel={thinkingLabel}
       serverThinkingLabel={serverThinkingLabel}
     />
@@ -4575,15 +4533,6 @@ function ThinkingIndicator({
   mode: ThinkingIndicatorMode;
   inAssistantGroup?: boolean;
 }) {
-  const featureSwitches = useGet(featureSwitch$);
-  const spinnerEnabled =
-    featureSwitches[FeatureSwitchKey.ChatThinkingSpinner] ?? false;
-  const [c1, c2, c3] = useGet(thread.blockColors$);
-  const blockStyle = {
-    "--zb-c1": c1,
-    "--zb-c2": c2,
-    "--zb-c3": c3,
-  } as CSSProperties;
   const summaries = useLastResolved(thread.thinkingSummaries$);
   const thinkingRunId = useLastResolved(thread.thinkingRunId$);
   const recommendedFollowupSource =
@@ -4607,9 +4556,7 @@ function ThinkingIndicator({
     return (
       <AssistantThinkingStatusRow
         active={active}
-        blockStyle={blockStyle}
         isQueued={isQueued}
-        spinnerEnabled={spinnerEnabled}
         thinkingLabel={thinkingLabel}
         serverThinkingLabel={serverThinkingLabel}
         thread={thread}
@@ -4623,9 +4570,7 @@ function ThinkingIndicator({
   return (
     <WaitingForAssistantResponse
       thread={thread}
-      blockStyle={blockStyle}
       isQueued={isQueued}
-      spinnerEnabled={spinnerEnabled}
       thinkingLabel={thinkingLabel}
       serverThinkingLabel={serverThinkingLabel}
       inAssistantGroup={inAssistantGroup}
@@ -5779,7 +5724,8 @@ function MessageAttachment({
           onImageClick(a);
         }}
         placeholderClassName="h-full w-full"
-        resourceUrl$={a.signals.resourceUrl$}
+        mountPreview$={a.signals.mountPreview$}
+        resourceUrl$={a.signals.linkUrl$}
         thumbnailUrl$={a.signals.thumbnailUrl$}
         url={a.url}
       />
@@ -5788,6 +5734,7 @@ function MessageAttachment({
   if (a.kind === "video") {
     return (
       <ChatVideoPreviewButton
+        mountPreview$={a.signals.mountPreview$}
         resourceUrl$={a.signals.resourceUrl$}
         posterLoad={a.signals.previewImageLoad}
         ariaLabel={t(
@@ -6230,6 +6177,7 @@ function UserMessageFileReference({
   if (signals.kind === "video") {
     reference = (
       <ChatVideoPreviewButton
+        mountPreview$={signals.mountPreview$}
         resourceUrl$={signals.resourceUrl$}
         posterLoad={signals.previewImageLoad}
         ariaLabel={t(

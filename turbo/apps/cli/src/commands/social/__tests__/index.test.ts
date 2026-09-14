@@ -159,6 +159,7 @@ describe("okou social command", () => {
       command.setOptionValue("json", undefined);
       command.setOptionValue("thread", undefined);
       command.setOptionValue("fullDetails", undefined);
+      command.setOptionValue("requireViews", undefined);
       command.setOptionValue("kind", undefined);
       command.setOptionValue("limit", 10);
       command.setOptionValue("stream", undefined);
@@ -168,6 +169,7 @@ describe("okou social command", () => {
       command.setOptionValue("date", undefined);
       command.setOptionValue("type", undefined);
       command.setOptionValue("prompt", undefined);
+      command.setOptionValue("refresh", undefined);
       command.setOptionValue("maxDuration", undefined);
       command.setOptionValue("quality", undefined);
       command.setOptionValue("format", undefined);
@@ -500,7 +502,32 @@ describe("okou social command", () => {
     expect(output()).not.toContain("instagram_channel_posts");
     expect(output()).toContain("up to 100 trimmed characters");
     expect(output()).toContain("one anonymous batch of up to 12 reels");
+    expect(output()).toContain("--require-views");
+    expect(output()).toContain("null, distinct from zero");
     expect(apiRequests).toBe(0);
+  });
+
+  it("discovers YouTube refresh and its cache boundary", async () => {
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "capabilities",
+      "youtube",
+      "--json",
+    ]);
+
+    expect(JSON.parse(output()) as unknown).toMatchObject({
+      capabilities: [
+        {
+          platform: "youtube",
+          notes: expect.arrayContaining([
+            expect.stringContaining("--refresh"),
+            expect.stringContaining("captions may still be unavailable"),
+            expect.stringContaining("Summary-result caching is separate"),
+          ]),
+        },
+      ],
+    });
   });
 
   it.each([
@@ -553,7 +580,184 @@ describe("okou social command", () => {
       status: "complete",
       operation: "inspect",
     });
-    expect(outputRequest()).toStrictEqual({ thread: false });
+    expect(outputRequest()).toStrictEqual({
+      thread: false,
+      ...(expectedTool === "instagram_stats" ? { requireViews: false } : {}),
+    });
+  });
+
+  it.each([null, undefined, 0, 12])(
+    "preserves Instagram views %s through the real reader and output",
+    async (views) => {
+      const data = {
+        ...(views === undefined ? {} : { views }),
+        likes: 4,
+        author: "example",
+      };
+      const requests: unknown[] = [];
+      server.use(
+        http.post(
+          "http://localhost:3000/api/social/request",
+          async ({ request }) => {
+            expect(request.headers.get("x-okou-instagram-views")).toBe(
+              "nullable",
+            );
+            requests.push(await request.json());
+            return HttpResponse.json(
+              socialResponse("instagram_stats", null, data),
+            );
+          },
+        ),
+      );
+
+      await socialCommand.parseAsync([
+        "node",
+        "okou",
+        "inspect",
+        "https://instagram.com/reel/example",
+        "--json",
+      ]);
+
+      expect(requests).toStrictEqual([
+        {
+          tool: "instagram_stats",
+          input: { url: "https://www.instagram.com/reel/example" },
+        },
+      ]);
+      expect(JSON.parse(output()) as unknown).toMatchObject({
+        status: "complete",
+        request: { requireViews: false },
+        data,
+      });
+      expect((JSON.parse(output()) as { data: unknown }).data).toStrictEqual(
+        data,
+      );
+    },
+  );
+
+  it("forwards strict Instagram lookup and preserves verified zero", async () => {
+    const requests: unknown[] = [];
+    server.use(
+      http.post(
+        "http://localhost:3000/api/social/request",
+        async ({ request }) => {
+          requests.push(await request.json());
+          return HttpResponse.json(
+            socialResponse("instagram_stats", null, { views: 0 }),
+          );
+        },
+      ),
+    );
+
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "inspect",
+      "https://instagram.com/p/example",
+      "--require-views",
+      "--json",
+    ]);
+
+    expect(requests).toStrictEqual([
+      {
+        tool: "instagram_stats",
+        input: {
+          url: "https://www.instagram.com/p/example",
+          requireViews: true,
+        },
+      },
+    ]);
+    expect(JSON.parse(output()) as unknown).toMatchObject({
+      status: "complete",
+      request: { requireViews: true },
+      data: { views: 0 },
+    });
+  });
+
+  it.each([
+    "https://instagram.com/example",
+    "https://youtube.com/watch?v=example",
+    "https://x.com/example/status/1",
+    "https://facebook.com/example/posts/1",
+    "https://tiktok.com/@example/video/1",
+    "https://linkedin.com/posts/example",
+  ])("rejects --require-views for %s before HTTP", async (url) => {
+    let requests = 0;
+    server.use(
+      http.post("http://localhost:3000/api/social/request", () => {
+        requests += 1;
+        return HttpResponse.json({});
+      }),
+    );
+
+    await expect(
+      socialCommand.parseAsync([
+        "node",
+        "okou",
+        "inspect",
+        url,
+        "--require-views",
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    expect(requests).toBe(0);
+    expect(errorOutput()).toContain(
+      "--require-views is supported only for Instagram post or video URLs",
+    );
+  });
+
+  it("reports strict Instagram 503 without retrying optional lookup", async () => {
+    const requests: unknown[] = [];
+    server.use(
+      http.post(
+        "http://localhost:3000/api/social/request",
+        async ({ request }) => {
+          requests.push(await request.json());
+          return HttpResponse.json(
+            {
+              error: {
+                code: "SOCIAL_VIEWS_UNAVAILABLE",
+                message:
+                  "Instagram view count is temporarily unavailable. No credits were charged. Retry later, or omit --require-views to use other available data.",
+              },
+            },
+            { status: 503 },
+          );
+        },
+      ),
+    );
+
+    await expect(
+      socialCommand.parseAsync([
+        "node",
+        "okou",
+        "inspect",
+        "https://instagram.com/reel/example",
+        "--require-views",
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    expect(requests).toStrictEqual([
+      {
+        tool: "instagram_stats",
+        input: {
+          url: "https://www.instagram.com/reel/example",
+          requireViews: true,
+        },
+      },
+    ]);
+    expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+      status: "error",
+      error: {
+        code: "SOCIAL_VIEWS_UNAVAILABLE",
+        httpStatus: 503,
+        retryable: true,
+        message: expect.stringContaining("No credits were charged"),
+      },
+    });
+    expect(output()).toBe("");
   });
 
   it("canonicalizes supported URLs and routes X threads", async () => {
@@ -1212,6 +1416,8 @@ describe("okou social command", () => {
 
     expect(requestBody).toMatchObject({ tool: expectedTool });
     expect(outputRequest()).toStrictEqual({});
+    expect(requestBody).not.toHaveProperty("input.no_cache");
+    expect(requestBody).not.toHaveProperty("input.cache");
   });
 
   it.each([
@@ -1248,7 +1454,134 @@ describe("okou social command", () => {
       input: { custom_prompt: "Focus on outcomes" },
     });
     expect(outputRequest()).toStrictEqual({ customPrompt: true });
+    expect(requestBody).not.toHaveProperty("input.no_cache");
+    expect(requestBody).not.toHaveProperty("input.cache");
   });
+
+  it.each(["transcript", "summarize"])(
+    "refreshes YouTube extraction through %s without changing result caching",
+    async (operation) => {
+      let requestBody: unknown;
+      server.use(
+        http.post(
+          "http://localhost:3000/api/social/request",
+          async ({ request }) => {
+            requestBody = await request.json();
+            return HttpResponse.json(
+              socialResponse(`youtube_${operation}`, null, {
+                transcript: "Fresh captions",
+                summary: "Fresh summary",
+              }),
+            );
+          },
+        ),
+      );
+
+      const isSummary = operation === "summarize";
+      await socialCommand.parseAsync([
+        "node",
+        "okou",
+        operation,
+        "https://youtu.be/example",
+        "--refresh",
+        ...(isSummary ? ["--prompt", "Focus on outcomes"] : []),
+        "--json",
+      ]);
+
+      expect(requestBody).toStrictEqual({
+        tool: `youtube_${operation}`,
+        input: {
+          url: "https://youtu.be/example",
+          no_cache: true,
+          ...(isSummary ? { custom_prompt: "Focus on outcomes" } : {}),
+        },
+      });
+      expect(outputRequest()).toStrictEqual({
+        refresh: true,
+        ...(isSummary ? { customPrompt: true } : {}),
+      });
+      expect(JSON.parse(output()) as unknown).toMatchObject({
+        status: "complete",
+        operation,
+        platform: "youtube",
+        data: isSummary
+          ? { summary: "Fresh summary" }
+          : { transcript: "Fresh captions" },
+      });
+    },
+  );
+
+  it.each(["transcript", "summarize"])(
+    "rejects unsupported %s refresh before requesting managed work",
+    async (operation) => {
+      let requests = 0;
+      server.use(
+        http.post("http://localhost:3000/api/social/request", () => {
+          requests += 1;
+          return HttpResponse.json({});
+        }),
+      );
+
+      await expect(
+        socialCommand.parseAsync([
+          "node",
+          "okou",
+          operation,
+          "https://instagram.com/reel/example",
+          "--refresh",
+          "--json",
+        ]),
+      ).rejects.toThrow("process.exit called");
+
+      expect(requests).toBe(0);
+      expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+        status: "error",
+        error: {
+          code: "INVALID_INPUT",
+          message: "--refresh is supported only for YouTube videos",
+          retryable: false,
+        },
+      });
+      expect(mockExit).toHaveBeenCalledWith(1);
+    },
+  );
+
+  it.each([
+    ["transcript", 404, "SOCIAL_TRANSCRIPT_UNAVAILABLE"],
+    ["summarize", 400, "BAD_REQUEST"],
+  ])(
+    "preserves %s refresh failures (%s) without retrying",
+    async (operation, status, code) => {
+      let requests = 0;
+      server.use(
+        http.post("http://localhost:3000/api/social/request", () => {
+          requests += 1;
+          return HttpResponse.json(
+            { error: { code, message: "Requested extraction is unavailable" } },
+            { status },
+          );
+        }),
+      );
+
+      await expect(
+        socialCommand.parseAsync([
+          "node",
+          "okou",
+          operation,
+          "https://youtu.be/example",
+          "--refresh",
+          "--json",
+        ]),
+      ).rejects.toThrow("process.exit called");
+
+      expect(requests).toBe(1);
+      expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+        status: "error",
+        error: { code, httpStatus: status, retryable: false },
+      });
+      expect(mockExit).toHaveBeenCalledWith(1);
+    },
+  );
 
   it("aggregates pages, trims provider overshoot, and totals billing", async () => {
     const requests: unknown[] = [];
@@ -2559,6 +2892,13 @@ describe("okou social command", () => {
     expect(postsHelp).toContain("slower; --limit at most 30");
     expect(renderedHelp).toContain("--full-details --limit 30 --json");
     expect(renderedHelp).toContain("null, empty, or missing");
+    for (const name of ["transcript", "summarize"]) {
+      const command = socialCommand.commands.find((candidate) => {
+        return candidate.name() === name;
+      });
+      expect(command?.helpInformation()).toContain("--refresh");
+      expect(command?.helpInformation()).toContain("YouTube extraction caches");
+    }
     expect(renderedHelp).toContain(
       "Provider credentials remain on the Okou API server",
     );
