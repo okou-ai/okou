@@ -644,6 +644,7 @@ with the resting shadow. Adopting Sonner's supported `theme` prop instead takes
 Sonner's palette rather than the App's popover tokens. Draining `toaster` is
 blocked behind that choice, because whichever repair wins rewrites the same class
 string.
+
 ### The standalone PWA fixed cover
 
 The `okou-pwa-fixed-cover` selector and its consumers have been removed. It was
