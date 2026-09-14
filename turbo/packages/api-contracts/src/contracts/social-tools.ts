@@ -166,7 +166,7 @@ function cachedUrlCollectionInput(maxLimit: number) {
     .strict();
 }
 
-const customResponseObjectSchema = z
+export const socialKitSummaryFieldsSchema = z
   .record(z.string().min(1).max(64), inputStringSchema)
   .refine(
     (value) => {
@@ -179,7 +179,7 @@ const summaryInputSchema = z
   .object({
     url: urlSchema.describe("Public social video URL to summarize"),
     custom_response: z
-      .union([inputStringSchema, customResponseObjectSchema])
+      .union([inputStringSchema, socialKitSummaryFieldsSchema])
       .optional()
       .describe("Custom response fields, as instructions or a field map"),
     custom_prompt: inputStringSchema

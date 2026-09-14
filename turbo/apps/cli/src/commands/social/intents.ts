@@ -51,6 +51,7 @@ export interface SocialQueryTarget {
 export type SocialTarget = SocialQueryTarget | SocialUrlTarget;
 
 export interface SocialRequestMetadata {
+  readonly customFields?: boolean;
   readonly customPrompt?: boolean;
   readonly date?: string;
   readonly format?: string;
@@ -82,6 +83,9 @@ export interface SocialCapability {
   readonly notes?: readonly string[];
 }
 
+const SUMMARY_FIELDS_NOTE =
+  'Summarize accepts --fields JSON or --fields-file PATH, e.g. {"audience":"Who this video helps"}, plus optional --prompt guidance (not strict JSON Schema)';
+
 export const SOCIAL_CAPABILITIES: readonly SocialCapability[] = [
   {
     platform: "linkedin",
@@ -96,6 +100,7 @@ export const SOCIAL_CAPABILITIES: readonly SocialCapability[] = [
   {
     platform: "facebook",
     operations: ["comments", "download", "inspect", "summarize", "transcript"],
+    notes: [SUMMARY_FIELDS_NOTE],
   },
   {
     platform: "instagram",
@@ -114,6 +119,7 @@ export const SOCIAL_CAPABILITIES: readonly SocialCapability[] = [
       "Search returns one anonymous batch of up to 12 reels; additional pages and exhaustive results are unavailable",
       "Inspect preserves unavailable views as null, distinct from zero",
       "Inspect --require-views requires verified video views for posts/reels; unavailable views fail without a charge and are not retried automatically",
+      SUMMARY_FIELDS_NOTE,
     ],
   },
   {
@@ -127,7 +133,7 @@ export const SOCIAL_CAPABILITIES: readonly SocialCapability[] = [
       "summarize",
       "transcript",
     ],
-    notes: ["Search supports keywords and hashtags"],
+    notes: ["Search supports keywords and hashtags", SUMMARY_FIELDS_NOTE],
   },
   {
     platform: "youtube",
@@ -146,6 +152,7 @@ export const SOCIAL_CAPABILITIES: readonly SocialCapability[] = [
       "Unavailable publication dates and descriptions remain null, empty, or missing",
       "Transcript and summarize support --refresh to bypass extraction caches, including cached caption absence; captions may still be unavailable",
       "Summary-result caching is separate and unchanged by --refresh",
+      SUMMARY_FIELDS_NOTE,
     ],
   },
 ] as const;
@@ -180,6 +187,7 @@ interface TranscriptOptions {
 }
 
 interface SummarizeOptions extends TranscriptOptions {
+  readonly fields?: Readonly<Record<string, string>>;
   readonly prompt?: string;
 }
 
@@ -1159,12 +1167,16 @@ export function summarizeIntent(
     tool,
     {
       url: target.canonicalUrl,
+      ...(options.fields === undefined
+        ? {}
+        : { custom_response: options.fields }),
       ...(options.prompt === undefined
         ? {}
         : { custom_prompt: options.prompt }),
       ...(options.refresh ? { no_cache: true } : {}),
     },
     {
+      ...(options.fields === undefined ? {} : { customFields: true }),
       customPrompt: options.prompt !== undefined,
       ...(options.refresh ? { refresh: true } : {}),
     },

@@ -23,6 +23,7 @@ export {
   SOCIALKIT_TRANSCRIPT_ERROR_CODES,
   socialKitTranscriptErrorReasonSchema,
   socialKitRequestSchema,
+  socialKitSummaryFieldsSchema,
   type ManagedSocialKitCollection,
   type ManagedSocialKitCatalogBilling,
   type ManagedSocialKitCatalogProviderLimit,

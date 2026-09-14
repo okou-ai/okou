@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import {
@@ -7,6 +8,8 @@ import {
   socialKitDownloadListQuerySchema,
   type SocialKitDownloadListQuery,
   socialKitRequestSchema,
+  socialKitSummaryFieldsSchema,
+  SOCIALKIT_MAX_INPUT_VALUE_CHARS,
   type SocialKitDownloadResponse,
   type SocialKitRequest,
   type SocialKitResponse,
@@ -83,6 +86,8 @@ interface TranscriptOptions extends OutputOptions {
 }
 
 interface SummarizeOptions extends TranscriptOptions {
+  readonly fields?: string;
+  readonly fieldsFile?: string;
   readonly prompt?: string;
 }
 
@@ -1213,6 +1218,55 @@ const transcriptCommand = new Command()
     });
   });
 
+async function summaryFields(
+  options: SummarizeOptions,
+): Promise<Record<string, string> | undefined> {
+  if (options.fields !== undefined && options.fieldsFile !== undefined) {
+    throw new InvalidArgumentError(
+      "Use either --fields or --fields-file, not both",
+    );
+  }
+  let json = options.fields;
+  if (options.fieldsFile !== undefined) {
+    try {
+      json = await readFile(options.fieldsFile, "utf8");
+    } catch (error) {
+      throw new InvalidArgumentError(
+        `Cannot read --fields-file ${JSON.stringify(options.fieldsFile)}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+  if (json === undefined) {
+    return undefined;
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(json);
+  } catch {
+    throw new InvalidArgumentError(
+      `${options.fieldsFile === undefined ? "--fields" : "--fields-file"} must contain valid JSON`,
+    );
+  }
+  const parsed = socialKitSummaryFieldsSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new InvalidArgumentError(
+      `Summary fields must be a JSON object with field names of 1-64 characters and nonempty string descriptions; compact JSON must not exceed ${SOCIALKIT_MAX_INPUT_VALUE_CHARS} characters`,
+    );
+  }
+  const fields = Object.entries(parsed.data);
+  if (
+    fields.length === 0 ||
+    fields.some(([name, description]) => {
+      return name.trim().length === 0 || description.trim().length === 0;
+    })
+  ) {
+    throw new InvalidArgumentError(
+      "Summary fields must contain at least one field with a nonblank name and description",
+    );
+  }
+  return parsed.data;
+}
+
 const summarizeCommand = new Command()
   .name("summarize")
   .description("Summarize one public social video")
@@ -1222,16 +1276,39 @@ const summarizeCommand = new Command()
     "--refresh",
     "Bypass YouTube extraction caches; summary-result caching is unchanged",
   )
+  .option("--fields <json>", "JSON object mapping field names to descriptions")
+  .option(
+    "--fields-file <path>",
+    "Read the field-description JSON object from a file",
+  )
   .option("--json", "Print compact JSON")
   .addHelpText(
     "after",
     "\nRefresh bypasses cached caption absence but does not guarantee captions exist.\nExtraction refresh and summary-result caching are separate controls.",
   )
+  .addHelpText(
+    "after",
+    `
+Examples:
+  okou social summarize https://youtu.be/<id> --fields '{"audience":"Who this video helps","actionItems":"Practical next steps"}' --json
+  okou social summarize https://youtu.be/<id> --fields-file summary-fields.json --prompt "Focus on small business owners" --json
+
+Notes:
+  - Supported on Facebook, Instagram, TikTok, and YouTube
+  - Use either --fields or --fields-file with a nonempty JSON object
+  - Field names must be 1-64 characters; descriptions must be nonblank strings
+  - Compact serialized JSON must not exceed ${SOCIALKIT_MAX_INPUT_VALUE_CHARS} characters
+  - --prompt adds analysis instructions alongside the requested field descriptions
+  - Field descriptions guide extraction; they do not enforce strict JSON Schema
+  - Returned custom fields are preserved in data; this does not select output columns`,
+  )
   .action(async (url: string, options: SummarizeOptions) => {
     await runSocialAction(options.json === true, async () => {
       const target = parseSocialTarget(url);
+      const fields = await summaryFields(options);
       await printIntent(
         summarizeIntent(target, {
+          fields,
           prompt: options.prompt,
           refresh: options.refresh,
         }),
@@ -1441,6 +1518,8 @@ Examples:
   Comments:    okou social comments https://www.tiktok.com/@<user>/video/<id> --limit 20 --json
   Transcript:  okou social transcript https://youtu.be/<id> --json
   Summary:     okou social summarize https://youtu.be/<id> --json
+  Fields:      okou social summarize https://youtu.be/<id> --fields '{"audience":"Who this video helps","actionItems":"Practical next steps"}' --json
+  Fields file: okou social summarize https://youtu.be/<id> --fields-file summary-fields.json --json
   Download:    okou social download https://youtu.be/<id> --max-duration 600 --json
   Find tasks:  okou social downloads --status active --json
   Resume:      okou social download --resume <download-id> --json

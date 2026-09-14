@@ -1488,21 +1488,33 @@ describe("managed SocialKit route", () => {
         path: "/youtube/summarize",
         input: {
           url: "https://youtu.be/video123",
-          custom_response: { title: "Video title" },
+          custom_response: {
+            audience: "Who this video helps",
+            actionItems: 'Practical next steps with "quotes"\n原文',
+          },
           custom_prompt: "Return only the requested fields",
+          no_cache: true,
           cache: true,
           cache_ttl: 3600,
         },
         expectedQuery: {
           url: "https://youtu.be/video123",
-          custom_response: '{"title":"Video title"}',
+          custom_response:
+            '{"audience":"Who this video helps","actionItems":"Practical next steps with \\"quotes\\"\\n原文"}',
           custom_prompt: "Return only the requested fields",
+          no_cache: "true",
           cache: "true",
           cache_ttl: "3600",
         },
       },
     ] as const;
     const observed: { path: string; query: Record<string, string> }[] = [];
+    const summaryData = {
+      audience: ["Business owners"],
+      actionItems: [{ task: "Review feedback", owner: null }],
+      hasOffer: false,
+      offerCount: 0,
+    };
     configureProvider();
     await fundActor(actor);
     const pricing = await setupConfiguredPricing();
@@ -1514,19 +1526,26 @@ describe("managed SocialKit route", () => {
           query: Object.fromEntries(url.searchParams),
         });
         return HttpResponse.json(
-          providerResponse(validProviderData(url.pathname)),
+          providerResponse(
+            url.pathname === "/youtube/summarize"
+              ? summaryData
+              : validProviderData(url.pathname),
+          ),
         );
       }),
     );
 
     for (const request of cases) {
-      await accept(
+      const response = await accept(
         client(pricing.resolution)(socialContract).request({
           headers: authenticate(actor),
           body: requestForPath(request.path, request.input),
         }),
         [200],
       );
+      if (request.path === "/youtube/summarize") {
+        expect(response.body.result).toStrictEqual(summaryData);
+      }
     }
 
     expect(observed).toStrictEqual(

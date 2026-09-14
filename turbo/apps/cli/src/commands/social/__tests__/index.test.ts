@@ -1,3 +1,7 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { HttpResponse, http } from "msw";
 import {
   afterAll,
@@ -6,6 +10,7 @@ import {
   describe,
   expect,
   it,
+  onTestFinished,
   vi,
 } from "vitest";
 
@@ -170,6 +175,8 @@ describe("okou social command", () => {
       command.setOptionValue("type", undefined);
       command.setOptionValue("prompt", undefined);
       command.setOptionValue("refresh", undefined);
+      command.setOptionValue("fields", undefined);
+      command.setOptionValue("fieldsFile", undefined);
       command.setOptionValue("maxDuration", undefined);
       command.setOptionValue("quality", undefined);
       command.setOptionValue("format", undefined);
@@ -460,6 +467,16 @@ describe("okou social command", () => {
 
   function parserErrorOutput(): string {
     return mockStderrWrite.mock.calls.flat().map(String).join("");
+  }
+
+  async function fieldsFile(contents: string): Promise<string> {
+    const directory = await mkdtemp(join(tmpdir(), "okou-summary-fields-"));
+    onTestFinished(async () => {
+      await rm(directory, { recursive: true, force: true });
+    });
+    const path = join(directory, "summary fields.json");
+    await writeFile(path, contents);
+    return path;
   }
 
   it("discovers concise capabilities locally", async () => {
@@ -1582,6 +1599,332 @@ describe("okou social command", () => {
       expect(mockExit).toHaveBeenCalledWith(1);
     },
   );
+
+  it.each([
+    ["https://www.facebook.com/example/videos/1", "facebook_summarize"],
+    ["https://www.instagram.com/reel/example", "instagram_summarize"],
+    ["https://www.tiktok.com/@example/video/1", "tiktok_summarize"],
+    ["https://youtu.be/example", "youtube_summarize"],
+  ])("extracts custom summary fields from %s", async (url, expectedTool) => {
+    const fields = {
+      audience: "Who this video helps",
+      actionItems: 'Practical next steps, including "quoted" advice\n保留原文',
+    };
+    const data = {
+      audience: ["Small business owners"],
+      actionItems: [{ task: "Review customer feedback", owner: null }],
+      hasOffer: false,
+      offerCount: 0,
+    };
+    let requestBody: unknown;
+    server.use(
+      http.post(
+        "http://localhost:3000/api/social/request",
+        async ({ request }) => {
+          requestBody = await request.json();
+          return HttpResponse.json(socialResponse(expectedTool, null, data));
+        },
+      ),
+    );
+
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "summarize",
+      url,
+      "--fields",
+      JSON.stringify(fields),
+      "--json",
+    ]);
+
+    expect(requestBody).toStrictEqual({
+      tool: expectedTool,
+      input: { url, custom_response: fields },
+    });
+    expect(JSON.parse(output()) as unknown).toMatchObject({
+      status: "complete",
+      data,
+      request: { customFields: true, customPrompt: false },
+    });
+    expect(output()).not.toContain(fields.audience);
+  });
+
+  it.each([false, true])(
+    "reads a fields file with prompt instructions (refresh: %s)",
+    async (refresh) => {
+      const fields = {
+        audience: "Who this video helps",
+        topics: "Main business topics",
+      };
+      const path = await fieldsFile(` ${JSON.stringify(fields, null, 2)}\r\n`);
+      let requestBody: unknown;
+      server.use(
+        http.post(
+          "http://localhost:3000/api/social/request",
+          async ({ request }) => {
+            requestBody = await request.json();
+            return HttpResponse.json(
+              socialResponse("youtube_summarize", null, {
+                audience: "Business owners",
+                topics: ["Customer retention"],
+              }),
+            );
+          },
+        ),
+      );
+
+      await socialCommand.parseAsync([
+        "node",
+        "okou",
+        "summarize",
+        "https://youtu.be/example",
+        "--fields-file",
+        path,
+        "--prompt",
+        "Write in plain English",
+        ...(refresh ? ["--refresh"] : []),
+        "--json",
+      ]);
+
+      expect(requestBody).toStrictEqual({
+        tool: "youtube_summarize",
+        input: {
+          url: "https://youtu.be/example",
+          custom_response: fields,
+          custom_prompt: "Write in plain English",
+          ...(refresh ? { no_cache: true } : {}),
+        },
+      });
+      expect(outputRequest()).toStrictEqual({
+        customFields: true,
+        customPrompt: true,
+        ...(refresh ? { refresh: true } : {}),
+      });
+      expect(output()).not.toContain(path);
+    },
+  );
+
+  it("preserves default summary requests without customization", async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(
+        "http://localhost:3000/api/social/request",
+        async ({ request }) => {
+          requestBody = await request.json();
+          return HttpResponse.json(
+            socialResponse("youtube_summarize", null, { summary: "Example" }),
+          );
+        },
+      ),
+    );
+
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "summarize",
+      "https://youtu.be/example",
+      "--json",
+    ]);
+
+    expect(requestBody).toStrictEqual({
+      tool: "youtube_summarize",
+      input: { url: "https://youtu.be/example" },
+    });
+    expect(outputRequest()).toStrictEqual({ customPrompt: false });
+  });
+
+  it("accepts the compact serialized fields limit with Unicode and file whitespace", async () => {
+    const fields = { audience: "界".repeat(4096 - '{"audience":""}'.length) };
+    const path = await fieldsFile(
+      `${" ".repeat(4096)}${JSON.stringify(fields)}\n`,
+    );
+    let requestBody: unknown;
+    server.use(
+      http.post(
+        "http://localhost:3000/api/social/request",
+        async ({ request }) => {
+          requestBody = await request.json();
+          return HttpResponse.json(
+            socialResponse("youtube_summarize", null, {
+              audience: "Business owners",
+            }),
+          );
+        },
+      ),
+    );
+
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "summarize",
+      "https://youtu.be/example",
+      "--fields-file",
+      path,
+      "--json",
+    ]);
+
+    expect(requestBody).toMatchObject({ input: { custom_response: fields } });
+    expect(JSON.parse(output()) as unknown).toMatchObject({
+      status: "complete",
+    });
+  });
+
+  it.each([
+    ["malformed JSON", "{not-json}"],
+    ["empty input", ""],
+    ["string instructions", '"Extract the audience"'],
+    ["null", "null"],
+    ["array", '["audience"]'],
+    ["empty map", "{}"],
+    ["empty name", '{"":"Who this video helps"}'],
+    ["blank name", '{" ":"Who this video helps"}'],
+    ["long name", JSON.stringify({ ["a".repeat(65)]: "Audience" })],
+    ["empty description", '{"audience":""}'],
+    ["blank description", '{"audience":" \\n\\t"}'],
+    ["non-string description", '{"audience":true}'],
+    ["nested schema", '{"audience":{"type":"string"}}'],
+    [
+      "oversized map",
+      JSON.stringify({ audience: "a".repeat(4097 - '{"audience":""}'.length) }),
+    ],
+    ["oversized escaped map", JSON.stringify({ audience: "\n".repeat(2042) })],
+  ])("rejects %s fields before a managed request", async (_name, fields) => {
+    let apiRequests = 0;
+    server.use(
+      http.post("http://localhost:3000/api/social/request", () => {
+        apiRequests += 1;
+        return HttpResponse.json(socialResponse("youtube_summarize", null, {}));
+      }),
+    );
+
+    await expect(
+      socialCommand.parseAsync([
+        "node",
+        "okou",
+        "summarize",
+        "https://youtu.be/example",
+        "--fields",
+        fields,
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    expect(apiRequests).toBe(0);
+    expect(mockExit).toHaveBeenCalledWith(1);
+    expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+      status: "error",
+      error: { kind: "invalid_input", retryable: false },
+    });
+  });
+
+  it.each(["malformed", "oversized", "missing", "conflicting"])(
+    "rejects a %s fields file before a managed request",
+    async (problem) => {
+      const path = await fieldsFile(
+        problem === "malformed"
+          ? "{not-json}"
+          : JSON.stringify({ audience: "a".repeat(4096) }),
+      );
+      const suppliedPath = problem === "missing" ? `${path}.missing` : path;
+      const args = ["--fields-file", suppliedPath];
+      if (problem === "conflicting") {
+        args.push("--fields", '{"audience":"Who this video helps"}');
+      }
+      let apiRequests = 0;
+      server.use(
+        http.post("http://localhost:3000/api/social/request", () => {
+          apiRequests += 1;
+          return HttpResponse.json(
+            socialResponse("youtube_summarize", null, {}),
+          );
+        }),
+      );
+
+      await expect(
+        socialCommand.parseAsync([
+          "node",
+          "okou",
+          "summarize",
+          "https://youtu.be/example",
+          ...args,
+          "--json",
+        ]),
+      ).rejects.toThrow("process.exit called");
+
+      expect(apiRequests).toBe(0);
+      expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+        error: { kind: "invalid_input" },
+      });
+      if (problem === "missing") {
+        expect(errorOutput()).toContain("Cannot read --fields-file");
+        expect(errorOutput()).toContain(suppliedPath);
+      } else if (problem === "malformed") {
+        expect(errorOutput()).toContain(
+          "--fields-file must contain valid JSON",
+        );
+        expect(errorOutput()).not.toContain("not-json");
+      } else if (problem === "conflicting") {
+        expect(errorOutput()).toContain("Use either --fields or --fields-file");
+      } else {
+        expect(errorOutput()).toContain("4096 characters");
+      }
+    },
+  );
+
+  it.each([
+    ["summarize", "https://x.com/example/status/1"],
+    ["summarize", "https://linkedin.com/posts/example"],
+    ["transcript", "https://youtu.be/example"],
+  ])("rejects fields on unsupported %s targets %s", async (operation, url) => {
+    let apiRequests = 0;
+    server.use(
+      http.post("http://localhost:3000/api/social/request", () => {
+        apiRequests += 1;
+        return HttpResponse.json(socialResponse("youtube_summarize", null, {}));
+      }),
+    );
+
+    await expect(
+      socialCommand.parseAsync([
+        "node",
+        "okou",
+        operation,
+        url,
+        "--fields",
+        '{"audience":"Who this video helps"}',
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    expect(apiRequests).toBe(0);
+    expect(`${errorOutput()}${parserErrorOutput()}`).toContain("invalid_input");
+  });
+
+  it("discovers fields support only on reviewed summary platforms", async () => {
+    await socialCommand.parseAsync(["node", "okou", "capabilities", "--json"]);
+
+    const result = JSON.parse(output()) as {
+      capabilities: {
+        platform: string;
+        operations: string[];
+        notes?: string[];
+      }[];
+    };
+    const supported = result.capabilities.filter((capability) => {
+      return capability.notes?.some((note) => {
+        return note.includes("--fields-file");
+      });
+    });
+    expect(
+      supported.map((capability) => {
+        return capability.platform;
+      }),
+    ).toStrictEqual(["facebook", "instagram", "tiktok", "youtube"]);
+    for (const capability of supported) {
+      expect(capability.operations).toContain("summarize");
+      expect(capability.notes?.join(" ")).toContain("not strict JSON Schema");
+    }
+  });
 
   it("aggregates pages, trims provider overshoot, and totals billing", async () => {
     const requests: unknown[] = [];
@@ -2905,5 +3248,27 @@ describe("okou social command", () => {
     expect(renderedHelp).toContain(
       "one kind=page record per fetched page, followed by one metadata-only kind=summary record",
     );
+    expect(renderedHelp).toContain("--fields-file summary-fields.json");
+    const summarize = socialCommand.commands.find((command) => {
+      return command.name() === "summarize";
+    });
+    expect(summarize).toBeDefined();
+    renderedHelp = "";
+    summarize?.configureOutput({
+      writeOut: (value) => {
+        renderedHelp += value;
+      },
+    });
+    summarize?.outputHelp();
+    expect(renderedHelp).toContain("--refresh");
+    expect(renderedHelp).toContain(
+      "Extraction refresh and summary-result caching are separate controls",
+    );
+    expect(renderedHelp).toContain("--fields <json>");
+    expect(renderedHelp).toContain("--fields-file <path>");
+    expect(renderedHelp).toContain("Who this video helps");
+    expect(renderedHelp).toContain("4096 characters");
+    expect(renderedHelp).toContain("--prompt adds analysis instructions");
+    expect(renderedHelp).toContain("do not enforce strict JSON Schema");
   });
 });
