@@ -83,7 +83,6 @@ type ChatImagePreviewLinkProps = {
   load: ImageLoadSignals;
   onPreview: () => void;
   placeholderClassName: string;
-  mountPreview$: ArtifactSignals["mountPreview$"];
   resourceUrl$: ArtifactSignals["resourceUrl$"];
   thumbnailUrl$: ArtifactSignals["thumbnailUrl$"];
   url: string;
@@ -120,12 +119,10 @@ export function ChatImagePreviewLink({
   load,
   onPreview,
   placeholderClassName,
-  mountPreview$,
   resourceUrl$,
   thumbnailUrl$,
   url,
 }: ChatImagePreviewLinkProps) {
-  const mountPreview = useSet(mountPreview$);
   const imageStatus = useGet(load.status$);
   const markLoaded = useSet(load.loaded$);
   const markFailed = useSet(load.failed$);
@@ -151,7 +148,6 @@ export function ChatImagePreviewLink({
 
   return (
     <a
-      ref={mountPreview}
       href={resourceUrl ?? imageUrl}
       onClick={openPreview}
       className={cn(
@@ -195,7 +191,6 @@ export function ChatImagePreviewLink({
 }
 
 type ChatVideoPreviewButtonProps = {
-  mountPreview$: ArtifactSignals["mountPreview$"];
   resourceUrl$: ArtifactSignals["resourceUrl$"];
   ariaLabel: string;
   buttonClassName: string;
@@ -215,7 +210,6 @@ function videoPosterFrameUrl(url: string): string {
 }
 
 export function ChatVideoPreviewButton({
-  mountPreview$,
   resourceUrl$,
   ariaLabel,
   buttonClassName,
@@ -227,7 +221,6 @@ export function ChatVideoPreviewButton({
   previewImageUrl,
   videoClassName,
 }: ChatVideoPreviewButtonProps) {
-  const mountPreview = useSet(mountPreview$);
   const videoUrl = useLastResolved(resourceUrl$) ?? null;
   const posterVideoUrl =
     videoUrl === null ? undefined : videoPosterFrameUrl(videoUrl);
@@ -246,7 +239,6 @@ export function ChatVideoPreviewButton({
   return (
     <button
       type="button"
-      ref={mountPreview}
       onClick={onPreview}
       title={filename}
       aria-label={ariaLabel}
@@ -377,7 +369,6 @@ function ArtifactCardView({
         }}
         load={signals.previewImageLoad}
         placeholderClassName="h-full w-full"
-        mountPreview$={signals.mountPreview$}
         resourceUrl$={signals.linkUrl$}
         thumbnailUrl$={signals.thumbnailUrl$}
         url={signals.url}
@@ -387,7 +378,6 @@ function ArtifactCardView({
   if (signals.kind === "video") {
     return withChatScrollLayout(
       <ChatVideoPreviewButton
-        mountPreview$={signals.mountPreview$}
         resourceUrl$={signals.resourceUrl$}
         ariaLabel={t(
           ($) => {
@@ -415,7 +405,6 @@ function ArtifactCardView({
   }
   return withChatScrollLayout(
     <AttachmentPreview
-      mountPreview$={signals.mountPreview$}
       resourceUrl$={signals.resourceUrl$}
       attachment={{
         filename: signals.kind === "html" && label ? label : signals.filename,

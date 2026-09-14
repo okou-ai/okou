@@ -436,12 +436,8 @@ export class StorageManifestBuildStats {
   private systemResolvedStorageCount = 0;
   private systemPresignCacheHitCount = 0;
   private systemPresignCacheMissCount = 0;
-  private systemPresignCacheStaleReuseCount = 0;
-  private systemPresignCacheSyncRefreshCount = 0;
   private workflowSkillPresignCacheHitCount = 0;
   private workflowSkillPresignCacheMissCount = 0;
-  private workflowSkillPresignCacheStaleReuseCount = 0;
-  private workflowSkillPresignCacheSyncRefreshCount = 0;
   private nonSystemPresignCount = 0;
   private readonly resolvedSourceCounts = emptyStorageManifestSourceCounts();
   private readonly plannedPresignSourceCounts =
@@ -545,14 +541,6 @@ export class StorageManifestBuildStats {
         this.systemPresignCacheMissCount += 1;
         return;
       }
-      case "stale_reuse": {
-        this.systemPresignCacheStaleReuseCount += 1;
-        return;
-      }
-      case "sync_refresh": {
-        this.systemPresignCacheSyncRefreshCount += 1;
-        return;
-      }
     }
   }
 
@@ -566,14 +554,6 @@ export class StorageManifestBuildStats {
       }
       case "miss": {
         this.workflowSkillPresignCacheMissCount += 1;
-        return;
-      }
-      case "stale_reuse": {
-        this.workflowSkillPresignCacheStaleReuseCount += 1;
-        return;
-      }
-      case "sync_refresh": {
-        this.workflowSkillPresignCacheSyncRefreshCount += 1;
         return;
       }
     }
@@ -813,10 +793,6 @@ export class StorageManifestBuildStats {
         storageManifestCountBucket(this.systemPresignCacheHitCount),
       storage_manifest_system_presign_cache_miss_count_bucket:
         storageManifestCountBucket(this.systemPresignCacheMissCount),
-      storage_manifest_system_presign_cache_stale_reuse_count_bucket:
-        storageManifestCountBucket(this.systemPresignCacheStaleReuseCount),
-      storage_manifest_system_presign_cache_sync_refresh_count_bucket:
-        storageManifestCountBucket(this.systemPresignCacheSyncRefreshCount),
       storage_manifest_non_system_presign_count_bucket:
         storageManifestCountBucket(this.nonSystemPresignCount),
     };
@@ -828,14 +804,6 @@ export class StorageManifestBuildStats {
         storageManifestCountBucket(this.workflowSkillPresignCacheHitCount),
       storage_manifest_workflow_skill_presign_cache_miss_count_bucket:
         storageManifestCountBucket(this.workflowSkillPresignCacheMissCount),
-      storage_manifest_workflow_skill_presign_cache_stale_reuse_count_bucket:
-        storageManifestCountBucket(
-          this.workflowSkillPresignCacheStaleReuseCount,
-        ),
-      storage_manifest_workflow_skill_presign_cache_sync_refresh_count_bucket:
-        storageManifestCountBucket(
-          this.workflowSkillPresignCacheSyncRefreshCount,
-        ),
     };
   }
 }
@@ -2101,7 +2069,7 @@ function buildWorkflowSkillStorageEntry(args: {
     );
   }
   args.stats?.recordWorkflowSkillPresignCacheResult(result.status);
-  if (result.status === "miss" || result.status === "sync_refresh") {
+  if (result.status === "miss") {
     args.stats?.recordPresignCandidate(args.plan.entryKind, args.plan.source, {
       bucket: args.bucket,
       key: storageArchiveKey(args.plan.resolved),
@@ -2133,7 +2101,7 @@ function buildReadOnlyStorageEntry(args: {
   if (!result) {
     throw new Error("Missing readonly storage presigned URL cache result");
   }
-  if (result.status === "miss" || result.status === "sync_refresh") {
+  if (result.status === "miss") {
     args.stats?.recordPresignCandidate(args.plan.entryKind, args.plan.source, {
       bucket: args.bucket,
       key: storageArchiveKey(args.plan.resolved),
@@ -2166,7 +2134,7 @@ function buildSystemStorageEntry(args: {
     throw new Error("Missing system storage presigned URL cache result");
   }
   args.stats?.recordSystemPresignCacheResult(result.status);
-  if (result.status === "miss" || result.status === "sync_refresh") {
+  if (result.status === "miss") {
     args.stats?.recordPresignCandidate(args.plan.entryKind, args.plan.source, {
       bucket: args.bucket,
       key: storageArchiveKey(args.plan.resolved),
@@ -2341,7 +2309,7 @@ function buildPreparedWritebackStorageEntry(args: {
   if (args.archiveUrl === undefined || args.cacheStatus === undefined) {
     throw new Error("Missing writeback storage presigned URL cache result");
   }
-  if (args.cacheStatus === "miss" || args.cacheStatus === "sync_refresh") {
+  if (args.cacheStatus === "miss") {
     args.stats?.recordPresignCandidate("artifact", args.input.source, {
       bucket: args.bucket,
       key: archiveKey,

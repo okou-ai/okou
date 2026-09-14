@@ -291,7 +291,6 @@ import {
 import { readMemorySummaryProjection } from "./memory-summary-projection.service";
 import {
   PI_API_FIRST_TURN_COORDINATION_TIMEOUT_MS,
-  PI_API_FIRST_TURN_URL_TTL_SECONDS,
   piApiFirstTurnObjectKey,
   requirePiApiFirstTurnExecutionContext,
 } from "./pi-api-first-turn-config";
@@ -7416,7 +7415,6 @@ function signPiLaunchObjectUrls(
             generatePresignedGetUrl(
               bucket,
               piApiFirstTurnObjectKey(runId, "manifest"),
-              PI_API_FIRST_TURN_URL_TTL_SECONDS,
               undefined,
               true,
             ),
@@ -7432,7 +7430,6 @@ function signPiLaunchObjectUrls(
             generatePresignedGetUrl(
               bucket,
               piApiFirstTurnObjectKey(runId, "session"),
-              PI_API_FIRST_TURN_URL_TTL_SECONDS,
               undefined,
               true,
             ),

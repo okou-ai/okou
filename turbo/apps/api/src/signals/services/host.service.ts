@@ -1,4 +1,3 @@
-import { PRIVATE_ARTIFACT_PREVIEW_TTL_SECONDS } from "../../lib/private-artifact-preview";
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import type {
@@ -42,9 +41,6 @@ import {
   HostedSiteScopeError,
   lockHostedRunChatThreadId,
 } from "./hosted-site-scope.service";
-
-const PUT_URL_TTL_SECONDS = 3600;
-const GET_URL_TTL_SECONDS = 3600;
 const MAX_HOSTED_SITE_TOTAL_BYTES = 512 * 1024 * 1024;
 const MAX_HOSTED_SITE_FILE_BYTES = 100 * 1024 * 1024;
 const MAX_PUBLIC_SLUG_ATTEMPTS = 5;
@@ -892,7 +888,6 @@ export const prepareHostedSiteDeployment$ = command(
               hostedR2.config.bucket,
               fileKey(siteAndDeployment.deployment.r2Prefix, file.path),
               file.contentType,
-              PUT_URL_TTL_SECONDS,
               true,
             ),
           );
@@ -1423,9 +1418,6 @@ export const getHostedSiteFiles$ = command(
           generateHostedSitesPresignedGetUrl(
             hostedR2.config.bucket,
             fileKey(deployment.r2Prefix, file.path),
-            deployment.manifest.access
-              ? PRIVATE_ARTIFACT_PREVIEW_TTL_SECONDS
-              : GET_URL_TTL_SECONDS,
             true,
           ),
         );

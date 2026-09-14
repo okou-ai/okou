@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { PRESIGNED_URL_TTL_SECONDS } from "./presigned-urls";
 
 const c = initContract();
 
@@ -13,7 +14,8 @@ export const IMAGE_REFERENCE_CONTENT_TYPES = [
 export const MAX_IMAGE_REFERENCE_SOURCE_BYTES = 20 * 1024 * 1024;
 export const MAX_IMAGE_REFERENCE_DIMENSION = 16_384;
 export const MAX_IMAGE_REFERENCE_PIXELS = 67_108_864;
-export const IMAGE_REFERENCE_PREVIEW_URL_TTL_SECONDS = 15 * 60;
+export const IMAGE_REFERENCE_PREVIEW_URL_TTL_SECONDS =
+  PRESIGNED_URL_TTL_SECONDS;
 export const MAX_IMAGE_REFERENCE_PREVIEW_URLS = 100;
 
 const imageReferenceVisibilitySchema = z.enum(["private", "public"]);

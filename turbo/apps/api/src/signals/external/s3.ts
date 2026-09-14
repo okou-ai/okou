@@ -27,6 +27,7 @@ import {
   artifactDeliveryKey,
   artifactDeliveryRecordSchema,
 } from "@okouai/api-contracts/contracts/artifact-delivery";
+import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 
 const PRIVATE_ARTIFACT_CACHE_CONTROL =
   "private, max-age=31536000, must-revalidate";
@@ -721,7 +722,6 @@ export function generatePresignedPutUrl(
   key: string,
   contentType: string,
   options: {
-    readonly expiresIn: number;
     readonly usePublicEndpoint?: boolean;
     readonly metadata?: Readonly<Record<string, string>>;
   },
@@ -781,7 +781,6 @@ export function generatePresignedUploadPartUrl(
   key: string,
   uploadId: string,
   partNumber: number,
-  expiresIn: number,
 ): Computed<Promise<string>> {
   return computed((get): Promise<string> => {
     const client = get(s3ClientForBucket(bucket, true));
@@ -793,7 +792,7 @@ export function generatePresignedUploadPartUrl(
         UploadId: uploadId,
         PartNumber: partNumber,
       }),
-      { expiresIn },
+      { expiresIn: PRESIGNED_URL_TTL_SECONDS },
     );
   });
 }
@@ -909,7 +908,6 @@ function generatePresignedPutUrlWithClient(
     readonly bucket: string;
     readonly key: string;
     readonly contentType: string;
-    readonly expiresIn: number;
     readonly metadata?: Readonly<Record<string, string>>;
   },
   signal?: AbortSignal,
@@ -934,7 +932,7 @@ function generatePresignedPutUrlWithClient(
       Metadata: options.metadata,
     });
     return getSignedUrl(client, command, {
-      expiresIn: options.expiresIn,
+      expiresIn: PRESIGNED_URL_TTL_SECONDS,
       ...(metadataHeaders
         ? {
             unhoistableHeaders: new Set(Object.keys(metadataHeaders)),
@@ -948,33 +946,29 @@ export function generateHostedSitesPresignedPutUrl(
   bucket: string,
   key: string,
   contentType: string,
-  expiresIn: number,
   usePublicEndpoint = false,
 ): Computed<Promise<string>> {
   return generatePresignedPutUrlWithClient(
     usePublicEndpoint ? hostedSitesPublicS3Client$ : hostedSitesS3Client$,
-    { bucket, key, contentType, expiresIn },
+    { bucket, key, contentType },
   );
 }
 
 export function generateHostedSitesPresignedGetUrl(
   bucket: string,
   key: string,
-  expiresIn: number,
   usePublicEndpoint = false,
 ): Computed<Promise<string>> {
   return generatePresignedGetUrlWithClient(
     usePublicEndpoint ? hostedSitesPublicS3Client$ : hostedSitesS3Client$,
     bucket,
     key,
-    expiresIn,
   );
 }
 
 export function generatePresignedGetUrl(
   bucket: string,
   key: string,
-  expiresIn: number,
   filename?: string,
   usePublicEndpoint = false,
 ): Computed<Promise<string>> {
@@ -982,7 +976,6 @@ export function generatePresignedGetUrl(
     s3ClientForBucket(bucket, usePublicEndpoint),
     bucket,
     key,
-    expiresIn,
     {
       filename,
       responseCacheControl:
@@ -997,13 +990,11 @@ export function generatePresignedGetUrl(
 export function generatePrivatePresignedGetUrl(
   bucket: string,
   key: string,
-  expiresIn: number,
 ): Computed<Promise<string>> {
   return generatePresignedGetUrlWithClient(
     s3ClientForBucket(bucket, true),
     bucket,
     key,
-    expiresIn,
     { responseCacheControl: PRIVATE_NO_STORE_CACHE_CONTROL },
   );
 }
@@ -1013,13 +1004,12 @@ export function generateArtifactPreviewUrl(
   bucket: string,
   key: string,
   options: {
-    readonly expiresIn: number;
     readonly signingDate: Date;
     readonly filename?: string;
   },
 ): Computed<Promise<{ url: string; expiresAt: string }>> {
   return computed(async (get) => {
-    const { expiresIn, filename } = options;
+    const { filename } = options;
     const signingDate = new Date(
       Math.floor(options.signingDate.getTime() / 1000) * 1000,
     );
@@ -1028,7 +1018,6 @@ export function generateArtifactPreviewUrl(
         s3ClientForBucket(bucket, true),
         bucket,
         key,
-        expiresIn,
         {
           filename,
           signingDate,
@@ -1042,7 +1031,7 @@ export function generateArtifactPreviewUrl(
     return {
       url,
       expiresAt: new Date(
-        signingDate.getTime() + expiresIn * 1000,
+        signingDate.getTime() + PRESIGNED_URL_TTL_SECONDS * 1000,
       ).toISOString(),
     };
   });
@@ -1052,7 +1041,6 @@ function generatePresignedGetUrlWithClient(
   client$: Computed<S3Client>,
   bucket: string,
   key: string,
-  expiresIn: number,
   options?: {
     readonly filename?: string;
     readonly responseCacheControl?: string;
@@ -1074,7 +1062,7 @@ function generatePresignedGetUrlWithClient(
         : {}),
     });
     return getSignedUrl(client, command, {
-      expiresIn,
+      expiresIn: PRESIGNED_URL_TTL_SECONDS,
       ...(options?.signingDate ? { signingDate: options.signingDate } : {}),
     });
   });

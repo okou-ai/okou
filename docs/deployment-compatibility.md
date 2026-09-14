@@ -1146,3 +1146,26 @@ existing storage-version lifecycle. US provider user IDs remain unchanged;
 EU IDs have an `eu:` prefix to distinguish independent regional ID namespaces.
 The personal API-key storage version stays at 1. No frontend, Runner, or
 production data migration is required.
+
+## Storage presigned URLs use a fixed two-day lifetime
+
+All first-party object-storage GET, PUT, and multipart-part URLs are signed for
+172800 seconds. API responses that advertise expiration use the same shared
+constant, including reference images, private previews, registry archives, chat
+snapshots, and exports. Private hosted preview tokens retain that same two-day
+lifetime. Provider-owned URLs and OAuth token lifetimes are unchanged.
+
+The app no longer renews preview credentials on a timer or after media errors.
+Presigned uploads and Runner/Guest object downloads make one application-level attempt;
+errors remain visible to the caller. Existing preview-resolution API contracts
+remain available to deployed older app and CLI versions. Old Runner versions can
+consume the longer-lived URLs without a wire-format change.
+
+Storage URL caches are read on demand and reuse unexpired entries. Missing or
+expired entries are signed once during the normal API request. There is no
+proactive refresh or retry. The cron endpoint is now
+`/api/cron/prune-storage-presigned-urls` and only removes expired cache rows.
+Cache keys include the lifetime, so new code does not reuse the previous shorter
+policy. The database's required `refresh_after` and `last_requested_at` columns
+remain writable for deployment coexistence; new rows set `refresh_after` to their
+expiration and new code does not use either column to schedule renewal.

@@ -7,15 +7,13 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import { delay } from "signal-timers";
-import { resetSignal, setLoop, settle, tapError } from "../utils.ts";
+import { resetSignal, settle, tapError } from "../utils.ts";
 import {
   createImageLoadSignals,
   type ImageLoadSignals,
 } from "../image-load.ts";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
-import { IN_VITEST } from "../../env.ts";
 import type {
   GenerationTemplateRequest,
   PersistedAttachment,
@@ -66,8 +64,6 @@ type AttachmentUploadState =
 const log = logger("chat-draft");
 
 const MULTIPART_UPLOAD_THRESHOLD_BYTES = 5 * 1024 * 1024;
-const MAX_PART_UPLOAD_ATTEMPTS = 5;
-const PART_UPLOAD_RETRY_BASE_DELAY_MS = 250;
 
 function uploadContentTypeByExtension(ext: string): string | undefined {
   const contentTypeByExtension: Record<string, string | undefined> = {
@@ -163,51 +159,23 @@ function inferUploadContentType(file: File): string {
     : "application/octet-stream";
 }
 
-async function uploadPartWithRetry(
+async function uploadPart(
   uploadUrl: string,
   body: Blob,
   contentType: string,
   signal: AbortSignal,
 ): Promise<void> {
-  let attempt = 0;
-  await setLoop(
-    async (loopSignal) => {
-      attempt += 1;
-      const result = await settle(
-        fetchResource(
-          uploadUrl,
-          {
-            method: "PUT",
-            body,
-            headers: { "content-type": contentType },
-          },
-          loopSignal,
-        ),
-        loopSignal,
-      );
-      if (result.ok) {
-        if (result.value.ok) {
-          return true;
-        }
-        if (attempt === MAX_PART_UPLOAD_ATTEMPTS) {
-          throw new Error(
-            `storage returned ${result.value.status} ${result.value.statusText}`,
-          );
-        }
-      } else if (attempt === MAX_PART_UPLOAD_ATTEMPTS) {
-        throw result.error;
-      }
-      await delay(
-        IN_VITEST ? 0 : PART_UPLOAD_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1),
-        { signal: loopSignal },
-      );
-      return false;
-    },
-    0,
+  const response = await fetchResource(
+    uploadUrl,
+    { method: "PUT", body, headers: { "content-type": contentType } },
     signal,
-    { retryTransientErrors: false },
   );
   signal.throwIfAborted();
+  if (!response.ok) {
+    throw new Error(
+      `storage returned ${String(response.status)} ${response.statusText}`,
+    );
+  }
 }
 
 /**
@@ -224,7 +192,7 @@ const uploadFileToStorage$ = command(
     const client = createClient(uploadsContract);
     const contentType = inferUploadContentType(file);
 
-    // Step 1: ask the server to sign either one PUT URL or retryable R2
+    // Step 1: ask the server to sign either one PUT URL or R2
     // multipart URLs. The file body never travels through the app runtime.
     const prepared = await accept(
       client.prepare({
@@ -247,7 +215,7 @@ const uploadFileToStorage$ = command(
       for (const part of multipart.parts) {
         const start = (part.partNumber - 1) * multipart.partSize;
         const end = Math.min(start + multipart.partSize, file.size);
-        await uploadPartWithRetry(
+        await uploadPart(
           part.uploadUrl,
           file.slice(start, end, prepared.body.contentType),
           prepared.body.contentType,

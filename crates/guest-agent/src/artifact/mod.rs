@@ -1108,10 +1108,10 @@ mod tests {
         };
         assert_eq!(
             message,
-            "artifact archive upload failed: http: PUT presigned failed after 3 attempts; last failure: HTTP 500"
+            "artifact archive upload failed: http: PUT presigned: HTTP 500 Internal Server Error"
         );
         prepare.assert_calls(1);
-        archive_upload.assert_calls(3);
+        archive_upload.assert_calls(1);
         manifest_upload.assert_calls(0);
         commit.assert_calls(0);
         assert_eq!(

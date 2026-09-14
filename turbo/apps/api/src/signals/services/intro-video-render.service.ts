@@ -383,7 +383,6 @@ const submitClaimedRender$ = command(
         generatePrivatePresignedGetUrl(
           state.projectStorage.bucket,
           state.projectStorage.key,
-          26 * 60 * 60,
         ),
       );
       signal.throwIfAborted();

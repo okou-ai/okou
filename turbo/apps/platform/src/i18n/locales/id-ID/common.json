@@ -2804,7 +2804,6 @@
       "importedLoadFailed": "Tidak dapat memuat templat yang diunggah.",
       "importedLoading": "Memuat templat yang diunggah…",
       "importedUnavailable": "Templat yang diunggah untuk sementara tidak tersedia.",
-      "previewRefreshFailed": "Tidak dapat memperbarui pratinjau templat.",
       "previewTemplate": "Pratinjau template {{title}}",
       "previewVideo": "Pratinjau template video {{title}}",
       "previewWebsite": "Pratinjau template situs web {{title}}",

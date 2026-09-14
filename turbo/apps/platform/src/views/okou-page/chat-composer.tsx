@@ -4771,16 +4771,14 @@ function importedPptImageCandidateSource(
     return null;
   }
   const resolvedPreviewSourceUrl = previewSourceUrl ?? desiredSourceUrl;
-  if (
-    state.active === null &&
-    resolvedPreviewSourceUrl !== desiredSourceUrl &&
-    !importedPptImageLoadFailed(
+  if (state.active === null && resolvedPreviewSourceUrl !== desiredSourceUrl) {
+    return importedPptImageLoadFailed(
       state.failed,
       desiredUrl,
       resolvedPreviewSourceUrl,
     )
-  ) {
-    return resolvedPreviewSourceUrl;
+      ? null
+      : resolvedPreviewSourceUrl;
   }
   return importedPptImageLoadFailed(state.failed, desiredUrl, desiredSourceUrl)
     ? null
@@ -5784,18 +5782,9 @@ function ImportedPresentationTemplateLibraryStatus({
   const realtime = useLoadable(
     signals.template.presentationTemplatesRealtimeReady$,
   );
-  // Background renewal must not remove the error and Retry button while the
-  // replacement request is still pending.
-  const previews = useLastLoadable(
-    signals.template.importedPresentationTemplatePreviewAssets$,
-  );
   const retryCatalog = useSet(
     signals.template.retryImportedPresentationTemplates$,
   );
-  const [refreshing, refreshPreviews] = useLoadableSet(
-    signals.template.refreshImportedPresentationTemplateUrlsIfExpiring$,
-  );
-  const signal = useGet(pageSignal$);
   let message: string;
   let retry: (() => void) | undefined;
   if (templates.state === "loading") {
@@ -5816,13 +5805,6 @@ function ImportedPresentationTemplateLibraryStatus({
       });
       retry = retryCatalog;
     }
-  } else if (previews.state === "hasError") {
-    message = t(($) => {
-      return $.chat.templates.previewRefreshFailed;
-    });
-    retry = () => {
-      detach(refreshPreviews(signal), Reason.DomCallback);
-    };
   } else if (templates.data.length === 0) {
     message = t(($) => {
       return $.chat.templates.importedEmpty;
@@ -5833,22 +5815,11 @@ function ImportedPresentationTemplateLibraryStatus({
   return (
     <div
       className="col-span-full flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
-      role={
-        templates.state === "hasError" ||
-        (templates.state === "hasData" && previews.state === "hasError")
-          ? "alert"
-          : "status"
-      }
+      role={templates.state === "hasError" ? "alert" : "status"}
     >
       <span>{message}</span>
       {retry ? (
-        <Button
-          type="button"
-          variant="quiet"
-          size="sm"
-          disabled={refreshing.state === "loading"}
-          onClick={retry}
-        >
+        <Button type="button" variant="quiet" size="sm" onClick={retry}>
           {t(($) => {
             return $.chat.templates.retry;
           })}
@@ -6864,23 +6835,6 @@ function selectedComposerTemplateAttachment(
   return websiteItem
     ? { type: "website", title: websiteItem.title, category: "website" }
     : undefined;
-}
-
-function ComposerImportedTemplateUrlRefreshLifecycle({
-  signals,
-}: {
-  signals: ComposerSignals;
-}) {
-  const setImportedTemplateUrlRefreshLifecycleRef = useSet(
-    signals.template.importedPresentationTemplateUrlRefreshLifecycleRef$,
-  );
-  return (
-    <span
-      ref={setImportedTemplateUrlRefreshLifecycleRef}
-      aria-hidden="true"
-      className="pointer-events-none absolute size-px overflow-hidden opacity-0"
-    />
-  );
 }
 
 function TemplatePickerButton({
@@ -11025,7 +10979,6 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
           ref={actions.bind}
           className={cn("flex flex-col", layoutHeightClassNames.shell)}
         >
-          <ComposerImportedTemplateUrlRefreshLifecycle signals={signals} />
           <ComposerCreateControls signals={signals} />
           <ComposerAttachments signals={signals} />
           <ComposerSelectedTask signals={signals} />

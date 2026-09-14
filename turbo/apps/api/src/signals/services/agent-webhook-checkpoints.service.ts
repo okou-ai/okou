@@ -646,7 +646,7 @@ export const prepareCheckpointHistoryUpload$ = command(
         bucketName,
         s3Key,
         "application/octet-stream",
-        { expiresIn: 3600, usePublicEndpoint: true },
+        { usePublicEndpoint: true },
         signal,
       ),
     );

@@ -198,12 +198,12 @@ describe("GET /api/web/file-url", () => {
     );
 
     expect(response.body.url).toBe(PRESIGNED_URL);
-    expect(response.body.expiresAt).toBe("2026-09-09T14:00:00.000Z");
+    expect(response.body.expiresAt).toBe("2026-09-11T12:00:00.000Z");
     expect(signedObjectInputs()).toStrictEqual([
       expect.objectContaining({ Bucket: BUCKET, Key: key }),
     ]);
     expect(signedOptions()).toStrictEqual([
-      { expiresIn: 7200, signingDate: new Date("2026-09-09T12:00:00.000Z") },
+      { expiresIn: 172_800, signingDate: new Date("2026-09-09T12:00:00.000Z") },
     ]);
   });
 

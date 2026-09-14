@@ -54,7 +54,6 @@ import { safeUriComponentDecode, settle } from "../utils";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const DOWNLOAD_MAX_BYTES = 100 * 1024 * 1024;
-const PUT_URL_TTL_SECONDS = 3600;
 const FEISHU_FILE_ID_PREFIX = "feishu_file_";
 
 type InstallationResolution =
@@ -463,7 +462,6 @@ const initUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
       artifact.key,
       bodyResult.data.contentType,
       {
-        expiresIn: PUT_URL_TTL_SECONDS,
         usePublicEndpoint: true,
         metadata: artifact.metadata,
       },

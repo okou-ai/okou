@@ -2813,7 +2813,6 @@
       "importedLoadFailed": "अपलोड किए गए टेम्पलेट लोड नहीं हो सके।",
       "importedLoading": "अपलोड किए गए टेम्पलेट लोड हो रहे हैं…",
       "importedUnavailable": "अपलोड किए गए टेम्पलेट फ़िलहाल उपलब्ध नहीं हैं।",
-      "previewRefreshFailed": "टेम्पलेट के प्रीव्यू रीफ़्रेश नहीं हो सके।",
       "previewTemplate": "पूर्वावलोकन टेम्पलेट {{title}}",
       "previewVideo": "पूर्वावलोकन वीडियो टेम्पलेट {{title}}",
       "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",

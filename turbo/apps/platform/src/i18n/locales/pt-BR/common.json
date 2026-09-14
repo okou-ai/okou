@@ -2859,7 +2859,6 @@
       "importedLoadFailed": "Não foi possível carregar os modelos enviados.",
       "importedLoading": "Carregando modelos enviados…",
       "importedUnavailable": "Os modelos enviados estão temporariamente indisponíveis.",
-      "previewRefreshFailed": "Não foi possível atualizar as prévias dos modelos.",
       "previewTemplate": "Visualizar template {{title}}",
       "previewVideo": "Visualizar template de vídeo {{title}}",
       "previewWebsite": "Visualizar template de site {{title}}",

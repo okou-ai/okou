@@ -170,7 +170,6 @@ const INVALID_EXECUTION_CONTEXT_ERROR =
   "Runner job missing valid execution context";
 const runnerClaimVersionHeaderSchema = runnerVersionSchema.optional();
 const MAX_VALIDATION_ISSUES_TO_LOG = 10;
-const RESUME_SESSION_HISTORY_URL_TTL_SECONDS = 60 * 60;
 const RESUME_SESSION_HISTORY_LOAD_ERROR =
   "Runner job missing resume session history";
 const RESUME_SESSION_HISTORY_INVALID_ERROR =
@@ -1612,7 +1611,6 @@ const generateResumeSessionHistoryUrl$ = command(
       generatePresignedGetUrl(
         env("R2_USER_STORAGES_BUCKET_NAME"),
         resumeSessionHistoryRawBlobKey(hash),
-        RESUME_SESSION_HISTORY_URL_TTL_SECONDS,
         undefined,
         true,
       ),
@@ -1626,7 +1624,6 @@ const generateResumeSessionHistoryObjectUrl$ = command(
       generatePresignedGetUrl(
         env("R2_USER_STORAGES_BUCKET_NAME"),
         objectKey,
-        RESUME_SESSION_HISTORY_URL_TTL_SECONDS,
         undefined,
         true,
       ),

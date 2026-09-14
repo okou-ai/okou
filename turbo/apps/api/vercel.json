@@ -89,7 +89,7 @@
       "schedule": "0 * * * *"
     },
     {
-      "path": "/api/cron/refresh-storage-presigned-urls",
+      "path": "/api/cron/prune-storage-presigned-urls",
       "schedule": "* * * * *"
     },
     {

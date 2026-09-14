@@ -75,7 +75,6 @@ function MediaImage({
   resolvedPreview,
   asLink = false,
   insideLink = false,
-  previewRef,
 }: {
   src: string | undefined;
   url: string;
@@ -85,7 +84,6 @@ function MediaImage({
   resolvedPreview?: AttachmentPreviewSignals;
   asLink?: boolean;
   insideLink?: boolean;
-  previewRef?: (element: HTMLElement | null) => (() => void) | undefined;
 }) {
   const imageStatus = useGet(load.status$);
   const markLoaded = useSet(load.loaded$);
@@ -134,15 +132,10 @@ function MediaImage({
   if (asLink) {
     // A linked Markdown thumbnail already has its own destination.
     if (insideLink) {
-      return (
-        <span ref={previewRef} className={className}>
-          {preview}
-        </span>
-      );
+      return <span className={className}>{preview}</span>;
     }
     return (
       <a
-        ref={previewRef}
         href={url}
         target="_blank"
         rel="noopener noreferrer"
@@ -155,7 +148,6 @@ function MediaImage({
 
   return (
     <button
-      ref={previewRef}
       type="button"
       onClick={(event) => {
         const threadId = event.currentTarget.closest<HTMLElement>(
@@ -241,7 +233,6 @@ function ArtifactImage({
   alt: string;
 }) {
   const src = useLastResolved(signals.thumbnailUrl$);
-  const mountPreview = useSet(signals.mountPreview$);
   return (
     <MediaImage
       src={src}
@@ -250,7 +241,6 @@ function ArtifactImage({
       load={signals.previewImageLoad}
       filename={signals.filename}
       resolvedPreview={signals}
-      previewRef={mountPreview}
     />
   );
 }

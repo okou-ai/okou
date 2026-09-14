@@ -2813,7 +2813,6 @@
       "importedLoadFailed": "Hochgeladene Vorlagen konnten nicht geladen werden.",
       "importedLoading": "Hochgeladene Vorlagen werden geladen…",
       "importedUnavailable": "Hochgeladene Vorlagen sind vorübergehend nicht verfügbar.",
-      "previewRefreshFailed": "Vorlagenvorschauen konnten nicht aktualisiert werden.",
       "previewTemplate": "Vorschauvorlage {{title}}",
       "previewVideo": "Vorschau der Videovorlage {{title}}",
       "previewWebsite": "Vorschau der Website-Vorlage {{title}}",

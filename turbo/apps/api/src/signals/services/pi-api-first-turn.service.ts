@@ -122,7 +122,6 @@ import {
 } from "./session-history-blobs";
 import {
   PI_API_FIRST_TURN_API_OWNERSHIP_TIMEOUT_MS,
-  PI_API_FIRST_TURN_URL_TTL_SECONDS,
   piApiFirstTurnObjectKey,
   type PiApiFirstTurnActivation,
 } from "./pi-api-first-turn-config";
@@ -2240,7 +2239,6 @@ const publishLargeHistoryTransfer$ = command(
         generatePresignedGetUrl(
           env("R2_USER_STORAGES_BUCKET_NAME"),
           resumeSessionHistoryBlobKey(hash, metadata.encoding),
-          PI_API_FIRST_TURN_URL_TTL_SECONDS,
           undefined,
           true,
         ),

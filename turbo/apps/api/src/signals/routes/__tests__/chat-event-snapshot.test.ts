@@ -194,7 +194,7 @@ describe("chat event snapshot read endpoints", () => {
     );
     expect(download.body).toStrictEqual({
       url: FAKE_CHAT_EVENT_SNAPSHOT_URL,
-      expiresInSeconds: 900,
+      expiresInSeconds: 172_800,
       lastEventId: head.last_event_id,
       lastSeqId: head.last_seq_id,
     });

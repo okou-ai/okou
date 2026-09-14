@@ -218,7 +218,6 @@ function ArtifactSidebarContent({
   const fullscreen = fullscreenState.active;
   const toggleFullscreen = fullscreenState.toggle;
   const resourceUrl = useLastResolved(artifactRef.resourceUrl$) ?? null;
-  const mountPreview = useSet(artifactRef.mountPreview$);
   const shareUrl = useLastResolved(artifactRef.shareUrl$);
   const display = resolveArtifactDisplay(artifactRef, item);
   const syncTarget = artifactSidebarSyncTargetForItem({
@@ -230,7 +229,6 @@ function ArtifactSidebarContent({
 
   return (
     <ArtifactSidebarResolvedContent
-      mountPreview={mountPreview}
       resourceUrl={resourceUrl}
       shareUrl={shareUrl}
       closePreview={onClose}
@@ -248,9 +246,6 @@ function ArtifactSidebarContent({
 }
 
 type ArtifactSidebarResolvedContentProps = {
-  readonly mountPreview: (
-    element: HTMLElement | null,
-  ) => (() => void) | undefined;
   readonly resourceUrl: string | null;
   readonly shareUrl: string | null | undefined;
   readonly closePreview: () => void;
@@ -266,7 +261,6 @@ type ArtifactSidebarResolvedContentProps = {
 };
 
 function ArtifactSidebarResolvedContent({
-  mountPreview,
   resourceUrl,
   shareUrl,
   closePreview,
@@ -296,10 +290,7 @@ function ArtifactSidebarResolvedContent({
         onToggleFullscreen={toggleFullscreen}
         onClose={closePreview}
       />
-      <div
-        ref={mountPreview}
-        className="min-h-0 flex-1 overflow-hidden bg-background"
-      >
+      <div className="min-h-0 flex-1 overflow-hidden bg-background">
         <ArtifactBody
           resourceUrl={resourceUrl}
           shareUrl={shareUrl}

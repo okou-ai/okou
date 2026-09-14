@@ -2859,7 +2859,6 @@
       "importedLoadFailed": "Impossible de charger les modèles importés.",
       "importedLoading": "Chargement des modèles importés…",
       "importedUnavailable": "Les modèles importés sont temporairement indisponibles.",
-      "previewRefreshFailed": "Impossible d’actualiser les aperçus des modèles.",
       "previewTemplate": "Aperçu du modèle {{title}}",
       "previewVideo": "Aperçu du modèle vidéo {{title}}",
       "previewWebsite": "Aperçu du modèle de site web {{title}}",

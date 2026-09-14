@@ -2813,7 +2813,6 @@
       "importedLoadFailed": "Couldn't load uploaded templates.",
       "importedLoading": "Loading uploaded templates…",
       "importedUnavailable": "Uploaded templates are temporarily unavailable.",
-      "previewRefreshFailed": "Couldn't refresh template previews.",
       "previewTemplate": "Preview template {{title}}",
       "previewVideo": "Preview video template {{title}}",
       "previewWebsite": "Preview website template {{title}}",

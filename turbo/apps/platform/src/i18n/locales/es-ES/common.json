@@ -2859,7 +2859,6 @@
       "importedLoadFailed": "No se pudieron cargar las plantillas subidas.",
       "importedLoading": "Cargando plantillas subidas…",
       "importedUnavailable": "Las plantillas subidas no están disponibles temporalmente.",
-      "previewRefreshFailed": "No se pudieron actualizar las vistas previas de las plantillas.",
       "previewTemplate": "Plantilla de vista previa {{title}}",
       "previewVideo": "Vista previa de la plantilla de vídeo {{title}}",
       "previewWebsite": "Vista previa de la plantilla de sitio web {{title}}",
