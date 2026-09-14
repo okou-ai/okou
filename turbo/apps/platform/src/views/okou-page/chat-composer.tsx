@@ -9868,8 +9868,8 @@ function ComposerModelPickerControls({
         value={value}
         onChange={onChange}
         triggerClassName={cn(
-          composerModelPickerTriggerClassName(),
-          "hidden sm:flex",
+          "hidden text-sm text-muted-foreground sm:inline-flex",
+          COMPOSER_CONTROL_FOCUS_CLASS,
         )}
       />
       <ComposerRunModelPickerControl

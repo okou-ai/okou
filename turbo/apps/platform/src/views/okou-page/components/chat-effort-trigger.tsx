@@ -1,5 +1,5 @@
 import { isCodexFastModeModel } from "@okouai/api-contracts/contracts/model-providers";
-import { Popover, PopoverContent, PopoverTrigger, cn } from "@okouai/ui";
+import { Button, Popover, PopoverContent, PopoverTrigger } from "@okouai/ui";
 import { useGet, useLastResolved } from "ccstate-react";
 import { Zap } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -61,21 +61,29 @@ export function ChatEffortTrigger({
   return (
     <>
       <Popover>
-        <PopoverTrigger
-          aria-label={`${label}, ${displayValue}`}
-          className={cn(triggerClassName, "flex items-center gap-1.5")}
-        >
-          {fast ? (
-            <Zap
-              size={15}
-              fill="currentColor"
-              className="text-amber-600 dark:text-amber-300"
-              aria-hidden="true"
-            />
-          ) : null}
-          {displayValue}
+        {/* A real composer control, not a bare trigger: the shared button owns
+            the radius, height, hover and focus ring the rest of the row has. */}
+        <PopoverTrigger asChild>
+          <Button
+            variant="quiet"
+            size="sm"
+            aria-label={`${label}, ${displayValue}`}
+            className={triggerClassName}
+          >
+            {fast ? (
+              <Zap
+                size={15}
+                fill="currentColor"
+                className="text-amber-600 dark:text-amber-300"
+                aria-hidden="true"
+              />
+            ) : null}
+            {displayValue}
+          </Button>
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-63 p-0">
+        {/* The rows bring their own padding, so the card only adds the little
+            the prototype's 252px popover has around them. */}
+        <PopoverContent align="start" className="w-63 px-1.5 py-0.5">
           <ChatEffortSettings
             selection={value}
             disabled={disabled}
