@@ -7,7 +7,7 @@ edition.workspace = true
 libc = { workspace = true, features = ["std"] }
 runner-rpc-proto.workspace = true
 serde_json = { workspace = true, features = ["std"] }
-tokio = { workspace = true, features = ["io-std", "io-util", "net", "rt", "time"] }
+tokio = { workspace = true, features = ["io-std", "io-util", "macros", "net", "rt", "time"] }
 
 [dev-dependencies]
 tempfile = { workspace = true, features = ["getrandom"] }
