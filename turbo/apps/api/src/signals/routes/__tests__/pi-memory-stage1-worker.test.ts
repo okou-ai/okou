@@ -23,6 +23,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { gzipSync, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 
 import { GetObjectCommand } from "@aws-sdk/client-s3";
+import {
+  getProvidersForModel,
+  getSecretNameForType,
+} from "@okouai/api-contracts/contracts/model-providers";
+import { isPiExecutionRoute } from "@okouai/core/pi-execution";
+import { PI_MEMORY_STAGE1_RESPONSE_SCHEMA } from "@okouai/pi-agent-runtime/api";
+import { encode } from "gpt-tokenizer/encoding/o200k_base";
 import { cronExtractPiMemoryStage1Contract } from "@okouai/api-contracts/contracts/cron";
 import {
   SESSION_HISTORY_ENCODING_GZIP,
@@ -85,6 +92,7 @@ interface CandidateFixture {
 interface ProviderInvocation {
   readonly sequence: number;
   readonly request: unknown;
+  readonly body: string;
   readonly url: string;
   readonly headers: Headers;
 }
@@ -268,19 +276,20 @@ function installProvider(
   const calls: ProviderInvocation[] = [];
   server.use(
     http.post(
-      /https:\/\/(?:api\.openai\.com|(?:us\.)?openrouter\.ai|chatgpt\.com|stage1-gateway\.example)\/.*\/responses/u,
+      /https:\/\/(?:api\.openai\.com|(?:us\.)?openrouter\.ai|chatgpt\.com|ai-gateway\.vercel\.sh|stage1-gateway\.example)\/.*\/responses/u,
       async ({ request }) => {
         sequence += 1;
+        const body = (
+          request.headers.get("content-encoding") === "zstd"
+            ? zstdDecompressSync(Buffer.from(await request.arrayBuffer()))
+            : Buffer.from(await request.arrayBuffer())
+        ).toString("utf8");
         const invocation = {
           sequence,
           url: request.url,
           headers: request.headers,
-          request: JSON.parse(
-            (request.headers.get("content-encoding") === "zstd"
-              ? zstdDecompressSync(Buffer.from(await request.arrayBuffer()))
-              : Buffer.from(await request.arrayBuffer())
-            ).toString("utf8"),
-          ) as unknown,
+          body,
+          request: JSON.parse(body) as unknown,
         };
         calls.push(invocation);
         const reply = await responder(invocation);
@@ -1642,6 +1651,28 @@ type SourceBinding = NonNullable<
 >;
 type StorageFixture = ReturnType<typeof createStorageFixture>;
 
+const lunaApiKeyRoutes = [
+  {
+    type: "openai-api-key",
+    url: "https://api.openai.com/v1/responses",
+    model: "gpt-5.6-luna",
+    contextWindow: 272_000,
+  },
+  {
+    type: "openrouter-codex",
+    url: "https://openrouter.ai/api/v1/responses",
+    model: "openai/gpt-5.6-luna",
+    contextWindow: 1_050_000,
+  },
+  {
+    type: "vercel-ai-gateway-codex",
+    url: "https://ai-gateway.vercel.sh/v1/responses",
+    model: "openai/gpt-5.6-luna",
+    contextWindow: 272_000,
+  },
+] as const;
+type LunaApiKeyProvider = (typeof lunaApiKeyRoutes)[number]["type"];
+
 function actorFor(storage: StorageFixture) {
   return createBddApi(context).user({
     userId: storage.user_id,
@@ -1653,7 +1684,7 @@ function actorFor(storage: StorageFixture) {
 async function apiKeySource(
   storage: StorageFixture,
   key = "source-openai-key",
-  type: "openai-api-key" | "openrouter-codex" = "openai-api-key",
+  type: LunaApiKeyProvider = "openai-api-key",
   scope: "org" | "member" = "org",
 ) {
   const actor = actorFor(storage);
@@ -1903,11 +1934,11 @@ describe("Stage 1 source credentials", () => {
   });
 
   it("routes a mixed batch to each original source and charges only built-in", async () => {
-    const storages = Array.from({ length: 4 }, () => {
+    const storages = Array.from({ length: 5 }, () => {
       return createStorageFixture();
     });
-    const [builtin, api, codex, gateway] = storages;
-    if (!builtin || !api || !codex || !gateway) {
+    const [builtin, api, codex, gateway, vercel] = storages;
+    if (!builtin || !api || !codex || !gateway || !vercel) {
       throw new Error("Missing owners");
     }
     const subscription = await codexSource(codex);
@@ -1923,17 +1954,22 @@ describe("Stage 1 source credentials", () => {
     await seedSource(api, await apiKeySource(api), "api evidence");
     await seedSource(codex, subscription.binding, "codex evidence");
     await seedSource(gateway, await gatewaySource(gateway), "gateway evidence");
+    await seedSource(
+      vercel,
+      await apiKeySource(vercel, "vercel-owned-key", "vercel-ai-gateway-codex"),
+      "vercel evidence",
+    );
     const provider = installSourceProvider();
     const result = await accept(
       stage1Client(storages).extract({ headers: stage1Headers() }),
       [200],
     );
     expect(result.body).toMatchObject({
-      succeeded: 4,
+      succeeded: 5,
       terminalFailure: 0,
       retryableFailure: 0,
     });
-    expect(provider.calls).toHaveLength(4);
+    expect(provider.calls).toHaveLength(5);
     const callFor = (content: string) => {
       const call = provider.calls.find((call) => {
         return JSON.stringify(call.request).includes(content);
@@ -1948,6 +1984,12 @@ describe("Stage 1 source credentials", () => {
     expect(apiCall.headers.get("authorization")).toBe(
       "Bearer source-openai-key",
     );
+    const vercelCall = callFor("vercel evidence");
+    expect(vercelCall.url).toBe("https://ai-gateway.vercel.sh/v1/responses");
+    expect(vercelCall.headers.get("authorization")).toBe(
+      "Bearer vercel-owned-key",
+    );
+    expect(vercelCall.request).toMatchObject({ model: "openai/gpt-5.6-luna" });
     const native = callFor("codex evidence");
     expect(native.url).toBe("https://chatgpt.com/backend-api/codex/responses");
     expect(native.headers.get("authorization")).toBe(
@@ -1970,54 +2012,137 @@ describe("Stage 1 source credentials", () => {
       expect(call.request).toMatchObject({ reasoning: { effort: "low" } });
       expect(call.request).not.toHaveProperty("service_tier");
       expect(call.request).not.toHaveProperty("tools");
-      if (call !== custom) {
+      if (call !== custom && call !== vercelCall) {
         expect(call.request).toMatchObject({ model: "gpt-5.6-luna" });
       }
     }
     expect((await inspectUsage(builtin)).length).toBeGreaterThan(0);
-    for (const storage of [api, codex, gateway]) {
+    for (const storage of [api, codex, gateway, vercel]) {
       await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
     }
   });
 
-  it("keeps the exact key after default changes and accepts surviving-key rotation", async () => {
-    const storage = createStorageFixture();
-    const source = await apiKeySource(storage, "original-key");
-    await seedSource(storage, source);
-    const rotated = await apiKeySource(storage, "rotated-key");
-    expect(rotated.modelProviderId).toBe(source.modelProviderId);
-    await apiKeySource(storage, "new-default-key", "openrouter-codex");
-    const provider = installSourceProvider();
-    await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
-    expect(provider.calls).toHaveLength(1);
-    expect(provider.calls[0]?.headers.get("authorization")).toBe(
-      "Bearer rotated-key",
-    );
-    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
-  });
+  it.each(lunaApiKeyRoutes)(
+    "keeps the exact $type key after default changes and surviving-key rotation",
+    async ({ type, url }) => {
+      const storage = createStorageFixture();
+      const source = await apiKeySource(storage, "original-key", type);
+      const actor = actorFor(storage);
+      const runs = createRunsApi(context);
+      await runs.updateOrgModelPolicies(actor, [
+        {
+          model: "gpt-5.6-luna",
+          isDefault: true,
+          defaultProviderType: type,
+          credentialScope: "org",
+          modelProviderId: source.modelProviderId,
+        },
+      ]);
+      await seedSource(storage, source);
+      const rotated = await apiKeySource(storage, "rotated-key", type);
+      expect(rotated.modelProviderId).toBe(source.modelProviderId);
+      const replacement = await apiKeySource(
+        storage,
+        "new-default-key",
+        type === "openrouter-codex" ? "openai-api-key" : "openrouter-codex",
+      );
+      await runs.updateOrgModelPolicies(actor, [
+        {
+          model: "gpt-5.6-luna",
+          isDefault: true,
+          defaultProviderType: replacement.modelProvider,
+          credentialScope: "org",
+          modelProviderId: replacement.modelProviderId,
+        },
+      ]);
+      expect(
+        (await createMiscRoutesApi(context).listModelPolicies(actor)).policies,
+      ).toContainEqual(
+        expect.objectContaining({
+          model: "gpt-5.6-luna",
+          isDefault: true,
+          modelProviderId: replacement.modelProviderId,
+        }),
+      );
+      const provider = installSourceProvider();
+      await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
+      expect(provider.calls).toHaveLength(1);
+      expect(provider.calls[0]?.headers.get("authorization")).toBe(
+        "Bearer rotated-key",
+      );
+      expect(provider.calls[0]?.url).toBe(url);
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    },
+  );
 
-  it("cannot replace a deleted API-key ID with a same-type provider", async () => {
+  it.each(lunaApiKeyRoutes)(
+    "cannot replace a deleted $type ID with a same-type provider",
+    async ({ type }) => {
+      const storage = createStorageFixture();
+      const source = await apiKeySource(storage, "deleted-key", type);
+      const candidate = await seedSource(storage, source);
+      await createMiscRoutesApi(context).deleteOrgModelProvider(
+        actorFor(storage),
+        type,
+        [204],
+      );
+      const replacement = await apiKeySource(storage, "replacement-key", type);
+      expect(replacement.modelProviderId).not.toBe(source.modelProviderId);
+      const provider = installSourceProvider();
+      await expect(runScoped(storage)).resolves.toMatchObject({
+        terminalFailure: 1,
+      });
+      expect(provider.calls).toHaveLength(0);
+      await expect(inspect(candidate)).resolves.toMatchObject({
+        last_error_class: "credential_unavailable",
+        successful_source_history_hash: null,
+      });
+      await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    },
+  );
+
+  it.each(["org", "member"] as const)(
+    "rejects a Vercel key whose %s owner disagrees with the source scope",
+    async (scope) => {
+      const storage = createStorageFixture();
+      const source = await apiKeySource(
+        storage,
+        "wrong-scope-key",
+        "vercel-ai-gateway-codex",
+        scope,
+      );
+      const candidate = await seedSource(storage, {
+        ...source,
+        modelProviderCredentialScope: scope === "org" ? "member" : "org",
+      });
+      const provider = installSourceProvider();
+      await expect(runScoped(storage)).resolves.toMatchObject({
+        terminalFailure: 1,
+      });
+      expect(provider.calls).toHaveLength(0);
+      await expect(inspect(candidate)).resolves.toMatchObject({
+        last_error_class: "credential_unavailable",
+        successful_source_history_hash: null,
+      });
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    },
+  );
+
+  it("rejects a Vercel provider ID owned by another organization", async () => {
     const storage = createStorageFixture();
-    const source = await apiKeySource(storage);
-    const candidate = await seedSource(storage, source);
-    await createMiscRoutesApi(context).deleteOrgModelProvider(
-      actorFor(storage),
-      "openai-api-key",
-      [204],
+    const foreign = createStorageFixture();
+    await seedSource(
+      storage,
+      await apiKeySource(foreign, "foreign-key", "vercel-ai-gateway-codex"),
     );
-    const replacement = await apiKeySource(storage, "replacement-key");
-    expect(replacement.modelProviderId).not.toBe(source.modelProviderId);
     const provider = installSourceProvider();
     await expect(runScoped(storage)).resolves.toMatchObject({
       terminalFailure: 1,
     });
     expect(provider.calls).toHaveLength(0);
-    await expect(inspect(candidate)).resolves.toMatchObject({
-      last_error_class: "credential_unavailable",
-      successful_source_history_hash: null,
-    });
-    await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
     await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    await expect(inspectUsage(foreign)).resolves.toStrictEqual([]);
   });
 
   it("does not select today's active subscription for a historical account", async () => {
@@ -2036,16 +2161,22 @@ describe("Stage 1 source credentials", () => {
     await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
   });
 
-  it.each(["api", "codex", "gateway"] as const)(
+  it.each([
+    "openai-api-key",
+    "openrouter-codex",
+    "vercel-ai-gateway-codex",
+    "codex",
+    "gateway",
+  ] as const)(
     "never writes %s model credits for no-output, malformed output and replay",
     async (kind) => {
       const storage = createStorageFixture();
       const source =
-        kind === "api"
-          ? await apiKeySource(storage)
-          : kind === "codex"
-            ? (await codexSource(storage)).binding
-            : await gatewaySource(storage);
+        kind === "codex"
+          ? (await codexSource(storage)).binding
+          : kind === "gateway"
+            ? await gatewaySource(storage)
+            : await apiKeySource(storage, "byok-key", kind);
       const candidate = await seedSource(storage, source);
       installSourceProvider(() => {
         return "not valid JSON";
@@ -2423,11 +2554,17 @@ describe("Stage 1 credential lifecycle fences", () => {
 });
 
 describe("Stage 1 source preparation identity", () => {
-  it.each(["orgId", "userId"] as const)(
-    "rejects a %s change while history is being prepared",
-    async (field) => {
+  it.each(
+    lunaApiKeyRoutes.flatMap(({ type }) => {
+      return (["orgId", "userId"] as const).map((field) => {
+        return { type, field };
+      });
+    }),
+  )(
+    "rejects a $type $field change while history is being prepared",
+    async ({ type, field }) => {
       const storage = createStorageFixture();
-      const source = await apiKeySource(storage);
+      const source = await apiKeySource(storage, "owned-key", type);
       const candidate = await seedSource(storage, source);
       const provider = installSourceProvider();
       const read = context.mocks.s3.send.getMockImplementation();
@@ -2458,35 +2595,68 @@ describe("Stage 1 source preparation identity", () => {
     },
   );
 
-  it("revalidates an already prepared exact key after another history download", async () => {
+  it.each(lunaApiKeyRoutes)(
+    "revalidates an already prepared $type key after another history download",
+    async ({ type, url }) => {
+      const storage = createStorageFixture();
+      const source = await apiKeySource(storage, "prepared-key", type);
+      await seedSource(storage, source, "prepared source one");
+      await seedSource(storage, source, "prepared source two");
+      const provider = installSourceProvider();
+      const read = context.mocks.s3.send.getMockImplementation();
+      let downloads = 0;
+      context.mocks.s3.send.mockImplementation(
+        async (commandValue: unknown) => {
+          if (commandValue instanceof GetObjectCommand) {
+            downloads += 1;
+            if (downloads === 2) {
+              const replacement = await apiKeySource(
+                storage,
+                "rotated-during-preparation",
+                type,
+              );
+              expect(replacement.modelProviderId).toBe(source.modelProviderId);
+            }
+          }
+          return read ? await read(commandValue) : {};
+        },
+      );
+      await expect(runScoped(storage)).resolves.toMatchObject({
+        succeeded: 1,
+        terminalFailure: 1,
+      });
+      expect(provider.calls).toHaveLength(1);
+      expect(provider.calls[0]?.headers.get("authorization")).toBe(
+        "Bearer rotated-during-preparation",
+      );
+      expect(provider.calls[0]?.url).toBe(url);
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    },
+  );
+
+  it("rejects a Vercel key deleted after preparation before sending stale HTTP", async () => {
     const storage = createStorageFixture();
-    const source = await apiKeySource(storage, "prepared-key");
-    await seedSource(storage, source, "prepared source one");
-    await seedSource(storage, source, "prepared source two");
+    const type = "vercel-ai-gateway-codex";
+    const source = await apiKeySource(storage, "prepared-vercel-key", type);
+    await seedSource(storage, source, "source one");
+    await seedSource(storage, source, "source two");
     const provider = installSourceProvider();
     const read = context.mocks.s3.send.getMockImplementation();
     let downloads = 0;
     context.mocks.s3.send.mockImplementation(async (commandValue: unknown) => {
-      if (commandValue instanceof GetObjectCommand) {
-        downloads += 1;
-        if (downloads === 2) {
-          const replacement = await apiKeySource(
-            storage,
-            "rotated-during-preparation",
-          );
-          expect(replacement.modelProviderId).toBe(source.modelProviderId);
-        }
+      if (commandValue instanceof GetObjectCommand && ++downloads === 2) {
+        await createMiscRoutesApi(context).deleteOrgModelProvider(
+          actorFor(storage),
+          type,
+          [204],
+        );
       }
       return read ? await read(commandValue) : {};
     });
     await expect(runScoped(storage)).resolves.toMatchObject({
-      succeeded: 1,
-      terminalFailure: 1,
+      terminalFailure: 2,
     });
-    expect(provider.calls).toHaveLength(1);
-    expect(provider.calls[0]?.headers.get("authorization")).toBe(
-      "Bearer rotated-during-preparation",
-    );
+    expect(provider.calls).toHaveLength(0);
     await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
   });
 
@@ -2521,14 +2691,65 @@ describe("Stage 1 source preparation identity", () => {
 });
 
 describe("Stage 1 background credential availability", () => {
-  it.each(["org", "member"] as const)(
-    "uses the exact %s key while company routing is unavailable",
-    async (scope) => {
-      const storage = createStorageFixture();
-      await seedSource(
-        storage,
-        await apiKeySource(storage, "exact-owned-key", "openai-api-key", scope),
+  it("covers every currently servable Luna Pi API-key source", () => {
+    const supported = getProvidersForModel("gpt-5.6-luna").filter((type) => {
+      return (
+        getSecretNameForType(type) !== undefined &&
+        isPiExecutionRoute({
+          selectedModel: "gpt-5.6-luna",
+          modelProviderType: type,
+          runtimeProviderType: type,
+          codexServiceTier: undefined,
+          piEnabled: true,
+          codexFastModeEnabled: false,
+        })
       );
+    });
+    expect(supported.sort()).toStrictEqual(
+      lunaApiKeyRoutes
+        .map(({ type }) => {
+          return type;
+        })
+        .sort(),
+    );
+  });
+
+  it.each(
+    lunaApiKeyRoutes.flatMap((route) => {
+      return (["org", "member"] as const).map((scope) => {
+        return { ...route, scope };
+      });
+    }),
+  )(
+    "uses the exact $scope $type route while company routing is unavailable",
+    async ({ type, scope, url, model, contextWindow }) => {
+      const storage = createStorageFixture();
+      const source = await apiKeySource(
+        storage,
+        "exact-owned-key",
+        type,
+        scope,
+      );
+      const piSessionId = randomUUID();
+      const history = MemoryPiSession.create({
+        cwd: "/private/source",
+        id: piSessionId,
+      });
+      // Historical checkpoint fixture exception: exercise the actual worker's
+      // final serialized request with enough evidence to exceed its input budget.
+      for (let index = 0; index < 180; index += 1) {
+        history.appendMessage({
+          role: "user",
+          timestamp: index,
+          content: `human-${index} ${String.raw`"\汉😀 `.repeat(600)}`,
+        });
+      }
+      history.appendMessage(assistantMessage("completed safely", 181));
+      const candidate = await storage.seed({
+        piSessionId,
+        raw: Buffer.from(history.toJsonl(), "utf8"),
+        source,
+      });
       const provider = installSourceProvider();
       await expect(
         withBuiltInModelRuntimeRouteUnavailableForTest(
@@ -2539,9 +2760,40 @@ describe("Stage 1 background credential availability", () => {
         ),
       ).resolves.toMatchObject({ succeeded: 1 });
       expect(provider.calls).toHaveLength(1);
-      expect(provider.calls[0]?.headers.get("authorization")).toBe(
-        "Bearer exact-owned-key",
+      const call = provider.calls[0];
+      expect(call?.url).toBe(url);
+      expect(call?.headers.get("authorization")).toBe("Bearer exact-owned-key");
+      expect(call?.headers.get("chatgpt-account-id")).toBeNull();
+      expect(call?.request).toMatchObject({
+        model,
+        reasoning: { effort: "low" },
+        max_output_tokens: 32_768,
+        text: {
+          format: {
+            type: "json_schema",
+            strict: true,
+            schema: PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
+          },
+        },
+      });
+      expect(call?.request).not.toHaveProperty("service_tier");
+      expect(call?.request).not.toHaveProperty("tools");
+      if (!call) {
+        throw new Error("Missing source HTTP request");
+      }
+      const body = call.body;
+      const tokens = encode(body).length;
+      expect(tokens).toBeGreaterThan(100_000);
+      expect(tokens).toBeLessThanOrEqual(
+        Math.min(250_000, contextWindow - 32_768 - 8192),
       );
+      expect(body).toContain("human-179");
+      expect(body).not.toContain("human-0 ");
+      await expect(inspect(candidate)).resolves.toMatchObject({
+        status: "succeeded",
+        successful_source_history_hash: candidate.source_history_hash,
+      });
+      await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
       await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
     },
   );

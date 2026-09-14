@@ -27,6 +27,7 @@ import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-
 import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import { gptApiKeyPiRoute } from "./pi-sandbox-config";
 import {
   personalModelProviderAccountById,
   readPersonalSubscriptionCredentialBundle,
@@ -392,16 +393,17 @@ async function gatewayCredential(
 async function apiKeyCredential(
   args: ResolutionContext,
   id: string,
-  type: "openai-api-key" | "openrouter-codex",
+  route: NonNullable<ReturnType<typeof gptApiKeyPiRoute>>,
   signal: AbortSignal,
 ): Promise<PiMemoryStage1CredentialResult> {
   const { db, source, binding, context } = args;
+  const type = route.productProviderType;
   if (!isModelSupportedByProvider(PI_MEMORY_STAGE1_MODEL, type)) {
     return skip("provider_model_unsupported");
   }
   const secretOwner = binding.scope === "org" ? "__org__" : source.userId;
   const secretName = getSecretNameForType(type);
-  const endpoint = getModelProviderPiEndpoint(type, "openai-responses");
+  const endpoint = route.endpoint;
   if (!secretName || !endpoint) {
     return skip("provider_model_unsupported");
   }
@@ -438,9 +440,12 @@ async function apiKeyCredential(
   return availableCredential(
     args,
     {
-      provider: type === "openai-api-key" ? "openai" : "openrouter",
+      provider: route.provider,
       baseUrl: endpoint.baseUrl,
       model: getProviderRuntimeModel(type, PI_MEMORY_STAGE1_MODEL),
+      ...(type === "vercel-ai-gateway-codex"
+        ? { catalogModel: PI_MEMORY_STAGE1_MODEL }
+        : {}),
       apiKey,
       dialect: "openai-responses",
       transport: "sse",
@@ -487,16 +492,16 @@ export async function resolvePiMemoryStage1Credential(
   if (binding.scope !== "member" && binding.scope !== "org") {
     return skip("source_scope_mismatch");
   }
+  const apiKeyRoute = gptApiKeyPiRoute(binding.type);
+  if (apiKeyRoute) {
+    return await apiKeyCredential(args, binding.id, apiKeyRoute, signal);
+  }
   switch (binding.type) {
     case "codex-oauth-token": {
       return await codexCredential(args, binding.id, signal);
     }
     case "custom-openai-responses": {
       return await gatewayCredential(args, binding.id, signal);
-    }
-    case "openai-api-key":
-    case "openrouter-codex": {
-      return await apiKeyCredential(args, binding.id, binding.type, signal);
     }
     default: {
       return skip("provider_model_unsupported");

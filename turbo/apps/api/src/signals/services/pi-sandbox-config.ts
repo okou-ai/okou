@@ -97,7 +97,7 @@ export function isGptApiKeyPiProviderType(
   );
 }
 
-function gptApiKeyPiRoute(
+export function gptApiKeyPiRoute(
   value: string | null | undefined,
 ): (typeof GPT_API_KEY_PI_ROUTES)[GptApiKeyPiProviderType] | null {
   return isGptApiKeyPiProviderType(value) ? GPT_API_KEY_PI_ROUTES[value] : null;
