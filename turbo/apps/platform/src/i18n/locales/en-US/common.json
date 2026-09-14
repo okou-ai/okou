@@ -1014,10 +1014,7 @@
     },
     "viewer": {
       "continuePrompt": "Help me work with this artifact: {{url}}",
-      "continueWithBrand": "Continue with {{brandName}}",
-      "fileDetails": "File details",
-      "filename": "File name",
-      "fileType": "File type"
+      "continueWithBrand": "Continue with {{brandName}}"
     }
   },
   "auth": {

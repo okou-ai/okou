@@ -1,6 +1,6 @@
-import { Button, Popover, PopoverContent, PopoverTrigger } from "@okouai/ui";
+import { Button } from "@okouai/ui";
 import { useGet, useSet } from "ccstate-react";
-import { ArrowUpRight, Info, Maximize2, Minimize2, Share2 } from "lucide-react";
+import { ArrowUpRight, Maximize2, Minimize2, Share2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { BRAND_NAME } from "../../signals/branding.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -17,51 +17,6 @@ import {
   ArtifactDownloadMenu,
 } from "../okou-page/artifact-actions.tsx";
 import { artifactFallbackSubtitle } from "../okou-page/artifact-display.ts";
-
-function ArtifactDetails({ artifact }: { artifact: SharedArtifactPreview }) {
-  const { t } = useTranslation();
-  const label = t(($) => {
-    return $.artifacts.viewer.fileDetails;
-  });
-  return (
-    <Popover>
-      <PopoverTrigger
-        render={
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            showTooltip
-            aria-label={label}
-          />
-        }
-      >
-        <Info size={18} />
-      </PopoverTrigger>
-      <PopoverContent align="end" sideOffset={6} aria-label={label}>
-        <h2 className="mb-4 text-sm font-medium">{label}</h2>
-        <dl className="space-y-4 text-xs">
-          <div className="space-y-1">
-            <dt className="text-muted-foreground">
-              {t(($) => {
-                return $.artifacts.viewer.filename;
-              })}
-            </dt>
-            <dd className="break-words">{artifact.filename}</dd>
-          </div>
-          <div className="space-y-1">
-            <dt className="text-muted-foreground">
-              {t(($) => {
-                return $.artifacts.viewer.fileType;
-              })}
-            </dt>
-            <dd className="break-words">{artifact.contentType}</dd>
-          </div>
-        </dl>
-      </PopoverContent>
-    </Popover>
-  );
-}
 
 function ArtifactViewerActions({
   artifact,
@@ -118,8 +73,6 @@ function ArtifactViewerActions({
         iconSize={18}
         showGoogleDriveAction={false}
       />
-      <ArtifactActionSeparator />
-      <ArtifactDetails artifact={artifact} />
       {fullscreenAvailable && (
         <Button
           type="button"
@@ -143,9 +96,7 @@ function ArtifactViewerActions({
           {fullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
         </Button>
       )}
-      <span className="hidden sm:contents">
-        <ArtifactActionSeparator />
-      </span>
+      <ArtifactActionSeparator />
       <Button
         size="sm"
         asChild

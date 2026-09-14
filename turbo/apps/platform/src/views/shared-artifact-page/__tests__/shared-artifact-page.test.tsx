@@ -69,7 +69,7 @@ async function openViewer({
   return resolutions;
 }
 
-test("an image link stays in the app and reuses the lightbox preview and file details", async () => {
+test("an image link stays in the app and reuses the lightbox preview and zoom controls", async () => {
   vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(
     1600,
   );
@@ -104,10 +104,6 @@ test("an image link stays in the app and reuses the lightbox preview and file de
   expect(
     screen.getByTestId("artifact-dialog-image-zoom-level"),
   ).toHaveTextContent("100%");
-
-  click(action("button", "File details"));
-  await expect(screen.findByText("image/png")).resolves.toBeVisible();
-  expect(screen.getByText("File name")).toBeVisible();
 });
 
 test.each([imagePath, `/share/artifacts/${artifactId}`])(

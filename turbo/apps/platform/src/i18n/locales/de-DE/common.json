@@ -1014,10 +1014,7 @@
     },
     "viewer": {
       "continuePrompt": "Hilf mir, mit diesem Artefakt zu arbeiten: {{url}}",
-      "continueWithBrand": "Mit {{brandName}} fortfahren",
-      "fileDetails": "Dateidetails",
-      "filename": "Dateiname",
-      "fileType": "Dateityp"
+      "continueWithBrand": "Mit {{brandName}} fortfahren"
     }
   },
   "auth": {

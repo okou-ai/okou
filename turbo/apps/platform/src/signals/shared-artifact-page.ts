@@ -15,7 +15,6 @@ import { createZoomableImageCanvasSignals } from "./zoomable-image-canvas.ts";
 
 export interface SharedArtifactPreview {
   readonly filename: string;
-  readonly contentType: string;
   readonly preview: AttachmentLightboxState;
 }
 
@@ -58,7 +57,6 @@ export function createSharedArtifactPreview(
   }
   return {
     filename: artifact.filename,
-    contentType: artifact.contentType,
     preview,
   };
 }
@@ -113,7 +111,7 @@ export function createSharedArtifactViewerSignals() {
       if (document.fullscreenElement) {
         await document.exitFullscreen();
       } else {
-        // Include body portals so download and file-details popups remain
+        // Include body portals so download menus and feedback remain
         // usable while viewing the artifact in fullscreen.
         await document.documentElement.requestFullscreen();
       }

@@ -1013,10 +1013,7 @@
     },
     "viewer": {
       "continuePrompt": "Bantu saya mengerjakan artefak ini: {{url}}",
-      "continueWithBrand": "Lanjutkan dengan {{brandName}}",
-      "fileDetails": "Detail file",
-      "filename": "Nama file",
-      "fileType": "Jenis file"
+      "continueWithBrand": "Lanjutkan dengan {{brandName}}"
     }
   },
   "auth": {

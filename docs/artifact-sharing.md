@@ -57,7 +57,7 @@ the canonical reference again and saves the original filename. HTML remains in
 the isolated preview origin inside a sandboxed iframe; URL fragments, including
 slide and PDF page positions, are retained. **Continue with Okou** opens a new
 chat with the canonical artifact link as its prompt, without importing the
-source thread. File details contain only the resolver's filename and MIME type.
+source thread.
 
 ## Storage authority and immutable bytes
 

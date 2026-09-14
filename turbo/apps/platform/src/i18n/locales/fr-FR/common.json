@@ -1033,10 +1033,7 @@
     },
     "viewer": {
       "continuePrompt": "Aide-moi à travailler avec cet artefact : {{url}}",
-      "continueWithBrand": "Continuer avec {{brandName}}",
-      "fileDetails": "Détails du fichier",
-      "filename": "Nom du fichier",
-      "fileType": "Type de fichier"
+      "continueWithBrand": "Continuer avec {{brandName}}"
     }
   },
   "auth": {
