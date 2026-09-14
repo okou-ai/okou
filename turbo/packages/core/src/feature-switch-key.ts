@@ -56,7 +56,6 @@ export enum FeatureSwitchKey {
   ReferenceImages = "referenceImages",
   PrivateArtifacts = "privateArtifacts",
   AgentMessageMath = "agentMessageMath",
-  MarkdownTime = "markdownTime",
   ProgressiveArtifactPreview = "progressiveArtifactPreview",
   ChatThinkingSpinner = "chatThinkingSpinner",
   SidebarSubscriptionUsage = "_sidebarSubscriptionUsage",

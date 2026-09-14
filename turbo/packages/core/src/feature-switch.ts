@@ -399,12 +399,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Render explicit LaTeX delimiters in Agent messages as native MathML.",
     enabled: true,
   },
-  [FeatureSwitchKey.MarkdownTime]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Render Markdown time tags with explicit datetime offsets in the browser timezone.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ProgressiveArtifactPreview]: {
     maintainer: "bingjie@okou.ai",
     description:
