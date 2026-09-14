@@ -1854,6 +1854,54 @@ async function seedSource(
 }
 
 describe("Stage 1 source credentials", () => {
+  it.each([null, "org"])(
+    "serves an explicit built-in source with %s scope under its original owner",
+    async (scope) => {
+      const storage = createStorageFixture();
+      await seedSource(storage, {
+        modelProvider: "built-in",
+        modelProviderId: null,
+        modelProviderCredentialScope: scope,
+      });
+      const provider = installSourceProvider();
+      await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
+      expect(provider.calls).toHaveLength(1);
+      expect(provider.calls[0]?.request).toMatchObject({
+        model: "gpt-5.6-luna",
+        reasoning: { effort: "low" },
+      });
+      const usage = await inspectUsage(storage);
+      expect(usage.length).toBeGreaterThan(0);
+      for (const row of usage) {
+        expect(row).toMatchObject({
+          run_id: null,
+          provider: "gpt-5.6-luna",
+        });
+      }
+    },
+  );
+
+  it.each([
+    { modelProviderId: randomUUID(), modelProviderCredentialScope: "org" },
+    { modelProviderId: null, modelProviderCredentialScope: "member" },
+  ])("rejects an ambiguous built-in binding %j", async (binding) => {
+    const storage = createStorageFixture();
+    const candidate = await seedSource(storage, {
+      modelProvider: "built-in",
+      ...binding,
+    });
+    const provider = installSourceProvider();
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      terminalFailure: 1,
+    });
+    expect(provider.calls).toHaveLength(0);
+    await expect(inspect(candidate)).resolves.toMatchObject({
+      last_error_class: "source_binding_invalid",
+      successful_source_history_hash: null,
+    });
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+  });
+
   it("routes a mixed batch to each original source and charges only built-in", async () => {
     const storages = Array.from({ length: 4 }, () => {
       return createStorageFixture();

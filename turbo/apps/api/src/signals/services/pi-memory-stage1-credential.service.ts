@@ -139,7 +139,11 @@ async function builtinCredential(
   signal: AbortSignal,
 ): Promise<PiMemoryStage1CredentialResult> {
   const { db, binding, context } = args;
-  if (binding.id !== null || binding.scope !== null) {
+  // Model-first Chat pins use org scope; direct built-in launches leave it null.
+  if (
+    binding.id !== null ||
+    (binding.scope !== null && binding.scope !== "org")
+  ) {
     return skip("source_binding_invalid");
   }
   const route = await resolveBuiltInModelRuntimeRoute(
