@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { v5 as uuidv5 } from "uuid";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { testContext } from "../../../__tests__/test-context";
@@ -15,18 +14,26 @@ const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const webhooks = createWebhookCallbackApi(context);
 
-/**
- * Duplicated from the service on purpose. The expected id has to be derived
- * from the published contract — namespace, input order and separator — so a
- * changed derivation fails here instead of agreeing with itself.
- */
-const WELCOME_THREAD_NAMESPACE = "92aa933e-a5fe-4b89-8d50-955b93b40459";
-
-function expectedWelcomeThreadId(actor: ApiTestUser): string {
-  if (!actor.orgId) {
-    throw new Error("Expected a workspace");
+async function createdThreadIds(
+  actor: ApiTestUser,
+): Promise<readonly string[]> {
+  const response = await chat.requestThreadEvents(actor, {}, [200]);
+  if (response.status !== 200) {
+    throw new Error("Expected chat thread lifecycle events");
   }
-  return uuidv5(`${actor.userId}:${actor.orgId}`, WELCOME_THREAD_NAMESPACE);
+  return response.body.events.flatMap((event) => {
+    return event.kind === "created" ? [event.chatThreadId] : [];
+  });
+}
+
+async function onlyCreatedThreadId(actor: ApiTestUser): Promise<string> {
+  const threadIds = await createdThreadIds(actor);
+  expect(threadIds).toHaveLength(1);
+  const [threadId] = threadIds;
+  if (!threadId) {
+    throw new Error("Expected one created thread");
+  }
+  return threadId;
 }
 
 async function enable(actor: ApiTestUser, value = true): Promise<void> {
@@ -95,14 +102,14 @@ async function welcomeEvents(actor: ApiTestUser, threadId: string) {
 }
 
 describe("automatic welcome thread delivery", () => {
-  it("delivers one welcome thread to an invited member at the identity-derived id", async () => {
+  it("delivers one welcome thread to an invited member", async () => {
     const admin = await establishedWorkspace();
     const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
     await enable(member);
 
     await deliverMembershipCreated(member);
 
-    const threadId = expectedWelcomeThreadId(member);
+    const threadId = await onlyCreatedThreadId(member);
     const metadata = await chat.readThreadMetadata(member, threadId);
     expect(metadata.id).toBe(threadId);
     const rows = await welcomeEvents(member, threadId);
@@ -135,7 +142,7 @@ describe("automatic welcome thread delivery", () => {
       await expect(bdd.readOnboardingStatus(creator)).resolves.toMatchObject({
         hasDefaultAgent: true,
       });
-      const threadId = expectedWelcomeThreadId(creator);
+      const threadId = await onlyCreatedThreadId(creator);
       await expect(
         chat.readThreadMetadata(creator, threadId),
       ).resolves.toMatchObject({ id: threadId });
@@ -147,10 +154,8 @@ describe("automatic welcome thread delivery", () => {
     const admin = await establishedWorkspace();
     const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
     await enable(member);
-    const threadId = expectedWelcomeThreadId(member);
 
-    // Two deliveries in flight at once. The losing insert waits on the winner's
-    // uncommitted row, then `onConflictDoNothing` leaves it with nothing to do.
+    // Two deliveries in flight at once.
     membershipEvent(member);
     membershipEvent(member);
     await Promise.all([
@@ -158,10 +163,12 @@ describe("automatic welcome thread delivery", () => {
       webhooks.requestClerkWebhook("{}", {}, [200]),
     ]);
     await flushWaitUntilForTest();
+    const threadId = await onlyCreatedThreadId(member);
     await expect(welcomeEvents(member, threadId)).resolves.toHaveLength(1);
 
     // Clerk redelivery after the first attempt committed.
     await deliverMembershipCreated(member);
+    await expect(createdThreadIds(member)).resolves.toStrictEqual([threadId]);
     await expect(welcomeEvents(member, threadId)).resolves.toHaveLength(1);
     await expect(
       chat.readThreadMetadata(member, threadId),
@@ -174,9 +181,7 @@ describe("automatic welcome thread delivery", () => {
 
     await deliverMembershipCreated(member);
 
-    await expect(
-      chat.requestReadThread(member, expectedWelcomeThreadId(member), [404]),
-    ).resolves.toMatchObject({ status: 404 });
+    await expect(createdThreadIds(member)).resolves.toStrictEqual([]);
   });
 
   it("abandons the invocation when the workspace default agent is not ready", async () => {
@@ -187,13 +192,9 @@ describe("automatic welcome thread delivery", () => {
     // appear for this workspace and nothing is scheduled to look again.
     await deliverMembershipCreated(member);
 
-    await expect(
-      chat.requestReadThread(member, expectedWelcomeThreadId(member), [404]),
-    ).resolves.toMatchObject({ status: 404 });
+    await expect(createdThreadIds(member)).resolves.toStrictEqual([]);
     await deliverMembershipCreated(member);
-    await expect(
-      chat.requestReadThread(member, expectedWelcomeThreadId(member), [404]),
-    ).resolves.toMatchObject({ status: 404 });
+    await expect(createdThreadIds(member)).resolves.toStrictEqual([]);
   });
 
   it("never delivers again after the recipient deletes the thread", async () => {
@@ -201,14 +202,14 @@ describe("automatic welcome thread delivery", () => {
     const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
     await enable(member);
     await deliverMembershipCreated(member);
-    const threadId = expectedWelcomeThreadId(member);
+    const threadId = await onlyCreatedThreadId(member);
     await chat.requestDeleteThread(member, threadId, [204]);
 
     // Ordinary app entry. The trigger is the registration event alone: nothing
     // on this path re-checks whether the recipient still has a welcome.
     await bdd.readOnboardingStatus(member);
     await chat.getThreadSnapshot(member);
-    await chat.listActiveChatThreadIds(member);
+    await expect(createdThreadIds(member)).resolves.toStrictEqual([threadId]);
 
     await expect(
       chat.requestReadThread(member, threadId, [404]),
