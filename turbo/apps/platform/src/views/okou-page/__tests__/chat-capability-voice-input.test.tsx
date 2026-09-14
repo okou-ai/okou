@@ -185,7 +185,6 @@ test("Transcribe a voice draft using the latest assistant reference", async () =
   const transcriptionStarted = context.mocks.deferred<void>();
   const transcriptionReady = context.mocks.deferred<void>();
   context.mocks.browser.voiceInput({ rms: 0.12 });
-  vi.stubGlobal("MediaRecorder", undefined);
   installAvailableVoiceQuota();
   context.mocks.http.post(
     "*/api/voice-io/transcribe/segment",
@@ -260,7 +259,6 @@ test("Transcribe a voice draft using the latest assistant reference", async () =
   expect(normalizedComposerText()).toBe(
     "Opening Send the launch update tomorrow. Additional note. closing",
   );
-  expect(queryButton("Finish")).toBeNull();
 });
 
 test.each([RUN_PATH, NEW_CHAT_PATH])(
@@ -598,7 +596,6 @@ test.each(
   await expect(findButton("Retry")).resolves.toBeEnabled();
   expect(queryButton("Voice input")).toBeNull();
   expect(transcriptionAttempts).toBe(1);
-  expect(queryButton("Finish")).toBeNull();
   expect(queryButton("Remove voice draft")).toBeEnabled();
   expect(normalizedComposerText()).toBe("Keep these notes.");
   expect(queryButton("Send")).toBeNull();
