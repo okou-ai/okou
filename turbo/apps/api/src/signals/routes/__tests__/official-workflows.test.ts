@@ -2521,6 +2521,9 @@ describe("Morning Brief preference", () => {
     }
     expect(installed.agentId).toBe(originalAgentId);
 
+    // Only the Clerk org-creation bootstrap writes `default_agent_id`, so no
+    // production endpoint can repoint an existing org at another Agent. This
+    // fixture is the narrow exception that makes the case reachable at all.
     await setOrgDefaultAgentFixture({ orgId, agentId: replacement.agentId });
 
     const read = await accept(

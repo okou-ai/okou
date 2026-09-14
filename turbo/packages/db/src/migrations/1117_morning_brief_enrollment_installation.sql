@@ -33,5 +33,4 @@ UPDATE "morning_brief_enrollments" AS "target"
 SET "workflow_id" = "adopted"."workflow_id"
 FROM "adopted"
 WHERE "target"."org_id" = "adopted"."org_id"
-	AND "target"."user_id" = "adopted"."user_id"
-	AND "target"."workflow_id" IS NULL;
+	AND "target"."user_id" = "adopted"."user_id";
