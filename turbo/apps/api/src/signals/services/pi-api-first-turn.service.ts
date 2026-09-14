@@ -900,6 +900,7 @@ function runtimeCredentialLookupArgs(
 ) {
   return {
     db: args.db,
+    runId: args.activation.runId,
     orgId: args.activation.orgId,
     userId: args.activation.userId,
     key: reference.binding.secretName,

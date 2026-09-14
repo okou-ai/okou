@@ -5,8 +5,11 @@ import type {
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { secrets } from "@okouai/db/schema/secret";
-import { modelProviderAccountSecrets } from "@okouai/db/schema/model-provider-account";
-import { and, eq, inArray } from "drizzle-orm";
+import {
+  modelProviderAccounts,
+  modelProviderAccountSecrets,
+} from "@okouai/db/schema/model-provider-account";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 
 import {
   invalidateCodexResetCreditExpiry,
@@ -76,6 +79,13 @@ async function modelProviderSecretValues(
           encryptedValue: modelProviderAccountSecrets.encryptedValue,
         })
         .from(modelProviderAccountSecrets)
+        .innerJoin(
+          modelProviderAccounts,
+          eq(
+            modelProviderAccountSecrets.modelProviderAccountId,
+            modelProviderAccounts.id,
+          ),
+        )
         .where(
           and(
             eq(
@@ -83,6 +93,9 @@ async function modelProviderSecretValues(
               args.modelProviderAccountId,
             ),
             inArray(modelProviderAccountSecrets.name, [...args.names]),
+            eq(modelProviderAccounts.orgId, args.orgId),
+            eq(modelProviderAccounts.userId, args.userId),
+            isNull(modelProviderAccounts.disconnectedAt),
           ),
         )
     : await args.db

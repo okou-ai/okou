@@ -20,6 +20,8 @@ surface; the index does not replace their detailed rules.
 - [Testing](./testing.md): testing strategy, patterns, and anti-patterns.
 - [Deployment compatibility](./deployment-compatibility.md): compatibility
   requirements for independently deployed components and persisted state.
+- [Personal subscription run identity](./personal-subscription-run-identity.md):
+  concrete account ownership, bounded disconnect retention and activation gates.
 - [Connector-account workflow automations](./connector-account-workflow-automation.md):
   workflow-thread account authority, exact provider ingress, lifecycle
   convergence, and persisted compatibility for account-backed triggers.

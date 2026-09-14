@@ -1,7 +1,5 @@
 import { command } from "ccstate";
 import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -37,22 +35,19 @@ const resetSubscriptionUsageInner$ = command(
       userFeatureSwitchContext(auth.orgId, auth.userId),
     );
     signal.throwIfAborted();
-    const accountsEnabled = isFeatureEnabled(
-      FeatureSwitchKey.PersonalModelProviderAccounts,
-      featureSwitchContext,
-    );
-    const activeAccount = accountsEnabled
-      ? (
-          await listPersonalModelProviderAccounts({
-            db: set(writeDb$),
-            orgId: auth.orgId,
-            userId: auth.userId,
-            featureSwitchContext,
-          })
-        ).modelProviders.find((provider) => {
-          return provider.type === params.type && provider.isActive;
-        })
-      : undefined;
+    const activeAccount = (
+      await listPersonalModelProviderAccounts({
+        db: set(writeDb$),
+        orgId: auth.orgId,
+        userId: auth.userId,
+        featureSwitchContext,
+      })
+    ).modelProviders.find((provider) => {
+      return provider.type === params.type && provider.isActive;
+    });
+    if (!activeAccount) {
+      return notFound(`Provider "${params.type}" not found`);
+    }
 
     const result = await set(
       consumePersonalCodexRateLimitResetCredit$,
@@ -60,7 +55,7 @@ const resetSubscriptionUsageInner$ = command(
         orgId: auth.orgId,
         userId: auth.userId,
         idempotencyKey: bodyResult.data.idempotencyKey,
-        ...(activeAccount ? { modelProviderAccountId: activeAccount.id } : {}),
+        modelProviderAccountId: activeAccount.id,
       },
       signal,
     );

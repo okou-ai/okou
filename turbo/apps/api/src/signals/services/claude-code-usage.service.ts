@@ -43,6 +43,7 @@ const profileResponseSchema = z
   .object({
     account: z
       .object({
+        uuid: z.string().nullable().optional(),
         email: z.string().nullable().optional(),
         display_name: z.string().nullable().optional(),
         full_name: z.string().nullable().optional(),
@@ -54,6 +55,7 @@ const profileResponseSchema = z
       .optional(),
     organization: z
       .object({
+        uuid: z.string().nullable().optional(),
         name: z.string().nullable().optional(),
         organization_name: z.string().nullable().optional(),
         organization_type: z.string().nullable().optional(),
@@ -70,6 +72,7 @@ type UsageResponse = z.infer<typeof usageResponseSchema>;
 type UsageWindow = z.infer<typeof usageWindowSchema>;
 
 interface ClaudeCodeSubscriptionMetadata {
+  readonly externalAccountId?: string | null;
   readonly accountEmail?: string | null;
   readonly workspaceName?: string | null;
   readonly planType?: string | null;
@@ -323,7 +326,7 @@ async function fetchProfileMetadata(
 ): Promise<
   Pick<
     ClaudeCodeSubscriptionMetadata,
-    "accountEmail" | "workspaceName" | "planType"
+    "externalAccountId" | "accountEmail" | "workspaceName" | "planType"
   >
 > {
   const parsed = profileResponseSchema.safeParse(
@@ -339,6 +342,10 @@ async function fetchProfileMetadata(
     throw new Error("Claude Code profile response shape unrecognized");
   }
   return {
+    externalAccountId:
+      parsed.data.account?.uuid && parsed.data.organization?.uuid
+        ? `${parsed.data.account.uuid}:${parsed.data.organization.uuid}`
+        : null,
     accountEmail:
       nonEmptyString(parsed.data.account?.email)?.toLowerCase() ?? null,
     workspaceName: workspaceNameFromProfile(parsed.data),

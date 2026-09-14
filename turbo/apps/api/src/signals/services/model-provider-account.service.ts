@@ -6,18 +6,35 @@ import {
   type ModelProviderResponse,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   modelProviderAccounts,
   modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { secrets } from "@okouai/db/schema/secret";
-import { and, asc, desc, eq, inArray, isNull, ne } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  notExists,
+  or,
+} from "drizzle-orm";
 
 import { badRequestMessage, notFound } from "../../lib/error";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import type { Db, ReadonlyDb } from "../external/db";
 import { lockModelProviderState } from "./auth-state-lock.service";
 import {
   decryptStoredSecretValue,
@@ -25,6 +42,7 @@ import {
 } from "./crypto.utils";
 import { extractCodexAccountEmailFromIdToken } from "./codex-auth-json-parser";
 import { invalidateCodexResetCreditExpiry } from "./codex-reset-credit-expiry.service";
+import { fetchClaudeCodeSubscriptionMetadata } from "./claude-code-usage.service";
 
 const MAX_PERSONAL_PROVIDER_ACCOUNTS = 10;
 const CODEX_TYPE = "codex-oauth-token";
@@ -314,7 +332,7 @@ export async function ensurePersonalModelProviderAccount(args: {
     return;
   }
 
-  const seeded = await args.db.transaction(async (tx) => {
+  await args.db.transaction(async (tx) => {
     await lockModelProviderState(tx, {
       orgId: args.provider.orgId,
       userId: args.provider.userId,
@@ -325,15 +343,26 @@ export async function ensurePersonalModelProviderAccount(args: {
       .from(modelProviderAccounts)
       .where(eq(modelProviderAccounts.modelProviderId, args.provider.id))
       .limit(1);
-    return current ?? (await seedLegacyAccount(tx, args.provider));
+    if (current) {
+      return;
+    }
+    const [provider] = await tx
+      .select()
+      .from(modelProviders)
+      .where(eq(modelProviders.id, args.provider.id))
+      .limit(1);
+    if (!provider) {
+      return;
+    }
+    const account = await seedLegacyAccount(tx, provider);
+    if (account) {
+      await hydrateSeededCodexIdentity({
+        db: tx,
+        account,
+        featureSwitchContext: args.featureSwitchContext,
+      });
+    }
   });
-  if (seeded) {
-    await hydrateSeededCodexIdentity({
-      db: args.db,
-      account: seeded,
-      featureSwitchContext: args.featureSwitchContext,
-    });
-  }
 }
 
 async function providerRowsForPersonalAccounts(
@@ -387,6 +416,7 @@ export async function listPersonalModelProviderAccounts(args: {
         eq(modelProviderAccounts.orgId, args.orgId),
         eq(modelProviderAccounts.userId, args.userId),
         inArray(modelProviderAccounts.type, [CODEX_TYPE, CLAUDE_CODE_TYPE]),
+        isNull(modelProviderAccounts.disconnectedAt),
       ),
     )
     .orderBy(
@@ -413,7 +443,7 @@ function accountMetadataValues(args: {
           args.metadata?.externalAccountId ??
             args.secretValues[CODEX_ACCOUNT_ID_SECRET],
         )
-      : null;
+      : normalizedText(args.metadata?.externalAccountId);
   return {
     externalAccountId,
     accountEmail: normalizedEmail(args.metadata?.accountEmail),
@@ -455,6 +485,11 @@ function identityMatches(
       account.externalAccountId === metadata.externalAccountId
     );
   }
+  if (account.externalAccountId && metadata.externalAccountId) {
+    return account.externalAccountId === metadata.externalAccountId;
+  }
+  // Older OAuth connections recorded email/workspace before upstream UUIDs.
+  // Match only that stored identity, never metadata from today's active row.
   return sameClaudeIdentity(
     account,
     metadata.accountEmail,
@@ -632,16 +667,24 @@ async function applyAccountMutation(
     readonly mode: PersonalProviderAccountMutation;
     readonly metadata: ReturnType<typeof accountMetadataValues>;
     readonly encryptedSecrets: readonly EncryptedAccountSecret[];
+    readonly preserveIdentity: boolean;
   },
 ): Promise<
   | { readonly account: AccountRow; readonly created: boolean }
   | ReturnType<typeof notFound>
   | ReturnType<typeof badRequestMessage>
 > {
-  const selected = selectMutationTarget(args);
-  if (selected && "status" in selected) {
-    return selected;
+  const connected = args.accounts.filter((account) => {
+    return account.disconnectedAt === null;
+  });
+  const target = selectMutationTarget({ ...args, accounts: connected });
+  if (target && "status" in target) {
+    return target;
   }
+  if (args.preserveIdentity) {
+    return await applyStableAccountMutation(db, args, target);
+  }
+  const selected = target;
   if (!selected && args.accounts.length >= MAX_PERSONAL_PROVIDER_ACCOUNTS) {
     return badRequestMessage(
       `A maximum of ${MAX_PERSONAL_PROVIDER_ACCOUNTS} ${args.type} accounts can be connected`,
@@ -718,6 +761,7 @@ async function applyAccountMutation(
           eq(modelProviderAccounts.modelProviderId, args.provider.id),
           ne(modelProviderAccounts.id, account.id),
           eq(modelProviderAccounts.isActive, true),
+          isNull(modelProviderAccounts.disconnectedAt),
         ),
       );
     await mirrorAccountToLegacy(db, { account, provider: args.provider });
@@ -752,28 +796,61 @@ function affectedCodexExpiryBindings(
   ];
 }
 
-export async function upsertPersonalModelProviderAccount(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly type: PersonalSubscriptionProviderType;
-    readonly authMethod: string | null;
-    readonly secretValues: Readonly<Record<string, string>>;
-    readonly selectedModel?: string;
-    readonly metadata?: PersonalProviderAccountMetadata;
-    readonly mode: PersonalProviderAccountMutation;
-    readonly featureSwitchContext: FeatureSwitchContext;
-  },
-  signal: AbortSignal,
-): Promise<
+type UpsertPersonalAccountArgs = {
+  readonly db: Db;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly type: PersonalSubscriptionProviderType;
+  readonly authMethod: string | null;
+  readonly secretValues: Readonly<Record<string, string>>;
+  readonly selectedModel?: string;
+  readonly metadata?: PersonalProviderAccountMetadata;
+  readonly mode: PersonalProviderAccountMutation;
+  readonly featureSwitchContext: FeatureSwitchContext;
+};
+
+type UpsertPersonalAccountResult =
   | ReturnType<typeof badRequestMessage>
   | ReturnType<typeof notFound>
   | {
       readonly provider: ModelProviderResponse;
       readonly created: boolean;
-    }
-> {
+    };
+
+async function resolveConnectionIdentityMetadata(
+  args: UpsertPersonalAccountArgs,
+  preserveIdentity: boolean,
+  signal: AbortSignal,
+): Promise<PersonalProviderAccountMetadata | undefined> {
+  const claudeToken = args.secretValues.CLAUDE_CODE_OAUTH_TOKEN;
+  return preserveIdentity &&
+    args.type === CLAUDE_CODE_TYPE &&
+    claudeToken &&
+    !args.metadata?.accountEmail
+    ? {
+        ...args.metadata,
+        ...(await fetchClaudeCodeSubscriptionMetadata(
+          { accessToken: claudeToken },
+          signal,
+        )),
+      }
+    : args.metadata;
+}
+
+export async function upsertPersonalModelProviderAccount(
+  args: UpsertPersonalAccountArgs,
+  signal: AbortSignal,
+): Promise<UpsertPersonalAccountResult> {
+  const preserveIdentity = isFeatureEnabled(
+    FeatureSwitchKey.PersonalSubscriptionPriority,
+    args.featureSwitchContext,
+  );
+  const resolvedMetadata = await resolveConnectionIdentityMetadata(
+    args,
+    preserveIdentity,
+    signal,
+  );
+  signal.throwIfAborted();
   const encryptedSecrets = await encryptAccountSecrets(
     args.type,
     args.secretValues,
@@ -833,7 +910,7 @@ export async function upsertPersonalModelProviderAccount(
           type: args.type,
           selectedModel: args.selectedModel,
         }));
-      const accounts = await tx
+      const storedAccounts = await tx
         .select()
         .from(modelProviderAccounts)
         .where(eq(modelProviderAccounts.modelProviderId, provider.id))
@@ -841,9 +918,19 @@ export async function upsertPersonalModelProviderAccount(
           asc(modelProviderAccounts.createdAt),
           asc(modelProviderAccounts.id),
         );
+      const accounts =
+        preserveIdentity && args.type === CLAUDE_CODE_TYPE
+          ? await hydrateClaudeAccountIdentities(
+              tx,
+              storedAccounts,
+              args.featureSwitchContext,
+              signal,
+            )
+          : storedAccounts;
+      signal.throwIfAborted();
       const metadata = accountMetadataValues({
         type: args.type,
-        metadata: args.metadata,
+        metadata: resolvedMetadata,
         secretValues: args.secretValues,
       });
       for (const binding of affectedCodexExpiryBindings({
@@ -863,6 +950,7 @@ export async function upsertPersonalModelProviderAccount(
         mode: args.mode,
         metadata,
         encryptedSecrets,
+        preserveIdentity,
       });
       if ("status" in result) {
         return result;
@@ -873,6 +961,62 @@ export async function upsertPersonalModelProviderAccount(
       };
     })
     .finally(invalidateExpiry);
+}
+
+async function hydrateClaudeAccountIdentities(
+  db: Db,
+  accounts: readonly AccountRow[],
+  featureSwitchContext: FeatureSwitchContext,
+  signal: AbortSignal,
+): Promise<readonly AccountRow[]> {
+  const hydrated: AccountRow[] = [];
+  for (const account of accounts) {
+    if (account.externalAccountId || account.disconnectedAt !== null) {
+      hydrated.push(account);
+      continue;
+    }
+    const [secret] = await db
+      .select()
+      .from(modelProviderAccountSecrets)
+      .where(
+        and(
+          eq(modelProviderAccountSecrets.modelProviderAccountId, account.id),
+          eq(modelProviderAccountSecrets.name, "CLAUDE_CODE_OAUTH_TOKEN"),
+        ),
+      )
+      .limit(1);
+    if (!secret) {
+      hydrated.push(account);
+      continue;
+    }
+    const accessToken = await decryptStoredSecretValue(
+      secret.encryptedValue,
+      featureSwitchContext,
+    );
+    signal.throwIfAborted();
+    const metadata = await fetchClaudeCodeSubscriptionMetadata(
+      { accessToken },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!metadata?.accountEmail) {
+      // An unidentifiable legacy credential must never be rebound to today's
+      // active identity. Keep its existing identity and exact run references.
+      hydrated.push(account);
+      continue;
+    }
+    const identity = {
+      externalAccountId: metadata.externalAccountId ?? null,
+      accountEmail: metadata.accountEmail,
+      workspaceName: metadata.workspaceName ?? account.workspaceName,
+    };
+    await db
+      .update(modelProviderAccounts)
+      .set(identity)
+      .where(eq(modelProviderAccounts.id, account.id));
+    hydrated.push({ ...account, ...identity });
+  }
+  return hydrated;
 }
 
 async function accountWithProvider(
@@ -896,6 +1040,7 @@ async function accountWithProvider(
     .where(
       and(
         eq(modelProviderAccounts.id, args.id),
+        isNull(modelProviderAccounts.disconnectedAt),
         eq(modelProviderAccounts.orgId, args.orgId),
         eq(modelProviderAccounts.userId, args.userId),
       ),
@@ -956,8 +1101,19 @@ async function deleteLastAccount(
         },
       );
   await db
-    .delete(modelProviders)
+    .update(modelProviders)
+    .set({ secretId: null, authMethod: null, updatedAt: nowDate() })
     .where(eq(modelProviders.id, args.provider.id));
+  const [retained] = await db
+    .select({ id: modelProviderAccounts.id })
+    .from(modelProviderAccounts)
+    .where(eq(modelProviderAccounts.modelProviderId, args.provider.id))
+    .limit(1);
+  if (!retained) {
+    await db
+      .delete(modelProviders)
+      .where(eq(modelProviders.id, args.provider.id));
+  }
   if (legacyNames && legacyNames.length > 0) {
     await db
       .delete(secrets)
@@ -972,12 +1128,16 @@ async function deleteLastAccount(
   }
 }
 
-export async function deletePersonalModelProviderAccount(args: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly id: string;
-}): Promise<ReturnType<typeof notFound> | undefined> {
+export async function deletePersonalModelProviderAccount(
+  args: {
+    readonly db: Db;
+    readonly featureSwitchContext: FeatureSwitchContext;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly id: string;
+  },
+  signal: AbortSignal,
+): Promise<ReturnType<typeof notFound> | undefined> {
   const initial = await accountWithProvider(args.db, args);
   if (!initial || !isPersonalSubscriptionProviderType(initial.account.type)) {
     return notFound("Resource not found");
@@ -992,13 +1152,31 @@ export async function deletePersonalModelProviderAccount(args: {
     if (!current) {
       return notFound("Resource not found");
     }
-    await tx
-      .delete(modelProviderAccounts)
-      .where(eq(modelProviderAccounts.id, current.account.id));
+    const retain = isFeatureEnabled(
+      FeatureSwitchKey.PersonalSubscriptionPriority,
+      args.featureSwitchContext,
+    );
+    if (retain && current.account.type === CLAUDE_CODE_TYPE) {
+      // Identify a legacy token while it is still connected. Once retired,
+      // only its exact nonterminal runs may read or use its credentials.
+      await hydrateClaudeAccountIdentities(
+        tx,
+        [current.account],
+        args.featureSwitchContext,
+        signal,
+      );
+      signal.throwIfAborted();
+    }
+    await retirePersonalModelProviderAccount(tx, current.account, retain);
     const [replacement] = await tx
       .select()
       .from(modelProviderAccounts)
-      .where(eq(modelProviderAccounts.modelProviderId, current.provider.id))
+      .where(
+        and(
+          eq(modelProviderAccounts.modelProviderId, current.provider.id),
+          isNull(modelProviderAccounts.disconnectedAt),
+        ),
+      )
       .orderBy(
         asc(modelProviderAccounts.needsReconnect),
         asc(modelProviderAccounts.createdAt),
@@ -1044,6 +1222,7 @@ export async function activePersonalModelProviderAccount(args: {
         eq(modelProviderAccounts.orgId, args.orgId),
         eq(modelProviderAccounts.userId, args.userId),
         eq(modelProviderAccounts.isActive, true),
+        isNull(modelProviderAccounts.disconnectedAt),
       ),
     )
     .limit(1);
@@ -1051,14 +1230,15 @@ export async function activePersonalModelProviderAccount(args: {
 }
 
 /**
- * Capture the concrete ChatGPT account selected for one run admission.
+ * Capture the concrete subscription account selected for one run admission.
  *
  * A non-null candidate can name either the logical provider row or an already
  * captured account row. Unknown/stale explicit IDs fail closed instead of
  * falling back to whichever sibling account is active.
  */
-export async function captureActiveCodexModelProviderAccount(args: {
+export async function captureActivePersonalModelProviderAccount(args: {
   readonly db: Db;
+  readonly type: PersonalSubscriptionProviderType;
   readonly orgId: string;
   readonly userId: string;
   readonly modelProviderId: string | null;
@@ -1072,7 +1252,7 @@ export async function captureActiveCodexModelProviderAccount(args: {
       userId: args.userId,
     });
     if (exactAccount) {
-      return exactAccount.type === CODEX_TYPE ? exactAccount : null;
+      return exactAccount.type === args.type ? exactAccount : null;
     }
   }
 
@@ -1083,7 +1263,7 @@ export async function captureActiveCodexModelProviderAccount(args: {
       and(
         eq(modelProviders.orgId, args.orgId),
         eq(modelProviders.userId, args.userId),
-        eq(modelProviders.type, CODEX_TYPE),
+        eq(modelProviders.type, args.type),
         ...(args.modelProviderId === null
           ? []
           : [eq(modelProviders.id, args.modelProviderId)]),
@@ -1104,7 +1284,7 @@ export async function captureActiveCodexModelProviderAccount(args: {
     orgId: args.orgId,
     userId: args.userId,
   });
-  return account?.type === CODEX_TYPE ? account : null;
+  return account?.type === args.type ? account : null;
 }
 
 export async function personalModelProviderAccountById(args: {
@@ -1119,10 +1299,223 @@ export async function personalModelProviderAccountById(args: {
     .where(
       and(
         eq(modelProviderAccounts.id, args.id),
+        isNull(modelProviderAccounts.disconnectedAt),
         eq(modelProviderAccounts.orgId, args.orgId),
         eq(modelProviderAccounts.userId, args.userId),
       ),
     )
     .limit(1);
   return account ?? null;
+}
+
+/** Settings never receive retired credentials. Runtime retention requires the
+ * exact owner, org and live run binding, including queued work. */
+export function personalSubscriptionAccountAccessCondition(
+  db: ReadonlyDb,
+  runId?: string,
+) {
+  const connected = isNull(modelProviderAccounts.disconnectedAt);
+  return runId === undefined
+    ? connected
+    : or(
+        connected,
+        exists(
+          db
+            .select({ id: agentRuns.id })
+            .from(agentRuns)
+            .where(
+              and(
+                eq(agentRuns.id, runId),
+                eq(agentRuns.orgId, modelProviderAccounts.orgId),
+                eq(agentRuns.userId, modelProviderAccounts.userId),
+                eq(agentRuns.modelProviderId, modelProviderAccounts.id),
+                inArray(agentRuns.status, ["queued", "pending", "running"]),
+              ),
+            ),
+        ),
+      );
+}
+
+export function visiblePersonalModelProviderCondition(db: ReadonlyDb) {
+  return or(
+    notExists(
+      db
+        .select({ id: modelProviderAccounts.id })
+        .from(modelProviderAccounts)
+        .where(eq(modelProviderAccounts.modelProviderId, modelProviders.id)),
+    ),
+    exists(
+      db
+        .select({ id: modelProviderAccounts.id })
+        .from(modelProviderAccounts)
+        .where(
+          and(
+            eq(modelProviderAccounts.modelProviderId, modelProviders.id),
+            isNull(modelProviderAccounts.disconnectedAt),
+          ),
+        ),
+    ),
+  );
+}
+
+async function retirePersonalModelProviderAccount(
+  db: Db,
+  account: AccountRow,
+  retain: boolean,
+): Promise<void> {
+  const [reference] = retain
+    ? await db
+        .select({ id: agentRuns.id })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.modelProviderId, account.id),
+            eq(agentRuns.orgId, account.orgId),
+            eq(agentRuns.userId, account.userId),
+            inArray(agentRuns.status, ["queued", "pending", "running"]),
+          ),
+        )
+        .limit(1)
+    : [];
+  if (reference) {
+    await db
+      .update(modelProviderAccounts)
+      .set({ isActive: false, disconnectedAt: nowDate(), updatedAt: nowDate() })
+      .where(eq(modelProviderAccounts.id, account.id));
+  } else {
+    await db
+      .delete(modelProviderAccounts)
+      .where(eq(modelProviderAccounts.id, account.id));
+  }
+}
+
+async function applyStableAccountMutation(
+  db: Db,
+  args: Parameters<typeof applyAccountMutation>[1],
+  target: AccountRow | null,
+): Promise<Awaited<ReturnType<typeof applyAccountMutation>>> {
+  // Reconnecting to another upstream identity selects its existing row (even a
+  // retained row), never overwrites the identity of the requested account.
+  const selected =
+    args.accounts.find((account) => {
+      return identityMatches(account, args.type, args.metadata);
+    }) ?? null;
+  const connected = args.accounts.filter((account) => {
+    return account.disconnectedAt === null;
+  });
+  const replacing =
+    args.mode.kind !== "add" && target && target.id !== selected?.id;
+  if (
+    (!selected || selected.disconnectedAt !== null) &&
+    connected.length - (replacing ? 1 : 0) >= MAX_PERSONAL_PROVIDER_ACCOUNTS
+  ) {
+    return badRequestMessage(
+      `A maximum of ${MAX_PERSONAL_PROVIDER_ACCOUNTS} ${args.type} accounts can be connected`,
+    );
+  }
+  const active =
+    connected.length === 0 ||
+    target?.isActive === true ||
+    selected?.isActive === true;
+  if (replacing) {
+    await retirePersonalModelProviderAccount(db, target, true);
+  }
+  if (active) {
+    await db
+      .update(modelProviderAccounts)
+      .set({ isActive: false })
+      .where(eq(modelProviderAccounts.modelProviderId, args.provider.id));
+  }
+  const values = {
+    ...args.metadata,
+    authMethod: args.authMethod,
+    isActive: active,
+    disconnectedAt: null,
+  };
+  const [account] = selected
+    ? await db
+        .update(modelProviderAccounts)
+        .set(values)
+        .where(eq(modelProviderAccounts.id, selected.id))
+        .returning()
+    : await db
+        .insert(modelProviderAccounts)
+        .values({
+          ...values,
+          modelProviderId: args.provider.id,
+          orgId: args.provider.orgId,
+          userId: args.provider.userId,
+          type: args.type,
+        })
+        .returning();
+  if (!account) {
+    throw new Error("Expected subscription account mutation to return");
+  }
+  await replaceAccountSecrets(db, account.id, args.encryptedSecrets);
+  if (active) {
+    await mirrorAccountToLegacy(db, { account, provider: args.provider });
+  }
+  return { account, created: !selected };
+}
+
+/** Called inside the terminal transaction after the run update. The auth-state
+ * lock serializes cleanup with admission, settings mutations and token refresh.
+ * A second terminal transition observes the first commit and removes the final
+ * reference; no wall-clock retention delay is used. */
+export async function cleanupDisconnectedPersonalModelProviderAccounts(
+  db: Db,
+  runs: readonly {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly modelProviderId: string | null;
+  }[],
+): Promise<void> {
+  const ids = [
+    ...new Set(
+      runs.flatMap((run) => {
+        return run.modelProviderId ? [run.modelProviderId] : [];
+      }),
+    ),
+  ];
+  if (ids.length === 0) {
+    return;
+  }
+  const accounts = await db
+    .select()
+    .from(modelProviderAccounts)
+    .where(inArray(modelProviderAccounts.id, ids))
+    .orderBy(
+      modelProviderAccounts.orgId,
+      modelProviderAccounts.userId,
+      modelProviderAccounts.type,
+      modelProviderAccounts.id,
+    );
+  for (const account of accounts) {
+    await lockModelProviderState(db, account);
+    // A fresh same-identity connection may have revived the row while waiting.
+    const [current] = await db
+      .select()
+      .from(modelProviderAccounts)
+      .where(
+        and(
+          eq(modelProviderAccounts.id, account.id),
+          isNotNull(modelProviderAccounts.disconnectedAt),
+        ),
+      )
+      .limit(1);
+    if (!current) {
+      continue;
+    }
+    await retirePersonalModelProviderAccount(db, current, true);
+    const [remaining] = await db
+      .select({ id: modelProviderAccounts.id })
+      .from(modelProviderAccounts)
+      .where(eq(modelProviderAccounts.modelProviderId, current.modelProviderId))
+      .limit(1);
+    if (!remaining) {
+      await db
+        .delete(modelProviders)
+        .where(eq(modelProviders.id, current.modelProviderId));
+    }
+  }
 }

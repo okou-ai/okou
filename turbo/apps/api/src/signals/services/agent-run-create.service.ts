@@ -288,6 +288,7 @@ import {
   piApiFirstTurnObjectKey,
   requirePiApiFirstTurnExecutionContext,
 } from "./pi-api-first-turn-config";
+import { lockModelProviderState } from "./auth-state-lock.service";
 import {
   activePersonalModelProviderAccount,
   ensurePersonalModelProviderAccount,
@@ -1529,7 +1530,6 @@ async function resolveRequestedRunFramework(
   db: Db,
   args: CreateAgentRunArgs,
   composeFramework: SupportedFramework,
-  featureSwitchContext: FeatureSwitchContext,
 ): Promise<SupportedFramework> {
   if (args.modelProviderType && isModelProviderType(args.modelProviderType)) {
     return (
@@ -1562,13 +1562,7 @@ async function resolveRequestedRunFramework(
     )
     .limit(1);
 
-  if (
-    !provider &&
-    isFeatureEnabled(
-      FeatureSwitchKey.PersonalModelProviderAccounts,
-      featureSwitchContext,
-    )
-  ) {
+  if (!provider) {
     const [account] = await db
       .select({ type: modelProviderAccounts.type })
       .from(modelProviderAccounts)
@@ -2860,15 +2854,7 @@ async function resolveExactPersonalModelProviderAccount(
   db: Db,
   args: ResolveModelProviderEnvironmentArgs,
 ): Promise<ResolvedModelProviderEnvironment | null> {
-  if (
-    !args.modelProviderId ||
-    args.modelProviderCredentialScope === "org" ||
-    (!args.piExecution &&
-      !isFeatureEnabled(
-        FeatureSwitchKey.PersonalModelProviderAccounts,
-        args.featureSwitchContext,
-      ))
-  ) {
+  if (!args.modelProviderId || args.modelProviderCredentialScope === "org") {
     return null;
   }
   const account = await personalModelProviderAccountById({
@@ -2901,12 +2887,7 @@ function shouldResolveActivePersonalModelProviderAccount(
   row: ResolvableModelProviderEnvironmentRow,
 ): boolean {
   return (
-    row.userId === args.userId &&
-    isPersonalSubscriptionProviderType(row.type) &&
-    isFeatureEnabled(
-      FeatureSwitchKey.PersonalModelProviderAccounts,
-      args.featureSwitchContext,
-    )
+    row.userId === args.userId && isPersonalSubscriptionProviderType(row.type)
   );
 }
 
@@ -6430,11 +6411,16 @@ function launchRunMetadataValues(args: LaunchRunRowsArgs): RunMetadataValues {
   const metadata: AgentRunMetadata = args.agentRunMetadata ?? {};
   const modelPin =
     args.agentRunModelPin ?? agentRunModelProviderValues(args.modelProvider);
+  const exactSubscriptionId =
+    args.modelProvider &&
+    isPersonalSubscriptionProviderType(args.modelProvider.type)
+      ? args.modelProvider.id
+      : undefined;
   return normalizeRunMetadata({
     triggerSource: args.body.triggerSource,
     ...agentRunLaunchMetadataInput(metadata),
     modelProvider: modelPin.modelProvider,
-    modelProviderId: modelPin.modelProviderId,
+    modelProviderId: exactSubscriptionId ?? modelPin.modelProviderId,
     modelProviderCredentialScope: modelPin.modelProviderCredentialScope,
     selectedModel: modelPin.selectedModel,
     ...builtInModelLaunchMetadataValues(args.modelProvider),
@@ -8575,7 +8561,51 @@ async function bindPreparedPiMemoryPhase2MaintenanceRun(
   });
 }
 
+async function validateCapturedSubscriptionAccount(
+  tx: Tx,
+  args: CommitPreparedLaunchArgs,
+) {
+  const provider = args.context.modelProvider;
+  if (
+    provider &&
+    isPersonalSubscriptionProviderType(provider.type) &&
+    provider.credentialOwner === "member"
+  ) {
+    await lockModelProviderState(tx, {
+      orgId: args.createArgs.orgId,
+      userId: args.createArgs.userId,
+      type: provider.type,
+    });
+    const account = provider.id
+      ? await personalModelProviderAccountById({
+          db: tx,
+          orgId: args.createArgs.orgId,
+          userId: args.createArgs.userId,
+          id: provider.id,
+        })
+      : null;
+    if (!account || account.type !== provider.type) {
+      return conflict(
+        "The selected subscription account was disconnected. Reconnect it before starting another run.",
+      );
+    }
+  }
+  return undefined;
+}
+
 async function commitPreparedLaunchUnderLock(
+  tx: DbTransaction,
+  args: CommitPreparedLaunchArgs,
+  payload: RunnerJobPayload,
+): Promise<AtomicLaunchCommitResult | CreateRunErrorResult> {
+  const failure = await validateCapturedSubscriptionAccount(tx, args);
+  if (failure) {
+    return failure;
+  }
+  return await commitValidatedPreparedLaunch(tx, args, payload);
+}
+
+async function commitValidatedPreparedLaunch(
   tx: DbTransaction,
   args: CommitPreparedLaunchArgs,
   payload: RunnerJobPayload,
@@ -9549,7 +9579,6 @@ function prepareRunBodyContext(
           args.db,
           args.createArgs,
           frameworkValidation.framework,
-          featureSwitchContext,
         );
       },
     );

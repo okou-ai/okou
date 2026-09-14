@@ -84,7 +84,10 @@ import {
   resolveWebChatSessionPrompt,
   type WebChatSessionPromptContext,
 } from "./web-chat-session-prompt.service";
-import { captureActiveCodexModelProviderAccount } from "./model-provider-account.service";
+import {
+  captureActivePersonalModelProviderAccount,
+  isPersonalSubscriptionProviderType,
+} from "./model-provider-account.service";
 
 type AgentRunCreateBody = z.infer<typeof runCreateBodySchema>;
 // Emitted as the agent_run_origin observability dimension. The values name what
@@ -1116,31 +1119,32 @@ interface AgentRunAfterPreCreate {
   readonly threadSessionResolution?: ChatThreadSessionResolution;
 }
 
-async function captureCodexSubscriptionAccount(
+async function captureSubscriptionAccount(
   db: Db,
   input: AgentRunAfterPreCreate,
-): Promise<AgentRunAfterPreCreate> {
+): Promise<AgentRunAfterPreCreate | ReturnType<typeof conflict>> {
   const { command } = input;
+  const pin = command.agentRunModelPin;
   if (
-    (!command.piExecution &&
-      !isFeatureEnabled(
-        FeatureSwitchKey.PersonalModelProviderAccounts,
-        input.featureSwitchContext,
-      )) ||
-    command.agentRunModelPin?.modelProvider !== "codex-oauth-token" ||
-    command.threadSessionRoute === undefined
+    !pin ||
+    !pin.modelProvider ||
+    !isPersonalSubscriptionProviderType(pin.modelProvider) ||
+    pin.modelProviderCredentialScope === "org"
   ) {
     return input;
   }
-  const account = await captureActiveCodexModelProviderAccount({
+  const account = await captureActivePersonalModelProviderAccount({
+    type: pin.modelProvider,
     db,
     orgId: command.auth.orgId,
     userId: command.auth.userId,
-    modelProviderId: command.agentRunModelPin.modelProviderId,
+    modelProviderId: pin.modelProviderId,
     featureSwitchContext: input.featureSwitchContext,
   });
   if (!account) {
-    return input;
+    return conflict(
+      "The selected subscription account is unavailable. Reconnect it before starting another run.",
+    );
   }
   return {
     ...input,
@@ -1148,7 +1152,7 @@ async function captureCodexSubscriptionAccount(
       ...command,
       modelProviderId: account.id,
       agentRunModelPin: {
-        ...command.agentRunModelPin,
+        ...pin,
         modelProviderId: account.id,
       },
     },
@@ -1215,8 +1219,11 @@ const THREAD_SESSION_PREPARATION_ATTEMPTS = 3;
 const createAgentRunAfterPreCreate$ = command(
   async ({ set }, input: AgentRunAfterPreCreate, signal: AbortSignal) => {
     const db = set(writeDb$);
-    const capturedInput = await captureCodexSubscriptionAccount(db, input);
+    const capturedInput = await captureSubscriptionAccount(db, input);
     signal.throwIfAborted();
+    if ("status" in capturedInput) {
+      return capturedInput;
+    }
     for (
       let attempt = 0;
       attempt < THREAD_SESSION_PREPARATION_ATTEMPTS;
