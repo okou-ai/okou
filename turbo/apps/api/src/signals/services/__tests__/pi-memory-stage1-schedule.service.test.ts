@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { executeRawRows } from "../../../lib/db-raw-rows";
-import { createDeferredPromise } from "../../utils";
+import { createDeferredPromise, settle } from "../../utils";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { eq, sql } from "drizzle-orm";
@@ -575,21 +575,25 @@ describe("durable Pi Stage 1 daily scheduling", () => {
     });
     const blockerPid = await locked.promise;
     const selection = h.select();
-    await expect
-      .poll(async () => {
-        const rows = await executeRawRows(
-          h.db,
-          sql`SELECT pid FROM pg_stat_activity WHERE ${blockerPid} = ANY(pg_blocking_pids(pid))`,
-          z.object({ pid: z.number() }),
-        );
-        return rows.length;
-      })
-      .toBeGreaterThan(0)
-      .finally(async () => {
-        release.resolve(undefined);
-        await foreground;
-        await selection;
-      });
+    const blocked = await settle(
+      Promise.resolve(
+        expect
+          .poll(async () => {
+            const rows = await executeRawRows(
+              h.db,
+              sql`SELECT pid FROM pg_stat_activity WHERE ${blockerPid} = ANY(pg_blocking_pids(pid))`,
+              z.object({ pid: z.number() }),
+            );
+            return rows.length;
+          })
+          .toBeGreaterThan(0),
+      ),
+    );
+    release.resolve(undefined);
+    await Promise.all([foreground, selection]);
+    if (!blocked.ok) {
+      throw blocked.error;
+    }
     await expect(selection).resolves.toHaveLength(0);
     expect((await h.claim()).claimed).toHaveLength(0);
   });
