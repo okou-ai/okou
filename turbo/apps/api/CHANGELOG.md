@@ -8,6 +8,30 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.595.0](https://github.com/vm0-ai/vm0/compare/api-v1.594.0...api-v1.595.0) (2026-09-14)
+
+
+### Features
+
+* **pi-memory:** admit stage 1 extraction only for human-interactive trigger sources ([#33974](https://github.com/vm0-ai/vm0/issues/33974)) ([737e752](https://github.com/vm0-ai/vm0/commit/737e752d859154f921d599412c5754ff262078e1)), closes [#33954](https://github.com/vm0-ai/vm0/issues/33954)
+* **pi-memory:** align background extraction and consolidation with upstream models and reasoning ([#33969](https://github.com/vm0-ai/vm0/issues/33969)) ([967f004](https://github.com/vm0-ai/vm0/commit/967f004c7e158e70338a54ea6afbb064e8405766))
+
+
+### Refactoring
+
+* **api:** prepare explicit organization entitlement writes ([#33912](https://github.com/vm0-ai/vm0/issues/33912)) ([5914652](https://github.com/vm0-ai/vm0/commit/5914652e56c01ea535fc64d4e12b80c7b6aaafe6)), closes [#33747](https://github.com/vm0-ai/vm0/issues/33747)
+* **pi:** retire the drained legacy api wire field ([#33980](https://github.com/vm0-ai/vm0/issues/33980)) ([edbbe29](https://github.com/vm0-ai/vm0/commit/edbbe29ae11760122eb444d73883ff4e88ee5b2a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.436.0
+    * @okouai/core bumped to 8.662.1
+    * @okouai/db bumped to 1.255.5
+    * @okouai/pi-agent-runtime bumped to 1.28.0
+
 ## [1.594.0](https://github.com/vm0-ai/vm0/compare/api-v1.593.0...api-v1.594.0) (2026-09-14)
 
 

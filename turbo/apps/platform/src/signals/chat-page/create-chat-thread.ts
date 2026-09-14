@@ -89,7 +89,6 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { debounceCommand } from "../command-scheduling.ts";
 import {
-  agentMessageMathEnabled$,
   chatReasoningEffortEnabled$,
   codexFastModeEnabled$,
   featureSwitch$,
@@ -1842,7 +1841,6 @@ function createCardRefRegistrar({
 
 interface EventTree {
   readonly content: string;
-  readonly mathEnabled: boolean;
   readonly tree: Root | undefined;
   readonly error: boolean;
   /** Diagram sources this event shows, prepared when it becomes visible. */
@@ -1854,7 +1852,6 @@ interface RichEventTreePlan {
   readonly content: string;
   readonly treeSource: string;
   readonly descriptors: readonly CardDescriptorBlock[];
-  readonly mathEnabled: boolean;
 }
 
 function createEventTreeParser(registries: EventTreeRegistries) {
@@ -1878,7 +1875,7 @@ function createEventTreeParser(registries: EventTreeRegistries) {
         );
       }
       const tree = parseMarkdownTree(plan.treeSource, {
-        math: plan.mathEnabled,
+        math: true,
         mermaid: true,
         cards,
       });
@@ -1905,7 +1902,6 @@ function planEventTreeUpdates(
   events: readonly ChatEvent[],
   current: ReadonlyMap<string, EventTree>,
   chatActionContext: ChatActionContext,
-  mathEnabled: boolean,
 ): {
   readonly next: Map<string, EventTree> | undefined;
   readonly richPlans: RichEventTreePlan[];
@@ -1914,11 +1910,7 @@ function planEventTreeUpdates(
   const richPlans: RichEventTreePlan[] = [];
   for (const event of events) {
     const content = chatEventTreeContent(event);
-    const previous = current.get(event.id);
-    if (
-      content === null ||
-      (previous?.content === content && previous.mathEnabled === mathEnabled)
-    ) {
+    if (content === null || current.get(event.id)?.content === content) {
       continue;
     }
     // Raw-row projection already checked every 1094 provenance field. Keep
@@ -1935,7 +1927,6 @@ function planEventTreeUpdates(
       next ??= new Map(current);
       next.set(event.id, {
         content,
-        mathEnabled,
         tree: literalHistoryTree(content),
         error: false,
       });
@@ -1946,13 +1937,12 @@ function planEventTreeUpdates(
       continue;
     }
     const plainTree = createPlainMarkdownTree(plan.treeSource, {
-      mathEnabled,
+      mathEnabled: true,
     });
     next ??= new Map(current);
     if (plainTree !== null) {
       next.set(event.id, {
         content: plan.content,
-        mathEnabled,
         tree: plainTree,
         error: false,
       });
@@ -1962,11 +1952,10 @@ function planEventTreeUpdates(
     // body loads. This pending identity also deduplicates concurrent ensures.
     next.set(event.id, {
       content: plan.content,
-      mathEnabled,
       tree: undefined,
       error: false,
     });
-    richPlans.push({ eventId: event.id, ...plan, mathEnabled });
+    richPlans.push({ eventId: event.id, ...plan });
   }
   return { next, richPlans };
 }
@@ -1980,7 +1969,6 @@ function markPendingEventTreesFailed(
     const entry = current.get(plan.eventId);
     if (
       entry?.content === plan.content &&
-      entry.mathEnabled === plan.mathEnabled &&
       entry.tree === undefined &&
       !entry.error
     ) {
@@ -2070,7 +2058,6 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
         const pendingEntry = pending.get(plan.eventId);
         if (
           pendingEntry?.content !== plan.content ||
-          pendingEntry.mathEnabled !== plan.mathEnabled ||
           pendingEntry.tree !== undefined ||
           pendingEntry.error
         ) {
@@ -2080,7 +2067,6 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
         parsed ??= new Map(pending);
         parsed.set(plan.eventId, {
           content: plan.content,
-          mathEnabled: plan.mathEnabled,
           tree,
           error: false,
           diagramCodes,
@@ -2112,7 +2098,6 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
         events,
         current,
         chatActionContext,
-        get(agentMessageMathEnabled$),
       );
       if (next) {
         set(internalEventTrees$, next);

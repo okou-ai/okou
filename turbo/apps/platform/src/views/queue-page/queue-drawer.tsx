@@ -168,7 +168,7 @@ function CheckCircleIcon() {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="lucide shrink-0 text-muted-foreground/40"
+      className="stroke-icon shrink-0 text-muted-foreground/40"
     >
       <circle cx="12" cy="12" r="10" />
       <polyline points="16 9 10.5 15 8 12.5" />

@@ -1,5 +1,7 @@
 //! Codex content policy for the shared delivery budget engine.
-use super::bounded_event_delivery::{ContentPolicy, DELIVERY_NOTICE, PathSegment};
+use super::bounded_event_delivery::{
+    ContentPolicy, DELIVERY_NOTICE, PathSegment, json_string_bytes,
+};
 use crate::error::AgentError;
 use serde_json::{Value, json};
 
@@ -12,6 +14,20 @@ pub(super) fn content_policy(
     path: &[PathSegment],
     item_type: Option<&str>,
 ) -> ContentPolicy {
+    if item_type == Some("collab_agent_tool_call")
+        && let [PathSegment::Key(item), PathSegment::Key(states), rest @ ..] = path
+        && item == "item"
+        && states == "agents_states"
+    {
+        // Child IDs are keys, even when they match a protected field name.
+        return match rest {
+            [] | [PathSegment::Key(_)] => ContentPolicy::Descend,
+            [PathSegment::Key(_), PathSegment::Key(field)] if field == "message" => {
+                ContentPolicy::Text("collab_agent_message")
+            }
+            _ => ContentPolicy::Preserve,
+        };
+    }
     if matches!(path, [PathSegment::Key(item), PathSegment::Key(output), PathSegment::Index(_)] if item == "item" && output == "output")
         && item_type == Some("function_call_output")
         && value.get("type").and_then(Value::as_str) == Some("input_image")
@@ -32,6 +48,7 @@ pub(super) fn content_policy(
                 | "tool"
                 | "server"
                 | "model"
+                | "reasoning_effort"
                 | "usage"
                 | "sender_thread_id"
                 | "receiver_thread_ids"
@@ -125,6 +142,20 @@ pub(super) fn minimum_event(mut event: Value, omitted_image: bool) -> Result<Val
                 item.insert("command".into(), json!(DELIVERY_NOTICE));
                 item.insert("aggregated_output".into(), json!(DELIVERY_NOTICE));
             }
+            Some("collab_agent_tool_call") => {
+                if let Some(prompt) = item.get_mut("prompt") {
+                    minimize_text(prompt);
+                }
+                // A shallow in-place pass covers messages beyond candidate, key,
+                // and traversal limits without retaining input-sized path state.
+                if let Some(states) = item.get_mut("agents_states").and_then(Value::as_object_mut) {
+                    for state in states.values_mut() {
+                        if let Some(message) = state.get_mut("message") {
+                            minimize_text(message);
+                        }
+                    }
+                }
+            }
             Some("function_call_output") => {
                 let output = if let Some(output) = item.get("output").and_then(Value::as_array) {
                     let images = output.iter().any(|block| {
@@ -156,6 +187,14 @@ pub(super) fn minimum_event(mut event: Value, omitted_image: bool) -> Result<Val
     Ok(event)
 }
 
+fn minimize_text(value: &mut Value) {
+    if value.as_str().is_some_and(|text| {
+        text.len() > DELIVERY_NOTICE.len() || json_string_bytes(text) > DELIVERY_NOTICE.len() + 2
+    }) {
+        *value = json!(DELIVERY_NOTICE);
+    }
+}
+
 fn event_type_label(event: &Value) -> &'static str {
     match event.get("type").and_then(Value::as_str) {
         Some("thread.started") => "thread.started",
@@ -176,6 +215,7 @@ fn item_type_label(event: &Value) -> &'static str {
         Some("plan") => "plan",
         Some("reasoning") => "reasoning",
         Some("command_execution") => "command_execution",
+        Some("collab_agent_tool_call") => "collab_agent_tool_call",
         Some("file_change") => "file_change",
         Some("function_call_output") => "function_call_output",
         Some(_) => "other",

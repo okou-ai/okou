@@ -2210,6 +2210,20 @@ describe("managed SocialKit route", () => {
       },
     });
     expect(beforeCredits - creditsAfterCompletion).toBe(6);
+    const discovered = await accept(
+      socialClient.listDownloads({
+        headers: authenticate(actor),
+        query: { status: "completed" },
+      }),
+      [200],
+    );
+    expect(discovered.body.downloads).toMatchObject([
+      {
+        ...completed.body,
+        request: { url: "https://youtu.be/public-video" },
+        resumeCommand: `okou social download --resume ${created.body.downloadId}`,
+      },
+    ]);
     await expect(credits(actor)).resolves.toBe(creditsAfterCompletion);
     expect(
       context.mocks.s3.send.mock.calls.filter(([command]) => {
@@ -2774,6 +2788,10 @@ describe("managed SocialKit route", () => {
     expect(blocked.body.error).toStrictEqual({
       code: "DOWNLOAD_IN_PROGRESS",
       message: "Another social media download is already in progress",
+      recovery: {
+        downloadId: first.body.downloadId,
+        resumeCommand: `okou social download --resume ${first.body.downloadId}`,
+      },
     });
     expect(first.body.status).toBe("processing");
     expect(providerStarts).toBe(1);
@@ -3196,6 +3214,23 @@ describe("managed SocialKit route", () => {
     );
     const creditsAfterFailure = await credits(actor);
 
+    const discovered = await accept(
+      socialClient.listDownloads({
+        headers: authenticate(actor),
+        query: { status: "artifact_failed" },
+      }),
+      [200],
+    );
+    expect(discovered.body.downloads).toMatchObject([
+      {
+        downloadId: created.body.downloadId,
+        status: "artifact_failed",
+        request: { url: "https://youtu.be/public-video" },
+        resumeCommand: `okou social download --resume ${created.body.downloadId}`,
+        billing: { quantity: 2, creditsCharged: 6 },
+      },
+    ]);
+
     expect(failed.body).toMatchObject({
       status: "artifact_failed",
       billing: { quantity: 2, creditsCharged: 6 },
@@ -3225,6 +3260,9 @@ describe("managed SocialKit route", () => {
 
     expectApiError(blocked.body);
     expect(blocked.body.error.code).toBe("DOWNLOAD_IN_PROGRESS");
+    expect(blocked.body.error.recovery?.downloadId).toBe(
+      created.body.downloadId,
+    );
     expect(providerStarts).toBe(1);
 
     mockNow(now() + 61_000);

@@ -1009,7 +1009,8 @@
     "toasts": {
       "copyLinkFailed": "Link konnte nicht kopiert werden",
       "downloadFailed": "Der Download ist fehlgeschlagen",
-      "linkCopied": "Link kopiert"
+      "linkCopied": "Link kopiert",
+      "sharing": "Wird geteilt…"
     }
   },
   "auth": {
@@ -1745,15 +1746,10 @@
       "selectModel": "Modell auswählen",
       "slashPanel": {
         "browseAll": "Alle Vorlagen durchsuchen",
-        "illustrationDescription": "Ein einzelnes Bild im gewählten Stil",
         "make": "Erstellen",
-        "slidesDescription": "Eine HTML-Präsentation, die du direkt zeigen kannst",
         "templateCount_one": "{{count}} Vorlage",
         "templateCount_other": "{{count}} Vorlagen",
-        "useTemplate": "Vorlage {{title}} verwenden",
-        "videoDescription": "Text zu Video, mit den Parametern des gewählten Modells",
-        "websiteDescription": "Eine statische Website, die du veröffentlichen kannst",
-        "workflowDescription": "Ein gespeicherter Workflow, den du im Composer starten kannst"
+        "useTemplate": "Vorlage {{title}} verwenden"
       },
       "temporarilySwitchTo": "Vorübergehend wechseln zu",
       "threadSuggestions": "Chat-Threads",

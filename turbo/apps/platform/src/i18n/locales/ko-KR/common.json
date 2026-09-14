@@ -1008,7 +1008,8 @@
     "toasts": {
       "copyLinkFailed": "링크 복사 실패",
       "downloadFailed": "다운로드 실패",
-      "linkCopied": "링크 복사됨"
+      "linkCopied": "링크 복사됨",
+      "sharing": "공유 중…"
     }
   },
   "auth": {
@@ -1742,14 +1743,9 @@
       "selectModel": "모델 선택",
       "slashPanel": {
         "browseAll": "모든 템플릿 보기",
-        "illustrationDescription": "선택한 스타일로 이미지 한 장을 만듭니다",
         "make": "만들기",
-        "slidesDescription": "바로 발표할 수 있는 HTML 슬라이드",
         "templateCount_other": "템플릿 {{count}}개",
-        "useTemplate": "템플릿 {{title}} 사용",
-        "videoDescription": "텍스트로 영상을 만들며 매개변수는 선택한 모델을 따릅니다",
-        "websiteDescription": "게시할 수 있는 정적 사이트",
-        "workflowDescription": "작성 창에서 실행할 수 있는 저장된 워크플로"
+        "useTemplate": "템플릿 {{title}} 사용"
       },
       "temporarilySwitchTo": "임시로 전환할 모델",
       "threadSuggestions": "채팅 스레드",

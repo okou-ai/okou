@@ -12,8 +12,11 @@ import {
   fauxAssistantMessage,
   type AssistantMessage,
 } from "@earendil-works/pi-ai";
-import { CURRENT_SESSION_VERSION } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it } from "vitest";
+import {
+  AgentSession,
+  CURRENT_SESSION_VERSION,
+} from "@earendil-works/pi-coding-agent";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   createPiApiFirstTurnOwnership,
@@ -22,12 +25,25 @@ import {
   projectPiSessionJsonlForExport,
   PiApiFirstTurnCompactionRequiredError,
   runPiApiFirstTurn,
+  preparePiApiTurn,
+  executePreparedPiApiTurn,
   UnsupportedPiSessionVersionError,
 } from "./api";
 import { projectPiApiAssistantMessage } from "./api-turn";
 import { resolvePiAgentModel } from "./model";
 import { MemoryPiSession } from "./session-memory";
 import type { PiApiAssistantMessage, PiApiFirstTurnArgs } from "./api-types";
+
+function promiseWithResolvers<T>() {
+  return (
+    Promise as PromiseConstructor & {
+      withResolvers<TValue>(): {
+        readonly promise: Promise<TValue>;
+        readonly resolve: (value: TValue) => void;
+      };
+    }
+  ).withResolvers<T>();
+}
 
 const publicEventFixture = JSON.parse(
   readFileSync(
@@ -214,6 +230,113 @@ function responsesToolSse(
 }
 
 describe("Pi API facade", () => {
+  it.each(["execute", "discard", "cancel", "late-initialization"] as const)(
+    "owns a prepared session through %s without speculative provider transport",
+    async (outcome) => {
+      let providerRequests = 0;
+      const server = createServer((_request, response) => {
+        providerRequests++;
+        responsesTextSse(response, "prepared answer");
+      });
+      await new Promise<void>((resolve) => {
+        return server.listen(0, "127.0.0.1", resolve);
+      });
+      const address = server.address();
+      if (!address || typeof address === "string")
+        throw new Error("Expected test transport");
+      const disposed = vi.spyOn(AgentSession.prototype, "dispose");
+      const controller = new AbortController();
+      const args = {
+        cwd: "/home/user/workspace",
+        agentDir: "/home/user/.pi/agent",
+        sessionId: SESSION_ID,
+        prompt: "use exactly the captured input",
+        appendSystemPrompt: "Captured final instruction",
+        model: {
+          provider: "openai",
+          baseUrl: `http://127.0.0.1:${address.port}/v1`,
+          apiKey: "test-key",
+          model: "gpt-5.6-terra",
+          dialect: "openai-responses",
+          transport: "sse",
+          thinkingLevel: "low",
+        },
+        resourceSnapshot: { schemaVersion: 1, agentsFiles: [], skills: [] },
+        onPreparationTiming(observation: { readonly phase: string }) {
+          // The official initializer is already running and does not stop at
+          // this abort. Preparation must dispose its eventual session.
+          if (
+            outcome === "late-initialization" &&
+            observation.phase === "model_runtime"
+          ) {
+            controller.abort(new Error("abandoned initializer"));
+          }
+        },
+      } as const;
+      try {
+        if (outcome === "late-initialization") {
+          await expect(
+            preparePiApiTurn(args, controller.signal),
+          ).rejects.toThrow("abandoned initializer");
+        } else {
+          const prepared = await preparePiApiTurn(args, controller.signal);
+          expect(providerRequests).toBe(0);
+          const ownership = createPiApiFirstTurnOwnership();
+          if (outcome === "discard") {
+            prepared.dispose();
+            prepared.dispose();
+          } else if (outcome === "cancel") {
+            controller.abort(new Error("cancel before transport"));
+            await expect(
+              executePreparedPiApiTurn(
+                prepared,
+                { ownership },
+                controller.signal,
+              ),
+            ).rejects.toThrow("cancel before transport");
+          } else {
+            const gate = promiseWithResolvers<void>();
+            const entered = promiseWithResolvers<void>();
+            const execution = executePreparedPiApiTurn(
+              prepared,
+              {
+                ownership,
+                async providerRequestBoundary(mark) {
+                  entered.resolve();
+                  await gate.promise;
+                  mark();
+                },
+              },
+              controller.signal,
+            );
+            await entered.promise;
+            expect(providerRequests).toBe(0);
+            expect(ownership.stage).toBe("pre-provider");
+            gate.resolve();
+            const result = await execution;
+            expect(result.assistantMessage.content).toEqual([
+              { type: "text", text: "prepared answer" },
+            ]);
+          }
+          await expect(
+            executePreparedPiApiTurn(prepared, { ownership }),
+          ).rejects.toThrow("already been consumed or disposed");
+          prepared.dispose();
+        }
+        expect(providerRequests).toBe(outcome === "execute" ? 1 : 0);
+        expect(disposed).toHaveBeenCalledTimes(1);
+      } finally {
+        disposed.mockRestore();
+        controller.abort();
+        await new Promise<void>((resolve, reject) => {
+          return server.close((error) => {
+            return error ? reject(error) : resolve();
+          });
+        });
+      }
+    },
+  );
+
   it("sends stable memory schemas and hands a call off without API execution", async () => {
     const requestBodies: Array<Record<string, unknown>> = [];
     const server = createServer((request, response) => {

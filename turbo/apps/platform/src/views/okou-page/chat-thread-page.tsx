@@ -6661,7 +6661,7 @@ function WorkflowUserMessage({
     messageDocumentToDisplayText(event.userMessage)?.trim() ||
     part.automationBrief?.trim();
   const bubbleClassName =
-    "okou-chat-bubble-user rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden whitespace-pre-wrap transition-colors duration-150";
+    "rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden whitespace-pre-wrap transition-colors duration-150 bg-gray-200 text-foreground";
   const body = workflowBody ? (
     <div className={bubbleClassName}>
       <div className="px-4 py-3">{workflowBody}</div>
@@ -6735,7 +6735,7 @@ function GoalUserMessage({
         <div className="flex w-full flex-col items-end">
           <MessageAnnotation renderPart={renderPart} />
           {goalBrief ? (
-            <div className="okou-chat-bubble-user rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden ring-1 ring-emerald-900/10">
+            <div className="rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden ring-1 ring-emerald-900/10 bg-gray-200 text-foreground">
               <div className="px-4 py-3 whitespace-pre-wrap">{goalBrief}</div>
             </div>
           ) : null}
@@ -7270,6 +7270,7 @@ function PagedAssistantEventItem({
         data-chat-run-id={event.runId}
       >
         <MarkdownEventBody
+          chatBubble
           className={
             workHistory ? CHAT_THREAD_WORK_HISTORY_MARKDOWN_CLASS : undefined
           }

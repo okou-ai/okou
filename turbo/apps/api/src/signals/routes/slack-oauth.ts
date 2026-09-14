@@ -413,7 +413,7 @@ const handlePlatformInstall$ = command(
     );
     signal.throwIfAborted();
 
-    if (!member) {
+    if (member.kind !== "member") {
       throw new Error("You are not a member of this organization");
     }
 
@@ -658,7 +658,7 @@ const handleConnectCallback$ = command(
     );
     signal.throwIfAborted();
 
-    if (!member) {
+    if (member.kind !== "member") {
       throw new Error("You are not a member of this organization");
     }
 

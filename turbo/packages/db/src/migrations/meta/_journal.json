@@ -302,6 +302,13 @@
       "when": 1789374133592,
       "tag": "1120_lark_bot_platform",
       "breakpoints": true
+    },
+    {
+      "idx": 1121,
+      "version": "7",
+      "when": 1789378963892,
+      "tag": "1121_retire_pi_candidate_reference_trigger",
+      "breakpoints": true
     }
   ]
 }

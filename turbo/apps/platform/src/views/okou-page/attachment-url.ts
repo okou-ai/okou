@@ -269,13 +269,18 @@ export async function downloadAttachmentUrl(
 
 export async function copyAttachmentLinkToClipboard(
   url: string,
+  toastId?: string | number,
+  signal?: AbortSignal,
 ): Promise<void> {
+  signal?.throwIfAborted();
   const copied = await writeToClipboard(publicAttachmentUrl(url));
+  signal?.throwIfAborted();
   if (copied) {
     toast.success(
       i18n.t(($) => {
         return $.artifacts.toasts.linkCopied;
       }),
+      { id: toastId },
     );
     return;
   }
@@ -283,5 +288,6 @@ export async function copyAttachmentLinkToClipboard(
     i18n.t(($) => {
       return $.artifacts.toasts.copyLinkFailed;
     }),
+    { id: toastId },
   );
 }

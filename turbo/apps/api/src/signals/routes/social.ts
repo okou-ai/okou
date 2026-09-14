@@ -10,7 +10,7 @@ import { command } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { bodyResultOf, pathParamsOf } from "../context/request";
+import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import { notFound } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
@@ -19,6 +19,7 @@ import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import {
   createSocialKitDownload$,
   getSocialKitDownload$,
+  listSocialKitDownloads$,
   reconcileSocialKitDownload$,
   SOCIALKIT_RECONCILIATION_TIMEOUT_MS,
 } from "../services/socialkit-download.service";
@@ -130,7 +131,57 @@ const createSocialKitDownloadInner$ = command(
         ),
       );
     }
+    if (response.status === 409) {
+      const active = await set(
+        listSocialKitDownloads$,
+        {
+          orgId: auth.orgId,
+          userId: auth.userId,
+          query: { limit: 1, status: "active" },
+        },
+        signal,
+      );
+      const download = active.downloads[0];
+      if (download?.resumeCommand) {
+        return agentSafeResponse(auth, {
+          ...response,
+          body: {
+            error: {
+              ...response.body.error,
+              recovery: {
+                downloadId: download.downloadId,
+                resumeCommand: download.resumeCommand,
+              },
+            },
+          },
+        });
+      }
+    }
     return agentSafeResponse(auth, response);
+  },
+);
+
+const listSocialKitDownloadsInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const response = await set(
+      listSocialKitDownloads$,
+      {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        query: get(queryOf(socialContract.listDownloads)),
+      },
+      signal,
+    );
+    return {
+      status: 200 as const,
+      body: {
+        ...response,
+        downloads: response.downloads.map((download) => {
+          return agentSafeResponse(auth, { body: download }).body;
+        }),
+      },
+    };
   },
 );
 
@@ -188,6 +239,17 @@ export const socialRoutes: readonly RouteEntry[] = [
         requiredCapability: "social:read",
       },
       createSocialKitDownloadInner$,
+    ),
+  },
+  {
+    route: socialContract.listDownloads,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        requiredCapability: "social:read",
+      },
+      listSocialKitDownloadsInner$,
     ),
   },
   {

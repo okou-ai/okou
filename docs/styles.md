@@ -542,6 +542,101 @@ appearance. Leaving the separator to `TableRow` instead is not equivalent — a 
 border never wins that boundary, so the header rule simply disappears and every
 body row shifts up.
 
+### Chat message bubbles
+
+The `okou-chat-bubble-user` and `okou-chat-bubble-assistant` selectors and their
+consumers have been removed. Between them they carried seven declarations over
+four rules: the user bubble's fill and foreground, the assistant bubble's
+transparent fill and `border: none`, the 8px block spacing the Markdown body
+inside either bubble used instead of the App's 6px default, and the assistant
+bubble's suppressed horizontal rules.
+
+The two fills are ordinary utilities. The user bubble writes `bg-gray-200
+text-foreground` — `--color-gray-200` and `--color-foreground` are the
+registered names for `hsl(var(--gray-200))` and `hsl(var(--foreground))`, the
+same runtime variables the retired rule read, so every Dark and
+gradient-palette override still applies. The assistant bubble writes
+`bg-transparent border-none border-current`. The colour utility is there because
+`border: none` is a shorthand: it reset `border-color` to `currentcolor`, while
+`border-none` sets only the style. The width is 0 either way, so this is
+invisible today; it is kept because the retired rule decided it, so an assistant
+body that later carries a border keeps the treatment it has now.
+
+The Markdown block treatment is different in kind, because it applies to
+elements the Markdown library renders. `MarkdownEventBody` takes a `chatBubble`
+prop and composes the whole treatment onto the frame it already owns:
+
+```
+[&_:is(p,[data-slot=markdown-card])]:my-2! [&>*:first-child]:mt-0!
+[&>*:last-child]:mb-0! [&_blockquote>*:first-child]:mt-0!
+[&_blockquote>*:last-child]:mb-0! [&_hr]:hidden
+```
+
+Every margin there is important, and the four resets exist only because of it.
+The competitor for the paragraphs and cards is the App's own unlayered
+`.wmde-markdown p, .wmde-markdown .okou-markdown-card` rule, which a utility in
+`@layer utilities` cannot outrank without one; a layered important declaration
+does. But that same promotion would also beat the two competitors the retired
+rule _lost_ to — the vendored `.wmde-markdown > *:first-child` /
+`> *:last-child` resets, which are themselves important, and the vendored
+`blockquote > :first-child` / `:last-child` pair, which ties the retired rule on
+specificity and wins on source order because the Markdown chunk's stylesheet
+loads after the App's. Restating those four at the same tier is what keeps the
+edge paragraphs flush. `[&_hr]:hidden` needs no important, because nothing
+unlayered declares `display` on a Markdown rule.
+
+The card slot is addressed through `data-slot="markdown-card"` rather than its
+`okou-markdown-card` class, for the same reason the desktop titlebar block below
+cannot be respelled: naming a legacy class inside an arbitrary variant registers
+a new dependency on it, and that token belongs to a later batch. The slot
+carries no styles. `data-slot="chat-user-message"` likewise replaces the
+attachment-preview test's `.okou-chat-bubble-user` query.
+
+This narrows a contract on purpose, the way the nav chrome above does. The
+retired rules applied to _any_ Markdown frame that happened to sit inside a
+bubble; the replacement applies to the three call sites that ask for it — the
+chat transcript's Agent message, and the shared thread's rendered and
+rich-content Agent messages. Those are every Markdown frame inside a bubble
+today, so nothing changes now, and a future in-bubble frame asks for the
+treatment by name.
+
+Two of the four retired rules were already partly dead.
+`.okou-chat-bubble-user .wmde-markdown p` and its `.okou-markdown-card` sibling
+never matched: a user bubble's body renders spans and reference chips through
+`UserMessagePartView`, the shared thread's renders plain text, and the
+automation and goal bubbles render plain text, so no Markdown frame has ever
+existed inside one. Both bubble names also remain in the
+`.okou-app[data-desktop-shell] :where(…)` selection exception, which nothing in
+the repository can activate for the reason the titlebar section below records;
+that block belongs to the `okou-app` batch and is deliberately untouched here,
+so the two class names stay inside it while no element carries them.
+
+Measured against `main` with the App's own Tailwind compiler (the 4.2.2 engine
+the Vite plugin bundles) in Chromium over CDP, across 28 captures — the default
+palette in Light and Dark at desktop 1280x1400 device scale 1 and 2 and narrow
+700x1400 device scale 2, each with and without the fine-pointer hover flags,
+plus all eight gradient palettes in Light and Dark at the desktop geometry:
+zero changed pixels and zero computed-style or geometry differences on every
+capture. `GradientColorThemes` is `enabled: false` with no organization
+allowlist, so the default palette is the online-visible result and the palette
+states are a superset. The fixture
+rebuilds the real ancestor chain down to the bubble and reproduces the Markdown
+frame's element, a first/middle/last paragraph, a loose list item, a blockquote,
+both card forms, a horizontal rule, and the single `<p class="m-0">` the plain
+Markdown path renders. The capture is taller than a real viewport on purpose:
+the chat pane scrolls inside an absolutely positioned container, so the document
+never grows and a page-height capture would compare only the first turn.
+
+Six negative controls establish that those zeros are not degenerate. Dropping
+the paragraph/card spacing changes 214,329 pixels on desktop Light and 10,227,660
+over all 28 captures; dropping the first-child reset changes 108,927 and
+5,131,289; dropping the rule suppression changes 211,552 and 10,147,418;
+dropping the user bubble's fill changes 32,890 and 1,690,648. The remaining two
+are invisible by construction and are caught by the observation channel alone:
+dropping the blockquote reset changes one observed margin per capture at zero
+pixels, and dropping `border-current` changes three observed border colours per
+capture at zero pixels.
+
 ### Desktop titlebar drag region — partially drained
 
 The `okou-desktop-no-drag` selector and its consumer have been removed. The
@@ -587,6 +682,63 @@ Dropping `.okou-app` from the condition, deleting the block with its two
 product decisions, and each one also constrains `okou-app` and
 `okou-workspace-bg`, which share this family and the same dead attribute.
 Resolve that before draining the last two tokens.
+
+### Third-party attribution of borrowed class names
+
+A class that looks like a vendor's is not automatically that vendor's. The
+exception boundary follows who authors the element, not who the name resembles.
+
+The queue drawer's check icon was a hand-written SVG in
+`queue-page/queue-drawer.tsx` that spelled `lucide` in its own `className`.
+Lucide never rendered it; the class was there to opt into the first-party
+`svg[class*="lucide"][stroke-width="2"]:not([data-stroke])` rule that normalizes
+the vendor's default stroke. A first-party element borrowing a vendor
+fingerprint to reach a first-party rule is legacy debt, not an adapter, so it
+takes a utility instead, and the icon stroke token moves into the namespace that
+already owns that decision. Tailwind resolves `stroke-*` against `--stroke-width-*`
+before it falls back to a bare number, so renaming `--icon-stroke-width` to
+`--stroke-width-icon` turns the token into the plain named utility `stroke-icon`,
+which emits the same `stroke-width: var(--stroke-width-icon)` the retired rule
+matched into. That is the shape the emoji spans ended at with
+`font-family-emoji`: a registered token read through its own namespace, not a
+custom property threaded through an arbitrary or data-type-hinted utility. Bare
+`stroke-2` keeps working, because the namespace lookup only precedes the numeric
+fallback. The element's own `strokeWidth="2"` presentation attribute stays,
+because CSS outranks it either way and the retired rule keyed on it. Both lucide
+rules remain for the real `lucide-react` DOM, including the allowlisted
+`svg.lucide-ellipsis circle` entry.
+
+`toaster` in `components/ui/sonner.tsx` is the mirror case. Sonner neither
+defines nor requires that class; the component invents it, hands it to Sonner's
+`className` prop, and then anchors its own `group-[.toaster]:` variants on it.
+Sonner's actual contract is the `[data-sonner-toaster]` attribute it puts on its
+own list element. There is also no mechanism to authorize this kind of
+dependency: `turbo/style-allowlist.json` holds CSS selectors, style injections
+and vendored files, so a legacy class named in a component's `className` can only
+be drained or left in the shrink-only baseline — never allowlisted.
+
+### Toast styling is decided by cascade layers, not specificity
+
+Sonner injects its stylesheet into `document.head` at module load, unlayered.
+Unlayered rules outrank every layer, so a `@layer utilities` declaration loses to
+`[data-sonner-toast][data-styled="true"]` no matter how specific the variant is.
+That is why the toast class string carries `!` on most of its utilities, and it
+is why the four that lack it — `bg-popover`, `text-foreground`, `border-border`
+and `shadow-lg` — have never applied. Measured on the real Sonner runtime, a dark
+toast computes `rgb(255, 255, 255)` on `rgb(23, 23, 23)` while `--color-popover`
+is `hsl(20 2.9% 20.2%)`: the panel stays light in Dark. The component also passes
+no `theme` prop, so Sonner itself is permanently in its `light` palette. The
+`description`, `actionButton` and `cancelButton` entries are inert for the same
+reason.
+
+Restoring those declarations is a visual decision, not an equivalence repair, and
+it is tracked separately. Marking the four important does fix Dark, but it also
+moves the Light foreground, border and shadow, and — because `!important` beats
+Sonner's unlayered `:focus-visible` rule — it replaces the toast's focus ring
+with the resting shadow. Adopting Sonner's supported `theme` prop instead takes
+Sonner's palette rather than the App's popover tokens. Draining `toaster` is
+blocked behind that choice, because whichever repair wins rewrites the same class
+string.
 
 ## Exception boundary
 

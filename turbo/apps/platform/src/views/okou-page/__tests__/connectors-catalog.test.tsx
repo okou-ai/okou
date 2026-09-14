@@ -174,7 +174,7 @@ test("Avoid duplicate catalog sections during metadata changes", async () => {
   expect(queryConnectorCard("Billing Stripe")).toBeInTheDocument();
 });
 
-test("Show Mailchimp OAuth without a feature-switch override", async () => {
+test("Show Mailchimp OAuth in the connector catalog", async () => {
   mockConnectors(context, []);
   await setupPage({ context, path: "/connectors?keywords=mailchimp" });
 

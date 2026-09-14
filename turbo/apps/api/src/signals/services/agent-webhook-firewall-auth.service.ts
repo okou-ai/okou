@@ -3535,6 +3535,23 @@ export async function resolveModelProviderRuntimeSecretForApi(
     : null;
 }
 
+/** Observe revocation without refreshing or replacing prepared credentials. */
+export async function readModelProviderRuntimeReconnectStateForApi(
+  args: ModelProviderRuntimeSecretForApiArgs,
+): Promise<ModelProviderRuntimeReconnectState | null> {
+  const lookup = resolveModelProviderRuntimeSecretLookup(args);
+  if (!lookup) {
+    return null;
+  }
+  return modelProviderRuntimeReconnectState(
+    await loadModelProviderRuntimeRefreshState({
+      db: args.db,
+      orgId: args.orgId,
+      lookup,
+    }),
+  );
+}
+
 export async function resolveCurrentModelProviderRuntimeSecretForApi(
   args: ModelProviderRuntimeSecretForApiArgs,
   signal: AbortSignal,

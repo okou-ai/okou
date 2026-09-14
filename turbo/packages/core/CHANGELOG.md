@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.662.1](https://github.com/vm0-ai/vm0/compare/core-v8.662.0...core-v8.662.1) (2026-09-14)
+
+
+### Bug Fixes
+
+* **app:** scope video controls to creative video drafts ([#33934](https://github.com/vm0-ai/vm0/issues/33934)) ([dc5ccdf](https://github.com/vm0-ai/vm0/commit/dc5ccdf653935b778d77fe120d62f3e20cc2b4e5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.436.0
+
 ## [8.662.0](https://github.com/vm0-ai/vm0/compare/core-v8.661.1...core-v8.662.0) (2026-09-14)
 
 
