@@ -107,13 +107,20 @@ export async function recordMorningBriefChoice(
     });
 }
 
+/** Completion is what binds the enrollment to the installation it owns. */
 export async function completeMorningBriefEnrollment(
   db: Db,
   identity: MorningBriefMemberIdentity,
+  workflowId: string,
 ): Promise<void> {
   await db
     .update(morningBriefEnrollments)
-    .set({ state: "completed", lastError: null, updatedAt: nowDate() })
+    .set({
+      state: "completed",
+      workflowId,
+      lastError: null,
+      updatedAt: nowDate(),
+    })
     .where(
       and(
         morningBriefEnrollmentWhere(identity),
