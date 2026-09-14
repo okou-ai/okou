@@ -1600,15 +1600,16 @@ function articleByText(text: string): HTMLElement {
   return article;
 }
 
-function linkByAriaLabel(label: string): HTMLAnchorElement {
-  const link = queryAllByRoleFast("link").find(
-    (candidate): candidate is HTMLAnchorElement => {
-      return (
-        candidate instanceof HTMLAnchorElement &&
-        candidate.getAttribute("aria-label") === label
-      );
-    },
-  );
+function linkByAriaLabel(
+  label: string,
+  candidates = queryAllByRoleFast("link"),
+): HTMLAnchorElement {
+  const link = candidates.find((candidate): candidate is HTMLAnchorElement => {
+    return (
+      candidate instanceof HTMLAnchorElement &&
+      candidate.getAttribute("aria-label") === label
+    );
+  });
   if (!link) {
     throw new Error(`${label} link not found`);
   }
@@ -5932,10 +5933,7 @@ test("Release author requests on workflow navigation", async () => {
   expect(screen.queryByText("Previous Page Author")).not.toBeInTheDocument();
 });
 
-test("Bound the page's author cache and refresh expired successful profiles", async () => {
-  const user = userEvent.setup();
-  const startedAt = new Date("2026-09-14T08:00:00Z").getTime();
-  mockNow(startedAt, context.signal);
+test("Bound the page's author cache while quickly moving between workflows", async () => {
   const workflows = Array.from({ length: 33 }, (_, index) => {
     return {
       ...salesResearch(),
@@ -5958,31 +5956,76 @@ test("Bound the page's author cache and refresh expired successful profiles", as
   );
   await setupPage({ context, path: "/workflows" });
   await screen.findByText("Bounded Workflow 32");
-  await user.keyboard("{Tab}");
-  for (const workflow of workflows) {
-    act(() => {
-      return linkByAriaLabel(`Open ${workflow.displayName}`).focus();
-    });
-    await expect(
-      screen.findByText(`Initial ${workflow.id}`),
-    ).resolves.toBeInTheDocument();
-    await user.keyboard("{Escape}");
-  }
-  revision = "Evicted";
-  act(() => {
-    return linkByAriaLabel("Open Bounded Workflow 0").focus();
+  const links = queryAllByRoleFast("link");
+  await act(() => {
+    linkByAriaLabel("Open Bounded Workflow 0", links).focus();
   });
   await expect(
-    screen.findByText(`Evicted ${workflows[0]?.id}`),
+    screen.findByText(`Initial ${workflows[0]?.id}`, {
+      selector: '[role="tooltip"] *',
+    }),
   ).resolves.toBeInTheDocument();
-  await user.keyboard("{Escape}");
-  revision = "Expired";
-  mockNow(startedAt + 15 * 60 * 1000, context.signal);
-  act(() => {
-    return linkByAriaLabel("Open Bounded Workflow 32").focus();
+
+  // Focus can move again before an author arrives; the page still owns each
+  // request. Observe the final row before checking that capacity evicts the first.
+  await act(() => {
+    for (const workflow of workflows.slice(1)) {
+      linkByAriaLabel(`Open ${workflow.displayName}`, links).focus();
+    }
   });
   await expect(
-    screen.findByText(`Expired ${workflows[32]?.id}`),
+    screen.findByText(`Initial ${workflows[32]?.id}`, {
+      selector: '[role="tooltip"] *',
+    }),
+  ).resolves.toBeInTheDocument();
+
+  revision = "Evicted";
+  await act(() => {
+    linkByAriaLabel("Open Bounded Workflow 0", links).focus();
+  });
+  await expect(
+    screen.findByText(`Evicted ${workflows[0]?.id}`, {
+      selector: '[role="tooltip"] *',
+    }),
+  ).resolves.toBeInTheDocument();
+});
+
+test("Reuse a successful author profile until its TTL expires", async () => {
+  const user = userEvent.setup();
+  const startedAt = new Date("2026-09-14T08:00:00Z").getTime();
+  mockNow(startedAt, context.signal);
+  mockWorkflowApis([salesResearch()]);
+  let revision = "Initial";
+  context.mocks.api(workflowsDetailContract.ownerProfile, ({ respond }) => {
+    return respond(200, { displayName: `${revision} Author`, imageUrl: null });
+  });
+  await setupPage({ context, path: "/workflows" });
+  await screen.findByText("Sales Research");
+  const title = linkByAriaLabel("Open Sales Research");
+  await user.hover(title);
+  await expect(
+    screen.findByText("Initial Author"),
+  ).resolves.toBeInTheDocument();
+  await user.unhover(title);
+  await waitFor(() => {
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+
+  revision = "Refreshed";
+  mockNow(startedAt + 15 * 60 * 1000 - 1, context.signal);
+  await user.hover(title);
+  await expect(
+    screen.findByText("Initial Author"),
+  ).resolves.toBeInTheDocument();
+  await user.unhover(title);
+  await waitFor(() => {
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+
+  mockNow(startedAt + 15 * 60 * 1000, context.signal);
+  await user.hover(title);
+  await expect(
+    screen.findByText("Refreshed Author"),
   ).resolves.toBeInTheDocument();
 });
 
