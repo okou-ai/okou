@@ -11,7 +11,7 @@ import {
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -548,6 +548,65 @@ beforeEach(async () => {
   await seedBuiltInModelKey(context, "gpt-5.6-luna");
 });
 
+async function corruptStage1CatalogPayload(value: unknown): Promise<void> {
+  // Infrastructure exception: an unmeasurable SDK payload cannot be produced
+  // through a user API. Load the runtime-owned external SDK, retaining its
+  // actual serializer/onPayload/error folding and the worker's real route.
+  if (typeof value === "object" && value !== null) {
+    Object.defineProperty(value, "recursive", { value, enumerable: true });
+  }
+  const sdkUrl = new URL(
+    "../node_modules/@earendil-works/pi-ai/dist/providers/openai.js",
+    import.meta.resolve("@okouai/pi-agent-runtime/node"),
+  );
+  const sdk: unknown = await import(sdkUrl.href);
+  if (
+    typeof sdk !== "object" ||
+    sdk === null ||
+    !("openaiProvider" in sdk) ||
+    typeof sdk.openaiProvider !== "function"
+  ) {
+    throw new Error("Missing SDK provider");
+  }
+  const provider: unknown = sdk.openaiProvider();
+  if (
+    typeof provider !== "object" ||
+    provider === null ||
+    !("getModels" in provider) ||
+    typeof provider.getModels !== "function"
+  ) {
+    throw new Error("Missing SDK catalog");
+  }
+  const models: unknown = provider.getModels();
+  if (!Array.isArray(models)) {
+    throw new Error("Invalid SDK catalog");
+  }
+  const model: unknown = models.find((item: unknown) => {
+    return (
+      typeof item === "object" &&
+      item !== null &&
+      "id" in item &&
+      item.id === "gpt-5.6-luna"
+    );
+  });
+  if (typeof model !== "object" || model === null) {
+    throw new Error("Missing Luna");
+  }
+  const descriptor = Object.getOwnPropertyDescriptor(model, "thinkingLevelMap");
+  Object.defineProperty(model, "thinkingLevelMap", {
+    value: { low: value },
+    configurable: true,
+    writable: true,
+  });
+  onTestFinished(() => {
+    if (descriptor) {
+      Object.defineProperty(model, "thinkingLevelMap", descriptor);
+    } else {
+      Reflect.deleteProperty(model, "thinkingLevelMap");
+    }
+  });
+}
+
 describe("Pi memory Stage 1 worker", () => {
   it("leaves switch-off legacy work unclaimed before any download or provider call", async () => {
     const enabledStorage = createStorageFixture();
@@ -607,6 +666,7 @@ describe("Pi memory Stage 1 worker", () => {
       status: "pending",
       retry_count: 2,
       retry_at: null,
+      successful_source_history_hash: null,
       last_error_class: null,
       raw_memory: null,
       rollout_summary: null,
@@ -847,6 +907,50 @@ describe("Pi memory Stage 1 worker", () => {
     },
   );
 
+  it.each(["unmeasurable", "over_budget"])(
+    "settles a final %s SDK payload once without HTTP, usage or a success watermark",
+    async (failure) => {
+      await corruptStage1CatalogPayload(
+        failure === "unmeasurable"
+          ? { recursive: null }
+          : "overhead ".repeat(260_000),
+      );
+      const storage = createStorageFixture();
+      const piSessionId = randomUUID();
+      const fixture = await storage.seed({
+        piSessionId,
+        raw: settledHistory(piSessionId, "retain human decision"),
+      });
+      const provider = installProvider();
+      const result = await runScoped(storage);
+      expect(
+        provider.calls.map((call) => {
+          return call.url;
+        }),
+      ).toStrictEqual([]);
+      expect(result).toMatchObject({
+        claimed: 1,
+        terminalFailure: 1,
+        retryableFailure: 0,
+        succeeded: 0,
+        succeededNoOutput: 0,
+      });
+      expect(provider.calls).toHaveLength(0);
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+      await expect(inspect(fixture)).resolves.toMatchObject({
+        status: "terminal_failure",
+        last_error_class:
+          failure === "unmeasurable"
+            ? "input_payload_unmeasurable"
+            : "input_budget_exceeded",
+        raw_memory: null,
+        successful_source_history_hash: null,
+      });
+      await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+      expect(provider.calls).toHaveLength(0);
+    },
+  );
+
   it("bills the luna long-context tier from the 272,001 total-input boundary", async () => {
     const below = createStorageFixture();
     const atBoundary = createStorageFixture();
@@ -993,6 +1097,59 @@ describe("Pi memory Stage 1 worker", () => {
       status: "succeeded",
     });
   }, 150_000);
+
+  it.each(["encoded_size", "integrity", "utf8", "gzip", "zstd"])(
+    "rejects %s source corruption before extraction",
+    async (failure) => {
+      const storage = createStorageFixture();
+      const piSessionId = randomUUID();
+      const fixture = await storage.seed({
+        piSessionId,
+        raw:
+          failure === "utf8"
+            ? Buffer.from([0xff, 0xfe])
+            : settledHistory(piSessionId, "valid source"),
+        encoding:
+          failure === "gzip"
+            ? SESSION_HISTORY_ENCODING_GZIP
+            : failure === "zstd"
+              ? SESSION_HISTORY_ENCODING_ZSTD
+              : SESSION_HISTORY_ENCODING_IDENTITY,
+      });
+      const body = context.sessionHistoryBlobs.get(fixture.objectKey);
+      if (!body) {
+        throw new Error("Missing owned source fixture");
+      }
+      if (failure === "encoded_size") {
+        context.sessionHistoryBlobs.set(fixture.objectKey, body.subarray(1));
+      } else if (failure !== "utf8") {
+        const corrupted = Buffer.from(body);
+        corrupted[0] = 0;
+        context.sessionHistoryBlobs.set(fixture.objectKey, corrupted);
+      }
+      const provider = installProvider();
+      await expect(runScoped(storage)).resolves.toMatchObject({
+        claimed: 1,
+        terminalFailure: 1,
+        succeeded: 0,
+        retryableFailure: 0,
+      });
+      expect(provider.calls).toHaveLength(0);
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+      await expect(inspect(fixture)).resolves.toMatchObject({
+        status: "terminal_failure",
+        successful_source_history_hash: null,
+        last_error_class:
+          failure === "encoded_size"
+            ? "source_encoded_size_invalid"
+            : failure === "integrity"
+              ? "source_integrity_invalid"
+              : failure === "utf8"
+                ? "source_utf8_invalid"
+                : "source_decompression_invalid",
+      });
+    },
+  );
 
   it("fences concurrent claims and stale workers while recording both provider usages", async () => {
     const storage = createStorageFixture();

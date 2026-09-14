@@ -4,7 +4,7 @@ import type {
   Message,
   ToolCall,
 } from "@earendil-works/pi-ai";
-import { decode, encode } from "gpt-tokenizer/encoding/o200k_base";
+
 import { projectPiMemoryCitationSegments } from "@okouai/api-contracts/contracts/pi-memory-citations";
 
 import { PI_MEMORY_STAGE1_REASONING } from "./memory-background-config";
@@ -16,21 +16,23 @@ import {
 } from "./stage1-prompts";
 import type { PiAgentModelConfig } from "./types";
 
+import {
+  boundStage1Evidence,
+  isRecord,
+  PiMemoryStage1BudgetError,
+  PI_MEMORY_STAGE1_OUTPUT_TOKENS,
+  selectStage1Evidence,
+  serializeStage1Payload,
+  stage1InputBudgets,
+  stage1TokenCount,
+  type PiMemoryStage1Evidence,
+} from "./stage1-input";
+import {
+  redactPiMemoryStage1Segments,
+  redactPiMemoryStage1Secrets,
+} from "./stage1-secrets";
+
 const MEMORY_TOOL_PREFIX = "memories.";
-const REDACTED_SECRET = "[REDACTED_SECRET]";
-const PRIVATE_KEY_BEGIN_PREFIX = "-----BEGIN ";
-const PRIVATE_KEY_LABEL_SUFFIX = " PRIVATE KEY";
-const PRIVATE_KEY_MARKER_SUFFIX = "-----";
-const PRIVATE_KEY_TYPE_MAX_LENGTH = 32;
-const AUTHORIZATION_HEADER =
-  /(\b(?:authorization|proxy-authorization)\s*:\s*)(?:bearer|basic)\s+[^\s`"'<>]+/giu;
-const COOKIE_HEADER = /(\b(?:cookie|set-cookie)\s*:\s*)[^\r\n]+/giu;
-const URL_USER_INFO = /(https?:\/\/)[^\s/@:]+:[^\s/@]+@/giu;
-const PROVIDER_TOKEN =
-  /(?<![A-Za-z0-9])(?:sk-(?:proj-)?[A-Za-z0-9_-]{16,}|github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{12,}|AKIA[A-Z0-9]{16}|ASIA[A-Z0-9]{16}|AIza[0-9A-Za-z_-]{20,}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})(?![A-Za-z0-9])/gu;
-const SECRET_ASSIGNMENT =
-  /((?:["'`]?)(?:api[_-]?key|access[_-]?key|secret|token|password|passwd|private[_-]?key|client[_-]?secret|cookie)(?:["'`]?)\s*(?::|=)\s*)(["'`]?)([^\s,;\r\n"'`]+)(["'`]?)/giu;
-const TRUNCATION_MARKER = "\n[... truncated ...]\n";
 const EXCLUDED_USER_MARKERS = [
   "<oai-mem-citation>",
   "<memory_context>",
@@ -71,135 +73,28 @@ export class PiMemoryStage1ProviderError extends Error {
   }
 }
 
-function privateKeyLabelAt(input: string, start: number): string | null {
-  const labelStart = start + PRIVATE_KEY_BEGIN_PREFIX.length;
-  const boundedMarker = input.slice(
-    labelStart,
-    labelStart +
-      PRIVATE_KEY_TYPE_MAX_LENGTH +
-      PRIVATE_KEY_LABEL_SUFFIX.length +
-      PRIVATE_KEY_MARKER_SUFFIX.length,
-  );
-  const markerEnd = boundedMarker.indexOf(PRIVATE_KEY_MARKER_SUFFIX);
-  if (markerEnd < 0) {
-    return null;
-  }
-  const label = boundedMarker.slice(0, markerEnd);
-  if (label === "PRIVATE KEY") {
-    return label;
-  }
-  if (!label.endsWith(PRIVATE_KEY_LABEL_SUFFIX)) {
-    return null;
-  }
-  const type = label.slice(0, -PRIVATE_KEY_LABEL_SUFFIX.length);
-  if (type.length === 0 || type.length > PRIVATE_KEY_TYPE_MAX_LENGTH) {
-    return null;
-  }
-  for (const character of type) {
-    const code = character.charCodeAt(0);
-    if (!((code >= 48 && code <= 57) || (code >= 65 && code <= 90))) {
-      return null;
-    }
-  }
-  return label;
-}
-
-function redactPrivateKeyBlocks(input: string): string {
-  const parts: string[] = [];
-  let cursor = 0;
-  let searchFrom = 0;
-  while (searchFrom < input.length) {
-    const begin = input.indexOf(PRIVATE_KEY_BEGIN_PREFIX, searchFrom);
-    if (begin < 0) {
-      break;
-    }
-    const label = privateKeyLabelAt(input, begin);
-    if (label === null) {
-      searchFrom = begin + PRIVATE_KEY_BEGIN_PREFIX.length;
-      continue;
-    }
-    const endMarker = `-----END ${label}-----`;
-    const end = input.indexOf(
-      endMarker,
-      begin + PRIVATE_KEY_BEGIN_PREFIX.length + label.length,
-    );
-    parts.push(input.slice(cursor, begin), REDACTED_SECRET);
-    if (end < 0) {
-      cursor = input.length;
-      break;
-    }
-    cursor = end + endMarker.length;
-    searchFrom = cursor;
-  }
-  parts.push(input.slice(cursor));
-  return parts.join("");
-}
-
-/** Deterministic redaction for both Stage 1 trust boundaries. */
-export function redactPiMemoryStage1Secrets(input: string): string {
-  return redactPrivateKeyBlocks(input)
-    .replace(AUTHORIZATION_HEADER, `$1${REDACTED_SECRET}`)
-    .replace(COOKIE_HEADER, `$1${REDACTED_SECRET}`)
-    .replace(URL_USER_INFO, `$1${REDACTED_SECRET}@`)
-    .replace(PROVIDER_TOKEN, REDACTED_SECRET)
-    .replace(SECRET_ASSIGNMENT, `$1$2${REDACTED_SECRET}$4`);
-}
-
-/** Apply Codex's 70% effective-window head/tail truncation deterministically. */
-export function truncatePiMemoryStage1History(args: {
-  readonly projectedHistory: string;
-  readonly contextWindow: number | null;
-  readonly fallbackTokenLimit: number;
-  readonly maxBytes: number;
-}): { readonly content: string; readonly tokenCount: number } {
-  const tokenLimit =
-    args.contextWindow === null
-      ? args.fallbackTokenLimit
-      : Math.max(1, Math.floor(args.contextWindow * 0.7));
-  let tokens = encode(args.projectedHistory);
-  if (tokens.length > tokenLimit) {
-    const markerTokens = encode(TRUNCATION_MARKER);
-    const contentBudget = Math.max(0, tokenLimit - markerTokens.length);
-    const headCount = Math.ceil(contentBudget / 2);
-    const tailCount = Math.floor(contentBudget / 2);
-    tokens = [
-      ...tokens.slice(0, headCount),
-      ...markerTokens,
-      ...tokens.slice(tokens.length - tailCount),
-    ];
-  }
-  let content = decode(tokens);
-  if (Buffer.byteLength(content, "utf8") > args.maxBytes) {
-    const buffer = Buffer.from(content, "utf8");
-    const marker = Buffer.from(TRUNCATION_MARKER, "utf8");
-    const contentBudget = Math.max(0, args.maxBytes - marker.length);
-    const headBytes = Math.ceil(contentBudget / 2);
-    const tailBytes = Math.floor(contentBudget / 2);
-    content = Buffer.concat([
-      buffer.subarray(0, headBytes),
-      marker,
-      buffer.subarray(buffer.length - tailBytes),
-    ]).toString("utf8");
-    tokens = encode(content);
-  }
-  return { content, tokenCount: tokens.length };
-}
-
 function textFromContent(content: Message["content"]): string {
-  if (typeof content === "string") {
-    return content;
-  }
+  if (typeof content === "string") return content;
   return content
-    .filter((item) => {
-      return item.type === "text";
+    .flatMap((item) => {
+      switch (item.type) {
+        case "text":
+          return [item.text];
+        case "image":
+          return ["[image omitted]"];
+        case "thinking":
+        case "toolCall":
+          return [];
+        default:
+          throw new Error("Unsupported Pi memory Stage 1 content");
+      }
     })
-    .map((item) => {
-      return item.type === "text" ? item.text : "";
-    })
-    .join("\n");
+    .join("");
 }
 
 function canonicalJson(value: unknown): unknown {
+  // Redact leaf text before JSON escaping can hide quoted shell assignments.
+  if (typeof value === "string") return redactPiMemoryStage1Secrets(value);
   if (Array.isArray(value)) {
     return value.map(canonicalJson);
   }
@@ -231,57 +126,90 @@ function assistantIsUsable(message: AssistantMessage): boolean {
   return message.stopReason !== "error" && message.stopReason !== "aborted";
 }
 
-function appendAssistantProjection(args: {
-  readonly message: AssistantMessage;
-  readonly toolResults: ReadonlyMap<string, Message>;
-  readonly emittedToolIds: Set<string>;
-  readonly projected: unknown[];
-}): void {
-  if (!assistantIsUsable(args.message)) {
-    return;
+function assistantKind(
+  signature: string | undefined,
+): PiMemoryStage1Evidence["kind"] {
+  // SDK 0.85.1's optional TextSignatureV1. Legacy/absent phases retain
+  // upstream non-commentary priority without claiming a known final phase.
+  if (signature) {
+    try {
+      const value: unknown = JSON.parse(signature);
+      if (isRecord(value) && value.v === 1 && typeof value.id === "string") {
+        if (value.phase === "final_answer") return "final";
+        if (value.phase === "commentary") return "commentary";
+      }
+    } catch {
+      // A legacy opaque id is valid SDK data, but has no phase provenance.
+    }
   }
-  const citationProjection = projectPiMemoryCitationSegments(
-    args.message.content.flatMap((item) => {
-      return item.type === "text" ? [item.text] : [];
+  return "assistant";
+}
+
+function isOtherAgentEnvelope(text: string): boolean {
+  return (
+    /^Message Type: (?:MESSAGE|FINAL_ANSWER)\r?\nTask name: [^\r\n]+\r?\nSender: [^\r\n]+\r?\nPayload:\r?\n[\s\S]+$/u.test(
+      text,
+    ) ||
+    /^<subagent_notification>\s*[\s\S]+\s*<\/subagent_notification>$/u.test(
+      text,
+    )
+  );
+}
+
+function appendAssistantEvidence(
+  message: AssistantMessage,
+  rows: PiMemoryStage1Evidence[],
+  pending: Map<string, ToolCall>,
+): void {
+  if (!assistantIsUsable(message)) return;
+  const texts = message.content.flatMap((item) => {
+    return item.type === "text" ? [item] : [];
+  });
+  const visible = projectPiMemoryCitationSegments(
+    texts.map((item) => {
+      return item.text;
     }),
   );
+  const redacted = redactPiMemoryStage1Segments(visible.visibleSegments);
+  const otherAgent = isOtherAgentEnvelope(
+    texts
+      .map((item) => {
+        return item.text;
+      })
+      .join("")
+      .trim(),
+  );
   let textIndex = 0;
-  for (const item of args.message.content) {
-    if (item.type === "text") {
-      const content = (
-        citationProjection.visibleSegments[textIndex] ?? ""
-      ).trim();
-      textIndex += 1;
-      if (content) {
-        args.projected.push({ role: "assistant", content });
+  for (const item of message.content) {
+    switch (item.type) {
+      case "text": {
+        const content = redacted[textIndex]?.trim();
+        textIndex += 1;
+        if (content)
+          rows.push({
+            kind: otherAgent
+              ? "other_agent"
+              : assistantKind(item.textSignature),
+            content,
+          });
+        break;
       }
-    } else if (
-      item.type === "toolCall" &&
-      args.toolResults.has(item.id) &&
-      !isMemoryTool(item)
-    ) {
-      args.emittedToolIds.add(item.id);
-      args.projected.push({
-        role: "assistant",
-        tool: {
-          name: item.name,
-          arguments: canonicalJson(item.arguments),
-        },
-      });
+      case "toolCall":
+        if (!isMemoryTool(item)) pending.set(item.id, item);
+        break;
+      case "thinking":
+        break;
+      default:
+        throw new Error("Unsupported Pi memory Stage 1 content");
     }
   }
 }
 
-/**
- * Parse canonical Pi JSONL and serialize only the official active branch's
- * content-bearing messages. Persisted ids, timestamps, provider metadata,
- * reasoning, custom/runtime messages, and incomplete tools are deliberately
- * absent from the result.
- */
-export function projectPiMemoryStage1History(args: {
+/** Classify only the validated, settled canonical active branch. */
+export function projectPiMemoryStage1Evidence(args: {
   readonly jsonl: string;
   readonly expectedSessionId: string;
-}): string {
+}): PiMemoryStage1Evidence[] {
   const session = MemoryPiSession.fromJsonl(args.jsonl);
   if (session.getSessionId() !== args.expectedSessionId) {
     throw new Error("Pi memory Stage 1 source session id mismatch");
@@ -289,78 +217,110 @@ export function projectPiMemoryStage1History(args: {
   if (!session.isSettledCheckpoint()) {
     throw new Error("Pi memory Stage 1 source is not settled");
   }
-
-  const messages = session.getBranchEntries().flatMap((entry) => {
-    return entry.type === "message" ? [entry.message] : [];
-  });
-  const toolResults = new Map(
-    messages.flatMap((message) => {
-      return message.role === "toolResult"
-        ? [[message.toolCallId, message] as const]
-        : [];
-    }),
-  );
-  const emittedToolIds = new Set<string>();
-  const projected: unknown[] = [];
-
-  for (const message of messages) {
+  const rows: PiMemoryStage1Evidence[] = [];
+  const pending = new Map<string, ToolCall>();
+  for (const entry of session.getBranchEntries()) {
+    if (entry.type !== "message") continue;
+    const message = entry.message;
     switch (message.role) {
       case "user": {
         const content = textFromContent(message.content).trim();
         if (content && !isRuntimeOrMemoryFeedback(content)) {
-          projected.push({ role: "user", content });
+          rows.push({
+            kind: isOtherAgentEnvelope(content) ? "other_agent" : "human",
+            content: redactPiMemoryStage1Secrets(content),
+          });
         }
         break;
       }
       case "assistant": {
-        appendAssistantProjection({
-          message,
-          toolResults,
-          emittedToolIds,
-          projected,
-        });
+        appendAssistantEvidence(message, rows, pending);
         break;
       }
       case "toolResult": {
-        if (emittedToolIds.has(message.toolCallId)) {
-          projected.push({
-            role: "tool",
-            name: message.toolName,
-            content: textFromContent(message.content).trim(),
-            is_error: message.isError,
-          });
-        }
+        const call = pending.get(message.toolCallId);
+        if (!call || call.name !== message.toolName) break;
+        pending.delete(message.toolCallId);
+        // Pi has no registered paired human-input tool. Arbitrary tool names
+        // never promote results. Keep call/question and result atomic at Tool.
+        rows.push({
+          kind: "tool",
+          content: redactPiMemoryStage1Secrets(
+            `Tool: ${call.name}\nArguments: ${JSON.stringify(canonicalJson(call.arguments))}\nResult${message.isError ? " (error)" : ""}: ${textFromContent(message.content).trim()}`,
+          ),
+        });
         break;
       }
       case "bashExecution":
       case "branchSummary":
       case "compactionSummary":
-      case "custom": {
+      case "custom":
         break;
-      }
-      default: {
-        const exhaustiveRole: never = message;
-        return exhaustiveRole;
-      }
+      default:
+        throw new Error("Unsupported Pi memory Stage 1 message");
     }
   }
-
-  return projected
-    .map((item) => {
-      return JSON.stringify(item);
-    })
-    .join("\n");
+  // Pi has no safe Context provenance or audio content type. Runtime context,
+  // recalled memory, reasoning and custom records stay excluded, not retagged.
+  return boundStage1Evidence(rows);
 }
 
-export function resolvePiMemoryStage1ContextWindow(
-  config: PiAgentModelConfig,
-): number | null {
-  const model = resolvePiAgentModel(config);
-  return model &&
-    Number.isSafeInteger(model.contextWindow) &&
-    model.contextWindow > 0
-    ? model.contextWindow
-    : null;
+function shapeProviderPayload(
+  payload: unknown,
+  evidence: readonly PiMemoryStage1Evidence[],
+  contextWindow: number,
+): unknown {
+  // Normalize once so the exact object returned to the SDK is plain JSON.
+  const normalized: unknown = JSON.parse(serializeStage1Payload(payload));
+  if (
+    !isRecord(normalized) ||
+    !Array.isArray(normalized.input) ||
+    normalized.input.length !== 2 ||
+    normalized.max_output_tokens !== PI_MEMORY_STAGE1_OUTPUT_TOKENS ||
+    normalized.tools !== undefined
+  ) {
+    throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
+  }
+  const [system, user] = normalized.input;
+  if (
+    !isRecord(system) ||
+    !["system", "developer"].includes(String(system.role)) ||
+    system.content !== PI_MEMORY_STAGE1_SYSTEM_PROMPT ||
+    !isRecord(user) ||
+    user.role !== "user" ||
+    !Array.isArray(user.content) ||
+    user.content.length !== 1
+  ) {
+    throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
+  }
+  const part: unknown = user.content[0];
+  if (
+    !isRecord(part) ||
+    part.type !== "input_text" ||
+    part.text !== renderPiMemoryStage1Input("")
+  ) {
+    throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
+  }
+  const budget = stage1InputBudgets(contextWindow);
+  const overhead = stage1TokenCount(serializeStage1Payload(normalized));
+  let allowance = budget.request - overhead - 32;
+  let historyAllowance = budget.history;
+  if (allowance <= 0)
+    throw new PiMemoryStage1BudgetError("input_budget_exceeded");
+  // Boundary merges in BPE can change additive row counts. Re-select by tier
+  // with a smaller budget; never apply a whole-history head/tail truncation.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const history = selectStage1Evidence(evidence, historyAllowance, allowance);
+    part.text = renderPiMemoryStage1Input(history);
+    const serialized = serializeStage1Payload(normalized);
+    const tokens = stage1TokenCount(serialized);
+    const historyTokens = stage1TokenCount(history);
+    if (tokens <= budget.request && historyTokens <= budget.history)
+      return normalized;
+    allowance -= Math.max(128, tokens - budget.request);
+    historyAllowance -= Math.max(128, historyTokens - budget.history);
+  }
+  throw new PiMemoryStage1BudgetError("input_budget_exceeded");
 }
 
 async function consumeAssistantMessage(
@@ -375,13 +335,13 @@ async function consumeAssistantMessage(
 export async function runPiMemoryStage1Extraction(
   args: {
     readonly model: PiAgentModelConfig;
-    readonly projectedHistory: string;
+    readonly evidence: readonly PiMemoryStage1Evidence[];
     readonly requestId: string;
   },
   signal?: AbortSignal,
 ): Promise<PiMemoryStage1ProviderResult> {
   const model = resolvePiAgentModel(args.model);
-  if (!model) {
+  if (!model || model.api !== "openai-responses") {
     throw new PiMemoryStage1ProviderError();
   }
   const context: Context = {
@@ -389,18 +349,19 @@ export async function runPiMemoryStage1Extraction(
     messages: [
       {
         role: "user",
-        content: renderPiMemoryStage1Input(args.projectedHistory),
+        content: renderPiMemoryStage1Input(""),
         timestamp: 0,
       },
     ],
     tools: [],
   };
+  let budgetError: PiMemoryStage1BudgetError | undefined;
   const message = await consumeAssistantMessage(
     piAgentStreamForConfig(args.model)(model, context, {
       apiKey: args.model.apiKey,
       reasoning: PI_MEMORY_STAGE1_REASONING,
       samplingParams: {
-        max_output_tokens: 32_768,
+        max_output_tokens: PI_MEMORY_STAGE1_OUTPUT_TOKENS,
         text: {
           format: {
             type: "json_schema",
@@ -410,10 +371,27 @@ export async function runPiMemoryStage1Extraction(
           },
         },
       },
+      onPayload: (payload) => {
+        try {
+          return shapeProviderPayload(
+            payload,
+            args.evidence,
+            model.contextWindow,
+          );
+        } catch (error) {
+          budgetError =
+            error instanceof PiMemoryStage1BudgetError
+              ? error
+              : new PiMemoryStage1BudgetError("input_payload_unmeasurable");
+          throw budgetError;
+        }
+      },
       sessionId: args.requestId,
       signal,
     }),
   );
+  // The SDK folds onPayload exceptions into terminal stream messages.
+  if (budgetError) throw budgetError;
   if (message.stopReason !== "stop") {
     throw new PiMemoryStage1ProviderError();
   }

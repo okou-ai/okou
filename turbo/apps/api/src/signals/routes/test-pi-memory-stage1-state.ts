@@ -1,6 +1,9 @@
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
-import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
+import {
+  piMemoryStage1Days,
+  piMemoryStage1Watermarks,
+} from "@okouai/db/schema/pi-memory-stage1-schedule";
 import {
   DEFAULT_PROFILE,
   SESSION_HISTORY_ENCODING_GZIP,
@@ -106,6 +109,7 @@ const candidateStateSchema = z.object({
   retry_count: z.number().int().nonnegative(),
   retry_at: z.iso.datetime().nullable(),
   last_error_class: z.string().nullable(),
+  successful_source_history_hash: z.string().nullable(),
   raw_memory: z.string().nullable(),
   rollout_summary: z.string().nullable(),
   rollout_slug: z.string().nullable(),
@@ -312,8 +316,17 @@ async function inspectCandidate(
       rawMemory: piMemoryStage1Candidates.rawMemory,
       rolloutSummary: piMemoryStage1Candidates.rolloutSummary,
       rolloutSlug: piMemoryStage1Candidates.rolloutSlug,
+      successfulSourceHistoryHash: piMemoryStage1Watermarks.sourceHistoryHash,
     })
     .from(piMemoryStage1Candidates)
+    .leftJoin(agentRuns, eq(agentRuns.id, piMemoryStage1Candidates.sourceRunId))
+    .leftJoin(
+      piMemoryStage1Watermarks,
+      and(
+        eq(piMemoryStage1Watermarks.chatThreadId, agentRuns.chatThreadId),
+        eq(piMemoryStage1Watermarks.userId, scope.user_id),
+      ),
+    )
     .where(candidateCondition(scope))
     .limit(1);
   signal.throwIfAborted();
@@ -327,6 +340,7 @@ async function inspectCandidate(
           raw_memory: row.rawMemory,
           rollout_summary: row.rolloutSummary,
           rollout_slug: row.rolloutSlug,
+          successful_source_history_hash: row.successfulSourceHistoryHash,
         }
       : null,
   });

@@ -55,16 +55,18 @@ import type {
 import {
   PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
   PiMemoryStage1ProviderError,
-  projectPiMemoryStage1History,
-  redactPiMemoryStage1Secrets,
-  resolvePiMemoryStage1ContextWindow,
+  projectPiMemoryStage1Evidence,
   runPiMemoryStage1Extraction,
-  truncatePiMemoryStage1History,
 } from "./stage1-memory";
 import type {
   PiMemoryStage1ProviderResult,
   PiMemoryStage1ProviderUsage,
 } from "./stage1-memory";
+import {
+  PiMemoryStage1BudgetError,
+  type PiMemoryStage1Evidence,
+} from "./stage1-input";
+import { redactPiMemoryStage1Secrets } from "./stage1-secrets";
 export {
   piMemoryPhase2SelectionDigest,
   classifyPiApiProviderFailure,
@@ -72,11 +74,10 @@ export {
   PI_MEMORY_STAGE1_MODEL,
   PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
   PiMemoryStage1ProviderError,
-  projectPiMemoryStage1History,
+  PiMemoryStage1BudgetError,
+  projectPiMemoryStage1Evidence,
   redactPiMemoryStage1Secrets,
-  resolvePiMemoryStage1ContextWindow,
   runPiMemoryStage1Extraction,
-  truncatePiMemoryStage1History,
   PiApiFirstTurnCompactionRequiredError,
   UnsupportedPiResourceSnapshotError,
   UnsupportedPiSessionVersionError,
@@ -112,6 +113,7 @@ export type {
   PiApiFirstTurnOwnership,
   PiApiFirstTurnOwnershipStage,
   PiMemoryStage1ProviderResult,
+  PiMemoryStage1Evidence,
   PiMemoryStage1ProviderUsage,
 };
 
