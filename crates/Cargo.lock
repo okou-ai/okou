@@ -1676,7 +1676,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.90.0"
+version = "0.90.1"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -1804,7 +1804,7 @@ dependencies = [
 
 [[package]]
 name = "guest-storage-apply"
-version = "0.23.83"
+version = "0.23.84"
 dependencies = [
  "flate2",
  "guest-contracts",
@@ -3391,7 +3391,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.192.5"
+version = "0.192.6"
 dependencies = [
  "ably-subscriber",
  "api-contracts",

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.192.6](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.192.5...runner-rs-v0.192.6) (2026-09-14)
+
+
+### Refactoring
+
+* use two-day presigned urls without renewal or retries ([#34149](https://github.com/vm0-ai/vm0/issues/34149)) ([a876fd2](https://github.com/vm0-ai/vm0/commit/a876fd28cd0a0fade04aa12fff33614ff156ba9b))
+
 ## [0.192.5](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.192.4...runner-rs-v0.192.5) (2026-09-14)
 
 ## [0.192.4](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.192.3...runner-rs-v0.192.4) (2026-09-14)

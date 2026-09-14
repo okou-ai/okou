@@ -11,6 +11,34 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.896.0](https://github.com/vm0-ai/vm0/compare/app-v0.895.3...app-v0.896.0) (2026-09-14)
+
+
+### Features
+
+* add debug langfuse links to run actions ([#34148](https://github.com/vm0-ai/vm0/issues/34148)) ([b7ca117](https://github.com/vm0-ai/vm0/commit/b7ca1179ef140b045ed72cf4e857625678c0cb89))
+
+
+### Bug Fixes
+
+* default new workspaces to luna ([#34155](https://github.com/vm0-ai/vm0/issues/34155)) ([da449c9](https://github.com/vm0-ai/vm0/commit/da449c979a1a8efe95ba30d261746c4bf3ff3ff8))
+* **platform:** unify chat scrollbars with shadcn styling ([#34150](https://github.com/vm0-ai/vm0/issues/34150)) ([b677eee](https://github.com/vm0-ai/vm0/commit/b677eee09365a6dd132e4cf7fef28054fb3ee26b))
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#34153](https://github.com/vm0-ai/vm0/issues/34153)) ([3eca7a9](https://github.com/vm0-ai/vm0/commit/3eca7a941b02a0da8254f79e671e22e697743040))
+* use two-day presigned urls without renewal or retries ([#34149](https://github.com/vm0-ai/vm0/issues/34149)) ([a876fd2](https://github.com/vm0-ai/vm0/commit/a876fd28cd0a0fade04aa12fff33614ff156ba9b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.440.0
+    * @okouai/core bumped to 8.664.1
+    * @okouai/ui bumped to 1.9.0
+
 ## [0.895.3](https://github.com/vm0-ai/vm0/compare/app-v0.895.2...app-v0.895.3) (2026-09-14)
 
 

@@ -1,6 +1,6 @@
 [package]
 name = "runner"
-version = "0.192.5"
+version = "0.192.6"
 edition.workspace = true
 
 [dependencies]

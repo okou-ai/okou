@@ -8,6 +8,33 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.600.0](https://github.com/vm0-ai/vm0/compare/api-v1.599.1...api-v1.600.0) (2026-09-14)
+
+
+### Features
+
+* add debug langfuse links to run actions ([#34148](https://github.com/vm0-ai/vm0/issues/34148)) ([b7ca117](https://github.com/vm0-ai/vm0/commit/b7ca1179ef140b045ed72cf4e857625678c0cb89))
+
+
+### Bug Fixes
+
+* default new workspaces to luna ([#34155](https://github.com/vm0-ai/vm0/issues/34155)) ([da449c9](https://github.com/vm0-ai/vm0/commit/da449c979a1a8efe95ba30d261746c4bf3ff3ff8))
+
+
+### Refactoring
+
+* use two-day presigned urls without renewal or retries ([#34149](https://github.com/vm0-ai/vm0/issues/34149)) ([a876fd2](https://github.com/vm0-ai/vm0/commit/a876fd28cd0a0fade04aa12fff33614ff156ba9b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.440.0
+    * @okouai/core bumped to 8.664.1
+    * @okouai/db bumped to 1.257.1
+    * @okouai/pi-agent-runtime bumped to 1.30.1
+
 ## [1.599.1](https://github.com/vm0-ai/vm0/compare/api-v1.599.0...api-v1.599.1) (2026-09-14)
 
 
