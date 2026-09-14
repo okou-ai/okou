@@ -324,10 +324,6 @@ test("Recover clearly from interruptions while uploading a large attachment", as
       url: "https://cdn.vm7.io/chat-continuity/12/recovered-large.bin",
     });
   });
-  context.mocks.api(uploadsContract.abortMultipart, ({ body, respond }) => {
-    return respond(200, { id: body.id });
-  });
-
   await setupPage({
     context,
     path: `/chats/${thread.id}`,
