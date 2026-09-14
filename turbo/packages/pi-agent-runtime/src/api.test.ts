@@ -77,6 +77,7 @@ function responsesTextSse(
   text: string,
   options?: {
     readonly fragmentTerminal?: boolean;
+    readonly onDeltaSent?: (finish: () => void) => void;
     readonly serviceTier?: string | null;
   },
 ): void {
@@ -149,6 +150,14 @@ function responsesTextSse(
       return `data: ${JSON.stringify(event)}\n\n`;
     })
     .join("");
+  if (options?.onDeltaSent) {
+    const boundary = body.indexOf('data: {"type":"response.output_item.done"');
+    response.write(body.slice(0, boundary));
+    options.onDeltaSent(() => {
+      response.end(body.slice(boundary));
+    });
+    return;
+  }
   if (!options?.fragmentTerminal) {
     response.end(body);
     return;
@@ -230,6 +239,83 @@ function responsesToolSse(
 }
 
 describe("Pi API facade", () => {
+  it("streams visible text before completion and preserves its durable block identity", async () => {
+    const firstDelta = promiseWithResolvers<void>();
+    const chunks: { runEventId: string; chunkIndex: number; delta: string }[] =
+      [];
+    let finishResponse: (() => void) | undefined;
+    const server = createServer((_request, response) => {
+      responsesTextSse(
+        response,
+        `Visible text${PI_MEMORY_CITATION_OPEN}private citation${PI_MEMORY_CITATION_CLOSE}`,
+        {
+          onDeltaSent(finish) {
+            finishResponse = finish;
+          },
+        },
+      );
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Expected test transport");
+    }
+    try {
+      const turn = runPiApiFirstTurn({
+        cwd: "/home/user/workspace",
+        agentDir: "/home/user/.pi/agent",
+        sessionId: SESSION_ID,
+        prompt: "Stream an answer",
+        appendSystemPrompt: null,
+        model: {
+          provider: "openai",
+          baseUrl: `http://127.0.0.1:${address.port}/v1`,
+          apiKey: "test-key",
+          model: "gpt-5.6-terra",
+          dialect: "openai-responses",
+          transport: "sse",
+          thinkingLevel: "low",
+        },
+        resourceSnapshot: { schemaVersion: 1, agentsFiles: [], skills: [] },
+        ownership: createPiApiFirstTurnOwnership(),
+        textStream: {
+          eventIdPrefix: "api-first:attempt",
+          onDelta(chunk) {
+            chunks.push(chunk);
+            firstDelta.resolve();
+          },
+        },
+      });
+      await firstDelta.promise;
+      expect(chunks).toEqual([
+        {
+          runEventId: "api-first:attempt:0",
+          chunkIndex: 0,
+          delta: "Visible text",
+        },
+      ]);
+      expect(finishResponse).toBeDefined();
+      finishResponse?.();
+      const result = await turn;
+      expect(result.assistantMessage.content).toEqual([
+        {
+          type: "text",
+          text: "Visible text",
+          runEventId: chunks[0]?.runEventId,
+        },
+      ]);
+      expect(result.sessionJsonl).toContain("private citation");
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => {
+        server.close(() => {
+          resolve();
+        });
+      });
+    }
+  });
   it.each(["execute", "discard", "cancel", "late-initialization"] as const)(
     "owns a prepared session through %s without speculative provider transport",
     async (outcome) => {

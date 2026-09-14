@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type {
   Api,
   AssistantMessage,
+  AssistantMessageEvent,
   AssistantMessageEventStream,
   Context,
   Message,
@@ -54,6 +55,7 @@ interface RunPiFirstModelTurnOptions<TApi extends Api = Api> {
   readonly streamOptions?: Omit<PiAgentStreamOptions, "sessionId">;
   readonly ownership: PiApiFirstTurnOwnership;
   readonly onPreparationTiming?: PiPreparationObserver;
+  readonly onEvent?: (event: AssistantMessageEvent) => void;
   readonly providerRequestBoundary?: (
     markProviderRequestMayHaveStarted: () => void,
   ) => Promise<void>;
@@ -307,9 +309,10 @@ function piReasoningLevel(
 
 async function consumeAssistantMessage(
   stream: AssistantMessageEventStream,
+  onEvent?: (event: AssistantMessageEvent) => void,
 ): Promise<AssistantMessage> {
-  for await (const _event of stream) {
-    // The API slot commits only the final native Pi message.
+  for await (const event of stream) {
+    onEvent?.(event);
   }
   return await stream.result();
 }
@@ -375,7 +378,10 @@ export async function runPiFirstModelTurn<TApi extends Api>(
       context,
       streamOptions,
     );
-    assistantMessage = await consumeAssistantMessage(responseStream);
+    assistantMessage = await consumeAssistantMessage(
+      responseStream,
+      options.onEvent,
+    );
   } catch (error) {
     throw new PiApiModelRequestError(
       error,

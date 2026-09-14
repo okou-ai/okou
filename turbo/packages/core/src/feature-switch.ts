@@ -45,6 +45,12 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.SessionOutputStreaming]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Subscribe to transient session text output while a run is active",
+    enabled: false,
+  },
   [FeatureSwitchKey.SocialStatus]: {
     maintainer: "liangyou@okou.ai",
     description: "On-demand public Social service health",

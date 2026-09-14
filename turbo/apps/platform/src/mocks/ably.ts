@@ -172,6 +172,11 @@ class FakeChannel {
     this.transition("detached");
   }
 
+  detach(): Promise<void> {
+    this.transition("detached");
+    return Promise.resolve();
+  }
+
   fail(reason: MockErrorInfo): void {
     this.subscriptions.clear();
     this.channelSubscriptions.clear();
@@ -319,6 +324,7 @@ export class Realtime {
     off: ConnectionOff;
   };
   readonly channels: {
+    release: (name: string) => void;
     get: (
       _name: string,
       options?: { attachOnSubscribe?: boolean },
@@ -390,6 +396,9 @@ export class Realtime {
     };
     this.channel = this.getChannel("user:test-user-123");
     this.channels = {
+      release: (name) => {
+        this.channelsByName.delete(name);
+      },
       get: (name, options) => {
         const channel = this.getChannel(name);
         if (options?.attachOnSubscribe !== undefined) {
@@ -930,6 +939,12 @@ export function hasSubscriptionOnChannel(
     }
   }
   return false;
+}
+
+export function hasRealtimeChannel(channelName: string): boolean {
+  return [...realtimeInstances].some((realtime) => {
+    return realtime.getExistingChannel(channelName) !== undefined;
+  });
 }
 
 /** Debug: check if a user channel has an active catch-all subscription. */

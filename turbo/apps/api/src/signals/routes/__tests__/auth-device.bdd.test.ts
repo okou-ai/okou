@@ -339,6 +339,7 @@ describe("AUTH-02: platform realtime token", () => {
       [`user:${actor.userId}`]: ["subscribe"],
       [`org:${actor.orgId}`]: ["subscribe"],
       [`user-org:${actor.userId}:${actor.orgId}`]: ["subscribe"],
+      [`run-output:${actor.userId}:${actor.orgId}:*`]: ["subscribe"],
     });
     context.mocks.ably.createTokenRequest.mockResolvedValueOnce({
       keyName: "ably-key",
@@ -361,6 +362,7 @@ describe("AUTH-02: platform realtime token", () => {
         [`user:${actor.userId}`]: ["subscribe"],
         [`org:${actor.orgId}`]: ["subscribe"],
         [`user-org:${actor.userId}:${actor.orgId}`]: ["subscribe"],
+        [`run-output:${actor.userId}:${actor.orgId}:*`]: ["subscribe"],
       },
       ttl: 60 * 60 * 1000,
       clientId: actor.userId,

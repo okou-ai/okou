@@ -1,8 +1,9 @@
 import Ably, { type CapabilityOp } from "ably";
 import type { RunnerSshInvalidate } from "@okouai/api-contracts/contracts/runner-ssh";
-import type {
-  BrowserSessionChangedPayload,
-  UserPreferenceChangedPayload,
+import {
+  sessionOutputChannelName,
+  type BrowserSessionChangedPayload,
+  type UserPreferenceChangedPayload,
 } from "@okouai/api-contracts/contracts/realtime";
 import type { RunnerPreference } from "@okouai/api-contracts/contracts/runners";
 import type { BuiltInGenerationRealtimeSubscription } from "@okouai/api-contracts/contracts/built-in-generation";
@@ -62,6 +63,7 @@ export async function createPlatformRealtimeToken(
   if (orgId !== undefined) {
     capability[getOrgChannelName(orgId)] = ["subscribe"];
     capability[getUserOrgChannelName(userId, orgId)] = ["subscribe"];
+    capability[sessionOutputChannelName(userId, orgId, "*")] = ["subscribe"];
   }
   const tokenRequest = await ablyClient().auth.createTokenRequest({
     capability,

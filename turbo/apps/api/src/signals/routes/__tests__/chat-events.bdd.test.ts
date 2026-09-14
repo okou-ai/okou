@@ -1,3 +1,4 @@
+import { sessionOutputDeltaSchema } from "@okouai/api-contracts/contracts/realtime";
 import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
 import {
   PI_NATIVE_CREDENTIAL_PLACEHOLDER,
@@ -17547,6 +17548,12 @@ describe("CHAT-02: model-first provider policies", () => {
     if (await runInIsolatedProcess(import.meta.url)) {
       return;
     }
+    context.mocks.ably.realtimeSubscribe.mockImplementation(
+      (_name, listener) => {
+        listener({ data: { metrics: { subscribers: 1 } } });
+        return Promise.resolve();
+      },
+    );
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     const usagePricingResolution = await createGptUsagePricingResolution();
@@ -17696,6 +17703,39 @@ describe("CHAT-02: model-first provider policies", () => {
       { content: "before parallel tools", sequenceNumber: 0 },
       { content: "after parallel tools", sequenceNumber: 3 },
     ]);
+    await expect
+      .poll(() => {
+        return context.mocks.ably.realtimePublish.mock.calls.length;
+      })
+      .toBe(2);
+    const streamed = context.mocks.ably.realtimePublish.mock.calls.map(
+      ([_channel, _options, _topic, payload]) => {
+        return sessionOutputDeltaSchema.parse(payload);
+      },
+    );
+    expect(
+      streamed.map((chunk) => {
+        return chunk.delta;
+      }),
+    ).toStrictEqual(["before parallel tools", "after parallel tools"]);
+    expect(
+      streamed.every((chunk) => {
+        return chunk.chunkIndex === 0;
+      }),
+    ).toBeTruthy();
+    expect(projected.events).toStrictEqual(
+      expect.arrayContaining(
+        streamed.map((chunk) => {
+          return expect.objectContaining({
+            id: chunk.eventId,
+            eventType: "output.message",
+            runId: run.runId,
+            runEventId: chunk.runEventId,
+            content: chunk.delta,
+          });
+        }),
+      ),
+    );
     const claimed = await claimChatRun(runnerGroup, run.runId);
     expect(claimed.claim.cliAgentType).toBe("pi");
     expect(claimed.claim.piSessionId).toBe(run.threadId);

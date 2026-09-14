@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { createSessionOutputStream } from "../external/session-output-stream";
 
 import {
   CANONICAL_WORKING_DIR,
@@ -1304,7 +1305,7 @@ async function acquireApiProviderOwnership(
   finish("success");
 }
 
-function runObservedApiModelTurn(
+async function runObservedApiModelTurn(
   args: ExecuteApiModelTurnArgs,
   providerSignal: AbortSignal,
   lifecycleSignal: AbortSignal,
@@ -1312,7 +1313,16 @@ function runObservedApiModelTurn(
   const langfuseEnabled = isPiLangfuseDebugRunEnvironment(
     args.activation.executionContext.platformEnvironment,
   );
-  return tracePiApiFirstTurn(
+  const textStream = createSessionOutputStream(
+    {
+      userId: args.activation.userId,
+      orgId: args.activation.orgId,
+      threadId: args.commitIdentity.sessionId,
+      runId: args.activation.runId,
+    },
+    providerSignal,
+  );
+  return await tracePiApiFirstTurn(
     {
       enabled: langfuseEnabled,
       runId: args.activation.runId,
@@ -1326,6 +1336,7 @@ function runObservedApiModelTurn(
           args.runtime,
           {
             ownership: args.ownership,
+            textStream,
             providerRequestBoundary: async (
               markProviderRequestMayHaveStarted,
             ) => {
@@ -1341,7 +1352,9 @@ function runObservedApiModelTurn(
       },
     },
     lifecycleSignal,
-  );
+  ).finally(() => {
+    textStream.close();
+  });
 }
 
 async function finalizeObservedApiModelTurn(args: {

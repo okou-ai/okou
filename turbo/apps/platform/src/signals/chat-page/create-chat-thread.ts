@@ -1,3 +1,4 @@
+import { createSessionOutputStreamSignals } from "./session-output-stream.ts";
 import { isRetiredGoalArchiveText } from "@okouai/api-contracts/contracts/retired-goal-archive";
 import { literalHistoryTree } from "../../lib/markdown/literal-history.ts";
 import { createChatComposerLayoutOnRef } from "./chat-layout.ts";
@@ -2703,6 +2704,7 @@ interface RunTrackingDeps {
   catchUpChatEvents$: Command<Promise<void>, [AbortSignal]>;
   reloadArtifacts$: Command<void, []>;
   subscribeBrowserSessions$: Command<Promise<void>, [AbortSignal]>;
+  subscribeSessionOutput$: Command<Promise<void>, [AbortSignal]>;
   subscribeThinkingSummaries$: ThreadActivitySummarySignals["subscribe$"];
   thinkingSummarySubscription: ThreadActivitySummarySignals["subscription"];
   automationSignals: Pick<ChatPanelSignals, "headerAutomations">;
@@ -3105,6 +3107,7 @@ function createRunTracking({
   catchUpChatEvents$,
   reloadArtifacts$,
   subscribeBrowserSessions$,
+  subscribeSessionOutput$,
   subscribeThinkingSummaries$,
   thinkingSummarySubscription,
   automationSignals,
@@ -3127,6 +3130,7 @@ function createRunTracking({
 
     await Promise.all([
       set(subscribeBrowserSessions$, signal),
+      set(subscribeSessionOutput$, signal),
       set(subscribeThinkingSummaries$, thinkingSummarySubscription, signal),
       set(
         subscribeChatThreadRealtime$,
@@ -4023,6 +4027,10 @@ export function createChatPanelSignals(
   const threadDraft$ = createRemoteChatThreadDraft(threadId);
   const threadMeta$ = createThreadMeta(threadId);
   const threadTitle = createThreadTitleParts(threadMeta$);
+  const sessionOutput = createSessionOutputStreamSignals(
+    threadId,
+    chatEvents.chatEvents$,
+  );
   const activity = createThreadActivitySummarySignals(
     threadId,
     chatEvents.chatEvents$,
@@ -4072,6 +4080,7 @@ export function createChatPanelSignals(
     reloadArtifacts$: messages.reloadArtifacts$,
     subscribeBrowserSessions$: messages.subscribeBrowserSessions$,
     subscribeThinkingSummaries$: activity.subscribe$,
+    subscribeSessionOutput$: sessionOutput.subscribe$,
     thinkingSummarySubscription: activity.subscription,
     automationSignals: threadOwned,
     cancellationRecovery,
