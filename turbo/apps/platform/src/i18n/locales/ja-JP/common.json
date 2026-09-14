@@ -2369,6 +2369,14 @@
       "moreTemplates": "他のテンプレート",
       "presentationTemplates": "プレゼンテンプレート",
       "removeTask": "{{task}}を削除",
+      "shelf": {
+        "browseStyles": "すべてのスタイルを見る",
+        "browseTemplates": "すべてのテンプレートを見る",
+        "image": "画像スタイル",
+        "nextTemplates": "次のテンプレート",
+        "video": "動画テンプレート",
+        "website": "ウェブサイトテンプレート"
+      },
       "tasks": {
         "image": "画像",
         "presentation": "スライド",

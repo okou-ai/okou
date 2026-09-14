@@ -9,7 +9,11 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { findComposerEditor, tabByText } from "./chat-composer-test-helpers.ts";
+import {
+  composerInlineTemplates,
+  findComposerEditor,
+  tabByText,
+} from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
   THREAD_ID,
@@ -57,7 +61,19 @@ function selectedTask(editor: HTMLElement, task: string): HTMLElement {
 function ideaButtons(ideas: HTMLElement): HTMLElement[] {
   return queryAllByRoleFast("button", ideas).filter((item) => {
     return !["More ideas", "More templates"].includes(
-      item.textContent?.trim() ?? "",
+      item.getAttribute("aria-label") ?? item.textContent?.trim() ?? "",
+    );
+  });
+}
+
+function templateShelf(name: string): HTMLElement {
+  return screen.getByRole("group", { name });
+}
+
+function coverButtons(shelf: HTMLElement): HTMLElement[] {
+  return queryAllByRoleFast("button", shelf).filter((item) => {
+    return (
+      item.getAttribute("aria-label")?.startsWith("Use template ") === true
     );
   });
 }
@@ -651,7 +667,7 @@ test("Importing a deck uses the existing analysis flow without a create-mode ins
   );
 });
 
-test("More templates and Website open the existing library in the matching category", async () => {
+test("Browsing the catalog opens the existing library in the matching category", async () => {
   mockTemplateChat();
   const editor = await setupChips();
   await fill(editor, "Keep my draft");
@@ -673,12 +689,51 @@ test("More templates and Website open the existing library in the matching categ
   expect(selectedTask(editor, "Website")).toBeVisible();
   expect(screen.queryByRole("group", { name: "Choose a task" })).toBeNull();
   await screen.findByText("Build a website for my business");
-  click(button("More templates"));
+  click(button("Browse all templates", templateShelf("Website templates")));
   await screen.findByRole("dialog");
   expect(tabByText("Website")).toHaveAttribute("aria-selected", "true");
   expect(screen.queryByTestId("composer-create-mode")).toBeNull();
   expect(editor).toHaveTextContent("Keep my draft");
 });
+
+test.each([
+  {
+    task: "Website",
+    shelf: "Website templates",
+    browse: "Browse all templates",
+  },
+  { task: "Image", shelf: "Image styles", browse: "Browse all styles" },
+  { task: "Video", shelf: "Video templates", browse: "Browse all templates" },
+])(
+  "$task shows a cover shelf that pages through its catalog and attaches a template",
+  async ({ task, shelf, browse }) => {
+    mockTemplateChat();
+    const editor = await setupChips();
+    await fill(editor, "Keep my draft");
+    click(button(task, screen.getByRole("group", { name: "Choose a task" })));
+    const covers = templateShelf(shelf);
+    expect(button(browse, covers)).toBeVisible();
+    const first = coverButtons(covers);
+    expect(first.length).toBeGreaterThan(0);
+    expect(first.length).toBeLessThanOrEqual(5);
+    const firstLabels = first.map((item) => {
+      return item.getAttribute("aria-label");
+    });
+    click(button("Next templates", covers));
+    await waitFor(() => {
+      expect(
+        coverButtons(templateShelf(shelf)).map((item) => {
+          return item.getAttribute("aria-label");
+        }),
+      ).not.toStrictEqual(firstLabels);
+    });
+    click(coverButtons(templateShelf(shelf))[0]!);
+    await waitFor(() => {
+      expect(composerInlineTemplates()).toHaveLength(1);
+    });
+    expect(editor).toHaveTextContent("Keep my draft");
+  },
+);
 
 test("Task chips do not replace the composer in an existing conversation", async () => {
   mockTemplateChat();

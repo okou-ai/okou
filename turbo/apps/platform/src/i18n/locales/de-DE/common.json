@@ -2378,6 +2378,14 @@
       "moreTemplates": "Weitere Vorlagen",
       "presentationTemplates": "Präsentationsvorlagen",
       "removeTask": "{{task}} entfernen",
+      "shelf": {
+        "browseStyles": "Alle Stile durchsuchen",
+        "browseTemplates": "Alle Vorlagen durchsuchen",
+        "image": "Bildstile",
+        "nextTemplates": "Weitere Vorlagen anzeigen",
+        "video": "Videovorlagen",
+        "website": "Website-Vorlagen"
+      },
       "tasks": {
         "image": "Bild",
         "presentation": "Folien",

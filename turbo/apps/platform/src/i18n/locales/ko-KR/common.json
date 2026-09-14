@@ -2369,6 +2369,14 @@
       "moreTemplates": "더 많은 템플릿",
       "presentationTemplates": "프레젠테이션 템플릿",
       "removeTask": "{{task}} 제거",
+      "shelf": {
+        "browseStyles": "모든 스타일 보기",
+        "browseTemplates": "모든 템플릿 보기",
+        "image": "이미지 스타일",
+        "nextTemplates": "다음 템플릿",
+        "video": "동영상 템플릿",
+        "website": "웹사이트 템플릿"
+      },
       "tasks": {
         "image": "이미지",
         "presentation": "슬라이드",

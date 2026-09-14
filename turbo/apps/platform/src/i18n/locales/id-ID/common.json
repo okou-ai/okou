@@ -2369,6 +2369,14 @@
       "moreTemplates": "Template lainnya",
       "presentationTemplates": "Template presentasi",
       "removeTask": "Hapus {{task}}",
+      "shelf": {
+        "browseStyles": "Jelajahi semua gaya",
+        "browseTemplates": "Jelajahi semua templat",
+        "image": "Gaya gambar",
+        "nextTemplates": "Templat berikutnya",
+        "video": "Templat video",
+        "website": "Templat situs web"
+      },
       "tasks": {
         "image": "Gambar",
         "presentation": "Slide",

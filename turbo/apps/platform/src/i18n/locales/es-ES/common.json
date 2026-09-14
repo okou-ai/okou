@@ -2424,6 +2424,14 @@
       "moreTemplates": "Más plantillas",
       "presentationTemplates": "Plantillas de presentación",
       "removeTask": "Quitar {{task}}",
+      "shelf": {
+        "browseStyles": "Ver todos los estilos",
+        "browseTemplates": "Ver todas las plantillas",
+        "image": "Estilos de imagen",
+        "nextTemplates": "Siguientes plantillas",
+        "video": "Plantillas de vídeo",
+        "website": "Plantillas de sitio web"
+      },
       "tasks": {
         "image": "Imagen",
         "presentation": "Diapositivas",

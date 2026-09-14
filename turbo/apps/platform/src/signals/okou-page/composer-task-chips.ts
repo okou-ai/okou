@@ -20,6 +20,8 @@ export type ComposerIdeaTask = Exclude<
   ComposerTask,
   "presentation" | "visualization"
 >;
+/** The idea tasks whose catalog carries cover art, so they get a cover shelf. */
+export type ComposerTemplateTask = Exclude<ComposerIdeaTask, "workflow">;
 
 export function createComposerTaskChipsSignals(
   create: ComposerCreateSignals,
@@ -86,12 +88,30 @@ export function createComposerTaskChipsSignals(
       });
     },
   );
+  // The cover shelf pages the same way the idea row does, and for the same
+  // reason: the row is one line, so the only way to reach the rest of the
+  // catalog without leaving the page is to advance it.
+  const internalTemplatePages$ = state({ image: 0, video: 0, website: 0 });
+  const templatePages$ = computed((get) => {
+    return get(internalTemplatePages$);
+  });
+  const nextTemplates$ = command(
+    ({ get, set }, task: ComposerTemplateTask, pageCount: number) => {
+      const pages = get(internalTemplatePages$);
+      set(internalTemplatePages$, {
+        ...pages,
+        [task]: (pages[task] + 1) % pageCount,
+      });
+    },
+  );
   return {
     enabled$,
     task$,
     selectTask$,
     ideaPages$,
     nextIdeas$,
+    templatePages$,
+    nextTemplates$,
     workflows,
     visualization,
   };

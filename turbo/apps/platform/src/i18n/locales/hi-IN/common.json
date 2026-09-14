@@ -2378,6 +2378,14 @@
       "moreTemplates": "और टेम्पलेट",
       "presentationTemplates": "प्रस्तुति टेम्पलेट",
       "removeTask": "{{task}} हटाएँ",
+      "shelf": {
+        "browseStyles": "सभी शैलियाँ देखें",
+        "browseTemplates": "सभी टेम्पलेट देखें",
+        "image": "चित्र शैलियाँ",
+        "nextTemplates": "अगले टेम्पलेट",
+        "video": "वीडियो टेम्पलेट",
+        "website": "वेबसाइट टेम्पलेट"
+      },
       "tasks": {
         "image": "चित्र",
         "presentation": "स्लाइड",

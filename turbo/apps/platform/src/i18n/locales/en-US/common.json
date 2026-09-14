@@ -2378,6 +2378,14 @@
       "moreTemplates": "More templates",
       "presentationTemplates": "Presentation templates",
       "removeTask": "Remove {{task}}",
+      "shelf": {
+        "browseStyles": "Browse all styles",
+        "browseTemplates": "Browse all templates",
+        "image": "Image styles",
+        "nextTemplates": "Next templates",
+        "video": "Video templates",
+        "website": "Website templates"
+      },
       "tasks": {
         "image": "Image",
         "presentation": "Presentation",

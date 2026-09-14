@@ -2424,6 +2424,14 @@
       "moreTemplates": "Mais modelos",
       "presentationTemplates": "Modelos de apresentação",
       "removeTask": "Remover {{task}}",
+      "shelf": {
+        "browseStyles": "Ver todos os estilos",
+        "browseTemplates": "Ver todos os modelos",
+        "image": "Estilos de imagem",
+        "nextTemplates": "Próximos modelos",
+        "video": "Modelos de vídeo",
+        "website": "Modelos de site"
+      },
       "tasks": {
         "image": "Imagem",
         "presentation": "Slides",
