@@ -295,6 +295,13 @@
       "when": 1789365857386,
       "tag": "1119_billing_attribution_capture",
       "breakpoints": true
+    },
+    {
+      "idx": 1120,
+      "version": "7",
+      "when": 1789374665864,
+      "tag": "1120_account_erasure_foundation",
+      "breakpoints": true
     }
   ]
 }

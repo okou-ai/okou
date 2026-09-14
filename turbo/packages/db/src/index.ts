@@ -1,3 +1,4 @@
+import * as accountErasureSchema from "./schema/account-erasure";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
 import * as runActivitySnapshotSchema from "./schema/run-activity-snapshot";
 import * as artifactShareSchema from "./schema/artifact-share";
@@ -144,6 +145,7 @@ import * as sshCredentialSchema from "./schema/ssh-credential";
 import * as agentSshAccessSchema from "./schema/agent-ssh-access";
 
 export const schema = {
+  ...accountErasureSchema,
   ...runActivitySnapshotSchema,
   ...userSchema,
   ...privacyChoiceSchema,
