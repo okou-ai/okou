@@ -37,7 +37,7 @@ import { bestEffort, settle, tapError, withCleanup } from "../utils.ts";
 import { accept } from "../../lib/accept.ts";
 import {
   applyStoredAdAttribution$,
-  readApiAdAttributionMetadata$,
+  readStoredAdAttributionMetadata$,
 } from "../bootstrap/ad-attribution.ts";
 import {
   capturePaidOnboardingCheckoutCreated$,
@@ -774,7 +774,7 @@ export const startCheckout$ = command(
     const cancelUrl = checkoutReturnUrl();
     cancelUrl.searchParams.set("billing", "canceled");
     set(applyStoredAdAttribution$, cancelUrl);
-    const adAttribution = set(readApiAdAttributionMetadata$);
+    const adAttribution = set(readStoredAdAttributionMetadata$);
     const createClient = get(apiClient$);
     const client = createClient(billingCheckoutContract);
     const request: CheckoutRequest = {
@@ -845,7 +845,7 @@ export const startUsagePackCheckout$ = command(
     const cancelUrl = new URL(currentUrl);
     cancelUrl.searchParams.set("billing", "canceled");
     set(applyStoredAdAttribution$, cancelUrl);
-    const adAttribution = set(readApiAdAttributionMetadata$);
+    const adAttribution = set(readStoredAdAttributionMetadata$);
     const createClient = get(apiClient$);
     const client = createClient(billingUsagePackCheckoutContract);
     const request: UsagePackCheckoutRequest = {

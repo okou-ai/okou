@@ -1,7 +1,4 @@
-import {
-  legacyGoogleAdsAttribution,
-  normalizeGoogleAdsAttribution,
-} from "@okouai/core/google-ads-attribution";
+import { normalizeGoogleAdsAttribution } from "@okouai/core/google-ads-attribution";
 import { command } from "ccstate";
 import {
   googleAdsAccountForAttribution,
@@ -193,7 +190,7 @@ const recordSignupInner$ = command(
       privateMetadata: {
         ...privateMetadata,
         [SIGNUP_ATTRIBUTION_KEY]: {
-          ...legacyGoogleAdsAttribution(attribution),
+          ...attribution,
           recorded_at: nowDate().toISOString(),
         },
       },
