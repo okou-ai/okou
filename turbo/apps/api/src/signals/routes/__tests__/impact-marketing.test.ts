@@ -1,6 +1,5 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
-import { beforeEach, expect, test, onTestFinished } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { beforeEach, expect, test } from "vitest";
 import { impactMarketingContract } from "@okouai/api-contracts/contracts/impact-marketing";
 import { acquisitionAttributionContract } from "@okouai/api-contracts/contracts/acquisition-attribution";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -10,10 +9,6 @@ import { nowDate } from "../../../lib/time";
 import { impactMarketingRoutes } from "../impact-marketing";
 import { acquisitionAttributionRoutes } from "../acquisition-attribution";
 import { createRouteMocks } from "./helpers/route-test";
-import {
-  deleteFeatureSwitchesForUser,
-  updateFeatureSwitchesForUser,
-} from "./helpers/feature-switches";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -30,17 +25,12 @@ beforeEach(() => {
   mockOptionalEnv("IMPACT_MARKETING_ATTRIBUTION", "true");
   mockOptionalEnv("MARKETING_ATTRIBUTION_SECRET", secret);
 });
-async function enabledActor() {
+function authenticatedActor() {
   const actor = {
     userId: `user_${randomUUID()}`,
     orgId: `org_${randomUUID()}`,
   };
-  await updateFeatureSwitchesForUser(context, actor, {
-    [FeatureSwitchKey.ImpactMarketingAttribution]: true,
-  });
-  onTestFinished(async () => {
-    await deleteFeatureSwitchesForUser(context, actor);
-  });
+  mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
   return actor;
 }
 test("disables the handoff until the server cutover is configured", async () => {
@@ -49,8 +39,8 @@ test("disables the handoff until the server cutover is configured", async () => 
   const response = await accept(client().handoff({ headers, body: {} }), [200]);
   expect(response.body).toStrictEqual({ handoff: null });
 });
-test("issues a dedicated short-lived proof for the authenticated identity", async () => {
-  const actor = await enabledActor();
+test("issues a dedicated short-lived proof without a feature-switch override", async () => {
+  const actor = authenticatedActor();
   const response = await accept(client().handoff({ headers, body: {} }), [200]);
   expect(response.body.handoff?.iframeUrl).toBe(
     "https://www.okou.ai/finish-onboarding",
@@ -79,7 +69,7 @@ test("issues a dedicated short-lived proof for the authenticated identity", asyn
   expect(response.body.handoff?.token).not.toContain("clerk-session");
 });
 test("ordinary members receive no authority to alter organization billing attribution", async () => {
-  const actor = await enabledActor();
+  const actor = authenticatedActor();
   mocks.clerk.session(actor.userId, actor.orgId, "org:member");
   const handoff = await accept(client().handoff({ headers, body: {} }), [200]);
   const payload = handoff.body.handoff?.token.split(".")[0] ?? "";

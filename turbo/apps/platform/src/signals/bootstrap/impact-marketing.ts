@@ -10,7 +10,6 @@ import {
   settle,
   setLoop,
 } from "../utils.ts";
-import { recordImpactAttribution$ } from "./impact-attribution.ts";
 
 function waitForMessage(
   frame: HTMLIFrameElement,
@@ -49,9 +48,7 @@ function waitForMessage(
 }
 
 const runImpactHandoff$ = command(
-  async ({ get, set }, frame: HTMLIFrameElement, signal: AbortSignal) => {
-    // Clears the retired App session value once the migration switch is active.
-    set(recordImpactAttribution$);
+  async ({ get }, frame: HTMLIFrameElement, signal: AbortSignal) => {
     const client = get(apiClient$)(impactMarketingContract, {
       apiBase: "api",
     });

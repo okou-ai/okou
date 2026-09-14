@@ -1,19 +1,12 @@
 import { useLastResolved, useSet } from "ccstate-react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { currentOrgInfo$, user$ } from "../../signals/auth.ts";
 import { setImpactMarketingFrame$ } from "../../signals/bootstrap/impact-marketing.ts";
 
 export function ImpactMarketingFrame() {
-  const features = useLastResolved(featureSwitch$);
   const user = useLastResolved(user$);
   const org = useLastResolved(currentOrgInfo$);
   const ref = useSet(setImpactMarketingFrame$);
-  if (
-    !features?.[FeatureSwitchKey.ImpactMarketingAttribution] ||
-    !user ||
-    !org
-  ) {
+  if (!user || !org) {
     return null;
   }
   return (

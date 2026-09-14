@@ -62,8 +62,10 @@ Refunds may correct known submissions after withdrawal, but never create a sale.
 
 ## Configuration and rollout
 
-Both PRs can merge and deploy with switches off. Production activation requires
-both releases, a dedicated Marketing D1 database and matching signing secrets.
+The App mounts the bridge for every authenticated user with an organization,
+without an App feature switch. The API and Marketing retain server cutover
+configuration. Production activation requires both releases, a dedicated Marketing
+D1 database and matching signing secrets.
 There is no production data, credential, provider or live-switch change in this PR.
 
 API configuration:
@@ -76,16 +78,16 @@ API configuration:
 - `MARKETING_ATTRIBUTION_ORIGIN`: defaults to `https://www.okou.ai`.
 - `IMPACT_APP_ORIGIN`: defaults to `https://app.okou.ai`, independently of the
   older generic `APP_URL`/Clerk auth domain.
-- `impactMarketingAttribution`: the App/API feature switch, initially off.
 
 Follow the Marketing runbook to provision its D1 binding and deploy its migration.
 Verify Termly opt-in advertising consent in every supported region, cookie
 classification and GPC behavior. Enable Marketing server cutover first, then API
-cutover, then the App feature switch. During transition attribution may be omitted;
-checkout remains available. Require the new App release before measuring coverage.
+cutover. The App bridge is enabled for all authenticated organizations. During
+transition attribution may be omitted; checkout remains available. Require the new
+App release before measuring coverage.
 Do not reconstruct historical consent from old cookies or billing records.
 
-To pause after cutover, disable Marketing `IMPACT_ENABLED` and/or the App bridge.
+To pause after cutover, disable Marketing `IMPACT_ENABLED`.
 Keep both server cutover modes enabled; re-enabling legacy ingestion/delivery would
 bypass the consent ledger.
 
