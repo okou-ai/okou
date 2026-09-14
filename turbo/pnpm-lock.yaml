@@ -23,7 +23,7 @@ patchedDependencies:
     hash: 09ad5ee7fadcae6ba310bdce2f50dc96ddaec57c060edf0be72f40dd09797668
     path: patches/@earendil-works__pi-ai@0.85.1.patch
   '@earendil-works/pi-coding-agent@0.85.1':
-    hash: 7845aa2cc2c62908db74168513b9a2df083f1eedc398fe74edf4ede237ded8f9
+    hash: d73715c0523d394c8fb3a06b21f3efd36d074095d5a8077e2a618cce831fa1e2
     path: patches/@earendil-works__pi-coding-agent@0.85.1.patch
   '@testing-library/jest-dom@6.9.1':
     hash: 82080105f6adaf176f58b0ec2d5017702df2a069e46194cd9e1b0054f392a8bf
@@ -334,7 +334,7 @@ importers:
     devDependencies:
       '@earendil-works/pi-coding-agent':
         specifier: 0.85.1
-        version: 0.85.1(patch_hash=7845aa2cc2c62908db74168513b9a2df083f1eedc398fe74edf4ede237ded8f9)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
+        version: 0.85.1(patch_hash=d73715c0523d394c8fb3a06b21f3efd36d074095d5a8077e2a618cce831fa1e2)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
       '@modelcontextprotocol/client':
         specifier: ^2.0.0
         version: 2.0.0
@@ -1005,6 +1005,9 @@ importers:
       eslint:
         specifier: ^9.34.0
         version: 9.39.4(jiti@2.7.0)
+      msw:
+        specifier: ^2.13.2
+        version: 2.13.2(@types/node@24.3.0)(@typescript/typescript6@6.0.2)
       oxlint:
         specifier: ^1.75.0
         version: 1.75.0(oxlint-tsgolint@7.0.2001)
@@ -1106,7 +1109,7 @@ importers:
         version: 0.85.1(patch_hash=09ad5ee7fadcae6ba310bdce2f50dc96ddaec57c060edf0be72f40dd09797668)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
       '@earendil-works/pi-coding-agent':
         specifier: 0.85.1
-        version: 0.85.1(patch_hash=7845aa2cc2c62908db74168513b9a2df083f1eedc398fe74edf4ede237ded8f9)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
+        version: 0.85.1(patch_hash=d73715c0523d394c8fb3a06b21f3efd36d074095d5a8077e2a618cce831fa1e2)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
       '@okouai/api-contracts':
         specifier: workspace:*
         version: link:../api-contracts
@@ -11423,7 +11426,7 @@ snapshots:
       - ws
       - zod
 
-  '@earendil-works/pi-coding-agent@0.85.1(patch_hash=7845aa2cc2c62908db74168513b9a2df083f1eedc398fe74edf4ede237ded8f9)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)':
+  '@earendil-works/pi-coding-agent@0.85.1(patch_hash=d73715c0523d394c8fb3a06b21f3efd36d074095d5a8077e2a618cce831fa1e2)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)':
     dependencies:
       '@earendil-works/chord': 0.85.1
       '@earendil-works/pi-agent-core': 0.85.1(patch_hash=2d9f733c595c2a567c36c780172a57e284c6d1f440d3a7e76041389ae08c6680)(@modelcontextprotocol/sdk@1.30.0(zod@4.5.4))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)

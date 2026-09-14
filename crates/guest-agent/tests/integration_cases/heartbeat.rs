@@ -1,5 +1,5 @@
 use crate::support::*;
-use guest_contracts::diagnostics::HeartbeatAttemptFailureKind;
+use guest_contracts::diagnostics::HttpAttemptFailureKind;
 use httpmock::prelude::*;
 use serde_json::json;
 use std::time::Duration;
@@ -218,10 +218,7 @@ async fn heartbeat_first_failure_fatal() {
     for (index, attempt) in cycle.attempts.iter().enumerate() {
         assert_eq!(attempt.attempt, u32::try_from(index + 1).unwrap());
         assert!(!attempt.client_request_id.is_empty());
-        assert_eq!(
-            attempt.failure_kind,
-            HeartbeatAttemptFailureKind::HttpStatus
-        );
+        assert_eq!(attempt.failure_kind, HttpAttemptFailureKind::HttpStatus);
         assert_eq!(attempt.http_status, Some(500));
         assert_eq!(attempt.timeout_observed, None);
         assert_eq!(attempt.connect_observed, None);

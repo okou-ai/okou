@@ -394,12 +394,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
   return withChatScrollLayout(
     <div
       ref={shellDocumentAttributesRef}
-      // Workspace scrollports reach the physical viewport edge. Their scroll
-      // content, composer, and other bottom interactions own the safe inset
-      // instead, so this shell drops the one `okou-viewport-shell` applies.
-      // That selector is unlayered legacy CSS and outranks `@layer utilities`,
-      // so the override has to be important to keep today's zero padding.
-      className="okou-app okou-viewport-shell !pb-0 flex w-full bg-background md:bg-sidebar"
+      className="okou-app box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-0 md:bg-sidebar"
       data-gradient-color-themes={gradientColorThemesEnabled || undefined}
       data-color-theme={gradientColorThemesEnabled ? colorTheme : undefined}
     >

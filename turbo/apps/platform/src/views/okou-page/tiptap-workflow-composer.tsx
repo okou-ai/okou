@@ -321,8 +321,8 @@ interface ComposerSuggestionMenuState {
   readonly selectCreate: (mode: ComposerCreateCommand) => void;
   /** Non-empty only while ComposerSlashTemplatePanel is on. */
   readonly panelCategories: readonly SlashTemplateCategory[];
-  readonly highlightedCategory: SlashTemplateCategory | null;
-  readonly highlightCategory: (category: SlashTemplateCategory | null) => void;
+  readonly previewIndex: number;
+  readonly previewSuggestion: (index: number | null) => void;
   readonly selectCategory: (category: SlashTemplateCategory) => void;
   readonly selectTemplate: (preview: SlashTemplatePreview) => void;
   readonly browseAllTemplates: () => void;
@@ -411,11 +411,7 @@ function useSlashTemplateCategorySuggestions(
 function useSlashTemplatePanelActions(
   composer: ComposerSignals,
   query: string | undefined,
-  selection: {
-    readonly selectedIndex: number;
-    readonly setSelectedIndex: (index: number) => void;
-    readonly close: () => void;
-  },
+  close: () => void,
 ) {
   const enabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ComposerSlashTemplatePanel] ===
@@ -438,19 +434,9 @@ function useSlashTemplatePanelActions(
       }
       openTemplatePicker({ kind: "insert", category });
     },
-    highlighted:
-      enabled && selection.selectedIndex < categories.length
-        ? (categories[selection.selectedIndex] ?? null)
-        : null,
-    highlight(category: SlashTemplateCategory | null): void {
-      const index = category === null ? -1 : categories.indexOf(category);
-      // A row with no index (a workflow) parks the selection past the head so
-      // the pane closes without pointing the keyboard at a category.
-      selection.setSelectedIndex(index < 0 ? categories.length : index);
-    },
     selectTemplate(preview: SlashTemplatePreview): void {
       insertTemplate(preview.template, preview.attachment);
-      selection.close();
+      close();
     },
     browseAll(): void {
       openTemplatePicker({ kind: "insert", category: "slides" });
@@ -616,6 +602,8 @@ function useComposerSuggestionMenu({
     slashRange?.query,
   );
   const selectedIndex = useGet(composer.suggestion.selectedSuggestionIndex$);
+  const previewIndex = useGet(composer.suggestion.previewSuggestionIndex$);
+  const previewSuggestion = useSet(composer.suggestion.previewSuggestion$);
   const setSelectedIndex = useSet(
     composer.suggestion.setSelectedSuggestionIndex$,
   );
@@ -623,7 +611,7 @@ function useComposerSuggestionMenu({
   const templatePanel = useSlashTemplatePanelActions(
     composer,
     slashRange?.query,
-    { selectedIndex, setSelectedIndex, close },
+    close,
   );
   const templatePanelEnabled = templatePanel.enabled;
   const panelCategories = templatePanel.categories;
@@ -711,8 +699,8 @@ function useComposerSuggestionMenu({
     createModes,
     selectCreate,
     panelCategories,
-    highlightedCategory: templatePanel.highlighted,
-    highlightCategory: templatePanel.highlight,
+    previewIndex,
+    previewSuggestion,
     selectCategory: templatePanel.selectCategory,
     selectTemplate: templatePanel.selectTemplate,
     browseAllTemplates: templatePanel.browseAll,
@@ -833,8 +821,9 @@ export function TiptapWorkflowComposer({
                 categories={suggestionMenu.panelCategories}
                 workflows={suggestionMenu.workflows}
                 workflowsLoading={suggestionMenu.workflowsLoading}
-                highlighted={suggestionMenu.highlightedCategory}
-                onHighlight={suggestionMenu.highlightCategory}
+                selectedIndex={suggestionMenu.selectedIndex}
+                previewIndex={suggestionMenu.previewIndex}
+                onPreview={suggestionMenu.previewSuggestion}
                 onSelectCategory={suggestionMenu.selectCategory}
                 onSelectTemplate={suggestionMenu.selectTemplate}
                 onSelectWorkflow={suggestionMenu.selectWorkflow}

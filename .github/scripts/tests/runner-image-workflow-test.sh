@@ -13,6 +13,27 @@ fail() {
 command -v yq >/dev/null || fail "yq is required"
 workflow_json=$(yq -o=json '.' "$WORKFLOW")
 
+# Exercise the workflow's input detector with a transport-only Git change.
+test_root=$(mktemp -d)
+trap 'rm -rf "$test_root"' EXIT
+fixture_git() {
+  git -C "$test_root" -c user.name=Fixture -c user.email=fixture@example.com \
+    -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"
+}
+fixture_git init --quiet
+fixture_git commit --quiet --allow-empty -m baseline
+base_ref=$(fixture_git rev-parse HEAD)
+mkdir -p "${test_root}/.github/scripts"
+cp "${SCRIPT_DIR}/runner-image-context.sh" "${SCRIPT_DIR}/runner-image-target.sh" \
+  "${SCRIPT_DIR}/runner-binary-transport.sh" "${test_root}/.github/scripts/"
+fixture_git add .github/scripts/runner-binary-transport.sh
+fixture_git commit --quiet -m transport
+image_input_step=$(jq -r '.jobs.prepare.steps[] | select(.id == "image-inputs") | .run' <<<"$workflow_json")
+image_input_step=${image_input_step//"\${{ steps.crates.outputs.runner-changed }}"/false}
+image_inputs=$(cd "$test_root" && BASE_REF="$base_ref" GITHUB_OUTPUT='' bash -c "$image_input_step")
+grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
+  fail "transport-only changes must be recognized as runner image inputs"
+
 jq -e '
   .jobs.prepare.outputs["turbo-runner-consumer-needed"] ==
     "${{ steps.needed.outputs.turbo-runner-consumer-needed }}" and
@@ -48,12 +69,18 @@ jq -e '
 
 jq -e '
   [.jobs | to_entries[] | .value.steps[]? |
-    .with.name? // empty |
-    select(startswith("runner-binary-compiled-"))
-  ] as $transport_names |
-  ($transport_names | length) == 3 and
-  all($transport_names[]; contains("${{ github.run_id }}")) and
-  all($transport_names[]; contains("${{ github.run_attempt }}") | not)
+    select((.run // "") | startswith(".github/scripts/runner-binary-transport.sh "))
+  ] as $transports |
+  ($transports | length) == 3 and
+  all($transports[];
+    .env.CURRENT_RUN_ID == "${{ github.run_id }}" and
+    .env.REPO == "${{ github.repository }}" and
+    .env.EXPECTED_TARGET == "${{ matrix.target }}" and
+    .env.AWS_ACCESS_KEY_ID == "${{ secrets.R2_ACCESS_KEY_ID }}" and
+    .env.AWS_SECRET_ACCESS_KEY == "${{ secrets.R2_SECRET_ACCESS_KEY }}" and
+    .env.R2_BUCKET_NAME == "${{ vars.R2_USER_STORAGES_BUCKET_NAME }}" and
+    (. | has("continue-on-error") | not)
+  )
 ' <<<"$workflow_json" >/dev/null || fail "runner binary transport identity must survive producer and consumer attempt mismatch"
 
 jq -e '
@@ -87,9 +114,9 @@ jq -e '
   any(.jobs.compile.steps[]; .uses == "Swatinem/rust-cache@v2") and
   any(.jobs.compile.steps[]; .run == ".github/scripts/runner-binary-build/build.sh build") and
   any(.jobs.compile.steps[];
-    .uses == "actions/upload-artifact@v7" and
-    .with.name == "runner-binary-compiled-${{ github.run_id }}-${{ matrix.target }}" and
-    .with.overwrite == true and
+    .run == ".github/scripts/runner-binary-transport.sh publish" and
+    .env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.build.outputs.binary-input-digest }}" and
+    .env.PRODUCER_RUN_ATTEMPT == "${{ github.run_attempt }}" and
     (. | has("continue-on-error") | not)
   )
 ' <<<"$workflow_json" >/dev/null || fail "compile must be a required miss-only Rust/cache/build matrix"
@@ -119,8 +146,10 @@ jq -e '
     .env.RESOLVE_OUTPUT_DIR == "runner-binary-transport/${{ matrix.target }}"
   ) and
   any(.jobs.build.steps[];
-    .name == "Download compiled runner binary" and
-    .with.name == "runner-binary-compiled-${{ github.run_id }}-${{ matrix.target }}"
+    .run == ".github/scripts/runner-binary-transport.sh download" and
+    (.if | contains("!contains(")) and
+    .env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.binary-input.outputs.binary-input-digest }}" and
+    .env.OUTPUT_DIR == "runner-binary-transport/${{ matrix.target }}"
   ) and
   any(.jobs.build.steps[];
     .run == ".github/scripts/prepare-runner-image.sh" and
@@ -134,8 +163,9 @@ jq -e '
   (.jobs.asset.if | contains("runner-binary-miss-count != '\''0'\''")) and
   .jobs.asset.strategy.matrix.include == "${{ fromJSON(needs.prepare.outputs.runner-binary-compile-matrix) }}" and
   any(.jobs.asset.steps[];
-    .name == "Download compiled runner binary" and
-    .with.name == "runner-binary-compiled-${{ github.run_id }}-${{ matrix.target }}"
+    .run == ".github/scripts/runner-binary-transport.sh download" and
+    .env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.binary-input.outputs.binary-input-digest }}" and
+    .env.OUTPUT_DIR == "runner-binary-fresh"
   ) and
   any(.jobs.asset.steps[];
     .name == "Validate fresh runner binary" and
@@ -147,12 +177,8 @@ jq -e '
     (. | has("if") | not)
   ) and
   any(.jobs.asset.steps[];
-    .name == "Publish runner binary cache object" and
-    (. | has("if") | not)
-  ) and
-  any(.jobs.asset.steps[];
     .name == "Upload reusable runner binary manifest" and
-    .with.path == "runner-binary-asset/manifest.json" and
+    .with.path == "runner-binary-fresh/manifest.json" and
     .with["retention-days"] == 7
   )
 ' <<<"$workflow_json" >/dev/null || fail "reusable publication must run only for compiled misses"

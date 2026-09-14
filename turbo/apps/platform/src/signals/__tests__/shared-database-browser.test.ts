@@ -3,7 +3,10 @@ import { CLIENT_FORCE_UPGRADE_STATUS } from "@okouai/api-contracts/contracts/cli
 import { expect, vi } from "vitest";
 
 import { setupPage } from "../../__tests__/page-helper.ts";
-import { mockedClerk } from "../../__tests__/mock-auth.ts";
+import {
+  installMockedClerkBootstrap,
+  mockedClerk,
+} from "../../__tests__/mock-auth.ts";
 import type { SharedDatabasePortLike } from "../../shared-database/bridge.ts";
 import { sharedDatabaseClientMessageSchema } from "../../shared-database/protocol.ts";
 import { setupSharedDatabaseBridge$ } from "../shared-database-browser.ts";
@@ -129,6 +132,7 @@ function installSharedWorkerMock(): {
 function setupBridge(): void {
   context.store.set(setRootSignal$, context.signal);
   const clerk = context.mocks.clerk();
+  installMockedClerkBootstrap(context.signal);
   clerk.user(
     {
       id: "shared-worker-user",

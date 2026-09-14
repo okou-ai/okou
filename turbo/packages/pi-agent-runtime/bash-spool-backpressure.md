@@ -53,6 +53,29 @@ Successful output preserves each pipe's byte order and the observed merged
 ingestion order. It does not establish a new chronological order across two
 independent OS pipes.
 
+## Signal-terminated tools
+
+The Bash operations contract uses a null exit code for a killed process. The
+tool rejects that result after normal output finalization, retaining available
+output and reporting `Command terminated by signal`. Native Pi records a failed
+tool result and can continue with another tool in the same session. The message
+does not identify the specific signal or claim OOM; cancellation and timeout
+retain their existing outcomes and take precedence when their owner aborts.
+
+This fixes [#33855](https://github.com/vm0-ai/vm0/issues/33855) without changing
+the shared child-process helper, operations types, Guest tool placement, or
+memory budgets. Existing per-tool OOM cleanup remains authoritative. The fix
+ships with the commit-addressed CLI; already captured contexts keep their older
+package. There is no history or API migration and no claim that this explains
+the historical run's eventual timeout.
+
+`src/bash-signal.test.ts` drives real Bash children through the installed native
+Pi session using a controlled model provider. Both SIGKILL and SIGTERM are
+checked through normal prompts and pending-tool continuation: persisted history
+must contain a failed result with available output, a successful subsequent Bash
+result, and a completed assistant response. These tests do not induce OOM or
+replace the separate Guest containment/reuse coverage.
+
 ## Audited callers and scope
 
 The original #32637 audit used upstream source at

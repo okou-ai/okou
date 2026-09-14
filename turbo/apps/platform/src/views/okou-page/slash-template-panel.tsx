@@ -1,5 +1,5 @@
 // The two-pane slash panel. The left column indexes what you can make and the
-// workflows you have; the right pane previews the highlighted type's covers.
+// workflows you have; the right pane previews a type independently of selection.
 // Kept beside the flat menu in slash-workflow.tsx so both can render from the
 // same suggestion state while the feature switch decides which one is shown.
 import {
@@ -40,9 +40,10 @@ interface SlashTemplatePanelProps {
   readonly categories: readonly SlashTemplateCategory[];
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
   readonly workflowsLoading: boolean;
-  /** The highlighted row, owned by the editor's keyboard handling. */
-  readonly highlighted: SlashTemplateCategory | null;
-  readonly onHighlight: (category: SlashTemplateCategory | null) => void;
+  /** Categories precede workflows in the editor's shared suggestion index. */
+  readonly selectedIndex: number;
+  readonly previewIndex: number;
+  readonly onPreview: (index: number | null) => void;
   readonly onSelectCategory: (category: SlashTemplateCategory) => void;
   readonly onSelectTemplate: (preview: SlashTemplatePreview) => void;
   readonly onSelectWorkflow: (workflow: ComposerSlashWorkflowMatch) => void;
@@ -216,13 +217,15 @@ function SlashTemplateDetailPane({
 function SlashPanelWorkflowList({
   workflows,
   loading,
-  onHighlight,
+  selectedIndex,
+  onPreview,
   onSelect,
   workflowOptionId,
 }: {
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
   readonly loading: boolean;
-  readonly onHighlight: (category: SlashTemplateCategory | null) => void;
+  readonly selectedIndex: number;
+  readonly onPreview: (index: number) => void;
   readonly onSelect: (workflow: ComposerSlashWorkflowMatch) => void;
   readonly workflowOptionId: (workflowId: string) => string;
 }) {
@@ -247,17 +250,20 @@ function SlashPanelWorkflowList({
   }
   return (
     <div className="px-1">
-      {workflows.map((workflow) => {
+      {workflows.map((workflow, index) => {
         return (
           <button
             key={workflow.id}
             id={workflowOptionId(workflow.id)}
             type="button"
-            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-state-hover"
-            onMouseEnter={() => {
-              // A workflow has nothing to preview, so highlighting one closes
-              // the pane rather than leaving a stale type open.
-              onHighlight(null);
+            className={cn(
+              "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors",
+              selectedIndex === index
+                ? "bg-state-selected hover:bg-state-selected-hover"
+                : "hover:bg-state-hover",
+            )}
+            onMouseMove={() => {
+              onPreview(index);
             }}
             onMouseDown={(event) => {
               event.preventDefault();
@@ -284,8 +290,9 @@ export function SlashTemplatePanel({
   categories,
   workflows,
   workflowsLoading,
-  highlighted,
-  onHighlight,
+  selectedIndex,
+  previewIndex,
+  onPreview,
   onSelectCategory,
   onSelectTemplate,
   onSelectWorkflow,
@@ -294,14 +301,21 @@ export function SlashTemplatePanel({
   categoryOptionId,
 }: SlashTemplatePanelProps) {
   const { t } = useTranslation();
+  const previewCategory = categories[previewIndex] ?? null;
   // Narrowed here rather than inside the pane, so the pane has no unreachable
   // branch for a category that can never reach it.
   const detailCategory =
-    highlighted !== null && isSlashTemplatePreviewCategory(highlighted)
-      ? highlighted
+    previewCategory !== null && isSlashTemplatePreviewCategory(previewCategory)
+      ? previewCategory
       : null;
   return (
-    <div className="flex h-[380px] overflow-hidden" data-slot="slash-panel">
+    <div
+      className="flex h-[380px] overflow-hidden"
+      data-slot="slash-panel"
+      onMouseLeave={() => {
+        onPreview(null);
+      }}
+    >
       <div className="flex min-h-0 w-[260px] shrink-0 flex-col border-r border-border/60">
         {/*
           Make and Workflows scroll as one list. Scrolling only the workflows
@@ -315,7 +329,7 @@ export function SlashTemplatePanel({
             })}
           </SectionLabel>
           <div className="px-1">
-            {categories.map((category) => {
+            {categories.map((category, index) => {
               const Icon = SLASH_TEMPLATE_CATEGORY_ICONS[category];
               const label = slashTemplateCategoryLabel(category);
               return (
@@ -326,12 +340,12 @@ export function SlashTemplatePanel({
                   aria-label={label}
                   className={cn(
                     "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-foreground transition-colors",
-                    highlighted === category
-                      ? "bg-state-hover"
+                    selectedIndex === index
+                      ? "bg-state-selected hover:bg-state-selected-hover"
                       : "hover:bg-state-hover",
                   )}
-                  onMouseEnter={() => {
-                    onHighlight(category);
+                  onMouseMove={() => {
+                    onPreview(index);
                   }}
                   onMouseDown={(event) => {
                     event.preventDefault();
@@ -356,7 +370,10 @@ export function SlashTemplatePanel({
           <SlashPanelWorkflowList
             workflows={workflows}
             loading={workflowsLoading}
-            onHighlight={onHighlight}
+            selectedIndex={selectedIndex - categories.length}
+            onPreview={(index) => {
+              onPreview(categories.length + index);
+            }}
             onSelect={onSelectWorkflow}
             workflowOptionId={workflowOptionId}
           />

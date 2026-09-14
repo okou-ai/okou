@@ -3,6 +3,7 @@ import type {
   CreateOrganizationParams,
 } from "@clerk/react/types";
 import type { ClerkOptions } from "@clerk/shared/types";
+import type { ClerkUIConstructor } from "@clerk/shared/ui";
 import { vi } from "vitest";
 import { replaceState } from "../signals/location.ts";
 
@@ -555,3 +556,52 @@ export const mockedClerk = {
     return Promise.resolve({ id: "new-org-id" });
   }),
 };
+
+type MockedClerkBootstrapLoadOptions = MockedClerkLoadOptions & {
+  readonly afterSignOutUrl: string;
+  readonly signInUrl: string;
+  readonly signUpUrl: string;
+};
+
+/** Publishes the same single Clerk runtime that the inline page bootstrap owns. */
+export function installMockedClerkBootstrap(
+  signal: AbortSignal,
+  options: {
+    readonly coreReady?: Promise<unknown>;
+    readonly loadOptions?: MockedClerkBootstrapLoadOptions;
+  } = {},
+): void {
+  const loadOptions = options.loadOptions ?? {
+    afterSignOutUrl: "/sign-in",
+    signInUrl: "/sign-in",
+    signUpUrl: "/sign-up",
+  };
+  const originalBootstrap = window.__okouClerkBootstrap;
+  const clerkUI = Promise.withResolvers<ClerkUIConstructor>();
+  const bootstrap: NonNullable<Window["__okouClerkBootstrap"]> = {
+    resolveClerkUI: clerkUI.resolve,
+    runtime: (async () => {
+      await options.coreReady;
+      const loaded = mockedClerk.load({
+        ...loadOptions,
+        ui: { ClerkUI: clerkUI.promise },
+      });
+      return { clerk: mockedClerk, loaded };
+    })(),
+  };
+  window.__okouClerkBootstrap = bootstrap;
+  signal.addEventListener(
+    "abort",
+    () => {
+      if (window.__okouClerkBootstrap !== bootstrap) {
+        return;
+      }
+      if (originalBootstrap) {
+        window.__okouClerkBootstrap = originalBootstrap;
+      } else {
+        Reflect.deleteProperty(window, "__okouClerkBootstrap");
+      }
+    },
+    { once: true },
+  );
+}

@@ -117,44 +117,47 @@ async function readGoogleAdsMilestones(
 }
 
 describe("POST /api/attribution/signup", () => {
-  it("accepts Okou IDs while keeping first-touch storage readable by older APIs", async () => {
-    mockNow(new Date(RECORDED_AT_ISO));
-    const userId = `user_${randomUUID()}`;
-    mocks.clerk.session(userId, null);
-    context.mocks.clerk.users.getUserList.mockResolvedValue({
-      data: [{ id: userId, privateMetadata: {} }],
-    });
-    const response = await accept(
-      client().recordSignup({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          attribution: {
-            gclid: "original-click",
-            okou_campaign_id: "24220469665",
-            okou_ad_group_id: "123456",
+  it.each(["24220469665", "24239997272", "24240467199"])(
+    "preserves canonical first-touch IDs for campaign %s",
+    async (campaignId) => {
+      mockNow(new Date(RECORDED_AT_ISO));
+      const userId = `user_${randomUUID()}`;
+      mocks.clerk.session(userId, null);
+      context.mocks.clerk.users.getUserList.mockResolvedValue({
+        data: [{ id: userId, privateMetadata: {} }],
+      });
+      const response = await accept(
+        client().recordSignup({
+          headers: { authorization: "Bearer clerk-session" },
+          body: {
+            attribution: {
+              gclid: "original-click",
+              okou_campaign_id: campaignId,
+              okou_ad_group_id: "123456",
+            },
+          },
+        }),
+        [200],
+      );
+      expect(response.body).toStrictEqual({
+        recorded: true,
+        googleAdsAccountId: "7935750692",
+      });
+      expect(context.mocks.clerk.users.updateUserMetadata).toHaveBeenCalledWith(
+        userId,
+        {
+          privateMetadata: {
+            signup_attribution: {
+              gclid: "original-click",
+              okou_campaign_id: campaignId,
+              okou_ad_group_id: "123456",
+              recorded_at: RECORDED_AT_ISO,
+            },
           },
         },
-      }),
-      [200],
-    );
-    expect(response.body).toStrictEqual({
-      recorded: true,
-      googleAdsAccountId: "7935750692",
-    });
-    expect(context.mocks.clerk.users.updateUserMetadata).toHaveBeenCalledWith(
-      userId,
-      {
-        privateMetadata: {
-          signup_attribution: {
-            gclid: "original-click",
-            vm0_campaign_id: "24220469665",
-            vm0_ad_group_id: "123456",
-            recorded_at: RECORDED_AT_ISO,
-          },
-        },
-      },
-    );
-  });
+      );
+    },
+  );
 
   it("requires a Clerk session", async () => {
     const response = await client().recordSignup({

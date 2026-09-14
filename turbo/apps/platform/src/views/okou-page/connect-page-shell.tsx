@@ -11,9 +11,10 @@ export function connectErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
+/** Centered card layout for connector sign-in, authorization, and status pages. */
 export function PageShell({ children }: { children: ReactNode }) {
   return (
-    <div className="okou-app okou-viewport-shell flex w-full bg-background okou-workspace-bg">
+    <div className="okou-app box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-(--sab) okou-workspace-bg">
       <div className="flex flex-1 items-center justify-center p-4">
         <div
           className={surfaceVariants({

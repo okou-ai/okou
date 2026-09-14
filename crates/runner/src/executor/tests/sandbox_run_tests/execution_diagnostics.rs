@@ -1,9 +1,8 @@
 use super::*;
 use crate::executor::{SandboxReuseDisposition, SandboxReuseRejection, SandboxReuseTerminal};
 use guest_contracts::diagnostics::{
-    EventDeliveryAcceptanceOutcome, EventDeliveryAttemptFailureKind,
-    EventDeliveryCompletedAttemptDiagnostic, EventDeliveryDiagnostic,
-    EventDeliveryFailedBatchDiagnostic, WorkloadResourceLimitDiagnostic,
+    EventDeliveryAcceptanceOutcome, EventDeliveryDiagnostic, EventDeliveryFailedBatchDiagnostic,
+    HttpAttemptFailureKind, HttpCompletedAttemptDiagnostic, WorkloadResourceLimitDiagnostic,
 };
 
 #[tokio::test]
@@ -1182,11 +1181,11 @@ async fn execute_inner_nonzero_with_failure_diagnostic_skips_abnormal_exit_diagn
             event_count: 1,
             conservative_bytes: 128,
             outcome: EventDeliveryAcceptanceOutcome::OutcomeUnknown,
-            attempts: vec![EventDeliveryCompletedAttemptDiagnostic {
+            attempts: vec![HttpCompletedAttemptDiagnostic {
                 attempt: 1,
                 client_request_id: "11111111-1111-4111-8111-111111111111".to_string(),
                 elapsed_ms: 10_000,
-                failure_kind: EventDeliveryAttemptFailureKind::Timeout,
+                failure_kind: HttpAttemptFailureKind::Timeout,
                 http_status: None,
                 timeout_observed: None,
                 connect_observed: None,

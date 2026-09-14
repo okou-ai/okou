@@ -277,10 +277,20 @@
           resolveClerkUI = resolve;
         });
 
+        var resolveRuntime;
+        var rejectRuntime;
+        var runtime = new Promise(function (resolve, reject) {
+          resolveRuntime = resolve;
+          rejectRuntime = reject;
+        });
+        // Own a rejection that can occur before the app module is evaluated.
+        runtime.catch(function (error) {
+          console.error("Clerk core bootstrap failed", error);
+        });
+
         var bootstrap = {
-          loadOptions: loadOptions,
-          publishableKey: publishableKey,
           resolveClerkUI: resolveClerkUI,
+          runtime: runtime,
         };
         window.__okouClerkBootstrap = bootstrap;
 
@@ -288,21 +298,22 @@
           return /^\/sign-(?:in|up)(?:\/|$)/.test(pathname || "");
         }
 
-        function startClerk() {
+        function createClerkRuntime() {
           var clerk = window.Clerk;
           if (
             !clerk ||
             typeof clerk.load !== "function" ||
             typeof clerk.on !== "function"
           ) {
-            return;
+            throw new Error("Clerk core script exposed no valid runtime");
           }
-          if (bootstrap.loaded) return;
 
-          bootstrap.clerk = clerk;
-          bootstrap.loaded = clerk.load(
-            Object.assign({}, loadOptions, { ui: { ClerkUI: clerkUI } }),
-          );
+          return {
+            clerk: clerk,
+            loaded: clerk.load(
+              Object.assign({}, loadOptions, { ui: { ClerkUI: clerkUI } }),
+            ),
+          };
         }
 
         // Direct auth route entries start the installed UI alongside the app.
@@ -348,9 +359,13 @@
         script.dataset.clerkJsScript = "";
         script.dataset.clerkPublishableKey = publishableKey;
         script.onerror = function () {
-          script.remove();
+          rejectRuntime(new Error("Clerk core resource is unavailable"));
         };
-        script.onload = startClerk;
+        script.onload = function () {
+          Promise.resolve()
+            .then(createClerkRuntime)
+            .then(resolveRuntime, rejectRuntime);
+        };
         startClerkUI();
       })();
     </script>

@@ -214,7 +214,7 @@ def validate_preview(branch, name, snapshot_id, existing_ids):
     return branch_id
 
 
-def inspect_database(database, endpoint, branch_id, target_environment=None):
+def inspect_database(database, endpoint, branch_id, target_environment, record_stage):
     name, owner = database.get("name"), database.get("owner_name")
     require(database.get("branch_id") == branch_id, "database_branch_mismatch")
     require(
@@ -233,6 +233,8 @@ def inspect_database(database, endpoint, branch_id, target_environment=None):
             "pooled": "false",
         }
     )
+    database_hash = digest(name)
+    record_stage(database_hash, "connection_metadata")
     parsed = urllib.parse.urlsplit(api("/connection_uri?" + query)["uri"])
     require(
         parsed.scheme in {"postgres", "postgresql"}
@@ -263,28 +265,34 @@ def inspect_database(database, endpoint, branch_id, target_environment=None):
     )
     seconds = min(900, int(DEADLINE - time.monotonic()))
     require(seconds > 0, "inspection_time_budget_exhausted")
-    result = subprocess.run(
-        [
-            "psql",
-            "-X",
-            "-qAt",
-            "-v",
-            "ON_ERROR_STOP=1",
-            "-f",
-            str(Path(__file__).with_name("kms-recovery-snapshot-inventory.sql")),
-        ],
-        env=environment,
-        capture_output=True,
-        text=True,
-        timeout=seconds,
-        check=False,
-    )
-    safe = scan_records(result, digest(name))
-    scanned = {"databaseNameSha256": digest(name), "readOnly": True, "records": safe}
+    record_stage(database_hash, "marker_scan")
+    try:
+        result = subprocess.run(
+            [
+                "psql",
+                "-X",
+                "-qAt",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-f",
+                str(Path(__file__).with_name("kms-recovery-snapshot-inventory.sql")),
+            ],
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        result = error
+    safe = scan_records(result, database_hash)
+    scanned = {"databaseNameSha256": database_hash, "readOnly": True, "records": safe}
     if target_environment is not None:
+        record_stage(database_hash, "target_verification")
         scanned["targetVerification"] = verify_database(
             parsed, target_environment, DEADLINE
         )
+    record_stage(database_hash, "complete")
     return scanned
 
 
@@ -312,6 +320,13 @@ def main():
 
     def checkpoint():
         report_path.write_text(json.dumps(report, indent=2) + "\n")
+
+    def record_stage(database_hash, phase):
+        report["lastDatabaseStage"] = {
+            "databaseNameSha256": database_hash,
+            "phase": phase,
+        }
+        checkpoint()
 
     preview_id = None
     production = None
@@ -488,7 +503,9 @@ def main():
                 report["targetVerificationStarted"] = True
                 checkpoint()
             report["databases"].append(
-                inspect_database(database, endpoint, preview_id, target_environment)
+                inspect_database(
+                    database, endpoint, preview_id, target_environment, record_stage
+                )
             )
             if target_environment is not None:
                 report["kmsCallsMade"] = any(

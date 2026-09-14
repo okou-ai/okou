@@ -355,6 +355,33 @@ alongside their existing `border-0`. That still paints, because Tailwind emits
 the legacy rule won only by sitting outside every layer. Tests continue to
 select both separators through `data-slot`.
 
+### Page layouts
+
+Choose the existing layout that owns the page structure. Route setup selects
+`pageLayout$`; the Router's `LayoutHost` supplies `SidebarLayout` or
+`StandaloneLayout`, and the page supplies the content inside it.
+
+| Component                                         | Use it for                                                                                               | Placement                                    |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `SidebarLayout`                                   | Workspace pages with navigation and a workspace pane                                                     | Selected by the router's `sidebar` layout    |
+| `StandaloneLayout`                                | Independent flows with shared theme and dialogs, such as authorization, browser sessions, and redemption | Selected by the router's `standalone` layout |
+| `OnboardingShell`                                 | Step-based onboarding with progress, account controls, and an optional footer                            | The onboarding page's outer layout           |
+| `PageShell` in `okou-page/connect-page-shell.tsx` | Connector sign-in, authorization, and status content in a centered card                                  | The connection page's outer layout           |
+| `DirectedCardShell`                               | Connector-specific title, icon, description, and actions in a centered handoff card                      | Content inside `StandaloneLayout`            |
+| `DetailPageShell`                                 | A detail page's flex and scroll container                                                                | Content inside an existing workspace layout  |
+
+Pages rendered inside a shared layout reuse that layout's outer container.
+Independent pages that already own their structure, such as `ExportPage`, keep
+their native root element.
+
+Viewport sizing stays on the existing native roots through
+`box-border h-full max-h-full min-h-full overflow-hidden`. Page roots reserve
+the bottom safe-area inset with `pb-(--sab)`; `SidebarLayout` uses `pb-0` so its
+scrollports reach the viewport edge and its content/composer owns the inset.
+Document sizing, top and horizontal insets, and PWA keyboard handling remain
+owned by the existing global environment rules. The `okou-viewport-shell` and
+`okou-managed-bottom-safe-area` selectors and their consumers have been removed.
+
 ### Table header rules and the global scrollbar treatment
 
 The `table-wrapper` selector and its injected stylesheet have been removed. It
@@ -444,42 +471,28 @@ product decisions, and each one also constrains `okou-app` and
 `okou-workspace-bg`, which share this family and the same dead attribute.
 Resolve that before draining the last two tokens.
 
-### Safe-area covers and the unlayered shell padding
+### The standalone PWA fixed cover
 
-The `okou-pwa-fixed-cover` and `okou-managed-bottom-safe-area` selectors and
-their consumers have been removed. Both were single declarations about the
-bottom safe inset, and they show the two shapes this family keeps producing.
-
-`okou-pwa-fixed-cover` was `bottom: calc(-1 * var(--sab))` inside
-`@media (display-mode: standalone)`, on the mobile drawer scrim and on the
+The `okou-pwa-fixed-cover` selector and its consumers have been removed. It was
+one declaration — `bottom: calc(-1 * var(--sab))` inside
+`@media (display-mode: standalone)` — on the mobile drawer scrim and on the
 artifact-preview dialog backdrop. Both are `fixed inset-0`, and a fixed cover is
 clipped by the visual viewport, so in a standalone PWA it stops short of the
-bottom inset; extending `bottom` paints it to the physical edge. Each consumer
-now writes
-`[@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))]`. Tailwind has
-no `display-mode` variant, and this is a genuine environment condition rather
-than a token decision, so it stays an arbitrary variant over an arbitrary value —
-the same shape the `[@media(hover:hover)]:` call sites already use. The utility
-has to win against the `inset-0` on the same element; it does, because Tailwind
-emits `inset` before the `bottom` longhand inside `@layer utilities`, and
-`cn()` keeps both because a modifier-prefixed `bottom-*` never conflicts with an
-unprefixed `inset-0`.
+bottom safe inset; extending `bottom` paints it to the physical edge while the
+drawer's own content keeps its safe-area padding. Each consumer now writes
+`[@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))]`.
 
-`okou-managed-bottom-safe-area` was `padding-bottom: 0`, and it existed only to
-cancel the `padding-bottom: var(--sab)` that `okou-viewport-shell` sets on the
-same element, because the workspace scrollports reach the physical viewport edge
-and their scroll content, composer and other bottom interactions own that inset
-instead. Its consumer now writes `!pb-0`. The important marker is load-bearing,
-not decoration: `okou-viewport-shell` is still an unlayered legacy selector, so
-it outranks any normal declaration in `@layer utilities`, and a plain `pb-0`
-loses to it. This is the same ordering trap the titlebar block above describes,
-and the same remedy `TableRow`'s `last:!border-b-0` already uses. Measured, the
-non-important form regresses the shell by the full bottom inset; drop the marker
-when `okou-viewport-shell` itself migrates.
+Tailwind has no `display-mode` variant, and this is a genuine environment
+condition rather than a token decision, so it stays an arbitrary variant over an
+arbitrary value — the shape the existing `[@media(hover:hover)]:` call sites
+already use. The utility has to win against the `inset-0` on the same element,
+and it does: Tailwind emits the `inset` shorthand before the `bottom` longhand
+inside `@layer utilities`, and `cn()` keeps both, because a modifier-prefixed
+`bottom-*` never conflicts with an unprefixed `inset-0`.
 
 Measured against `main` with the App's own Tailwind compiler in Chromium over
-CDP: 216 states per pointer mode — two fixtures (the shell with its drawer and
-scrim, and the portaled dialog backdrop) across the default palette plus the
+CDP: 216 states per pointer mode — two fixtures, the shell with its drawer and
+scrim and the portaled dialog backdrop, across the default palette plus the
 eight gradient palettes in Light and Dark, at 1440x900, 390x844 DPR 2 and 767px,
 each with and without a standalone display mode. Zero changed pixels and zero
 computed-style or geometry differences in both the fine-pointer and
@@ -487,8 +500,8 @@ coarse-pointer runs.
 
 Two details make those zeros meaningful. `--sat`/`--sar`/`--sab`/`--sal` come
 from `env(safe-area-inset-*)` and resolve to `0px` in a desktop Chromium, which
-would make every padding under test measure zero and report a false no-change,
-so the harness injects non-zero insets on both sides and asserts them at every
+would make every inset under test measure zero and report a false no-change, so
+the harness injects non-zero insets on both sides and asserts them at every
 capture. And `display-mode` cannot be emulated: in Chromium 152
 `Emulation.setEmulatedMedia` accepts `{name:"display-mode",value:"standalone"}`
 without error while `matchMedia` still reports `browser`, for features-only,
@@ -497,11 +510,12 @@ launched with `--app=<url>` against a served web app manifest reports a real
 standalone display mode, so the standalone states run there rather than against
 a substituted media condition.
 
-A pixel diff alone also cannot accept `okou-pwa-fixed-cover`, because its whole
-effect is paint below the visual viewport: on-screen pixels are identical whether
-it applies or not. Geometry is its channel, and the negative controls check both
+A pixel diff alone also cannot accept this rule, because its whole effect is
+paint below the visual viewport: on-screen pixels are identical whether it
+applies or not. Geometry is its channel, and the negative controls check both
 channels separately — dropping the migrated bottom extension moves the scrim and
-backdrop boxes, while dropping their background fills changes pixels.
+backdrop boxes without changing a pixel, while dropping their background fills
+changes millions of pixels.
 
 `okou-mobile-sidebar` and `okou-mobile-fixed-safe-area` remain legacy selectors.
 They sit together on the mobile drawer `aside`, and spelling them as utilities

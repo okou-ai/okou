@@ -172,15 +172,6 @@ body {
   }
 }
 
-.okou-viewport-shell {
-  box-sizing: border-box;
-  height: 100%;
-  min-height: 100%;
-  max-height: 100%;
-  overflow: hidden;
-  padding-bottom: var(--sab);
-}
-
 .okou-fixed-viewport-shell {
   box-sizing: border-box;
   height: var(--okou-viewport-height);

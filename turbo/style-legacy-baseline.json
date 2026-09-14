@@ -25,12 +25,12 @@
     "okou-mobile-fixed-safe-area",
     "okou-mobile-sidebar",
     "okou-nav",
+    "okou-pwa-fixed-cover",
     "okou-shimmer-text",
     "okou-sidebar-header",
     "okou-thinking-enter",
     "okou-thinking-spinner",
     "okou-thinking-spinner-frame",
-    "okou-viewport-shell",
     "okou-workspace-bg",
     "owf-diagram",
     "owf-diagram-action",
@@ -63,48 +63,6 @@
   ],
   "cssAtoms": {
     "apps/platform/src/views/css/index.css": [
-      {
-        "atRules": [],
-        "selector": ".okou-viewport-shell",
-        "property": "box-sizing",
-        "value": "border-box",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-viewport-shell",
-        "property": "height",
-        "value": "100%",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-viewport-shell",
-        "property": "min-height",
-        "value": "100%",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-viewport-shell",
-        "property": "max-height",
-        "value": "100%",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-viewport-shell",
-        "property": "overflow",
-        "value": "hidden",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-viewport-shell",
-        "property": "padding-bottom",
-        "value": "var(--sab)",
-        "important": false
-      },
       {
         "atRules": [],
         "selector": ".okou-fixed-viewport-shell",
@@ -145,6 +103,13 @@
         "selector": ".okou-fixed-viewport-shell",
         "property": "padding",
         "value": "var(--sat) var(--sar) var(--sab) var(--sal)",
+        "important": false
+      },
+      {
+        "atRules": ["@media (display-mode:standalone)"],
+        "selector": ".okou-pwa-fixed-cover",
+        "property": "bottom",
+        "value": "calc(-1*var(--sab))",
         "important": false
       },
       {
@@ -2906,7 +2871,6 @@
     },
     "apps/platform/src/views/export-page/export-page.tsx": {
       "okou-app": 1,
-      "okou-viewport-shell": 1,
       "okou-workspace-bg": 1
     },
     "apps/platform/src/views/okou-page/agent-chat-page.tsx": {
@@ -3000,15 +2964,13 @@
     },
     "apps/platform/src/views/okou-page/connect-page-shell.tsx": {
       "okou-app": 1,
-      "okou-viewport-shell": 1,
       "okou-workspace-bg": 1
     },
     "apps/platform/src/views/okou-page/connector-account-action-card.tsx": {
       "okou-chat-card": 1
     },
     "apps/platform/src/views/okou-page/directed-shared.tsx": {
-      "okou-app": 1,
-      "okou-viewport-shell": 1
+      "okou-app": 1
     },
     "apps/platform/src/views/okou-page/image-annotation-editor.tsx": {
       "okou-app": 1
@@ -3024,7 +2986,7 @@
     },
     "apps/platform/src/views/okou-page/sidebar-layout.tsx": {
       "okou-app": 1,
-      "okou-viewport-shell": 1
+      "okou-pwa-fixed-cover": 1
     },
     "apps/platform/src/views/okou-page/sidebar.tsx": {
       "okou-desktop-titlebar-drag-region": 2,
@@ -3046,8 +3008,7 @@
       "okou-workspace-bg": 1
     },
     "apps/platform/src/views/onboarding/onboarding-shell.tsx": {
-      "okou-app": 1,
-      "okou-viewport-shell": 1
+      "okou-app": 1
     },
     "apps/platform/src/views/onboarding/onboarding-workflow-diagram.tsx": {
       "owf-diagram": 1,
