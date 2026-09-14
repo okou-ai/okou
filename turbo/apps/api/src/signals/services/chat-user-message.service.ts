@@ -12,7 +12,7 @@ import {
   isChatUserMessageEventType,
   type ChatEventType,
 } from "@okouai/api-contracts/contracts/chat-events";
-import { parseAvatarTemplateStylePresetId } from "@okouai/core/avatar-template";
+import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 
 interface UserMessageProjection {
   readonly agentPrompt: string;
@@ -277,19 +277,6 @@ function userMessageFilePrompt(part: UserMessageFilePart): string {
   return `${annotatedFile}\n\n[Image annotations]\n${JSON.stringify(part)}`;
 }
 
-function generationTemplateTypeLabel(
-  template: GenerationTemplateRequest,
-): string {
-  if (
-    template.type === "video" &&
-    parseAvatarTemplateStylePresetId(template.selection.stylePresetId) !==
-      undefined
-  ) {
-    return "avatar";
-  }
-  return template.type;
-}
-
 function inlineGenerationTemplatePrompt(
   part: {
     readonly titleSnapshot: string;
@@ -297,7 +284,7 @@ function inlineGenerationTemplatePrompt(
   },
   referenceNumber: number,
 ): string {
-  return `[Template #${referenceNumber}: ${part.titleSnapshot} (${generationTemplateTypeLabel(part.template)})]`;
+  return `[Template #${referenceNumber}: ${part.titleSnapshot} (${generationTemplateKind(part.template)})]`;
 }
 
 function formatFeedbackParts(

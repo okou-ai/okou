@@ -109,7 +109,7 @@ import {
   messageDocumentToDisplayText,
   messageDocumentToPrompt,
 } from "../../signals/okou-page/user-message-document-codec.ts";
-import { avatarTemplateSelection } from "../../signals/okou-page/avatar-template-selection.ts";
+import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import type {
   ChatThreadWorkflowAutomation,
   WorkflowSchedule,
@@ -5942,34 +5942,43 @@ function generationTemplateTypeLabel(
   if (!value) {
     return null;
   }
-  if (avatarTemplateSelection(value)) {
-    return i18n.t(($) => {
-      return $.artifacts.templates.avatar;
-    });
+  switch (generationTemplateKind(value)) {
+    case "avatar": {
+      return i18n.t(($) => {
+        return $.artifacts.templates.avatar;
+      });
+    }
+    case "intro-video": {
+      return i18n.t(($) => {
+        return $.artifacts.templates.introVideo;
+      });
+    }
+    case "video": {
+      return i18n.t(($) => {
+        return $.chat.templates.categories.video;
+      });
+    }
+    case "illustration": {
+      return i18n.t(($) => {
+        return $.chat.templates.categories.illustration;
+      });
+    }
+    case "workflow": {
+      return i18n.t(($) => {
+        return $.chat.templates.categories.workflow;
+      });
+    }
+    case "website": {
+      return i18n.t(($) => {
+        return $.chat.templates.categories.website;
+      });
+    }
+    case "presentation": {
+      return i18n.t(($) => {
+        return $.chat.templates.categories.presentation;
+      });
+    }
   }
-  if (value.type === "video") {
-    return i18n.t(($) => {
-      return $.chat.templates.categories.video;
-    });
-  }
-  if (value.type === "illustration") {
-    return i18n.t(($) => {
-      return $.chat.templates.categories.illustration;
-    });
-  }
-  if (value.type === "workflow") {
-    return i18n.t(($) => {
-      return $.chat.templates.categories.workflow;
-    });
-  }
-  if (value.type === "website") {
-    return i18n.t(($) => {
-      return $.chat.templates.categories.website;
-    });
-  }
-  return i18n.t(($) => {
-    return $.chat.templates.categories.presentation;
-  });
 }
 
 const annotationIconImgs = {

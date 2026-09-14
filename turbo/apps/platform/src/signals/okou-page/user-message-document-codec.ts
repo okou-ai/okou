@@ -19,6 +19,7 @@ import { formatFeedbackPrompt, type FeedbackSource } from "./chat-feedback.ts";
 import { serializeChatThreadMention } from "./chat-thread-suggestion-domain.ts";
 import { avatarTemplateSelection } from "./avatar-template-selection.ts";
 import { introVideoTemplateOptions } from "@okouai/core/intro-video-template";
+import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import {
   serializeAgentMention,
   splitAgentMentionSegments,
@@ -501,11 +502,8 @@ function templateAttachmentType(template: GenerationTemplateRequest): string {
 }
 
 function templateCategory(template: GenerationTemplateRequest): string {
-  if (introVideoTemplateOptions(template)) {
-    return "intro-video";
-  }
-  const type = templateAttachmentType(template);
-  return type === "presentation" ? "slides" : type;
+  const kind = generationTemplateKind(template);
+  return kind === "presentation" ? "slides" : kind;
 }
 
 function templatePreviewImageUrl(
