@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { createElement } from "react";
 import {
   artifactReferencePath,
@@ -20,6 +20,11 @@ import {
   createSharedArtifactViewerSignals,
 } from "./shared-artifact-page.ts";
 import { SharedArtifactPage } from "../views/shared-artifact-page/shared-artifact-page.tsx";
+
+const sharedArtifactViewer$ = computed((get) => {
+  get(pathParams$);
+  return createSharedArtifactViewerSignals();
+});
 
 // Keep authorization on the existing resolver. Preview URLs stay inside the
 // viewer while the app URL remains the address recipients can copy.
@@ -76,8 +81,9 @@ export const setupSharedArtifact$ = command(
       set(
         updatePage$,
         createElement(SharedArtifactPage, {
+          key: id,
           artifact,
-          viewer: createSharedArtifactViewerSignals(),
+          viewer: get(sharedArtifactViewer$),
         }),
       );
       await set(hideAppSkeleton$, signal);

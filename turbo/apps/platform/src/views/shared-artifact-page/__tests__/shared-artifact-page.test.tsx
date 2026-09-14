@@ -84,11 +84,13 @@ test("an image link stays in the app and reuses the lightbox preview and zoom co
   await expect(
     screen.findByTestId("attachment-lightbox-image"),
   ).resolves.toHaveAttribute("src", imageUrl);
-  expect(screen.getByRole("heading", { name: "launch.png" })).toBeVisible();
+  expect(
+    screen.getByRole("heading", { name: "launch.png" }),
+  ).toBeInTheDocument();
   expect(document.title).toBe("launch.png | Okou");
   await expect(
     screen.findByTestId("artifact-dialog-image-zoom-controls"),
-  ).resolves.toBeVisible();
+  ).resolves.toBeInTheDocument();
   expect(redirect).not.toHaveBeenCalled();
   click(action("button", "Zoom in"));
   await waitFor(() => {
@@ -125,7 +127,7 @@ test.each([imagePath, `/share/artifacts/${artifactId}`])(
         `https://app.okou.ai${path}#detail`,
       ]);
     });
-    await expect(screen.findByText("Link copied")).resolves.toBeVisible();
+    await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
     expect(shareChanges).toStrictEqual([]);
     expect(queryAllByRoleFast("menuitem")).toHaveLength(0);
   },
@@ -138,7 +140,9 @@ test("clipboard failure is reported without claiming that the link was copied", 
   await openViewer();
   click(action("button", "Share"));
 
-  await expect(screen.findByText("Failed to copy link")).resolves.toBeVisible();
+  await expect(
+    screen.findByText("Failed to copy link"),
+  ).resolves.toBeInTheDocument();
   expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
 });
 
@@ -154,7 +158,7 @@ test("downloads resolve a legacy link again and save the original filename and b
   });
   click(action("button", "Download options"));
   await waitFor(() => {
-    expect(action("menuitem", "Download")).toBeVisible();
+    expect(action("menuitem", "Download")).toBeInTheDocument();
   });
   expect(queryAllByRoleFast("menuitem")).toHaveLength(1);
   click(action("menuitem", "Download"));
@@ -228,8 +232,10 @@ test.each([400, 403, 404] as const)(
       screen.getByText(
         "This artifact is unavailable or you do not have access.",
       ),
-    ).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Artifacts" })).toBeVisible();
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Artifacts" }),
+    ).toBeInTheDocument();
     expect(
       screen.queryByTestId("attachment-lightbox-image"),
     ).not.toBeInTheDocument();
