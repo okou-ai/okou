@@ -76,7 +76,11 @@ interface CommentsOptions extends CollectionOptions {
   readonly sort?: string;
 }
 
-interface SummarizeOptions extends OutputOptions {
+interface TranscriptOptions extends OutputOptions {
+  readonly refresh?: boolean;
+}
+
+interface SummarizeOptions extends TranscriptOptions {
   readonly prompt?: string;
 }
 
@@ -1161,11 +1165,18 @@ const transcriptCommand = new Command()
   .name("transcript")
   .description("Extract the transcript from one public social video")
   .argument("<url>", "Public social video URL")
+  .option(
+    "--refresh",
+    "Bypass YouTube extraction caches; captions may still be unavailable",
+  )
   .option("--json", "Print compact JSON")
-  .action(async (url: string, options: OutputOptions) => {
+  .action(async (url: string, options: TranscriptOptions) => {
     await runSocialAction(options.json === true, async () => {
       const target = parseSocialTarget(url);
-      await printIntent(transcriptIntent(target), options.json === true);
+      await printIntent(
+        transcriptIntent(target, { refresh: options.refresh }),
+        options.json === true,
+      );
     });
   });
 
@@ -1174,12 +1185,23 @@ const summarizeCommand = new Command()
   .description("Summarize one public social video")
   .argument("<url>", "Public social video URL")
   .option("--prompt <text>", "Additional summary instructions")
+  .option(
+    "--refresh",
+    "Bypass YouTube extraction caches; summary-result caching is unchanged",
+  )
   .option("--json", "Print compact JSON")
+  .addHelpText(
+    "after",
+    "\nRefresh bypasses cached caption absence but does not guarantee captions exist.\nExtraction refresh and summary-result caching are separate controls.",
+  )
   .action(async (url: string, options: SummarizeOptions) => {
     await runSocialAction(options.json === true, async () => {
       const target = parseSocialTarget(url);
       await printIntent(
-        summarizeIntent(target, options.prompt),
+        summarizeIntent(target, {
+          prompt: options.prompt,
+          refresh: options.refresh,
+        }),
         options.json === true,
       );
     });

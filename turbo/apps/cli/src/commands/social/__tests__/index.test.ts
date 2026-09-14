@@ -168,6 +168,7 @@ describe("okou social command", () => {
       command.setOptionValue("date", undefined);
       command.setOptionValue("type", undefined);
       command.setOptionValue("prompt", undefined);
+      command.setOptionValue("refresh", undefined);
       command.setOptionValue("maxDuration", undefined);
       command.setOptionValue("quality", undefined);
       command.setOptionValue("format", undefined);
@@ -499,6 +500,29 @@ describe("okou social command", () => {
     expect(output()).not.toContain("inputSchema");
     expect(output()).not.toContain("instagram_channel_posts");
     expect(apiRequests).toBe(0);
+  });
+
+  it("discovers YouTube refresh and its cache boundary", async () => {
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "capabilities",
+      "youtube",
+      "--json",
+    ]);
+
+    expect(JSON.parse(output()) as unknown).toMatchObject({
+      capabilities: [
+        {
+          platform: "youtube",
+          notes: expect.arrayContaining([
+            expect.stringContaining("--refresh"),
+            expect.stringContaining("captions may still be unavailable"),
+            expect.stringContaining("Summary-result caching is separate"),
+          ]),
+        },
+      ],
+    });
   });
 
   it.each([
@@ -993,6 +1017,8 @@ describe("okou social command", () => {
 
     expect(requestBody).toMatchObject({ tool: expectedTool });
     expect(outputRequest()).toStrictEqual({});
+    expect(requestBody).not.toHaveProperty("input.no_cache");
+    expect(requestBody).not.toHaveProperty("input.cache");
   });
 
   it.each([
@@ -1029,7 +1055,134 @@ describe("okou social command", () => {
       input: { custom_prompt: "Focus on outcomes" },
     });
     expect(outputRequest()).toStrictEqual({ customPrompt: true });
+    expect(requestBody).not.toHaveProperty("input.no_cache");
+    expect(requestBody).not.toHaveProperty("input.cache");
   });
+
+  it.each(["transcript", "summarize"])(
+    "refreshes YouTube extraction through %s without changing result caching",
+    async (operation) => {
+      let requestBody: unknown;
+      server.use(
+        http.post(
+          "http://localhost:3000/api/social/request",
+          async ({ request }) => {
+            requestBody = await request.json();
+            return HttpResponse.json(
+              socialResponse(`youtube_${operation}`, null, {
+                transcript: "Fresh captions",
+                summary: "Fresh summary",
+              }),
+            );
+          },
+        ),
+      );
+
+      const isSummary = operation === "summarize";
+      await socialCommand.parseAsync([
+        "node",
+        "okou",
+        operation,
+        "https://youtu.be/example",
+        "--refresh",
+        ...(isSummary ? ["--prompt", "Focus on outcomes"] : []),
+        "--json",
+      ]);
+
+      expect(requestBody).toStrictEqual({
+        tool: `youtube_${operation}`,
+        input: {
+          url: "https://youtu.be/example",
+          no_cache: true,
+          ...(isSummary ? { custom_prompt: "Focus on outcomes" } : {}),
+        },
+      });
+      expect(outputRequest()).toStrictEqual({
+        refresh: true,
+        ...(isSummary ? { customPrompt: true } : {}),
+      });
+      expect(JSON.parse(output()) as unknown).toMatchObject({
+        status: "complete",
+        operation,
+        platform: "youtube",
+        data: isSummary
+          ? { summary: "Fresh summary" }
+          : { transcript: "Fresh captions" },
+      });
+    },
+  );
+
+  it.each(["transcript", "summarize"])(
+    "rejects unsupported %s refresh before requesting managed work",
+    async (operation) => {
+      let requests = 0;
+      server.use(
+        http.post("http://localhost:3000/api/social/request", () => {
+          requests += 1;
+          return HttpResponse.json({});
+        }),
+      );
+
+      await expect(
+        socialCommand.parseAsync([
+          "node",
+          "okou",
+          operation,
+          "https://instagram.com/reel/example",
+          "--refresh",
+          "--json",
+        ]),
+      ).rejects.toThrow("process.exit called");
+
+      expect(requests).toBe(0);
+      expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+        status: "error",
+        error: {
+          code: "INVALID_INPUT",
+          message: "--refresh is supported only for YouTube videos",
+          retryable: false,
+        },
+      });
+      expect(mockExit).toHaveBeenCalledWith(1);
+    },
+  );
+
+  it.each([
+    ["transcript", 404, "SOCIAL_TRANSCRIPT_UNAVAILABLE"],
+    ["summarize", 400, "BAD_REQUEST"],
+  ])(
+    "preserves %s refresh failures (%s) without retrying",
+    async (operation, status, code) => {
+      let requests = 0;
+      server.use(
+        http.post("http://localhost:3000/api/social/request", () => {
+          requests += 1;
+          return HttpResponse.json(
+            { error: { code, message: "Requested extraction is unavailable" } },
+            { status },
+          );
+        }),
+      );
+
+      await expect(
+        socialCommand.parseAsync([
+          "node",
+          "okou",
+          operation,
+          "https://youtu.be/example",
+          "--refresh",
+          "--json",
+        ]),
+      ).rejects.toThrow("process.exit called");
+
+      expect(requests).toBe(1);
+      expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+        status: "error",
+        error: { code, httpStatus: status, retryable: false },
+      });
+      expect(mockExit).toHaveBeenCalledWith(1);
+    },
+  );
 
   it("aggregates pages, trims provider overshoot, and totals billing", async () => {
     const requests: unknown[] = [];
@@ -2345,6 +2498,13 @@ describe("okou social command", () => {
     expect(postsHelp).toContain("slower; --limit at most 30");
     expect(renderedHelp).toContain("--full-details --limit 30 --json");
     expect(renderedHelp).toContain("null, empty, or missing");
+    for (const name of ["transcript", "summarize"]) {
+      const command = socialCommand.commands.find((candidate) => {
+        return candidate.name() === name;
+      });
+      expect(command?.helpInformation()).toContain("--refresh");
+      expect(command?.helpInformation()).toContain("YouTube extraction caches");
+    }
     expect(renderedHelp).toContain(
       "Provider credentials remain on the Okou API server",
     );
