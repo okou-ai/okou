@@ -266,3 +266,131 @@ writers and supported rollback writers must use the explicit contract; merge
 alone does not prove that gate. Retire outgoing-writer fixture expectations
 and update the exact schema inventory in the later removal change. API
 rollback does not restore database triggers.
+
+## Pending usage-pack purchase preparation
+
+`usage-pack-pending-snapshot.service.ts:writeUsagePackPendingSnapshots` owns
+subscription mutations and the explicit counterpart of
+`sync_usage_pack_pending_snapshot_guard_0954`. Its callback and guard writes
+commit together. It preserves the two pending statuses (`checkout_pending`,
+`purchase_pending`), rejects a newly pending purchase when another remains,
+and releases the guard for any transition out of that set or a deletion.
+Changing between the two pending statuses is idempotent. Existing competing
+pre-0954 snapshots retain their exact count; retaining or retiring those rows
+does not admit an additional pending purchase.
+
+### Pending writer inventory
+
+Paths below are relative to `turbo/apps/api/src/` unless stated otherwise.
+
+| Writer                                                                                                             | Transaction and companion behavior                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `signals/services/usage-pack-subscription.service.ts`: prepare, serialized Checkout and saved-card preview/confirm | The explicit operation replaces the existing purchase transaction boundary. Resolution retires unwanted/expired snapshots before creating a replacement; the root, allocations, Stripe correlation and final guard stay atomic. Existing Stripe idempotency keys, retry/redirect decisions and cancellation ownership remain.                                             |
+| Same service: synchronization, invalidation, deletion, plan activation and invoice fulfillment                     | Checkout/subscription/invoice webhooks enter these operations through `webhooks-stripe.service.ts`. All status changes release/maintain the guard in the same transaction as allocation, credit and organization projections. Fulfillment retains its existing outer usage-pack billing lock before entering the pending operation. Repeated events keep the final count. |
+| Same service: reconciliation                                                                                       | `cron-billing-entitlements.service.ts` enters the same lifecycle writers. Both uncorrelated stale snapshots and expired Checkout Sessions retire through the explicit operation. Per-candidate failure handling and scoped test cron selection remain unchanged.                                                                                                          |
+| `signals/services/usage-pack-subscription-migration.service.ts:materializeUsagePackSnapshot`                       | Keeps its outer usage-pack billing lock, then enters the pending operation before locking the migration and materializing the root/allocations. Stripe-derived non-pending subscriptions leave a zero guard.                                                                                                                                                              |
+| `signals/services/usage-pack-allocation-change.service.ts`                                                         | Its only direct root update changes `cancelAtPeriodEnd`/`updatedAt`; neither triggers pending effects. Allocation/plan/invitation changes otherwise read roots and write their own ledgers. Subsequent Stripe lifecycle status changes use the explicit writer above.                                                                                                     |
+| `signals/services/usage-pack-plan-change.service.ts`, `usage-pack-invitation-purchase.service.ts`                  | Read subscription roots; do not insert/delete them or change their organization/status. Existing usage-pack billing serialization is retained.                                                                                                                                                                                                                            |
+| `signals/services/org-deletion-billing.service.ts`                                                                 | Reads billing correlations to cancel Stripe objects. It does not delete local roots; cancellation callbacks/reconciliation use the explicit lifecycle writer. Roots have no organization foreign key and do not disappear through an organization cascade. Preserve existing billing retention.                                                                           |
+| `signals/routes/test-usage-pack-subscription-state.ts`                                                             | Current seed and both root cleanup operations use the explicit boundary. Timestamp/legacy Checkout correlation actions change neither status nor organization. The explicitly named pre-serialization fixture deliberately reconstructs historical competing roots and calls the explicit repair operation. It is fixture-owned setup, not a current admission path.      |
+| `signals/routes/test-billing-reconciliation-state.ts`                                                              | Setup and cleanup lock their complete, uniquely owned organization set before writing any root, allocation or organization metadata. Guard release is part of cleanup.                                                                                                                                                                                                    |
+| `turbo/packages/db/scripts/test-migration-consistency-schema.ts`                                                   | Keeps the shipped function/trigger inventory and legacy SQL behavior assertions until contraction. No current numbered external-data migration writes these roots. Shipped migrations and historical numbered scripts remain unchanged.                                                                                                                                   |
+
+There is no current product/admin endpoint for moving a root to another
+organization or physically deleting it. A new administrative writer must use
+the explicit operation and its complete old/new organization scope, and update
+any related allocation/ledger ownership under its own reviewed business rules.
+This preparation does not introduce such an endpoint or move existing data.
+
+### Lock order and old/new writer protocol
+
+1. If the caller already needs the `usage_pack_billing:<org>` advisory lock,
+   acquire all needed organization locks in sorted order first. Never acquire
+   this lock inside a pending callback.
+2. Acquire `billing_purchase:<org>` advisory transaction locks for every
+   affected organization in sorted, deduplicated order. Current outgoing
+   purchase creation already shares this lock.
+3. Lock all existing subscription roots for those organizations with
+   `FOR UPDATE`, ordered by root ID, before touching a guard. This includes
+   multiple grandfathered roots. IDs loaded before the transaction are also
+   locked and their organization scope is rechecked before taking any guard;
+   a stale lifecycle callback cannot update a root moved to another organization.
+   Checkout confirmation selects its root with both ID and organization predicates.
+   Outgoing terminal writers take a root lock
+   before their AFTER trigger takes its guard lock, so prepared writers must
+   not reverse that order.
+4. Ensure guard rows exist, then lock guards in sorted organization order.
+   Read the current roots/counts under these locks. A mismatched persisted
+   count fails the transaction and requires explicit repair.
+5. Execute the awaited callback. Every root it writes must belong to the
+   declared organization set; include both organizations for a move and use
+   scoped predicates. Retire replaced purchases before inserting their
+   replacement. Acquire allocation, migration, fulfillment and organization
+   metadata locks only after entering this boundary.
+6. Read the final pending identities, validate admission (including movement
+   into another organization), and **assign** the exact final guard count.
+   Do not increment/decrement in API code. The retained trigger may already
+   have performed its original effects; assigning the same final count is
+   idempotent. There is no trigger-presence probe selecting an effect owner.
+
+Pending-to-pending updates preserve an established root, including
+pre-0954 duplicates. New pending identities are allowed only when no competing
+pending root remains. All API callbacks retain their existing mutation order;
+they do not create a competing pending root and then discard it to bypass
+admission. A failed callback, conflict, validation failure or commit failure rolls back
+both primary and guard writes. Do not catch a failed admission and commit the
+surrounding transaction. The operation can use an existing transaction through
+a savepoint, but must enter before that transaction takes subordinate row locks.
+Direct historical SQL and pre-0954 writers without the shared purchase
+serialization are not new supported administrative interfaces.
+
+For one organization, this boundary executes seven queries around the callback:
+one advisory lock, one ordered root lock, guard creation/lock, the initial root
+read, the final root read, and count assignment. This excludes transaction
+control; fulfillment and migration add a savepoint pair inside their existing
+outer transaction. Existing purchase transactions already performed the advisory lock. Multi-organization operations
+add four queries per additional organization. The organization index bounds
+root scans; all existing roots are deliberately locked so a batch retirement
+cannot take a guard before a later root. Slow Stripe work retains these locks
+until its existing transaction completes. Keep external retry and network
+bounds intact; measure representative organization histories before contraction.
+
+`usagePackPurchaseSerializationSchemaAvailable` now checks the relations used
+by the writer, the valid/ready unique organization guard index, its indexed
+column, the non-null integer count and validated count constraint. It follows
+the writer's search path and no longer requires a trigger or function. Removing
+just the trigger/function therefore does not disable Checkout.
+
+### Pending repair, verification and removal gate
+
+Use `repairUsagePackPendingSnapshotGuards(db, orgIds)` for an explicitly scoped
+repair/backfill. It uses the same organization/root/guard lock order and
+reconstructs counts from actual pending rows, preserving grandfathered
+purchases. It does not cancel purchases or silently pick a winner. Review the
+intended organization set and billing correlations before calling it; use
+bounded batches without pre-acquiring subordinate locks. Never reset a live
+guard to zero to force a purchase through. Keep raw historical fixtures and
+permanent migrations as evidence, not executable current repair instructions.
+
+The private PostgreSQL suite exercises retained/absent triggers, guard/index
+prerequisites, admission, duplicate requests, all terminal releases, deletion,
+rollback, grandfathered rows, repair, organization movement and deterministic
+blocked prepared/outgoing transactions. API route coverage exercises Checkout,
+saved-card confirmation, webhook/invoice processing, migration, scoped billing
+cron and cleanup. A cron-expired snapshot must permit a subsequent real
+Checkout request. Run the same routes in isolated UTC databases with the
+trigger retained and with only this trigger/function absent; never drop shared
+suite triggers to select a test mode.
+
+The shipped trigger/function, guard table, unique index and check constraint
+remain installed. Before a later migration removes the trigger/function,
+record the prepared immutable API artifacts serving requests and background
+jobs, the oldest supported rollback artifact, fresh writer inventory, guard
+reconciliation evidence and this compatibility matrix in #33747. Every
+serving/background/rollback writer must use the explicit operation. Keep the
+guard/index after contraction. A source audit or merged preparation PR is not
+proof that the serving/rollback gate passed. Rolling back below the prepared
+floor after contraction requires a separately reviewed schema restoration and
+reconciliation; application rollback does not recreate a trigger. This PR does
+not run production migration or deployment observation, and does not resume
+marketing privacy functionality.
