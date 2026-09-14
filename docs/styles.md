@@ -589,7 +589,7 @@ changes millions of pixels.
 
 `okou-mobile-sidebar` and `okou-mobile-fixed-safe-area` remain legacy selectors.
 They sit together on the mobile drawer `aside`, and spelling them as utilities
-takes that element from 301 to 512 characters of class list and from two to six
+takes that element from 288 to 499 characters of class list and from two to six
 bracketed arbitrary values. Whether a six-declaration `::before` paint layer and
 a four-value safe-area padding belong inline there, behind a shared safe-area
 decision, or inside a drawer-surface component is a token-layer design call, so
