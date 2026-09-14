@@ -18,6 +18,12 @@ import {
 } from "@okouai/api-contracts/contracts/social";
 import chalk from "chalk";
 import { Command, InvalidArgumentError } from "commander";
+import {
+  SOCIAL_DEFAULT_COLLECTION_LIMIT as DEFAULT_COLLECTION_LIMIT,
+  SOCIAL_MAX_COLLECTION_PAGES as MAX_COLLECTION_PAGES,
+  type SocialOperation,
+  type SocialPlatform,
+} from "@okouai/api-contracts/contracts/social-discovery";
 
 import {
   callSocialKit,
@@ -26,10 +32,12 @@ import {
   listSocialKitDownloads,
   SocialDownloadConflictError,
   SocialApiRequestError,
+  getSocialStatus,
 } from "../../lib/api/domains/social";
 import { ApiRequestError } from "../../lib/api/core/client-factory";
 import { getOkouToken } from "../../lib/okou-env";
 import { createArtifactPresentation } from "../shared/artifact-return";
+import { socialCapabilities } from "./capabilities";
 import {
   commentsIntent,
   downloadPlatform,
@@ -38,19 +46,12 @@ import {
   parseSocialTarget,
   postsIntent,
   searchIntent,
-  SOCIAL_CAPABILITIES,
   summarizeIntent,
   transcriptIntent,
-  type SocialCapability,
   type SocialIntent,
-  type SocialOperation,
-  type SocialPlatform,
   type SocialRequestMetadata,
   type SocialTarget,
 } from "./intents";
-
-const DEFAULT_COLLECTION_LIMIT = 10;
-const MAX_COLLECTION_PAGES = 100;
 
 interface OutputOptions {
   readonly json?: boolean;
@@ -1015,16 +1016,6 @@ async function printCollectionIntent(
   }
 }
 
-function capabilitiesFor(
-  platform: SocialPlatform | undefined,
-): readonly SocialCapability[] {
-  return platform
-    ? SOCIAL_CAPABILITIES.filter((capability) => {
-        return capability.platform === platform;
-      })
-    : SOCIAL_CAPABILITIES;
-}
-
 function resumeDownloadCommand(downloadId: string): string {
   return `okou social download --resume ${downloadId}`;
 }
@@ -1188,17 +1179,46 @@ function downloadOutput(
 
 const capabilitiesCommand = new Command()
   .name("capabilities")
-  .description("List concise Okou Social capabilities")
+  .description(
+    "List offline capabilities, supported inputs, and collection limits",
+  )
   .argument("[platform]", "Optional platform filter", parseSocialPlatform)
   .option("--json", "Print compact JSON")
   .action((platform: SocialPlatform | undefined, options: OutputOptions) => {
     printJson(
       {
-        capabilities: capabilitiesFor(platform),
+        capabilities: socialCapabilities(platform),
       },
       options.json === true,
     );
   });
+
+const statusCommand = new Command()
+  .name("status")
+  .description("Check reported Social service health without using credits")
+  .argument(
+    "[platform]",
+    "Optional platform filter (x aliases twitter)",
+    parseSocialPlatform,
+  )
+  .option("--json", "Print compact JSON")
+  .addHelpText(
+    "after",
+    `
+Reports public service health, not account access, quota, or balance.
+Overall includes service-wide health even when operations are filtered.
+Missing, invalid, unavailable, or older-than-five-minute observations are unknown.
+Requires social:read and the Social status feature to be enabled.
+Discover supported operations and constraints offline: okou social capabilities [platform] --json
+`,
+  )
+  .action(
+    async (platform: SocialPlatform | undefined, options: OutputOptions) => {
+      await runSocialAction(options.json === true, async () => {
+        printJson(await getSocialStatus(platform), options.json === true);
+      });
+    },
+  );
 
 const inspectCommand = new Command()
   .name("inspect")
@@ -1624,6 +1644,7 @@ export const socialCommand = new Command()
   .name("social")
   .description("Use Okou Social through intent-oriented public data commands")
   .addCommand(capabilitiesCommand)
+  .addCommand(statusCommand)
   .addCommand(inspectCommand)
   .addCommand(postsCommand)
   .addCommand(searchCommand)
@@ -1637,6 +1658,7 @@ export const socialCommand = new Command()
     `
 Examples:
   Discover:    okou social capabilities instagram --json
+  Health:      okou social status instagram --json
   Inspect:     okou social inspect https://www.instagram.com/p/<id>/ --json
   With views:  okou social inspect https://www.instagram.com/reel/<id>/ --require-views --json
   Posts:       okou social posts https://www.instagram.com/<user>/ --limit 20 --json
@@ -1656,6 +1678,8 @@ Examples:
 Notes:
   - URL commands detect LinkedIn, X, Facebook, Instagram, TikTok, and YouTube automatically
   - Commands use reviewed managed capabilities without exposing provider operation names
+  - capabilities is offline; status separately checks reported service health without credits
+  - Capability details distinguish total limits, page limits, source constraints, and supported inputs
   - Authenticates via OKOU_TOKEN (requires social:read capability) or a CLI token
   - Provider credentials remain on the Okou API server
   - Collection --limit applies to the total returned result, not one provider page

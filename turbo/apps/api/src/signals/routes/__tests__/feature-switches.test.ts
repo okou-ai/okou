@@ -107,7 +107,7 @@ describe("/api/feature-switches", () => {
   });
 
   it.each([true, false])(
-    "persists the unified model selection override as %s and ignores the retired switches",
+    "persists the unified model selection override as %s for a non-staff org",
     async (enabled) => {
       createRouteMocks(context).clerk.session(
         `user_${randomUUID()}`,
@@ -122,8 +122,6 @@ describe("/api/feature-switches", () => {
           body: {
             switches: {
               [FeatureSwitchKey.RefactorModelSelect]: enabled,
-              modelPickerMenu: !enabled,
-              chatReasoningEffort: !enabled,
             },
           },
         }),
@@ -144,12 +142,6 @@ describe("/api/feature-switches", () => {
       expect(
         current.body.effectiveSwitches[FeatureSwitchKey.RefactorModelSelect],
       ).toBe(enabled);
-      expect(current.body.effectiveSwitches).not.toHaveProperty(
-        "modelPickerMenu",
-      );
-      expect(current.body.effectiveSwitches).not.toHaveProperty(
-        "chatReasoningEffort",
-      );
     },
   );
 });

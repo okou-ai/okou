@@ -239,7 +239,7 @@ function ModelPickerOverview({
               selectedOption?.fastAvailable ? speedLabel : undefined,
               savedEffort === undefined
                 ? undefined
-                : formatChatEffort(value?.selectedModel, savedEffort),
+                : formatChatEffort(savedEffort),
             ]
               .filter(Boolean)
               .join(" · ") || undefined
@@ -311,6 +311,7 @@ function ChatModelSettings({
         {option?.content ??
           getCanonicalModelDisplayName(selection.selectedModel)}
       </div>
+      {/* Effort and Fast belong together, so space separates them, not a rule. */}
       <ChatEffortSettings
         selection={selection}
         disabled={option?.disabled ?? true}

@@ -480,9 +480,10 @@ describe("okou social command", () => {
   }
 
   it("discovers concise capabilities locally", async () => {
+    vi.stubEnv("OKOU_TOKEN", undefined);
     let apiRequests = 0;
     server.use(
-      http.post("http://localhost:3000/api/social/request", () => {
+      http.all("*", () => {
         apiRequests += 1;
         return HttpResponse.json(socialResponse("youtube_stats", null, {}));
       }),
@@ -546,6 +547,270 @@ describe("okou social command", () => {
       ],
     });
   });
+
+  it("discovers source limits and only supported advanced inputs without HTTP", async () => {
+    vi.stubEnv("OKOU_TOKEN", undefined);
+    let requests = 0;
+    server.use(
+      http.all("*", () => {
+        requests += 1;
+        return HttpResponse.error();
+      }),
+    );
+    await socialCommand.parseAsync(["node", "okou", "capabilities", "--json"]);
+    const capabilities = (
+      JSON.parse(output()) as {
+        capabilities: { platform: string; details: unknown[] }[];
+      }
+    ).capabilities;
+    expect(
+      capabilities.find((entry) => {
+        return entry.platform === "tiktok";
+      })?.details,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "posts",
+          collection: expect.objectContaining({
+            effectivePageLimit: 30,
+            maxPages: 100,
+          }),
+        }),
+        expect.objectContaining({
+          operation: "search",
+          variant: "keyword",
+          inputs: expect.objectContaining({
+            "--sort": expect.objectContaining({
+              choices: ["relevance", "likes", "date"],
+            }),
+          }),
+          collection: expect.objectContaining({
+            effectivePageLimit: 10,
+            pageSize: "provider_controlled",
+          }),
+        }),
+        expect.objectContaining({
+          operation: "search",
+          variant: "hashtag",
+          inputs: { "--hashtag": { value: true } },
+          collection: expect.objectContaining({ effectivePageLimit: 20 }),
+        }),
+      ]),
+    );
+    expect(
+      capabilities.find((entry) => {
+        return entry.platform === "instagram";
+      })?.details,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "inspect",
+          variant: "post",
+          inputs: {
+            "--require-views": { type: "boolean", required: false },
+          },
+        }),
+        expect.objectContaining({
+          operation: "search",
+          inputs: {
+            "<query>": {
+              type: "string",
+              minLength: 1,
+              maxLength: 100,
+              required: true,
+            },
+            "--hashtag": { type: "boolean", required: false },
+          },
+          collection: expect.objectContaining({
+            pagination: "none",
+            maxPages: 1,
+            requestPageLimit: null,
+            sourceLimit: { kind: "single_batch", maxItems: 12 },
+          }),
+        }),
+        expect.objectContaining({
+          operation: "posts",
+          inputs: {
+            "--kind": {
+              choices: ["posts", "reels"],
+              value: "reels",
+              default: "posts",
+            },
+          },
+        }),
+      ]),
+    );
+    expect(
+      capabilities.find((entry) => {
+        return entry.platform === "youtube";
+      })?.details,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "posts",
+          inputs: {
+            "--full-details": { type: "boolean", required: false },
+          },
+          collection: expect.objectContaining({
+            totalLimit: {
+              default: 10,
+              minimum: 1,
+              maximum: Number.MAX_SAFE_INTEGER,
+            },
+            pagination: "none",
+            maxPages: 1,
+            requestPageLimit: 100,
+          }),
+        }),
+        expect.objectContaining({
+          operation: "transcript",
+          inputs: {
+            "--refresh": { type: "boolean", required: false },
+          },
+        }),
+        expect.objectContaining({
+          operation: "summarize",
+          inputs: {
+            "--prompt": expect.objectContaining({
+              type: "string",
+              maxLength: 4096,
+            }),
+            "--refresh": { type: "boolean", required: false },
+            "--fields": expect.objectContaining({
+              format: "json_object",
+              fieldNameMaxLength: 64,
+              maxSerializedLength: 4096,
+              conflictsWith: "--fields-file",
+            }),
+            "--fields-file": expect.objectContaining({
+              format: "path",
+              conflictsWith: "--fields",
+            }),
+          },
+        }),
+        expect.objectContaining({
+          operation: "download",
+          inputs: expect.objectContaining({
+            "--format": expect.objectContaining({
+              choices: ["mp4", "m4a"],
+              default: "mp4",
+              required: false,
+            }),
+            "--quality": expect.objectContaining({
+              default: "720p",
+              required: false,
+            }),
+            "--max-duration": expect.objectContaining({
+              maximum: 86400,
+              required: true,
+            }),
+            "--resume": expect.objectContaining({ format: "uuid" }),
+          }),
+        }),
+      ]),
+    );
+    expect(requests).toBe(0);
+  });
+
+  it.each(["healthy", "degraded", "unavailable", "unknown"])(
+    "prints %s live status and normalizes the X platform alias",
+    async (status) => {
+      const body = {
+        observedAt: "2026-09-14T09:00:00.000Z",
+        staleAfterSeconds: 300,
+        overall: {
+          status,
+          updatedAt: status === "unknown" ? null : "2026-09-14T09:00:00.000Z",
+          reason: status === "unknown" ? "status_unavailable" : null,
+        },
+        operations: [
+          {
+            platform: "twitter",
+            operation: "inspect",
+            variant: "profile",
+            status,
+            updatedAt: null,
+            reason: null,
+          },
+        ],
+      };
+      server.use(
+        http.get("http://localhost:3000/api/social/status", ({ request }) => {
+          expect(new URL(request.url).searchParams.get("platform")).toBe(
+            "twitter",
+          );
+          expect(request.headers.get("authorization")).toBe(
+            "Bearer test-okou-token",
+          );
+          return HttpResponse.json(body);
+        }),
+      );
+      await socialCommand.parseAsync(["node", "okou", "status", "x", "--json"]);
+      expect(JSON.parse(output())).toEqual(body);
+      expect(mockExit).not.toHaveBeenCalled();
+    },
+  );
+
+  it("reports status API errors without inventing healthy observations", async () => {
+    server.use(
+      http.get("http://localhost:3000/api/social/status", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "FORBIDDEN",
+              message: "Social status is not enabled",
+            },
+          },
+          { status: 403 },
+        );
+      }),
+    );
+    await expect(
+      socialCommand.parseAsync(["node", "okou", "status", "--json"]),
+    ).rejects.toThrow("process.exit called");
+    expect(errorOutput()).toContain("Social status is not enabled");
+    expect(mockExit).toHaveBeenCalledWith(1);
+    expect(output()).toBe("");
+  });
+
+  it.each(["relevance", "likes", "date"])(
+    "accepts the advertised TikTok sort %s through the real command",
+    async (sort) => {
+      server.use(
+        http.post(
+          "http://localhost:3000/api/social/request",
+          async ({ request }) => {
+            expect(await request.json()).toMatchObject({
+              tool: "tiktok_search",
+              input: { sortBy: sort, datePosted: "week", limit: 10 },
+            });
+            return HttpResponse.json(
+              socialResponse(
+                "tiktok_search",
+                { state: "complete", itemsReturned: 0 },
+                collectionResult("tiktok_search"),
+              ),
+            );
+          },
+        ),
+      );
+      await socialCommand.parseAsync([
+        "node",
+        "okou",
+        "search",
+        "example",
+        "--platform",
+        "tiktok",
+        "--sort",
+        sort,
+        "--date",
+        "week",
+        "--json",
+      ]);
+      expect(mockExit).not.toHaveBeenCalled();
+      expect(output()).toContain('"operation":"search"');
+    },
+  );
 
   it.each([
     ["https://linkedin.com/in/example", "linkedin_profile"],

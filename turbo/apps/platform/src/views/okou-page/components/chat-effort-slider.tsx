@@ -2,15 +2,7 @@ import { Slider as SliderPrimitive } from "@base-ui/react/slider";
 
 import { cn } from "@okouai/ui/lib/utils";
 
-/**
- * Half the handle's width. The handle travels inside the track rather than
- * across its centre line, so at the lowest step its left edge sits on the
- * track's left edge and at the highest step its right edge sits on the right
- * edge. Base UI positions the handle by the value's percentage of the element
- * it lives in, so the inset is expressed as layout: the control is the visible
- * track, and the primitive's own track is that box pulled in by this much on
- * each side.
- */
+/** Keep in step with the handle's own width and the track's margin. */
 const THUMB_WIDTH = "18px";
 const THUMB_INSET = "9px";
 
@@ -18,17 +10,41 @@ const THUMB_INSET = "9px";
  * One mark per interior step. The track's two ends already read as the lowest
  * and highest step, so a mark drawn on top of them says the same thing twice;
  * the marks that remain divide the whole track evenly.
+ *
+ * `bg-divider` is the usual token for a painted rule, but it resolves to the
+ * same value as `--gray-200`, which is this track's own fill -- a mark drawn in
+ * it is invisible on the track and reads as a white slash over the texture.
+ * These marks sit on the track rather than on a page surface, so they take the
+ * ramp stop the shared `Slider` already uses for its own ticks.
+ *
+ * `passed` marks how many steps the handle has gone by. Those marks carry a
+ * little more weight, because they sit on the heavier fill rather than on the
+ * bare track.
  */
-function InteriorTicks({ count }: { count: number }) {
+function InteriorTicks({
+  count,
+  passed,
+}: {
+  count: number;
+  passed?: number | undefined;
+}) {
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0">
       {Array.from({ length: Math.max(count - 2, 0) }, (_, index) => {
+        const step = index + 1;
         return (
           <span
             key={index}
-            className="absolute inset-y-0 -ml-px w-px bg-divider"
+            className={cn(
+              "absolute inset-y-0 -ml-px w-px transition-colors duration-200",
+              passed === undefined
+                ? "bg-gray-400/45"
+                : step <= passed
+                  ? "bg-gray-500/40"
+                  : "bg-transparent",
+            )}
             style={{
-              insetInlineStart: `${String(((index + 1) / (count - 1)) * 100)}%`,
+              insetInlineStart: `${String((step / (count - 1)) * 100)}%`,
             }}
           />
         );
@@ -128,20 +144,24 @@ export function ChatEffortSlider({
           )}
         >
           {/* The fill ends on the handle's middle, so it is measured against
-              the same travel the handle has rather than against the primitive's
-              inset track. */}
+                the same travel the handle has. */}
           <div
-            className="absolute inset-y-0 left-0 transition-[width] duration-200 ease-[cubic-bezier(0.34,1.32,0.58,1)] motion-reduce:transition-none bg-gray-400/60"
+            className="absolute inset-y-0 left-0 bg-gray-400/60 transition-[width] duration-200 ease-[cubic-bezier(0.34,1.32,0.58,1)] motion-reduce:transition-none"
             style={{ width: fillWidth }}
           />
-          <InteriorTicks count={steps} />
+          <InteriorTicks count={steps} passed={value} />
         </div>
         <InteriorTicks count={steps} />
 
-        <SliderPrimitive.Track
-          className="absolute inset-y-0"
-          style={{ left: THUMB_INSET, right: THUMB_INSET }}
-        >
+        {/* The handle travels inside the track rather than across its centre
+            line: at the lowest step its left edge sits on the track's left
+            edge, at the highest its right edge sits on the right edge. The
+            primitive centres the handle on the value within this element, so
+            the inset is expressed as layout. It has to be a margin: the
+            primitive sets `position: relative` on the track inline, which beats
+            a class, and `inset-inline-start`/`inset-inline-end` do not size a
+            relatively positioned box. */}
+        <SliderPrimitive.Track className="relative mx-[9px] h-full">
           <SliderPrimitive.Thumb
             aria-label={label}
             aria-valuetext={valueText}

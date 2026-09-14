@@ -35,13 +35,15 @@ export function useChatEffort(
 }
 
 /**
- * Claude names its levels as words and Codex names them as identifiers, so only
- * the Claude vocabulary is title-cased.
+ * Each model keeps its own vocabulary, because the levels are the ones that
+ * model actually documents: Codex runs `low`/`medium`/`high`/`xhigh`/`max`/
+ * `ultra`, Claude runs `low`/`medium`/`high`/`extra`/`max`/`ultracode`.
+ * Renaming them to a house scale would tell a user something their model does
+ * not say. The only thing this changes is the case: a level is a label in the
+ * interface, not the raw enum it happens to be on the wire.
  */
-export function formatChatEffort(model: string | undefined, effort: string) {
-  return model?.startsWith("claude-")
-    ? effort.charAt(0).toUpperCase() + effort.slice(1)
-    : effort;
+export function formatChatEffort(effort: string) {
+  return effort.charAt(0).toUpperCase() + effort.slice(1);
 }
 
 /**
@@ -65,12 +67,12 @@ export function ChatEffortSettings({
   if (efforts.length === 0 || value === undefined) {
     return null;
   }
-  const displayValue = formatChatEffort(selection.selectedModel, value);
+  const displayValue = formatChatEffort(value);
   const index = efforts.findIndex((effort) => {
     return effort === value;
   });
   return (
-    <div className="flex flex-col gap-3 border-b border-border/60 px-2 py-4">
+    <div className="flex flex-col gap-3 px-2 py-3">
       <div className="flex items-baseline justify-between gap-3 text-[13px]">
         <span>{label}</span>
         <span className="font-medium text-foreground">{displayValue}</span>
@@ -122,7 +124,7 @@ export function ChatFastSetting({
     return $.settings.models.picker.fast;
   });
   return (
-    <div className="flex items-center justify-between gap-3 px-2 py-4">
+    <div className="flex items-center justify-between gap-3 px-2 py-3">
       <TooltipProvider delayDuration={300}>
         <Tooltip>
           <TooltipTrigger className="flex cursor-default items-center gap-2 text-[13px]">

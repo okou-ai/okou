@@ -12,6 +12,10 @@ import {
 } from "./social-tools";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import {
+  socialPlatformSchema,
+  socialStatusResponseSchema,
+} from "./social-discovery";
 
 export {
   findManagedSocialKitTool,
@@ -594,6 +598,19 @@ export function projectPublicSocialResponse(
 }
 
 export const socialContract = c.router({
+  status: {
+    method: "GET",
+    path: "/api/social/status",
+    headers: authHeadersSchema,
+    query: z.object({ platform: socialPlatformSchema.optional() }).strict(),
+    responses: {
+      200: socialStatusResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+    summary: "Get reported Social service health without billing",
+  },
   request: {
     method: "POST",
     path: "/api/social/request",

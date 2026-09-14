@@ -8,31 +8,80 @@ Keep the old key enabled while retained recovery paths still need it. This plan
 does not retire staging, the old account, historical audit logs, CloudTrail, or
 AWS Config.
 
-## Accepted evidence and remaining dependencies
+## Accepted evidence as of September 14, 2026 (UTC)
 
-- [Full verification 34449151278](https://github.com/vm0-ai/vm0/actions/runs/34449151278)
-  completed at `2026-09-10T07:38:23.484Z`: 77,331 verified fields with no source
-  or nested source references. The backfill is complete; do not repeat it.
+These are dated, collected results. Refresh time-sensitive evidence at the
+retirement decision; do not repeat completed backfill or business flows solely
+to refresh this document.
+
+- [Full production verification 34449151278](https://github.com/vm0-ai/vm0/actions/runs/34449151278)
+  completed at `2026-09-10T07:38:23.484Z`: 77,331 verified target fields, with no
+  source or nested source references. The production backfill is complete.
 - [Target audit 34556455859, attempt 2](https://github.com/vm0-ai/vm0/actions/runs/34556455859/attempts/2)
   verified actual CloudTrail and Config delivery into the new S3 buckets.
-- [Dependency inspection 34569228115](https://github.com/vm0-ai/vm0/actions/runs/34569228115)
-  read 59 target headers and no source headers from 15 runner registries.
-  Three missing registries are stable configuration-only `v0.190.0` directories,
-  without a loaded service, service PID, or matching runner process. The automated
-  inventory remains incomplete; its gate has not been weakened.
-- The same inspection listed 14 daily Neon snapshots with 14-day retention and
-  one manual snapshot without reported expiration. Snapshot timestamps/LSNs were
-  absent. Creation dates alone do not prove which historical data is stored.
-  The latest reported expiration was `2026-09-25T00:00:14Z`; actual disappearance
-  must be checked later.
-- The configured 24-hour PITR window clears the accepted verification timestamp
-  at `2026-09-11T07:38:23.484Z`. This arithmetic does not verify the earliest
-  actually restorable point or remove independent snapshot history.
-- [Source audit 34567634207](https://github.com/vm0-ai/vm0/actions/runs/34567634207)
-  verified the old IAM identity, then failed with `AccessDeniedException` on
-  `cloudtrail:LookupEvents`. No event pages were collected. The temporary read
-  grant remains required on `arn:aws:iam::072707626411:user/vm0-kms-prod`, scoped
-  to `us-west-2`; this is not a zero-usage result.
+  Preserve both accounts' audit services and historical logs.
+- [Source audit 34813865003](https://github.com/vm0-ai/vm0/actions/runs/34813865003)
+  successfully exercised the granted `cloudtrail:LookupEvents` permission as
+  `arn:aws:iam::072707626411:user/vm0-kms-prod`. Complete full-ARN and key-ID queries
+  covered `2026-09-10T07:38:23.484Z` through
+  `2026-09-14T06:17:54.228959Z`: 19 read-only management events, zero cryptographic
+  operations, unclassified operations or reported errors. None matched the
+  retained source runtime credential. The 15-minute visibility buffer does not
+  exclude late arrivals. Permission is no longer a blocker; refresh the whole
+  historical interval at retirement using [source-audit mode](source-audit.md),
+  which creates no old-key canary.
+- [Runner inventory 34811428216](https://github.com/vm0-ai/vm0/actions/runs/34811428216)
+  read all 18 production registries across three hosts: 36 target outer headers,
+  zero source, unknown, invalid, unreadable or concurrently changed entries.
+  This supersedes the older missing-registry result. It does not authenticate
+  nested contents or cover state outside those registries.
+- [Manual snapshot inspection 34801916529](https://github.com/vm0-ai/vm0/actions/runs/34801916529)
+  restored the February 16 snapshot in isolation: one database, 35 tables and
+  36,569 rows; zero envelope markers, literal source references, binary values,
+  foreign tables and large objects. Original state and preview cleanup passed.
+  This predates the stored-secret KMS writer introduced in
+  [PR 13693](https://github.com/vm0-ai/vm0/pull/13693); no KMS call was made.
+- [September 11 snapshot marker inspection 34836589200](https://github.com/vm0-ai/vm0/actions/runs/34836589200)
+  completed all 215 tables in one database: 6,974,074 rows, 77,410 rows containing
+  an envelope substring, 20 rows containing the literal source UUID, and 10,220
+  binary values. Foreign tables and large objects were absent. Cleanup and
+  original-state preservation passed. This is complete marker evidence, not
+  target-only decryption or retirement clearance.
+
+## Remaining recovery coverage
+
+The September 14 [backup inventory](https://github.com/vm0-ai/vm0/actions/runs/34811428216)
+contains the manual snapshot, 11 previously identified daily snapshots and three
+new daily snapshots. The August 29–31 snapshots have actually disappeared from
+the paginated inventory; the remaining original hashes still need disposition.
+The September 11 snapshot's reported expiration is `2026-09-25T00:00:14Z`.
+Verify actual disappearance by the original hash, or accept independently
+verified target-only recovery; a configured date is not expiration evidence.
+Classify new daily snapshots by their data and writers rather than repeatedly
+extending a wait because a new snapshot exists.
+
+All 15 listed snapshots lack reported data timestamps/LSNs. The configured
+24-hour PITR window and its calculated start do not establish the earliest
+actually restorable point. Six other retained branches have reported parent
+points after the migration verification time; their lineage has been collected,
+but their ciphertext has not been verified. Do not delete branches or original
+recovery points to manufacture a zero count. Resolve concrete external backup
+locations found in the operational inventory before claiming coverage.
+
+The September 11 marker result leaves these specific classification gaps:
+
+| Observed state                 | Required evidence                                                                                                |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| 20 literal source-UUID rows    | Exact catalog/field locations and reader semantics; literal text is not a decoded key reference.                 |
+| 10,220 binary values           | Actual catalog identities, formats and decoded contents; repository schema names alone do not prove the mapping. |
+| Known fields and nested queues | A complete target-only cryptographic report from the isolated recovery workflow.                                 |
+| Later and current SSH storage  | Actual schema coverage for every retained encrypted field, including `ssh_credentials.encrypted_password`.       |
+
+The snapshot's historical manifest lists `ssh_connection_credentials`; later
+code uses `ssh_credentials` with a different primary key and an additional
+password field. Match the manifest to each inspected database. A missing old
+table is not zero ciphertext, and schema drift is not an explanation for a
+failed run unless its actual diagnostic establishes that cause.
 
 ## Isolated snapshot inspection
 
@@ -159,38 +208,41 @@ external-boundary CLI scenarios and real isolated PostgreSQL aggregate tests.
 
 ## Resolve recovery paths before scheduling deletion
 
-1. Inspect the non-expiring manual snapshot. If it contains KMS envelopes,
-   verify its historical schema and ciphertext in isolation, re-encrypt source
-   and nested source values under the target key, then create and restore a
-   replacement backup and verify the target-only result. A separate reviewed
-   operation must pin the isolated branch; do not bypass the existing production
-   migration workflow's branch guards.
-2. Preserve daily backups through their configured retention. Wait for the
-   identified snapshots to actually expire, or preserve each required recovery
-   point through the same verified replacement process for an earlier retirement.
-   Do not delete historical recovery points merely to reduce the count.
-3. Refresh snapshot, PITR, live branch, and recoverable-deleted-branch inventories.
-   Perform target-only restore verification against a retained recovery point.
-   Resolve any other concrete backup locations in the operational inventory.
-   Metadata counts alone do not certify recovery.
-4. Complete the source CloudTrail audit after its read permission is granted.
-   Review the full paginated interval, visibility buffer and late arrival, and
-   classify every old-key call. Do not generate old-key canaries during the quiet
-   observation.
-5. Retire the old-key configuration rollback path in the operational runbook.
-   After permanent retirement, approved code rollbacks must retain current target
-   KMS configuration. The immutable Doppler pre-cutover configuration remains
-   historical evidence, not an executable restoration procedure. Preserve it
-   without recreating or exposing credentials.
-6. Only after accepted live, retained-state, backup, and rollback evidence is
-   complete, prepare an exact-key `ScheduleKeyDeletion` operation. Verify identity,
-   state, waiting period, and returned deletion date. KMS requires a 7–30 day wait
-   and the key is unusable while pending deletion. Maintain a tested cancellation
-   and re-enable procedure during that period, and observe failures before the
-   irreversible deadline.
+1. Complete target-only recovery verification of the retained target-era
+   snapshot and resolve the literal-reference and binary-format gaps above.
+   Bind each accepted result to its snapshot hash, creation time, run attempt,
+   inspected code and actual schema. A green marker-only job, a partial report,
+   or absent counters does not satisfy this gate. The February manual inspection
+   is already collected; do not restore it again without new evidence of a gap.
+2. Preserve daily backups through their retention, and verify actual expiration
+   or independently verified replacement recovery for every original point that
+   could require the source key. Refresh snapshot, PITR, live-branch and
+   recoverable-deleted-branch coverage. Branch lineage and snapshot creation
+   dates alone do not certify ciphertext. Preserve required recovery points.
+3. At the retirement decision, refresh the relevant production fields and runner
+   state under the actual writer/schema inventory. Refresh the whole source
+   CloudTrail interval using `operation=source-audit`, including late and newer
+   events. Classify cryptographic and unclassified calls without introducing
+   old-key canaries. A previously passed audit is not indefinite clearance.
+4. Code rollback must retain the current target KMS configuration. The immutable
+   pre-cutover Doppler snapshot remains historical evidence; it must not be
+   restored as an executable configuration rollback after source-key retirement.
+   Keep credentials, deployments, original backups and both accounts' audit
+   services unchanged by the retirement operation.
+5. Once these dependency and recovery gates pass, prepare a separately reviewed
+   operation for `ScheduleKeyDeletion` on the exact old production ARN above.
+   Verify account, key identity and current state, choose an AWS-supported
+   7–30 day waiting period, and record the returned `DeletionDate`. Reconcile an
+   existing pending/deleted state or uncertain response before any new request.
+   Scheduling immediately makes the key unusable; it is not physical deletion.
+   During the waiting period, cancellation and re-enabling are separate steps;
+   retain the recovery procedure and observe relevant production failures before
+   the irreversible deadline. Verify actual deletion after the returned date.
 
+No old-key mutation or deletion date has been established by the evidence above.
 Do not substitute `DisableKey`, a successful metadata job, configured expiration,
-or an empty denied query for these dependency checks.
+or an empty denied query for these dependency checks. Production-key retirement
+alone does not close the broader account-migration issue.
 
 The exit inventory includes metadata for every branch returned by the existing
 paginated project listing: hashed IDs and names, parent relationships, creation

@@ -1,5 +1,5 @@
 import { isCodexFastModeModel } from "@okouai/api-contracts/contracts/model-providers";
-import { Popover, PopoverContent, PopoverTrigger, cn } from "@okouai/ui";
+import { Button, Popover, PopoverContent, PopoverTrigger } from "@okouai/ui";
 import { useGet, useLastResolved } from "ccstate-react";
 import { Zap } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -50,7 +50,7 @@ export function ChatEffortTrigger({
   const label = t(($) => {
     return $.settings.models.picker.effort;
   });
-  const displayValue = formatChatEffort(value.selectedModel, effort);
+  const displayValue = formatChatEffort(effort);
   const fast = value.codexServiceTier === "fast";
   const disabled = policy?.routeStatus !== "valid";
   const fastAvailable =
@@ -59,11 +59,15 @@ export function ChatEffortTrigger({
     policy.routeStatus === "valid" &&
     isCodexFastModeModel(policy.model);
   return (
-    <>
-      <Popover>
-        <PopoverTrigger
+    <Popover>
+      {/* A real composer control, not a bare trigger: the shared button owns
+            the radius, height, hover and focus ring the rest of the row has. */}
+      <PopoverTrigger asChild>
+        <Button
+          variant="quiet"
+          size="sm"
           aria-label={`${label}, ${displayValue}`}
-          className={cn(triggerClassName, "flex items-center gap-1.5")}
+          className={triggerClassName}
         >
           {fast ? (
             <Zap
@@ -74,26 +78,38 @@ export function ChatEffortTrigger({
             />
           ) : null}
           {displayValue}
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-63 p-0">
-          <ChatEffortSettings
+        </Button>
+      </PopoverTrigger>
+      {/* Above the control and aligned to its trailing edge. The control sits
+            in a right-aligned row, so its leading edge moves as the level's name
+            changes width while its trailing edge does not -- anchoring there is
+            what keeps the panel still. `side="top"` follows the composer's other
+            popovers, which all open upward away from the message field.
+
+            The rows bring their own padding, so the card adds only the little
+            that puts the label 14px from the top edge. Effort and Fast are one
+            decision about how this message runs, so they are separated by space
+            rather than by a rule. */}
+      <PopoverContent
+        side="top"
+        align="end"
+        sideOffset={6}
+        className="w-63 px-1.5 py-0.5"
+      >
+        <ChatEffortSettings
+          selection={value}
+          disabled={disabled}
+          onChange={onChange}
+        />
+        {fastAvailable ? (
+          <ChatFastSetting
             selection={value}
             disabled={disabled}
+            fastImpact={<ModelFastImpact policy={policy} />}
             onChange={onChange}
           />
-          {fastAvailable ? (
-            <ChatFastSetting
-              selection={value}
-              disabled={disabled}
-              fastImpact={<ModelFastImpact policy={policy} />}
-              onChange={onChange}
-            />
-          ) : null}
-        </PopoverContent>
-      </Popover>
-      {/* The separator belongs to this control rather than to the row, so a
-          model without effort levels does not leave a rule behind. */}
-      <div className="mx-0 h-5 w-px bg-divider/60 sm:mx-0.5" />
-    </>
+        ) : null}
+      </PopoverContent>
+    </Popover>
   );
 }

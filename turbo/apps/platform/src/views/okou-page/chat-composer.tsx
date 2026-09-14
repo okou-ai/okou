@@ -9720,6 +9720,9 @@ function ComposerRunModelPickerControl({
             ? signals.model.menu
             : undefined
         }
+        // The effort control beside it carries the bolt when Fast is on, so the
+        // model keeps its own name.
+        fastShownByCaller
         flyoutLayout={modelFlyoutEnabled}
         onSelected={() => {
           setModelPickerOpen(false);
@@ -9868,8 +9871,8 @@ function ComposerModelPickerControls({
         value={value}
         onChange={onChange}
         triggerClassName={cn(
-          composerModelPickerTriggerClassName(),
-          "hidden sm:flex",
+          "hidden text-sm text-muted-foreground sm:inline-flex",
+          COMPOSER_CONTROL_FOCUS_CLASS,
         )}
       />
       <ComposerRunModelPickerControl
