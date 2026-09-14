@@ -292,6 +292,7 @@ jobs:
             .github/scripts/tests/verify-okou-app-assets-test.sh \
             .github/scripts/tests/verify-okou-app-runtime-test.sh \
             .github/scripts/tests/download-verified-test.sh \
+            .github/scripts/tests/fixtures/runner-binary-r2.sh \
             .github/scripts/tests/fetch-okou-desktop-artifact-test.sh \
             .github/scripts/tests/neon-credential-mask-test.sh \
             .github/scripts/tests/neon-connection-string-ssl-test.sh \

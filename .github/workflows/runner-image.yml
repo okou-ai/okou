@@ -203,7 +203,7 @@ jobs:
           set -euo pipefail
 
           runner_image_ci_changed=false
-          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(turbo|crates|runner-image)\.yml$|^\.github/actions/(setup-ssh-tunnel|provision)/|^\.github/scripts/runner-binary-build/|^\.github/scripts/(prepare-runner-image|runner-binary-cache|runner-binary-cache-plan|runner-binary-transport|runner-host-architecture-groups|runner-image-context|runner-image-manifest|runner-image-target|wait-runner-image)\.sh$|^ansible/(ansible\.cfg|playbooks/(build-runner|provision-runner|promote-runner|rollback-runner)\.yml)$"; then
+          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(turbo|crates|runner-image)\.yml$|^\.github/actions/(setup-ssh-tunnel|provision)/|^\.github/scripts/runner-binary-build/|^\.github/scripts/(prepare-runner-image|runner-binary-cache|runner-binary-cache-plan|runner-binary-r2|runner-binary-transport|runner-host-architecture-groups|runner-image-context|runner-image-manifest|runner-image-target|wait-runner-image)\.sh$|^ansible/(ansible\.cfg|playbooks/(build-runner|provision-runner|promote-runner|rollback-runner)\.yml)$"; then
             runner_image_ci_changed=true
           fi
 
@@ -276,7 +276,6 @@ jobs:
         if: steps.needed.outputs.current-runner-image-needed == 'true'
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_DEFAULT_REGION: auto
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -364,24 +363,9 @@ jobs:
             "$RUNNER_PATH"
           .github/scripts/runner-binary-cache.sh fresh-validate
 
-      - name: Install AWS CLI
-        shell: bash
-        run: |
-          installer_dir=$(mktemp -d "${RUNNER_TEMP}/awscli.XXXXXX")
-          trap 'rm -rf "$installer_dir"' EXIT
-          # Both Rust targets compile on x86_64 GitHub-hosted workers.
-          curl -fsSL --retry 3 \
-            https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip \
-            --output "${installer_dir}/awscliv2.zip"
-          python3 -m zipfile -e "${installer_dir}/awscliv2.zip" "$installer_dir"
-          chmod +x "${installer_dir}/aws/install" "${installer_dir}/aws/dist/aws"
-          "${installer_dir}/aws/install"
-          aws --version
-
       - name: Publish compiled runner binary to R2
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_DEFAULT_REGION: auto
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
@@ -441,7 +425,6 @@ jobs:
         if: contains(fromJSON(needs.prepare.outputs.runner-binary-hit-targets), matrix.target)
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_DEFAULT_REGION: auto
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
@@ -455,7 +438,6 @@ jobs:
         if: ${{ !contains(fromJSON(needs.prepare.outputs.runner-binary-hit-targets), matrix.target) }}
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_DEFAULT_REGION: auto
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
@@ -586,7 +568,6 @@ jobs:
         id: transport
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          AWS_DEFAULT_REGION: auto
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}

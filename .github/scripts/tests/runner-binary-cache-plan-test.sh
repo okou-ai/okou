@@ -5,7 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 PLAN="${SCRIPT_DIR}/runner-binary-cache-plan.sh"
 TMPDIR="$(mktemp -d)"
-trap 'rm -rf "$TMPDIR"' EXIT
+. "${SCRIPT_DIR}/tests/fixtures/runner-binary-r2.sh"
+trap 'runner_binary_r2_fixture_stop; rm -rf "$TMPDIR"' EXIT
 
 fail() {
   echo "FAIL: $1" >&2
@@ -47,7 +48,7 @@ for guest in "${RUNNER_GUEST_BINARIES[@]}"; do
   guest_json=$(jq -c --arg guest "$guest" --arg sha "$guest_sha" '. + {($guest): $sha}' <<<"$guest_json")
 done
 
-mkdir -p "${TMPDIR}/bin" "${TMPDIR}/fixtures" "${TMPDIR}/objects" "${TMPDIR}/runner-temp"
+mkdir -p "${TMPDIR}/bin" "${TMPDIR}/fixtures" "${TMPDIR}/store" "${TMPDIR}/runner-temp"
 runner="${TMPDIR}/runner"
 printf 'runner binary cache plan fixture\n' > "$runner"
 runner_sha=$(sha256sum "$runner" | awk '{print $1}')
@@ -56,7 +57,7 @@ main_head=$(printf 'b%.0s' {1..40})
 
 create_fixture() {
   local target=$1 digest=$2 name=$3
-  local object="${TMPDIR}/objects/${target}.zst"
+  local object="${TMPDIR}/store/${target}.zst"
   zstd -q -3 -f -o "$object" "$runner"
   object_size=$(stat -c '%s' "$object")
   jq -n \
@@ -119,46 +120,14 @@ exit 2
 BASH
 chmod +x "${TMPDIR}/bin/gh"
 
-cat > "${TMPDIR}/bin/aws" <<'BASH'
-#!/usr/bin/env bash
-set -euo pipefail
-[ "$1" = "s3api" ] || exit 2
-operation=$2
-printf '%s\n' "$*" >> "$AWS_LOG"
-shift 2
-key=""
-destination=""
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --key) key=$2; shift 2 ;;
-    --endpoint-url|--bucket|--output|--range|--cli-connect-timeout|--cli-read-timeout) shift 2 ;;
-    --*) shift ;;
-    *) destination=$1; shift ;;
-  esac
-done
-target=${key#runner-binaries/}
-target=${target%%/*}
-object="${OBJECTS}/${target}.zst"
-case "$operation" in
-  head-object) test -f "$object"; printf '{"ContentLength":%s}\n' "$(stat -c '%s' "$object")" ;;
-  get-object)
-    [ "${AWS_MODE:-success}" != "get-fail" ] || exit 7
-    cp "$object" "$destination"
-    printf '{}\n'
-    ;;
-  *) exit 2 ;;
-esac
-BASH
-chmod +x "${TMPDIR}/bin/aws"
+runner_binary_r2_fixture_start "${TMPDIR}" target
 
 run_plan() {
   local scenario=$1 output_dir=$2
   PATH="${TMPDIR}/bin:${PATH}" \
   GH_LOG="${TMPDIR}/gh.log" \
-  AWS_LOG="${TMPDIR}/aws.log" \
   GH_SCENARIO="$scenario" \
   FIXTURES="${TMPDIR}/fixtures" \
-  OBJECTS="${TMPDIR}/objects" \
   ARM_ARTIFACT="$arm_artifact" \
   X86_ARTIFACT="$x86_artifact" \
   MAIN_HEAD="$main_head" \
@@ -193,7 +162,7 @@ references=$(sed -n 's/^hit-references=//p' "$plan_output")
 jq -e --arg arm "$arm_target" --arg x86 "$x86_target" \
   'keys == ([$arm, $x86] | sort) and .[$arm].target == $arm and .[$x86].target == $x86' \
   <<<"$references" >/dev/null || fail "each target must receive its own cache reference"
-[ "$(wc -l < "${TMPDIR}/aws.log")" -eq 2 ] || fail "prepare should only inspect the two R2 objects"
+[ "$(wc -l < "${TMPDIR}/r2.log")" -eq 2 ] || fail "prepare should only inspect the two R2 objects"
 
 mixed=$(run_plan mixed "${TMPDIR}/mixed")
 assert_contains "$mixed" 'hit-count=1'
@@ -219,9 +188,7 @@ assert_contains "$forced" '"reason":"force-miss"'
 run_download() {
   local target=$1 digest=$2 output_dir=$3 mode=${4:-success}
   PATH="${TMPDIR}/bin:${PATH}" \
-  AWS_LOG="${TMPDIR}/aws.log" \
-  AWS_MODE="$mode" \
-  OBJECTS="${TMPDIR}/objects" \
+  R2_TEST_MODE="$mode" \
   AWS_ACCESS_KEY_ID=test-access \
   AWS_SECRET_ACCESS_KEY=test-secret \
   R2_ACCOUNT_ID=test-account \
@@ -234,7 +201,7 @@ run_download() {
     "${SCRIPT_DIR}/runner-binary-cache.sh" download-reference
 }
 
-: > "${TMPDIR}/aws.log"
+: > "${TMPDIR}/r2.log"
 arm_download=$(run_download "$arm_target" "$arm_digest" "${TMPDIR}/download-arm")
 x86_download=$(run_download "$x86_target" "$x86_digest" "${TMPDIR}/download-x86")
 assert_contains "$arm_download" 'resolve-outcome=hit'
@@ -242,15 +209,15 @@ assert_contains "$x86_download" 'resolve-outcome=hit'
 assert_contains "$arm_download" "runner-size-bytes=${runner_size}"
 cmp "$runner" "${TMPDIR}/download-arm/runner" || fail "arm build must receive cached bytes"
 cmp "$runner" "${TMPDIR}/download-x86/runner" || fail "x86 build must receive cached bytes"
-[ "$(wc -l < "${TMPDIR}/aws.log")" -eq 2 ] || fail "builds should perform one R2 download per target"
-[ "$(grep -c 's3api get-object' "${TMPDIR}/aws.log")" -eq 2 ] || fail "expected two target downloads"
+[ "$(wc -l < "${TMPDIR}/r2.log")" -eq 2 ] || fail "builds should perform one R2 download per target"
+[ "$(grep -c '^GET ' "${TMPDIR}/r2.log")" -eq 2 ] || fail "expected two target downloads"
 FRESH_METADATA_PATH="${TMPDIR}/download-arm/metadata.json" \
 RUNNER_PATH="${TMPDIR}/download-arm/runner" \
 EXPECTED_TARGET="$arm_target" \
 EXPECTED_BINARY_INPUT_DIGEST="$arm_digest" \
   "${SCRIPT_DIR}/runner-binary-cache.sh" fresh-validate >/dev/null
 
-mv "${TMPDIR}/objects/${arm_target}.zst" "${TMPDIR}/arm-unavailable.zst"
+mv "${TMPDIR}/store/${arm_target}.zst" "${TMPDIR}/arm-unavailable.zst"
 unavailable=$(run_plan all-hit "${TMPDIR}/unavailable")
 assert_contains "$unavailable" 'hit-count=1'
 assert_contains "$unavailable" 'miss-count=1'
@@ -260,7 +227,7 @@ if run_download "$arm_target" "$arm_digest" "${TMPDIR}/late-missing" >/dev/null 
   fail "a selected object that disappears must fail the download"
 fi
 [ ! -e "${TMPDIR}/late-missing" ] || fail "failed download must not expose partial transport"
-mv "${TMPDIR}/arm-unavailable.zst" "${TMPDIR}/objects/${arm_target}.zst"
+mv "${TMPDIR}/arm-unavailable.zst" "${TMPDIR}/store/${arm_target}.zst"
 
 if run_download "$arm_target" "$arm_digest" "${TMPDIR}/download-failed" get-fail >/dev/null 2>&1; then
   fail "a required cache download failure must propagate"
