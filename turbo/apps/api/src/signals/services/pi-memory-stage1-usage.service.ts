@@ -1,13 +1,15 @@
 import { MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS } from "@okouai/api-contracts/contracts/model-price-tiers";
 import { usageEvent } from "@okouai/db/schema/usage-event";
-import type { PiMemoryStage1ProviderUsage } from "@okouai/pi-agent-runtime/api";
+import {
+  PI_MEMORY_STAGE1_MODEL,
+  type PiMemoryStage1ProviderUsage,
+} from "@okouai/pi-agent-runtime/api";
 import { inArray } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
 
 import type { Db } from "../external/db";
 
 const PI_MEMORY_STAGE1_USAGE_NAMESPACE = "4a535d58-0d9a-44d4-aee8-8d3fa2901314";
-const PI_MEMORY_STAGE1_MODEL = "gpt-5.6-terra";
 
 type UsageCategoryBase =
   | "tokens.input"
