@@ -153,3 +153,13 @@ external-boundary CLI scenarios and real isolated PostgreSQL aggregate tests.
 
 Do not substitute `DisableKey`, a successful metadata job, configured expiration,
 or an empty denied query for these dependency checks.
+
+The exit inventory includes metadata for every branch returned by the existing
+paginated project listing: hashed IDs and names, parent relationships, creation
+time, and any reported parent timestamp or LSN. It identifies the exact
+`kms-recovery-32264-<run>-<attempt>` inspection naming pattern without exporting
+other branch names. A recent creation time does not prove a recent data point;
+missing parent timestamps remain unknown. `otherBranchesNotInspected` and each
+branch's `ciphertextVerified: false` remain explicit until separate data
+verification resolves those dependencies. This collection adds no API requests,
+database connections, resource mutations or retirement clearance.
