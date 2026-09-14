@@ -7,14 +7,20 @@ import { fileURLToPath } from "node:url";
 
 import ts from "typescript";
 
+import {
+  testProjectNames,
+  validateTestProjects,
+} from "./prepare-typecheck-tests.mjs";
+
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceRoot = resolve(packageRoot, "src");
 const baselineConfig = "tsconfig.json";
 const programConfigs = [
   "tsconfig.gateways.json",
   "tsconfig.core.json",
+  "tsconfig.routes.json",
   "tsconfig.bootstrap.json",
-  "tsconfig.tests.json",
+  ...testProjectNames,
   "tsconfig.bootstrap-wiring.json",
 ];
 
@@ -143,6 +149,8 @@ function moduleReferences(sourceFile) {
   return references;
 }
 
+validateTestProjects(packageRoot);
+
 const baselineRoots = typeScriptRoots(baselineConfig);
 const ownersByRoot = new Map();
 const counts = new Map();
@@ -184,6 +192,53 @@ if (overlappingRoots.length > 0) {
       return `${display(root)} (${owners.join(", ")})`;
     }),
   );
+}
+
+// JSON requires explicit composite roots; the broad TypeScript include does
+// not select it. Test/bench/fixture patterns stay owned by the canonical tests.
+const productionJsonRoots = new Set(
+  ts.sys
+    .readDirectory(
+      packageRoot,
+      [".json"],
+      readConfig("tsconfig.tests.json").raw.include,
+      ["src/**/*.json"],
+    )
+    .map((file) => {
+      return resolve(file);
+    }),
+);
+const jsonOwners = new Map();
+for (const name of ["tsconfig.core.json", "tsconfig.routes.json"]) {
+  for (const file of readConfig(name).fileNames.filter((file) => {
+    return extname(file) === ".json";
+  })) {
+    const owners = jsonOwners.get(file) ?? [];
+    owners.push(name);
+    jsonOwners.set(file, owners);
+  }
+}
+const missingJson = [...productionJsonRoots].filter((file) => {
+  return !jsonOwners.has(file);
+});
+const extraJson = [...jsonOwners.keys()].filter((file) => {
+  return !productionJsonRoots.has(file);
+});
+const overlappingJson = [...jsonOwners].filter(([, owners]) => {
+  return owners.length > 1;
+});
+if (missingJson.length || extraJson.length || overlappingJson.length) {
+  fail("Production JSON boundary: missing, extra or overlapping inputs", [
+    ...missingJson.map((file) => {
+      return `missing: ${display(file)}`;
+    }),
+    ...extraJson.map((file) => {
+      return `extra: ${display(file)}`;
+    }),
+    ...overlappingJson.map(([file, owners]) => {
+      return `overlap: ${display(file)} (${owners.join(", ")})`;
+    }),
+  ]);
 }
 
 const importers = new Map();
@@ -423,5 +478,5 @@ const programSummary = programConfigs
   })
   .join(", ");
 process.stdout.write(
-  `TypeScript boundaries: roots=${baselineRoots.size}; ${programSummary}; missing=0; extra=0; overlaps=0; setupApp=${setupAppCalls}; createApp=${createAppCalls}; aggregate-importers=2; bootstrap-importers=2; drizzle-schema=erased\n`,
+  `TypeScript boundaries: roots=${baselineRoots.size}; ${programSummary}; missing=0; extra=0; overlaps=0; production-json=${productionJsonRoots.size}; setupApp=${setupAppCalls}; createApp=${createAppCalls}; aggregate-importers=2; bootstrap-importers=2; drizzle-schema=erased\n`,
 );

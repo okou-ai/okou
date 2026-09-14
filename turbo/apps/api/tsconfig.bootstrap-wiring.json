@@ -9,6 +9,7 @@
   "references": [
     { "path": "./tsconfig.gateways.json" },
     { "path": "./tsconfig.core.json" },
+    { "path": "./tsconfig.routes.json" },
     { "path": "./tsconfig.bootstrap.json" }
   ]
 }
