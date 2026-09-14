@@ -1871,33 +1871,30 @@ async function importLegacySubscriptionBundle(
       }
     }
   }
-  const invalidateExpiry = () => {
-    if (args.type === CODEX_TYPE) {
-      for (const binding of [
-        null,
-        ...accounts.map((account) => {
-          return account.id;
-        }),
-      ]) {
-        invalidateCodexResetCreditExpiry(
-          { scope: "personal", orgId: args.orgId, userId: args.userId },
-          { binding },
-        );
-      }
-    }
-  };
-  invalidateExpiry();
-  const result = await applyAccountMutation(args.db, {
-    provider: snapshot.provider,
+  const mutation = {
     accounts,
     type: args.type,
-    authMethod: snapshot.provider.authMethod,
-    mode: { kind: "replace-active" },
+    mode: { kind: "replace-active" as const },
     metadata: accountMetadataValues({
       type: args.type,
       metadata,
       secretValues: Object.fromEntries(values),
     }),
+  };
+  const expiryBindings = affectedCodexExpiryBindings(mutation);
+  const invalidateExpiry = () => {
+    for (const binding of expiryBindings) {
+      invalidateCodexResetCreditExpiry(
+        { scope: "personal", orgId: args.orgId, userId: args.userId },
+        { binding },
+      );
+    }
+  };
+  invalidateExpiry();
+  const result = await applyAccountMutation(args.db, {
+    ...mutation,
+    provider: snapshot.provider,
+    authMethod: snapshot.provider.authMethod,
     encryptedSecrets: snapshot.mirror.map((secret) => {
       return {
         ...secret,

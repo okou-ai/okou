@@ -862,6 +862,230 @@ async function writeHistoricalSubscription(
 }
 
 describe("actual historical subscription writers", () => {
+  it.each([false, true])(
+    "returns 404 when exact reset itself imports a different old identity, priority=%s",
+    async (priority) => {
+      const f = await fixture("codex-oauth-token", true, priority);
+      const first = await f.start();
+      const a = await f.claim(first);
+      const captured = accountId(a, f.type);
+      const consumeRequests: (string | null)[] = [];
+      server.use(
+        http.post(
+          "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume",
+          ({ request }) => {
+            consumeRequests.push(request.headers.get("chatgpt-account-id"));
+            return HttpResponse.json({ code: "reset", windows_reset: 1 });
+          },
+        ),
+      );
+      const b = await writeHistoricalSubscription(
+        f.actor,
+        f.type,
+        "identity-b",
+        2,
+      );
+      // No list, admission or auth between the old write and reset: this very
+      // request passes the connected check, imports B and retires/deletes A.
+      const idempotencyKey = randomUUID();
+      const reset = await support.resetPersonalModelProviderAccount(
+        f.actor,
+        captured,
+        idempotencyKey,
+        [404],
+      );
+      expect(reset.status).toBe(404);
+      expect(consumeRequests).toStrictEqual([]);
+      expect(
+        (
+          await support.resetPersonalModelProviderAccount(
+            f.actor,
+            captured,
+            idempotencyKey,
+            [404],
+          )
+        ).status,
+      ).toBe(404);
+      if (priority) {
+        await expect(resolve(a, f.type)).resolves.toMatchObject({
+          Authorization: `Bearer ${f.connected.token}`,
+          "ChatGPT-Account-ID": "identity-a",
+        });
+      } else {
+        const denied = await firewall.requestFirewallAuth(
+          { authorization: `Bearer ${a.sandboxToken}` },
+          authBody(a, f.type),
+          [424],
+        );
+        expect(denied.status).toBe(424);
+      }
+      const second = await f.start();
+      const selected = await f.claim(second);
+      expect(accountId(selected, f.type)).not.toBe(captured);
+      await expect(resolve(selected, f.type)).resolves.toMatchObject({
+        Authorization: `Bearer ${b.token}`,
+        "ChatGPT-Account-ID": "identity-b",
+      });
+      expect(consumeRequests).toStrictEqual([]);
+      await runs.requestCancelRun(f.actor, first, [200]);
+      await runs.requestCancelRun(f.actor, second, [200]);
+    },
+  );
+
+  it("does not expose a retained terminal refresh state to the reset that imports its replacement", async () => {
+    const f = await fixture("codex-oauth-token");
+    const first = await f.start();
+    const a = await f.claim(first);
+    await connect(f.actor, f.type, "identity-a", true);
+    const refreshRequests: string[] = [];
+    const consumeRequests: string[] = [];
+    server.use(
+      http.post("https://auth.openai.com/oauth/token", ({ request }) => {
+        refreshRequests.push(request.url);
+        return HttpResponse.json(
+          { error: { code: "refresh_token_expired" } },
+          { status: 401 },
+        );
+      }),
+      http.post(
+        "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume",
+        ({ request }) => {
+          consumeRequests.push(request.url);
+          return HttpResponse.json({ code: "reset" });
+        },
+      ),
+    );
+    expect(
+      (
+        await support.resetPersonalModelProviderAccount(
+          f.actor,
+          accountId(a, f.type),
+          randomUUID(),
+          [500],
+        )
+      ).status,
+    ).toBe(500);
+    expect(refreshRequests).toHaveLength(1);
+    await writeHistoricalSubscription(f.actor, f.type, "identity-b", 2);
+    expect(
+      (
+        await support.resetPersonalModelProviderAccount(
+          f.actor,
+          accountId(a, f.type),
+          randomUUID(),
+          [404],
+        )
+      ).status,
+    ).toBe(404);
+    expect(refreshRequests).toHaveLength(1);
+    expect(consumeRequests).toStrictEqual([]);
+    const denied = await firewall.requestFirewallAuth(
+      { authorization: `Bearer ${a.sandboxToken}` },
+      authBody(a, f.type),
+      [502],
+    );
+    expect(denied.status).toBe(502);
+    expect(denied.body).toMatchObject({
+      error: { failureReason: "reconnect_required" },
+    });
+    await runs.requestCancelRun(f.actor, first, [200]);
+  });
+
+  it("fences the replaced account's expiry when an old writer reuses a retained identity", async () => {
+    const f = await fixture("codex-oauth-token");
+    const first = await f.start();
+    const a = await f.claim(first);
+    const b = await connect(f.actor, f.type, "identity-b");
+    const second = await f.start();
+    const bClaim = await f.claim(second);
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<Response>(context.signal);
+    const detailsUrl =
+      "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits";
+    server.use(
+      http.get(detailsUrl, ({ request }) => {
+        expect(request.headers.get("chatgpt-account-id")).toBe("identity-b");
+        entered.resolve();
+        return release.promise;
+      }),
+    );
+    const oldRead = support.listPersonalModelProviders(f.actor, [200]);
+    await (async () => {
+      await entered.promise;
+      const restored = await writeHistoricalSubscription(
+        f.actor,
+        f.type,
+        "identity-a",
+        3,
+      );
+      const freshExpiry = new Date(now() + 7_200_000).toISOString();
+      server.use(
+        http.get(detailsUrl, ({ request }) => {
+          expect(request.headers.get("authorization")).toBe(
+            `Bearer ${restored.token}`,
+          );
+          expect(request.headers.get("chatgpt-account-id")).toBe("identity-a");
+          return HttpResponse.json({
+            credits: [{ status: "available", expires_at: freshExpiry }],
+          });
+        }),
+      );
+      const listed = await support.listPersonalModelProviders(f.actor, [200]);
+      expect(listed.body).toMatchObject({
+        modelProviders: [
+          {
+            id: accountId(a, f.type),
+            isActive: true,
+            subscriptionResetCreditsNextExpiresAt: freshExpiry,
+          },
+        ],
+      });
+      expect((await oldRead).body).toMatchObject({
+        modelProviders: [
+          {
+            id: b.id,
+            subscriptionResetCreditsNextExpiresAt: null,
+          },
+        ],
+      });
+      release.resolve(
+        HttpResponse.json({
+          credits: [
+            {
+              status: "available",
+              expires_at: new Date(now() + 3_600_000).toISOString(),
+            },
+          ],
+        }),
+      );
+      expect(
+        (await support.listPersonalModelProviders(f.actor, [200])).body,
+      ).toMatchObject({
+        modelProviders: [
+          {
+            id: accountId(a, f.type),
+            subscriptionResetCreditsNextExpiresAt: freshExpiry,
+          },
+        ],
+      });
+      await expect(resolve(a, f.type)).resolves.toMatchObject({
+        Authorization: `Bearer ${restored.token}`,
+        "ChatGPT-Account-ID": "identity-a",
+      });
+      await expect(resolve(bClaim, f.type)).resolves.toMatchObject({
+        Authorization: `Bearer ${b.token}`,
+        "ChatGPT-Account-ID": "identity-b",
+      });
+    })().finally(async () => {
+      if (!release.settled()) {
+        release.resolve(HttpResponse.json({ credits: [] }));
+      }
+      await oldRead;
+      await runs.requestCancelRun(f.actor, first, [200]);
+      await runs.requestCancelRun(f.actor, second, [200]);
+    });
+  });
+
   it.each([
     ["claude-code-oauth-token", false, false],
     ["claude-code-oauth-token", true, false],

@@ -3614,6 +3614,7 @@ function resolveModelProviderRuntimeSecretLookup(
 async function loadModelProviderRuntimeRefreshState(args: {
   readonly db: Db;
   readonly orgId: string;
+  readonly runId?: string;
   readonly lookup: ResolvedModelProviderRuntimeSecretLookup;
 }): Promise<ModelProviderRuntimeRefreshState | null> {
   if (args.lookup.metadata.sourceId) {
@@ -3627,6 +3628,7 @@ async function loadModelProviderRuntimeRefreshState(args: {
       .where(
         and(
           eq(modelProviderAccounts.id, args.lookup.metadata.sourceId),
+          personalSubscriptionAccountAccessCondition(args.db, args.runId),
           eq(modelProviderAccounts.orgId, args.orgId),
           eq(modelProviderAccounts.userId, args.lookup.userId),
           eq(modelProviderAccounts.type, args.lookup.providerType),
@@ -3674,6 +3676,7 @@ async function unavailableModelProviderRuntimeSecretForApi(
   args: {
     readonly db: Db;
     readonly orgId: string;
+    readonly runId?: string;
     readonly lookup: ResolvedModelProviderRuntimeSecretLookup;
   },
   signal: AbortSignal,
@@ -3724,6 +3727,7 @@ export async function readModelProviderRuntimeReconnectStateForApi(
     await loadModelProviderRuntimeRefreshState({
       db: args.db,
       orgId: args.orgId,
+      runId: args.runId,
       lookup,
     }),
   );
@@ -3764,7 +3768,7 @@ async function resolveCurrentModelProviderRuntimeSecretForApi(
     signal.throwIfAborted();
     return value === null
       ? await unavailableModelProviderRuntimeSecretForApi(
-          { db: args.db, orgId: args.orgId, lookup },
+          { db: args.db, orgId: args.orgId, runId: args.runId, lookup },
           signal,
         )
       : { status: "available", value };
@@ -3773,6 +3777,7 @@ async function resolveCurrentModelProviderRuntimeSecretForApi(
   const initialState = await loadModelProviderRuntimeRefreshState({
     db: args.db,
     orgId: args.orgId,
+    runId: args.runId,
     lookup,
   });
   signal.throwIfAborted();
@@ -3829,7 +3834,7 @@ async function resolveCurrentModelProviderRuntimeSecretForApi(
   }
 
   return await unavailableModelProviderRuntimeSecretForApi(
-    { db: args.db, orgId: args.orgId, lookup },
+    { db: args.db, orgId: args.orgId, runId: args.runId, lookup },
     signal,
   );
 }

@@ -154,6 +154,23 @@ checks the locked current bundle before spending the refresh token.
 | Usage, reset and reconnect-state observation             | Reads the complete current account bundle. Retired management IDs remain unavailable. Codex import invalidates singleton/account reset-credit expiry epochs before/after mutation; current connection, activation, deletion and reset invalidation remain in place. |
 | Pi initial Codex credentials                             | Uses one shared bundle after refresh. A3's independent missing `activation.runId` in final all-binding validation remains unchanged and is not accepted by this repair.                                                                                             |
 
+### Management import boundaries (#34142)
+
+Legacy import computes affected expiry bindings from the same normalized
+metadata, replacement mode and complete locked identity inventory as the real
+mutation, including retained same-identity reuse. Both invalidation fences
+remain; an affected in-flight result cannot publish after replacement.
+
+Exact reset can pass its connected-account check before its own bundle read
+imports a legacy replacement and retires the requested account. State-only
+refresh observations apply the same account-access predicate as credential
+reads, so this management request returns 404 without consuming either
+account's reset credits. Connected-account terminal/transient refresh errors
+retain their existing 500 and retry behavior. Every shared state lookup carries
+its existing optional run ID: admitted runtime callers retain their exact
+account authority, while settings and Pi memory Stage 1 have no foreground run
+ID. Pi final validation remains the separate A3 boundary.
+
 ### Verification and compatibility limits
 
 `personal-subscription-run-identity.test.ts` uses uniquely named test users/orgs
