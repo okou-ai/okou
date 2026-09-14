@@ -14,7 +14,7 @@ interface OverlayScrollAreaProps {
   readonly tabIndex?: number;
 }
 
-/** Overlay scroll area with a draggable Base UI scrollbar. */
+/** Sidebar scroll state with shadcn's Base UI scrollbar styling. */
 export function OverlayScrollArea({
   "aria-label": ariaLabel,
   className,
@@ -53,11 +53,11 @@ export function OverlayScrollArea({
         </ScrollArea.Content>
       </ScrollArea.Viewport>
       <ScrollArea.Scrollbar
-        className="pointer-events-none m-px flex w-3 justify-center opacity-0 data-hovering:pointer-events-auto data-hovering:opacity-100 data-scrolling:pointer-events-auto data-scrolling:opacity-100"
+        className="flex h-full w-2.5 touch-none select-none border-l border-l-transparent p-px transition-colors"
         data-testid="sidebar-scrollbar"
       >
         <ScrollArea.Thumb
-          className="w-[5px] rounded-full bg-foreground/15"
+          className="relative flex-1 rounded-full bg-border"
           data-testid="sidebar-scrollbar-thumb"
         />
       </ScrollArea.Scrollbar>
