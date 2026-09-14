@@ -9,6 +9,10 @@ on:
         description: "Dry-run mode (no actual deletions)"
         type: boolean
         default: true
+      runner-pr-numbers:
+        description: "Only clean these runner PR namespaces (comma-separated); leave empty to clean all resource types"
+        type: string
+        default: ""
 
 env:
   npm_config_audit: "false"
@@ -16,6 +20,7 @@ env:
 
 jobs:
   cleanup-neon-branches:
+    if: inputs.runner-pr-numbers == ''
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/vm0-ai/vm0-toolchain:20260825
@@ -84,6 +89,7 @@ jobs:
           echo "Skipped: $SKIPPED"
 
   cleanup-github-deployments:
+    if: inputs.runner-pr-numbers == ''
     runs-on: ubuntu-latest
     permissions:
       deployments: write
@@ -261,9 +267,20 @@ jobs:
         uses: actions/github-script@v9
         env:
           PR_NUMBERS: ${{ steps.runner-prs.outputs.numbers }}
+          RUNNER_PR_NUMBERS: ${{ inputs.runner-pr-numbers }}
         with:
           script: |
-            const candidates = JSON.parse(process.env.PR_NUMBERS);
+            let candidates = JSON.parse(process.env.PR_NUMBERS);
+            const requested = process.env.RUNNER_PR_NUMBERS;
+            if (requested) {
+              const numbers = requested.split(',').map(value => value.trim());
+              if (numbers.some(value => !/^[1-9][0-9]*$/.test(value) || !Number.isSafeInteger(Number(value)))) {
+                throw new Error('runner-pr-numbers must be comma-separated positive PR numbers');
+              }
+              const selected = new Set(numbers.map(Number));
+              candidates = candidates.filter(number => selected.has(number));
+              console.log(`Restricting runner cleanup to requested PRs: ${numbers.join(', ')}`);
+            }
             const closed = [];
 
             for (const pull_number of candidates) {
@@ -318,13 +335,17 @@ jobs:
             # First await owners visible through GitHub, then hold the same
             # host-local namespace lock as Turbo through the actual deletion.
             # A late approval serializes behind cleanup and reconciles after it.
-            PR_NUMBER="$PR_NUMBER" \
+            if ! PR_NUMBER="$PR_NUMBER" \
               RUNNER_OWNER_SCOPE=closed-pr-cleanup \
-              "$GITHUB_WORKSPACE/.github/scripts/cancel-superseded-merge-group-runs.sh"
+              "$GITHUB_WORKSPACE/.github/scripts/cancel-superseded-merge-group-runs.sh"; then
+              echo "::warning::Owner check failed for pr-${PR_NUMBER}; retaining its resources and continuing with the next PR"
+              FAILED=$((FAILED + 1))
+              continue
+            fi
 
             # Cleanup every runner resource in the PR namespace.
             JOB_REF="pr-${PR_NUMBER}"
-            export JOB_REF
+            export JOB_REF PR_NUMBER
             if ! "$GITHUB_WORKSPACE/.github/scripts/with-runner-lifecycle-lock.sh" \
               "$GITHUB_WORKSPACE/.github/scripts/cleanup-pr-runner-namespace.sh"; then
               echo "::warning::PR runner cleanup failed for pr-${PR_NUMBER}"
@@ -359,6 +380,7 @@ jobs:
           fi
 
   cleanup-git-branches:
+    if: inputs.runner-pr-numbers == ''
     runs-on: ubuntu-latest
     permissions:
       contents: write

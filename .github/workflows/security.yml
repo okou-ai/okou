@@ -280,6 +280,7 @@ jobs:
             .github/scripts/tests/pass-release-pr-ci-gates-test.sh \
             .github/scripts/tests/check-workflow-shell-compatibility-test.sh \
             .github/scripts/tests/checkout-depth-test.sh \
+            .github/scripts/tests/cleanup-stale-runners-test.sh \
             .github/scripts/tests/clerk-test-resource-workflow-test.sh \
             .github/scripts/tests/cloudflare-ssh-command-test.sh \
             .github/scripts/tests/cloudflare-ssh-preconnect-test.sh \
