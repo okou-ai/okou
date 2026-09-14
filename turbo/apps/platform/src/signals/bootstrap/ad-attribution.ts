@@ -7,7 +7,6 @@ import {
 import { command } from "ccstate";
 import {
   compatibleGoogleAdsAttribution,
-  legacyGoogleAdsAttribution,
   normalizeGoogleAdsAttributionParams,
 } from "@okouai/core/google-ads-attribution";
 import { registerPostHogAttribution } from "../../lib/posthog.ts";
@@ -257,10 +256,4 @@ export const readStoredAdAttributionMetadata$ = command(({ get }) => {
     get(storedAdAttributionStorage.get$),
     getCookieString(),
   );
-});
-
-// Keep the wire shape readable by older API deployments until #33059 closes its rollout gate.
-export const readApiAdAttributionMetadata$ = command(({ set }) => {
-  const metadata = set(readStoredAdAttributionMetadata$);
-  return metadata ? legacyGoogleAdsAttribution(metadata) : undefined;
 });

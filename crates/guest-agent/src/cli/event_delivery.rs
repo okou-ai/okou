@@ -8,16 +8,13 @@
 
 use crate::error::AgentError;
 use crate::events;
-use crate::http::{
-    HttpAttemptFailureKind, HttpAttemptFinished, HttpAttemptObserver, HttpAttemptOutcome,
-    HttpAttemptStarted, HttpClient,
-};
+use crate::http::{HttpAttemptFinished, HttpAttemptObserver, HttpAttemptStarted, HttpClient};
 use bytes::Bytes;
 use guest_contracts::diagnostics::{
     EventDeliveryAcceptanceOutcome, EventDeliveryActiveAttemptDiagnostic,
-    EventDeliveryActiveBatchDiagnostic, EventDeliveryAttemptFailureKind,
-    EventDeliveryCompletedAttemptDiagnostic, EventDeliveryDiagnostic,
+    EventDeliveryActiveBatchDiagnostic, EventDeliveryDiagnostic,
     EventDeliveryDrainTimeoutDiagnostic, EventDeliveryFailedBatchDiagnostic,
+    HttpAttemptFailureKind, HttpCompletedAttemptDiagnostic,
 };
 use guest_telemetry::{log_info, log_warn};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -473,7 +470,7 @@ struct ActiveBatchProgress {
     first_sequence: u32,
     last_sequence: u32,
     conservative_bytes: usize,
-    completed_attempts: Vec<EventDeliveryCompletedAttemptDiagnostic>,
+    completed_attempts: Vec<HttpCompletedAttemptDiagnostic>,
     active_attempt: Option<HttpAttemptStarted>,
 }
 
@@ -501,24 +498,8 @@ impl HttpAttemptObserver for DeliveryAttemptObserver {
             )
         })?;
         active_batch.active_attempt = None;
-        if let HttpAttemptOutcome::Failure {
-            kind,
-            http_status,
-            timeout_observed,
-            connect_observed,
-        } = attempt.outcome
-        {
-            active_batch
-                .completed_attempts
-                .push(EventDeliveryCompletedAttemptDiagnostic {
-                    attempt: attempt.attempt,
-                    client_request_id: attempt.client_request_id,
-                    elapsed_ms: attempt.elapsed_ms,
-                    failure_kind: event_attempt_failure_kind(kind),
-                    http_status,
-                    timeout_observed,
-                    connect_observed,
-                });
+        if let Some(diagnostic) = attempt.into_failure_diagnostic() {
+            active_batch.completed_attempts.push(diagnostic);
         }
         Ok(())
     }
@@ -715,25 +696,16 @@ fn active_batch_diagnostic(active: &ActiveBatchProgress) -> EventDeliveryActiveB
 }
 
 fn acceptance_outcome(
-    attempts: &[EventDeliveryCompletedAttemptDiagnostic],
+    attempts: &[HttpCompletedAttemptDiagnostic],
 ) -> EventDeliveryAcceptanceOutcome {
     if !attempts.is_empty()
         && attempts
             .iter()
-            .all(|attempt| attempt.failure_kind == EventDeliveryAttemptFailureKind::HttpStatus)
+            .all(|attempt| attempt.failure_kind == HttpAttemptFailureKind::HttpStatus)
     {
         EventDeliveryAcceptanceOutcome::ConfirmedRejection
     } else {
         EventDeliveryAcceptanceOutcome::OutcomeUnknown
-    }
-}
-
-fn event_attempt_failure_kind(kind: HttpAttemptFailureKind) -> EventDeliveryAttemptFailureKind {
-    match kind {
-        HttpAttemptFailureKind::Timeout => EventDeliveryAttemptFailureKind::Timeout,
-        HttpAttemptFailureKind::Connect => EventDeliveryAttemptFailureKind::Connect,
-        HttpAttemptFailureKind::HttpStatus => EventDeliveryAttemptFailureKind::HttpStatus,
-        HttpAttemptFailureKind::Transport => EventDeliveryAttemptFailureKind::Transport,
     }
 }
 

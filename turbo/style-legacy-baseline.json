@@ -23,7 +23,6 @@
     "okou-markdown-card",
     "okou-mobile-fixed-safe-area",
     "okou-mobile-sidebar",
-    "okou-nav",
     "okou-pwa-fixed-cover",
     "okou-shimmer-text",
     "okou-sidebar-header",
@@ -540,13 +539,6 @@
       },
       {
         "atRules": [],
-        "selector": ".okou-nav",
-        "property": "--color-sidebar-border",
-        "value": " hsl(var(--gray-200))",
-        "important": false
-      },
-      {
-        "atRules": [],
         "selector": ".okou-app",
         "property": "--color-sidebar",
         "value": " hsl(var(--sidebar))",
@@ -557,34 +549,6 @@
         "selector": ".okou-app",
         "property": "--color-sidebar-rail",
         "value": " hsl(var(--sidebar-rail))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app[data-gradient-color-themes] .okou-nav",
-        "property": "--color-sidebar",
-        "value": " hsl(var(--sidebar))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app[data-gradient-color-themes] .okou-nav",
-        "property": "--color-sidebar-border",
-        "value": " hsl(var(--border) / 0.5)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app[data-gradient-color-themes] .okou-nav.okou-nav-rail",
-        "property": "background-color",
-        "value": "hsl(var(--okou-nav-rail))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ":where([data-theme=\"dark\"]) .okou-nav",
-        "property": "--color-sidebar",
-        "value": " hsl(var(--sidebar))",
         "important": false
       },
       {
@@ -2944,7 +2908,6 @@
       "okou-desktop-titlebar-drag-region": 2,
       "okou-mobile-fixed-safe-area": 1,
       "okou-mobile-sidebar": 1,
-      "okou-nav": 3,
       "okou-sidebar-header": 1
     },
     "apps/platform/src/views/okou-page/unsaved-bar.tsx": {

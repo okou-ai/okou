@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import { createStore } from "ccstate";
+import { testUsageStateContract } from "@okouai/api-contracts/contracts/test-usage-state";
+import { testUsageStateRoutes } from "../test-usage-state";
 import { cronCompactUsageEventsContract } from "@okouai/api-contracts/contracts/cron";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
@@ -8,7 +10,11 @@ import { createApp } from "../../../app-factory";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { holdUsageEventCompactionLockFixture } from "../../../test-fixtures/usage-event-compaction";
+import {
+  holdUsageEventCompactionLockFixture,
+  makeUsageBillingLegacyFixture,
+  backfillUsageBillingFixture,
+} from "../../../test-fixtures/usage-event-compaction";
 import { nowDate } from "../../../lib/time";
 import {
   attachUsageAllowance$,
@@ -59,6 +65,15 @@ async function seedFixture(): Promise<UsageStateFixture> {
 
 async function compactUsage() {
   return await accept(cronClient().compact({ headers: cronHeaders() }), [200]);
+}
+
+async function compactOwnedUsage(fixture: UsageStateFixture) {
+  return await accept(
+    setupApp({ context, routes: testUsageStateRoutes })(
+      testUsageStateContract,
+    ).compact({ body: { orgId: fixture.orgId } }),
+    [200],
+  );
 }
 
 async function readStorage(fixture: UsageStateFixture) {
@@ -610,6 +625,152 @@ describe("usage event compaction cron", () => {
       hourly: 1,
     });
   });
+
+  it("denies scoped test compaction in production", async () => {
+    mockEnv("ENV", "production");
+    const response = await accept(
+      setupApp({ context, routes: testUsageStateRoutes })(
+        testUsageStateContract,
+      ).compact({ body: { orgId: randomUUID() } }),
+      [404],
+    );
+    expect(response.status).toBe(404);
+  });
+
+  it("preserves different billing identities after their live runs are removed", async () => {
+    const fixture = await seedFixture();
+    const first = await seedRunContext(fixture);
+    const second = await seedRunContext(fixture);
+    const processedAt = new Date("2026-08-01T00:15:00.000Z");
+    for (const run of [first, second]) {
+      await store.set(
+        insertUsageEvent$,
+        {
+          ...fixture,
+          runId: run.runId,
+          status: "processed",
+          quantity: 2,
+          creditsCharged: 3,
+          processedAt,
+        },
+        context.signal,
+      );
+      await store.set(
+        materializeHourlyUsage$,
+        { ...fixture, runId: run.runId },
+        context.signal,
+      );
+      await store.set(
+        insertUsageEvent$,
+        {
+          ...fixture,
+          runId: run.runId,
+          status: "processed",
+          quantity: 5,
+          creditsCharged: 7,
+          processedAt,
+        },
+        context.signal,
+      );
+      await store.set(deleteRun$, run.runId, context.signal);
+    }
+    await seedZeroUsageEvents(fixture, {
+      processedAt,
+      count: 1,
+    });
+    const result = await compactOwnedUsage(fixture);
+    expect(result.body).toMatchObject({
+      rawRowsDeleted: 3,
+      hourlyRowsDeleted: 2,
+      hourlyRowsInserted: 3,
+      quantity: "14",
+      creditsCharged: "20",
+      reconciled: true,
+    });
+    // Two original runs stay distinct; unlinked legacy events remain a third
+    // truthful grain rather than being assigned to either deleted run.
+    await expect(readStorage(fixture)).resolves.toStrictEqual({
+      raw: 0,
+      processedRaw: 0,
+      hourly: 3,
+    });
+    const retry = await compactOwnedUsage(fixture);
+    expect(retry.body).toMatchObject({
+      rawRowsDeleted: 0,
+      hourlyRowsInserted: 0,
+      reconciled: true,
+    });
+  });
+
+  it.each(["before", "after"] as const)(
+    "preserves mixed billing grains with backfill %s compaction",
+    async (order) => {
+      const fixture = await seedFixture();
+      const run = await seedRunContext(fixture);
+      const processedAt = new Date("2026-08-02T00:15:00.000Z");
+      const insert = async (quantity: number, creditsCharged: number) => {
+        await store.set(
+          insertUsageEvent$,
+          {
+            ...fixture,
+            runId: run.runId,
+            status: "processed",
+            quantity,
+            creditsCharged,
+            processedAt,
+          },
+          context.signal,
+        );
+      };
+      await insert(2, 3);
+      await store.set(
+        materializeHourlyUsage$,
+        { ...fixture, runId: run.runId },
+        context.signal,
+      );
+      await insert(5, 7);
+      // The migration-only legacy shape has no production endpoint; the fixture
+      // affects this owned org only. Both actions under test are real entry points.
+      await makeUsageBillingLegacyFixture(fixture.orgId, context.signal);
+      await insert(11, 13);
+      if (order === "before") {
+        await backfillUsageBillingFixture(fixture.orgId, context.signal);
+      }
+      const first = await compactOwnedUsage(fixture);
+      expect(first.body).toMatchObject({
+        rawRowsDeleted: 2,
+        hourlyRowsDeleted: 1,
+        hourlyRowsInserted: order === "before" ? 1 : 2,
+        quantity: "18",
+        creditsCharged: "23",
+        allowanceUnits: "0",
+        reconciled: true,
+      });
+      await backfillUsageBillingFixture(fixture.orgId, context.signal);
+      await backfillUsageBillingFixture(fixture.orgId, context.signal);
+      // Late usage reconsolidates the populated hourly grains in either ordering.
+      await insert(1, 2);
+      const late = await compactOwnedUsage(fixture);
+      expect(late.body).toMatchObject({
+        rawRowsDeleted: 1,
+        hourlyRowsInserted: 1,
+        quantity: "19",
+        creditsCharged: "25",
+        allowanceUnits: "0",
+        reconciled: true,
+      });
+      await expect(readStorage(fixture)).resolves.toStrictEqual({
+        raw: 0,
+        processedRaw: 0,
+        hourly: 1,
+      });
+      expect((await compactOwnedUsage(fixture)).body).toMatchObject({
+        rawRowsDeleted: 0,
+        hourlyRowsInserted: 0,
+        reconciled: true,
+      });
+    },
+  );
 
   it("serializes overlapping invocations without duplicating facts", async () => {
     const fixture = await seedFixture();

@@ -1,7 +1,4 @@
-import {
-  legacyGoogleAdsAttribution,
-  compatibleGoogleAdsAttribution,
-} from "@okouai/core/google-ads-attribution";
+import { compatibleGoogleAdsAttribution } from "@okouai/core/google-ads-attribution";
 import {
   GOOGLE_ADS_ADSMARCH_ACCOUNT_ID,
   GOOGLE_ADS_LEGACY_ACCOUNT_ID,
@@ -103,7 +100,7 @@ export const recordSignupAttribution$ = command(
       const result = await accept(
         client.recordSignup({
           body: {
-            attribution: legacyGoogleAdsAttribution(attribution),
+            attribution,
             ...(impactAttribution ? { impactAttribution } : {}),
           },
           fetchOptions: { signal },

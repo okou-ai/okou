@@ -1,4 +1,12 @@
-import { count, sql } from "drizzle-orm";
+import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+import { usageEvent } from "@okouai/db/schema/usage-event";
+import { usageEventHourlyRollup } from "@okouai/db/schema/usage-event-hourly-rollup";
+import { billingAttributionBackfill } from "@okouai/db/schema/billing-run-attribution";
+import { env, optionalEnv } from "../lib/env";
+import { count, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "../lib/db";
@@ -84,4 +92,76 @@ export async function holdUsageEventCompactionLockFixture(
       return rows[0]?.waiterCount ?? 0;
     },
   };
+}
+
+/** Historical missing columns cannot be produced through current API writers.
+ * Disable capture only in this connection, and only touch this test's org.
+ */
+export async function makeUsageBillingLegacyFixture(
+  orgId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  await db().transaction(async (tx) => {
+    await lockUsageEventCompaction(tx);
+    await tx.execute(sql`SET LOCAL session_replication_role = replica`);
+    const legacy = {
+      billingRunId: null,
+      billingAnchorAt: null,
+      billingContext: "legacy_unknown",
+    };
+    await tx.update(usageEvent).set(legacy).where(eq(usageEvent.orgId, orgId));
+    await tx
+      .update(usageEventHourlyRollup)
+      .set(legacy)
+      .where(eq(usageEventHourlyRollup.orgId, orgId));
+  });
+  signal.throwIfAborted();
+}
+
+/** Execute the actual operator CLI, bounded to the test-owned organization. */
+export async function backfillUsageBillingFixture(
+  orgId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const jobId = randomUUID();
+  const packageDir = fileURLToPath(
+    new URL("../../../../packages/db", import.meta.url),
+  );
+  const [result] = await Promise.allSettled([
+    promisify(execFile)(
+      "node",
+      [
+        fileURLToPath(import.meta.resolve("tsx/cli")),
+        "scripts/billing-attribution.ts",
+        "--org-id",
+        orgId,
+        "--migrate",
+        "--ack-writer-drain",
+        "--job-id",
+        jobId,
+        "--max-rows",
+        "1000",
+        "--batch-size",
+        "2",
+        "--max-ms",
+        "10000",
+      ],
+      {
+        cwd: packageDir,
+        env: {
+          PATH: optionalEnv("PATH"),
+          HOME: optionalEnv("HOME"),
+          DATABASE_URL: env("DATABASE_URL"),
+          TZ: "UTC",
+        },
+        signal,
+      },
+    ),
+  ]);
+  await db()
+    .delete(billingAttributionBackfill)
+    .where(eq(billingAttributionBackfill.id, jobId));
+  if (result.status === "rejected") {
+    throw result.reason;
+  }
 }
