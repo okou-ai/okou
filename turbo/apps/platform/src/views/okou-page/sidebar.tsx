@@ -221,12 +221,13 @@ function ExpandedSidebar() {
   const { t } = useTranslation();
   return (
     <aside
+      data-slot="sidebar-expanded"
       data-sidebar-expanded={expanded || undefined}
       aria-label={t(($) => {
         return $.appShell.sidebar.ariaLabel;
       })}
       className={cn(
-        "okou-nav okou-mobile-sidebar okou-mobile-fixed-safe-area h-full w-[300px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:h-auto max-md:shadow-xl",
+        "okou-mobile-sidebar okou-mobile-fixed-safe-area h-full w-[300px] shrink-0 flex-col border-r border-nav-border bg-sidebar transition-all duration-300 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:h-auto max-md:shadow-xl",
         "hidden data-[sidebar-expanded]:max-md:flex md:hidden",
       )}
     >
@@ -461,7 +462,7 @@ function ExpandedFooter() {
    what puts the workspace logo and the account mark the same distance from
    the corner they sit in as from the edge beside them. */
 const RAIL_FRAME =
-  "okou-nav okou-nav-rail hidden md:flex h-full w-[72px] shrink-0 flex-col items-center border-r border-sidebar-border bg-sidebar-rail px-1.5 py-[18px]";
+  "okou-nav-rail hidden md:flex h-full w-[72px] shrink-0 flex-col items-center border-r border-nav-border bg-nav-rail px-1.5 py-[18px]";
 
 function LabeledRailLink({
   id,
@@ -759,7 +760,7 @@ function ChatListColumn() {
   return (
     <aside
       data-testid="chat-list-column"
-      className="okou-nav hidden md:flex h-full w-[300px] shrink-0 flex-col bg-sidebar"
+      className="hidden md:flex h-full w-[300px] shrink-0 flex-col bg-sidebar"
     >
       <div
         className={cn(

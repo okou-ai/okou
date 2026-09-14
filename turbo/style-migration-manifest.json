@@ -705,6 +705,27 @@
       "evidence": [],
       "pullRequest": "https://github.com/vm0-ai/vm0/pull/33693",
       "mergeCommit": null
+    },
+    {
+      "id": "nav-chrome",
+      "family": "navigation",
+      "tokens": ["okou-nav"],
+      "consumers": [
+        "apps/platform/src/views/okou-page/sidebar.tsx",
+        "apps/platform/src/views/okou-page/__tests__/sidebar-account-menu.test.tsx"
+      ],
+      "cases": [
+        "nav-chrome-light",
+        "nav-chrome-dark",
+        "nav-chrome-light-retina",
+        "nav-chrome-dark-retina",
+        "nav-chrome-narrow",
+        "nav-chrome-narrow-dark"
+      ],
+      "status": "implemented",
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
     }
   ],
   "caseFiles": [
@@ -722,6 +743,7 @@
     "../e2e/playwright/style-migration/mic-motion-cases.json",
     "../e2e/playwright/style-migration/control-surface-cases.json",
     "../e2e/playwright/style-migration/hairline-rule-cases.json",
-    "../e2e/playwright/style-migration/sidebar-thread-title-cases.json"
+    "../e2e/playwright/style-migration/sidebar-thread-title-cases.json",
+    "../e2e/playwright/style-migration/nav-chrome-cases.json"
   ]
 }
