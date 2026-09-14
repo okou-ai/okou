@@ -53,7 +53,7 @@ function selectedTask(editor: HTMLElement, task: string): HTMLElement {
   if (!card) {
     throw new Error("Expected composer card");
   }
-  return within(card).getByRole("button", { name: `Remove ${task}` });
+  return button(`Remove ${task}`, card);
 }
 
 function ideaButtons(ideas: HTMLElement): HTMLElement[] {
