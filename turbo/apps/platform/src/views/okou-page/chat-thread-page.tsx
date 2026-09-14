@@ -1,5 +1,6 @@
 import type { ThinkingSummaries } from "../../signals/chat-page/thread-activity-summary.ts";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
+import { ScrollArea } from "@base-ui/react/scroll-area";
 import type {
   FormEvent,
   KeyboardEvent as ReactKeyboardEvent,
@@ -71,6 +72,7 @@ import {
   Checkbox,
   Input,
   Skeleton,
+  ScrollBar,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -3685,23 +3687,27 @@ function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
   };
 
   return (
-    <div className="flex-1 min-h-0 relative isolate">
-      <div
+    <ScrollArea.Root className="flex-1 min-h-0 isolate">
+      <ScrollArea.Viewport
         ref={scrollContainerOnRef}
+        data-slot="scroll-area-viewport"
         data-scroll-container
         tabIndex={-1}
         onScroll={handleScroll}
         className={cn(
-          "absolute inset-0 overflow-y-auto focus:outline-none [overflow-anchor:none] [scrollbar-gutter:stable]",
+          "absolute inset-0 focus:outline-none [overflow-anchor:none]",
           standalonePwa && "overscroll-contain",
         )}
       >
-        <ChatThreadEventsMain thread={thread} />
-      </div>
+        <ScrollArea.Content>
+          <ChatThreadEventsMain thread={thread} />
+        </ScrollArea.Content>
+      </ScrollArea.Viewport>
+      <ScrollBar data-testid="chat-message-scrollbar" />
       <ChatThreadSkeletonOverlay thread={thread} />
       <ScrollToBottomButton thread={thread} />
       <ChatConversationLocator thread={thread} />
-    </div>
+    </ScrollArea.Root>
   );
 }
 

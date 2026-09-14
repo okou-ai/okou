@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode, UIEvent } from "react";
 import { ScrollArea } from "@base-ui/react/scroll-area";
+import { ScrollBar } from "@okouai/ui";
 import { useSet } from "ccstate-react";
 import type { SidebarChatThreadScrollSignals } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
 
@@ -40,6 +41,7 @@ export function OverlayScrollArea({
     <ScrollArea.Root className={className}>
       <ScrollArea.Viewport
         ref={setViewportRef}
+        data-slot="scroll-area-viewport"
         className="h-full focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         style={style}
         onScroll={handleScroll}
@@ -52,15 +54,7 @@ export function OverlayScrollArea({
           {children}
         </ScrollArea.Content>
       </ScrollArea.Viewport>
-      <ScrollArea.Scrollbar
-        className="flex h-full w-2.5 touch-none select-none border-l border-l-transparent p-px transition-colors"
-        data-testid="sidebar-scrollbar"
-      >
-        <ScrollArea.Thumb
-          className="relative flex-1 rounded-full bg-border"
-          data-testid="sidebar-scrollbar-thumb"
-        />
-      </ScrollArea.Scrollbar>
+      <ScrollBar data-testid="sidebar-scrollbar" />
     </ScrollArea.Root>
   );
 }

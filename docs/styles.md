@@ -140,6 +140,18 @@ Control typography is a joint decision about font size, line height, height, and
 
 The `okou-badge`, `okou-pill`, and `okou-border-r` selectors and their consumers have been removed. `okou-pill` was scoped to `.okou-app` and set the muted foreground; its only consumer now spells that foreground itself. `okou-border-r` was a single settings-dialog divider and became `border-r border-r-gray-300` on that nav, keeping its lighter Gray 300 stroke while its width joins the shared hairline token.
 
+### Chat scrollbars
+
+`ScrollBar` from `@okouai/ui` owns the shadcn Base UI scrollbar styling shared
+by the chat sidebar and message pane. Compose it with Base UI's
+`ScrollArea.Root`, `ScrollArea.Viewport`, and `ScrollArea.Content`. The vertical
+track is 10px wide with 1px padding, a transparent left border, and a flexible
+rounded `bg-border` thumb. Base UI hides it when content does not overflow.
+Callers retain their viewport refs, scroll handlers, content layout, and
+scroll-position ownership; they do not add scrollbar width, color, or offset
+overrides. The documented `scroll-area-viewport`, `scroll-area-scrollbar`, and
+`scroll-area-thumb` slots identify the shared parts for browser verification.
+
 ### Icon controls and dialog bodies
 
 `IconButton` from `@okouai/ui` owns a neutral 36px square control, the shared
