@@ -224,6 +224,7 @@ import {
   type MediaModelPanelState,
   type ModelProviderSelection,
 } from "./components/model-provider-picker.tsx";
+import { ChatEffortTrigger } from "./components/chat-effort-trigger.tsx";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { ConnectorCard } from "./components/settings/connector-card.tsx";
 import { CustomConnectorIcon } from "./components/settings/custom-connector-icon.tsx";
@@ -7726,8 +7727,9 @@ function ComposerConnectorAccountMenu({
   const closeMenu = useSet(signals.connector.accounts.closeMenu$);
   const open = Boolean(
     menuOpen &&
-    menuTarget &&
-    connectorAccountTargetKey(menuTarget) === connectorAccountTargetKey(target),
+      menuTarget &&
+      connectorAccountTargetKey(menuTarget) ===
+        connectorAccountTargetKey(target),
   );
   const effectiveConnection = explicit ? selectedConnection : defaultConnection;
   const resolveAccountLabel = useConnectorAccountLabel();
@@ -9729,9 +9731,8 @@ interface ComposerMediaModelPickerState<Model extends string> {
   readonly onChange: (next: Model | null) => void;
 }
 
-interface ComposerResolvedMediaModelPickerState<
-  Model extends string,
-> extends ComposerMediaModelPickerState<Model> {
+interface ComposerResolvedMediaModelPickerState<Model extends string>
+  extends ComposerMediaModelPickerState<Model> {
   readonly selectedModel: Model;
 }
 
@@ -9933,6 +9934,17 @@ function ComposerModelPickerControls({
       : undefined;
   return (
     <>
+      {/* Effort sits level with the model rather than two surfaces behind it.
+          A phone's control row has no width to spare, so there it stays inside
+          the model picker's settings page. */}
+      <ChatEffortTrigger
+        value={value}
+        onChange={onChange}
+        triggerClassName={cn(
+          composerModelPickerTriggerClassName(),
+          "hidden sm:flex",
+        )}
+      />
       <ComposerRunModelPickerControl
         signals={signals}
         value={value}

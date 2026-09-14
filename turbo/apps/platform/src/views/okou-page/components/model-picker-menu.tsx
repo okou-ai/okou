@@ -1,12 +1,5 @@
-import { orgModelPolicies$ } from "../../../signals/external/org-model-policies.ts";
-import { featureSwitch$ } from "../../../signals/external/feature-switch.ts";
-import {
-  availableChatReasoningEfforts,
-  effectiveChatReasoningEffort,
-} from "../../../signals/okou-page/model-reasoning-effort.ts";
-import { withModelReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { KeyboardEvent, ReactNode } from "react";
-import { useGet, useSet, useLastResolved } from "ccstate-react";
+import { useGet, useSet } from "ccstate-react";
 import {
   ArrowLeft,
   Check,
@@ -14,17 +7,8 @@ import {
   Cpu,
   MessageCircle,
   SlidersHorizontal,
-  Zap,
 } from "lucide-react";
-import {
-  Button,
-  Switch,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-  cn,
-} from "@okouai/ui";
+import { Button, cn } from "@okouai/ui";
 import {
   getCanonicalModelDisplayName,
   type SupportedRunModel,
@@ -33,7 +17,12 @@ import { useTranslation } from "react-i18next";
 import type { ModelPickerMenuSignals } from "../../../signals/okou-page/model-picker-menu.ts";
 import { pageSignal$ } from "../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../signals/utils.ts";
-import { ChatEffortSlider } from "./chat-effort-slider.tsx";
+import {
+  ChatEffortSettings,
+  ChatFastSetting,
+  formatChatEffort,
+  useChatEffort,
+} from "./chat-effort-controls.tsx";
 import { PriceTierBadge } from "./model-picker-price-tier.tsx";
 import {
   getMediaModelPriceTierLabel,
@@ -53,18 +42,6 @@ interface ModelPickerMenuOption {
   readonly disabled: boolean;
   readonly fastAvailable: boolean;
   readonly fastImpact: ReactNode;
-}
-
-function useChatEffort(selection: ModelProviderSelection | null | undefined) {
-  const switches = useGet(featureSwitch$);
-  const policies = useLastResolved(orgModelPolicies$);
-  const policy = policies?.policies.find((entry) => {
-    return entry.model === selection?.selectedModel;
-  });
-  return {
-    efforts: availableChatReasoningEfforts(selection, switches, policy),
-    effort: effectiveChatReasoningEffort(selection, switches, policy),
-  };
 }
 
 function MenuHeader({
@@ -200,15 +177,6 @@ interface ModelPickerMenuContentProps {
   onSelected?: (() => void) | undefined;
 }
 
-function formatChatEffort(
-  model: string | undefined,
-  effort: string | null | undefined,
-) {
-  return model?.startsWith("claude-") && effort
-    ? effort.charAt(0).toUpperCase() + effort.slice(1)
-    : effort;
-}
-
 function canAdjustChatSettings(
   option: ModelPickerMenuOption | undefined,
   hasEffortControls: boolean,
@@ -313,61 +281,6 @@ function ModelPickerOverview({
   );
 }
 
-function ChatReasoningEffortSettings({
-  selection,
-  disabled,
-  onChange,
-}: {
-  selection: ModelProviderSelection;
-  disabled: boolean;
-  onChange: ModelPickerMenuContentProps["onChange"];
-}) {
-  const { t } = useTranslation();
-  const { efforts, effort: value } = useChatEffort(selection);
-  if (efforts.length === 0) {
-    return null;
-  }
-  const label = t(($) => {
-    return $.settings.models.picker.effort;
-  });
-  if (value === undefined) {
-    return null;
-  }
-  const displayValue = formatChatEffort(selection.selectedModel, value);
-  const index = efforts.findIndex((effort) => {
-    return effort === value;
-  });
-  return (
-    <div className="flex flex-col gap-3 border-b border-border/60 px-2 py-4">
-      <div className="flex items-baseline justify-between gap-3 text-[13px]">
-        <span>{label}</span>
-        <span className="font-medium text-foreground">{displayValue}</span>
-      </div>
-      {index !== -1 ? (
-        <ChatEffortSlider
-          steps={efforts.length}
-          value={index}
-          disabled={disabled}
-          label={label}
-          valueText={displayValue ?? value}
-          onValueChange={(next) => {
-            const effort = efforts[next];
-            if (effort !== undefined) {
-              onChange({
-                ...selection,
-                modelSettings: withModelReasoningEffort(
-                  selection.modelSettings,
-                  { model: selection.selectedModel, effort },
-                ),
-              });
-            }
-          }}
-        />
-      ) : null}
-    </div>
-  );
-}
-
 function ChatModelSettings({
   signals,
   options,
@@ -396,50 +309,18 @@ function ChatModelSettings({
         {option?.content ??
           getCanonicalModelDisplayName(selection.selectedModel)}
       </div>
-      <ChatReasoningEffortSettings
+      <ChatEffortSettings
         selection={selection}
         disabled={option?.disabled ?? true}
         onChange={onChange}
       />
       {option?.fastAvailable && (
-        <div className="flex items-center justify-between gap-3 px-2 py-4">
-          {/* The bolt says what Fast is and carries its cost, the same icon and
-              treatment the model rows already use for it. Spelling the cost out
-              underneath put two lines of small print in a row the user reads
-              as a single switch. */}
-          <TooltipProvider delayDuration={300}>
-            <Tooltip>
-              <TooltipTrigger className="flex cursor-default items-center gap-2 text-[13px]">
-                <Zap
-                  size={18}
-                  fill="currentColor"
-                  className="text-amber-600 dark:text-amber-300"
-                  aria-hidden="true"
-                />
-                {t(($) => {
-                  return $.settings.models.picker.fast;
-                })}
-              </TooltipTrigger>
-              <TooltipContent side="top" className="text-xs">
-                {option.fastImpact}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <Switch
-            size="compact"
-            aria-label={t(($) => {
-              return $.settings.models.picker.fast;
-            })}
-            checked={selection.codexServiceTier === "fast"}
-            onCheckedChange={(fast) => {
-              onChange({
-                ...selection,
-                codexServiceTier: fast ? "fast" : undefined,
-              });
-            }}
-            disabled={option.disabled}
-          />
-        </div>
+        <ChatFastSetting
+          selection={selection}
+          disabled={option.disabled}
+          fastImpact={option.fastImpact}
+          onChange={onChange}
+        />
       )}
     </>
   );

@@ -100,18 +100,28 @@
     oklch(0.955 0.028 72),
     oklch(0.9 0.085 52)
   );
-  --background-image-effort-aurora-peaks: radial-gradient(
+  --background-image-effort-aurora-peaks:
+    radial-gradient(
       46px 40px at 50% 116%,
       oklch(0.64 0.19 38 / 0.95),
       transparent 70%
     ),
-    radial-gradient(30px 33px at 50% 121%, oklch(0.7 0.175 56 / 0.9), transparent 68%);
-  --background-image-effort-aurora-curtain: radial-gradient(
+    radial-gradient(
+      30px 33px at 50% 121%,
+      oklch(0.7 0.175 56 / 0.9),
+      transparent 68%
+    );
+  --background-image-effort-aurora-curtain:
+    radial-gradient(
       84px 27px at 50% 127%,
       oklch(0.68 0.175 44 / 0.9),
       transparent 72%
     ),
-    radial-gradient(120px 20px at 50% 132%, oklch(0.76 0.145 72 / 0.85), transparent 70%);
+    radial-gradient(
+      120px 20px at 50% 132%,
+      oklch(0.76 0.145 72 / 0.85),
+      transparent 70%
+    );
   --animate-effort-aurora-peaks:
     effort-aurora-peaks 23s linear infinite,
     effort-aurora-breathe 11s ease-in-out infinite;
@@ -156,8 +166,114 @@
    through a 1px inset of the inner one. Both are fixed to the handle's
    18x40 / 16x38 geometry. */
 :root {
-  --okou-effort-thumb-clip: polygon(0.0px 8.2px, 0.04px 5.55px, 0.16px 4.33px, 0.35px 3.39px, 0.63px 2.62px, 0.99px 1.98px, 1.44px 1.44px, 1.98px 0.99px, 2.62px 0.63px, 3.39px 0.35px, 4.33px 0.16px, 5.55px 0.04px, 8.2px 0.0px, 9.8px 0.0px, 12.45px 0.04px, 13.67px 0.16px, 14.61px 0.35px, 15.38px 0.63px, 16.02px 0.99px, 16.56px 1.44px, 17.01px 1.98px, 17.37px 2.62px, 17.65px 3.39px, 17.84px 4.33px, 17.96px 5.55px, 18.0px 8.2px, 18.0px 31.8px, 17.96px 34.45px, 17.84px 35.67px, 17.65px 36.61px, 17.37px 37.38px, 17.01px 38.02px, 16.56px 38.56px, 16.02px 39.01px, 15.38px 39.37px, 14.61px 39.65px, 13.67px 39.84px, 12.45px 39.96px, 9.8px 40.0px, 8.2px 40.0px, 5.55px 39.96px, 4.33px 39.84px, 3.39px 39.65px, 2.62px 39.37px, 1.98px 39.01px, 1.44px 38.56px, 0.99px 38.02px, 0.63px 37.38px, 0.35px 36.61px, 0.16px 35.67px, 0.04px 34.45px, 0.0px 31.8px);
-  --okou-effort-thumb-body-clip: polygon(0.0px 7.4px, 0.04px 5.01px, 0.14px 3.91px, 0.32px 3.06px, 0.57px 2.37px, 0.89px 1.78px, 1.3px 1.3px, 1.78px 0.89px, 2.37px 0.57px, 3.06px 0.32px, 3.91px 0.14px, 5.01px 0.04px, 7.4px 0.0px, 8.6px 0.0px, 10.99px 0.04px, 12.09px 0.14px, 12.94px 0.32px, 13.63px 0.57px, 14.22px 0.89px, 14.7px 1.3px, 15.11px 1.78px, 15.43px 2.37px, 15.68px 3.06px, 15.86px 3.91px, 15.96px 5.01px, 16.0px 7.4px, 16.0px 30.6px, 15.96px 32.99px, 15.86px 34.09px, 15.68px 34.94px, 15.43px 35.63px, 15.11px 36.22px, 14.7px 36.7px, 14.22px 37.11px, 13.63px 37.43px, 12.94px 37.68px, 12.09px 37.86px, 10.99px 37.96px, 8.6px 38.0px, 7.4px 38.0px, 5.01px 37.96px, 3.91px 37.86px, 3.06px 37.68px, 2.37px 37.43px, 1.78px 37.11px, 1.3px 36.7px, 0.89px 36.22px, 0.57px 35.63px, 0.32px 34.94px, 0.14px 34.09px, 0.04px 32.99px, 0.0px 30.6px);
+  --okou-effort-thumb-clip: polygon(
+    0px 8.2px,
+    0.04px 5.55px,
+    0.16px 4.33px,
+    0.35px 3.39px,
+    0.63px 2.62px,
+    0.99px 1.98px,
+    1.44px 1.44px,
+    1.98px 0.99px,
+    2.62px 0.63px,
+    3.39px 0.35px,
+    4.33px 0.16px,
+    5.55px 0.04px,
+    8.2px 0px,
+    9.8px 0px,
+    12.45px 0.04px,
+    13.67px 0.16px,
+    14.61px 0.35px,
+    15.38px 0.63px,
+    16.02px 0.99px,
+    16.56px 1.44px,
+    17.01px 1.98px,
+    17.37px 2.62px,
+    17.65px 3.39px,
+    17.84px 4.33px,
+    17.96px 5.55px,
+    18px 8.2px,
+    18px 31.8px,
+    17.96px 34.45px,
+    17.84px 35.67px,
+    17.65px 36.61px,
+    17.37px 37.38px,
+    17.01px 38.02px,
+    16.56px 38.56px,
+    16.02px 39.01px,
+    15.38px 39.37px,
+    14.61px 39.65px,
+    13.67px 39.84px,
+    12.45px 39.96px,
+    9.8px 40px,
+    8.2px 40px,
+    5.55px 39.96px,
+    4.33px 39.84px,
+    3.39px 39.65px,
+    2.62px 39.37px,
+    1.98px 39.01px,
+    1.44px 38.56px,
+    0.99px 38.02px,
+    0.63px 37.38px,
+    0.35px 36.61px,
+    0.16px 35.67px,
+    0.04px 34.45px,
+    0px 31.8px
+  );
+  --okou-effort-thumb-body-clip: polygon(
+    0px 7.4px,
+    0.04px 5.01px,
+    0.14px 3.91px,
+    0.32px 3.06px,
+    0.57px 2.37px,
+    0.89px 1.78px,
+    1.3px 1.3px,
+    1.78px 0.89px,
+    2.37px 0.57px,
+    3.06px 0.32px,
+    3.91px 0.14px,
+    5.01px 0.04px,
+    7.4px 0px,
+    8.6px 0px,
+    10.99px 0.04px,
+    12.09px 0.14px,
+    12.94px 0.32px,
+    13.63px 0.57px,
+    14.22px 0.89px,
+    14.7px 1.3px,
+    15.11px 1.78px,
+    15.43px 2.37px,
+    15.68px 3.06px,
+    15.86px 3.91px,
+    15.96px 5.01px,
+    16px 7.4px,
+    16px 30.6px,
+    15.96px 32.99px,
+    15.86px 34.09px,
+    15.68px 34.94px,
+    15.43px 35.63px,
+    15.11px 36.22px,
+    14.7px 36.7px,
+    14.22px 37.11px,
+    13.63px 37.43px,
+    12.94px 37.68px,
+    12.09px 37.86px,
+    10.99px 37.96px,
+    8.6px 38px,
+    7.4px 38px,
+    5.01px 37.96px,
+    3.91px 37.86px,
+    3.06px 37.68px,
+    2.37px 37.43px,
+    1.78px 37.11px,
+    1.3px 36.7px,
+    0.89px 36.22px,
+    0.57px 35.63px,
+    0.32px 34.94px,
+    0.14px 34.09px,
+    0.04px 32.99px,
+    0px 30.6px
+  );
 }
 
 @supports (height: 100lvh) {

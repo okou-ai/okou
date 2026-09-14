@@ -37,7 +37,7 @@ function InteriorTicks({ count }: { count: number }) {
   );
 }
 
-export interface ChatEffortSliderProps {
+interface ChatEffortSliderProps {
   /** Step count, lowest first. */
   readonly steps: number;
   /** Index of the selected step. */
