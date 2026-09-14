@@ -137,6 +137,13 @@ export const socialKitDownloadQualitySchema = z.enum([
 
 export const socialKitDownloadFormatSchema = z.enum(["mp4", "m4a"]);
 
+// Delivered resolutions include source renditions such as TikTok's 576p.
+export const socialKitDownloadDeliveredQualitySchema = z
+  .string()
+  .regex(/^[1-9]\d{0,3}p$/u);
+
+const socialKitDownloadArtifactFormatSchema = z.enum(["mp4", "m4a", "mp3"]);
+
 export const socialKitDownloadRequestSchema = z
   .object({
     platform: socialKitDownloadPlatformSchema,
@@ -170,6 +177,8 @@ const socialKitDownloadProviderResultSchema = z.object({
   durationSeconds: z.number().int().nonnegative(),
   fileSizeMB: z.number().nonnegative(),
   creditsCost: z.number().int().positive(),
+  quality: socialKitDownloadDeliveredQualitySchema.optional(),
+  format: socialKitDownloadFormatSchema.optional(),
   title: z.string().max(1000).optional(),
   thumbnail: z.url().max(4096).optional(),
 });
@@ -180,14 +189,29 @@ const socialKitDownloadArtifactSchema = z.object({
   filename: z.string().min(1),
   contentType: z.string().min(1),
   sizeBytes: z.number().int().positive(),
+  format: socialKitDownloadArtifactFormatSchema.nullable().optional(),
 });
 
 export const socialKitDownloadResponseSchema = z.object({
   downloadId: z.string().uuid(),
   status: socialKitDownloadStatusSchema,
   platform: socialKitDownloadPlatformSchema,
+  // Retain the request aliases for already selected commit-addressed CLIs.
   quality: socialKitDownloadQualitySchema,
   format: socialKitDownloadFormatSchema,
+  // Optional while older API artifacts remain supported rollout/rollback targets.
+  requested: z
+    .object({
+      quality: socialKitDownloadQualitySchema,
+      format: socialKitDownloadFormatSchema,
+    })
+    .optional(),
+  delivered: z
+    .object({
+      quality: socialKitDownloadDeliveredQualitySchema.nullable(),
+      format: socialKitDownloadArtifactFormatSchema.nullable(),
+    })
+    .optional(),
   maxDuration: z.number().int().positive(),
   billingCategory: z.literal(MANAGED_SOCIALKIT_BILLING_CATEGORY),
   provider: socialKitDownloadProviderResultSchema.nullable(),

@@ -1037,7 +1037,16 @@ function downloadOutput(
     platform: response.platform,
     target,
     request,
-    data: response,
+    data: {
+      ...response,
+      // Older API artifacts remain reachable during rollout and rollback.
+      // Remove normalization only after those API targets are retired.
+      requested: response.requested ?? {
+        quality: response.quality,
+        format: response.format,
+      },
+      delivered: response.delivered ?? { quality: null, format: null },
+    },
     ...(artifact
       ? createArtifactPresentation(
           artifact.filename,

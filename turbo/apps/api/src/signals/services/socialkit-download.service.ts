@@ -2,9 +2,9 @@ import { v5 as uuidv5 } from "uuid";
 
 import {
   MANAGED_SOCIALKIT_BILLING_CATEGORY,
+  socialKitDownloadDeliveredQualitySchema,
   socialKitDownloadFormatSchema,
   socialKitDownloadPlatformSchema,
-  socialKitDownloadQualitySchema,
   socialKitDownloadResponseSchema,
   type SocialKitDownloadListQuery,
   type SocialKitDownloadListResponse,
@@ -141,7 +141,8 @@ const providerReadySchema = z.object({
   durationSeconds: z.number().int().positive(),
   fileSizeMB: providerFileSizeMbSchema,
   creditsCost: z.number().int().positive(),
-  quality: socialKitDownloadQualitySchema,
+  billed: z.literal(true).optional(),
+  quality: socialKitDownloadDeliveredQualitySchema,
   format: socialKitDownloadFormatSchema,
   title: z.unknown().optional(),
   thumbnail: z.unknown().optional(),
@@ -207,12 +208,23 @@ function externalStatus(job: DownloadJob): SocialKitDownloadResponse["status"] {
 
 function responseForJob(job: DownloadJob): SocialKitDownloadResponse {
   const billed = job.creditsCharged !== null;
+  // Historical filenames/content types could be request-derived. Do not use
+  // them to reconstruct missing delivery evidence from older JSONB writers.
+  const deliveredFormat = job.artifact?.format ?? null;
+  const hasVideo = deliveredFormat
+    ? deliveredFormat === "mp4"
+    : job.providerResult?.format === "mp4";
   return socialKitDownloadResponseSchema.parse({
     downloadId: job.id,
     status: externalStatus(job),
     platform: job.request.platform,
     quality: job.request.quality,
     format: job.request.format,
+    requested: { quality: job.request.quality, format: job.request.format },
+    delivered: {
+      quality: hasVideo ? (job.providerResult?.quality ?? null) : null,
+      format: deliveredFormat,
+    },
     maxDuration: job.request.maxDuration,
     billingCategory: MANAGED_SOCIALKIT_BILLING_CATEGORY,
     provider: job.providerResult,
@@ -404,7 +416,7 @@ async function pollProviderJob(
 
 interface SniffedMedia {
   readonly contentType: string;
-  readonly extension: string;
+  readonly extension: "mp4" | "m4a" | "mp3";
 }
 
 type IsoTrackKind = "audio" | "video";
@@ -821,19 +833,44 @@ function usageIdempotencyKey(downloadId: string): string {
   );
 }
 
+function providerCreditsPerMinute(media: {
+  readonly quality: string;
+  readonly format: SocialKitDownloadRequest["format"];
+}): number {
+  return media.format === "mp4" && Number.parseInt(media.quality, 10) >= 720
+    ? 4
+    : 1;
+}
+
 function readyMetadataIsValid(
   job: DownloadJob,
   ready: z.infer<typeof providerReadySchema>,
 ): boolean {
-  const expectedCredits = Math.max(1, Math.ceil(ready.durationSeconds / 60));
-  const maximumCredits = Math.max(1, Math.ceil(job.request.maxDuration / 60));
+  const minutes = Math.ceil(ready.durationSeconds / 60);
+  const requestedRate = providerCreditsPerMinute(job.request);
+  const deliveredRate =
+    job.request.platform === "tiktok"
+      ? Math.min(requestedRate, providerCreditsPerMinute(ready))
+      : requestedRate;
+  const expectedCredits = minutes * deliveredRate;
+  const maximumCredits =
+    Math.ceil(job.request.maxDuration / 60) * requestedRate;
+  // SocialKit retains legacy account rates for 30 days. Accept only the exact
+  // old or current cost, never arbitrary bounded usage. Remove the old-rate
+  // allowance after the managed account transition AND recoverable legacy jobs
+  // have drained; a paid job's refresh must not reprice its original usage.
+  const validCost =
+    ready.creditsCost === expectedCredits || ready.creditsCost === minutes;
   return !(
     ready.jobId !== job.providerJobId ||
     ready.platform !== job.request.platform ||
     ready.format !== job.request.format ||
     ready.durationSeconds > job.request.maxDuration ||
-    ready.creditsCost !== expectedCredits ||
-    ready.creditsCost > maximumCredits
+    !validCost ||
+    ready.creditsCost > maximumCredits ||
+    (job.providerResult !== null &&
+      (ready.creditsCost !== job.providerResult.creditsCost ||
+        ready.durationSeconds !== job.providerResult.durationSeconds))
   );
 }
 
@@ -951,7 +988,9 @@ export const createSocialKitDownload$ = command(
           kind: "social",
           provider: "socialkit",
           category: MANAGED_SOCIALKIT_BILLING_CATEGORY,
-          quantity: Math.max(1, Math.ceil(args.body.maxDuration / 60)),
+          quantity:
+            Math.ceil(args.body.maxDuration / 60) *
+            providerCreditsPerMinute(args.body),
         },
         label: "Okou SocialKit download",
       },
@@ -1146,6 +1185,8 @@ function safeProviderResult(ready: ProviderReady) {
     durationSeconds: ready.durationSeconds,
     fileSizeMB: ready.fileSizeMB,
     creditsCost: ready.creditsCost,
+    quality: ready.quality,
+    format: ready.format,
     ...(typeof ready.title === "string" && ready.title.length <= 1000
       ? { title: ready.title }
       : {}),
@@ -1359,6 +1400,7 @@ const materializeSocialKitArtifact$ = command(
       filename,
       contentType,
       sizeBytes: stored.sizeBytes,
+      format: media?.extension ?? null,
     };
     await set(
       recordWebUploadedFile$,

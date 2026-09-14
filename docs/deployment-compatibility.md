@@ -257,6 +257,56 @@ Remove the old-API metadata projection and its compatibility-only tests after
 every serving API and retained rollback target emits the canonical source limit;
 [issue #34053](https://github.com/vm0-ai/vm0/issues/34053) owns that removal gate.
 
+### Social download accounting and media metadata
+
+Social download admission uses the caller's maximum duration rounded up to
+started minutes and the requested format/quality tier: audio and SD video use
+one provider credit per minute; 720p/1080p video uses four. TikTok ready jobs use
+the delivered tier, capped at the requested tier, so a 720p request delivered at
+576p uses the SD rate. The default request remains 720p. These are **provider
+usage units**; managed usage applies the separately configured Okou retail
+price to the validated actual `creditsCost`, once per download job.
+
+The [provider API overview](https://docs.socialkit.dev/api-reference#credit-costs)
+documents a 30-day legacy-account pricing transition. Admission conservatively
+uses current published tiers, while settlement accepts only the exact current
+cost or the prior one-credit-per-minute cost from the authenticated ready job.
+It does not assume the production account's transition date or bill the
+preflight maximum. Remove the legacy allowance only after verifying the managed
+account's transition and that no recoverable historical jobs need the old rate.
+Follow-up [#34056](https://github.com/vm0-ai/vm0/issues/34056) owns these gates
+and the old-API normalization cleanup described below.
+An explicitly unbilled ready response is rejected. Polling headers may report
+zero new usage on a paid-link refresh; the original job cost remains authoritative.
+
+The additive response fields distinguish media intent from delivery evidence:
+
+- `quality` and `format` remain request aliases for older CLI artifacts;
+  `requested` explicitly contains those same values.
+- `provider.quality` and `provider.format` preserve the accepted ready metadata.
+  Provider-reported resolution accepts renditions such as `576p`, independently
+  of the finite request-quality choices. It is not a byte-level resolution
+  measurement.
+- `artifact.format` records the byte-sniffed MP4, M4A or MP3 type, or null when
+  unrecognized. `delivered.format` uses only that evidence. Existing filenames
+  and content types may be request-derived and are not used to infer it.
+- `delivered.quality` uses stored provider reporting and is null for audio.
+  Missing historical delivery metadata remains null. New artifact recovery can
+  establish a sniffed format without fabricating missing original quality.
+
+No relational migration or stored-job rewrite is required. Old JSONB writers
+legitimately omit the new optional media fields; new readers keep their original
+usage and return unknown delivery metadata. Interrupted settlement and paid-link
+refresh keep the same job and usage idempotency key. Refresh metadata must match
+the original accepted duration and cost, rather than reprice a paid download.
+
+| Pairing            | Supported behavior                                                                                                                                                                              |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Old CLI, new API   | Existing request aliases and response fields remain valid; additional fields can be ignored.                                                                                                    |
+| New CLI, old API   | Optional response fields allow parsing; output adds explicit requested values and null delivered values. Remove this normalization only when old API targets leave the rollout/rollback window. |
+| Old API, new JSONB | Additive keys do not change existing required values; rollback retains the old API's pre-existing HD validation limitation.                                                                     |
+| New API, old JSONB | Completed jobs remain readable; pending settlement and artifact recovery preserve original usage and unknown media fields.                                                                      |
+
 ### Pi Gen1 wire-field retirement
 
 [#33966](https://github.com/vm0-ai/vm0/issues/33966) removes only the optional

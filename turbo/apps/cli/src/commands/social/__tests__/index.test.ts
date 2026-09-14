@@ -2976,6 +2976,10 @@ describe("okou social command", () => {
 
     expect(creates).toBe(0);
     expect(JSON.parse(output()) as unknown).toMatchObject({
+      data: {
+        requested: { quality: "720p", format: "mp4" },
+        delivered: { quality: null, format: null },
+      },
       inlineMarkdownLink:
         "[example.mp4](<https://artifacts.example/video.mp4>)",
       previewMarkdownBlock:
@@ -2995,6 +2999,80 @@ describe("okou social command", () => {
       format: "mp4",
     });
   });
+
+  it.each([
+    {
+      platform: "tiktok",
+      providerQuality: "576p",
+      delivered: { quality: "576p", format: "mp4" },
+      filename: "example.mp4",
+      contentType: "video/mp4",
+    },
+    {
+      platform: "youtube",
+      providerQuality: "720p",
+      delivered: { quality: null, format: "mp3" },
+      filename: "example.mp3",
+      contentType: "audio/mpeg",
+    },
+  ])(
+    "preserves delivered $delivered.format metadata when resuming",
+    async ({ platform, providerQuality, delivered, filename, contentType }) => {
+      const legacy = completedDownload();
+      const response = {
+        ...legacy,
+        platform,
+        requested: { quality: "720p", format: "mp4" },
+        delivered,
+        provider: {
+          ...legacy.provider,
+          quality: providerQuality,
+          format: "mp4",
+        },
+        artifact: {
+          ...legacy.artifact,
+          filename,
+          url: `https://artifacts.example/${filename}`,
+          contentType,
+          format: delivered.format,
+        },
+      };
+      server.use(
+        http.get(
+          "http://localhost:3000/api/social/downloads/:downloadId",
+          () => {
+            return HttpResponse.json(response);
+          },
+        ),
+      );
+
+      await socialCommand.parseAsync([
+        "node",
+        "okou",
+        "download",
+        "--resume",
+        legacy.downloadId,
+        "--json",
+      ]);
+
+      expect(JSON.parse(output()) as unknown).toMatchObject({
+        data: {
+          quality: "720p",
+          format: "mp4",
+          requested: response.requested,
+          delivered,
+          artifact: { filename, contentType, format: delivered.format },
+        },
+        billing: { quantity: 2, creditsCharged: 6 },
+      });
+      expect(outputRequest()).toStrictEqual({
+        resume: true,
+        maxDuration: 600,
+        quality: "720p",
+        format: "mp4",
+      });
+    },
+  );
 
   it("retries artifact materialization when resuming a download", async () => {
     let statusRequests = 0;
