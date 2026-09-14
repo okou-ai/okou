@@ -2682,6 +2682,21 @@ function createActiveSuggestionRange<T>(
   });
 }
 
+function createTemplateSignals(
+  editor: Editor,
+  draft: DraftSignals,
+  openDialog$: OpenTemplatePickerDialogCommand,
+) {
+  const commands = createTemplateCommands(editor, draft, openDialog$);
+  const legacy = createLegacyTemplateAttachmentControls(editor, draft);
+  const selection = createTemplateSelectionSignals(
+    editor,
+    draft,
+    legacy.active$,
+  );
+  return { commands, legacy, selection };
+}
+
 export function createWorkflowComposerSignals<
   T extends AgentIdValue = Promise<string | null>,
 >(
@@ -2710,16 +2725,7 @@ export function createWorkflowComposerSignals<
   const syncAgentMentionAvatars$ = createSyncAgentMentionAvatarsCommand(
     agentMentionAvatarRuntime,
   );
-  const templateCommands = createTemplateCommands(editor, draft, openDialog$);
-  const legacyTemplateAttachment = createLegacyTemplateAttachmentControls(
-    editor,
-    draft,
-  );
-  const templateSelection = createTemplateSelectionSignals(
-    editor,
-    draft,
-    legacyTemplateAttachment.active$,
-  );
+  const templates = createTemplateSignals(editor, draft, openDialog$);
   const selectedSuggestionIndex$ = computed((get) => {
     return get(selectedSuggestionIndexState$);
   });
@@ -2752,9 +2758,9 @@ export function createWorkflowComposerSignals<
     editor,
     draft,
     runtime,
-    legacyTemplateAttachment,
-    templateSelection,
-    openTemplatePicker$: templateCommands.openTemplatePicker$,
+    legacyTemplateAttachment: templates.legacy,
+    templateSelection: templates.selection,
+    openTemplatePicker$: templates.commands.openTemplatePicker$,
     caretIndex$,
     editorFocusedState$,
     selectedSuggestionIndexState$,
@@ -2785,8 +2791,8 @@ export function createWorkflowComposerSignals<
     setContainerRef$,
     focus$,
     hasInput$,
-    hasTemplateAttachment$: legacyTemplateAttachment.active$,
-    templateRequests$: templateSelection.requests$,
+    hasTemplateAttachment$: templates.legacy.active$,
+    templateRequests$: templates.selection.requests$,
     activeSlashRange$,
     activeChatThreadSuggestionRange$,
     chatThreadSuggestions$,
@@ -2798,7 +2804,7 @@ export function createWorkflowComposerSignals<
     closeSuggestionMenu$,
     ...suggestionInsertionCommands,
     ...textCommands,
-    ...templateCommands,
+    ...templates.commands,
     insertUserMessage$,
     readInputForSubmission$,
     feedback: feedback.signals,
