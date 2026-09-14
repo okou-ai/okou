@@ -6,6 +6,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@okouai/ui/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@okouai/ui/components/ui/select";
 import { Slider } from "@okouai/ui/components/ui/slider";
 import { Switch } from "@okouai/ui/components/ui/switch";
 import { Button, cn } from "@okouai/ui";
@@ -349,6 +356,110 @@ function VideoSettingsPane({
   );
 }
 
+function VideoToolbarField<Option extends string>({
+  label,
+  value,
+  values,
+  onChange,
+}: {
+  readonly label: string;
+  readonly value: Option;
+  readonly values: readonly Option[];
+  readonly onChange: (value: Option) => void;
+}) {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger
+        aria-label={label}
+        disabled={values.length < 2}
+        className="h-8 w-auto gap-1 border-transparent bg-transparent px-2 text-xs text-muted-foreground hover:bg-state-hover [&>[data-slot=select-icon]>svg]:size-3"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent side="top" align="start">
+        {values.map((option) => {
+          return (
+            <SelectItem key={option} value={option}>
+              {option}
+            </SelectItem>
+          );
+        })}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function VideoToolbar({
+  resolved,
+  config,
+  onChange,
+}: {
+  readonly resolved: ResolvedVideoGenerationOptions;
+  readonly config: VideoModelConfig;
+  readonly onChange: (next: ResolvedVideoGenerationOptions) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="hidden shrink-0 items-center gap-0.5 @min-[760px]/composer:flex">
+      <div className="mx-1 h-4 w-px bg-divider/60" />
+      <VideoToolbarField
+        label={t(($) => {
+          return $.chat.templates.videoOptionsRatio;
+        })}
+        value={resolved.aspectRatio}
+        values={config.aspectRatios}
+        onChange={(aspectRatio) => {
+          onChange({ ...resolved, aspectRatio });
+        }}
+      />
+      <VideoToolbarField
+        label={t(($) => {
+          return $.chat.templates.videoOptionsResolution;
+        })}
+        value={resolved.resolution}
+        values={config.resolutions}
+        onChange={(resolution) => {
+          onChange({ ...resolved, resolution });
+        }}
+      />
+      <VideoToolbarField
+        label={t(($) => {
+          return $.chat.templates.videoOptionsDuration;
+        })}
+        value={resolved.duration}
+        values={config.durations}
+        onChange={(duration) => {
+          onChange({ ...resolved, duration });
+        }}
+      />
+      {config.supportsGenerateAudio && (
+        <Button
+          type="button"
+          variant="quiet"
+          size="icon-sm"
+          aria-label={t(($) => {
+            return $.chat.templates.videoOptionsAudio;
+          })}
+          aria-pressed={resolved.generateAudio}
+          showTooltip
+          onClick={() => {
+            onChange({
+              ...resolved,
+              generateAudio: !resolved.generateAudio,
+            });
+          }}
+        >
+          {resolved.generateAudio ? (
+            <Volume2 size={16} />
+          ) : (
+            <VolumeX size={16} />
+          )}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function ComposerVideoOptionsChipBody({
   signals,
   videoModelSignals,
@@ -378,55 +489,64 @@ function ComposerVideoOptionsChipBody({
   });
 
   return (
-    <Popover open={open && !templatePickerMounted} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="quiet"
-          size="sm"
-          className="shrink-0 gap-1.5 font-normal data-popup-open:bg-state-hover data-popup-open:text-foreground"
-          aria-label={t(
-            ($) => {
-              return $.chat.templates.videoOptionsLabel;
-            },
-            { spec },
-          )}
-          aria-description={
-            config.supportsGenerateAudio ? audioLabel : undefined
-          }
+    <>
+      <VideoToolbar
+        resolved={resolved}
+        config={config}
+        onChange={(next) => {
+          setPatch(videoRunOptionsPatch(next, model));
+        }}
+      />
+      <Popover open={open && !templatePickerMounted} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            type="button"
+            variant="quiet"
+            size="sm"
+            className="shrink-0 gap-1.5 font-normal data-popup-open:bg-state-hover data-popup-open:text-foreground @min-[760px]/composer:hidden"
+            aria-label={t(
+              ($) => {
+                return $.chat.templates.videoOptionsLabel;
+              },
+              { spec },
+            )}
+            aria-description={
+              config.supportsGenerateAudio ? audioLabel : undefined
+            }
+          >
+            <span className="tabular-nums">{spec}</span>
+            {config.supportsGenerateAudio &&
+              (resolved.generateAudio ? (
+                <Volume2 size={14} aria-hidden />
+              ) : (
+                <VolumeX size={14} aria-hidden />
+              ))}
+            <ChevronDown className="shrink-0 opacity-50" aria-hidden />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          side="top"
+          sideOffset={6}
+          className="w-[17.5rem] max-w-[calc(100vw-2rem)] p-1.5"
+          aria-label={t(($) => {
+            return $.chat.templates.videoOptions;
+          })}
         >
-          <span className="tabular-nums">{spec}</span>
-          {config.supportsGenerateAudio &&
-            (resolved.generateAudio ? (
-              <Volume2 size={14} aria-hidden />
-            ) : (
-              <VolumeX size={14} aria-hidden />
-            ))}
-          <ChevronDown className="shrink-0 opacity-50" aria-hidden />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        side="top"
-        sideOffset={6}
-        className="w-[17.5rem] max-w-[calc(100vw-2rem)] p-1.5"
-        aria-label={t(($) => {
-          return $.chat.templates.videoOptions;
-        })}
-      >
-        <VideoSettingsPane
-          resolved={resolved}
-          config={config}
-          onChange={(next) => {
-            setPatch(videoRunOptionsPatch(next, model));
-          }}
-        />
-      </PopoverContent>
-    </Popover>
+          <VideoSettingsPane
+            resolved={resolved}
+            config={config}
+            onChange={(next) => {
+              setPatch(videoRunOptionsPatch(next, model));
+            }}
+          />
+        </PopoverContent>
+      </Popover>
+    </>
   );
 }
 
-/** One visible summary and one settings panel, exclusively for Creative Video. */
+/** Creative Video toolbar, with a compact settings panel on narrow composers. */
 export function ComposerVideoOptionsChip({
   signals,
 }: {

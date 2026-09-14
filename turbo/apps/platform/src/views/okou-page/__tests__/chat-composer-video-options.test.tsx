@@ -113,14 +113,17 @@ async function openVideoOptions(expectedSpec: string): Promise<HTMLElement> {
   return await screen.findByLabelText("Video options");
 }
 
-function optionRadio(group: HTMLElement, label: string): HTMLElement {
-  const radio = queryAllByRoleFast("radio", group).find((candidate) => {
-    return candidate.textContent?.trim() === label;
+async function selectToolbarOption(
+  label: string,
+  value: string,
+): Promise<void> {
+  click(await screen.findByRole("combobox", { name: label }));
+  click(await screen.findByRole("option", { name: value }));
+  await waitFor(() => {
+    expect(screen.getByRole("combobox", { name: label })).toHaveTextContent(
+      value,
+    );
   });
-  if (!radio) {
-    throw new Error(`${label} video option not found`);
-  }
-  return radio;
 }
 
 function sendButton(): HTMLElement {
@@ -211,6 +214,12 @@ test.each([false, true])(
       featureSwitches: { [FeatureSwitchKey.ComposerCreateCommands]: enabled },
     });
     await selectVideoTemplate();
+    for (const label of ["Ratio", "Resolution", "Duration"]) {
+      expect(screen.getByRole("combobox", { name: label })).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+    }
     expect(
       fastControl("button", "Video options 16:9 · 8s · 720p"),
     ).toHaveAttribute("aria-expanded", "false");
@@ -261,7 +270,6 @@ test.each([false, true])(
 test.each([false, true])(
   "Submit a selected video ratio with Create enabled: %s",
   async (enabled) => {
-    const user = userEvent.setup({ delay: null });
     const submissions = installVideoSubmissionCapture();
     await setupPage({
       locale: "en-US",
@@ -274,11 +282,7 @@ test.each([false, true])(
     const editor = await enterText(prompt);
     await enterVideoMode("Claude Fable 5.1");
     const template = await selectVideoTemplate();
-    const options = await openVideoOptions("16:9 · 8s · 720p");
-    const ratioGroup = screen.getByRole("radiogroup", { name: "Ratio" });
-    expect(options).toContainElement(ratioGroup);
-    click(optionRadio(ratioGroup, "9:16"));
-    await user.keyboard("{Escape}");
+    await selectToolbarOption("Ratio", "9:16");
     await sendCurrent(editor, prompt);
 
     await waitFor(() => {
@@ -337,11 +341,15 @@ test("Changing a Creative Video style retains settings without reopening the pan
   await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
   const editor = await enterText("Keep this scene description");
   await selectVideoTemplate();
-  await openVideoOptions("16:9 · 8s · 720p");
-  click(optionRadio(screen.getByRole("radiogroup", { name: "Ratio" }), "9:16"));
-  click(screen.getByRole("switch", { name: "Generate audio" }));
-  await userEvent.setup({ delay: null }).keyboard("{Escape}");
-  const summary = fastControl("button", "Video options 9:16 · 8s · 720p");
+  await selectToolbarOption("Ratio", "9:16");
+  await selectToolbarOption("Resolution", "1080p");
+  await selectToolbarOption("Duration", "10s");
+  click(fastControl("button", "Generate audio"));
+  expect(fastControl("button", "Generate audio")).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  const summary = fastControl("button", "Video options 9:16 · 10s · 1080p");
   expect(summary).toHaveAttribute("aria-description", "Audio off");
   const edit = composerInlineTemplates()[0]?.querySelector("button");
   if (!edit) {
@@ -368,8 +376,17 @@ test("Changing a Creative Video style retains settings without reopening the pan
   expect(editor).toHaveTextContent("Keep this scene description");
   expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
   expect(
-    fastControl("button", "Video options 9:16 · 8s · 720p"),
+    fastControl("button", "Video options 9:16 · 10s · 1080p"),
   ).toHaveAttribute("aria-description", "Audio off");
+  expect(screen.getByRole("combobox", { name: "Ratio" })).toHaveTextContent(
+    "9:16",
+  );
+  expect(
+    screen.getByRole("combobox", { name: "Resolution" }),
+  ).toHaveTextContent("1080p");
+  expect(screen.getByRole("combobox", { name: "Duration" })).toHaveTextContent(
+    "10s",
+  );
 });
 
 async function restoreVideoDraft(stylePresetId: string): Promise<HTMLElement> {

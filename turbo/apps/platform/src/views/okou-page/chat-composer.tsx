@@ -10901,22 +10901,24 @@ function ComposerFooter({
         />
       ) : (
         <>
-          <div
-            className={cn(
-              "flex min-w-0 items-center gap-1 text-muted-foreground sm:gap-1.5",
-              narrowVideoGap,
-            )}
-          >
-            <ComposerAttachButton signals={signals} />
-            <ComposerTemplatePickerSlot signals={signals} />
-            <ComposerWorkflowPromptSlot signals={signals} />
-            <ComposerConnectorsSlot
-              signals={signals}
-              actions={connectorActions}
-            />
-            <ComposerPresentationOptions signals={signals} />
+          <div className="contents @min-[640px]/composer:flex @min-[640px]/composer:min-w-0 @min-[640px]/composer:items-center @min-[640px]/composer:gap-1.5">
+            <div
+              className={cn(
+                "flex min-w-0 items-center gap-1 text-muted-foreground sm:gap-1.5",
+                narrowVideoGap,
+              )}
+            >
+              <ComposerAttachButton signals={signals} />
+              <ComposerTemplatePickerSlot signals={signals} />
+              <ComposerWorkflowPromptSlot signals={signals} />
+              <ComposerConnectorsSlot
+                signals={signals}
+                actions={connectorActions}
+              />
+              <ComposerPresentationOptions signals={signals} />
+            </div>
+            <ComposerVideoOptionsChip signals={signals} />
           </div>
-          <ComposerVideoOptionsChip signals={signals} />
           <div
             className={cn(
               "flex shrink-0 items-center gap-1 sm:gap-2",
