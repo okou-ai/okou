@@ -308,7 +308,7 @@ function AgentCommandPinToggle({
       variant="quiet"
       size="xs"
       disabled={disabled}
-      className="ml-auto shrink-0 gap-1.5 opacity-0 transition-opacity duration-150 group-data-[highlighted]:opacity-100 focus-visible:opacity-100"
+      className="ml-auto shrink-0 gap-1.5 opacity-0 group-data-[highlighted]:opacity-100 focus-visible:opacity-100"
       onClick={(e) => {
         e.stopPropagation();
         onToggle();

@@ -18,9 +18,11 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test, vi } from "vitest";
+import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
+import { NEVER_RESOLVED_PROMISE } from "../../../signals/utils.ts";
 import { catalogConnectorFixture } from "../../team-page/__tests__/team-page-test-helpers.ts";
 import {
   getAction,
@@ -1328,6 +1330,109 @@ test("An ordinary owner can manage SSH when the feature flag is enabled", async 
   });
   await screen.findByText("deploy@ssh.example.com:22");
   expect(getAction("button", "Add host")).toBeEnabled();
+});
+
+test("Changing owner while an SSH token is pending prevents the old mutation", async () => {
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [] });
+  });
+  const requests: unknown[] = [];
+  context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
+    requests.push(body);
+    return respond(201, base);
+  });
+  await page();
+  await screen.findByText("0 hosts configured");
+  click(getAction("button", "Add host"));
+  const dialog = await screen.findByRole("dialog");
+  await fill(within(dialog).getByLabelText("Display name"), "Old owner host");
+  await fill(
+    within(dialog).getByLabelText("Public hostname or IP address"),
+    "old-owner.example.com",
+  );
+  await fill(
+    within(dialog).getByLabelText("Credential name"),
+    "Old owner credential",
+  );
+  await fill(within(dialog).getByLabelText("SSH username"), "old-owner");
+  await fill(within(dialog).getByLabelText("Private key"), "old-owner-key");
+
+  const token = context.mocks.deferred<string>();
+  const tokenRequestCount = mockedClerk.sessionGetToken.mock.calls.length;
+  mockedClerk.sessionGetToken.mockImplementationOnce(() => {
+    return token.promise;
+  });
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(mockedClerk.sessionGetToken.mock.calls).toHaveLength(
+      tokenRequestCount + 1,
+    );
+  });
+
+  const clerk = context.mocks.clerk();
+  act(() => {
+    clerk.user(
+      { id: "other-owner", fullName: "Other Owner" },
+      { token: "other-token" },
+    );
+    clerk.stateChanged();
+  });
+  await act(async () => {
+    token.resolve("old-owner-token");
+    await token.promise;
+  });
+
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(requests).toStrictEqual([]);
+});
+
+test("Leaving SSH while its token is pending cancels the old mutation", async () => {
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [] });
+  });
+  const requests: unknown[] = [];
+  context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
+    requests.push(body);
+    return respond(201, base);
+  });
+  await page();
+  await screen.findByText("0 hosts configured");
+  const agentsLink = getAction(
+    "link",
+    "Agents",
+    screen.getByRole("navigation", { name: "Sidebar" }),
+  );
+  click(getAction("button", "Add host"));
+  const dialog = await screen.findByRole("dialog");
+  await fill(within(dialog).getByLabelText("Display name"), "Cancelled host");
+  await fill(
+    within(dialog).getByLabelText("Public hostname or IP address"),
+    "cancelled.example.com",
+  );
+  await fill(
+    within(dialog).getByLabelText("Credential name"),
+    "Cancelled credential",
+  );
+  await fill(within(dialog).getByLabelText("SSH username"), "cancelled");
+  await fill(within(dialog).getByLabelText("Private key"), "cancelled-key");
+
+  const tokenRequestCount = mockedClerk.sessionGetToken.mock.calls.length;
+  mockedClerk.sessionGetToken.mockImplementationOnce(() => {
+    return NEVER_RESOLVED_PROMISE;
+  });
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(mockedClerk.sessionGetToken.mock.calls).toHaveLength(
+      tokenRequestCount + 1,
+    );
+  });
+  expect(getAction("button", "Saving...", dialog)).toBeDisabled();
+
+  click(agentsLink);
+  await screen.findByRole("heading", { name: "Agents" });
+  expect(requests).toStrictEqual([]);
 });
 
 test("Changing owner closes the credential form and clears its fields", async () => {

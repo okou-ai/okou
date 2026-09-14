@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.20.8](https://github.com/vm0-ai/vm0/compare/guest-control-client-v0.20.7...guest-control-client-v0.20.8) (2026-09-14)
+
+
+### Documentation
+
+* **rust:** clarify dns readiness output truncation semantics ([#33931](https://github.com/vm0-ai/vm0/issues/33931)) ([35603a2](https://github.com/vm0-ai/vm0/commit/35603a2ed5c3773a326642219080f08d541c2c28))
+* **rust:** correct exec-stream queue sizing rationale ([#33930](https://github.com/vm0-ai/vm0/issues/33930)) ([e3ed240](https://github.com/vm0-ai/vm0/commit/e3ed240e9fb7658a93f8b0060088f47556c80baa))
+
+
+### Refactoring
+
+* **rust:** centralize exec process diagnostic labels ([#33938](https://github.com/vm0-ai/vm0/issues/33938)) ([cd8acd3](https://github.com/vm0-ai/vm0/commit/cd8acd3a7019ece7f5ba031529e508d929b0a1b1))
+
 ## [0.20.7](https://github.com/vm0-ai/vm0/compare/guest-control-client-v0.20.6...guest-control-client-v0.20.7) (2026-09-14)
 
 

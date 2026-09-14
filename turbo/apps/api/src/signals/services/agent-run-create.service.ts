@@ -7146,6 +7146,7 @@ async function resolvePiMemoryRecall(
     readonly db: Db;
     readonly orgId: string;
     readonly userId: string;
+    readonly piMemoryEnabled: boolean;
     readonly storageMounts: readonly StorageMountMetadata[];
     readonly persistedStorageMounts:
       | readonly PersistedStorageMount[]
@@ -7167,6 +7168,15 @@ async function resolvePiMemoryRecall(
     persistedMemoryMount.version !== currentMemoryMount.versionId
   ) {
     return undefined;
+  }
+  if (!args.piMemoryEnabled) {
+    // PiMemory is off for this owner: the mount stays pinned, but neither a
+    // prior recall epoch nor the summary projection is read, so nothing from
+    // the memory tree reaches the prompt.
+    return noContentPiMemoryRecall({
+      memoryStorageId: currentMemoryMount.storageId,
+      storageVersionId: currentMemoryMount.versionId,
+    });
   }
 
   const prior = priorPiMemoryRecall({
@@ -7318,6 +7328,7 @@ interface PreparePiLaunchResourcesArgs {
   readonly db: Db;
   readonly orgId: string;
   readonly userId: string;
+  readonly piMemoryEnabled: boolean;
   readonly runId: string;
   readonly agentSessionId: string;
   readonly apiStartTime: number;
@@ -7433,6 +7444,7 @@ function preparePiLaunchResources(
                         db: args.db,
                         orgId: args.orgId,
                         userId: args.userId,
+                        piMemoryEnabled: args.piMemoryEnabled,
                         storageMounts: metadata.storageMounts,
                         persistedStorageMounts: metadata.persistedStorageMounts,
                         previousRunStorageMounts: args.previousRunStorageMounts,
@@ -7643,6 +7655,11 @@ function buildRunnerJobPayload(
           db,
           orgId: args.orgId,
           userId: args.userId,
+          // The launching Run's own switch context, never the caller's.
+          piMemoryEnabled: isFeatureEnabled(
+            FeatureSwitchKey.PiMemory,
+            args.featureSwitchContext,
+          ),
           runId: args.run.id,
           agentSessionId: args.run.sessionId,
           apiStartTime: args.apiStartTime,

@@ -3,7 +3,7 @@ import type { Store } from "ccstate";
 import { StoreProvider, useGet, useSet } from "ccstate-react";
 import { Toaster } from "@okouai/ui/components/ui/sonner";
 import { ErrorBoundary } from "./error-boundary.tsx";
-import { AppSkeletonOverlay, Router } from "./router.tsx";
+import { Router } from "./router.tsx";
 import { ClerkOptionsProvider } from "./clerk-options-provider.tsx";
 import { ForceUpgradeDialog } from "./components/force-upgrade-dialog.tsx";
 import { SharedWorkerFailureDialog } from "./components/shared-worker-failure-dialog.tsx";
@@ -78,7 +78,6 @@ export const setupRouter = (
     <StrictMode>
       <StoreProvider value={store}>
         <ErrorBoundary>
-          <AppSkeletonOverlay />
           <ClerkOptionsProvider>
             <Router />
           </ClerkOptionsProvider>

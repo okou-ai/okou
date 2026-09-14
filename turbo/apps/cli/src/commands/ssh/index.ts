@@ -11,6 +11,8 @@ import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { executeSsh } from "./rpc";
 import { createSessionCommand } from "./sessions";
+import { createFileCommand } from "./files";
+import { FILE_LIMIT_HELP } from "./file-protocol";
 
 function requireCapability(capability: "ssh:read" | "ssh:write") {
   if (!decodeSandboxTokenPayload()?.capabilities.includes(capability)) {
@@ -102,12 +104,26 @@ const exec = new Command("exec")
 
 export const sshCommand = new Command("ssh")
   .description("Access owner-configured SSH hosts from an authorized Run")
+  .addHelpText(
+    "after",
+    `\nFile transfers (upload/download): ${FILE_LIMIT_HELP}\n`,
+  )
   .addCommand(
     new Command("host")
       .description("Inspect authorized SSH hosts")
       .addCommand(list),
   )
   .addCommand(exec)
+  .addCommand(
+    createFileCommand("upload", () => {
+      requireCapability("ssh:write");
+    }),
+  )
+  .addCommand(
+    createFileCommand("download", () => {
+      requireCapability("ssh:write");
+    }),
+  )
   .addCommand(
     createSessionCommand(() => {
       return requireCapability("ssh:write");

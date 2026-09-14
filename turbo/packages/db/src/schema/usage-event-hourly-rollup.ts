@@ -34,6 +34,11 @@ export const usageEventHourlyRollup = pgTable(
       },
       { onDelete: "set null" },
     ),
+    // Original identity survives run_id SET NULL. Missing historical context is
+    // explicit; this is not an authorization reference or a pricing input yet.
+    billingRunId: uuid("billing_run_id"),
+    billingAnchorAt: timestamp("billing_anchor_at"),
+    billingContext: text("billing_context").notNull().default("legacy_unknown"),
     kind: varchar("kind", { length: 30 }).notNull(),
     provider: varchar("provider", { length: 100 }).notNull(),
     category: varchar("category", { length: 100 }).notNull(),
@@ -45,6 +50,16 @@ export const usageEventHourlyRollup = pgTable(
   },
   (table) => {
     return [
+      index("idx_usage_event_hourly_rollup_billing_run").on(table.billingRunId),
+      check(
+        "usage_event_hourly_rollup_billing_context_check",
+        sql`(
+        (${table.billingContext} = 'run' AND ${table.billingRunId} IS NOT NULL AND ${table.billingAnchorAt} IS NOT NULL)
+        OR (${table.billingContext} = 'runless' AND ${table.billingRunId} IS NULL AND ${table.billingAnchorAt} IS NOT NULL)
+        OR (${table.billingContext} = 'missing_run' AND ${table.billingRunId} IS NOT NULL AND ${table.billingAnchorAt} IS NULL)
+        OR (${table.billingContext} = 'legacy_unknown' AND ${table.billingRunId} IS NULL AND ${table.billingAnchorAt} IS NULL)
+      )`,
+      ),
       foreignKey({
         name: "fk_usage_event_hourly_rollup_short_window",
         columns: [table.shortWindowId],

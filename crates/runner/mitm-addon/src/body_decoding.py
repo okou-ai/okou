@@ -23,6 +23,7 @@ from body_limits import (
     STREAM_DECODE_EXPANSION_GRACE,
     STREAM_DECODE_MAX_EXPANSION_RATIO,
 )
+from stream_capture import CapturedStreamBody
 from zlib_decoding import decode_zlib_bounded
 from zlib_input import ZlibInputCursor
 
@@ -827,6 +828,26 @@ def decode_request_body_for_network_log_capture(
     if error is not None and error != DECODED_BODY_LIMIT_EXCEEDED:
         return None
     return body
+
+
+def decode_captured_json_usage_body(
+    captured_body: CapturedStreamBody,
+    headers: http.Headers,
+) -> tuple[bytes, str | None]:
+    """Admit only complete captured responses to bounded JSON usage decoding.
+
+    A retained prefix may contain complete compressed frames and valid JSON
+    even when an unseen suffix invalidates the response. Reject capture
+    truncation before decoding; incremental inspectors own their completion
+    checks independently of this forensic buffer.
+    """
+    if captured_body.truncated:
+        return b"", INCOMPLETE_COMPRESSED_BODY
+    if not captured_body.buffer:
+        return b"", None
+    return decompress_json_usage_body(
+        bytes(captured_body.buffer), headers, max_output=LARGE_RESPONSE_DECOMPRESS_LIMIT
+    )
 
 
 def decompress_json_usage_body(

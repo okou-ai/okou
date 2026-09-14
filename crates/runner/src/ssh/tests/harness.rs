@@ -48,6 +48,7 @@ pub(super) enum Reply {
     Disconnect,
     Hold,
     Process,
+    Sftp(&'static str),
     BlockedInput,
 }
 impl Default for Reply {
@@ -691,7 +692,7 @@ impl server::Handler for Peer {
                     session.handle(),
                 ));
             }
-            Reply::Reject => {
+            Reply::Reject | Reply::Sftp(_) => {
                 session.channel_failure(channel)?;
             }
             Reply::Disconnect => return Err(russh::Error::Disconnect),
@@ -715,6 +716,22 @@ impl server::Handler for Peer {
                 });
                 self.send_output(channel, session)?;
             }
+        }
+        Ok(())
+    }
+
+    async fn subsystem_request(
+        &mut self,
+        channel: ChannelId,
+        name: &str,
+        session: &mut server::Session,
+    ) -> Result<(), Self::Error> {
+        if let Reply::Sftp(mode) = self.reply {
+            assert_eq!(name, "sftp");
+            session.channel_success(channel)?;
+            self.process = Some(process::Process::sftp(mode, channel, session.handle()));
+        } else {
+            session.channel_failure(channel)?;
         }
         Ok(())
     }
@@ -775,7 +792,9 @@ impl server::Handler for Peer {
         bytes: &[u8],
         session: &mut server::Session,
     ) -> Result<(), Self::Error> {
-        self.observed.input.lock().unwrap().extend_from_slice(bytes);
+        if !matches!(self.reply, Reply::Sftp(_)) {
+            self.observed.input.lock().unwrap().extend_from_slice(bytes);
+        }
         if matches!(self.reply, Reply::BlockedInput) {
             // A one-byte receive window remains exhausted. Output is still
             // independent of the client's blocked stdin write.

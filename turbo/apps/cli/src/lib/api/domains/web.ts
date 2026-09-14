@@ -5,11 +5,13 @@ import {
   type IntroVideoRenderResponse,
 } from "@okouai/api-contracts/contracts/intro-video-render";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
+import { isUtf8 } from "node:buffer";
 import { createWriteStream, readFileSync, statSync } from "node:fs";
 import { basename, extname } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { setTimeout as delay } from "node:timers/promises";
+import { MIMEType } from "node:util";
 import { Realtime, type AuthOptions, type InboundMessage } from "ably";
 import type {
   BuiltInGenerationAcceptedResponse,
@@ -155,6 +157,31 @@ const MIME_BY_EXTENSION: Record<string, string> = {
 export function inferWebUploadContentType(localPath: string): string {
   const ext = extname(localPath).toLowerCase();
   return MIME_BY_EXTENSION[ext] ?? "application/octet-stream";
+}
+
+const UTF8_TEXT_ARTIFACT_TYPES = new Set([
+  "text/markdown",
+  "text/plain",
+  "text/csv",
+  "text/tab-separated-values",
+]);
+
+function textArtifactContentType(contentType: string): {
+  readonly contentType: string;
+  readonly validateUtf8: boolean;
+} {
+  const base = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
+  if (!UTF8_TEXT_ARTIFACT_TYPES.has(base)) {
+    return { contentType, validateUtf8: false };
+  }
+  const parsed = new MIMEType(contentType);
+  if (parsed.params.has("charset")) {
+    return { contentType, validateUtf8: false };
+  }
+  return {
+    contentType: `${parsed.essence}; charset=utf-8`,
+    validateUtf8: true,
+  };
 }
 
 interface DownloadWebFileResult {
@@ -812,8 +839,12 @@ export async function uploadWebFile(
   }
 
   const filename = basename(localPath);
-  const contentType =
+  const requestedContentType =
     options?.contentType ?? inferWebUploadContentType(localPath);
+  const { contentType, validateUtf8 } =
+    options?.purpose === "artifact"
+      ? textArtifactContentType(requestedContentType)
+      : { contentType: requestedContentType, validateUtf8: false };
 
   const prepareHeaders: Record<string, string> = {
     Authorization: `Bearer ${token}`,
@@ -843,6 +874,13 @@ export async function uploadWebFile(
   const prepared = (await prepareRes.json()) as PrepareUploadResponse;
 
   const bytes = readFileSync(localPath);
+  if (validateUtf8 && !isUtf8(bytes)) {
+    throw new ApiRequestError(
+      "Text artifacts must use UTF-8. Save the file as UTF-8 or specify its actual charset with --content-type.",
+      "BAD_REQUEST",
+      400,
+    );
+  }
   const putRes = await fetch(prepared.uploadUrl, {
     method: "PUT",
     headers: {

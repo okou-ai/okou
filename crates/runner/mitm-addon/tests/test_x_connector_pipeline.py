@@ -573,8 +573,9 @@ class TestXConnectorResponsePipeline:
 
         with self._usage_webhook_api() as webhook:
             mitm_addon.response(flow)
+            usage.flush_usage_events(trigger="test")
 
-        assert webhook.request_count == 0
+        assert webhook.usage_events() == []
         proxy_log = Path(flow.metadata[metadata_keys.SANDBOX_PROXY_LOG_PATH])
         entries = read_jsonl_entries_after_flush(proxy_log)
         lost_visibility_entries = [
@@ -608,8 +609,9 @@ class TestXConnectorResponsePipeline:
 
         with self._usage_webhook_api() as webhook:
             mitm_addon.response(flow)
+            usage.flush_usage_events(trigger="test")
 
-        assert webhook.request_count == 0
+        assert webhook.usage_events() == []
         proxy_log = Path(flow.metadata[metadata_keys.SANDBOX_PROXY_LOG_PATH])
         entries = read_jsonl_entries_after_flush(proxy_log)
         lost_visibility_entries = [

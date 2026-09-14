@@ -64,6 +64,7 @@ export enum FeatureSwitchKey {
   SshAccess = "sshAccess",
   ChatReasoningEffort = "chatReasoningEffort",
   PiLoop = "piLoop",
+  PiMemory = "piMemory",
   OpenRouterUsRouting = "openRouterUsRouting",
   IntroVideo = "introVideo",
   ChatTranslation = "chatTranslation",

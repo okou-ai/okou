@@ -6,9 +6,7 @@
 mod common;
 
 use guest_agent::masker::SecretMasker;
-use guest_contracts::diagnostics::{
-    EventDeliveryAcceptanceOutcome, EventDeliveryAttemptFailureKind,
-};
+use guest_contracts::diagnostics::{EventDeliveryAcceptanceOutcome, HttpAttemptFailureKind};
 use std::time::Duration;
 
 const RUN_ID: &str = "codex-app-server-event-delivery-test";
@@ -123,7 +121,7 @@ async fn codex_app_server_event_delivery_stops_watermark_at_failed_sequence()
         failed_request_ids
     );
     assert!(failed_batch.attempts.iter().all(|attempt| {
-        attempt.failure_kind == EventDeliveryAttemptFailureKind::HttpStatus
+        attempt.failure_kind == HttpAttemptFailureKind::HttpStatus
             && attempt.http_status == Some(500)
     }));
     assert_eq!(failed_attempts, 3);

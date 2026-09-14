@@ -1,6 +1,8 @@
 use std::io;
 
-use guest_control_proto::{ExecCapturedOutput, ExecProcessRole, ExecTermination};
+use guest_control_proto::{
+    ExecCapturedOutput, ExecLifecyclePolicy, ExecProcessRole, ExecTermination,
+};
 use tokio::time::Instant;
 
 use super::state::ExecOperationLifecycle;
@@ -115,23 +117,10 @@ impl ExecOperationDiagnostic {
         supervised: bool,
         timeout_is_expected: bool,
     ) -> Self {
-        let process_class = match role {
-            ExecProcessRole::Workload => "contained_workload",
-            ExecProcessRole::Agent => "controlled_agent",
-            ExecProcessRole::SessionHistoryIdentityVerifier => "session_history_identity_verifier",
-            ExecProcessRole::CodexSessionCleanup => "codex_session_cleanup",
-        };
-        let operation_kind = match (role, supervised) {
-            (ExecProcessRole::Workload, false) => "exec",
-            (ExecProcessRole::Workload, true) => "start_process",
-            (ExecProcessRole::Agent, true) => "start_agent_process",
-            (ExecProcessRole::Agent, false) => "invalid",
-            (ExecProcessRole::SessionHistoryIdentityVerifier, false) => {
-                "verify_session_history_identity"
-            }
-            (ExecProcessRole::SessionHistoryIdentityVerifier, true) => "invalid",
-            (ExecProcessRole::CodexSessionCleanup, false) => "cleanup_codex_session",
-            (ExecProcessRole::CodexSessionCleanup, true) => "invalid",
+        let lifecycle = if supervised {
+            ExecLifecyclePolicy::Supervised
+        } else {
+            ExecLifecyclePolicy::OneShot
         };
         Self {
             seq,
@@ -141,8 +130,8 @@ impl ExecOperationDiagnostic {
             label_log: exec_operation_label_log(label),
             registered_at: Instant::now(),
             first_output_at: None,
-            process_class,
-            operation_kind,
+            process_class: role.process_class(),
+            operation_kind: role.operation_kind(lifecycle),
         }
     }
 

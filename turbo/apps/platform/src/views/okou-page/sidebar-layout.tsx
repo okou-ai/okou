@@ -327,7 +327,7 @@ function MobileTopBar() {
                 <Link
                   pathname={breadcrumb.sectionPath}
                   options={breadcrumb.sectionOptions}
-                  className="hover:opacity-70 transition-opacity no-underline text-inherit"
+                  className="hover:opacity-70 no-underline text-inherit"
                 >
                   {breadcrumb.section}
                 </Link>
@@ -391,7 +391,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
   return withChatScrollLayout(
     <div
       ref={shellDocumentAttributesRef}
-      className="okou-app okou-viewport-shell okou-managed-bottom-safe-area flex w-full bg-background md:bg-sidebar"
+      className="okou-app box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-0 md:bg-sidebar"
       data-gradient-color-themes={gradientColorThemesEnabled || undefined}
       data-color-theme={gradientColorThemesEnabled ? colorTheme : undefined}
     >

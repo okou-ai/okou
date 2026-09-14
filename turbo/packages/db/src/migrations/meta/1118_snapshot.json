@@ -1,5 +1,5 @@
 {
-  "id": "515fa4de-912b-4030-b0c6-1b3391e0eda9",
+  "id": "e13747fb-732b-40d9-a83f-f8a952a4bb87",
   "prevId": "99f5e182-7219-4e81-8298-7ca37ecc8cbf",
   "version": "7",
   "dialect": "postgresql",
@@ -3862,6 +3862,192 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.billing_attribution_backfill": {
+      "name": "billing_attribution_backfill",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "run_from": {
+          "name": "run_from",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "run_through": {
+          "name": "run_through",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "phase": {
+          "name": "phase",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'runs'"
+        },
+        "cursor": {
+          "name": "cursor",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scanned": {
+          "name": "scanned",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "populated": {
+          "name": "populated",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "missing_source": {
+          "name": "missing_source",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "conflicts": {
+          "name": "conflicts",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "billing_attribution_backfill_phase_check": {
+          "name": "billing_attribution_backfill_phase_check",
+          "value": "\"billing_attribution_backfill\".\"phase\" IN ('runs', 'jobs', 'raw', 'hourly', 'done')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.billing_run_attribution": {
+      "name": "billing_run_attribution",
+      "schema": "",
+      "columns": {
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_started_at": {
+          "name": "run_started_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "usage_observed": {
+          "name": "usage_observed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "captured_at": {
+          "name": "captured_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_billing_run_attribution_owner": {
+          "name": "idx_billing_run_attribution_owner",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "billing_run_attribution_source_check": {
+          "name": "billing_run_attribution_source_check",
+          "value": "\"billing_run_attribution\".\"source\" IN ('chat', 'automation', 'slack', 'teams', 'telegram', 'email', 'agentphone', 'github', 'agent', 'other')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.blobs": {
       "name": "blobs",
       "schema": "",
@@ -4934,6 +5120,19 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "billing_run_id": {
+          "name": "billing_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "billing_context": {
+          "name": "billing_context",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'legacy_unknown'"
         },
         "request": {
           "name": "request",
@@ -11717,13 +11916,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "platform": {
-          "name": "platform",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'feishu'"
         },
         "app_id": {
           "name": "app_id",
@@ -26753,6 +26945,25 @@
           "primaryKey": false,
           "notNull": false
         },
+        "billing_run_id": {
+          "name": "billing_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "billing_anchor_at": {
+          "name": "billing_anchor_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "billing_context": {
+          "name": "billing_context",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'legacy_unknown'"
+        },
         "kind": {
           "name": "kind",
           "type": "varchar(30)",
@@ -26803,6 +27014,21 @@
         }
       },
       "indexes": {
+        "idx_usage_event_hourly_rollup_billing_run": {
+          "name": "idx_usage_event_hourly_rollup_billing_run",
+          "columns": [
+            {
+              "expression": "billing_run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_usage_event_hourly_rollup_org_hour": {
           "name": "idx_usage_event_hourly_rollup_org_hour",
           "columns": [
@@ -26993,6 +27219,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "usage_event_hourly_rollup_billing_context_check": {
+          "name": "usage_event_hourly_rollup_billing_context_check",
+          "value": "(\n        (\"usage_event_hourly_rollup\".\"billing_context\" = 'run' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NOT NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'runless' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'missing_run' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NOT NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NULL)\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'legacy_unknown' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NULL)\n      )"
+        },
         "chk_usage_event_hourly_rollup_processed_hour": {
           "name": "chk_usage_event_hourly_rollup_processed_hour",
           "value": "\"usage_event_hourly_rollup\".\"processed_hour\" = date_trunc('hour', \"usage_event_hourly_rollup\".\"processed_hour\")"
@@ -27050,6 +27280,25 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "billing_run_id": {
+          "name": "billing_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "billing_anchor_at": {
+          "name": "billing_anchor_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "billing_context": {
+          "name": "billing_context",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'legacy_unknown'"
         },
         "kind": {
           "name": "kind",
@@ -27109,6 +27358,21 @@
         }
       },
       "indexes": {
+        "idx_usage_event_billing_run": {
+          "name": "idx_usage_event_billing_run",
+          "columns": [
+            {
+              "expression": "billing_run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "uq_usage_event_idempotency_key": {
           "name": "uq_usage_event_idempotency_key",
           "columns": [
@@ -27277,7 +27541,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "usage_event_billing_context_check": {
+          "name": "usage_event_billing_context_check",
+          "value": "(\n        (\"usage_event\".\"billing_context\" = 'run' AND \"usage_event\".\"billing_run_id\" IS NOT NULL AND \"usage_event\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event\".\"billing_context\" = 'runless' AND \"usage_event\".\"billing_run_id\" IS NULL AND \"usage_event\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event\".\"billing_context\" = 'missing_run' AND \"usage_event\".\"billing_run_id\" IS NOT NULL AND \"usage_event\".\"billing_anchor_at\" IS NULL)\n        OR (\"usage_event\".\"billing_context\" = 'legacy_unknown' AND \"usage_event\".\"billing_run_id\" IS NULL AND \"usage_event\".\"billing_anchor_at\" IS NULL)\n      )"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.usage_pack_credit_grants": {

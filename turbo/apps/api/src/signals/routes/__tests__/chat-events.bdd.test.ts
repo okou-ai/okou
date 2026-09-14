@@ -1147,6 +1147,7 @@ interface ChatRunCompletionOptions {
 function frameworkMatchingCompletionOptions(
   threadId: string,
   cliAgentType: "claude-code" | "codex" | "pi",
+  userNote?: string,
 ): ChatRunCompletionOptions {
   if (cliAgentType !== "pi") {
     return { cliAgentType };
@@ -1155,6 +1156,9 @@ function frameworkMatchingCompletionOptions(
     cwd: "/home/user/workspace",
     id: threadId,
   });
+  if (userNote !== undefined) {
+    session.appendMessage({ role: "user", content: userNote, timestamp: 1 });
+  }
   session.appendMessage({
     role: "assistant",
     content: [{ type: "text", text: "BDD Pi completion checkpoint" }],
@@ -1170,7 +1174,7 @@ function frameworkMatchingCompletionOptions(
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     },
     stopReason: "stop",
-    timestamp: 1,
+    timestamp: userNote === undefined ? 1 : 2,
   });
   return {
     cliAgentType,
@@ -2965,6 +2969,7 @@ describe("thread-bound Pi Automation and Goal execution", () => {
         { ...actor, orgId },
         {
           [FeatureSwitchKey.PiLoop]: true,
+          [FeatureSwitchKey.PiMemory]: true,
         },
       );
       mockEnv("PI_MEMORY_STAGE1_IDLE_DELAY_MS", 60_000);
@@ -8015,6 +8020,7 @@ describe("CHAT-02: model-first provider policies", () => {
       { ...actor, orgId },
       {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
       },
     );
     mockPiResourceArchiveDownloads();
@@ -8163,7 +8169,10 @@ describe("CHAT-02: model-first provider policies", () => {
           ...actor,
           orgId: requireOrgId(actor),
         },
-        { [FeatureSwitchKey.PiLoop]: true },
+        {
+          [FeatureSwitchKey.PiLoop]: true,
+          [FeatureSwitchKey.PiMemory]: true,
+        },
       );
       await bdd.updateAgentInstructions(
         actor,
@@ -8435,7 +8444,10 @@ describe("CHAT-02: model-first provider policies", () => {
         ...actor,
         orgId: requireOrgId(actor),
       },
-      { [FeatureSwitchKey.PiLoop]: true },
+      {
+        [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
+      },
     );
     mockPiResourceArchiveDownloads();
     const objects = mockPiCheckpointObjectStore();
@@ -8715,6 +8727,7 @@ describe("CHAT-02: model-first provider policies", () => {
       { ...actor, orgId },
       {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
       },
     );
     mockPiResourceArchiveDownloads(true);
@@ -8773,6 +8786,7 @@ describe("CHAT-02: model-first provider policies", () => {
       { ...actor, orgId },
       {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
       },
     );
     mockPiResourceArchiveDownloads();
@@ -8851,6 +8865,108 @@ describe("CHAT-02: model-first provider policies", () => {
     await Promise.all([
       cancelChatRun(actor, frozenMiss.runId, frozenMissClaim.sandboxHeaders),
       cancelChatRun(actor, newSession.runId, newSessionClaim.sandboxHeaders),
+    ]);
+  }, 90_000);
+
+  it("injects no memory recall into a Pi launch while the owner's PiMemory is off", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const orgId = requireOrgId(actor);
+    const summary =
+      "# Gated summary\n\nOnly an owner with PiMemory on may see this.";
+    const memory = await commitMemoryVersion(context, actor, [
+      { path: "memory_summary.md", content: summary },
+    ]);
+    await seedReadyMemorySummaryProjection(context, actor, memory, summary);
+    const usagePricingResolution = await createGptUsagePricingResolution();
+    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      { [FeatureSwitchKey.PiLoop]: true },
+    );
+    mockPiResourceArchiveDownloads();
+    const checkpointObjects = mockPiCheckpointObjectStore();
+    const requestBodies: string[] = [];
+    server.use(
+      http.post("https://api.openai.com/v1/responses", async ({ request }) => {
+        requestBodies.push(await request.text());
+        return new HttpResponse(
+          piResponsesToolSse({
+            callId: `call_pi_memory_gate_${requestBodies.length}`,
+            name: "read",
+            arguments: { path: "/home/user/workspace/AGENTS.md" },
+            sequence: requestBodies.length,
+          }),
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      }),
+    );
+    async function launchPiRun(prompt: string) {
+      const run = await sendChatRun(
+        actor,
+        { agentId, prompt, model: "gpt-5.6-terra" },
+        usagePricingResolution,
+      );
+      const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`;
+      await expect
+        .poll(() => {
+          return checkpointObjects.has(manifestKey);
+        })
+        .toBe(true);
+      return run;
+    }
+
+    // Off: the ready projection is never read, and the mount stays pinned.
+    const gated = await launchPiRun("launch Pi with PiMemory off");
+    expect(piResponsesDeveloperPrompt(requestBodies[0])).not.toContain(summary);
+    const gatedClaim = await claimChatRun(runnerGroup, gated.runId);
+    expect(gatedClaim.claim.piLaunchConfig).toMatchObject({
+      memoryRecall: {
+        status: "no-content",
+        memoryStorageId: memory.storageId,
+        storageVersionId: memory.versionId,
+      },
+    });
+    expect(
+      expectCanonicalStorageManifest(
+        gatedClaim.claim.storageManifest,
+      )?.storageMounts.filter((mount) => {
+        return mount.name === "memory" || mount.mountPath === PI_MEMORY_ROOT;
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({
+        name: "memory",
+        storageId: memory.storageId,
+        versionId: memory.versionId,
+        mountPath: PI_MEMORY_ROOT,
+        writeback: true,
+        archiveUrl: expect.any(String),
+      }),
+    ]);
+
+    // On for this owner only: the same projection is recalled as before.
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      { [FeatureSwitchKey.PiMemory]: true },
+    );
+    const enabled = await launchPiRun("launch Pi with PiMemory on");
+    expect(
+      occurrences(piResponsesDeveloperPrompt(requestBodies[1]), summary),
+    ).toBe(1);
+    const enabledClaim = await claimChatRun(runnerGroup, enabled.runId);
+    expect(enabledClaim.claim.piLaunchConfig).toMatchObject({
+      memoryRecall: {
+        status: "ready",
+        memoryStorageId: memory.storageId,
+        storageVersionId: memory.versionId,
+        content: summary,
+      },
+    });
+
+    await Promise.all([
+      cancelChatRun(actor, gated.runId, gatedClaim.sandboxHeaders),
+      cancelChatRun(actor, enabled.runId, enabledClaim.sandboxHeaders),
     ]);
   }, 90_000);
 
@@ -9028,7 +9144,10 @@ describe("CHAT-02: model-first provider policies", () => {
       await updateFeatureSwitchesForUser(
         context,
         { ...actor, orgId },
-        { [FeatureSwitchKey.PiLoop]: true },
+        {
+          [FeatureSwitchKey.PiLoop]: true,
+          [FeatureSwitchKey.PiMemory]: true,
+        },
       );
       await setRunLaunchSnapshotFixture(run.runId, snapshot);
       const completionOptions = frameworkMatchingCompletionOptions(
@@ -9060,7 +9179,10 @@ describe("CHAT-02: model-first provider policies", () => {
       await updateFeatureSwitchesForUser(
         context,
         { ...actor, orgId },
-        { [FeatureSwitchKey.PiLoop]: true },
+        {
+          [FeatureSwitchKey.PiLoop]: true,
+          [FeatureSwitchKey.PiMemory]: true,
+        },
       );
       await setRunLaunchSnapshotFixture(run.runId, snapshot);
       const completionOptions = frameworkMatchingCompletionOptions(
@@ -9162,6 +9284,113 @@ describe("CHAT-02: model-first provider policies", () => {
     }
   }, 90_000);
 
+  it("admits Pi completions only while the owner's PiMemory override is on", async () => {
+    mockEnv("PI_MEMORY_STAGE1_IDLE_DELAY_MS", 60_000);
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const orgId = requireOrgId(actor);
+    const scope = { orgId, userId: actor.userId };
+    async function completePiRun(threadId: string | undefined, note: string) {
+      const run = await sendChatRun(actor, {
+        agentId,
+        ...(threadId === undefined ? {} : { threadId }),
+        prompt: note,
+      });
+      const claimed = await claimChatRun(runnerGroup, run.runId);
+      await setRunLaunchSnapshotFixture(run.runId, {
+        schemaVersion: 3,
+        framework: "pi",
+        runnerProfile: DEFAULT_PROFILE,
+      });
+      const completionOptions = frameworkMatchingCompletionOptions(
+        run.threadId,
+        "pi",
+        note,
+      );
+      if (completionOptions.sessionHistory === undefined) {
+        throw new Error("Expected a settled Pi session history");
+      }
+      await completeChatRunOk(
+        run.runId,
+        claimed.sandboxHeaders,
+        completionOptions,
+      );
+      await flushWaitUntilForTest();
+      return {
+        ...run,
+        sourceHistoryHash: createHash("sha256")
+          .update(completionOptions.sessionHistory)
+          .digest("hex"),
+      };
+    }
+
+    // Off for everyone by default: no candidate is written, and readmitting
+    // the same completed Run stays skipped before any write.
+    const off = await completePiRun(undefined, "complete Pi with PiMemory off");
+    await expect(readPiMemoryStage1CandidateFixture(scope)).resolves.toBeNull();
+    await expect(
+      readmitPiMemoryStage1CandidateFixture(off.runId),
+    ).resolves.toStrictEqual({
+      outcome: "skipped",
+      reason: "pi_memory_disabled",
+    });
+    await expect(readPiMemoryStage1CandidateFixture(scope)).resolves.toBeNull();
+
+    // This owner's override admits the next completion exactly as before.
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      { [FeatureSwitchKey.PiMemory]: true },
+    );
+    const on = await completePiRun(
+      off.threadId,
+      "complete Pi with PiMemory on",
+    );
+    const admitted = await readPiMemoryStage1CandidateFixture(scope);
+    if (!admitted) {
+      throw new Error("Expected the enabled owner's completion to be admitted");
+    }
+    expect(admitted).toMatchObject({
+      memoryStorageName: "memory",
+      piSessionId: off.threadId,
+      sourceRunId: on.runId,
+      sourceHistoryHash: on.sourceHistoryHash,
+      status: "pending",
+    });
+    expect(
+      admitted.eligibleAt.getTime() - admitted.sourceCompletedAt.getTime(),
+    ).toBe(60_000);
+    await expect(
+      readmitPiMemoryStage1CandidateFixture(on.runId),
+    ).resolves.toMatchObject({ outcome: "exact_retry" });
+
+    // Turning the override off again replaces nothing, even for a newer
+    // exact history of the same session.
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      { [FeatureSwitchKey.PiMemory]: false },
+    );
+    const offAgain = await completePiRun(
+      off.threadId,
+      "complete Pi after PiMemory turned off again",
+    );
+    expect(offAgain.sourceHistoryHash).not.toBe(on.sourceHistoryHash);
+    await expect(
+      readmitPiMemoryStage1CandidateFixture(offAgain.runId),
+    ).resolves.toStrictEqual({
+      outcome: "skipped",
+      reason: "pi_memory_disabled",
+    });
+    await expect(
+      readPiMemoryStage1CandidateFixture(scope),
+    ).resolves.toMatchObject({
+      sourceRunId: on.runId,
+      sourceHistoryHash: on.sourceHistoryHash,
+      status: "pending",
+      updatedAt: admitted.updatedAt,
+    });
+  }, 90_000);
+
   it("admits an exact Pi history from an agent-authenticated same-owner chat send", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
@@ -9181,7 +9410,10 @@ describe("CHAT-02: model-first provider policies", () => {
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
-      { [FeatureSwitchKey.PiLoop]: true },
+      {
+        [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
+      },
     );
     mockPiResourceArchiveDownloads();
     mockPiCheckpointObjectStore();
@@ -9305,6 +9537,7 @@ describe("CHAT-02: model-first provider policies", () => {
       { ...actor, orgId },
       {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
       },
     );
     mockPiResourceArchiveDownloads();
@@ -16677,6 +16910,7 @@ describe("CHAT-02: model-first provider policies", () => {
       { ...actor, orgId },
       {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
         [FeatureSwitchKey.ThreadActivitySummary]: enabled,
         [FeatureSwitchKey.CodexFastMode]: true,
       },
@@ -28275,6 +28509,7 @@ describe("shared native Pi route activation", () => {
       await configureBuiltInPiModel(actor, model);
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
         [FeatureSwitchKey.ChatReasoningEffort]: true,
       });
       const pricing = await createPiApiFirstTurnUsagePricingResolution(model);
@@ -28428,6 +28663,7 @@ describe("shared native Pi route activation", () => {
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
       });
       mockPiResourceArchiveDownloads();
       const objects = mockPiCheckpointObjectStore();
@@ -28649,6 +28885,7 @@ describe("shared native Pi route activation", () => {
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
       });
       mockPiResourceArchiveDownloads();
       const objects = mockPiCheckpointObjectStore();
@@ -29063,6 +29300,7 @@ describe("shared native Pi route activation", () => {
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: true,
+        [FeatureSwitchKey.PiMemory]: true,
       });
       const pricing = await createPiApiFirstTurnUsagePricingResolution(model);
       const workflows = createWorkflowsBddApi(context);

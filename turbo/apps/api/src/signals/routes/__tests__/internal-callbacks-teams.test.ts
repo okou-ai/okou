@@ -143,6 +143,11 @@ function teamsApiMocks(args: {
         expires_in: 3600,
       });
     }),
+    http.post(`${serviceBaseUrl}/v3/conversations`, () => {
+      return HttpResponse.json({
+        id: `a:${teamsFixtureExternalId(args.fixture, "welcome")}`,
+      });
+    }),
     http.post(
       `${serviceBaseUrl}/v3/conversations/:conversationId/activities`,
       async ({ request }) => {
@@ -267,6 +272,12 @@ function teamsApiMocks(args: {
         return HttpResponse.json({ value: [] });
       },
     ),
+    http.get("https://graph.microsoft.com/v1.0/users/:userId", () => {
+      return HttpResponse.json(
+        { error: { code: "NotFound", message: "User not found" } },
+        { status: 404 },
+      );
+    }),
   );
 
   return { tokenRequests, postedActivities, reactionRequests };
@@ -378,16 +389,20 @@ async function setupConnectedTeamsActor(
   authOrgApi.acceptAgentStorageWrites();
   runsApi.acceptStorageDownloads();
   runsApi.acceptTelemetryIngest();
-  const defaultAgent = await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
-    displayName: "Teams callback agent",
-  });
+  // The paid entitlement helper already bootstraps and completes onboarding.
+  await runsApi.grantProEntitlement(actor);
+  const { defaultAgentId } = await authOrgApi.readOnboardingStatus(actor);
+  if (!defaultAgentId) {
+    throw new Error(
+      "Expected paid onboarding to create a Teams callback agent",
+    );
+  }
   await Promise.all([
-    authOrgApi.updateAgentMetadata(actor, defaultAgent.body.agentId, {
+    authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
       visibility: "public",
     }),
-    runsApi.grantProEntitlement(actor),
+    runsApi.ensureOrgModelProvider(actor),
   ]);
-  await runsApi.ensureOrgModelProvider(actor);
   if (options.okouDebug) {
     await updateFeatureSwitchesForUser(
       context,
@@ -412,7 +427,7 @@ async function setupConnectedTeamsActor(
     fixture,
     actor,
     runnerGroup,
-    defaultAgentId: defaultAgent.body.agentId,
+    defaultAgentId,
   };
 }
 

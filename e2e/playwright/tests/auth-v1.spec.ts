@@ -221,10 +221,7 @@ for (const device of [
       const failure = page.getByRole("alert");
       await expect(failure).toContainText("Oops! Something went sideways");
       await expect(page.locator(".cl-signIn-root")).toHaveCount(0);
-      await expect(page.locator("#app-bootstrap-skeleton")).toHaveAttribute(
-        "aria-hidden",
-        "true",
-      );
+      await expect(page.locator("#app-bootstrap-skeleton")).toBeHidden();
       await expectPrimary(
         page,
         failure.getByRole("button", { exact: true, name: "Refresh" }),

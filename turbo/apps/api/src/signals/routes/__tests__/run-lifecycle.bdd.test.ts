@@ -13280,6 +13280,20 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       if (enabled) {
         expect(prompt).toContain("okou ssh host list --json");
         expect(prompt).toContain("failure_reason and effects, not error text");
+        expect(prompt).toContain(
+          "okou ssh upload <connection-id> <local-file> <remote-file> --json",
+        );
+        expect(prompt).toContain(
+          "okou ssh download <connection-id> <remote-file> <local-file> --json",
+        );
+        expect(prompt).toContain("1 GiB (1,073,741,824 bytes) per file");
+        expect(prompt).toContain(
+          "15 minutes total per helper invocation, including setup and I/O waits",
+        );
+        expect(prompt).toContain(
+          "2 simultaneous transfers per Run, shared by uploads and downloads",
+        );
+        expect(prompt).toContain("No option overrides these limits");
       } else {
         expect(prompt).not.toContain("okou ssh");
       }

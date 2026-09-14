@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
@@ -20,8 +21,15 @@ import { db } from "../../../lib/db";
 import { mockOptionalEnv } from "../../../lib/env";
 import { withMockNowForTest } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+import {
+  deleteFeatureSwitchesForUser,
+  updateFeatureSwitchesForUser,
+} from "../../routes/__tests__/helpers/feature-switches";
 import { seedBuiltInModelKey } from "../../routes/__tests__/helpers/runtime-state";
-import { failPiMemoryPhase2Job } from "../pi-memory-phase2-job.service";
+import {
+  failPiMemoryPhase2Job,
+  PI_MEMORY_PHASE2_RETRY_DELAY_MS,
+} from "../pi-memory-phase2-job.service";
 import { handlePiMemoryPhase2MaintenanceCallback } from "../pi-memory-phase2-maintenance.service";
 import { executePiMemoryPhase2Work$ } from "../pi-memory-phase2-worker.service";
 import { computeContentHashFromHashes } from "../storage-content-hash.service";
@@ -59,7 +67,107 @@ async function deleteRunSessionsForScope(scope: {
   }
 }
 
+async function enablePiMemoryForScope(scope: {
+  readonly orgId: string;
+  readonly userId: string;
+}): Promise<void> {
+  const actor = { orgId: scope.orgId, userId: scope.userId };
+  await updateFeatureSwitchesForUser(testContext(), actor, {
+    [FeatureSwitchKey.PiMemory]: true,
+  });
+  onTestFinished(async () => {
+    await deleteFeatureSwitchesForUser(testContext(), actor);
+  });
+}
+
 describe("Pi memory Phase 2 sandbox dispatcher", () => {
+  it("releases a switch-off job with pi_memory_disabled and dispatches nothing", async () => {
+    const now = new Date("2026-09-05T02:00:00.000Z");
+    const scope = await createPhase2TestScope("sandbox-pi-memory-disabled", {
+      emptyBase: true,
+    });
+    onTestFinished(async () => {
+      await deleteRunSessionsForScope(scope);
+    });
+    await seedOrgMetadata({
+      orgId: scope.orgId,
+      tier: "pro",
+      credits: 100_000,
+    });
+    await seedBuiltInModelKey(testContext(), "gpt-5.6-terra");
+    await insertPhase2Candidates(scope, [
+      {
+        piSessionId: randomUUID(),
+        rawMemory: "candidate waits while the owner has PiMemory off",
+      },
+    ]);
+    await insertPendingPhase2Job(scope, { updatedAt: now });
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
+    const store = createStore();
+
+    await expect(
+      withMockNowForTest(now, async () => {
+        return await store.set(
+          executePiMemoryPhase2Work$,
+          { scope, currentTime: now },
+          testContext().signal,
+        );
+      }),
+    ).resolves.toStrictEqual({
+      outcome: "failed",
+      errorClass: "pi_memory_disabled",
+    });
+    await expect(
+      db()
+        .select({ id: agentRuns.id })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.orgId, scope.orgId),
+            eq(agentRuns.userId, scope.userId),
+          ),
+        ),
+    ).resolves.toStrictEqual([]);
+    await expect(readPhase2Job(scope)).resolves.toMatchObject({
+      status: "retryable_failure",
+      maintenanceRunId: null,
+      leaseToken: null,
+      sandboxLeaseToken: null,
+      retryCount: 1,
+      retryAt: new Date(now.getTime() + PI_MEMORY_PHASE2_RETRY_DELAY_MS),
+      lastErrorClass: "pi_memory_disabled",
+    });
+    const [candidate] = await db()
+      .select({ rawMemory: piMemoryStage1Candidates.rawMemory })
+      .from(piMemoryStage1Candidates)
+      .where(
+        eq(piMemoryStage1Candidates.memoryStorageId, scope.memoryStorageId),
+      );
+    expect(candidate?.rawMemory).toBe(
+      "candidate waits while the owner has PiMemory off",
+    );
+
+    // Enabling exactly this owner lets the due retry dispatch as before.
+    await enablePiMemoryForScope(scope);
+    const retryTime = new Date(
+      now.getTime() + PI_MEMORY_PHASE2_RETRY_DELAY_MS + 1,
+    );
+    const retried = await withMockNowForTest(retryTime, async () => {
+      return await store.set(
+        executePiMemoryPhase2Work$,
+        { scope, currentTime: retryTime },
+        testContext().signal,
+      );
+    });
+    expect(retried.outcome).toBe("dispatched");
+    await expect(readPhase2Job(scope)).resolves.toMatchObject({
+      status: "leased",
+      retryCount: 1,
+      retryAt: null,
+      lastErrorClass: null,
+    });
+  });
+
   it("does not claim when no control job is ready", async () => {
     const scope = await createPhase2TestScope("sandbox-no-work", {
       emptyBase: true,
@@ -79,6 +187,7 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     const scope = await createPhase2TestScope("sandbox-missing-agent-retry", {
       emptyBase: true,
     });
+    await enablePiMemoryForScope(scope);
     onTestFinished(async () => {
       await deleteRunSessionsForScope(scope);
     });
@@ -217,6 +326,7 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     const scope = await createPhase2TestScope("sandbox-launch-failure", {
       emptyBase: true,
     });
+    await enablePiMemoryForScope(scope);
     await seedOrgMetadata({
       orgId: scope.orgId,
       tier: "pro",
@@ -290,6 +400,7 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     const scope = await createPhase2TestScope("sandbox-dispatch", {
       emptyBase: true,
     });
+    await enablePiMemoryForScope(scope);
     await seedOrgMetadata({
       orgId: scope.orgId,
       tier: "pro",

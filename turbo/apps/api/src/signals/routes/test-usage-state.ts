@@ -40,6 +40,7 @@ import { bodyResultOf } from "../context/request";
 import { request$ } from "../context/hono";
 import { writeDb$, type Db } from "../external/db";
 import type { RouteEntry } from "../route-entry";
+import { compactUsageEvents$ } from "../services/cron-compact-usage-events.service";
 import { normalizeRunMetadata } from "../services/agent-run-metadata-write.service";
 import {
   deleteOrgUsageData,
@@ -51,6 +52,28 @@ import {
 } from "./test-endpoint-helpers";
 
 const actionBody$ = bodyResultOf(testUsageStateContract.action);
+const compactBody$ = bodyResultOf(testUsageStateContract.compact);
+const compactOwnedUsage$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    if (!isTestEndpointAllowed(get(request$))) {
+      return testEndpointNotFoundResponse();
+    }
+    const bodyResult = await get(compactBody$);
+    signal.throwIfAborted();
+    if (!bodyResult.ok) {
+      return bodyResult.response;
+    }
+    const result = await set(
+      compactUsageEvents$,
+      bodyResult.data.orgId,
+      signal,
+    );
+    return {
+      status: 200 as const,
+      body: { success: true as const, ...result },
+    };
+  },
+);
 
 interface UsageStateFixture {
   readonly orgId: string;
@@ -1239,6 +1262,7 @@ const mutateUsageState$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 export const testUsageStateRoutes: readonly RouteEntry[] = [
+  { route: testUsageStateContract.compact, handler: compactOwnedUsage$ },
   {
     route: testUsageStateContract.action,
     handler: mutateUsageState$,

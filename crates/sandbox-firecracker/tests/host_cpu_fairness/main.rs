@@ -6,8 +6,6 @@ use std::error::Error;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use futures_util::future::join_all;
@@ -18,6 +16,9 @@ use sandbox::{
 use sandbox_firecracker::FirecrackerRuntime;
 
 mod launch_contract;
+mod measurement;
+
+use measurement::Measurement;
 
 type TestResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
@@ -36,12 +37,6 @@ const CPU_LOAD_COMMAND: &str = "sh -c 'for i in $(seq 1 $(nproc)); do timeout 8 
 struct RunningSandbox {
     vcpu: u32,
     sandbox: Box<dyn Sandbox>,
-}
-
-struct Measurement {
-    usage: Vec<u64>,
-    control_ticks: u64,
-    control_max_gap_micros: u64,
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -208,39 +203,7 @@ async fn run_load_and_measure(
     };
     let sample = async {
         tokio::time::sleep(SAMPLE_WARMUP).await;
-        let before = read_usage(cgroup_root, sandboxes)?;
-        let stop = Arc::new(AtomicBool::new(false));
-        let ticks = Arc::new(AtomicU64::new(0));
-        let max_gap_micros = Arc::new(AtomicU64::new(0));
-        let ticker_stop = Arc::clone(&stop);
-        let ticker_ticks = Arc::clone(&ticks);
-        let ticker_max_gap_micros = Arc::clone(&max_gap_micros);
-        let ticker = tokio::task::spawn_blocking(move || {
-            let mut previous = std::time::Instant::now();
-            while !ticker_stop.load(Ordering::Relaxed) {
-                let now = std::time::Instant::now();
-                let gap_micros =
-                    u64::try_from(now.duration_since(previous).as_micros()).unwrap_or(u64::MAX);
-                ticker_max_gap_micros.fetch_max(gap_micros, Ordering::Relaxed);
-                previous = now;
-                ticker_ticks.fetch_add(1, Ordering::Relaxed);
-                std::hint::spin_loop();
-            }
-        });
-        tokio::time::sleep(SAMPLE_WINDOW).await;
-        let after = read_usage(cgroup_root, sandboxes)?;
-        stop.store(true, Ordering::Relaxed);
-        ticker.await?;
-        let usage = after
-            .iter()
-            .zip(before)
-            .map(|(after, before)| after.saturating_sub(before))
-            .collect();
-        TestResult::Ok(Measurement {
-            usage,
-            control_ticks: ticks.load(Ordering::Relaxed),
-            control_max_gap_micros: max_gap_micros.load(Ordering::Relaxed),
-        })
+        measurement::sample(|| read_usage(cgroup_root, sandboxes), SAMPLE_WINDOW).await
     };
     let (load_result, measurement) = tokio::join!(load, sample);
     load_result?;

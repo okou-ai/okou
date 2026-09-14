@@ -4076,7 +4076,7 @@ function RecommendedFollowupList({
               aria-hidden
               size={16}
               className={cn(
-                "pointer-events-none absolute right-2 top-1/2 box-content -translate-y-1/2 bg-state-hover pl-3 text-muted-foreground/60 opacity-0 transition-[color,opacity] group-hover:text-foreground group-hover:opacity-100",
+                "pointer-events-none absolute right-2 top-1/2 box-content -translate-y-1/2 bg-state-hover pl-3 text-muted-foreground/60 opacity-0 transition-colors group-hover:text-foreground group-hover:opacity-100",
                 showFollowupCards && "hidden",
               )}
             />

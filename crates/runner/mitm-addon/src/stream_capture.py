@@ -1,6 +1,10 @@
-"""Shared captured stream-body metadata validation."""
+"""Shared captured stream-body metadata access and validation."""
 
 from typing import NamedTuple
+
+from mitmproxy import http
+
+import flow_metadata_keys as metadata_keys
 
 
 class CapturedStreamBody(NamedTuple):
@@ -47,3 +51,15 @@ def captured_stream_body(
         stream_truncated = bool(stream_state.get("truncated", False))
 
     return CapturedStreamBody(stream_buf, stream_truncated)
+
+
+def captured_response_stream_body(flow: http.HTTPFlow) -> CapturedStreamBody | None:
+    """Read the response bytes and truncation state written together by streaming."""
+    return captured_stream_body(
+        flow.metadata.get(metadata_keys.STREAM_BUFFER),
+        flow.metadata.get(metadata_keys.STREAM_BUFFER_STATE),
+        body_kind="response",
+        buffer_key=metadata_keys.STREAM_BUFFER,
+        state_key=metadata_keys.STREAM_BUFFER_STATE,
+        writer="response_streaming.configure_response_stream()",
+    )

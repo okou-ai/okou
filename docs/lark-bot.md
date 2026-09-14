@@ -22,7 +22,7 @@ images. All actions link to the Lark developer console.
 
 ## Deployment and compatibility
 
-Migration `1118_lark_bot_platform` adds a non-null `platform` column defaulting
+Migration `1120_lark_bot_platform` adds a non-null `platform` column defaulting
 existing and legacy-created installations to `feishu`. Existing tables, event
 source values, queue/context shapes, callback URLs, and the App ID uniqueness
 constraint are retained. Feishu callers keep their existing routes and payloads.
