@@ -1,4 +1,5 @@
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
+import { Shell } from "../components/shell.tsx";
 import type { ReactNode } from "react";
 import {
   useGet,
@@ -389,9 +390,10 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
   const shellDocumentAttributesRef = useSet(shellDocumentAttributesRef$);
 
   return withChatScrollLayout(
-    <div
+    <Shell
       ref={shellDocumentAttributesRef}
-      className="okou-app okou-viewport-shell okou-managed-bottom-safe-area flex w-full bg-background md:bg-sidebar"
+      bottomSafeArea="content"
+      className="okou-app flex w-full bg-background md:bg-sidebar"
       data-gradient-color-themes={gradientColorThemesEnabled || undefined}
       data-color-theme={gradientColorThemesEnabled ? colorTheme : undefined}
     >
@@ -409,7 +411,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
         {!isDesktop && <MobileTopBar />}
         {children}
       </WorkspaceInset>
-    </div>,
+    </Shell>,
   );
 }
 

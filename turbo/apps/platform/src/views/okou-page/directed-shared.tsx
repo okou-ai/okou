@@ -3,6 +3,7 @@ import { useGet, useSet } from "ccstate-react";
 import { Loader2 } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ProductBrandMark } from "../components/product-brand-mark.tsx";
+import { Shell } from "../components/shell.tsx";
 import { Link } from "../router/link.tsx";
 import { CreditPurchaseConfirmDialog } from "./components/org-manage/credit-purchase-confirm-dialog.tsx";
 import { SubscriptionPurchaseConfirmDialog } from "./components/org-manage/subscription-purchase-confirm-dialog.tsx";
@@ -21,9 +22,9 @@ export function StandaloneLayout({ children }: { children: ReactNode }) {
   const shellDocumentAttributesRef = useSet(shellDocumentAttributesRef$);
 
   return (
-    <div
+    <Shell
       ref={shellDocumentAttributesRef}
-      className="okou-app okou-viewport-shell flex w-full flex-col bg-background"
+      className="okou-app flex w-full flex-col bg-background"
       data-gradient-color-themes={gradientColorThemesEnabled || undefined}
       data-color-theme={gradientColorThemesEnabled ? colorTheme : undefined}
     >
@@ -31,7 +32,7 @@ export function StandaloneLayout({ children }: { children: ReactNode }) {
       <CreditPurchaseConfirmDialog />
       <SubscriptionPurchaseConfirmDialog />
       {children}
-    </div>
+    </Shell>
   );
 }
 

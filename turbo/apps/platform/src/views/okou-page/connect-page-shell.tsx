@@ -4,6 +4,7 @@ import { surfaceVariants, Button } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { resolveAppAuthUrl } from "../../signals/auth.ts";
 import { Link } from "../router/link.tsx";
+import { Shell } from "../components/shell.tsx";
 
 export type MarkState = "idle" | "success" | "error" | "loading" | "warning";
 
@@ -13,7 +14,7 @@ export function connectErrorMessage(error: unknown, fallback: string): string {
 
 export function PageShell({ children }: { children: ReactNode }) {
   return (
-    <div className="okou-app okou-viewport-shell flex w-full bg-background okou-workspace-bg">
+    <Shell className="okou-app flex w-full bg-background okou-workspace-bg">
       <div className="flex flex-1 items-center justify-center p-4">
         <div
           className={surfaceVariants({
@@ -24,7 +25,7 @@ export function PageShell({ children }: { children: ReactNode }) {
           {children}
         </div>
       </div>
-    </div>
+    </Shell>
   );
 }
 

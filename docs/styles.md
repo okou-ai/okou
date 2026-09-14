@@ -355,6 +355,21 @@ alongside their existing `border-0`. That still paints, because Tailwind emits
 the legacy rule won only by sitting outside every layer. Tests continue to
 select both separators through `data-slot`.
 
+### Page viewport shells
+
+`Shell` in `views/components/shell.tsx` renders the page's existing `div` and owns
+border-box sizing, full parent height constraints, overflow clipping, and the
+bottom safe-area inset through Tailwind utilities. It forwards native div props,
+including refs and theme attributes, without adding a wrapper. The documented
+`data-slot="viewport-shell"` identifies this boundary without carrying styles.
+
+The default `bottomSafeArea="shell"` reserves `--sab` below the page content.
+Sidebar layouts use `bottomSafeArea="content"` so their scrollports reach the
+viewport edge and their content and composer own the inset. Document sizing,
+top and horizontal insets, and PWA keyboard handling remain owned by the existing
+global environment rules. The `okou-viewport-shell` and
+`okou-managed-bottom-safe-area` selectors and their consumers have been removed.
+
 ## Exception boundary
 
 Only two exception kinds exist:
