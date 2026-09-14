@@ -1021,6 +1021,9 @@ Before the first protected configuration or binding is written in a deployed
 environment, every serving API must understand protected authority, Runners from
 #34080 must own new Run admission, and incompatible active Runs must have drained.
 #34081 owns Access management UI and full real-Run acceptance before activation.
+Management stays inside `/connectors/ssh`. Access is a reusable host connection
+setting under the existing SSH Agent grant, not a separately authorized service.
+The Access feature switch controls rollout; it does not add an Agent permission.
 Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
 
@@ -1036,7 +1039,7 @@ Feature disable does not make a protected row safe for a pre-Access reader.
 Do not deploy such a reader after protected writes exist; no automatic deletion
 or conversion is part of deployment.
 
-Run cache invalidations are best-effort and identifier-only. Token/grant changes
+Run cache invalidations are best-effort and identifier-only. Token/SSH-grant changes
 may leave cached authority usable for the remainder of an active Run if a notice
 is missed. End those Runs when immediate revocation is required.
 

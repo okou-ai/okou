@@ -1,14 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
-import {
-  cloudflareAccessContract,
-  agentCloudflareAccessContract,
-} from "@okouai/api-contracts/contracts/cloudflare-access";
+import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import {
   sshConnectionsContract,
   sshConnectionResponseSchema,
 } from "@okouai/api-contracts/contracts/ssh-connections";
 import { runnerSshContract } from "@okouai/api-contracts/contracts/runner-ssh";
+import {
+  agentsMainContract,
+  agentsByIdContract,
+} from "@okouai/api-contracts/contracts/agents";
 import {
   agentSshAccessContract,
   sshHostsContract,
@@ -24,6 +25,7 @@ import { mockEnv } from "../../../lib/env";
 import { now, nowDate } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { cloudflareAccessRoutes } from "../cloudflare-access";
+import { agentsRoutes } from "../agents";
 import { runnerSshRoutes } from "../runner-ssh";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { sshAccessRoutes } from "../ssh-access";
@@ -55,11 +57,6 @@ type RuntimeBody = Extract<
 const configs = () => {
   return setupApp({ context, routes: cloudflareAccessRoutes })(
     cloudflareAccessContract,
-  );
-};
-const grants = () => {
-  return setupApp({ context, routes: cloudflareAccessRoutes })(
-    agentCloudflareAccessContract,
   );
 };
 const sshGrants = () => {
@@ -204,6 +201,45 @@ beforeEach(() => {
 });
 
 describe("Cloudflare Access owner configuration", () => {
+  it("refreshes SSH metadata for unreferenced config changes without runtime invalidation", async () => {
+    const o = await owner();
+    await runtime(o, { runnerGroup: "config-only" });
+    const assertNotice = () => {
+      expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
+        ["ssh:changed", { orgId: o.orgId }],
+      ]);
+      expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
+        [`user:${o.userId}`],
+      ]);
+    };
+    context.mocks.ably.publish.mockClear();
+    context.mocks.ably.channelGet.mockClear();
+    const c = await config();
+    assertNotice();
+    context.mocks.ably.publish.mockClear();
+    context.mocks.ably.channelGet.mockClear();
+    await accept(
+      configs().update({
+        headers,
+        params: { configId: c.id },
+        body: { expectedRevision: 1, name: "Renamed", enabled: false },
+      }),
+      [200],
+    );
+    assertNotice();
+    context.mocks.ably.publish.mockClear();
+    context.mocks.ably.channelGet.mockClear();
+    await accept(
+      configs().delete({
+        headers,
+        params: { configId: c.id },
+        body: { expectedRevision: 2 },
+      }),
+      [204],
+    );
+    assertNotice();
+  });
+
   it("is default-off and session-only, and rejects unsafe token headers before encryption", async () => {
     await accept(configs().list({ headers: {} }), [401]);
     mocks.clerk.session(`user_off_${randomUUID()}`, `org_off_${randomUUID()}`);
@@ -223,7 +259,7 @@ describe("Cloudflare Access owner configuration", () => {
       "é",
       "x".repeat(4097),
     ]) {
-      const result = await request("/api/cloudflare-access/configs", {
+      const result = await request("/api/ssh/cloudflare-access/configs", {
         method: "POST",
         headers: { ...headers, "content-type": "application/json" },
         body: JSON.stringify({
@@ -361,40 +397,187 @@ describe("Cloudflare Access owner configuration", () => {
     },
   );
 
-  it("onboards visible Agents only on the first config and preserves later denials", async () => {
+  it("does not configure SSH or grant it when only Access configs are created", async () => {
     const o = await owner();
     const r = await runtime(o);
     await config();
     const params = { agentId: r.agentId };
     expect(
-      (await accept(grants().get({ headers, params }), [200])).body,
-    ).toStrictEqual({ enabled: true });
-    await accept(
-      grants().update({ headers, params, body: { enabled: false } }),
-      [200],
-    );
+      (await accept(sshGrants().get({ headers, params }), [200])).body,
+    ).toStrictEqual({ enabled: false });
     const later = await runtime(o);
     await config("Second");
     for (const agentId of [r.agentId, later.agentId]) {
       expect(
-        (await accept(grants().get({ headers, params: { agentId } }), [200]))
+        (await accept(sshGrants().get({ headers, params: { agentId } }), [200]))
           .body,
       ).toStrictEqual({ enabled: false });
     }
-    await owner({ orgId: o.orgId });
     expect(
-      (await accept(grants().get({ headers, params }), [200])).body,
-    ).toStrictEqual({ enabled: false });
-    await owner();
-    await accept(grants().get({ headers, params }), [404]);
+      (await accept(connections().list({ headers }), [200])).body.connections,
+    ).toStrictEqual([]);
+  });
+
+  it("preserves SSH first-host onboarding and manual denials through Access config changes", async () => {
+    const f = await fixture();
+    const params = { agentId: f.agentId };
+    expect(
+      (await accept(sshGrants().get({ headers, params }), [200])).body,
+    ).toStrictEqual({ enabled: true });
     await accept(
-      grants().update({ headers, params, body: { enabled: true } }),
-      [404],
+      sshGrants().update({ headers, params, body: { enabled: false } }),
+      [200],
     );
+    const second = await config("Second");
+    await host(second.id);
+    let revision = f.config.revision;
+    for (const body of [
+      { name: "Renamed" },
+      { enabled: false },
+      { enabled: true },
+      { credentials: { ...token, clientSecret: "rotated-canary" } },
+    ]) {
+      const updated = await accept(
+        configs().update({
+          headers,
+          params: { configId: f.config.id },
+          body: { expectedRevision: revision, ...body },
+        }),
+        [200],
+      );
+      revision = updated.body.revision;
+      expect(
+        (await accept(sshGrants().get({ headers, params }), [200])).body,
+      ).toStrictEqual({ enabled: false });
+      await expect(resolve(f)).resolves.toStrictEqual({
+        outcome: "unavailable",
+      });
+    }
   });
 });
 
 describe("protected SSH authority", () => {
+  it("uses existing protected hosts after a later Agent receives SSH permission", async () => {
+    const f = await fixture();
+    const later = await runtime(f);
+    const params = { agentId: later.agentId };
+    expect(
+      (await accept(sshGrants().get({ headers, params }), [200])).body,
+    ).toStrictEqual({ enabled: false });
+    await accept(
+      sshGrants().update({ headers, params, body: { enabled: true } }),
+      [200],
+    );
+    expect(
+      (
+        await accept(
+          runner().resolve({
+            headers: runnerHeaders,
+            params: { runId: later.runId },
+            body: {
+              connectionId: f.host.id,
+              runnerIdentity: later.runnerIdentity,
+            },
+          }),
+          [200],
+        )
+      ).body,
+    ).toMatchObject({
+      outcome: "resolved_access",
+      access: { configId: f.config.id },
+    });
+    expect(
+      (
+        await accept(
+          setupApp({ context, routes: sshAccessRoutes })(sshHostsContract).list(
+            { headers: later.guestHeaders },
+          ),
+          [200],
+        )
+      ).body.hosts.map((h) => {
+        return h.id;
+      }),
+    ).toStrictEqual([f.host.id]);
+  });
+
+  it("uses only the Run owner's protected hosts for a shared Agent and rejects lost visibility", async () => {
+    const creator = await owner();
+    const shared = await accept(
+      setupApp({ context, routes: agentsRoutes })(agentsMainContract).create({
+        headers,
+        body: { displayName: "Shared SSH Agent", visibility: "public" },
+      }),
+      [201],
+    );
+    const creatorConfig = await config();
+    const creatorHost = await host(creatorConfig.id);
+    const user = await owner({ orgId: creator.orgId });
+    const r = await runtime(user, { agentId: shared.body.agentId });
+    const ownConfig = await config();
+    const ownHost = await host(ownConfig.id);
+    const request = {
+      headers: runnerHeaders,
+      params: { runId: r.runId },
+      body: { connectionId: ownHost.id, runnerIdentity: r.runnerIdentity },
+    };
+    expect((await accept(runner().resolve(request), [200])).body).toMatchObject(
+      {
+        outcome: "resolved_access",
+        access: { configId: ownConfig.id },
+      },
+    );
+    expect(
+      (
+        await accept(
+          runner().resolve({
+            ...request,
+            body: { ...request.body, connectionId: creatorHost.id },
+          }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ outcome: "unavailable" });
+    const inventory = setupApp({ context, routes: sshAccessRoutes })(
+      sshHostsContract,
+    );
+    expect(
+      (
+        await accept(inventory.list({ headers: r.guestHeaders }), [200])
+      ).body.hosts.map((h) => {
+        return h.id;
+      }),
+    ).toStrictEqual([ownHost.id]);
+    authenticate(creator);
+    await accept(
+      setupApp({ context, routes: agentsRoutes })(agentsByIdContract).update({
+        headers,
+        params: { id: shared.body.agentId },
+        body: { visibility: "private" },
+      }),
+      [200],
+    );
+    authenticate(user);
+    expect((await accept(runner().resolve(request), [200])).body).toStrictEqual(
+      { outcome: "unavailable" },
+    );
+    await accept(inventory.list({ headers: r.guestHeaders }), [404]);
+    expect(
+      (
+        await accept(
+          runner().pin({
+            ...request,
+            body: {
+              ...request.body,
+              expectedGeneration: 1,
+              observedHostKey: hostKey,
+            },
+          }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ outcome: "unavailable" });
+  });
+
   it("preserves key authentication separately from the Access token", async () => {
     const f = await fixture();
     await accept(
@@ -454,7 +637,7 @@ describe("protected SSH authority", () => {
   it("invalidates only protected host IDs and preserves recipients after grant revocation", async () => {
     const f = await fixture();
     const second = await host(f.config.id);
-    await host();
+    const direct = await host();
     const otherAgent = await runtime(f, { runnerGroup: "other-agent" });
     const otherOwner = await owner({ orgId: f.orgId });
     await runtime(otherOwner, { runnerGroup: "other-owner" });
@@ -474,6 +657,10 @@ describe("protected SSH authority", () => {
       [200],
     );
     expect(notices()).toStrictEqual([]);
+    expect(context.mocks.ably.publish.mock.calls).toContainEqual([
+      "ssh:changed",
+      { orgId: f.orgId },
+    ]);
     context.mocks.ably.publish.mockClear();
     await accept(
       configs().update({
@@ -487,6 +674,11 @@ describe("protected SSH authority", () => {
       [200],
     );
     expect(notices()).toHaveLength(4);
+    expect(
+      context.mocks.ably.publish.mock.calls.filter(([event]) => {
+        return event === "ssh:changed";
+      }),
+    ).toStrictEqual([["ssh:changed", { orgId: f.orgId }]]);
     expect(notices()).toStrictEqual(
       expect.arrayContaining(
         [f.runId, otherAgent.runId].flatMap((runId) => {
@@ -498,25 +690,29 @@ describe("protected SSH authority", () => {
     );
     context.mocks.ably.publish.mockClear();
     await accept(
-      grants().update({
+      sshGrants().update({
         headers,
         params: { agentId: f.agentId },
         body: { enabled: false },
       }),
       [200],
     );
-    expect(notices()).toHaveLength(2);
-    expect(notices()).toStrictEqual(
-      expect.arrayContaining(
-        [f.host.id, second.id].map((connectionId) => {
-          return [
-            "ssh-authority-invalidated",
-            { runId: f.runId, connectionId },
-          ];
-        }),
-      ),
-    );
+    expect(notices()).toStrictEqual([
+      ["ssh-authority-invalidated", { runId: f.runId, connectionId: null }],
+    ]);
     await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
+    expect(
+      (
+        await accept(
+          runner().resolve({
+            headers: runnerHeaders,
+            params: f.params,
+            body: { ...f.body, connectionId: direct.id },
+          }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ outcome: "unavailable" });
   });
 
   it("commits disable even when realtime publication fails", async () => {
@@ -724,36 +920,63 @@ describe("protected SSH authority", () => {
     expect(resolved).toMatchObject({ outcome: "resolved_password", port: 22 });
   });
 
-  it.each([
-    [false, true],
-    [true, false],
-    [false, false],
-    [true, true],
-  ])("requires SSH=%s and Access=%s grants", async (ssh, access) => {
-    const f = await fixture();
-    const params = { agentId: f.agentId };
-    await accept(
-      sshGrants().update({ headers, params, body: { enabled: ssh } }),
-      [200],
-    );
-    await accept(
-      grants().update({ headers, params, body: { enabled: access } }),
-      [200],
-    );
-    expect((await resolve(f)).outcome).toBe(
-      ssh && access ? "resolved_access" : "unavailable",
-    );
-    const inventory = setupApp({ context, routes: sshAccessRoutes })(
-      sshHostsContract,
-    );
-    const listed = await accept(
-      inventory.list({ headers: f.guestHeaders }),
-      ssh ? [200] : [404],
-    );
-    if (listed.status === 200) {
-      expect(listed.body.hosts).toHaveLength(access ? 1 : 0);
-    }
-  });
+  it.each([false, true])(
+    "uses the SSH grant alone when enabled=%s",
+    async (enabled) => {
+      const f = await fixture();
+      const params = { agentId: f.agentId };
+      await accept(
+        sshGrants().update({ headers, params, body: { enabled } }),
+        [200],
+      );
+      expect((await resolve(f)).outcome).toBe(
+        enabled ? "resolved_access" : "unavailable",
+      );
+      const inventory = setupApp({ context, routes: sshAccessRoutes })(
+        sshHostsContract,
+      );
+      const listed = await accept(
+        inventory.list({ headers: f.guestHeaders }),
+        enabled ? [200] : [404],
+      );
+      if (listed.status === 200) {
+        expect(listed.body.hosts).toHaveLength(1);
+      }
+      expect(
+        (
+          await accept(
+            runner().observe({
+              headers: runnerHeaders,
+              params: f.params,
+              body: {
+                ...f.body,
+                expectedGeneration: 1,
+                observedAt: nowDate().toISOString(),
+                failureReason: "access_rejected",
+              },
+            }),
+            [200],
+          )
+        ).body.outcome,
+      ).toBe(enabled ? "recorded" : "unavailable");
+      expect(
+        (
+          await accept(
+            runner().pin({
+              headers: runnerHeaders,
+              params: f.params,
+              body: {
+                ...f.body,
+                expectedGeneration: 1,
+                observedHostKey: hostKey,
+              },
+            }),
+            [200],
+          )
+        ).body.outcome,
+      ).toBe(enabled ? "pinned" : "unavailable");
+    },
+  );
 
   it("keeps Direct management and execution available when Access is disabled", async () => {
     const f = await fixture();
@@ -767,11 +990,40 @@ describe("protected SSH authority", () => {
       [200],
     );
     await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
+    const inventory = setupApp({ context, routes: sshAccessRoutes })(
+      sshHostsContract,
+    );
+    expect(
+      (
+        await accept(inventory.list({ headers: f.guestHeaders }), [200])
+      ).body.hosts.map((h) => {
+        return h.id;
+      }),
+    ).toStrictEqual([direct.id]);
+    await accept(
+      configs().update({
+        headers,
+        params: { configId: f.config.id },
+        body: { expectedRevision: 2, enabled: true },
+      }),
+      [200],
+    );
+    await expect(resolve(f)).resolves.toMatchObject({
+      outcome: "resolved_access",
+    });
     await updateFeatureSwitchesForUser(context, f, {
       [FeatureSwitchKey.SshAccess]: true,
       [FeatureSwitchKey.CloudflareAccess]: false,
     });
     authenticate(f);
+    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
+    expect(
+      (
+        await accept(inventory.list({ headers: f.guestHeaders }), [200])
+      ).body.hosts.map((h) => {
+        return h.id;
+      }),
+    ).toStrictEqual([direct.id]);
     await accept(configs().list({ headers }), [404]);
     await accept(
       connections().update({

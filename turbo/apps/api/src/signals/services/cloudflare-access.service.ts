@@ -9,16 +9,13 @@ import {
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { agents } from "@okouai/db/schema/agent";
-import { agentCloudflareAccess } from "@okouai/db/schema/agent-cloudflare-access";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
-import { and, asc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
-import { publishUserSignal } from "../external/realtime";
-import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { encryptStoredSecretValue } from "./crypto.utils";
+import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
 import { lockSshOwner, sshCredentialFailure } from "./ssh-credential.service";
 import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
 
@@ -153,11 +150,6 @@ async function encryptCredentials(
   );
   return { encryptedClientId, encryptedClientSecret };
 }
-async function notifyOwner(owner: Owner): Promise<void> {
-  await publishUserSignal([owner.userId], "cloudflare-access:changed", {
-    orgId: owner.orgId,
-  });
-}
 export async function createCloudflareAccessConfig(args: {
   readonly db: Db;
   readonly owner: Owner;
@@ -170,24 +162,6 @@ export async function createCloudflareAccessConfig(args: {
   );
   const config = await args.db.transaction(async (tx) => {
     await lockSshOwner(tx, args.owner);
-    const [existing] = await tx
-      .select({ id: cloudflareAccessConfigs.id })
-      .from(cloudflareAccessConfigs)
-      .where(ownedConfig(args.owner))
-      .limit(1);
-    const visibleAgents = existing
-      ? []
-      : await tx
-          .select({ id: agents.id })
-          .from(agents)
-          .where(
-            and(
-              eq(agents.orgId, args.owner.orgId),
-              visibleJoinedAgentCondition(args.owner.userId),
-            ),
-          )
-          .orderBy(asc(agents.id))
-          .for("update");
     const [created] = await tx
       .insert(cloudflareAccessConfigs)
       .values({
@@ -200,26 +174,12 @@ export async function createCloudflareAccessConfig(args: {
     if (!created) {
       throw new Error("Cloudflare Access insert returned no row");
     }
-    if (visibleAgents.length > 0) {
-      await tx
-        .insert(agentCloudflareAccess)
-        .values(
-          visibleAgents.map((agent) => {
-            return { ...args.owner, agentId: agent.id };
-          }),
-        )
-        .onConflictDoNothing();
-    }
     return response(created, []);
   });
-  await notifyOwner(args.owner);
+  await publishSshClientInvalidation(args.owner);
   return config;
 }
-function lockReferencingHosts(
-  tx: Transaction,
-  owner: Owner,
-  configId?: string,
-) {
+function lockReferencingHosts(tx: Transaction, owner: Owner, configId: string) {
   return tx
     .select({
       id: sshConnections.id,
@@ -231,9 +191,7 @@ function lockReferencingHosts(
       and(
         eq(sshConnections.orgId, owner.orgId),
         eq(sshConnections.userId, owner.userId),
-        configId === undefined
-          ? isNotNull(sshConnections.cloudflareAccessId)
-          : eq(sshConnections.cloudflareAccessId, configId),
+        eq(sshConnections.cloudflareAccessId, configId),
       ),
     )
     .orderBy(asc(sshConnections.id))
@@ -334,13 +292,10 @@ export async function updateCloudflareAccessConfig(args: {
     };
   });
   if (result.ok) {
-    await notifyOwner(args.owner);
-    if (result.affectedIds.length > 0) {
-      await publishSshRuntimeInvalidation(args.db, {
-        ...args.owner,
-        connectionIds: result.affectedIds,
-      });
-    }
+    await publishSshRuntimeInvalidation(args.db, {
+      ...args.owner,
+      connectionIds: result.affectedIds,
+    });
   }
   return result;
 }
@@ -373,77 +328,7 @@ export async function deleteCloudflareAccessConfig(args: {
     return { ok: true as const, value: undefined };
   });
   if (result.ok) {
-    await notifyOwner(args.owner);
+    await publishSshClientInvalidation(args.owner);
   }
   return result;
-}
-function visibleAgent(owner: Owner & { readonly agentId: string }) {
-  return and(
-    eq(agents.id, owner.agentId),
-    eq(agents.orgId, owner.orgId),
-    visibleJoinedAgentCondition(owner.userId),
-  );
-}
-function ownedGrant(owner: Owner & { readonly agentId: string }) {
-  return and(
-    eq(agentCloudflareAccess.orgId, owner.orgId),
-    eq(agentCloudflareAccess.userId, owner.userId),
-    eq(agentCloudflareAccess.agentId, owner.agentId),
-  );
-}
-export async function getAgentCloudflareAccess(
-  db: ReadonlyDb,
-  owner: Owner & { readonly agentId: string },
-) {
-  const [row] = await db
-    .select({ grant: agentCloudflareAccess.agentId })
-    .from(agents)
-    .leftJoin(agentCloudflareAccess, ownedGrant(owner))
-    .where(visibleAgent(owner));
-  return row ? { enabled: row.grant !== null } : null;
-}
-export async function updateAgentCloudflareAccess(
-  db: Db,
-  owner: Owner & { readonly agentId: string },
-  enabled: boolean,
-  signal: AbortSignal,
-) {
-  const result = await db.transaction(async (tx) => {
-    await lockSshOwner(tx, owner);
-    const hosts = await lockReferencingHosts(tx, owner);
-    const [agent] = await tx
-      .select({ id: agents.id })
-      .from(agents)
-      .where(visibleAgent(owner))
-      .for("update");
-    signal.throwIfAborted();
-    if (!agent) {
-      return null;
-    }
-    if (enabled) {
-      await tx
-        .insert(agentCloudflareAccess)
-        .values(owner)
-        .onConflictDoNothing();
-    } else {
-      await tx.delete(agentCloudflareAccess).where(ownedGrant(owner));
-    }
-    signal.throwIfAborted();
-    return {
-      enabled,
-      connectionIds: hosts.map((host) => {
-        return host.id;
-      }),
-    };
-  });
-  if (!result) {
-    return null;
-  }
-  await notifyOwner(owner);
-  await publishSshRuntimeInvalidation(db, {
-    ...owner,
-    connectionIds: result.connectionIds,
-  });
-  signal.throwIfAborted();
-  return { enabled };
 }

@@ -1,7 +1,4 @@
-import {
-  cloudflareAccessContract,
-  agentCloudflareAccessContract,
-} from "@okouai/api-contracts/contracts/cloudflare-access";
+import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
 import { command } from "ccstate";
 import { sshErrorResponse } from "../../lib/ssh-error";
@@ -14,10 +11,8 @@ import type { RouteEntry } from "../route-entry";
 import {
   createCloudflareAccessConfig,
   deleteCloudflareAccessConfig,
-  getAgentCloudflareAccess,
   isCloudflareAccessEnabled,
   listCloudflareAccessConfigs,
-  updateAgentCloudflareAccess,
   updateCloudflareAccessConfig,
 } from "../services/cloudflare-access.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
@@ -32,13 +27,6 @@ const unavailable = Object.freeze(
     404,
     SSH_ERROR_CODES.ACCESS_UNAVAILABLE,
     "Cloudflare Access is not available",
-  ),
-);
-const agentUnavailable = Object.freeze(
-  sshErrorResponse(
-    404,
-    SSH_ERROR_CODES.AGENT_UNAVAILABLE,
-    "Agent is not available",
   ),
 );
 const featureContext$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -132,39 +120,6 @@ const delete$ = command(async ({ get, set }, signal: AbortSignal) => {
         result.message,
       );
 });
-const getGrant$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await set(featureContext$, signal))) {
-    return unavailable;
-  }
-  const { agentId } = get(pathParamsOf(agentCloudflareAccessContract.get));
-  const owner = get(organizationAuthContext$);
-  const result = await getAgentCloudflareAccess(get(db$), {
-    orgId: owner.orgId,
-    userId: owner.userId,
-    agentId,
-  });
-  signal.throwIfAborted();
-  return result ? { status: 200 as const, body: result } : agentUnavailable;
-});
-const updateGrant$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await set(featureContext$, signal))) {
-    return unavailable;
-  }
-  const body = await get(bodyResultOf(agentCloudflareAccessContract.update));
-  signal.throwIfAborted();
-  if (!body.ok) {
-    return body.response;
-  }
-  const { agentId } = get(pathParamsOf(agentCloudflareAccessContract.update));
-  const owner = get(organizationAuthContext$);
-  const result = await updateAgentCloudflareAccess(
-    set(writeDb$),
-    { orgId: owner.orgId, userId: owner.userId, agentId },
-    body.data.enabled,
-    signal,
-  );
-  return result ? { status: 200 as const, body: result } : agentUnavailable;
-});
 export const cloudflareAccessRoutes: readonly RouteEntry[] = [
   {
     route: cloudflareAccessContract.list,
@@ -181,13 +136,5 @@ export const cloudflareAccessRoutes: readonly RouteEntry[] = [
   {
     route: cloudflareAccessContract.delete,
     handler: authRoute(ownerAuth, delete$),
-  },
-  {
-    route: agentCloudflareAccessContract.get,
-    handler: authRoute(ownerAuth, getGrant$),
-  },
-  {
-    route: agentCloudflareAccessContract.update,
-    handler: authRoute(ownerAuth, updateGrant$),
   },
 ];

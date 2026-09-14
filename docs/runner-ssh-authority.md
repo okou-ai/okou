@@ -192,8 +192,9 @@ URL, wildcard, alternate recipient list or Direct fallback exists.
 
 SSH has one canonical contract, without a version/profile selector or duplicate
 legacy DTO. Protected authority requires the existing SSH checks plus the current
-Access feature, enabled same-owner configuration and the Run user's Access grant
-for the visible Agent. Direct handoffs retain their actual key/password variants.
+Access feature and enabled same-owner configuration. The existing SSH grant is
+the only Agent permission for either transport; configuration creation or edits
+never grant SSH. Direct handoffs retain their actual key/password variants.
 
 The protected `resolved_access` outcome contains the saved host, port, username,
 host generation and learned key; `authentication` holds SSH key/password data,
@@ -206,9 +207,10 @@ The carrier must require port 443 before sending a token; TLS/SNI and
 public-destination checks also belong to #34080.
 
 Pin and observation retain host-first locking and recheck protected authority
-through non-null config/grant joins with share locks. Owner mutations use the
+through the non-null configuration with a share lock, while retaining the
+existing SSH-grant lock. Owner mutations use the
 owner advisory lock, ordered affected-host locks, then configuration locks.
-Grant edits use that same order before locking the Agent. Token replacement and
+SSH-grant edits retain their existing Agent-lock boundary. Token replacement and
 enable/disable advance both config generation and every referencing host
 generation atomically. Metadata rename advances only config revision. Host pins
 survive rotation, rebinding and every transition involving Access; explicit
@@ -216,9 +218,11 @@ reset clears protected trust. Direct-to-Direct endpoint edits retain their
 existing behavior.
 
 Access mutations publish identifier-only invalidations for captured affected
-connection IDs, scoped to owner Runs and, for grant changes, the Agent. Direct
-hosts are not evicted by Access changes. Browser notifications use
-`cloudflare-access:changed` with `{orgId}`, plus `ssh:changed` where relevant.
+connection IDs, scoped to owner Runs. SSH-grant changes invalidate both transport
+modes for that owner's affected Agent Runs, including after revocation. Direct
+hosts are not evicted by Access configuration changes. Browser notifications use
+the existing owner `ssh:changed` topic with `{orgId}`, including for unreferenced
+configurations and metadata-only edits.
 Rename does not interrupt runtime sessions. Notifications remain best effort;
 the accepted cached-authority lifetime is the remainder of the Run, not immediate
 revocation.

@@ -7,9 +7,8 @@ import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agentSshAccess } from "@okouai/db/schema/agent-ssh-access";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
-import { agentCloudflareAccess } from "@okouai/db/schema/agent-cloudflare-access";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
-import { and, asc, eq, isNotNull } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 import type { Db, ReadonlyDb } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
@@ -115,7 +114,6 @@ function runSshHostRows(
       accessId: sshConnections.cloudflareAccessId,
       accessConfigId: cloudflareAccessConfigs.id,
       accessEnabled: cloudflareAccessConfigs.enabled,
-      accessAgentId: agentCloudflareAccess.agentId,
     })
     .from(agentRuns)
     .innerJoin(
@@ -165,15 +163,6 @@ function runSshHostRows(
         eq(cloudflareAccessConfigs.userId, owner.userId),
       ),
     )
-    .leftJoin(
-      agentCloudflareAccess,
-      and(
-        isNotNull(sshConnections.cloudflareAccessId),
-        eq(agentCloudflareAccess.agentId, agents.id),
-        eq(agentCloudflareAccess.orgId, owner.orgId),
-        eq(agentCloudflareAccess.userId, owner.userId),
-      ),
-    )
     .where(
       and(
         eq(agentRuns.id, owner.runId),
@@ -213,11 +202,7 @@ export async function listRunSshHosts(
         if (row.accessConfigId === null) {
           throw new Error("SSH Cloudflare Access configuration is missing");
         }
-        if (
-          !accessEnabled ||
-          !row.accessEnabled ||
-          row.accessAgentId === null
-        ) {
+        if (!accessEnabled || !row.accessEnabled) {
           return [];
         }
       }

@@ -1,5 +1,5 @@
 {
-  "id": "d9cc96cf-99da-4ae9-8d8d-3f63f13ffc9b",
+  "id": "072205ab-b7c3-4acd-9753-5f80ace12c0a",
   "prevId": "9a88f04a-dc8e-41fe-bf2a-f3d1cca74c5d",
   "version": "7",
   "dialect": "postgresql",
@@ -971,83 +971,6 @@
           "value": "\"active_input_delivery_items\".\"disposition\" IS NULL OR \"active_input_delivery_items\".\"disposition\" IN ('delivered', 'released', 'expired')"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.agent_cloudflare_access": {
-      "name": "agent_cloudflare_access",
-      "schema": "",
-      "columns": {
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_agent_cloudflare_access_agent": {
-          "name": "idx_agent_cloudflare_access_agent",
-          "columns": [
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "agent_cloudflare_access_agent_fk": {
-          "name": "agent_cloudflare_access_agent_fk",
-          "tableFrom": "agent_cloudflare_access",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "agent_cloudflare_access_pkey": {
-          "name": "agent_cloudflare_access_pkey",
-          "columns": [
-            "org_id",
-            "user_id",
-            "agent_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.agent_drafts": {

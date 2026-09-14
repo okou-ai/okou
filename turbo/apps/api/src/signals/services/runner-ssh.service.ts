@@ -8,7 +8,6 @@ import {
   type RunnerSshResolveResponse,
   type RunnerSshObservationRequest,
 } from "@okouai/api-contracts/contracts/runner-ssh";
-import { agentCloudflareAccess } from "@okouai/db/schema/agent-cloudflare-access";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -19,7 +18,7 @@ import { agentSshAccess } from "@okouai/db/schema/agent-ssh-access";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { sshConnectionObservations } from "@okouai/db/schema/ssh-connection-observation";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
-import { and, eq, isNotNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, eq, lt, ne, or, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
@@ -62,7 +61,6 @@ function currentConnectionQuery(
         encryptedClientId: cloudflareAccessConfigs.encryptedClientId,
         encryptedClientSecret: cloudflareAccessConfigs.encryptedClientSecret,
       },
-      accessAgentId: agentCloudflareAccess.agentId,
     })
     .from(agentRuns)
     .innerJoin(
@@ -113,15 +111,6 @@ function currentConnectionQuery(
         eq(cloudflareAccessConfigs.userId, agentRuns.userId),
       ),
     )
-    .leftJoin(
-      agentCloudflareAccess,
-      and(
-        isNotNull(sshConnections.cloudflareAccessId),
-        eq(agentCloudflareAccess.agentId, agents.id),
-        eq(agentCloudflareAccess.orgId, agentRuns.orgId),
-        eq(agentCloudflareAccess.userId, agentRuns.userId),
-      ),
-    )
     .where(
       and(
         eq(agentRuns.id, input.runId),
@@ -169,25 +158,16 @@ async function currentConnection(
   }
   if (
     !isFeatureEnabled(FeatureSwitchKey.CloudflareAccess, featureContext) ||
-    !row.access.enabled ||
-    row.accessAgentId === null
+    !row.access.enabled
   ) {
     return null;
   }
   if (lockAuthority) {
-    // PostgreSQL cannot lock the nullable side of the outer joins above. The
-    // caller holds the host; lock only non-null protected authority rows here.
+    // PostgreSQL cannot lock the nullable side of the outer join above. The
+    // caller holds the host; lock its non-null protected configuration here.
     const [authority] = await db
       .select({ id: cloudflareAccessConfigs.id })
       .from(cloudflareAccessConfigs)
-      .innerJoin(
-        agentCloudflareAccess,
-        and(
-          eq(agentCloudflareAccess.orgId, row.orgId),
-          eq(agentCloudflareAccess.userId, row.userId),
-          eq(agentCloudflareAccess.agentId, row.accessAgentId),
-        ),
-      )
       .where(
         and(
           eq(cloudflareAccessConfigs.id, row.accessId),
@@ -197,7 +177,7 @@ async function currentConnection(
           eq(cloudflareAccessConfigs.generation, row.access.generation),
         ),
       )
-      .for("share", { of: [cloudflareAccessConfigs, agentCloudflareAccess] });
+      .for("share");
     signal.throwIfAborted();
     if (!authority) {
       return null;

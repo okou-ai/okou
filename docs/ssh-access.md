@@ -151,12 +151,13 @@ the accepted Run-lifetime cache window.
 
 ## Cloudflare Access backend preparation
 
-The backend foundation (#34077, parent #31996) adds user-owned Service Token
-configurations independently of SSH login credentials. It remains default-off
+The backend foundation (#34077, parent #31996) adds reusable, user-owned Service
+Token configurations as SSH connection settings, independently of SSH login
+credentials. It remains default-off
 behind `cloudflareAccess` and requires `sshAccess`; no new management UI or
 working Access transport is delivered by this slice.
 
-The canonical `/api/cloudflare-access/configs` endpoints create, list, rename,
+The canonical `/api/ssh/cloudflare-access/configs` endpoints create, list, rename,
 replace credentials, enable/disable and delete configurations. Client ID and
 Client Secret are write-only. Reads return metadata and referencing host IDs/names;
 updates/deletion require the expected edit revision, and referenced deletion is
@@ -166,11 +167,18 @@ generations.
 
 An SSH host explicitly selects a same-owner configuration, published DNS hostname
 and port 443. The origin SSH port belongs to Cloudflare, not this binding. Sharing
-a configuration across hosts does not share it across users or workspaces. The
-first configuration grants currently visible Agents for the owner's Runs; later
-additions preserve manual denials. Protected execution requires both the SSH and
-Access Agent grants. SSH username/key/password and server host-key trust remain
-independent of the Service Token.
+a configuration across hosts does not share it across users or workspaces.
+Protected execution uses the existing SSH Agent grant; there is no separate
+Access grant. Creating or changing an Access configuration does not create a
+host, grant SSH or restore a manual denial. Existing first-SSH-host onboarding
+remains unchanged, and later Agents can use bound configurations once authorized
+for SSH. SSH username/key/password and server host-key trust remain independent
+of the Service Token.
+
+Configuration mutations reuse the owner's `ssh:changed` notification. The later
+Platform delivery manages these settings inside `/connectors/ssh`, not through
+an independent connector card, Agent Authorization row or Chat service. Access
+configuration counts do not replace SSH host-based visibility and summaries.
 
 SSH management uses one canonical contract. Protected metadata includes
 `transport: {type: "cloudflare_access", configId}`. Direct hosts omit the binding.

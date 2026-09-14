@@ -45,7 +45,7 @@ const pathParams = z.object({ configId: z.uuid() }).strict();
 export const cloudflareAccessContract = c.router({
   list: {
     method: "GET",
-    path: "/api/cloudflare-access/configs",
+    path: "/api/ssh/cloudflare-access/configs",
     headers: authHeadersSchema,
     responses: {
       200: z
@@ -56,7 +56,7 @@ export const cloudflareAccessContract = c.router({
   },
   create: {
     method: "POST",
-    path: "/api/cloudflare-access/configs",
+    path: "/api/ssh/cloudflare-access/configs",
     headers: authHeadersSchema,
     body: z
       .object({ name, credentials: cloudflareAccessCredentialsSchema })
@@ -65,7 +65,7 @@ export const cloudflareAccessContract = c.router({
   },
   update: {
     method: "PATCH",
-    path: "/api/cloudflare-access/configs/:configId",
+    path: "/api/ssh/cloudflare-access/configs/:configId",
     headers: authHeadersSchema,
     pathParams,
     body: z
@@ -90,30 +90,11 @@ export const cloudflareAccessContract = c.router({
   },
   delete: {
     method: "DELETE",
-    path: "/api/cloudflare-access/configs/:configId",
+    path: "/api/ssh/cloudflare-access/configs/:configId",
     headers: authHeadersSchema,
     pathParams,
     body: z.object({ expectedRevision: revision }).strict(),
     responses: { 204: c.noBody(), ...errors },
-  },
-});
-const agentPath = z.object({ agentId: z.uuid() }).strict();
-const grant = z.object({ enabled: z.boolean() }).strict();
-export const agentCloudflareAccessContract = c.router({
-  get: {
-    method: "GET",
-    path: "/api/agents/:agentId/cloudflare-access",
-    headers: authHeadersSchema,
-    pathParams: agentPath,
-    responses: { 200: grant, ...errors },
-  },
-  update: {
-    method: "PUT",
-    path: "/api/agents/:agentId/cloudflare-access",
-    headers: authHeadersSchema,
-    pathParams: agentPath,
-    body: grant,
-    responses: { 200: grant, ...errors },
   },
 });
 export type CloudflareAccessConfig = z.infer<

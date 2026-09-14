@@ -1,11 +1,3 @@
-CREATE TABLE "agent_cloudflare_access" (
-	"org_id" text NOT NULL,
-	"user_id" text NOT NULL,
-	"agent_id" uuid NOT NULL,
-	"created_at" timestamp DEFAULT now() NOT NULL,
-	CONSTRAINT "agent_cloudflare_access_pkey" PRIMARY KEY("org_id","user_id","agent_id")
-);
---> statement-breakpoint
 CREATE TABLE "cloudflare_access_configs" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"org_id" text NOT NULL,
@@ -26,8 +18,6 @@ CREATE TABLE "cloudflare_access_configs" (
 --> statement-breakpoint
 ALTER TABLE "ssh_connection_observations" DROP CONSTRAINT "chk_ssh_connection_observation_failure";--> statement-breakpoint
 ALTER TABLE "ssh_connections" ADD COLUMN "cloudflare_access_id" uuid;--> statement-breakpoint
-ALTER TABLE "agent_cloudflare_access" ADD CONSTRAINT "agent_cloudflare_access_agent_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "idx_agent_cloudflare_access_agent" ON "agent_cloudflare_access" USING btree ("agent_id");--> statement-breakpoint
 CREATE INDEX "idx_cloudflare_access_configs_owner_created" ON "cloudflare_access_configs" USING btree ("org_id","user_id","created_at","id");--> statement-breakpoint
 ALTER TABLE "ssh_connections" ADD CONSTRAINT "ssh_connections_cloudflare_access_owner_fk" FOREIGN KEY ("cloudflare_access_id","org_id","user_id") REFERENCES "public"."cloudflare_access_configs"("id","org_id","user_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "idx_ssh_connections_cloudflare_access" ON "ssh_connections" USING btree ("cloudflare_access_id","id");--> statement-breakpoint

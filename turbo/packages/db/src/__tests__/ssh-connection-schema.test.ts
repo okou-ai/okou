@@ -7,7 +7,6 @@ import { agents } from "../schema/agent";
 import { sshCredentials } from "../schema/ssh-credential";
 import { sshConnections } from "../schema/ssh-connection";
 import { cloudflareAccessConfigs } from "../schema/cloudflare-access-config";
-import { agentCloudflareAccess } from "../schema/agent-cloudflare-access";
 
 describe("SSH connection schema", () => {
   it("exports the standalone SSH tables", () => {
@@ -15,7 +14,6 @@ describe("SSH connection schema", () => {
     expect(schema.sshCredentials).toBe(sshCredentials);
     expect(schema.agentSshAccess).toBe(agentSshAccess);
     expect(schema.cloudflareAccessConfigs).toBe(cloudflareAccessConfigs);
-    expect(schema.agentCloudflareAccess).toBe(agentCloudflareAccess);
   });
 
   it("defines bounded owner-scoped connection storage", () => {
