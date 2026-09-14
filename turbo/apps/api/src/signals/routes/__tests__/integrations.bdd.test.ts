@@ -886,7 +886,10 @@ async function establishCanonicalSlackHistory(args: SlackPiActorSetup) {
   await updateFeatureSwitchesForUser(
     context,
     { ...args.actor, orgId: args.orgId },
-    { [FeatureSwitchKey.PiLoop]: true },
+    {
+      [FeatureSwitchKey.PiLoop]: true,
+      [FeatureSwitchKey.PiMemory]: true,
+    },
   );
   return {
     ...args,

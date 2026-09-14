@@ -255,7 +255,7 @@ for local diagnostics that are acceptable to miss in production logs.
 
 Per-run network-log uploads have a 30-second total budget, with a separate
 10-second timeout for each sequential HTTP request. Uploads remain best-effort,
-limited to 32 MiB of source data and 32 batches, with no automatic retries.
+limited to 64 MiB of source data and 64 batches, with no automatic retries.
 They run after completion reporting and sandbox ownership settlement, but
 graceful Runner shutdown waits for outstanding uploads. Deadline cancellation
 can leave a request's result unknown; it does not prove that ingestion failed.

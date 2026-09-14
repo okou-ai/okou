@@ -5,12 +5,13 @@ import datetime as dt
 import hashlib
 import json
 import os
-from pathlib import Path
 import re
 import subprocess
 import time
 import urllib.parse
+from pathlib import Path
 
+from kms_recovery_scan import ScanReportError, scan_records
 from kms_recovery_verify import (
     RecoveryVerificationError,
     target_session,
@@ -89,6 +90,7 @@ def api(suffix, method="GET", body=None, allow_missing=False):
         capture_output=True,
         text=True,
         timeout=seconds + 5,
+        check=False,
     )
     require(response.returncode == 0, "neon_request_outcome_unconfirmed")
     content, status = response.stdout.rsplit("\n", 1)
@@ -212,7 +214,7 @@ def validate_preview(branch, name, snapshot_id, existing_ids):
     return branch_id
 
 
-def inspect_database(database, endpoint, branch_id, target_environment=None):
+def inspect_database(database, endpoint, branch_id, target_environment, record_stage):
     name, owner = database.get("name"), database.get("owner_name")
     require(database.get("branch_id") == branch_id, "database_branch_mismatch")
     require(
@@ -231,6 +233,8 @@ def inspect_database(database, endpoint, branch_id, target_environment=None):
             "pooled": "false",
         }
     )
+    database_hash = digest(name)
+    record_stage(database_hash, "connection_metadata")
     parsed = urllib.parse.urlsplit(api("/connection_uri?" + query)["uri"])
     require(
         parsed.scheme in {"postgres", "postgresql"}
@@ -261,55 +265,34 @@ def inspect_database(database, endpoint, branch_id, target_environment=None):
     )
     seconds = min(900, int(DEADLINE - time.monotonic()))
     require(seconds > 0, "inspection_time_budget_exhausted")
-    result = subprocess.run(
-        [
-            "psql",
-            "-X",
-            "-qAt",
-            "-v",
-            "ON_ERROR_STOP=1",
-            "-f",
-            str(Path(__file__).with_name("kms-recovery-snapshot-inventory.sql")),
-        ],
-        env=environment,
-        capture_output=True,
-        text=True,
-        timeout=seconds,
-    )
-    require(result.returncode == 0, "snapshot_database_scan_failed")
-    records = [json.loads(line) for line in result.stdout.splitlines() if line]
-    headers = [r for r in records if r.get("kind") == "database"]
-    require(
-        len(headers) == 1
-        and headers[0].get("readOnly") is True
-        and headers[0].get("isolation") == "repeatable read",
-        "read_only_transaction_unverified",
-    )
-    safe = []
-    fields = {
-        "database": {"largeObjects", "foreignTables"},
-        "table": {
-            "relationOid",
-            "rows",
-            "rowsWithEnvelopeMarker",
-            "rowsWithSourceReference",
-        },
-        "binary": {"relationOid", "columnNumber", "nonNullValues"},
-    }
-    for record in records:
-        kind = record.get("kind")
-        require(kind in fields, "unknown_scan_record")
-        item = {"kind": kind}
-        for field in fields[kind]:
-            value = record.get(field)
-            require(type(value) is int and value >= 0, "invalid_scan_counter")
-            item[field] = value
-        safe.append(item)
-    scanned = {"databaseNameSha256": digest(name), "readOnly": True, "records": safe}
+    record_stage(database_hash, "marker_scan")
+    try:
+        result = subprocess.run(
+            [
+                "psql",
+                "-X",
+                "-qAt",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-f",
+                str(Path(__file__).with_name("kms-recovery-snapshot-inventory.sql")),
+            ],
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        result = error
+    safe = scan_records(result, database_hash)
+    scanned = {"databaseNameSha256": database_hash, "readOnly": True, "records": safe}
     if target_environment is not None:
+        record_stage(database_hash, "target_verification")
         scanned["targetVerification"] = verify_database(
             parsed, target_environment, DEADLINE
         )
+    record_stage(database_hash, "complete")
     return scanned
 
 
@@ -337,6 +320,13 @@ def main():
 
     def checkpoint():
         report_path.write_text(json.dumps(report, indent=2) + "\n")
+
+    def record_stage(database_hash, phase):
+        report["lastDatabaseStage"] = {
+            "databaseNameSha256": database_hash,
+            "phase": phase,
+        }
+        checkpoint()
 
     preview_id = None
     production = None
@@ -513,7 +503,9 @@ def main():
                 report["targetVerificationStarted"] = True
                 checkpoint()
             report["databases"].append(
-                inspect_database(database, endpoint, preview_id, target_environment)
+                inspect_database(
+                    database, endpoint, preview_id, target_environment, record_stage
+                )
             )
             if target_environment is not None:
                 report["kmsCallsMade"] = any(
@@ -527,6 +519,7 @@ def main():
         report["collectionComplete"] = True
     except (
         InspectionError,
+        ScanReportError,
         RecoveryVerificationError,
         KeyError,
         ValueError,
@@ -536,9 +529,13 @@ def main():
     ) as error:
         report["failure"] = (
             str(error)
-            if isinstance(error, (InspectionError, RecoveryVerificationError))
+            if isinstance(
+                error, (InspectionError, ScanReportError, RecoveryVerificationError)
+            )
             else "inspection_failed"
         )
+        if isinstance(error, ScanReportError) and error.diagnostics is not None:
+            report["databaseScanFailure"] = error.diagnostics
     finally:
         # Reserve cleanup and preservation read-back time inside the job budget.
         DEADLINE = time.monotonic() + 5 * 60

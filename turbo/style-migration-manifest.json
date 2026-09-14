@@ -705,6 +705,46 @@
       "evidence": [],
       "pullRequest": "https://github.com/vm0-ai/vm0/pull/33693",
       "mergeCommit": null
+    },
+    {
+      "id": "desktop-titlebar",
+      "family": "platform-shell",
+      "tokens": ["okou-desktop-titlebar-drag-region", "okou-sidebar-header"],
+      "consumers": ["apps/platform/src/views/okou-page/sidebar.tsx"],
+      "cases": [
+        "desktop-titlebar-rail-light",
+        "desktop-titlebar-rail-dark",
+        "desktop-titlebar-rail-light-retina",
+        "desktop-titlebar-rail-dark-retina",
+        "desktop-titlebar-drawer-light",
+        "desktop-titlebar-drawer-dark"
+      ],
+      "status": "blocked",
+      "blockedReason": "Partially drained. The three declarations that are live in production moved to utilities: the sidebar header padding to pt-1.5, both drag regions to hidden, and the no-drag row to an arbitrary -webkit-app-region property. That removed 3 of 8 declarations, fully retired okou-desktop-no-drag, and left 3 consumption sites. The remaining 5 declarations sit behind .okou-app[data-desktop-shell] inside a min-width 768px block, and no first-party source sets that attribute: it appears only in index.css and the baseline derived from it. Those rules are deliberately left untouched, and the two class names stay on their elements as the hooks that block still selects; because it remains outside every @layer, its display block and padding-top 0 still override the new utilities if the attribute ever returns, which was verified by forcing the attribute on. Electron requests titleBarStyle hiddenInset with trafficLightPosition 16,18 on darwin (apps/desktop/src/desktop-window-chrome.ts), so the missing 48px drag region is more likely a live Desktop defect than intentional dead code. Deleting that block, porting it with a weakened ancestor condition, or restoring the attribute to repair Desktop are product decisions that also affect okou-app and okou-workspace-bg in this same family. Reproducing the condition verbatim is additionally impossible under the shrink-only ratchet: an arbitrary variant naming .okou-app fails style-policy/growth with okou-app going from 0 to 9 uses, and lint:style:prune refuses it.",
+      "evidence": [],
+      "pullRequest": "https://github.com/vm0-ai/vm0/pull/33838",
+      "mergeCommit": null
+    },
+    {
+      "id": "nav-chrome",
+      "family": "navigation",
+      "tokens": ["okou-nav"],
+      "consumers": [
+        "apps/platform/src/views/okou-page/sidebar.tsx",
+        "apps/platform/src/views/okou-page/__tests__/sidebar-account-menu.test.tsx"
+      ],
+      "cases": [
+        "nav-chrome-light",
+        "nav-chrome-dark",
+        "nav-chrome-light-retina",
+        "nav-chrome-dark-retina",
+        "nav-chrome-narrow",
+        "nav-chrome-narrow-dark"
+      ],
+      "status": "implemented",
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
     }
   ],
   "caseFiles": [
@@ -722,6 +762,8 @@
     "../e2e/playwright/style-migration/mic-motion-cases.json",
     "../e2e/playwright/style-migration/control-surface-cases.json",
     "../e2e/playwright/style-migration/hairline-rule-cases.json",
-    "../e2e/playwright/style-migration/sidebar-thread-title-cases.json"
+    "../e2e/playwright/style-migration/sidebar-thread-title-cases.json",
+    "../e2e/playwright/style-migration/desktop-titlebar-cases.json",
+    "../e2e/playwright/style-migration/nav-chrome-cases.json"
   ]
 }

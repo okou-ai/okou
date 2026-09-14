@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
-import { orgPlanEntitlementsCanonicalWrites } from "../src/operations/org-plan-entitlement-canonical-write";
+import { orgPlanEntitlements } from "../src/runtime/org-plan-entitlement";
 import {
   legacyOrgPlanEntitlements,
   legacyOrgPlanEntitlementValues,
@@ -147,26 +147,65 @@ try {
   // and reactivation, even when the plan key itself does not change.
   for (const [status, expected] of states) {
     const query = db
-      .insert(orgPlanEntitlementsCanonicalWrites)
+      .insert(orgPlanEntitlements)
       .values({
         orgId: "current_api",
         planKey: "pro",
         planRank: 1,
         source: "manual",
         status,
+        showUsagePack: expected,
         restrictedBuiltInModels: false,
       })
       .onConflictDoUpdate({
-        target: orgPlanEntitlementsCanonicalWrites.orgId,
-        set: { status },
+        target: orgPlanEntitlements.orgId,
+        set: { status, showUsagePack: expected },
       })
       .returning();
-    assert.ok(!query.toSQL().sql.includes("member_invitation_allowed"));
-    await query;
+    const [written] = await query;
+    assert.equal(written?.showUsagePack, expected);
     await assertLegacyInvitation("current_api", expected);
   }
+
+  // The next release may contract only after this application's projection has
+  // shipped. Exercise its real INSERT, conflict update, SELECT and RETURNING
+  // against that schema, while keeping today's physical schema unchanged.
+  await client.query(
+    "DROP TRIGGER sync_legacy_org_plan_entitlement_member_invitation_allowed ON org_plan_entitlements",
+  );
+  await client.query(`
+    ALTER TABLE org_plan_entitlements
+      DROP COLUMN member_invitation_allowed,
+      DROP COLUMN member_invite_usage_pack_required
+  `);
+  for (const active of [true, false, true]) {
+    const status = active ? "active" : "suspended";
+    const [written] = await db
+      .insert(orgPlanEntitlements)
+      .values({
+        orgId: "contracted_api",
+        planKey: "pro",
+        planRank: 1,
+        source: "manual",
+        status,
+        showUsagePack: active,
+        restrictedBuiltInModels: false,
+      })
+      .onConflictDoUpdate({
+        target: orgPlanEntitlements.orgId,
+        set: { status, showUsagePack: active },
+      })
+      .returning();
+    const [read] = await db
+      .select()
+      .from(orgPlanEntitlements)
+      .where(eq(orgPlanEntitlements.orgId, "contracted_api"));
+    assert.equal(written?.status, status);
+    assert.equal(written?.showUsagePack, active);
+    assert.deepEqual(read, written);
+  }
   console.log(
-    "Member invitation retirement backfill and old/new API compatibility passed",
+    "Member invitation retirement backfill, old API compatibility and canonical projection on both schemas passed",
   );
 } finally {
   await client.query("ROLLBACK");

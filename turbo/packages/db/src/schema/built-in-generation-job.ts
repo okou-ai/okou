@@ -51,6 +51,10 @@ export const builtInGenerationJobs = pgTable(
       },
       { onDelete: "set null" },
     ),
+    // Preserve the original association across a late provider callback. This
+    // metadata follows the job's normal deletion lifecycle, not billing retention.
+    billingRunId: uuid("billing_run_id"),
+    billingContext: text("billing_context").notNull().default("legacy_unknown"),
     request: jsonb("request").$type<BuiltInGenerationRequest>().notNull(),
     result: jsonb("result").$type<BuiltInGenerationResult>(),
     error: jsonb("error").$type<BuiltInGenerationError>(),

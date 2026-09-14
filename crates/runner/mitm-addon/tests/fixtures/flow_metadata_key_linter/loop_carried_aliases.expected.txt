@@ -1,0 +1,12 @@
+loop_carried_aliases.py:4: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+loop_carried_aliases.py:11: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+loop_carried_aliases.py:25: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+loop_carried_aliases.py:32: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+loop_carried_aliases.py:41: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+loop_carried_aliases.py:50: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+loop_carried_aliases.py:59: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+loop_carried_aliases.py:67: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+loop_carried_aliases.py:75: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+loop_carried_aliases.py:82: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+loop_carried_aliases.py:92: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access
+loop_carried_aliases.py:101: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access

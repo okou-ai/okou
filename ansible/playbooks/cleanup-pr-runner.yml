@@ -52,7 +52,7 @@
           --type=service \
           --no-legend \
           --plain \
-          'vm0-runner-{{ job_ref }}-*' 2>/dev/null \
+          'vm0-runner-{{ job_ref }}-*' \
           | awk '$1 ~ /^vm0-runner-{{ job_ref }}-[a-z0-9][a-z0-9.-]*\.service$/ {print $1}' \
           | sort -u
       args:
@@ -63,11 +63,12 @@
     - name: Find installed PR runner services
       shell: |
         set -o pipefail
+        # systemctl exits 1 when a supplied pattern matches no unit files.
+        # Filter the full inventory so directory-only namespaces can be cleaned.
         systemctl list-unit-files \
           --type=service \
           --no-legend \
           --no-pager \
-          'vm0-runner-{{ job_ref }}-*' 2>/dev/null \
           | awk '$1 ~ /^vm0-runner-{{ job_ref }}-[a-z0-9][a-z0-9.-]*\.service$/ {print $1}' \
           | sort -u
       args:

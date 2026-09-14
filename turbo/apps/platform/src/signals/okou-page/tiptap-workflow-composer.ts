@@ -12,6 +12,7 @@ import { HardBreak } from "@tiptap/extension-hard-break";
 import { Paragraph } from "@tiptap/extension-paragraph";
 import { Text } from "@tiptap/extension-text";
 import { Dropcursor, Gapcursor, UndoRedo } from "@tiptap/extensions";
+import { GapCursor } from "@tiptap/pm/gapcursor";
 import { Slice, type Node as ProseMirrorNode } from "@tiptap/pm/model";
 import {
   Plugin,
@@ -204,6 +205,8 @@ export interface WorkflowComposerSignals {
   readonly reloadWorkflows$: Command<Promise<void>, [AbortSignal]>;
   readonly selectedSuggestionIndex$: Computed<number>;
   readonly setSelectedSuggestionIndex$: Command<void, [number]>;
+  readonly previewSuggestionIndex$: Computed<number>;
+  readonly previewSuggestion$: Command<void, [number | null]>;
   readonly closeSuggestionMenu$: Command<void, []>;
   readonly insertWorkflow$: Command<void, [ComposerSlashWorkflow]>;
   readonly insertAgent$: Command<void, [ComposerAgentSuggestion]>;
@@ -732,6 +735,49 @@ function createFeedbackChromePlugin(runtime: WorkflowComposerRuntime): Plugin {
       decorations(state) {
         return buildFeedbackChromeDecorations(state.doc, runtime);
       },
+    },
+  });
+}
+
+function createFeedbackTextSelectionPlugin(): Plugin {
+  return new Plugin({
+    key: new PluginKey("feedbackTextSelection"),
+    appendTransaction(_transactions, previous, current) {
+      const { selection } = current;
+      if (!(selection instanceof GapCursor)) {
+        return null;
+      }
+
+      const { $head } = selection;
+      if ($head.depth !== 0) {
+        return null;
+      }
+      const before = $head.nodeBefore?.type.name;
+      const after = $head.nodeAfter?.type.name;
+      if (
+        before !== FEEDBACK_ITEM_NODE_NAME &&
+        after !== FEEDBACK_ITEM_NODE_NAME
+      ) {
+        return null;
+      }
+
+      // Legacy block templates still need their surrounding insertion points.
+      if (
+        before === TEMPLATE_ATTACHMENT_NODE_NAME ||
+        after === TEMPLATE_ATTACHMENT_NODE_NAME
+      ) {
+        return null;
+      }
+
+      // Keep keyboard and pointer navigation on editable feedback text. At
+      // either document edge, stay in the nearest existing paragraph.
+      const direction = selection.head < previous.selection.head ? -1 : 1;
+      const next =
+        Selection.findFrom($head, direction, true) ??
+        Selection.findFrom($head, -direction, true);
+      return next instanceof TextSelection
+        ? current.tr.setSelection(next).setMeta("addToHistory", false)
+        : null;
     },
   });
 }
@@ -1525,11 +1571,7 @@ interface WorkflowComposerRuntime {
   replaceFeedbackItems(items: readonly FeedbackItem[]): void;
   removeFeedback(id: number): void;
   localizedUi: Set<() => void>;
-  /**
-   * Read on every chip render rather than captured once: the authoritative
-   * feature-switch read resolves after the composer mounts, so a value latched
-   * at mount time would always be the pre-hydration default.
-   */
+  /** Read on every chip render so Lab updates apply without remounting. */
   templateChipCover: () => boolean;
 }
 
@@ -1673,7 +1715,10 @@ function createFeedbackItemNode(
       };
     },
     addProseMirrorPlugins() {
-      return [createFeedbackChromePlugin(runtime)];
+      return [
+        createFeedbackChromePlugin(runtime),
+        createFeedbackTextSelectionPlugin(),
+      ];
     },
   });
 }
@@ -1957,6 +2002,7 @@ interface MountEditorOptions {
   caretIndex$: State<number>;
   editorFocusedState$: State<boolean>;
   selectedSuggestionIndexState$: State<number>;
+  previewSuggestionIndexState$: State<number | null>;
   feedback: ComposerFeedbackModel;
   compositionGate: CompositionGate;
   syncWorkflowNames$: WorkflowNamesSyncCommand;
@@ -2027,6 +2073,7 @@ function createMountEditorCommand({
   caretIndex$,
   editorFocusedState$,
   selectedSuggestionIndexState$,
+  previewSuggestionIndexState$,
   feedback,
   compositionGate,
   syncWorkflowNames$,
@@ -2049,19 +2096,23 @@ function createMountEditorCommand({
           createEditorDocumentSnapshot(updatedEditor.state.doc),
         );
         set(selectedSuggestionIndexState$, 0);
+        set(previewSuggestionIndexState$, null);
         set(caretIndex$, updatedEditor.state.selection.head);
         compositionGate.notifySettled();
         // Forward TipTap updates through the React-owned DOM boundary.
         element.dispatchEvent(new Event("input", { bubbles: true }));
       };
       runtime.selectionUpdate = (updatedEditor) => {
+        set(previewSuggestionIndexState$, null);
         set(caretIndex$, updatedEditor.state.selection.head);
       };
       runtime.focus = (focusedEditor) => {
+        set(previewSuggestionIndexState$, null);
         set(editorFocusedState$, true);
         set(caretIndex$, focusedEditor.state.selection.head);
       };
       runtime.blur = () => {
+        set(previewSuggestionIndexState$, null);
         set(editorFocusedState$, false);
       };
       runtime.replaceFeedbackItems = (items) => {
@@ -2119,6 +2170,7 @@ function createMountEditorCommand({
         resetMountedWorkflowRuntime(runtime);
         set(legacyTemplateAttachment.reset$);
         set(draft.setInputSyncTarget$, null);
+        set(previewSuggestionIndexState$, null);
         set(editorFocusedState$, false);
         editor.unmount();
       });
@@ -2649,6 +2701,9 @@ export function createWorkflowComposerSignals<
   const caretIndex$ = state(-1);
   const editorFocusedState$ = state(false);
   const selectedSuggestionIndexState$ = state(0);
+  // A pointer preview is independent of keyboard selection. Null means the
+  // preview follows the keyboard again, including when the menu reopens.
+  const previewSuggestionIndexState$ = state<number | null>(null);
   const runtime = createWorkflowComposerRuntime();
   const agentMentionAvatarRuntime = createAgentMentionAvatarRuntime();
   const templatePreview = createTemplatePreviewRuntime();
@@ -2691,8 +2746,18 @@ export function createWorkflowComposerSignals<
   );
   const setSelectedSuggestionIndex$ = command(({ set }, index: number) => {
     set(selectedSuggestionIndexState$, index);
+    set(previewSuggestionIndexState$, null);
+  });
+  const previewSuggestionIndex$ = computed((get) => {
+    return (
+      get(previewSuggestionIndexState$) ?? get(selectedSuggestionIndexState$)
+    );
+  });
+  const previewSuggestion$ = command(({ set }, index: number | null) => {
+    set(previewSuggestionIndexState$, index);
   });
   const closeSuggestionMenu$ = command(({ set }) => {
+    set(previewSuggestionIndexState$, null);
     set(caretIndex$, -1);
   });
   const focus$ = command(() => {
@@ -2707,6 +2772,7 @@ export function createWorkflowComposerSignals<
     caretIndex$,
     editorFocusedState$,
     selectedSuggestionIndexState$,
+    previewSuggestionIndexState$,
     feedback,
     compositionGate,
     syncWorkflowNames$,
@@ -2743,6 +2809,8 @@ export function createWorkflowComposerSignals<
     reloadWorkflows$: reloadMountedComposerWorkflows$,
     selectedSuggestionIndex$,
     setSelectedSuggestionIndex$,
+    previewSuggestionIndex$,
+    previewSuggestion$,
     closeSuggestionMenu$,
     ...suggestionInsertionCommands,
     ...textCommands,

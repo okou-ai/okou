@@ -9,10 +9,20 @@ use crate::env;
 use aho_corasick::{AhoCorasick, MatchKind};
 use base64::Engine;
 use serde_json::{Map, Value};
-use std::{collections::HashSet, ops::Range};
+use std::{
+    collections::{BTreeMap, HashSet},
+    ops::Range,
+};
 
 /// Minimum secret length in UTF-8 bytes to avoid false-positive masking.
 const MIN_SECRET_LEN: usize = 5;
+
+/// Allocation progress shared by all masked keys in one object.
+struct KeyCollisionState {
+    next_decimal_suffixes: BTreeMap<String, usize>,
+    remaining_decimal_probes: usize,
+    next_fallback_suffix: usize,
+}
 
 /// Holds compiled secret matchers for efficient masking.
 ///
@@ -177,6 +187,10 @@ impl SecretMasker {
     }
 
     /// Recursively mask secrets in JSON object keys and string values (in-place).
+    ///
+    /// Keys whose cascading redactions exceed a linear scan budget are replaced
+    /// in full with `***`. Colliding masked keys receive unique secret-free names
+    /// so that every value and unmatched key is preserved.
     pub fn mask_value(&self, val: &mut Value) {
         if self.matcher.is_none() && self.url_encoded_matcher.is_none() {
             return;
@@ -351,6 +365,11 @@ impl SecretMasker {
             return;
         }
 
+        let mut collisions = KeyCollisionState {
+            next_decimal_suffixes: BTreeMap::new(),
+            remaining_decimal_probes: map.len(),
+            next_fallback_suffix: 0,
+        };
         let entries = std::mem::take(map);
         let mut masked_entries = Vec::new();
         for (key, mut value) in entries {
@@ -363,46 +382,72 @@ impl SecretMasker {
         }
 
         for (masked_key, value) in masked_entries {
-            let unique_key = self.unique_masked_key(map, masked_key);
+            let unique_key = self.unique_masked_key(map, masked_key, &mut collisions);
             map.insert(unique_key, value);
         }
     }
 
     fn fully_masked_key(&self, key: &str) -> Option<String> {
+        // Include the first scan in a budget of four times the original length.
+        // Charging each haystack before scanning bounds aggregate searching and
+        // copying for a fixed matcher, even when a pass removes only two bytes.
+        let mut remaining = key.len().saturating_mul(4) - key.len();
         let mut masked = self.masked_string(key)?;
-        // Production patterns are longer than "***", so each pass shortens
-        // the key and the loop terminates after removing cascading matches.
-        while let Some(remasked) = self.masked_string(&masked) {
+        loop {
+            let Some(budget) = remaining.checked_sub(masked.len()) else {
+                // Never return an unchecked intermediate key. This whole-key
+                // marker is shorter than every accepted production secret;
+                // unique_masked_key still preserves entries when it collides.
+                return Some("***".to_string());
+            };
+            remaining = budget;
+            let Some(remasked) = self.masked_string(&masked) else {
+                return Some(masked);
+            };
+            // Production patterns are longer than "***", so each pass shrinks.
             debug_assert!(remasked.len() < masked.len());
             masked = remasked;
         }
-        Some(masked)
     }
 
-    fn unique_masked_key(&self, map: &Map<String, Value>, masked_key: String) -> String {
+    fn unique_masked_key(
+        &self,
+        map: &Map<String, Value>,
+        masked_key: String,
+        collisions: &mut KeyCollisionState,
+    ) -> String {
         if !map.contains_key(&masked_key) {
             return masked_key;
         }
 
-        // Secrets can exclude the entire decimal suffix family. Bound these
-        // probes even when rejection is unrelated to occupied keys.
-        for suffix in 2..=map.len().saturating_add(2) {
-            let candidate = format!("{masked_key}#{suffix}");
-            if !map.contains_key(&candidate) && self.masked_string(&candidate).is_none() {
-                return candidate;
+        // Each base owns a disjoint decimal family. Without secret rejection,
+        // every probe consumes an occupied key or assigns one, so N input keys
+        // need at most N probes. Share that budget across families as secrets
+        // can exclude all of them; a per-family budget could still be quadratic.
+        if collisions.remaining_decimal_probes > 0 {
+            let suffix = collisions
+                .next_decimal_suffixes
+                .entry(masked_key.clone())
+                .or_insert(2);
+            while collisions.remaining_decimal_probes > 0 {
+                let candidate = format!("{masked_key}#{suffix}");
+                *suffix += 1;
+                collisions.remaining_decimal_probes -= 1;
+                if !map.contains_key(&candidate) && self.masked_string(&candidate).is_none() {
+                    return candidate;
+                }
             }
         }
 
-        // These identifiers are distinct and intrinsically secret-free. Every
-        // rejection consumes an occupied key, so n entries need at most n + 1
-        // probes; the counter cannot overflow before finding a free key.
-        let mut suffix = 0;
+        // These identifiers are distinct and intrinsically secret-free. Never
+        // retry one within this object: every probe consumes an occupied key or
+        // assigns one, bounding aggregate probes by N and preventing overflow.
         loop {
-            let candidate = self.collision_key(suffix);
+            let candidate = self.collision_key(collisions.next_fallback_suffix);
+            collisions.next_fallback_suffix += 1;
             if !map.contains_key(&candidate) {
                 return candidate;
             }
-            suffix += 1;
         }
     }
 

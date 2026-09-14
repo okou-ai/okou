@@ -5537,7 +5537,17 @@
         "chatModels": "Modelos de chat",
         "effort": "Esfuerzo de razonamiento",
         "fast": "Rápido",
-        "fastImpact": "1,5× velocidad del modelo · 2,5× uso de créditos",
+        "fastImpact": {
+          "apiCost": "2× el coste de tokens de API",
+          "chatGptUsage": "2,5× el consumo de ChatGPT",
+          "fasterResponses": "Respuestas del modelo más rápidas",
+          "modelSpeed": "{{multiplier}}× la velocidad del modelo",
+          "okouCredits": "2× los créditos de modelos de Okou",
+          "providerSpeed": "La velocidad depende del proveedor",
+          "providerUsage": "El consumo depende del proveedor",
+          "solApiSpeed": "Hasta 2,5× la velocidad del modelo",
+          "summary": "{{speed}} · {{usage}}"
+        },
         "generationPriceTiers": {
           "higher": "Coste superior por generación",
           "highest": "Coste más alto por generación",
@@ -5815,7 +5825,6 @@
         "emailOff": "El correo está desactivado. Tu resumen seguirá apareciendo en Chat.",
         "emailWhenReady": "Recibirás un correo cuando tu resumen esté listo.",
         "loading": "Cargando la configuración de Morning Brief...",
-        "missingDataSource": "Conecta Gmail, Google Calendar, GitHub o Slack para empezar a recibir tu resumen.",
         "missingDefaultAgent": "Elige un Agente predeterminado que se pueda utilizar antes de activar Morning Brief.",
         "missingTimezone": "Establece una zona horaria válida antes de activar Morning Brief.",
         "multipleInstallations": "Hay varias instalaciones de Morning Brief. Resuelve el conflicto antes de cambiar esta preferencia.",

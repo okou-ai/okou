@@ -2,10 +2,7 @@ import { command } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { defaultAgentId$ } from "../agent.ts";
-import {
-  featureSwitch$,
-  initialFeatureSwitchHydration$,
-} from "../external/feature-switch.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setupAgentsPage$ } from "../agents-page/agents-page-setup.ts";
 import { parseTemplatePickerEntryCategory } from "./template-picker-entry.ts";
 import {
@@ -24,8 +21,6 @@ export const setupHomePage$ = command(
       await set(setupAgentsPage$, signal);
       return;
     }
-    await get(initialFeatureSwitchHydration$);
-    signal.throwIfAborted();
     const params = get(searchParams$);
     const prompt = params.get("prompt");
     const queue = params.get("queue");

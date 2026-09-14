@@ -5479,7 +5479,17 @@
         "chatModels": "चैट मॉडल",
         "effort": "तर्क का प्रयास",
         "fast": "तेज़",
-        "fastImpact": "1.5× मॉडल गति · 2.5× क्रेडिट उपयोग",
+        "fastImpact": {
+          "apiCost": "2× API टोकन लागत",
+          "chatGptUsage": "2.5× ChatGPT उपयोग",
+          "fasterResponses": "मॉडल के तेज़ जवाब",
+          "modelSpeed": "{{multiplier}}× मॉडल गति",
+          "okouCredits": "2× Okou मॉडल क्रेडिट",
+          "providerSpeed": "गति प्रदाता पर निर्भर है",
+          "providerUsage": "उपयोग प्रदाता पर निर्भर है",
+          "solApiSpeed": "अधिकतम 2.5× मॉडल गति",
+          "summary": "{{speed}} · {{usage}}"
+        },
         "generationPriceTiers": {
           "higher": "प्रति जनरेशन अधिक लागत",
           "highest": "प्रति जनरेशन सबसे अधिक लागत",
@@ -5754,7 +5764,6 @@
         "emailOff": "ईमेल बंद है। आपका ब्रीफ़ चैट में दिखता रहेगा।",
         "emailWhenReady": "ब्रीफ़ तैयार होने पर आपको ईमेल मिलेगा।",
         "loading": "Morning Brief सेटिंग लोड हो रही हैं...",
-        "missingDataSource": "अपना ब्रीफ़ पाने के लिए Gmail, Google Calendar, GitHub या Slack कनेक्ट करें।",
         "missingDefaultAgent": "Morning Brief चालू करने से पहले उपयोग योग्य डिफ़ॉल्ट Agent चुनें।",
         "missingTimezone": "Morning Brief चालू करने से पहले एक मान्य समय क्षेत्र सेट करें।",
         "multipleInstallations": "Morning Brief के कई इंस्टॉलेशन मौजूद हैं। इस प्राथमिकता को बदलने से पहले विरोध हल करें।",

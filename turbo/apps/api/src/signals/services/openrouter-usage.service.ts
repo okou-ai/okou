@@ -142,6 +142,7 @@ export const recordOpenRouterUsage$ = command(
     const eventRows = entries.map((entry) => {
       return {
         runId: args.runId ?? null,
+        billingContext: args.runId ? "run" : "runless",
         idempotencyKey: usageIdempotencyKey({
           orgId: args.orgId,
           operation: args.operation,

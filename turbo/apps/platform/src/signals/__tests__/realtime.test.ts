@@ -12,6 +12,7 @@ import {
   setSharedWorkerRealtimeBridge$,
 } from "../realtime.ts";
 import { clerk$, setupClerk$ } from "../auth.ts";
+import { installMockedClerkBootstrap } from "../../__tests__/mock-auth.ts";
 import { initializeAppVersion$ } from "../app-version.ts";
 import { readClerkToken } from "../clerk-token.ts";
 import { setRootSignal$ } from "../root-signal.ts";
@@ -44,6 +45,7 @@ const context = testContext();
 
 beforeEach(() => {
   context.mocks.clerk();
+  installMockedClerkBootstrap(context.signal);
   context.store.set(initializeAppVersion$, __OKOU_APP_VERSION__);
   context.store.set(setRootSignal$, context.signal);
   const clerk = context.store.get(clerk$);
@@ -52,7 +54,7 @@ beforeEach(() => {
     oauthApiBaseUrl: location.origin,
     getToken: async (signal) => {
       const resolvedClerk = await clerk;
-      signal.throwIfAborted();
+      signal?.throwIfAborted();
       return await readClerkToken(resolvedClerk, signal);
     },
   });

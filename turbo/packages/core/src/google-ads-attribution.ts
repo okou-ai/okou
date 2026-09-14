@@ -35,9 +35,8 @@ export function normalizeGoogleAdsAttribution<
   };
 }
 
-// New App -> old API, and new Clerk writes -> retained old API readers.
-// Remove after legacy-only APIs leave serving and rollback; tracked in #33059.
-export function legacyGoogleAdsAttribution<T extends GoogleAdsAttributionIds>(
+// Existing analytics and Stripe recovery consumers still need equal aliases.
+function legacyGoogleAdsAttribution<T extends GoogleAdsAttributionIds>(
   metadata: T,
 ) {
   const {

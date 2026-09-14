@@ -5,9 +5,9 @@ import datetime as dt
 import hashlib
 import json
 import os
-from pathlib import Path
 import sys
 import urllib.parse
+from pathlib import Path
 
 state_path = Path(__file__).resolve().parent.parent / "fixture.json"
 state = json.loads(state_path.read_text())
@@ -214,6 +214,8 @@ if Path(sys.argv[0]).name == "psql":
                 "kind": "database",
                 "readOnly": True,
                 "isolation": "repeatable read",
+                "supportsTidRangeScan": True,
+                "plannedTables": 1,
                 "largeObjects": 0,
                 "foreignTables": 0,
             }
@@ -222,8 +224,20 @@ if Path(sys.argv[0]).name == "psql":
     print(
         json.dumps(
             {
-                "kind": "table",
+                "kind": "table-plan",
                 "relationOid": 123,
+                "blocks": 1,
+                "heapAccessMethod": True,
+            }
+        )
+    )
+    print(
+        json.dumps(
+            {
+                "kind": "table-chunk",
+                "relationOid": 123,
+                "firstBlock": 0,
+                "endBlock": 1,
                 "rows": 20,
                 "rowsWithEnvelopeMarker": 3,
                 "rowsWithSourceReference": 0,
@@ -231,6 +245,29 @@ if Path(sys.argv[0]).name == "psql":
             }
         )
     )
+    if scenario in {"sql-timeout", "sql-process-timeout", "invalid-scan-progress"}:
+        print(
+            json.dumps(
+                {
+                    "kind": "scan-start",
+                    "phase": "table",
+                    "relationOid": True if scenario == "invalid-scan-progress" else 456,
+                    "relationBytes": 5368709120,
+                    **(
+                        {"firstBlock": 256, "endBlock": 384}
+                        if scenario == "sql-process-timeout"
+                        else {}
+                    ),
+                    "private": "fixture-private-password",
+                }
+            )
+        )
+        if scenario == "sql-process-timeout":
+            raise SystemExit(0)
+        sys.stderr.write(
+            "psql:inventory.sql:42: ERROR:  57014\nDETAIL: fixture-private-password\n"
+        )
+        raise SystemExit(3)
     raise SystemExit(0)
 
 assert Path(sys.argv[0]).name == "curl"

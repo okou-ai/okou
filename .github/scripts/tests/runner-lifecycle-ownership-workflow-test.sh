@@ -100,9 +100,9 @@ unless stale.fetch("permissions") == {
   raise "stale runner cleanup must use the same ownership permissions"
 end
 stale_checkout = stale.fetch("steps").find { |step| step["uses"] == "actions/checkout@v7.0.1" }
-unless stale_checkout&.dig("with", "ref") == "${{ github.event.repository.default_branch }}" &&
+unless stale_checkout&.dig("with", "ref") == "${{ github.sha }}" &&
     stale_checkout&.dig("with", "persist-credentials") == false
-  raise "stale runner cleanup must execute the trusted default-branch ownership script"
+  raise "stale runner cleanup must execute the scheduled or manually selected workflow commit"
 end
 
 stale_names = stale.fetch("steps").map { |step| step["name"] }

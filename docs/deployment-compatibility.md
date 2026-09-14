@@ -615,6 +615,60 @@ existing admin requirements. It does not change usage-pack balances or purchase
 eligibility. Further legacy-column retirement remains tracked in
 [issue #32575](https://github.com/vm0-ai/vm0/issues/32575).
 
+#### Invitation and Free-member contract cleanup (2026-09-14)
+
+The Free-member API and App shipped in commit
+`b8b18c4aed6a054791b7a3a5209ad7a6112c4217` (#32573). Release
+`3d58eaa4609967a4f655f7cd61d0d7cd454ba2a1` contains that commit and promoted
+API 1.575.2 at 2026-09-09 09:48:46 UTC and App 0.873.0 at 09:50:38 UTC.
+The [App promotion log](https://github.com/vm0-ai/vm0/actions/runs/34335229479/job/102417989571)
+verifies that exact artifact SHA, rather than a moving deployment SHA. App
+0.873.0 uses billing `status` for invitations and accepts an empty all-Free
+migration configuration. It ignores `memberInvitationAllowed` when `status`
+is present.
+
+The later [API promotion](https://github.com/vm0-ai/vm0/actions/runs/34794788803/job/103826080723)
+and [App promotion](https://github.com/vm0-ai/vm0/actions/runs/34794788803/job/103826582194)
+of `826d131351049b7f35f45cad577618e01b231544` succeeded on 2026-09-14 at
+01:11:42 and 01:13:20 UTC. The App log verifies the 0.893.7 artifact at that
+SHA. Both the serving release and the existing enforced API rollback floor
+`669d0befc9a181e44e3f1f9e39093efddabcc0f8` descend from #32573. Those API
+readers use `status` and `show_usage_pack`, and their catalog and management
+responses always advertise `supportsFreeMembers: true`.
+
+This cleanup raises the App floor from 0.857.0 to the already-live 0.873.0,
+removes the derived `memberInvitationAllowed` response alias, requires explicit
+Free-member support, and removes paid-only catalog/management fallbacks. The
+API returns all-Free migration configuration without requiring an opt-in. The
+App's existing migration query opt-in remains necessary when it reaches a
+supported rollback API; keep the query and its contract until every supported
+API returns configuration unconditionally. The general floor's existing
+handling of missing/unparseable versions and other client types is unchanged.
+
+All application entitlement access now uses `runtime/org-plan-entitlement`.
+That mapping excludes both old invitation columns from INSERT, SELECT and
+RETURNING, and the canonical writer stops mirroring `show_usage_pack` into
+`member_invite_usage_pack_required`. The migration-only schema declarations,
+physical columns, status-mirror trigger/function and transition validator stay
+in place. Removing them in this same release would break outgoing API SQL
+between migration and promotion. No schema migration or rollback-floor change
+is part of this preparation release.
+
+To finish #32575 after this API is released:
+
+1. Record its successful production promotion and outgoing API drain. Enforce
+   a supported rollback floor that contains the canonical-only runtime mapping
+   and unconditional migration response; the existing floor is insufficient.
+2. Generate the column-drop migration with Drizzle. Audit persisted SQL first,
+   including `ensure_legacy_org_metadata_plan_entitlement`, then drop both
+   legacy columns and the invitation status-mirror trigger/function. Update
+   their exact inventory entries. Coordinate the overlapping trigger with
+   #33747; unrelated triggers are outside #32575.
+3. Remove the App migration query opt-in and contract. Retire the invitation
+   transition validator only after its contraction has shipped and permanent
+   coverage retains active Free invitations, suspended direct/paid rejection,
+   admin authorization, reactivation and explicit `showUsagePack: false`.
+
 ### Workflow automation connector-account projections
 
 Connector-backed workflow event automations persist account authority in an
@@ -949,8 +1003,8 @@ release process.
 
 The new API can load the old confidential-client catalog. Its capability
 filter hides only the incompatible PostHog OAuth method until the companion
-catalog is published; the personal API-key method remains available. The
-existing PostHog OAuth feature switch still controls exposure.
+catalog is published; the personal API-key method remains available. PostHog
+OAuth is available to all users when its catalog method is compatible and visible.
 
 OAuth storage version 2 adds the account's region and API base URL and changes
 the client identity. Version 1 OAuth accounts must reconnect through the

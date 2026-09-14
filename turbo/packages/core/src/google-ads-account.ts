@@ -29,6 +29,9 @@ const CAMPAIGN_ACCOUNTS: Readonly<Record<string, string>> = {
   "24185301545": "1001302527",
   "24220469665": "7935750692",
   "24220530631": "7935750692",
+  // Verified from Google Ads campaign.resource_name on 2026-09-14.
+  "24239997272": "7935750692",
+  "24240467199": "7935750692",
 };
 
 export function googleAdsAccountForAttribution(

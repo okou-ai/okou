@@ -70,6 +70,8 @@ export interface BuiltInGenerationWebhookJob {
   readonly orgId: string;
   readonly userId: string;
   readonly runId: string | null;
+  readonly billingRunId: string | null;
+  readonly billingContext: string;
   readonly request: Record<string, unknown>;
 }
 
@@ -539,6 +541,8 @@ export const getBuiltInGenerationWebhookJob$ = command(
         orgId: builtInGenerationJobs.orgId,
         userId: builtInGenerationJobs.userId,
         runId: builtInGenerationJobs.runId,
+        billingRunId: builtInGenerationJobs.billingRunId,
+        billingContext: builtInGenerationJobs.billingContext,
         request: builtInGenerationJobs.request,
       })
       .from(builtInGenerationJobs)
@@ -579,6 +583,8 @@ export const getBuiltInGenerationWebhookJobByProviderJobId$ = command(
         orgId: builtInGenerationJobs.orgId,
         userId: builtInGenerationJobs.userId,
         runId: builtInGenerationJobs.runId,
+        billingRunId: builtInGenerationJobs.billingRunId,
+        billingContext: builtInGenerationJobs.billingContext,
         request: builtInGenerationJobs.request,
       })
       .from(builtInGenerationJobs)

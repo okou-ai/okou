@@ -34,6 +34,13 @@
   --color-nav-copy: var(--nav-copy, var(--color-sidebar-foreground));
   --color-nav-copy-muted: var(--nav-copy-muted, var(--color-muted-foreground));
 
+  /* Nav chrome, on the same contract as the nav copy above: the gradient color
+     themes define the raw values at :root and the nav resolves to them, while
+     everywhere else they are unset and each consumer falls back to the shared
+     sidebar token it already read. */
+  --color-nav-border: var(--nav-border, var(--color-sidebar-border));
+  --color-nav-rail: var(--nav-rail, var(--color-sidebar-rail));
+
   /* Credit balance breakdown segment colors (usage bar chart) */
   --color-credit-free: #008d76;
   --color-credit-promotional: #ff6030;
@@ -172,21 +179,6 @@ body {
   }
 }
 
-.okou-viewport-shell {
-  box-sizing: border-box;
-  height: 100%;
-  min-height: 100%;
-  max-height: 100%;
-  overflow: hidden;
-  padding-bottom: var(--sab);
-}
-
-/* Workspace scrollports reach the physical viewport edge. Their scroll content,
-   composer, and other bottom interactions own the safe inset instead. */
-.okou-managed-bottom-safe-area {
-  padding-bottom: 0;
-}
-
 .okou-fixed-viewport-shell {
   box-sizing: border-box;
   height: var(--okou-viewport-height);
@@ -229,18 +221,6 @@ body {
   .okou-mobile-sidebar::before {
     bottom: calc(-1 * var(--sab));
   }
-}
-
-.okou-sidebar-header {
-  padding-top: 0.375rem;
-}
-
-.okou-desktop-titlebar-drag-region {
-  display: none;
-}
-
-.okou-desktop-no-drag {
-  -webkit-app-region: no-drag;
 }
 
 @media (min-width: 768px) {
@@ -569,25 +549,10 @@ body {
   border: 0.5px solid hsl(var(--gray-400));
 }
 
-/* Left nav */
-.okou-nav {
-  --color-sidebar-border: hsl(var(--gray-200));
-}
-
 /* The sidebars take the site's own two greys. */
 .okou-app {
   --color-sidebar: hsl(var(--sidebar));
   --color-sidebar-rail: hsl(var(--sidebar-rail));
-}
-.okou-app[data-gradient-color-themes] .okou-nav {
-  --color-sidebar: hsl(var(--sidebar));
-  --color-sidebar-border: hsl(var(--border) / 0.5);
-}
-.okou-app[data-gradient-color-themes] .okou-nav.okou-nav-rail {
-  background-color: hsl(var(--okou-nav-rail));
-}
-:where([data-theme="dark"]) .okou-nav {
-  --color-sidebar: hsl(var(--sidebar));
 }
 
 /* The travel a sidebar thread title is scrolled by while its row is hovered or
@@ -1756,7 +1721,8 @@ details > summary {
      card as well as backing the chat column, and a full-strength tint around a
      white sheet overpowers it. The rail keeps its depth and stays the anchor. */
   --sidebar: var(--okou-color-theme-hue) 30% 98.4%;
-  --okou-nav-rail: var(--okou-color-theme-hue) 36% 93.5%;
+  --nav-rail: hsl(var(--okou-color-theme-hue) 36% 93.5%);
+  --nav-border: hsl(var(--border) / 0.5);
   --nav-copy: hsl(var(--okou-color-theme-hue) 24% 18%);
   --nav-copy-muted: hsl(var(--okou-color-theme-hue) 18% 38%);
   --background-50: var(--gray-50);
@@ -1797,7 +1763,8 @@ details > summary {
   --input: var(--gray-200);
   --ring: var(--okou-color-theme-hue) 45% 62%;
   --sidebar: var(--okou-color-theme-hue) 14% 12%;
-  --okou-nav-rail: var(--okou-color-theme-hue) 18% 8%;
+  --nav-rail: hsl(var(--okou-color-theme-hue) 18% 8%);
+  --nav-border: hsl(var(--border) / 0.5);
   --nav-copy: hsl(var(--okou-color-theme-hue) 22% 90%);
   --nav-copy-muted: hsl(var(--okou-color-theme-hue) 16% 64%);
   --background-50: var(--gray-50);

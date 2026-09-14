@@ -324,8 +324,8 @@ interface ComposerSuggestionMenuState {
   readonly selectCreate: (mode: ComposerCreateCommand) => void;
   /** Non-empty only while ComposerSlashTemplatePanel is on. */
   readonly panelCategories: readonly SlashTemplateCategory[];
-  readonly highlightedCategory: SlashTemplateCategory | null;
-  readonly highlightCategory: (category: SlashTemplateCategory | null) => void;
+  readonly previewIndex: number;
+  readonly previewSuggestion: (index: number | null) => void;
   readonly selectCategory: (category: SlashTemplateCategory) => void;
   readonly selectTemplate: (preview: SlashTemplatePreview) => void;
   readonly importDeck: (file: File) => void;
@@ -415,11 +415,7 @@ function useSlashTemplateCategorySuggestions(
 function useSlashTemplatePanelActions(
   composer: ComposerSignals,
   query: string | undefined,
-  selection: {
-    readonly selectedIndex: number;
-    readonly setSelectedIndex: (index: number) => void;
-    readonly close: () => void;
-  },
+  close: () => void,
 ) {
   const enabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ComposerSlashTemplatePanel] ===
@@ -444,19 +440,9 @@ function useSlashTemplatePanelActions(
       }
       openTemplatePicker({ kind: "insert", category });
     },
-    highlighted:
-      enabled && selection.selectedIndex < categories.length
-        ? (categories[selection.selectedIndex] ?? null)
-        : null,
-    highlight(category: SlashTemplateCategory | null): void {
-      const index = category === null ? -1 : categories.indexOf(category);
-      // A row with no index (a workflow) parks the selection past the head so
-      // the pane closes without pointing the keyboard at a category.
-      selection.setSelectedIndex(index < 0 ? categories.length : index);
-    },
     selectTemplate(preview: SlashTemplatePreview): void {
       insertTemplate(preview.template, preview.attachment);
-      selection.close();
+      close();
     },
     /**
      * The import attaches the deck and sends, which navigates away from the
@@ -464,7 +450,7 @@ function useSlashTemplatePanelActions(
      * signal — the same reason the picker dialog's import card does.
      */
     importDeck(file: File): void {
-      selection.close();
+      close();
       detach(
         runDeckImport({ signals: composer, file }, rootSignal),
         Reason.DomCallback,
@@ -634,6 +620,8 @@ function useComposerSuggestionMenu({
     slashRange?.query,
   );
   const selectedIndex = useGet(composer.suggestion.selectedSuggestionIndex$);
+  const previewIndex = useGet(composer.suggestion.previewSuggestionIndex$);
+  const previewSuggestion = useSet(composer.suggestion.previewSuggestion$);
   const setSelectedIndex = useSet(
     composer.suggestion.setSelectedSuggestionIndex$,
   );
@@ -641,7 +629,7 @@ function useComposerSuggestionMenu({
   const templatePanel = useSlashTemplatePanelActions(
     composer,
     slashRange?.query,
-    { selectedIndex, setSelectedIndex, close },
+    close,
   );
   const templatePanelEnabled = templatePanel.enabled;
   const panelCategories = templatePanel.categories;
@@ -729,8 +717,8 @@ function useComposerSuggestionMenu({
     createModes,
     selectCreate,
     panelCategories,
-    highlightedCategory: templatePanel.highlighted,
-    highlightCategory: templatePanel.highlight,
+    previewIndex,
+    previewSuggestion,
     selectCategory: templatePanel.selectCategory,
     selectTemplate: templatePanel.selectTemplate,
     importDeck: templatePanel.importDeck,
@@ -748,25 +736,18 @@ function useComposerSuggestionMenu({
   };
 }
 
-export function TiptapWorkflowComposer({
-  signals,
-  onDraftChange,
-  sending,
-  onKeyDown,
-  onPaste,
-}: TiptapWorkflowComposerProps) {
-  const composer = signals;
-  const suggestionMenu = useComposerSuggestionMenu({
-    composer,
-    onKeyDown,
-  });
+/**
+ * Resolves a paste against the editor before the host handler sees it. The host
+ * gets first refusal so it can claim files; anything it leaves is inserted as
+ * Markdown so pasted prose keeps its structure instead of arriving flattened.
+ */
+function useComposerPasteHandler(
+  composer: ComposerSignals,
+  onPaste: TiptapWorkflowComposerProps["onPaste"],
+): (event: ClipboardEvent, currentTarget: HTMLElement) => boolean {
   const insertPromptMarkdown = useSet(composer.editor.insertPromptMarkdown$);
-  const setContainerRef = useSet(composer.editor.setContainerRef$);
 
-  function handlePaste(
-    event: ClipboardEvent,
-    currentTarget: HTMLElement,
-  ): boolean {
+  return function handlePaste(event, currentTarget) {
     if (eventTargetsNonEditableNodeView(event)) {
       return false;
     }
@@ -790,7 +771,23 @@ export function TiptapWorkflowComposer({
       return true;
     }
     return event.defaultPrevented;
-  }
+  };
+}
+
+export function TiptapWorkflowComposer({
+  signals,
+  onDraftChange,
+  sending,
+  onKeyDown,
+  onPaste,
+}: TiptapWorkflowComposerProps) {
+  const composer = signals;
+  const suggestionMenu = useComposerSuggestionMenu({
+    composer,
+    onKeyDown,
+  });
+  const handlePaste = useComposerPasteHandler(composer, onPaste);
+  const setContainerRef = useSet(composer.editor.setContainerRef$);
 
   return (
     <Popover
@@ -852,8 +849,9 @@ export function TiptapWorkflowComposer({
                 categories={suggestionMenu.panelCategories}
                 workflows={suggestionMenu.workflows}
                 workflowsLoading={suggestionMenu.workflowsLoading}
-                highlighted={suggestionMenu.highlightedCategory}
-                onHighlight={suggestionMenu.highlightCategory}
+                selectedIndex={suggestionMenu.selectedIndex}
+                previewIndex={suggestionMenu.previewIndex}
+                onPreview={suggestionMenu.previewSuggestion}
                 onSelectCategory={suggestionMenu.selectCategory}
                 onSelectTemplate={suggestionMenu.selectTemplate}
                 onImportDeck={suggestionMenu.importDeck}

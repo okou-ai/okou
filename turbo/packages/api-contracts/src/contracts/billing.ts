@@ -88,9 +88,6 @@ const billingStatusResponseSchema = z.object({
   concurrencyPurchaseReviewAvailable: z.boolean(),
   canBuyCredits: z.boolean(),
   showUsagePack: z.boolean(),
-  // Outgoing Apps still consume this derived status alias. Current Apps ignore
-  // it; there is no independent invitation capability. Cleanup: #32575.
-  memberInvitationAllowed: z.boolean().optional(),
   autoRechargeAllowed: z.boolean(),
   supportByok: z.boolean(),
   restrictedBuiltInModels: z.boolean().optional(),
@@ -234,7 +231,7 @@ const usagePackCatalogItemSchema = z.object({
 
 const usagePackCatalogResponseSchema = z.object({
   usagePacks: z.array(usagePackCatalogItemSchema),
-  supportsFreeMembers: z.boolean().optional(),
+  supportsFreeMembers: z.literal(true),
 });
 
 const usagePackCreditBalanceSchema = z.object({
@@ -310,7 +307,7 @@ const usagePackManagementResponseSchema = z.object({
   tier: z.enum(["pro", "team"]),
   currentPeriodEnd: z.iso.datetime().nullable(),
   supportsMemberAdditions: z.boolean().optional(),
-  supportsFreeMembers: z.boolean().optional(),
+  supportsFreeMembers: z.literal(true),
   allocations: z.array(managedUsagePackAllocationSchema),
 });
 
@@ -885,6 +882,9 @@ export const billingUsagePackMigrationContract = c.router({
     method: "GET",
     path: "/api/billing/usage-pack-migration",
     headers: authHeadersSchema,
+    // New Apps must still opt in when reaching a supported rollback API that
+    // otherwise omits all-Free configuration. Remove after the unconditional
+    // response API is serving and inside the rollback floor (#32575).
     query: z
       .object({ supportsFreeMembers: z.literal("true").optional() })
       .optional(),

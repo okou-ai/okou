@@ -8,6 +8,90 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.594.0](https://github.com/vm0-ai/vm0/compare/api-v1.593.0...api-v1.594.0) (2026-09-14)
+
+
+### Features
+
+* **pi-memory:** add the pimemory feature switch gating admission, workers and recall ([#33927](https://github.com/vm0-ai/vm0/issues/33927)) ([121fb21](https://github.com/vm0-ai/vm0/commit/121fb21295cc188a89cd0534b66c34f851a5b885))
+
+
+### Bug Fixes
+
+* **api:** batch s3 object deletion within the provider limit ([#33900](https://github.com/vm0-ai/vm0/issues/33900)) ([85a61e9](https://github.com/vm0-ai/vm0/commit/85a61e938fd855fd2ca309ae1ca57fcb950abfcf))
+* **api:** bind morning brief enrollment to its installation ([#33895](https://github.com/vm0-ai/vm0/issues/33895)) ([e8de2bc](https://github.com/vm0-ai/vm0/commit/e8de2bc2686ac02b0094dc972d9217e6108daff0))
+
+
+### Performance Improvements
+
+* **api:** split type checks at declaration boundaries ([#33871](https://github.com/vm0-ai/vm0/issues/33871)) ([e8deeab](https://github.com/vm0-ai/vm0/commit/e8deeab6653c31f0ea86c1bbc4fc9b914783b7d6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.435.1
+    * @okouai/core bumped to 8.662.0
+    * @okouai/db bumped to 1.255.4
+    * @okouai/pi-agent-runtime bumped to 1.27.6
+
+## [1.593.0](https://github.com/vm0-ai/vm0/compare/api-v1.592.0...api-v1.593.0) (2026-09-14)
+
+
+### Features
+
+* **slack:** add paginated thread reply reads ([#33882](https://github.com/vm0-ai/vm0/issues/33882)) ([d637f53](https://github.com/vm0-ai/vm0/commit/d637f53f81c5fd78abec9b27ff4c7136a25f56cb))
+
+
+### Bug Fixes
+
+* **api:** disable pi memory background workers by default ([#33875](https://github.com/vm0-ai/vm0/issues/33875)) ([4f8b16e](https://github.com/vm0-ai/vm0/commit/4f8b16eaadc33a317c87f21c9dc093fd41b5dc54))
+* **api:** remove the morning brief data-source gate ([#33858](https://github.com/vm0-ai/vm0/issues/33858)) ([042e874](https://github.com/vm0-ai/vm0/commit/042e8744647369967585cb42b5c406f98290ca5d))
+
+
+### Refactoring
+
+* **api:** retire legacy pi citation materializer bridge ([#33877](https://github.com/vm0-ai/vm0/issues/33877)) ([76ba5bf](https://github.com/vm0-ai/vm0/commit/76ba5bf16de6cc134408e1c7dc21f2c5e165cfd3)), closes [#31964](https://github.com/vm0-ai/vm0/issues/31964)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.435.0
+    * @okouai/core bumped to 8.661.1
+    * @okouai/db bumped to 1.255.3
+    * @okouai/pi-agent-runtime bumped to 1.27.5
+
+## [1.592.0](https://github.com/vm0-ai/vm0/compare/api-v1.591.2...api-v1.592.0) (2026-09-14)
+
+
+### Features
+
+* **model-provider:** gate supported platform openrouter us routing ([#33768](https://github.com/vm0-ai/vm0/issues/33768)) ([a19d5ea](https://github.com/vm0-ai/vm0/commit/a19d5ea87246eac8595cb3a8163feae856f4835f))
+
+
+### Bug Fixes
+
+* **api:** clarify connector catalog rejection diagnostics ([#33835](https://github.com/vm0-ai/vm0/issues/33835)) ([97451c9](https://github.com/vm0-ai/vm0/commit/97451c95143853c2612f5b194721d88320dd9b53))
+
+
+### Refactoring
+
+* remove cal.com connector feature switch ([#33841](https://github.com/vm0-ai/vm0/issues/33841)) ([fa2e6e6](https://github.com/vm0-ai/vm0/commit/fa2e6e6212dee848c8d37d72551cc5d9b7887ac4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.434.0
+    * @okouai/connectors bumped to 3.11.1
+    * @okouai/core bumped to 8.661.0
+    * @okouai/db bumped to 1.255.2
+    * @okouai/pi-agent-runtime bumped to 1.27.4
+
 ## [1.591.2](https://github.com/vm0-ai/vm0/compare/api-v1.591.1...api-v1.591.2) (2026-09-13)
 
 

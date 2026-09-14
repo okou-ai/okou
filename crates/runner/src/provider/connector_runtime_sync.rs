@@ -27,9 +27,12 @@
 //! before entering the scheduled retry path.
 //!
 //! Unregister and shutdown remove active run state, cancel per-run tokens, and
-//! abort scheduled task handles. Dropping the worker cancels the global token
-//! and aborts the worker task, preventing orphaned scheduled tasks from
-//! enqueueing stale registry refreshes.
+//! abort scheduled task handles. Local publications own their tasks and guards
+//! independently of the dispatcher, so cancellation cannot release a transaction
+//! while its filesystem replacement is still running. Shutdown drains these
+//! tasks; HTTP requests and publication lock waits remain cancellable. Dropping
+//! the worker cancels the global token and aborts the dispatcher without aborting
+//! an already-started publication.
 //!
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
@@ -45,7 +48,8 @@ use tokio::sync::{
     Mutex, mpsc,
     mpsc::error::{TrySendError, TrySendError::Closed, TrySendError::Full},
 };
-use tokio_util::sync::CancellationToken;
+use tokio_util::{sync::CancellationToken, task::TaskTracker};
+use tracing::instrument::WithSubscriber;
 use tracing::{info, warn};
 
 use super::api::{ApiClient, ConnectorRuntimeSyncOutcome};
@@ -94,6 +98,7 @@ struct ConnectorRuntimeSyncStateStore {
     api: ApiClient,
     active_runs: Mutex<HashMap<RunId, ActiveRunConnectorRuntimeState>>,
     cancel: CancellationToken,
+    publications: TaskTracker,
 }
 
 struct ActiveRunConnectorRuntimeState {
@@ -350,6 +355,7 @@ impl ConnectorRuntimeSyncHandle {
                 api,
                 active_runs: Mutex::new(HashMap::new()),
                 cancel: CancellationToken::new(),
+                publications: TaskTracker::new(),
             }),
             request_tx,
         };
@@ -371,6 +377,11 @@ impl ConnectorRuntimeSyncHandle {
         {
             warn!(error = %error, "connector runtime sync worker failed during shutdown");
         }
+        // Joining the dispatcher stops publication admission. Its cancelled
+        // waiters do not own the local writes, which must settle before shutdown
+        // can report completion and job cleanup can finish unregistering runs.
+        self.core.inner.publications.close();
+        self.core.inner.publications.wait().await;
     }
 
     pub(crate) async fn register_run(&self, registration: ConnectorRuntimeSyncRegistration<'_>) {
@@ -788,12 +799,7 @@ impl ConnectorRuntimeSyncCore {
         };
 
         let response = match response {
-            Ok(ConnectorRuntimeSyncOutcome::Synced(response)) => response,
-            Ok(ConnectorRuntimeSyncOutcome::RunTerminal) => {
-                self.reconcile_terminal_run(run_id, registration_cancel)
-                    .await;
-                return false;
-            }
+            Ok(response) => response,
             Err(error) => {
                 let retry_summary = self
                     .schedule_sync_retries_for_registration(
@@ -813,13 +819,42 @@ impl ConnectorRuntimeSyncCore {
             }
         };
 
-        self.publish_connector_runtime_response(
-            run_id,
-            &active_targets,
-            response,
-            registration_cancel,
-        )
-        .await
+        let core = self.clone();
+        let registration_cancel = registration_cancel.clone();
+        // Dropping the dispatcher or a per-run waiter must not drop a registry
+        // transaction while Tokio's blocking filesystem work can still finish.
+        // Only local response processing is owned here; HTTP remains cancellable.
+        let publication = self.inner.publications.spawn(
+            async move {
+                if core.inner.cancel.is_cancelled() || registration_cancel.is_cancelled() {
+                    return false;
+                }
+                match response {
+                    ConnectorRuntimeSyncOutcome::Synced(response) => {
+                        core.publish_connector_runtime_response(
+                            run_id,
+                            &active_targets,
+                            response,
+                            &registration_cancel,
+                        )
+                        .await
+                    }
+                    ConnectorRuntimeSyncOutcome::RunTerminal => {
+                        core.reconcile_terminal_run(run_id, &registration_cancel)
+                            .await;
+                        false
+                    }
+                }
+            }
+            .with_current_subscriber(),
+        );
+        match publication.await {
+            Ok(keep_syncing) => keep_syncing,
+            Err(error) => {
+                warn!(run_id = %run_id, error = %error, "connector runtime publication task failed");
+                false
+            }
+        }
     }
 
     async fn publish_connector_runtime_response(
@@ -1065,16 +1100,21 @@ impl ConnectorRuntimeSyncCore {
             return false;
         };
         if !prepared_publications.is_empty() {
-            let transaction = snapshot
-                .registry
-                .connector_runtime_registry_transaction()
-                .await;
+            let transaction = tokio::select! {
+                biased;
+                () = self.inner.cancel.cancelled() => return false,
+                () = registration_cancel.cancelled() => return false,
+                transaction = snapshot.registry.connector_runtime_registry_transaction() => transaction,
+            };
             let (prepared_publications, publication) = match transaction {
                 Ok(transaction) => {
                     // Acquire the registry transaction before active state so notifications can
                     // advance while the registry lock is contended. Holding both through the
                     // write orders every commit against generation and registration changes.
                     let active_runs = self.inner.active_runs.lock().await;
+                    if self.inner.cancel.is_cancelled() || registration_cancel.is_cancelled() {
+                        return false;
+                    }
                     let Some(active) = active_runs.get(&run_id) else {
                         return false;
                     };
@@ -1204,15 +1244,28 @@ impl ConnectorRuntimeSyncCore {
             registry: active.registry,
         };
         let targets = active.connectors.into_keys().collect::<Vec<_>>();
-        match snapshot
-            .registry
-            .fail_closed_connector_runtime_targets_if_run_matches(
-                &snapshot.source_ip,
-                &run_id.to_string(),
-                &targets,
-            )
-            .await
-        {
+        let transaction = tokio::select! {
+            biased;
+            () = self.inner.cancel.cancelled() => {
+                cancel.cancel();
+                return;
+            }
+            () = registration_cancel.cancelled() => return,
+            transaction = snapshot.registry.connector_runtime_registry_transaction() => transaction,
+        };
+        let publication = match transaction {
+            Ok(transaction) => {
+                transaction
+                    .fail_closed_targets_if_run_matches(
+                        &snapshot.source_ip,
+                        &run_id.to_string(),
+                        &targets,
+                    )
+                    .await
+            }
+            Err(error) => Err(error),
+        };
+        match publication {
             Ok(Some(outcomes)) => {
                 for (target, outcome) in targets.iter().zip(outcomes) {
                     if let ConnectorRuntimeFailCloseOutcome::Failed(error) = outcome {
@@ -2217,6 +2270,7 @@ mod tests {
                     api: api_client_for_server(server),
                     active_runs: Mutex::new(HashMap::new()),
                     cancel: CancellationToken::new(),
+                    publications: TaskTracker::new(),
                 }),
                 request_tx,
             },
@@ -2997,6 +3051,159 @@ mod tests {
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
         assert!(worker_task.is_none());
+    }
+
+    fn mock_publication_response(server: &MockServer, run_id: RunId, terminal: bool) {
+        server.mock(|when, then| {
+            when.method(POST)
+                .path(format!("/api/runners/runs/{run_id}/connector-runtime/sync"));
+            if terminal {
+                then.status(409).json_body(json!({
+                    "error": { "code": "RUN_TERMINAL", "message": "Run is terminal" },
+                }));
+            } else {
+                then.status(200)
+                    .json_body(connector_runtime_sync_response(json!({
+                        "kind": "builtin", "connectorSlug": "slack",
+                    })));
+            }
+        });
+    }
+
+    async fn assert_cancelled_publication_preserves_unregister(
+        terminal: bool,
+        cancel_caller: bool,
+    ) {
+        let server = MockServer::start();
+        let run_id = RunId::nil();
+        let harness = ConnectorRuntimeSyncHarness::new(&server, run_id).await;
+        mock_publication_response(&server, run_id, terminal);
+        let mut gate =
+            crate::host_file::atomic_write_test::AtomicRenameGate::new(&harness.registry_path);
+        let caller = if cancel_caller {
+            let core = harness.handle.core.clone();
+            Some(tokio::spawn(async move {
+                core.sync_builtin_connector_runtime_now(run_id, vec!["slack".to_string()])
+                    .await;
+            }))
+        } else {
+            harness
+                .handle
+                .notify_connector_runtime_sync(run_id, builtin_target("slack"))
+                .await;
+            None
+        };
+        gate.wait_entered().await;
+        if let Some(caller) = caller {
+            caller.abort();
+            assert!(caller.await.unwrap_err().is_cancelled());
+        }
+
+        // Own the worker join solely to observe cancellation deterministically.
+        // Shutdown must still drain publications when its worker was already
+        // taken by another caller.
+        let worker = harness.handle.take_worker_task().unwrap();
+        let shutdown = harness.handle.shutdown();
+        tokio::pin!(shutdown);
+        let mut shutdown_finished_early = futures_util::poll!(shutdown.as_mut()).is_ready();
+        tokio::time::timeout(SYNC_PUBLICATION_TEST_TIMEOUT, worker)
+            .await
+            .expect("dispatcher should stop while local publication is gated")
+            .unwrap();
+        if !shutdown_finished_early {
+            shutdown_finished_early = futures_util::poll!(shutdown.as_mut()).is_ready();
+        }
+
+        let lock_path = harness._dir.path().join("registry.lock");
+        let lock = crate::lock::try_acquire_or_busy(lock_path.clone())
+            .await
+            .unwrap();
+        let publication_holds_lock = matches!(lock, crate::lock::TryLock::Busy);
+        drop(lock);
+        let registry = ProxyRegistryHandle::new(harness.registry_path.clone(), lock_path);
+        let unregister = registry.unregister_sandbox(&harness.source_ip);
+        tokio::pin!(unregister);
+        let mut unregister_finished = match futures_util::poll!(unregister.as_mut()) {
+            std::task::Poll::Ready(result) => {
+                result.unwrap();
+                true
+            }
+            std::task::Poll::Pending => false,
+        };
+        // With broken ownership, let the successor finish before releasing the
+        // old replacement to deterministically reproduce the lost unregister.
+        if !publication_holds_lock && !unregister_finished {
+            tokio::time::timeout(SYNC_PUBLICATION_TEST_TIMEOUT, unregister.as_mut())
+                .await
+                .unwrap()
+                .unwrap();
+            unregister_finished = true;
+        }
+        gate.finish().await;
+        if !unregister_finished {
+            tokio::time::timeout(SYNC_PUBLICATION_TEST_TIMEOUT, unregister.as_mut())
+                .await
+                .unwrap()
+                .unwrap();
+        }
+        if !shutdown_finished_early {
+            tokio::time::timeout(SYNC_PUBLICATION_TEST_TIMEOUT, shutdown.as_mut())
+                .await
+                .unwrap();
+        }
+
+        let registry_json: serde_json::Value =
+            serde_json::from_slice(&tokio::fs::read(&harness.registry_path).await.unwrap())
+                .unwrap();
+        assert_eq!(
+            registry_json["sandboxes"],
+            json!({}),
+            "cancelled publication must not restore an unregistered sandbox (terminal={terminal})"
+        );
+        assert!(publication_holds_lock, "publication must retain its flock");
+        assert!(!shutdown_finished_early, "shutdown must drain publication");
+    }
+
+    #[tokio::test]
+    async fn shutdown_drains_in_flight_registry_publications() {
+        for terminal in [false, true] {
+            assert_cancelled_publication_preserves_unregister(terminal, false).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_sync_caller_retains_in_flight_registry_publications() {
+        for terminal in [false, true] {
+            assert_cancelled_publication_preserves_unregister(terminal, true).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn shutdown_cancels_publications_waiting_for_registry_lock() {
+        for terminal in [false, true] {
+            let server = MockServer::start();
+            let run_id = RunId::nil();
+            let handle = ConnectorRuntimeSyncHandle::new(api_client_for_server(&server));
+            let (attempt_tx, mut attempt_rx) = tokio::sync::mpsc::unbounded_channel();
+            let (_dir, registry_path, lock_path, _) =
+                register_builtin_runtime(&handle.core, run_id, &["slack"], Some(attempt_tx)).await;
+            let before = tokio::fs::read(&registry_path).await.unwrap();
+            let guard = crate::lock::acquire(lock_path).await.unwrap();
+            mock_publication_response(&server, run_id, terminal);
+            handle
+                .notify_connector_runtime_sync(run_id, builtin_target("slack"))
+                .await;
+            tokio::time::timeout(SYNC_PUBLICATION_TEST_TIMEOUT, attempt_rx.recv())
+                .await
+                .unwrap()
+                .expect("publication should attempt the held lock");
+
+            tokio::time::timeout(SYNC_PUBLICATION_TEST_TIMEOUT, handle.shutdown())
+                .await
+                .expect("shutdown must not wait for a publication that has not acquired its lock");
+            drop(guard);
+            assert_eq!(tokio::fs::read(registry_path).await.unwrap(), before);
+        }
     }
 
     #[tokio::test]

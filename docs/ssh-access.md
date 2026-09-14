@@ -252,6 +252,52 @@ An older Runner returns `unknown_method`; there is no automatic conversion into
 independent exec calls. Observed authorization-notification disconnects cancel
 managed sessions and prevent new starts until the subscription recovers.
 
+### File upload and download
+
+```sh
+okou ssh upload <connection-id> <local-file> <remote-file> --json
+okou ssh download <connection-id> <remote-file> <local-file> --json
+```
+
+Both commands require the existing SSH grant and `ssh:write` Run capability.
+Credentials remain outside the sandbox. They transfer one regular file via the
+Runner's verified SFTP connection, without shell/scp fallback. Paths are literal:
+no expansion, recursion, resume, final symlinks or automatic creation of missing
+parent directories. Existing ancestor symlinks resolve normally.
+
+Limits are **1 GiB (1,073,741,824 bytes) per file**, **15 minutes total per helper
+invocation**, including setup and I/O waits, and **two simultaneous transfers per
+Run**, shared across upload and download. No option raises these bounds. The CLI
+overview, each subcommand's help, Agent guidance and JSON errors expose them.
+Split oversized files; wait for another transfer when both slots are occupied.
+
+Default publication never replaces an existing destination. `--overwrite`
+explicitly permits atomic replacement of a regular destination entry. Transfers
+stage a private file (0600) in an exclusive private directory (0700) in the
+existing destination parent. Remote publication requires advertised SFTP v3
+`hardlink@openssh.com` v1 for no-clobber, or `posix-rename@openssh.com` v1 for
+overwrite. Unsupported servers fail before file writes; there is no delete-first
+or truncate-first fallback. Local download publication waits for verified size,
+SHA-256, End, terminal, helper EOF and successful helper exit.
+
+JSON results include `type`, `direction`, `ssh_connection_id`, `bytes`, `sha256`,
+`failure_reason`, `effects`, `residue`, `actual_bytes`, `limits` and `guidance`.
+`effects` describes the final destination: `not_started`, `unknown` or
+`completed`. `residue` separately identifies possible private temporary staging.
+Losing a remote publication acknowledgement yields `unknown`: inspect the target
+before retrying, never automatically replay. Successful publication remains
+completed even if staging cleanup fails. File permission/path failures do not
+mark the SSH host as a failed connection.
+
+Keep the source unchanged throughout the transfer. Descriptor/metadata and size
+checks detect some concurrent changes, but SHA-256 describes streamed bytes, not
+a filesystem snapshot or durable fsync guarantee. The remote server/account and
+resolved directory namespace must behave honestly: SFTP v3 cannot prove inode
+identity or defend against a same-account process maliciously replacing private
+staging. Overwrite is intentional replacement, not compare-and-swap with the
+initially observed inode. Cancellation/invalidation closes the transport; it does
+not reconnect to delete guessed paths after a lost acknowledgement.
+
 ## Host identity, errors and revocation
 
 The first successful connection learns and persists the server key before

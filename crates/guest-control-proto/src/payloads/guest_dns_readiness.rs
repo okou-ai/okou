@@ -43,7 +43,14 @@ pub struct DecodedGuestDnsReadinessResult<'a> {
     pub duration_ms: u32,
     /// Retained raw stdout containing resolver answers.
     pub answer: &'a [u8],
-    /// Whether stdout or stderr exceeded its retained bound.
+    /// Whether resolver stdout or stderr exceeded its retained byte bound, or
+    /// output-drain completion could not be confirmed.
+    ///
+    /// Completion is unproven when either drain's completion notification is not
+    /// received before the drain deadline or either drain worker's result cannot
+    /// be obtained. Retained output may therefore be incomplete even when `answer`
+    /// is short or empty. This flag does not report every cancellation or read
+    /// failure.
     pub output_truncated: bool,
     /// Bounded UTF-8 process or internal diagnostic.
     pub diagnostic: &'a str,

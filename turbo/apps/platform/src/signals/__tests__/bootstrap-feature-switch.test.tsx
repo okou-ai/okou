@@ -5,13 +5,10 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
-  emitMockedClerkEvent,
-  mockClerkSessionTransitioning,
-} from "../../__tests__/mock-auth.ts";
-import {
   click,
   queryAllByRoleFast,
   setupPage,
+  startPage,
 } from "../../__tests__/page-helper.ts";
 import {
   AGENT_ID,
@@ -83,8 +80,7 @@ async function setupModelPickerRolloutPage(args: {
   });
 
   await screen.findByRole("textbox", { name: "Message" });
-  // The intro video tab is visible only after the workspace feature response
-  // has been applied, so it marks the end of feature hydration.
+  // Routes start only after the workspace feature response has been applied.
   const user = userEvent.setup({ delay: null });
   await user.click(await screen.findByLabelText("Template"));
   await screen.findByRole("dialog");
@@ -110,7 +106,7 @@ function modelMenuTrigger(): HTMLElement | undefined {
   });
 }
 
-test("Bingjie retains the model picker menu rollout after hydration", async () => {
+test("Bingjie retains the model picker menu rollout after feature loading", async () => {
   await setupModelPickerRolloutPage({
     email: "BINGJIE@OKOU.AI",
     fullName: "Bingjie",
@@ -200,91 +196,32 @@ test("A signed-out page does not load workspace features", async () => {
   expect(workspaceFeatureRequested).toBeFalsy();
 });
 
-test("A feature response is discarded after identity changes", async () => {
-  mockOrgModelRoutes("claude-sonnet-4-6");
-  mockAgent();
+test("Routes wait for authoritative workspace features", async () => {
   const requestStarted = context.mocks.deferred<void>();
-  const requestCancelled = context.mocks.deferred<void>();
   const releaseResponse = context.mocks.deferred<void>();
-  let originalRequestPending = true;
   context.mocks.api(
     featureSwitchesContract.get,
-    async ({ respond, signal, withSignal }) => {
-      if (!originalRequestPending) {
-        return respond(200, {
-          switches: { [FeatureSwitchKey.Lab]: true },
-          effectiveSwitches: { [FeatureSwitchKey.Lab]: true },
-        });
-      }
-      originalRequestPending = false;
-      signal.addEventListener(
-        "abort",
-        () => {
-          requestCancelled.resolve(undefined);
-        },
-        { once: true },
-      );
+    async ({ respond, withSignal }) => {
       requestStarted.resolve(undefined);
       await withSignal(releaseResponse.promise);
       return respond(200, {
-        switches: {
-          [FeatureSwitchKey.IntroVideo]: true,
-        },
-        effectiveSwitches: {
-          [FeatureSwitchKey.IntroVideo]: true,
-        },
+        switches: {},
+        effectiveSwitches: {},
       });
     },
   );
 
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-  });
-  await screen.findByRole("textbox", { name: "Message" });
-  await openTemplates();
-  expect(introVideoTab()).toBeUndefined();
+  const page = await startPage({ context, path: "/agents" });
   await requestStarted.promise;
+  await expect(screen.findByTestId("app-skeleton")).resolves.toBeVisible();
+  expect(
+    screen.queryByRole("heading", { name: "Agents" }),
+  ).not.toBeInTheDocument();
 
-  mockClerkSessionTransitioning(true);
-  await requestCancelled.promise;
   releaseResponse.resolve(undefined);
-  mockClerkSessionTransitioning(false);
+  await page.ready;
 
-  expect(introVideoTab()).toBeUndefined();
-});
-
-test("The same identity can finish feature loading through an auth refresh", async () => {
-  mockOrgModelRoutes("claude-sonnet-4-6");
-  mockAgent();
-  const requestStarted = context.mocks.deferred<void>();
-  const releaseResponse = context.mocks.deferred<void>();
-  context.mocks.api(featureSwitchesContract.get, async ({ respond }) => {
-    requestStarted.resolve(undefined);
-    await releaseResponse.promise;
-    return respond(200, {
-      switches: {
-        [FeatureSwitchKey.IntroVideo]: true,
-      },
-      effectiveSwitches: {
-        [FeatureSwitchKey.IntroVideo]: true,
-      },
-    });
-  });
-
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-  });
-  await screen.findByRole("textbox", { name: "Message" });
-  await openTemplates();
-  expect(introVideoTab()).toBeUndefined();
-  await requestStarted.promise;
-
-  emitMockedClerkEvent();
-  releaseResponse.resolve(undefined);
-
-  await waitFor(() => {
-    expect(introVideoTab()).toBeVisible();
-  });
+  await expect(
+    screen.findByRole("heading", { name: "Agents" }),
+  ).resolves.toBeInTheDocument();
 });

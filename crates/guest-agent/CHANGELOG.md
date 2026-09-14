@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.89.8](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.7...guest-agent-v0.89.8) (2026-09-14)
+
+
+### Refactoring
+
+* **guest-agent:** unify codex app-server close finalization ([#33888](https://github.com/vm0-ai/vm0/issues/33888)) ([61c0c22](https://github.com/vm0-ai/vm0/commit/61c0c220d2a0559d64a05b91f8abfe076c876d51))
+
+
+### Performance Improvements
+
+* **guest-agent:** share masked key collision allocation progress ([#33943](https://github.com/vm0-ai/vm0/issues/33943)) ([309da39](https://github.com/vm0-ai/vm0/commit/309da39eecb4d08814f8eb64e47a7858f90fd7ac))
+
+## [0.89.7](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.6...guest-agent-v0.89.7) (2026-09-14)
+
+
+### Bug Fixes
+
+* **guest-agent:** retain codex initialization failure diagnostics ([#33833](https://github.com/vm0-ai/vm0/issues/33833)) ([a8ae14e](https://github.com/vm0-ai/vm0/commit/a8ae14e5e291db5404aac504f8512e5593059b24))
+
 ## [0.89.6](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.5...guest-agent-v0.89.6) (2026-09-12)
 
 ## [0.89.5](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.4...guest-agent-v0.89.5) (2026-09-11)

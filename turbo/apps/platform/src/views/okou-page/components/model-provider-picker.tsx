@@ -79,6 +79,7 @@ import { settingsIconAssetUrl } from "./settings/settings-icon-assets";
 
 import type { ModelPickerMenuSignals } from "../../../signals/okou-page/model-picker-menu.ts";
 import { PriceTierBadge } from "./model-picker-price-tier.tsx";
+import { ModelFastImpact } from "./model-fast-impact.tsx";
 import {
   ModelPickerFlyoutContent,
   ModelPickerMenuContent,
@@ -524,9 +525,6 @@ function ModelFirstPolicyRow({
     const fastLabel = t(($) => {
       return $.settings.models.picker.fast;
     });
-    const fastImpact = t(($) => {
-      return $.settings.models.picker.fastImpact;
-    });
     return (
       <div
         className={cn(
@@ -580,7 +578,7 @@ function ModelFirstPolicyRow({
               </SelectItem>
             </TooltipTrigger>
             <TooltipContent side="top" className="text-xs">
-              {fastLabel} · {fastImpact}
+              {fastLabel} · <ModelFastImpact policy={policy} />
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -1443,6 +1441,7 @@ function SubscribedExplicitModelFirstModelPickerContent({
               codexFastModeEnabled &&
               policy.routeStatus === "valid" &&
               isCodexFastModeModel(policy.model),
+            fastImpact: <ModelFastImpact policy={policy} />,
           };
         })}
       />

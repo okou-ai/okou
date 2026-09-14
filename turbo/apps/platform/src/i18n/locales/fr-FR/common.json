@@ -5537,7 +5537,17 @@
         "chatModels": "Modèles de chat",
         "effort": "Effort de raisonnement",
         "fast": "Rapide",
-        "fastImpact": "Vitesse du modèle 1,5× · consommation de crédits 2,5×",
+        "fastImpact": {
+          "apiCost": "2× le coût des tokens API",
+          "chatGptUsage": "2,5× la consommation ChatGPT",
+          "fasterResponses": "Réponses du modèle plus rapides",
+          "modelSpeed": "{{multiplier}}× la vitesse du modèle",
+          "okouCredits": "2× les crédits de modèle Okou",
+          "providerSpeed": "La vitesse dépend du fournisseur",
+          "providerUsage": "La consommation dépend du fournisseur",
+          "solApiSpeed": "Jusqu’à 2,5× la vitesse du modèle",
+          "summary": "{{speed}} · {{usage}}"
+        },
         "generationPriceTiers": {
           "higher": "Coût plus élevé par génération",
           "highest": "Coût le plus élevé par génération",
@@ -5815,7 +5825,6 @@
         "emailOff": "Les e-mails sont désactivés. Votre synthèse apparaîtra toujours dans Chat.",
         "emailWhenReady": "Vous recevrez un e-mail lorsque votre synthèse sera prête.",
         "loading": "Chargement des paramètres de Morning Brief...",
-        "missingDataSource": "Connectez Gmail, Google Agenda, GitHub ou Slack pour commencer à recevoir votre briefing.",
         "missingDefaultAgent": "Choisissez un Agent par défaut utilisable avant d'activer Morning Brief.",
         "missingTimezone": "Définissez un fuseau horaire valide avant d'activer Morning Brief.",
         "multipleInstallations": "Plusieurs installations de Morning Brief existent. Résolvez le conflit avant de modifier cette préférence.",
