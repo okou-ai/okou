@@ -29,7 +29,7 @@ import {
 
 type SourceState = "loading" | "hasData" | "hasError";
 
-function NewCustomConnectorButton() {
+export function NewCustomConnectorButton() {
   const { t } = useTranslation();
   const openCreate = useSet(openCustomConnectorCreateDialog$);
   return (
@@ -101,14 +101,11 @@ function DirectoryCustomSection({
       })}
       className="flex flex-col gap-3"
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-sm font-medium text-muted-foreground">
-          {t(($) => {
-            return $.connectors.catalog.directory.custom;
-          })}
-        </h2>
-        {isAdmin && <NewCustomConnectorButton />}
-      </div>
+      <h2 className="text-sm font-medium text-muted-foreground">
+        {t(($) => {
+          return $.connectors.catalog.directory.custom;
+        })}
+      </h2>
       {sourceState === "hasError" ? (
         <DirectoryLoadError
           message={t(($) => {
