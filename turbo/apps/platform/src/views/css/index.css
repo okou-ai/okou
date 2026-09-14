@@ -558,7 +558,24 @@ body {
   user-select: text;
 }
 
-/* Reusable 0.7px border utilities — replaces inline style={{ border: "0.7px solid ..." }} */
+/* Reusable 0.7px border utilities — replaces inline style={{ border: "0.7px solid ..." }}
+
+   Do not delete this rule yet, and do not trust the tooling about it. Its last
+   consumer is `tileBorderClass()` in `buy-credits-section.tsx`, which returns
+   the class from a function instead of spelling it in a `className` attribute.
+   Neither guard can see that: the legacy baseline resolves attributes and
+   constants, and `no-unknown-classes` is scoped to `class` / `className` /
+   `contentClassName`. So the baseline records no consumers, and removing this
+   rule and running the `pnpm lint:style:prune` that the resulting failure tells
+   you to run leaves a fully green tree while those preset tiles silently lose
+   their border.
+
+   That consumer is also not mechanically replaceable. This rule is unlayered,
+   so its `border` shorthand outranks every Tailwind utility regardless of
+   specificity — including the `hover:border-muted-foreground/30` beside it,
+   which therefore has never painted. Swapping the class in activates that
+   hover, so retiring it is a visual decision rather than an equivalence. See
+   "The all-round hairline" in docs/styles.md. */
 .okou-border {
   border: 0.7px solid hsl(var(--gray-400));
 }
