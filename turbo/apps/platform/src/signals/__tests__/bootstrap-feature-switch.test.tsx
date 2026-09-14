@@ -213,7 +213,7 @@ test("Routes wait for authoritative workspace features", async () => {
 
   const page = await startPage({ context, path: "/agents" });
   await requestStarted.promise;
-  expect(await screen.findByTestId("app-skeleton")).toBeVisible();
+  await expect(screen.findByTestId("app-skeleton")).resolves.toBeVisible();
   expect(
     screen.queryByRole("heading", { name: "Agents" }),
   ).not.toBeInTheDocument();

@@ -5,7 +5,6 @@ import {
   type PublicConnectorCatalogStatusResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -17,6 +16,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { reloadConnectors$ } from "../../../signals/external/connectors.ts";
 
 const context = testContext();
 
@@ -118,25 +118,17 @@ async function findComposer(name = "Message"): Promise<HTMLElement> {
 }
 
 function installCatalogRefresh(initial: PublicConnectorCatalogStatusResponse): {
-  readonly finishFeatureRefresh: () => void;
+  readonly startRefresh: () => void;
   readonly refreshResponse: ReturnType<
     typeof context.mocks.deferred<PublicConnectorCatalogStatusResponse>
   >;
   readonly refreshStarted: Promise<void>;
 } {
-  const featureRefresh = context.mocks.deferred<void>();
   const refreshStarted = context.mocks.deferred<void>();
   const refreshResponse =
     context.mocks.deferred<PublicConnectorCatalogStatusResponse>();
   let catalogRequest = 0;
 
-  context.mocks.api(featureSwitchesContract.get, async ({ respond }) => {
-    await featureRefresh.promise;
-    return respond(200, {
-      switches: { [FeatureSwitchKey.OkouDebug]: true },
-      effectiveSwitches: { [FeatureSwitchKey.OkouDebug]: true },
-    });
-  });
   context.mocks.api(connectorCatalogContract.status, async ({ respond }) => {
     catalogRequest += 1;
     if (catalogRequest === 1) {
@@ -147,8 +139,8 @@ function installCatalogRefresh(initial: PublicConnectorCatalogStatusResponse): {
   });
 
   return {
-    finishFeatureRefresh: () => {
-      featureRefresh.resolve(undefined);
+    startRefresh: () => {
+      context.store.set(reloadConnectors$);
     },
     refreshResponse,
     refreshStarted: refreshStarted.promise,
@@ -245,7 +237,7 @@ test("Ideas fall back to All when the selected category becomes unavailable", as
     expect(screen.queryByText("Browser screenshots")).not.toBeInTheDocument();
   });
 
-  refresh.finishFeatureRefresh();
+  refresh.startRefresh();
   await refresh.refreshStarted;
   refresh.refreshResponse.resolve(catalogResponse([]));
 
@@ -277,7 +269,7 @@ test("Ideas remain stable while connector availability reloads", async () => {
   await setupPage({ context, path: IDEAS_PATH });
   await screen.findByText("GitHub progress weekly");
 
-  refresh.finishFeatureRefresh();
+  refresh.startRefresh();
   await refresh.refreshStarted;
 
   expect(screen.getByText("GitHub progress weekly")).toBeVisible();

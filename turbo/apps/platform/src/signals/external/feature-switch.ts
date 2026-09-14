@@ -76,7 +76,10 @@ export const featureSwitches$ = computed(async (get) => {
     email: identity.email,
     orgId: identity.orgId,
   });
-  applySwitches(combined, result.body.effectiveSwitches ?? result.body.switches);
+  applySwitches(
+    combined,
+    result.body.effectiveSwitches ?? result.body.switches,
+  );
   applySwitches(combined, getEmailEnabledFeatureStates(identity.email));
   applySwitches(combined, result.body.switches);
   return combined;
@@ -138,7 +141,7 @@ export const applyFeatureSwitches$ = command(
   },
 );
 
-export const reloadFeatureSwitch$ = command(
+const reloadFeatureSwitch$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     set(internalReloadFeatureSwitches$, (value) => {
