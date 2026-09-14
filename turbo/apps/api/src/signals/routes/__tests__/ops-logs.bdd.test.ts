@@ -314,7 +314,7 @@ describe("OPS-01: user data export", () => {
         status: "completed",
         createdAt: new Date(exportStartAt).toISOString(),
         completedAt: new Date(exportStartAt).toISOString(),
-        expiresAt: new Date(exportStartAt + 72 * HOUR_MS).toISOString(),
+        expiresAt: new Date(exportStartAt + 48 * HOUR_MS).toISOString(),
         downloadUrl,
         error: null,
       },
@@ -348,7 +348,7 @@ describe("OPS-01: user data export", () => {
       },
     });
 
-    const expiredReadAt = exportStartAt + 73 * HOUR_MS;
+    const expiredReadAt = exportStartAt + 49 * HOUR_MS;
     mockNow(expiredReadAt);
     const signedUrlCalls = context.mocks.s3.getSignedUrl.mock.calls.length;
     const expired = await api.requestGetUserExport(actor, [200]);
@@ -378,7 +378,7 @@ describe("OPS-01: user data export", () => {
       status: "completed",
       createdAt: new Date(expiredReadAt).toISOString(),
       completedAt: new Date(expiredReadAt).toISOString(),
-      expiresAt: new Date(expiredReadAt + 72 * HOUR_MS).toISOString(),
+      expiresAt: new Date(expiredReadAt + 48 * HOUR_MS).toISOString(),
       downloadUrl,
       error: null,
     });
