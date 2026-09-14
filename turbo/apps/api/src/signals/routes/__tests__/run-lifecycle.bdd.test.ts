@@ -13260,6 +13260,15 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
           "2 simultaneous transfers per Run, shared by uploads and downloads",
         );
         expect(prompt).toContain("No option overrides these limits");
+        expect(prompt).toContain("okou ssh session read <session-id>");
+        expect(prompt).toContain("Read waits up to 10 seconds for progress");
+        expect(prompt).toContain("--wait 0");
+        expect(prompt).toContain(
+          "35 seconds collecting, 256 chunks and 64 page requests",
+        );
+        expect(prompt).toContain(
+          "CLI exit 0 means the read succeeded, not that the remote process succeeded",
+        );
       } else {
         expect(prompt).not.toContain("okou ssh");
       }

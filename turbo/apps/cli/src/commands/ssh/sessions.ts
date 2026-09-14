@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { z } from "zod";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { sessionRpc } from "./session-rpc";
-import { writeOutput } from "./rpc";
+import { createSessionReadCommand } from "./session-read";
 
 function id(value: string) {
   if (!z.uuid().safeParse(value).success)
@@ -24,7 +24,7 @@ async function output(
   switch (result.type) {
     case "started":
       console.log(
-        `${result.session_id}\nUse ssh session status to check setup, then read or write this session.`,
+        `${result.session_id}\nUse okou ssh session read ${result.session_id} to wait for the next output and inspect the observed state. Read or write this session again as needed.`,
       );
       break;
     case "sessions":
@@ -37,22 +37,6 @@ async function output(
           `${session.session_id}  ${session.ssh_connection_id}  ${session.state.type}`,
         );
       break;
-    case "read": {
-      const signal = AbortSignal.timeout(65_000);
-      if (result.lost)
-        console.error(
-          `Output bytes ${result.lost.from}–${result.lost.to} were discarded from the bounded buffer.`,
-        );
-      for (const chunk of result.chunks) {
-        const stream =
-          chunk.stream === "stdout" ? process.stdout : process.stderr;
-        await writeOutput(stream, Buffer.from(chunk.data, "base64"), signal);
-      }
-      console.error(
-        `next_cursor=${result.next_cursor}; state=${result.session.state.type}`,
-      );
-      break;
-    }
     case "status":
       console.log(JSON.stringify(result.session, null, 2));
       break;
@@ -166,37 +150,7 @@ export function createSessionCommand(requireCapability: () => void) {
         ),
     );
   }
-  session.addCommand(
-    new Command("read")
-      .description(
-        "Read up to 8 KiB without consuming output; continue with next_cursor",
-      )
-      .argument("<session-id>", "Exact session ID")
-      .option("--cursor <offset>", "Nonnegative byte cursor", "0")
-      .option("--json", "Print JSON with base64 chunks and any lost range")
-      .action(
-        withErrorHandler(
-          async (
-            sessionId: string,
-            options: { cursor: string; json?: boolean },
-          ) => {
-            requireCapability();
-            const cursor = Number(options.cursor);
-            if (
-              !/^(0|[1-9][0-9]*)$/.test(options.cursor) ||
-              !Number.isSafeInteger(cursor)
-            )
-              throw new Error(
-                "Cursor must be a nonnegative safe integer from the previous read result.",
-              );
-            await output(
-              await sessionRpc("read", { sessionId: id(sessionId), cursor }),
-              options.json,
-            );
-          },
-        ),
-      ),
-  );
+  session.addCommand(createSessionReadCommand(requireCapability));
   session.addCommand(
     new Command("write")
       .description(

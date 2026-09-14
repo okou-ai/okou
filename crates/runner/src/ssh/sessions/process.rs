@@ -43,6 +43,7 @@ pub(super) async fn run(
         };
         data.completed = Some(Instant::now());
     }
+    entry.changed.notify_waiters();
     // This task owns no guest I/O. Diagnostic reporting never extends a park lease.
     if let Some(report) = observation.finish(result.err())
         && let Ok(_permit) = Arc::clone(&runtime.reports).try_acquire_owned()
@@ -181,18 +182,12 @@ async fn read(entry: &Entry, mut reader: ChannelReadHalf) -> Result<RemoteExit, 
     let mut eof = false;
     loop {
         match reader.wait().await {
-            Some(ChannelMsg::Data { data }) if !eof => entry
-                .data
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .output
-                .append(Stream::Stdout, &data)?,
-            Some(ChannelMsg::ExtendedData { ext: 1, data }) if !eof => entry
-                .data
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .output
-                .append(Stream::Stderr, &data)?,
+            Some(ChannelMsg::Data { data }) if !eof => {
+                append(entry, Stream::Stdout, &data)?;
+            }
+            Some(ChannelMsg::ExtendedData { ext: 1, data }) if !eof => {
+                append(entry, Stream::Stderr, &data)?;
+            }
             Some(ChannelMsg::ExitStatus { exit_status }) if exit.is_none() => {
                 exit = Some(RemoteExit::Status { code: exit_status })
             }
@@ -213,6 +208,17 @@ async fn read(entry: &Entry, mut reader: ChannelReadHalf) -> Result<RemoteExit, 
             _ => return Err(FailureReason::Protocol),
         }
     }
+}
+
+fn append(entry: &Entry, stream: Stream, bytes: &[u8]) -> Result<(), FailureReason> {
+    entry
+        .data
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .output
+        .append(stream, bytes)?;
+    entry.changed.notify_waiters();
+    Ok(())
 }
 
 async fn write(
