@@ -558,3 +558,26 @@ test("An Intro Video draft excludes settings even after choosing Create video", 
     }),
   ).toBeFalsy();
 });
+
+test("The video options button owns every setting when the switch is on", async () => {
+  installVideoSubmissionCapture();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.ComposerVideoOptionsButton]: true },
+  });
+  await selectVideoTemplate();
+  for (const label of ["Ratio", "Resolution", "Duration"]) {
+    expect(
+      screen.queryByRole("combobox", { name: label }),
+    ).not.toBeInTheDocument();
+  }
+  const pane = await openVideoOptions("16:9 · 8s · 720p");
+  click(fastControl("radio", "9:16", pane));
+  await waitFor(() => {
+    expect(
+      fastControl("button", "Video options 9:16 · 8s · 720p"),
+    ).toBeInTheDocument();
+  });
+  expect(screen.queryByRole("combobox", { name: "Ratio" })).toBeNull();
+});

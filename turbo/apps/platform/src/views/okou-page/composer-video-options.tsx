@@ -23,7 +23,9 @@ import {
   type VideoDuration,
   type VideoModelConfig,
 } from "@okouai/core/video-model-catalog";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { useTranslation } from "react-i18next";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import type {
   ComposerSignals,
   ComposerVideoModelSignals,
@@ -474,6 +476,12 @@ function ComposerVideoOptionsChipBody({
   const patch = useGet(signals.videoOptions.videoRunOptions$);
   const setPatch = useSet(signals.videoOptions.setVideoRunOptions$);
   const model = useLastResolved(videoModelSignals.effectiveVideoModel$);
+  // One control at every width: the summary button already states the whole
+  // spec and owns the settings pane, so the wide composer stops expanding the
+  // same four values into a row of its own.
+  const buttonOnly =
+    useGet(featureSwitch$)[FeatureSwitchKey.ComposerVideoOptionsButton] ===
+    true;
 
   if (model === undefined) {
     return null;
@@ -490,20 +498,25 @@ function ComposerVideoOptionsChipBody({
 
   return (
     <>
-      <VideoToolbar
-        resolved={resolved}
-        config={config}
-        onChange={(next) => {
-          setPatch(videoRunOptionsPatch(next, model));
-        }}
-      />
+      {!buttonOnly && (
+        <VideoToolbar
+          resolved={resolved}
+          config={config}
+          onChange={(next) => {
+            setPatch(videoRunOptionsPatch(next, model));
+          }}
+        />
+      )}
       <Popover open={open && !templatePickerMounted} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
             type="button"
             variant="quiet"
             size="sm"
-            className="shrink-0 gap-1.5 font-normal data-popup-open:bg-state-hover data-popup-open:text-foreground @min-[760px]/composer:hidden"
+            className={cn(
+              "shrink-0 gap-1.5 font-normal data-popup-open:bg-state-hover data-popup-open:text-foreground",
+              !buttonOnly && "@min-[760px]/composer:hidden",
+            )}
             aria-label={t(
               ($) => {
                 return $.chat.templates.videoOptionsLabel;
@@ -546,7 +559,11 @@ function ComposerVideoOptionsChipBody({
   );
 }
 
-/** Creative Video toolbar, with a compact settings panel on narrow composers. */
+/**
+ * Creative Video settings. A wide composer lays the values out as a toolbar and
+ * a narrow one collapses them into a summary button that opens the settings
+ * pane; behind `ComposerVideoOptionsButton` the button is the only form.
+ */
 export function ComposerVideoOptionsChip({
   signals,
 }: {
