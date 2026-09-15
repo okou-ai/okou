@@ -1043,6 +1043,23 @@ Run cache invalidations are best-effort and identifier-only. Token/SSH-grant cha
 may leave cached authority usable for the remainder of an active Run if a notice
 is missed. End those Runs when immediate revocation is required.
 
+## Integration input attachments
+
+New Feishu/Lark, Teams, Telegram, and AgentPhone trigger attachments use the
+existing canonical input asset rows and `R2_USER_ARTIFACTS_BUCKET_NAME`, as Slack
+does. Successful imports emit the existing `userMessage` file part and
+`[Web file]` prompt format; existing frontends and pinned CLIs can read them
+without a coordinated release. Provider download commands continue to accept
+their original IDs.
+
+Feishu, Telegram, and AgentPhone store the resolved prompt in their existing
+launch context. Teams adds an optional `messageFiles[].canonicalAsset` object;
+new readers fall back to the original provider reference when it is absent,
+and old readers can still resolve that retained provider reference. Both queue
+launch and active input delivery read this persisted context. No database
+migration or historical attachment backfill is required. Failed imports retain
+provider references without emitting an unusable canonical file part.
+
 ## Testing Expectations
 
 Tests should cover cross-version behavior when a change touches a deployment

@@ -34,6 +34,10 @@ import {
   type AgentPhoneProviderSend,
   type AgentPhoneSendCapture,
 } from "./helpers/api-bdd-agentphone";
+import {
+  captureIntegrationInputUploads,
+  expectIntegrationInputPreview,
+} from "./helpers/integration-input-assets";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -842,11 +846,62 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(sends.messages).toHaveLength(sendsAfterCompletion);
   });
 
+  it("imports phone media into canonical storage and preserves its message text", async () => {
+    const ap = createAgentPhoneBddApi(context);
+    const { actor, phone, runnerGroup } = await entitledLinkedActor();
+    const uploads = captureIntegrationInputUploads(context);
+    const bytes = Buffer.from("phone image bytes");
+    const mediaUrl = "https://media.agentphone.test/canonical-photo.png";
+    let downloads = 0;
+    server.use(
+      http.get(mediaUrl, () => {
+        downloads += 1;
+        return new HttpResponse(bytes, {
+          headers: { "content-type": "image/png" },
+        });
+      }),
+    );
+    const messageId = await ap.postAgentPhoneInboundMessage({
+      channel: "mms",
+      from: phone,
+      body: "inspect imported photo",
+      mediaUrl,
+    });
+    const run = await claimDispatchedRun(runnerGroup);
+    expect(run.prompt).toContain(
+      "inspect imported photo\n\n[Web file] canonical-photo.png (image/png)",
+    );
+    expect(run.prompt).not.toContain(mediaUrl);
+    const fileId = run.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
+    if (!fileId) {
+      throw new Error("Expected canonical phone file id");
+    }
+    expect(fileId).not.toBe(messageId);
+    await expectIntegrationInputPreview(context, {
+      actor,
+      fileId,
+      bytes,
+      contentType: "image/png",
+      uploads,
+      okouToken: run.okouToken,
+    });
+    expect(downloads).toBe(1);
+    await completeSandboxRun(run.sandboxToken, run.runId, 0);
+  });
+
   it("renders media prompts", async () => {
     const ap = createAgentPhoneBddApi(context);
     const { phone, runnerGroup } = await entitledLinkedActor();
 
-    // A media DM walks both percent-decode branches of the filename.
+    server.use(
+      http.get(
+        "https://media.agentphone.test/photo%20one%2Bfinal%2zraw.png",
+        () => {
+          return new HttpResponse(null, { status: 503 });
+        },
+      ),
+    );
+    // A failed import retains the provider reference and its original filename.
     const mediaMessageId = await ap.postAgentPhoneInboundMessage({
       channel: "mms",
       from: phone,

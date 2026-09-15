@@ -42,6 +42,7 @@ import {
   fetchTeamsChannelMessage,
   fetchTeamsChannelMessageReplies,
   fetchTeamsChannelMessages,
+  fetchTeamsFile,
   fetchTeamsUsers,
   fetchTeamsPersonalChatMessages,
   sendTeamsReaction,
@@ -62,6 +63,14 @@ import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
 import { ensureTeamsChatThreadRoute } from "./teams-chat-ingress.service";
 import { formatTeamsFileForContext } from "./teams-prompt";
+import { isAllowedTeamsDownloadUrl } from "../../lib/teams-file-url";
+import {
+  integrationInputMessageFiles,
+  materializeIntegrationInputAssets$,
+  readyIntegrationInputAsset,
+  type IntegrationInputFile,
+  type IntegrationInputAsset,
+} from "./integration-input-assets.service";
 import type { TeamsFileTokenPayload } from "./teams-file-token";
 import {
   updateUserModelPreference$,
@@ -1611,110 +1620,187 @@ function teamsChatMessageId(
   );
 }
 
-async function persistTeamsChatMessage(
-  args: {
-    readonly db: Db;
-    readonly activity: TeamsMessageActivity;
-    readonly publicBrand: PublicBrand;
-    readonly installation: BoundTeamsInstallation;
-    readonly connection: TeamsConnection;
-    readonly composeId: string;
-    readonly promptFiles: readonly TeamsPromptFile[];
-    readonly promptContext: TeamsPromptContext;
-    readonly apiStartTime: number;
-    readonly modelRoute: IntegrationModelRoutePin | undefined;
-  },
-  signal: AbortSignal,
-): Promise<
-  | {
-      readonly inserted: true;
-      readonly chatThreadId: string;
-      readonly chatEventId: string;
-    }
-  | { readonly inserted: false }
-> {
-  const currentTime = new Date(args.apiStartTime);
-  const threadId = teamsSessionThreadId({
-    activity: args.activity,
-    agentId: args.composeId,
-    selectedModel: args.modelRoute?.selectedModel ?? null,
-    serviceTier: args.modelRoute?.serviceTier ?? null,
-  });
-  const route = await ensureTeamsChatThreadRoute(args.db, {
-    connectionId: args.connection.id,
-    conversationId: args.activity.conversationId,
-    threadId,
-    userId: args.connection.userId,
-    orgId: args.installation.orgId,
-    agentId: args.composeId,
-    selectedModel: args.modelRoute?.selectedModel ?? null,
-    serviceTier: args.modelRoute?.serviceTier ?? null,
-    currentTime,
-  });
-  signal.throwIfAborted();
-
-  const launchContext = canonicalTeamsLaunchContext({
-    activity: args.activity,
-    publicBrand: args.publicBrand,
-    connectionId: args.connection.id,
-    threadId,
-    threadContext: args.promptContext.text,
-    messageFiles: [
-      ...args.promptFiles.map((file) => {
-        return { ...file, inCurrentMessage: true };
-      }),
-      ...args.promptContext.files.map((file) => {
-        return { ...file, inCurrentMessage: false };
-      }),
-    ],
-  });
-  const chatEventId = teamsChatMessageId(args.activity, args.connection.id);
-  const inserted = await args.db.transaction(async (tx) => {
-    const event = await insertChatEvent(
-      tx,
-      {
-        id: chatEventId,
-        chatThreadId: route.chatThreadId,
-        eventType: "input.prompt",
-        userMessage: createUserMessageDocument({
-          text: args.activity.text,
-          files: args.promptFiles.map((file) => {
-            return {
-              id: file.fileId,
-              filename: file.name,
-              contentType: file.contentType,
-            };
-          }),
-          nonContentPart: createChatEventSourcePart({
-            kind: "teams",
-            tenantId: launchContext.tenantId,
-            channelId: launchContext.channelId,
-            activityId: launchContext.activityId,
-          }),
-        }),
-        runId: null,
-        teamsContext: launchContext,
-        createdAt: currentTime,
+function teamsInputFiles(
+  activity: TeamsMessageActivity,
+  installation: BoundTeamsInstallation,
+  files: readonly TeamsPromptFile[],
+): readonly IntegrationInputFile[] {
+  return files.map((file, index) => {
+    return {
+      sourceId: file.fileId,
+      filename: file.name,
+      contentType: file.contentType,
+      provenance: {
+        provider: "teams" as const,
+        installationId: installation.teamsTenantId,
+        messageId: `${activity.conversationId}:${activity.activityId ?? activity.idempotencyKey}`,
+        externalFileId: file.sourceId ?? `attachment:${index}`,
       },
-      "id",
-    );
-    signal.throwIfAborted();
-    if (!event) {
-      return false;
-    }
-    await touchChatThreadLastMessageAt(
-      tx,
-      route.chatThreadId,
-      currentTime,
-      chatEventId,
-    );
-    return true;
+      download: async (downloadSignal: AbortSignal) => {
+        if (!isAllowedTeamsDownloadUrl(file.payload.url)) {
+          throw new Error("Invalid Teams attachment URL");
+        }
+        const result = await fetchTeamsFile(file.payload, downloadSignal);
+        if (result.kind === "teams-error") {
+          throw new Error("Teams attachment download failed");
+        }
+        return result.response;
+      },
+    };
   });
-  signal.throwIfAborted();
-  return inserted
-    ? { inserted: true, chatThreadId: route.chatThreadId, chatEventId }
-    : { inserted: false };
 }
+
+function teamsLaunchMessageFiles(
+  files: readonly TeamsPromptFile[],
+  historyFiles: readonly TeamsPromptFile[],
+  assets: readonly IntegrationInputAsset[],
+): ChatTeamsMessageFiles {
+  return [
+    ...files.map((file) => {
+      const asset = readyIntegrationInputAsset(assets, file.fileId);
+      return {
+        ...file,
+        inCurrentMessage: true,
+        ...(asset
+          ? {
+              canonicalAsset: {
+                assetId: asset.assetId,
+                filename: asset.filename,
+                contentType: asset.contentType,
+              },
+            }
+          : {}),
+      };
+    }),
+    ...historyFiles.map((file) => {
+      return { ...file, inCurrentMessage: false };
+    }),
+  ];
+}
+
+const persistTeamsChatMessage$ = command(
+  async (
+    { set },
+    args: {
+      readonly db: Db;
+      readonly activity: TeamsMessageActivity;
+      readonly publicBrand: PublicBrand;
+      readonly installation: BoundTeamsInstallation;
+      readonly connection: TeamsConnection;
+      readonly composeId: string;
+      readonly promptFiles: readonly TeamsPromptFile[];
+      readonly promptContext: TeamsPromptContext;
+      readonly apiStartTime: number;
+      readonly modelRoute: IntegrationModelRoutePin | undefined;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | {
+        readonly inserted: true;
+        readonly chatThreadId: string;
+        readonly chatEventId: string;
+      }
+    | { readonly inserted: false }
+  > => {
+    const currentTime = new Date(args.apiStartTime);
+    const threadId = teamsSessionThreadId({
+      activity: args.activity,
+      agentId: args.composeId,
+      selectedModel: args.modelRoute?.selectedModel ?? null,
+      serviceTier: args.modelRoute?.serviceTier ?? null,
+    });
+    const route = await ensureTeamsChatThreadRoute(args.db, {
+      connectionId: args.connection.id,
+      conversationId: args.activity.conversationId,
+      threadId,
+      userId: args.connection.userId,
+      orgId: args.installation.orgId,
+      agentId: args.composeId,
+      selectedModel: args.modelRoute?.selectedModel ?? null,
+      serviceTier: args.modelRoute?.serviceTier ?? null,
+      currentTime,
+    });
+    signal.throwIfAborted();
+
+    const assets = await set(
+      materializeIntegrationInputAssets$,
+      {
+        userId: args.connection.userId,
+        orgId: args.installation.orgId,
+        chatThreadId: route.chatThreadId,
+        publicBrand: args.publicBrand,
+        files: teamsInputFiles(
+          args.activity,
+          args.installation,
+          args.promptFiles,
+        ),
+      },
+      signal,
+    );
+
+    const launchContext = canonicalTeamsLaunchContext({
+      activity: args.activity,
+      publicBrand: args.publicBrand,
+      connectionId: args.connection.id,
+      threadId,
+      threadContext: args.promptContext.text,
+      messageFiles: teamsLaunchMessageFiles(
+        args.promptFiles,
+        args.promptContext.files,
+        assets,
+      ),
+    });
+    const chatEventId = teamsChatMessageId(args.activity, args.connection.id);
+    const inserted = await args.db.transaction(async (tx) => {
+      const event = await insertChatEvent(
+        tx,
+        {
+          id: chatEventId,
+          chatThreadId: route.chatThreadId,
+          eventType: "input.prompt",
+          userMessage: createUserMessageDocument({
+            text: [
+              args.activity.text,
+              ...args.promptFiles
+                .filter((file) => {
+                  return !readyIntegrationInputAsset(assets, file.fileId);
+                })
+                .map(formatTeamsFileForContext),
+            ]
+              .filter(Boolean)
+              .join("\n\n"),
+            files: integrationInputMessageFiles(assets),
+            nonContentPart: createChatEventSourcePart({
+              kind: "teams",
+              tenantId: launchContext.tenantId,
+              channelId: launchContext.channelId,
+              activityId: launchContext.activityId,
+            }),
+          }),
+          runId: null,
+          teamsContext: launchContext,
+          createdAt: currentTime,
+        },
+        "id",
+      );
+      signal.throwIfAborted();
+      if (!event) {
+        return false;
+      }
+      await touchChatThreadLastMessageAt(
+        tx,
+        route.chatThreadId,
+        currentTime,
+        chatEventId,
+      );
+      return true;
+    });
+    signal.throwIfAborted();
+    return inserted
+      ? { inserted: true, chatThreadId: route.chatThreadId, chatEventId }
+      : { inserted: false };
+  },
+);
 
 async function teamsMessageDispatchState(
   db: Db,
@@ -1789,7 +1875,8 @@ const runAgentForTeams$ = command(
       nowDate().getTime(),
     );
     const db = set(writeDb$);
-    const persisted = await persistTeamsChatMessage(
+    const persisted = await set(
+      persistTeamsChatMessage$,
       {
         db,
         activity: args.activity,

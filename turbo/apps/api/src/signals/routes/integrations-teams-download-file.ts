@@ -5,6 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { inferMimetype } from "../../lib/mimetype";
+import { isAllowedTeamsDownloadUrl } from "../../lib/teams-file-url";
 import type { AuthContext } from "../../types/auth";
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -24,15 +25,6 @@ const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024;
 const teamsChatCallbackPayloadSchema = z.object({
   teamsDelivery: teamsDeliveryTargetSchema.optional(),
 });
-
-const ALLOWED_TEAMS_FILE_HOSTS = [
-  "1drv.ms",
-  "onedrive.live.com",
-  "sharepoint.com",
-  "trafficmanager.net",
-  "microsoft.com",
-  "office.com",
-] as const;
 
 const EXTENSION_BY_CONTENT_TYPE: Readonly<Record<string, string>> = {
   "application/json": "json",
@@ -60,21 +52,6 @@ function parseContentLength(value: string | null): number | undefined {
   }
   const size = Number(value);
   return Number.isSafeInteger(size) && size >= 0 ? size : undefined;
-}
-
-function allowedTeamsFileHost(hostname: string): boolean {
-  const host = hostname.toLowerCase();
-  return ALLOWED_TEAMS_FILE_HOSTS.some((allowed) => {
-    return host === allowed || host.endsWith(`.${allowed}`);
-  });
-}
-
-function isAllowedTeamsDownloadUrl(url: string): boolean {
-  if (!URL.canParse(url)) {
-    return false;
-  }
-  const parsed = new URL(url);
-  return parsed.protocol === "https:" && allowedTeamsFileHost(parsed.hostname);
 }
 
 function filenameFromContentDisposition(value: string | null): string | null {

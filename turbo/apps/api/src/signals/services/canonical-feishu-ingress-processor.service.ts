@@ -11,11 +11,23 @@ import { logger } from "../../lib/log";
 import { env } from "../../lib/env";
 import { buildFeishuNoticeMessage } from "../../lib/feishu-message-card";
 import { inferMimetype } from "../../lib/mimetype";
-import type { FeishuPromptFile } from "../../lib/feishu-message-content";
+import {
+  formatFeishuMessageContent,
+  type FeishuPromptFile,
+} from "../../lib/feishu-message-content";
 import {
   replyWithFeishuMessage,
   sendFeishuMessage,
+  downloadFeishuMessageResource,
 } from "../external/feishu-client";
+import {
+  canonicalInputFilePrompt,
+  integrationInputMessageFiles,
+  materializeIntegrationInputAssets$,
+  readyIntegrationInputAsset,
+  type IntegrationInputFile,
+  type IntegrationInputAsset,
+} from "./integration-input-assets.service";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import {
@@ -329,16 +341,21 @@ function canonicalFeishuLaunchContext(args: {
 function feishuInboundUserMessage(
   message: FeishuInboundMessage,
   chatOpenUrl: string,
+  assets: readonly IntegrationInputAsset[],
 ) {
   return createUserMessageDocument({
-    text: message.files.length ? message.text : message.promptText,
-    files: message.files.map((file) => {
-      return {
-        id: file.fileId,
-        filename: file.filename,
-        contentType: inferMimetype(file.filename),
-      };
-    }),
+    text: message.files.length
+      ? formatFeishuMessageContent(
+          {
+            text: message.text,
+            files: message.files.filter((file) => {
+              return !readyIntegrationInputAsset(assets, file.fileId);
+            }),
+          },
+          message.platform,
+        )
+      : message.promptText,
+    files: integrationInputMessageFiles(assets),
     nonContentPart: createChatEventSourcePart({
       kind: "feishu",
       chatOpenUrl,
@@ -346,93 +363,160 @@ function feishuInboundUserMessage(
   });
 }
 
-async function persistCanonicalFeishuIngress(
-  args: {
-    readonly db: Db;
-    readonly ingress: NonNullable<
-      Awaited<ReturnType<typeof loadClaimedIngress>>
-    >;
-    readonly installation: FeishuDispatchInstallation;
-    readonly connection: FeishuDispatchConnection;
-    readonly message: FeishuInboundMessage;
-    readonly agentId: string;
-    readonly selectedModel: string | null;
-    readonly serviceTier: IntegrationModelRoutePin["serviceTier"];
-    readonly reactionId: string | undefined;
-    readonly launchContext: CanonicalFeishuLaunchContext;
-  },
-  signal: AbortSignal,
-): Promise<PersistedCanonicalFeishuIngress> {
-  const routeThreadId = canonicalThreadId({
-    message: args.message,
-    agentId: args.agentId,
-    selectedModel: args.selectedModel,
-    serviceTier: args.serviceTier,
-  });
-  const route = await ensureFeishuChatThreadRoute(args.db, {
-    connectionId: args.connection.id,
-    chatId: args.message.chatId,
-    threadId: routeThreadId,
-    userId: args.connection.userId,
-    orgId: args.installation.orgId,
-    agentId: args.agentId,
-    selectedModel: args.selectedModel,
-    serviceTier: args.serviceTier,
-    currentTime: args.ingress.createdAt,
-  });
-  signal.throwIfAborted();
-
-  await args.db.transaction(async (tx) => {
-    const chatOpenUrl = buildFeishuChatOpenUrl(
-      args.message.chatId,
-      args.message.platform,
-    );
-    const inserted = await insertChatEvent(
-      tx,
-      {
-        id: args.ingress.ingressId,
-        chatThreadId: route.chatThreadId,
-        eventType: "input.prompt",
-        userMessage: feishuInboundUserMessage(args.message, chatOpenUrl),
-        runId: null,
-        feishuContext: {
-          ...args.launchContext,
-        },
-        createdAt: args.ingress.createdAt,
+function feishuInputFiles(
+  db: Db,
+  message: FeishuInboundMessage,
+): readonly IntegrationInputFile[] {
+  return message.files.map((file) => {
+    return {
+      sourceId: file.fileId,
+      filename: file.filename,
+      contentType: inferMimetype(file.filename),
+      provenance: {
+        provider: message.platform ?? "feishu",
+        installationId: message.installationId,
+        messageId: message.messageId,
+        externalFileId: `${file.type}:${file.fileKey}`,
       },
-      "id",
-    );
-    signal.throwIfAborted();
-    if (!inserted) {
-      throw new Error("Canonical Feishu ingress message already exists");
-    }
-    await touchChatThreadLastMessageAt(
-      tx,
-      route.chatThreadId,
-      args.ingress.createdAt,
-      args.ingress.ingressId,
-    );
-    signal.throwIfAborted();
-    await tx
-      .update(feishuChatIngress)
-      .set({ status: "processed", lastError: null, updatedAt: nowDate() })
-      .where(
-        and(
-          eq(feishuChatIngress.id, args.ingress.ingressId),
-          eq(feishuChatIngress.status, "processing"),
-        ),
-      );
+      download: (downloadSignal: AbortSignal) => {
+        return downloadFeishuMessageResource(
+          {
+            db: db,
+            installationId: message.installationId,
+            messageId: file.messageId,
+            fileKey: file.fileKey,
+            resourceType: file.type,
+          },
+          downloadSignal,
+        );
+      },
+    };
   });
-  signal.throwIfAborted();
-  return {
-    orgId: args.installation.orgId,
-    userId: args.connection.userId,
-    chatThreadId: route.chatThreadId,
-    message: args.message,
-    receivedAt: args.ingress.createdAt,
-    publicBrand: args.installation.publicBrand,
-  };
 }
+
+const persistCanonicalFeishuIngress$ = command(
+  async (
+    { set },
+    args: {
+      readonly db: Db;
+      readonly ingress: NonNullable<
+        Awaited<ReturnType<typeof loadClaimedIngress>>
+      >;
+      readonly installation: FeishuDispatchInstallation;
+      readonly connection: FeishuDispatchConnection;
+      readonly message: FeishuInboundMessage;
+      readonly agentId: string;
+      readonly selectedModel: string | null;
+      readonly serviceTier: IntegrationModelRoutePin["serviceTier"];
+      readonly reactionId: string | undefined;
+      readonly launchContext: CanonicalFeishuLaunchContext;
+    },
+    signal: AbortSignal,
+  ): Promise<PersistedCanonicalFeishuIngress> => {
+    const routeThreadId = canonicalThreadId({
+      message: args.message,
+      agentId: args.agentId,
+      selectedModel: args.selectedModel,
+      serviceTier: args.serviceTier,
+    });
+    const route = await ensureFeishuChatThreadRoute(args.db, {
+      connectionId: args.connection.id,
+      chatId: args.message.chatId,
+      threadId: routeThreadId,
+      userId: args.connection.userId,
+      orgId: args.installation.orgId,
+      agentId: args.agentId,
+      selectedModel: args.selectedModel,
+      serviceTier: args.serviceTier,
+      currentTime: args.ingress.createdAt,
+    });
+    signal.throwIfAborted();
+
+    const assets = await set(
+      materializeIntegrationInputAssets$,
+      {
+        userId: args.connection.userId,
+        orgId: args.installation.orgId,
+        chatThreadId: route.chatThreadId,
+        publicBrand: args.installation.publicBrand,
+        files: feishuInputFiles(args.db, args.message),
+      },
+      signal,
+    );
+    const messageText = args.message.files.length
+      ? [
+          args.message.text,
+          ...args.message.files.map((file) => {
+            const asset = readyIntegrationInputAsset(assets, file.fileId);
+            return asset
+              ? canonicalInputFilePrompt(asset)
+              : formatFeishuMessageContent(
+                  { text: "", files: [file] },
+                  args.message.platform,
+                );
+          }),
+        ]
+          .filter(Boolean)
+          .join("\n\n")
+      : args.message.promptText;
+
+    await args.db.transaction(async (tx) => {
+      const chatOpenUrl = buildFeishuChatOpenUrl(
+        args.message.chatId,
+        args.message.platform,
+      );
+      const inserted = await insertChatEvent(
+        tx,
+        {
+          id: args.ingress.ingressId,
+          chatThreadId: route.chatThreadId,
+          eventType: "input.prompt",
+          userMessage: feishuInboundUserMessage(
+            args.message,
+            chatOpenUrl,
+            assets,
+          ),
+          runId: null,
+          feishuContext: {
+            ...args.launchContext,
+            messageText,
+          },
+          createdAt: args.ingress.createdAt,
+        },
+        "id",
+      );
+      signal.throwIfAborted();
+      if (!inserted) {
+        throw new Error("Canonical Feishu ingress message already exists");
+      }
+      await touchChatThreadLastMessageAt(
+        tx,
+        route.chatThreadId,
+        args.ingress.createdAt,
+        args.ingress.ingressId,
+      );
+      signal.throwIfAborted();
+      await tx
+        .update(feishuChatIngress)
+        .set({ status: "processed", lastError: null, updatedAt: nowDate() })
+        .where(
+          and(
+            eq(feishuChatIngress.id, args.ingress.ingressId),
+            eq(feishuChatIngress.status, "processing"),
+          ),
+        );
+    });
+    signal.throwIfAborted();
+    return {
+      orgId: args.installation.orgId,
+      userId: args.connection.userId,
+      chatThreadId: route.chatThreadId,
+      message: args.message,
+      receivedAt: args.ingress.createdAt,
+      publicBrand: args.installation.publicBrand,
+    };
+  },
+);
 
 async function notifyQueuedFeishuRun(
   args: {
@@ -556,136 +640,127 @@ async function loadFeishuIngressDispatchContext(
   return { ingress, message, installation, connection };
 }
 
-async function processClaimedIngress(
-  args: {
-    readonly db: Db;
-    readonly ingressId: string;
-    readonly dispatchConnectedCommand: (
-      context: {
-        readonly db: Db;
-        readonly installation: FeishuDispatchInstallation;
-        readonly connection: FeishuDispatchConnection;
-        readonly message: FeishuInboundMessage;
-      },
-      signal: AbortSignal,
-    ) => Promise<boolean>;
-    readonly resolveModelRoute: (
-      orgId: string,
-      userId: string,
-      signal: AbortSignal,
-    ) => Promise<IntegrationModelRoutePin | undefined>;
-  },
-  signal: AbortSignal,
-): Promise<PersistedCanonicalFeishuIngress | null> {
-  const { ingress, message, installation, connection } =
-    await loadFeishuIngressDispatchContext(args.db, args.ingressId, signal);
-  if (!installation) {
-    await finishUnavailableAgentFeishuIngress(
-      {
-        db: args.db,
-        ingressId: ingress.ingressId,
-        message,
-        status: "not_found",
-      },
-      signal,
-    );
-    return null;
-  }
-  if (!connection) {
-    await finishUnconnectedFeishuIngress(
-      {
-        db: args.db,
-        ingressId: ingress.ingressId,
-        message,
-        publicBrand: installation.publicBrand,
-        botName: installation.botName,
-      },
-      signal,
-    );
-    return null;
-  }
-
-  const commandHandled = await args.dispatchConnectedCommand(
-    { db: args.db, installation, connection, message },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (commandHandled) {
-    await markIngressProcessed(args.db, ingress.ingressId);
-    return null;
-  }
-
-  const effectiveAgent = await resolveEffectiveFeishuAgent({
-    db: args.db,
-    installation,
-    connection,
-  });
-  signal.throwIfAborted();
-  if (effectiveAgent.status !== "resolved") {
-    await finishUnavailableAgentFeishuIngress(
-      {
-        db: args.db,
-        ingressId: ingress.ingressId,
-        message,
-        status: effectiveAgent.status,
-      },
-      signal,
-    );
-    return null;
-  }
-
-  const modelRoute = await args.resolveModelRoute(
-    installation.orgId,
-    connection.userId,
-    signal,
-  );
-  signal.throwIfAborted();
-  const selectedModel = modelRoute?.selectedModel ?? null;
-  const reactionId =
-    ingress.reactionId ??
-    (await addFeishuThinkingReaction(
-      {
-        db: args.db,
-        message,
-      },
-      signal,
-    ));
-  signal.throwIfAborted();
-  if (reactionId && reactionId !== ingress.reactionId) {
-    await args.db
-      .update(feishuChatIngress)
-      .set({ reactionId, updatedAt: nowDate() })
-      .where(eq(feishuChatIngress.id, ingress.ingressId));
-  }
-  const history = await loadFeishuConversationHistory(
-    {
-      db: args.db,
-      message,
+const processClaimedIngress$ = command(
+  async (
+    { set },
+    args: {
+      readonly db: Db;
+      readonly ingressId: string;
     },
-    signal,
-  );
-  signal.throwIfAborted();
-  const persistInput = {
-    db: args.db,
-    ingress,
-    installation,
-    connection,
-    message,
-    agentId: effectiveAgent.agent.id,
-    selectedModel,
-    serviceTier: modelRoute?.serviceTier ?? null,
-    reactionId,
-    launchContext: canonicalFeishuLaunchContext({
+    signal: AbortSignal,
+  ): Promise<PersistedCanonicalFeishuIngress | null> => {
+    const { ingress, message, installation, connection } =
+      await loadFeishuIngressDispatchContext(args.db, args.ingressId, signal);
+    if (!installation) {
+      await finishUnavailableAgentFeishuIngress(
+        {
+          db: args.db,
+          ingressId: ingress.ingressId,
+          message,
+          status: "not_found",
+        },
+        signal,
+      );
+      return null;
+    }
+    if (!connection) {
+      await finishUnconnectedFeishuIngress(
+        {
+          db: args.db,
+          ingressId: ingress.ingressId,
+          message,
+          publicBrand: installation.publicBrand,
+          botName: installation.botName,
+        },
+        signal,
+      );
+      return null;
+    }
+
+    const commandHandled = await set(
+      dispatchConnectedFeishuCommand$,
+      { db: args.db, installation, connection, message },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (commandHandled) {
+      await markIngressProcessed(args.db, ingress.ingressId);
+      signal.throwIfAborted();
+      return null;
+    }
+
+    const effectiveAgent = await resolveEffectiveFeishuAgent({
+      db: args.db,
+      installation,
+      connection,
+    });
+    signal.throwIfAborted();
+    if (effectiveAgent.status !== "resolved") {
+      await finishUnavailableAgentFeishuIngress(
+        {
+          db: args.db,
+          ingressId: ingress.ingressId,
+          message,
+          status: effectiveAgent.status,
+        },
+        signal,
+      );
+      return null;
+    }
+
+    const modelRoute = await set(
+      resolveIntegrationModelRouteForUser$,
+      { orgId: installation.orgId, userId: connection.userId },
+      signal,
+    );
+    signal.throwIfAborted();
+    const selectedModel = modelRoute?.selectedModel ?? null;
+    const reactionId =
+      ingress.reactionId ??
+      (await addFeishuThinkingReaction(
+        {
+          db: args.db,
+          message,
+        },
+        signal,
+      ));
+    signal.throwIfAborted();
+    if (reactionId && reactionId !== ingress.reactionId) {
+      await args.db
+        .update(feishuChatIngress)
+        .set({ reactionId, updatedAt: nowDate() })
+        .where(eq(feishuChatIngress.id, ingress.ingressId));
+    }
+    const history = await loadFeishuConversationHistory(
+      {
+        db: args.db,
+        message,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    const persistInput = {
+      db: args.db,
+      ingress,
+      installation,
+      connection,
       message,
-      connectionId: connection.id,
+      agentId: effectiveAgent.agent.id,
+      selectedModel,
+      serviceTier: modelRoute?.serviceTier ?? null,
       reactionId,
-      conversationHistory: history.text,
-      files: history.files,
-      publicBrand: installation.publicBrand,
-    }),
-  };
-  return await persistCanonicalFeishuIngress(persistInput, signal);
-}
+      launchContext: canonicalFeishuLaunchContext({
+        message,
+        connectionId: connection.id,
+        reactionId,
+        conversationHistory: history.text,
+        files: history.files,
+        publicBrand: installation.publicBrand,
+      }),
+    };
+    return await set(persistCanonicalFeishuIngress$, persistInput, signal);
+  },
+);
 
 export const processCanonicalFeishuIngress$ = command(
   async (
@@ -701,20 +776,11 @@ export const processCanonicalFeishuIngress$ = command(
     }
 
     const result = await settle(
-      processClaimedIngress(
+      set(
+        processClaimedIngress$,
         {
           db,
           ingressId: args.ingressId,
-          dispatchConnectedCommand: (context, inputSignal) => {
-            return set(dispatchConnectedFeishuCommand$, context, inputSignal);
-          },
-          resolveModelRoute: (orgId, userId, inputSignal) => {
-            return set(
-              resolveIntegrationModelRouteForUser$,
-              { orgId, userId },
-              inputSignal,
-            );
-          },
         },
         signal,
       ),

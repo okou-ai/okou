@@ -70,6 +70,10 @@ import {
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  captureIntegrationInputUploads,
+  expectIntegrationInputPreview,
+} from "./helpers/integration-input-assets";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import {
   clearFeishuConnectorOwnership,
@@ -735,6 +739,12 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     context.mocks.ably.publish.mockResolvedValue(undefined);
 
     server.use(
+      http.get(
+        `${provider.apiOrigin}/open-apis/im/v1/messages/:messageId/resources/:fileKey`,
+        () => {
+          return new HttpResponse(null, { status: 503 });
+        },
+      ),
       http.post(
         `${provider.apiOrigin}/open-apis/auth/v3/tenant_access_token/internal`,
         () => {
@@ -3919,6 +3929,81 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     );
   });
 
+  it.each(["image", "file"] as const)(
+    "imports a Feishu %s into canonical storage before dispatch",
+    async (type) => {
+      const fixture = await setupFeishuRunFixture();
+      await connectFixtureUser(fixture);
+      const { actor, runnerGroup, appId, callbackUrl } = fixture;
+      const uploads = captureIntegrationInputUploads(context);
+      const messageId = `om_${randomUUID()}`;
+      const fileKey = `file_${randomUUID()}`;
+      const bytes = Buffer.from(`canonical ${type} bytes`);
+      const contentType = type === "image" ? "image/png" : "application/pdf";
+      let downloads = 0;
+      server.use(
+        http.get(
+          `${provider.apiOrigin}/open-apis/im/v1/messages/${messageId}/resources/${fileKey}`,
+          ({ request }) => {
+            expect(new URL(request.url).searchParams.get("type")).toBe(type);
+            expect(request.headers.get("authorization")).toBe(
+              "Bearer tenant-access-token",
+            );
+            downloads += 1;
+            return new HttpResponse(bytes, {
+              headers: { "content-type": contentType },
+            });
+          },
+        ),
+      );
+      const event = v2Event(appId, "im.message.receive_v1", {
+        sender: {
+          sender_id: { open_id: "ou_feishu_user" },
+          sender_type: "user",
+        },
+        message: {
+          message_id: messageId,
+          chat_id: "oc_feishu_dm",
+          chat_type: "p2p",
+          message_type: type,
+          content: JSON.stringify(
+            type === "image"
+              ? { image_key: fileKey }
+              : { file_key: fileKey, file_name: "report.pdf" },
+          ),
+        },
+      });
+      await postEvent(callbackUrl, event, { encrypted: true });
+      await flushWaitUntilForTest();
+      const listed = await runsApi.listAgentRuns(actor, { limit: 20 });
+      const run = requireValue(
+        listed.runs.find((candidate) => {
+          return candidate.prompt.includes("[Web file]");
+        }),
+        "Expected imported file run",
+      );
+      await runsApi.heartbeatRunner(runnerGroup);
+      const claim = await runsApi.claimRunnerJob(run.id);
+      const fileId = requireValue(
+        claim.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1],
+        "Expected canonical file id",
+      );
+      expect(claim.prompt).not.toContain(fileKey);
+      await expectIntegrationInputPreview(context, {
+        actor,
+        fileId,
+        bytes,
+        contentType,
+        uploads,
+        okouToken: claim.platformEnvironment.OKOU_TOKEN,
+      });
+      await postEvent(callbackUrl, event, { encrypted: true });
+      await flushWaitUntilForTest();
+      expect(downloads).toBe(1);
+      expect(uploads).toHaveLength(1);
+    },
+  );
+
   it("runs a Feishu DM file with downloadable resource context", async () => {
     const fixture = await setupFeishuRunFixture();
     const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } = fixture;
@@ -4148,12 +4233,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
         userMessage: {
           version: 1,
           parts: [
-            {
-              type: "file",
-              fileId,
-              filenameSnapshot: "quarterly-report.pdf",
-              contentType: "application/pdf",
-            },
+            { type: "text", text: expect.stringContaining(feishuFilePrompt) },
             {
               type: "source",
               kind: "feishu",

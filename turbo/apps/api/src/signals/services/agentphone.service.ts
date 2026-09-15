@@ -65,6 +65,13 @@ import {
 } from "./chat-event-type.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import {
+  canonicalInputFilePrompt,
+  integrationInputMessageFiles,
+  materializeIntegrationInputAssets$,
+  readyIntegrationInputAsset,
+  type IntegrationInputFile,
+} from "./integration-input-assets.service";
+import {
   updateUserModelPreference$,
   userModelPreference,
 } from "./user-data.service";
@@ -1510,99 +1517,150 @@ function agentPhoneChatMessageId(args: {
   );
 }
 
-async function persistAgentPhoneChatMessage(
-  args: {
-    readonly db: Db;
-    readonly userLink: AgentPhoneUserLink;
-    readonly agent: WorkspaceAgent;
-    readonly event: AgentPhoneMessageEvent;
-    readonly rootMessageId: string;
-    readonly prompt: string;
-    readonly threadContext: string;
-    readonly apiStartTime: number;
-    readonly modelRoute: ModelRoutePin | undefined;
-    readonly publicBrand: PublicBrand;
-  },
-  signal: AbortSignal,
-): Promise<
-  | {
-      readonly inserted: true;
-      readonly chatThreadId: string;
-      readonly chatEventId: string;
-    }
-  | { readonly inserted: false }
-> {
-  const currentTime = new Date(args.apiStartTime);
-  const route = await ensureAgentPhoneChatThreadRoute(args.db, {
-    agentphoneUserLinkId: args.userLink.id,
-    rootMessageId: args.rootMessageId,
-    conversationId: args.event.conversationId,
-    userId: args.userLink.userId,
-    orgId: args.userLink.orgId,
-    agentId: args.agent.composeId,
-    selectedModel: args.modelRoute?.selectedModel ?? null,
-    serviceTier: args.modelRoute?.serviceTier ?? null,
-    currentTime,
-  });
-  signal.throwIfAborted();
-
-  const chatEventId = agentPhoneChatMessageId({
-    event: args.event,
-    userLinkId: args.userLink.id,
-    rootMessageId: args.rootMessageId,
-  });
-  const inserted = await args.db.transaction(async (tx) => {
-    const event = await insertChatEvent(
-      tx,
-      {
-        id: chatEventId,
-        chatThreadId: route.chatThreadId,
-        eventType: "input.prompt",
-        userMessage: createUserMessageDocument({
-          text: args.prompt,
-          nonContentPart: createChatEventSourcePart({ kind: "agentphone" }),
-        }),
-        runId: null,
-        agentphoneContext: {
-          messageText: args.prompt,
-          threadContext: args.threadContext,
-          messageId: args.event.messageId,
-          rootMessageId: args.rootMessageId,
-          conversationId: args.event.conversationId,
-          channel: args.event.channel,
-          isGroup: isAgentPhoneGroupEvent(args.event),
-          phoneHandle: args.event.fromNumber,
-          fromNumber: args.event.fromNumber,
-          toNumber: args.event.toNumber,
-          userLinkId: args.userLink.id,
-          agentphoneAgentId: args.event.agentphoneAgentId,
-          publicBrand: args.publicBrand,
+function agentPhoneInputFiles(
+  event: AgentPhoneMessageEvent,
+  userLinkId: string,
+): readonly IntegrationInputFile[] {
+  const mediaUrl = event.mediaUrl;
+  return mediaUrl
+    ? [
+        {
+          sourceId: event.messageId,
+          filename: agentPhoneFilenameFromMediaUrl(mediaUrl, event.messageId),
+          provenance: {
+            provider: "agentphone",
+            installationId: userLinkId,
+            messageId: event.messageId,
+            externalFileId: event.messageId,
+          },
+          download: (downloadSignal) => {
+            if (safeUrlParse(mediaUrl)?.protocol !== "https:") {
+              throw new Error("AgentPhone media URL must use HTTPS");
+            }
+            return fetch(mediaUrl, { signal: downloadSignal });
+          },
         },
-        createdAt: currentTime,
-      },
-      "id",
-    );
-    signal.throwIfAborted();
-    if (!event) {
-      return false;
-    }
-    await touchChatThreadLastMessageAt(
-      tx,
-      route.chatThreadId,
-      currentTime,
-      chatEventId,
-    );
-    return true;
-  });
-  signal.throwIfAborted();
-  return inserted
-    ? {
-        inserted: true,
-        chatThreadId: route.chatThreadId,
-        chatEventId,
-      }
-    : { inserted: false };
+      ]
+    : [];
 }
+
+const persistAgentPhoneChatMessage$ = command(
+  async (
+    { set },
+    args: {
+      readonly db: Db;
+      readonly userLink: AgentPhoneUserLink;
+      readonly agent: WorkspaceAgent;
+      readonly event: AgentPhoneMessageEvent;
+      readonly rootMessageId: string;
+      readonly prompt: string;
+      readonly threadContext: string;
+      readonly apiStartTime: number;
+      readonly modelRoute: ModelRoutePin | undefined;
+      readonly publicBrand: PublicBrand;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | {
+        readonly inserted: true;
+        readonly chatThreadId: string;
+        readonly chatEventId: string;
+      }
+    | { readonly inserted: false }
+  > => {
+    const currentTime = new Date(args.apiStartTime);
+    const route = await ensureAgentPhoneChatThreadRoute(args.db, {
+      agentphoneUserLinkId: args.userLink.id,
+      rootMessageId: args.rootMessageId,
+      conversationId: args.event.conversationId,
+      userId: args.userLink.userId,
+      orgId: args.userLink.orgId,
+      agentId: args.agent.composeId,
+      selectedModel: args.modelRoute?.selectedModel ?? null,
+      serviceTier: args.modelRoute?.serviceTier ?? null,
+      currentTime,
+    });
+    signal.throwIfAborted();
+
+    const chatEventId = agentPhoneChatMessageId({
+      event: args.event,
+      userLinkId: args.userLink.id,
+      rootMessageId: args.rootMessageId,
+    });
+    const assets = await set(
+      materializeIntegrationInputAssets$,
+      {
+        userId: args.userLink.userId,
+        orgId: args.userLink.orgId,
+        chatThreadId: route.chatThreadId,
+        publicBrand: args.publicBrand,
+        files: agentPhoneInputFiles(args.event, args.userLink.id),
+      },
+      signal,
+    );
+    const canonicalAsset = readyIntegrationInputAsset(
+      assets,
+      args.event.messageId,
+    );
+    const prompt = canonicalAsset
+      ? [args.event.body.trim(), canonicalInputFilePrompt(canonicalAsset)]
+          .filter(Boolean)
+          .join("\n\n")
+      : args.prompt;
+    const inserted = await args.db.transaction(async (tx) => {
+      const event = await insertChatEvent(
+        tx,
+        {
+          id: chatEventId,
+          chatThreadId: route.chatThreadId,
+          eventType: "input.prompt",
+          userMessage: createUserMessageDocument({
+            text: canonicalAsset ? args.event.body.trim() : args.prompt,
+            files: integrationInputMessageFiles(assets),
+            nonContentPart: createChatEventSourcePart({ kind: "agentphone" }),
+          }),
+          runId: null,
+          agentphoneContext: {
+            messageText: prompt,
+            threadContext: args.threadContext,
+            messageId: args.event.messageId,
+            rootMessageId: args.rootMessageId,
+            conversationId: args.event.conversationId,
+            channel: args.event.channel,
+            isGroup: isAgentPhoneGroupEvent(args.event),
+            phoneHandle: args.event.fromNumber,
+            fromNumber: args.event.fromNumber,
+            toNumber: args.event.toNumber,
+            userLinkId: args.userLink.id,
+            agentphoneAgentId: args.event.agentphoneAgentId,
+            publicBrand: args.publicBrand,
+          },
+          createdAt: currentTime,
+        },
+        "id",
+      );
+      signal.throwIfAborted();
+      if (!event) {
+        return false;
+      }
+      await touchChatThreadLastMessageAt(
+        tx,
+        route.chatThreadId,
+        currentTime,
+        chatEventId,
+      );
+      return true;
+    });
+    signal.throwIfAborted();
+    return inserted
+      ? {
+          inserted: true,
+          chatThreadId: route.chatThreadId,
+          chatEventId,
+        }
+      : { inserted: false };
+  },
+);
 
 async function agentPhoneMessageDispatchState(
   db: Db,
@@ -1673,7 +1731,8 @@ const runAgentForAgentPhone$ = command(
     },
     signal: AbortSignal,
   ): Promise<AgentPhoneMessageDispatchResult> => {
-    const persisted = await persistAgentPhoneChatMessage(
+    const persisted = await set(
+      persistAgentPhoneChatMessage$,
       {
         ...args,
       },
