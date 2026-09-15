@@ -25,7 +25,7 @@ export function createSessionOutputStreamSignals(
   chatEvents$: Computed<ChatEvent[]>,
 ) {
   const activeRunId$ = computed((get) => {
-    if (!get(featureSwitchState$)[FeatureSwitchKey.SessionOutputStreaming]) {
+    if (!get(featureSwitchState$)[FeatureSwitchKey.PiLoop]) {
       return null;
     }
     const events = get(chatEvents$);
