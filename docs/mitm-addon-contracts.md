@@ -31,7 +31,7 @@ or inventing a request ID. Malformed or pipelined peers can observe a reset.
 
 Requests have exactly `requestId`, `generation`, `method`, and `params`. Identifiers
 match `[A-Za-z0-9_.-]{1,64}`; duplicate keys, non-JSON constants, and unknown fields
-are rejected. The only method is `proxy.status`, with empty object parameters:
+are rejected. `proxy.status` takes empty object parameters:
 
 ```json
 {
@@ -44,10 +44,21 @@ are rejected. The only method is `proxy.status`, with empty object parameters:
 
 A successful reply contains those identities, `"type": "result"`, and
 `"data": {"state": "running"}`. An error instead contains `"type": "error"` and
-`"code": "invalid_request"`, `"stale_generation"`, or `"unknown_method"`;
+`"code": "invalid_request"`, `"stale_generation"`, `"unknown_method"`, or `"busy"`;
 `requestId` is null when no valid correlation can be recovered. Error generation
 always identifies the serving addon. Rust rejects mismatched identities, unknown
 response fields/states, extra response bytes, and missing terminal EOF.
+
+`logs.flush` takes exactly `runId` (a canonical UUID) and `path` (an absolute,
+normalized path ending in `network-{runId}.jsonl`). Runner freezes the original
+run, path, endpoint, and generation before execution; deferred upload never
+looks up a current IP registration or follows a replacement addon. The handler
+only observes the writer's path key and does not open the supplied path.
+Its result echoes `runId` and `path`, the captured `boundary` sequence, `pending`
+write count, and `state: processed|deadline`. Up to eight pending prefix tickets
+are admitted; exhaustion returns `busy`. Each request observes the prefix every
+50 ms for at most four seconds within the connection deadline. Later writes
+cannot extend the captured boundary.
 
 Shutdown stops control admission, closes every accepted socket (including tasks
 not yet started), and joins the I/O thread before existing blocking drains. The

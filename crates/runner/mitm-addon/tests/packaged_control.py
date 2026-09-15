@@ -13,8 +13,9 @@ import subprocess
 import time
 from contextlib import contextmanager
 from pathlib import Path
+from uuid import uuid4
 
-from tests.control_helpers import control_connection, exchange, status_request
+from tests.control_helpers import control_connection, exchange, log_flush_request, status_request
 
 
 @contextmanager
@@ -48,7 +49,7 @@ def launch(root: Path, generation: str):
                 "--set",
                 "okou_api_url=http://127.0.0.1:1",
                 "--set",
-                f"okou_proxy_registry_path={directory / 'missing-registry.json'}",
+                f"okou_proxy_registry_path={directory / 'registry.json'}",
                 "--set",
                 "connection_strategy=lazy",
             ],
@@ -79,7 +80,7 @@ def launch(root: Path, generation: str):
                 assert json.loads(response.read())["error"] == "registry_unavailable"
             finally:
                 proxy.close()
-            yield directory
+            yield directory, port
         finally:
             process.terminate()
             try:
@@ -93,13 +94,85 @@ def launch(root: Path, generation: str):
 
 
 def test_packaged_addon_status_shutdown_and_fresh_generation(tmp_path):
-    with launch(tmp_path, "generation-1") as directory:
+    with launch(tmp_path, "generation-1") as (directory, _):
         assert exchange(directory)["data"] == {"state": "running"}
         with control_connection(directory) as partial:
             partial.sendall(b"\x00")
             assert exchange(directory)["type"] == "result"
     # Addon closes the listener but never unlinks Runner's endpoint.
     assert (directory / "control.sock").is_socket()
-    with launch(tmp_path, "generation-2") as replacement:
+    with launch(tmp_path, "generation-2") as (replacement, _):
         assert exchange(replacement)["code"] == "stale_generation"
         assert exchange(replacement, status_request("generation-2"))["type"] == "result"
+
+
+def test_packaged_addon_flushes_production_network_log_after_unregister(tmp_path):
+    run_id = str(uuid4())
+    with launch(tmp_path, "generation-1") as (directory, port):
+        log_path = directory / f"network-{run_id}.jsonl"
+        registry_path = directory / "registry.json"
+        registry_path.write_text(
+            json.dumps(
+                {
+                    "sandboxes": {
+                        "127.0.0.1": {
+                            "runId": run_id,
+                            "cliAgentType": "claude-code",
+                            "billableFirewalls": [],
+                            "networkLogPath": str(log_path),
+                            "proxyLogPath": str(directory / f"proxy-{run_id}.jsonl"),
+                            "firewalls": [
+                                {
+                                    "kind": "inline",
+                                    "firewall": {
+                                        "name": "example",
+                                        "apis": [
+                                            {
+                                                "base": "http://example.com",
+                                                "auth": {"headers": {}},
+                                                "permissions": [
+                                                    {"name": "read", "rules": ["GET /control-log"]}
+                                                ],
+                                            }
+                                        ],
+                                    },
+                                }
+                            ],
+                            "networkPolicies": {
+                                "example": {"allow": [], "deny": ["read"], "unknownPolicy": "deny"}
+                            },
+                        }
+                    },
+                    "updatedAt": 1,
+                }
+            )
+        )
+        # A local firewall denial runs the real HTTP and logging hooks without
+        # connecting to an upstream service or requesting credentials.
+        proxy = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+        try:
+            proxy.request("GET", "http://example.com/control-log")
+            response = proxy.getresponse()
+            assert response.status == 403
+            assert json.loads(response.read())["reason"] == "permission_denied"
+        finally:
+            proxy.close()
+
+        # Deferred upload happens after sandbox unregistration. Control must
+        # retain the original log identity without a live registry entry.
+        registry_path.write_text(json.dumps({"sandboxes": {}, "updatedAt": 2}))
+        result = exchange(directory, log_flush_request(log_path, run_id))
+        assert result["requestId"] == "request-1"
+        assert result["generation"] == "generation-1"
+        assert result["type"] == "result"
+        data = result["data"]
+        assert isinstance(data, dict)
+        assert data["runId"] == run_id
+        assert data["path"] == str(log_path)
+        assert data["state"] == "processed"
+        assert data["pending"] == 0
+        records = [json.loads(line) for line in log_path.read_text().splitlines()]
+        assert len(records) == 1
+        assert records[0]["url"] == "http://example.com/control-log"
+        assert records[0]["action"] == "DENY"
+        assert records[0]["status"] == 403

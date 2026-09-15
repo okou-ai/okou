@@ -99,7 +99,9 @@ archive and executable size/SHA-256, and invokes `tests/packaged_control.py`.
 That explicitly selected suite fails if its verified executable is absent; normal
 pytest discovery does not download binaries. It loads the production addon with
 fixture-owned configuration, checks socket and TCP readiness, stops it, and starts
-a fresh generation without contacting platform or model APIs. CI runs it on both
+a fresh generation without contacting platform or model APIs. It also generates
+a network record through a real firewall-denied HTTP request, unregisters the
+sandbox, and verifies `logs.flush` and the original log bytes. CI runs it on both
 x86_64 and aarch64 and includes it in the Crates gate.
 
 ### Flow metadata key contract check
@@ -196,7 +198,7 @@ suites before committing the upgrade.
 | `test_response_handler_cleanup.py`                      | Response-hook terminal request/response stream-state cleanup                                                         |
 | `test_error_handler.py`                                 | Error hook logging and usage cleanup                                                                                 |
 | `test_done_hook.py`                                     | Shutdown hook delivery, runner flush coordination, and executor cleanup                                              |
-| `test_runner_flush_request.py`                          | Runner-triggered usage flush marker contracts                                                                         |
+| `test_runner_flush_request.py`                          | Runner-triggered usage flush marker contracts                                                                        |
 | `test_runner_log_flush.py`                              | Runner-triggered `logs.flush` control requests, bounded prefixes, cancellation, and target validation                |
 | `test_runner_usage_flush_signal.py`                     | Runner-triggered usage signal, worker, retry, and timer coordination                                                 |
 | `test_tls_clienthello_hook.py`                          | TLS clienthello admission behavior                                                                                   |
