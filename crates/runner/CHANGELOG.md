@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.194.2](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.194.1...runner-rs-v0.194.2) (2026-09-15)
+
+
+### Bug Fixes
+
+* **pi:** preserve codex rate-limit diagnostics ([#34266](https://github.com/vm0-ai/vm0/issues/34266)) ([48cb88f](https://github.com/vm0-ai/vm0/commit/48cb88fe5c6a70dd6519565211de55b710fee3af))
+
+
+### Refactoring
+
+* **runner:** replace addon readiness marker with private control socket ([#34308](https://github.com/vm0-ai/vm0/issues/34308)) ([0035c91](https://github.com/vm0-ai/vm0/commit/0035c91324113ccec6a31d26db35533af619ff9f))
+
+
+### Performance Improvements
+
+* **runner:** persist extracted storage files for cache-hit delivery ([#33976](https://github.com/vm0-ai/vm0/issues/33976)) ([b961911](https://github.com/vm0-ai/vm0/commit/b961911d0516fbdc06d3e8387bedb0653eee5ea9))
+
 ## [0.194.1](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.194.0...runner-rs-v0.194.1) (2026-09-15)
 
 
