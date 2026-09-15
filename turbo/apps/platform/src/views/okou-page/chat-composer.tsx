@@ -67,6 +67,7 @@ import {
   ArrowUp,
   Bolt,
   Check,
+  Clapperboard,
   Download,
   Globe,
   Image as ImageIcon,
@@ -4365,7 +4366,7 @@ function TemplatePickerCategoryNav({
             label: t(($) => {
               return $.artifacts.templates.introVideo;
             }),
-            Icon: Presentation,
+            Icon: Clapperboard,
           },
         ]
       : []),
