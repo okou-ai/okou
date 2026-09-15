@@ -12,7 +12,10 @@ import type {
 import { createComposerVisualizationSignals } from "./composer-visualization.ts";
 
 export type ComposerTask =
-  ComposerCreateMode | "workflow" | "website" | "visualization";
+  | ComposerCreateMode
+  | "workflow"
+  | "website"
+  | "visualization";
 export type ComposerIdeaTask = Exclude<
   ComposerTask,
   "presentation" | "visualization"
