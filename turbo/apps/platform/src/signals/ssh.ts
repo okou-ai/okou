@@ -10,6 +10,11 @@ import {
   type SshCredentialResponse,
 } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
+import {
+  cloudflareAccessContract,
+  type CloudflareAccessConfig,
+} from "@okouai/api-contracts/contracts/cloudflare-access";
 import {
   agentSshAccessContract,
   sshChangedPayloadSchema,
@@ -48,12 +53,29 @@ export const cancelSshPrivateKeyFile$ = command(({ set }) => {
   set(resetPrivateKeyRead$);
   set(privateKeyFileRead$, null);
 });
+const resetFormSave$ = resetSignal();
+const resetAccessFormSave$ = resetSignal();
 export const mountSshForm$ = onRef(
   command(({ set }, form: HTMLFormElement, signal: AbortSignal) => {
     signal.addEventListener("abort", () => {
+      set(resetFormSave$);
       form.reset();
       set(cancelSshPrivateKeyFile$);
     });
+  }),
+);
+export const mountSshAccessForm$ = onRef(
+  command(({ set }, form: HTMLFormElement, signal: AbortSignal) => {
+    const first = form.querySelector("input");
+    first?.focus();
+    signal.addEventListener(
+      "abort",
+      () => {
+        set(resetAccessFormSave$);
+        form.reset();
+      },
+      { once: true },
+    );
   }),
 );
 export const mountSshPrivateKey$ = onRef(
@@ -158,6 +180,7 @@ const sshClients$ = computed(async (get) => {
     connections: createClient(sshConnectionsContract, options),
     access: createClient(agentSshAccessContract, options),
     credentials: createClient(sshCredentialsContract, options),
+    cloudflare: createClient(cloudflareAccessContract, options),
   };
 });
 export interface SshDialogState {
@@ -169,19 +192,103 @@ export interface SshDialogState {
     | "reset"
     | "create-credential"
     | "edit-credential"
-    | "delete-credential";
+    | "delete-credential"
+    | "create-access"
+    | "rename-access"
+    | "replace-access"
+    | "delete-access";
   readonly credential: SshCredentialResponse | null;
   readonly connection: SshConnectionResponse | null;
+  readonly config: CloudflareAccessConfig | null;
 }
 const dialog$ = state<SshDialogState | null>(null);
-const view$ = state<"hosts" | "credentials">("hosts");
-export const sshView$ = computed((get) => {
-  return get(view$);
+export const sshCloudflareEnabled$ = computed((get) => {
+  const features = get(featureSwitch$);
+  return (
+    features[FeatureSwitchKey.SshAccess] &&
+    features[FeatureSwitchKey.CloudflareAccess]
+  );
 });
-export const changeSshView$ = command(({ set }, value: string) => {
-  if (value === "hosts" || value === "credentials") {
+const view$ = state<"hosts" | "credentials" | "access">("hosts");
+export const sshView$ = computed((get) => {
+  const view = get(view$);
+  return view === "access" && !get(sshCloudflareEnabled$) ? "hosts" : view;
+});
+export const changeSshView$ = command(({ get, set }, value: string) => {
+  if (
+    value === "hosts" ||
+    value === "credentials" ||
+    (value === "access" && get(sshCloudflareEnabled$))
+  ) {
     set(view$, value);
   }
+});
+const transportEditor$ = state({ mode: "direct", configId: "" });
+export const sshTransportEditor$ = computed((get) => {
+  return get(transportEditor$);
+});
+export const chooseSshTransport$ = command(({ get, set }, mode: string) => {
+  if (
+    mode === "direct" ||
+    (mode === "cloudflare_access" && get(sshCloudflareEnabled$))
+  ) {
+    set(transportEditor$, (current) => {
+      return { ...current, mode };
+    });
+    if (get(conflict$) === SSH_ERROR_CODES.ACCESS_NOT_FOUND) {
+      set(conflict$, null);
+    }
+  }
+});
+export const chooseSshAccessConfig$ = command(
+  ({ get, set }, configId: string | null) => {
+    if (configId !== null) {
+      set(transportEditor$, (current) => {
+        return { ...current, configId };
+      });
+      if (get(conflict$) === SSH_ERROR_CODES.ACCESS_NOT_FOUND) {
+        set(conflict$, null);
+      }
+    }
+  },
+);
+const accessStep$ = state(false);
+export const sshAccessCreateStep$ = computed((get) => {
+  return get(accessStep$) && get(sshCloudflareEnabled$);
+});
+const restoreAccessFocus$ = state(false);
+export const openSshAccessStep$ = command(({ get, set }) => {
+  if (get(sshCloudflareEnabled$)) {
+    if (get(conflict$) === SSH_ERROR_CODES.ACCESS_NOT_FOUND) {
+      set(conflict$, null);
+    }
+    set(accessStep$, true);
+  }
+});
+export const closeSshAccessStep$ = command(({ set }) => {
+  set(accessStep$, false);
+  set(restoreAccessFocus$, true);
+});
+export const mountSshAccessCreateButton$ = onRef(
+  command(({ get, set }, button: HTMLButtonElement, _signal: AbortSignal) => {
+    if (get(restoreAccessFocus$)) {
+      button.focus();
+      set(restoreAccessFocus$, false);
+    }
+  }),
+);
+export const sshCloudflareConfigs$ = computed(async (get) => {
+  get(reload$);
+  if (!get(sshCloudflareEnabled$) || !(await get(sshIdentity$))) {
+    return null;
+  }
+  const result = await accept(
+    (await get(sshClients$)).cloudflare.list(),
+    [200, 404],
+    undefined,
+    { showErrorToast: false },
+  );
+  return result.status === 200 ? result.body.configs : null;
 });
 const credentialEditor$ = state({
   selection: "new",
@@ -191,15 +298,20 @@ const credentialEditor$ = state({
 export const sshCredentialEditor$ = computed((get) => {
   return get(credentialEditor$);
 });
-export const chooseSshCredential$ = command(({ set }, value: string | null) => {
-  if (value === null) {
-    return;
-  }
-  set(cancelSshPrivateKeyFile$);
-  set(credentialEditor$, (current) => {
-    return { ...current, selection: value };
-  });
-});
+export const chooseSshCredential$ = command(
+  ({ get, set }, value: string | null) => {
+    if (get(conflict$) === SSH_ERROR_CODES.CREDENTIAL_NOT_FOUND) {
+      set(conflict$, null);
+    }
+    if (value === null) {
+      return;
+    }
+    set(cancelSshPrivateKeyFile$);
+    set(credentialEditor$, (current) => {
+      return { ...current, selection: value };
+    });
+  },
+);
 export const chooseSshAuthMethod$ = command(({ set }, value: string) => {
   if (value !== "private_key" && value !== "password") {
     return;
@@ -231,11 +343,15 @@ export const sshCredentials$ = computed(async (get) => {
   return result.status === 200 ? result.body.credentials : null;
 });
 const conflict$ = state<string | null>(null);
+const reviewedVersion$ = state<number | null>(null);
 export const sshConflict$ = computed((get) => {
   return get(conflict$);
 });
 export const sshDialog$ = computed(async (get) => {
   const dialog = get(dialog$);
+  if (dialog?.kind.endsWith("-access") && !get(sshCloudflareEnabled$)) {
+    return null;
+  }
   return dialog?.identity === (await get(sshIdentity$)) ? dialog : null;
 });
 export const sshConnections$ = computed(async (get) => {
@@ -273,6 +389,9 @@ export const sshSingleConnectionName$ = computed(async (get) => {
 });
 export const closeSshDialog$ = command(({ set }) => {
   set(cancelSshPrivateKeyFile$);
+  set(accessStep$, false);
+  set(restoreAccessFocus$, false);
+  set(conflict$, null);
   return set(dialog$, null);
 });
 export const sshObservationsSnapshot$ = computed(async (get) => {
@@ -353,13 +472,32 @@ export const openSshDialog$ = command(
       return;
     }
     set(conflict$, null);
+    set(reviewedVersion$, null);
     set(cancelSshPrivateKeyFile$);
     set(credentialEditor$, {
       selection: connection?.credentialId ?? "new",
       method: "private_key",
       replace: false,
     });
-    set(dialog$, { identity, kind, connection, credential: null });
+    set(accessStep$, false);
+    set(restoreAccessFocus$, false);
+    set(transportEditor$, {
+      mode:
+        connection && "transport" in connection
+          ? "cloudflare_access"
+          : "direct",
+      configId:
+        connection && "transport" in connection
+          ? connection.transport.configId
+          : "",
+    });
+    set(dialog$, {
+      identity,
+      kind,
+      connection,
+      credential: null,
+      config: null,
+    });
   },
 );
 
@@ -382,7 +520,197 @@ export const openSshCredentialDialog$ = command(
       method: credential?.authMethod ?? "private_key",
       replace: false,
     });
-    set(dialog$, { identity, kind, connection: null, credential });
+    set(dialog$, {
+      identity,
+      kind,
+      connection: null,
+      credential,
+      config: null,
+    });
+  },
+);
+
+export const openSshCloudflareDialog$ = command(
+  async (
+    { get, set },
+    kind:
+      | "create-access"
+      | "rename-access"
+      | "replace-access"
+      | "delete-access",
+    config: CloudflareAccessConfig | null,
+    signal: AbortSignal,
+  ) => {
+    const identity = await get(sshIdentity$);
+    signal.throwIfAborted();
+    if (!identity || !get(sshCloudflareEnabled$)) {
+      return;
+    }
+    set(conflict$, null);
+    set(reviewedVersion$, null);
+    set(accessStep$, false);
+    set(dialog$, {
+      identity,
+      kind,
+      config,
+      connection: null,
+      credential: null,
+    });
+  },
+);
+
+function accessCredentialsFromForm(form: FormData) {
+  return {
+    clientId: textField(form, "clientId"),
+    clientSecret: textField(form, "clientSecret"),
+  };
+}
+
+async function updateAccessConfig(
+  client: InitClientReturn<typeof cloudflareAccessContract, InitClientArgs>,
+  dialog: SshDialogState,
+  form: FormData,
+  reviewedRevision: number | null,
+  signal: AbortSignal,
+): Promise<string | null> {
+  const config = dialog.config;
+  if (!config) {
+    throw new Error("Access edit requires a configuration");
+  }
+  const params = { configId: config.id };
+  const expectedRevision = reviewedRevision ?? config.revision;
+  if (dialog.kind === "delete-access") {
+    const result = await accept(
+      client.delete({
+        params,
+        body: { expectedRevision },
+        fetchOptions: { signal },
+      }),
+      [204, 404, 409],
+      signal,
+    );
+    return result.status === 204 ? null : result.body.error.code;
+  }
+  const result = await accept(
+    client.update({
+      params,
+      body: {
+        expectedRevision,
+        ...(dialog.kind === "replace-access"
+          ? { credentials: accessCredentialsFromForm(form) }
+          : { name: textField(form, "accessName") }),
+      },
+      fetchOptions: { signal },
+    }),
+    [200, 404, 409],
+    signal,
+  );
+  return result.status === 200 ? null : result.body.error.code;
+}
+
+export const saveSshCloudflare$ = command(
+  async ({ get, set }, form: FormData, parentSignal: AbortSignal) => {
+    const signal = set(resetAccessFormSave$, parentSignal);
+    const dialog = await get(sshDialog$);
+    signal.throwIfAborted();
+    if (!dialog || !get(sshCloudflareEnabled$)) {
+      return;
+    }
+    const clients = await get(sshClients$);
+    signal.throwIfAborted();
+    if (clients.identity !== dialog.identity) {
+      return;
+    }
+    let created: CloudflareAccessConfig | null = null;
+    let conflict: string | null = null;
+    if (get(accessStep$) || dialog.kind === "create-access") {
+      const result = await accept(
+        clients.cloudflare.create({
+          body: cloudflareAccessContract.create.body.parse({
+            name: textField(form, "accessName"),
+            credentials: accessCredentialsFromForm(form),
+          }),
+          fetchOptions: { signal },
+        }),
+        [201],
+        signal,
+      );
+      created = result.body;
+    } else {
+      conflict = await updateAccessConfig(
+        clients.cloudflare,
+        dialog,
+        form,
+        get(reviewedVersion$),
+        signal,
+      );
+    }
+    signal.throwIfAborted();
+    if (dialog.identity !== (await get(sshIdentity$))) {
+      return;
+    }
+    signal.throwIfAborted();
+    set(invalidateSsh$);
+    if (get(dialog$) !== dialog || !get(sshCloudflareEnabled$)) {
+      return;
+    }
+    if (conflict) {
+      set(conflict$, conflict);
+      return;
+    }
+    if (created && get(accessStep$)) {
+      set(chooseSshAccessConfig$, created.id);
+      set(closeSshAccessStep$);
+    } else {
+      set(closeSshDialog$);
+    }
+  },
+);
+
+export const sshConflictReview$ = computed(async (get) => {
+  const dialog = await get(sshDialog$);
+  const conflict = get(conflict$);
+  if (
+    !dialog ||
+    (conflict !== SSH_ERROR_CODES.GENERATION_CONFLICT &&
+      conflict !== SSH_ERROR_CODES.ACCESS_REVISION_CONFLICT &&
+      conflict !== SSH_ERROR_CODES.ACCESS_IN_USE)
+  ) {
+    return null;
+  }
+  if (dialog.config) {
+    const config = (await get(sshCloudflareConfigs$))?.find((value) => {
+      return value.id === dialog.config?.id;
+    });
+    return config ? { ...dialog, config } : null;
+  }
+  if (dialog.connection) {
+    const connection = (await get(sshConnections$))?.find((value) => {
+      return value.id === dialog.connection?.id;
+    });
+    return connection ? { ...dialog, connection } : null;
+  }
+  return null;
+});
+
+export const acceptSshConflictReview$ = command(
+  async ({ get, set }, reviewed: SshDialogState, signal: AbortSignal) => {
+    const current = await get(sshDialog$);
+    signal.throwIfAborted();
+    if (
+      !current ||
+      reviewed.identity !== current.identity ||
+      reviewed.kind !== current.kind ||
+      reviewed.config?.id !== current.config?.id ||
+      reviewed.connection?.id !== current.connection?.id
+    ) {
+      return;
+    }
+    set(
+      reviewedVersion$,
+      reviewed.config?.revision ?? reviewed.connection?.generation ?? null,
+    );
+    set(conflict$, null);
   },
 );
 
@@ -475,8 +803,42 @@ async function saveCredentialForm(
   return null;
 }
 
+function hostFieldsFromForm(
+  dialog: SshDialogState,
+  form: FormData,
+  editor: { readonly selection: string; readonly method: string },
+  transport: { readonly mode: string; readonly configId: string },
+) {
+  if (dialog.kind !== "create" && dialog.kind !== "edit") {
+    return undefined;
+  }
+  return {
+    displayName: textField(form, "displayName"),
+    host: textField(form, "host"),
+    port:
+      transport.mode === "cloudflare_access"
+        ? 443
+        : Number(textField(form, "port")),
+    ...(transport.mode === "cloudflare_access"
+      ? {
+          transport: {
+            type: "cloudflare_access",
+            configId: transport.configId,
+          },
+        }
+      : dialog.connection && "transport" in dialog.connection
+        ? { transport: { type: "direct" } }
+        : {}),
+    credential:
+      editor.selection === "new"
+        ? { create: credentialFromForm(form, editor) }
+        : { id: editor.selection },
+  };
+}
+
 export const saveSsh$ = command(
-  async ({ get, set }, form: FormData, signal: AbortSignal) => {
+  async ({ get, set }, form: FormData, parentSignal: AbortSignal) => {
+    const signal = set(resetFormSave$, parentSignal);
     const dialog = await get(sshDialog$);
     signal.throwIfAborted();
     if (!dialog) {
@@ -503,18 +865,8 @@ export const saveSsh$ = command(
       );
     } else {
       const client = clients.connections;
-      const fields =
-        dialog.kind === "create" || dialog.kind === "edit"
-          ? {
-              displayName: textField(form, "displayName"),
-              host: textField(form, "host"),
-              port: Number(textField(form, "port")),
-              credential:
-                editor.selection === "new"
-                  ? { create: credentialFromForm(form, editor) }
-                  : { id: editor.selection },
-            }
-          : undefined;
+      const transport = get(transportEditor$);
+      const fields = hostFieldsFromForm(dialog, form, editor, transport);
       if (dialog.kind === "create") {
         const body = createSshConnectionRequestSchema.parse(fields);
         const result = await accept(
@@ -548,7 +900,7 @@ export const saveSsh$ = command(
           conflicted = result.status === 409 ? result.body.error.code : null;
         } else {
           const body = updateSshConnectionRequestSchema.parse({
-            expectedGeneration: connection.generation,
+            expectedGeneration: get(reviewedVersion$) ?? connection.generation,
             ...fields,
           });
           const result = await accept(
@@ -565,7 +917,12 @@ export const saveSsh$ = command(
       return;
     }
     signal.throwIfAborted();
-    set(dialog$, null);
+    if (get(dialog$) !== dialog) {
+      return;
+    }
+    if (!conflicted || (dialog.kind !== "create" && dialog.kind !== "edit")) {
+      set(dialog$, null);
+    }
     set(conflict$, conflicted);
     set(reload$, (value) => {
       return value + 1;
