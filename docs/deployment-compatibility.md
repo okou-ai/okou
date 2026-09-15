@@ -359,9 +359,19 @@ OTLP to `POST /api/webhooks/agent/:runId/langfuse/traces` using its existing
 `OKOU_TOKEN`. The API checks that token's run/user/org and the run's captured
 `langfuseTraceEnabled`, then forwards only the OTLP body and encoding headers
 with server-owned Langfuse credentials. Connector account selection cannot
-change this destination or authentication. Existing trace and parent IDs are
-preserved, and sandbox-first handoffs now carry the deterministic Run End-to-End
-parent so their observations join the run trace even without an API model turn.
+change this destination or authentication. API execution, ownership transfer,
+Sandbox Wait, and Sandbox Execution are sibling observations under the
+deterministic Run End-to-End parent. LLM and tool observations stay inside their
+execution phase. Both V3 and V4 sandbox handoffs carry that run parent and a
+required `sandboxWaitStartedAt` timestamp when tracing is admitted. This
+staff-only trace contract has no legacy shape or historical rewrite.
+
+The API phase ends when handoff preparation starts. Transfer preparation ends
+when manifest publication starts; the sandbox emits Sandbox Wait from that same
+timestamp through native execution start. Publication, handoff restoration, and
+runtime startup therefore belong to waiting. Publication failures still mark
+the transfer as failed. Cross-host clock skew never produces a fabricated or
+negative wait; invalid intervals are omitted.
 
 The relay sets `x-langfuse-ingestion-version: 4` on its upstream request so
 Langfuse stores native observations without synthesizing an extra trace span.

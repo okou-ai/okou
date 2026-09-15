@@ -17,6 +17,7 @@ it("exports real Pi spans through the authenticated relay without connector cred
     spanId: "2".repeat(16),
     traceFlags: 1 as const,
     sessionId: randomUUID(),
+    sandboxWaitStartedAt: Date.now() - 1000,
   };
   vi.stubEnv("OKOU_PI_LANGFUSE_DEBUG_ENABLED", "true");
   vi.stubEnv("LANGFUSE_TRACING_ENABLED", "true");
@@ -156,6 +157,7 @@ it("exports real Pi spans through the authenticated relay without connector cred
     expect(process.env.OKOU_PI_LANGFUSE_OTLP_TOKEN).toBeUndefined();
     expect(process.env.LANGFUSE_SECRET_KEY).toBeUndefined();
     await runtime.session.prompt(`Check trace redaction: ${token}`);
+    await runtime.session.prompt("Continue in the same sandbox");
   } finally {
     await runtime.dispose();
   }
@@ -176,4 +178,53 @@ it("exports real Pi spans through the authenticated relay without connector cred
   expect(payload).toContain("Sandbox answer");
   expect(payload).not.toContain(token);
   expect(payload).not.toContain("user-dev-secret-key");
+
+  const spans = exports.flatMap((batch) => {
+    const exported = JSON.parse(batch.body) as {
+      resourceSpans: {
+        scopeSpans: {
+          spans: {
+            name: string;
+            traceId: string;
+            spanId: string;
+            parentSpanId: string;
+            startTimeUnixNano: string;
+            endTimeUnixNano: string;
+          }[];
+        }[];
+      }[];
+    };
+    return exported.resourceSpans.flatMap((resource) => {
+      return resource.scopeSpans.flatMap((scope) => {
+        return scope.spans;
+      });
+    });
+  });
+  const waits = spans.filter((span) => {
+    return span.name === "Sandbox Wait";
+  });
+  const executions = spans.filter((span) => {
+    return span.name === "Sandbox Execution";
+  });
+  const generations = spans.filter((span) => {
+    return span.name.startsWith("LLM Call");
+  });
+  expect(waits).toHaveLength(1);
+  expect(executions).toHaveLength(2);
+  expect(generations).toHaveLength(2);
+  expect(waits[0]?.parentSpanId).toBe(parent.spanId);
+  expect(waits[0]?.startTimeUnixNano).toBe(
+    String(BigInt(parent.sandboxWaitStartedAt) * 1_000_000n),
+  );
+  expect(waits[0]?.endTimeUnixNano).toBe(executions[0]?.startTimeUnixNano);
+  for (const execution of executions) {
+    expect(execution.parentSpanId).toBe(parent.spanId);
+  }
+  for (const generation of generations) {
+    expect(
+      executions.map((span) => {
+        return span.spanId;
+      }),
+    ).toContain(generation.parentSpanId);
+  }
 });

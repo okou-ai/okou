@@ -11,10 +11,10 @@ index d41363e0c536ed26a6e8e761b4bbbef41988001f..cf23501694339325acc46f17f4119407
    "repository": {
      "type": "git",
 diff --git a/src/index.ts b/src/index.ts
-index 363a50de0d9702d7c365efcd6ade09e534713261..bbac5715bdd60f7b87f8d554d5e822de4d258ba0 100644
+index 363a50de0d9702d7c365efcd6ade09e534713261..5cff41846d8796488029140ebca18836ec757b26 100644
 --- a/src/index.ts
 +++ b/src/index.ts
-@@ -14,11 +14,13 @@ import {
+@@ -14,11 +14,14 @@ import {
  } from "@langfuse/tracing";
  import { type SpanContext, TraceFlags } from "@opentelemetry/api";
  import { AlwaysOnSampler, NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
@@ -25,10 +25,11 @@ index 363a50de0d9702d7c365efcd6ade09e534713261..bbac5715bdd60f7b87f8d554d5e822de
  const ROOT_OBSERVATION_NAME = "Conversational Turn";
  const SUBAGENT_ROOT_OBSERVATION_NAME = "Subagent Turn";
 +const CONTINUATION_ROOT_OBSERVATION_NAME = "Sandbox Continuation";
++const SANDBOX_ROOT_OBSERVATION_NAME = "Sandbox Execution";
  const TRACE_NAME = "Pi Turn";
  const GENERATION_PREFIX = "LLM Call";
  const TOOL_PREFIX = "Tool:";
-@@ -76,9 +78,10 @@ export function readInheritedParent(env: NodeJS.ProcessEnv = process.env): Inher
+@@ -76,9 +79,10 @@ export function readInheritedParent(env: NodeJS.ProcessEnv = process.env): Inher
  // ---------------------------------------------------------------------------
  
  export interface LangfuseConfig {
@@ -42,7 +43,7 @@ index 363a50de0d9702d7c365efcd6ade09e534713261..bbac5715bdd60f7b87f8d554d5e822de
    userId?: string;
    environment?: string;
    release?: string;
-@@ -89,6 +92,19 @@ export function loadConfig(): LangfuseConfig | undefined {
+@@ -89,6 +93,19 @@ export function loadConfig(): LangfuseConfig | undefined {
    if ((process.env.LANGFUSE_TRACING_ENABLED ?? "").trim().toLowerCase() === "false") {
      return undefined;
    }
@@ -62,7 +63,7 @@ index 363a50de0d9702d7c365efcd6ade09e534713261..bbac5715bdd60f7b87f8d554d5e822de
    const file = readConfigFile();
    const asTrimmedString = (v: unknown): string | undefined =>
      typeof v === "string" && v.trim() ? v.trim() : undefined;
-@@ -144,14 +160,15 @@ export interface TruncationMeta {
+@@ -144,14 +161,15 @@ export interface TruncationMeta {
  }
  
  export function truncateText(text: string): { text: string; meta: TruncationMeta } {
@@ -82,7 +83,7 @@ index 363a50de0d9702d7c365efcd6ade09e534713261..bbac5715bdd60f7b87f8d554d5e822de
        kept_len: MAX_CHARS,
        sha256: createHash("sha256").update(text).digest("hex"),
      },
-@@ -197,7 +214,7 @@ export function createSecretRedactor(...extraSecrets: string[]): (value: unknown
+@@ -197,7 +215,7 @@ export function createSecretRedactor(...extraSecrets: string[]): (value: unknown
    return (value) => walk(value, []);
  }
  
@@ -91,7 +92,7 @@ index 363a50de0d9702d7c365efcd6ade09e534713261..bbac5715bdd60f7b87f8d554d5e822de
  
  /** Extract plain text from a pi message content array. */
  export function extractText(content: unknown): string {
-@@ -383,8 +400,18 @@ function createRuntime(
+@@ -383,8 +401,18 @@ function createRuntime(
    config: LangfuseConfig,
    resolveTraceAttributes: () => TraceAttributes,
  ): Runtime {
@@ -111,7 +112,65 @@ index 363a50de0d9702d7c365efcd6ade09e534713261..bbac5715bdd60f7b87f8d554d5e822de
      publicKey: config.publicKey,
      secretKey: config.secretKey,
      baseUrl: config.baseUrl,
-@@ -654,6 +681,85 @@ export default function (pi: ExtensionAPI) {
+@@ -494,6 +522,36 @@ export default function (pi: ExtensionAPI) {
+     }
+   };
+ 
++  const isPlatformSandbox = Boolean(config.relay && inheritedParent?.depth === 0);
++  const sandboxWaitStartedAt = Number(process.env.OKOU_PI_LANGFUSE_SANDBOX_WAIT_STARTED_AT);
++  let sandboxWaitRecorded = false;
++  const recordSandboxWait = (endedAt: Date) => {
++    if (sandboxWaitRecorded || !isPlatformSandbox || !inheritedParent) return;
++    sandboxWaitRecorded = true;
++    // Different hosts supply these timestamps; do not fabricate a duration on clock skew.
++    if (!Number.isSafeInteger(sandboxWaitStartedAt) || sandboxWaitStartedAt < 0 || sandboxWaitStartedAt > endedAt.getTime()) return;
++    const wait = startObservation(
++      "Sandbox Wait",
++      {
++        metadata: {
++          source: "pi",
++          extension: EXTENSION_NAME,
++          extension_version: EXTENSION_VERSION,
++          phase: "sandbox-wait",
++          start_boundary: "manifest-publication-start",
++          end_boundary: "sandbox-execution-start",
++          content_capture: "metadata-only",
++        },
++      },
++      {
++        asType: "span",
++        parentSpanContext: inheritedParent.spanContext,
++        startTime: new Date(sandboxWaitStartedAt),
++      },
++    );
++    wait.end(endedAt);
++  };
++
+   const closeDanglingObservations = (reason: "interrupted" | "superseded") => {
+     if (!state) return;
+     for (const [, tool] of state.openTools) {
+@@ -618,8 +676,10 @@ export default function (pi: ExtensionAPI) {
+       ...(config.userId ? { [LangfuseOtelSpanAttributes.TRACE_USER_ID]: config.userId } : {}),
+     };
+ 
++    const startedAt = new Date();
++    recordSandboxWait(startedAt);
+     const root = startObservation(
+-      isSubagent ? SUBAGENT_ROOT_OBSERVATION_NAME : ROOT_OBSERVATION_NAME,
++      isPlatformSandbox ? SANDBOX_ROOT_OBSERVATION_NAME : isSubagent ? SUBAGENT_ROOT_OBSERVATION_NAME : ROOT_OBSERVATION_NAME,
+       {
+         input: { role: "user", content: userText },
+         metadata: {
+@@ -637,7 +697,7 @@ export default function (pi: ExtensionAPI) {
+             : {}),
+         },
+       },
+-      { asType: "span", ...(inheritedParent ? { parentSpanContext: inheritedParent.spanContext } : {}) },
++      { asType: "span", startTime: startedAt, ...(inheritedParent ? { parentSpanContext: inheritedParent.spanContext } : {}) },
+     );
+ 
+     state = {
+@@ -654,6 +714,88 @@ export default function (pi: ExtensionAPI) {
      debug("root created, turn", turnNumber);
    });
  
@@ -154,8 +213,10 @@ index 363a50de0d9702d7c365efcd6ade09e534713261..bbac5715bdd60f7b87f8d554d5e822de
 +        : {}),
 +    };
 +
++    const startedAt = new Date();
++    recordSandboxWait(startedAt);
 +    const root = startObservation(
-+      CONTINUATION_ROOT_OBSERVATION_NAME,
++      isPlatformSandbox ? SANDBOX_ROOT_OBSERVATION_NAME : CONTINUATION_ROOT_OBSERVATION_NAME,
 +      {
 +        input: { role: "user", content: userText },
 +        metadata: {
@@ -177,6 +238,7 @@ index 363a50de0d9702d7c365efcd6ade09e534713261..bbac5715bdd60f7b87f8d554d5e822de
 +      {
 +        asType: "span",
 +        parentSpanContext: inheritedParent.spanContext,
++        startTime: startedAt,
 +      },
 +    );
 +

@@ -38,6 +38,7 @@ const LANGFUSE_RUNTIME_ENVIRONMENT = {
   sessionId: "LANGFUSE_PI_PARENT_SESSION_ID",
   depth: "LANGFUSE_PI_PARENT_DEPTH",
   continuation: "PI_LANGFUSE_CONTINUATION",
+  sandboxWaitStartedAt: "OKOU_PI_LANGFUSE_SANDBOX_WAIT_STARTED_AT",
 } as const;
 
 const LANGFUSE_CONFIG_ENVIRONMENT = {
@@ -84,6 +85,9 @@ export function installLangfuseRuntimeEnvironment(
     process.env[LANGFUSE_RUNTIME_ENVIRONMENT.spanId] = parent.spanId;
     process.env[LANGFUSE_RUNTIME_ENVIRONMENT.sessionId] = parent.sessionId;
     process.env[LANGFUSE_RUNTIME_ENVIRONMENT.depth] = "0";
+    process.env[LANGFUSE_RUNTIME_ENVIRONMENT.sandboxWaitStartedAt] = String(
+      parent.sandboxWaitStartedAt,
+    );
   }
   if (enabled && ownershipTransferMode === "pending-tool-continuation") {
     process.env[LANGFUSE_RUNTIME_ENVIRONMENT.continuation] = "true";

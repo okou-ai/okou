@@ -8247,6 +8247,7 @@ describe("CHAT-02: model-first provider policies", () => {
         traceId: run.runId.replaceAll("-", ""),
         spanId: expect.stringMatching(/^[a-f0-9]{16}$/u),
         sessionId: run.threadId,
+        sandboxWaitStartedAt: expect.any(Number),
       },
     });
     const payload = JSON.stringify({

@@ -7,6 +7,7 @@ const PARENT = {
   spanId: "2".repeat(16),
   traceFlags: 1,
   sessionId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+  sandboxWaitStartedAt: 1_000,
 } as const;
 
 const MANAGED_ENVIRONMENT = [
@@ -16,6 +17,7 @@ const MANAGED_ENVIRONMENT = [
   "LANGFUSE_PI_PARENT_SESSION_ID",
   "LANGFUSE_PI_PARENT_DEPTH",
   "PI_LANGFUSE_CONTINUATION",
+  "OKOU_PI_LANGFUSE_SANDBOX_WAIT_STARTED_AT",
   "LANGFUSE_PUBLIC_KEY",
   "LANGFUSE_SECRET_KEY",
   "LANGFUSE_BASE_URL",
@@ -52,6 +54,7 @@ function installSpoofedParent(): void {
     "ffffffff-ffff-4fff-8fff-ffffffffffff";
   process.env.LANGFUSE_PI_PARENT_DEPTH = "99";
   process.env.PI_LANGFUSE_CONTINUATION = "true";
+  process.env.OKOU_PI_LANGFUSE_SANDBOX_WAIT_STARTED_AT = "999";
 }
 
 describe("Pi Langfuse RPC environment boundary", () => {
@@ -69,6 +72,9 @@ describe("Pi Langfuse RPC environment boundary", () => {
       expect(process.env.LANGFUSE_PI_PARENT_SESSION_ID).toBeUndefined();
       expect(process.env.LANGFUSE_PI_PARENT_DEPTH).toBeUndefined();
       expect(process.env.PI_LANGFUSE_CONTINUATION).toBeUndefined();
+      expect(
+        process.env.OKOU_PI_LANGFUSE_SANDBOX_WAIT_STARTED_AT,
+      ).toBeUndefined();
 
       restore();
       expect(process.env.LANGFUSE_PI_PARENT_TRACE_ID).toBe("a".repeat(32));
@@ -90,8 +96,12 @@ describe("Pi Langfuse RPC environment boundary", () => {
       expect(process.env.LANGFUSE_PI_PARENT_SESSION_ID).toBe(PARENT.sessionId);
       expect(process.env.LANGFUSE_PI_PARENT_DEPTH).toBe("0");
       expect(process.env.PI_LANGFUSE_CONTINUATION).toBe("true");
+      expect(process.env.OKOU_PI_LANGFUSE_SANDBOX_WAIT_STARTED_AT).toBe(
+        String(PARENT.sandboxWaitStartedAt),
+      );
 
       restore();
+      expect(process.env.OKOU_PI_LANGFUSE_SANDBOX_WAIT_STARTED_AT).toBe("999");
       expect(process.env.LANGFUSE_PI_PARENT_TRACE_ID).toBe("a".repeat(32));
     });
   });

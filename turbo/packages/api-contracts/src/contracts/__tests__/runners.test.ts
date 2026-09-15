@@ -638,6 +638,7 @@ describe("Pi sandbox execution contract", () => {
       spanId: "2".repeat(16),
       traceFlags: 1,
       sessionId: piSessionId,
+      sandboxWaitStartedAt: 1_000,
     } as const;
     const manifest = piApiFirstTurnManifestSchema.parse({
       schemaVersion: 3,
@@ -656,6 +657,9 @@ describe("Pi sandbox execution contract", () => {
       { ...langfuseParent, spanId: "0".repeat(16) },
       { ...langfuseParent, spanId: "2".repeat(15) },
       { ...langfuseParent, traceFlags: 0 },
+      { ...langfuseParent, sandboxWaitStartedAt: undefined },
+      { ...langfuseParent, sandboxWaitStartedAt: -1 },
+      { ...langfuseParent, sandboxWaitStartedAt: 1.5 },
       { ...langfuseParent, extra: true },
     ]) {
       expect(
