@@ -201,6 +201,7 @@ import {
   officialWorkflowConfigurationForm$,
   reconfigureOfficialWorkflow$,
   setOfficialWorkflowConfigurationForm$,
+  type OfficialWorkflowConfigurationForm,
   uninstallOfficialWorkflow$,
 } from "../../signals/workflows-page/official-workflows-signals.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -1491,6 +1492,7 @@ function OfficialWorkflowInstallationSettings({
 }: {
   readonly detail: WorkflowDetailResponse;
 }) {
+  const form = useGet(officialWorkflowConfigurationForm$);
   const installationLoadable = useLoadable(
     currentOfficialWorkflowInstallation$,
   );
@@ -1510,10 +1512,16 @@ function OfficialWorkflowInstallationSettings({
         />
       ) : null}
       <OfficialWorkflowUninstallCard />
-      {definition && canReconfigure ? (
+      {definition &&
+      canReconfigure &&
+      form?.target.operation === "reconfigure" &&
+      form.target.workflowId === detail.id &&
+      form.definitionName === definition.name ? (
         <OfficialWorkflowReconfigureDialog
+          key={detail.id}
           detail={detail}
           definition={definition}
+          form={form}
         />
       ) : null}
     </>
@@ -1618,34 +1626,27 @@ function OfficialWorkflowUninstallCard() {
 function OfficialWorkflowReconfigureDialog({
   detail,
   definition,
+  form,
 }: {
   readonly detail: WorkflowDetailResponse;
   readonly definition: OfficialWorkflowInstallationDefinition;
+  readonly form: OfficialWorkflowConfigurationForm;
 }) {
-  const form = useGet(officialWorkflowConfigurationForm$);
   const setForm = useSet(setOfficialWorkflowConfigurationForm$);
   const pageSignal = useGet(pageSignal$);
   const [reconfigureLoadable, reconfigure] = useLoadableSet(
     reconfigureOfficialWorkflow$,
   );
   const reconfiguring = reconfigureLoadable.state === "loading";
-  const activeForm =
-    form?.target.operation === "reconfigure" &&
-    form.target.workflowId === detail.id &&
-    form.definitionName === definition.name
-      ? form
-      : null;
-  const complete = activeForm
-    ? officialWorkflowConfigurationComplete(activeForm, definition.blueprints)
-    : false;
+  const complete = officialWorkflowConfigurationComplete(
+    form,
+    definition.blueprints,
+  );
   const submit = () => {
-    if (!activeForm) {
-      return;
-    }
     detach(
       (async () => {
         await reconfigure(
-          { workflowId: detail.id, blueprints: activeForm.blueprints },
+          { workflowId: detail.id, blueprints: form.blueprints },
           pageSignal,
         );
         setForm(null);
@@ -1661,7 +1662,7 @@ function OfficialWorkflowReconfigureDialog({
   };
   return (
     <Dialog
-      open={activeForm !== null}
+      open
       onOpenChange={(open) => {
         if (!open) {
           setForm(null);
@@ -1681,17 +1682,15 @@ function OfficialWorkflowReconfigureDialog({
             })}
           </DialogDescription>
         </DialogHeader>
-        {activeForm ? (
-          <OfficialWorkflowConfigurationFields
-            form={activeForm}
-            blueprints={definition.blueprints}
-            agents={[]}
-            agentsLoaded
-            showAgent={false}
-            disabled={reconfiguring}
-          />
-        ) : null}
-        {activeForm?.submitted && reconfigureLoadable.state === "hasError" ? (
+        <OfficialWorkflowConfigurationFields
+          form={form}
+          blueprints={definition.blueprints}
+          agents={[]}
+          agentsLoaded
+          showAgent={false}
+          disabled={reconfiguring}
+        />
+        {reconfigureLoadable.state === "hasError" ? (
           <Alert variant="destructive">
             <AlertTitle>
               {i18n.t(($) => {
@@ -1707,7 +1706,7 @@ function OfficialWorkflowReconfigureDialog({
         ) : null}
         <WorkflowDialogFooter
           busy={reconfiguring}
-          disabled={!activeForm || !complete || reconfiguring}
+          disabled={!complete || reconfiguring}
           cancelLabel={i18n.t(($) => {
             return $.workflows.common.cancel;
           })}
