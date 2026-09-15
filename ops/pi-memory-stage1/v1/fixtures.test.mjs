@@ -168,11 +168,12 @@ for (const fixture of fixtures) {
 test("one hundred fractional observations equal exactly 20", () => {
   const rows = Array.from({ length: 100 }, (_, index) => {
     const row = structuredClone(fixtures[1].events[0]);
-    Object.assign(row.fields, {
+    row.fields = {
+      ...row.fields,
       accountingId: `fractional-${index}`,
       grossCreditValueUsd: 0.2,
       grossCreditValueNanoUsd: "200000000",
-    });
+    };
     return row;
   });
   assert.deepEqual(evaluate(rows, "2026-09-15T12:00:00Z"), {
@@ -189,7 +190,7 @@ for (const [name, fields] of [
 ]) {
   test(name + " is unhealthy", () => {
     const row = structuredClone(fixtures[1].events[0]);
-    Object.assign(row.fields, fields);
+    row.fields = { ...row.fields, ...fields };
     assert.equal(evaluate([row], "2026-09-15T12:00:00Z").healthProblem, true);
   });
 }
