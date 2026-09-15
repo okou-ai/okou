@@ -109,7 +109,7 @@ export const capturePaidOnboardingStepViewed$ = command(
       signal,
     );
     capturePaidOnboardingEvent("StepViewed", {
-      ...(observation.ok
+      ...(observation.ok && observation.value
         ? { acquisition_observation_id: observation.value }
         : {}),
       ...attributionProperties(set(readStoredAdAttributionMetadata$)),
@@ -167,7 +167,7 @@ export const capturePaidOnboardingCheckoutCreated$ = command(
       signal,
     );
     capturePaidOnboardingEvent("CheckoutCreated", {
-      ...(observation.ok
+      ...(observation.ok && observation.value
         ? { acquisition_observation_id: observation.value }
         : {}),
       ...attributionProperties(set(readStoredAdAttributionMetadata$)),
@@ -183,7 +183,7 @@ export const capturePaidOnboardingRoleConfirmed$ = command(
       signal,
     );
     capturePaidOnboardingEvent("RoleConfirmed", {
-      ...(observation.ok
+      ...(observation.ok && observation.value
         ? { acquisition_observation_id: observation.value }
         : {}),
       ...attributionProperties(set(readStoredAdAttributionMetadata$)),
@@ -210,7 +210,7 @@ export const capturePaidOnboardingRedirectToStripe$ = command(
       signal,
     );
     capturePaidOnboardingEvent("RedirectToStripe", {
-      ...(observation.ok
+      ...(observation.ok && observation.value
         ? { acquisition_observation_id: observation.value }
         : {}),
       ...attributionProperties(set(readStoredAdAttributionMetadata$)),
@@ -264,7 +264,7 @@ export const capturePaidOnboardingAppHandoff$ = command(
       signal,
     );
     capturePaidOnboardingEvent("AppHandoff", {
-      ...(observation.ok
+      ...(observation.ok && observation.value
         ? { acquisition_observation_id: observation.value }
         : {}),
       ...attributionProperties(set(readStoredAdAttributionMetadata$)),

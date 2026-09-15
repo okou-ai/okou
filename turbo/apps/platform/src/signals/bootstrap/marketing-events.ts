@@ -10,6 +10,24 @@ interface PendingEvent {
 }
 // Business observations only. No URL attribution, cookies, or provider SDKs.
 const internalPendingMarketingEvents$ = state<readonly PendingEvent[]>([]);
+// Unknown buffers only business observations in memory until the trusted iframe
+// supplies Marketing's runtime setting. A known disabled state discards them.
+const internalMarketingShadowEnabled$ = state<boolean | undefined>(undefined);
+const internalMarketingShadowEpoch$ = state(0);
+export const marketingShadowEnabled$ = computed((get) => {
+  return get(internalMarketingShadowEnabled$);
+});
+export const setMarketingShadowEnabled$ = command(
+  ({ set }, enabled: boolean | undefined) => {
+    set(internalMarketingShadowEnabled$, enabled);
+    if (enabled !== true) {
+      set(internalMarketingShadowEpoch$, (epoch) => {
+        return epoch + 1;
+      });
+      set(internalPendingMarketingEvents$, []);
+    }
+  },
+);
 export const pendingMarketingEvents$ = computed((get) => {
   return get(internalPendingMarketingEvents$);
 });
@@ -29,9 +47,19 @@ export const enqueueMarketingEvent$ = command(
     properties: ObservedAcquisitionEvent["properties"],
     signal: AbortSignal,
   ) => {
+    if (get(marketingShadowEnabled$) === false) {
+      return undefined;
+    }
     const at = now();
+    const epoch = get(internalMarketingShadowEpoch$);
     const identity = await get(authenticatedIdentity$);
     signal.throwIfAborted();
+    if (
+      get(marketingShadowEnabled$) === false ||
+      get(internalMarketingShadowEpoch$) !== epoch
+    ) {
+      return undefined;
+    }
     const event: ObservedAcquisitionEvent = {
       id: crypto.randomUUID(),
       name,
