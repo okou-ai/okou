@@ -130,7 +130,7 @@
       "id": "onboarding-diagram",
       "owner": "bingjiez666",
       "phase": 8,
-      "replacement": "Fixed-coordinate illustration canvas: geometry, motion and typography become Tailwind utilities on the component, and the 614x470 coordinate variables become TypeScript constants. Bordered artwork needs a separate border-width decision before it can move.",
+      "replacement": "Fixed-coordinate illustration canvas: geometry, motion, typography and coordinates become Tailwind utilities at their call sites. Drawn strokes take the registered App-layer illustration weights rather than the shared border hairline; fills, borders and radii stay on semantic tokens.",
       "tokens": [
         "owf-diagram",
         "owf-diagram-action",
@@ -1047,10 +1047,9 @@
         "onboarding-diagram-no-connector-light",
         "onboarding-diagram-no-connector-dark"
       ],
-      "status": "blocked",
-      "blockedReason": "The bordered artwork carries 92 of the family's 242 declarations, plus the 25 shared coordinate variables the canvas batch left on .owf-diagram because these rules read them, and is blocked on a border-width decision, not on mechanics. Four tiles declare a whole-pixel border: .owf-diagram-icon-box, .owf-diagram-icon-stack-item and .owf-diagram-icon-stack-more at 1px, .owf-diagram-action at 1px, and the six dots share border: 1.5px solid #ffffff. docs/styles.md gives --default-border-width (0.5px) sole ownership of border width and rejects a hand-written width such as border-[1px], and no 1px or 1.5px border token is registered, which is the same wall that blocks chat-card-surfaces. This canvas adds one factor that batch does not have: .owf-diagram is transform: scale(0.6), so the declared 1px already paints 0.6px and the shared hairline would paint 0.3px, with the dots going from 0.9px to 0.3px. Two options are open and neither was chosen here. Adopting border border-border is guide-conformant and needs a measured statement of the thinner ring. Moving the strokes into the diagram's existing viewBox=\"0 0 614 470\" SVG, whose coordinate space these tiles already use, keeps the artwork exact because an SVG stroke-width attribute is not a CSS border-width decision, at the cost of restructuring the tiles. Two element-level constraints are already known and fix the batch boundary. owf-diagram-avatar sits on the same element as owf-diagram-icon-box, and the unlayered .owf-diagram-icon-box { width: 56px; height: 56px } would outrank a utility, so the modifier cannot drain before the box. Separately, the unlayered .owf-diagram-icon-box img { width: 34px; height: 34px } currently outranks the size-full utility on the Okou avatar image, so that image renders at 34px inside its 64px host today; the replacement must reproduce that, and correcting it is a separate visual change.",
+      "status": "implemented",
       "evidence": [],
-      "pullRequest": null,
+      "pullRequest": "https://github.com/vm0-ai/vm0/pull/34271",
       "mergeCommit": null
     }
   ],

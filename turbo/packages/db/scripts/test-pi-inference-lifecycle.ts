@@ -30,10 +30,10 @@ const journal = JSON.parse(
   entries: { idx: number; tag: string; when: number }[];
 };
 const expand = journal.entries.find((e) => {
-  return e.tag === "1133_pi_inference_lifecycle";
+  return e.tag === "1134_pi_inference_lifecycle";
 });
 const validate = journal.entries.find((e) => {
-  return e.tag === "1134_validate_pi_inference_launch";
+  return e.tag === "1135_validate_pi_inference_launch";
 });
 assert.ok(expand && validate);
 const fixture = await mkdtemp(join(tmpdir(), "pi-inference-migration-"));

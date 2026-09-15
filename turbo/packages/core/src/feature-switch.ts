@@ -278,7 +278,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.RefactorModelSelect]: {
     maintainer: "bingjie@okou.ai",
     description:
-      "Use the compact chat, image, and video model picker with Fast mode and chat reasoning effort controls.",
+      "Set Fast mode and chat reasoning effort from the composer's run controls.",
     enabled: false,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
@@ -374,12 +374,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Enable Okou Desktop Computer Use plugins for local resources, starting with the bundled filesystem plugin gateway.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ReferenceImages]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Enable reusable private and organization-visible image references.",
-    enabled: false,
   },
   // Every artifact privacy slice in #32492 uses this same rollout switch.
   [FeatureSwitchKey.PrivateArtifacts]: {

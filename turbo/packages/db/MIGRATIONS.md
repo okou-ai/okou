@@ -33,7 +33,7 @@ expired transition validator must be deleted.
 ### Active transition validators
 
 - `scripts/test-pi-inference-lifecycle.ts` protects migrations
-  `1133_pi_inference_lifecycle` and `1134_validate_pi_inference_launch` (#34242):
+  `1134_pi_inference_lifecycle` and `1135_validate_pi_inference_launch` (#34242):
   old/new launch writes, sparse-table invariants, real lock and journal rollback,
   bounded validation retry, unchanged historical records and indexed capacity
   plans at representative retained-table scale. Retain it until all three

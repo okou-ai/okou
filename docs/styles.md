@@ -1107,6 +1107,38 @@ Page tests select the source node and source dot through
 `data-slot="onboarding-diagram-source-node"` and
 `data-slot="onboarding-diagram-source-dot"`, which carry no styles.
 
+### Illustration strokes
+
+`--border-width-illustration` (1px) and `--border-width-illustration-marker`
+(1.5px) are App-layer tokens for artwork that is drawn rather than chrome. They
+are a different decision from `--default-border-width`, not a competing value
+for it, in the same way `border-2` is: the hairline decides how thick _a
+border_ is, while an illustration owns the weight of its own outlines. Both are
+identical in Light and Dark, because a stroke weight is not a theme value.
+Consumers read them through `border-(length:--border-width-illustration*)`
+beside `border-solid`, the same shape `Card` uses for
+`--border-width-surface`.
+
+Their scope is artwork, and nothing else. A control, surface, card, input,
+divider or any other piece of product chrome takes the shared hairline; reach
+for these only for a drawing whose strokes are part of the picture. They live
+in the App token layer because the onboarding diagram is their only consumer
+today, and they promote to `@okouai/ui` when a second product surface draws
+with them. Adding a third weight is a token change, not a call-site decision.
+
+The first consumers are the onboarding diagram's tiles: the icon box, the
+connector stack items, the overflow badge and the two action cards take
+`--border-width-illustration`, and the six waypoint dots take the marker
+weight. Those tiles otherwise use the semantic `bg-card` fill and `border-border`
+stroke, `rounded-surface` for the action cards and the artwork's own
+`shadow-[0_12px_30px_-18px_rgba(0,0,0,0.5)]` lift.
+
+`white` is not white here. `--color-white` is `hsl(var(--white))`, a
+theme-flipped token that resolves to a near-black in Dark, so the dots and the
+overflow badge spell the literal `#ffffff` the retired rules named. Measured,
+`border-white` moved 147 pixels of ring in Dark and none at all in Light, which
+is exactly the shape of a defect a Light-only check would have shipped.
+
 ## Exception boundary
 
 Only two exception kinds exist:

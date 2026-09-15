@@ -16,7 +16,6 @@ const ORG_SCOPED_FEATURE_SWITCH_KEYS: readonly string[] = [
   FeatureSwitchKey.PersonalSubscriptionPriority,
   FeatureSwitchKey.PiLoop,
   FeatureSwitchKey.PiDeferredSandbox,
-  FeatureSwitchKey.ReferenceImages,
   // Bot setup and native command availability must agree for all members.
   FeatureSwitchKey.LarkIntegration,
 ];

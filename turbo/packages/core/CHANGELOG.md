@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.666.2](https://github.com/vm0-ai/vm0/compare/core-v8.666.1...core-v8.666.2) (2026-09-15)
+
+
+### Bug Fixes
+
+* align artifact viewer and shorten sharing urls ([#34249](https://github.com/vm0-ai/vm0/issues/34249)) ([f833361](https://github.com/vm0-ai/vm0/commit/f833361a484782b0d85ea6dd6d4929f0a6034d14))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.443.1
+
 ## [8.666.1](https://github.com/vm0-ai/vm0/compare/core-v8.666.0...core-v8.666.1) (2026-09-15)
 
 
