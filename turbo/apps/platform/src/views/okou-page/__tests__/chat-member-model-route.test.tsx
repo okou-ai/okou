@@ -50,7 +50,7 @@ test.each(["select", "compact", "flyout"] as const)(
   async (layout) => {
     const user = userEvent.setup({ delay: null });
     context.mocks.browser.matchMedia((query) => {
-      return query === "(min-width: 640px)";
+      return query === "(min-width: 640px)" && layout !== "compact";
     });
     installRunChat({ selectedModel: "gpt-5.6-sol" });
     context.mocks.data.orgModelPolicies([
@@ -67,7 +67,7 @@ test.each(["select", "compact", "flyout"] as const)(
       featureSwitches: {
         [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
         [FeatureSwitchKey.RefactorModelSelect]: layout === "compact",
-        [FeatureSwitchKey.ModelPickerFlyout]: layout === "flyout",
+        [FeatureSwitchKey.ModelPickerFlyout]: layout !== "select",
       },
     });
     const composer = await screen.findByRole("textbox", { name: "Message" });
@@ -76,9 +76,26 @@ test.each(["select", "compact", "flyout"] as const)(
     if (layout === "select") {
       click(await screen.findByRole("combobox", { name: "GPT 5.6 Sol" }));
     } else {
-      click(await findButton("GPT 5.6 Sol"));
+      // The initial legacy Select has the same name while feature switches
+      // load. Wait for the requested menu's accessible trigger before opening.
+      const trigger = await waitFor(() => {
+        const button = queryButton("GPT 5.6 Sol");
+        if (button?.getAttribute("aria-haspopup") !== "dialog") {
+          throw new Error("The model menu trigger is not ready");
+        }
+        return button;
+      });
+      click(trigger);
       if (layout === "compact") {
-        click(await findButton("Change Chat model, GPT 5.6 Sol"));
+        const overview = await screen.findByRole("region", { name: "Models" });
+        const changeModel = queryButton(
+          "Change Chat model, GPT 5.6 Sol",
+          overview,
+        );
+        if (!changeModel) {
+          throw new Error("The Models menu has no Chat model navigation");
+        }
+        click(changeModel);
       }
     }
 

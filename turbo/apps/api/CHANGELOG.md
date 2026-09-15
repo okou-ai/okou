@@ -8,6 +8,29 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.603.1](https://github.com/vm0-ai/vm0/compare/api-v1.603.0...api-v1.603.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* align artifact viewer and shorten sharing urls ([#34249](https://github.com/vm0-ai/vm0/issues/34249)) ([f833361](https://github.com/vm0-ai/vm0/commit/f833361a484782b0d85ea6dd6d4929f0a6034d14))
+* **api:** materialize incoming integration attachments ([#34228](https://github.com/vm0-ai/vm0/issues/34228)) ([ba6044c](https://github.com/vm0-ai/vm0/commit/ba6044c721f8d708184881be58077a7b1bcca8a3))
+
+
+### Refactoring
+
+* **db:** retire prepared billing oauth and hosting triggers ([#34234](https://github.com/vm0-ai/vm0/issues/34234)) ([8b33f22](https://github.com/vm0-ai/vm0/commit/8b33f2212aeeaa07830159b394632e54d4aaf7a7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.443.1
+    * @okouai/core bumped to 8.666.2
+    * @okouai/db bumped to 1.260.0
+    * @okouai/pi-agent-runtime bumped to 1.30.6
+
 ## [1.603.0](https://github.com/vm0-ai/vm0/compare/api-v1.602.0...api-v1.603.0) (2026-09-15)
 
 

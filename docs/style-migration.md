@@ -736,27 +736,21 @@ family records it so the plan is complete; deleting the class is what closes the
 gap.
 
 Two batches split the family by whether a token participates in the border-width
-contract. `onboarding-diagram-canvas` holds the 13 tokens with no border of their
-own — the canvas, grid, connector lines, beam, vertical control, the three node
-positions and the action copy — for 150 declarations.
-`onboarding-diagram-tiles` holds the other 13 and is `blocked` on the decision
-recorded with it.
+contract. `onboarding-diagram-canvas` drained the geometry, motion and type in
+[#34225](https://github.com/vm0-ai/vm0/pull/34225): 125 declarations and 12 of
+its 13 tokens, leaving `owf-diagram` as the carrier of the 25 shared coordinate
+variables its tile and dot rules still read.
 
-The canvas batch drained 125 of its 150 declarations and 12 of its 13 tokens.
-`owf-diagram` stays, reduced to the 25 shared coordinate variables that the
-retained tile and dot rules read; its eleven geometry declarations and the four
-variables only the drained rules consumed are gone. The class remains on the
-element purely as the carrier for those variables, because a retained
-declaration cannot be rewritten to inline its value: the ratchet treats a
-changed `cssAtom` as both a removal and an addition, and additions are refused.
-The variables retire with their last readers in the tiles batch.
-
-Tokens that share a DOM element stay in the same batch. The legacy rules are
-unlayered, so a utility written on an element whose sibling class still exists
-would lose to that class: migrating `owf-diagram-avatar` while
-`.owf-diagram-icon-box` still declares `width: 56px` would shrink the box rather
-than resize it. That constraint, not the token's own declarations, is what puts
-the avatar modifier in the blocked batch.
+`onboarding-diagram-tiles` then drained the bordered artwork and those
+variables, which retires the family. Its blocker was the border-width contract:
+four rules declared `border: 1px` and six dots `border: 1.5px`, while
+`--default-border-width` owns border width and a hand-written width is refused.
+The resolution was to register the weights as App-layer tokens —
+`--border-width-illustration` and `--border-width-illustration-marker`, whose
+contract is in [the style guide](styles.md) — rather than to accept the shared
+hairline's measurable thinning under this canvas's `scale(0.6)` or to redraw
+the strokes in SVG. Every coordinate the variables produced is now spelled at
+its own call site.
 
 `onboarding-diagram-cases.json` covers the three geometry branches the component
 actually renders, each through the workflow-run preview dialog:

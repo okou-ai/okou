@@ -20,25 +20,10 @@ import { userFeatureSwitchContext } from "./feature-switches.service";
 import { safeUrlParse } from "../utils";
 
 const PRIVATE_STORAGE = "private-artifact-v1";
-
-/**
- * A private artifact that exists only to back one record of the named feature.
- * That feature owns the object's lifetime and may delete it with its record;
- * an artifact without this marker is the user's own and must never be reclaimed
- * by a feature that merely references it.
- */
-export const IMAGE_REFERENCE_EXCLUSIVE_OWNER = "image-reference";
-export const PRIVATE_ARTIFACT_EXCLUSIVE_OWNERS = [
-  IMAGE_REFERENCE_EXCLUSIVE_OWNER,
-] as const;
-export type PrivateArtifactExclusiveOwner =
-  (typeof PRIVATE_ARTIFACT_EXCLUSIVE_OWNERS)[number];
-
 const privateMetadataSchema = z.object({
   storage: z.literal(PRIVATE_STORAGE),
   bucket: z.string().min(1),
   publicBrand: z.enum(["vm0", "okou"]),
-  exclusiveOwner: z.enum(PRIVATE_ARTIFACT_EXCLUSIVE_OWNERS).optional(),
 });
 
 export function privateArtifactCreationEnabled(orgId: string, userId: string) {
@@ -98,7 +83,6 @@ export const allocatePrivateArtifact$ = command(
       readonly size: number;
       readonly publicBrand: PublicBrand;
       readonly id?: string;
-      readonly exclusiveOwner?: PrivateArtifactExclusiveOwner;
     },
     signal: AbortSignal,
   ) => {
@@ -128,9 +112,6 @@ export const allocatePrivateArtifact$ = command(
           storage: PRIVATE_STORAGE,
           bucket,
           publicBrand: args.publicBrand,
-          ...(args.exclusiveOwner === undefined
-            ? {}
-            : { exclusiveOwner: args.exclusiveOwner }),
         },
       })
       .onConflictDoNothing({ target: runUploadedFiles.id })
@@ -150,7 +131,6 @@ export const allocatePrivateArtifact$ = command(
         existing.metadata.storage !== PRIVATE_STORAGE ||
         existing.metadata.bucket !== bucket ||
         existing.metadata.publicBrand !== args.publicBrand ||
-        existing.metadata.exclusiveOwner !== args.exclusiveOwner ||
         existing.storageKey !== key ||
         existing.filename !== args.filename ||
         existing.contentType !== args.contentType

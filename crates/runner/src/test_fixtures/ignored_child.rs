@@ -519,11 +519,9 @@ async fn run_ignored_child_test_with_readiness(
         }
         Some(Err(error)) => Err(format!("cleanup after kill failed: {error}")),
         None => {
-            wait_for_child_until(
-                &mut child,
-                tokio::time::Instant::now() + CHILD_KILL_WAIT_TIMEOUT,
-            )
-            .await
+            // Normal EOF can leave quiet descendants alive. Finalize the session
+            // before reaping its leader, while the saved SID is still owned.
+            kill_ignored_child(&mut child, &child_session).await
         }
     };
     let status = status.unwrap_or_else(|error| {
@@ -724,6 +722,10 @@ mod tests {
     const OUTPUT_TIMEOUT_CHILD_ENV: &str = "OKOU_RUN_IGNORED_CHILD_OUTPUT_TIMEOUT_TEST";
     #[cfg(target_os = "linux")]
     const OUTPUT_TIMEOUT_EXIT_ENV: &str = "OKOU_RUN_IGNORED_CHILD_OUTPUT_TIMEOUT_EXIT";
+    #[cfg(target_os = "linux")]
+    const QUIET_CHILD_ENV: &str = "OKOU_RUN_IGNORED_CHILD_QUIET_TEST";
+    #[cfg(target_os = "linux")]
+    const QUIET_CHILD_FAIL_ENV: &str = "OKOU_RUN_IGNORED_CHILD_QUIET_FAIL";
 
     #[tokio::test]
     async fn run_ignored_child_test_preserves_tail_after_large_output() {
@@ -781,6 +783,109 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[tokio::test]
+    async fn run_ignored_child_test_quiet_descendant_after_successful_exit() {
+        assert_quiet_descendant_cleaned_up(false).await;
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn run_ignored_child_test_quiet_descendant_after_failed_exit() {
+        assert_quiet_descendant_cleaned_up(true).await;
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn assert_quiet_descendant_cleaned_up(fail: bool) {
+        let dir = tempfile::tempdir().unwrap();
+        let readiness_path = dir.path().join("descendant-ready");
+        let readiness_value = readiness_path.to_str().unwrap().to_owned();
+        let child_test_name =
+            "test_fixtures::ignored_child::tests::run_ignored_child_test_quiet_child";
+        let task = tokio::spawn(async move {
+            run_ignored_child_test(
+                child_test_name,
+                (QUIET_CHILD_ENV, &readiness_value),
+                &[(QUIET_CHILD_FAIL_ENV, Some(if fail { "1" } else { "0" }))],
+                Duration::from_secs(5),
+            )
+            .await;
+        });
+        let result = task.await;
+        let identity = read_descendant_identity(&readiness_path);
+        assert_descendant_exited(&identity).await;
+
+        if fail {
+            let panic = result
+                .expect_err("failed child test must fail the fixture")
+                .into_panic();
+            let message = panic
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| panic.downcast_ref::<&str>().copied())
+                .expect("fixture panic must contain a string");
+            for expected in [
+                &format!("ignored child test {child_test_name} failed"),
+                "status: exit status: 101",
+                "quiet child failed intentionally",
+                "quiet-child stdout marker",
+                "quiet-child stderr marker",
+                "[truncated ",
+            ] {
+                assert!(
+                    message.contains(expected),
+                    "missing {expected:?}: {message}"
+                );
+            }
+        } else {
+            result.expect("successful child test must pass after descendant cleanup");
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore]
+    fn run_ignored_child_test_quiet_child() {
+        let Ok(readiness_path) = std::env::var(QUIET_CHILD_ENV) else {
+            return;
+        };
+        if !ignored_child_test_env_guard_enabled((QUIET_CHILD_ENV, &readiness_path)) {
+            return;
+        }
+        let fail = std::env::var(QUIET_CHILD_FAIL_ENV).expect("quiet child failure mode");
+        // The parent fixture owns this descendant after the child test exits.
+        let descendant = std::process::Command::new("sleep")
+            .arg("60")
+            .process_group(0)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn quiet descendant");
+        let pid = descendant.id();
+        let ProcessStatRead::Found(stat) = crate::process::read_process_stat_checked_blocking(pid)
+        else {
+            panic!("quiet descendant stat must be readable");
+        };
+        assert!(process_stat_is_live(&stat));
+        assert_eq!(stat.pgid, pid);
+        assert_eq!(
+            process_session_id(libc::pid_t::try_from(pid).unwrap()),
+            Ok(nix::unistd::getsid(None).unwrap().as_raw())
+        );
+        write_large_ignored_child_stdout();
+        println!("quiet-child stdout marker");
+        eprintln!("quiet-child stderr marker");
+        std::fs::write(
+            &readiness_path,
+            format!("{pid} {} {}\n", stat.pgid, stat.starttime),
+        )
+        .expect("publish quiet descendant readiness");
+        // Relinquish the child handle without waiting; the fixture must finish cleanup.
+        drop(descendant);
+        assert_ne!(fail, "1", "quiet child failed intentionally");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
     async fn run_ignored_child_test_output_timeout_cleans_up_after_failed_exit() {
         assert_output_timeout_cleans_up_descendant("1").await;
     }
@@ -810,34 +915,8 @@ mod tests {
             .await;
         });
         let result = task.await;
-
-        // Clean up the controlled descendant even when this regression fails.
-        // Bind it before checking its generation, then signal only via the pidfd.
         let identity = read_descendant_identity(&readiness_path);
-        let pidfd = open_pidfd(libc::pid_t::try_from(identity.pid).unwrap()).unwrap();
-        let remained_live = match read_process_stat_checked(identity.pid).await {
-            ProcessStatRead::Found(stat) => {
-                stat.starttime == identity.starttime && process_stat_is_live(&stat)
-            }
-            ProcessStatRead::Missing => false,
-            ProcessStatRead::Unreadable(error) => panic!("read descendant state: {error}"),
-            ProcessStatRead::Invalid => panic!("parse descendant state"),
-        };
-        if remained_live {
-            let pidfd = pidfd.expect("live descendant must have a pidfd");
-            signal_pidfd(&pidfd, libc::SIGKILL).expect("clean up leaked test descendant");
-            let exit = tokio::io::unix::AsyncFd::new(pidfd).unwrap();
-            let _ready = tokio::time::timeout(CHILD_KILL_WAIT_TIMEOUT, exit.readable())
-                .await
-                .expect("test descendant cleanup must finish")
-                .expect("observe test descendant exit");
-        }
-        assert!(
-            !remained_live,
-            "descendant {} remained live after direct exit {exit_code} and output timeout",
-            identity.pid
-        );
-        assert_eq!(identity.pgid, identity.pid);
+        assert_descendant_exited(&identity).await;
 
         let panic = result
             .expect_err("inherited output pipe must fail the fixture")
@@ -1034,6 +1113,36 @@ mod tests {
         pid: u32,
         pgid: u32,
         starttime: u64,
+    }
+
+    #[cfg(target_os = "linux")]
+    async fn assert_descendant_exited(identity: &DescendantIdentity) {
+        // Clean up the controlled descendant even when a regression fails.
+        // Bind it before checking its generation, then signal only via the pidfd.
+        let pidfd = open_pidfd(libc::pid_t::try_from(identity.pid).unwrap()).unwrap();
+        let remained_live = match read_process_stat_checked(identity.pid).await {
+            ProcessStatRead::Found(stat) => {
+                stat.starttime == identity.starttime && process_stat_is_live(&stat)
+            }
+            ProcessStatRead::Missing => false,
+            ProcessStatRead::Unreadable(error) => panic!("read descendant state: {error}"),
+            ProcessStatRead::Invalid => panic!("parse descendant state"),
+        };
+        if remained_live {
+            let pidfd = pidfd.expect("live descendant must have a pidfd");
+            signal_pidfd(&pidfd, libc::SIGKILL).expect("clean up leaked test descendant");
+            let exit = tokio::io::unix::AsyncFd::new(pidfd).unwrap();
+            let _ready = tokio::time::timeout(CHILD_KILL_WAIT_TIMEOUT, exit.readable())
+                .await
+                .expect("test descendant cleanup must finish")
+                .expect("observe test descendant exit");
+        }
+        assert!(
+            !remained_live,
+            "descendant {} remained live after fixture completion",
+            identity.pid
+        );
+        assert_eq!(identity.pgid, identity.pid);
     }
 
     #[cfg(target_os = "linux")]

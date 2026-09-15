@@ -93,11 +93,15 @@ export const composerImageAnnotationEnabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.ComposerImageAnnotation] ?? false;
 });
 
+/** Effort is a run setting, not a way of drawing the model list. */
 export const refactorModelSelectEnabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.RefactorModelSelect] ?? false;
 });
 
-/** The flyout replaces the drill-in menu's pages with two detached panels. */
+/**
+ * How the composer draws the model list: the menu instead of the legacy
+ * select, and on a desktop two detached panels instead of the menu's pages.
+ */
 export const modelPickerFlyoutEnabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.ModelPickerFlyout] ?? false;
 });

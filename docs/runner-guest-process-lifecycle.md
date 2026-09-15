@@ -76,6 +76,22 @@ Guest Agent places the CLI in `runtime` immediately before exec. Each managed
 tool authenticates separately and receives a fresh `tool-N` descriptor.
 Controlled processes deny process inspection across the boundary.
 
+After the broker acknowledges tool placement, `guest-tool-exec` sets its own
+`oom_score_adj` to `1000` before replacing itself with the requested shell.
+Ordinary descendants inherit this preference. Claude Code and Codex managed
+Bash hooks and Pi's Bash adapter share this boundary; hook-only rewriting and
+runtime scoring remain unchanged. Placement or score setup failure exits before
+user code runs.
+
+This favors eligible tool processes under workload-limit or Guest-wide OOM;
+it does not guarantee runtime survival or choose the largest aggregate tool.
+Existing per-tool `memory.oom.group=1` terminates the selected group, while
+aggregate tools and workload keep `memory.oom.group=0`. No memory quota or
+runtime reservation is added. Privileged or deliberately reconfigured tools,
+restricted victim eligibility, and pressure after tools are gone can still
+leave the runtime as a victim. A tool OOM remains distinct from genuine
+agent-domain OOM failure.
+
 Guest-init mounts cgroup v2 with `favordynmods` before creating the containment
 hierarchy. This guest-only policy reduces dynamic placement latency for CLI
 children and managed tools. Linux documents a trade-off: fork/exit hot paths

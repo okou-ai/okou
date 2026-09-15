@@ -1,6 +1,6 @@
 {
-  "id": "3ae542f0-fb36-4b79-b414-d1eef3a20843",
-  "prevId": "f6590be1-e392-4d7d-8354-cf89c16f5053",
+  "id": "9365bb81-b84a-4a41-9928-d98eb3f7966a",
+  "prevId": "3ae542f0-fb36-4b79-b414-d1eef3a20843",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1659,6 +1659,12 @@
         "model_provider_id": {
           "name": "model_provider_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "model_provider_account_identity": {
+          "name": "model_provider_account_identity",
+          "type": "varchar(64)",
           "primaryKey": false,
           "notNull": false
         },

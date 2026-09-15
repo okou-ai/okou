@@ -11,6 +11,23 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.899.1](https://github.com/vm0-ai/vm0/compare/app-v0.899.0...app-v0.899.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* align artifact viewer and shorten sharing urls ([#34249](https://github.com/vm0-ai/vm0/issues/34249)) ([f833361](https://github.com/vm0-ai/vm0/commit/f833361a484782b0d85ea6dd6d4929f0a6034d14))
+* **app:** stabilize workflow hover author layout ([#34265](https://github.com/vm0-ai/vm0/issues/34265)) ([4829306](https://github.com/vm0-ai/vm0/commit/4829306b59c97df01f66d81dec4957be13376ba6))
+* persist sidebar section collapse preferences ([#34257](https://github.com/vm0-ai/vm0/issues/34257)) ([ebdf3a4](https://github.com/vm0-ai/vm0/commit/ebdf3a425766e6f00da4e2cb5f59198d315682fc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.443.1
+    * @okouai/core bumped to 8.666.2
+
 ## [0.899.0](https://github.com/vm0-ai/vm0/compare/app-v0.898.0...app-v0.899.0) (2026-09-15)
 
 
