@@ -1,5 +1,8 @@
 name: KMS Production Retirement
 
+env:
+  npm_config_audit: "false"
+
 on:
   workflow_dispatch:
     inputs:
