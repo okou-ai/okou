@@ -9,6 +9,122 @@ fn files() -> Vec<StorageFile> {
     }]
 }
 
+// Model the persisted format and external GC/writer lock without using the
+// decoded reader's key helpers, so changing both reader and writer cannot
+// silently move existing entries into a different namespace.
+fn persisted_paths(
+    home: &HomePaths,
+    name: &str,
+    version: &str,
+    rejected: bool,
+) -> (PathBuf, PathBuf) {
+    let name_hash = hex::encode(Sha256::digest(name.as_bytes()));
+    let version_hash = hex::encode(Sha256::digest(version.as_bytes()));
+    let name_hash = &name_hash[..16];
+    let kind = if rejected { "rejected-" } else { "" };
+    let key = format!("decoded-v1-{kind}{}", &version_hash[..16]);
+    (
+        home.storages_dir().join(name_hash).join(&key),
+        home.locks_dir()
+            .join(format!("storage-{name_hash}-{key}.lock")),
+    )
+}
+
+#[test]
+fn persisted_entries_keep_their_identity_and_external_writer_lock() {
+    use std::os::unix::ffi::OsStringExt;
+
+    for (name, version) in [
+        (String::new(), String::new()),
+        ("../nested/name".into(), "../nested/version".into()),
+        ("存储/文件".into(), "版本/一".into()),
+        ("n".repeat(4096), "v".repeat(4096)),
+    ] {
+        for rejected in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let home = HomePaths::with_root(
+                root.path()
+                    .join(std::ffi::OsString::from_vec(b"cache-\xff".to_vec())),
+            );
+            let (entry, lock_path) = persisted_paths(&home, &name, &version, rejected);
+            fs::create_dir_all(entry.join("files/nested")).unwrap();
+            fs::write(entry.join("files/nested/file"), b"hello").unwrap();
+            let metadata = (!rejected).then(|| {
+                serde_json::json!([{
+                    "path": "nested/file", "mode": 0o751, "mtime": 1234,
+                    "size": 5, "sha256": hex::encode(Sha256::digest(b"hello"))
+                }])
+            });
+            fs::write(
+                entry.join("index.json"),
+                serde_json::to_vec(&serde_json::json!({
+                    "name": name, "version": version,
+                    "compressed_bytes": 100, "files": metadata
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            let writer = lock::try_acquire_or_busy_blocking(&lock_path).unwrap();
+            assert!(matches!(writer, TryLock::Acquired(_)));
+            let cancel = CancellationToken::new();
+            if rejected {
+                assert!(!is_rejected(&home, &name, &version, &cancel).unwrap());
+            } else {
+                assert!(read(&home, &name, &version, &cancel).unwrap().is_none());
+            }
+            drop(writer);
+            if rejected {
+                assert!(is_rejected(&home, &name, &version, &cancel).unwrap());
+                assert!(read(&home, &name, &version, &cancel).unwrap().is_none());
+            } else {
+                assert_eq!(
+                    read(&home, &name, &version, &cancel)
+                        .unwrap()
+                        .flatten()
+                        .unwrap(),
+                    files()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_missing_entry_can_be_published_under_its_existing_writer_lock() {
+    for rejected in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let home = HomePaths::with_root(root.path().to_owned());
+        let name = "nested/存储";
+        let version = "version/一";
+        let (entry, lock_path) = persisted_paths(&home, name, version, rejected);
+        let cancel = CancellationToken::new();
+        assert!(read(&home, name, version, &cancel).unwrap().is_none());
+        assert!(!is_rejected(&home, name, version, &cancel).unwrap());
+        assert!(!home.storages_dir().exists());
+        assert!(!home.locks_dir().exists());
+        let payload = files();
+        let files = (!rejected).then_some(payload.as_slice());
+        let writer = lock::try_acquire_or_busy_blocking(&lock_path).unwrap();
+        assert!(matches!(writer, TryLock::Acquired(_)));
+        publish(&home, name, version, 100, files, &cancel).unwrap();
+        assert!(!entry.exists());
+        drop(writer);
+        publish(&home, name, version, 100, files, &cancel).unwrap();
+        assert!(entry.join("index.json").is_file());
+        if rejected {
+            assert!(is_rejected(&home, name, version, &cancel).unwrap());
+        } else {
+            assert_eq!(
+                read(&home, name, version, &cancel)
+                    .unwrap()
+                    .flatten()
+                    .unwrap(),
+                payload
+            );
+        }
+    }
+}
+
 fn setup() -> (tempfile::TempDir, HomePaths, PathBuf, PathBuf) {
     let root = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(root.path().to_owned());

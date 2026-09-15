@@ -88,15 +88,37 @@ fn version_key(version: &str, rejected: bool) -> String {
 }
 
 fn entry_paths(home: &HomePaths, name: &str, version: &str, rejected: bool) -> (PathBuf, PathBuf) {
-    let name = short_digest(name);
-    // The format is part of the version-directory identity. Previous archive
-    // readers never open this entry; previous GC uses the same name/key lock
-    // and recursively accounts its real files, including .tmp staging.
-    let version = version_key(version, rejected);
-    (
-        home.storages_dir().join(&name).join(&version),
-        home.storage_lock_for_cache_key(&name, &version),
-    )
+    let key = EntryKey::new(name, version, rejected);
+    (key.directory(home), key.lock(home))
+}
+
+struct EntryKey {
+    name_hash: String,
+    version_key: String,
+}
+
+impl EntryKey {
+    fn new(name: &str, version: &str, rejected: bool) -> Self {
+        // The format is part of the version-directory identity. Previous
+        // archive readers never open this entry; GC uses the same name/key
+        // lock and recursively accounts its files, including .tmp staging.
+        Self {
+            name_hash: short_digest(name),
+            version_key: version_key(version, rejected),
+        }
+    }
+
+    fn directory(&self, home: &HomePaths) -> PathBuf {
+        let mut path = home.storages_dir();
+        path.reserve(self.name_hash.len() + self.version_key.len() + 2);
+        path.push(&self.name_hash);
+        path.push(&self.version_key);
+        path
+    }
+
+    fn lock(&self, home: &HomePaths) -> PathBuf {
+        home.storage_lock_for_cache_key(&self.name_hash, &self.version_key)
+    }
 }
 
 fn open_directory(path: &Path) -> io::Result<File> {
@@ -198,7 +220,8 @@ fn read_entry(
     cancel: &CancellationToken,
 ) -> io::Result<Option<Option<Vec<StorageFile>>>> {
     check_cancel(cancel)?;
-    let (path, lock_path) = entry_paths(home, name, version, rejected);
+    let key = EntryKey::new(name, version, rejected);
+    let path = key.directory(home);
     // Most first uses have no extracted entry. A miss needs no flock or lock
     // namespace walk. Present data is still reopened and validated under its
     // lock below; publication racing this probe can safely wait for the next run.
@@ -208,6 +231,7 @@ fn read_entry(
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error),
     }
+    let lock_path = key.lock(home);
     let _lock = match lock::try_acquire_existing_shared_or_missing_blocking(&lock_path)
         .map_err(io::Error::other)?
     {
@@ -234,7 +258,7 @@ fn read_locked_entry(
     rejected: bool,
     cancel: &CancellationToken,
 ) -> io::Result<Option<Option<Vec<StorageFile>>>> {
-    let (path, _) = entry_paths(home, name, version, rejected);
+    let path = EntryKey::new(name, version, rejected).directory(home);
     let root = match open_entry(home, name, version, rejected) {
         Ok(root) => root,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -366,7 +390,7 @@ pub(super) fn retire_archive(
             "retired storage archive is not a regular private file",
         ));
     }
-    let (_, replacement_lock) = entry_paths(home, name, version, false);
+    let replacement_lock = EntryKey::new(name, version, false).lock(home);
     let _replacement =
         match lock::try_acquire_existing_shared_or_missing_blocking(&replacement_lock)
             .map_err(io::Error::other)?
