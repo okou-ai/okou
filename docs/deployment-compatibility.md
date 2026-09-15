@@ -307,6 +307,39 @@ the original accepted duration and cost, rather than reprice a paid download.
 | Old API, new JSONB | Additive keys do not change existing required values; rollback retains the old API's pre-existing HD validation limitation.                                                                     |
 | New API, old JSONB | Completed jobs remain readable; pending settlement and artifact recovery preserve original usage and unknown media fields.                                                                      |
 
+#### Explicit MP3 social downloads
+
+`social download --format mp3` requests audio through the existing download
+lifecycle. MP4 remains the default, M4A remains supported, and both audio
+formats use one provider unit per started minute regardless of video quality.
+The provider's ready format must match the request. Artifact bytes still
+determine the delivered extension and MIME: detected MP3 is `audio/mpeg`, and
+a different detected type is reported truthfully. For unrecognized bytes, the
+filename and MIME are request-derived hints (MP3 uses `audio/mpeg`) while
+`delivered.format` remains null. Sniffing does not validate an entire media file.
+
+MP3 requests become available when the capable API is deployed, using the
+existing authentication, capability, credit and active-task checks. MP3 extends
+values inside existing response and JSONB fields. Older API and CLI schemas
+reject those values, including when listing tasks that contain an MP3 request.
+
+Coordinate MP3-capable serving, reconciling and rollback API artifacts with
+compatible commit-addressed CLI selection and the incompatible queued, active
+and finalizing context drain described above. Upgrade supported external
+callers that may list or resume MP3 tasks. These compatibility conditions must
+be addressed as part of deployment because the new API accepts MP3 immediately.
+
+| Pairing                            | Behavior                                                                                                                          |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Old CLI, new API, MP4/M4A jobs     | MP4/M4A requests, polling and discovery retain their existing contract.                                                           |
+| New CLI, old API                   | MP4/M4A keep working. Explicit MP3 is rejected by the old API; never silently substitute a format or resubmit.                    |
+| New API, old JSONB                 | MP4/M4A tasks remain readable/resumable; missing historical delivery metadata stays unknown. No migration or rewrite is required. |
+| MP3-capable CLI/API, new MP3 JSONB | Creation, listing, polling and same-job recovery use the widened format contract.                                                 |
+| Old CLI/API, new MP3 JSONB         | Unsupported; exclude this pairing from supported deployment and rollback combinations once MP3 tasks exist.                       |
+
+After the first MP3 task is created, rollback must retain MP3-capable readers
+for as long as MP3 tasks remain readable or recoverable.
+
 ### Pi Gen1 wire-field retirement
 
 [#33966](https://github.com/vm0-ai/vm0/issues/33966) removes only the optional
@@ -788,15 +821,15 @@ in place. Removing them in this same release would break outgoing API SQL
 between migration and promotion. No schema migration or rollback-floor change
 is part of this preparation release.
 
-Migration 1130 below subsequently handles the three entitlement triggers and
+Migration 1131 below subsequently handles the three entitlement triggers and
 enforces the canonical-only rollback artifact. To finish the remaining #32575
 column/client cleanup:
 
-1. Preserve the 1130 serving/rollback evidence below and confirm its production
+1. Preserve the 1131 serving/rollback evidence below and confirm its production
    journal completion before treating its trigger contraction as shipped.
 2. Generate the column-drop migration with Drizzle. Audit remaining persisted
    SQL first, then drop both legacy columns. The entitlement triggers/functions
-   are removed by #33747 migration 1130; preserve its journal and transition
+   are removed by #33747 migration 1131; preserve its journal and transition
    evidence. Unrelated triggers are outside #32575.
 3. Remove the App migration query opt-in and contract. Retire the invitation
    transition validator only after its contraction has shipped and permanent
@@ -805,7 +838,7 @@ column/client cleanup:
 
 ### Prepared billing, OAuth and hosting trigger contraction (2026-09-15)
 
-Migration `1130_retire_prepared_domain_triggers` removes A–D's eight triggers
+Migration `1131_retire_prepared_domain_triggers` removes A–D's eight triggers
 and functions from #33747. The supported rollback floor is API 1.600.1,
 `api-v1.600.1`, at `eb2f211a9af41450d0d5dad10c0c8ad12fac0a24`; it contains
 all four prepared writers, their webhook/cron paths and the canonical-only
@@ -828,7 +861,7 @@ release gates; no production deletion is asserted by this source change.
 The invitation status-mirror trigger is included; its obsolete physical columns
 and App query opt-in remain #32575 work. E's privacy trigger is excluded, and
 the withdrawn feature remains withdrawn. See the
-[writer inventory, repair rules and migration receipts](database-trigger-retirement.md#a-d-contraction-migration-1130).
+[writer inventory, repair rules and migration receipts](database-trigger-retirement.md#a-d-contraction-migration-1131).
 
 ### Workflow automation connector-account projections
 

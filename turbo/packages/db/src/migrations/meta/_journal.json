@@ -369,8 +369,15 @@
     {
       "idx": 1130,
       "version": "7",
-      "when": 1789442325117,
-      "tag": "1130_retire_prepared_domain_triggers",
+      "when": 1789441232116,
+      "tag": "1130_account_erasure_claim_scale",
+      "breakpoints": true
+    },
+    {
+      "idx": 1131,
+      "version": "7",
+      "when": 1789445160765,
+      "tag": "1131_retire_prepared_domain_triggers",
       "breakpoints": true
     }
   ]

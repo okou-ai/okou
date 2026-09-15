@@ -18,6 +18,7 @@ use guest_contracts::session_history_identity::{
     SESSION_HISTORY_SIDECAR_EXPORT_EXIT_WRITE_FAILURE, SessionHistorySidecarExportFailure,
     SessionHistorySidecarExportMetadata, SessionHistorySidecarExportTimings,
     SessionHistorySidecarIoErrorClass, SessionHistorySidecarRepresentation,
+    SessionHistorySidecarResourceUsage,
 };
 use sandbox::{
     CopyFileOptions, CopyFileResult, ExecRequest, ExecResult, GuestAgentProcessHandle,
@@ -359,6 +360,17 @@ async fn active_workspace_promotion_exports_session_history_sidecar() {
             read_verify_us: 303,
             write_us: 404,
             total_us: 1010,
+            read_verify_resources: Some(SessionHistorySidecarResourceUsage {
+                user_cpu_us: 1,
+                system_cpu_us: 2,
+                minor_faults: 3,
+                major_faults: 4,
+                input_blocks: 5,
+                output_blocks: 6,
+                voluntary_context_switches: 7,
+                involuntary_context_switches: 8,
+            }),
+            write_resources: Some(Default::default()),
         },
         representation: SessionHistorySidecarRepresentation::Raw,
         encoded_size: history.len() as u64,
@@ -391,6 +403,22 @@ async fn active_workspace_promotion_exports_session_history_sidecar() {
         ("helper_read_verify_us", 303),
         ("helper_write_us", 404),
         ("helper_total_us", 1010),
+        ("helper_read_verify_user_cpu_us", 1),
+        ("helper_read_verify_system_cpu_us", 2),
+        ("helper_read_verify_minor_faults", 3),
+        ("helper_read_verify_major_faults", 4),
+        ("helper_read_verify_input_blocks", 5),
+        ("helper_read_verify_output_blocks", 6),
+        ("helper_read_verify_voluntary_context_switches", 7),
+        ("helper_read_verify_involuntary_context_switches", 8),
+        ("helper_write_user_cpu_us", 0),
+        ("helper_write_system_cpu_us", 0),
+        ("helper_write_minor_faults", 0),
+        ("helper_write_major_faults", 0),
+        ("helper_write_input_blocks", 0),
+        ("helper_write_output_blocks", 0),
+        ("helper_write_voluntary_context_switches", 0),
+        ("helper_write_involuntary_context_switches", 0),
         ("history_size_bytes", history.len() as u64),
         ("encoded_size", history.len() as u64),
     ] {
@@ -398,6 +426,12 @@ async fn active_workspace_promotion_exports_session_history_sidecar() {
     }
     for field in ["export_admission_ms", "export_exec_ms"] {
         export_event.fields[field].parse::<u64>().unwrap();
+    }
+    for stage in ["read_verify", "write"] {
+        assert_eq!(
+            export_event.fields[&format!("helper_{stage}_resources_available")],
+            "true"
+        );
     }
     let promotion_event = captured_event(&events, "workspace image cache promoted");
     assert_eq!(
@@ -497,6 +531,8 @@ async fn successful_slow_sidecar_export_reports_timings_at_warn() {
                 read_verify_us: 3_000_000,
                 write_us: 1_000_000,
                 total_us: 4_000_300,
+                read_verify_resources: None,
+                write_resources: None,
             },
         };
         let mut result = ExecResult::new(0, serde_json::to_vec(&metadata).unwrap(), Vec::new());
@@ -523,6 +559,28 @@ async fn successful_slow_sidecar_export_reports_timings_at_warn() {
         assert_eq!(event.fields["helper_read_verify_us"], "3000000");
         assert_eq!(event.fields["helper_write_us"], "1000000");
         assert_eq!(event.fields["helper_total_us"], "4000300");
+        for stage in ["read_verify", "write"] {
+            assert_eq!(
+                event.fields[&format!("helper_{stage}_resources_available")],
+                "false"
+            );
+            for counter in [
+                "user_cpu_us",
+                "system_cpu_us",
+                "minor_faults",
+                "major_faults",
+                "input_blocks",
+                "output_blocks",
+                "voluntary_context_switches",
+                "involuntary_context_switches",
+            ] {
+                assert!(
+                    !event
+                        .fields
+                        .contains_key(&format!("helper_{stage}_{counter}"))
+                );
+            }
+        }
         assert_eq!(sandbox.copy_file_calls().len(), 1);
     }
 }

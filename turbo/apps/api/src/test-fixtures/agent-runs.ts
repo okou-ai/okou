@@ -679,3 +679,25 @@ export async function setRunModelProviderFixture(args: {
     throw new Error("Expected one run model provider to update");
   }
 }
+
+/** Operational source and model admission are not exposed by the public run
+ * read. Keep this test-owned persisted observation separate from runtime-route
+ * assertions so it cannot change existing fixture result contracts. */
+export async function readRunModelSourceFixture(runId: string) {
+  const [run] = await db()
+    .select({
+      modelProvider: agentRuns.modelProvider,
+      modelProviderId: agentRuns.modelProviderId,
+      modelProviderCredentialScope: agentRuns.modelProviderCredentialScope,
+      selectedModel: agentRuns.selectedModel,
+      creditAdmitted: agentRuns.creditAdmitted,
+      builtInModelKeyId: agentRuns.builtInModelKeyId,
+    })
+    .from(agentRuns)
+    .where(eq(agentRuns.id, runId))
+    .limit(1);
+  if (!run) {
+    throw new Error("Expected one run model source");
+  }
+  return run;
+}

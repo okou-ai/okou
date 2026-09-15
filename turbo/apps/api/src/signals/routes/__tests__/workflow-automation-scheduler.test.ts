@@ -11,6 +11,12 @@ import {
 } from "@okouai/api-contracts/contracts/agents";
 import { userConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { createStore } from "ccstate";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import { makeCodexAuthJson, makeCodexJwt } from "./helpers/api-bdd-auth-device";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -572,6 +578,163 @@ describe("okou workflow automation scheduler", () => {
     );
     await disableAutomation(automation.automationId);
   });
+
+  it.each([false, true])(
+    "uses the second member automation owner's subscription and retains it after scheduler admission (queued: %s)",
+    async (queuedLaunch) => {
+      const scenario = await setup();
+      const support = createAuthDeviceSupportApi(context);
+      const misc = createMiscRoutesApi(context);
+      await support.updateFeatureSwitches(scenario.actor, {
+        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+        [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+        [FeatureSwitchKey.PiLoop]: false,
+      });
+      const configured = await runsApi.createOrgModelProvider(scenario.actor, {
+        type: "openai-api-key",
+        secret: "unused-scheduler-api-key",
+      });
+      await runsApi.updateOrgModelPolicies(scenario.actor, [
+        {
+          model: "gpt-5.6-luna",
+          isDefault: true,
+          defaultProviderType: "openai-api-key",
+          credentialScope: "org",
+          modelProviderId: configured.providerId,
+        },
+      ]);
+      const connectOwner = async (actor: ApiTestUser, identity: string) => {
+        const token = makeCodexJwt({
+          exp: Math.floor(now() / 1000) + 7200,
+          identity,
+          nonce: randomUUID(),
+        });
+        const connected = await misc.upsertPersonalModelProvider(
+          actor,
+          {
+            type: "codex-oauth-token",
+            authMethod: "auth_json",
+            secrets: {
+              CODEX_AUTH_JSON: makeCodexAuthJson({
+                accessToken: token,
+                accountId: identity,
+                refreshToken: `refresh-${identity}`,
+              }),
+            },
+          },
+          [200, 201],
+        );
+        if (connected.status !== 200 && connected.status !== 201) {
+          throw new Error("Expected connected owner");
+        }
+        return { token, accountId: connected.body.provider.id };
+      };
+      await connectOwner(scenario.actor, "agent-author");
+      const blockers: string[] = [];
+      if (queuedLaunch) {
+        for (let index = 0; index < 2; index += 1) {
+          const started = await chatFilesApi.requestSendEvent(
+            scenario.actor,
+            {
+              agentId: scenario.agentId,
+              model: "gpt-5.6-luna",
+              prompt: `Occupy organization concurrency ${index}`,
+            },
+            [201],
+          );
+          if (started.status !== 201 || !started.body.runId) {
+            throw new Error("Expected an admitted concurrency blocker");
+          }
+          blockers.push(started.body.runId);
+        }
+      }
+      const member = wf.user({
+        userId: `user_${randomUUID()}`,
+        orgId: scenario.orgId,
+        orgRole: "org:member",
+      });
+      // The same membership cache fixture and real CLI read used by the scheduler's access test.
+      await store.set(
+        seedOrgMembership$,
+        { orgId: scenario.orgId, userId: member.userId, role: "member" },
+        context.signal,
+      );
+      const apiKey = await runsApi.createCliToken(member);
+      await accept(
+        setupApp({ context, routes: agentsRoutes })(agentsMainContract).list({
+          headers: { authorization: `Bearer ${apiKey.token}` },
+        }),
+        [200],
+      );
+      await support.updateFeatureSwitches(member, {
+        [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+        [FeatureSwitchKey.PiLoop]: false,
+      });
+      const owner = await connectOwner(member, "automation-owner");
+      mocks.clerk.session(member.userId, scenario.orgId, "org:member");
+      const created = await createDueLoopAutomation(scenario, 3600);
+      // Scheduler execution is unauthenticated infrastructure; the owner is the member above.
+      mocks.clerk.session(scenario.userId, scenario.orgId);
+      const threadId = await executeDueWorkflowAutomations(
+        created.automationId,
+      );
+      mocks.clerk.session(member.userId, scenario.orgId, "org:member");
+      const message = await onlyWorkflowRunMessage(threadId);
+      expect((await runsApi.readRun(member, message.runId)).status).toBe(
+        queuedLaunch ? "queued" : "pending",
+      );
+      await connectOwner(member, "later-owner-account");
+      for (const blocker of blockers) {
+        await runsApi.requestCancelRun(scenario.actor, blocker, [200]);
+      }
+      await expect
+        .poll(async () => {
+          return (await runsApi.readRun(member, message.runId)).status;
+        })
+        .toBe("pending");
+      await runsApi.heartbeatRunner(scenario.runnerGroup);
+      const claim = await runsApi.claimRunnerJob(message.runId);
+      expect(claim.cliAgentType).toBe("codex");
+      expect(
+        claim.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN?.sourceId,
+      ).toBe(owner.accountId);
+      if (!claim.encryptedSecrets) {
+        throw new Error("Expected subscription envelope");
+      }
+      const resolved = await createFirewallApi(context).requestFirewallAuth(
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        {
+          encryptedSecrets: claim.encryptedSecrets,
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
+            "ChatGPT-Account-ID": secretTemplate("CHATGPT_ACCOUNT_ID"),
+          },
+          secretConnectorMap: claim.secretConnectorMap ?? undefined,
+          secretConnectorMetadataMap:
+            claim.secretConnectorMetadataMap ?? undefined,
+        },
+        [200],
+      );
+      expect(resolved.body).toMatchObject({
+        headers: {
+          Authorization: `Bearer ${owner.token}`,
+          "ChatGPT-Account-ID": "automation-owner",
+        },
+      });
+      await expect(
+        readRunModelSourceFixture(message.runId),
+      ).resolves.toMatchObject({
+        modelProvider: "codex-oauth-token",
+        modelProviderCredentialScope: "member",
+        modelProviderId: owner.accountId,
+        creditAdmitted: false,
+        builtInModelKeyId: null,
+      });
+      mocks.clerk.session(member.userId, scenario.orgId, "org:member");
+      await disableAutomation(created.automationId);
+      await runsApi.requestCancelRun(member, message.runId, [200]);
+    },
+  );
 
   it("skips a due automation when the owner can no longer read the agent", async () => {
     const scenario = await setup();

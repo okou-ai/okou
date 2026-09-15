@@ -1,5 +1,7 @@
 //! Final session-history identity helpers for checkpoint and runner reuse.
 
+mod resources;
+
 use crate::env;
 use crate::error::AgentError;
 use crate::session_history;
@@ -128,6 +130,7 @@ pub fn export_final_session_history_sidecar_file(
     let resolved = session_history::resolve_session_history_from_source(history_source)
         .map_err(SessionHistoryIdentityVerifyError::HistoryRead)?;
     let resolve_done = Instant::now();
+    let read_resources = resources::snapshot();
     let prepared = resolved
         .prepare_sidecar(
             identity.history_size_bytes,
@@ -136,6 +139,7 @@ pub fn export_final_session_history_sidecar_file(
         .map_err(map_session_history_digest_error)?;
     verify_final_session_history_digest(&identity, &prepared.digest)?;
     let read_verify_done = Instant::now();
+    let write_resources = resources::snapshot();
     let source = prepared.into_source();
     let (representation, bytes) = match source {
         session_history::SessionHistoryCheckpointSource::Decoded(bytes) => {
@@ -148,6 +152,7 @@ pub fn export_final_session_history_sidecar_file(
     crate::paths::write_private(export_path.as_ref(), &bytes)
         .map_err(SessionHistorySidecarExportError::OutputWrite)?;
     let finished = Instant::now();
+    let finished_resources = resources::snapshot();
     Ok(SessionHistorySidecarExportMetadata {
         representation,
         encoded_size: bytes.len() as u64,
@@ -157,6 +162,8 @@ pub fn export_final_session_history_sidecar_file(
             read_verify_us: duration_us(read_verify_done.duration_since(resolve_done)),
             write_us: duration_us(finished.duration_since(read_verify_done)),
             total_us: duration_us(finished.duration_since(started)),
+            read_verify_resources: resources::delta(read_resources, write_resources),
+            write_resources: resources::delta(write_resources, finished_resources),
         },
     })
 }

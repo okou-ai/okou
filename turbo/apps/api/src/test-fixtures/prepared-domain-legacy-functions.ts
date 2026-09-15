@@ -16,7 +16,7 @@ const invitation = readFileSync(
   "utf8",
 );
 
-// Active 1130 transition control: use immutable shipped SQL in the caller's
+// Active 1131 transition control: use immutable shipped SQL in the caller's
 // private schema after public functions disappear. Retire retained variants
 // only after the production journal confirms contraction and its cycle drains.
 export async function installPreparedDomainLegacyFunctions(

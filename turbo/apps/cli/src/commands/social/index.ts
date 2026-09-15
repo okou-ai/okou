@@ -39,6 +39,12 @@ import { getOkouToken } from "../../lib/okou-env";
 import { createArtifactPresentation } from "../shared/artifact-return";
 import { socialCapabilities } from "./capabilities";
 import {
+  addSocialExportOptions,
+  SocialExportError,
+  withSocialOutput,
+  type SocialExportOptions,
+} from "./output";
+import {
   commentsIntent,
   downloadPlatform,
   inspectIntent,
@@ -57,12 +63,12 @@ interface OutputOptions {
   readonly json?: boolean;
 }
 
-interface InspectOptions extends OutputOptions {
+interface InspectOptions extends SocialExportOptions {
   readonly requireViews?: boolean;
   readonly thread?: boolean;
 }
 
-interface CollectionOptions extends OutputOptions {
+interface CollectionOptions extends SocialExportOptions {
   readonly limit: number;
   readonly stream?: boolean;
 }
@@ -84,7 +90,7 @@ interface CommentsOptions extends CollectionOptions {
   readonly sort?: string;
 }
 
-interface TranscriptOptions extends OutputOptions {
+interface TranscriptOptions extends SocialExportOptions {
   readonly refresh?: boolean;
 }
 
@@ -517,15 +523,15 @@ async function runSocialAction(
   try {
     await action();
   } catch (error) {
-    if (error instanceof SocialCollectionError) {
-      printJson(error.output, machineReadable);
-    }
     if (machineReadable) {
       console.error(JSON.stringify(structuredError(error)));
     } else {
       console.error(chalk.red(`✗ ${humanError(error)}`));
     }
-    if (error instanceof SocialCollectionError) {
+    if (
+      error instanceof SocialCollectionError ||
+      error instanceof SocialExportError
+    ) {
       process.exitCode = 1;
     } else {
       process.exit(1);
@@ -992,28 +998,36 @@ async function retrieveCollection(
 
 async function printIntent(
   intent: SocialIntent,
-  compact: boolean,
+  options: SocialExportOptions,
 ): Promise<void> {
-  const response = await callSocialKit(intent.request);
-  if (response.collection) {
-    throw new Error("Okou Social returned unexpected collection metadata");
-  }
-  printJson(successfulOutput(intent, response), compact);
+  await withSocialOutput(options, false, async (write) => {
+    const response = await callSocialKit(intent.request);
+    if (response.collection) {
+      throw new Error("Okou Social returned unexpected collection metadata");
+    }
+    await write(successfulOutput(intent, response));
+  });
 }
 
 async function printCollectionIntent(
   intent: SocialIntent,
   options: CollectionOptions,
 ): Promise<void> {
-  const output = await retrieveCollection(
-    intent,
-    options.limit,
-    options.stream === true,
-  );
-  printJson(output, options.stream === true || options.json === true);
-  if (output.status === "partial") {
-    process.exitCode = 2;
-  }
+  await withSocialOutput(options, true, async (write) => {
+    let output: SocialOutput;
+    try {
+      output = await retrieveCollection(
+        intent,
+        options.limit,
+        options.stream === true,
+      );
+    } catch (error) {
+      if (error instanceof SocialCollectionError) await write(error.output);
+      throw error;
+    }
+    await write(output);
+    if (output.status === "partial") process.exitCode = 2;
+  });
 }
 
 function resumeDownloadCommand(downloadId: string): string {
@@ -1238,7 +1252,7 @@ const inspectCommand = new Command()
           thread: options.thread,
           requireViews: options.requireViews,
         }),
-        options.json === true,
+        options,
       );
     });
   });
@@ -1362,7 +1376,7 @@ const transcriptCommand = new Command()
       const target = parseSocialTarget(url);
       await printIntent(
         transcriptIntent(target, { refresh: options.refresh }),
-        options.json === true,
+        options,
       );
     });
   });
@@ -1461,7 +1475,7 @@ Notes:
           prompt: options.prompt,
           refresh: options.refresh,
         }),
-        options.json === true,
+        options,
       );
     });
   });
@@ -1550,7 +1564,7 @@ const downloadCommand = new Command()
     "--quality <quality>",
     "240p, 360p, 480p, 720p, or 1080p (default: 720p)",
   )
-  .option("--format <format>", "mp4 or m4a (default: mp4)")
+  .option("--format <format>", "mp4, m4a, or mp3 (default: mp4)")
   .option(
     "--resume <download-id>",
     "Resume polling an existing download",
@@ -1640,6 +1654,17 @@ const downloadCommand = new Command()
     });
   });
 
+for (const command of [
+  inspectCommand,
+  postsCommand,
+  searchCommand,
+  commentsCommand,
+  transcriptCommand,
+  summarizeCommand,
+]) {
+  addSocialExportOptions(command);
+}
+
 export const socialCommand = new Command()
   .name("social")
   .description("Use Okou Social through intent-oriented public data commands")
@@ -1671,7 +1696,10 @@ Examples:
   Summary:     okou social summarize https://youtu.be/<id> --json
   Fields:      okou social summarize https://youtu.be/<id> --fields '{"audience":"Who this video helps","actionItems":"Practical next steps"}' --json
   Fields file: okou social summarize https://youtu.be/<id> --fields-file summary-fields.json --json
+  Research:    okou social search "small business" --platform youtube --limit 20 --select title,url --format csv --output research.csv
+  Save JSON:   okou social inspect https://www.instagram.com/p/<id>/ --output result.json
   Download:    okou social download https://youtu.be/<id> --max-duration 600 --json
+  MP3 audio:   okou social download https://youtu.be/<id> --max-duration 600 --format mp3 --json
   Find tasks:  okou social downloads --status active --json
   Resume:      okou social download --resume <download-id> --json
 
@@ -1687,6 +1715,8 @@ Notes:
   - Unavailable publication dates and descriptions remain null, empty, or missing
   - Instagram search accepts up to 100 trimmed characters and exposes one anonymous batch of up to 12 reels
   - Collection output is aggregated unless --stream explicitly requests JSON Lines
+  - Research commands support --output, --select, --format json/csv, and explicit --overwrite; see each command's help
+  - Exported files are local; retain stdout metadata receipts and use okou web upload-file for web-chat delivery
   - --stream writes one kind=page record per fetched page, followed by one metadata-only kind=summary record
   - Handled collection failures retain accepted results and emit one terminal result/summary with error and progress
   - Collection states: complete or caller_limited (exit 0), unsatisfied provider_limited (exit 2), failed (exit 1)

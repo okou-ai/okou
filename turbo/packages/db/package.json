@@ -50,6 +50,7 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "db:reset": "tsx scripts/reset-db.ts",
+    "check:account-erasure-claim-scale": "tsx scripts/check-account-erasure-claim-scale.ts",
     "test:migration-consistency": "pnpm test:migration-runner && pnpm test:kms-rotation && pnpm test:pi-memory-checkpoint-settlement && pnpm test:pi-memory-citations && pnpm test:show-usage-pack-migration && pnpm test:member-invitation-retirement && pnpm test:reusable-ssh-credentials && pnpm test:cloudflare-access && pnpm test:morning-brief-enrollment-installation && pnpm test:billing-attribution && pnpm test:pi-candidate-trigger-retirement && pnpm test:prepared-domain-trigger-retirement && tsx scripts/test-migration-consistency-schema.ts",
     "test:cloudflare-access": "tsx scripts/test-cloudflare-access.ts",
     "test:kms-rotation": "tsx scripts/migrations/013-kms-account-rotation/test.ts && tsx scripts/migrations/013-kms-account-rotation/test-business.ts",

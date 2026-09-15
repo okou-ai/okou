@@ -14,6 +14,7 @@ import {
   SOCIAL_INSTAGRAM_POST_KINDS,
   type SocialPlatform,
 } from "@okouai/api-contracts/contracts/social-discovery";
+import { socialExportCapabilities } from "./output";
 
 const SUMMARY_FIELDS_NOTE =
   'Summarize accepts --fields JSON or --fields-file PATH, e.g. {"audience":"Who this video helps"}, plus optional --prompt guidance (not strict JSON Schema)';
@@ -198,6 +199,9 @@ function detailsFor(entry: ReturnType<typeof socialOperationBindings>[number]) {
         : {}),
     },
     ...(tool ? collectionDetails(tool) : {}),
+    ...(entry.operation !== "download"
+      ? { export: socialExportCapabilities(tool?.collection !== undefined) }
+      : {}),
   };
 }
 
