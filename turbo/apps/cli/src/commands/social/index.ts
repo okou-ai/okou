@@ -1297,7 +1297,7 @@ async function printCollectionIntent(
   intent: SocialIntent,
   options: CollectionOptions,
 ): Promise<void> {
-  if (options.checkpoint) {
+  if (options.checkpoint !== undefined) {
     requireCheckpointSupport(intent);
     const file = await CollectionCheckpoint.open(options.checkpoint, false);
     try {

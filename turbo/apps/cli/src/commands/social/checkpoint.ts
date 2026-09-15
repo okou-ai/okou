@@ -226,6 +226,9 @@ export class CollectionCheckpoint {
     path: string,
     resume: boolean,
   ): Promise<CollectionCheckpoint> {
+    if (path.length === 0) {
+      throw new InvalidArgumentError("Checkpoint path must not be empty");
+    }
     const token = getOkouToken();
     if (!token) {
       throw new InvalidArgumentError(

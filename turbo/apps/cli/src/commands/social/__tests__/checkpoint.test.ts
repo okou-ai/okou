@@ -101,6 +101,29 @@ afterEach(async () => {
 });
 
 describe("social collection checkpoints through the CLI", () => {
+  it("rejects an explicitly empty checkpoint path before provider work", async () => {
+    let requests = 0;
+    server.use(
+      http.post(endpoint, () => {
+        requests += 1;
+        return HttpResponse.json(response(["one", "two", "three"], "next"));
+      }),
+    );
+    const result = await invoke([
+      "comments",
+      target,
+      "--limit",
+      "2",
+      "--checkpoint",
+      "",
+      "--json",
+    ]);
+    expect(result.code).toBe(1);
+    expect(result.records).toHaveLength(0);
+    expect(result.errors).toContain("Checkpoint path must not be empty");
+    expect(requests).toBe(0);
+  });
+
   it.each(["json", "csv"])(
     "exports selected %s results while retaining the original checkpoint tail",
     async (format) => {
