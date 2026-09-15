@@ -50,6 +50,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Subscribe to transient session text output while a run is active",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SocialStatus]: {
     maintainer: "liangyou@okou.ai",
