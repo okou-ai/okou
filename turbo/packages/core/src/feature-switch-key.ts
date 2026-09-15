@@ -53,7 +53,6 @@ export enum FeatureSwitchKey {
   ComputerUseDesktopPlugins = "computerUseDesktopPlugins",
   ReferenceImages = "referenceImages",
   PrivateArtifacts = "privateArtifacts",
-  ArtifactViewer = "artifactViewer",
   ProgressiveArtifactPreview = "progressiveArtifactPreview",
   SidebarSubscriptionUsage = "_sidebarSubscriptionUsage",
   PersonalModelProviderAccounts = "_multipleSubscriptions",

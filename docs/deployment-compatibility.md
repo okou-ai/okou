@@ -78,6 +78,30 @@ after a backend deployment. When changing an API used by the frontend, keep the
 old request shape working until old browser clients can no longer reasonably be
 active, or introduce a versioned/new endpoint and migrate the frontend first.
 
+#### Artifact share names and short references
+
+Share status adds optional `shortUrl`; `url` continues returning the legacy
+32-character organization reference for already-open App bundles. New Apps
+prefer `shortUrl` and fall back to `url` when talking to an older API. An explicit
+share action allocates the new alias when a current API reports `shortUrl: null`;
+opening the menu does not mutate a share. Both organization reference formats
+resolve through the same membership and policy checks.
+
+The R2 policy fields `organizationReference` and `publicSlug` are optional, so
+old policies remain readable. The immutable reference index and public alias
+registry survive an older writer dropping those optional fields. Current APIs
+reuse the same organization index and retain the legacy public-token registry
+entry. Named public sites use the existing generic Worker publication reader;
+they require no database migration or new Worker routing format. Current APIs
+must serve short-reference resolution before Apps begin copying those links.
+Rolling the API back removes short-reference support until it is restored;
+existing legacy organization URLs remain available in the `url` response.
+
+The iframe loading correction spans the App's explicit first-party iframe
+referrer policy and the host Worker's same-origin resource policy. Both must be
+deployed to verify full HTML resource loading against the hosted-domain WAF.
+The viewer and sharing use the existing `privateArtifacts` rollout switch.
+
 #### Connector App retirement
 
 The first singleton-free connector App release is `0.843.1`, built from

@@ -19,6 +19,7 @@ import { generateArtifactPreviewUrl } from "../external/s3";
 import { privateArtifactRecord } from "../services/private-artifact-storage.service";
 import { createPrivateHostedPreview$ } from "../services/private-hosted-preview.service";
 import { resolveArtifactShare$ } from "../services/artifact-shares.service";
+import { artifactShareReference } from "../services/artifact-share-alias.service";
 import type { RouteEntry } from "../route-entry";
 
 const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -29,6 +30,20 @@ const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
     return notFound("Artifact unavailable");
   }
   const id = parsed.id;
+  if (id === null) {
+    const shareId = await get(artifactShareReference(parsed.hash, signal));
+    signal.throwIfAborted();
+    const shared = shareId
+      ? await set(
+          resolveArtifactShare$,
+          { id: shareId, userId: auth.userId },
+          signal,
+        )
+      : null;
+    return shared
+      ? { status: 200 as const, body: shared }
+      : notFound("Artifact unavailable");
+  }
   const file = await get(privateArtifactRecord(id));
   signal.throwIfAborted();
   if (file) {

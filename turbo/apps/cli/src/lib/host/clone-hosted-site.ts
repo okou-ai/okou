@@ -37,7 +37,14 @@ interface CloneHostedSiteOptions {
 export async function publicSlugFromSite(value: string): Promise<string> {
   const trimmed = value.trim();
   const reference = parseArtifactReference(trimmed);
-  if (reference) return `dpl-${reference.id}`;
+  if (reference) {
+    if (!reference.id) {
+      throw new Error(
+        "Open organization share links in the app. To clone your own site, use its owner artifact reference.",
+      );
+    }
+    return `dpl-${reference.id}`;
+  }
   if (URL.canParse(trimmed)) {
     const deploymentId = privateHostedDeploymentId(trimmed, await getBaseUrl());
     if (deploymentId) {

@@ -11,6 +11,8 @@ import {
 } from "../external/s3";
 import { settle } from "../utils";
 
+export class ArtifactDeliveryAliasConflict extends Error {}
+
 /** Immutable alias ownership survives revocation; only the share policy changes. */
 export const registerArtifactDelivery$ = command(
   async (
@@ -46,8 +48,8 @@ export const registerArtifactDelivery$ = command(
         signal,
       );
       if (legacy.ok) {
-        throw new Error(
-          "Publication hash conflicts with a historical site alias",
+        throw new ArtifactDeliveryAliasConflict(
+          "Publication alias conflicts with a historical site alias",
         );
       }
       if (
@@ -79,7 +81,9 @@ export const registerArtifactDelivery$ = command(
       JSON.parse(existing.buffer.toString("utf8")),
     );
     if (JSON.stringify(previous) !== body) {
-      throw new Error("Artifact delivery alias is already allocated");
+      throw new ArtifactDeliveryAliasConflict(
+        "Artifact delivery alias is already allocated",
+      );
     }
   },
 );

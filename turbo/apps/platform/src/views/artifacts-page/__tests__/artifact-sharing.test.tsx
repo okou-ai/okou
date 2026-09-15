@@ -315,6 +315,41 @@ test("the two share actions create and copy links, then only copy the existing a
   expect(changes).toStrictEqual(["organization", "public"]);
 });
 
+test.each([null, "https://app.okou.ai/artifacts/a1b2c3d4e5.html"])(
+  "organization sharing copies its short URL and only allocates a missing alias: %s",
+  async (existingShortUrl) => {
+    const shortUrl = "https://app.okou.ai/artifacts/a1b2c3d4e5.html";
+    const clipboard = context.mocks.browser.clipboardWriteText();
+    const publications: string[] = [];
+    const status: ArtifactShareStatus = {
+      shareId,
+      audience: "organization",
+      organization: { id: "original-org", name: "Original organization" },
+      selectedTarget: { kind: "html", id: deploymentId },
+      selectedVersion: 2,
+      candidateVersion: 2,
+      url: organizationUrl,
+      shortUrl: existingShortUrl,
+    };
+    context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+      return respond(200, status);
+    });
+    context.mocks.api(artifactSharesContract.update, ({ body, respond }) => {
+      publications.push(body.audience);
+      return respond(200, { ...status, shortUrl });
+    });
+    await openArtifact();
+    await openShareMenu();
+    click(action("menuitem", "Share to organization"));
+    await waitFor(() => {
+      return expect(clipboard.writes).toStrictEqual([shortUrl]);
+    });
+    expect(publications).toStrictEqual(
+      existingShortUrl ? [] : ["organization"],
+    );
+  },
+);
+
 test("sharing a newer HTML version publishes that version before copying its link", async () => {
   const publications: string[] = [];
   const status: ArtifactShareStatus = {
@@ -383,7 +418,7 @@ test.each([
       context,
       path: `${path}#slide-2`,
       host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.ArtifactViewer]: false },
+      featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: false },
     });
     await waitFor(() => {
       return expect(redirect).toHaveBeenCalledWith(`${temporary}#slide-2`);

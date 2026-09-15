@@ -37,11 +37,13 @@ async function openViewer({
   filename = "launch.png",
   contentType = "image/png",
   url = imageUrl,
+  colorThemes = false,
 }: {
   path?: string;
   filename?: string;
   contentType?: string;
   url?: string;
+  colorThemes?: boolean;
 } = {}) {
   const resolutions: string[] = [];
   context.mocks.api(
@@ -64,7 +66,10 @@ async function openViewer({
     context,
     path,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ArtifactViewer]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.PrivateArtifacts]: true,
+      [FeatureSwitchKey.GradientColorThemes]: colorThemes,
+    },
   });
   return resolutions;
 }
@@ -146,35 +151,61 @@ test("clipboard failure is reported without claiming that the link was copied", 
   expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
 });
 
-test("downloads resolve a legacy link again and save the original filename and bytes", async () => {
-  const browser = context.mocks.browser.blobDownload();
-  context.mocks.http.get("https://artifacts.example.com/launch.png", () => {
-    return HttpResponse.text("original image bytes", {
-      headers: { "Content-Type": "image/png" },
-    });
-  });
-  const resolutions = await openViewer({
-    path: `/share/artifacts/${artifactId}?source=shared#detail`,
-  });
-  click(action("button", "Download options"));
+test("the standalone viewer restores the selected app color theme", async () => {
+  context.mocks.data.userPreferences({ colorTheme: "golden-hour" });
+  await openViewer({ colorThemes: true });
   await waitFor(() => {
-    expect(action("menuitem", "Download")).toBeInTheDocument();
+    expect(document.documentElement).toHaveAttribute(
+      "data-color-theme",
+      "golden-hour",
+    );
+    expect(document.documentElement).toHaveAttribute(
+      "data-gradient-color-themes",
+    );
   });
-  expect(queryAllByRoleFast("menuitem")).toHaveLength(1);
-  click(action("menuitem", "Download"));
-
-  await waitFor(() => {
-    expect(browser.downloads).toHaveLength(1);
-  });
-  expect(browser.downloads[0]?.filename).toBe("launch.png");
-  await expect(browser.downloads[0]?.blob?.text()).resolves.toBe(
-    "original image bytes",
-  );
-  expect(resolutions).toStrictEqual([
-    artifactId.replaceAll("-", ""),
-    artifactId.replaceAll("-", ""),
-  ]);
+  expect(action("link", "Continue with Okou")).toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button").some((element) => {
+      return element.getAttribute("aria-label") === "Enter fullscreen";
+    }),
+  ).toBe(false);
 });
+
+test.each([
+  [
+    `/share/artifacts/${artifactId}?source=shared#detail`,
+    artifactId.replaceAll("-", ""),
+  ],
+  ["/artifacts/a1b2c3d4e5.png#detail", "a1b2c3d4e5.png"],
+])(
+  "downloads resolve references and save the original filename and bytes: %s",
+  async (path, reference) => {
+    const browser = context.mocks.browser.blobDownload();
+    context.mocks.http.get("https://artifacts.example.com/launch.png", () => {
+      return HttpResponse.text("original image bytes", {
+        headers: { "Content-Type": "image/png" },
+      });
+    });
+    const resolutions = await openViewer({
+      path,
+    });
+    click(action("button", "Download options"));
+    await waitFor(() => {
+      expect(action("menuitem", "Download")).toBeInTheDocument();
+    });
+    expect(queryAllByRoleFast("menuitem")).toHaveLength(1);
+    click(action("menuitem", "Download"));
+
+    await waitFor(() => {
+      expect(browser.downloads).toHaveLength(1);
+    });
+    expect(browser.downloads[0]?.filename).toBe("launch.png");
+    await expect(browser.downloads[0]?.blob?.text()).resolves.toBe(
+      "original image bytes",
+    );
+    expect(resolutions).toStrictEqual([reference, reference]);
+  },
+);
 
 test("HTML stays on its isolated origin and retains the requested slide", async () => {
   const temporary = `https://ps-${"c".repeat(48)}.okou.app/`;
@@ -188,6 +219,7 @@ test("HTML stays on its isolated origin and retains the requested slide", async 
   const frame = await screen.findByTitle("index.html preview");
   expect(frame).toHaveAttribute("src", `${temporary}#slide-2`);
   expect(frame).toHaveAttribute("sandbox", "allow-same-origin allow-scripts");
+  expect(frame).toHaveAttribute("referrerpolicy", "origin");
   const href = action("link", "Continue with Okou").getAttribute("href");
   expect(href).not.toBeNull();
   const handoff = new URL(href ?? "");
@@ -196,6 +228,17 @@ test("HTML stays on its isolated origin and retains the requested slide", async 
   expect(handoff.searchParams.get("prompt")).toBe(
     `Help me work with this artifact: https://app.okou.ai${artifactReferencePath(artifactId, "index.html")}#slide-2`,
   );
+});
+
+test("an external HTML preview receives no app or artifact referrer", async () => {
+  await openViewer({
+    filename: "index.html",
+    contentType: "text/html",
+    url: "https://preview.okou.app.untrusted.example/index.html",
+  });
+  await expect(
+    screen.findByTitle("index.html preview"),
+  ).resolves.toHaveAttribute("referrerpolicy", "no-referrer");
 });
 
 test("PDF page fragments survive embedding in the viewer", async () => {
@@ -225,7 +268,7 @@ test.each([400, 403, 404] as const)(
       context,
       path: imagePath,
       host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.ArtifactViewer]: true },
+      featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: true },
     });
 
     expect(

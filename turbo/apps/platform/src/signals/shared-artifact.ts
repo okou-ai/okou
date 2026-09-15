@@ -61,7 +61,7 @@ export const setupSharedArtifact$ = command(
       [200, 400, 403, 404],
       signal,
     );
-    if (switches[FeatureSwitchKey.ArtifactViewer]) {
+    if (switches[FeatureSwitchKey.PrivateArtifacts]) {
       const referenceUrl = new URL(
         `/artifacts/${encodeURIComponent(id)}`,
         location.origin,

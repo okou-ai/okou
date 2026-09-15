@@ -107,6 +107,7 @@ import {
 import { ZoomableArtifactImageCanvas } from "./zoomable-image-canvas.tsx";
 import type { ZoomableImageCanvasSignals } from "../../signals/zoomable-image-canvas.ts";
 import { AutoFocusedArtifactIframe } from "./auto-focused-artifact-iframe.tsx";
+import { hostedArtifactReferrerPolicy } from "../../lib/platform-host.ts";
 import { PresentationArtifactViewport } from "./presentation-artifact-viewport.tsx";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 import { OfficeDocumentPreview } from "./office-document-preview.tsx";
@@ -993,6 +994,7 @@ function ArtifactDialogHtmlBody({
         { filename },
       )}
       sandbox="allow-same-origin allow-scripts"
+      referrerPolicy={hostedArtifactReferrerPolicy(src)}
       tabIndex={isPresentationHtml ? -1 : undefined}
       scrolling="yes"
       className="block h-full w-full border-0 bg-background"

@@ -98,7 +98,7 @@ describe("private HTML preview gateway", () => {
       expect(response.status).toBe(200);
       expect(response.headers.get("Content-Type")).toBe(contentType);
       expect(response.headers.get("Cache-Control")).toBe("private, no-store");
-      expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
+      expect(response.headers.get("Referrer-Policy")).toBe("same-origin");
       expect(response.headers.get("Content-Security-Policy")).toContain(
         "worker-src 'none'",
       );
