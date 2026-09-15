@@ -1,5 +1,5 @@
 {
-  "id": "9365bb81-b84a-4a41-9928-d98eb3f7966a",
+  "id": "9bac3087-02a7-40c7-8069-3cd2028cba6a",
   "prevId": "3ae542f0-fb36-4b79-b414-d1eef3a20843",
   "version": "7",
   "dialect": "postgresql",
@@ -1303,6 +1303,471 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.agent_run_inference": {
+      "name": "agent_run_inference",
+      "schema": "",
+      "columns": {
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "source_conversation_id": {
+          "name": "source_conversation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "input": {
+          "name": "input",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "phase": {
+          "name": "phase",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner_epoch": {
+          "name": "owner_epoch",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deadline_at": {
+          "name": "deadline_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "activation_ready": {
+          "name": "activation_ready",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "provider_attempt_id": {
+          "name": "provider_attempt_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider_attempt_state": {
+          "name": "provider_attempt_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "publication": {
+          "name": "publication",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "published_sequence": {
+          "name": "published_sequence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "usage_settled": {
+          "name": "usage_settled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        }
+      },
+      "indexes": {
+        "agent_run_inference_source_idx": {
+          "name": "agent_run_inference_source_idx",
+          "columns": [
+            {
+              "expression": "source_conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "agent_run_inference_deadline_idx": {
+          "name": "agent_run_inference_deadline_idx",
+          "columns": [
+            {
+              "expression": "phase",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "deadline_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "agent_run_inference_run_id_agent_runs_id_fk": {
+          "name": "agent_run_inference_run_id_agent_runs_id_fk",
+          "tableFrom": "agent_run_inference",
+          "tableTo": "agent_runs",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "agent_run_inference_source_conversation_id_conversations_id_fk": {
+          "name": "agent_run_inference_source_conversation_id_conversations_id_fk",
+          "tableFrom": "agent_run_inference",
+          "tableTo": "conversations",
+          "columnsFrom": [
+            "source_conversation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "agent_run_inference_epoch_check": {
+          "name": "agent_run_inference_epoch_check",
+          "value": "\"agent_run_inference\".\"owner_epoch\" >= 1"
+        },
+        "agent_run_inference_phase_check": {
+          "name": "agent_run_inference_phase_check",
+          "value": "\"agent_run_inference\".\"phase\" IN ('admitted', 'ready', 'provider', 'publishing', 'sandbox_waiting', 'sandbox_preparing', 'sandbox_ready', 'sandbox_running', 'terminal')"
+        },
+        "agent_run_inference_attempt_check": {
+          "name": "agent_run_inference_attempt_check",
+          "value": "\"agent_run_inference\".\"provider_attempt_state\" IN ('not-started', 'may-have-started', 'settled') AND (\"agent_run_inference\".\"phase\" <> 'provider' OR (\"agent_run_inference\".\"activation_ready\" AND \"agent_run_inference\".\"provider_attempt_state\" = 'may-have-started')) AND (\"agent_run_inference\".\"provider_attempt_state\" <> 'settled' OR \"agent_run_inference\".\"publication\" IS NOT NULL) AND (\"agent_run_inference\".\"phase\" <> 'publishing' OR \"agent_run_inference\".\"provider_attempt_state\" = 'settled')"
+        },
+        "agent_run_inference_input_check": {
+          "name": "agent_run_inference_input_check",
+          "value": "jsonb_typeof(\"agent_run_inference\".\"input\") = 'object' AND \"agent_run_inference\".\"input\" ?& ARRAY['schemaVersion', 'inputEventId', 'inputGeneration', 'configurationHash', 'contextHash', 'h0', 'deferredSecrets'] AND \"agent_run_inference\".\"input\"->'schemaVersion' = '1'::jsonb"
+        },
+        "agent_run_inference_sequence_check": {
+          "name": "agent_run_inference_sequence_check",
+          "value": "\"agent_run_inference\".\"published_sequence\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.agent_run_sandbox_intent": {
+      "name": "agent_run_sandbox_intent",
+      "schema": "",
+      "columns": {
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "continuation": {
+          "name": "continuation",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "enqueued_at": {
+          "name": "enqueued_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner_epoch": {
+          "name": "owner_epoch",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempt_deadline_at": {
+          "name": "attempt_deadline_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "notified_at": {
+          "name": "notified_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "agent_run_sandbox_intent_queue_idx": {
+          "name": "agent_run_sandbox_intent_queue_idx",
+          "columns": [
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "enqueued_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "agent_run_sandbox_intent_attempt_idx": {
+          "name": "agent_run_sandbox_intent_attempt_idx",
+          "columns": [
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "attempt_deadline_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "agent_run_sandbox_intent_expiry_idx": {
+          "name": "agent_run_sandbox_intent_expiry_idx",
+          "columns": [
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "agent_run_sandbox_intent_run_id_agent_run_inference_run_id_fk": {
+          "name": "agent_run_sandbox_intent_run_id_agent_run_inference_run_id_fk",
+          "tableFrom": "agent_run_sandbox_intent",
+          "tableTo": "agent_run_inference",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "run_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "agent_run_sandbox_intent_epoch_check": {
+          "name": "agent_run_sandbox_intent_epoch_check",
+          "value": "\"agent_run_sandbox_intent\".\"generation\" >= 1 AND \"agent_run_sandbox_intent\".\"owner_epoch\" >= 1 AND \"agent_run_sandbox_intent\".\"attempts\" >= 0"
+        },
+        "agent_run_sandbox_intent_state_check": {
+          "name": "agent_run_sandbox_intent_state_check",
+          "value": "\"agent_run_sandbox_intent\".\"state\" IN ('waiting', 'preparing', 'ready', 'claimed', 'cancelled', 'expired', 'settled')"
+        },
+        "agent_run_sandbox_intent_expiry_check": {
+          "name": "agent_run_sandbox_intent_expiry_check",
+          "value": "\"agent_run_sandbox_intent\".\"expires_at\" > \"agent_run_sandbox_intent\".\"enqueued_at\" AND \"agent_run_sandbox_intent\".\"expires_at\" <= \"agent_run_sandbox_intent\".\"enqueued_at\" + interval '2 hours'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.agent_run_sandbox_lease": {
+      "name": "agent_run_sandbox_lease",
+      "schema": "",
+      "columns": {
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner_epoch": {
+          "name": "owner_epoch",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deadline_at": {
+          "name": "deadline_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "runner_id": {
+          "name": "runner_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "release_evidence": {
+          "name": "release_evidence",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "agent_run_sandbox_lease_deadline_idx": {
+          "name": "agent_run_sandbox_lease_deadline_idx",
+          "columns": [
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "deadline_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "agent_run_sandbox_lease_run_id_agent_run_sandbox_intent_run_id_fk": {
+          "name": "agent_run_sandbox_lease_run_id_agent_run_sandbox_intent_run_id_fk",
+          "tableFrom": "agent_run_sandbox_lease",
+          "tableTo": "agent_run_sandbox_intent",
+          "columnsFrom": [
+            "run_id"
+          ],
+          "columnsTo": [
+            "run_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "agent_run_sandbox_lease_epoch_check": {
+          "name": "agent_run_sandbox_lease_epoch_check",
+          "value": "\"agent_run_sandbox_lease\".\"owner_epoch\" >= 1"
+        },
+        "agent_run_sandbox_lease_state_check": {
+          "name": "agent_run_sandbox_lease_state_check",
+          "value": "\"agent_run_sandbox_lease\".\"state\" IN ('reserved', 'preparing', 'ready', 'claimed', 'releasing', 'released') AND (\"agent_run_sandbox_lease\".\"state\" <> 'claimed' OR \"agent_run_sandbox_lease\".\"runner_id\" IS NOT NULL)"
+        },
+        "agent_run_sandbox_lease_release_check": {
+          "name": "agent_run_sandbox_lease_release_check",
+          "value": "(\"agent_run_sandbox_lease\".\"state\" = 'released' AND \"agent_run_sandbox_lease\".\"release_evidence\" IS NOT NULL AND length(\"agent_run_sandbox_lease\".\"release_evidence\") > 0) OR (\"agent_run_sandbox_lease\".\"state\" <> 'released' AND \"agent_run_sandbox_lease\".\"release_evidence\" IS NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.agent_run_queue": {
       "name": "agent_run_queue",
       "schema": "",
@@ -1662,12 +2127,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "model_provider_account_identity": {
-          "name": "model_provider_account_identity",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "model_provider_credential_scope": {
           "name": "model_provider_credential_scope",
           "type": "varchar(20)",
@@ -1957,7 +2416,7 @@
         },
         "agent_runs_launch_snapshot_check": {
           "name": "agent_runs_launch_snapshot_check",
-          "value": "(\n          \"agent_runs\".\"launch_snapshot\" IS NULL OR (\n            jsonb_typeof(\"agent_runs\".\"launch_snapshot\") = 'object' AND\n            jsonb_typeof(\"agent_runs\".\"launch_snapshot\" -> 'framework') = 'string' AND\n            \"agent_runs\".\"launch_snapshot\" ->> 'framework' = ANY (\n              ARRAY['claude-code', 'codex', 'pi']\n            ) AND\n            jsonb_typeof(\n              \"agent_runs\".\"launch_snapshot\" -> 'runnerProfile'\n            ) = 'string' AND\n            char_length(\"agent_runs\".\"launch_snapshot\" ->> 'runnerProfile') >= 1 AND\n            char_length(\"agent_runs\".\"launch_snapshot\" ->> 'runnerProfile') <= 255 AND\n            (\n              (\n                \"agent_runs\".\"launch_snapshot\" ?& ARRAY[\n                  'schemaVersion',\n                  'framework',\n                  'runnerProfile'\n                ] AND\n                (\n                  \"agent_runs\".\"launch_snapshot\" -\n                  'schemaVersion' -\n                  'framework' -\n                  'runnerProfile'\n                ) = '{}'::jsonb AND\n                \"agent_runs\".\"launch_snapshot\" -> 'schemaVersion' = '1'::jsonb\n              ) OR (\n                \"agent_runs\".\"launch_snapshot\" ?& ARRAY[\n                  'schemaVersion',\n                  'framework',\n                  'runnerProfile',\n                  'piMemoryGenerationEnabled'\n                ] AND\n                (\n                  \"agent_runs\".\"launch_snapshot\" -\n                  'schemaVersion' -\n                  'framework' -\n                  'runnerProfile' -\n                  'piMemoryGenerationEnabled'\n                ) = '{}'::jsonb AND\n                \"agent_runs\".\"launch_snapshot\" -> 'schemaVersion' = '2'::jsonb AND\n                jsonb_typeof(\n                  \"agent_runs\".\"launch_snapshot\" -> 'piMemoryGenerationEnabled'\n                ) = 'boolean'\n              ) OR (\n                \"agent_runs\".\"launch_snapshot\" ?& ARRAY[\n                  'schemaVersion',\n                  'framework',\n                  'runnerProfile'\n                ] AND\n                (\n                  \"agent_runs\".\"launch_snapshot\" -\n                  'schemaVersion' -\n                  'framework' -\n                  'runnerProfile'\n                ) = '{}'::jsonb AND\n                \"agent_runs\".\"launch_snapshot\" -> 'schemaVersion' = '3'::jsonb\n              )\n            )\n          )\n        )"
+          "value": "(\n          \"agent_runs\".\"launch_snapshot\" IS NULL OR (\n            jsonb_typeof(\"agent_runs\".\"launch_snapshot\") = 'object' AND\n            jsonb_typeof(\"agent_runs\".\"launch_snapshot\" -> 'framework') = 'string' AND\n            \"agent_runs\".\"launch_snapshot\" ->> 'framework' = ANY (\n              ARRAY['claude-code', 'codex', 'pi']\n            ) AND\n            ((\n              jsonb_typeof(\n              \"agent_runs\".\"launch_snapshot\" -> 'runnerProfile'\n            ) = 'string' AND\n            char_length(\"agent_runs\".\"launch_snapshot\" ->> 'runnerProfile') >= 1 AND\n            char_length(\"agent_runs\".\"launch_snapshot\" ->> 'runnerProfile') <= 255 AND\n            (\n              (\n                \"agent_runs\".\"launch_snapshot\" ?& ARRAY[\n                  'schemaVersion',\n                  'framework',\n                  'runnerProfile'\n                ] AND\n                (\n                  \"agent_runs\".\"launch_snapshot\" -\n                  'schemaVersion' -\n                  'framework' -\n                  'runnerProfile'\n                ) = '{}'::jsonb AND\n                \"agent_runs\".\"launch_snapshot\" -> 'schemaVersion' = '1'::jsonb\n              ) OR (\n                \"agent_runs\".\"launch_snapshot\" ?& ARRAY[\n                  'schemaVersion',\n                  'framework',\n                  'runnerProfile',\n                  'piMemoryGenerationEnabled'\n                ] AND\n                (\n                  \"agent_runs\".\"launch_snapshot\" -\n                  'schemaVersion' -\n                  'framework' -\n                  'runnerProfile' -\n                  'piMemoryGenerationEnabled'\n                ) = '{}'::jsonb AND\n                \"agent_runs\".\"launch_snapshot\" -> 'schemaVersion' = '2'::jsonb AND\n                jsonb_typeof(\n                  \"agent_runs\".\"launch_snapshot\" -> 'piMemoryGenerationEnabled'\n                ) = 'boolean'\n              ) OR (\n                \"agent_runs\".\"launch_snapshot\" ?& ARRAY[\n                  'schemaVersion',\n                  'framework',\n                  'runnerProfile'\n                ] AND\n                (\n                  \"agent_runs\".\"launch_snapshot\" -\n                  'schemaVersion' -\n                  'framework' -\n                  'runnerProfile'\n                ) = '{}'::jsonb AND\n                \"agent_runs\".\"launch_snapshot\" -> 'schemaVersion' = '3'::jsonb\n              )\n            )\n            ) OR (\n              \"agent_runs\".\"launch_snapshot\" ?& ARRAY['schemaVersion', 'framework', 'executionMode', 'inferenceContractVersion'] AND\n              (\"agent_runs\".\"launch_snapshot\" - 'schemaVersion' - 'framework' - 'executionMode' - 'inferenceContractVersion') = '{}'::jsonb AND\n              \"agent_runs\".\"launch_snapshot\"->'schemaVersion' = '4'::jsonb AND\n              \"agent_runs\".\"launch_snapshot\"->>'framework' = 'pi' AND\n              \"agent_runs\".\"launch_snapshot\"->'executionMode' = '\"api-inference\"'::jsonb AND\n              \"agent_runs\".\"launch_snapshot\"->'inferenceContractVersion' = '1'::jsonb\n            ))\n          )\n        )"
         },
         "agent_runs_official_workflow_provenance_check": {
           "name": "agent_runs_official_workflow_provenance_check",

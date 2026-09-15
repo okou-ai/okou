@@ -166,7 +166,8 @@ Evaluation has two layers (lowest to highest priority):
    `user_feature_switches` keyed by `(orgId, userId)`. Some switches are
    org-scoped and stored under the org sentinel user id (`ORG_SENTINEL_USER_ID`,
    `"__org__"`); `ORG_SCOPED_FEATURE_SWITCH_KEYS` currently holds
-   `PersonalSubscriptionPriority`, `PiLoop` and `LarkIntegration`. Written
+   `PersonalSubscriptionPriority`, `PiLoop`, `PiDeferredSandbox` and
+   `LarkIntegration`. Written
    via `POST /api/feature-switches` and cleared via
    `DELETE /api/feature-switches`. The Lab page lets users update or reset these
    overrides and groups the registry into Released, Beta, Alpha, and Internal

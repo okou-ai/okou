@@ -34,6 +34,16 @@
     {
       "file": "apps/platform/src/views/css/index.css",
       "atRules": [],
+      "selector": ".wmde-markdown p",
+      "kind": "third-party-dom-adapter",
+      "owner": "frontend-platform",
+      "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content. This paragraph rhythm previously shared its rule with the first-party okou-markdown-card class, which is why it is allowlisted later than its siblings.",
+      "upstream": "@uiw/react-markdown-preview generated DOM",
+      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes."
+    },
+    {
+      "file": "apps/platform/src/views/css/index.css",
+      "atRules": [],
       "selector": ".wmde-markdown h1,.wmde-markdown h2,.wmde-markdown h3,.wmde-markdown h4,.wmde-markdown h5,.wmde-markdown h6",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",

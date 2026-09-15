@@ -326,3 +326,24 @@ refresh rejection, cancellation and membership revocation, session disposal and
 absence of output artifacts/Built-in usage on rejection. Priority-off deletion
 remains destructive. This repair changes no persisted shape, protocol, routing
 policy or feature configuration; priority remains default-off including staff.
+
+## Pi API inference without Sandbox admission (#34242)
+
+The [inference lifecycle foundation](pi-inference-lifecycle.md) reuses this document's
+captured credential-source and lifecycle-before-provider lock contract. A v4
+API-only or Sandbox-waiting run has public status `pending`, retains its exact
+admitted personal source, and needs no Runner job or Sandbox lease. Ordinary
+disconnect preserves that admitted reference under the existing enabled retention
+policy (`PersonalSubscriptionPriority`); priority-off disconnect keeps its existing
+hard behavior. Final terminal cleanup removes the
+last disconnected reference under the existing provider lock. Hard user, org,
+membership or ban authority loss remains hard and does not authorize account
+reselection. The common terminal transition also fences inference/intent/lease
+publication. Resource/usage erasure can remain retryable until external release and
+usage evidence exists; retention never restores revoked execution authority.
+
+The org start switch does not gate these readers. New inference producers must
+capture the existing source columns at admission, coordinate live rotating auth at
+the actual request boundary, and retain every necessary catalog/credit/provider
+lock. The foundation adds no credential snapshot, fallback account, provider call
+or production activation.

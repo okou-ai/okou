@@ -1379,3 +1379,18 @@ Cache keys include the lifetime, so new code does not reuse the previous shorter
 policy. The database's required `refresh_after` and `last_requested_at` columns
 remain writable for deployment coexistence; new rows set `refresh_after` to their
 expiration and new code does not use either column to schedule renewal.
+
+## Pi inference lifecycle reader floor (#34242)
+
+The [Pi inference lifecycle contract](pi-inference-lifecycle.md) adds a strict v4
+launch discriminator without a Runner profile and three sparse ownership/intent/lease
+tables. Full-launch v1–v3 and historical NULL writes remain legal. The generated
+expand migration replaces the launch CHECK as NOT VALID; a separate bounded
+validation transaction scans retained runs before API promotion. New runtime
+writers are absent and `piDeferredSandbox` is org-scoped and off, including staff.
+
+After future v4 activation, disabling starts must retain phase/epoch-aware readers,
+consumer/recovery, cancellation, capacity counting, credential retention and erasure.
+A v1–v3-only application is below the rollback floor while v4 records remain.
+Do not shrink the CHECK or cascade away releasing leases. See the linked contract
+for exact DDL timeouts, failure/retry behavior, scale receipts and activation gates.

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.149](https://github.com/vm0-ai/vm0/compare/claude-mock-v0.21.148...claude-mock-v0.21.149) (2026-09-15)
+
+
+### Bug Fixes
+
+* **runner:** prefer managed tools as oom victims ([#34237](https://github.com/vm0-ai/vm0/issues/34237)) ([7872a2a](https://github.com/vm0-ai/vm0/commit/7872a2afb7ed5779ec62823d45808ab65bf762f8))
+
 ## [0.21.148](https://github.com/vm0-ai/vm0/compare/claude-mock-v0.21.147...claude-mock-v0.21.148) (2026-09-15)
 
 ## [0.21.147](https://github.com/vm0-ai/vm0/compare/claude-mock-v0.21.146...claude-mock-v0.21.147) (2026-09-14)

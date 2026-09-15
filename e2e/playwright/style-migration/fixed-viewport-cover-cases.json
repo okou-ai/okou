@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "batch": "fixed-viewport-cover",
+  "cases": [
+    {
+      "id": "fixed-viewport-cover-light",
+      "path": "/browsers/:browserThreadId",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "fixed-viewport-cover-dark",
+      "path": "/browsers/:browserThreadId",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "fixed-viewport-cover-narrow",
+      "path": "/browsers/:browserThreadId",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "deviceScaleFactor": 2,
+      "hasTouch": true,
+      "isMobile": true
+    },
+    {
+      "id": "fixed-viewport-cover-narrow-dark",
+      "path": "/browsers/:browserThreadId",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "deviceScaleFactor": 2,
+      "hasTouch": true,
+      "isMobile": true
+    }
+  ]
+}
