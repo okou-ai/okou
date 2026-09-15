@@ -370,6 +370,32 @@ describe("okou social command", () => {
       });
     });
 
+    it("exports only own properties when a selected name also exists on the prototype", async () => {
+      serveRows([
+        { id: "inherited" },
+        { id: "own", toString: "provider value" },
+      ]);
+      const path = join(directory, "properties.csv");
+      await socialCommand.parseAsync([
+        ...commentsArgs,
+        "--output",
+        path,
+        "--format",
+        "csv",
+        "--select",
+        "toString,id",
+        "--json",
+      ]);
+      expect(await readFile(path, "utf8")).toBe(
+        '"toString","id"\r\n,"inherited"\r\n"provider value","own"\r\n',
+      );
+      expect(JSON.parse(output()) as unknown).toMatchObject({
+        kind: "export",
+        status: "complete",
+      });
+      expect(errorOutput()).toBe("");
+    });
+
     it.each(["json", "csv"])(
       "exports accepted results and accounting after a later page fails (%s)",
       async (format) => {

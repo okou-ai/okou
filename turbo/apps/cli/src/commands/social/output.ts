@@ -158,12 +158,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function fieldValue(row: unknown, field: string): unknown {
-  let value = row;
-  for (const segment of field.split(".")) {
+  return field.split(".").reduce<unknown>((value, segment) => {
     if (!isRecord(value) || !Object.hasOwn(value, segment)) return undefined;
-    value = value[segment];
-  }
-  return value;
+    return value[segment];
+  }, row);
 }
 
 function projectRow(row: unknown, fields: readonly string[]) {
