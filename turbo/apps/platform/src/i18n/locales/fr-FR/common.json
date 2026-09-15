@@ -5691,6 +5691,10 @@
         "categoryVideo": "Vidéo",
         "chatModels": "Modèles de chat",
         "effort": "Effort",
+        "effortScale": {
+          "faster": "Plus rapide",
+          "smarter": "Plus intelligent"
+        },
         "fast": "Rapide",
         "fastImpact": {
           "apiCost": "2× le coût des tokens API",

@@ -5620,6 +5620,10 @@
         "categoryVideo": "動画",
         "chatModels": "チャットモデル",
         "effort": "強度",
+        "effortScale": {
+          "faster": "速さ",
+          "smarter": "賢さ"
+        },
         "fast": "速い",
         "fastImpact": {
           "apiCost": "APIトークン料金 2×",

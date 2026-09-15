@@ -47,6 +47,42 @@ export function formatChatEffort(effort: string) {
 }
 
 /**
+ * The two words naming the ends of the scale.
+ *
+ * They are not a second reading of the current value -- the row above already
+ * carries that. They name the *direction*, which is the one thing the level
+ * names cannot say on their own: a user who has not dragged the bar has no way
+ * to know which way `Extra` or `Ultracode` points. Claude and ChatGPT both
+ * label the poles for the same reason.
+ *
+ * The row is a sibling of the bar rather than part of it, so it inherits the
+ * bar's width and `justify-between` lands each word on a track end. It sits
+ * closer to the track than to the row above, because it labels the ruler and is
+ * not the setting row's second sentence. It stays outside the track, so the
+ * aurora revealed at the highest step never sits underneath the words.
+ */
+function EffortScaleLabels() {
+  const { t } = useTranslation();
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none mt-5 mb-2 flex select-none items-baseline justify-between gap-3 text-xs text-muted-foreground"
+    >
+      <span>
+        {t(($) => {
+          return $.settings.models.picker.effortScale.faster;
+        })}
+      </span>
+      <span>
+        {t(($) => {
+          return $.settings.models.picker.effortScale.smarter;
+        })}
+      </span>
+    </div>
+  );
+}
+
+/**
  * The effort row: the label, the selected step in the user's words, and the
  * bar. Renders nothing for a model that has no effort levels.
  */
@@ -72,7 +108,10 @@ export function ChatEffortSettings({
     return effort === value;
   });
   return (
-    <div className="flex flex-col gap-3 px-2 py-3">
+    // The gap between the rows is not uniform, so each row below the header
+    // carries its own spacing rather than the column setting one for all of
+    // them.
+    <div className="flex flex-col px-2 py-3">
       {/* The same label/value pair the composer's video options use: the name
           of the setting recedes, the chosen value carries the row. */}
       <div className="flex items-baseline justify-between gap-3 text-[13px]">
@@ -80,25 +119,28 @@ export function ChatEffortSettings({
         <span className="font-medium text-foreground">{displayValue}</span>
       </div>
       {index !== -1 ? (
-        <ChatEffortSlider
-          steps={efforts.length}
-          value={index}
-          disabled={disabled}
-          label={label}
-          valueText={displayValue}
-          onValueChange={(next) => {
-            const effort = efforts[next];
-            if (effort !== undefined) {
-              onChange({
-                ...selection,
-                modelSettings: withModelReasoningEffort(
-                  selection.modelSettings,
-                  { model: selection.selectedModel, effort },
-                ),
-              });
-            }
-          }}
-        />
+        <>
+          <EffortScaleLabels />
+          <ChatEffortSlider
+            steps={efforts.length}
+            value={index}
+            disabled={disabled}
+            label={label}
+            valueText={displayValue}
+            onValueChange={(next) => {
+              const effort = efforts[next];
+              if (effort !== undefined) {
+                onChange({
+                  ...selection,
+                  modelSettings: withModelReasoningEffort(
+                    selection.modelSettings,
+                    { model: selection.selectedModel, effort },
+                  ),
+                });
+              }
+            }}
+          />
+        </>
       ) : null}
     </div>
   );

@@ -5620,6 +5620,10 @@
         "categoryVideo": "동영상",
         "chatModels": "채팅 모델",
         "effort": "강도",
+        "effortScale": {
+          "faster": "빠르게",
+          "smarter": "똑똑하게"
+        },
         "fast": "빠름",
         "fastImpact": {
           "apiCost": "API 토큰 비용 2×",

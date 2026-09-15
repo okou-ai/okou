@@ -5633,6 +5633,10 @@
         "categoryVideo": "वीडियो",
         "chatModels": "चैट मॉडल",
         "effort": "प्रयास",
+        "effortScale": {
+          "faster": "तेज़",
+          "smarter": "समझदार"
+        },
         "fast": "तेज़",
         "fastImpact": {
           "apiCost": "2× API टोकन लागत",
