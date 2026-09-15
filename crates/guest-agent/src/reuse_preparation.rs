@@ -515,7 +515,8 @@ fn verify_leaf_core_files(leaf_path: &Path) -> io::Result<()> {
 }
 
 fn verify_workload_policy(workload_path: &Path) -> io::Result<()> {
-    let policy = WorkloadResourcePolicy::for_current_guest_capacity().map_err(io::Error::other)?;
+    let policy =
+        WorkloadResourcePolicy::for_current_guest_capacity(false).map_err(io::Error::other)?;
     for (filename, expected) in [
         (
             CPU_MAX_FILE,

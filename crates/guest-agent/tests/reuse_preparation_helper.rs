@@ -672,7 +672,7 @@ async fn prepare_for_reuse_rejects_stale_workload_memory_high() -> TestResult {
     let (request, _runtime) = reusable_request()?;
     let containment = ContainmentFixture::new()?;
     let policy =
-        WorkloadResourcePolicy::for_current_guest_capacity().map_err(std::io::Error::other)?;
+        WorkloadResourcePolicy::for_current_guest_capacity(false).map_err(std::io::Error::other)?;
     let legacy_memory_high = policy
         .memory_max_bytes
         .checked_sub(256 * 1024 * 1024)
@@ -698,7 +698,7 @@ async fn prepare_for_reuse_rejects_stale_workload_memory_max() -> TestResult {
     let (request, _runtime) = reusable_request()?;
     let containment = ContainmentFixture::new()?;
     let policy =
-        WorkloadResourcePolicy::for_current_guest_capacity().map_err(std::io::Error::other)?;
+        WorkloadResourcePolicy::for_current_guest_capacity(false).map_err(std::io::Error::other)?;
     // The retired policy reserved 384 MiB regardless of today's control floor.
     let retired_reserve_delta = 384 * 1024 * 1024 - WORKLOAD_MEMORY_RESERVE_BYTES;
     let legacy_memory_max = policy
@@ -809,8 +809,8 @@ impl ContainmentFixture {
                 std::fs::write(leaf.join(filename), content)?;
             }
         }
-        let policy =
-            WorkloadResourcePolicy::for_current_guest_capacity().map_err(std::io::Error::other)?;
+        let policy = WorkloadResourcePolicy::for_current_guest_capacity(false)
+            .map_err(std::io::Error::other)?;
         let workload = operation.join("workload");
         for (filename, value) in [
             (

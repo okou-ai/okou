@@ -14,6 +14,9 @@ control services and the native agent runtime.
 | Ordinary exec operation and leaves |            0 | Do not receive trusted Agent protection             |
 
 Ancestor values describe the same descendant memory, not additional allocations.
+Only Agent operations require Guest capacity for the combined protection floor.
+Ordinary exec retains its smaller-Guest capacity support (including the 512 MiB
+CPU-fairness test Guests) because it does not receive these protected floors.
 The workload hard limit remains Guest-visible physical memory minus a separate
 128 MiB reserve for new control allocations. The reserve and control protection
 have different purposes even though their configured values match. Workload

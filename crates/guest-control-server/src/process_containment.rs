@@ -457,7 +457,7 @@ fn verify_exec_process_containment_empty_in(
 
 impl CgroupGuard {
     fn create(sequence: u32, role: ExecProcessRole) -> Result<Self, ProcessContainmentError> {
-        let policy = workload_resource_policy()?;
+        let policy = workload_resource_policy(role)?;
         Self::create_in(Path::new(EXEC_CGROUP_BASE_PATH), sequence, role, policy)
     }
 
@@ -784,10 +784,17 @@ impl CgroupGuard {
     }
 }
 
-fn workload_resource_policy() -> Result<WorkloadResourcePolicy, ProcessContainmentError> {
-    WorkloadResourcePolicy::for_current_guest_capacity().map_err(|message| {
-        ProcessContainmentError::new("derive workload resource policy", io::Error::other(message))
-    })
+fn workload_resource_policy(
+    role: ExecProcessRole,
+) -> Result<WorkloadResourcePolicy, ProcessContainmentError> {
+    WorkloadResourcePolicy::for_current_guest_capacity(role == ExecProcessRole::Agent).map_err(
+        |message| {
+            ProcessContainmentError::new(
+                "derive workload resource policy",
+                io::Error::other(message),
+            )
+        },
+    )
 }
 
 fn enable_required_controllers(group_path: &Path) -> Result<(), ProcessContainmentError> {
@@ -2526,7 +2533,8 @@ mod tests {
         let workload = operation.path().join(WORKLOAD_CGROUP_NAME);
         fs::create_dir(&control).unwrap();
         fs::create_dir(&workload).unwrap();
-        let policy = WorkloadResourcePolicy::for_guest_capacity(2, 4096 * 1024 * 1024).unwrap();
+        let policy =
+            WorkloadResourcePolicy::for_guest_capacity(2, 4096 * 1024 * 1024, true).unwrap();
 
         configure_resource_policy(operation.path(), &control, &workload, true, policy).unwrap();
 
@@ -2560,13 +2568,18 @@ mod tests {
         for path in [operation.path(), control.as_path(), workload.as_path()] {
             fs::write(path.join(MEMORY_MIN_FILE), "0").unwrap();
         }
-        let policy = WorkloadResourcePolicy::for_guest_capacity(2, 4096 * 1024 * 1024).unwrap();
+        let policy =
+            WorkloadResourcePolicy::for_guest_capacity(2, 480 * 1024 * 1024, false).unwrap();
 
         configure_resource_policy(operation.path(), &control, &workload, false, policy).unwrap();
 
         for path in [operation.path(), control.as_path(), workload.as_path()] {
             assert_eq!(fs::read_to_string(path.join(MEMORY_MIN_FILE)).unwrap(), "0");
         }
+        assert_eq!(
+            fs::read_to_string(workload.join(MEMORY_MAX_FILE)).unwrap(),
+            (352 * 1024 * 1024).to_string()
+        );
     }
 
     #[test]
@@ -2576,7 +2589,8 @@ mod tests {
         let workload = operation.path().join(WORKLOAD_CGROUP_NAME);
         fs::create_dir(&control).unwrap();
         fs::create_dir_all(workload.join(MEMORY_MIN_FILE)).unwrap();
-        let policy = WorkloadResourcePolicy::for_guest_capacity(2, 4096 * 1024 * 1024).unwrap();
+        let policy =
+            WorkloadResourcePolicy::for_guest_capacity(2, 4096 * 1024 * 1024, true).unwrap();
 
         let error = configure_resource_policy(operation.path(), &control, &workload, true, policy)
             .unwrap_err();
@@ -2589,7 +2603,7 @@ mod tests {
         let base = tempfile::tempdir().unwrap();
 
         let policy =
-            WorkloadResourcePolicy::for_guest_capacity(2, u64::from(4096_u32) * 1024 * 1024)
+            WorkloadResourcePolicy::for_guest_capacity(2, u64::from(4096_u32) * 1024 * 1024, true)
                 .unwrap();
         // A plain directory can supply the outer directory capability, but
         // cannot supply the Agent's kernel-created runtime cgroup.procs file.
