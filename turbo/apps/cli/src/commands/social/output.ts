@@ -345,10 +345,29 @@ export async function withSocialOutput(
     });
   } finally {
     if (file) {
-      await file.handle.close();
-      await unlink(file.staging).catch((error: unknown) => {
-        if (!hasErrorCode(error, "ENOENT")) throw error;
-      });
+      try {
+        await file.handle.close();
+        await unlink(file.staging).catch((error: unknown) => {
+          if (!hasErrorCode(error, "ENOENT")) throw error;
+        });
+      } catch (error) {
+        // Cleanup must not replace the request/export error or truncate stdout.
+        const message = `Could not clean Social export staging file ${JSON.stringify(file.staging)}: ${errorMessage(error)}. Check this local path and remove any remaining file after restoring directory access.`;
+        console.error(
+          compact
+            ? JSON.stringify({
+                status: "error",
+                error: {
+                  kind: "export_cleanup",
+                  code: "EXPORT_CLEANUP_FAILED",
+                  message,
+                  retryable: false,
+                },
+              })
+            : message,
+        );
+        process.exitCode = 1;
+      }
     }
   }
 }

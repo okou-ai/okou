@@ -130,7 +130,9 @@ even with overwrite. The CLI prepares a private staging file in the destination
 directory before provider work, writes it completely, then publishes it without
 clobbering an existing destination. Overwrite uses atomic replacement; it never
 truncates the old file before the replacement is ready. Staging files are removed
-after handled success/failure. Abrupt termination can leave a staging file.
+after handled success/failure. If filesystem access prevents cleanup, stderr
+reports the staging path and the command exits 1 without replacing the original
+request/export error. Abrupt termination can also leave a staging file.
 
 Invalid selectors, formats, and combinations are rejected before requests.
 `--stream` cannot be combined with `--output`, `--select`, `--format`, or

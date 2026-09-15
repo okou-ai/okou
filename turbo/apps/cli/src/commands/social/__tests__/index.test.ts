@@ -895,6 +895,78 @@ describe("okou social command", () => {
       expect(requests).toHaveLength(1);
       expect(await readdir(directory)).toEqual(["out.csv"]);
     });
+
+    it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+      "retains recovered results and both diagnostics when directory access prevents publication and cleanup",
+      async () => {
+        const path = join(directory, "blocked.json");
+        const requests: unknown[] = [];
+        server.use(
+          http.post(
+            "http://localhost:3000/api/social/request",
+            async ({ request }) => {
+              requests.push(await request.json());
+              await chmod(directory, 0o500);
+              return HttpResponse.json(
+                socialResponse(
+                  "instagram_comments",
+                  { state: "complete", itemsReturned: 1 },
+                  { comments: [{ id: "one", text: "retain me" }] },
+                ),
+              );
+            },
+          ),
+        );
+        try {
+          await socialCommand.parseAsync([
+            ...commentsArgs,
+            "--output",
+            path,
+            "--select",
+            "id",
+            "--json",
+          ]);
+          expect(JSON.parse(output()) as unknown).toMatchObject({
+            kind: "result",
+            data: { items: [{ id: "one", text: "retain me" }] },
+            billing: { creditsCharged: 3 },
+          });
+          expect(
+            mockConsoleError.mock.calls.map(([value]) => {
+              return JSON.parse(String(value)) as unknown;
+            }),
+          ).toEqual([
+            {
+              status: "error",
+              error: {
+                kind: "export_cleanup",
+                code: "EXPORT_CLEANUP_FAILED",
+                message: expect.stringContaining(".tmp"),
+                retryable: false,
+              },
+            },
+            expect.objectContaining({
+              error: expect.objectContaining({
+                message: expect.stringContaining(
+                  "without repeating the Social request",
+                ),
+              }),
+            }),
+          ]);
+          expect(process.exitCode).toBe(1);
+          expect(mockExit).not.toHaveBeenCalled();
+          expect(requests).toHaveLength(1);
+          await expect(readFile(path, "utf8")).rejects.toMatchObject({
+            code: "ENOENT",
+          });
+          expect(await readdir(directory)).toEqual([
+            expect.stringMatching(/^\.okou-social-.+\.tmp$/u),
+          ]);
+        } finally {
+          await chmod(directory, 0o700);
+        }
+      },
+    );
   });
 
   it("discovers a lost task ID and retrieves its artifact through existing resume", async () => {
