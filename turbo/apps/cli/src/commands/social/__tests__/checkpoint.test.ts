@@ -101,6 +101,155 @@ afterEach(async () => {
 });
 
 describe("social collection checkpoints through the CLI", () => {
+  it.each(["json", "csv"])(
+    "exports selected %s results while retaining the original checkpoint tail",
+    async (format) => {
+      let requests = 0;
+      server.use(
+        http.post(endpoint, () => {
+          requests += 1;
+          const page = response(["one", "two", "three"], "next");
+          return HttpResponse.json({
+            ...page,
+            result: {
+              ...page.result,
+              comments: page.result.comments.map((item) => {
+                return { ...item, text: `Full ${item.id}` };
+              }),
+            },
+          });
+        }),
+      );
+      const output = join(directory, `results.${format}`);
+      const first = await start("2", [
+        "--output",
+        output,
+        "--format",
+        format,
+        "--select",
+        "id",
+      ]);
+      expect(first.code, first.errors).toBe(0);
+      expect(first.records).toHaveLength(1);
+      expect(first.result).toMatchObject({
+        kind: "export",
+        collection: { continuation: { available: true, bufferedItems: 1 } },
+      });
+      const contents = await readFile(output, "utf8");
+      if (format === "json") {
+        expect(JSON.parse(contents) as unknown).toMatchObject({
+          data: { items: [{ id: "one" }, { id: "two" }] },
+        });
+        expect(contents).not.toContain("Full");
+      } else {
+        expect(contents).toBe('"id"\r\n"one"\r\n"two"\r\n');
+      }
+      const resumed = await invoke([
+        "resume",
+        checkpoint,
+        "--limit",
+        "1",
+        "--json",
+      ]);
+      expect(resumed.code, resumed.errors).toBe(0);
+      expect(resumed.result).toMatchObject({
+        data: { items: [{ id: "three", text: "Full three" }] },
+        billing: { quantity: 0, creditsCharged: 0 },
+      });
+      expect(requests).toBe(1);
+    },
+  );
+
+  it("exports one partial receipt and resumes the failed page", async () => {
+    let requests = 0;
+    server.use(
+      http.post(endpoint, () => {
+        requests += 1;
+        if (requests === 2) return HttpResponse.error();
+        return HttpResponse.json(
+          requests === 1 ? response(["one"], "next") : response(["two"]),
+        );
+      }),
+    );
+    const output = join(directory, "partial.json");
+    const first = await start("5", ["--output", output]);
+    expect(first.code).toBe(1);
+    expect(first.records).toHaveLength(1);
+    expect(first.result).toMatchObject({ kind: "export", status: "partial" });
+    expect(JSON.parse(await readFile(output, "utf8")) as unknown).toMatchObject(
+      {
+        data: { items: [{ id: "one" }] },
+        collection: { continuation: { available: true } },
+      },
+    );
+    const resumed = await invoke(["resume", checkpoint, "--json"]);
+    expect(resumed.code, resumed.errors).toBe(0);
+    expect(resumed.result).toMatchObject({ data: { items: [{ id: "two" }] } });
+    expect(requests).toBe(3);
+  });
+
+  it("retains accepted stdout and the tail when export publication fails", async () => {
+    const output = join(directory, "results.json");
+    let requests = 0;
+    server.use(
+      http.post(endpoint, async () => {
+        requests += 1;
+        await mkdir(output);
+        return HttpResponse.json(response(["one", "two", "three"], "next"));
+      }),
+    );
+    const first = await start("2", ["--output", output]);
+    expect(first.code).toBe(1);
+    expect(first.records).toHaveLength(1);
+    expect(first.result).toMatchObject({
+      kind: "result",
+      data: { items: [{ id: "one" }, { id: "two" }] },
+      collection: { continuation: { available: true } },
+    });
+    expect(first.errors).toContain("Cannot export Social results");
+    const resumed = await invoke([
+      "resume",
+      checkpoint,
+      "--limit",
+      "1",
+      "--json",
+    ]);
+    expect(resumed.code, resumed.errors).toBe(0);
+    expect(resumed.result).toMatchObject({
+      data: { items: [{ id: "three" }] },
+    });
+    expect(requests).toBe(1);
+  });
+
+  it.each(["checkpoint", "lock", "aliased_parent"])(
+    "rejects an export path that shares the %s path before provider work",
+    async (kind) => {
+      let requests = 0;
+      server.use(
+        http.post(endpoint, () => {
+          requests += 1;
+          return HttpResponse.json(response(["one", "two", "three"]));
+        }),
+      );
+      let output = kind === "lock" ? `${checkpoint}.lock` : checkpoint;
+      if (kind === "aliased_parent") {
+        const alias = join(directory, "alias");
+        await symlink(directory, alias);
+        output = join(alias, "comments.json");
+      }
+      const result = await start("2", ["--output", output, "--overwrite"]);
+      expect(result.code).toBe(1);
+      expect(result.records).toHaveLength(0);
+      expect(result.errors).toContain("different from the checkpoint");
+      expect(requests).toBe(0);
+      await expect(stat(checkpoint)).rejects.toHaveProperty("code", "ENOENT");
+      await expect(stat(`${checkpoint}.lock`)).rejects.toHaveProperty(
+        "code",
+        "ENOENT",
+      );
+    },
+  );
+
   it("resumes a large Unicode tail intact without another provider request", async () => {
     const text = "A多字节🙂".repeat(20_000);
     let requests = 0;

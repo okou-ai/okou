@@ -285,6 +285,19 @@ export class CollectionCheckpoint {
       .digest();
   }
 
+  async assertDistinctOutput(output: string): Promise<void> {
+    const absolute = resolve(output);
+    const canonical = join(
+      await realpath(dirname(absolute)),
+      basename(absolute),
+    );
+    if (canonical === this.path || canonical === `${this.path}.lock`) {
+      throw new InvalidArgumentError(
+        "--output must be different from the checkpoint and its .lock file",
+      );
+    }
+  }
+
   async read(): Promise<SavedCollection> {
     const file = await open(
       this.path,

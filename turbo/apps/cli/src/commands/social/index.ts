@@ -1272,6 +1272,9 @@ async function printCollectionResult(
   options: CollectionOptions,
   checkpoint?: CollectionRecovery,
 ): Promise<void> {
+  if (checkpoint && options.output !== undefined) {
+    await checkpoint.file.assertDistinctOutput(options.output);
+  }
   await withSocialOutput(options, true, async (write) => {
     let output: SocialOutput;
     try {

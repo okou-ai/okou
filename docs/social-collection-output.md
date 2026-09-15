@@ -86,6 +86,14 @@ two, resume emits the third item before requesting another page. A resume with
 page already reported source completion. Once it is drained, source completion
 and provider limitations remain terminal.
 
+Initial collection can combine `--checkpoint` with JSON/CSV export or
+`--select`. Selection affects the emitted/exported rows; the checkpoint keeps
+the original buffered items. Use distinct paths for the exported results, the
+checkpoint, and its `.lock` file, including through parent-directory aliases.
+Conflicting paths are rejected before provider work, even with `--overwrite`.
+`social resume` accepts `--json` or `--stream`; save its returned output when
+needed.
+
 Checkpointed terminal records add these fields under `collection`:
 
 | Field                        | Meaning                                                      |
