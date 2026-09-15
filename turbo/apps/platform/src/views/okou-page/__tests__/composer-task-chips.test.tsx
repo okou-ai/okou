@@ -224,6 +224,21 @@ test("The original start cards remain when task chips are disabled", async () =>
   ).toBeNull();
 });
 
+test("The selected task sits in the composer footer, below the input", async () => {
+  mockTemplateChat();
+  const editor = await setupChips();
+  const tasks = screen.getByRole("group", { name: "Choose a task" });
+  click(button("Video", tasks));
+  const chip = await screen.findByLabelText("Remove Video");
+  const card = editor.closest('[data-slot="chat-composer-card"]');
+  expect(card).toContainElement(chip);
+  // The task is composer state, so it belongs to the row a send does not
+  // clear rather than to the attachment lane that sits above the input.
+  expect(
+    card?.querySelector('[data-slot="chat-composer-footer"]'),
+  ).toContainElement(chip);
+});
+
 test("Visualization starts with no selected preferences", async () => {
   const capture = mockTemplateChat();
   const editor = await setupChips();

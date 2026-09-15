@@ -96,6 +96,20 @@ test("Create commands stay hidden until enabled", async () => {
   expect(screen.queryByTestId("composer-create-mode")).toBeNull();
 });
 
+test("The create mode control sits in the composer footer, below the input", async () => {
+  setupModels();
+  const editor = await setupComposer();
+  await chooseCommand(editor, "Our launch /create video", "Create video");
+  const control = screen.getByTestId("composer-create-mode");
+  const card = editor.closest('[data-slot="chat-composer-card"]');
+  expect(card).toContainElement(control);
+  // The type is composer state, so it belongs to the row a send does not
+  // clear rather than to the attachment lane that sits above the input.
+  expect(
+    card?.querySelector('[data-slot="chat-composer-footer"]'),
+  ).toContainElement(control);
+});
+
 test("Choose a video through the consolidated Create entry with the keyboard and submit its settings", async () => {
   setupModels();
   const submissions: {
