@@ -1087,6 +1087,32 @@
       "evidence": [],
       "pullRequest": null,
       "mergeCommit": null
+    },
+    {
+      "id": "composer-surface",
+      "family": "chat-and-content",
+      "tokens": ["okou-composer"],
+      "consumers": [
+        "packages/ui/src/components/ui/card.tsx",
+        "apps/platform/src/views/okou-page/chat-composer.tsx",
+        "apps/platform/src/views/components/instatus-status-notice.tsx",
+        "apps/platform/src/views/shared-thread-page/shared-thread-page.tsx"
+      ],
+      "cases": [
+        "composer-surface-light",
+        "composer-surface-dark",
+        "composer-surface-light-retina",
+        "composer-surface-dark-retina",
+        "composer-surface-shared-thread-light",
+        "composer-surface-shared-thread-dark",
+        "composer-surface-narrow",
+        "composer-surface-narrow-dark"
+      ],
+      "status": "implemented",
+      "blockedReason": null,
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
     }
   ],
   "caseFiles": [
@@ -1115,6 +1141,7 @@
     "../e2e/playwright/style-migration/pwa-safe-area-cover-cases.json",
     "../e2e/playwright/style-migration/onboarding-diagram-cases.json",
     "../e2e/playwright/style-migration/fixed-viewport-cover-cases.json",
-    "../e2e/playwright/style-migration/markdown-card-cases.json"
+    "../e2e/playwright/style-migration/markdown-card-cases.json",
+    "../e2e/playwright/style-migration/composer-surface-cases.json"
   ]
 }
