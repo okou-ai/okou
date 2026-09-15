@@ -443,22 +443,20 @@ const persistCanonicalFeishuIngress$ = command(
       },
       signal,
     );
-    const messageText = args.message.files.length
-      ? [
-          args.message.text,
-          ...args.message.files.map((file) => {
-            const asset = readyIntegrationInputAsset(assets, file.fileId);
-            return asset
-              ? canonicalInputFilePrompt(asset)
-              : formatFeishuMessageContent(
-                  { text: "", files: [file] },
-                  args.message.platform,
-                );
-          }),
-        ]
-          .filter(Boolean)
-          .join("\n\n")
-      : args.message.promptText;
+    const messageText = args.message.files.reduce((prompt, file) => {
+      const asset = readyIntegrationInputAsset(assets, file.fileId);
+      return asset
+        ? prompt.replace(
+            formatFeishuMessageContent(
+              { text: "", files: [file] },
+              args.message.platform,
+            ),
+            () => {
+              return canonicalInputFilePrompt(asset);
+            },
+          )
+        : prompt;
+    }, args.message.promptText);
 
     await args.db.transaction(async (tx) => {
       const chatOpenUrl = buildFeishuChatOpenUrl(

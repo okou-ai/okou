@@ -4312,13 +4312,25 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
   });
 
   it.each(["p2p", "group"] as const)(
-    "runs a rich post with text and multiple downloadable images in %s",
+    "runs a rich post with imported and native images in %s",
     async (chatType) => {
       const fixture = await setupFeishuRunFixture();
       const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
         fixture;
       await connectFixtureUser(fixture);
       const messageId = `om_post_${randomUUID()}`;
+      const uploads = captureIntegrationInputUploads(context);
+      const imageBytes = Buffer.from("first rich post image");
+      server.use(
+        http.get(
+          `${provider.apiOrigin}/open-apis/im/v1/messages/${messageId}/resources/img_post_first`,
+          () => {
+            return new HttpResponse(imageBytes, {
+              headers: { "content-type": "image/png" },
+            });
+          },
+        ),
+      );
       const rows = [
         [
           ...(chatType === "group" ? [{ tag: "at", user_id: "@_user_1" }] : []),
@@ -4394,14 +4406,24 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
       if (chatType === "group") {
         expect(claim.prompt).toContain("@Nova");
       }
+      const importedFileId = requireValue(
+        claim.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1],
+        "Expected the imported rich post image",
+      );
+      expect(uploads).toHaveLength(1);
+      await expectIntegrationInputPreview(context, {
+        actor,
+        fileId: importedFileId,
+        bytes: imageBytes,
+        contentType: "image/png",
+        uploads,
+        okouToken: claim.platformEnvironment.OKOU_TOKEN,
+      });
       await expectFeishuResourceDownloads({
         actor,
         runId: run.id,
         prompt: claim.prompt,
-        resources: [
-          { messageId, fileKey: "img_post_first", type: "image" },
-          { messageId, fileKey: "img_post_second", type: "image" },
-        ],
+        resources: [{ messageId, fileKey: "img_post_second", type: "image" }],
       });
 
       const threads = await accept(
@@ -4430,15 +4452,14 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
             parts: [
               expect.objectContaining({
                 type: "file",
-                filenameSnapshot: "image",
-              }),
-              expect.objectContaining({
-                type: "file",
+                fileId: importedFileId,
                 filenameSnapshot: "image",
               }),
               {
                 type: "text",
-                text: "Image comparison\nCompare these images with [the brief](https://example.com/brief)",
+                text: expect.stringContaining(
+                  "Image comparison\nCompare these images with [the brief](https://example.com/brief)",
+                ),
               },
               expect.objectContaining({ type: "source", kind: "feishu" }),
             ],
