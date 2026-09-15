@@ -11,7 +11,7 @@ import {
   openBuiltinAccountManager$,
 } from "../okou-page/settings/connector-account-dialogs.ts";
 import {
-  createChildAbortController,
+  createDeferredPromise,
   resetSignal,
   setLoop,
   withCleanup,
@@ -32,6 +32,7 @@ interface CalendarRecoveryTarget {
 
 const internalRecoveryTarget$ = state<CalendarRecoveryTarget | null>(null);
 const resetConfirmation$ = resetSignal();
+const resetConfirmationWork$ = resetSignal();
 export const googleCalendarRecoveryTarget$ = computed((get) => {
   return get(internalRecoveryTarget$);
 });
@@ -79,12 +80,16 @@ export const closeGoogleCalendarReconnect$ = command(
 
 const confirmRecovery$ = command(
   async ({ get, set }, target: CalendarRecoveryTarget, signal: AbortSignal) => {
+    signal.throwIfAborted();
     const deadline = now() + 30_000;
-    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-    const controller = createChildAbortController(signal);
+    const workSignal = set(resetConfirmationWork$, signal);
+    const expired = createDeferredPromise<never>(workSignal);
     timeout(
       () => {
-        controller.abort(
+        if (workSignal.aborted) {
+          return;
+        }
+        expired.reject(
           new DOMException(
             "Calendar recovery confirmation expired",
             "TimeoutError",
@@ -92,53 +97,57 @@ const confirmRecovery$ = command(
         );
       },
       30_000,
-      { signal: controller.signal },
+      { signal: workSignal },
     );
     let attempts = 0;
     let recovered = false;
     // At most 10 serial GETs, 2s after each completed pending read, and a 30s
     // total deadline including hung requests. No transport or OAuth retries.
     await withCleanup(
-      setLoop(
-        async () => {
-          if (now() >= deadline || attempts >= 10) {
-            return true;
-          }
-          if (get(currentWorkflowId$) !== target.workflowId) {
-            return true;
-          }
-          attempts++;
-          const detail = await set(
-            reloadCurrentWorkflowDetail$,
-            controller.signal,
-          );
-          if (now() >= deadline) {
-            return true;
-          }
-          const automation = detail?.automations.find((candidate) => {
-            return candidate.id === target.automationId;
-          });
-          if (
-            detail?.id !== target.workflowId ||
-            !automation ||
-            !isGoogleCalendarWorkflowAutomation(automation) ||
-            automation.eventType !== target.eventType
-          ) {
-            return true;
-          }
-          recovered = automation.warning === undefined;
-          return (
-            recovered ||
-            automation.warning !== "reconnect_required" ||
-            attempts >= 10
-          );
-        },
-        2000,
-        controller.signal,
-        { retryTransientErrors: false },
-      ),
+      Promise.race([
+        expired.promise,
+        setLoop(
+          async () => {
+            if (now() >= deadline || attempts >= 10) {
+              return true;
+            }
+            if (get(currentWorkflowId$) !== target.workflowId) {
+              return true;
+            }
+            attempts++;
+            const detail = await set(reloadCurrentWorkflowDetail$, workSignal);
+            if (now() >= deadline) {
+              return true;
+            }
+            const automation = detail?.automations.find((candidate) => {
+              return candidate.id === target.automationId;
+            });
+            if (
+              detail?.id !== target.workflowId ||
+              !automation ||
+              !isGoogleCalendarWorkflowAutomation(automation) ||
+              automation.eventType !== target.eventType
+            ) {
+              return true;
+            }
+            recovered = automation.warning === undefined;
+            return (
+              recovered ||
+              automation.warning !== "reconnect_required" ||
+              attempts >= 10
+            );
+          },
+          2000,
+          workSignal,
+          { retryTransientErrors: false },
+        ),
+      ]),
       () => {
-        controller.abort();
+        // Timeout keeps its classification while cleanup stops a hung read.
+        // An older attempt may settle after replacement has already started.
+        if (!workSignal.aborted) {
+          set(resetConfirmationWork$);
+        }
       },
     );
     signal.throwIfAborted();
@@ -158,6 +167,7 @@ export const checkGoogleCalendarRecovery$ = command(
       return;
     }
     const attemptSignal = set(resetConfirmation$, signal);
+    let confirmationTarget = target;
     if (target.phase === "reconnect") {
       const dialog = get(builtinAccountConnectDialog$);
       if (
@@ -179,14 +189,16 @@ export const checkGoogleCalendarRecovery$ = command(
       );
       signal.throwIfAborted();
       attemptSignal.throwIfAborted();
-      set(internalRecoveryTarget$, { ...target, phase: "confirm" });
+      confirmationTarget = { ...target, phase: "confirm" };
+      set(internalRecoveryTarget$, confirmationTarget);
       // The inline recovery status now owns progress and cancellation.
       set(dismissConnectorConnectionProgress$);
       set(closeBuiltinAccountConnectDialog$);
     }
     const recovered = await set(confirmRecovery$, target, attemptSignal);
     signal.throwIfAborted();
-    if (recovered) {
+    attemptSignal.throwIfAborted();
+    if (recovered && get(internalRecoveryTarget$) === confirmationTarget) {
       set(internalRecoveryTarget$, null);
     }
   },
