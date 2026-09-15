@@ -84,18 +84,14 @@
         "important": false
       },
       {
-        "atRules": [
-          "@media (max-width:767px)"
-        ],
+        "atRules": ["@media (max-width:767px)"],
         "selector": ".okou-mobile-fixed-safe-area",
         "property": "box-sizing",
         "value": "border-box",
         "important": false
       },
       {
-        "atRules": [
-          "@media (max-width:767px)"
-        ],
+        "atRules": ["@media (max-width:767px)"],
         "selector": ".okou-mobile-fixed-safe-area",
         "property": "padding",
         "value": "var(--sat) var(--sar) var(--sab) var(--sal)",
@@ -151,9 +147,7 @@
         "important": false
       },
       {
-        "atRules": [
-          "@media (display-mode:standalone)"
-        ],
+        "atRules": ["@media (display-mode:standalone)"],
         "selector": ".okou-mobile-sidebar::before",
         "property": "bottom",
         "value": "calc(-1*var(--sab))",
@@ -426,9 +420,7 @@
         "important": false
       },
       {
-        "atRules": [
-          "@media (prefers-reduced-motion:reduce)"
-        ],
+        "atRules": ["@media (prefers-reduced-motion:reduce)"],
         "selector": ".okou-app .okou-composer::after",
         "property": "transition",
         "value": "none",
@@ -1107,18 +1099,14 @@
         "important": false
       },
       {
-        "atRules": [
-          "@media (prefers-reduced-motion:reduce)"
-        ],
+        "atRules": ["@media (prefers-reduced-motion:reduce)"],
         "selector": ".owf-diagram-beam",
         "property": "animation",
         "value": "none",
         "important": false
       },
       {
-        "atRules": [
-          "@media (prefers-reduced-motion:reduce)"
-        ],
+        "atRules": ["@media (prefers-reduced-motion:reduce)"],
         "selector": ".owf-diagram-beam",
         "property": "opacity",
         "value": "0.35",

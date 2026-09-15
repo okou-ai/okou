@@ -693,16 +693,28 @@ spells `okou-app` inside a `className`, which the class-usage scanner counts as
 a dependency: that attempt fails `style-policy/growth` with `okou-app` usage
 growing from 0 to 9, and `pnpm lint:style:prune` refuses to authorize it.
 
-The behaviour the block described is still wanted.
+The behaviour the block described is not missing either.
 `buildDesktopWindowChromeOptions` asks Electron for
 `titleBarStyle: "hiddenInset"` with the traffic lights at `{ x: 16, y: 18 }` on
-darwin, which is precisely the layout a 48px drag region is written for, so
-Desktop has a live defect: the window has no drag region at all. That defect,
-and the decision about how to implement it, are tracked in
-[issue #34162](https://github.com/vm0-ai/vm0/issues/34162). This section records
-step one of that issue — remove the code that never ran, at zero rendering
-change. Step two implements dragging for real, and it starts from an empty
-slate rather than from a selector that had been inert since it was written.
+darwin, which is precisely the layout a 48px drag region is written for — but
+that layout is already paired, in the Desktop renderer's own stylesheet rather
+than this one. `apps/desktop/src/main.ts` loads `desktopRendererUrl()`,
+`vm0-desktop://renderer/index.html`, and `renderer/styles.css` gives its
+`.app-header` `-webkit-app-region: drag` at the renderer's own titlebar height,
+with `no-drag` exceptions on its controls and three more drag/no-drag pairs in
+the recorder window. `okou-app` appears nowhere under `turbo/apps/desktop`, so
+neither this stylesheet nor a `.okou-app` element is in that document. **Desktop
+window dragging works; this was never the code that implemented it.**
+
+These rules were residue of a different integration, one that was never built:
+rendering the Platform UI inside the Desktop shell.
+[Issue #34162](https://github.com/vm0-ai/vm0/issues/34162) records that. The
+block becomes relevant again only if someone decides to host the Platform UI in
+the Desktop shell, and that drag chrome would then be designed with the decision
+rather than resurrected from a selector that had been inert since it was
+written. Note that Platform markup does reach an Electron window in one place
+today — the auth window `desktop-auth-window.ts` opens on the `/desktop-auth/*`
+routes — and that window sets no such attribute either.
 
 Measured against `main` with the App's own Tailwind compiler (the 4.2.2 engine
 the Vite plugin bundles) in Chromium over CDP. The fixture rebuilds the real
