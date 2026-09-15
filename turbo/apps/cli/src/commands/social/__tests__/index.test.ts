@@ -181,6 +181,7 @@ describe("okou social command", () => {
       command.setOptionValue("kind", undefined);
       command.setOptionValue("limit", 10);
       command.setOptionValue("stream", undefined);
+      command.setOptionValue("checkpoint", undefined);
       command.setOptionValue("platform", undefined);
       command.setOptionValue("hashtag", undefined);
       command.setOptionValue("sort", undefined);

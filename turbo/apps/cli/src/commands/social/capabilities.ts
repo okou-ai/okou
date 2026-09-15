@@ -122,6 +122,19 @@ function collectionDetails(tool: ManagedSocialKitTool) {
             ? collection.pagination.maxPage
             : SOCIAL_MAX_COLLECTION_PAGES,
       stream: true,
+      continuation:
+        collection.pagination.kind === "none"
+          ? { supported: false }
+          : {
+              supported: true,
+              checkpoint: "--checkpoint <file>",
+              resume:
+                "okou social resume <file> --limit <count> [--json|--stream]",
+              version: 1,
+              lifetimeHours: 24,
+              context: "same OKOU_TOKEN and API endpoint",
+              limit: "additional items per invocation; buffered items first",
+            },
       ...(collection.sourceLimit
         ? { sourceLimit: collection.sourceLimit }
         : {}),
