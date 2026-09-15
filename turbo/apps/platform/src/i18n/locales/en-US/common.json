@@ -1948,8 +1948,7 @@
           "print": "Print and publishing",
           "retro-tech": "Retro tech and interfaces"
         },
-        "preview": "Preview {{title}}",
-        "previewUnavailable": "A video preview is not available for this style."
+        "preview": "Preview {{title}}"
       },
       "voice": {
         "auto": "Let Okou choose",

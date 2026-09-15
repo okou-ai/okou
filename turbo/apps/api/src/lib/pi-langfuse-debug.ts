@@ -95,27 +95,11 @@ export function piLangfuseDebugPlatformEnvironment(args: {
 }): Readonly<Record<string, string>> {
   return {
     [PI_LANGFUSE_DEBUG_ENABLED_ENV]: "true",
-    OKOU_PI_LANGFUSE_RELAY_ENABLED: "true",
     [LANGFUSE_TRACING_ENABLED_ENV]: "true",
     [LANGFUSE_TRACING_ENVIRONMENT_ENV]: DEBUG_TRACING_ENVIRONMENT,
     [LANGFUSE_MEDIA_UPLOAD_ENABLED_ENV]: "false",
     [LANGFUSE_USER_ID_ENV]: piLangfuseDebugUserId(args.userId),
     [PI_LANGFUSE_MAX_CHARS_ENV]: String(PI_LANGFUSE_MAX_CAPTURED_CHARS),
-  };
-}
-
-/** Read legacy queued contexts until their commit-pinned CLIs have drained. */
-export function piLangfuseDebugCredentialsFromEnvironment(
-  environment: Readonly<Record<string, string>>,
-): Readonly<Record<string, string>> | undefined {
-  const publicKey = environment[LANGFUSE_PUBLIC_KEY_ENV]?.trim();
-  const secretKey = environment[LANGFUSE_SECRET_KEY_ENV]?.trim();
-  if (!publicKey || !secretKey) {
-    return undefined;
-  }
-  return {
-    [LANGFUSE_PUBLIC_KEY_ENV]: publicKey,
-    [LANGFUSE_SECRET_KEY_ENV]: secretKey,
   };
 }
 

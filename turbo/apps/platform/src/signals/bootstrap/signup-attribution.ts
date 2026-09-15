@@ -102,7 +102,7 @@ export const recordSignupAttribution$ = command(
       );
       signal.throwIfAborted();
       recorded = result.body.recorded;
-      googleAdsAccountId = result.body.googleAdsAccountId ?? null;
+      googleAdsAccountId = result.body.googleAdsAccountId;
       if (recorded) {
         set(signupAttributionRecordedStorage.set$, attributionFingerprint);
         capturePaidOnboardingEvent("SignupAttributionRecorded", {

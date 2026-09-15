@@ -1,5 +1,6 @@
 import { legacySandboxRunPredicate } from "../services/pi-inference-lifecycle.service";
 import { command } from "ccstate";
+import { activePiMemoryPhase2MaintenanceRunCondition } from "../services/pi-memory-phase2-maintenance.service";
 import {
   claimCompatibleStoredExecutionContextSchema,
   CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
@@ -49,6 +50,8 @@ import {
   eq,
   gt,
   inArray,
+  isNotNull,
+  exists,
   lt,
   lte,
   notInArray,
@@ -79,11 +82,14 @@ import { recordSandboxOperations } from "../external/sandbox-op-log";
 import { now, nowDate } from "../../lib/time";
 import { env } from "../../lib/env";
 import { badRequestMessage, notFound } from "../../lib/error";
-import { logger } from "../../lib/log";
 import {
-  isPiLangfuseDebugRunEnvironment,
-  piLangfuseDebugCredentialsFromEnvironment,
-} from "../../lib/pi-langfuse-debug";
+  prepareComputeRunAdmission,
+  validateComputeRunAdmission,
+  stopClosedComputeCandidate,
+  withComputeOwnershipRetry,
+  type ComputeRunOwner,
+} from "../services/compute-erasure-admission.service";
+import { logger } from "../../lib/log";
 import { executeRawRows } from "../../lib/db-raw-rows";
 import {
   nullableDriverValueDecoder,
@@ -690,6 +696,63 @@ async function resolvePollRunnerReusePreference(
   return resolution ?? runnerReusePreferenceLookupError();
 }
 
+function pendingRunnerJobs(
+  executor: Pick<Db, "select">,
+  args: {
+    readonly conditions: readonly SQL[];
+    readonly priorityOrder: readonly SQL[];
+    readonly currentDate: Date;
+  },
+) {
+  return executor
+    .select({
+      runId: runnerJobQueue.runId,
+      userId: agentRuns.userId,
+      orgId: agentRuns.orgId,
+      agentId: agentSessions.agentId,
+      prompt: agentRuns.prompt,
+      appendSystemPrompt: agentRuns.appendSystemPrompt,
+      vars: agentRuns.vars,
+      profile: runnerJobQueue.profile,
+      cliAgentSessionId: runnerJobQueue.cliAgentSessionId,
+      reuseKey: runnerJobQueue.reuseKey,
+      historyGenerationRunId:
+        sql`${runnerJobQueue.executionContext}->'resumeSession'->>'historyGenerationRunId'`.mapWith(
+          nullableDriverValueDecoder(pgTextDecoder),
+        ),
+      createdAt: runnerJobQueue.createdAt,
+    })
+    .from(runnerJobQueue)
+    .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
+    .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
+    .where(
+      and(
+        ...args.conditions,
+        or(
+          isNotNull(agentSessions.agentId),
+          exists(
+            executor
+              .select({ id: piMemoryPhase2Jobs.memoryStorageId })
+              .from(piMemoryPhase2Jobs)
+              .where(
+                activePiMemoryPhase2MaintenanceRunCondition(executor, {
+                  runId: agentRuns.id,
+                  userId: agentRuns.userId,
+                  orgId: agentRuns.orgId,
+                  currentTime: args.currentDate,
+                }),
+              ),
+          ),
+        ),
+      ),
+    )
+    .orderBy(
+      ...args.priorityOrder,
+      runnerJobQueue.createdAt,
+      runnerJobQueue.runId,
+    );
+}
+
 const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const pollRequestStartedAtMs = now();
   const auth = await set(runnerAuth$, get(authorization$), signal);
@@ -734,30 +797,45 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     runnerGroup: group,
     currentDate,
   });
-  const [pendingJob] = await db
-    .select({
-      runId: runnerJobQueue.runId,
-      prompt: agentRuns.prompt,
-      appendSystemPrompt: agentRuns.appendSystemPrompt,
-      vars: agentRuns.vars,
-      profile: runnerJobQueue.profile,
-      cliAgentSessionId: runnerJobQueue.cliAgentSessionId,
-      reuseKey: runnerJobQueue.reuseKey,
-      historyGenerationRunId:
-        sql`${runnerJobQueue.executionContext}->'resumeSession'->>'historyGenerationRunId'`.mapWith(
-          nullableDriverValueDecoder(pgTextDecoder),
-        ),
-      createdAt: runnerJobQueue.createdAt,
-    })
-    .from(runnerJobQueue)
-    .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
-    .where(and(...whereConditions))
-    .orderBy(
-      ...reusePreferencePriorityOrder,
-      runnerJobQueue.createdAt,
-      runnerJobQueue.runId,
-    )
-    .limit(1);
+  const candidates = await pendingRunnerJobs(db, {
+    conditions: whereConditions,
+    priorityOrder: reusePreferencePriorityOrder,
+    currentDate,
+  }).limit(8);
+  signal.throwIfAborted();
+  let pendingJob: (typeof candidates)[number] | undefined;
+  for (const candidate of candidates) {
+    pendingJob = await withComputeOwnershipRetry(() => {
+      return db.transaction(async (tx) => {
+        const admission = await prepareComputeRunAdmission(
+          tx,
+          candidate.runId,
+          candidate,
+        );
+        if (!admission || !(await validateComputeRunAdmission(tx, admission))) {
+          return undefined;
+        }
+        if (admission.closed) {
+          await stopClosedComputeCandidate(tx, admission);
+          return undefined;
+        }
+        const [job] = await pendingRunnerJobs(tx, {
+          conditions: [
+            ...whereConditions,
+            eq(runnerJobQueue.runId, candidate.runId),
+          ],
+          priorityOrder: reusePreferencePriorityOrder,
+          currentDate,
+        })
+          .for("share", { of: runnerJobQueue })
+          .limit(1);
+        return job;
+      });
+    });
+    if (pendingJob) {
+      break;
+    }
+  }
   signal.throwIfAborted();
   const pendingJobLookupFinishedAtMs = now();
 
@@ -832,6 +910,7 @@ interface ClaimedRun {
   readonly userId: string;
   readonly orgId: string;
   readonly agentId: string | null;
+  readonly resourceOwner?: ComputeRunOwner["resourceOwner"];
   readonly prompt: string;
   readonly appendSystemPrompt: string | null;
   readonly vars: unknown;
@@ -923,10 +1002,12 @@ async function getClaimableJob(
         vars: agentRuns.vars,
       },
       maintenanceRunId: piMemoryPhase2Jobs.maintenanceRunId,
+      resourceOwner: { userId: agents.owner, orgId: agents.orgId },
     })
     .from(runnerJobQueue)
     .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
     .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
+    .leftJoin(agents, eq(agents.id, agentSessions.agentId))
     .leftJoin(
       piMemoryPhase2Jobs,
       and(
@@ -952,7 +1033,10 @@ async function getClaimableJob(
   ) {
     return {
       job: jobWithRun.job,
-      run: jobWithRun.run,
+      run: {
+        ...jobWithRun.run,
+        resourceOwner: jobWithRun.resourceOwner ?? undefined,
+      },
     };
   }
   return notFound("Job not found in queue");
@@ -1169,11 +1253,12 @@ function buildClaimTransitionSql(
 
 async function transitionClaimedJobToRunning(
   db: Db,
-  runId: string,
+  args: { readonly runId: string; readonly owner: ComputeRunOwner },
   runnerAttribution: RunnerClaimAttribution | undefined,
   signal: AbortSignal,
   timing: ClaimRouteTimingCollector,
 ): Promise<ClaimTransitionResult> {
+  const { runId, owner } = args;
   const query = buildClaimTransitionSql(
     runId,
     runnerAttribution?.runnerIdentity.runnerId ?? null,
@@ -1181,16 +1266,26 @@ async function transitionClaimedJobToRunning(
     runnerAttribution?.runnerHostname ?? null,
     runnerAttribution?.runnerVersion ?? null,
   );
-  return await db.transaction(async (tx) => {
-    const result = await timing.measure(
-      "claim_route_transition_execute",
-      "nested",
-      async () => {
-        return await executeRawRows(tx, query, claimTransitionSqlRowSchema);
-      },
-    );
-    signal.throwIfAborted();
-    return decodeClaimTransitionResult(result);
+  return await withComputeOwnershipRetry(() => {
+    return db.transaction(async (tx) => {
+      const admission = await prepareComputeRunAdmission(tx, runId, owner);
+      if (!admission || !(await validateComputeRunAdmission(tx, admission))) {
+        return { status: "run-not-found" as const };
+      }
+      if (admission.closed) {
+        await stopClosedComputeCandidate(tx, admission);
+        return { status: "run-not-found" as const };
+      }
+      const result = await timing.measure(
+        "claim_route_transition_execute",
+        "nested",
+        async () => {
+          return await executeRawRows(tx, query, claimTransitionSqlRowSchema);
+        },
+      );
+      signal.throwIfAborted();
+      return decodeClaimTransitionResult(result);
+    });
   });
 }
 
@@ -1213,45 +1308,56 @@ function poisonJobErrorResponse(result: FailedPoisonJobResult) {
 async function failPoisonQueuedJob(
   db: Db,
   runId: string,
+  owner: ComputeRunOwner,
   errorMessage: string,
   signal: AbortSignal,
 ): Promise<PoisonJobResult> {
-  return await db.transaction(async (tx) => {
-    const run = await lockClaimRun(tx, runId);
-    signal.throwIfAborted();
-    if (!run) {
-      return { status: "run-not-found" };
-    }
-    if (run.status !== "pending") {
+  return await withComputeOwnershipRetry(() => {
+    return db.transaction(async (tx) => {
+      const admission = await prepareComputeRunAdmission(tx, runId, owner);
+      if (!admission || !(await validateComputeRunAdmission(tx, admission))) {
+        return { status: "run-not-found" as const };
+      }
+      if (admission.closed) {
+        await stopClosedComputeCandidate(tx, admission);
+        return { status: "run-not-found" as const };
+      }
+      const run = await lockClaimRun(tx, runId);
+      signal.throwIfAborted();
+      if (!run) {
+        return { status: "run-not-found" };
+      }
+      if (run.status !== "pending") {
+        await tx.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, runId));
+        signal.throwIfAborted();
+        return { status: "run-not-found" };
+      }
+
+      const job = await lockRunnerJob(tx, runId);
+      signal.throwIfAborted();
+      if (!job || job.isExpired) {
+        return { status: "job-not-found" };
+      }
+
+      const failedAt = nowDate();
+      const [updatedRun] = await transitionAgentRunsToTerminal(tx, {
+        values: {
+          status: "failed",
+          completedAt: failedAt,
+          error: errorMessage,
+        },
+        conditions: [eq(agentRuns.id, runId), eq(agentRuns.status, "pending")],
+      });
+      signal.throwIfAborted();
+      if (!updatedRun) {
+        throw new Error("Locked pending run was not failed");
+      }
+
       await tx.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, runId));
       signal.throwIfAborted();
-      return { status: "run-not-found" };
-    }
 
-    const job = await lockRunnerJob(tx, runId);
-    signal.throwIfAborted();
-    if (!job || job.isExpired) {
-      return { status: "job-not-found" };
-    }
-
-    const failedAt = nowDate();
-    const [updatedRun] = await transitionAgentRunsToTerminal(tx, {
-      values: {
-        status: "failed",
-        completedAt: failedAt,
-        error: errorMessage,
-      },
-      conditions: [eq(agentRuns.id, runId), eq(agentRuns.status, "pending")],
+      return { status: "failed" as const };
     });
-    signal.throwIfAborted();
-    if (!updatedRun) {
-      throw new Error("Locked pending run was not failed");
-    }
-
-    await tx.delete(runnerJobQueue).where(eq(runnerJobQueue.runId, runId));
-    signal.throwIfAborted();
-
-    return { status: "failed" as const };
   });
 }
 
@@ -1370,43 +1476,6 @@ async function secretValuesForRunner(
       return envValues.has(value);
     });
   });
-}
-
-async function piLangfuseCredentialsForRunner(args: {
-  readonly runId: string;
-  readonly storedContext: StoredExecutionContext;
-  readonly timing: ClaimRouteTimingCollector;
-}): Promise<Readonly<Record<string, string>> | undefined> {
-  if (
-    !isPiLangfuseDebugRunEnvironment(args.storedContext.platformEnvironment) ||
-    args.storedContext.platformEnvironment.OKOU_PI_LANGFUSE_RELAY_ENABLED ===
-      "true"
-  ) {
-    return undefined;
-  }
-  const decrypted = await settle(
-    args.timing.measure(
-      "claim_route_secret_materialization",
-      "top_level",
-      async () => {
-        return await decryptPersistentSecretsMap(
-          args.storedContext.encryptedSecrets,
-          {},
-        );
-      },
-    ),
-  );
-  if (!decrypted.ok) {
-    L.warn("Pi Langfuse credentials could not be materialized", {
-      runId: args.runId,
-      errorName:
-        decrypted.error instanceof Error
-          ? decrypted.error.name
-          : "UnknownError",
-    });
-    return undefined;
-  }
-  return piLangfuseDebugCredentialsFromEnvironment(decrypted.value ?? {});
 }
 
 function connectorPermissionBaselineMatchesStoredContext(
@@ -1895,24 +1964,11 @@ async function buildClaimResponseBody(
   },
   signal: AbortSignal,
 ): Promise<ExecutionContext> {
-  const storedSecretValues = await secretValuesForRunner(
+  const secretValues = await secretValuesForRunner(
     args.storedContext,
     args.timing,
   );
   signal.throwIfAborted();
-  const langfuseCredentials = await piLangfuseCredentialsForRunner({
-    runId: args.run.id,
-    storedContext: args.storedContext,
-    timing: args.timing,
-  });
-  signal.throwIfAborted();
-  const secretValues =
-    storedSecretValues === null && langfuseCredentials === undefined
-      ? null
-      : [
-          ...(storedSecretValues ?? []),
-          ...Object.values(langfuseCredentials ?? {}),
-        ];
   return await args.timing.measure(
     "claim_route_response_assembly",
     "top_level",
@@ -1969,13 +2025,6 @@ async function buildClaimResponseBody(
       } = args.storedContext;
       return {
         ...runnerStoredContext,
-        // Claim context is consumed by the trusted Guest. Langfuse keys are
-        // materialized only here; the Guest removes them from the Pi child's
-        // exec environment and converts them into its private one-shot file.
-        platformEnvironment: {
-          ...runnerStoredContext.platformEnvironment,
-          ...langfuseCredentials,
-        },
         runId: args.run.id,
         reuseKey: args.reuseKey,
         prompt: args.run.prompt,
@@ -2430,6 +2479,7 @@ const scheduleClaimFailedSideEffects$ = command(
 async function failClaimForResumeSessionHistoryLoad(
   args: {
     readonly db: Db;
+    readonly owner: ComputeRunOwner;
     readonly runId: string;
     readonly orgId: string;
     readonly hash: string;
@@ -2450,6 +2500,7 @@ async function failClaimForResumeSessionHistoryLoad(
   const poisonResult = await failPoisonQueuedJob(
     args.db,
     args.runId,
+    args.owner,
     args.errorMessage,
     signal,
   );
@@ -2467,6 +2518,7 @@ async function failClaimForResumeSessionHistoryLoad(
 async function failClaimForInvalidStoredExecutionContext(
   args: {
     readonly db: Db;
+    readonly owner: ComputeRunOwner;
     readonly runId: string;
     readonly orgId: string;
     readonly scheduleFailedSideEffects: (
@@ -2478,6 +2530,7 @@ async function failClaimForInvalidStoredExecutionContext(
   const poisonResult = await failPoisonQueuedJob(
     args.db,
     args.runId,
+    args.owner,
     INVALID_EXECUTION_CONTEXT_ERROR,
     signal,
   );
@@ -2511,6 +2564,7 @@ async function claimResponseBuildErrorResponse(
     {
       db: args.db,
       runId: args.runId,
+      owner: args.run,
       hash: args.error.hash,
       orgId: args.run.orgId,
       errorMessage: args.error.message,
@@ -2524,6 +2578,7 @@ async function claimResponseBuildErrorResponse(
 async function resolveStoredExecutionContextForClaim(
   args: {
     readonly db: Db;
+    readonly owner: ComputeRunOwner;
     readonly runId: string;
     readonly orgId: string;
     readonly executionContext: unknown;
@@ -2611,6 +2666,7 @@ const claimAuthorizedJob$ = command(
       {
         db,
         runId,
+        owner: run,
         orgId: run.orgId,
         executionContext: jobWithRun.job.executionContext,
         capabilities: args.capabilities,
@@ -2669,7 +2725,7 @@ const claimAuthorizedJob$ = command(
       async () => {
         return await transitionClaimedJobToRunning(
           db,
-          runId,
+          { runId, owner: run },
           args.runnerAttribution,
           signal,
           claimRouteTiming,

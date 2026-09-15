@@ -23,7 +23,7 @@ requires the withdrawn authorization API. Its current guards must not be
 deployed against this rollback: they would suppress optional delivery when the
 API is unavailable. A revised implementation needs a new coordinated rollout.
 
-## Storage retirement: migration 1137
+## Storage retirement: migration 1138
 
 On 2026-09-15 the owner explicitly requested complete retirement of
 `privacy_choices`, `privacy_choice_revisions`, `marketing_privacy_receipts`, and
@@ -31,7 +31,7 @@ On 2026-09-15 the owner explicitly requested complete retirement of
 plan. The withdrawn store is retired rather than replaced with a new consent
 API; the revised DCF-552 work remains in #33275.
 
-Migration `1137_retire_marketing_privacy_storage` removes:
+Migration `1138_retire_marketing_privacy_storage` removes:
 
 - personal/browser choice rows, including user associations, token hashes,
   purpose decisions, policy/revision identifiers and purpose epochs;
@@ -86,7 +86,7 @@ ready; merge ancestry by itself is not a serving receipt.
 
 The preparation acquires a shared transaction advisory lock on
 `hashtext('marketing_privacy_storage_retirement')` before its relation checks
-and deletion. Migration 1137 acquires the exclusive form **before** locking
+and deletion. Migration 1138 acquires the exclusive form **before** locking
 `privacy_choices` → `privacy_choice_revisions` → `marketing_privacy_receipts`.
 It drops the trigger, then child tables before parents, then the function.
 A waiting prepared cleanup reads the committed schema under READ COMMITTED;
@@ -116,7 +116,7 @@ storage in separate databases. These are test-owned data, not production rows.
 Contraction passed eight real PostgreSQL migration scenarios, the complete
 database migration-consistency chain, four actual account-deletion/lifecycle
 webhook cases and the signed Clerk erasure-compatibility route against the
-database migrated through 1137. Prepared release source
+database migrated through 1138. Prepared release source
 `8b9763e341ea8519c1aad5e62ad72dfa5c582eb8` also passed those five route cases
 against that contracted database and all six private-schema compatibility cases.
 This includes main's newer Pi erasure ingress and replay guards. Generated metadata

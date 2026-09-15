@@ -74,7 +74,7 @@ function InstatusIssueNotice({
     <Card
       role="status"
       aria-label={`${statusLabel}: ${issue.title}`}
-      className="okou-composer relative overflow-visible"
+      surface="composer"
     >
       <CardContent className={compact ? "p-3" : "p-4"}>
         <div className="flex items-start gap-3">

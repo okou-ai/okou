@@ -418,8 +418,15 @@
     {
       "idx": 1137,
       "version": "7",
-      "when": 1789462376313,
-      "tag": "1137_retire_marketing_privacy_storage",
+      "when": 1789460587817,
+      "tag": "1137_retire_legacy_invitation_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 1138,
+      "version": "7",
+      "when": 1789465632030,
+      "tag": "1138_retire_marketing_privacy_storage",
       "breakpoints": true
     }
   ]
