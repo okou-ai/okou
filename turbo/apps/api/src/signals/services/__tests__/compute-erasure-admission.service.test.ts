@@ -1,4 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
+import { slackChatThreadRoutes } from "@okouai/db/schema/slack-chat-thread-route";
+import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
+import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
+import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
+import { server } from "../../../mocks/server";
+import { encryptPersistentSecretValue } from "../crypto.utils";
 import {
   assertErasureSubjectWritable,
   projectErasureDecision,
@@ -29,7 +35,15 @@ import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contrac
 import { HttpResponse, http } from "msw";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { createStore } from "ccstate";
-import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  getTableColumns,
+  inArray,
+  sql,
+} from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool, type PoolClient } from "pg";
 import { z } from "zod";
@@ -39,12 +53,12 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { testCronCleanupSandboxesStateRoutes } from "../../routes/test-cron-cleanup-sandboxes-state";
 import { chatThreadActivitySummaryRoutes } from "../../routes/chat-threads-activity-summary";
-import { server } from "../../../mocks/server";
 import {
   withActivityCommitBarrierFixture,
   advanceRunActivityClockFixture,
 } from "../../../test-fixtures/run-activity";
-import { env, mockOptionalEnv } from "../../../lib/env";
+import { closeDbPool } from "../../../lib/db";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { nowDate, mockNow, clearMockNow } from "../../../lib/time";
 import {
   seedOrgMetadata,
@@ -3391,6 +3405,485 @@ describe("actual compute transactions versus the B1 projector", () => {
           }),
         ).toHaveLength(1);
       });
+
+      // The synthetic multi-integration callback gap has no public setup path.
+      // Bind only this API-created run/thread to unique persisted cleanup targets.
+      async function terminalCleanupTargets(f: OutputFixture) {
+        const workspaceId = `T${randomUUID()}`;
+        const connectionId = randomUUID();
+        const installationId = randomUUID();
+        const secret = await encryptPersistentSecretValue(
+          "synthetic-cleanup-token",
+          { orgId: f.orgId },
+        );
+        await db.insert(slackOrgInstallations).values({
+          slackWorkspaceId: workspaceId,
+          orgId: f.orgId,
+          encryptedBotToken: secret,
+          botUserId: `B${randomUUID()}`,
+        });
+        await db.insert(slackOrgConnections).values({
+          id: connectionId,
+          slackWorkspaceId: workspaceId,
+          userId: f.userId,
+          slackUserId: `U${randomUUID()}`,
+        });
+        const slackDelivery = {
+          channelId: `C${randomUUID()}`,
+          threadTs: "123.456",
+        };
+        await db.insert(slackChatThreadRoutes).values({
+          connectionId,
+          ...slackDelivery,
+          userId: f.userId,
+          chatThreadId: f.threadId,
+        });
+        await db.insert(feishuOrgInstallations).values({
+          id: installationId,
+          orgId: f.orgId,
+          appId: `cli_${randomUUID()}`,
+          encryptedAppSecret: secret,
+          encryptedEncryptKey: secret,
+          encryptedVerificationToken: secret,
+          encryptedTenantAccessToken: secret,
+          tenantAccessTokenExpiresAt: new Date("2099-01-01T00:00:00Z"),
+        });
+        const feishuDelivery = {
+          ...deliveries(f).feishuDelivery,
+          installationId,
+          messageId: randomUUID(),
+          reactionId: randomUUID(),
+        };
+        let removedReactions = 0;
+        server.use(
+          http.delete(
+            `https://open.feishu.cn/open-apis/im/v1/messages/${feishuDelivery.messageId}/reactions/${feishuDelivery.reactionId}`,
+            ({ request }) => {
+              expect(request.headers.get("authorization")).toBe(
+                "Bearer synthetic-cleanup-token",
+              );
+              removedReactions += 1;
+              return HttpResponse.json({ code: 0 });
+            },
+          ),
+        );
+        context.mocks.slack.assistant.threads.setStatus.mockResolvedValue({
+          ok: true,
+        });
+        onTestFinished(async () => {
+          await db
+            .delete(slackChatThreadRoutes)
+            .where(eq(slackChatThreadRoutes.connectionId, connectionId));
+          await db
+            .delete(slackOrgConnections)
+            .where(eq(slackOrgConnections.id, connectionId));
+          await db
+            .delete(slackOrgInstallations)
+            .where(eq(slackOrgInstallations.slackWorkspaceId, workspaceId));
+          await db
+            .delete(feishuOrgInstallations)
+            .where(eq(feishuOrgInstallations.id, installationId));
+        });
+        return {
+          slackDelivery,
+          feishuDelivery,
+          removedReactions: () => {
+            return removedReactions;
+          },
+        };
+      }
+
+      // A SELECT fault cannot be injected through the public API. Only this
+      // worker's connection search_path sees the unique, temporary session view.
+      // The real capture query blocks inside PostgreSQL; all other workers keep
+      // using public tables. Healing the view queues behind that exact backend
+      // before cancellation, so recovery sees the ordinary writable relation.
+      async function holdTerminalCapture(f: OutputFixture) {
+        const schema = `capture_${f.sessionId.replaceAll("-", "")}`;
+        const schemaId = sql.identifier(schema);
+        await db.execute(sql`CREATE SCHEMA ${schemaId}`);
+        await db.execute(sql`CREATE FUNCTION ${schemaId}.capture(id uuid, value text)
+          RETURNS text LANGUAGE plpgsql AS $$
+          BEGIN
+            PERFORM pg_advisory_xact_lock(hashtextextended(id::text, 0));
+            RETURN value;
+          END $$`);
+        const columns = Object.values(getTableColumns(agentSessions)).map(
+          (column) => {
+            const name = sql.identifier(column.name);
+            return column.name === "org_id"
+              ? sql`${schemaId}.capture(id, ${name}) AS ${name}`
+              : name;
+          },
+        );
+        await db.execute(sql`CREATE VIEW ${schemaId}.agent_sessions AS
+          SELECT ${sql.join(columns, sql`, `)} FROM public.agent_sessions`);
+        const held = await holdBusinessRow((tx) => {
+          return tx.execute(
+            sql`SELECT pg_advisory_xact_lock(hashtextextended(${f.sessionId}, 0))`,
+          );
+        });
+        const originalUrl = env("DATABASE_URL");
+        const url = new URL(originalUrl);
+        url.searchParams.set("options", `-csearch_path=${schema},public`);
+        const plainPool = new Pool({
+          connectionString: url.toString(),
+          max: 2,
+        });
+        await closeDbPool();
+        mockEnv("DATABASE_URL", url.toString());
+        onTestFinished(async () => {
+          await plainPool.end();
+          await closeDbPool();
+          mockEnv("DATABASE_URL", originalUrl);
+          await db.execute(sql`DROP SCHEMA ${schemaId} CASCADE`);
+        });
+        return {
+          plainDb: drizzle(plainPool),
+          captured: async () => {
+            const pid = await waitForBlockedBy(held.pid);
+            const [backend] = await executeRawRows(
+              db,
+              sql`SELECT query FROM pg_stat_activity WHERE pid = ${pid}`,
+              z.object({ query: z.string() }),
+            );
+            // This is the ownership SELECT, before prompt/error/history reads
+            // and before any writer acquires B1 subjects or resource locks.
+            expect(backend?.query).toBe(
+              'select "user_id", "org_id", "agent_id" from "agent_sessions" where "agent_sessions"."id" = $1',
+            );
+            return pid;
+          },
+          resume: async (pid: number) => {
+            const healed = db
+              .execute(sql`DROP VIEW ${schemaId}.agent_sessions`)
+              .execute();
+            await waitForBlockedBy(pid);
+            await held.release();
+            await healed;
+          },
+          cancel: async (pid: number) => {
+            const healed = db
+              .execute(sql`DROP VIEW ${schemaId}.agent_sessions`)
+              .execute();
+            await waitForBlockedBy(pid);
+            const stopped = await executeRawRows(
+              db,
+              sql`SELECT pg_cancel_backend(${pid}) AS stopped`,
+              z.object({ stopped: z.boolean() }),
+            );
+            expect(stopped).toStrictEqual([{ stopped: true }]);
+            await healed;
+            await held.release();
+          },
+        };
+      }
+
+      it.each(["completed", "failed", "cancelled"] as const)(
+        "early ACK capture failure recovers a transferred survivor: %s",
+        async (kind) => {
+          const f = await outputFixture();
+          const survivor = await outputFixture(f.orgId);
+          const queuedId = randomUUID();
+          await chat.requestSendEvent(
+            survivor.actor,
+            {
+              agentId: survivor.agentId,
+              threadId: survivor.threadId,
+              prompt: "Recover after early ownership capture fails",
+              clientEventId: queuedId,
+            },
+            [201],
+          );
+          await flushWaitUntilForTest();
+          await db
+            .update(agentRuns)
+            .set({ status: kind, completedAt: nowDate() })
+            .where(inArray(agentRuns.id, [f.runId, survivor.runId]));
+          await close(decision(f.userId));
+          const targets = await terminalCleanupTargets(f);
+          await db
+            .update(agentRunCallbacks)
+            .set({
+              payload: {
+                threadId: f.threadId,
+                agentId: f.agentId,
+                publicBrand: "okou",
+                slackDelivery: targets.slackDelivery,
+                feishuDelivery: targets.feishuDelivery,
+              },
+            })
+            .where(
+              and(
+                eq(agentRunCallbacks.runId, f.runId),
+                eq(agentRunCallbacks.internalKind, "chat"),
+              ),
+            );
+          if (kind === "failed") {
+            context.mocks.slack.assistant.threads.setStatus.mockRejectedValueOnce(
+              new Error("Synthetic Slack cleanup failure"),
+            );
+          }
+          const before = await terminalState(f);
+          const capture = await holdTerminalCapture(f);
+          const result = await createStore().set(
+            dispatchRunCallbacks$,
+            {
+              db,
+              runId: f.runId,
+              status: kind === "completed" ? "completed" : "failed",
+              error:
+                kind === "cancelled" ? "Run cancelled" : "Synthetic failure",
+            },
+            context.signal,
+          );
+          expect(result).toContainEqual(
+            expect.objectContaining({ success: true }),
+          );
+          const processing = flushWaitUntilForTest();
+          const pid = await capture.captured();
+          await db
+            .update(agentRuns)
+            .set({ chatThreadId: survivor.threadId })
+            .where(eq(agentRuns.id, f.runId));
+          await capture.cancel(pid);
+          await processing;
+          await expect(terminalState(f)).resolves.toStrictEqual(before);
+          expect(
+            context.mocks.slack.assistant.threads.setStatus,
+          ).toHaveBeenCalledWith({
+            channel_id: targets.slackDelivery.channelId,
+            thread_ts: targets.slackDelivery.threadTs,
+            status: "",
+          });
+          expect(targets.removedReactions()).toBe(1);
+          const page = await chat.listThreadEvents(
+            survivor.actor,
+            survivor.threadId,
+          );
+          const claimed = page.events.filter((event) => {
+            return (
+              event.eventType === "input.prompt" &&
+              event.revokesEventId === queuedId
+            );
+          });
+          expect(claimed).toHaveLength(1);
+          const nextRunId = claimed[0]?.runId;
+          if (!nextRunId) {
+            throw new Error(
+              "The real scheduler must create the surviving candidate",
+            );
+          }
+          await expect(
+            api.readRun(survivor.actor, nextRunId),
+          ).resolves.toMatchObject({ status: "pending" });
+        },
+      );
+
+      it.each([
+        "closed",
+        "deleted-run",
+        "deleted-thread",
+        "deleted-run-load-miss",
+        "deleted-thread-load-miss",
+        "unmapped",
+        "duplicate",
+      ] as const)(
+        "capture recovery respects a %s destination",
+        async (change) => {
+          const f = await outputFixture();
+          const queuedId = randomUUID();
+          await chat.requestSendEvent(
+            f.actor,
+            {
+              agentId: f.agentId,
+              threadId: f.threadId,
+              prompt: "Candidate owned by the surviving thread",
+              clientEventId: queuedId,
+            },
+            [201],
+          );
+          await flushWaitUntilForTest();
+          await db
+            .update(agentRuns)
+            .set({ status: "completed", completedAt: nowDate() })
+            .where(eq(agentRuns.id, f.runId));
+          if (change === "duplicate") {
+            await invokeTerminal(f, "completed");
+          }
+          if (change === "closed") {
+            await close(decision(f.userId));
+          }
+          const decoy =
+            change === "unmapped" ? await outputFixture(f.orgId) : undefined;
+          const decoyQueuedId = randomUUID();
+          if (decoy) {
+            await chat.requestSendEvent(
+              decoy.actor,
+              {
+                agentId: decoy.agentId,
+                threadId: decoy.threadId,
+                prompt: "Payload is not scheduler authority",
+                clientEventId: decoyQueuedId,
+              },
+              [201],
+            );
+            await flushWaitUntilForTest();
+            await db
+              .update(agentRuns)
+              .set({ status: "completed" })
+              .where(eq(agentRuns.id, decoy.runId));
+            await db
+              .update(agentRunCallbacks)
+              .set({
+                payload: {
+                  threadId: decoy.threadId,
+                  agentId: decoy.agentId,
+                },
+              })
+              .where(
+                and(
+                  eq(agentRunCallbacks.runId, f.runId),
+                  eq(agentRunCallbacks.internalKind, "chat"),
+                ),
+              );
+          }
+          const before = await terminalState(f);
+          const capture = await holdTerminalCapture(f);
+          await createStore().set(
+            dispatchRunCallbacks$,
+            {
+              db,
+              runId: f.runId,
+              status: "completed",
+            },
+            context.signal,
+          );
+          const processing = flushWaitUntilForTest();
+          const pid = await capture.captured();
+          if (change === "deleted-run" || change === "deleted-run-load-miss") {
+            await db.delete(agentRuns).where(eq(agentRuns.id, f.runId));
+          } else if (
+            change === "deleted-thread" ||
+            change === "deleted-thread-load-miss"
+          ) {
+            await db.delete(chatThreads).where(eq(chatThreads.id, f.threadId));
+          } else if (change === "unmapped") {
+            await db
+              .update(agentRuns)
+              .set({ chatThreadId: null })
+              .where(eq(agentRuns.id, f.runId));
+          }
+          if (change.endsWith("load-miss")) {
+            await capture.resume(pid);
+          } else {
+            await capture.cancel(pid);
+          }
+          await processing;
+          if (decoy) {
+            const decoyPage = await chat.listThreadEvents(
+              decoy.actor,
+              decoy.threadId,
+            );
+            expect(
+              decoyPage.events.filter((event) => {
+                return event.revokesEventId === decoyQueuedId;
+              }),
+            ).toHaveLength(0);
+          }
+          if (
+            change === "deleted-thread" ||
+            change === "deleted-thread-load-miss"
+          ) {
+            await chat.requestReadThread(f.actor, f.threadId, [404]);
+            await expect(
+              db
+                .select({ id: chatThreads.id })
+                .from(chatThreads)
+                .where(eq(chatThreads.id, f.threadId)),
+            ).resolves.toStrictEqual([]);
+            return;
+          }
+          const page = await chat.listThreadEvents(f.actor, f.threadId);
+          const claimed = page.events.filter((event) => {
+            return (
+              event.eventType === "input.prompt" &&
+              event.revokesEventId === queuedId
+            );
+          });
+          expect(claimed).toHaveLength(
+            change === "deleted-run" || change === "deleted-run-load-miss"
+              ? 1
+              : 0,
+          );
+          if (change === "deleted-run" || change === "deleted-run-load-miss") {
+            const runId = claimed[0]?.runId;
+            if (!runId) {
+              throw new Error("Missing recovered run");
+            }
+            await expect(api.readRun(f.actor, runId)).resolves.toMatchObject({
+              status: "pending",
+            });
+          } else {
+            await expect(terminalState(f)).resolves.toStrictEqual(before);
+          }
+        },
+      );
+
+      it.each(["completed", "failed"] as const)(
+        "plain %s capture failure clears integrations without content or scheduler work",
+        async (kind) => {
+          const f = await terminalFixture(kind);
+          const targets = await terminalCleanupTargets(f);
+          await callbackApi.registerPushSubscription(f.actor);
+          callbackApi.enableVapid();
+          mockOptionalEnv("OPENROUTER_API_KEY", "synthetic-capture-test");
+          let completions = 0;
+          callbackApi.mockOpenRouterCompletions(() => {
+            completions += 1;
+            return "No terminal preparation should reach the provider";
+          });
+          const before = await terminalState(f);
+          const capture = await holdTerminalCapture(f);
+          context.mocks.ably.publish.mockClear();
+          context.mocks.s3.send.mockClear();
+          context.mocks.webpush.sendNotification.mockClear();
+          await expect(
+            handleChatInternalCallbackWithoutCcstate(
+              capture.plainDb,
+              {
+                runId: f.runId,
+                status: kind,
+                error: "Synthetic source failure",
+                payload: {
+                  threadId: f.threadId,
+                  agentId: f.agentId,
+                  slackDelivery: targets.slackDelivery,
+                  feishuDelivery: targets.feishuDelivery,
+                },
+              },
+              context.signal,
+            ),
+          ).resolves.toStrictEqual({ success: true });
+          const processing = flushWaitUntilForTest();
+          const pid = await capture.captured();
+          await capture.cancel(pid);
+          await processing;
+          await expect(terminalState(f)).resolves.toStrictEqual(before);
+          expect(context.mocks.ably.publish).not.toHaveBeenCalled();
+          expect(context.mocks.s3.send).not.toHaveBeenCalled();
+          expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
+          expect(completions).toBe(0);
+          expect(
+            context.mocks.slack.assistant.threads.setStatus,
+          ).toHaveBeenCalledWith({
+            channel_id: targets.slackDelivery.channelId,
+            thread_ts: targets.slackDelivery.threadTs,
+            status: "",
+          });
+          expect(targets.removedReactions()).toBe(1);
+        },
+      );
 
       it("a source callback invariant failure retains the real dispatcher's recovery drain", async () => {
         const f = await outputFixture();
