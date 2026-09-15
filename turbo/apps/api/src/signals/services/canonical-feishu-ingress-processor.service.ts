@@ -7,6 +7,7 @@ import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installatio
 import { and, asc, eq, inArray, lt, or } from "drizzle-orm";
 import { z } from "zod";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import type { FeishuPlatform } from "@okouai/api-contracts/contracts/feishu-platform";
 import { logger } from "../../lib/log";
 import { env } from "../../lib/env";
 import { buildFeishuNoticeMessage } from "../../lib/feishu-message-card";
@@ -366,6 +367,7 @@ function feishuInboundUserMessage(
 function feishuInputFiles(
   db: Db,
   message: FeishuInboundMessage,
+  platform: FeishuPlatform,
 ): readonly IntegrationInputFile[] {
   return message.files.map((file) => {
     return {
@@ -373,7 +375,7 @@ function feishuInputFiles(
       filename: file.filename,
       contentType: inferMimetype(file.filename),
       provenance: {
-        provider: message.platform ?? "feishu",
+        provider: platform,
         installationId: message.installationId,
         messageId: message.messageId,
         externalFileId: `${file.type}:${file.fileKey}`,
@@ -439,7 +441,7 @@ const persistCanonicalFeishuIngress$ = command(
         orgId: args.installation.orgId,
         chatThreadId: route.chatThreadId,
         publicBrand: args.installation.publicBrand,
-        files: feishuInputFiles(args.db, args.message),
+        files: feishuInputFiles(args.db, args.message, args.ingress.platform),
       },
       signal,
     );
