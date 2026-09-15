@@ -198,12 +198,6 @@ function detailsFor(entry: ReturnType<typeof socialOperationBindings>[number]) {
         : {}),
     },
     ...(tool ? collectionDetails(tool) : {}),
-    ...(entry.operation === "download"
-      ? {
-          availability:
-            "MP3 requires account enablement; offline capabilities do not establish access",
-        }
-      : {}),
   };
 }
 

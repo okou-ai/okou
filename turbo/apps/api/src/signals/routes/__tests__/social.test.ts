@@ -23,7 +23,6 @@ import {
 } from "@okouai/api-contracts/contracts/social";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -55,7 +54,6 @@ import {
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 import { reconcileSocialKitDownloadsForTest } from "./helpers/runtime-state";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const SOCIALKIT_BASE = "https://api.socialkit.dev";
@@ -3036,17 +3034,6 @@ describe("managed SocialKit route", () => {
     return concatBytes([fileType, movie]);
   }
 
-  async function setMp3Enabled(actor: ApiTestUser, enabled: boolean) {
-    if (!actor.orgId) {
-      throw new Error("Social download tests require an organization");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      { [FeatureSwitchKey.SocialDownloadMp3]: enabled },
-    );
-  }
-
   async function completeDownloadWithPayload(
     actor: ApiTestUser,
     pricing: UsagePricingFixture,
@@ -3138,48 +3125,6 @@ describe("managed SocialKit route", () => {
     return completed.body;
   }
 
-  it("rejects MP3 creation before provider work, billing or task creation when disabled", async () => {
-    const actor = createBddApi(context).user();
-    configureProvider();
-    const pricing = await setupConfiguredPricing();
-    await fundActor(actor);
-    const beforeCredits = await credits(actor);
-    let providerStarts = 0;
-    server.use(
-      http.post(`${SOCIALKIT_BASE}/v2/youtube/download`, () => {
-        providerStarts += 1;
-        return HttpResponse.json({ jobId: "unexpected", status: "queued" });
-      }),
-    );
-    const socialClient = client(pricing.resolution)(socialContract);
-
-    const rejected = await accept(
-      socialClient.createDownload({
-        headers: authenticate(actor),
-        body: {
-          platform: "youtube",
-          url: "https://youtu.be/public-video",
-          maxDuration: 120,
-          quality: "1080p",
-          format: "mp3",
-        },
-      }),
-      [403],
-    );
-    const listed = await accept(
-      socialClient.listDownloads({ headers: authenticate(actor), query: {} }),
-      [200],
-    );
-
-    expect(rejected.body.error).toMatchObject({
-      code: "FORBIDDEN",
-      message: "MP3 downloads are not enabled for your account",
-    });
-    expect(listed.body.downloads).toStrictEqual([]);
-    expect(providerStarts).toBe(0);
-    await expect(credits(actor)).resolves.toBe(beforeCredits);
-  });
-
   it.each([
     { platform: "youtube", url: "https://youtu.be/public-video" },
     {
@@ -3195,14 +3140,13 @@ describe("managed SocialKit route", () => {
       url: "https://www.facebook.com/watch/?v=123456789",
     },
   ] as const)(
-    "recovers a paid $platform MP3 task after disabling creation without charging again",
+    "recovers a paid $platform MP3 task without charging again",
     async ({ platform, url }) => {
       const actor = createBddApi(context).user();
       configureProvider();
       const pricing = await setupConfiguredPricing();
       await bootstrapOnboarding(actor);
       await setActorCredits(actor, 6);
-      await setMp3Enabled(actor, true);
       const providerJobId = `provider-mp3-${randomUUID()}`;
       let providerReady = false;
       let mediaAvailable = false;
@@ -3309,14 +3253,6 @@ describe("managed SocialKit route", () => {
       });
       await expect(credits(actor)).resolves.toBe(0);
 
-      await setMp3Enabled(actor, false);
-      await accept(
-        socialClient.createDownload({
-          headers: authenticate(actor),
-          body: request,
-        }),
-        [403],
-      );
       mediaAvailable = true;
       mockNow(now() + 121_000);
       await accept(poll(), [200]);
@@ -3447,9 +3383,6 @@ describe("managed SocialKit route", () => {
       const pricing = await setupConfiguredPricing();
       await bootstrapOnboarding(actor);
       await setActorCredits(actor, maximumRetailCredits);
-      if (options.format === "mp3") {
-        await setMp3Enabled(actor, true);
-      }
       const payload =
         options.format === "mp3"
           ? AUDIO_ONLY_PAYLOAD
@@ -3534,9 +3467,6 @@ describe("managed SocialKit route", () => {
     const pricing = await setupConfiguredPricing();
     await fundActor(actor);
     const beforeCredits = await credits(actor);
-    if ("format" in options && options.format === "mp3") {
-      await setMp3Enabled(actor, true);
-    }
 
     const body = await completeDownloadWithPayload(
       actor,
@@ -3666,7 +3596,6 @@ describe("managed SocialKit route", () => {
     configureProvider();
     const pricing = await setupConfiguredPricing();
     await fundActor(actor);
-    await setMp3Enabled(actor, true);
 
     const body = await completeDownloadWithPayload(
       actor,
@@ -3700,9 +3629,6 @@ describe("managed SocialKit route", () => {
       configureProvider();
       const pricing = await setupConfiguredPricing();
       await fundActor(actor);
-      if (format === "mp3") {
-        await setMp3Enabled(actor, true);
-      }
       const payload = new Uint8Array([
         0x1a, 0x45, 0xdf, 0xa3, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00,

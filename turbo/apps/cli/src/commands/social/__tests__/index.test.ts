@@ -690,9 +690,6 @@ describe("okou social command", () => {
         }),
         expect.objectContaining({
           operation: "download",
-          availability: expect.stringContaining(
-            "MP3 requires account enablement",
-          ),
           inputs: expect.objectContaining({
             "--format": expect.objectContaining({
               choices: ["mp4", "m4a", "mp3"],
@@ -4025,6 +4022,5 @@ describe("okou social command", () => {
     });
     download?.outputHelp();
     expect(renderedHelp).toContain("mp4, m4a, or mp3");
-    expect(renderedHelp).toMatch(/mp3 requires account\s+enablement/u);
   });
 });

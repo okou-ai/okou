@@ -1550,10 +1550,7 @@ const downloadCommand = new Command()
     "--quality <quality>",
     "240p, 360p, 480p, 720p, or 1080p (default: 720p)",
   )
-  .option(
-    "--format <format>",
-    "mp4, m4a, or mp3 (default: mp4; mp3 requires account enablement)",
-  )
+  .option("--format <format>", "mp4, m4a, or mp3 (default: mp4)")
   .option(
     "--resume <download-id>",
     "Resume polling an existing download",

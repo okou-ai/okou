@@ -161,27 +161,6 @@ const createSocialKitDownloadInner$ = command(
     if (!bodyResult.ok) {
       return agentSafeResponse(auth, bodyResult.response);
     }
-    if (bodyResult.data.format === "mp3") {
-      const featureContext = await loadUserFeatureSwitchContext(
-        get(db$),
-        auth.orgId,
-        auth.userId,
-      );
-      signal.throwIfAborted();
-      if (
-        !isFeatureEnabled(FeatureSwitchKey.SocialDownloadMp3, featureContext)
-      ) {
-        return {
-          status: 403 as const,
-          body: {
-            error: {
-              code: "FORBIDDEN",
-              message: "MP3 downloads are not enabled for your account",
-            },
-          },
-        };
-      }
-    }
     const publicBrand = PUBLIC_BRAND;
     const reconciliationSignal = AbortSignal.timeout(
       SOCIALKIT_RECONCILIATION_TIMEOUT_MS,

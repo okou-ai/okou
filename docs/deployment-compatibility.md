@@ -318,36 +318,27 @@ a different detected type is reported truthfully. For unrecognized bytes, the
 filename and MIME are request-derived hints (MP3 uses `audio/mpeg`) while
 `delivered.format` remains null. Sniffing does not validate an entire media file.
 
-The `socialDownloadMp3` switch is disabled by default without a default staff
-cohort. It gates only new MP3 requests, before admission, provider calls and job
-creation. Existing task listing, polling, settlement and artifact recovery do
-not depend on the switch. Offline capabilities describe implemented formats,
-not account access. The switch is an opt-in rollout control, not a deployment
-version or authorization boundary.
+MP3 requests become available when the capable API is deployed, using the
+existing authentication, capability, credit and active-task checks. MP3 extends
+values inside existing response and JSONB fields. Older API and CLI schemas
+reject those values, including when listing tasks that contain an MP3 request.
 
-MP3 extends values inside existing response and JSONB fields. Older API and
-CLI schemas reject those values, even when merely listing another task. Before
-any opt-in or general activation:
+Coordinate MP3-capable serving, reconciling and rollback API artifacts with
+compatible commit-addressed CLI selection and the incompatible queued, active
+and finalizing context drain described above. Upgrade supported external
+callers that may list or resume MP3 tasks. These compatibility conditions must
+be addressed as part of deployment because the new API accepts MP3 immediately.
 
-1. Deploy MP3-capable serving and reconciling API artifacts, and retain only
-   MP3-capable rollback targets for users who can create MP3 tasks.
-2. Select the compatible commit-addressed CLI package and drain incompatible
-   queued, active and finalizing contexts for affected users, as described above.
-3. Upgrade any explicitly supported external caller that may list or resume
-   those users' tasks. Only then enable the switch for the intended cohort.
+| Pairing                            | Behavior                                                                                                                          |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Old CLI, new API, MP4/M4A jobs     | MP4/M4A requests, polling and discovery retain their existing contract.                                                           |
+| New CLI, old API                   | MP4/M4A keep working. Explicit MP3 is rejected by the old API; never silently substitute a format or resubmit.                    |
+| New API, old JSONB                 | MP4/M4A tasks remain readable/resumable; missing historical delivery metadata stays unknown. No migration or rewrite is required. |
+| MP3-capable CLI/API, new MP3 JSONB | Creation, listing, polling and same-job recovery use the widened format contract.                                                 |
+| Old CLI/API, new MP3 JSONB         | Unsupported; exclude this pairing from supported deployment and rollback combinations once MP3 tasks exist.                       |
 
-| Pairing                                | Behavior                                                                                                                                        |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Old CLI, new API before MP3 activation | MP4/M4A requests, polling and discovery retain their existing contract.                                                                         |
-| New CLI, old API                       | MP4/M4A keep working. Explicit MP3 is rejected by the old API; never silently substitute a format or resubmit.                                  |
-| New API, old JSONB                     | MP4/M4A tasks remain readable/resumable; missing historical delivery metadata stays unknown. No migration or rewrite is required.               |
-| MP3-capable CLI/API, new MP3 JSONB     | Creation when opted in, listing, polling and same-job recovery use the widened format contract.                                                 |
-| Old CLI/API, new MP3 JSONB             | Unsupported; exclude this pairing before activation. Disabling the creation switch does not remove existing MP3 tasks or make old readers safe. |
-
-After activation, rollback must retain MP3-capable readers for as long as MP3
-tasks remain readable or recoverable. Disabling the switch stops new creation
-while the capable API continues recovering already paid jobs. General release
-and eventual switch removal require verification of these reader gates.
+After the first MP3 task is created, rollback must retain MP3-capable readers
+for as long as MP3 tasks remain readable or recoverable.
 
 ### Pi Gen1 wire-field retirement
 

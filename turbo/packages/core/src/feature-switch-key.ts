@@ -35,7 +35,6 @@ export enum FeatureSwitchKey {
   OkouDebug = "_debug",
   Banking = "banking",
   SocialStatus = "socialStatus",
-  SocialDownloadMp3 = "socialDownloadMp3",
   Lab = "_lab",
   StripeInvoicePaidWorkflowAutomations = "stripeInvoicePaidWorkflowAutomations",
   OfficialWorkflows = "officialWorkflows",
