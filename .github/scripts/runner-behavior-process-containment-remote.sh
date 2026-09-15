@@ -841,7 +841,7 @@ printf '%s\n' "$LOGS" \
 printf '%s\n' "$LOGS" \
   | grep -F "run_id=$RUNTIME_OOM_RUN_ID" \
   | grep -F 'job execution failed' \
-  | grep -F 'resource_failure_kind=guest_memory_oom_killed' >/dev/null \
+  | grep -F 'resource_failure_kind="guest_memory_oom_killed"' >/dev/null \
   || fail "runtime-only OOM lost genuine agent-OOM attribution"
 printf '%s\n' "$LOGS" \
   | grep -F "run_id=$MEMORY_RUN_ID" \
