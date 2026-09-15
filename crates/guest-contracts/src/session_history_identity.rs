@@ -154,7 +154,7 @@ pub struct SessionHistorySidecarExportMetadata {
     pub timings: SessionHistorySidecarExportTimings,
 }
 
-/// Monotonic wall-clock durations for one successful sidecar export.
+/// Monotonic wall-clock durations and thread resources for one successful sidecar export.
 ///
 /// Runner and the helper ship together. These fields are private helper output,
 /// not a workspace-cache format or independently deployed API contract.
@@ -171,6 +171,36 @@ pub struct SessionHistorySidecarExportTimings {
     pub write_us: u64,
     /// Total helper work; excludes process startup, result serialization and exit.
     pub total_us: u64,
+    /// Read/verify thread resources, or unavailable if either snapshot failed.
+    pub read_verify_resources: Option<SessionHistorySidecarResourceUsage>,
+    /// Write thread resources, or unavailable if either snapshot failed.
+    pub write_resources: Option<SessionHistorySidecarResourceUsage>,
+}
+
+/// Per-stage deltas from Linux `getrusage(RUSAGE_THREAD)` on the synchronous exporter.
+///
+/// These exclude other threads. Zero is a measured value, not missing data. Faults
+/// include allocation effects; block counters are accounting operations, not bytes
+/// or disk latency. Wall time minus CPU time is not a measurement of disk wait.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionHistorySidecarResourceUsage {
+    /// User CPU time in microseconds.
+    pub user_cpu_us: u64,
+    /// System CPU time in microseconds.
+    pub system_cpu_us: u64,
+    /// Page faults serviced without I/O.
+    pub minor_faults: u64,
+    /// Page faults requiring I/O.
+    pub major_faults: u64,
+    /// Filesystem input operations counted by `ru_inblock`.
+    pub input_blocks: u64,
+    /// Filesystem output operations counted by `ru_oublock`.
+    pub output_blocks: u64,
+    /// Voluntary context switches.
+    pub voluntary_context_switches: u64,
+    /// Involuntary context switches.
+    pub involuntary_context_switches: u64,
 }
 
 /// Safe low-cardinality I/O class emitted for a sidecar output failure.
@@ -631,6 +661,43 @@ mod tests {
             failure
         );
         assert_eq!(failure.io_error_class.as_str(), "storage-full");
+    }
+
+    #[test]
+    fn sidecar_export_resources_round_trip_with_bounded_payload() {
+        let maximum = SessionHistorySidecarResourceUsage {
+            user_cpu_us: u64::MAX,
+            system_cpu_us: u64::MAX,
+            minor_faults: u64::MAX,
+            major_faults: u64::MAX,
+            input_blocks: u64::MAX,
+            output_blocks: u64::MAX,
+            voluntary_context_switches: u64::MAX,
+            involuntary_context_switches: u64::MAX,
+        };
+        for read_verify_resources in [Some(maximum), Some(Default::default()), None] {
+            for write_resources in [Some(maximum), Some(Default::default()), None] {
+                let metadata = SessionHistorySidecarExportMetadata {
+                    representation: SessionHistorySidecarRepresentation::CodexZstd,
+                    encoded_size: u64::MAX,
+                    timings: SessionHistorySidecarExportTimings {
+                        metadata_us: u64::MAX,
+                        resolve_us: u64::MAX,
+                        read_verify_us: u64::MAX,
+                        write_us: u64::MAX,
+                        total_us: u64::MAX,
+                        read_verify_resources,
+                        write_resources,
+                    },
+                };
+                let json = serde_json::to_vec(&metadata).unwrap();
+                assert!(json.len() < 2048, "helper summary must stay bounded");
+                assert_eq!(
+                    serde_json::from_slice::<SessionHistorySidecarExportMetadata>(&json).unwrap(),
+                    metadata
+                );
+            }
+        }
     }
 
     fn valid_identity() -> SessionHistoryIdentity {

@@ -266,6 +266,8 @@ fn log_session_history_sidecar_export_timing(
     guest_duration_ms: Option<u32>,
 ) {
     let timings = &metadata.timings;
+    let read_resources = timings.read_verify_resources;
+    let write_resources = timings.write_resources;
     macro_rules! emit {
         ($level:expr) => {
             tracing::event!(
@@ -288,6 +290,24 @@ fn log_session_history_sidecar_export_timing(
                 helper_read_verify_us = timings.read_verify_us,
                 helper_write_us = timings.write_us,
                 helper_total_us = timings.total_us,
+                helper_read_verify_resources_available = read_resources.is_some(),
+                helper_write_resources_available = write_resources.is_some(),
+                helper_read_verify_user_cpu_us = read_resources.map(|usage| usage.user_cpu_us),
+                helper_read_verify_system_cpu_us = read_resources.map(|usage| usage.system_cpu_us),
+                helper_read_verify_minor_faults = read_resources.map(|usage| usage.minor_faults),
+                helper_read_verify_major_faults = read_resources.map(|usage| usage.major_faults),
+                helper_read_verify_input_blocks = read_resources.map(|usage| usage.input_blocks),
+                helper_read_verify_output_blocks = read_resources.map(|usage| usage.output_blocks),
+                helper_read_verify_voluntary_context_switches = read_resources.map(|usage| usage.voluntary_context_switches),
+                helper_read_verify_involuntary_context_switches = read_resources.map(|usage| usage.involuntary_context_switches),
+                helper_write_user_cpu_us = write_resources.map(|usage| usage.user_cpu_us),
+                helper_write_system_cpu_us = write_resources.map(|usage| usage.system_cpu_us),
+                helper_write_minor_faults = write_resources.map(|usage| usage.minor_faults),
+                helper_write_major_faults = write_resources.map(|usage| usage.major_faults),
+                helper_write_input_blocks = write_resources.map(|usage| usage.input_blocks),
+                helper_write_output_blocks = write_resources.map(|usage| usage.output_blocks),
+                helper_write_voluntary_context_switches = write_resources.map(|usage| usage.voluntary_context_switches),
+                helper_write_involuntary_context_switches = write_resources.map(|usage| usage.involuntary_context_switches),
                 "workspace image cache session history sidecar export completed"
             );
         };
