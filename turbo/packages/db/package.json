@@ -39,6 +39,14 @@
     "./migrations/014-goal-archive-search": {
       "import": "./scripts/migrations/014-goal-archive-search/recover.ts",
       "types": "./scripts/migrations/014-goal-archive-search/recover.ts"
+    },
+    "./erasure-journal": {
+      "import": "./src/erasure-journal/client.ts",
+      "types": "./src/erasure-journal/client.ts"
+    },
+    "./erasure-journal/migrate": {
+      "import": "./src/erasure-journal/migrate.ts",
+      "types": "./src/erasure-journal/migrate.ts"
     }
   },
   "scripts": {
@@ -50,7 +58,7 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "db:reset": "tsx scripts/reset-db.ts",
-    "test:migration-consistency": "pnpm test:migration-runner && pnpm test:kms-rotation && pnpm test:pi-memory-checkpoint-settlement && pnpm test:pi-memory-citations && pnpm test:show-usage-pack-migration && pnpm test:member-invitation-retirement && pnpm test:reusable-ssh-credentials && pnpm test:cloudflare-access && pnpm test:morning-brief-enrollment-installation && pnpm test:billing-attribution && pnpm test:pi-candidate-trigger-retirement && tsx scripts/test-migration-consistency-schema.ts",
+    "test:migration-consistency": "pnpm test:migration-runner && pnpm test:kms-rotation && pnpm test:pi-memory-checkpoint-settlement && pnpm test:pi-memory-citations && pnpm test:show-usage-pack-migration && pnpm test:member-invitation-retirement && pnpm test:reusable-ssh-credentials && pnpm test:cloudflare-access && pnpm test:morning-brief-enrollment-installation && pnpm test:billing-attribution && pnpm test:pi-candidate-trigger-retirement && pnpm test:erasure-journal && tsx scripts/test-migration-consistency-schema.ts",
     "test:cloudflare-access": "tsx scripts/test-cloudflare-access.ts",
     "test:kms-rotation": "tsx scripts/migrations/013-kms-account-rotation/test.ts && tsx scripts/migrations/013-kms-account-rotation/test-business.ts",
     "test:show-usage-pack-migration": "tsx scripts/test-show-usage-pack-migration.ts",
@@ -63,7 +71,9 @@
     "test:morning-brief-enrollment-installation": "tsx scripts/test-morning-brief-enrollment-installation.ts",
     "test:billing-attribution": "tsx scripts/test-billing-attribution.ts",
     "billing:attribution": "tsx scripts/billing-attribution.ts",
-    "test:pi-candidate-trigger-retirement": "tsx scripts/test-pi-candidate-trigger-retirement.ts"
+    "test:pi-candidate-trigger-retirement": "tsx scripts/test-pi-candidate-trigger-retirement.ts",
+    "journal:generate": "drizzle-kit generate --dialect postgresql --schema ./src/erasure-journal/schema.ts --out ./erasure-journal-migrations",
+    "test:erasure-journal": "tsx scripts/test-erasure-journal.ts"
   },
   "dependencies": {
     "@aws-sdk/client-kms": "^3.1127.0",

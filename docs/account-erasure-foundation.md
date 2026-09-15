@@ -42,6 +42,11 @@ missing projections, and place guards at actual producer commit boundaries.
 A committed main-DB job cannot satisfy
 [ADR 0004](adr/0004-account-telemetry-recovery-erasure.md)'s independent authority.
 
+The [G2d1a journal](account-erasure-decision-journal.md) now implements dormant
+independent PostgreSQL persistence, commit ordering and bounded replay. Its
+internal references do not authenticate decisions. G2d1b still owns verified
+production trust, infrastructure isolation and finite retirement before activation.
+
 The following production callers remain unchanged and do not call this module:
 
 - `webhooks-clerk.ts` still acknowledges user deletion after `waitUntil` work;
@@ -55,8 +60,8 @@ The following production callers remain unchanged and do not call this module:
 - No webhook switch, cron/scheduler, collector/erase adapter registration,
   historical admission, backfill, credentials, or production IAM is added.
 
-The functional sequence remains **B1 -> B2 -> A2**, with **G2d1 also required
-before B2**. A1's accepted code does not prove release, writer/compactor drain,
+The functional sequence remains **B1 -> B2 -> A2**, with **full G2d1 required
+before B2 activation**. A1's accepted code does not prove release, writer/compactor drain,
 or bounded backfill completeness. Broader purge requires accepted A2 billing
 isolation plus the relevant C2/D/E/G2 collectors and terminal proofs. B3/F/UX
 own trustworthy client confirmation and local data cleanup. No local guard
