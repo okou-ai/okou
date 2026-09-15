@@ -1,3 +1,18 @@
+import { readPiMemoryBuiltinQuota } from "../pi-memory-builtin-quota.service";
+import { checkPiMemoryQuota } from "../pi-memory-quota.service";
+import {
+  orgUsageAllowanceEntitlements,
+  orgUsageAllowanceWindows,
+} from "@okouai/db/schema/org-usage-allowance";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+import { env, mockOptionalEnv } from "../../../lib/env";
+import {
+  builtinMemoryQuotaCases,
+  seedMemoryQuotaCase,
+} from "../../../test-fixtures/pi-memory-builtin-quota";
+import { nativeMemoryQuotaCases } from "../../../test-fixtures/pi-memory-quota";
+import { usageEvent } from "@okouai/db/schema/usage-event";
 import { randomUUID } from "node:crypto";
 import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -19,7 +34,6 @@ import { holdAgentRunRowLockFixture } from "../../../test-fixtures/chat-events";
 import { countWaitingPersonalSubscriptionMutationsFixture } from "../../../test-fixtures/personal-subscription";
 import { testContext } from "../../../__tests__/test-context";
 import { db } from "../../../lib/db";
-import { mockOptionalEnv } from "../../../lib/env";
 import { withMockNowForTest, now, nowDate } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import {
@@ -47,6 +61,7 @@ import {
 } from "./pi-memory-phase2-job.test-fixture";
 import {
   createPhase2Provider,
+  phase2ApiKeyRoutes,
   disconnectPhase2Codex,
   activateAnotherPhase2Codex,
 } from "../../../test-fixtures/pi-memory-phase2-credential";
@@ -56,7 +71,10 @@ import { createBddApi } from "../../routes/__tests__/helpers/api-bdd";
 import { createMiscRoutesApi } from "../../routes/__tests__/helpers/api-bdd-misc";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
-import { makeCodexJwt } from "../../routes/__tests__/helpers/api-bdd-auth-device";
+import {
+  makeCodexJwt,
+  makeCodexAuthJson,
+} from "../../routes/__tests__/helpers/api-bdd-auth-device";
 import { executePhase2Runtime } from "../../../test-fixtures/__tests__/pi-memory-phase2-runtime";
 
 async function deleteRunSessionsForScope(scope: {
@@ -1216,6 +1234,15 @@ test.each([false, true])(
       exp: Math.floor(now() / 1000) + 7200,
       identity: "refreshed-original",
     });
+    const quotaHeaders: Headers[] = [];
+    server.use(
+      http.get("https://chatgpt.com/backend-api/wham/usage", ({ request }) => {
+        quotaHeaders.push(request.headers);
+        return HttpResponse.json({
+          rate_limit: { primary_window: { used_percent: 75 } },
+        });
+      }),
+    );
     const refreshes: string[] = [];
     server.use(
       http.post("https://auth.openai.com/oauth/token", async ({ request }) => {
@@ -1266,6 +1293,11 @@ test.each([false, true])(
     }
     expect(refreshes).toHaveLength(1);
     expect(refreshes[0]).toContain(`refresh-${account}`);
+    expect(quotaHeaders).toHaveLength(revoke ? 0 : 1);
+    if (!revoke) {
+      expect(quotaHeaders[0]?.get("authorization")).toBe(`Bearer ${refreshed}`);
+      expect(quotaHeaders[0]?.get("chatgpt-account-id")).toBe(account);
+    }
   },
 );
 
@@ -1368,4 +1400,566 @@ test("lets disconnect finish while final admission waits on a non-first source",
     completedRevision: 0,
     retryCount: 1,
   });
+});
+
+describe("Phase 2 new-run source quota boundary", () => {
+  it.each(nativeMemoryQuotaCases)(
+    "$name",
+    async ({ payload, raw, status, reason }) => {
+      const job = await credentialJob("quota");
+      const native = await createPhase2Provider(
+        testContext(),
+        job.scope,
+        "codex-oauth-token",
+        "member",
+      );
+      await insertPhase2Candidates(
+        job.scope,
+        [{ piSessionId: randomUUID() }],
+        native.binding,
+      );
+      const metadata: Headers[] = [];
+      let modelRequests = 0;
+      server.use(
+        http.post("https://chatgpt.com/backend-api/codex/responses", () => {
+          modelRequests++;
+          return new HttpResponse(null, { status: 500 });
+        }),
+        http.get(
+          "https://chatgpt.com/backend-api/wham/usage",
+          ({ request }) => {
+            metadata.push(request.headers);
+            return new HttpResponse(raw ?? JSON.stringify(payload), {
+              status: status ?? 200,
+              headers: { "content-type": "application/json" },
+            });
+          },
+        ),
+      );
+      if (reason) {
+        await expectNoDispatch(job, reason);
+        expect(modelRequests).toBe(0);
+        await expect(
+          db()
+            .select({ id: usageEvent.id })
+            .from(usageEvent)
+            .where(eq(usageEvent.orgId, job.scope.orgId)),
+        ).resolves.toStrictEqual([]);
+      } else {
+        const result = await job.work();
+        expect(result.outcome).toBe("dispatched");
+        if (result.outcome !== "dispatched") {
+          throw new Error("Expected admitted maintenance");
+        }
+      }
+      expect(metadata).toHaveLength(1);
+      expect(metadata[0]?.get("authorization")).toBe(`Bearer ${native.key}`);
+      expect(metadata[0]?.get("chatgpt-account-id")).toBe(native.account);
+    },
+  );
+});
+
+describe("Phase 2 built-in reserves with positive cash", () => {
+  it.each(builtinMemoryQuotaCases)("%s", async (scenario) => {
+    const job = await credentialJob("builtin-quota");
+    await insertPhase2Candidates(
+      job.scope,
+      [{ piSessionId: randomUUID() }],
+      builtinSource,
+    );
+    if (
+      scenario === "entitlement-stale" ||
+      scenario === "unpaid-outside-grace"
+    ) {
+      // Quota permits stale metadata; canonical launch still reconciles it.
+      testContext().mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+        status: "canceled",
+        items: { data: [] },
+      });
+    }
+    const { denied } = await seedMemoryQuotaCase(
+      job.scope,
+      new Date("2026-09-05T02:00:00Z"),
+      scenario,
+    );
+    if (denied) {
+      await expectNoDispatch(job, "quota_below_threshold");
+      await expect(
+        db()
+          .select({ id: usageEvent.id })
+          .from(usageEvent)
+          .where(eq(usageEvent.orgId, job.scope.orgId)),
+      ).resolves.toStrictEqual([]);
+    } else {
+      await expect(job.work()).resolves.toMatchObject({
+        outcome: "dispatched",
+      });
+    }
+  });
+});
+
+test.each(["uncreated-windows", "entitlement-stale", "no-grants"] as const)(
+  "quota-only DB read is pure and reports unknown for %s",
+  async (scenario) => {
+    const job = await credentialJob("quota-purity");
+    const at = nowDate();
+    await seedMemoryQuotaCase(job.scope, at, scenario);
+    const before = await db()
+      .select()
+      .from(orgUsageAllowanceEntitlements)
+      .where(eq(orgUsageAllowanceEntitlements.orgId, job.scope.orgId));
+    const result = await readPiMemoryBuiltinQuota(
+      db(),
+      job.scope,
+      at,
+      testContext().signal,
+    );
+    expect(result).toMatchObject({
+      decision: "unknown",
+      reason:
+        scenario === "entitlement-stale"
+          ? "entitlement_stale"
+          : "cash_percentage_unknown",
+    });
+    await expect(
+      db()
+        .select()
+        .from(orgUsageAllowanceEntitlements)
+        .where(eq(orgUsageAllowanceEntitlements.orgId, job.scope.orgId)),
+    ).resolves.toStrictEqual(before);
+    const windows = await db()
+      .select()
+      .from(orgUsageAllowanceWindows)
+      .where(eq(orgUsageAllowanceWindows.orgId, job.scope.orgId));
+    expect(windows).toHaveLength(scenario === "entitlement-stale" ? 1 : 0);
+    expect(
+      testContext().mocks.stripe.subscriptions.retrieve,
+    ).not.toHaveBeenCalled();
+  },
+);
+
+test.each([
+  "invalid-pool",
+  "invalid-pool-masked",
+  "invalid-window",
+  "db-failure",
+] as const)(
+  "fails unavailable for %s without fabricated reserves",
+  async (fault) => {
+    // Infrastructure exception: constraint-violating historical rows and a failed
+    // DB transaction cannot be produced by an API. Temporary tables are scoped to
+    // one PostgreSQL session, preserving real query/decoder behavior and isolation.
+    const pool = new Pool({ connectionString: env("DATABASE_URL"), max: 1 });
+    const client = await pool.connect();
+    onTestFinished(async () => {
+      client.release();
+      await pool.end();
+    });
+    const quotaDb = drizzle(client);
+    const owner = { orgId: randomUUID(), userId: randomUUID() };
+    await client.query(
+      "CREATE TEMP TABLE usage_pack_credit_grants (LIKE public.usage_pack_credit_grants)",
+    );
+    await client.query(
+      "CREATE TEMP TABLE org_usage_allowance_entitlements (LIKE public.org_usage_allowance_entitlements)",
+    );
+    await client.query(
+      "CREATE TEMP TABLE org_usage_allowance_windows (LIKE public.org_usage_allowance_windows)",
+    );
+    if (fault === "invalid-pool" || fault === "invalid-pool-masked") {
+      await client.query(
+        "INSERT INTO pg_temp.usage_pack_credit_grants (id, org_id, user_id, grant_type, idempotency_key, original_amount, remaining_amount, created_at, expires_at) VALUES ($1::uuid,$2,$3,'purchased',$1::text,0,0,now()-interval '1 hour',now()+interval '1 hour')",
+        [randomUUID(), owner.orgId, owner.userId],
+      );
+      if (fault === "invalid-pool-masked") {
+        await client.query(
+          "INSERT INTO pg_temp.usage_pack_credit_grants (id, org_id, user_id, grant_type, idempotency_key, original_amount, remaining_amount, created_at, expires_at) VALUES ($1::uuid,$2,$3,'bonus',$1::text,100,100,now()-interval '1 hour',now()+interval '1 hour')",
+          [randomUUID(), owner.orgId, owner.userId],
+        );
+      }
+    } else if (fault === "invalid-window") {
+      const id = randomUUID();
+      await client.query(
+        "INSERT INTO pg_temp.org_usage_allowance_entitlements (id,org_id,source,status,short_window_seconds,short_window_units,weekly_window_seconds,weekly_window_units,effective_at,created_at,updated_at) VALUES ($1,$2,'manual','active',18000,10000,604800,100000,now()-interval '2 hours',now(),now())",
+        [id, owner.orgId],
+      );
+      await client.query(
+        "INSERT INTO pg_temp.org_usage_allowance_windows (id,org_id,entitlement_id,kind,starts_at,expires_at,unit_limit,consumed_units,created_at,updated_at) VALUES ($1,$2,$3,'short',now()-interval '1 hour',now()+interval '1 hour',0,0,now(),now())",
+        [randomUUID(), owner.orgId, id],
+      );
+    } else {
+      await client.query("BEGIN");
+      await expect(client.query("SELECT 1 / 0")).rejects.toThrow(
+        "division by zero",
+      );
+    }
+    await expect(
+      checkPiMemoryQuota(
+        quotaDb,
+        { ...owner, stage: "phase2", source: { providerClass: "builtin" } },
+        testContext().signal,
+      ),
+    ).rejects.toMatchObject({ errorClass: "quota_unavailable" });
+    if (fault === "db-failure") {
+      await client.query("ROLLBACK");
+    }
+  },
+);
+
+test("refreshes quota for a new hourly attempt and never re-admits committed recovery", async () => {
+  const job = await credentialJob("quota-retry");
+  const native = await createPhase2Provider(
+    testContext(),
+    job.scope,
+    "codex-oauth-token",
+    "member",
+  );
+  await insertPhase2Candidates(
+    job.scope,
+    [{ piSessionId: randomUUID() }],
+    native.binding,
+  );
+  let used = 90;
+  let reads = 0;
+  server.use(
+    http.get("https://chatgpt.com/backend-api/wham/usage", ({ request }) => {
+      if (request.headers.get("chatgpt-account-id") === native.account) {
+        reads++;
+      }
+      return HttpResponse.json({
+        rate_limit: { primary_window: { used_percent: used } },
+      });
+    }),
+  );
+  const at = nowDate();
+  await expect(job.work(at)).resolves.toMatchObject({
+    outcome: "failed",
+    errorClass: "quota_below_threshold",
+  });
+  await expect(job.work(new Date(at.getTime() + 1000))).resolves.toMatchObject({
+    outcome: "no_work",
+  });
+  expect(reads).toBe(1);
+  used = 75;
+  const retryTime = new Date(
+    at.getTime() + PI_MEMORY_PHASE2_RETRY_DELAY_MS + 1,
+  );
+  const retried = await job.work(retryTime);
+  expect(retried.outcome).toBe("dispatched");
+  expect(reads).toBe(2);
+  used = 100;
+  await activateAnotherPhase2Codex(testContext(), job.scope);
+  await expect(
+    job.work(new Date(retryTime.getTime() + 1000)),
+  ).resolves.toStrictEqual(retried);
+  expect(reads).toBe(2);
+});
+
+test.each(["disconnect", "feature", "source", "storage", "token", "cancel"])(
+  "preserves the Phase 2 final %s fence after quota I/O",
+  async (fault) => {
+    const job = await credentialJob("post-quota-race");
+    const native = await createPhase2Provider(
+      testContext(),
+      job.scope,
+      "codex-oauth-token",
+      "member",
+    );
+    await insertPhase2Candidates(
+      job.scope,
+      [{ piSessionId: randomUUID() }],
+      native.binding,
+    );
+    const controller = new AbortController();
+    onTestFinished(() => {
+      return controller.abort();
+    });
+    let mutated = false;
+    server.use(
+      http.get("https://chatgpt.com/backend-api/wham/usage", async () => {
+        if (fault === "token" && !mutated) {
+          mutated = true;
+          await createMiscRoutesApi(testContext()).upsertPersonalModelProvider(
+            createBddApi(testContext()).user({
+              ...job.scope,
+              orgRole: "org:admin",
+            }),
+            {
+              type: "codex-oauth-token",
+              authMethod: "auth_json",
+              secrets: {
+                CODEX_AUTH_JSON: makeCodexAuthJson({
+                  accessToken: makeCodexJwt({
+                    exp: Math.floor(now() / 1000) + 7200,
+                    identity: "rotated-after-quota",
+                  }),
+                  accountId: native.account as string,
+                  refreshToken: "rotated-refresh",
+                }),
+              },
+            },
+            [200],
+          );
+        }
+        if (fault === "disconnect") {
+          await disconnectPhase2Codex(
+            testContext(),
+            job.scope,
+            native.binding.modelProviderId,
+          );
+        }
+        if (fault === "feature") {
+          await updateFeatureSwitchesForUser(testContext(), job.scope, {
+            [FeatureSwitchKey.PiMemory]: false,
+          });
+        }
+        if (fault === "source") {
+          await db()
+            .update(agentRuns)
+            .set({ modelProviderId: randomUUID() })
+            .where(eq(agentRuns.orgId, job.scope.orgId));
+        }
+        if (fault === "storage") {
+          const version = await insertPhase2StorageVersion(
+            job.scope,
+            "concurrent quota read",
+          );
+          await setPhase2StorageHead(job.scope, version);
+        }
+        if (fault === "cancel") {
+          controller.abort();
+        }
+        return HttpResponse.json({
+          rate_limit: { primary_window: { used_percent: 0 } },
+        });
+      }),
+    );
+    const work = job.work(nowDate(), controller.signal);
+    if (fault === "cancel") {
+      await expect(work).rejects.toMatchObject({ name: "AbortError" });
+    } else {
+      expect((await work).outcome).toBe("failed");
+    }
+    await expect(
+      db()
+        .select({ id: agentRuns.id })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.orgId, job.scope.orgId),
+            eq(agentRuns.triggerSource, "agent"),
+          ),
+        ),
+    ).resolves.toStrictEqual([]);
+    await expect(
+      db()
+        .select({ id: usageEvent.id })
+        .from(usageEvent)
+        .where(eq(usageEvent.orgId, job.scope.orgId)),
+    ).resolves.toStrictEqual([]);
+    expect((await readPhase2Job(job.scope))?.completedRevision).toBe(0);
+  },
+);
+
+test.each(["malformed-json", "network", "timeout"])(
+  "phase 2 unknown %s preserves canonical admission",
+  async (fault) => {
+    const job = await credentialJob("unknown-quota");
+    const native = await createPhase2Provider(
+      testContext(),
+      job.scope,
+      "codex-oauth-token",
+      "member",
+    );
+    await insertPhase2Candidates(
+      job.scope,
+      [{ piSessionId: randomUUID() }],
+      native.binding,
+    );
+    server.use(
+      http.get(
+        "https://chatgpt.com/backend-api/wham/usage",
+        async ({ request }) => {
+          if (fault === "network") {
+            return HttpResponse.error();
+          }
+          if (fault === "timeout") {
+            const deadline = createDeferredPromise<void>(testContext().signal);
+            if (request.signal.aborted) {
+              deadline.resolve();
+            } else {
+              request.signal.addEventListener(
+                "abort",
+                () => {
+                  deadline.resolve();
+                },
+                { once: true },
+              );
+            }
+            await deadline.promise;
+          }
+          return new HttpResponse("malformed JSON");
+        },
+      ),
+    );
+    await expect(job.work()).resolves.toMatchObject({ outcome: "dispatched" });
+  },
+  10_000,
+); // Includes the real five-second metadata deadline.
+
+test("makes exactly one quota GET and no reset-credit request for a real native model attempt", async () => {
+  const job = await credentialJob("native-quota-purity");
+  const native = await createPhase2Provider(
+    testContext(),
+    job.scope,
+    "codex-oauth-token",
+    "member",
+  );
+  await insertPhase2Candidates(
+    job.scope,
+    [{ piSessionId: randomUUID() }],
+    native.binding,
+  );
+  let reads = 0;
+  let resetRequests = 0;
+  server.use(
+    http.get("https://chatgpt.com/backend-api/wham/usage", () => {
+      reads++;
+      return HttpResponse.json({
+        rate_limit: { primary_window: { used_percent: 75 } },
+      });
+    }),
+    http.all(
+      /https:\/\/chatgpt\.com\/backend-api\/wham\/rate-limit-reset-credits/u,
+      () => {
+        resetRequests++;
+        return HttpResponse.json({});
+      },
+    ),
+  );
+  const result = await job.work(nowDate());
+  if (result.outcome !== "dispatched") {
+    throw new Error("Expected maintenance run");
+  }
+  const actual = await executePhase2Runtime(testContext(), result.runId);
+  expect(actual.requests).toHaveLength(3);
+  for (const request of actual.requests) {
+    expect(request.headers.get("authorization")).toBe(`Bearer ${native.key}`);
+    expect(request.headers.get("chatgpt-account-id")).toBe(native.account);
+  }
+  expect(reads).toBe(1);
+  expect(resetRequests).toBe(0);
+  expect(
+    testContext().mocks.stripe.subscriptions.retrieve,
+  ).not.toHaveBeenCalled();
+});
+
+test.each([
+  ...phase2ApiKeyRoutes,
+  {
+    type: "custom-openai-responses" as const,
+    url: "https://phase2-gateway.example/v1/responses",
+    model: "mapped-terra",
+  },
+])(
+  "admits $type with unknown vendor quota independently of an empty wallet",
+  async ({ type, url, model }) => {
+    const job = await credentialJob("unknown-api-key-quota");
+    const provider = await createPhase2Provider(testContext(), job.scope, type);
+    await insertPhase2Candidates(
+      job.scope,
+      [{ piSessionId: randomUUID() }],
+      provider.binding,
+    );
+    await seedOrgMetadata({ orgId: job.scope.orgId, tier: "pro", credits: 0 });
+    await seedMemoryQuotaCase(job.scope, nowDate(), "pool-zero");
+    let quotaReads = 0;
+    server.use(
+      http.get("https://chatgpt.com/backend-api/wham/usage", () => {
+        quotaReads++;
+        return HttpResponse.json({ rate_limit: { allowed: false } });
+      }),
+    );
+    const result = await job.work();
+    expect(result.outcome).toBe("dispatched");
+    if (result.outcome !== "dispatched") {
+      throw new Error("Expected admitted API-key maintenance");
+    }
+    const runtime = await executePhase2Runtime(testContext(), result.runId);
+    expect(runtime.requests).toHaveLength(3);
+    expect(runtime.requests[0]?.body).toMatchObject({ model });
+    expect(runtime.requests[0]?.url).toBe(url);
+    expect(quotaReads).toBe(0);
+  },
+);
+
+test("exhausts quota-denied Phase 2 work after three hourly attempts", async () => {
+  const job = await credentialJob("quota-max3");
+  const native = await createPhase2Provider(
+    testContext(),
+    job.scope,
+    "codex-oauth-token",
+    "member",
+  );
+  await insertPhase2Candidates(
+    job.scope,
+    [{ piSessionId: randomUUID() }],
+    native.binding,
+  );
+  let reads = 0;
+  server.use(
+    http.post("https://auth.openai.com/oauth/token", () => {
+      return HttpResponse.json({
+        access_token: makeCodexJwt({
+          exp: Math.floor(now() / 1000) + 86_400,
+          identity: "quota-retry",
+        }),
+        refresh_token: "refresh-quota-retry",
+        expires_in: 86_400,
+        id_token: makeCodexJwt({
+          "https://api.openai.com/auth": {
+            chatgpt_account_id: native.account,
+            chatgpt_plan_type: "plus",
+          },
+        }),
+      });
+    }),
+    http.get("https://chatgpt.com/backend-api/wham/usage", () => {
+      reads++;
+      return HttpResponse.json({ rate_limit: { allowed: false } });
+    }),
+  );
+  const at = nowDate();
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await expect(
+      job.work(
+        new Date(
+          at.getTime() + attempt * (PI_MEMORY_PHASE2_RETRY_DELAY_MS + 1),
+        ),
+      ),
+    ).resolves.toMatchObject({
+      outcome: "failed",
+      errorClass: "quota_limit_reached",
+    });
+  }
+  await expect(
+    job.work(new Date(at.getTime() + 4 * PI_MEMORY_PHASE2_RETRY_DELAY_MS)),
+  ).resolves.toMatchObject({ outcome: "no_work" });
+  expect(reads).toBe(3);
+  await expect(readPhase2Job(job.scope)).resolves.toMatchObject({
+    retryCount: 3,
+    maintenanceRunId: null,
+    completedRevision: 0,
+  });
+});
+
+test("requires ordinary credit admission before builtin quota", async () => {
+  const job = await credentialJob("ordinary-credit-admission");
+  await insertPhase2Candidates(
+    job.scope,
+    [{ piSessionId: randomUUID() }],
+    builtinSource,
+  );
+  await seedOrgMetadata({ orgId: job.scope.orgId, tier: "pro", credits: 0 });
+  await expectNoDispatch(job, "source_admission_denied");
 });
