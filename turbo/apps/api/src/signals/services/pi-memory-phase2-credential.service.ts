@@ -263,6 +263,27 @@ async function credentialSnapshot(db: ReadDb, source: Source) {
   return key;
 }
 
+async function readQuotaPairSnapshot(db: ReadDb, sourceId: string) {
+  return await db
+    .select({
+      id: modelProviderAccountSecrets.id,
+      name: modelProviderAccountSecrets.name,
+      encryptedValue: modelProviderAccountSecrets.encryptedValue,
+    })
+    .from(modelProviderAccountSecrets)
+    .where(
+      and(
+        eq(modelProviderAccountSecrets.modelProviderAccountId, sourceId),
+        inArray(modelProviderAccountSecrets.name, [
+          "CHATGPT_ACCESS_TOKEN",
+          "CHATGPT_ACCOUNT_ID",
+        ]),
+      ),
+    )
+    .orderBy(asc(modelProviderAccountSecrets.id))
+    .for("share");
+}
+
 async function prepareSubscription(
   db: Db,
   source: Source,
@@ -310,6 +331,30 @@ async function prepareSubscription(
     reject("credential_unavailable");
   }
 
+  // Prove the bounded encrypted pair outside final admission: decryption calls
+  // KMS. Canonical preparation above remains the only refresh/resolution owner.
+  const snapshot = await readQuotaPairSnapshot(db, sourceId);
+  signal.throwIfAborted();
+  for (const [name, expected] of [
+    ["CHATGPT_ACCESS_TOKEN", accessToken],
+    ["CHATGPT_ACCOUNT_ID", externalAccountId],
+  ] as const) {
+    const row = snapshot.find((item) => {
+      return item.name === name;
+    });
+    if (
+      !row ||
+      (await decryptStoredSecretValue(
+        row.encryptedValue,
+        featureSwitchContext,
+      )) !== expected
+    ) {
+      reject("credential_unavailable");
+    }
+    signal.throwIfAborted();
+  }
+  const proof = JSON.stringify(snapshot);
+
   return {
     quota: {
       providerClass: "codex",
@@ -317,41 +362,12 @@ async function prepareSubscription(
       accountId: externalAccountId,
     } satisfies PiMemoryQuotaSource,
     validate: async (tx: Tx) => {
-      // Canonical preparation above owns refresh. Under the final account lock,
-      // compare the exact pair used for quota without another resolver or HTTP.
-      const rows = await tx
-        .select({
-          name: modelProviderAccountSecrets.name,
-          encryptedValue: modelProviderAccountSecrets.encryptedValue,
-        })
-        .from(modelProviderAccountSecrets)
-        .where(
-          and(
-            eq(modelProviderAccountSecrets.modelProviderAccountId, sourceId),
-            inArray(modelProviderAccountSecrets.name, [
-              "CHATGPT_ACCESS_TOKEN",
-              "CHATGPT_ACCOUNT_ID",
-            ]),
-          ),
-        )
-        .for("share");
-      for (const [name, expected] of [
-        ["CHATGPT_ACCESS_TOKEN", accessToken],
-        ["CHATGPT_ACCOUNT_ID", externalAccountId],
-      ] as const) {
-        const row = rows.find((row) => {
-          return row.name === name;
-        });
-        if (
-          !row ||
-          (await decryptStoredSecretValue(
-            row.encryptedValue,
-            featureSwitchContext,
-          )) !== expected
-        ) {
-          reject("credential_unavailable");
-        }
-        signal.throwIfAborted();
+      // Final admission is database-only. Any later row/ciphertext change,
+      // including equivalent re-encryption, requires a fresh admission proof.
+      const current = await readQuotaPairSnapshot(tx, sourceId);
+      signal.throwIfAborted();
+      if (JSON.stringify(current) !== proof) {
+        reject("credential_unavailable");
       }
     },
   };

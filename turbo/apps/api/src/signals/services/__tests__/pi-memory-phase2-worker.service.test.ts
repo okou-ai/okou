@@ -76,6 +76,7 @@ import {
   makeCodexAuthJson,
 } from "../../routes/__tests__/helpers/api-bdd-auth-device";
 import { executePhase2Runtime } from "../../../test-fixtures/__tests__/pi-memory-phase2-runtime";
+import { useSecretKmsProbe } from "../../routes/__tests__/helpers/secret-kms-probe";
 
 async function deleteRunSessionsForScope(scope: {
   readonly orgId: string;
@@ -789,7 +790,8 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
   });
 });
 
-async function credentialJob(label: string, emptyBase = true) {
+// Prepares test scope and worker execution; this helper returns no credentials.
+async function createPhase2WorkerFixture(label: string, emptyBase = true) {
   const scope = await createPhase2TestScope(label, { emptyBase });
   await enablePiMemoryForScope(scope);
   await seedOrgMetadata({ orgId: scope.orgId, tier: "pro", credits: 100_000 });
@@ -826,7 +828,7 @@ const builtinSource = {
 } satisfies Phase2SourceBinding;
 
 async function expectNoDispatch(
-  job: Awaited<ReturnType<typeof credentialJob>>,
+  job: Awaited<ReturnType<typeof createPhase2WorkerFixture>>,
   reason: string,
   expectedHead: string | null = job.scope.baseVersion.versionId,
 ) {
@@ -876,7 +878,10 @@ describe("Phase 2 complete source credential admission", () => {
   it.each([true, false])(
     "defers empty-selection cleanup/repair for emptyBase=%s with three hourly attempts",
     async (emptyBase) => {
-      const job = await credentialJob("empty-credentials", emptyBase);
+      const job = await createPhase2WorkerFixture(
+        "empty-credentials",
+        emptyBase,
+      );
       await expectNoDispatch(job, "source_credentials_missing");
       expect(testContext().mocks.s3.getSignedUrl).not.toHaveBeenCalled();
       for (let attempt = 2; attempt <= 3; attempt++) {
@@ -901,7 +906,7 @@ describe("Phase 2 complete source credential admission", () => {
     "rejects the whole %s selection",
     async (kind) => {
       expect.hasAssertions();
-      const job = await credentialJob(`mixed-${kind}`);
+      const job = await createPhase2WorkerFixture(`mixed-${kind}`);
       const provider = await createPhase2Provider(
         testContext(),
         job.scope,
@@ -931,7 +936,7 @@ describe("Phase 2 complete source credential admission", () => {
   );
 
   it("normalizes legitimate built-in null/org scopes across all sources", async () => {
-    const job = await credentialJob("builtin-representations");
+    const job = await createPhase2WorkerFixture("builtin-representations");
     await insertPhase2Candidates(
       job.scope,
       [{ piSessionId: randomUUID() }],
@@ -960,7 +965,7 @@ describe("Phase 2 complete source credential admission", () => {
 
   it("rejects a missing historical successful source", async () => {
     expect.hasAssertions();
-    const job = await credentialJob("missing-source");
+    const job = await createPhase2WorkerFixture("missing-source");
     await insertMissingSourceCandidates(job.scope, [
       { piSessionId: randomUUID() },
     ]);
@@ -1002,7 +1007,7 @@ describe("Phase 2 complete source credential admission", () => {
     "rejects invalid provenance $reason/$modelProvider",
     async ({ reason, ...binding }) => {
       expect.hasAssertions();
-      const job = await credentialJob("invalid-source");
+      const job = await createPhase2WorkerFixture("invalid-source");
       await insertPhase2Candidates(
         job.scope,
         [{ piSessionId: randomUUID() }],
@@ -1014,7 +1019,7 @@ describe("Phase 2 complete source credential admission", () => {
 
   it("rejects a custom surface with only a Luna mapping", async () => {
     expect.hasAssertions();
-    const job = await credentialJob("luna-only");
+    const job = await createPhase2WorkerFixture("luna-only");
     const provider = await createPhase2Provider(
       testContext(),
       job.scope,
@@ -1038,7 +1043,7 @@ describe("Phase 2 complete source credential admission", () => {
     "replacement",
     "surface",
   ])("fences %s changes during asynchronous preparation", async (fault) => {
-    const job = await credentialJob(`race-${fault}`);
+    const job = await createPhase2WorkerFixture(`race-${fault}`);
     const provider = await createPhase2Provider(
       testContext(),
       job.scope,
@@ -1116,7 +1121,7 @@ describe("Phase 2 complete source credential admission", () => {
   });
 
   it("uses a surviving rotated key while ignoring a changed default", async () => {
-    const job = await credentialJob("surviving-key");
+    const job = await createPhase2WorkerFixture("surviving-key");
     const provider = await createPhase2Provider(
       testContext(),
       job.scope,
@@ -1145,7 +1150,7 @@ describe("Phase 2 complete source credential admission", () => {
 });
 
 test("does not admit a subscription disconnected during preparation", async () => {
-  const job = await credentialJob("disconnect-before-admission");
+  const job = await createPhase2WorkerFixture("disconnect-before-admission");
   const provider = await createPhase2Provider(
     testContext(),
     job.scope,
@@ -1175,7 +1180,7 @@ test("does not admit a subscription disconnected during preparation", async () =
 });
 
 test("does not persist or dispatch when preparation is cancelled", async () => {
-  const job = await credentialJob("cancel-before-admission");
+  const job = await createPhase2WorkerFixture("cancel-before-admission");
   const provider = await createPhase2Provider(
     testContext(),
     job.scope,
@@ -1215,7 +1220,7 @@ test("does not persist or dispatch when preparation is cancelled", async () => {
 test.each([false, true])(
   "refreshes the original subscription or rejects revocation=%s",
   async (revoke) => {
-    const job = await credentialJob("refresh-exact-account");
+    const job = await createPhase2WorkerFixture("refresh-exact-account");
     const account = `account-${randomUUID()}`;
     const provider = await createPhase2Provider(
       testContext(),
@@ -1303,7 +1308,7 @@ test.each([false, true])(
 
 test("rejects a selected source owned by another Storage owner", async () => {
   expect.hasAssertions();
-  const job = await credentialJob("foreign-source");
+  const job = await createPhase2WorkerFixture("foreign-source");
   const foreign = await createPhase2TestScope("foreign-owner");
   const sourceRunId = randomUUID();
   await insertPhase2Candidates(foreign, [
@@ -1316,7 +1321,7 @@ test("rejects a selected source owned by another Storage owner", async () => {
 });
 
 test("lets disconnect finish while final admission waits on a non-first source", async () => {
-  const job = await credentialJob("source-lifecycle-lock-order");
+  const job = await createPhase2WorkerFixture("source-lifecycle-lock-order");
   const provider = await createPhase2Provider(
     testContext(),
     job.scope,
@@ -1406,7 +1411,7 @@ describe("Phase 2 new-run source quota boundary", () => {
   it.each(nativeMemoryQuotaCases)(
     "$name",
     async ({ payload, raw, status, reason }) => {
-      const job = await credentialJob("quota");
+      const job = await createPhase2WorkerFixture("quota");
       const native = await createPhase2Provider(
         testContext(),
         job.scope,
@@ -1461,7 +1466,7 @@ describe("Phase 2 new-run source quota boundary", () => {
 
 describe("Phase 2 built-in reserves with positive cash", () => {
   it.each(builtinMemoryQuotaCases)("%s", async (scenario) => {
-    const job = await credentialJob("builtin-quota");
+    const job = await createPhase2WorkerFixture("builtin-quota");
     await insertPhase2Candidates(
       job.scope,
       [{ piSessionId: randomUUID() }],
@@ -1501,7 +1506,7 @@ describe("Phase 2 built-in reserves with positive cash", () => {
 test.each(["uncreated-windows", "entitlement-stale", "no-grants"] as const)(
   "quota-only DB read is pure and reports unknown for %s",
   async (scenario) => {
-    const job = await credentialJob("quota-purity");
+    const job = await createPhase2WorkerFixture("quota-purity");
     const at = nowDate();
     await seedMemoryQuotaCase(job.scope, at, scenario);
     const before = await db()
@@ -1607,7 +1612,7 @@ test.each([
 );
 
 test("refreshes quota for a new hourly attempt and never re-admits committed recovery", async () => {
-  const job = await credentialJob("quota-retry");
+  const job = await createPhase2WorkerFixture("quota-retry");
   const native = await createPhase2Provider(
     testContext(),
     job.scope,
@@ -1658,7 +1663,7 @@ test("refreshes quota for a new hourly attempt and never re-admits committed rec
 test.each(["disconnect", "feature", "source", "storage", "token", "cancel"])(
   "preserves the Phase 2 final %s fence after quota I/O",
   async (fault) => {
-    const job = await credentialJob("post-quota-race");
+    const job = await createPhase2WorkerFixture("post-quota-race");
     const native = await createPhase2Provider(
       testContext(),
       job.scope,
@@ -1764,7 +1769,7 @@ test.each(["disconnect", "feature", "source", "storage", "token", "cancel"])(
 test.each(["malformed-json", "network", "timeout"])(
   "phase 2 unknown %s preserves canonical admission",
   async (fault) => {
-    const job = await credentialJob("unknown-quota");
+    const job = await createPhase2WorkerFixture("unknown-quota");
     const native = await createPhase2Provider(
       testContext(),
       job.scope,
@@ -1808,7 +1813,7 @@ test.each(["malformed-json", "network", "timeout"])(
 ); // Includes the real five-second metadata deadline.
 
 test("makes exactly one quota GET and no reset-credit request for a real native model attempt", async () => {
-  const job = await credentialJob("native-quota-purity");
+  const job = await createPhase2WorkerFixture("native-quota-purity");
   const native = await createPhase2Provider(
     testContext(),
     job.scope,
@@ -1864,7 +1869,7 @@ test.each([
 ])(
   "admits $type with unknown vendor quota independently of an empty wallet",
   async ({ type, url, model }) => {
-    const job = await credentialJob("unknown-api-key-quota");
+    const job = await createPhase2WorkerFixture("unknown-api-key-quota");
     const provider = await createPhase2Provider(testContext(), job.scope, type);
     await insertPhase2Candidates(
       job.scope,
@@ -1894,7 +1899,7 @@ test.each([
 );
 
 test("exhausts quota-denied Phase 2 work after three hourly attempts", async () => {
-  const job = await credentialJob("quota-max3");
+  const job = await createPhase2WorkerFixture("quota-max3");
   const native = await createPhase2Provider(
     testContext(),
     job.scope,
@@ -1954,7 +1959,8 @@ test("exhausts quota-denied Phase 2 work after three hourly attempts", async () 
 });
 
 test("requires ordinary credit admission before builtin quota", async () => {
-  const job = await credentialJob("ordinary-credit-admission");
+  expect.hasAssertions();
+  const job = await createPhase2WorkerFixture("ordinary-credit-admission");
   await insertPhase2Candidates(
     job.scope,
     [{ piSessionId: randomUUID() }],
@@ -1962,4 +1968,56 @@ test("requires ordinary credit admission before builtin quota", async () => {
   );
   await seedOrgMetadata({ orgId: job.scope.orgId, tier: "pro", credits: 0 });
   await expectNoDispatch(job, "source_admission_denied");
+});
+
+test("admits native maintenance without asking KMS under the organization admission lock", async () => {
+  const job = await createPhase2WorkerFixture("quota-proof-lock-ownership");
+  const native = await createPhase2Provider(
+    testContext(),
+    job.scope,
+    "codex-oauth-token",
+    "member",
+  );
+  await insertPhase2Candidates(
+    job.scope,
+    [{ piSessionId: randomUUID() }],
+    native.binding,
+  );
+  // Infrastructure exception: only a real separate PostgreSQL connection can
+  // observe the admission lock during an external KMS callback. The transaction
+  // lock is released when this single probe statement commits, without waiting.
+  const lockProbe = new Pool({ connectionString: env("DATABASE_URL"), max: 1 });
+  onTestFinished(async () => {
+    await lockProbe.end();
+  });
+  useSecretKmsProbe(undefined, async () => {
+    const result = await lockProbe.query<{ available: unknown }>(
+      "SELECT pg_try_advisory_xact_lock(hashtext($1)) AS available",
+      [job.scope.orgId],
+    );
+    if (result.rows[0]?.available !== true) {
+      throw new Error("KMS requested while organization admission is locked");
+    }
+    return Buffer.from("0123456789abcdef0123456789abcdef");
+  });
+  server.use(
+    http.get("https://chatgpt.com/backend-api/wham/usage", () => {
+      return HttpResponse.json({
+        rate_limit: { primary_window: { used_percent: 75 } },
+      });
+    }),
+  );
+  const result = await job.work();
+  expect(result.outcome).toBe("dispatched");
+  if (result.outcome !== "dispatched") {
+    throw new Error("Expected native maintenance");
+  }
+  const runtime = await executePhase2Runtime(testContext(), result.runId);
+  expect(runtime.requests).toHaveLength(3);
+  expect(runtime.requests[0]?.headers.get("authorization")).toBe(
+    `Bearer ${native.key}`,
+  );
+  expect(runtime.requests[0]?.headers.get("chatgpt-account-id")).toBe(
+    native.account,
+  );
 });
