@@ -612,13 +612,6 @@ export default [
       // B2b1 races the dormant real projector with actual compute writers;
       // no HTTP route owns closure or can observe PostgreSQL lock ordering.
       "src/signals/services/__tests__/compute-erasure-admission.service.test.ts",
-      // Content hashes are a byte-identical cryptographic contract shared with
-      // guest-agent; route behavior cannot pin the serializer's full corpus.
-      "src/signals/services/__tests__/storage-content-hash.service.test.ts",
-      // Route BDDs cover citation persistence and public projection; this
-      // privacy-boundary matrix separately pins semantic deduplication and
-      // byte-identical non-Pi passthrough without coupling either to a DB row.
-      "src/signals/services/__tests__/pi-memory-citation-events.test.ts",
       // Pi resource snapshots are a byte-identical discovery contract shared
       // with the sandbox runtime; route output cannot expose its full virtual
       // filesystem, ignore-rule, and precedence matrix.
@@ -648,10 +641,6 @@ export default [
       "src/signals/services/__tests__/morning-brief-composition.test.ts",
       "src/signals/services/__tests__/connector-catalog-rejection-authority.test.ts",
       "src/signals/services/__tests__/connector-authorization-provider-state.test.ts",
-      // Preview job-ref aliases are process environment state, and both Stripe
-      // metadata entry points must share one value-free resolution matrix that
-      // cannot be observed completely through a single production API route.
-      "src/signals/services/__tests__/stripe-preview-metadata.service.test.ts",
       // A physical relation versus a compatibility view cannot be selected
       // through the production API. This focused PostgreSQL test proves the
       // exact Agent Draft writer through both rollout targets.
@@ -813,9 +802,6 @@ export default [
       // policy lookup byte-for-byte; individual provider routes cannot cover
       // every lookup-table row without duplicating the contract under test.
       "src/signals/services/__tests__/workflow-automation-context.test.ts",
-      // Content hashes are a byte-identical cryptographic contract shared with
-      // guest-agent; route behavior cannot pin the serializer's full corpus.
-      "src/signals/services/__tests__/storage-content-hash.service.test.ts",
       // Pi resource snapshots are a byte-identical discovery contract shared
       // with the sandbox runtime; route output cannot expose its full virtual
       // filesystem, ignore-rule, and precedence matrix.
@@ -837,10 +823,6 @@ export default [
       // B2b1 races the dormant real projector with actual compute writers;
       // no HTTP route owns closure or can observe PostgreSQL lock ordering.
       "src/signals/services/__tests__/compute-erasure-admission.service.test.ts",
-      // Preview job-ref aliases are process environment state, and both Stripe
-      // metadata entry points must share one value-free resolution matrix that
-      // cannot be observed completely through a single production API route.
-      "src/signals/services/__tests__/stripe-preview-metadata.service.test.ts",
       // A physical relation versus a compatibility view cannot be selected
       // through the production API. This focused PostgreSQL test proves the
       // exact Agent Draft writer through both rollout targets.
