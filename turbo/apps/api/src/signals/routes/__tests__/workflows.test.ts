@@ -1,4 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { readGetStartedStatus } from "./helpers/get-started";
+import {
+  scopedReviewContract,
+  scopedReviewRoutes,
+} from "../test-get-started-rewards";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 
 import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
@@ -28,7 +35,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createDeferredPromise } from "../../utils";
 import { mockNow, now } from "../../../lib/time";
-import { mockOptionalEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import {
   readWorkflowAutomationAutonomyFixture,
@@ -2889,5 +2896,102 @@ describe("workflow owner profile cancellation and capacity", () => {
         (await accept(read(first.workflowId), [200])).body.displayName,
       ).toBe("Workflow Author");
     });
+  });
+});
+
+test("awards the workflow creator only after a queued user workflow really succeeds", async () => {
+  mockEnv("GET_STARTED_REWARDS_ROLLOUT", "all");
+  const actor = user({ orgRole: "org:admin" });
+  await enableWorkflowRuns(actor);
+  const agent = await createAgent(actor, {
+    displayName: "Reward Workflow Agent",
+    visibility: "private",
+  });
+  const workflow = await createWorkflow(actor, {
+    agentId: agent.agentId,
+    name: `reward-${randomUUID().slice(0, 8)}`,
+    instruction: "Produce a short summary",
+  });
+  if (!actor.orgId) {
+    throw new Error("Expected workflow org");
+  }
+  const review = () => {
+    return accept(
+      setupApp({ context, routes: scopedReviewRoutes })(
+        scopedReviewContract,
+      ).process({ body: { orgId: actor.orgId ?? "" } }),
+      [200],
+    );
+  };
+  const rewards = async () => {
+    return (await readGetStartedStatus(context, actor)).quests.find((q) => {
+      return q.key === "workflow";
+    });
+  };
+  await expect(rewards()).resolves.toMatchObject({ claimedCount: 0 });
+  const first = await accept(
+    detailClient().run({
+      headers: authHeaders(actor),
+      params: { workflowId: workflow.body.id },
+    }),
+    [200],
+  );
+  if (!first.body.runId) {
+    throw new Error("Expected first Run");
+  }
+  const queued = await accept(
+    detailClient().run({
+      headers: authHeaders(actor),
+      params: { workflowId: workflow.body.id },
+    }),
+    [200],
+  );
+  expect(queued.body.runId).toBeNull();
+  const webhooks = createWebhookCallbackApi(context);
+  await webhooks.requestAgentComplete(
+    { runId: first.body.runId, exitCode: 1, error: "Synthetic failure" },
+    {
+      authorization: `Bearer ${api.sandboxTokenForRun(actor, first.body.runId)}`,
+    },
+    [200],
+  );
+  await flushWaitUntilForTest();
+  const events = await chat.listThreadEvents(actor, first.body.chatThreadId);
+  const next = events.events.find((event) => {
+    return event.runId && event.runId !== first.body.runId;
+  });
+  if (!next?.runId) {
+    throw new Error("Expected the queued workflow to start after failure");
+  }
+  await review();
+  await expect(rewards()).resolves.toMatchObject({ claimedCount: 0 });
+  await webhooks.requestAgentComplete(
+    {
+      runId: next.runId,
+      exitCode: 0,
+      checkpoint: {
+        cliAgentType: "claude-code",
+        cliAgentSessionId: next.runId,
+        cliAgentSessionHistoryHash: createHash("sha256")
+          .update(`workflow reward ${next.runId}`)
+          .digest("hex"),
+      },
+    },
+    { authorization: `Bearer ${api.sandboxTokenForRun(actor, next.runId)}` },
+    [200],
+  );
+  // The next worker attempt is due later; use the test-owned clock, not a sleep.
+  mockNow(now() + 60_001);
+  await review();
+  await expect(rewards()).resolves.toMatchObject({
+    claimedCount: 1,
+    earnedCredits: 1000,
+    canEarnMore: false,
+  });
+  await miscApi.deleteWorkflow(actor, workflow.body.id, [204]);
+  await review();
+  await expect(rewards()).resolves.toMatchObject({
+    claimedCount: 1,
+    earnedCredits: 1000,
   });
 });

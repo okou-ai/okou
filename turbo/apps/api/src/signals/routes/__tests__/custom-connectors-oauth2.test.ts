@@ -1,3 +1,4 @@
+import { readGetStartedStatus } from "./helpers/get-started";
 import { randomBytes, randomUUID } from "node:crypto";
 
 import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
@@ -195,6 +196,7 @@ describe("Custom connector OAuth callbacks", () => {
   });
 
   it("replays an in-flight prefixed OAuth state and uses a plain nonce on reconnect", async () => {
+    mockEnv("GET_STARTED_REWARDS_ROLLOUT", "all");
     mockEnv("APP_URL", "https://app.okou.ai");
     const provider = mockCustomConnectorOAuth2Provider(context, {
       initialScope: "read",
@@ -267,5 +269,10 @@ describe("Custom connector OAuth callbacks", () => {
     expect(provider.tokenBodies[1]?.get("redirect_uri")).toBe(okouRedirectUri);
 
     await connectors.deleteCustomConnector(actor, connector.id);
+    expect(
+      (await readGetStartedStatus(context, actor)).quests.find((q) => {
+        return q.key === "connector";
+      }),
+    ).toMatchObject({ claimedCount: 1, earnedCredits: 100, canEarnMore: true });
   });
 });

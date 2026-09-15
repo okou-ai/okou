@@ -1,3 +1,4 @@
+import { getStartedRoutes } from "./routes/get-started";
 import { introVideoRenderRoutes } from "./routes/intro-video-render";
 import { cronMaterializePiResourceIndexesRoutes } from "./routes/cron-materialize-pi-resource-indexes";
 import { authMeRoutes } from "./routes/auth-me";
@@ -209,6 +210,7 @@ import { webDownloadRoutes } from "./routes/web-download";
 import { webFileUrlRoutes } from "./routes/web-file-url";
 
 export const ROUTES: readonly RouteEntry[] = [
+  ...getStartedRoutes,
   ...healthRoutes,
   ...buildInfoRoutes,
   ...authMeRoutes,

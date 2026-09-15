@@ -1,3 +1,4 @@
+import { readGetStartedStatus } from "./helpers/get-started";
 /**
  * helper gap:
  * - Expired OAuth states, stale/hidden legacy connector rows, stale OAuth scope
@@ -257,6 +258,7 @@ const CONNECTOR_OAUTH_COOKIE_CLEARS = [
 
 describe("CONN-01 and CHAIN-CONNECTOR: connector discovery and manual grant lifecycle", () => {
   it("keeps a manual-grant connection and authorization when realtime publishing fails", async () => {
+    mockEnv("GET_STARTED_REWARDS_ROLLOUT", "all");
     const bdd = createBddApi(context);
     const actor = bdd.user();
     const agent = await authOrgApi.createAgent(actor, {
@@ -285,6 +287,11 @@ describe("CONN-01 and CHAIN-CONNECTOR: connector discovery and manual grant life
     await expect(
       authOrgApi.readEnabledConnectorSlugs(actor, agent.agentId),
     ).resolves.toContain("openai");
+    expect(
+      (await readGetStartedStatus(context, actor)).quests.find((q) => {
+        return q.key === "connector";
+      })?.claimedCount,
+    ).toBe(0);
   });
 
   it("authorizes a manual-grant connector for the current default agent when no agent is requested", async () => {
@@ -584,6 +591,7 @@ describe("CONN-02: OAuth start and callback", () => {
   });
 
   it("supports exact reconnect and sibling adds across OAuth callbacks", async () => {
+    mockEnv("GET_STARTED_REWARDS_ROLLOUT", "all");
     mockGitHubConnectorOAuth();
 
     const bdd = createBddApi(context);
@@ -671,6 +679,11 @@ describe("CONN-02: OAuth start and callback", () => {
     expect(accounts).toContainEqual(
       expect.objectContaining({ displayName: "Personal", isDefault: false }),
     );
+    expect(
+      (await readGetStartedStatus(context, actor)).quests.find((q) => {
+        return q.key === "connector";
+      })?.claimedCount,
+    ).toBe(1);
   });
 
   it("persists the callback-selected Datadog site through the public OAuth flow", async () => {

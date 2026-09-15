@@ -1,3 +1,4 @@
+import { awardCompletedGetStartedQuest } from "../services/get-started-rewards.service";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { command } from "ccstate";
@@ -11,6 +12,7 @@ import { request$ } from "../context/hono";
 import { queryOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
+import type { Tx } from "../../lib/db-types";
 import { now, nowDate } from "../../lib/time";
 import {
   exchangeSlackOAuthCode,
@@ -385,6 +387,37 @@ const notifyAfterConnect$ = command(
   },
 );
 
+const checkPlatformInstallPermission$ = command(
+  async (
+    { set },
+    state: OAuthState,
+    signal: AbortSignal,
+  ): Promise<Response | null> => {
+    if (!state.orgId || !state.userId) {
+      return null;
+    }
+    const member = await set(
+      getMemberRoleAndUpdateCache$,
+      state.orgId,
+      state.userId,
+      signal,
+    );
+    signal.throwIfAborted();
+
+    if (member.kind !== "member") {
+      throw new Error("You are not a member of this organization");
+    }
+
+    if (member.role !== "admin") {
+      return failedRedirect(
+        "Only org admins can install Slack for an organization.",
+      );
+    }
+
+    return null;
+  },
+);
+
 const handlePlatformInstall$ = command(
   async (
     { set },
@@ -402,24 +435,6 @@ const handlePlatformInstall$ = command(
         appUrl(
           `/settings/slack?w=${encodeURIComponent(args.installation.slackWorkspaceId)}&u=${encodeURIComponent(args.authedUserId)}`,
         ),
-      );
-    }
-
-    const member = await set(
-      getMemberRoleAndUpdateCache$,
-      args.state.orgId,
-      args.state.userId,
-      signal,
-    );
-    signal.throwIfAborted();
-
-    if (member.kind !== "member") {
-      throw new Error("You are not a member of this organization");
-    }
-
-    if (member.role !== "admin") {
-      return failedRedirect(
-        "Only org admins can install Slack for an organization.",
       );
     }
 
@@ -458,6 +473,58 @@ const handlePlatformInstall$ = command(
   },
 );
 
+async function persistSlackInstallation(
+  tx: Tx,
+  args: {
+    readonly fields: Pick<
+      SlackInstallation,
+      "encryptedBotToken" | "botUserId" | "slackWorkspaceName" | "botScopes"
+    >;
+    readonly workspaceId: string;
+    readonly state: OAuthState;
+    readonly isReinstall: boolean;
+  },
+  signal: AbortSignal,
+): Promise<SlackInstallation> {
+  const fields = {
+    ...args.fields,
+    publicBrand: OFFICIAL_SLACK_PUBLIC_BRAND,
+  } as const;
+  const isPlatformFlow = Boolean(args.state.orgId && args.state.userId);
+  const [installation] = args.isReinstall
+    ? await tx
+        .update(slackOrgInstallations)
+        .set({ ...fields, updatedAt: nowDate() })
+        .where(eq(slackOrgInstallations.slackWorkspaceId, args.workspaceId))
+        .returning()
+    : await tx
+        .insert(slackOrgInstallations)
+        .values({
+          ...fields,
+          slackWorkspaceId: args.workspaceId,
+          orgId: isPlatformFlow ? args.state.orgId : null,
+          installedByUserId: isPlatformFlow ? args.state.userId : null,
+        })
+        .returning();
+  signal.throwIfAborted();
+  if (!installation) {
+    throw new Error("Slack installation upsert did not return a row");
+  }
+  if (
+    args.state.orgId &&
+    args.state.userId &&
+    installation.orgId === args.state.orgId
+  ) {
+    await awardCompletedGetStartedQuest(tx, {
+      orgId: args.state.orgId,
+      userId: args.state.userId,
+      questKey: "slack",
+      sourceKey: installation.slackWorkspaceId,
+    });
+  }
+  return installation;
+}
+
 const handleInstallCallback$ = command(
   async (
     { set },
@@ -472,6 +539,16 @@ const handleInstallCallback$ = command(
     },
     signal: AbortSignal,
   ): Promise<Response> => {
+    const denied = await set(
+      checkPlatformInstallPermission$,
+      args.state,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (denied) {
+      return denied;
+    }
+
     const oauthResult = await tapError(
       exchangeSlackOAuthCode(
         args.credentials.clientId,
@@ -517,60 +594,38 @@ const handleInstallCallback$ = command(
     signal.throwIfAborted();
 
     const isReinstall = existing !== undefined;
-    if (existing) {
-      if (
-        existing.orgId &&
-        args.state.orgId &&
-        existing.orgId !== args.state.orgId
-      ) {
-        L.warn("Install rejected: workspace already bound to another org", {
-          workspaceId: oauthResult.teamId,
-          existingOrgId: existing.orgId,
-          requestedOrgId: args.state.orgId,
-        });
-        return settingsErrorRedirect(
-          "This Slack workspace is already installed by another organization. Please contact the workspace admin to uninstall first.",
-        );
-      }
-
-      await writeDb
-        .update(slackOrgInstallations)
-        .set({
-          encryptedBotToken,
-          botUserId: oauthResult.botUserId,
-          slackWorkspaceName: oauthResult.teamName,
-          botScopes,
-          publicBrand: OFFICIAL_SLACK_PUBLIC_BRAND,
-          updatedAt: nowDate(),
-        })
-        .where(eq(slackOrgInstallations.slackWorkspaceId, oauthResult.teamId));
-      signal.throwIfAborted();
-    } else {
-      const isPlatformFlow = Boolean(args.state.orgId && args.state.userId);
-      await writeDb.insert(slackOrgInstallations).values({
-        slackWorkspaceId: oauthResult.teamId,
-        slackWorkspaceName: oauthResult.teamName,
-        orgId: isPlatformFlow ? args.state.orgId : null,
-        encryptedBotToken,
-        botUserId: oauthResult.botUserId,
-        installedByUserId: isPlatformFlow ? args.state.userId : null,
-        botScopes,
-        publicBrand: OFFICIAL_SLACK_PUBLIC_BRAND,
+    if (
+      existing?.orgId &&
+      args.state.orgId &&
+      existing.orgId !== args.state.orgId
+    ) {
+      L.warn("Install rejected: workspace already bound to another org", {
+        workspaceId: oauthResult.teamId,
+        existingOrgId: existing.orgId,
+        requestedOrgId: args.state.orgId,
       });
-      signal.throwIfAborted();
+      return settingsErrorRedirect(
+        "This Slack workspace is already installed by another organization. Please contact the workspace admin to uninstall first.",
+      );
     }
-
-    const [installation] = await writeDb
-      .select()
-      .from(slackOrgInstallations)
-      .where(eq(slackOrgInstallations.slackWorkspaceId, oauthResult.teamId))
-      .limit(1);
+    const installation = await writeDb.transaction((tx) => {
+      return persistSlackInstallation(
+        tx,
+        {
+          fields: {
+            encryptedBotToken,
+            botUserId: oauthResult.botUserId,
+            slackWorkspaceName: oauthResult.teamName,
+            botScopes,
+          },
+          workspaceId: oauthResult.teamId,
+          state: args.state,
+          isReinstall,
+        },
+        signal,
+      );
+    });
     signal.throwIfAborted();
-
-    if (!installation) {
-      throw new Error("Slack installation upsert did not return a row");
-    }
-
     if (args.state.orgId && args.state.userId) {
       return await set(
         handlePlatformInstall$,

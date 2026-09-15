@@ -34,6 +34,58 @@ const SOCIALKIT_TIMEOUT_MS = 240_000;
 const MAX_SOCIALKIT_RESPONSE_BYTES = 4 * 1024 * 1024;
 const L = logger("ManagedSocialKit");
 
+/** Internal acquisition verification is paid by the platform, not the claimant. */
+export async function readGetStartedRewardPost(
+  url: string,
+  signal: AbortSignal,
+): Promise<
+  | { readonly kind: "post"; readonly id: string; readonly text: string }
+  | { readonly kind: "retry"; readonly reason: string }
+> {
+  const accessKey = env("OKOU_SOCIAL_SOCIALKIT_TOKEN");
+  if (!accessKey) {
+    return { kind: "retry", reason: "verification_unavailable" };
+  }
+  const tool = findManagedSocialKitTool("twitter_tweet");
+  if (!tool) {
+    throw new Error("Twitter post verification tool is missing");
+  }
+  const request: SocialKitRequest = { tool: "twitter_tweet", input: { url } };
+  const fetched = await settle(
+    fetchSocialKit(
+      accessKey,
+      request,
+      tool,
+      AbortSignal.any([signal, AbortSignal.timeout(20_000)]),
+    ),
+  );
+  signal.throwIfAborted();
+  if (!fetched.ok) {
+    if (
+      fetched.error instanceof Error &&
+      fetched.error.name === "TimeoutError"
+    ) {
+      return { kind: "retry", reason: "verification_timeout" };
+    }
+    throw fetched.error;
+  }
+  const response = fetched.value;
+  if (response.kind === "error") {
+    return { kind: "retry", reason: "verification_unavailable" };
+  }
+  const result = providerResult(response.body, accessKey, request, tool);
+  if (!result.ok || !isRecord(result.result)) {
+    return { kind: "retry", reason: "incomplete_response" };
+  }
+  const tweet = z
+    .object({ id: z.string().min(1), text: z.string().min(1) })
+    .safeParse(result.result.tweet);
+  if (!tweet.success || !tweet.data.text.trim()) {
+    return { kind: "retry", reason: "incomplete_response" };
+  }
+  return { kind: "post", id: tweet.data.id, text: tweet.data.text };
+}
+
 type ErrorStatus = 400 | 404 | 422 | 429 | 502 | 503;
 
 interface SocialKitErrorResponse {

@@ -335,3 +335,6 @@ OFFICIAL_RUNNER_SECRET=000000000000000000000000000000000000000000000000000000000
 # `pnpm dev`. A fixed local value is fine; production uses a Vercel-managed
 # secret and never touches this file.
 CRON_SECRET=local-dev-cron-secret
+
+# Server-owned reward rollout: off (default), staff, or all.
+# GET_STARTED_REWARDS_ROLLOUT=off

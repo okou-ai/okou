@@ -1,3 +1,4 @@
+import { readGetStartedStatus } from "./helpers/get-started";
 import { randomUUID } from "node:crypto";
 
 import { HttpResponse, http } from "msw";
@@ -14599,10 +14600,18 @@ describe("usage pack allocation management", () => {
   });
 
   it("activates one paid invitation exactly once after Clerk acceptance", async () => {
+    mockEnv("GET_STARTED_REWARDS_ROLLOUT", "all");
     const purchase = await beginInvitationPurchase();
     const invitationId = `inv_paid_${randomUUID()}`;
     await payInvitationPurchase(purchase, invitationId);
     await payInvitationPurchase(purchase, invitationId);
+    expect(
+      (await readGetStartedStatus(context, purchase.fixture)).quests.find(
+        (q) => {
+          return q.key === "invite";
+        },
+      ),
+    ).toMatchObject({ claimedCount: 0, pendingCount: 1 });
 
     const pending = await readUsagePackState(
       purchase.fixture.orgId,
@@ -14701,6 +14710,13 @@ describe("usage pack allocation management", () => {
         idempotencyKey: expect.stringContaining(purchase.purchaseId),
       }),
     );
+    expect(
+      (await readGetStartedStatus(context, purchase.fixture)).quests.find(
+        (q) => {
+          return q.key === "invite";
+        },
+      ),
+    ).toMatchObject({ claimedCount: 1, earnedCredits: 100 });
   });
 
   it("activates one paid invitation exactly once after Clerk creates the membership", async () => {

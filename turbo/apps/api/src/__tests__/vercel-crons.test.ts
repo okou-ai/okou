@@ -1,3 +1,4 @@
+import { cronGetStartedContract } from "@okouai/api-contracts/contracts/get-started";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -170,6 +171,7 @@ const expectedVercelCrons = [
     path: cronSteerRunTimeBudgetContract.steer.path,
     schedule: "* * * * *",
   },
+  { path: cronGetStartedContract.process.path, schedule: "* * * * *" },
 ] satisfies readonly VercelCron[];
 
 describe("vercel cron config", () => {

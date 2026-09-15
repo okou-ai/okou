@@ -64,6 +64,7 @@ import {
 import { apiWorkflowsHandlers, resetMockWorkflows } from "./api-workflows.ts";
 import { apiRunsHandlers } from "./api-runs.ts";
 import { apiFeatureSwitchesHandlers } from "./api-feature-switches.ts";
+import { apiGetStartedHandlers } from "./api-get-started.ts";
 import { apiRealtimeHandlers } from "./api-realtime.ts";
 import { resetAblySubscriptions } from "../ably.ts";
 import {
@@ -135,6 +136,7 @@ export const handlers = [
   ...apiAttributionHandlers,
   ...apiIntegrationsSlackConnectHandlers,
   ...apiFeatureSwitchesHandlers,
+  ...apiGetStartedHandlers,
   ...apiRealtimeHandlers,
   ...apiUserPermissionGrantsHandlers,
   ...apiQueuePositionHandlers,

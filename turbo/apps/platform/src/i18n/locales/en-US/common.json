@@ -1516,31 +1516,34 @@
     "agentPage": {
       "getStarted": {
         "checkin": {
-          "description": "Once a day, every day",
+          "description": "Open the app daily. Resets at 00:00 UTC.",
           "name": "Check in daily",
           "unit": "a day"
         },
         "connector": {
-          "description": "Gmail, Notion, and 100+ more",
+          "description": "Connect with OAuth. Earn once per connector.",
           "name": "Connect a connector",
           "unit": "per connector"
         },
         "inReview": "In review",
         "inReviewDescription": "Submitted, waiting on review",
         "invite": {
-          "description": "Everyone you add counts",
+          "description": "Earn when an invite is accepted, up to 15 members.",
           "name": "Invite your team",
           "unit": "per member"
         },
-        "personalBalanceNote": "Credits go to your personal balance.",
+        "pendingInvitations": "Pending invitations: {{amount}}",
+        "personalBalanceNote": "Rewards expire 7 days after they are granted. Slack rewards go to the organization; other rewards go to your personal balance.",
         "progressLabel": "Get started progress",
+        "rejectedDescription": "This post is not eligible. Submit another public post mentioning Okou.",
         "reward": "+{{amount}}",
+        "rewardedConnections": "Rewarded connectors: {{amount}}",
         "share": {
           "description": "Post it, then paste the link",
           "name": "Share {{assistantName}} on X"
         },
         "shareDialog": {
-          "description": "Post about something you built, then paste the link. You get one submission.",
+          "description": "Submit a public post for review. One successful reward per person.",
           "helper": "The post has to be public and mention {{assistantName}}.",
           "inputLabel": "Post link",
           "placeholder": "https://x.com/...",
@@ -1548,14 +1551,14 @@
           "title": "Share {{assistantName}} on X"
         },
         "slack": {
-          "description": "Where your team already works",
+          "description": "Earn 2,000 organization credits, once per organization and workspace.",
           "name": "Add {{assistantName}} to Slack"
         },
         "stepCount": "{{completed}}/{{total}}",
-        "subtitle": "Finish a step, keep the credits.",
+        "subtitle": "Try a task, earn credits.",
         "title": "Get started",
         "workflow": {
-          "description": "Turn a repeat task into an automation",
+          "description": "Successfully run a workflow you created.",
           "name": "Build a workflow"
         }
       },

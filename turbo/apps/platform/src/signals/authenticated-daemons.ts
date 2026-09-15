@@ -1,3 +1,4 @@
+import { runGetStartedRewards$ } from "./okou-page/get-started.ts";
 import { command } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { clerk$, clerkUser$, setupClerk$ } from "./auth.ts";
@@ -37,6 +38,7 @@ const runAppRealtimeDaemons$ = command(
       return;
     }
     await Promise.all([
+      set(runGetStartedRewards$, signal),
       set(subscribePermissionUpdate$, signal),
       set(setupBillingRealtime$, signal),
       set(setupUserPreferenceRealtime$, signal),

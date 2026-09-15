@@ -1,3 +1,4 @@
+import { awardCompletedGetStartedQuest } from "./get-started-rewards.service";
 import { command, computed, type Computed } from "ccstate";
 import {
   connectorReconnectReasonSchema,
@@ -2417,6 +2418,18 @@ async function commitConnectorTokenConnection(
     },
     signal,
   );
+  if (
+    ["auth-code", "external-code", "device-auth"].includes(
+      args.runtimeMethod.method.grant.kind,
+    )
+  ) {
+    await awardCompletedGetStartedQuest(args.db, {
+      orgId: args.orgId,
+      userId: args.userId,
+      questKey: "connector",
+      sourceKey: `builtin:${args.runtimeMethod.connectorSlug}`,
+    });
+  }
   await reprojectConnectedWorkflowAutomations(
     { ...args, connectorSlug: args.runtimeMethod.connectorSlug },
     signal,
