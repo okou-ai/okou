@@ -69,7 +69,7 @@ for _ in range(4):
         allocated = 0
         while allocated < limit:
             chunk = bytearray(min(4 * 1024 * 1024, limit - allocated))
-            chunk[::4096] = b"\x01" * (len(chunk) // 4096)
+            chunk[::4096] = b"\x01" * ((len(chunk) + 4095) // 4096)
             allocated += len(chunk)
             chunks.append(chunk)
             time.sleep(0.01)
