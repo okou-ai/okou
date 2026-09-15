@@ -742,6 +742,15 @@ positions and the action copy — for 150 declarations.
 `onboarding-diagram-tiles` holds the other 13 and is `blocked` on the decision
 recorded with it.
 
+The canvas batch drained 125 of its 150 declarations and 12 of its 13 tokens.
+`owf-diagram` stays, reduced to the 25 shared coordinate variables that the
+retained tile and dot rules read; its eleven geometry declarations and the four
+variables only the drained rules consumed are gone. The class remains on the
+element purely as the carrier for those variables, because a retained
+declaration cannot be rewritten to inline its value: the ratchet treats a
+changed `cssAtom` as both a removal and an addition, and additions are refused.
+The variables retire with their last readers in the tiles batch.
+
 Tokens that share a DOM element stay in the same batch. The legacy rules are
 unlayered, so a utility written on an element whose sibling class still exists
 would lose to that class: migrating `owf-diagram-avatar` while
@@ -756,5 +765,7 @@ two-icon source stack; `sort-gmail-draft-replies` has one connector, so it draws
 a source with no destination; `track-keyword-ranks-ahrefs` has none, so it draws
 neither and the beam takes its third path. The dialog's open state lives in
 `onboardingUi$` rather than the URL, so these cases still need a runner that
-opens the preview; `planned` and `blocked` batches require no evidence, and no
-runner ships with the family split.
+opens the preview. No runner ships here, so the canvas batch is `implemented`
+rather than `verified`, and the local equivalence evidence recorded with its
+pull request is bounded Chromium rendering of the two class lists, not a
+deployed-preview capture.

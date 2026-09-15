@@ -979,6 +979,54 @@ so between 767px and 768px the padding would newly apply. The element already
 gates its whole fixed-drawer geometry on `max-md`, so the two spellings disagree
 there today.
 
+### The onboarding workflow diagram canvas
+
+The diagram is a fixed 614x470 illustration scaled to 0.6, so its geometry was a
+block of coordinate variables plus absolutely positioned rules. Twelve of its
+selectors have been removed and their declarations now live as Tailwind
+utilities on the component: the wrapper, the dotted grid, the connector-line
+SVG, the travelling beam, the vertical control, the node base and its three
+positions, the icon stack host, the avatar host and the action copy.
+
+`owf-diagram` is deliberately still on the canvas element, reduced to the 25
+shared coordinate variables that the remaining tile and dot rules read. A class
+kept only as a variable carrier is not an exception for business styling: it
+contributes no geometry, and it retires with those readers. Inlining each
+variable into the rules that read them was not an option, because the ratchet
+compares whole declarations and would score a rewritten value as new
+first-party CSS.
+
+The beam registers `--animate-owf-beam-flow` as an `--animate-*` theme entry,
+the same form the thinking states use, and its keyframes stay in the stylesheet.
+Its retired `prefers-reduced-motion` override did two things — cancel the
+animation and dim the beam from 0.92 to 0.35 — so both belong to
+`motion-safe:`: the element carries `opacity-[0.35]` with
+`motion-safe:opacity-[0.92] motion-safe:animate-owf-beam-flow`. A
+`motion-reduce:` utility would have depended on emission order to win.
+
+The beam gradient, both of its drop shadows and the two literal brand strokes
+keep their exact values in arbitrary utilities. Tailwind's gradient utilities
+interpolate in oklab, and this gradient has five stops with literal `rgba()`
+colors. The grid's radial gradient likewise spells
+`hsl(var(--gray-500)/0.55)` rather than a ramp utility, because the retired rule
+named that alpha.
+
+Type maps onto the shared scale exactly: the node labels' 12px/16px is `text-xs`,
+the action title's 16px/24px is `text-base`, and its description's 14px/20px is
+`text-sm`, so no arbitrary font size survives. The description keeps
+`text-ellipsis` beside `line-clamp-2`, which the retired rule declared and the
+utility does not imply.
+
+One inherited cascade is preserved rather than corrected. The retained
+`.owf-diagram-icon-box img` rule sizes every image inside a tile at 34px and,
+being unlayered, outranks the `size-full` utility on the Okou avatar image, so
+that avatar renders at 34px inside its 64px host today. The canvas batch keeps
+that behaviour; changing it is a visual decision for the tiles batch.
+
+Page tests select the source node and source dot through
+`data-slot="onboarding-diagram-source-node"` and
+`data-slot="onboarding-diagram-source-dot"`, which carry no styles.
+
 ## Exception boundary
 
 Only two exception kinds exist:
