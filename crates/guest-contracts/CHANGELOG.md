@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.10](https://github.com/vm0-ai/vm0/compare/guest-contracts-v0.14.9...guest-contracts-v0.14.10) (2026-09-15)
+
+
+### Bug Fixes
+
+* **runner:** admit decoded skills beside staged instructions ([#34425](https://github.com/vm0-ai/vm0/issues/34425)) ([a889f9e](https://github.com/vm0-ai/vm0/commit/a889f9e9156c7c3f073e1cdedf313bb37bc1d7e3))
+
 ## [0.14.9](https://github.com/vm0-ai/vm0/compare/guest-contracts-v0.14.8...guest-contracts-v0.14.9) (2026-09-15)
 
 

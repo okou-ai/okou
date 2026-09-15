@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.1.69](https://github.com/vm0-ai/vm0/compare/guest-tool-exec-v0.1.68...guest-tool-exec-v0.1.69) (2026-09-15)
+
 ## [0.1.68](https://github.com/vm0-ai/vm0/compare/guest-tool-exec-v0.1.67...guest-tool-exec-v0.1.68) (2026-09-15)
 
 ## [0.1.67](https://github.com/vm0-ai/vm0/compare/guest-tool-exec-v0.1.66...guest-tool-exec-v0.1.67) (2026-09-15)
