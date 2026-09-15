@@ -183,7 +183,7 @@ jobs:
           fetch-depth: 2
 
       - name: Configure Git safe directory
-        run: git config --global --add safe.directory /__w/vm0/vm0
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Detect changes
         id: detect
