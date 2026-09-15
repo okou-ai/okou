@@ -1131,7 +1131,7 @@ the withdrawn feature remains withdrawn. See the
 
 ### Withdrawn marketing privacy storage contraction (2026-09-15)
 
-Migration 1138 drops the three withdrawn privacy tables and their trigger/function
+Migration 1139 drops the three withdrawn privacy tables and their trigger/function
 under #33747. The old `user.deleted` cleanup still unconditionally names
 `privacy_choices`, so preparation #34296 must be released and its old writers
 drained before contraction can merge/release. The prepared cleanup handles all

@@ -1,12 +1,11 @@
-import type { ReactNode } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
-import { Button, Input, Skeleton, cn } from "@okouai/ui";
+import { Button, Skeleton, cn } from "@okouai/ui";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import {
   ArrowRight,
   Check,
   LayoutTemplate,
-  Search,
   UserRound,
   UserRoundX,
   Volume2,
@@ -30,8 +29,12 @@ import {
 import { IntroVideoAvatarGroupCard } from "./intro-video-avatar-group-card.tsx";
 import { IntroVideoCatalogPagination } from "./intro-video-catalog-pagination.tsx";
 import {
+  VOICE_PREVIEW_CARD_CLASS,
+  VOICE_PREVIEW_CARD_PROPS,
+  type VoiceCardVoice,
   VoiceLibraryContent,
   VoiceLibraryToolbar,
+  VoicePreviewControl,
 } from "./avatar-template-picker.tsx";
 import {
   avatarSelectionLabel,
@@ -41,6 +44,35 @@ import {
 
 interface PickerProps {
   readonly signals: IntroVideoPickerSignals;
+}
+
+function PickerOptionBody({
+  leading,
+  title,
+  description,
+  selected,
+}: {
+  readonly leading: ReactNode;
+  readonly title: string;
+  readonly description: string;
+  readonly selected: boolean;
+}) {
+  return (
+    <>
+      {leading}
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-medium">{title}</span>
+        <span className="mt-1 block text-xs font-normal text-muted-foreground">
+          {description}
+        </span>
+      </span>
+      {selected && (
+        <span className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
+          <Check size={12} />
+        </span>
+      )}
+    </>
+  );
 }
 
 function PickerOption({
@@ -67,21 +99,67 @@ function PickerOption({
         selected && "border-primary",
       )}
     >
-      <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-gray-50 text-muted-foreground">
-        {icon}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium">{title}</span>
-        <span className="mt-1 block text-xs font-normal text-muted-foreground">
-          {description}
-        </span>
-      </span>
-      {selected && (
-        <span className="grid size-5 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
-          <Check size={12} />
-        </span>
-      )}
+      <PickerOptionBody
+        leading={
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-gray-50 text-muted-foreground">
+            {icon}
+          </span>
+        }
+        title={title}
+        description={description}
+        selected={selected}
+      />
     </Button>
+  );
+}
+
+/**
+ * The avatar's own voice, auditionable like a library voice. A preview button
+ * cannot nest inside the plain option's `Button`, so this row owns the same
+ * card contract the library cards use and keeps selection on the row itself.
+ */
+function AvatarVoicePickerOption({
+  voice,
+  title,
+  description,
+  selected,
+  onSelect,
+}: {
+  readonly voice: VoiceCardVoice;
+  readonly title: string;
+  readonly description: string;
+  readonly selected: boolean;
+  readonly onSelect: () => void;
+}) {
+  return (
+    <div
+      {...VOICE_PREVIEW_CARD_PROPS}
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      onClick={onSelect}
+      onKeyDown={(event: ReactKeyboardEvent<HTMLDivElement>) => {
+        if (event.target !== event.currentTarget) {
+          return;
+        }
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+      className={cn(
+        VOICE_PREVIEW_CARD_CLASS,
+        "flex w-full cursor-pointer items-center gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        selected && "border-primary",
+      )}
+    >
+      <PickerOptionBody
+        leading={<VoicePreviewControl voice={voice} />}
+        title={title}
+        description={description}
+        selected={selected}
+      />
+    </div>
   );
 }
 
@@ -122,32 +200,6 @@ function PickerSkeleton() {
       {Array.from({ length: 6 }, (_, index) => {
         return <Skeleton key={index} className="aspect-video rounded-xl" />;
       })}
-    </div>
-  );
-}
-
-function PickerSearch({
-  signals,
-  label,
-}: PickerProps & { readonly label: string }) {
-  const search = useGet(signals.search$);
-  const setSearch = useSet(signals.setSearch$);
-  return (
-    <div className="relative w-40 min-w-0 sm:w-48">
-      <Search
-        size={14}
-        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-      />
-      <Input
-        type="search"
-        aria-label={label}
-        placeholder={label}
-        value={search}
-        onChange={(event) => {
-          setSearch(event.target.value);
-        }}
-        className="h-8 pl-9 text-xs placeholder:text-xs"
-      />
     </div>
   );
 }
@@ -322,18 +374,16 @@ function StylePicker({ signals }: PickerProps) {
   const style = useGet(signals.style$);
   const setStyle = useSet(signals.setStyle$);
   const group = useGet(signals.group$);
-  const search = useGet(signals.search$).trim().toLocaleLowerCase();
   const items =
     catalog.state === "hasData"
       ? catalog.data.filter((item) => {
           return (
-            (group === "all" ||
-              (group === "other"
-                ? !INTRO_VIDEO_STYLE_TAGS.some((tag) => {
-                    return item.tags.includes(tag);
-                  })
-                : item.tags.includes(group))) &&
-            item.name.toLocaleLowerCase().includes(search)
+            group === "all" ||
+            (group === "other"
+              ? !INTRO_VIDEO_STYLE_TAGS.some((tag) => {
+                  return item.tags.includes(tag);
+                })
+              : item.tags.includes(group))
           );
         })
       : [];
@@ -346,29 +396,19 @@ function StylePicker({ signals }: PickerProps) {
     });
   return (
     <>
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6">
-        <div className="flex min-w-0 items-center gap-2">
-          <h3 className="text-xs font-medium">
-            {t(($) => {
-              return $.chat.introVideo.picker.chooseStyle;
-            })}
-          </h3>
-          {catalog.state === "hasData" && (
-            <span className="text-xs text-muted-foreground">
-              {items.length}
-            </span>
-          )}
-        </div>
-        <PickerSearch
-          signals={signals}
-          label={t(($) => {
-            return $.chat.introVideo.picker.searchStyles;
+      <div className="flex min-w-0 shrink-0 items-center gap-2 px-4 py-3 sm:px-6">
+        <h3 className="text-xs font-medium">
+          {t(($) => {
+            return $.chat.introVideo.picker.chooseStyle;
           })}
-        />
+        </h3>
+        {catalog.state === "hasData" && (
+          <span className="text-xs text-muted-foreground">{items.length}</span>
+        )}
       </div>
       <StyleTags signals={signals} hasOther={hasOther} />
       <div
-        key={`${group}:${search}`}
+        key={group}
         data-intro-video-catalog-scroll=""
         className="min-h-0 flex-1 overflow-y-auto px-4 pb-5 sm:px-6"
       >
@@ -405,7 +445,6 @@ function AvatarPicker({ signals }: PickerProps) {
   const { t } = useTranslation();
   const selection = useGet(signals.avatar$);
   const setSelection = useSet(signals.setAvatar$);
-  const search = useGet(signals.search$).trim().toLocaleLowerCase();
   const catalog = useLoadable(introVideoAvatarPickerSignals.catalogPage$);
   const lastCatalog = useLastResolved(
     introVideoAvatarPickerSignals.catalogPage$,
@@ -422,14 +461,10 @@ function AvatarPicker({ signals }: PickerProps) {
       : lastCatalog?.generation === generation
         ? lastCatalog
         : undefined;
-  const groups = visible
-    ? groupIntroVideoAvatars(visible.items).filter((group) => {
-        return group.name.toLocaleLowerCase().includes(search);
-      })
-    : [];
+  const groups = visible ? groupIntroVideoAvatars(visible.items) : [];
   return (
     <>
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6">
+      <div className="flex shrink-0 items-center gap-2 px-4 py-3 sm:px-6">
         <h3 className="sr-only">
           {t(($) => {
             return $.chat.introVideo.avatar.heading;
@@ -453,12 +488,6 @@ function AvatarPicker({ signals }: PickerProps) {
             return $.chat.introVideo.avatar.none;
           })}
         </Button>
-        <PickerSearch
-          signals={signals}
-          label={t(($) => {
-            return $.chat.introVideo.picker.searchAvatars;
-          })}
-        />
       </div>
       <div
         data-intro-video-catalog-scroll=""
@@ -510,6 +539,24 @@ function VoicePicker({ signals }: PickerProps) {
   const selection = useGet(signals.voice$);
   const setSelection = useSet(signals.setVoice$);
   const setTab = useSet(signals.setTab$);
+  const defaultVoiceTitle = t(($) => {
+    return avatar.kind === "none"
+      ? $.chat.introVideo.voice.auto
+      : $.chat.introVideo.picker.avatarVoice;
+  });
+  const defaultVoiceDescription = t(($) => {
+    return avatar.kind === "none"
+      ? $.chat.introVideo.picker.autoVoiceDescription
+      : $.chat.introVideo.voice.defaultDescription;
+  });
+  const defaultVoiceSample: VoiceCardVoice | undefined =
+    avatar.kind === "catalog" && avatar.avatar.defaultVoiceSampleUrl
+      ? {
+          id: avatar.avatar.defaultVoiceId,
+          name: avatar.avatar.defaultVoiceName ?? defaultVoiceTitle,
+          sampleUrl: avatar.avatar.defaultVoiceSampleUrl,
+        }
+      : undefined;
   return (
     <>
       <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-3 sm:px-6">
@@ -552,38 +599,46 @@ function VoicePicker({ signals }: PickerProps) {
             </Button>
           </div>
         </aside>
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-          <PickerOption
-            title={t(($) => {
-              return avatar.kind === "none"
-                ? $.chat.introVideo.voice.auto
-                : $.chat.introVideo.picker.avatarVoice;
-            })}
-            description={t(($) => {
-              return avatar.kind === "none"
-                ? $.chat.introVideo.picker.autoVoiceDescription
-                : $.chat.introVideo.voice.defaultDescription;
-            })}
-            icon={<Volume2 size={17} />}
-            selected={selection?.kind === "default"}
-            onSelect={() => {
-              setSelection({ kind: "default" });
-            }}
-          />
-          <PickerOption
-            title={t(($) => {
-              return $.chat.introVideo.voice.none;
-            })}
-            description={t(($) => {
-              return $.chat.introVideo.voice.noneDescription;
-            })}
-            icon={<VolumeX size={17} />}
-            selected={selection?.kind === "none"}
-            onSelect={() => {
-              setSelection({ kind: "none" });
-            }}
-          />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <VoiceLibraryContent
+            header={
+              <>
+                {defaultVoiceSample ? (
+                  <AvatarVoicePickerOption
+                    voice={defaultVoiceSample}
+                    title={defaultVoiceTitle}
+                    description={defaultVoiceDescription}
+                    selected={selection?.kind === "default"}
+                    onSelect={() => {
+                      setSelection({ kind: "default" });
+                    }}
+                  />
+                ) : (
+                  <PickerOption
+                    title={defaultVoiceTitle}
+                    description={defaultVoiceDescription}
+                    icon={<Volume2 size={17} />}
+                    selected={selection?.kind === "default"}
+                    onSelect={() => {
+                      setSelection({ kind: "default" });
+                    }}
+                  />
+                )}
+                <PickerOption
+                  title={t(($) => {
+                    return $.chat.introVideo.voice.none;
+                  })}
+                  description={t(($) => {
+                    return $.chat.introVideo.voice.noneDescription;
+                  })}
+                  icon={<VolumeX size={17} />}
+                  selected={selection?.kind === "none"}
+                  onSelect={() => {
+                    setSelection({ kind: "none" });
+                  }}
+                />
+              </>
+            }
             selectedVoiceId={
               selection?.kind === "catalog" ? selection.voice.id : undefined
             }

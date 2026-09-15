@@ -1,3 +1,7 @@
+import {
+  getMemberModelPolicyRoute,
+  isMemberModelPolicyConfigurable,
+} from "@okouai/api-contracts/contracts/member-model-policy";
 import type { ReactNode } from "react";
 import {
   useGet,
@@ -37,6 +41,7 @@ import {
 } from "@okouai/ui";
 import {
   getCanonicalModelDisplayName,
+  getModelProviderPresentationLabel,
   getProvidersForModel,
   isBuiltInModelProviderType,
   isCodexFastModeModel,
@@ -57,7 +62,7 @@ import {
   DEFAULT_MODEL_PLAN_CAPABILITIES,
   modelAllowedForPlan,
   modelPlanCapabilities$,
-  modelPolicyAllowedForPlan,
+  memberModelPolicyAllowedForPlan,
   type ModelPlanCapabilities,
 } from "../../../signals/okou-page/model-plan-capabilities";
 import {
@@ -195,19 +200,27 @@ const CODEX_FAST_SELECTED_PREFIX = "__codex_fast_selected__:";
 const MEASURABLE_HIDDEN_SELECT_ITEM_CLASS =
   "absolute left-0 top-0 h-8 w-px overflow-hidden opacity-0 data-[disabled]:opacity-0 pointer-events-none";
 
-function ByokBadge() {
+function ByokBadge({
+  subscriptionProvider,
+}: {
+  subscriptionProvider?: ModelProviderType;
+}) {
   const { t } = useTranslation();
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
         <TooltipTrigger asChild>
           <span className="shrink-0 cursor-help text-xs font-medium text-muted-foreground underline decoration-dotted decoration-muted-foreground/50 underline-offset-2 hover:text-foreground hover:decoration-muted-foreground">
-            BYOK
+            {subscriptionProvider
+              ? getModelProviderPresentationLabel(subscriptionProvider)
+              : "BYOK"}
           </span>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">
           {t(($) => {
-            return $.settings.models.picker.byokHelp;
+            return subscriptionProvider
+              ? $.settings.models.personal.description
+              : $.settings.models.picker.byokHelp;
           })}
         </TooltipContent>
       </Tooltip>
@@ -297,7 +310,7 @@ function selectionAllowedValue(
     return candidate.model === value.selectedModel;
   });
   const allowed = policy
-    ? modelPolicyAllowedForPlan(policy, modelCapabilities)
+    ? memberModelPolicyAllowedForPlan(policy, modelCapabilities)
     : modelAllowedForPlan(value.selectedModel, modelCapabilities);
   return allowed ? value : null;
 }
@@ -487,12 +500,14 @@ function ModelFirstPolicyRowContent({
   showSelectedIndicator?: boolean;
 }) {
   const iconType = getModelFirstIconType(policy.model);
-  const builtInPriceTier = isBuiltInModelProviderType(
-    policy.defaultProviderType,
-  )
+  const route = getMemberModelPolicyRoute(policy);
+  const builtInPriceTier = isBuiltInModelProviderType(route.providerType)
     ? getBuiltInModelPriceTier(policy.model)
     : undefined;
-  const restricted = !modelPolicyAllowedForPlan(policy, modelCapabilities);
+  const restricted = !memberModelPolicyAllowedForPlan(
+    policy,
+    modelCapabilities,
+  );
   return (
     <span className="flex w-full min-w-0 items-center gap-2">
       {iconType && <ProviderIcon type={iconType} size={16} />}
@@ -505,7 +520,13 @@ function ModelFirstPolicyRowContent({
           description={getBuiltInModelPriceTierLabel(builtInPriceTier)}
         />
       ) : (
-        <ByokBadge />
+        <ByokBadge
+          subscriptionProvider={
+            policy.memberEffective && route.credentialScope === "member"
+              ? route.providerType
+              : undefined
+          }
+        />
       )}
       {restricted && <ProBadge />}
       {showSelectedIndicator && (
@@ -531,7 +552,7 @@ function ModelFirstPolicyRow({
   const { t } = useTranslation();
   const fastAvailable =
     codexFastModeEnabled &&
-    policy.routeStatus === "valid" &&
+    isMemberModelPolicyConfigurable(policy) &&
     isCodexFastModeModel(policy.model);
   if (fastAvailable) {
     const modelLabel =
@@ -605,7 +626,7 @@ function ModelFirstPolicyRow({
     <SelectItem
       key={policy.id}
       value={policy.model}
-      disabled={policy.routeStatus !== "valid"}
+      disabled={!isMemberModelPolicyConfigurable(policy)}
     >
       <ModelFirstPolicyRowContent
         policy={policy}
@@ -1389,9 +1410,10 @@ function SubscribedExplicitModelFirstModelPickerContent({
 }) {
   const { t } = useTranslation();
   const policiesLoadable = useLastLoadable(orgModelPolicies$);
+  const policyResponse = useLastResolved(orgModelPolicies$);
   const modelCapabilities =
     useLastResolved(modelPlanCapabilities$) ?? DEFAULT_MODEL_PLAN_CAPABILITIES;
-  if (policiesLoadable.state !== "hasData") {
+  if (policyResponse === undefined) {
     if (menuSignals) {
       return (
         <div className="px-2 py-2 text-sm text-muted-foreground" role="status">
@@ -1425,7 +1447,7 @@ function SubscribedExplicitModelFirstModelPickerContent({
   }
   const state = resolveModelFirstModelPickerState({
     value,
-    policyResponse: policiesLoadable.data,
+    policyResponse,
     modelCapabilities: DEFAULT_MODEL_PLAN_CAPABILITIES,
     placeholder,
     codexFastModeEnabled,
@@ -1455,10 +1477,10 @@ function SubscribedExplicitModelFirstModelPickerContent({
                 modelCapabilities={modelCapabilities}
               />
             ),
-            disabled: policy.routeStatus !== "valid",
+            disabled: !isMemberModelPolicyConfigurable(policy),
             fastAvailable:
               codexFastModeEnabled &&
-              policy.routeStatus === "valid" &&
+              isMemberModelPolicyConfigurable(policy) &&
               isCodexFastModeModel(policy.model),
             fastImpact: <ModelFastImpact policy={policy} />,
           };

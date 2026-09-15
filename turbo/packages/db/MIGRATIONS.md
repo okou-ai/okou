@@ -33,7 +33,7 @@ expired transition validator must be deleted.
 ### Active transition validators
 
 - `scripts/test-marketing-privacy-retirement.ts` protects migration
-  `1138_retire_marketing_privacy_storage` (#33747): populated/empty storage,
+  `1139_retire_marketing_privacy_storage` (#33747): populated/empty storage,
   unrelated state preservation, restrictive external dependencies, shared
   cleanup/table locks, default lock timeout, retry and journal-failure rollback.
   Keep it until the production journal and completed prepared-cleanup rollout

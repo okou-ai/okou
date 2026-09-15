@@ -839,8 +839,12 @@ function ConnectorsDirectoryToolbar({
     // z-30 clears the cards: their access buttons carry `relative z-20` in the
     // same stacking context, and on a tie the later element in the document
     // wins, so a z-20 bar would have the card's button painted over it.
-    <div className="sticky top-0 z-30 -mb-6 -mt-3">
-      <div className="flex flex-col gap-3 bg-background pt-3">
+    // The padding the strip carries is the clearance the segment gets once the
+    // strip is latched, so it is the page's 24px rather than the 12px the
+    // controls keep between themselves -- a gap equal to the one inside the
+    // group reads as a crop against the viewport edge.
+    <div className="sticky top-0 z-30 -mb-6 -mt-6">
+      <div className="flex flex-col gap-3 bg-background pt-6">
         <div className="flex items-center">
           <ConnectorsScopeSegment
             scope={scope}
@@ -1668,7 +1672,7 @@ function ConnectorCatalogHeader(props: ConnectorCatalogHeaderProps) {
           return $.connectors.catalog.description;
         });
   return (
-    <header className="shrink-0 bg-transparent px-4 sm:px-6 pt-3 md:pt-10 pb-0 md:pb-3">
+    <header className="shrink-0 bg-transparent px-4 sm:px-6 pt-0 md:pt-10 pb-0">
       <div className="mx-auto w-full max-w-[900px]">
         <div className="min-w-0 hidden md:block">
           <h1 className="text-lg font-semibold tracking-tight text-foreground">
@@ -2108,7 +2112,7 @@ export function ConnectorsPage() {
 
       <main
         data-testid="connectors-scroll-content"
-        className="flex-1 px-4 sm:px-6 pt-3 pb-[max(4rem,var(--sab))]"
+        className="flex-1 px-4 sm:px-6 pt-6 pb-[max(4rem,var(--sab))]"
       >
         <div className="relative mx-auto w-full max-w-[900px]">
           {!shelfEnabled &&

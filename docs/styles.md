@@ -598,6 +598,25 @@ rather than depending on that.
 Visual evidence for this batch is not captured yet; it is recorded `implemented`
 rather than `verified` in `turbo/style-migration-manifest.json`.
 
+### Top-edge clearance
+
+A control that meets the top edge of the surface holding it clears that edge by
+24px, and never by less than the vertical gap between the items below it.
+`DialogContent` carries `p-6` and the shared `DetailPageHeader` carries `pt-6`,
+so a page that composes its own header owes the same value rather than a smaller
+one of its own. The edge is read against the group's own rhythm: a clearance
+equal to the gap inside the group makes the first control read as cropped by the
+edge instead of placed against it.
+
+A sticky strip is measured in the state it is latched in, not only at rest. The
+connectors toolbar hands the page's top padding back with a negative margin and
+restates it as its own padding, so that padding is the clearance the segment
+control keeps once the strip is pinned to the scrollport. Page padding and strip
+padding therefore come from one value; raising only the strip would move the
+controls at the moment it latches. A header that hides its content at a
+breakpoint stops contributing padding there, so below `md` the page's own top
+padding owns the whole clearance.
+
 ### Table header rules and the global scrollbar treatment
 
 The `table-wrapper` selector and its injected stylesheet have been removed. It

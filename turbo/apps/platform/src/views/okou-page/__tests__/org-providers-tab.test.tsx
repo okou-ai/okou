@@ -1,3 +1,10 @@
+import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
+import type {
+  OrgModelPoliciesResponse,
+  UpdateOrgModelPoliciesRequest,
+  ModelProviderResponse,
+  OrgModelPolicy,
+} from "@okouai/api-contracts/contracts/model-providers";
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
 import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/claude-code-device-auth";
 import {
@@ -5,10 +12,6 @@ import {
   billingStatusContract,
   type BillingStatusResponse,
 } from "@okouai/api-contracts/contracts/billing";
-import type {
-  ModelProviderResponse,
-  OrgModelPolicy,
-} from "@okouai/api-contracts/contracts/model-providers";
 import {
   modelProviderConnectionsByIdContract,
   modelProviderConnectionsMainContract,
@@ -1425,4 +1428,119 @@ test("Cancel an unfinished workspace Codex reconnection when Settings closes", a
   await expect(
     screen.findByTestId("codex-device-auth-code"),
   ).resolves.toHaveTextContent("WXYZ-1234");
+});
+
+function enabledPolicySnapshot(): OrgModelPoliciesResponse {
+  return {
+    revision: "administrative-snapshot-one",
+    writePreconditionRequired: true,
+    workspaceDefaultModel: "gpt-5.6-luna",
+    workspaceDefaultPolicyId: "00000000-0000-4000-a000-000000000211",
+    policies: [
+      builtInPolicy(
+        "00000000-0000-4000-a000-000000000211",
+        "gpt-5.6-luna",
+        "GPT 5.6 Luna",
+        true,
+      ),
+      {
+        ...builtInPolicy(
+          "00000000-0000-4000-a000-000000000212",
+          "gpt-6-astra",
+          "GPT 6 Astra",
+          false,
+        ),
+        defaultProviderType: "codex-oauth-token",
+        credentialScope: "member",
+      },
+    ],
+  };
+}
+
+test("Enabled priority keeps legacy subscription rows truthful and submits their original administrative revision", async () => {
+  mockAdminOrg();
+  let snapshot = enabledPolicySnapshot();
+  let submitted: UpdateOrgModelPoliciesRequest | undefined;
+  context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
+    return respond(200, snapshot);
+  });
+  context.mocks.api(modelPoliciesMainContract.update, ({ body, respond }) => {
+    submitted = body;
+    snapshot = {
+      ...snapshot,
+      revision: "administrative-snapshot-two",
+      workspaceDefaultModel: "gpt-6-astra",
+      workspaceDefaultPolicyId: "00000000-0000-4000-a000-000000000212",
+      policies: snapshot.policies.map((policy) => {
+        return { ...policy, isDefault: policy.model === "gpt-6-astra" };
+      }),
+    };
+    return respond(200, snapshot);
+  });
+  await openProvidersTab();
+  const legacy = await screen.findByTestId("org-model-policy-row-gpt-6-astra");
+  expect(within(legacy).getByText("ChatGPT (Codex)")).toBeInTheDocument();
+  click(within(screen.getByTestId("default-model-row")).getByRole("combobox"));
+  click(await screen.findByRole("option", { name: "GPT 6 Astra" }));
+  await expect(
+    screen.findByText("Model provider settings updated"),
+  ).resolves.toBeInTheDocument();
+  expect(submitted).toMatchObject({
+    revision: "administrative-snapshot-one",
+    policies: [
+      {
+        model: "gpt-5.6-luna",
+        isDefault: false,
+        credentialScope: "org",
+        defaultProviderType: "built-in",
+      },
+      {
+        model: "gpt-6-astra",
+        isDefault: true,
+        credentialScope: "member",
+        defaultProviderType: "codex-oauth-token",
+      },
+    ],
+  });
+  expect(within(legacy).getByText("ChatGPT (Codex)")).toBeInTheDocument();
+  click(buttonByText("Add model"));
+  await selectDialogModel("Claude Opus 4.8");
+  const dialog = screen.getByRole("dialog", { name: "Add model" });
+  expect(radioByName(/Built-in/u, dialog)).toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("radio", dialog).some((radio) => {
+      return radio.textContent?.includes("subscription");
+    }),
+  ).toBeFalsy();
+});
+
+test("A stale settings save displays refresh guidance and leaves the displayed legacy route intact", async () => {
+  mockAdminOrg();
+  const snapshot = enabledPolicySnapshot();
+  context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
+    return respond(200, snapshot);
+  });
+  context.mocks.api(modelPoliciesMainContract.update, ({ body, respond }) => {
+    expect(body.revision).toBe(snapshot.revision);
+    return respond(409, {
+      error: {
+        code: "CONFLICT",
+        message:
+          "Model settings changed. Refresh model settings and try again.",
+      },
+    });
+  });
+  await openProvidersTab();
+  const legacy = await screen.findByTestId("org-model-policy-row-gpt-6-astra");
+  click(within(screen.getByTestId("default-model-row")).getByRole("combobox"));
+  click(await screen.findByRole("option", { name: "GPT 6 Astra" }));
+  await expect(
+    screen.findByText(
+      "Model settings changed. Refresh model settings and try again.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(within(legacy).getByText("ChatGPT (Codex)")).toBeInTheDocument();
+  expect(
+    within(screen.getByTestId("default-model-row")).getByRole("combobox"),
+  ).toHaveTextContent("GPT 5.6 Luna");
 });

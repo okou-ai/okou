@@ -35,6 +35,7 @@ import { settle } from "../utils";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
+import { publishPersonalModelProvidersChangedSafely } from "../external/realtime";
 import { lockModelProviderState } from "./auth-state-lock.service";
 import {
   decryptStoredSecretValue,
@@ -827,7 +828,7 @@ export async function upsertPersonalModelProviderAccount(
       );
     }
   };
-  return await args.db
+  const result = await args.db
     .transaction(async (tx) => {
       await lockModelProviderState(tx, {
         orgId: args.orgId,
@@ -920,6 +921,10 @@ export async function upsertPersonalModelProviderAccount(
       };
     })
     .finally(invalidateExpiry);
+  if (!("status" in result)) {
+    await publishPersonalModelProvidersChangedSafely(args.userId);
+  }
+  return result;
 }
 
 async function persistSubscriptionSelectedModel(
@@ -1094,7 +1099,7 @@ export async function activatePersonalModelProviderAccount(
   ) {
     return notFound("Resource not found");
   }
-  return await args.db.transaction(async (tx) => {
+  const result = await args.db.transaction(async (tx) => {
     await lockModelProviderState(tx, {
       orgId: args.orgId,
       userId: args.userId,
@@ -1138,6 +1143,10 @@ export async function activatePersonalModelProviderAccount(
     await mirrorAccountToLegacy(tx, { account, provider: current.provider });
     return accountResponse({ account, provider: current.provider });
   });
+  if (!("status" in result)) {
+    await publishPersonalModelProvidersChangedSafely(args.userId);
+  }
+  return result;
 }
 
 async function deleteLastAccount(
@@ -1219,7 +1228,7 @@ export async function deletePersonalModelProviderAccount(
           signal,
         )
       : null;
-  return await args.db.transaction(async (tx) => {
+  const result = await args.db.transaction(async (tx) => {
     await lockModelProviderState(tx, {
       orgId: args.orgId,
       userId: args.userId,
@@ -1296,6 +1305,11 @@ export async function deletePersonalModelProviderAccount(
     }
     return undefined;
   });
+  // Disconnect-all is nested in the provider transaction; its owner publishes.
+  if (result === undefined && !args.disconnectAll) {
+    await publishPersonalModelProvidersChangedSafely(args.userId);
+  }
+  return result;
 }
 
 export async function activePersonalModelProviderAccount(args: {
@@ -1421,6 +1435,19 @@ export async function personalModelProviderAccountById(args: {
     )
     .limit(1);
   return account ?? null;
+}
+
+/** Exact management reads never enumerate, seed, or substitute a sibling. */
+export async function personalModelProviderAccountResponseById(args: {
+  readonly db: Db;
+  readonly id: string;
+  readonly orgId: string;
+  readonly userId: string;
+}): Promise<ModelProviderResponse | null> {
+  const row = await accountWithProvider(args.db, args);
+  return row && isPersonalSubscriptionProviderType(row.account.type)
+    ? accountResponse(row)
+    : null;
 }
 
 /** Settings never receive retired credentials. Runtime retention requires the

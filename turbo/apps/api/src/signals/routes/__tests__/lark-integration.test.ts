@@ -378,7 +378,7 @@ describe("Lark integration", () => {
     const sent = createDeferredPromise<unknown>(context.signal);
     server.use(
       http.post(
-        "https://open.larksuite.com/open-apis/im/v1/messages",
+        "https://open.larksuite.com/open-apis/im/v1/messages/om_incoming/reply",
         async ({ request }) => {
           sent.resolve(await request.json());
           return HttpResponse.json({
@@ -422,7 +422,7 @@ describe("Lark integration", () => {
     expect(response.status).toBe(200);
     const card = await sent.promise;
     expect(card).toMatchObject({
-      receive_id: "oc_lark",
+      reply_in_thread: true,
       msg_type: "interactive",
     });
     expect(JSON.stringify(card)).toContain("in Lark");

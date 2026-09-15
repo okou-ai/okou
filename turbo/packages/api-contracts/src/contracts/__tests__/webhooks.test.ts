@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT } from "../runners";
+import {
+  RESUME_SESSION_HISTORY_MAX_BYTES,
+  SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
+} from "../runners";
 import {
   knownRunFailureReasonSchema,
   runFailureReasonTokenSchema,
@@ -23,6 +26,67 @@ import {
 
 const storageId = "00000000-0000-4000-8000-000000000000";
 const manifestHash = "a".repeat(64);
+
+describe("workspace history restore telemetry", () => {
+  const operation = {
+    ts: "2026-09-15T00:00:00Z",
+    action_type: "session_history_workspace_cache_guest_restore",
+    duration_ms: 1234,
+    success: true,
+  };
+
+  it("preserves local source and completed payload measurements", () => {
+    const measured = {
+      ...operation,
+      session_history_framework: "codex",
+      session_history_raw_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
+      session_history_source_bytes: 1024,
+      session_history_guest_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
+      session_history_source_representation: "codex_zstd",
+      session_history_restore_representation: "raw",
+      session_history_restore_reason: "codex_pruning_guard",
+    };
+    const parsed = webhookTelemetryContract.send.body.parse({
+      runId: "run",
+      sandboxOperations: [{ ...measured, session_history_ref_hash: "private" }],
+    });
+    expect(parsed.sandboxOperations).toStrictEqual([measured]);
+  });
+
+  it("preserves zero measurements and accepts legacy operations without metadata", () => {
+    const zero = {
+      ...operation,
+      session_history_raw_bytes: 0,
+      session_history_source_bytes: 0,
+      session_history_guest_bytes: 0,
+    };
+    expect(
+      webhookTelemetryContract.send.body.parse({
+        runId: "run",
+        sandboxOperations: [operation, zero],
+      }).sandboxOperations,
+    ).toStrictEqual([operation, zero]);
+  });
+
+  it("rejects out-of-contract byte values and representation categories", () => {
+    for (const invalid of [
+      { session_history_raw_bytes: -1 },
+      { session_history_source_bytes: 1.5 },
+      { session_history_guest_bytes: RESUME_SESSION_HISTORY_MAX_BYTES + 1 },
+      { session_history_framework: "unknown-framework" },
+      { session_history_source_representation: "gzip" },
+      { session_history_restore_representation: "json" },
+      { session_history_restore_reason: "arbitrary" },
+    ]) {
+      expect(
+        webhookTelemetryContract.send.body.safeParse({
+          runId: "run",
+          sandboxOperations: [{ ...operation, ...invalid }],
+        }).success,
+      ).toBe(false);
+    }
+  });
+});
 
 describe("Pi memory citation event transport", () => {
   const citation = {

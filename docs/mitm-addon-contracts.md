@@ -84,6 +84,17 @@ nested fields map. Runner-owned Axiom metadata (`_time`, `context`, `service`,
 `runner_hostname`, and `runner_version`) remains authoritative. Callers remain
 responsible for redaction and bounded values.
 
+Process events use the Linux Runner's stderr pipe only. Each emission reopens
+`/proc/self/fd/2` with independent nonblocking flags, checks the opened pipe's
+atomic-write limit, attempts one complete record, and closes the descriptor.
+The original stderr flags remain unchanged for mitmproxy-native output. A full
+pipe drops the entire event; later events can be delivered once the reader
+resumes. There is no application queue, retry, overflow log, or shutdown drain.
+Each concurrent emission owns at most one transient descriptor and one bounded
+record (4096 bytes). Non-pipe stderr and transport setup/write errors also drop
+the event. Input validation and serialization errors still propagate. This
+best-effort policy does not change billing delivery or run-local JSONL logging.
+
 ### Capture header inspection
 
 Opt-in network capture serializes a header prefix bounded to 512 raw fields

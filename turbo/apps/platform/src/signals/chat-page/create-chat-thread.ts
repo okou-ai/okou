@@ -2645,6 +2645,7 @@ function createChatThreadMessagePipeline({
     threadId,
     chatEvents,
     visibleRenderedChatGroups$: renderWindow.visibleRenderedChatGroups$,
+    runDetails$: resources.publicSignals.runDetails$,
   });
   const readyScrollAfterRenderRequest$ = createReadyScrollAfterRenderRequest(
     scroll.pendingScrollAfterRenderRequest$,

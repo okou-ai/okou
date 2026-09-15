@@ -1,5 +1,26 @@
 # Changelog
 
+## [9.333.0](https://github.com/vm0-ai/vm0/compare/cli-v9.332.1...cli-v9.333.0) (2026-09-15)
+
+
+### Features
+
+* **cli:** export social transcripts as text and subtitles ([#34298](https://github.com/vm0-ai/vm0/issues/34298)) ([87904ed](https://github.com/vm0-ai/vm0/commit/87904ed468031d03ca6694a950b736171402ca92))
+
+
+### Refactoring
+
+* retire the pi langfuse credential bootstrap ([#34326](https://github.com/vm0-ai/vm0/issues/34326)) ([7d93840](https://github.com/vm0-ai/vm0/commit/7d93840dba64065a157662079527495623adb676))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.443.3
+    * @okouai/core bumped to 8.666.4
+    * @okouai/pi-agent-runtime bumped to 1.30.8
+
 ## [9.332.1](https://github.com/vm0-ai/vm0/compare/cli-v9.332.0...cli-v9.332.1) (2026-09-15)
 
 
