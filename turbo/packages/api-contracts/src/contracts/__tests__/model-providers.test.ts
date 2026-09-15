@@ -700,6 +700,8 @@ describe("model-first canonical catalog", () => {
         expect.objectContaining({
           slug: upstreamModel,
           apply_patch_tool_type: null,
+          input_modalities:
+            model === "deepseek-v4.1-flash" ? ["text", "image"] : ["text"],
         }),
       ]);
     },
@@ -889,6 +891,26 @@ describe("normalizeBuiltInModelId", () => {
 
 describe("model image input support", () => {
   it.each([
+    ["deepseek-flash", "deepseek", "supported"],
+    ["deepseek-v4-flash", "deepseek", "supported"],
+    ["deepseek-v4-pro", "deepseek", "unsupported"],
+    ["deepseek-flash", undefined, "unknown"],
+    ["deepseek-v4-flash", undefined, "unsupported"],
+    ["deepseek-flash", "openrouter-codex", "unknown"],
+    ["deepseek-v4-flash", "openrouter-codex", "unsupported"],
+    ["deepseek-v4-flash", "custom-openai-responses", "unsupported"],
+    ["deepseek/deepseek-v4-flash", "deepseek", "unknown"],
+  ] as const)(
+    "resolves %s image support on %s as %s",
+    (model, providerType, support) => {
+      expect(getModelImageInputSupport(model, providerType)).toBe(support);
+      expect(modelSupportsImageInput(model, providerType)).toBe(
+        support === "supported",
+      );
+    },
+  );
+
+  it.each([
     "gpt-6-astra",
     "openai/gpt-6-astra",
     "deepseek-v4.1-flash",
@@ -931,7 +953,72 @@ describe("deepseek Responses provider", () => {
       "deepseek-v4-flash",
       "deepseek-v4-pro",
     ]);
-    expect(getDefaultModel("deepseek")).toBe("deepseek-v4-flash");
+    expect(getDefaultModel("deepseek")).toBe("deepseek-flash");
+  });
+
+  it("accepts the native default as a provider model with a matching runtime catalog", () => {
+    const defaultModel = MODEL_PROVIDER_TYPES.deepseek.defaultModel;
+    expect(
+      upsertModelProviderRequestSchema.safeParse({
+        type: "deepseek",
+        secret: "test-deepseek-key",
+        selectedModel: defaultModel,
+      }).success,
+    ).toBe(true);
+    expect(getProviderRuntimeModel("deepseek", defaultModel)).toBe(
+      "deepseek-flash",
+    );
+    expect(getModelProviderCodexRuntimeConfig("deepseek")).toMatchObject({
+      modelCatalog: {
+        models: expect.arrayContaining([
+          expect.objectContaining({
+            slug: defaultModel,
+            input_modalities: ["text", "image"],
+          }),
+        ]),
+      },
+    });
+    expect(normalizeRunModelId(defaultModel)).toBe("deepseek-flash");
+    expect(normalizeRunModelId("deepseek-v4-flash")).toBe("deepseek-v4-flash");
+    expect(normalizeRunModelId("deepseek-v4.1-flash")).toBe(
+      "deepseek-v4.1-flash",
+    );
+  });
+
+  it.each([
+    ["deepseek", "deepseek-v4-flash", ["text", "image"]],
+    ["custom-openai-responses", "custom-flash", ["text"]],
+  ] as const)(
+    "projects legacy Flash capabilities for the %s route",
+    (providerType, runtimeModel, modalities) => {
+      expect(
+        getModelProviderCodexCatalogForModel(
+          "deepseek-v4-flash",
+          runtimeModel,
+          providerType,
+        )?.models,
+      ).toEqual([
+        expect.objectContaining({
+          slug: runtimeModel,
+          input_modalities: modalities,
+        }),
+      ]);
+    },
+  );
+
+  it("retains the legacy Flash route and billing identity", () => {
+    expect(getBuiltInModelRouteCandidates("deepseek-v4-flash")).toEqual([
+      expect.objectContaining({
+        selectedModel: "deepseek-v4-flash",
+        providerType: "deepseek",
+        upstreamModel: "deepseek-v4-flash",
+      }),
+      expect.objectContaining({
+        selectedModel: "deepseek-v4-flash",
+        providerType: "openrouter-codex",
+        upstreamModel: "deepseek/deepseek-v4-flash",
+      }),
+    ]);
   });
 
   it("configures the official DeepSeek Responses model catalog", () => {
@@ -954,6 +1041,8 @@ describe("deepseek Responses provider", () => {
           }),
           expect.objectContaining({
             slug: "deepseek-v4-flash",
+            display_name: "DeepSeek-V4.1-Flash",
+            input_modalities: ["text", "image"],
             default_reasoning_level: "high",
             context_window: 1_048_576,
             minimal_client_version: "0.144.0",
@@ -969,6 +1058,7 @@ describe("deepseek Responses provider", () => {
           expect.objectContaining({
             slug: "deepseek-v4-pro",
             display_name: "DeepSeek-V4-Pro",
+            input_modalities: ["text"],
             default_reasoning_level: "high",
             context_window: 1_048_576,
             model_messages: expect.objectContaining({

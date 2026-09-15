@@ -88,7 +88,7 @@ if ! git merge-base --is-ancestor \
   fail "Target commit predates the org_members_metadata.morning_brief_default_eligible_at drop: ${ORG_MEMBER_MORNING_BRIEF_ELIGIBILITY_DROP_COMMIT}."
 fi
 
-# Migration 1131 removes the remaining A-D business triggers. API rollback does
+# Migration 1132 removes the remaining A-D business triggers. API rollback does
 # not restore schema, so only already-released explicit writers are supported.
 if ! git merge-base --is-ancestor "$PREPARED_DOMAIN_TRIGGER_RELEASE" "$TARGET_COMMIT"; then
   fail "Rollback target lacks prepared billing, OAuth and hosting writers; first supported release is ${PREPARED_DOMAIN_TRIGGER_RELEASE}."

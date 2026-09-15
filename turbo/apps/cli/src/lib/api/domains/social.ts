@@ -55,6 +55,16 @@ export class SocialApiRequestError extends ApiRequestError {
   }
 }
 
+export class SocialTransportError extends Error {
+  constructor(cause: unknown) {
+    super(
+      "Social request did not receive a complete response. Check the connection before retrying explicitly; provider effects and charges may be unknown.",
+      { cause },
+    );
+    this.name = "SocialTransportError";
+  }
+}
+
 export async function getSocialStatus(
   platform?: SocialPlatform,
 ): Promise<SocialStatusResponse> {
@@ -158,7 +168,23 @@ export async function callSocialKit(
   body: SocialKitRequest,
 ): Promise<SocialKitResponse> {
   const config = await getClientConfig();
-  const client = initClient(socialContract, config);
+  const client = initClient(socialContract, {
+    ...config,
+    api: async (args) => {
+      try {
+        return await config.api(args);
+      } catch (error) {
+        if (
+          error instanceof TypeError ||
+          (error instanceof Error &&
+            (error.name === "TimeoutError" || error.name === "AbortError"))
+        ) {
+          throw new SocialTransportError(error);
+        }
+        throw error;
+      }
+    },
+  });
   const result = await client.request({
     headers:
       body.tool === "instagram_stats"

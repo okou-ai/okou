@@ -19,6 +19,7 @@ function configureDebugProject(): void {
   mockOptionalEnv("LANGFUSE_PUBLIC_KEY", "pk-lf-debug");
   mockOptionalEnv("LANGFUSE_SECRET_KEY", "sk-lf-debug");
   mockOptionalEnv("LANGFUSE_BASE_URL", "https://langfuse.example/");
+  mockOptionalEnv("LANGFUSE_PROJECT_ID", "  project-debug  ");
 }
 
 afterEach(() => {
@@ -45,6 +46,7 @@ describe("Pi Langfuse debug configuration", () => {
         publicKey: "pk-lf-debug",
         secretKey: "sk-lf-debug",
         baseUrl: "https://langfuse.example",
+        projectId: "project-debug",
       });
     }
 
@@ -67,6 +69,7 @@ describe("Pi Langfuse debug configuration", () => {
     mockOptionalEnv("LANGFUSE_PUBLIC_KEY", "pk-lf-debug");
     mockOptionalEnv("LANGFUSE_SECRET_KEY", undefined);
     mockOptionalEnv("LANGFUSE_BASE_URL", undefined);
+    mockOptionalEnv("LANGFUSE_PROJECT_ID", undefined);
     expect(
       resolvePiLangfuseDebugConfig({
         userId: USER_ID,
@@ -86,6 +89,7 @@ describe("Pi Langfuse debug configuration", () => {
       publicKey: "pk-lf-debug",
       secretKey: "sk-lf-debug",
       baseUrl: "https://us.cloud.langfuse.com",
+      projectId: "cmu0bvhcu012gad0drbw8ddts",
     });
 
     mockOptionalEnv("LANGFUSE_BASE_URL", "file:///tmp/not-allowed");

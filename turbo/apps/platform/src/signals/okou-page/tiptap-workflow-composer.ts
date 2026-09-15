@@ -249,6 +249,7 @@ export type ComposerTemplateAttachmentType =
   | "illustration"
   | "video"
   | "avatar"
+  | "intro-video"
   | "workflow"
   | "website";
 
@@ -797,6 +798,7 @@ function templateAttachmentNodeAttributes(
       type !== "illustration" &&
       type !== "video" &&
       type !== "avatar" &&
+      type !== "intro-video" &&
       type !== "workflow" &&
       type !== "website") ||
     typeof title !== "string" ||

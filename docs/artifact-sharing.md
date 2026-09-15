@@ -13,8 +13,9 @@ The owner opens an artifact's existing Share menu, which contains only
 the displayed version and copies its link. If that version already has the
 chosen audience, the action only copies the existing link without updating
 permissions or republishing. Opening the menu is read-only. Upload, generation,
-hosting and thread sharing create no artifact grants. Recipients cannot edit
-or reshare.
+hosting create no artifact grants. Thread sharing creates independent resource
+snapshots under its own grant; see [shared-thread snapshots](shared-thread-artifact-snapshots.md).
+Recipients cannot edit or reshare the original artifact.
 
 - Organization: `https://app.okou.ai/share/artifacts/<shareId>` (the configured
   `APP_URL` in other environments). The app uses existing login with a same-origin
@@ -151,11 +152,12 @@ messages copies their attached files into immutable public objects under
 `artifacts/shared-threads/<shareId>/`. The snapshot stores their filenames,
 content types, sizes and public URLs; annotated images publish their rendered
 annotation copy. Every source is resolved for the sharing owner and original
-organization before publication. Copy or registration failures reject creation;
-there is no partial snapshot, retry or failed-copy reclamation. The source
-artifact's access policy is unchanged. Other artifact references in shared-thread
-content retain their independent authorization. This change adds no organization-recipient
-Drive export or editing authority.
+organization before publication. Private artifact references in message content
+use the parent conversation grant described in
+[shared-thread snapshots](shared-thread-artifact-snapshots.md), without changing
+the source artifact's policy. Copy or registration failures reject creation;
+there is no partial snapshot, retry or failed-copy reclamation. This change adds
+no organization-recipient Drive export or editing authority.
 
 Shared-thread attachment metadata is stored in `shared_threads.message_attachments`,
 keyed by the snapshot's message index. The existing `messages` JSON keeps its

@@ -33,7 +33,7 @@ expired transition validator must be deleted.
 ### Active transition validators
 
 - `scripts/test-prepared-domain-trigger-retirement.ts` protects migration
-  `1131_retire_prepared_domain_triggers` (#33747): all eight A–D drops in one
+  `1132_retire_prepared_domain_triggers` (#33747): all eight A–D drops in one
   transaction, exact original catalogs, invariant rejection, unchanged data,
   preserved ordinary constraints/privacy, grandfathered counts, default lock
   timeout, retry and journal-failure rollback. The four private API write suites
@@ -54,7 +54,7 @@ expired transition validator must be deleted.
 - `scripts/test-member-invitation-retirement.ts` protects migration
   `1098_retire_member_invitation_capability` (#32573). It checks removal of
   manual invitation overrides, legacy INSERT/UPSERT/RETURNING statements, and
-  current status-only writes observed by old API readers. Migration 1131 removes
+  current status-only writes observed by old API readers. Migration 1132 removes
   the derived-status trigger. The physical columns
   remain for #32575's separate contraction; keep this validator until that
   column transition passes its release gates. The current

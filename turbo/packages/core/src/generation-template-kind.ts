@@ -1,15 +1,15 @@
 import type { GenerationTemplateType } from "@okouai/api-contracts/contracts/chat-threads";
 
 import { parseAvatarTemplateStylePresetId } from "./avatar-template";
-import { INTRO_VIDEO_TEMPLATE_ID } from "./intro-video-template";
 
 /**
  * What one template selection actually produces.
  *
- * Three products share the wire contract's `type: "video"`: creative video,
- * talking avatar, and Intro Video. Only `selection.stylePresetId` tells them
- * apart, so every surface that names or buckets a selection was re-deriving
- * the same split from the raw id. This owns that derivation once.
+ * Creative video and talking avatar still share the wire contract's
+ * `type: "video"` and are told apart only by `selection.stylePresetId`, so this
+ * owns that derivation once rather than leaving each surface to re-read the raw
+ * id. Every other product, Intro Video included, is its own wire type and
+ * passes straight through.
  *
  * A kind is neither a display string nor a picker tab id. Callers translate it
  * into their own vocabulary: the composer's picker calls presentations
@@ -43,10 +43,10 @@ export type GenerationTemplateKindSource =
 /**
  * Classify one template selection.
  *
- * Intro Video is checked before avatar because both are style-preset ids inside
- * the same envelope, and it is checked independently of
- * `selection.explainerOptions`: a selection whose settings are missing is still
- * an Intro Video selection, and reporting it as creative video would hide it.
+ * A selection stored before Intro Video became its own wire type still carries
+ * `type: "video"`, so it classifies as creative video. That is the accepted
+ * cost of not backfilling staff-only rows; see the Intro Video schema in
+ * `chat-threads.ts`.
  */
 export function generationTemplateKind(
   source: GenerationTemplateKindSource,
@@ -54,11 +54,8 @@ export function generationTemplateKind(
   if (source.type !== "video") {
     return source.type;
   }
-  const { stylePresetId } = source.selection;
-  if (stylePresetId === INTRO_VIDEO_TEMPLATE_ID) {
-    return "intro-video";
-  }
-  return parseAvatarTemplateStylePresetId(stylePresetId) === undefined
+  return parseAvatarTemplateStylePresetId(source.selection.stylePresetId) ===
+    undefined
     ? "video"
     : "avatar";
 }

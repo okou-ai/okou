@@ -821,15 +821,15 @@ in place. Removing them in this same release would break outgoing API SQL
 between migration and promotion. No schema migration or rollback-floor change
 is part of this preparation release.
 
-Migration 1131 below subsequently handles the three entitlement triggers and
+Migration 1132 below subsequently handles the three entitlement triggers and
 enforces the canonical-only rollback artifact. To finish the remaining #32575
 column/client cleanup:
 
-1. Preserve the 1131 serving/rollback evidence below and confirm its production
+1. Preserve the 1132 serving/rollback evidence below and confirm its production
    journal completion before treating its trigger contraction as shipped.
 2. Generate the column-drop migration with Drizzle. Audit remaining persisted
    SQL first, then drop both legacy columns. The entitlement triggers/functions
-   are removed by #33747 migration 1131; preserve its journal and transition
+   are removed by #33747 migration 1132; preserve its journal and transition
    evidence. Unrelated triggers are outside #32575.
 3. Remove the App migration query opt-in and contract. Retire the invitation
    transition validator only after its contraction has shipped and permanent
@@ -838,7 +838,7 @@ column/client cleanup:
 
 ### Prepared billing, OAuth and hosting trigger contraction (2026-09-15)
 
-Migration `1131_retire_prepared_domain_triggers` removes A–D's eight triggers
+Migration `1132_retire_prepared_domain_triggers` removes A–D's eight triggers
 and functions from #33747. The supported rollback floor is API 1.600.1,
 `api-v1.600.1`, at `eb2f211a9af41450d0d5dad10c0c8ad12fac0a24`; it contains
 all four prepared writers, their webhook/cron paths and the canonical-only
@@ -861,7 +861,7 @@ release gates; no production deletion is asserted by this source change.
 The invitation status-mirror trigger is included; its obsolete physical columns
 and App query opt-in remain #32575 work. E's privacy trigger is excluded, and
 the withdrawn feature remains withdrawn. See the
-[writer inventory, repair rules and migration receipts](database-trigger-retirement.md#a-d-contraction-migration-1131).
+[writer inventory, repair rules and migration receipts](database-trigger-retirement.md#a-d-contraction-migration-1132).
 
 ### Workflow automation connector-account projections
 

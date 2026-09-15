@@ -16,14 +16,14 @@ import postgres from "postgres";
 import { applyPendingMigrations } from "./migration-runner";
 
 // DDL, catalog corruption and journal failures are infrastructure boundaries.
-// Each case owns a database at the actual pre-1131 migration frontier.
+// Each case owns a database at the actual pre-1132 migration frontier.
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
 const migrations = fileURLToPath(new URL("../src/migrations", import.meta.url));
 const originalDirectory = process.cwd();
 const fixture = await mkdtemp(join(tmpdir(), "prepared-domain-retirement-"));
 const fixtureMigrations = join(fixture, "src/migrations");
-const tag = "1131_retire_prepared_domain_triggers";
+const tag = "1132_retire_prepared_domain_triggers";
 const journal = JSON.parse(
   await readFile(join(migrations, "meta/_journal.json"), "utf8"),
 ) as {
