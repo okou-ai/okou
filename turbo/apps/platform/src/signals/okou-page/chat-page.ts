@@ -8,7 +8,7 @@ import {
   type VideoModel,
 } from "@okouai/core/video-model-catalog";
 import {
-  refactorModelSelectEnabled$,
+  chatEffortEnabled$,
   codexFastModeEnabled$,
 } from "../external/feature-switch.ts";
 import { orgModelPolicies$ } from "../external/org-model-policies.ts";
@@ -88,7 +88,7 @@ export const chatPageModelSelection$ = computed(
       }
       const selection: ModelProviderSelection = {
         selectedModel: user.value.selectedModel,
-        modelSettings: get(refactorModelSelectEnabled$)
+        modelSettings: get(chatEffortEnabled$)
           ? (user.value.modelSettings ?? {})
           : {},
       };

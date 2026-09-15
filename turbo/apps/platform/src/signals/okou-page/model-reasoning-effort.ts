@@ -10,6 +10,10 @@ import {
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  isChatEffortEnabled,
+  isCodexFastModeEnabled,
+} from "@okouai/core/model-feature-switch";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 
 /** Saved preferences remain independent of the route's current capability. */
@@ -17,7 +21,7 @@ export function preferredChatReasoningEffort(
   selection: ModelProviderSelection | null | undefined,
   switches: Partial<Record<FeatureSwitchKey, boolean>>,
 ): ReasoningEffort | undefined {
-  if (!switches[FeatureSwitchKey.RefactorModelSelect]) {
+  if (!isChatEffortEnabled({ overrides: switches })) {
     return undefined;
   }
   return modelReasoningEffort(
@@ -36,7 +40,7 @@ export function availableChatReasoningEfforts(
     !selection ||
     !policy ||
     policy.routeStatus !== "valid" ||
-    !switches[FeatureSwitchKey.RefactorModelSelect]
+    !isChatEffortEnabled({ overrides: switches })
   ) {
     return [];
   }
@@ -54,10 +58,7 @@ export function availableChatReasoningEfforts(
     runtimeProviderType,
     codexServiceTier: selection.codexServiceTier ?? undefined,
     piEnabled: switches[FeatureSwitchKey.PiLoop] === true,
-    codexFastModeEnabled: Boolean(
-      switches[FeatureSwitchKey.RefactorModelSelect] ||
-      switches[FeatureSwitchKey.CodexFastMode],
-    ),
+    codexFastModeEnabled: isCodexFastModeEnabled({ overrides: switches }),
   });
   return getRouteReasoningEfforts({
     model: selection.selectedModel,

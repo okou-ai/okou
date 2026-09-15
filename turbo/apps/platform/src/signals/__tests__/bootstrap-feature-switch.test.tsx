@@ -50,7 +50,7 @@ test("A signed-in workspace receives its enabled features", async () => {
   });
 });
 
-async function setupModelPickerRolloutPage(args: {
+async function setupEffortRolloutPage(args: {
   readonly email: string;
   readonly fullName: string;
   readonly userId: string;
@@ -61,7 +61,7 @@ async function setupModelPickerRolloutPage(args: {
     return respond(200, {
       switches: {},
       effectiveSwitches: {
-        [FeatureSwitchKey.RefactorModelSelect]: false,
+        [FeatureSwitchKey.Effort]: false,
         [FeatureSwitchKey.IntroVideo]: true,
       },
     });
@@ -93,48 +93,43 @@ async function setupModelPickerRolloutPage(args: {
   });
 }
 
-// The legacy picker renders its trigger as a <button role="combobox">; only
-// the model picker menu renders a plain button named after the model.
-function modelMenuTrigger(): HTMLElement | undefined {
+// The effort control names itself after the level it carries, and it renders
+// only for a user the switch reaches.
+function effortTrigger(): HTMLElement | undefined {
   return queryAllByRoleFast("button").find((button) => {
-    const role = button.getAttribute("role");
-    return (
-      (role === null || role === "button") &&
-      (button.getAttribute("aria-label") === "Claude Sonnet 4.6" ||
-        button.textContent?.trim() === "Claude Sonnet 4.6")
-    );
+    return button.getAttribute("aria-label")?.startsWith("Effort, ");
   });
 }
 
-test("Bingjie retains the model picker menu rollout after feature loading", async () => {
-  await setupModelPickerRolloutPage({
+test("Bingjie retains the chat effort rollout after feature loading", async () => {
+  await setupEffortRolloutPage({
     email: "BINGJIE@OKOU.AI",
     fullName: "Bingjie",
     userId: "user_bingjie",
   });
 
   const trigger = await waitFor(() => {
-    const button = modelMenuTrigger();
+    const button = effortTrigger();
     if (!button) {
-      throw new Error("Expected the model picker menu trigger");
+      throw new Error("Expected the chat effort control");
     }
     return button;
   });
   click(trigger);
   await expect(
-    screen.findByRole("region", { name: "Models" }),
+    screen.findByRole("slider", { name: "Effort" }),
   ).resolves.toBeVisible();
 });
 
-test("another member does not receive the model picker menu rollout", async () => {
-  await setupModelPickerRolloutPage({
+test("another member does not receive the chat effort rollout", async () => {
+  await setupEffortRolloutPage({
     email: "ethan@okou.ai",
     fullName: "Another member",
     userId: "user_other_member",
   });
 
   await expectComposerModel("Claude Sonnet 4.6");
-  expect(modelMenuTrigger()).toBeUndefined();
+  expect(effortTrigger()).toBeUndefined();
 });
 
 test("Image recognition remains available by default", async () => {

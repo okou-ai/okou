@@ -1,6 +1,6 @@
 {
   "name": "api",
-  "version": "1.603.0",
+  "version": "1.603.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -58,7 +58,6 @@
     "hono": "^4.13.0",
     "html-to-text": "^10.0.1",
     "ignore": "^7.0.5",
-    "image-dimensions": "^2.5.1",
     "markdown-it": "14.2.0",
     "music-metadata": "^11.13.0",
     "pg": "^8.23.0",

@@ -24,7 +24,7 @@ function measure(page: Page) {
           '[data-testid^="connector-account-action-card"]',
         ),
       ).map((card) => {
-        const frame = card.closest(".okou-markdown-card");
+        const frame = card.closest('[data-slot="markdown-card"]');
         if (!frame) {
           throw new Error("Expected a rendered account card");
         }

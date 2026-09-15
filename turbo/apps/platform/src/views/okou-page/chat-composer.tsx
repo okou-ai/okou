@@ -272,7 +272,6 @@ import {
 import {
   codexFastModeEnabled$,
   modelPickerFlyoutEnabled$,
-  refactorModelSelectEnabled$,
   customConnectorMcpEnabled$,
   featureSwitch$,
 } from "../../signals/external/feature-switch.ts";
@@ -9655,10 +9654,13 @@ function ComposerRunModelPickerControl({
   mediaModelPanel: MediaModelPanelState | undefined;
 }) {
   const { t } = useTranslation();
-  const modelMenuEnabled = useGet(refactorModelSelectEnabled$);
+  // One switch owns how the picker looks. Effort keeps its own switch, because
+  // it is a run setting the composer shows beside the model rather than a way
+  // of drawing the model list.
+  const modelMenuEnabled = useGet(modelPickerFlyoutEnabled$);
   // The flyout needs the room a phone does not have; narrow viewports keep the
   // menu's pages until the sheet layout lands.
-  const modelFlyoutEnabled = useGet(modelPickerFlyoutEnabled$) && desktopLayout;
+  const modelFlyoutEnabled = modelMenuEnabled && desktopLayout;
   const modelPickerOpen = useGet(signals.model.modelPickerOpen$);
   const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
   const setLifecycleRef = useSet(signals.model.desktopModelPickerLifecycleRef$);
@@ -9671,11 +9673,7 @@ function ComposerRunModelPickerControl({
           return $.chat.composer.selectModel;
         })}
         triggerClassName={composerModelPickerTriggerClassName()}
-        menuSignals={
-          modelMenuEnabled || modelFlyoutEnabled
-            ? signals.model.menu
-            : undefined
-        }
+        menuSignals={modelMenuEnabled ? signals.model.menu : undefined}
         // The effort control beside it carries the bolt when Fast is on, so the
         // model keeps its own name.
         fastShownByCaller

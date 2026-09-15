@@ -230,7 +230,6 @@ function privateFileSnapshot(
         file.userId !== args.userId ||
         file.orgId !== args.orgId ||
         file.materializationStatus !== "ready" ||
-        file.exclusiveOwner ||
         (reference.key !== undefined && reference.key !== file.key)
       ) {
         throw new SharedThreadArtifactUnavailable();

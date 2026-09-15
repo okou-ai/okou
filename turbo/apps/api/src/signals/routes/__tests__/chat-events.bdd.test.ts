@@ -3607,7 +3607,7 @@ describe("CHAT effort: thread configuration", () => {
       }),
     );
     await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
     });
     const thread = await chat.createThread(actor, {
       agentId,
@@ -3680,7 +3680,7 @@ describe("CHAT effort: thread configuration", () => {
       }),
     );
     await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
     });
     const thread = await chat.createThread(actor, {
       agentId,
@@ -3789,7 +3789,7 @@ describe("CHAT effort: thread configuration", () => {
         },
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.RefactorModelSelect]: true,
+        [FeatureSwitchKey.Effort]: true,
         [FeatureSwitchKey.PiLoop]: pi,
       });
       if (pi) {
@@ -3875,7 +3875,7 @@ describe("CHAT effort: thread configuration", () => {
         await entitledChatActor();
       chatCallbacks.failIfChatCallbackRouteIsFetched();
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.RefactorModelSelect]: true,
+        [FeatureSwitchKey.Effort]: true,
         [FeatureSwitchKey.PiLoop]: false,
       });
       const selectedModel = pi ? "gpt-5.6-sol" : "claude-opus-4-8";
@@ -3948,7 +3948,7 @@ describe("CHAT effort: thread configuration", () => {
       );
       expect(retry.body).toStrictEqual(queued.body);
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.RefactorModelSelect]: enabled,
+        [FeatureSwitchKey.Effort]: enabled,
         [FeatureSwitchKey.PiLoop]: pi,
       });
       if (pi) {
@@ -4006,7 +4006,7 @@ describe("CHAT effort: thread configuration", () => {
   it("ignores saved effort while disabled without erasing it on normal or explicit-model sends", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
     });
     const thread = await chat.createThread(actor, {
       agentId,
@@ -4016,7 +4016,7 @@ describe("CHAT effort: thread configuration", () => {
       reasoningEffort: "high",
     });
     await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.RefactorModelSelect]: false,
+      [FeatureSwitchKey.Effort]: false,
     });
     for (const model of [undefined, "claude-sonnet-5"] as const) {
       const sent = await sendChatRun(actor, {
@@ -4050,7 +4050,7 @@ describe("CHAT effort: thread configuration", () => {
       error: { message: "Reasoning effort selection is not enabled" },
     });
     await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
     });
     const enabled = await sendChatRun(actor, {
       agentId,
@@ -4067,7 +4067,7 @@ describe("CHAT effort: thread configuration", () => {
   it("preserves Fast when changing effort", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.CodexFastMode]: true,
     });
     const { providerId } = await upsertOrgModelProvider(actor, {
@@ -4134,7 +4134,7 @@ describe("CHAT effort: automation launches", () => {
     const scenario = await entitledChatActor({}, "pro");
     const { actor, agentId, runnerGroup } = scenario;
     await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.PiLoop]: false,
     });
     const workflowId = await createWorkflowsBddApi(context).createWorkflow(
@@ -4201,7 +4201,7 @@ describe("CHAT effort: automation launches", () => {
         },
       );
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.RefactorModelSelect]: enabled,
+        [FeatureSwitchKey.Effort]: enabled,
       });
       await completeChatRunOk(runId, claimed.sandboxHeaders, {
         cliAgentType: "claude-code",
@@ -10375,7 +10375,7 @@ describe("CHAT-02: model-first provider policies", () => {
         { ...actor, orgId },
         {
           [FeatureSwitchKey.PiLoop]: true,
-          [FeatureSwitchKey.RefactorModelSelect]: true,
+          [FeatureSwitchKey.Effort]: true,
         },
       );
       mockPiResourceArchiveDownloads();
@@ -30167,7 +30167,7 @@ describe("shared native Pi route activation", () => {
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.PiMemory]: true,
-        [FeatureSwitchKey.RefactorModelSelect]: true,
+        [FeatureSwitchKey.Effort]: true,
       });
       const pricing = await createPiApiFirstTurnUsagePricingResolution(model);
       mockPiResourceArchiveDownloads();

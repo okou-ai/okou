@@ -141,6 +141,16 @@
   /* Onboarding workflow diagram beam. Its keyframes stay below; the consumer
      reaches this entry through `motion-safe:animate-owf-beam-flow`. */
   --animate-owf-beam-flow: owf-beam-flow 2.8s linear infinite;
+
+  /* Illustration strokes. These are drawn artwork inside a scaled canvas, not
+     product chrome, so they are a different decision from `--border-width-surface`
+     and its shared hairline rather than a competing value for it: an
+     illustration owns the weight of its own outlines the way a logo does.
+     Two weights, because the artwork uses two. Identical in Light and Dark,
+     since a stroke weight is not a theme value. Consumers reach them through
+     `border-(length:--border-width-illustration*)`. */
+  --border-width-illustration: 1px;
+  --border-width-illustration-marker: 1.5px;
 }
 
 /* Palette previews keep the fixed 135deg/52% sRGB blend in Light and Dark.
@@ -158,6 +168,12 @@
       52%,
     var(--okou-color-theme-companion) 100%
   );
+
+  /* The app's own viewport height, so a surface that has to pin itself reaches
+     it through `h-*` / `min-h-*` / `max-h-*` instead of respelling the variable.
+     It is not `h-dvh`: the standalone block below moves it to `100lvh`. Inline
+     keeps the reference, so the media query still decides at use time. */
+  --height-viewport: var(--okou-viewport-height);
 
   /* The thinking label's shimmer. Six stops, so the sweep reads as a band with
      a flat core rather than a point: the two inner stops hold the bright
@@ -185,6 +201,14 @@
   --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left, 0px);
   --okou-viewport-height: 100dvh;
+}
+
+/* All four insets at once, for a surface that escapes the page shell and so
+   inherits none of the insets `#root` applies. The four sides carry different
+   values, which no single spacing token can express, so this is a utility
+   rather than a `@theme` entry. */
+@utility p-safe {
+  padding: var(--sat) var(--sar) var(--sab) var(--sal);
 }
 
 /* The effort bar's handle is a superellipse rather than a rounded rectangle --
@@ -367,15 +391,6 @@ body {
     height: var(--okou-keyboard-scroll-reserve, 0px);
     pointer-events: none;
   }
-}
-
-.okou-fixed-viewport-shell {
-  box-sizing: border-box;
-  height: var(--okou-viewport-height);
-  min-height: var(--okou-viewport-height);
-  max-height: var(--okou-viewport-height);
-  overflow: hidden;
-  padding: var(--sat) var(--sar) var(--sab) var(--sal);
 }
 
 @media (max-width: 767px) {
@@ -864,8 +879,7 @@ body {
   max-width: 100%;
 }
 
-.wmde-markdown p,
-.wmde-markdown .okou-markdown-card {
+.wmde-markdown p {
   margin-top: 6px;
   margin-bottom: 6px;
 }
@@ -1264,208 +1278,13 @@ details > summary {
   }
 }
 
-/* Onboarding workflow preview diagram (owf-). The canvas keeps only the shared
-   coordinate variables that the remaining tile and dot rules read; its own
-   geometry now lives in Tailwind utilities on the component. The variables
-   retire with their last readers in the tiles batch. */
-.owf-diagram {
-  --workflow-dot-size: 8px;
-  --workflow-top-line-y: 81px;
-  --workflow-source-icon-left: 107px;
-  --workflow-node-icon-size: 56px;
-  --workflow-output-icon-left: 457.5px;
-  --workflow-output-icon-top: 53px;
-  --workflow-source-dot-x: calc(
-    var(--workflow-source-icon-left) + var(--workflow-node-icon-size) + 3px
-  );
-  --workflow-destination-in-dot-x: 455px;
-  --workflow-destination-down-dot-x: calc(
-    var(--workflow-output-icon-left) + calc(var(--workflow-node-icon-size) / 2)
-  );
-  --workflow-destination-down-dot-y: calc(
-    var(--workflow-output-icon-top) + var(--workflow-node-icon-size) + 3px
-  );
-  --workflow-action-left: 142px;
-  --workflow-action-one-width: 339px;
-  --workflow-action-two-width: 341px;
-  --workflow-action-height: 98px;
-  --workflow-action-one-center-x: calc(
-    var(--workflow-action-left) + calc(var(--workflow-action-one-width) / 2)
-  );
-  --workflow-action-two-center-x: calc(
-    var(--workflow-action-left) + calc(var(--workflow-action-two-width) / 2)
-  );
-  --workflow-action-one-top: 224px;
-  --workflow-action-two-top: 352px;
-  --workflow-action-top-dot-y: 223px;
-  --workflow-action-vertical-top-dot-y: calc(
-    var(--workflow-action-one-top) + var(--workflow-action-height)
-  );
-  --workflow-action-vertical-bottom-dot-y: var(--workflow-action-two-top);
-  --workflow-diagram-tile-bg: hsl(var(--card));
-  --workflow-diagram-tile-border: hsl(var(--border));
-  --workflow-diagram-tile-shadow: 0 12px 30px -18px rgba(0, 0, 0, 0.5);
-  --workflow-diagram-stack-border: hsl(var(--border));
-}
-
+/* Onboarding workflow preview diagram beam. The diagram itself is Tailwind
+   utilities on its component; only these keyframes stay, because keyframes are
+   not class selectors. */
 @keyframes owf-beam-flow {
   to {
     offset-distance: 100%;
   }
-}
-
-.owf-diagram-icon-box {
-  display: inline-flex;
-  width: 56px;
-  height: 56px;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  border: 1px solid var(--workflow-diagram-tile-border);
-  border-radius: 16px;
-  background: var(--workflow-diagram-tile-bg);
-  box-shadow: var(--workflow-diagram-tile-shadow);
-}
-
-.owf-diagram-icon-box img {
-  display: block;
-  width: 34px;
-  height: 34px;
-  object-fit: contain;
-}
-
-.owf-diagram-icon-stack-item {
-  position: absolute;
-  display: inline-flex;
-  width: 28px;
-  height: 28px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--workflow-diagram-stack-border);
-  border-radius: 9px;
-  background: var(--workflow-diagram-tile-bg);
-  box-shadow: var(--workflow-diagram-tile-shadow);
-}
-
-.owf-diagram-icon-stack-item:nth-child(1) {
-  top: 0;
-  left: 0;
-}
-
-.owf-diagram-icon-stack-item:nth-child(2) {
-  top: 0;
-  right: 0;
-}
-
-.owf-diagram-icon-stack-item:nth-child(3) {
-  bottom: 0;
-  left: 7px;
-}
-
-.owf-diagram-icon-stack-item img {
-  width: 22px;
-  height: 22px;
-}
-
-.owf-diagram-icon-stack-more {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  display: inline-flex;
-  min-width: 20px;
-  height: 20px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid #ffffff;
-  border-radius: 999px;
-  background: #29292e;
-  color: #ffffff;
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1;
-  padding: 0 4px;
-}
-
-.owf-diagram-avatar {
-  width: 72px;
-  height: 72px;
-  padding: 4px;
-}
-
-.owf-diagram-dot-source,
-.owf-diagram-dot-destination-in,
-.owf-diagram-dot-destination-down,
-.owf-diagram-dot-action-top,
-.owf-diagram-dot-action-middle,
-.owf-diagram-dot-action-bottom {
-  position: absolute;
-  z-index: 6;
-  box-sizing: border-box;
-  width: var(--workflow-dot-size);
-  height: var(--workflow-dot-size);
-  border: 1.5px solid #ffffff;
-  border-radius: 999px;
-  background: #29292e;
-  pointer-events: none;
-  transform: translate(-50%, -50%);
-}
-
-.owf-diagram-dot-source {
-  top: var(--workflow-top-line-y);
-  left: var(--workflow-source-dot-x);
-}
-
-.owf-diagram-dot-destination-in {
-  top: var(--workflow-top-line-y);
-  left: var(--workflow-destination-in-dot-x);
-}
-
-.owf-diagram-dot-destination-down {
-  top: var(--workflow-destination-down-dot-y);
-  left: var(--workflow-destination-down-dot-x);
-}
-
-.owf-diagram-dot-action-top {
-  top: var(--workflow-action-top-dot-y);
-  left: var(--workflow-action-one-center-x);
-}
-
-.owf-diagram-dot-action-middle {
-  top: var(--workflow-action-vertical-top-dot-y);
-  left: var(--workflow-action-two-center-x);
-}
-
-.owf-diagram-dot-action-bottom {
-  top: var(--workflow-action-vertical-bottom-dot-y);
-  left: var(--workflow-action-two-center-x);
-}
-
-.owf-diagram-action {
-  position: absolute;
-  z-index: 5;
-  box-sizing: border-box;
-  display: flex;
-  height: var(--workflow-action-height);
-  align-items: center;
-  gap: 16px;
-  overflow: hidden;
-  border: 1px solid var(--workflow-diagram-tile-border);
-  border-radius: 20px;
-  background: var(--workflow-diagram-tile-bg);
-  box-shadow: var(--workflow-diagram-tile-shadow);
-  padding: 15px 24px;
-}
-
-.owf-diagram-action-one {
-  top: var(--workflow-action-one-top);
-  left: var(--workflow-action-left);
-  width: var(--workflow-action-one-width);
-}
-
-.owf-diagram-action-two {
-  top: var(--workflow-action-two-top);
-  left: var(--workflow-action-left);
-  width: var(--workflow-action-two-width);
 }
 
 /* Dark carries the brand hue instead of a lighter neutral. The light ring can
