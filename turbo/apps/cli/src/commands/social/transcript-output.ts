@@ -1,3 +1,4 @@
+import { escapeText } from "entities/escape";
 import { z } from "zod";
 
 const transcriptSchema = z.object({
@@ -91,10 +92,8 @@ function subtitles(
       })
       .join("\n");
     if (format === "vtt") {
-      cueText = cueText
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;");
+      // This encoder uses WebVTT-supported references and leaves quotes intact.
+      cueText = escapeText(cueText);
     }
     const separator = format === "srt" ? "," : ".";
     return `${index + 1}\n${timestamp(startMs, separator)} --> ${timestamp(endMs, separator)}\n${cueText}\n\n`;

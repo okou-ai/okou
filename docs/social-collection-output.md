@@ -276,7 +276,7 @@ Absolute starts and ends are rounded to milliseconds, and intervals that collaps
 at that precision or exceed safe integer milliseconds fail. Hours do not wrap at 24. SRT uses numbered cues and comma milliseconds; WebVTT uses a `WEBVTT` header,
 numbered cue identifiers, and period milliseconds.
 
-WebVTT escapes cue ampersands and angle brackets as literal text, following its
+WebVTT escapes cue ampersands, angle brackets and nonbreaking spaces as literal text, following its
 [cue payload format](https://developer.mozilla.org/en-US/docs/Web/API/WebVTT_API/Web_Video_Text_Tracks_Format#cue_payload).
 SRT preserves source cue text without adding WebVTT character references, which
 some SRT readers display literally. SRT readers differ in

@@ -404,6 +404,36 @@ describe("okou social command", () => {
       },
     );
 
+    it("keeps quotes and entity-looking source text literal in WebVTT", async () => {
+      const requests = serveTranscript({
+        transcriptSegments: [
+          {
+            text: `"你好" &amp; <b>world</b>\u00a0's 🌍`,
+            start: 0,
+            duration: 1,
+          },
+        ],
+      });
+      const path = join(directory, "captions.vtt");
+      await socialCommand.parseAsync([
+        ...transcriptArgs,
+        "--format",
+        "vtt",
+        "--output",
+        path,
+        "--json",
+      ]);
+      expect(await readFile(path, "utf8")).toBe(
+        `WEBVTT\n\n1\n00:00:00.000 --> 00:00:01.000\n"你好" &amp;amp; &lt;b&gt;world&lt;/b&gt;&nbsp;'s 🌍\n\n`,
+      );
+      expect(JSON.parse(output()) as unknown).toMatchObject({
+        kind: "export",
+        export: { format: "vtt" },
+      });
+      expect(requests).toHaveLength(1);
+      expect(await readdir(directory)).toEqual(["captions.vtt"]);
+    });
+
     it.each([
       { name: "missing segments", segments: undefined },
       { name: "empty segments", segments: [] },
