@@ -10525,6 +10525,102 @@ describe("usage pack allocation management", () => {
     expect(state.grants).toHaveLength(2);
   });
 
+  async function readDeferredReplayCredits(fixture: BillingOrgFixture) {
+    authenticateOrg(fixture);
+    const response = await accept(
+      setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+        billingUsagePackCreditsContract,
+      ).get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    return response.body;
+  }
+
+  async function purchaseDeferredReplaySubscription(): Promise<ManagedUsagePackFixture> {
+    const actor = createOrgFixture();
+    authenticateOrg(actor);
+    mockClerkOrganization(actor);
+    const customerId = `cus_${randomUUID()}`;
+    const subscriptionId = `sub_${randomUUID()}`;
+    const checkoutSessionId = `cs_${randomUUID()}`;
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          {
+            role: "org:admin",
+            publicUserData: { userId: actor.userId },
+            createdAt: now(),
+          },
+        ],
+      },
+    );
+    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+      { data: [] },
+    );
+    context.mocks.stripe.customers.create.mockResolvedValue({ id: customerId });
+    context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
+      id: checkoutSessionId,
+      url: `https://checkout.stripe.test/${checkoutSessionId}`,
+    });
+    await accept(
+      setupApp({ context, routes: billingCheckoutRoutes })(
+        billingUsagePackCheckoutContract,
+      ).create({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { ...usagePackCheckoutBody(actor.userId), tier: "team" },
+      }),
+      [200],
+    );
+    const metadata = stripeInputMetadata(
+      context.mocks.stripe.checkout.sessions.create.mock.calls.at(-1)?.[0],
+    );
+    const usagePackSubscriptionId = metadata.usagePackSubscriptionId;
+    if (!usagePackSubscriptionId) {
+      throw new Error("Checkout did not identify its usage pack subscription");
+    }
+    const fixture: ManagedUsagePackFixture = {
+      ...actor,
+      customerId,
+      subscriptionId,
+      usagePackSubscriptionId,
+      billingPeriod: {
+        start: currentSecond() - 15 * 86_400,
+        end: currentSecond() + 15 * 86_400,
+      },
+      tier: "team",
+    };
+    // Cleanup only removes this test's uniquely owned resources; setup and
+    // assertions use production checkout, webhook, billing and credit routes.
+    onTestFinished(async () => {
+      await usagePackStateAction({
+        action: "cleanup",
+        orgId: actor.orgId,
+        usagePackSubscriptionId,
+        deleteGrants: true,
+        deleteOrgMetadata: true,
+      });
+    });
+    const quantities = new Map([[TEST_PRICE_USAGE_PACK_20, 1]]);
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      managedUsagePackSubscription(fixture, quantities),
+    );
+    await postManagedUsagePackEvent(
+      "invoice.paid",
+      managedUsagePackInvoice(fixture, {
+        invoiceId: `in_${randomUUID()}`,
+        quantities,
+      }),
+    );
+    expect((await readBillingStatus(fixture)).tier).toBe("team");
+    await expect(readDeferredReplayCredits(fixture)).resolves.toMatchObject({
+      hasUsagePack: true,
+      purchasedCredits: 20_000,
+      bonusCredits: 400,
+      totalCredits: 20_400,
+    });
+    return fixture;
+  }
+
   async function prepareDeferredInvoiceReplay(
     at = "2035-01-17T00:00:00.000Z",
     nextPhaseEnd = "2035-03-01T00:00:00.000Z",
@@ -10533,11 +10629,8 @@ describe("usage pack allocation management", () => {
     onTestFinished(() => {
       return clearMockNow();
     });
-    const userId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack(
-      [{ userId, usagePackUsd: 20 }],
-      "team",
-    );
+    const fixture = await purchaseDeferredReplaySubscription();
+    const userId = fixture.userId;
     const source = managedUsagePackSubscription(
       fixture,
       new Map([[TEST_PRICE_USAGE_PACK_20, 1]]),
@@ -10651,10 +10744,7 @@ describe("usage pack allocation management", () => {
   it("does not update a completed deferred schedule when the invoice or billing cron replays", async () => {
     const replay = await prepareDeferredInvoiceReplay();
     await postManagedUsagePackEvent("invoice.paid", replay.invoice);
-    const before = await readUsagePackState(
-      replay.fixture.orgId,
-      replay.fixture.usagePackSubscriptionId,
-    );
+    const before = await readDeferredReplayCredits(replay.fixture);
     const current = { ...replay.subscription, schedule: replay.scheduleId };
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(current);
     context.mocks.stripe.subscriptions.list.mockResolvedValue({
@@ -10675,13 +10765,8 @@ describe("usage pack allocation management", () => {
       context.mocks.stripe.subscriptionSchedules.create,
     ).toHaveBeenCalledOnce();
     expect(
-      (
-        await readUsagePackState(
-          replay.fixture.orgId,
-          replay.fixture.usagePackSubscriptionId,
-        )
-      ).grants,
-    ).toStrictEqual(before.grants);
+      (await readDeferredReplayCredits(replay.fixture)).creditGrants,
+    ).toStrictEqual(before.creditGrants);
     const confirmation = await accept(
       replay.client.confirmSubscriptionChange({
         headers: { authorization: "Bearer clerk-session" },
@@ -10707,10 +10792,7 @@ describe("usage pack allocation management", () => {
       ).rejects.toThrow(
         "Unknown response status 500 for POST /api/webhooks/stripe",
       );
-      const before = await readUsagePackState(
-        replay.fixture.orgId,
-        replay.fixture.usagePackSubscriptionId,
-      );
+      const before = await readDeferredReplayCredits(replay.fixture);
       context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
         ...replay.subscription,
         schedule: replay.scheduleId,
@@ -10725,13 +10807,8 @@ describe("usage pack allocation management", () => {
         context.mocks.stripe.subscriptionSchedules.update,
       ).toHaveBeenCalledOnce();
       expect(
-        (
-          await readUsagePackState(
-            replay.fixture.orgId,
-            replay.fixture.usagePackSubscriptionId,
-          )
-        ).grants,
-      ).toStrictEqual(before.grants);
+        (await readDeferredReplayCredits(replay.fixture)).creditGrants,
+      ).toStrictEqual(before.creditGrants);
       const confirmation = await accept(
         replay.client.confirmSubscriptionChange({
           headers: { authorization: "Bearer clerk-session" },
@@ -10815,15 +10892,22 @@ describe("usage pack allocation management", () => {
     expect(
       context.mocks.stripe.subscriptionSchedules.create,
     ).toHaveBeenCalledOnce();
-    const state = await readUsagePackState(
-      replay.fixture.orgId,
-      replay.fixture.usagePackSubscriptionId,
-    );
-    expect(
-      state.fulfillmentInvoiceIds.filter((id) => {
-        return id === replay.invoice.id;
+    const credits = await readDeferredReplayCredits(replay.fixture);
+    expect(credits).toMatchObject({
+      hasUsagePack: true,
+      purchasedCredits: 35_000,
+      bonusCredits: 1500,
+      totalCredits: 36_500,
+    });
+    expect(credits.creditGrants).toHaveLength(4);
+    const confirmation = await accept(
+      replay.client.confirmSubscriptionChange({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { changeId: replay.preview.body.changeId },
       }),
-    ).toHaveLength(1);
+      [200],
+    );
+    expect(confirmation.body.status).toBe("scheduled");
   });
 
   it("does not treat an unfulfilled invoice as a deferred schedule replay", async () => {
@@ -10845,6 +10929,9 @@ describe("usage pack allocation management", () => {
     );
     context.mocks.stripe.invoices.retrieve.mockResolvedValue(replay.invoice);
     const unrelatedInvoice = { ...replay.invoice, id: `in_${randomUUID()}` };
+    const creditsBeforeUnrelatedInvoice = await readDeferredReplayCredits(
+      replay.fixture,
+    );
 
     await expect(
       postManagedUsagePackEvent("invoice.paid", unrelatedInvoice),
@@ -10860,14 +10947,9 @@ describe("usage pack allocation management", () => {
       [200],
     );
     expect(confirmation.body.status).toBe("processing");
-    expect(
-      (
-        await readUsagePackState(
-          replay.fixture.orgId,
-          replay.fixture.usagePackSubscriptionId,
-        )
-      ).fulfillmentInvoiceIds,
-    ).not.toContain(unrelatedInvoice.id);
+    await expect(
+      readDeferredReplayCredits(replay.fixture),
+    ).resolves.toStrictEqual(creditsBeforeUnrelatedInvoice);
     await postManagedUsagePackEvent("invoice.paid", replay.invoice);
     expect(
       context.mocks.stripe.subscriptionSchedules.update,
@@ -10914,11 +10996,8 @@ describe("usage pack allocation management", () => {
     ).rejects.toThrow(
       "Unknown response status 500 for POST /api/webhooks/stripe",
     );
-    const before = await readUsagePackState(
-      replay.fixture.orgId,
-      replay.fixture.usagePackSubscriptionId,
-    );
     mockNow(new Date("2035-02-02T00:00:00.000Z"));
+    const before = await readDeferredReplayCredits(replay.fixture);
     const renewed = managedUsagePackSubscription(
       { ...replay.fixture, tier: "pro" },
       new Map([[TEST_PRICE_USAGE_PACK_50, 1]]),
@@ -10939,12 +11018,10 @@ describe("usage pack allocation management", () => {
     expect(
       context.mocks.stripe.subscriptionSchedules.update,
     ).toHaveBeenCalledOnce();
-    const state = await readUsagePackState(
-      replay.fixture.orgId,
-      replay.fixture.usagePackSubscriptionId,
-    );
-    expect(state.org?.tier).toBe("pro");
-    expect(state.grants).toStrictEqual(before.grants);
+    expect((await readBillingStatus(replay.fixture)).tier).toBe("pro");
+    await expect(
+      readDeferredReplayCredits(replay.fixture),
+    ).resolves.toStrictEqual(before);
     const confirmation = await accept(
       replay.client.confirmSubscriptionChange({
         headers: { authorization: "Bearer clerk-session" },
@@ -10963,11 +11040,8 @@ describe("usage pack allocation management", () => {
   it("preserves the renewed plan when a completed deferred schedule invoice replays", async () => {
     const replay = await prepareDeferredInvoiceReplay();
     await postManagedUsagePackEvent("invoice.paid", replay.invoice);
-    const before = await readUsagePackState(
-      replay.fixture.orgId,
-      replay.fixture.usagePackSubscriptionId,
-    );
     mockNow(new Date("2035-02-02T00:00:00.000Z"));
+    const before = await readDeferredReplayCredits(replay.fixture);
     const renewed = managedUsagePackSubscription(
       { ...replay.fixture, tier: "pro" },
       new Map([[TEST_PRICE_USAGE_PACK_50, 1]]),
@@ -10984,12 +11058,10 @@ describe("usage pack allocation management", () => {
     expect(
       context.mocks.stripe.subscriptionSchedules.update,
     ).toHaveBeenCalledOnce();
-    const state = await readUsagePackState(
-      replay.fixture.orgId,
-      replay.fixture.usagePackSubscriptionId,
-    );
-    expect(state.org?.tier).toBe("pro");
-    expect(state.grants).toStrictEqual(before.grants);
+    expect((await readBillingStatus(replay.fixture)).tier).toBe("pro");
+    await expect(
+      readDeferredReplayCredits(replay.fixture),
+    ).resolves.toStrictEqual(before);
   });
 
   it("does not resurrect a restored deferred schedule when an old invoice is delivered", async () => {
