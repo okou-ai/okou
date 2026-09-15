@@ -1,7 +1,6 @@
 {
   "version": 1,
   "legacyClassTokens": [
-    "language-mermaid",
     "okou-app",
     "okou-composer",
     "okou-desktop-titlebar-drag-region",
@@ -2328,9 +2327,6 @@
     "apps/platform/src/views/components/markdown-frame.tsx": {
       "wmde-markdown": 1,
       "wmde-markdown-color": 1
-    },
-    "apps/platform/src/views/components/mermaid-diagram.tsx": {
-      "language-mermaid": 1
     },
     "apps/platform/src/views/components/rich-markdown.tsx": {
       "okou-markdown-card": 2
