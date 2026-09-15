@@ -68,3 +68,78 @@ replay are tracked separately in
 Terminal records cover handled execution failures. Abrupt termination, a killed
 process, or an unusable stdout cannot guarantee a final record. These changes
 affect CLI output only; existing CLI/API wire contracts remain unchanged.
+
+## JSON files and selected fields
+
+`inspect`, `posts`, `search`, `comments`, `transcript`, and `summarize` support
+`--output <path>`, `--select <fields>`, `--format json|csv`, and `--overwrite`.
+JSON remains the default; `--json` controls compactness. Without an output path,
+JSON is printed on stdout as before. Export options are unavailable on download,
+download discovery, capabilities, and service status.
+
+```bash
+okou social inspect https://www.instagram.com/p/example/ --output result.json
+okou social search "small business" --platform youtube --limit 20 \
+  --select title,url --format csv --output research.csv
+```
+
+`--select` addresses fields inside a single result's `data`, or inside each
+collection `data.items` row. JSON retains all envelope metadata and collection
+context. The selector is an ordered comma-separated list of 1–32 unique paths.
+Each path has at most 128 characters and eight dot-separated segments. Segments
+start with a letter, `_`, or `$`, followed by letters, digits, `_`, `$`, or `-`.
+Array indexes, wildcards, and prototype properties are rejected. Only own
+properties are read.
+
+Selected JSON keys retain the path name: `--select author.name,title` produces
+`{"author.name":"Example","title":"A post"}` for each row. Missing fields
+are omitted; explicit null, false, zero, objects, and arrays retain their JSON
+values. `summarize --fields` and `--fields-file` still supply provider extraction
+instructions; they do not select output columns.
+
+## CSV and metadata receipts
+
+CSV supports normalized `posts`, `search`, and `comments` collections and
+requires both `--output` and `--select`. Columns follow selector order, including
+for empty collections. There is no inferred schema. Files use UTF-8 and CRLF
+record separators, quote string values, double embedded quotes, and retain
+embedded newlines. Objects and arrays are compact JSON within a quoted cell.
+Missing fields become empty cells; null becomes literal `null`; numbers and
+booleans are unquoted. CSV is textual: readers may conflate missing/empty cells
+or a null with the string `"null"`. Use JSON when type distinctions matter.
+
+Strings beginning with spreadsheet formula prefixes (`=`, `+`, `-`, `@`,
+including preceding whitespace/control characters), tabs, or newlines
+gain an apostrophe before CSV quoting. This prevents public content from being
+treated as a spreadsheet formula. Numeric negative values are unchanged.
+
+Every successful file publication prints one metadata-only JSON receipt with
+`kind: "export"`, the original status, collection bounds, billing, warnings,
+and any error/progress. `export` contains the absolute path, format, selected
+fields when supplied, and `visibility: "local"`. **Retain the receipt with a
+CSV file**: CSV rows alone cannot describe source completeness or accounting.
+JSON files also include that metadata in their result envelope. An exported
+partial collection preserves its ordinary exit code (1 for failure, 2 for an
+unsatisfied source limit).
+
+## Filesystem and streaming boundaries
+
+The parent directory must exist and be writable. Existing paths are rejected
+unless `--overwrite` is explicit; symlinks, directories, and devices are rejected
+even with overwrite. The CLI prepares a private staging file in the destination
+directory before provider work, writes it completely, then publishes it without
+clobbering an existing destination. Overwrite uses atomic replacement; it never
+truncates the old file before the replacement is ready. Staging files are removed
+after handled success/failure. Abrupt termination can leave a staging file.
+
+Invalid selectors, formats, and combinations are rejected before requests.
+`--stream` cannot be combined with `--output`, `--select`, `--format`, or
+`--overwrite`; it retains its existing JSON Lines contract. `--overwrite`
+requires `--output`. JSONL files and text/SRT/VTT transcript exports are outside
+this interface.
+
+Disk or directory state may change after preflight. If projection or publication
+fails after retrieval, the CLI prints the full original envelope to stdout,
+reports an actionable export error on stderr, and exits 1. It does not repeat
+provider requests. A path in a receipt refers to the local runtime, not a hosted
+artifact. Use `okou web upload-file` when delivering that file to a web-chat user.
