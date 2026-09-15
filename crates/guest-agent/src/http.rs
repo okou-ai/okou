@@ -31,6 +31,7 @@ use uuid::Uuid;
 const LOG_TAG: &str = "sandbox:guest-agent";
 const HTTP_TOO_MANY_REQUESTS: u16 = 429;
 const DEFAULT_RETRY_DELAY: Duration = Duration::from_secs(1);
+const SESSION_OUTPUT_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
 #[cfg(debug_assertions)]
 const TEST_DISABLE_HTTP_RETRY_DELAY_ENV: &str = "OKOU_TEST_DISABLE_HTTP_RETRY_DELAY";
 const GUEST_AGENT_CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -188,6 +189,7 @@ struct ApiHttpConfig {
 #[derive(Clone)]
 struct ApiUrls {
     events: String,
+    session_output: String,
     complete: String,
     heartbeat: String,
     telemetry: String,
@@ -376,6 +378,10 @@ impl HttpClient {
         Ok(&self.api_config()?.urls.events)
     }
 
+    fn session_output_url(&self) -> Result<&str, AgentError> {
+        Ok(&self.api_config()?.urls.session_output)
+    }
+
     pub(crate) fn complete_url(&self) -> Result<&str, AgentError> {
         Ok(&self.api_config()?.urls.complete)
     }
@@ -446,6 +452,7 @@ impl ApiUrls {
     fn new(base_url: &str) -> Self {
         Self {
             events: urls::events_url(base_url),
+            session_output: urls::session_output_url(base_url),
             complete: urls::complete_url(base_url),
             heartbeat: urls::heartbeat_url(base_url),
             telemetry: urls::telemetry_url(base_url),
@@ -679,6 +686,22 @@ impl HttpClient {
         observer: Option<&dyn HttpAttemptObserver>,
     ) -> Result<(), AgentError> {
         self.post_json_response(url, body, max_attempts, observer, None)
+            .await?;
+        Ok(())
+    }
+
+    /// Publish one best-effort session-output delta exactly once.
+    ///
+    /// A timeout can race with successful server publication, so this path must
+    /// never retry. The caller stops previewing the affected text block and
+    /// leaves reconciliation to the durable event path.
+    pub(crate) async fn post_session_output(
+        &self,
+        body: &impl Serialize,
+    ) -> Result<(), AgentError> {
+        let url = self.session_output_url()?;
+        let body = Bytes::from(serde_json::to_vec(body)?);
+        self.post_json_response(url, body, 1, None, Some(SESSION_OUTPUT_REQUEST_TIMEOUT))
             .await?;
         Ok(())
     }

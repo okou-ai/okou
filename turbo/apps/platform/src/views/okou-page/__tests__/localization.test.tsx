@@ -232,6 +232,51 @@ test("A failed runtime language change keeps the current language", async () => 
   expect(screen.queryByText("Langue")).not.toBeInTheDocument();
 });
 
+test("Run error copy follows a language change without rewriting the run", async () => {
+  const runId = "94000000-0000-4000-a000-000000000002";
+  const error = "The current model is unavailable.";
+  context.mocks.api(logsByIdContract.getById, ({ respond }) => {
+    return respond(200, {
+      id: runId,
+      sessionId: null,
+      agentId: null,
+      displayName: null,
+      framework: "claude-code",
+      modelProvider: "built-in",
+      selectedModel: null,
+      triggerSource: "web",
+      status: "failed",
+      prompt: "Run localization",
+      appendSystemPrompt: null,
+      error,
+      createdAt: "2026-01-01T12:00:00.000Z",
+      startedAt: "2026-01-01T12:00:00.000Z",
+      completedAt: "2026-01-01T12:00:01.200Z",
+      artifact: { name: null, version: null },
+    });
+  });
+  context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
+    return respond(200, {
+      events: [],
+      hasMore: false,
+      status: "failed",
+      lastEventSequence: -1,
+    });
+  });
+  await setupPage({ context, path: `/activities/${runId}` });
+  await expect(screen.findByText(error)).resolves.toBeInTheDocument();
+
+  const settings = await openSettingsDialog("Settings");
+  await selectLanguage("Language", "Français");
+  await expect(
+    screen.findByText("Le modèle actuel est indisponible."),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText(error)).not.toBeInTheDocument();
+  await selectLanguage("Langue", "English");
+  await expect(screen.findByText(error)).resolves.toBeInTheDocument();
+  await closeDialog(settings, "Close");
+});
+
 test("French uses local formatting and plurals", async () => {
   const frenchSidebar = Object.fromEntries(
     Object.entries(frFRAgents.sidebar).filter(([key]) => {

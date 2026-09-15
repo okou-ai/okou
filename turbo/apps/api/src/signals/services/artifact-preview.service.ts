@@ -16,12 +16,15 @@ import { safeJsonParse, tapError } from "../utils";
 import { allocateArtifactObject$ } from "./artifact-storage.service";
 import {
   allocatePrivateArtifact$,
+  artifactFileReference,
   completePrivateArtifact$,
   privateArtifactCreationEnabled,
   privateArtifactRecord,
 } from "./private-artifact-storage.service";
 import { syncArtifactCatalogForFile$ } from "./artifact-catalog.service";
 import { publishArtifactsChangedForRun } from "./artifact-realtime.service";
+import { createPrivateHostedPreview$ } from "./private-hosted-preview.service";
+import { extractPrivateVideoPoster$ } from "./private-video-preview.service";
 
 const log = logger("artifacts:preview");
 
@@ -91,6 +94,7 @@ export interface RenderArtifactPreviewArgs {
   // Versions the preview key so each deployment gets a fresh, CDN-cache-busting
   // URL instead of overwriting a stale object at a fixed key.
   readonly deploymentId?: string;
+  readonly privateHosted?: boolean;
 }
 
 // Version the preview object by renderer and deployment so both renderer
@@ -135,6 +139,34 @@ async function extractVideoPoster(
   }
   return Buffer.from(await response.arrayBuffer());
 }
+
+const renderVideoPoster$ = command(
+  async ({ set }, args: RenderArtifactPreviewArgs, signal: AbortSignal) => {
+    if (!canExtractVideoPoster(args.contentType)) {
+      return null;
+    }
+    const reference = artifactFileReference(args.url);
+    if (reference) {
+      if (!reference.id) {
+        return null;
+      }
+      const image = await set(
+        extractPrivateVideoPoster$,
+        {
+          id: reference.id,
+          userId: args.userId,
+          orgId: args.orgId,
+        },
+        signal,
+      );
+      return image ? { image, isPrivate: true } : null;
+    }
+    return {
+      image: await extractVideoPoster(args.url, args.publicBrand, signal),
+      isPrivate: false,
+    };
+  },
+);
 
 function isCloudflareChallenge(content: string, title?: string): boolean {
   const page = `${title ?? ""}\n${content}`.toLowerCase();
@@ -317,14 +349,17 @@ const renderAndStoreArtifactPreview$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const isVideo = isVideoContentType(args.contentType);
+    let privateSource = args.privateHosted === true;
     let image: Buffer;
     let filename: string;
     let contentType: string;
     if (isVideo) {
-      if (!canExtractVideoPoster(args.contentType)) {
+      const poster = await set(renderVideoPoster$, args, signal);
+      if (!poster) {
         return false;
       }
-      image = await extractVideoPoster(args.url, args.publicBrand, signal);
+      image = poster.image;
+      privateSource ||= poster.isPrivate;
       filename = VIDEO_POSTER_FILENAME;
       contentType = VIDEO_POSTER_CONTENT_TYPE;
     } else {
@@ -338,7 +373,26 @@ const renderAndStoreArtifactPreview$ = command(
           "ARTIFACT_PREVIEW_WAF_SECRET is required when browser rendering is configured",
         );
       }
-      image = await renderArtifactSnapshot(token, wafSecret, args.url, signal);
+      let renderUrl = args.url;
+      if (args.privateHosted) {
+        if (!args.deploymentId) {
+          throw new Error("Private site previews require a deployment");
+        }
+        const preview = await set(
+          createPrivateHostedPreview$,
+          {
+            deploymentId: args.deploymentId,
+            userId: args.userId,
+            orgId: args.orgId,
+          },
+          signal,
+        );
+        if (!preview) {
+          return false;
+        }
+        renderUrl = preview.url;
+      }
+      image = await renderArtifactSnapshot(token, wafSecret, renderUrl, signal);
       filename = previewImageFilename(args.deploymentId);
       contentType = PREVIEW_IMAGE_CONTENT_TYPE;
     }
@@ -348,6 +402,7 @@ const renderAndStoreArtifactPreview$ = command(
     const existing = await get(privateArtifactRecord(privateId));
     signal.throwIfAborted();
     const privatePreview =
+      privateSource ||
       existing !== null ||
       (await get(privateArtifactCreationEnabled(args.orgId, args.userId)));
     signal.throwIfAborted();
@@ -433,7 +488,10 @@ export const scheduleArtifactPreviewRender$ = command(
             artifactId: args.id,
             url: args.url,
             contentType: args.contentType,
-            error: error instanceof Error ? error.message : String(error),
+            error: (error instanceof Error
+              ? error.message
+              : String(error)
+            ).replace(/pv-[a-f0-9]{48}/gu, "pv-[redacted]"),
           });
         },
       ),

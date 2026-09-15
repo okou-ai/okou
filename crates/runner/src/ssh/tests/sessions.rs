@@ -16,7 +16,6 @@ use super::{
 async fn lost_start_and_read_replies_do_not_kill_the_session_or_hold_guest_park() {
     use tokio::io::AsyncWriteExt;
     let mut h = Harness::new(Reply::Hold).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let mut guest = h.open().await;
     let request = envelope(
@@ -45,7 +44,6 @@ async fn lost_start_and_read_replies_do_not_kill_the_session_or_hold_guest_park(
 #[tokio::test]
 async fn backpressured_input_does_not_block_output_and_timeout_never_replays_partial_input() {
     let mut h = Harness::new(Reply::BlockedInput).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let id = start(&h, json!({"type":"exec","command":"hold"}), false).await;
     state(&h, &id, "running").await;
@@ -83,7 +81,6 @@ async fn backpressured_input_does_not_block_output_and_timeout_never_replays_par
 #[tokio::test]
 async fn malformed_session_requests_are_rejected_before_authority_or_network() {
     let h = Harness::new(Reply::Hold).await;
-    h.runtime.ably_connected(true);
     let resolve = h.resolve(h.credential(true)).await;
     for (method, params) in [
         (
@@ -123,7 +120,6 @@ async fn malformed_session_requests_are_rejected_before_authority_or_network() {
 async fn signal_submission_and_observed_signal_exit_are_separate_outcomes() {
     for signal in ["TERM", "KILL", "HUP", "INT", "USR1", "USR2"] {
         let mut h = Harness::new(Reply::Process).await;
-        h.runtime.ably_connected(true);
         let _resolve = h.resolve(h.credential(true)).await;
         let id = start(
             &h,
@@ -212,7 +208,6 @@ pub(super) fn bytes(read: &Value) -> Vec<u8> {
 #[tokio::test]
 async fn shell_keeps_cwd_environment_and_stdin_across_short_requests() {
     let mut h = Harness::new(Reply::Process).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let id = start(&h, json!({"type":"shell"}), false).await;
     state(&h, &id, "running").await;
@@ -246,7 +241,6 @@ async fn shell_keeps_cwd_environment_and_stdin_across_short_requests() {
 #[tokio::test]
 async fn a_real_pty_is_explicit_and_refusal_never_sends_the_program() {
     let h = Harness::new(Reply::Process).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let id = start(
         &h,
@@ -264,7 +258,6 @@ async fn a_real_pty_is_explicit_and_refusal_never_sends_the_program() {
     );
     assert_eq!(h.observed.ptys.load(Ordering::SeqCst), 1);
     let h = Harness::new(Reply::Hold).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let id = start(&h, json!({"type":"shell"}), true).await;
     let status = state(&h, &id, "failed").await;
@@ -276,7 +269,6 @@ async fn a_real_pty_is_explicit_and_refusal_never_sends_the_program() {
 #[tokio::test]
 async fn quiet_command_survives_the_one_shot_deadline_and_peer_rekey() {
     let mut h = Harness::new(Reply::Process).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let first = h
         .request(json!({"sshConnectionId":CONNECTION,"command":"true"}))
@@ -305,7 +297,6 @@ async fn quiet_command_survives_the_one_shot_deadline_and_peer_rekey() {
 #[tokio::test]
 async fn eight_retained_sessions_do_not_occupy_short_request_slots_or_park_leases() {
     let mut h = Harness::new(Reply::default()).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let mut ids = Vec::new();
     for _ in 0..8 {
@@ -357,7 +348,6 @@ async fn output_loss_is_explicit_bounded_and_cursor_reads_make_progress() {
         signal: None,
     })
     .await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let id = start(&h, json!({"type":"exec","command":"true"}), false).await;
     let status = state(&h, &id, "finished").await;
@@ -382,9 +372,8 @@ async fn output_loss_is_explicit_bounded_and_cursor_reads_make_progress() {
 }
 
 #[tokio::test]
-async fn invalidation_disconnect_and_replacement_retire_existing_ids() {
+async fn targeted_run_wide_invalidation_and_replacement_retire_existing_ids() {
     let mut h = Harness::new(Reply::Hold).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let id = start(&h, json!({"type":"exec","command":"hold"}), false).await;
     state(&h, &id, "running").await;
@@ -401,18 +390,14 @@ async fn invalidation_disconnect_and_replacement_retire_existing_ids() {
     );
     let id = start(&h, json!({"type":"exec","command":"hold"}), false).await;
     state(&h, &id, "running").await;
-    h.runtime.ably_connected(false);
+    h.runtime.ably_message(&ably_subscriber::Message {
+        name: Some("ssh-authority-invalidated".into()),
+        data: json!({"runId":h.run,"connectionId":null}),
+        id: None,
+        client_id: None,
+        timestamp: None,
+    });
     assert_eq!(rpc(&h, "list", json!({})).await["sessions"], json!([]));
-    assert_eq!(
-        rpc(
-            &h,
-            "start",
-            json!({"sshConnectionId":CONNECTION,"program":{"type":"shell"}})
-        )
-        .await["failure_reason"],
-        "unavailable"
-    );
-    h.runtime.ably_connected(true);
     let id = start(&h, json!({"type":"exec","command":"hold"}), false).await;
     state(&h, &id, "running").await;
     h.restart(crate::ids::RunId::new_v4()).await;
@@ -426,7 +411,6 @@ async fn invalidation_disconnect_and_replacement_retire_existing_ids() {
 #[tokio::test]
 async fn failed_async_preparation_remains_inspectable_and_cpu_wait_does_not_keep_guest_busy() {
     let mut h = Harness::new(Reply::Hold).await;
-    h.runtime.ably_connected(true);
     let mut credential = h.credential(true);
     credential["privateKey"] = json!("not a key");
     let _resolve = h.resolve(credential).await;
@@ -448,7 +432,6 @@ async fn failed_async_preparation_remains_inspectable_and_cpu_wait_does_not_keep
 #[tokio::test]
 async fn eof_signal_and_close_report_submission_without_claiming_remote_termination() {
     let mut h = Harness::new(Reply::Hold).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let id = start(&h, json!({"type":"exec","command":"hold"}), false).await;
     state(&h, &id, "running").await;
@@ -476,7 +459,6 @@ async fn eof_signal_and_close_report_submission_without_claiming_remote_terminat
 #[tokio::test]
 async fn credential_cache_saturation_does_not_create_a_global_session_cap() {
     let mut h = Harness::new(Reply::Hold).await;
-    h.runtime.ably_connected(true);
     let mut registrations = Vec::new();
     for _ in 0..256 {
         let registration = h.runtime.cache.register(crate::ids::RunId::new_v4());
@@ -504,7 +486,6 @@ async fn credential_cache_saturation_does_not_create_a_global_session_cap() {
 #[tokio::test]
 async fn completed_records_expire_and_cannot_be_reattached() {
     let mut h = Harness::new(Reply::default()).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let id = start(&h, json!({"type":"exec","command":"true"}), false).await;
     state(&h, &id, "finished").await;

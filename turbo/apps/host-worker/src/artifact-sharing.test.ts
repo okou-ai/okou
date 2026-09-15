@@ -17,7 +17,7 @@ const origin = `https://a.okou.io/${publicToken}.pdf`;
 const siteOrigin = `https://${publicToken}.okou.app`;
 const policyKey = `artifact-shares/okou/${id}.json`;
 
-function fixture(html = false, extension = "pdf") {
+function fixture(html = false, extension = "pdf", token = publicToken) {
   const files = {
     "/index.html": {
       path: "/index.html",
@@ -59,7 +59,7 @@ function fixture(html = false, extension = "pdf") {
     publicBrand: "okou",
     audience: "public",
     status: "active",
-    publicToken,
+    publicToken: token,
     target: html
       ? {
           kind: "html",
@@ -94,14 +94,14 @@ function fixture(html = false, extension = "pdf") {
       artifactDeliveryKey(
         "okou",
         html ? "html" : "file",
-        html ? publicToken : `${publicToken}.${extension}`,
+        html ? token : `${token}.${extension}`,
       ),
       JSON.stringify({
         version: 1,
         kind: "publication",
         publicBrand: "okou",
         shareId: id,
-        publicToken,
+        publicToken: token,
         targetKind: html ? "html" : "file",
       }),
     ],
@@ -172,6 +172,224 @@ function fixture(html = false, extension = "pdf") {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+function imageFixture(token = publicToken) {
+  const f = fixture(false, "png", token);
+  if (f.policy.target.kind !== "file") throw new Error("Expected file fixture");
+  f.policy.target.contentType = "image/png";
+  f.objects.set(policyKey, JSON.stringify(f.policy));
+  const render = vi.fn(async (body: ReadableStream) => {
+    return new Response(`Thumbnail of ${await new Response(body).text()}`);
+  });
+  const transforms: { readonly width?: number; readonly height?: number }[] =
+    [];
+  const images: NonNullable<Env["IMAGES"]> = {
+    input: (body) => {
+      return {
+        transform: (options) => {
+          transforms.push(options);
+          return {
+            output: async () => {
+              const response = await render(body);
+              return {
+                response: () => {
+                  return response;
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+  return {
+    ...f,
+    env: { ...f.env, IMAGES: images },
+    render,
+    transforms,
+    url: `https://a.okou.io/${token}.png?thumbnail=1&width=400`,
+  };
+}
+
+test.each([
+  { dimensions: "", width: undefined, height: undefined },
+  { dimensions: "&width=1200", width: 1200, height: undefined },
+  { dimensions: "&height=900", width: undefined, height: 900 },
+])(
+  "image embeds resize only when dimensions are requested (%j)",
+  async ({ dimensions, width, height }) => {
+    const f = imageFixture("a1b2c3d4e5");
+    const url = f.url.replace("&width=400", dimensions);
+    const response = await fetchWorker(new Request(url), f.env);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe("image/webp");
+    expect(await response.text()).toBe("Thumbnail of Private PDF bytes");
+    // The Images binding is the external renderer. An authoring embed with
+    // no bounds must retain its source dimensions; cards pass explicit bounds.
+    expect(f.transforms).toStrictEqual([{ width, height, fit: "scale-down" }]);
+  },
+);
+
+test.each(["a".repeat(24), "a1b2c3d4e5"])(
+  "cached thumbnails recheck public authorization for %s",
+  async (token) => {
+    const f = imageFixture(token);
+    const request = () => {
+      return new Request(f.url);
+    };
+    const cold = await fetchWorker(request(), f.env);
+    expect(await cold.text()).toBe("Thumbnail of Private PDF bytes");
+    expect(cold.headers.get("Content-Type")).toBe("image/webp");
+    expect(cold.headers.get("Cache-Control")).toBe("private, no-store");
+    f.reads.length = 0;
+    const warm = await fetchWorker(request(), f.env);
+    expect(await warm.text()).toBe("Thumbnail of Private PDF bytes");
+    expect(f.reads).toStrictEqual([policyKey]);
+    expect(f.render).toHaveBeenCalledTimes(1);
+    expect(
+      await (
+        await fetchWorker(new Request(f.url, { method: "HEAD" }), f.env)
+      ).text(),
+    ).toBe("");
+    expect(
+      await (
+        await fetchWorker(new Request(`https://a.okou.io/${token}.png`), f.env)
+      ).text(),
+    ).toBe("Private PDF bytes");
+    const cacheReads = f.cache.match.mock.calls.length;
+    for (const audience of ["organization", "private"] as const) {
+      f.objects.set(
+        policyKey,
+        JSON.stringify({
+          ...f.policy,
+          audience,
+          status: audience === "private" ? "revoked" : "active",
+          publicToken: null,
+        }),
+      );
+      const denied = await fetchWorker(request(), f.env);
+      expect(denied.status).toBe(404);
+      expect(denied.headers.get("Cache-Control")).toBe("private, no-store");
+    }
+    expect(f.cache.match).toHaveBeenCalledTimes(cacheReads);
+  },
+);
+
+test("thumbnail caches cannot hide missing policy or feed external Image Resizing", async () => {
+  const f = imageFixture();
+  await fetchWorker(new Request(f.url), f.env);
+  expect(
+    (
+      await fetchWorker(
+        new Request(f.url, { headers: { Via: "1.1 image-resizing" } }),
+        f.env,
+      )
+    ).status,
+  ).toBe(404);
+  f.objects.set(policyKey, "malformed");
+  expect((await fetchWorker(new Request(f.url), f.env)).status).toBe(503);
+  f.objects.delete(policyKey);
+  expect((await fetchWorker(new Request(f.url), f.env)).status).toBe(404);
+  expect(f.render).toHaveBeenCalledTimes(1);
+});
+
+test("legacy ten-character image thumbnails retain public caching and original bytes", async () => {
+  const f = imageFixture("a1b2c3d4e5");
+  const key = "artifacts/a1b2c3d4e5.png";
+  // The same shape as a new share is classified by its immutable registration.
+  f.objects.set(
+    artifactDeliveryKey(null, "file", "a1b2c3d4e5.png"),
+    JSON.stringify({
+      version: 1,
+      kind: "legacy-file",
+      publicBrand: "okou",
+      audience: "public",
+      key,
+      filename: "old.png",
+      contentType: "image/png",
+    }),
+  );
+  f.objects.set(key, "Historical image");
+  f.env.PUBLIC_ARTIFACTS_BUCKET = f.env.HOSTED_SITES_BUCKET;
+  f.objects.delete(policyKey);
+  const thumbnail = await fetchWorker(new Request(f.url), f.env);
+  expect(await thumbnail.text()).toBe("Thumbnail of Historical image");
+  expect(thumbnail.headers.get("Cache-Control")).toBe(
+    "public, max-age=31536000, immutable",
+  );
+  expect(
+    await (
+      await fetchWorker(new Request("https://a.okou.io/a1b2c3d4e5.png"), f.env)
+    ).text(),
+  ).toBe("Historical image");
+});
+
+test("thumbnail variants and immutable source versions do not share cached images", async () => {
+  const f = imageFixture();
+  await fetchWorker(new Request(f.url), f.env);
+  await fetchWorker(new Request(f.url.replace("400", "800")), f.env);
+  if (f.policy.target.kind !== "file") throw new Error("Expected file fixture");
+  f.policy.target.key = `private-artifacts/${fileId}/shares/next/image.png`;
+  f.objects.set(f.policy.target.key, "New image");
+  f.objects.set(policyKey, JSON.stringify(f.policy));
+  expect(await (await fetchWorker(new Request(f.url), f.env)).text()).toBe(
+    "Thumbnail of New image",
+  );
+  expect(f.render).toHaveBeenCalledTimes(3);
+});
+
+test.each(["0", "2049", "NaN", "12.5", "400&width=500"])(
+  "invalid thumbnail width %s never starts a transform",
+  async (width) => {
+    const f = imageFixture();
+    const response = await fetchWorker(
+      new Request(f.url.replace("400", width)),
+      f.env,
+    );
+    expect(response.status).toBe(400);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(f.render).not.toHaveBeenCalled();
+  },
+);
+
+test("unsupported images keep the authorized original and remain revocable", async () => {
+  const f = imageFixture();
+  if (f.policy.target.kind !== "file") throw new Error("Expected file fixture");
+  f.policy.target.contentType = "image/svg+xml";
+  f.objects.set(policyKey, JSON.stringify(f.policy));
+  const response = await fetchWorker(new Request(f.url), f.env);
+  expect(await response.text()).toBe("Private PDF bytes");
+  expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(f.render).not.toHaveBeenCalled();
+  f.objects.delete(policyKey);
+  expect((await fetchWorker(new Request(f.url), f.env)).status).toBe(404);
+});
+
+test("images larger than the binding limit keep their authorized original", async () => {
+  const f = imageFixture();
+  const bucket = f.env.PRIVATE_ARTIFACTS_BUCKET!;
+  f.env.PRIVATE_ARTIFACTS_BUCKET = {
+    ...bucket,
+    get: async (key, options) => {
+      const object = await bucket.get(key, options);
+      return object ? { ...object, size: 20_000_000 + 1 } : null;
+    },
+  };
+  const response = await fetchWorker(new Request(f.url), f.env);
+  expect(await response.text()).toBe("Private PDF bytes");
+  expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(f.render).not.toHaveBeenCalled();
+});
+
+test("a failed transform never populates the thumbnail cache or exposes an original", async () => {
+  const f = imageFixture();
+  f.render.mockRejectedValue(new Error("Image service unavailable"));
+  const response = await fetchWorker(new Request(f.url), f.env);
+  expect(response.status).toBe(503);
+  expect(await response.text()).not.toContain("Private PDF");
+  expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+  expect(f.cache.put).not.toHaveBeenCalled();
 });
 
 test.each([false, true])(

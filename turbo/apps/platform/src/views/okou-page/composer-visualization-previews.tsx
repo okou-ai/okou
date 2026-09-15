@@ -946,6 +946,35 @@ const CHART_ARTWORKS = {
   "word-cloud": WordCloudChartArtwork,
 } satisfies Record<VisualizationChart, ComponentType>;
 
+/**
+ * Each artwork's own content bounds, measured with `getBBox` in a browser and
+ * padded by 3 units. One shared frame cannot centre them: dropping the legend
+ * columns left pie, funnel and the nested donut drawn in the left half of a
+ * frame that still spanned the full width, and radar never filled it at all.
+ * Framing each drawing on itself centres every tile and gives the row one
+ * optical weight, which a single viewBox cannot do for shapes this different.
+ */
+const CHART_VIEW_BOX = {
+  bar: "26 20.3 122 51.8",
+  line: "22 12.4 136.6 52.6",
+  pie: "20 9 68 68",
+  scatter: "23.8 10.5 125.2 56.7",
+  area: "22 16.8 134 55.2",
+  "stacked-bar": "26 10 122 61",
+  heatmap: "22 6 123 63",
+  bubble: "26 8 121 60",
+  radar: "44.6 7 65.4 74",
+  sankey: "21 7 120 71",
+  gantt: "22 7 134 71",
+  "bar-race": "23 8 126 71",
+  candlestick: "24 8.3 128 43.8",
+  funnel: "17 9 102 75",
+  "nested-donut": "27 9 70 70",
+  "route-map": "6 12.2 153 64",
+  "choropleth-map": "1 6 158 78",
+  "word-cloud": "1.8 4.9 155.1 81",
+} as const satisfies Record<VisualizationChart, string>;
+
 export function VisualizationChartPreview({
   chart,
 }: {
@@ -954,7 +983,7 @@ export function VisualizationChartPreview({
   const Artwork = CHART_ARTWORKS[chart];
   return (
     <svg
-      viewBox="9 -1 160 80"
+      viewBox={CHART_VIEW_BOX[chart]}
       className="h-full w-full"
       aria-hidden
       focusable="false"

@@ -3,26 +3,19 @@ import type { Element, Root } from "hast";
 import mermaid from "@okouai/mermaid-lite";
 
 import { createObjectUrlResource } from "./object-url-resource.ts";
-import { theme$ } from "./theme.ts";
 import { NEVER_RESOLVED_PROMISE, settle } from "./utils.ts";
 
 /**
- * Mermaid diagrams render through a pull model. Each diagram source owns one
- * `MermaidDiagramSignals` in the registry of the surface showing it; its
- * `diagram$` computed lays the diagram out and resolves to an image the view
- * shows in an `<img>` — or to `null` when the parser rejects the source, in
- * which case the fence simply stays a code block. Reading the theme inside the
- * computed makes a theme switch re-render every diagram without any
- * remounting.
+ * Mermaid diagrams use black text on an opaque white SVG, independent of the
+ * app theme. Each source owns one image per surface, shown through an `<img>`
+ * or resolved to `null` when the parser rejects it so the fence stays code.
  *
  * The command that parses a tree registers each diagram and embeds the
  * returned signals on the marker node, so rendering receives the signals
  * object directly and never resolves diagrams by key.
  *
- * Each resolved theme has one blob URL owned by the surface lifetime the
- * registry (or a preview tree) supplies. The light/dark cache is a hard
- * two-entry bound, so switching themes reuses the prior rendering instead of
- * stranding another blob.
+ * Chat prepares visible diagrams through commands. Shared threads and markdown
+ * previews render on first read. Both bind blob URLs to their owning lifetime.
  */
 export interface MermaidDiagramImage {
   readonly url: string;
@@ -70,9 +63,8 @@ export function embedMermaidSignals(
 }
 
 /**
- * mermaid needs a DOM id per `render` call. Concurrent renders only happen for
- * distinct code+theme pairs — the same pair is one deduplicated computed — so
- * a deterministic hash of both is collision-free where it matters.
+ * Mermaid needs a DOM id for its temporary render elements. Renders are
+ * serialized, so a deterministic source hash can be reused across surfaces.
  */
 function diagramRenderId(seed: string): string {
   let hash = 5381;
@@ -103,13 +95,8 @@ async function renderDiagramSvg(
   return svg;
 }
 
-// `mermaid.initialize` mutates module-global configuration, so an
-// initialize+render pair must not interleave with another pair: a theme flip
-// mid-render would otherwise re-initialize mermaid and the in-flight render
-// would produce — and permanently cache — the other theme's SVG under its own
-// theme key. The queue holds the tail of one render chain; each render settles
-// the pair before it (a failed render must not break the chain) and becomes
-// the new tail.
+// Mermaid shares mutable configuration and render state. Serialize each
+// initialize+render pair; a failed render must not break the chain.
 const mermaidRenderQueue$ = computed((): { tail: Promise<unknown> } => {
   return { tail: Promise.resolve() };
 });
@@ -148,6 +135,8 @@ function setSvgSize(svg: SVGSVGElement, width: number, height: number): void {
  */
 function sizeDiagramAndSerialize(svg: SVGSVGElement): string {
   svg.style.maxWidth = "";
+  // Keep the same opaque canvas in chat, expanded previews, and downloads.
+  svg.style.backgroundColor = "#ffffff";
   const size = viewBoxSize(svg);
   if (!size) {
     return new XMLSerializer().serializeToString(svg);
@@ -172,7 +161,6 @@ function svgFile(markup: string): File {
  */
 async function renderDiagramFile(
   renderQueue: { tail: Promise<unknown> },
-  theme: "light" | "dark",
   code: string,
 ): Promise<File | null> {
   // Read the tail and replace it in the same synchronous block, so two
@@ -188,7 +176,7 @@ async function renderDiagramFile(
       // Without this mermaid injects its own error diagram into the
       // document.
       suppressErrorRendering: true,
-      theme: theme === "dark" ? "redux-dark" : "redux",
+      theme: "base",
       // Resolved to a concrete stack rather than passed as `var(...)`: the
       // same SVG is also shown inside an <img> in the lightbox, where
       // page-level CSS custom properties do not resolve.
@@ -199,10 +187,21 @@ async function renderDiagramFile(
       // and 50px rank spacing make a five-node flowchart taller than the
       // message around it. These match the chat body text and cut roughly
       // a third of the height.
-      themeVariables: { fontSize: "14px" },
+      themeVariables: {
+        fontSize: "14px",
+        background: "#ffffff",
+        primaryColor: "#ffffff",
+        primaryTextColor: "#000000",
+        primaryBorderColor: "#000000",
+        secondaryColor: "#ffffff",
+        tertiaryColor: "#ffffff",
+        lineColor: "#000000",
+        noteBkgColor: "#ffffff",
+        noteTextColor: "#000000",
+      },
       flowchart: { nodeSpacing: 30, rankSpacing: 32, padding: 8 },
     });
-    return renderDiagramSvg(diagramRenderId(`${theme}:${code}`), code);
+    return renderDiagramSvg(diagramRenderId(code), code);
   })();
   renderQueue.tail = render;
   const markup = await render;
@@ -233,20 +232,10 @@ export function createMermaidDiagramSignals(
   code: string,
   ownerSignal: AbortSignal,
 ): MermaidDiagramSignals {
-  const imagesByTheme = new Map<
-    "light" | "dark",
-    Promise<MermaidDiagramImage | null>
-  >();
   // eslint-disable-next-line ccstate/no-computed-signal -- migrate this computed away from AbortSignal ownership
-  const diagram$ = computed((get): Promise<MermaidDiagramImage | null> => {
-    const theme = get(theme$);
-    const existing = imagesByTheme.get(theme);
-    if (existing !== undefined) {
-      return existing;
-    }
-    const renderQueue = get(mermaidRenderQueue$);
-    const image = (async (): Promise<MermaidDiagramImage | null> => {
-      const file = await renderDiagramFile(renderQueue, theme, code);
+  const diagram$ = computed(
+    async (get): Promise<MermaidDiagramImage | null> => {
+      const file = await renderDiagramFile(get(mermaidRenderQueue$), code);
       if (file === null) {
         return null;
       }
@@ -254,10 +243,8 @@ export function createMermaidDiagramSignals(
       // A short blob URL keeps the multi-kilobyte SVG out of the `src`
       // attribute, avoiding the measured per-mount string assignment cost.
       return { url: resource.url, file };
-    })();
-    imagesByTheme.set(theme, image);
-    return image;
-  });
+    },
+  );
   return { code, diagram$ };
 }
 
@@ -283,19 +270,14 @@ export interface MermaidDiagramRegistry {
  * produced it but not the surface that showed it.
  */
 export function createMermaidDiagramRegistry(): MermaidDiagramRegistry {
-  // Keyed by theme and source. The source itself is the key rather than a
-  // digest of it: a non-cryptographic hash that collided would show one
-  // diagram in place of another, and entries are bounded by what is on screen.
+  // Key by source to avoid hash collisions showing the wrong diagram.
+  // Entries are bounded by what is on screen.
   const internalImages$ = state<
     ReadonlyMap<string, MermaidDiagramImage | null>
   >(new Map());
   const internalSignals$ = state<ReadonlyMap<string, MermaidDiagramSignals>>(
     new Map(),
   );
-
-  const imageKey = (theme: "light" | "dark", code: string): string => {
-    return `${theme}\n${code}`;
-  };
 
   const register$ = command(
     ({ get, set }, code: string): MermaidDiagramSignals => {
@@ -304,7 +286,7 @@ export function createMermaidDiagramRegistry(): MermaidDiagramRegistry {
         return existing;
       }
       const diagram$ = computed((get): Promise<MermaidDiagramImage | null> => {
-        const image = get(internalImages$).get(imageKey(get(theme$), code));
+        const image = get(internalImages$).get(code);
         // Nothing prepared yet keeps the view on its reserved placeholder.
         return image === undefined
           ? (NEVER_RESOLVED_PROMISE as Promise<MermaidDiagramImage | null>)
@@ -343,35 +325,29 @@ export function createMermaidDiagramRegistry(): MermaidDiagramRegistry {
       signal: AbortSignal,
     ): Promise<void> => {
       signal.throwIfAborted();
-      const theme = get(theme$);
       const pending = new Set(
         codes.filter((code) => {
-          return !get(internalImages$).has(imageKey(theme, code));
+          return !get(internalImages$).has(code);
         }),
       );
       for (const code of pending) {
-        const key = imageKey(theme, code);
-        const file = await renderDiagramFile(
-          get(mermaidRenderQueue$),
-          theme,
-          code,
-        );
+        const file = await renderDiagramFile(get(mermaidRenderQueue$), code);
         signal.throwIfAborted();
         if (file === null) {
-          set(publishImage$, key, null);
+          set(publishImage$, code, null);
           continue;
         }
         const resource = createObjectUrlResource(file, signal);
         signal.addEventListener(
           "abort",
           () => {
-            set(dropImage$, key);
+            set(dropImage$, code);
           },
           { once: true },
         );
         // A short blob URL keeps the multi-kilobyte SVG out of the `src`
         // attribute, avoiding the measured per-mount string assignment cost.
-        set(publishImage$, key, { url: resource.url, file });
+        set(publishImage$, code, { url: resource.url, file });
       }
     },
   );

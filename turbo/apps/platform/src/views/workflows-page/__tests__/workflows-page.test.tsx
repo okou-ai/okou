@@ -2601,7 +2601,7 @@ test.each(["Cancel", "Close", "Escape", "backdrop"] as const)(
 );
 
 test.each(["Install", "Reconfigure"] as const)(
-  "Keep a pending Official Workflow %s submission disabled after reopening",
+  "Keep an Official Workflow %s submission disabled until failure and allow retry",
   async (operation) => {
     const workflow = officialSalesResearch();
     const definition = officialCatalogDetail();
@@ -2616,8 +2616,8 @@ test.each(["Install", "Reconfigure"] as const)(
     });
     context.mocks.api(
       officialWorkflowsContract.install,
-      async ({ respond }) => {
-        await response.promise;
+      async ({ respond, withSignal }) => {
+        await withSignal(response.promise);
         return respond(500, {
           error: { code: "INTERNAL_SERVER_ERROR", message: "Install failed" },
         });
@@ -2639,8 +2639,8 @@ test.each(["Install", "Reconfigure"] as const)(
     );
     context.mocks.api(
       officialWorkflowInstallationsContract.reconfigure,
-      async ({ respond }) => {
-        await response.promise;
+      async ({ respond, withSignal }) => {
+        await withSignal(response.promise);
         return respond(500, {
           error: {
             code: "INTERNAL_SERVER_ERROR",
@@ -2665,16 +2665,13 @@ test.each(["Install", "Reconfigure"] as const)(
     await waitFor(() => {
       expect(buttonByText(operation, dialog)).toBeDisabled();
     });
-    await dismissOfficialWorkflowDialog(dialog, "Close");
-    click(openButton);
-    const reopened = await screen.findByRole("dialog");
-    expect(buttonByText(operation, reopened)).toBeDisabled();
-
     response.resolve();
-    await waitFor(() => {
-      expect(buttonByText(operation, reopened)).toBeEnabled();
-    });
-    expect(within(reopened).queryByRole("alert")).not.toBeInTheDocument();
+    await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
+      installing
+        ? "Official Workflow could not be installed"
+        : "Official Workflow could not be reconfigured",
+    );
+    expect(buttonByText(operation, dialog)).toBeEnabled();
   },
 );
 
@@ -4311,11 +4308,14 @@ function calendarRecoveryWorkflow(): WorkflowDetailResponse {
   };
 }
 
+interface CalendarRecoveryDeadline {
+  readonly expire: () => void;
+  readonly signal: AbortSignal;
+}
+
 function holdCalendarRecoveryDeadline() {
-  const deadline = context.mocks.deferred<{
-    readonly expire: () => void;
-    readonly signal: AbortSignal;
-  }>();
+  const deadline = context.mocks.deferred<CalendarRecoveryDeadline>();
+  const scheduled: CalendarRecoveryDeadline[] = [];
   const timeout = timers.timeout;
   vi.spyOn(timers, "timeout").mockImplementation((callback, ms, options) => {
     if (ms !== 30_000) {
@@ -4326,16 +4326,13 @@ function holdCalendarRecoveryDeadline() {
     if (!signal) {
       throw new Error("Expected an owned recovery deadline");
     }
-    deadline.resolve({
-      signal,
-      expire: () => {
-        if (!signal.aborted) {
-          callback();
-        }
-      },
-    });
+    const entry = { signal, expire: callback };
+    scheduled.push(entry);
+    if (!deadline.settled()) {
+      deadline.resolve(entry);
+    }
   });
-  return deadline;
+  return { ...deadline, scheduled };
 }
 
 async function expectUnconfirmedCalendarRecovery() {
@@ -4448,6 +4445,70 @@ test("Abort a hanging Calendar summary at the recovery deadline", async () => {
       "Google Calendar needs to be reconnected before this automation can resume.",
     ),
   ).toBeVisible();
+});
+
+test("An expired Calendar attempt cannot cancel or complete its replacement", async () => {
+  const workflow = calendarRecoveryWorkflow();
+  const reconnect = mockCalendarReconnect(workflow);
+  const deadline = holdCalendarRecoveryDeadline();
+  const oldRequested = context.mocks.deferred<AbortSignal>();
+  const newRequested = context.mocks.deferred<AbortSignal>();
+  const oldResponse = context.mocks.deferred<void>();
+  const newResponse = context.mocks.deferred<void>();
+  let oauthCompleted = false;
+  let statusReads = 0;
+  context.mocks.api(
+    workflowsDetailContract.get,
+    async ({ request, respond }) => {
+      if (oauthCompleted) {
+        statusReads++;
+        if (statusReads === 1) {
+          oldRequested.resolve(request.signal);
+          await oldResponse.promise;
+        } else {
+          newRequested.resolve(request.signal);
+          await newResponse.promise;
+        }
+      }
+      return respond(200, publicWorkflowDetail(workflow));
+    },
+  );
+  await reconnect.open();
+  oauthCompleted = true;
+  reconnect.complete();
+  const oldSignal = await oldRequested.promise;
+  const oldDeadline = await deadline.promise;
+  oldDeadline.expire();
+  const recovery = await expectUnconfirmedCalendarRecovery();
+  expect(oldSignal.aborted).toBeTruthy();
+
+  click(buttonByText("Check status", recovery));
+  const newSignal = await newRequested.promise;
+  await within(recovery).findByRole("status");
+  expect(buttonByText("Check status", recovery)).toBeDisabled();
+  // Even a queued old deadline callback and late successful response belong
+  // only to the expired attempt, while the replacement is still pending.
+  oldDeadline.expire();
+  workflow.automations[0] = googleCalendarWorkflowAutomation();
+  oldResponse.resolve();
+  expect(newSignal.aborted).toBeFalsy();
+  expect(within(recovery).getByRole("status")).toBeInTheDocument();
+
+  newResponse.resolve();
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("region", { name: "Google Calendar recovery" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+  expect(deadline.scheduled).toHaveLength(2);
+  expect(
+    deadline.scheduled.every((entry) => {
+      return entry.signal.aborted;
+    }),
+  ).toBeTruthy();
+  expect(screen.getByRole("switch")).toBeChecked();
+  expect(reconnect.submittedAccounts).toHaveLength(1);
 });
 
 test("Keep the Calendar warning after a read failure and allow a status-only retry", async () => {

@@ -176,6 +176,8 @@ export const setCustomConnectorAgentAuthorization$ = command(
       },
     );
     signal.throwIfAborted();
+    await get(customConnectorAgentAuthorizations$);
+    signal.throwIfAborted();
     return true;
   },
 );

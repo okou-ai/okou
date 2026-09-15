@@ -422,8 +422,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.TelegramDmSessions]: {
     maintainer: "linghan@okou.ai",
     description:
-      "Use agent/model-scoped Telegram DM sessions and separate reply chains. Enable after compatible callback readers are deployed.",
-    enabled: false,
+      "Use agent/model-scoped Telegram DM sessions and separate reply chains.",
+    enabled: true,
   },
   [FeatureSwitchKey.FeishuIntegration]: {
     maintainer: "linghan@okou.ai",
@@ -468,6 +468,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "tongx@okou.ai",
     description:
       "Replace the composer's flat slash menu with a two-pane panel that previews each template type's covers.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.GetStartedQuests]: {
+    maintainer: "ming@okou.ai",
+    description:
+      "Show the home corner's Get started quest list. Progress is placeholder data; no credits are awarded yet.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

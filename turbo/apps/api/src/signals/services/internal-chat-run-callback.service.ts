@@ -1,3 +1,7 @@
+import {
+  readRunContentOwnership,
+  type RunContentOwnership,
+} from "./run-content-erasure-admission.service";
 import { historicalRunGroupId } from "./run-event-provenance.service";
 import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
@@ -20,6 +24,7 @@ import {
   type PublicBrand,
 } from "@okouai/api-contracts/contracts/public-brand";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
+import { publicProviderBalanceFailureReason } from "@okouai/api-contracts/contracts/run-balance-errors";
 import {
   isFeatureEnabled,
   type FeatureSwitchContext,
@@ -405,6 +410,7 @@ interface AssistantEventItem {
 }
 
 interface AssistantEventInsertArgs {
+  readonly ownership: RunContentOwnership;
   readonly runId: string;
   readonly threadId: string;
   readonly userId: string;
@@ -651,6 +657,7 @@ interface ChatRunInfo {
   readonly prompt: string;
   readonly error: string | null;
   readonly failureReason: RunFailureReasonToken | null;
+  readonly modelProvider: string | null;
   readonly lastEventSequence: number | null;
   readonly cancellationRecoveryCompleted: boolean | null;
 }
@@ -1941,10 +1948,12 @@ async function loadRecommendedFollowupContextForCompletedRun(args: {
 async function materializeCompletedChatResult(
   args: {
     readonly output: CompletedChatOutputLoad;
+    readonly ownership: RunContentOwnership;
     readonly preferResultFallback: boolean;
     readonly timing: ChatCallbackPreCreateTimingCollector;
     readonly insertAssistantItems: (
       items: readonly AssistantEventItem[],
+      ownership: RunContentOwnership,
     ) => Promise<void>;
   },
   signal: AbortSignal,
@@ -1957,7 +1966,10 @@ async function materializeCompletedChatResult(
       "api_dispatch_pre_create_agent_chat_callback_insert_assistant_items",
       "nested",
       () => {
-        return args.insertAssistantItems(assistantItemsToInsert);
+        return args.insertAssistantItems(
+          assistantItemsToInsert,
+          args.ownership,
+        );
       },
     );
     signal.throwIfAborted();
@@ -1978,7 +1990,7 @@ async function materializeCompletedChatResult(
       "api_dispatch_pre_create_agent_chat_callback_insert_assistant_items",
       "nested",
       () => {
-        return args.insertAssistantItems([resultFallback]);
+        return args.insertAssistantItems([resultFallback], args.ownership);
       },
     );
     signal.throwIfAborted();
@@ -2004,10 +2016,13 @@ async function handleCompletedChatCallback(
     readonly publicBrand: PublicBrand;
     readonly insertAssistantItems: (
       items: readonly AssistantEventItem[],
+      ownership: RunContentOwnership,
     ) => Promise<void>;
   },
   signal: AbortSignal,
 ): Promise<CompletedChatCallbackResult> {
+  const ownership = await readRunContentOwnership(args.db, args.runId);
+  signal.throwIfAborted();
   const output = await loadCompletedChatOutput(
     {
       db: args.db,
@@ -2022,6 +2037,7 @@ async function handleCompletedChatCallback(
   const lastResultText = await materializeCompletedChatResult(
     {
       output,
+      ownership,
       preferResultFallback:
         args.slackDelivery !== undefined ||
         args.teamsDelivery !== undefined ||
@@ -3922,6 +3938,7 @@ async function loadTerminalChatCallback(
       prompt: agentRuns.prompt,
       error: agentRuns.error,
       failureReason: agentRuns.failureReason,
+      modelProvider: agentRuns.modelProvider,
       lastEventSequence: agentRuns.lastEventSequence,
       cancellationRecoveryCompleted: agentRuns.cancellationRecoveryCompleted,
     })
@@ -3995,7 +4012,7 @@ async function prepareCompletedTerminalChatCallbackWork(
           githubDelivery: args.githubDelivery,
           sourceCallbackId: args.sourceCallbackId,
           publicBrand: args.publicBrand,
-          insertAssistantItems: async (items) => {
+          insertAssistantItems: async (items, ownership) => {
             await args.dependencies.insertAssistantItems(
               {
                 runId: args.runId,
@@ -4003,6 +4020,7 @@ async function prepareCompletedTerminalChatCallbackWork(
                 userId: args.chatThread.userId,
                 orgId: args.chatThread.orgId,
                 items,
+                ownership,
               },
               signal,
             );
@@ -4082,7 +4100,11 @@ async function prepareFailedTerminalChatCallbackWork(
         runId: args.runId,
         chatThread: args.chatThread,
         errorMessage: args.errorMessage,
-        failureReason: args.run.failureReason,
+        failureReason:
+          args.run.failureReason === "provider_insufficient_credits"
+            ? (publicProviderBalanceFailureReason(args.run.modelProvider) ??
+              null)
+            : args.run.failureReason,
         hasCancellationRecoveryState:
           args.run.cancellationRecoveryCompleted !== null,
         getFormattedError: () => {

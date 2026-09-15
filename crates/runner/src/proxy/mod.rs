@@ -19,9 +19,9 @@
 //! - `usage-flush-request` is written by Rust before shutdown drain. The addon
 //!   acknowledges in `usage-pending` with the matching usage state, flush
 //!   request id, and pending flow/buffer/report counters.
-//! - `jsonl-flush-request` is written by Rust for one network log path before
-//!   upload. The addon acknowledges in `jsonl-flush-state` after accepted
-//!   writes for that path are visible.
+//! - `logs.flush` captures an accepted-write prefix for the original run/path
+//!   and generation before upload. Processing includes failed append attempts;
+//!   it does not certify persistence. Connections never own pending writes.
 //!
 //! On supported Unix runner hosts, registry writes are target-path atomic so
 //! the addon never consumes partial JSON. Flush acknowledgements must match the
@@ -49,7 +49,7 @@
 //! (mitmproxy hook orchestration),
 //! `crates/runner/mitm-addon/src/runner_control.py` (independent control I/O),
 //! `crates/runner/mitm-addon/src/runner_flush_lifecycle.py` (SIGUSR1 usage
-//! worker and JSONL marker watcher),
+//! worker),
 //! `crates/runner/mitm-addon/src/usage/counters.py` (`usage-pending`),
 //! `crates/runner/mitm-addon/src/registry.py` (registry loading), and
 //! `crates/runner/mitm-addon/src/jsonl_writer.py` (accepted-write flush
@@ -57,16 +57,15 @@
 
 mod control;
 mod flush;
+mod log_flush;
 mod managed_process;
 mod process;
 mod registry;
 mod runtime;
 mod stderr;
 
-pub use flush::{
-    MitmJsonlFlushHandle, USAGE_FLUSH_TIMEOUT, wait_usage_flush_requesting,
-    write_usage_flush_request,
-};
+pub use flush::{USAGE_FLUSH_TIMEOUT, wait_usage_flush_requesting, write_usage_flush_request};
+pub use log_flush::{MitmJsonlFlushHandle, MitmRunLogFlush};
 pub(crate) use managed_process::ManagedMitmdump;
 pub(crate) use process::MitmRestartError;
 pub use process::{MitmProxy, ProxyConfig};

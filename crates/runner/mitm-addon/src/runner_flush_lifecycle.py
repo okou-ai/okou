@@ -1,19 +1,14 @@
-"""Runner-triggered usage flush and JSONL marker-watcher lifecycle owner."""
+"""Runner-triggered usage flush lifecycle owner."""
 
-import os
 import signal
 import threading
 import time
-from pathlib import Path
 from typing import Literal
 
 import addon_process_logging
 import anthropic_accounting
 import claude_output_timing
 import codex_output_timing
-import logging_utils
-import runner_flush_request
-import state_file
 import usage
 
 _RunnerFlushPhase = Literal["running", "draining", "closed"]
@@ -26,9 +21,6 @@ _DeliveryFlushTrigger = Literal["runner", "shutdown"]
 #   matching flushRequestId so the runner can observe a fresh snapshot.
 # - Rust performs a bounded wait for the acknowledged snapshot to have zero
 #   flows, buffered work, and reports before stopping the proxy.
-# - Rust may also write `jsonl-flush-request` for a concrete network log path.
-#   An addon-owned watcher independently drains accepted JSONL writes for that
-#   path and acknowledges with `jsonl-flush-state` before Rust uploads the file.
 #
 # Keep this in sync with usage/counters.py and the Rust wait path in
 # crates/runner/src/proxy/flush.rs plus crates/runner/src/cmd/start/mod.rs.
@@ -42,16 +34,6 @@ _usage_flush_signal_lock = threading.Lock()
 # Running workers own requests under the lock. During shutdown, drain_and_close()
 # changes the phase before waiting for that lock and becomes the sole draining owner.
 _runner_flush_phase: _RunnerFlushPhase = "running"
-_jsonl_flush_state_publisher = state_file.AtomicJsonPublisher()
-_jsonl_flush_worker_lock = threading.Lock()
-_jsonl_flush_stop = threading.Event()
-_jsonl_flush_worker: threading.Thread | None = None
-_last_jsonl_flush_request_id: str | None = None
-_last_jsonl_state_write_error_request_id: str | None = None
-_JSONL_FLUSH_REQUEST_FILE = "jsonl-flush-request"
-_JSONL_FLUSH_STATE_FILE = "jsonl-flush-state"
-RUNNER_JSONL_FLUSH_TIMEOUT_SECONDS = 4.0
-RUNNER_JSONL_FLUSH_POLL_SECONDS = 0.1
 
 
 def handle_runner_usage_flush_signal(signum: int, _frame: object) -> None:
@@ -89,73 +71,16 @@ def wait_for_runner_usage_flush_worker_to_stop_for_tests(timeout: float = 1.0) -
 
 
 def reset_runner_usage_flush_state_for_tests(timeout: float = 1.0) -> None:
-    global _last_jsonl_flush_request_id, _last_jsonl_state_write_error_request_id
     global _runner_flush_phase, _usage_flush_requested
 
-    _stop_runner_jsonl_flush_worker()
     acquired = _usage_flush_signal_lock.acquire(timeout=timeout)
     if not acquired:
         raise AssertionError("runner usage flush worker did not stop")
     try:
         _runner_flush_phase = "running"
         _usage_flush_requested = False
-        _last_jsonl_flush_request_id = None
-        _last_jsonl_state_write_error_request_id = None
     finally:
         _usage_flush_signal_lock.release()
-
-
-def start_runner_jsonl_flush_worker() -> None:
-    """Start the addon-owned JSONL marker watcher once."""
-    global _jsonl_flush_worker
-
-    with _jsonl_flush_worker_lock:
-        if _runner_flush_phase != "running":
-            return
-        if _jsonl_flush_worker is not None and _jsonl_flush_worker.is_alive():
-            return
-
-        marker_directory = Path(__file__).resolve().parent
-        request_path = marker_directory / _JSONL_FLUSH_REQUEST_FILE
-        state_path = marker_directory / _JSONL_FLUSH_STATE_FILE
-        _jsonl_flush_stop.clear()
-        worker = threading.Thread(
-            target=_run_runner_jsonl_flush_worker,
-            args=(request_path, state_path),
-            name="runner-jsonl-flush",
-            daemon=True,
-        )
-        worker.start()
-        _jsonl_flush_worker = worker
-
-
-def stop_runner_jsonl_flush_worker_for_tests() -> None:
-    _stop_runner_jsonl_flush_worker()
-
-
-def _run_runner_jsonl_flush_worker(request_path: Path, state_path: Path) -> None:
-    """Observe current-generation JSONL markers independently of usage."""
-    while True:
-        _flush_jsonl_for_runner_request(request_path, state_path)
-        if _jsonl_flush_stop.wait(RUNNER_JSONL_FLUSH_POLL_SECONDS):
-            _flush_jsonl_for_runner_request(request_path, state_path)
-            return
-
-
-def _stop_runner_jsonl_flush_worker() -> None:
-    global _jsonl_flush_worker
-
-    with _jsonl_flush_worker_lock:
-        worker = _jsonl_flush_worker
-        if worker is None:
-            return
-        _jsonl_flush_stop.set()
-
-    worker.join()
-
-    with _jsonl_flush_worker_lock:
-        if _jsonl_flush_worker is worker:
-            _jsonl_flush_worker = None
 
 
 def _start_usage_flush_worker() -> None:
@@ -248,118 +173,16 @@ def drain_delivery_work_after_executor_shutdown() -> None:
     _retry_retained_diagnostic_reports()
 
 
-def _flush_jsonl_for_runner_request(request_path: Path, state_path: Path) -> None:
-    global _last_jsonl_flush_request_id
-
-    request = _read_jsonl_flush_request(request_path)
-    if request is None:
-        return
-
-    log_path, flush_request_id = request
-    pending = 0
-    timed_out = False
-    try:
-        if not logging_utils.flush_log_path(
-            log_path,
-            timeout=RUNNER_JSONL_FLUSH_TIMEOUT_SECONDS,
-        ):
-            pending = 1
-            timed_out = True
-            addon_process_logging.emit_addon_process_event(
-                "warn",
-                "JSONL flush did not complete before timeout",
-            )
-    except Exception as exc:
-        pending = 1
-        addon_process_logging.emit_addon_process_event(
-            "warn",
-            f"Failed to flush JSONL logs after runner request ({type(exc).__name__})",
-        )
-    finally:
-        state_written = _write_jsonl_flush_state(
-            state_path,
-            log_path,
-            flush_request_id,
-            pending=pending,
-        )
-        if state_written and (pending == 0 or timed_out):
-            _last_jsonl_flush_request_id = flush_request_id
-
-
-def _read_jsonl_flush_request(request_path: Path) -> tuple[str, str] | None:
-    request = runner_flush_request.read_runner_flush_request(
-        request_path,
-        get_usage_state_id=usage.current_usage_state_id,
-    )
-    if request is None:
-        return None
-    flush_request_id = request.flush_request_id
-    if (
-        not _is_safe_jsonl_flush_request_id(flush_request_id)
-        or flush_request_id == _last_jsonl_flush_request_id
-    ):
-        return None
-    log_path = request.marker.get("path")
-    if not isinstance(log_path, str) or not log_path:
-        return None
-    return log_path, flush_request_id
-
-
-def _is_safe_jsonl_flush_request_id(flush_request_id: str) -> bool:
-    return all(
-        ("a" <= char <= "z") or ("A" <= char <= "Z") or ("0" <= char <= "9") or char in "-_"
-        for char in flush_request_id
-    )
-
-
-def _write_jsonl_flush_state(
-    state_path: Path,
-    log_path: str,
-    flush_request_id: str,
-    *,
-    pending: int = 0,
-) -> bool:
-    global _last_jsonl_state_write_error_request_id
-
-    state: dict[str, object] = {
-        "pid": os.getpid(),
-        "usageStateId": usage.current_usage_state_id(),
-        "updatedAtMs": int(time.time() * 1000),
-        "flushRequestId": flush_request_id,
-        "path": log_path,
-        "pending": pending,
-    }
-    try:
-        _jsonl_flush_state_publisher.publish(state_path, state)
-        return True
-    except OSError as exc:
-        if _last_jsonl_state_write_error_request_id != flush_request_id:
-            _last_jsonl_state_write_error_request_id = flush_request_id
-            addon_process_logging.emit_addon_process_event(
-                "warn",
-                (
-                    f"Failed to write JSONL flush state for request {flush_request_id!r} "
-                    f"({type(exc).__name__}). Subsequent failures for this request will be "
-                    f"silent. State path: {state_path}. Error: {exc}"
-                ),
-            )
-        return False
-
-
 def drain_and_close() -> None:
     """Drain accepted runner flush requests and close further admission."""
     global _runner_flush_phase
 
     _runner_flush_phase = "draining"
-    try:
-        with _usage_flush_signal_lock:
-            try:
-                _flush_delivery_work(trigger="shutdown")
-                _drain_runner_usage_flush_requests()
-            finally:
-                # Close request admission while still owning the lock, then consume
-                # any request recorded immediately before this cutoff.
-                _runner_flush_phase = "closed"
-                _drain_runner_usage_flush_requests()
-    finally:
-        _stop_runner_jsonl_flush_worker()
+    with _usage_flush_signal_lock:
+        try:
+            _flush_delivery_work(trigger="shutdown")
+            _drain_runner_usage_flush_requests()
+        finally:
+            # Close admission under the owner lock, then consume the final flag.
+            _runner_flush_phase = "closed"
+            _drain_runner_usage_flush_requests()

@@ -37,7 +37,7 @@ export const artifactSharePolicySchema = z
     status: z.enum(["active", "revoked"]),
     publicToken: z
       .string()
-      .regex(/^[a-f0-9]{24}$/u)
+      .regex(/^(?:[a-z0-9]{10}|[a-f0-9]{24})$/u)
       .nullable(),
     target: z.discriminatedUnion("kind", [
       z.object({

@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.14.9](https://github.com/vm0-ai/vm0/compare/guest-contracts-v0.14.8...guest-contracts-v0.14.9) (2026-09-15)
+
+
+### Bug Fixes
+
+* **runner:** protect native runtime memory from tool reclaim ([#34398](https://github.com/vm0-ai/vm0/issues/34398)) ([756b6bc](https://github.com/vm0-ai/vm0/commit/756b6bce47a0a4b341359971ebc7ae9a4c24c62e))
+
+## [0.14.8](https://github.com/vm0-ai/vm0/compare/guest-contracts-v0.14.7...guest-contracts-v0.14.8) (2026-09-15)
+
+
+### Bug Fixes
+
+* distinguish balance ownership and localize run errors ([#34251](https://github.com/vm0-ai/vm0/issues/34251)) ([0367d97](https://github.com/vm0-ai/vm0/commit/0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6))
+
 ## [0.14.7](https://github.com/vm0-ai/vm0/compare/guest-contracts-v0.14.6...guest-contracts-v0.14.7) (2026-09-15)
 
 

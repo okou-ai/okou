@@ -159,3 +159,70 @@ test("A run change during channel attachment keeps only the latest run subscribe
     ).toBeFalsy();
   });
 });
+
+// Page navigation cancels the previous route before mounting its replacement.
+// Drive overlapping owner lifetimes here to cover a late external attach and
+// cancellation without exposing that infrastructure timing through the UI.
+test("Cancelling an obsolete viewer cannot stop its replacement subscription", async () => {
+  await setupStreamingViewer();
+  const events$ = state<ChatEvent[]>([promptEvent(FIRST_RUN_ID, 1)]);
+  const chatEvents$ = computed((get) => {
+    return get(events$);
+  });
+  const signals = createSessionOutputStreamSignals(THREAD_ID, chatEvents$);
+  const resetPreviousViewer$ = resetSignal();
+  const resetCurrentViewer$ = resetSignal();
+  const previousSignal = context.store.set(
+    resetPreviousViewer$,
+    context.signal,
+  );
+  const currentSignal = context.store.set(resetCurrentViewer$, context.signal);
+  const attaching = context.mocks.ably.deferSubscribeOnChannel(
+    channelOf(FIRST_RUN_ID),
+    FIRST_RUN_ID,
+  );
+  context.store.set(signals.subscribe$, previousSignal);
+  await attaching.started;
+
+  context.store.set(events$, [
+    promptEvent(FIRST_RUN_ID, 1),
+    completedEvent(FIRST_RUN_ID, 2),
+    promptEvent(SECOND_RUN_ID, 3),
+  ]);
+  context.store.set(signals.subscribe$, currentSignal);
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(
+        channelOf(SECOND_RUN_ID),
+        SECOND_RUN_ID,
+      ),
+    ).toBeTruthy();
+  });
+
+  context.store.set(resetPreviousViewer$);
+  attaching.attach();
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(
+        channelOf(FIRST_RUN_ID),
+        FIRST_RUN_ID,
+      ),
+    ).toBeFalsy();
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(
+        channelOf(SECOND_RUN_ID),
+        SECOND_RUN_ID,
+      ),
+    ).toBeTruthy();
+  });
+
+  context.store.set(resetCurrentViewer$);
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(
+        channelOf(SECOND_RUN_ID),
+        SECOND_RUN_ID,
+      ),
+    ).toBeFalsy();
+  });
+});

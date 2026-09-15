@@ -355,6 +355,9 @@ describe("Pi agent model adapter", () => {
   );
 
   it.each([
+    { provider: "deepseek", model: "deepseek-v4.2-flash" },
+    { provider: "openrouter", model: "deepseek/deepseek-v4.2-flash" },
+    { provider: "openai", model: "deepseek-v4.1-flash" },
     { provider: "unknown", model: "gpt-5.6-terra" },
     { provider: "openai", model: "unknown-model" },
     { provider: "openrouter", model: "unknown/model" },

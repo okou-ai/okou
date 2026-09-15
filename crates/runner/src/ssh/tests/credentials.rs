@@ -132,7 +132,7 @@ async fn encrypted_pkcs8_preflights_memory_work_and_prf_before_derivation() {
     use pkcs5::pbes2::{EncryptionScheme, Kdf, Parameters, Pbkdf2Params, Pbkdf2Prf, ScryptParams};
     use pkcs8::der::{Encode, asn1::OctetStringRef};
 
-    let h = Harness::new(Reply::default()).await;
+    let mut h = Harness::new(Reply::default()).await;
     let salt = [7_u8; 16].as_slice().try_into().unwrap();
     let scrypt = ScryptParams {
         salt,
@@ -219,6 +219,8 @@ async fn encrypted_pkcs8_preflights_memory_work_and_prf_before_derivation() {
         }
         assert_eq!(h.observed.attempts.lock().unwrap().len(), 1);
         resolve.delete_async().await;
+        // The next credential must be decoded rather than reusing the successful fill.
+        h.restart(h.run).await;
     }
 }
 

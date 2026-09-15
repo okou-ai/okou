@@ -19,6 +19,22 @@ export function isPiGptModel(
   );
 }
 
+export type PiDeepSeekModel =
+  | "deepseek-v4-flash"
+  | "deepseek-v4-pro"
+  | "deepseek-v4.1-flash";
+
+/** Keep admission, credential capture and API-owned billing on the same set. */
+export function isPiDeepSeekModel(
+  model: string | null | undefined,
+): model is PiDeepSeekModel {
+  return (
+    model === "deepseek-v4-flash" ||
+    model === "deepseek-v4-pro" ||
+    model === "deepseek-v4.1-flash"
+  );
+}
+
 export function isPiNativeModel(model: string | null | undefined): boolean {
   return (
     typeof model === "string" &&
@@ -50,6 +66,12 @@ function isGptApiKeyPiProviderType(value: string | null | undefined): boolean {
   );
 }
 
+function isDeepSeekPiProviderType(
+  value: string | null | undefined,
+): value is "deepseek" | "openrouter-codex" {
+  return value === "deepseek" || value === "openrouter-codex";
+}
+
 /** Shared by Chat controls and server admission; trigger source does not select a runtime. */
 export function isPiExecutionRoute(args: {
   readonly selectedModel: string | null | undefined;
@@ -63,15 +85,12 @@ export function isPiExecutionRoute(args: {
   if (isPiNativeRoute(args.modelProviderType, args.selectedModel)) return true;
   const builtIn = isBuiltInModelProviderType(args.modelProviderType);
   const custom = args.modelProviderType === "custom-openai-responses";
-  if (
-    args.selectedModel === "deepseek-v4-flash" ||
-    args.selectedModel === "deepseek-v4-pro"
-  ) {
+  if (isPiDeepSeekModel(args.selectedModel)) {
     return (
-      builtIn ||
+      (builtIn && isDeepSeekPiProviderType(args.runtimeProviderType)) ||
       custom ||
-      args.modelProviderType === "deepseek" ||
-      args.modelProviderType === "openrouter-codex"
+      (isDeepSeekPiProviderType(args.modelProviderType) &&
+        isModelSupportedByProvider(args.selectedModel, args.modelProviderType))
     );
   }
   if (!isPiGptModel(args.selectedModel)) return false;

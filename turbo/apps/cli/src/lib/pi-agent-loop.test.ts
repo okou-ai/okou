@@ -403,12 +403,16 @@ function occurrences(value: string, needle: string): number {
   return value.split(needle).length - 1;
 }
 
-function prepareDeepSeekModel(session: MemoryPiSession, baseUrl: string): void {
+function prepareDeepSeekModel(
+  session: MemoryPiSession,
+  baseUrl: string,
+  v41?: { provider: "deepseek" | "openrouter"; model: string },
+): void {
   session.prepareModelTurn({
-    id: "deepseek-v4-flash",
+    id: v41?.model ?? "deepseek-v4-flash",
     name: "DeepSeek V4 Flash",
     api: "openai-responses",
-    provider: "deepseek",
+    provider: v41?.provider ?? "deepseek",
     baseUrl,
     reasoning: true,
     thinkingLevelMap: {
@@ -469,7 +473,13 @@ async function startOwnershipTransferHost(args: {
     | "settled-session-continuation";
   readonly baseSessionSha256: string | null;
   readonly providerBaseUrl: string;
-  readonly model?: "deepseek" | "openrouter-terra" | "terra" | "codex-terra";
+  readonly model?:
+    | "deepseek"
+    | "deepseek-v41"
+    | "openrouter-v41"
+    | "openrouter-terra"
+    | "terra"
+    | "codex-terra";
   readonly serviceTier?: "priority" | "fast";
 }): Promise<{
   readonly host: RpcHost;
@@ -547,7 +557,9 @@ async function startOwnershipTransferHost(args: {
     { mode: 0o600 },
   );
   const terra = args.model === "terra" || args.model === "openrouter-terra";
-  const openrouter = args.model === "openrouter-terra";
+  const openrouter =
+    args.model === "openrouter-terra" || args.model === "openrouter-v41";
+  const v41 = args.model === "deepseek-v41" || args.model === "openrouter-v41";
   const env = {
     ...process.env,
     OKOU_RUN_ID: RUN_ID,
@@ -580,11 +592,15 @@ async function startOwnershipTransferHost(args: {
         : {
             provider: openrouter ? "openrouter" : terra ? "openai" : "deepseek",
             baseUrl: args.providerBaseUrl,
-            model: openrouter
-              ? "openai/gpt-5.6-terra"
-              : terra
-                ? "gpt-5.6-terra"
-                : "deepseek-v4-flash",
+            model: v41
+              ? openrouter
+                ? "deepseek/deepseek-v4.1-flash"
+                : "deepseek-flash"
+              : openrouter
+                ? "openai/gpt-5.6-terra"
+                : terra
+                  ? "gpt-5.6-terra"
+                  : "deepseek-v4-flash",
             ...(terra
               ? {
                   thinkingLevel: "low" as const,
@@ -1216,7 +1232,12 @@ describe("sandbox Pi agent loop", () => {
     }
   });
 
-  it.each(["openrouter-terra", "codex-terra"] as const)(
+  it.each([
+    "openrouter-terra",
+    "codex-terra",
+    "deepseek-v41",
+    "openrouter-v41",
+  ] as const)(
     "restores %s H1, executes its pending tool, and checkpoints H2",
     async (route) => {
       const root = await mkdtemp(join(tmpdir(), "okou-pi-terra-handoff-rpc-"));
@@ -1224,11 +1245,27 @@ describe("sandbox Pi agent loop", () => {
       const prompt = "read the Terra handoff source exactly once";
       const provider = await ProviderHarness.start();
       const memory = MemoryPiSession.create({ cwd: root, id: SESSION_ID });
-      prepareTerraModel(
-        memory,
-        provider.baseUrl,
-        route === "codex-terra" ? "openai-codex" : "openrouter",
-      );
+      const v41 = route === "deepseek-v41" || route === "openrouter-v41";
+      const upstreamModel = v41
+        ? route === "deepseek-v41"
+          ? "deepseek-flash"
+          : "deepseek/deepseek-v4.1-flash"
+        : route === "codex-terra"
+          ? "gpt-5.6-terra"
+          : "openai/gpt-5.6-terra";
+      if (v41) {
+        // H1 stores model identity; the child resolves its own real SDK registry.
+        prepareDeepSeekModel(memory, provider.baseUrl, {
+          provider: route === "deepseek-v41" ? "deepseek" : "openrouter",
+          model: upstreamModel,
+        });
+      } else {
+        prepareTerraModel(
+          memory,
+          provider.baseUrl,
+          route === "codex-terra" ? "openai-codex" : "openrouter",
+        );
+      }
       memory.appendMessage({ role: "user", content: prompt, timestamp: 1 });
       memory.appendMessage({
         role: "assistant",
@@ -1259,9 +1296,13 @@ describe("sandbox Pi agent loop", () => {
           route === "codex-terra"
             ? "openai-codex-responses"
             : "openai-responses",
-        provider: route === "codex-terra" ? "openai-codex" : "openrouter",
-        model:
-          route === "codex-terra" ? "gpt-5.6-terra" : "openai/gpt-5.6-terra",
+        provider:
+          route === "deepseek-v41"
+            ? "deepseek"
+            : route === "codex-terra"
+              ? "openai-codex"
+              : "openrouter",
+        model: upstreamModel,
         usage: {
           input: 5,
           output: 3,
@@ -1289,7 +1330,11 @@ describe("sandbox Pi agent loop", () => {
           baseSessionSha256: null,
           providerBaseUrl: provider.baseUrl,
           model: route,
-          serviceTier: route === "codex-terra" ? "fast" : "priority",
+          serviceTier: v41
+            ? undefined
+            : route === "codex-terra"
+              ? "fast"
+              : "priority",
         });
         host = started.host;
         handoffServer = started.handoffServer;
@@ -1312,9 +1357,12 @@ describe("sandbox Pi agent loop", () => {
         );
         expect(continuationBody).toContain("rs_terra_okou_handoff");
         expect(occurrences(continuationBody, prompt)).toBe(1);
-        expect(continuationRequest.body).toMatchObject({
-          service_tier: "priority",
-        });
+        expect(continuationRequest.body).toMatchObject(
+          v41 ? { model: upstreamModel } : { service_tier: "priority" },
+        );
+        if (v41) {
+          expect(continuationRequest.body).not.toHaveProperty("service_tier");
+        }
         continuationRequest.respond("Terra Okou handoff complete");
         await host.waitFor((record) => {
           return record.type === "agent_settled";
@@ -1325,9 +1373,9 @@ describe("sandbox Pi agent loop", () => {
           message: "answer one more turn",
         });
         const nextRequest = await provider.nextRequest();
-        expect(nextRequest.body).toMatchObject({
-          service_tier: "priority",
-        });
+        expect(nextRequest.body).toMatchObject(
+          v41 ? { model: upstreamModel } : { service_tier: "priority" },
+        );
         nextRequest.respond("Terra followup complete");
         await host.waitFor((record) => {
           return record.type === "agent_settled";

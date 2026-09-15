@@ -94,6 +94,10 @@ BEGIN
   END IF;
 END
 $$;
+--> statement-breakpoint
+CREATE TABLE migration_probe (id integer PRIMARY KEY, value integer NOT NULL);
+--> statement-breakpoint
+INSERT INTO migration_probe (id, value) VALUES (1, 0);
 `,
   );
   await fs.writeFile(
@@ -111,6 +115,33 @@ END
 $$;
 `,
   );
+}
+
+async function appendMigrationFixture(
+  idx: number,
+  tag: string,
+  migration: string,
+): Promise<void> {
+  const directory = path.join(fixtureDirectory, "src", "migrations");
+  const journalPath = path.join(directory, "meta", "_journal.json");
+  const journal = JSON.parse(await fs.readFile(journalPath, "utf8")) as {
+    entries: {
+      idx: number;
+      version: string;
+      when: number;
+      tag: string;
+      breakpoints: boolean;
+    }[];
+  };
+  await fs.writeFile(path.join(directory, `${tag}.sql`), migration);
+  journal.entries.push({
+    idx,
+    version: "7",
+    when: idx + 1,
+    tag,
+    breakpoints: true,
+  });
+  await fs.writeFile(journalPath, JSON.stringify(journal));
 }
 
 async function validateMigrationRunnerTimeouts(): Promise<void> {
@@ -132,6 +163,75 @@ async function validateMigrationRunnerTimeouts(): Promise<void> {
     `;
     assert.equal(ledger.length, 1);
     assert.equal(ledger[0]?.count, 2);
+
+    // Journal failure is an infrastructure state, with no product API entry.
+    // Keep this runner contract independent of any shipped migration tag.
+    await appendMigrationFixture(
+      2,
+      "0002_journal_atomicity",
+      `ALTER TABLE migration_probe ADD COLUMN annotation text;
+--> statement-breakpoint
+UPDATE migration_probe SET value = 1, annotation = 'applied';`,
+    );
+    await sql.unsafe(`
+      CREATE FUNCTION reject_probe_journal() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'injected journal failure'; END $$;
+      CREATE TRIGGER reject_probe_journal BEFORE INSERT ON drizzle.__drizzle_migrations
+        FOR EACH ROW WHEN (NEW.created_at = 3) EXECUTE FUNCTION reject_probe_journal();
+    `);
+    const state = async () => {
+      return Array.from(
+        await sql`
+        SELECT to_jsonb(p) AS row,
+          (SELECT count(*)::integer FROM drizzle.__drizzle_migrations) AS journal
+        FROM migration_probe p
+      `,
+      );
+    };
+    const before = await state();
+    await assert.rejects(
+      applyPendingMigrations(sql),
+      /injected journal failure/,
+    );
+    assert.deepEqual(await state(), before);
+    await sql.unsafe(
+      "DROP TRIGGER reject_probe_journal ON drizzle.__drizzle_migrations",
+    );
+    await applyPendingMigrations(sql);
+    assert.deepEqual(await state(), [
+      { row: { id: 1, value: 1, annotation: "applied" }, journal: 3 },
+    ]);
+    const committed = await state();
+    await applyPendingMigrations(sql);
+    assert.deepEqual(await state(), committed);
+
+    await appendMigrationFixture(
+      3,
+      "0003_lock_retry",
+      "UPDATE migration_probe SET value = 2;",
+    );
+    const blocker = new Client({
+      connectionString: testDatabaseUrl.toString(),
+    });
+    await blocker.connect();
+    try {
+      await blocker.query("BEGIN");
+      try {
+        await blocker.query(
+          "LOCK TABLE migration_probe IN ACCESS EXCLUSIVE MODE",
+        );
+        await assert.rejects(applyPendingMigrations(sql), /lock timeout/);
+      } finally {
+        await blocker.query("ROLLBACK");
+      }
+    } finally {
+      await blocker.end();
+    }
+    assert.deepEqual(await state(), committed);
+    await applyPendingMigrations(sql);
+    assert.deepEqual(await state(), [
+      { row: { id: 1, value: 2, annotation: "applied" }, journal: 4 },
+    ]);
   } finally {
     process.chdir(originalDirectory);
     await sql.end();
@@ -150,4 +250,6 @@ try {
   await fs.rm(fixtureDirectory, { recursive: true, force: true });
 }
 
-console.log("Migration runner timeout defaults validated");
+console.log(
+  "Migration runner timeouts, atomic journal rollback and retries validated",
+);

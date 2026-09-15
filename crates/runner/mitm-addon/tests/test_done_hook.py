@@ -2,7 +2,6 @@
 
 import json
 import threading
-import time
 from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -130,14 +129,9 @@ class TestDoneHook:
     ) -> None:
         usage_state_id = "runner-state"
         usage_flush_request_id = "request-1"
-        jsonl_flush_request_id = "jsonl-request-1"
         requested_at_ms = 1_770_000_000_000
         pending_path = tmp_path / "usage-pending"
         usage_flush_request_path = tmp_path / "usage-flush-request"
-        jsonl_flush_request_path = tmp_path / "jsonl-flush-request"
-        jsonl_flush_state_path = tmp_path / "jsonl-flush-state"
-        network_log_path = tmp_path / "network.jsonl"
-        lifecycle_file = tmp_path / "runner_flush_lifecycle.py"
         shutdown_flush_started = threading.Event()
         release_shutdown_flush = threading.Event()
         calls: list[str] = []
@@ -152,38 +146,6 @@ class TestDoneHook:
                 }
             )
         )
-
-        def write_jsonl_flush_request() -> None:
-            jsonl_flush_request_path.write_text(
-                json.dumps(
-                    {
-                        "usageStateId": usage_state_id,
-                        "flushRequestId": jsonl_flush_request_id,
-                        "requestedAtMs": requested_at_ms,
-                        "path": str(network_log_path),
-                    }
-                )
-            )
-
-        def wait_for_jsonl_flush_state() -> dict[str, object]:
-            deadline = time.monotonic() + 1
-            while True:
-                try:
-                    state = json.loads(jsonl_flush_state_path.read_text())
-                except (OSError, json.JSONDecodeError):
-                    state = None
-                if (
-                    isinstance(state, dict)
-                    and state.get("flushRequestId") == jsonl_flush_request_id
-                ):
-                    return state
-
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise AssertionError(
-                        f"JSONL flush state did not acknowledge {jsonl_flush_request_id}"
-                    )
-                time.sleep(min(0.005, remaining))
 
         def flush_usage_events(*, trigger: str) -> int:
             calls.append(f"flush:{trigger}")
@@ -201,10 +163,6 @@ class TestDoneHook:
                 reports=0,
                 flush_request_id=usage_flush_request_id,
             )
-            state = json.loads(jsonl_flush_state_path.read_text())
-            assert state["flushRequestId"] == jsonl_flush_request_id
-            assert state["path"] == str(network_log_path)
-            assert state["pending"] == 0
             assert not runner_flush_lifecycle._usage_flush_requested
 
         mock_executor = MagicMock()
@@ -213,7 +171,6 @@ class TestDoneHook:
 
         try:
             with (
-                patch.object(runner_flush_lifecycle, "__file__", str(lifecycle_file)),
                 patch.object(usage, "flush_usage_events", side_effect=flush_usage_events),
                 patch.object(usage.webhook, "usage_executor", mock_executor),
                 patch.object(
@@ -228,7 +185,6 @@ class TestDoneHook:
                 ),
             ):
                 try:
-                    runner_flush_lifecycle.start_runner_jsonl_flush_worker()
                     done_thread.start()
                     wait_for_event(
                         shutdown_flush_started,
@@ -238,10 +194,6 @@ class TestDoneHook:
                     )
 
                     runner_flush_lifecycle.handle_runner_usage_flush_signal(0, None)
-                    write_jsonl_flush_request()
-                    state = wait_for_jsonl_flush_state()
-                    assert state["path"] == str(network_log_path)
-                    assert state["pending"] == 0
                     state_before_release = json.loads(pending_path.read_text())
                     assert "flushRequestId" not in state_before_release
 

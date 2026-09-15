@@ -1,5 +1,37 @@
 # Changelog
 
+## [9.335.0](https://github.com/vm0-ai/vm0/compare/cli-v9.334.1...cli-v9.335.0) (2026-09-15)
+
+
+### Features
+
+* stream Pi sandbox assistant output ([#34299](https://github.com/vm0-ai/vm0/issues/34299)) ([2c12008](https://github.com/vm0-ai/vm0/commit/2c12008061eaf9d1fc8e0d2c1240697433182c8d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.445.0
+    * @okouai/core bumped to 8.666.7
+    * @okouai/pi-agent-runtime bumped to 1.30.11
+
+## [9.334.1](https://github.com/vm0-ai/vm0/compare/cli-v9.334.0...cli-v9.334.1) (2026-09-15)
+
+
+### Refactoring
+
+* require canonical social download response metadata ([#34325](https://github.com/vm0-ai/vm0/issues/34325)) ([ac1c477](https://github.com/vm0-ai/vm0/commit/ac1c4771e1baf6bc766853451e758d01bab919fc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.444.1
+    * @okouai/core bumped to 8.666.6
+    * @okouai/pi-agent-runtime bumped to 1.30.10
+
 ## [9.334.0](https://github.com/vm0-ai/vm0/compare/cli-v9.333.0...cli-v9.334.0) (2026-09-15)
 
 

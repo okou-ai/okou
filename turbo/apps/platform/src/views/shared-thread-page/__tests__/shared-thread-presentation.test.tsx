@@ -1,5 +1,11 @@
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
@@ -157,6 +163,57 @@ test("A public conversation renders embedded media and diagrams", async () => {
     return button.getAttribute("aria-label") === "Expand diagram";
   });
   expect(expandDiagram).toBeEnabled();
+});
+
+test("A shared diagram keeps its white SVG when the system theme changes", async () => {
+  const media = context.mocks.browser.matchMedia((query) => {
+    return query === "(prefers-color-scheme: dark)";
+  });
+  const images = context.mocks.browser.blobDownload();
+  const content = [
+    "```mermaid",
+    "sequenceDiagram",
+    "  Reader->>Platform: Read the plan",
+    "  Note over Platform: Ready",
+    "```",
+  ].join("\n");
+  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+    return respond(
+      200,
+      sharedThread({
+        messages: [{ messageIndex: 0, role: "assistant", content }],
+      }),
+    );
+  });
+
+  await setupSharedThreadPage(context, { host: "app.okou.ai" });
+  const image = await screen.findByRole("img", { name: "Diagram" });
+  const source = image.getAttribute("src");
+  if (!source) {
+    throw new Error("Expected a diagram image URL");
+  }
+  const file = images.blobForUrl(source);
+  if (!file) {
+    throw new Error("Expected the diagram image file");
+  }
+  const svg = new DOMParser()
+    .parseFromString(await file.text(), "image/svg+xml")
+    .querySelector("svg");
+  expect(svg?.style.backgroundColor).toBe("#ffffff");
+
+  act(() => {
+    media.setMatches(false);
+  });
+
+  expect(document.documentElement).toHaveAttribute("data-theme", "light");
+  expect(screen.getByRole("img", { name: "Diagram" })).toHaveAttribute(
+    "src",
+    source,
+  );
+  const expand = queryAllByRoleFast("button").find((button) => {
+    return button.getAttribute("aria-label") === "Expand diagram";
+  });
+  expect(expand).toBeEnabled();
 });
 
 test("An intact public Goal archive displays its original literal text", async () => {

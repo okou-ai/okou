@@ -227,7 +227,17 @@ function ExpandedSidebar() {
         return $.appShell.sidebar.ariaLabel;
       })}
       className={cn(
-        "okou-mobile-sidebar okou-mobile-fixed-safe-area h-full w-[300px] shrink-0 flex-col border-r border-nav-border bg-sidebar transition-all duration-300 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:h-auto max-md:shadow-xl",
+        // The `before` layer exists for one case: in a standalone PWA it extends
+        // the sidebar fill past the bottom of the viewport, into the home
+        // indicator, while the drawer's own content keeps its safe-area padding.
+        // `isolate` keeps that `-z-1` layer inside this element rather than
+        // letting it fall behind the page. The drawer's own scrim spells the
+        // same standalone extension inline in `sidebar-layout.tsx`.
+        "isolate before:pointer-events-none before:absolute before:inset-0 before:-z-1 before:bg-sidebar before:content-[''] before:[@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))]",
+        // A fixed mobile drawer escapes the page shell, so its content owns an
+        // immutable safe-area boundary.
+        "max-md:box-border max-md:p-safe",
+        "h-full w-[300px] shrink-0 flex-col border-r border-nav-border bg-sidebar transition-all duration-300 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:h-auto max-md:shadow-xl",
         "hidden data-[sidebar-expanded]:max-md:flex md:hidden",
       )}
     >

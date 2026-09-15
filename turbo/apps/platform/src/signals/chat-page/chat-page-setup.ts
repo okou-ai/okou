@@ -12,12 +12,19 @@ import {
   setupRightThreadNotFound$,
   unloadRightThread$,
 } from "./chat-thread-panes.ts";
-import { resolveThreadMeta$ } from "./chat-thread-event-sourcing.ts";
+import { createThreadMetaLookup } from "./chat-thread-event-sourcing.ts";
 import {
   captureNavigationTiming$,
   markRouteSetupBegin$,
   recordBootstrapThreadMetadataTiming$,
 } from "../../lib/posthog.ts";
+
+import { createChatLayoutSignals } from "./chat-layout.ts";
+
+const resolveLeftThreadMeta$ = createThreadMetaLookup();
+const resolveRightThreadMeta$ = createThreadMetaLookup();
+// The mounted shell survives thread navigation, so its owner must too.
+const chatLayout = createChatLayoutSignals();
 
 const CHAT_EVENT_HASH_PREFIX = "#event-";
 
@@ -41,7 +48,7 @@ const setupResolvedLeftThread$ = command(
     initialEventId: string | null,
     signal: AbortSignal,
   ): Promise<void> => {
-    const resolution = await set(resolveThreadMeta$, threadId, signal);
+    const resolution = await set(resolveLeftThreadMeta$, threadId, signal);
     signal.throwIfAborted();
     set(recordBootstrapThreadMetadataTiming$, {
       localDurationMs: resolution.localDurationMs,
@@ -59,7 +66,7 @@ const setupResolvedLeftThread$ = command(
 
 const setupResolvedRightThread$ = command(
   async ({ set }, threadId: string, signal: AbortSignal): Promise<void> => {
-    const { meta } = await set(resolveThreadMeta$, threadId, signal);
+    const { meta } = await set(resolveRightThreadMeta$, threadId, signal);
     signal.throwIfAborted();
     if (meta) {
       await set(setupRightThread$, meta, signal);
@@ -77,7 +84,11 @@ const internalSetupChatPage$ = command(
       throw new Error("threadId is required to load chat page");
     }
 
-    set(updatePage$, createElement(ChatThreadPage), "sidebar");
+    set(
+      updatePage$,
+      createElement(ChatThreadPage, { layout: chatLayout }),
+      "sidebar",
+    );
 
     set(captureNavigationTiming$);
 
