@@ -122,7 +122,42 @@ fn envelope_failure_reason(message: &str) -> Option<FailureReason> {
     let (Some(value), _) = failure_patterns::parse_next_json_object(message, start)? else {
         return None;
     };
-    provider_error_reason(&value)
+    let reason = provider_error_reason(&value)?;
+    if reason == FailureReason::ProviderInsufficientCredits
+        && !prefix.starts_with("api error: ")
+        && !prefix.starts_with("unexpected status ")
+    {
+        return None;
+    }
+    Some(reason)
+}
+
+/// An upstream error object, distinct from the platform's string error envelope.
+pub(crate) fn is_provider_balance_error(error: &Value) -> bool {
+    const BILLING_CODES: &[&str] = &[
+        "billing",
+        "billing_error",
+        "insufficient_quota",
+        "payment_required",
+        "billing_hard_limit_reached",
+        "insufficient_credits",
+    ];
+    let code = error.get("code");
+    let error_type = error.get("type").and_then(Value::as_str);
+    [code.and_then(Value::as_str), error_type]
+        .into_iter()
+        .flatten()
+        .any(|token| BILLING_CODES.contains(&token.to_ascii_lowercase().as_str()))
+        || code.and_then(Value::as_u64) == Some(402)
+        || (error_type == Some("invalid_request_error")
+            && error
+                .get("message")
+                .and_then(Value::as_str)
+                .is_some_and(|message| {
+                    message
+                        .to_ascii_lowercase()
+                        .starts_with("your credit balance is too low to access the anthropic api.")
+                }))
 }
 
 /// Classify a provider's error object before a CLI projection drops its code.
@@ -133,6 +168,9 @@ pub(crate) fn provider_error_reason(value: &Value) -> Option<FailureReason> {
         .unwrap_or(value);
     if error.get("error").and_then(Value::as_str) == Some("insufficient_credits") {
         return Some(FailureReason::InsufficientCredits);
+    }
+    if is_provider_balance_error(error) {
+        return Some(FailureReason::ProviderInsufficientCredits);
     }
     if (error.get("error").and_then(Value::as_str) == Some("TOKEN_REFRESH_FAILED")
         || error.get("code").and_then(Value::as_str) == Some("TOKEN_REFRESH_FAILED"))
@@ -156,13 +194,7 @@ pub(crate) fn provider_error_reason(value: &Value) -> Option<FailureReason> {
         }
         Some("overloaded_error" | "server_overloaded") => Some(FailureReason::ProviderOverloaded),
         Some("server_error" | "internal_server_error") => Some(FailureReason::ProviderServerError),
-        Some(
-            "insufficient_quota"
-            | "usage_limit_reached"
-            | "usage_not_included"
-            | "billing_hard_limit_reached",
-        ) => Some(FailureReason::UsageLimit),
-        Some("insufficient_credits") => Some(FailureReason::InsufficientCredits),
+        Some("usage_limit_reached" | "usage_not_included") => Some(FailureReason::UsageLimit),
         Some("content_policy_violation") => Some(FailureReason::SafetyPolicyRefusal),
         Some("model_not_found" | "unsupported_model") => Some(FailureReason::UnsupportedModel),
         Some("invalid_request_error")

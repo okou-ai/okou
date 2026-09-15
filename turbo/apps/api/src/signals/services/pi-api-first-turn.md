@@ -47,9 +47,10 @@ their existing owners; decisions are immutable snapshots, not a second lifecycle
    pre-commit API deadline and eligible model failures retain same-route recovery.
    Classified rate limits, overload, server failures, stream timeouts and lost
    connections remain eligible model failures under the same recovery guards.
-   Reconnect, quota, other non-transient reasons, 401/403 and corrupt
-   credentials/history are terminal. Final incomplete output is terminal with
-   `output_token_limit`; pending tool continuation still transfers ownership.
+   Reconnect, provider balance, subscription usage limits, other non-transient
+   reasons, 401/403 and corrupt credentials/history are terminal. Final incomplete
+   output is terminal with `output_token_limit`; pending tool continuation still
+   transfers ownership.
 5. Commit start prevents H0 replay even if publication's response was lost. The
    large-history manifest marks this fact immediately before publication too.
 6. Every selected handoff still validates status, identity, deadline and durable

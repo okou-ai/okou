@@ -4,8 +4,26 @@ import {
   classifyProviderHttpFailure,
 } from "@okouai/api-contracts/contracts/provider-failure";
 import cases from "./test/fixtures/provider-failures.json";
+import {
+  formatRunBalanceError,
+  MODEL_UNAVAILABLE_MESSAGE,
+  PROVIDER_INSUFFICIENT_CREDITS_MESSAGE,
+} from "@okouai/api-contracts/contracts/run-balance-errors";
 
 describe("provider failure contract shared with guest-agent", () => {
+  it.each(["billing_hard_limit_reached", "insufficient_credits"])(
+    "keeps %s provider billing details private on built-in models",
+    (code) => {
+      const message = `API Error: 402 ${JSON.stringify({ error: { code, message: "Private provider billing details" } })}`;
+      expect(
+        formatRunBalanceError({ message, modelProvider: "built-in" }),
+      ).toBe(MODEL_UNAVAILABLE_MESSAGE);
+      expect(
+        formatRunBalanceError({ message, modelProvider: "openai-api-key" }),
+      ).toBe(PROVIDER_INSUFFICIENT_CREDITS_MESSAGE);
+    },
+  );
+
   it.each(cases)("classifies $message", ({ message, reason }) => {
     expect(classifyProviderFailure(message)).toBe(reason ?? undefined);
   });

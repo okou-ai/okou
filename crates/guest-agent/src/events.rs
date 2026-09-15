@@ -874,7 +874,10 @@ mod tests {
             ),
             ("rate_limit_exceeded", FailureReason::ProviderRateLimited),
             ("server_error", FailureReason::ProviderServerError),
-            ("insufficient_quota", FailureReason::UsageLimit),
+            (
+                "insufficient_quota",
+                FailureReason::ProviderInsufficientCredits,
+            ),
             ("model_not_found", FailureReason::UnsupportedModel),
         ] {
             let error = serde_json::json!({"code": code, "message": "provider request failed"});

@@ -308,6 +308,17 @@ async fn guest_preserves_pi_error_and_aborted_settlement_results()
             FailureReason::ProviderServerError,
             None,
         ),
+        (
+            "00000000-0000-4000-8000-000000000144",
+            serde_json::json!({
+                "role": "assistant", "stopReason": "error", "api": "openai-codex-responses", "content": [],
+                "errorMessage": "You have hit your ChatGPT usage limit.",
+                "diagnostics": [{"type": "okou_model_request", "details": {"httpStatus": 429, "transportAttempts": 1, "failureReason": "provider_insufficient_credits"}}]
+            }),
+            "You have hit your ChatGPT usage limit.",
+            FailureReason::ProviderInsufficientCredits,
+            None,
+        ),
     ] {
         run_settlement_case(
             run_id,

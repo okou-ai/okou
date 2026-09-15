@@ -1,5 +1,29 @@
 [
   {
+    "message": "API Error: 429 {\"error\":{\"code\":\"insufficient_quota\"}}",
+    "reason": "provider_insufficient_credits"
+  },
+  {
+    "message": "API Error: 402 {\"error\":{\"code\":\"billing_hard_limit_reached\"}}",
+    "reason": "provider_insufficient_credits"
+  },
+  {
+    "message": "API Error: 402 {\"error\":{\"code\":\"insufficient_credits\"}}",
+    "reason": "provider_insufficient_credits"
+  },
+  {
+    "message": "API Error: 400 {\"error\":{\"type\":\"invalid_request_error\",\"message\":\"Your credit balance is too low to access the Anthropic API. Please purchase credits.\"}}",
+    "reason": "provider_insufficient_credits"
+  },
+  {
+    "message": "API Error: 402 {\"error\":{\"code\":402,\"message\":\"Payment required\"}}",
+    "reason": "provider_insufficient_credits"
+  },
+  {
+    "message": "The tool printed: API Error: 429 {\"error\":{\"code\":\"insufficient_quota\"}}",
+    "reason": null
+  },
+  {
     "message": "{\"message\":\"Our servers are currently overloaded. Please try again later.\"}",
     "reason": "provider_overloaded"
   },
@@ -73,7 +97,7 @@
   },
   {
     "message": "{\"error\":{\"code\":\"insufficient_quota\",\"message\":\"private provider content\"}}",
-    "reason": "usage_limit"
+    "reason": null
   },
   {
     "message": "{\"error\":{\"code\":\"usage_limit_reached\",\"message\":\"private provider content\"}}",
@@ -85,11 +109,11 @@
   },
   {
     "message": "{\"error\":{\"code\":\"billing_hard_limit_reached\",\"message\":\"private provider content\"}}",
-    "reason": "usage_limit"
+    "reason": null
   },
   {
     "message": "{\"error\":{\"code\":\"insufficient_credits\",\"message\":\"private provider content\"}}",
-    "reason": "insufficient_credits"
+    "reason": null
   },
   {
     "message": "{\"error\":{\"code\":\"content_policy_violation\",\"message\":\"private provider content\"}}",

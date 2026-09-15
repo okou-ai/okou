@@ -531,27 +531,10 @@ fn is_provider_balance_response_error(normalized: &str) -> bool {
     let Some((Some(body), _)) = failure_patterns::parse_next_json_object(normalized, 0) else {
         return false;
     };
-    let Some(error) = body.get("error").and_then(Value::as_object) else {
+    let Some(error) = body.get("error").filter(|error| error.is_object()) else {
         return false;
     };
-    let code = error.get("code");
-    let error_type = error.get("type").and_then(Value::as_str);
-    matches!(
-        code.and_then(Value::as_str),
-        Some("billing" | "billing_error" | "insufficient_quota" | "payment_required")
-    ) || code.and_then(Value::as_u64) == Some(402)
-        || matches!(
-            error_type,
-            Some("billing" | "billing_error" | "insufficient_quota" | "payment_required")
-        )
-        || (error_type == Some("invalid_request_error")
-            && error
-                .get("message")
-                .and_then(Value::as_str)
-                .is_some_and(|message| {
-                    message
-                        .starts_with("your credit balance is too low to access the anthropic api.")
-                }))
+    crate::provider_failure::is_provider_balance_error(error)
 }
 
 fn has_insufficient_credits_response_envelope(normalized: &str) -> bool {

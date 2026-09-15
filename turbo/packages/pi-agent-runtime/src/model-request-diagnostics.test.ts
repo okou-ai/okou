@@ -102,6 +102,28 @@ describe("Codex model request diagnostics", () => {
   });
 
   it.each([
+    ...[
+      "insufficient_quota",
+      "billing_hard_limit_reached",
+      "insufficient_credits",
+    ].map((code) => {
+      return {
+        status: 429,
+        body: { error: { code, message: "Private provider billing details" } },
+        reason: "provider_insufficient_credits",
+      };
+    }),
+    {
+      status: 400,
+      body: {
+        error: {
+          type: "invalid_request_error",
+          message:
+            "Your credit balance is too low to access the Anthropic API. Please purchase credits.",
+        },
+      },
+      reason: "provider_insufficient_credits",
+    },
     {
       status: 503,
       body: { error: { message: "Service unavailable" } },

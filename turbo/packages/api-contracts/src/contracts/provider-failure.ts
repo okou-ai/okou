@@ -1,4 +1,5 @@
 import type { KnownRunFailureReason } from "./run-failure-reasons";
+import { isProviderBalanceErrorBody } from "./run-balance-errors";
 
 const PROVIDER_FAILURE_CODES = new Map<string, KnownRunFailureReason>([
   ["invalid_api_key", "invalid_api_key"],
@@ -12,11 +13,8 @@ const PROVIDER_FAILURE_CODES = new Map<string, KnownRunFailureReason>([
   ["server_overloaded", "provider_overloaded"],
   ["server_error", "provider_server_error"],
   ["internal_server_error", "provider_server_error"],
-  ["insufficient_quota", "usage_limit"],
   ["usage_limit_reached", "usage_limit"],
   ["usage_not_included", "usage_limit"],
-  ["billing_hard_limit_reached", "usage_limit"],
-  ["insufficient_credits", "insufficient_credits"],
   ["content_policy_violation", "safety_policy_refusal"],
   ["model_not_found", "unsupported_model"],
   ["unsupported_model", "unsupported_model"],
@@ -29,6 +27,13 @@ export function classifyProviderFailure(
 ): KnownRunFailureReason | undefined {
   const payload = providerErrorPayload(message);
   const reason = payload && providerErrorReason(payload);
+  // Billing requires provider provenance: an observed response or a native API
+  // error prefix. A bare JSON fragment in a terminal message is not sufficient.
+  if (
+    reason === "provider_insufficient_credits" &&
+    !hasProviderErrorProvenance(message, httpStatus)
+  )
+    return undefined;
   if (reason) return reason;
 
   const errorMessage = payload && (object(payload.error) ?? payload).message;
@@ -93,6 +98,19 @@ export function classifyProviderHttpFailure(
   return undefined;
 }
 
+function hasProviderErrorProvenance(
+  message: string,
+  httpStatus: number | undefined,
+): boolean {
+  return (
+    (httpStatus !== undefined &&
+      Number.isInteger(httpStatus) &&
+      httpStatus >= 100 &&
+      httpStatus <= 599) ||
+    /^(?:api error: |unexpected status )/iu.test(message.trim())
+  );
+}
+
 function object(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -125,6 +143,9 @@ function providerErrorReason(
 ): KnownRunFailureReason | undefined {
   const error = object(payload.error) ?? payload;
   if (error.error === "insufficient_credits") return "insufficient_credits";
+  if (isProviderBalanceErrorBody({ error })) {
+    return "provider_insufficient_credits";
+  }
   if (
     (error.error === "TOKEN_REFRESH_FAILED" ||
       error.code === "TOKEN_REFRESH_FAILED") &&

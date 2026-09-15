@@ -215,6 +215,11 @@ describe("Pi API-first transition precedence", () => {
       outcome: "arbitrate-terminal",
     },
     {
+      status: 429,
+      failureReason: "provider_insufficient_credits",
+      outcome: "arbitrate-terminal",
+    },
+    {
       status: 200,
       failureReason: "output_token_limit",
       outcome: "arbitrate-terminal",

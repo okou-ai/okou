@@ -75,7 +75,7 @@ fn terminal_provider_status_preserves_quota_precedence() {
             ),
             (
                 r#"API Error: 429 {"error":{"code":"insufficient_quota"}}"#,
-                FailureReason::UsageLimit,
+                FailureReason::ProviderInsufficientCredits,
             ),
         ] {
             assert_eq!(

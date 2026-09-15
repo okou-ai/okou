@@ -141,8 +141,14 @@ an earlier retry budget. Aborted messages and tool results cannot supply model
 HTTP evidence. Historical messages without this diagnostic remain supported.
 
 Structured provider codes precede recognized terminal text and HTTP status.
-The original body distinguishes ordinary HTTP 429 rate limits from explicit
-account quota exhaustion, even when the SDK renders both as a usage limit.
+The original body distinguishes ordinary HTTP 429 rate limits from provider
+account balance failures (`provider_insufficient_credits`) and subscription
+usage limits (`usage_limit`), even when the SDK renders all three as a usage
+limit. Platform credit admission retains `insufficient_credits`. Provider
+billing classification requires an observed response, a typed provider event,
+or a native API error prefix; bare billing JSON in terminal text is insufficient.
+Public balance messages use the existing provider ownership contract, keeping
+built-in provider billing details private.
 HTTP 529 means overload; other 5xx statuses mean provider server failure.
 Known streaming error text can classify an overload after HTTP 200. Unknown
 formats remain unclassified, and bare HTTP 401/403 does not establish a specific
