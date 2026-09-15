@@ -6,7 +6,12 @@ import * as idb from "idb";
 import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
 
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  setupPage,
+  startPage,
+} from "../../../__tests__/page-helper.ts";
 import { decodeVoiceDraftPcmWav } from "../../../signals/voice-io/voice-draft-pcm.ts";
 import { textContinuityDraft } from "./chat-continuity-test-helpers.ts";
 import { AGENT_ID } from "./chat-lifecycle-test-helpers.ts";
@@ -368,17 +373,22 @@ test("Preserve an explicit draft clear while the server baseline is pending", as
     await response.promise;
     return respond(200, textContinuityDraft("Old saved notes."));
   });
-  await setupPage({ context, path: NEW_CHAT_PATH });
+  const page = await startPage({ context, path: NEW_CHAT_PATH });
   await requested.promise;
   const editor = screen.getByRole("textbox", { name: "Message" });
   await fill(editor, "Temporary notes.");
   await fill(editor, "");
   response.resolve();
+  await page.ready;
   click(await findEnabledButton("Voice input"));
   click(await findEnabledButton("Stop recording"));
   await findEnabledButton("Send");
-  expect(editor).toHaveTextContent("Voice note.");
-  expect(editor).not.toHaveTextContent("Old saved notes.");
+  expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
+    "Voice note.",
+  );
+  expect(
+    screen.getByRole("textbox", { name: "Message" }),
+  ).not.toHaveTextContent("Old saved notes.");
 });
 
 test("Keep voice input enabled while switching conversations", async () => {
