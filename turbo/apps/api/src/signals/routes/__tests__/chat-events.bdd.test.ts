@@ -3,6 +3,7 @@ import {
   type SessionOutputDelta,
 } from "@okouai/api-contracts/contracts/realtime";
 import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
+import { assertPiLangfuseRelayContract } from "./helpers/pi-langfuse-relay";
 import {
   PI_NATIVE_CREDENTIAL_PLACEHOLDER,
   piModelConfigV4Schema,
@@ -8163,16 +8164,17 @@ describe("CHAT-02: model-first provider policies", () => {
     );
   });
 
-  it("persists Langfuse trace admission after runner claim", async () => {
+  it("relays admitted run traces with platform credentials after runner claim", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     await publishPendingPiInstructions(actor, agentId);
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
     const usagePricingResolution = await createGptUsagePricingResolution();
     mockPiResourceArchiveDownloads(true);
-    mockPiCheckpointObjectStore();
+    const checkpointObjects = mockPiCheckpointObjectStore();
     mockOptionalEnv("LANGFUSE_PUBLIC_KEY", "pk-lf-bdd-trace-admission");
     mockOptionalEnv("LANGFUSE_SECRET_KEY", "sk-lf-bdd-trace-admission");
+    mockOptionalEnv("LANGFUSE_BASE_URL", "https://langfuse.example");
     server.use(
       http.post("https://api.openai.com/v1/responses", () => {
         return new HttpResponse(
@@ -8216,6 +8218,7 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     expect(queuedContext.platformEnvironment).toMatchObject({
       OKOU_PI_LANGFUSE_DEBUG_ENABLED: "true",
+      OKOU_PI_LANGFUSE_RELAY_ENABLED: "true",
       LANGFUSE_TRACING_ENABLED: "true",
     });
     expect(queuedContext.platformEnvironment).not.toHaveProperty(
@@ -8224,27 +8227,58 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(queuedContext.platformEnvironment).not.toHaveProperty(
       "LANGFUSE_SECRET_KEY",
     );
-    expect(queuedContext.encryptedSecrets).toMatchObject({
-      LANGFUSE_PUBLIC_KEY: "pk-lf-bdd-trace-admission",
-      LANGFUSE_SECRET_KEY: "sk-lf-bdd-trace-admission",
-    });
+    expect(queuedContext.encryptedSecrets ?? {}).not.toHaveProperty(
+      "LANGFUSE_PUBLIC_KEY",
+    );
+    expect(queuedContext.encryptedSecrets ?? {}).not.toHaveProperty(
+      "LANGFUSE_SECRET_KEY",
+    );
 
     const claimed = await claimChatRun(runnerGroup, run.runId);
     expect(claimed.claim.cliAgentType).toBe("pi");
-    expect(claimed.claim.platformEnvironment).toMatchObject({
-      LANGFUSE_PUBLIC_KEY: "pk-lf-bdd-trace-admission",
-      LANGFUSE_SECRET_KEY: "sk-lf-bdd-trace-admission",
-    });
-    expect(claimed.claim.secretValues).toStrictEqual(
-      expect.arrayContaining([
-        "pk-lf-bdd-trace-admission",
-        "sk-lf-bdd-trace-admission",
-      ]),
+    expect(claimed.claim.platformEnvironment).not.toHaveProperty(
+      "LANGFUSE_PUBLIC_KEY",
+    );
+    expect(claimed.claim.platformEnvironment).not.toHaveProperty(
+      "LANGFUSE_SECRET_KEY",
+    );
+    expect(claimed.claim.secretValues).not.toContain(
+      "sk-lf-bdd-trace-admission",
     );
     await expect(
       readRunLangfuseTraceEnabledFixture(run.runId),
     ).resolves.toBeTruthy();
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId },
+      {
+        [FeatureSwitchKey.LangfuseTrace]: false,
+      },
+    );
+    const relay = await assertPiLangfuseRelayContract(context, {
+      runId: run.runId,
+      sessionId: run.threadId,
+      token: claimed.claim.platformEnvironment.OKOU_TOKEN,
+      checkpointObjects,
+    });
     await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
+
+    const untraced = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "run without trace admission",
+        model: "gpt-5.6-terra",
+      },
+      usagePricingResolution,
+    );
+    await flushWaitUntilForTest();
+    const untracedClaim = await claimChatRun(runnerGroup, untraced.runId);
+    await relay.expectAdmissionDenied(
+      untraced.runId,
+      untracedClaim.claim.platformEnvironment.OKOU_TOKEN,
+    );
+    await cancelChatRun(actor, untraced.runId, untracedClaim.sandboxHeaders);
   });
 
   it("pins recall-enabled Pi memory through API completion and Sandbox handoff", async () => {

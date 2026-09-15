@@ -87,6 +87,13 @@ rejections, a fresh snapshot after a blocked writer, timeout and retry. A
 synthetic 10,000 organizations/roots/connectors/sites plus 20,000 deployments
 completed the migration in 69 ms on PostgreSQL 17.10 with the default limits;
 this is bounded local load evidence, not a production timing prediction.
+After merging main `4a60b74daa3cba9e11fdb6a072fa989dd1a242d3`, the expanded
+migration-consistency chain, including the independent historical blob audit,
+passed with the unchanged 1132 SQL. All 230 private compatibility cases and
+329 cases in five affected billing, lifecycle and chat route files passed on
+each schema. Their scenario results, persisted projections and invariant counts
+match. The 26-file matrix above remains evidence for its recorded prior base.
+
 Retire transition controls only after the production journal, completed compatibility cycle and permanent surviving
 coverage satisfy `turbo/packages/db/MIGRATIONS.md`.
 

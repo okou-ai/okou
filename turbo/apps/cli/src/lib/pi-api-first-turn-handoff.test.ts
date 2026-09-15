@@ -30,6 +30,7 @@ const LANGFUSE_PARENT = {
   spanId: "2".repeat(16),
   traceFlags: 1,
   sessionId: SESSION_ID,
+  sandboxWaitStartedAt: 1_000,
 } as const;
 const H0_HASH = "b".repeat(64);
 const temporaryDirectories: string[] = [];

@@ -12,7 +12,6 @@ import {
 import { accept } from "../../lib/accept.ts";
 import { capturePaidOnboardingEvent } from "../../lib/posthog.ts";
 import { now } from "../../lib/time.ts";
-import { recordImpactAttribution$ } from "./impact-attribution.ts";
 import { apiClient$ } from "../api-client.ts";
 import { user$ } from "../auth.ts";
 import { sessionStorageSignals } from "../external/session-storage.ts";
@@ -76,20 +75,15 @@ export const recordSignupAttribution$ = command(
     }
 
     const storedAttribution = set(readStoredAdAttributionMetadata$);
-    const impactAttribution = set(recordImpactAttribution$);
     const recentlyCreatedUser = isRecentlyCreatedUser(user);
     const attribution: AdAttributionMetadata | undefined =
       storedAttribution ??
-      (recentlyCreatedUser
-        ? { source_type: "unknown" }
-        : impactAttribution
-          ? {}
-          : undefined);
+      (recentlyCreatedUser ? { source_type: "unknown" } : undefined);
     if (!attribution) {
       return;
     }
 
-    const attributionFingerprint = `${user.id}:${JSON.stringify(attribution)}:${JSON.stringify(impactAttribution)}`;
+    const attributionFingerprint = `${user.id}:${JSON.stringify(attribution)}`;
     let recorded =
       get(signupAttributionRecordedStorage.get$) === attributionFingerprint;
 
@@ -101,7 +95,6 @@ export const recordSignupAttribution$ = command(
         client.recordSignup({
           body: {
             attribution,
-            ...(impactAttribution ? { impactAttribution } : {}),
           },
           fetchOptions: { signal },
         }),

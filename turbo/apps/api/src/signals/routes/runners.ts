@@ -1375,7 +1375,9 @@ async function piLangfuseCredentialsForRunner(args: {
   readonly timing: ClaimRouteTimingCollector;
 }): Promise<Readonly<Record<string, string>> | undefined> {
   if (
-    !isPiLangfuseDebugRunEnvironment(args.storedContext.platformEnvironment)
+    !isPiLangfuseDebugRunEnvironment(args.storedContext.platformEnvironment) ||
+    args.storedContext.platformEnvironment.OKOU_PI_LANGFUSE_RELAY_ENABLED ===
+      "true"
   ) {
     return undefined;
   }

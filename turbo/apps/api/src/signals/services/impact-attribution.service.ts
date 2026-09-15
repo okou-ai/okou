@@ -1,3 +1,4 @@
+import { marketingImpactEnabled } from "../../lib/impact-marketing";
 import { command } from "ccstate";
 import { eq, isNull, lt, or, sql } from "drizzle-orm";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -32,7 +33,11 @@ const persistOrgImpactAttribution$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const auth = get(authContext$);
-    if (auth.orgId !== orgId || auth.orgRole !== "admin") {
+    if (
+      marketingImpactEnabled() ||
+      auth.orgId !== orgId ||
+      auth.orgRole !== "admin"
+    ) {
       return;
     }
     const capturedAt = new Date(attribution.capturedAt);
@@ -75,6 +80,9 @@ export async function readOrgImpactMetadata(
   orgId: string,
   signal: AbortSignal,
 ): Promise<Record<string, string>> {
+  if (marketingImpactEnabled()) {
+    return {};
+  }
   const [row] = await db
     .select({
       clickId: orgMetadata.impactClickId,
@@ -101,7 +109,11 @@ export const impactStripeMetadata$ = command(
     signal: AbortSignal,
   ): Promise<Record<string, string>> => {
     const auth = get(authContext$);
-    if (auth.orgId !== orgId || auth.orgRole !== "admin") {
+    if (
+      marketingImpactEnabled() ||
+      auth.orgId !== orgId ||
+      auth.orgRole !== "admin"
+    ) {
       return {};
     }
     if (clerkAttributionDisabled()) {
@@ -141,6 +153,9 @@ export async function updateImpactCustomer(
   metadata: Readonly<Record<string, string>>,
   signal: AbortSignal,
 ): Promise<void> {
+  if (marketingImpactEnabled()) {
+    return;
+  }
   const capturedAt = metadata.impact_click_at;
   if (!metadata.impact_click_id || !capturedAt) {
     return;
@@ -197,7 +212,7 @@ export const syncImpactStripeCustomer$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const auth = get(authContext$);
-    if (!auth.orgId || auth.orgRole !== "admin") {
+    if (marketingImpactEnabled() || !auth.orgId || auth.orgRole !== "admin") {
       return;
     }
     const orgId = auth.orgId;

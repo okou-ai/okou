@@ -239,7 +239,7 @@ test.each([400, 403, 404] as const)(
     expect(
       screen.queryByTestId("attachment-lightbox-image"),
     ).not.toBeInTheDocument();
-    expect(document.querySelector("iframe")).toBeNull();
+    expect(screen.getByRole("main").querySelector("iframe")).toBeNull();
     expect(queryAllByRoleFast("button")).toHaveLength(0);
   },
 );

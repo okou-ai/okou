@@ -384,6 +384,46 @@ restores its 16 MiB validation and resume limit: larger saved histories stay in
 storage, but continuing those sessions requires the fixed API and CLI again.
 There is no history truncation, migration, or alternate reader for that rollback.
 
+### Pi Langfuse trace relay
+
+New run contexts set `OKOU_PI_LANGFUSE_RELAY_ENABLED=true` and no longer
+store or inject platform Langfuse credentials. The commit-pinned CLI exports
+OTLP to `POST /api/webhooks/agent/:runId/langfuse/traces` using its existing
+`OKOU_TOKEN`. The API checks that token's run/user/org and the run's captured
+`langfuseTraceEnabled`, then forwards only the OTLP body and encoding headers
+with server-owned Langfuse credentials. Connector account selection cannot
+change this destination or authentication. API execution, ownership transfer,
+Sandbox Wait, and Sandbox Execution are sibling observations under the
+deterministic Run End-to-End parent. LLM and tool observations stay inside their
+execution phase. Both V3 and V4 sandbox handoffs carry that run parent and a
+required `sandboxWaitStartedAt` timestamp when tracing is admitted. This
+staff-only trace contract has no legacy shape or historical rewrite.
+
+The API phase ends when handoff preparation starts. Transfer preparation ends
+when manifest publication starts; the sandbox emits Sandbox Wait from that same
+timestamp through native execution start. Publication, handoff restoration, and
+runtime startup therefore belong to waiting. Publication failures still mark
+the transfer as failed. Cross-host clock skew never produces a fabricated or
+negative wait; invalid intervals are omitted.
+
+The relay sets `x-langfuse-ingestion-version: 4` on its upstream request so
+Langfuse stores native observations without synthesizing an extra trace span.
+The API owns this version declaration; incoming headers cannot downgrade it.
+This staff-only feature requires v4 ingestion and has no legacy ingestion
+fallback or historical trace backfill.
+
+The API and its pinned CLI must ship together through the existing deployment
+pipeline. Existing Guests already pass the first-party API URL, run token, and
+trusted platform environment to that CLI; no Runner promotion is needed.
+Queued contexts created by older APIs retain their older CLI URL and encrypted
+Langfuse configuration. Claim-time decryption and the Guest bootstrap file
+remain for those contexts, whose pinned CLI retains its own reader. The new
+CLI only configures the relay; it has no direct-export fallback. Remove the
+remaining claim/Guest handling after old queued and running contexts drain.
+This change does not repair exports from an already-running legacy CLI. An
+API rollback that removes the relay route drops optional trace exports from
+relay-enabled runs; agent execution continues independently.
+
 ### Runner
 
 #### Pi maintenance usage journal retirement

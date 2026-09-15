@@ -1,3 +1,4 @@
+import type { PiMemoryQuotaSource } from "./pi-memory-quota.service";
 import { getModelProviderPiEndpoint } from "@okouai/api-contracts/contracts/model-provider-firewalls";
 import {
   getProviderRuntimeModel,
@@ -74,6 +75,8 @@ export type PiMemoryStage1CredentialResult =
       readonly status: "available";
       readonly model: PiAgentModelConfig;
       readonly billing: PiMemoryStage1Billing;
+      readonly modelProviderType: string;
+      readonly quota: PiMemoryQuotaSource;
       /** Re-read the exact binding without refreshing or selecting defaults. */
       readonly validate: (signal: AbortSignal) => Promise<void>;
     };
@@ -96,7 +99,9 @@ async function sourceBinding(db: Db, source: SourceIdentity) {
 interface ResolutionContext {
   readonly db: Db;
   readonly source: SourceIdentity;
-  readonly binding: NonNullable<Awaited<ReturnType<typeof sourceBinding>>>;
+  readonly binding: NonNullable<Awaited<ReturnType<typeof sourceBinding>>> & {
+    readonly type: string;
+  };
   readonly context: Awaited<ReturnType<typeof loadUserFeatureSwitchContext>>;
 }
 
@@ -111,6 +116,7 @@ function availableCredential(
   model: PiAgentModelConfig,
   mode: PiMemoryStage1Billing["mode"],
   validateCredential: (signal: AbortSignal) => Promise<boolean>,
+  quota: PiMemoryQuotaSource,
 ): PiMemoryStage1CredentialResult {
   const { db, source, binding } = args;
   if (!isPiAgentModelSupported(model)) {
@@ -119,6 +125,8 @@ function availableCredential(
   return {
     status: "available",
     model,
+    modelProviderType: binding.type,
+    quota,
     billing: { mode, orgId: source.orgId, userId: source.userId },
     validate: async (validationSignal) => {
       const current = await sourceBinding(db, source);
@@ -207,6 +215,7 @@ async function builtinCredential(
       validationSignal.throwIfAborted();
       return current === apiKey;
     },
+    { providerClass: "builtin" },
   );
 }
 
@@ -309,6 +318,7 @@ async function codexCredential(
         bundle.values.get("CHATGPT_ACCOUNT_ID") === accountId
       );
     },
+    { providerClass: "codex", accessToken: token, accountId },
   );
 }
 
@@ -387,6 +397,7 @@ async function gatewayCredential(
       validationSignal.throwIfAborted();
       return JSON.stringify(current) === JSON.stringify(row);
     },
+    { providerClass: "api_key" },
   );
 }
 
@@ -456,6 +467,7 @@ async function apiKeyCredential(
       validationSignal.throwIfAborted();
       return current === encrypted;
     },
+    { providerClass: "api_key" },
   );
 }
 
@@ -482,7 +494,12 @@ export async function resolvePiMemoryStage1Credential(
     source.userId,
   );
   signal.throwIfAborted();
-  const args = { db, source, binding, context };
+  const args = {
+    db,
+    source,
+    binding: { ...binding, type: binding.type },
+    context,
+  };
   if (binding.type === "built-in") {
     return await builtinCredential(args, signal);
   }

@@ -1,3 +1,4 @@
+import { retireImpactMetadata } from "../../lib/impact-marketing";
 import type {
   MemberUsagePack,
   UsagePackChangeConfirmResponse,
@@ -2484,7 +2485,7 @@ function schedulePhaseItem(
     price,
     quantity,
     ...(discounts.length > 0 ? { discounts } : {}),
-    ...(item.metadata ? { metadata: { ...item.metadata } } : {}),
+    ...(item.metadata ? { metadata: retireImpactMetadata(item.metadata) } : {}),
     ...(taxRates.length > 0 ? { tax_rates: taxRates } : {}),
   };
 }
@@ -2614,7 +2615,7 @@ function schedulePhaseParamWithItems(
       : { end_date: args.endDate }),
     ...(phase.currency ? { currency: phase.currency } : {}),
     items: [...args.items],
-    ...(metadata ? { metadata: { ...metadata } } : {}),
+    ...(metadata ? { metadata: retireImpactMetadata(metadata) } : {}),
     proration_behavior: phase.proration_behavior ?? "none",
     ...(discounts.length > 0 ? { discounts } : {}),
   };
@@ -2847,7 +2848,12 @@ function restoredUsagePackScheduleParams(
           ...activePackageItems,
         ],
         ...(phase.metadata || metadataOverlay
-          ? { metadata: { ...phase.metadata, ...metadataOverlay } }
+          ? {
+              metadata: retireImpactMetadata({
+                ...phase.metadata,
+                ...metadataOverlay,
+              }),
+            }
           : {}),
         proration_behavior: phase.proration_behavior ?? "none",
         ...(discounts.length > 0 ? { discounts } : {}),

@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import { and, eq, inArray } from "drizzle-orm";
 import { onTestFinished } from "vitest";
@@ -65,12 +65,6 @@ export interface Phase2CandidateInput {
 }
 
 type Phase2CandidateStatus = Exclude<Phase2CandidateInput["status"], undefined>;
-
-function candidateHash(scope: Phase2TestScope, piSessionId: string): string {
-  return createHash("sha256")
-    .update(`${scope.memoryStorageId}:${piSessionId}:${randomUUID()}`)
-    .digest("hex");
-}
 
 async function insertFixtureBlobs(
   scope: Phase2TestScope,
@@ -260,7 +254,8 @@ export async function insertPhase2Candidates(
 ): Promise<readonly string[]> {
   const now = new Date("2026-09-03T04:00:00.000Z");
   const hashes = inputs.map((input) => {
-    return input.sourceHistoryHash ?? candidateHash(scope, input.piSessionId);
+    // Synthetic blob identity: independent of the worker scope and credentials.
+    return input.sourceHistoryHash ?? randomBytes(32).toString("hex");
   });
   await insertFixtureBlobs(scope, hashes);
   await db().transaction(async (tx) => {
