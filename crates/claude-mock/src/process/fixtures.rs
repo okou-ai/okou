@@ -844,7 +844,10 @@ impl Drop for ParallelToolOomFixture {
         {
             // A fixture error must not leave distributed allocators behind.
             // Only kill this owned child's validated tool leaf, never runtime.
-            if let Some(tools_relative) = &tools_relative
+            // An unreaped child pins its PID; never inspect a recycled PID
+            // after an earlier try_wait has already observed its exit.
+            if matches!(child.try_wait(), Ok(None))
+                && let Some(tools_relative) = &tools_relative
                 && let Ok(relative) = unified_cgroup_path(child.id())
                 && validate_tool_cgroup(&relative, tools_relative).is_ok()
             {
