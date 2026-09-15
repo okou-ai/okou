@@ -37,6 +37,7 @@ import {
 import {
   captureIntegrationInputUploads,
   expectIntegrationInputPreview,
+  listIntegrationInputFileParts,
 } from "./helpers/integration-input-assets";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
@@ -887,11 +888,28 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     });
     expect(downloads).toBe(1);
     await completeSandboxRun(run.sandboxToken, run.runId, 0);
+    await ap.postAgentPhoneInboundMessage({
+      channel: "mms",
+      from: phone,
+      body: "inspect the same photo again",
+      mediaUrl,
+    });
+    const nextRun = await claimDispatchedRun(runnerGroup);
+    expect(nextRun.prompt).toContain(`[ID] ${fileId}`);
+    expect(downloads).toBe(1);
+    expect(uploads).toHaveLength(1);
+    await expect(
+      listIntegrationInputFileParts(context, actor),
+    ).resolves.toStrictEqual([
+      expect.objectContaining({ fileId }),
+      expect.objectContaining({ fileId }),
+    ]);
+    await completeSandboxRun(nextRun.sandboxToken, nextRun.runId, 0);
   });
 
   it("renders media prompts", async () => {
     const ap = createAgentPhoneBddApi(context);
-    const { phone, runnerGroup } = await entitledLinkedActor();
+    const { actor, phone, runnerGroup } = await entitledLinkedActor();
 
     server.use(
       http.get(
@@ -915,6 +933,14 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         `[AgentPhone file] photo one+final%2zraw.png (image/png)\n   [ID] ${mediaMessageId}`,
       ].join("\n\n"),
     );
+    await expect(
+      listIntegrationInputFileParts(context, actor),
+    ).resolves.toStrictEqual([
+      expect.objectContaining({
+        fileId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
+        filenameSnapshot: "photo one+final%2zraw.png",
+      }),
+    ]);
     await completeSandboxRun(run1.sandboxToken, run1.runId, 0);
   });
 

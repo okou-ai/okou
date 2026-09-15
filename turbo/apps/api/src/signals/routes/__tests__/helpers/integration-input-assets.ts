@@ -4,6 +4,7 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
+import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import { expect } from "vitest";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
@@ -112,30 +113,44 @@ export async function expectIntegrationInputPreview(
     }),
     [200],
   );
-  const chats = createChatFilesBddApi(context);
-  const threads = await chats.requestThreadEvents(args.actor, {}, [200]);
-  if (threads.status !== 200) {
-    throw new Error("Expected chat thread events");
-  }
-  const parts = [];
-  for (const thread of threads.body.events) {
-    if (thread.kind === "created") {
-      const events = await chats.listThreadEvents(
-        args.actor,
-        thread.chatThreadId,
-      );
-      for (const event of events.events) {
-        if (event.eventType === "input.prompt") {
-          parts.push(...event.userMessage.parts);
-        }
-      }
-    }
-  }
-  expect(parts).toContainEqual(
+  await expect(
+    listIntegrationInputFileParts(context, args.actor),
+  ).resolves.toContainEqual(
     expect.objectContaining({
       type: "file",
       fileId: args.fileId,
       contentType: args.contentType,
     }),
   );
+}
+
+export async function listIntegrationInputFileParts(
+  context: TestContext,
+  actor: ApiTestUser,
+) {
+  const chats = createChatFilesBddApi(context);
+  const threads = await chats.requestThreadEvents(actor, {}, [200]);
+  if (threads.status !== 200) {
+    throw new Error("Expected chat thread events");
+  }
+  const threadIds = new Set(
+    threads.body.events.flatMap((event) => {
+      return event.kind === "created" ? [event.chatThreadId] : [];
+    }),
+  );
+  const parts = [];
+  for (const threadId of threadIds) {
+    const events = await chats.listThreadEvents(actor, threadId);
+    const revokedIds = revokedChatEventIds(events.events);
+    for (const event of events.events) {
+      if (event.eventType === "input.prompt" && !revokedIds.has(event.id)) {
+        parts.push(
+          ...event.userMessage.parts.filter((part) => {
+            return part.type === "file";
+          }),
+        );
+      }
+    }
+  }
+  return parts;
 }

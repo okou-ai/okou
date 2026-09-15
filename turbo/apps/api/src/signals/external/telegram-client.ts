@@ -81,7 +81,7 @@ async function callTelegramApi<T>(
 
   if (!response.ok || errorPayload) {
     throw new TelegramApiError(
-      response.status,
+      errorPayload?.error_code ?? response.status,
       response.statusText,
       errorPayload?.description,
     );

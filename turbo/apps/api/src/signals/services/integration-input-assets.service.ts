@@ -1,9 +1,9 @@
 import { command } from "ccstate";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type { CanonicalAssetProvenance } from "@okouai/db/jsonb-contracts/run-uploaded-file";
-import { inferMimetype } from "../../lib/mimetype";
-import { sanitizeArtifactFilename } from "../../lib/file-url";
 import {
+  canonicalInputContentType,
+  canonicalInputMessageFiles,
   materializeCanonicalInputFile$,
   type CanonicalInputAsset,
 } from "./canonical-asset.service";
@@ -40,11 +40,9 @@ export const materializeIntegrationInputAssets$ = command(
     },
     signal: AbortSignal,
   ): Promise<readonly IntegrationInputAsset[]> => {
-    const batchDeadline = AbortSignal.timeout(30_000);
     const assets: IntegrationInputAsset[] = [];
     for (const file of args.files) {
-      const { provider, installationId, messageId, externalFileId } =
-        file.provenance;
+      const { provider, installationId, externalFileId } = file.provenance;
       const asset = await set(
         materializeCanonicalInputFile$,
         {
@@ -54,21 +52,17 @@ export const materializeIntegrationInputAssets$ = command(
           publicBrand: args.publicBrand,
           source: provider === "lark" ? "feishu" : provider,
           scope: `${provider}-input`,
-          key: JSON.stringify([
-            args.orgId,
-            installationId,
-            messageId,
-            externalFileId,
-          ]),
+          key: JSON.stringify([args.orgId, installationId, externalFileId]),
           externalId: externalFileId,
           provenance: file.provenance,
-          filename: sanitizeArtifactFilename(file.filename),
-          contentType: file.contentType ?? inferMimetype(file.filename),
+          filename: file.filename,
+          contentType: canonicalInputContentType(
+            file.filename,
+            file.contentType,
+          ),
           size: file.size,
           maxBytes: file.maxBytes,
-          download: (fileSignal) => {
-            return file.download(AbortSignal.any([fileSignal, batchDeadline]));
-          },
+          download: file.download,
         },
         signal,
       );
@@ -90,17 +84,11 @@ export function readyIntegrationInputAsset(
 export function integrationInputMessageFiles(
   assets: readonly IntegrationInputAsset[],
 ) {
-  return assets.flatMap(({ asset }) => {
-    return asset.status === "ready"
-      ? [
-          {
-            id: asset.assetId,
-            filename: asset.filename,
-            contentType: asset.contentType,
-          },
-        ]
-      : [];
-  });
+  return canonicalInputMessageFiles(
+    assets.map(({ asset }) => {
+      return asset;
+    }),
+  );
 }
 
 export function canonicalInputFilePrompt(asset: CanonicalInputAsset): string {

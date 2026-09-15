@@ -158,6 +158,7 @@ export class FeishuApiError extends Error {
   constructor(
     message: string,
     readonly routeStatus: 400 | 403 | 502,
+    readonly upstreamStatusCode?: number,
   ) {
     super(message);
   }
@@ -519,6 +520,7 @@ export async function downloadFeishuMessageResource(
     throw new FeishuApiError(
       `${providerName} file download returned HTTP ${response.status}`,
       response.status >= 500 ? 502 : 400,
+      response.status,
     );
   }
   return response;

@@ -33,6 +33,7 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   captureIntegrationInputUploads,
   expectIntegrationInputPreview,
+  listIntegrationInputFileParts,
 } from "./helpers/integration-input-assets";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import { readAgentRunCallbacks$ } from "./helpers/agent-run-callback";
@@ -1789,6 +1790,57 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
   });
 
+  it.each(["uniqueId", "resource URL"] as const)(
+    "deduplicates Teams files across messages by %s without mixing attachments",
+    async (identity) => {
+      const { fixture, actor } = await setupConnectedTeamsBotActor();
+      const uploads = captureIntegrationInputUploads(context);
+      let downloads = 0;
+      server.use(
+        http.get("https://contoso.sharepoint.com/input/:file", ({ params }) => {
+          downloads += 1;
+          return new HttpResponse(String(params.file), {
+            headers: { "content-type": "image/png" },
+          });
+        }),
+      );
+      for (const index of [0, 1, 2]) {
+        const file = index === 2 ? "second.png" : "first.png";
+        const response = await postTeamsActivity({
+          activity: {
+            ...teamsPersonalMessageActivity({
+              fixture,
+              id: teamsFixtureExternalId(fixture, `dedupe-file-${index}`),
+              text: `Inspect file ${index}`,
+            }),
+            attachments: [
+              {
+                id: "0",
+                contentType:
+                  "application/vnd.microsoft.teams.file.download.info",
+                content: {
+                  downloadUrl: `https://contoso.sharepoint.com/input/${file}${identity === "uniqueId" ? `?token=${index}` : ""}`,
+                  fileName: file,
+                  ...(identity === "uniqueId" ? { uniqueId: file } : {}),
+                },
+              },
+            ],
+          },
+          token: teamsToken(),
+        });
+        expect(response.status).toBe(200);
+        await readTeamsBotResponseAndFlush(response);
+      }
+      const parts = await listIntegrationInputFileParts(context, actor);
+      expect(parts).toHaveLength(3);
+      expect(parts[0]?.fileId).toMatch(/^[0-9a-f-]{36}$/u);
+      expect(parts[1]?.fileId).toBe(parts[0]?.fileId);
+      expect(parts[2]?.fileId).not.toBe(parts[0]?.fileId);
+      expect(downloads).toBe(2);
+      expect(uploads).toHaveLength(2);
+    },
+  );
+
   it("uses short file ids for Teams personal attachments", async () => {
     const { fixture, actor, runnerGroup } = await setupConnectedTeamsBotActor();
     const activityId = teamsFixtureExternalId(
@@ -1852,6 +1904,14 @@ describe("POST /api/webhooks/teams/bot", () => {
     const fileId = claim.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
     expect(fileId).toMatch(/^teams_file_[A-Za-z0-9_-]{22}$/u);
     expect(fileId?.length).toBeLessThan(64);
+    await expect(
+      listIntegrationInputFileParts(context, actor),
+    ).resolves.toStrictEqual([
+      expect.objectContaining({
+        fileId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
+        filenameSnapshot: "personal.png",
+      }),
+    ]);
 
     importPending = false;
     const app = createAppWithRoutes({

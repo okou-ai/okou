@@ -23,6 +23,8 @@ import { inferMimetype } from "../../lib/mimetype";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { isAllowedUploadType } from "../../lib/uploads-constants";
 import { type Db, writeDb$ } from "../external/db";
+import { FeishuApiError } from "../external/feishu-client";
+import { isTelegramApiError } from "../external/telegram-client";
 import {
   fetchSlackFile,
   isSlackFileFetchError,
@@ -47,9 +49,14 @@ import { sourceForRun } from "./run-uploaded-files.service";
 const INPUT_IMPORT_TIMEOUT_MS = 10_000;
 const MAX_INPUT_FILE_SIZE_BYTES = 100 * 1024 * 1024;
 
-class InputFileImportError extends Error {
+export class InputFileImportError extends Error {
   constructor(
-    readonly code: "download-failed" | "too-large",
+    readonly code:
+      | "download-failed"
+      | "too-large"
+      | "unsupported-type"
+      | "html-response"
+      | "invalid-url",
     message: string,
     readonly statusCode?: number,
   ) {
@@ -73,6 +80,18 @@ export interface CanonicalInputAsset {
 
 export interface CanonicalSlackInputAsset extends CanonicalInputAsset {
   readonly slackFileId: string;
+}
+
+export function canonicalInputMessageFiles(
+  assets: readonly CanonicalInputAsset[],
+) {
+  return assets.map((asset) => {
+    return {
+      id: asset.assetId,
+      filename: asset.filename,
+      contentType: asset.contentType,
+    };
+  });
 }
 
 interface CanonicalInputFileArgs {
@@ -141,10 +160,12 @@ function slackFileFilename(file: SlackFile): string {
   return file.name || file.title || file.id || "Untitled";
 }
 
-function slackFileContentType(file: SlackFile, filename: string): string {
+export function canonicalInputContentType(
+  filename: string,
+  contentType?: string,
+): string {
   return (
-    file.mimetype?.split(";")[0]?.trim().toLowerCase() ??
-    inferMimetype(filename)
+    contentType?.split(";")[0]?.trim().toLowerCase() ?? inferMimetype(filename)
   );
 }
 
@@ -153,6 +174,23 @@ function inputMaterializationError(error: unknown): {
   readonly message: string;
   readonly retryable: boolean;
 } {
+  if (
+    error instanceof FeishuApiError &&
+    error.upstreamStatusCode !== undefined
+  ) {
+    return inputMaterializationError(
+      new InputFileImportError(
+        "download-failed",
+        error.message,
+        error.upstreamStatusCode,
+      ),
+    );
+  }
+  if (isTelegramApiError(error)) {
+    return inputMaterializationError(
+      new InputFileImportError("download-failed", error.message, error.status),
+    );
+  }
   if (error instanceof InputFileImportError || isSlackFileFetchError(error)) {
     const retryable =
       error.code === "download-failed" &&
@@ -396,23 +434,42 @@ type CanonicalMaterializationError = NonNullable<
   CanonicalAssetRow["materializationError"]
 >;
 
-function immediateSlackInputError(
-  file: SlackFile,
+function immediateInputError(
   contentType: string,
+  size: number | undefined,
+  maxBytes: number,
 ): CanonicalMaterializationError | undefined {
-  if (file.size !== undefined && file.size > MAX_SLACK_FILE_SIZE_BYTES) {
+  if (size !== undefined && size > maxBytes) {
     return {
       code: "too-large",
       message: "File exceeds maximum size",
       retryable: false,
     };
   }
-  if (!isAllowedUploadType(contentType)) {
+  if (
+    contentType !== "application/octet-stream" &&
+    !isAllowedUploadType(contentType)
+  ) {
     return {
       code: "unsupported-type",
       message: `Unsupported file type: ${contentType}`,
       retryable: false,
     };
+  }
+  return undefined;
+}
+
+function immediateSlackInputError(
+  file: SlackFile,
+  contentType: string,
+): CanonicalMaterializationError | undefined {
+  const immediateError = immediateInputError(
+    contentType,
+    file.size,
+    MAX_SLACK_FILE_SIZE_BYTES,
+  );
+  if (immediateError) {
+    return immediateError;
   }
   if (!file.url_private_download) {
     return {
@@ -527,6 +584,41 @@ async function resetCanonicalInputPending(
   return observed;
 }
 
+function canonicalInputResponseContentType(
+  response: Response,
+  declaredContentType: string,
+): string {
+  if (!response.ok) {
+    throw new InputFileImportError(
+      "download-failed",
+      "File cannot be imported",
+      response.status,
+    );
+  }
+  const responseContentType = response.headers
+    .get("content-type")
+    ?.split(";")[0]
+    ?.trim()
+    .toLowerCase();
+  if (responseContentType === "text/html") {
+    throw new InputFileImportError(
+      "html-response",
+      "File download returned an unexpected HTML response",
+    );
+  }
+  const contentType =
+    declaredContentType === "application/octet-stream"
+      ? (responseContentType ?? declaredContentType)
+      : declaredContentType;
+  if (!isAllowedUploadType(contentType)) {
+    throw new InputFileImportError(
+      "unsupported-type",
+      `Unsupported file type: ${contentType}`,
+    );
+  }
+  return contentType;
+}
+
 const importCanonicalInputFile$ = command(
   async (
     { get, set },
@@ -552,27 +644,10 @@ const importCanonicalInputFile$ = command(
         readonly contentType: string;
       }> => {
         const response = await args.download(importSignal);
-        const responseContentType = response.headers
-          .get("content-type")
-          ?.split(";")[0]
-          ?.trim()
-          .toLowerCase();
-        const contentType =
-          args.contentType === "application/octet-stream"
-            ? (responseContentType ?? args.contentType)
-            : args.contentType;
-        if (
-          !response.ok ||
-          !isAllowedUploadType(contentType) ||
-          (responseContentType === "text/html" &&
-            args.contentType !== "text/html")
-        ) {
-          throw new InputFileImportError(
-            "download-failed",
-            "File cannot be imported",
-            response.status,
-          );
-        }
+        const contentType = canonicalInputResponseContentType(
+          response,
+          args.contentType,
+        );
         if (Number(response.headers.get("content-length")) > args.maxBytes) {
           throw new InputFileImportError(
             "too-large",
@@ -649,7 +724,7 @@ const materializeCanonicalSlackInputFile$ = command(
       return null;
     }
     const filename = slackFileFilename(args.file);
-    const contentType = slackFileContentType(args.file, filename);
+    const contentType = canonicalInputContentType(filename, args.file.mimetype);
     const artifact = await set(
       allocateArtifactObject$,
       {
@@ -772,15 +847,16 @@ export const materializeCanonicalInputFile$ = command(
       return canonicalInputResult(asset);
     }
     const maxBytes = args.maxBytes ?? MAX_INPUT_FILE_SIZE_BYTES;
-    if (args.size !== undefined && args.size > maxBytes) {
+    const immediateError = immediateInputError(
+      args.contentType,
+      args.size,
+      maxBytes,
+    );
+    if (immediateError) {
       const failed = await markCanonicalInputFailed(db, {
         asset,
         userId: args.userId,
-        error: {
-          code: "too-large",
-          message: "File exceeds maximum size",
-          retryable: false,
-        },
+        error: immediateError,
       });
       signal.throwIfAborted();
       return canonicalInputResult(failed);

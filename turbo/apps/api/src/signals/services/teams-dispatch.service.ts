@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 import { command } from "ccstate";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
@@ -63,6 +63,7 @@ import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
 import { ensureTeamsChatThreadRoute } from "./teams-chat-ingress.service";
 import { formatTeamsFileForContext } from "./teams-prompt";
+import { InputFileImportError } from "./canonical-asset.service";
 import { isAllowedTeamsDownloadUrl } from "../../lib/teams-file-url";
 import {
   integrationInputMessageFiles,
@@ -170,7 +171,9 @@ interface TeamsModelPickerOption {
   readonly isDefault: boolean;
 }
 
-type TeamsPromptFile = Omit<ChatTeamsMessageFile, "inCurrentMessage">;
+type TeamsPromptFile = Omit<ChatTeamsMessageFile, "inCurrentMessage"> & {
+  readonly upstreamFileId: string;
+};
 
 interface TeamsAttachmentDownload {
   readonly url: string;
@@ -530,6 +533,16 @@ function teamsAttachmentContentType(
   return inferMimetype(filename);
 }
 
+function teamsUpstreamFileId(
+  content: Readonly<Record<string, unknown>> | null,
+  downloadUrl: string,
+): string {
+  const uniqueId = stringRecordValue(content, "uniqueId");
+  return uniqueId
+    ? `file:${uniqueId}`
+    : `url:${createHash("sha256").update(downloadUrl).digest("hex")}`;
+}
+
 function teamsPromptFile(
   activity: TeamsMessageActivity,
   attachment: TeamsInboundAttachment,
@@ -551,6 +564,7 @@ function teamsPromptFile(
   };
   return {
     fileId: `teams_file_${randomBytes(16).toString("base64url")}`,
+    upstreamFileId: teamsUpstreamFileId(attachment.content, download.url),
     sourceId: attachment.id ?? undefined,
     name,
     contentType,
@@ -644,6 +658,10 @@ function teamsGraphPromptFile(
   };
   return {
     fileId: `teams_file_${randomBytes(16).toString("base64url")}`,
+    upstreamFileId: teamsUpstreamFileId(
+      graphAttachmentContent(attachment),
+      download.url,
+    ),
     sourceId: attachment.id ?? undefined,
     name,
     contentType,
@@ -1625,7 +1643,7 @@ function teamsInputFiles(
   installation: BoundTeamsInstallation,
   files: readonly TeamsPromptFile[],
 ): readonly IntegrationInputFile[] {
-  return files.map((file, index) => {
+  return files.map((file) => {
     return {
       sourceId: file.fileId,
       filename: file.name,
@@ -1634,20 +1652,39 @@ function teamsInputFiles(
         provider: "teams" as const,
         installationId: installation.teamsTenantId,
         messageId: `${activity.conversationId}:${activity.activityId ?? activity.idempotencyKey}`,
-        externalFileId: file.sourceId ?? `attachment:${index}`,
+        externalFileId: file.upstreamFileId,
       },
       download: async (downloadSignal: AbortSignal) => {
         if (!isAllowedTeamsDownloadUrl(file.payload.url)) {
-          throw new Error("Invalid Teams attachment URL");
+          throw new InputFileImportError(
+            "invalid-url",
+            "Invalid Teams attachment URL",
+          );
         }
         const result = await fetchTeamsFile(file.payload, downloadSignal);
         if (result.kind === "teams-error") {
-          throw new Error("Teams attachment download failed");
+          throw new InputFileImportError(
+            "download-failed",
+            "Teams attachment download failed",
+            result.status,
+          );
         }
         return result.response;
       },
     };
   });
+}
+
+function teamsLaunchMessageFile(
+  file: TeamsPromptFile,
+): Omit<ChatTeamsMessageFile, "inCurrentMessage"> {
+  return {
+    fileId: file.fileId,
+    sourceId: file.sourceId,
+    name: file.name,
+    contentType: file.contentType,
+    payload: file.payload,
+  };
 }
 
 function teamsLaunchMessageFiles(
@@ -1659,7 +1696,7 @@ function teamsLaunchMessageFiles(
     ...files.map((file) => {
       const asset = readyIntegrationInputAsset(assets, file.fileId);
       return {
-        ...file,
+        ...teamsLaunchMessageFile(file),
         inCurrentMessage: true,
         ...(asset
           ? {
@@ -1673,7 +1710,7 @@ function teamsLaunchMessageFiles(
       };
     }),
     ...historyFiles.map((file) => {
-      return { ...file, inCurrentMessage: false };
+      return { ...teamsLaunchMessageFile(file), inCurrentMessage: false };
     }),
   ];
 }

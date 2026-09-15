@@ -85,7 +85,10 @@ import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
 import { insertChatEvent } from "./chat-event.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
-import type { CanonicalInputAsset } from "./canonical-asset.service";
+import {
+  InputFileImportError,
+  type CanonicalInputAsset,
+} from "./canonical-asset.service";
 import {
   canonicalInputFilePrompt,
   integrationInputMessageFiles,
@@ -257,6 +260,10 @@ interface TelegramFileContext {
   readonly width?: number;
   readonly height?: number;
   readonly duration?: number;
+}
+
+interface TelegramInboundFileContext extends TelegramFileContext {
+  readonly file_unique_id: string;
 }
 
 interface WorkspaceAgent {
@@ -945,11 +952,12 @@ function selectLargestPhoto(
 
 function extractTelegramFileForContext(
   message: TelegramMessage,
-): TelegramFileContext | undefined {
+): TelegramInboundFileContext | undefined {
   const photo = selectLargestPhoto(message.photo);
   if (photo) {
     return {
       file_id: photo.file_id,
+      file_unique_id: photo.file_unique_id,
       file_type: "photo",
       file_size: photo.file_size,
       width: photo.width,
@@ -959,6 +967,7 @@ function extractTelegramFileForContext(
   if (message.document) {
     return {
       file_id: message.document.file_id,
+      file_unique_id: message.document.file_unique_id,
       file_type: "document",
       file_name: message.document.file_name,
       mime_type: message.document.mime_type,
@@ -968,6 +977,7 @@ function extractTelegramFileForContext(
   if (message.video) {
     return {
       file_id: message.video.file_id,
+      file_unique_id: message.video.file_unique_id,
       file_type: "video",
       file_name: message.video.file_name,
       mime_type: message.video.mime_type,
@@ -980,6 +990,7 @@ function extractTelegramFileForContext(
   if (message.audio) {
     return {
       file_id: message.audio.file_id,
+      file_unique_id: message.audio.file_unique_id,
       file_type: "audio",
       file_name: message.audio.file_name,
       mime_type: message.audio.mime_type,
@@ -990,6 +1001,7 @@ function extractTelegramFileForContext(
   if (message.voice) {
     return {
       file_id: message.voice.file_id,
+      file_unique_id: message.voice.file_unique_id,
       file_type: "voice",
       mime_type: message.voice.mime_type,
       file_size: message.voice.file_size,
@@ -999,6 +1011,7 @@ function extractTelegramFileForContext(
   if (message.animation) {
     return {
       file_id: message.animation.file_id,
+      file_unique_id: message.animation.file_unique_id,
       file_type: "animation",
       file_name: message.animation.file_name,
       mime_type: message.animation.mime_type,
@@ -1011,6 +1024,7 @@ function extractTelegramFileForContext(
   if (message.video_note) {
     return {
       file_id: message.video_note.file_id,
+      file_unique_id: message.video_note.file_unique_id,
       file_type: "video_note",
       file_size: message.video_note.file_size,
       width: message.video_note.length,
@@ -1021,6 +1035,7 @@ function extractTelegramFileForContext(
   if (message.sticker) {
     return {
       file_id: message.sticker.file_id,
+      file_unique_id: message.sticker.file_unique_id,
       file_type: "sticker",
       file_size: message.sticker.file_size,
       width: message.sticker.width,
@@ -1806,7 +1821,7 @@ function telegramChatMessageId(args: {
 function telegramInputFiles(
   source: TelegramAgentMessageArgs,
   chatId: string,
-  file: TelegramFileContext | undefined,
+  file: TelegramInboundFileContext | undefined,
 ): readonly IntegrationInputFile[] {
   return file
     ? [
@@ -1824,7 +1839,7 @@ function telegramInputFiles(
             provider: "telegram",
             installationId: source.botId,
             messageId: `${chatId}:${source.message.message_id}`,
-            externalFileId: file.file_id,
+            externalFileId: file.file_unique_id,
           },
           download: async (downloadSignal) => {
             const metadata = await getFile(
@@ -1836,7 +1851,10 @@ function telegramInputFiles(
               throw new Error("Telegram file has no download path");
             }
             if ((metadata.file_size ?? 0) > MAX_TELEGRAM_DOWNLOAD_BYTES) {
-              throw new Error("Telegram file exceeds the download limit");
+              throw new InputFileImportError(
+                "too-large",
+                "Telegram file exceeds the download limit",
+              );
             }
             return fetch(
               buildFileDownloadUrl(source.botToken, metadata.file_path),

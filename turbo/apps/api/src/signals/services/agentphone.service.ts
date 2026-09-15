@@ -64,6 +64,7 @@ import {
   chatInputPromptDispatchCondition,
 } from "./chat-event-type.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
+import { InputFileImportError } from "./canonical-asset.service";
 import {
   canonicalInputFilePrompt,
   integrationInputMessageFiles,
@@ -1531,11 +1532,14 @@ function agentPhoneInputFiles(
             provider: "agentphone",
             installationId: userLinkId,
             messageId: event.messageId,
-            externalFileId: event.messageId,
+            externalFileId: createHash("sha256").update(mediaUrl).digest("hex"),
           },
           download: (downloadSignal) => {
             if (safeUrlParse(mediaUrl)?.protocol !== "https:") {
-              throw new Error("AgentPhone media URL must use HTTPS");
+              throw new InputFileImportError(
+                "invalid-url",
+                "AgentPhone media URL must use HTTPS",
+              );
             }
             return fetch(mediaUrl, { signal: downloadSignal });
           },
