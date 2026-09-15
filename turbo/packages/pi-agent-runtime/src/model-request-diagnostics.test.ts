@@ -163,9 +163,13 @@ describe("Codex model request diagnostics", () => {
     expect(requests).toBe(3);
   });
 
-  it.each([false, true])(
-    "preserves native session retry behavior (recover=%s)",
-    async (recover) => {
+  it.each([
+    { recover: false, followUp: false },
+    { recover: true, followUp: false },
+    { recover: false, followUp: true },
+  ])(
+    "preserves native session retry behavior (recover=$recover, followUp=$followUp)",
+    async ({ recover, followUp }) => {
       const directory = await mkdtemp(join(tmpdir(), "pi-rate-limit-"));
       onTestFinished(() => {
         return rm(directory, { recursive: true, force: true });
@@ -200,8 +204,22 @@ describe("Codex model request diagnostics", () => {
       });
       const retries: unknown[] = [];
       const failures: unknown[] = [];
+      let settlements = 0;
+      let queuedFollowUp = false;
+      created.session.agent.subscribe(async (event) => {
+        if (
+          followUp &&
+          !queuedFollowUp &&
+          event.type === "agent_end" &&
+          requests === 3
+        ) {
+          queuedFollowUp = true;
+          await created.session.followUp("next input after exhausted retries");
+        }
+      });
       created.session.subscribe((event) => {
         if (event.type === "auto_retry_start") retries.push(event);
+        if (event.type === "agent_settled") settlements++;
         if (
           event.type === "message_end" &&
           event.message.role === "assistant" &&
@@ -210,9 +228,13 @@ describe("Codex model request diagnostics", () => {
           failures.push(event.message);
       });
       await created.session.prompt("hello");
-      expect(requests).toBe(recover ? 2 : 3);
-      expect(retries).toHaveLength(recover ? 1 : 2);
-      expect(retries[0]).toMatchObject({ attempt: 1, maxAttempts: 2 });
+      expect(requests).toBe(followUp ? 6 : recover ? 2 : 3);
+      expect(settlements).toBe(1);
+      expect(retries).toMatchObject(
+        (followUp ? [1, 2, 1, 2] : recover ? [1] : [1, 2]).map((attempt) => {
+          return { attempt, maxAttempts: 2 };
+        }),
+      );
       for (const failure of failures)
         expect(failure).toMatchObject(rateLimitMessage);
       const final = created.session.messages.at(-1);

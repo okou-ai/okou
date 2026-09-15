@@ -131,10 +131,11 @@ call. Failed native assistant messages carry these numeric fields in the SDK's
 unchanged. Both stream iteration and `result()` expose the same diagnostic.
 
 Guest projects this evidence into the failed terminal result and optional
-`FailureDiagnostic.modelRequest`. It counts completed failed model retries and
-records the retry limit from native `auto_retry_start` events. A scheduled sleep
-does not count as a completed retry. Successful assistant output and settlement
-clear the retry state; aborted messages and tool results cannot supply model
+`FailureDiagnostic.modelRequest`. A failed retry records the attempt number and
+limit from its native `auto_retry_start` event. A scheduled sleep does not count
+as a completed retry. Native retry completion, successful assistant output and
+settlement clear pending retry state; queued input and compaction do not inherit
+an earlier retry budget. Aborted messages and tool results cannot supply model
 HTTP evidence. Historical messages without this diagnostic remain supported.
 
 Observed HTTP 429 supplies `provider_rate_limited` after existing explicit

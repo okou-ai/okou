@@ -505,14 +505,20 @@ fn model_request_diagnostic(message: &Value) -> Option<ModelRequestDiagnostic> {
     Some(request)
 }
 
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PiRetryAttempt {
+    attempt: u32,
+    max_attempts: u32,
+}
+
 pub(super) struct PiRpcProjection {
     run_id: String,
     session_id: String,
     started_at: Instant,
     emitted_session_init: bool,
     assistant_terminal: Option<PiAssistantTerminal>,
-    failed_model_attempts: u32,
-    retry_limit: Option<u32>,
+    pending_retry: Option<PiRetryAttempt>,
     terminal_error: bool,
 }
 
@@ -524,8 +530,7 @@ impl PiRpcProjection {
             started_at: Instant::now(),
             emitted_session_init: false,
             assistant_terminal: None,
-            failed_model_attempts: 0,
-            retry_limit: None,
+            pending_retry: None,
             terminal_error: false,
         }
     }
@@ -545,10 +550,21 @@ impl PiRpcProjection {
             Some("message_end") => self.project_message_end(record),
             Some("agent_settled") => Ok(Some(self.project_agent_settled())),
             Some("auto_retry_start") => {
-                self.retry_limit = record
-                    .get("maxAttempts")
-                    .and_then(Value::as_u64)
-                    .and_then(|limit| u32::try_from(limit).ok());
+                self.pending_retry = serde_json::from_value(record).ok();
+                // A cancelled backoff still proves the configured limit, but
+                // does not complete the newly scheduled attempt.
+                if let Some(retry) = self.pending_retry
+                    && let Some(request) = self
+                        .assistant_terminal
+                        .as_mut()
+                        .and_then(|terminal| terminal.model_request.as_mut())
+                {
+                    request.retry_limit = Some(retry.max_attempts);
+                }
+                Ok(None)
+            }
+            Some("auto_retry_end") => {
+                self.pending_retry = None;
                 Ok(None)
             }
             Some("extension_error") => {
@@ -634,14 +650,12 @@ impl PiRpcProjection {
         let citation_projection = normalize_assistant_citations(&mut message);
         let mut terminal =
             PiAssistantTerminal::from_message(&message, citation_projection.citation.is_some());
-        if message.get("stopReason").and_then(Value::as_str) == Some("error") {
-            if let Some(request) = terminal.model_request.as_mut() {
-                request.retry_attempts = self.failed_model_attempts;
-            }
-            self.failed_model_attempts = self.failed_model_attempts.saturating_add(1);
-        } else {
-            self.failed_model_attempts = 0;
-            self.retry_limit = None;
+        let retry = self.pending_retry.take();
+        if let Some(request) = terminal.model_request.as_mut() {
+            // Only a scheduled SDK retry is a retry. Compaction and queued
+            // input can continue after an error without sharing its budget.
+            request.retry_attempts = retry.map_or(0, |retry| retry.attempt);
+            request.retry_limit = retry.map(|retry| retry.max_attempts);
         }
         self.assistant_terminal = Some(terminal);
         let content = assistant_content(&mut message)?;
@@ -768,12 +782,8 @@ impl PiRpcProjection {
     }
 
     fn project_agent_settled(&mut self) -> Value {
-        let mut assistant = self.assistant_terminal.take().unwrap_or_default();
-        if let Some(request) = assistant.model_request.as_mut() {
-            request.retry_limit = self.retry_limit;
-        }
-        self.failed_model_attempts = 0;
-        self.retry_limit = None;
+        let assistant = self.assistant_terminal.take().unwrap_or_default();
+        self.pending_retry = None;
         let mut result = serde_json::Map::from_iter([
             ("type".to_owned(), json!("result")),
             (
@@ -1262,6 +1272,26 @@ mod tests {
                     failure.clone(),
                     json!({"type": "auto_retry_start", "attempt": 2, "maxAttempts": 2}),
                     failure.clone(),
+                ],
+                json!({"httpStatus": 429, "transportAttempts": 1, "retryAttempts": 2, "retryLimit": 2}),
+            ),
+            // The SDK can drain a queued follow-up after exhausting the first
+            // retry budget, without settling between the two request cycles.
+            (
+                vec![
+                    failure.clone(),
+                    retry.clone(),
+                    failure.clone(),
+                    json!({"type": "auto_retry_start", "attempt": 2, "maxAttempts": 2}),
+                    failure.clone(),
+                    json!({"type": "auto_retry_end", "success": false, "attempt": 2}),
+                    json!({"type": "message_end", "message": {"role": "user", "content": "next input"}}),
+                    failure.clone(),
+                    retry.clone(),
+                    failure.clone(),
+                    json!({"type": "auto_retry_start", "attempt": 2, "maxAttempts": 2}),
+                    failure.clone(),
+                    json!({"type": "auto_retry_end", "success": false, "attempt": 2}),
                 ],
                 json!({"httpStatus": 429, "transportAttempts": 1, "retryAttempts": 2, "retryLimit": 2}),
             ),
