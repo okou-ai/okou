@@ -73,7 +73,8 @@ function sourceArgs(run: Run) {
     generationEnabled:
       snapshot?.schemaVersion === 2
         ? snapshot.piMemoryGenerationEnabled
-        : snapshot?.schemaVersion === 3 && snapshot.framework === "pi",
+        : (snapshot?.schemaVersion === 3 || snapshot?.schemaVersion === 4) &&
+          snapshot.framework === "pi",
     triggerSource: run.triggerSource,
     chatThreadId: run.chatThreadId,
     completedAt: run.completedAt ?? run.createdAt,

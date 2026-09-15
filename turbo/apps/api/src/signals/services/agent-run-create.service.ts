@@ -152,7 +152,7 @@ import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import type {
-  AgentRunLaunchSnapshot,
+  AgentRunFullLaunchSnapshot,
   AgentRunOfficialWorkflowProvenance,
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -6348,7 +6348,7 @@ interface LaunchRunRowsArgs {
   readonly agentRunMetadata: AgentRunMetadata | undefined;
   readonly apiStartTime: number;
   readonly runnerGroup: string | undefined;
-  readonly launchSnapshot: AgentRunLaunchSnapshot;
+  readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly langfuseTraceEnabled: boolean;
   readonly officialWorkflowProvenance:
     | AgentRunOfficialWorkflowProvenance
@@ -7117,7 +7117,7 @@ interface BuildRunnerJobPayloadInput {
   readonly body: CreateRunBody;
   readonly artifacts: readonly ContextArtifact[];
   readonly framework: SupportedFramework;
-  readonly launchSnapshot: AgentRunLaunchSnapshot;
+  readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly piSandbox: PiModelConfig | undefined;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly connectorContext: ConnectorRuntimeContext;
@@ -7331,7 +7331,7 @@ function piBaseSession(
 function storedExecutionContextWithPiResources(
   context: StoredExecutionContext,
   resources: PreparedPiLaunchResources | undefined,
-  launchFramework: AgentRunLaunchSnapshot["framework"],
+  launchFramework: AgentRunFullLaunchSnapshot["framework"],
 ): StoredExecutionContext {
   const finalizedContext = { ...context, cliAgentType: launchFramework };
   if (resources === undefined) {
@@ -9021,7 +9021,7 @@ interface PreparedRunContext {
 }
 
 interface FinalizedPreparedRunContext extends PreparedRunContext {
-  readonly launchSnapshot: AgentRunLaunchSnapshot;
+  readonly launchSnapshot: AgentRunFullLaunchSnapshot;
 }
 
 async function materializePreparedPiProvider(

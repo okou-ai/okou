@@ -1,3 +1,4 @@
+import { legacySandboxRunPredicate } from "../services/pi-inference-lifecycle.service";
 import { command } from "ccstate";
 import {
   claimCompatibleStoredExecutionContextSchema,
@@ -938,6 +939,7 @@ async function getClaimableJob(
     .where(
       and(
         eq(runnerJobQueue.runId, runId),
+        sql`(${legacySandboxRunPredicate()})`,
         gt(runnerJobQueue.expiresAt, sql`now()`),
       ),
     )
@@ -1070,6 +1072,7 @@ function buildClaimTransitionSql(
             FROM ${agentRuns}
             WHERE ${eq(agentRuns.id, runId)}
               AND ${agentRuns.triggerSource} IS DISTINCT FROM 'goal'
+              AND (${legacySandboxRunPredicate()})
             FOR UPDATE
           ),
           locked_job AS MATERIALIZED (

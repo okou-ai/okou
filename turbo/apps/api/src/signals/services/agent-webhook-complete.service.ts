@@ -1,3 +1,7 @@
+import {
+  readPiInferenceLifecycle,
+  assertPiInferencePublication,
+} from "./pi-inference-lifecycle.service";
 import { command } from "ccstate";
 import type { z } from "zod";
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -65,6 +69,7 @@ type WebhookCompleteBody = z.infer<
 type TerminalStatus = "completed" | "failed";
 
 interface CompleteAgentRunInput {
+  readonly inferenceOwnerEpoch?: number;
   readonly auth: SandboxAuth;
   readonly body: WebhookCompleteBody;
   readonly allowCheckpointlessSuccess?: boolean;
@@ -325,6 +330,9 @@ function checkpointInputForCompletion(
   }
   return {
     auth: input.auth,
+    ...(input.inferenceOwnerEpoch === undefined
+      ? {}
+      : { inferenceOwnerEpoch: input.inferenceOwnerEpoch }),
     body: {
       ...input.body.checkpoint,
       runId: input.body.runId,
@@ -476,6 +484,13 @@ async function lockCompletionRun(
   if (!run) {
     return null;
   }
+  const lifecycle = await readPiInferenceLifecycle(
+    tx,
+    input.body.runId,
+    run.launchSnapshot,
+  );
+  assertPiInferencePublication(lifecycle, input.inferenceOwnerEpoch);
+
   return { ...run, status: runStatusSchema.parse(run.status) };
 }
 

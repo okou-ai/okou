@@ -61,6 +61,7 @@ export enum FeatureSwitchKey {
   CustomConnectorMcp = "customConnectorMcp",
   SshAccess = "sshAccess",
   CloudflareAccess = "cloudflareAccess",
+  PiDeferredSandbox = "piDeferredSandbox",
   PiLoop = "piLoop",
   PiMemory = "piMemory",
   OpenRouterUsRouting = "openRouterUsRouting",

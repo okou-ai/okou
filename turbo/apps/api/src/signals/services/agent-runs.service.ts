@@ -31,7 +31,6 @@ import {
   inArray,
   isNotNull,
   lte,
-  or,
   sql,
 } from "drizzle-orm";
 import { z } from "zod";
@@ -43,7 +42,11 @@ import {
 import { now } from "../../lib/time";
 import { readPiLangfuseServerConfig } from "../../lib/pi-langfuse-debug";
 import { db$, type Db } from "../external/db";
-import { activePendingRunPredicate } from "./agent-run-activity.service";
+import {
+  sandboxCapacityPredicate,
+  readPiInferenceLifecycle,
+} from "./pi-inference-lifecycle.service";
+import { agentRunSandboxLease } from "@okouai/db/schema/agent-run-inference";
 import {
   activePaidConcurrencySlots,
   cappedBaseConcurrencyLimit,
@@ -124,18 +127,13 @@ async function activeMemberUsage(
       active,
     })
     .from(agentRuns)
+    .leftJoin(
+      agentRunSandboxLease,
+      eq(agentRunSandboxLease.runId, agentRuns.id),
+    )
     .leftJoin(userCache, eq(agentRuns.userId, userCache.userId))
     .where(
-      and(
-        eq(agentRuns.orgId, orgId),
-        or(
-          eq(agentRuns.status, "running"),
-          and(
-            eq(agentRuns.status, "pending"),
-            activePendingRunPredicate(staleThreshold),
-          ),
-        ),
-      ),
+      and(eq(agentRuns.orgId, orgId), sandboxCapacityPredicate(staleThreshold)),
     )
     .groupBy(agentRuns.userId, userCache.name, userCache.email)
     .orderBy(desc(active), asc(agentRuns.userId));
@@ -302,6 +300,7 @@ export function agentRunById(args: {
     const [run] = await get(db$)
       .select({
         id: agentRuns.id,
+        launchSnapshot: agentRuns.launchSnapshot,
         status: agentRuns.status,
         prompt: agentRuns.prompt,
         appendSystemPrompt: agentRuns.appendSystemPrompt,
@@ -327,6 +326,8 @@ export function agentRunById(args: {
     if (!run) {
       return null;
     }
+
+    await readPiInferenceLifecycle(get(db$), run.id, run.launchSnapshot);
 
     const langfuseConfig = run.langfuseTraceEnabled
       ? readPiLangfuseServerConfig()

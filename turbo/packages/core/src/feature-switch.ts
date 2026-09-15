@@ -304,6 +304,10 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Send preview chat runs through real agent CLIs instead of preview mock runners.",
     enabled: false,
   },
+  [FeatureSwitchKey.PiDeferredSandbox]: {
+    maintainer: "lancy@vm0.ai",
+    enabled: false,
+  },
   [FeatureSwitchKey.PiLoop]: {
     maintainer: "lancy@okou.ai",
     description:

@@ -1,3 +1,4 @@
+import { assertPiInferenceScopeErasureReady } from "./pi-inference-lifecycle.service";
 import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { cleanupSharedThreadArtifacts$ } from "./shared-thread-artifacts.service";
@@ -925,6 +926,13 @@ async function deleteUserData(
 export const cleanupClerkDeletedOrg$ = command(
   async ({ get, set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
+    await cancelOrgRuns(db, orgId);
+    signal.throwIfAborted();
+    await assertPiInferenceScopeErasureReady(db, {
+      kind: "organization",
+      orgId,
+    });
+    signal.throwIfAborted();
     await set(
       cleanupSharedThreadArtifacts$,
       { kind: "organization", orgId },
@@ -949,6 +957,10 @@ export const cleanupClerkDeletedOrgBilling$ = command(
 export const cleanupClerkDeletedUser$ = command(
   async ({ get, set }, userId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
+    await cancelUserRuns(db, userId);
+    signal.throwIfAborted();
+    await assertPiInferenceScopeErasureReady(db, { kind: "user", userId });
+    signal.throwIfAborted();
     await set(cleanupSharedThreadArtifacts$, { kind: "user", userId }, signal);
     const emptyOrgIds = await emptyOrgIdsAfterDeletingUser(
       db,
@@ -961,6 +973,13 @@ export const cleanupClerkDeletedUser$ = command(
     await set(cleanupUserExternalServices$, db, userId, signal);
     signal.throwIfAborted();
     for (const orgId of emptyOrgIds) {
+      await cancelOrgRuns(db, orgId);
+      signal.throwIfAborted();
+      await assertPiInferenceScopeErasureReady(db, {
+        kind: "organization",
+        orgId,
+      });
+      signal.throwIfAborted();
       await set(
         cleanupSharedThreadArtifacts$,
         { kind: "organization", orgId },
@@ -1025,6 +1044,7 @@ export const cleanupClerkBannedUser$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
     await cancelUserRuns(db, userId);
+    signal.throwIfAborted();
     signal.throwIfAborted();
     await cancelLastAdminOrgsStripeSubscriptions(db, userId);
   },
