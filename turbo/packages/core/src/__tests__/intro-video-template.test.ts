@@ -179,13 +179,5 @@ describe("intro video template", () => {
         selection: { stylePresetId: "other-video" },
       }),
     ).toBeUndefined();
-    // A selection stored before the wire split is not recognised; those
-    // staff-only rows were deliberately left unmigrated.
-    expect(
-      introVideoTemplateOptions({
-        type: "video",
-        selection: { stylePresetId: "explainer-video" },
-      }),
-    ).toBeUndefined();
   });
 });

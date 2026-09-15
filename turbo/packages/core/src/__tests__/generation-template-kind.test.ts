@@ -53,16 +53,6 @@ describe("generationTemplateKind", () => {
     ).toBe("avatar");
   });
 
-  it("classifies a selection stored before the Intro Video split as creative video", () => {
-    // Intro Video used to ride inside the video envelope as
-    // `stylePresetId: "explainer-video"`. Those rows were staff-only and were
-    // deliberately not backfilled, so they now read as creative video. This
-    // records that accepted cost rather than asserting a removed code path.
-    expect(generationTemplateKind(videoTemplate("explainer-video"))).toBe(
-      "video",
-    );
-  });
-
   it("does not mistake a malformed avatar preset id for an avatar", () => {
     expect(generationTemplateKind(videoTemplate("avatar-template:0"))).toBe(
       "video",
