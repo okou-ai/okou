@@ -401,6 +401,17 @@ describe("video Artifact previews", () => {
         key: `private-artifacts/${reference.id}/poster-v2.jpg`,
       }),
     ]);
+    const catalog = await chat.listArtifactCatalog(actor);
+    expect(
+      catalog.artifacts.map((entry) => {
+        return entry.title;
+      }),
+    ).toStrictEqual(["old-video.mp4"]);
+    owner.objectStore.addObject({
+      bucket: "test-private-artifacts",
+      key: `private-artifacts/${reference.id}/poster-v2.jpg`,
+      size: 3,
+    });
     await updateFeatureSwitchesForUser(context, actor, {
       [FeatureSwitchKey.PrivateArtifacts]: false,
     });

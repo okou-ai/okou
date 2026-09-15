@@ -226,7 +226,9 @@ export const completePrivateArtifact$ = command(
     { set },
     args: {
       readonly id: string;
-      readonly url: string;
+      // Internal previews and browser captures keep their reference on the
+      // owning record, without publishing a standalone catalog file.
+      readonly url: string | null;
       readonly contentType: string;
       readonly size: number;
     },

@@ -388,7 +388,7 @@ const renderAndStoreArtifactPreview$ = command(
         completePrivateArtifact$,
         {
           id: artifact.id,
-          url: artifact.url,
+          url: null,
           contentType,
           size: image.byteLength,
         },

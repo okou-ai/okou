@@ -986,7 +986,7 @@ const captureAndStoreBrowserScreenshot$ = command(
             completePrivateArtifact$,
             {
               id: artifact.id,
-              url: artifact.url,
+              url: null,
               contentType: BROWSER_SCREENSHOT_CONTENT_TYPE,
               size: image.byteLength,
             },

@@ -1190,7 +1190,13 @@ export const listSocialKitDownloads$ = command(
       downloads: page.map((job) => {
         return {
           ...responseForJob(job),
-          request: job.request,
+          request: {
+            platform: job.request.platform,
+            url: job.request.url,
+            maxDuration: job.request.maxDuration,
+            quality: job.request.quality,
+            format: job.request.format,
+          },
           resumeCommand:
             job.status === "provider_failed"
               ? null
