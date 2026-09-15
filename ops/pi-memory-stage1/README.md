@@ -230,11 +230,11 @@ The 2026-09-15 05:17:59.234547–05:18:01.438157 UTC production census was
 statements, not a common snapshot. Attribution columns were not exposed by that
 masked schema, so live source coverage is unknown.
 
-1. `1139_pi_memory_stage1_billing_context` replaces only the two context checks
+1. `1141_pi_memory_stage1_billing_context` replaces only the two context checks
    with expanded `NOT VALID` checks and updates capture in one short transaction.
    Existing rows are not rewritten or relabeled. New writes are checked at once.
 2. Commit releases the `ACCESS EXCLUSIVE` locks before
-   `1140_validate_pi_memory_stage1_billing_context` scans the existing rows in a
+   `1142_validate_pi_memory_stage1_billing_context` scans the existing rows in a
    **different transaction**. It uses `SHARE UPDATE EXCLUSIVE`; no same-transaction
    lock downgrade is claimed. There is no explicit `LOCK TABLE` or timeout raise.
 3. Retain runner defaults (1s lock, 10s statement). If expansion times out, its
@@ -256,7 +256,7 @@ limits, inspects lock modes and commits old/new writes while validation locks
 remain held. It values an integer beyond JavaScript's safe range with PostgreSQL
 `numeric`, preserves pending/missing-price/billing-error coverage, and records a
 representative all-org plan in [scale-evidence.json](v1/scale-evidence.json).
-The recorded sample: expansion 15ms, validation 62ms, query 71.821ms; sequential
+The recorded sample: expansion 7ms, validation 75ms, query 64.019ms; sequential
 scans are expected because the existing indexes do not lead with the billing
 anchor. No index is added on an unmeasured production workload. Volume is
 representative; distribution, hardware, cache and contention are synthetic.
@@ -265,10 +265,15 @@ representative; distribution, hardware, cache and contention are synthetic.
 #34273 then merged inference lifecycle migrations 1134/1135; these and their
 validators are retained unchanged. #34304 then merged Clerk erasure bridge
 migration 1136; its schema, export and validator are preserved. #34317 then
-merged invitation-column retirement migration 1137; its SQL, snapshot and
-validator are preserved. #34263 then merged account-identity migration 1138;
-its SQL and snapshot are preserved. D metadata was regenerated as 1139/1140
-against canonical main `aff7d3bf7571bf3baba47dbd20a9f339981fcb4f`.
+merged invitation-column retirement migration 1137; its SQL and snapshot are
+preserved. Main subsequently retired its transition validators after the
+documented production receipt and added permanent org-plan entitlement checks;
+this integration retains that canonical validation lifecycle. #34263 merged
+account-identity migration 1138. #34305 and #34340 merged marketing privacy
+storage retirement 1139 and deferred usage-pack schedule 1140. Their SQL,
+snapshots, exports and current validators are preserved. D metadata was
+regenerated as 1141/1142 against canonical main
+`52049588ce58cf9b7f7635e34e5268be1aa0422a`.
 #34234 and #34263 competed for migration numbering during inventory. They are
 not ordering blockers. Preserve the first merged canonical main migrations and
 regenerate this branch's metadata through Drizzle if a conflict occurs.

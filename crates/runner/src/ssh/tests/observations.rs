@@ -12,7 +12,6 @@ async fn connection_evidence_reports_actual_authentication_and_skips_reused_tran
     ] {
         let mut h = Harness::new(reply).await;
         let dispatcher = h.take_dispatcher();
-        h.runtime.ably_connected(true);
         let resolve = h.resolve(h.credential(true)).await;
         let report = h.api.mock_async(|when, then| {
             when.method("POST").path(format!("/api/runners/runs/{}/ssh/observations", h.run))
@@ -140,7 +139,6 @@ async fn failed_authentication_after_tofu_reports_the_new_generation_for_exec_an
     for managed in [false, true] {
         let mut h = Harness::new(Reply::default()).await;
         let dispatcher = h.take_dispatcher();
-        h.runtime.ably_connected(true);
         let mut credential = h.credential(false);
         credential["privateKey"] = json!(
             super::harness::key(russh::keys::Algorithm::Ed25519)

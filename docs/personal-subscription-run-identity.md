@@ -225,15 +225,26 @@ The operation-local proof contains the fixed source ID and exact serialized
 encrypted snapshot; it is never written to run metadata or queue payloads.
 This also accepts independent KMS re-encryption of equivalent complete bundles.
 
-The final transaction retains the organization and A1 lifecycle fences, locks
-the same provider and bounded credential rows, compares the exact snapshot, and
-rechecks the connected account with its fixed org/user/type before inserting
-the run. It cannot call general reconciliation, KMS or a profile endpoint.
+The final transaction retains the organization and A1 lifecycle fences, takes
+the provider advisory lock once, locks the same provider and bounded credential
+rows, and compares the exact snapshot. It checks the captured account's fixed
+ID/org/user/type and connected state from that locked inventory before inserting
+the run; a connected inactive source remains valid. No second account SELECT is
+needed: the validated snapshot account also supplies the existing failed-run
+recovery identity digest. It cannot call general reconciliation, KMS or a profile
+endpoint.
 Changes to row IDs, account identity/selection, state or any ciphertext reject
 the original capture with existing guidance. Even equivalent re-encryption
 after the proof invalidates it; a fresh request can prove the new snapshot.
 The same proof is retained across the queue-payload encryption retry outside
 the final transaction. There is no sibling/account/model/payment reselection.
+Dispatch timings separate `api_dispatch_subscription_prepare_snapshot` (the
+short encrypted-state transaction), `api_dispatch_subscription_prepare_bundle_proof`
+(outside-lock equivalence, including KMS when ciphertext differs), and
+`api_dispatch_subscription_validate_admission` (the final locked check).
+Each carries only the bounded `subscription_provider_type` classification in
+addition to the collector's standard request metadata. These are nested spans;
+their percentiles must not be added to parent phase percentiles.
 Rotating refresh retains its existing single transaction/provider owner and
 checks the locked current bundle before spending the refresh token.
 

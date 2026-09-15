@@ -76,10 +76,23 @@ pub const MATERIAL_CPU_THROTTLED_USEC: u64 = 1_000_000;
 
 /// Minimum protected memory for Guest control services.
 ///
-/// Cgroup v2 limits effective `memory.min` protection by every ancestor. The
-/// exec base, controlled operation, and control leaf must therefore all use
-/// this value so concurrent operation siblings cannot reclaim protected use.
-pub const CONTROL_MEMORY_MIN_BYTES: u64 = 384 * 1024 * 1024;
+/// This protects charged Guest Agent use, not an allocation or usage ceiling.
+pub const CONTROL_MEMORY_MIN_BYTES: u64 = 128 * 1024 * 1024;
+
+/// Protected memory for the native agent runtime, including its file-backed pages.
+///
+/// Managed tools share the workload hard limit but must not reclaim this working
+/// set and stall native model/control processing before an OOM victim is chosen.
+/// Unused protection remains available to tools; runtime use above this floor
+/// remains reclaimable. This does not make the runtime immune to OOM killing.
+pub const RUNTIME_MEMORY_MIN_BYTES: u64 = 384 * 1024 * 1024;
+
+/// Combined control/runtime protection carried by the exec base and Agent operation.
+///
+/// Cgroup v2 caps effective protection at every ancestor. The workload ancestor
+/// carries only [`RUNTIME_MEMORY_MIN_BYTES`]; ordinary execs and tools have no
+/// leaf protection. Ancestor values do not allocate additional physical memory.
+pub const AGENT_MEMORY_MIN_BYTES: u64 = CONTROL_MEMORY_MIN_BYTES + RUNTIME_MEMORY_MIN_BYTES;
 
 /// Memory kept outside the workload hard limit for new Guest control use.
 ///
@@ -225,13 +238,17 @@ pub struct WorkloadResourcePolicy {
     pub memory_oom_group: &'static str,
     /// Protected Guest Agent memory in bytes.
     pub control_memory_min_bytes: u64,
+    /// Protected native agent runtime memory in bytes.
+    pub runtime_memory_min_bytes: u64,
     /// Value written to the workload `pids.max` cgroup file.
     pub pids_max: &'static str,
 }
 
 impl WorkloadResourcePolicy {
     /// Derive the policy from capacity visible to the current Guest.
-    pub fn for_current_guest_capacity() -> Result<Self, &'static str> {
+    ///
+    /// Only Agent operations require room for the protected memory floors.
+    pub fn for_current_guest_capacity(protect_agent: bool) -> Result<Self, &'static str> {
         // SAFETY: these sysconf selectors return scalar capacity values.
         let vcpu = unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) };
         // SAFETY: these sysconf selectors return scalar capacity values.
@@ -250,15 +267,20 @@ impl WorkloadResourcePolicy {
                     .and_then(|size| pages.checked_mul(size))
             })
             .ok_or("guest physical memory size is out of range")?;
-        Self::for_guest_capacity(vcpu, memory_bytes)
+        Self::for_guest_capacity(vcpu, memory_bytes, protect_agent)
     }
 
     /// Derive the fixed platform policy from Guest-visible capacity.
     ///
     /// `vcpu` is the number of online processors and `memory_bytes` is physical
-    /// memory visible to the Guest. The calculation fails when the Guest cannot
-    /// preserve the fixed control memory minimum.
-    pub fn for_guest_capacity(vcpu: u32, memory_bytes: u64) -> Result<Self, &'static str> {
+    /// memory visible to the Guest. Agent operations also require capacity for
+    /// the combined control and runtime floor. Ordinary exec does not receive
+    /// these floors and only needs capacity for its workload hard-limit reserve.
+    pub fn for_guest_capacity(
+        vcpu: u32,
+        memory_bytes: u64,
+        protect_agent: bool,
+    ) -> Result<Self, &'static str> {
         let total_cpu_us = u64::from(vcpu)
             .checked_mul(WORKLOAD_CPU_PERIOD_US)
             .ok_or("guest vCPU capacity overflows workload policy")?;
@@ -267,10 +289,14 @@ impl WorkloadResourcePolicy {
             .filter(|quota| *quota > 0)
             .ok_or("guest CPU capacity cannot preserve control headroom")?;
 
-        memory_bytes
-            .checked_sub(CONTROL_MEMORY_MIN_BYTES)
-            .filter(|remaining| *remaining > 0)
-            .ok_or("guest memory capacity cannot preserve control memory minimum")?;
+        if protect_agent {
+            memory_bytes
+                .checked_sub(AGENT_MEMORY_MIN_BYTES)
+                .filter(|remaining| *remaining > 0)
+                .ok_or(
+                    "guest memory capacity cannot preserve control and runtime memory minimum",
+                )?;
+        }
         let memory_max_bytes = memory_bytes
             .checked_sub(WORKLOAD_MEMORY_RESERVE_BYTES)
             .filter(|limit| *limit > 0)
@@ -282,6 +308,7 @@ impl WorkloadResourcePolicy {
             memory_max_bytes,
             memory_oom_group: WORKLOAD_MEMORY_OOM_GROUP,
             control_memory_min_bytes: CONTROL_MEMORY_MIN_BYTES,
+            runtime_memory_min_bytes: RUNTIME_MEMORY_MIN_BYTES,
             pids_max: WORKLOAD_PIDS_MAX,
         })
     }
@@ -306,7 +333,7 @@ mod tests {
     #[test]
     fn derives_default_profile_policy() {
         let policy =
-            WorkloadResourcePolicy::for_guest_capacity(2, u64::from(4096_u32) * 1024 * 1024)
+            WorkloadResourcePolicy::for_guest_capacity(2, u64::from(4096_u32) * 1024 * 1024, true)
                 .unwrap();
 
         assert_eq!(policy.cpu_quota_us, 190_000);
@@ -314,40 +341,68 @@ mod tests {
         assert_eq!(policy.memory_high, "max");
         assert_eq!(policy.memory_max_bytes, 3968 * 1024 * 1024);
         assert_eq!(policy.memory_oom_group, "0");
-        assert_eq!(policy.control_memory_min_bytes, 384 * 1024 * 1024);
+        assert_eq!(policy.control_memory_min_bytes, 128 * 1024 * 1024);
+        assert_eq!(policy.runtime_memory_min_bytes, 384 * 1024 * 1024);
         assert_eq!(policy.pids_max, "max");
     }
 
     #[test]
-    fn rejects_capacity_without_control_memory_minimum() {
-        let error =
-            WorkloadResourcePolicy::for_guest_capacity(1, CONTROL_MEMORY_MIN_BYTES).unwrap_err();
+    fn rejects_capacity_without_control_and_runtime_memory_minimum() {
+        let error = WorkloadResourcePolicy::for_guest_capacity(1, AGENT_MEMORY_MIN_BYTES, true)
+            .unwrap_err();
 
         assert_eq!(
             error,
-            "guest memory capacity cannot preserve control memory minimum"
+            "guest memory capacity cannot preserve control and runtime memory minimum"
         );
     }
 
     #[test]
     fn derives_small_profile_policy_from_fixed_reserves() {
         let policy =
-            WorkloadResourcePolicy::for_guest_capacity(1, u64::from(1024_u32) * 1024 * 1024)
+            WorkloadResourcePolicy::for_guest_capacity(1, u64::from(1024_u32) * 1024 * 1024, true)
                 .unwrap();
 
         assert_eq!(policy.cpu_quota_us, 90_000);
         assert_eq!(policy.memory_high, "max");
         assert_eq!(policy.memory_max_bytes, 896 * 1024 * 1024);
+        assert_eq!(policy.control_memory_min_bytes, 128 * 1024 * 1024);
+        assert_eq!(policy.runtime_memory_min_bytes, 384 * 1024 * 1024);
     }
 
     #[test]
     fn derives_policy_from_calibrated_minimum_guest_capacity() {
         // A 1-vCPU/1024-MiB Firecracker Guest exposes this physical capacity
         // after kernel reservations on the production-equivalent test host.
-        let policy = WorkloadResourcePolicy::for_guest_capacity(1, 1_033_928_704).unwrap();
+        let policy = WorkloadResourcePolicy::for_guest_capacity(1, 1_033_928_704, true).unwrap();
 
         assert_eq!(policy.cpu_quota_us, 90_000);
         assert_eq!(policy.memory_high, "max");
         assert_eq!(policy.memory_max_bytes, 899_710_976);
+    }
+
+    #[test]
+    fn ordinary_exec_preserves_small_guest_capacity_without_agent_floors() {
+        // Host CPU fairness uses 512 MiB Guests; kernel reservations further
+        // reduce the capacity visible to the Guest's policy derivation.
+        let guest_memory_bytes = 480 * 1024 * 1024;
+        let policy =
+            WorkloadResourcePolicy::for_guest_capacity(1, guest_memory_bytes, false).unwrap();
+
+        assert_eq!(policy.memory_max_bytes, 352 * 1024 * 1024);
+        assert_eq!(policy.memory_high, "max");
+        assert!(WorkloadResourcePolicy::for_guest_capacity(1, guest_memory_bytes, true).is_err());
+    }
+
+    #[test]
+    fn ordinary_exec_still_requires_workload_reserve_capacity() {
+        let error =
+            WorkloadResourcePolicy::for_guest_capacity(1, WORKLOAD_MEMORY_RESERVE_BYTES, false)
+                .unwrap_err();
+
+        assert_eq!(
+            error,
+            "guest memory capacity cannot preserve workload memory reserve"
+        );
     }
 }

@@ -441,6 +441,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Report coverage disk usage after cache restore
+        continue-on-error: true
         run: |
           df -h "$GITHUB_WORKSPACE"
           for path in crates/target crates/target/llvm-cov-target; do
@@ -461,6 +462,7 @@ jobs:
 
       - name: Report final coverage disk usage
         if: success() || failure()
+        continue-on-error: true
         run: |
           df -h "$GITHUB_WORKSPACE"
           for path in crates/target crates/target/llvm-cov-target; do

@@ -82,6 +82,7 @@ import { NetworkContent } from "./components/network-content.tsx";
 import { Markdown } from "../components/markdown.tsx";
 import { NoPermissionIllustration } from "./components/no-permission-illustration.tsx";
 import { formatAppNumber } from "../../i18n/format.ts";
+import { localizedRunError } from "../../lib/run-error.ts";
 
 // ---------------------------------------------------------------------------
 // Error Banner
@@ -176,6 +177,17 @@ function RunErrorBanner({ error }: { error: string }) {
         };
         break;
       }
+      case "MODEL_PROVIDER_UNAVAILABLE": {
+        localized = {
+          title: t(($) => {
+            return $.runErrors.modelTemporarilyUnavailable;
+          }),
+          guidance: t(($) => {
+            return $.runErrors.modelRoutesUnavailable;
+          }),
+        };
+        break;
+      }
       case "PROVIDER_DELETED": {
         localized = {
           title: t(($) => {
@@ -217,7 +229,7 @@ function RunErrorBanner({ error }: { error: string }) {
   }
   return (
     <div className="mt-2 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive break-words whitespace-pre-wrap">
-      {error}
+      {localizedRunError(error)}
     </div>
   );
 }

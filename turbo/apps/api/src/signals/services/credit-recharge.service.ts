@@ -25,7 +25,6 @@ import { settle, tapError } from "../utils";
 import { logger } from "../../lib/log";
 import { stripePreviewMetadata } from "./stripe-preview-metadata.service";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
-import { readOrgImpactMetadata } from "./impact-attribution.service";
 
 const L = logger("CreditRecharge");
 
@@ -246,7 +245,6 @@ export const triggerAutoRecharge$ = command(
             type: "auto_recharge",
             orgId,
             creditsAmount: String(creditsAmount),
-            ...(await readOrgImpactMetadata(writeDb, orgId, signal)),
             ...stripePreviewMetadata(),
           },
         });

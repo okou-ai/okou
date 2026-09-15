@@ -1,11 +1,13 @@
 import { sql } from "drizzle-orm";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import type { UsagePackDeferredSchedule } from "../jsonb-contracts/usage-pack-deferred-schedule";
 import {
   bigint,
   boolean,
   check,
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -341,6 +343,8 @@ export const usagePackSubscriptionChanges = pgTable(
     previewExpiresAt: timestamp("preview_expires_at").notNull(),
     stripeInvoiceId: text("stripe_invoice_id"),
     stripePendingUpdateExpiresAt: timestamp("stripe_pending_update_expires_at"),
+    deferredSchedule:
+      jsonb("deferred_schedule").$type<UsagePackDeferredSchedule>(),
     effectiveAt: timestamp("effective_at").notNull(),
     failureReason: text("failure_reason"),
     completedAt: timestamp("completed_at"),

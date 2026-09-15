@@ -4,7 +4,6 @@ import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
 import * as runActivitySnapshotSchema from "./schema/run-activity-snapshot";
 import * as artifactShareSchema from "./schema/artifact-share";
 import * as userSchema from "./schema/user";
-import * as privacyChoiceSchema from "./schema/privacy-choice";
 import * as deviceCodesSchema from "./schema/device-codes";
 import * as cliTokensSchema from "./schema/cli-tokens";
 import * as desktopAuthHandoffCodeSchema from "./schema/desktop-auth-handoff-code";
@@ -151,7 +150,6 @@ export const schema = {
   ...accountErasureBridgeSchema,
   ...runActivitySnapshotSchema,
   ...userSchema,
-  ...privacyChoiceSchema,
   ...artifactShareSchema,
   ...deviceCodesSchema,
   ...cliTokensSchema,

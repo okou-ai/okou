@@ -4,6 +4,7 @@ import {
 } from "./composer-task-chips.ts";
 import {
   createComposerVoiceInputSignals,
+  type ComposerVoiceInputOwner,
   type ComposerVoiceInputSignals,
 } from "./composer-voice-input.ts";
 import type {
@@ -951,7 +952,7 @@ function createComposerSubmissionSignals(
 ) {
   const { state$: voiceState$, owner$ } = voice;
   const invocation$ = state<{
-    readonly owner: AbortController;
+    readonly owner: ComposerVoiceInputOwner;
     readonly action: ComposerPrimaryAction;
   } | null>(null);
   const hasCurrentInvocation$ = computed((get) => {

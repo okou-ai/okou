@@ -228,19 +228,14 @@ export const socialKitDownloadResponseSchema = z.object({
   // Retain the request aliases for already selected commit-addressed CLIs.
   quality: socialKitDownloadQualitySchema,
   format: socialKitDownloadFormatSchema,
-  // Optional while older API artifacts remain supported rollout/rollback targets.
-  requested: z
-    .object({
-      quality: socialKitDownloadQualitySchema,
-      format: socialKitDownloadFormatSchema,
-    })
-    .optional(),
-  delivered: z
-    .object({
-      quality: socialKitDownloadDeliveredQualitySchema.nullable(),
-      format: socialKitDownloadArtifactFormatSchema.nullable(),
-    })
-    .optional(),
+  requested: z.object({
+    quality: socialKitDownloadQualitySchema,
+    format: socialKitDownloadFormatSchema,
+  }),
+  delivered: z.object({
+    quality: socialKitDownloadDeliveredQualitySchema.nullable(),
+    format: socialKitDownloadArtifactFormatSchema.nullable(),
+  }),
   maxDuration: z.number().int().positive(),
   billingCategory: z.literal(MANAGED_SOCIALKIT_BILLING_CATEGORY),
   provider: socialKitDownloadProviderResultSchema.nullable(),

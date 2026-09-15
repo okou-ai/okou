@@ -5,7 +5,7 @@ import {
   measurePiPreparationSync,
   startPiPreparationObservation,
 } from "@okouai/pi-agent-runtime/api";
-import { isPiNativeModel } from "@okouai/core/pi-execution";
+import { isPiNativeModel, isPiDeepSeekModel } from "@okouai/core/pi-execution";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
 import {
   assertPiNativeCredential,
@@ -294,7 +294,6 @@ import {
   piApiFirstTurnObjectKey,
   requirePiApiFirstTurnExecutionContext,
 } from "./pi-api-first-turn-config";
-import { lockModelProviderState } from "./auth-state-lock.service";
 import {
   activePersonalModelProviderAccount,
   ensurePersonalModelProviderAccount,
@@ -3071,7 +3070,7 @@ async function resolveCandidateModelProviderEnvironment(
   const captureSecret =
     args.piExecution &&
     (isPiNativeModel(args.selectedModelOverride) ||
-      args.selectedModelOverride?.startsWith("deepseek-v4-"));
+      isPiDeepSeekModel(args.selectedModelOverride));
   if (getModelProviderFirewall(row.type) !== undefined && !captureSecret) {
     return modelProviderEnvironment({
       id: row.id,
@@ -8709,32 +8708,26 @@ async function validateCapturedSubscriptionAccount(
         .where(eq(agentSessions.id, args.identity.sessionId))
         .for("key share");
     }
-    await lockModelProviderState(tx, {
-      orgId: args.createArgs.orgId,
-      userId: args.createArgs.userId,
-      type: provider.type,
-    });
-    const coherent = await validatePersonalSubscriptionAdmission(
-      {
-        db: tx,
-        orgId: args.createArgs.orgId,
-        userId: args.createArgs.userId,
-        type: provider.type,
-        sourceId: provider.id ?? undefined,
-        featureSwitchContext: args.context.featureSwitchContext,
-      },
-      args.subscriptionAdmission,
-    );
-    const account =
-      coherent && provider.id
-        ? await personalModelProviderAccountById({
+    const type = provider.type;
+    const account = await args.timing.measure(
+      "api_dispatch_subscription_validate_admission",
+      "nested",
+      async () => {
+        return await validatePersonalSubscriptionAdmission(
+          {
             db: tx,
             orgId: args.createArgs.orgId,
             userId: args.createArgs.userId,
-            id: provider.id,
-          })
-        : null;
-    if (!account || account.type !== provider.type) {
+            type,
+            sourceId: provider.id ?? undefined,
+            featureSwitchContext: args.context.featureSwitchContext,
+          },
+          args.subscriptionAdmission,
+        );
+      },
+      { subscription_provider_type: type },
+    );
+    if (!account) {
       return conflict(
         "The selected subscription account was disconnected. Reconnect it before starting another run.",
       );
@@ -9106,6 +9099,26 @@ interface FinalizedPreparedRunContext extends PreparedRunContext {
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
 }
 
+function assertCurrentPiCliArtifact(): void {
+  // The writer and CLI reader are built from the same commit. A mutable or
+  // differently pinned package cannot consume a newly captured model.
+  const commit = env("GIT_COMMIT_SHA");
+  const cliUrl = new URL(env("CLI_PKG_URL"));
+  if (
+    !/^[0-9a-f]{40}$/u.test(commit) ||
+    cliUrl.origin !== "https://static.okou.io" ||
+    cliUrl.username ||
+    cliUrl.password ||
+    cliUrl.search ||
+    cliUrl.hash ||
+    cliUrl.pathname !== `/okou-cli/${commit}/package.tgz`
+  ) {
+    throw new PiNativeConfigurationError(
+      "Pi requires the current commit-addressed CLI reader artifact",
+    );
+  }
+}
+
 async function materializePreparedPiProvider(
   createArgs: CreateAgentRunArgs,
   provider: ResolvedModelProviderEnvironment | null,
@@ -9123,11 +9136,14 @@ async function materializePreparedPiProvider(
       "Selected Pi execution requires a supported model provider configuration",
     );
   }
+  if (provider.selectedModel === "deepseek-v4.1-flash") {
+    assertCurrentPiCliArtifact();
+  }
   if (!("schemaVersion" in config) || config.schemaVersion !== 4) {
     if (
       !("schemaVersion" in config) &&
       (provider.type === "deepseek" || provider.type === "openrouter-codex") &&
-      provider.selectedModel?.startsWith("deepseek-v4-")
+      isPiDeepSeekModel(provider.selectedModel)
     ) {
       const credential = safeSync(() => {
         return assertPiNativeCredential(
@@ -9148,23 +9164,7 @@ async function materializePreparedPiProvider(
     }
     return { ...provider, piModelConfig: config };
   }
-  // The writer and CLI reader are built from the same commit. A mutable or
-  // differently pinned package cannot consume a newly captured native route.
-  const commit = env("GIT_COMMIT_SHA");
-  const cliUrl = new URL(env("CLI_PKG_URL"));
-  if (
-    !/^[0-9a-f]{40}$/u.test(commit) ||
-    cliUrl.origin !== "https://static.okou.io" ||
-    cliUrl.username ||
-    cliUrl.password ||
-    cliUrl.search ||
-    cliUrl.hash ||
-    cliUrl.pathname !== `/okou-cli/${commit}/package.tgz`
-  ) {
-    throw new PiNativeConfigurationError(
-      "Native Pi requires the current commit-addressed CLI reader artifact",
-    );
-  }
+  assertCurrentPiCliArtifact();
   const secrets: Record<string, string> = {};
   const route = normalizePiExecutionRoute(config);
   await materializePiExecutionRoute({
@@ -10831,6 +10831,7 @@ const commitAndActivateAtomicLaunch$ = command(
               type: provider.type,
               sourceId: provider.id,
               featureSwitchContext: input.context.featureSwitchContext,
+              timing: input.timing,
             },
             signal,
           )

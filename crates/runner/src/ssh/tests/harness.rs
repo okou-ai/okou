@@ -228,6 +228,18 @@ impl AdditionalRun {
 }
 
 impl Harness {
+    pub(super) fn notifications(&self) -> crate::provider::AblyTestEvents {
+        crate::provider::AblyTestEvents::new(
+            HttpClient::new(HttpClientConfig {
+                api_url: self.api.base_url(),
+                vercel_bypass: None,
+                client_session_id: "ssh-notification-test".into(),
+            })
+            .unwrap(),
+            Arc::clone(&self.runtime),
+        )
+    }
+
     pub(super) async fn new(reply: Reply) -> Self {
         Self::with_keys(reply, key(Algorithm::Ed25519), key(Algorithm::Ed25519)).await
     }

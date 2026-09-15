@@ -1,4 +1,3 @@
-import { marketingImpactEnabled } from "../../lib/impact-marketing";
 import type {
   OrgInvitationPurchasePreviewResponse,
   OrgRole,
@@ -72,7 +71,6 @@ import {
   loadBillingOrganizationPendingInvitations,
 } from "./billing-clerk-directory.service";
 import { onRejection, settle } from "../utils";
-import { readOrgImpactMetadata } from "./impact-attribution.service";
 
 const PURPOSE = "usage_pack_invitation_purchase";
 const PURCHASE_ID_METADATA_KEY = "usagePackInvitationPurchaseId";
@@ -425,9 +423,7 @@ function checkoutMetadata(
     ...stripePreviewMetadata(),
     purpose: PURPOSE,
     [PURCHASE_ID_METADATA_KEY]: purchase.id,
-    ...(marketingImpactEnabled()
-      ? { purchaseCreatedAt: purchase.createdAt.toISOString() }
-      : {}),
+    purchaseCreatedAt: purchase.createdAt.toISOString(),
   };
 }
 
@@ -438,7 +434,7 @@ async function insertPendingInvitationPurchase(
 ): Promise<string | null> {
   return await db.transaction(async (tx) => {
     await lockInvitationEmail(tx, args.orgId, args.email);
-    const impact = await readOrgImpactMetadata(tx, args.orgId, signal);
+    signal.throwIfAborted();
     await tx
       .update(usagePackInvitationPurchases)
       .set({
@@ -462,10 +458,6 @@ async function insertPendingInvitationPurchase(
         normalizedEmail: args.email,
         role: args.role,
         inviterUserId: args.inviterUserId,
-        impactClickId: impact.impact_click_id ?? null,
-        impactClickAt: impact.impact_click_at
-          ? new Date(impact.impact_click_at)
-          : null,
         publicBrand: args.publicBrand,
         usagePackUsd: args.usagePackUsd,
         stripePriceId: args.stripePriceId,
@@ -1610,17 +1602,7 @@ async function createInvitationPurchaseInvoice(
       ...(args.paymentMethod
         ? stripeBillingPurchasePaymentParams(args.paymentMethod)
         : {}),
-      metadata: {
-        ...checkoutMetadata(purchase),
-        ...(!marketingImpactEnabled() &&
-        purchase.impactClickId &&
-        purchase.impactClickAt
-          ? {
-              impact_click_id: purchase.impactClickId,
-              impact_click_at: purchase.impactClickAt.toISOString(),
-            }
-          : {}),
-      },
+      metadata: checkoutMetadata(purchase),
       discounts: "",
       ...(structuredCharge.preview.automaticTax
         ? { automatic_tax: structuredCharge.preview.automaticTax }

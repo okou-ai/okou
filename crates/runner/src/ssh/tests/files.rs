@@ -50,6 +50,47 @@ async fn response(guest: impl tokio::io::AsyncRead + Unpin) -> (Value, Vec<u8>) 
     .unwrap()
 }
 
+#[tokio::test]
+async fn direct_file_transfer_completes_across_notification_outages() {
+    let mut h = Harness::new(Reply::Sftp("normal")).await;
+    let _resolve = h.resolve(h.credential(true)).await;
+    upload_across_notification_outages(&h).await;
+    h.shutdown().await;
+}
+
+pub(super) async fn upload_across_notification_outages(h: &Harness) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("file");
+    let data = b"bytes across a notification outage";
+    let mut notifications = h.notifications();
+    let guest = open(
+        h,
+        "upload",
+        upload_params(&path, data.len(), false),
+        900_000,
+    )
+    .await;
+    let (read, write) = tokio::io::split(guest);
+    // Actual remote staging proves SFTP has started before transport events arrive.
+    wait_for(|| std::fs::read_dir(dir.path()).unwrap().count() == 1).await;
+    for event in super::notifications::outage_events() {
+        notifications.send(event).await;
+    }
+    drop(notifications);
+    let mut writer = Writer::input(write);
+    writer.send(&Frame::Data(data.to_vec())).await.unwrap();
+    writer.send(&Frame::End).await.unwrap();
+    let (outcome, _) = response(read).await;
+    assert_eq!(outcome["type"], "completed");
+    assert_eq!(outcome["sha256"], hex::encode(Sha256::digest(data)));
+    assert_eq!(std::fs::read(&path).unwrap(), data);
+    // A new transfer is also authorized without notification readiness.
+    let (outcome, received) = download(h, &path).await;
+    assert_eq!(outcome["type"], "completed");
+    assert_eq!(received, data);
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+}
+
 pub(super) async fn upload(h: &Harness, path: &Path, bytes: &[u8], overwrite: bool) -> Value {
     let guest = open(
         h,
@@ -88,7 +129,6 @@ pub(super) async fn download(h: &Harness, path: &Path) -> (Value, Vec<u8>) {
 
 async fn roundtrip(mode: &'static str) {
     let mut h = Harness::new(Reply::Sftp(mode)).await;
-    h.runtime.ably_connected(true);
     let mut credential = h.credential(true);
     credential.as_object_mut().unwrap().remove("privateKey");
     credential.as_object_mut().unwrap().remove("passphrase");
@@ -134,7 +174,6 @@ async fn openssh_server_interoperability() {
 #[tokio::test]
 async fn no_clobber_symlinks_and_non_regular_paths_never_modify_destinations() {
     let h = Harness::new(Reply::Sftp("normal")).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("original");
@@ -163,7 +202,6 @@ async fn no_clobber_symlinks_and_non_regular_paths_never_modify_destinations() {
 #[tokio::test]
 async fn native_stream_helper_preserves_early_file_rejection_during_upload() {
     let h = Harness::new(Reply::Sftp("normal")).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("original");
@@ -207,7 +245,6 @@ async fn sftp_failures_are_typed_and_never_publish_partial_files() {
         ("mismatched", "protocol"),
     ] {
         let h = Harness::new(Reply::Sftp(mode)).await;
-        h.runtime.ably_connected(true);
         let _resolve = h.resolve(h.credential(true)).await;
         let dir = tempfile::tempdir().unwrap();
         let outcome = upload(&h, &dir.path().join("file"), b"content canary", false).await;
@@ -225,7 +262,6 @@ async fn lost_acknowledgements_and_cleanup_failure_preserve_honest_effects_and_r
         ("cleanup-denied", "completed", true, true),
     ] {
         let h = Harness::new(Reply::Sftp(mode)).await;
-        h.runtime.ably_connected(true);
         let _resolve = h.resolve(h.credential(true)).await;
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("file");
@@ -243,7 +279,6 @@ async fn lost_acknowledgements_and_cleanup_failure_preserve_honest_effects_and_r
 #[tokio::test]
 async fn missing_mutated_and_oversized_sources_fail_without_success() {
     let h = Harness::new(Reply::Sftp("mutate")).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("file");
@@ -267,17 +302,11 @@ async fn missing_mutated_and_oversized_sources_fail_without_success() {
 }
 
 #[tokio::test]
-async fn transfer_capacity_and_retained_authority_are_required_before_touching_files() {
+async fn transfer_capacity_and_invalidation_apply_without_subscription_readiness() {
     let mut h = Harness::new(Reply::Sftp("normal")).await;
     let resolve = h.resolve(h.credential(true)).await;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("file");
-    assert_eq!(
-        upload(&h, &path, b"bytes", false).await["failure_reason"],
-        "unavailable"
-    );
-    resolve.assert_calls_async(0).await;
-    h.runtime.ably_connected(true);
     let first = open(&h, "upload", upload_params(&path, 5, false), 900_000).await;
     let second = open(&h, "upload", upload_params(&path, 5, false), 900_000).await;
     wait_for(|| std::fs::read_dir(dir.path()).unwrap().count() == 2).await;
@@ -285,7 +314,23 @@ async fn transfer_capacity_and_retained_authority_are_required_before_touching_f
         download(&h, &path).await.0["failure_reason"],
         "transfer_limit"
     );
-    h.runtime.ably_connected(false);
+    resolve.assert_calls_async(1).await;
+    let mut notifications = h.notifications();
+    for event in super::notifications::outage_events() {
+        notifications.send(event).await;
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 2);
+    }
+    notifications
+        .send(Some(ably_subscriber::Event::Message(
+            ably_subscriber::Message {
+                name: Some("ssh-authority-invalidated".into()),
+                data: json!({"runId":h.run,"connectionId":CONNECTION}),
+                id: None,
+                client_id: None,
+                timestamp: None,
+            },
+        )))
+        .await;
     for stream in [first, second] {
         let outcome = response(stream).await.0;
         assert_eq!(outcome["failure_reason"], "configuration_changed");
@@ -299,7 +344,6 @@ async fn transfer_capacity_and_retained_authority_are_required_before_touching_f
 #[tokio::test]
 async fn size_and_request_validation_precede_credential_resolution() {
     let h = Harness::new(Reply::Sftp("normal")).await;
-    h.runtime.ably_connected(true);
     let resolve = h.resolve(h.credential(true)).await;
     let outcome = response(
         open(
@@ -323,7 +367,6 @@ async fn size_and_request_validation_precede_credential_resolution() {
 #[tokio::test]
 async fn incomplete_and_expired_uploads_clean_only_owned_staging_and_never_publish() {
     let h = Harness::new(Reply::Sftp("normal")).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("file");
@@ -365,7 +408,6 @@ async fn incomplete_and_expired_uploads_clean_only_owned_staging_and_never_publi
 async fn subsystem_refusal_records_authenticated_connection_not_a_connectivity_warning() {
     let mut h = Harness::new(Reply::Reject).await;
     let dispatcher = h.take_dispatcher();
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let observed = h
         .api
@@ -390,7 +432,6 @@ async fn subsystem_refusal_records_authenticated_connection_not_a_connectivity_w
 #[tokio::test]
 async fn run_cancellation_releases_the_reservation_and_does_not_reconnect_for_cleanup() {
     let mut h = Harness::new(Reply::Sftp("normal")).await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(h.credential(true)).await;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("file");

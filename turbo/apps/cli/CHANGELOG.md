@@ -1,5 +1,42 @@
 # Changelog
 
+## [9.334.1](https://github.com/vm0-ai/vm0/compare/cli-v9.334.0...cli-v9.334.1) (2026-09-15)
+
+
+### Refactoring
+
+* require canonical social download response metadata ([#34325](https://github.com/vm0-ai/vm0/issues/34325)) ([ac1c477](https://github.com/vm0-ai/vm0/commit/ac1c4771e1baf6bc766853451e758d01bab919fc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.444.1
+    * @okouai/core bumped to 8.666.6
+    * @okouai/pi-agent-runtime bumped to 1.30.10
+
+## [9.334.0](https://github.com/vm0-ai/vm0/compare/cli-v9.333.0...cli-v9.334.0) (2026-09-15)
+
+
+### Features
+
+* complete personal subscription launch support ([#34263](https://github.com/vm0-ai/vm0/issues/34263)) ([f2731f5](https://github.com/vm0-ai/vm0/commit/f2731f57b6d9ff924ae87f7c5222aa78e5f1cce4))
+
+
+### Refactoring
+
+* retire instagram views compatibility negotiation ([#34315](https://github.com/vm0-ai/vm0/issues/34315)) ([7be4135](https://github.com/vm0-ai/vm0/commit/7be41358b2322e621f0c5408346367747275ba41))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.444.0
+    * @okouai/core bumped to 8.666.5
+    * @okouai/pi-agent-runtime bumped to 1.30.9
+
 ## [9.333.0](https://github.com/vm0-ai/vm0/compare/cli-v9.332.1...cli-v9.333.0) (2026-09-15)
 
 

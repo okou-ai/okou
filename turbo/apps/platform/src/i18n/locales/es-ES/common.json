@@ -1538,6 +1538,51 @@
       "title": "Acción no disponible"
     },
     "agentPage": {
+      "getStarted": {
+        "checkin": {
+          "description": "Una vez al día, todos los días",
+          "name": "Entrar cada día",
+          "unit": "al día"
+        },
+        "connector": {
+          "description": "Gmail, Notion y más de 100",
+          "name": "Conectar un conector",
+          "unit": "por conector"
+        },
+        "inReview": "En revisión",
+        "inReviewDescription": "Enviado, pendiente de revisión",
+        "invite": {
+          "description": "Cada persona que añadas cuenta",
+          "name": "Invita a tu equipo",
+          "unit": "por miembro"
+        },
+        "personalBalanceNote": "Los créditos van a tu saldo personal.",
+        "progressLabel": "Progreso de los primeros pasos",
+        "reward": "+{{amount}}",
+        "share": {
+          "description": "Publícalo y pega el enlace",
+          "name": "Comparte {{assistantName}} en X"
+        },
+        "shareDialog": {
+          "description": "Publica algo que hayas creado y pega el enlace. Tienes un solo envío.",
+          "helper": "La publicación tiene que ser pública y mencionar a {{assistantName}}.",
+          "inputLabel": "Enlace de la publicación",
+          "placeholder": "https://x.com/...",
+          "submit": "Enviar",
+          "title": "Comparte {{assistantName}} en X"
+        },
+        "slack": {
+          "description": "Donde tu equipo ya trabaja",
+          "name": "Añadir {{assistantName}} a Slack"
+        },
+        "stepCount": "{{completed}}/{{total}}",
+        "subtitle": "Completa un paso y quédate con los créditos.",
+        "title": "Primeros pasos",
+        "workflow": {
+          "description": "Convierte una tarea repetida en una automatización",
+          "name": "Crea un workflow"
+        }
+      },
       "growth": {
         "addInSlack": "Añadir {{assistantName}} en Slack",
         "connect": "Conectar",
@@ -2318,6 +2363,40 @@
             "prompt": "Crear una imagen para mi web"
           }
         },
+        "presentation": {
+          "clientProposal": {
+            "label": "Escribir una propuesta para un cliente",
+            "prompt": "Crea una presentación de propuesta para un cliente. Pregúntame por el cliente, el trabajo propuesto, el plazo y el precio."
+          },
+          "companyOverview": {
+            "label": "Explicar a qué se dedica mi empresa",
+            "prompt": "Crea una presentación corporativa. Pregúntame qué hacemos, a quién servimos y qué debería recordar la audiencia."
+          },
+          "eventTalk": {
+            "label": "Preparar una charla para un evento",
+            "prompt": "Crea una presentación para una charla. Pregúntame por el evento, la audiencia y la idea principal que quiero transmitir."
+          },
+          "pitchDeck": {
+            "label": "Presentar mi negocio a inversores",
+            "prompt": "Crea un pitch deck para inversores sobre mi negocio. Pregúntame por el problema, el producto, la tracción y cuánto quiero levantar."
+          },
+          "productIntro": {
+            "label": "Presentar un producto nuevo",
+            "prompt": "Crea una presentación que introduzca un producto nuevo. Pregúntame qué hace, para quién es y qué lo diferencia."
+          },
+          "resultsReadout": {
+            "label": "Presentar mis resultados",
+            "prompt": "Convierte mis resultados en una presentación de informe. Pregúntame por las cifras, el periodo y la decisión que respaldan."
+          },
+          "teamUpdate": {
+            "label": "Preparar una actualización para el equipo",
+            "prompt": "Crea una presentación para la actualización de mi equipo. Pregúntame qué pasó en el periodo, qué viene después y quién estará presente."
+          },
+          "training": {
+            "label": "Enseñar algo a mi equipo",
+            "prompt": "Crea una presentación de formación sobre un tema que yo elija. Pregúntame a quién se forma y qué debería saber hacer después."
+          }
+        },
         "video": {
           "animatePhoto": {
             "label": "Convertir una foto en vídeo",
@@ -2523,7 +2602,6 @@
           "waterfall": "Waterfall chart",
           "word-cloud": "Word cloud"
         },
-        "chartSafety": "Leave blank and Okou will choose what fits your content.",
         "chooseAny": "Choose any",
         "chooseCharts": "Choose charts",
         "chooseOne": "Choose one",
@@ -5416,6 +5494,31 @@
       "teamDescription": "Amplía tu equipo con 10 ejecuciones paralelas y más créditos."
     }
   },
+  "runErrors": {
+    "actions": {
+      "addCredits": "Añadir créditos",
+      "openModelProviders": "Abrir proveedores de modelos",
+      "reconnectClaude": "Volver a conectar Claude Code",
+      "shareWithAdmin": "Compartir con un administrador"
+    },
+    "anthropicKeyAdmin": "Claude Code no pudo autenticarse con la clave API de Anthropic configurada. Actualiza o sustituye la clave API en Proveedores de modelos y vuelve a intentarlo.",
+    "anthropicKeyMember": "Claude Code no pudo autenticarse con la clave API de Anthropic configurada. Pide a un administrador del espacio de trabajo que actualice o sustituya la clave API.",
+    "askAdmin": "Pide a un administrador del espacio de trabajo que añada créditos o mejore el plan.",
+    "claudeReconnect": "La autenticación de la suscripción de Claude Code ha fallado. Vuelve a conectar Claude Code en Proveedores de modelos e inténtalo de nuevo.",
+    "claudeTerms": "Claude Code requiere aceptar las condiciones de uso y la política de privacidad actualizadas. Inicia sesión en https://claude.ai con la cuenta de Claude conectada en Proveedores de modelos, acepta las actualizaciones y vuelve a intentarlo.",
+    "codexOverloaded": "El modelo seleccionado está saturado. Prueba con otro modelo.",
+    "codexReconnect": "Es necesario volver a conectar la sesión de ChatGPT. Vuelve a conectar ChatGPT (Codex) en Proveedores de modelos e inténtalo de nuevo.",
+    "contentPolicyRejected": "El proveedor del modelo ha rechazado esta solicitud según su política de seguridad del contenido. Reintentar con la misma entrada volverá a fallar. Reformula la solicitud, inicia una nueva conversación o cambia de modelo.",
+    "executionTimeout": "Esta ejecución ha alcanzado su límite de tiempo.",
+    "failed": "La ejecución ha fallado",
+    "modelRoutesUnavailable": "Todas las rutas integradas de este modelo están temporalmente no disponibles. Vuelve a intentarlo más tarde.",
+    "modelTemporarilyUnavailable": "Modelo temporalmente no disponible",
+    "modelUnavailable": "El modelo actual no está disponible.",
+    "overloaded": "{{model}} está sobrecargado. Espera unos minutos y vuelve a intentarlo, o cambia de modelo.",
+    "providerBalance": "El saldo de tu cuenta del proveedor de modelos conectado es insuficiente.",
+    "transient": "Se ha producido un error. Vuelve a intentarlo más tarde.",
+    "vm0Credits": "Créditos insuficientes. Añade créditos o configura tu propia clave API para continuar."
+  },
   "serviceStatus": {
     "dismiss": "Descartar actualización del servicio",
     "label": "Actualizaciones del estado del servicio",
@@ -6223,6 +6326,44 @@
     "cancel": "Cancelar",
     "chooseFile": "Elegir archivo",
     "choosePrivateKeyFile": "Elegir archivo de clave privada",
+    "cloudflare": {
+      "add": "Añadir configuración de Access",
+      "back": "Volver al host",
+      "changed": "Esta configuración de Access cambió mientras la editabas. Revisa los últimos ajustes antes de guardar.",
+      "clientId": "ID de cliente del Service Token",
+      "clientSecret": "Secreto de cliente del Service Token",
+      "configuration": "Configuración de Access",
+      "createNew": "Crear configuración de Access",
+      "delete": "Eliminar configuración",
+      "deleteHelp": "¿Eliminar esta configuración de Access sin uso? El Service Token guardado no se podrá recuperar.",
+      "direct": "Directa",
+      "empty": "Aún no hay configuraciones de Access. Añade un Service Token para conectar hosts SSH protegidos por Cloudflare Access.",
+      "gatewayHelp": "Se conecta mediante WebSocket cifrado en el puerto 443. Configura la dirección y el puerto SSH privados en Cloudflare.",
+      "inUse": "Un host utiliza esta configuración de Access. Revisa los hosts afectados y cambia su configuración o elimínalos primero.",
+      "inUseHelp": "Selecciona otra configuración de Access para estos hosts, cámbialos explícitamente a Directa o elimínalos antes de eliminar esta configuración.",
+      "keepChanges": "Aplicar mis cambios a esta versión",
+      "latest": "Últimos ajustes guardados",
+      "loadFailed": "No se pudieron cargar las configuraciones de Access. Inténtalo de nuevo.",
+      "loading": "Cargando configuraciones de Access…",
+      "missing": "Esta configuración de Access ya no está disponible. Selecciona otra o crea una.",
+      "mode": "Conexión",
+      "name": "Nombre de la configuración",
+      "protectedHost": "Cloudflare Access · {{name}}",
+      "publishedHost": "Nombre de host publicado",
+      "rename": "Renombrar configuración",
+      "replace": "Reemplazar Service Token",
+      "reviewHelp": "Tu borrador se conserva. Confirma los últimos ajustes guardados antes de aplicar tus cambios.",
+      "select": "Selecciona una configuración",
+      "summary_one": "{{count}} configuración de Access",
+      "summary_many": "{{count}} configuraciones de Access",
+      "summary_other": "{{count}} configuraciones de Access",
+      "title": "Cloudflare Access",
+      "tokenHelp": "Usa un Service Token permitido por la política Service Auth de tu aplicación SSH. Es independiente de tus credenciales SSH.",
+      "unavailable": "Cloudflare Access no está disponible para esta cuenta. Los hosts protegidos no pueden conectarse; los directos no se ven afectados.",
+      "usedBy_one": "Usada por {{count}} host:",
+      "usedBy_many": "Usada por {{count}} hosts:",
+      "usedBy_other": "Usada por {{count}} hosts:"
+    },
     "connectionStatus": {
       "accessProtocolFailure": "Cloudflare Access no estableció un túnel SSH. Revisa el nombre de host publicado y el enrutamiento del Tunnel.",
       "accessRejected": "Cloudflare Access rechazó la conexión. Revisa el token de servicio y la política Service Auth de la aplicación.",
@@ -6272,7 +6413,7 @@
     "description": "Configura hosts SSH para que tus agentes ejecuten comandos remotos.",
     "displayName": "Nombre para mostrar",
     "edit": "Editar host",
-    "editHelp": "Seleccionar otras credenciales solo cambia este host. Cambiar la dirección o el puerto borra su clave de host aprendida.",
+    "editHelp": "Seleccionar otras credenciales solo cambia este host. Los cambios del destino directo borran su clave de host guardada; los que implican Cloudflare Access la conservan.",
     "empty": "No hay hosts SSH configurados. Añade uno para que esté disponible para los Agents con acceso SSH.",
     "errors": {
       "agentUnavailable": "Este agente ya no está disponible. Elige otro agente.",

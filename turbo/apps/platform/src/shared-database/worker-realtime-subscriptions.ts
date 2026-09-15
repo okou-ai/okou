@@ -1,7 +1,7 @@
-import { command, state, type Command } from "ccstate";
+import { command, computed, state } from "ccstate";
 
 import { setAblyPayloadLoop$ } from "../signals/realtime.ts";
-import { createChildAbortController, settle } from "../signals/utils.ts";
+import { resetSignal, settle } from "../signals/utils.ts";
 import { rootSignal$ } from "../signals/root-signal.ts";
 import {
   serializeSharedDatabaseError,
@@ -28,16 +28,29 @@ interface RealtimeSubscriber {
 }
 
 interface WorkerRealtimeSubscription {
-  readonly controller: AbortController;
+  readonly graph: WorkerRealtimeSubscriptionGraph;
+  readonly signal: AbortSignal;
   readonly ready: boolean;
   readonly subscribers: ReadonlyMap<string, RealtimeSubscriber>;
 }
 
-interface RunWorkerRealtimeSubscriptionArgs {
+interface WorkerRealtimeSubscriptionIdentity {
   readonly key: string;
   readonly scope: SharedDatabaseRealtimeScope;
   readonly topic: string;
 }
+
+// The selected identity constructs a graph without capturing a lifetime.
+// Each live subscription keeps that graph until its final subscriber leaves.
+const startingSubscriptionIdentity$ =
+  state<WorkerRealtimeSubscriptionIdentity | null>(null);
+const startingSubscriptionGraph$ = computed((get) => {
+  const identity = get(startingSubscriptionIdentity$);
+  return identity ? createWorkerRealtimeSubscriptionGraph(identity) : null;
+});
+type WorkerRealtimeSubscriptionGraph = ReturnType<
+  typeof createWorkerRealtimeSubscriptionGraph
+>;
 
 const workerRealtimeSubscriptionsState$ = state<
   ReadonlyMap<string, WorkerRealtimeSubscription>
@@ -84,9 +97,13 @@ const sendRealtimeSubscribed$ = command(
 );
 
 const markWorkerRealtimeSubscriptionReady$ = command(
-  ({ get, set }, key: string): void => {
+  ({ get, set }, key: string, signal: AbortSignal): void => {
     const subscription = get(workerRealtimeSubscriptionsState$).get(key);
-    if (!subscription || subscription.ready) {
+    if (
+      subscription?.signal !== signal ||
+      signal.aborted ||
+      subscription.ready
+    ) {
       return;
     }
     const readySubscription: WorkerRealtimeSubscription = {
@@ -108,9 +125,9 @@ const markWorkerRealtimeSubscriptionReady$ = command(
  * the same baseline read it performed when the subscription first went live.
  */
 const forwardWorkerRealtimeResync$ = command(
-  ({ get, set }, key: string): void => {
+  ({ get, set }, key: string, signal: AbortSignal): void => {
     const subscription = get(workerRealtimeSubscriptionsState$).get(key);
-    if (!subscription) {
+    if (subscription?.signal !== signal || signal.aborted) {
       return;
     }
     for (const subscriber of subscription.subscribers.values()) {
@@ -135,7 +152,7 @@ const forwardWorkerRealtimeSubscriptionMessage$ = command(
   ): boolean => {
     signal.throwIfAborted();
     const subscription = get(workerRealtimeSubscriptionsState$).get(key);
-    if (!subscription) {
+    if (subscription?.signal !== signal || signal.aborted) {
       return false;
     }
     const message = sharedDatabaseRealtimeMessageSchema.parse(payload);
@@ -155,9 +172,9 @@ const forwardWorkerRealtimeSubscriptionMessage$ = command(
 );
 
 const failWorkerRealtimeSubscription$ = command(
-  ({ get, set }, key: string, error: unknown): void => {
+  ({ get, set }, key: string, error: unknown, signal: AbortSignal): void => {
     const subscription = get(workerRealtimeSubscriptionsState$).get(key);
-    if (!subscription) {
+    if (subscription?.signal !== signal || signal.aborted) {
       return;
     }
     const serialized = serializeSharedDatabaseError(error);
@@ -176,38 +193,34 @@ const failWorkerRealtimeSubscription$ = command(
     set(workerRealtimeSubscriptionsState$, (current) => {
       return removeWorkerRealtimeSubscription(current, key);
     });
-    subscription.controller.abort(error);
+    set(subscription.graph.resetSubscription$);
   },
 );
 
-function createWorkerRealtimeForwarder(
-  key: string,
-): Command<Promise<boolean> | boolean, [unknown, AbortSignal]> {
-  return command(({ set }, payload: unknown, signal: AbortSignal) => {
+function createWorkerRealtimeSubscriptionGraph({
+  key,
+  scope,
+  topic,
+}: WorkerRealtimeSubscriptionIdentity) {
+  const resetSubscription$ = resetSignal();
+  const forward$ = command(({ set }, payload: unknown, signal: AbortSignal) => {
     return set(forwardWorkerRealtimeSubscriptionMessage$, key, payload, signal);
   });
-}
-
-const runWorkerRealtimeSubscription$ = command(
-  async (
-    { set },
-    { key, scope, topic }: RunWorkerRealtimeSubscriptionArgs,
-    signal: AbortSignal,
-  ): Promise<void> => {
+  const run$ = command(async ({ set }, signal: AbortSignal): Promise<void> => {
     const result = await settle(
       set(
         setAblyPayloadLoop$,
         {
           scope,
           topic,
-          loopCommand$: createWorkerRealtimeForwarder(key),
+          loopCommand$: forward$,
           includeMessage: true,
           options: {
             onSubscribed: () => {
-              set(markWorkerRealtimeSubscriptionReady$, key);
+              set(markWorkerRealtimeSubscriptionReady$, key, signal);
             },
             onResync: () => {
-              set(forwardWorkerRealtimeResync$, key);
+              set(forwardWorkerRealtimeResync$, key, signal);
             },
           },
         },
@@ -216,10 +229,11 @@ const runWorkerRealtimeSubscription$ = command(
       signal,
     );
     if (!result.ok && !signal.aborted) {
-      set(failWorkerRealtimeSubscription$, key, result.error);
+      set(failWorkerRealtimeSubscription$, key, result.error, signal);
     }
-  },
-);
+  });
+  return { resetSubscription$, run$ };
+}
 
 export const stopWorkerRealtimeSubscription$ = command(
   ({ get, set }, connectionId: ConnectionId, subscriptionId: string): void => {
@@ -239,9 +253,7 @@ export const stopWorkerRealtimeSubscription$ = command(
         set(workerRealtimeSubscriptionsState$, (current) => {
           return removeWorkerRealtimeSubscription(current, key);
         });
-        subscription.controller.abort(
-          new DOMException("Realtime subscription closed", "AbortError"),
-        );
+        set(subscription.graph.resetSubscription$);
         return;
       }
       set(workerRealtimeSubscriptionsState$, (current) => {
@@ -303,10 +315,23 @@ export const startWorkerRealtimeSubscription$ = command(
       return null;
     }
 
-    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-    const controller = createChildAbortController(get(rootSignal$));
+    const parentSignal = get(rootSignal$);
+    parentSignal.throwIfAborted();
+    set(startingSubscriptionIdentity$, {
+      key,
+      scope: message.scope,
+      topic: message.topic,
+    });
+    const graph = get(startingSubscriptionGraph$);
+    if (!graph) {
+      throw new Error(
+        "Shared database realtime subscription graph is unavailable",
+      );
+    }
+    const subscriptionSignal = set(graph.resetSubscription$, parentSignal);
     const subscription: WorkerRealtimeSubscription = {
-      controller,
+      graph,
+      signal: subscriptionSignal,
       ready: false,
       subscribers: new Map([[subscriberKey, subscriber]]),
     };
@@ -314,10 +339,6 @@ export const startWorkerRealtimeSubscription$ = command(
       return replaceWorkerRealtimeSubscription(state, key, subscription);
     });
     signal.addEventListener("abort", subscriber.onAbort, { once: true });
-    return set(
-      runWorkerRealtimeSubscription$,
-      { key, scope: message.scope, topic: message.topic },
-      controller.signal,
-    );
+    return set(graph.run$, subscriptionSignal);
   },
 );

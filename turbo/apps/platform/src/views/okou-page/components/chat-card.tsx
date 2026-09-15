@@ -9,9 +9,9 @@ type ChatCardProps = useRender.ComponentProps<"div">;
  * the transcript carried two radii, four border tokens and three fills.
  *
  * The radius and shadow read the App-owned `--okou-chat-card-*` variables,
- * which are declared on `.okou-app`. Every consumer renders inside that shell,
- * so both resolve through normal inheritance, including the gradient themes'
- * shadow override. They are spelled `rounded-[var(…)]` / `shadow-[var(…)]` to
+ * which the App stylesheet declares at `:root`, so both resolve through normal
+ * inheritance wherever the card renders, including the gradient themes' shadow
+ * override. They are spelled `rounded-[var(…)]` / `shadow-[var(…)]` to
  * match the page-level `--okou-card-*` siblings, which are read that way at 19
  * call sites. `tailwind-merge` cannot classify an arbitrary `shadow-[var(…)]`
  * as a box-shadow, so it would not drop this base for a caller's own

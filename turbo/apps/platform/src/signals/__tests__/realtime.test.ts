@@ -21,12 +21,7 @@ import { setAuthenticatedIdentity$ } from "../auth-context.ts";
 import { subscribeChatThreadRealtime$ } from "../chat-page/chat-thread-remote-signals.ts";
 import { testContext } from "./test-helpers.ts";
 import { hasRealtimeChannel } from "../../mocks/ably.ts";
-import {
-  createChildAbortController,
-  detach,
-  Reason,
-  settle,
-} from "../utils.ts";
+import { detach, Reason, resetSignal, settle } from "../utils.ts";
 import type { SharedDatabaseBridge } from "../../shared-database/bridge.ts";
 import type {
   ComputedKey,
@@ -115,54 +110,72 @@ async function setupAuthAndRealtime(): Promise<void> {
   await context.store.set(setupRealtime$, context.signal);
 }
 
-function testSubscriber(): AbortController {
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  return createChildAbortController(context.signal);
-}
-
 test("A session output channel detaches after its final subscriber and can be reacquired", async () => {
+  const resetFirstSubscriber$ = resetSignal();
+  const resetSecondSubscriber$ = resetSignal();
+  const payloads: unknown[] = [];
+  const receivePayload$ = command(
+    (_ctx, payload: unknown, _signal: AbortSignal) => {
+      payloads.push(payload);
+      return false;
+    },
+  );
   mockSignedInUser();
   await setupAuthAndRealtime();
   const topic = "d0000000-0000-4000-a000-000000000851";
   const channel = `run-output:test-user-123:test-org-123:${topic}`;
-  const first = testSubscriber();
-  const second = testSubscriber();
+  const firstSignal = context.store.set(resetFirstSubscriber$, context.signal);
+  const secondSignal = context.store.set(
+    resetSecondSubscriber$,
+    context.signal,
+  );
   const firstOperation = context.store.set(
     setAblyPayloadLoop$,
     { scope: "run-output", topic, loopCommand$: keepAlivePayloadLoop$ },
-    first.signal,
+    firstSignal,
   );
   const secondOperation = context.store.set(
     setAblyPayloadLoop$,
-    { scope: "run-output", topic, loopCommand$: keepAlivePayloadLoop$ },
-    second.signal,
+    { scope: "run-output", topic, loopCommand$: receivePayload$ },
+    secondSignal,
   );
   await waitFor(() => {
     expect(
       context.mocks.ably.hasSubscriptionOnChannel(channel, topic),
     ).toBeTruthy();
   });
-  first.abort(new DOMException("First viewer left", "AbortError"));
-  await expect(firstOperation).rejects.toThrow("First viewer left");
+  context.store.set(resetFirstSubscriber$);
+  await expect(firstOperation).rejects.toBe(firstSignal.reason);
   expect(
     context.mocks.ably.hasSubscriptionOnChannel(channel, topic),
   ).toBeTruthy();
-  second.abort(new DOMException("Last viewer left", "AbortError"));
-  await expect(secondOperation).rejects.toThrow("Last viewer left");
+  context.mocks.ably.triggerOnChannel(channel, topic, { text: "still live" });
+  await waitFor(() => {
+    expect(payloads).toStrictEqual([{ text: "still live" }]);
+  });
+  context.store.set(resetSecondSubscriber$);
+  await expect(secondOperation).rejects.toBe(secondSignal.reason);
   expect(hasRealtimeChannel(channel)).toBeFalsy();
-  const next = testSubscriber();
+  const nextSignal = context.store.set(resetFirstSubscriber$, context.signal);
   const nextOperation = context.store.set(
     setAblyPayloadLoop$,
-    { scope: "run-output", topic, loopCommand$: keepAlivePayloadLoop$ },
-    next.signal,
+    { scope: "run-output", topic, loopCommand$: receivePayload$ },
+    nextSignal,
   );
   await waitFor(() => {
     expect(
       context.mocks.ably.hasSubscriptionOnChannel(channel, topic),
     ).toBeTruthy();
   });
-  next.abort(new DOMException("Next viewer left", "AbortError"));
-  await expect(nextOperation).rejects.toThrow("Next viewer left");
+  context.mocks.ably.triggerOnChannel(channel, topic, { text: "reacquired" });
+  await waitFor(() => {
+    expect(payloads).toStrictEqual([
+      { text: "still live" },
+      { text: "reacquired" },
+    ]);
+  });
+  context.store.set(resetFirstSubscriber$);
+  await expect(nextOperation).rejects.toBe(nextSignal.reason);
   expect(hasRealtimeChannel(channel)).toBeFalsy();
 });
 
@@ -224,7 +237,6 @@ class TestSharedWorkerRealtimeBridge implements SharedDatabaseBridge {
 test("Route app subscriptions through the SharedWorker without an App Ably client", async () => {
   mockSignedInUser();
   const bridge = new TestSharedWorkerRealtimeBridge();
-  const subscriber = testSubscriber();
   let runs = 0;
   const loop$ = command((_ctx, _signal: AbortSignal) => {
     runs += 1;
@@ -236,7 +248,7 @@ test("Route app subscriptions through the SharedWorker without an App Ably clien
   const loopPromise = context.store.set(
     setAblyLoop$,
     { topic: "connectorPermissionUpdated", loopCommand$: loop$ },
-    subscriber.signal,
+    context.signal,
   );
 
   await vi.waitFor(() => {
@@ -352,24 +364,34 @@ test("Realtime authentication failure does not leave stale live updates", async 
 // These transport failures have no page action for controlling one subscriber's
 // lifetime or the registration/attach gap. Exercise the real realtime setup and
 // external Ably boundary here; template loading/recovery has page coverage.
-test("Cancelling a subscriber releases its pending channel attach wait", async () => {
-  mockSignedInUser();
-  await setupAuthAndRealtime();
-  context.mocks.ably.triggerConnectionState("suspended");
-  const subscriber = testSubscriber();
-  const topic = "test:cancel-attach";
-  const operation = context.store.set(
-    setAblyLoop$,
-    { topic, loopCommand$: keepAliveLoop$ },
-    subscriber.signal,
-  );
-  await waitFor(() => {
-    expect(context.mocks.ably.hasSubscription(topic)).toBeTruthy();
-  });
-  subscriber.abort(new DOMException("Subscriber closed", "AbortError"));
-  await expect(operation).rejects.toThrow("Subscriber closed");
-  expect(context.mocks.ably.hasSubscription(topic)).toBeFalsy();
-});
+test.each(["subscriber", "parent"])(
+  "Cancelling a %s releases its pending channel attach wait",
+  async (owner) => {
+    const resetParent$ = resetSignal();
+    const resetSubscriber$ = resetSignal();
+    const parentSignal = context.store.set(resetParent$, context.signal);
+    const subscriberSignal = context.store.set(resetSubscriber$, parentSignal);
+    mockSignedInUser();
+    await setupAuthAndRealtime();
+    context.mocks.ably.triggerConnectionState("suspended");
+    const topic = "test:cancel-attach";
+    const operation = context.store.set(
+      setAblyLoop$,
+      { topic, loopCommand$: keepAliveLoop$ },
+      subscriberSignal,
+    );
+    await waitFor(() => {
+      expect(context.mocks.ably.hasSubscription(topic)).toBeTruthy();
+    });
+    context.store.set(owner === "subscriber" ? resetSubscriber$ : resetParent$);
+    await expect(operation).rejects.toBe(subscriberSignal.reason);
+    expect(parentSignal.aborted).toBe(owner === "parent");
+    expect(parentSignal.reason).toBe(
+      owner === "parent" ? subscriberSignal.reason : undefined,
+    );
+    expect(context.mocks.ably.hasSubscription(topic)).toBeFalsy();
+  },
+);
 
 test("A channel that fails during registration rejects the subsequent attach wait", async () => {
   mockSignedInUser();
@@ -394,7 +416,6 @@ test("A channel that fails during registration rejects the subsequent attach wai
 test("Live updates remain usable after the transport reconnects", async () => {
   mockSignedInUser();
   const topic = "test:reconnect";
-  const subscriber = testSubscriber();
   let runs = 0;
   const loop$ = command((_ctx, _signal: AbortSignal) => {
     runs += 1;
@@ -408,7 +429,7 @@ test("Live updates remain usable after the transport reconnects", async () => {
       topic,
       loopCommand$: loop$,
     },
-    subscriber.signal,
+    context.signal,
   );
   detach(loopPromise, Reason.Daemon, "test realtime loop");
 
@@ -430,7 +451,6 @@ test("Live updates remain usable after the transport reconnects", async () => {
 test("A subscription created while the connection is suspended still starts", async () => {
   mockSignedInUser();
   const topic = "test:subscribe-while-suspended";
-  const subscriber = testSubscriber();
   let runs = 0;
   const loop$ = command((_ctx, _signal: AbortSignal) => {
     runs += 1;
@@ -448,7 +468,7 @@ test("A subscription created while the connection is suspended still starts", as
   const loopPromise = context.store.set(
     setAblyLoop$,
     { topic, loopCommand$: loop$ },
-    subscriber.signal,
+    context.signal,
   );
   detach(loopPromise, Reason.Daemon, "suspended realtime loop");
 
@@ -468,7 +488,6 @@ test("A subscription created while the connection is suspended still starts", as
 test("A suspended connection keeps the listener instead of failing", async () => {
   mockSignedInUser();
   const topic = "test:suspended-no-failure";
-  const subscriber = testSubscriber();
 
   await setupAuthAndRealtime();
   context.mocks.ably.triggerConnectionState("suspended", {
@@ -479,7 +498,7 @@ test("A suspended connection keeps the listener instead of failing", async () =>
   const loopPromise = context.store.set(
     setAblyLoop$,
     { topic, loopCommand$: keepAliveLoop$ },
-    subscriber.signal,
+    context.signal,
   );
   let loopSettled = false;
   const observeLoop = async (): Promise<void> => {
@@ -500,7 +519,6 @@ test("A suspended connection keeps the listener instead of failing", async () =>
 test("Subscription initialization runs only after the channel attaches", async () => {
   mockSignedInUser();
   const topic = "test:initialize-after-attach";
-  const subscriber = testSubscriber();
   let reconnected = false;
   const initializeOrder: string[] = [];
   const initialize$ = command((_ctx, _signal: AbortSignal) => {
@@ -522,7 +540,7 @@ test("Subscription initialization runs only after the channel attaches", async (
         loopCommand$: keepAlivePayloadLoop$,
         initializeCommand$: initialize$,
       },
-      subscriber.signal,
+      context.signal,
     ),
     Reason.Daemon,
     "initialize after attach",
@@ -545,7 +563,6 @@ test("Subscription initialization runs only after the channel attaches", async (
 test("A terminal channel failure still stops the subscription", async () => {
   mockSignedInUser();
   const topic = "test:terminal-channel-failure";
-  const subscriber = testSubscriber();
 
   await setupAuthAndRealtime();
   context.mocks.ably.triggerConnectionState("suspended", {
@@ -555,7 +572,7 @@ test("A terminal channel failure still stops the subscription", async () => {
   const loopPromise = context.store.set(
     setAblyLoop$,
     { topic, loopCommand$: keepAliveLoop$ },
-    subscriber.signal,
+    context.signal,
   );
   await vi.waitFor(() => {
     expect(context.mocks.ably.hasSubscription(topic)).toBeTruthy();
@@ -572,7 +589,6 @@ test("A terminal channel failure still stops the subscription", async () => {
 test("A continuity gap re-reads the subscription baseline", async () => {
   mockSignedInUser();
   const topic = "test:continuity-gap";
-  const subscriber = testSubscriber();
   let baselineReads = 0;
   const initialize$ = command((_ctx, _signal: AbortSignal) => {
     baselineReads += 1;
@@ -588,7 +604,7 @@ test("A continuity gap re-reads the subscription baseline", async () => {
         loopCommand$: keepAlivePayloadLoop$,
         initializeCommand$: initialize$,
       },
-      subscriber.signal,
+      context.signal,
     ),
     Reason.Daemon,
     "continuity gap loop",
@@ -613,7 +629,6 @@ test("A continuity gap re-reads the subscription baseline", async () => {
 test("A replayed reattach does not re-read the subscription baseline", async () => {
   mockSignedInUser();
   const topic = "test:continuity-preserved";
-  const subscriber = testSubscriber();
   let baselineReads = 0;
   const initialize$ = command((_ctx, _signal: AbortSignal) => {
     baselineReads += 1;
@@ -629,7 +644,7 @@ test("A replayed reattach does not re-read the subscription baseline", async () 
         loopCommand$: keepAlivePayloadLoop$,
         initializeCommand$: initialize$,
       },
-      subscriber.signal,
+      context.signal,
     ),
     Reason.Daemon,
     "continuity preserved loop",
@@ -650,7 +665,6 @@ test("A replayed reattach does not re-read the subscription baseline", async () 
 test("A continuity gap pokes a topic loop", async () => {
   mockSignedInUser();
   const topic = "test:continuity-gap-topic";
-  const subscriber = testSubscriber();
   let runs = 0;
   const loop$ = command((_ctx, _signal: AbortSignal) => {
     runs += 1;
@@ -662,7 +676,7 @@ test("A continuity gap pokes a topic loop", async () => {
     context.store.set(
       setAblyLoop$,
       { topic, loopCommand$: loop$, options: { runOnSubscribe: true } },
-      subscriber.signal,
+      context.signal,
     ),
     Reason.Daemon,
     "continuity gap topic loop",
@@ -756,7 +770,6 @@ test("A transient live-update error is retried", async () => {
 test("Payload updates received during subscription initialization are applied", async () => {
   mockSignedInUser();
   const topic = "test:payload-initialization";
-  const subscriber = testSubscriber();
   const payloads: unknown[] = [];
   const initializationStarted = context.mocks.deferred<void>();
   const initializationFinished = context.mocks.deferred<void>();
@@ -783,7 +796,7 @@ test("Payload updates received during subscription initialization are applied", 
       loopCommand$: loop$,
       initializeCommand$: initialize$,
     },
-    subscriber.signal,
+    context.signal,
   );
   detach(loopPromise, Reason.Daemon, "test realtime loop");
 
@@ -878,7 +891,6 @@ test("A persistent refresh error pauses until a new update", async () => {
 test("Chat thread notifications invalidate their matching resources", async () => {
   mockSignedInUser();
   const threadId = "test-thread-invalidations";
-  const subscriber = testSubscriber();
   const invalidated: string[] = [];
   const recordInvalidation = (name: string) => {
     return command((): void => {
@@ -902,7 +914,7 @@ test("Chat thread notifications invalidate their matching resources", async () =
         },
         handlers: { onWorkflowsChanged$: keepAliveLoop$ },
       },
-      subscriber.signal,
+      context.signal,
     ),
     Reason.Daemon,
     "test chat thread realtime invalidations",

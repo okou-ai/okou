@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.90.5](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.4...guest-agent-v0.90.5) (2026-09-15)
+
+
+### Bug Fixes
+
+* distinguish balance ownership and localize run errors ([#34251](https://github.com/vm0-ai/vm0/issues/34251)) ([0367d97](https://github.com/vm0-ai/vm0/commit/0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6))
+
+## [0.90.4](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.3...guest-agent-v0.90.4) (2026-09-15)
+
+
+### Bug Fixes
+
+* **guest-agent:** clean up quiet descendants of test commands ([#34350](https://github.com/vm0-ai/vm0/issues/34350)) ([6641b4a](https://github.com/vm0-ai/vm0/commit/6641b4a9dc7835eb918c7435c1d8e1c1d102d3db))
+
 ## [0.90.3](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.2...guest-agent-v0.90.3) (2026-09-15)
 
 

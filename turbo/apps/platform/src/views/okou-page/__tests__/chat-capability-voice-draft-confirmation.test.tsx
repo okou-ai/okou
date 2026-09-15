@@ -16,7 +16,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { createChildAbortController } from "../../../signals/utils.ts";
+import { resetSignal } from "../../../signals/utils.ts";
 import { textContinuityDraft } from "./chat-continuity-test-helpers.ts";
 import {
   CHAT_LIST_AGENT_ID,
@@ -42,10 +42,7 @@ async function enabledButton(name: string): Promise<HTMLElement> {
   return fastButton(name);
 }
 
-function unloadPage(page: AbortController): void {
-  const error = new Error("Page reloaded");
-  error.name = "AbortError";
-  page.abort(error);
+function releasePageDom() {
   cleanup();
   vi.mocked(window.history.pushState).mockRestore();
   vi.mocked(window.history.replaceState).mockRestore();
@@ -56,10 +53,16 @@ test.each([false, true])(
   "Finish voice without waiting for conversation creation confirmation (reload: %s)",
   async (reloadBeforeRetry) => {
     const auth = chatListAuth(49);
-    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-    const initialPage = createChildAbortController(context.signal);
-    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-    const refreshedPage = createChildAbortController(refreshedContext.signal);
+    const resetInitialPage$ = resetSignal();
+    const initialPageSignal = context.store.set(
+      resetInitialPage$,
+      context.signal,
+    );
+    const resetRefreshedPage$ = resetSignal();
+    const refreshedPageSignal = refreshedContext.store.set(
+      resetRefreshedPage$,
+      refreshedContext.signal,
+    );
     await seedPersistentChatListCache(49, auth, []);
     let createdThreadId: string | undefined;
     let createdEventId: string | undefined;
@@ -147,7 +150,7 @@ test.each([false, true])(
 
     await setupPage({
       locale: "en-US",
-      context: { ...context, signal: initialPage.signal },
+      context: { ...context, signal: initialPageSignal },
       path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
       auth,
     });
@@ -179,11 +182,12 @@ test.each([false, true])(
       throw new Error("Expected thread creation identifiers");
     }
     if (reloadBeforeRetry) {
-      unloadPage(initialPage);
+      context.store.set(resetInitialPage$);
+      releasePageDom();
       publishThreadConfirmation();
       await setupPage({
         locale: "en-US",
-        context: { ...refreshedContext, signal: refreshedPage.signal },
+        context: { ...refreshedContext, signal: refreshedPageSignal },
         path: `/chats/${createdThreadId}`,
         auth,
       });

@@ -2387,6 +2387,68 @@ describe("historical writer consumer fences", () => {
 });
 
 describe("historical exact selection and retained-only parent", () => {
+  it("admits a captured connected account while another account is active", async () => {
+    const f = await fixture("codex-oauth-token");
+    const auth = createAuthDeviceApiActions(context);
+    mockCodexDeviceAuthProvider({
+      tokenScope: "personal",
+      accountId: "identity-b",
+    });
+    const started = await auth.requestCodexStart(f.actor, "personal", [200], {
+      mode: "add",
+    });
+    if (started.status !== 200) {
+      throw new Error("Expected device auth start");
+    }
+    const completed = await auth.requestCodexComplete(
+      f.actor,
+      started.body.sessionToken,
+      [200],
+    );
+    if (!("status" in completed.body) || completed.body.status !== "complete") {
+      throw new Error("Expected device auth completion");
+    }
+    const accountB = completed.body.provider.id;
+    await support.activatePersonalModelProviderAccount(f.actor, accountB);
+    const listed = await support.listPersonalModelProviders(f.actor, [200]);
+    expect(listed.body).toMatchObject({
+      modelProviders: expect.arrayContaining([
+        expect.objectContaining({ id: f.connected.id, isActive: false }),
+        expect.objectContaining({ id: accountB, isActive: true }),
+      ]),
+    });
+
+    // The documented historical fixture carries an already captured concrete
+    // ID, which current model-first public input cannot select directly.
+    const admitted = await createHistoricalPinnedSubscriptionRunFixture(
+      {
+        owner: f.actor,
+        agentId: f.agentId,
+        accountId: f.connected.id,
+        type: f.type,
+        model: f.model,
+      },
+      context.signal,
+    );
+    if (admitted.status !== 201) {
+      throw new Error("Expected the connected captured account to be admitted");
+    }
+    expect(
+      (await runs.readRun(f.actor, admitted.body.runId)).source,
+    ).toMatchObject({
+      providerType: f.type,
+      credentialScope: "member",
+      account: { status: "connected", id: f.connected.id },
+    });
+    const claim = await f.claim(admitted.body.runId);
+    expect(accountId(claim, f.type)).toBe(f.connected.id);
+    await expect(resolve(claim, f.type)).resolves.toMatchObject({
+      Authorization: `Bearer ${f.connected.token}`,
+      "ChatGPT-Account-ID": "identity-a",
+    });
+    await runs.requestCancelRun(f.actor, admitted.body.runId, [200]);
+  });
+
   it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
     "coordinates a direct concrete %s admission before environment materialization",
     async (type) => {

@@ -10,18 +10,43 @@ import type {
   ComposerCreateSignals,
 } from "./composer-create.ts";
 import { createComposerVisualizationSignals } from "./composer-visualization.ts";
+import { onRef } from "../utils.ts";
 
 export type ComposerTask =
   | ComposerCreateMode
   | "workflow"
   | "website"
   | "visualization";
-export type ComposerIdeaTask = Exclude<
-  ComposerTask,
-  "presentation" | "visualization"
+export type ComposerIdeaTask = Exclude<ComposerTask, "visualization">;
+/** The tasks whose ideas render as a prompt row; workflow has its own surface. */
+export type ComposerPromptRowTask = Exclude<ComposerIdeaTask, "workflow">;
+/**
+ * The tasks served by the shared cover shelf. Presentation has ideas but not
+ * this shelf: its catalog carries uploaded decks and an import tile, so it
+ * builds its own row.
+ */
+export type ComposerTemplateTask = Exclude<
+  ComposerPromptRowTask,
+  "presentation"
 >;
-/** The idea tasks whose catalog carries cover art, so they get a cover shelf. */
-export type ComposerTemplateTask = Exclude<ComposerIdeaTask, "workflow">;
+
+/** What a row reports after laying out: whether either pager has anywhere to go. */
+interface RailTravel {
+  readonly canScrollBack: boolean;
+  readonly canScrollForward: boolean;
+}
+
+/** How far the rail can still travel in each direction, right now. */
+export function measureRail(element: HTMLElement): RailTravel {
+  // A scroll position is fractional under zoom, so a whole pixel of slack
+  // keeps a rail that is visually at its end from claiming otherwise.
+  const remaining =
+    element.scrollWidth - element.clientWidth - element.scrollLeft;
+  return {
+    canScrollBack: element.scrollLeft > 1,
+    canScrollForward: remaining > 1,
+  };
+}
 
 export function createComposerTaskChipsSignals(
   create: ComposerCreateSignals,
@@ -75,6 +100,7 @@ export function createComposerTaskChipsSignals(
     workflow: 0,
     video: 0,
     website: 0,
+    presentation: 0,
   });
   const ideaPages$ = computed((get) => {
     return get(internalIdeaPages$);
@@ -89,37 +115,62 @@ export function createComposerTaskChipsSignals(
     },
   );
   /**
-   * The rows are a two-way pager, not a shuffle: the last page does not wrap
-   * back to the first, so `‹` and `›` can say truthfully whether there is
-   * anything in that direction. `nextIdeas$` above keeps its wrap because the
-   * workflow row is still a single "more" button rather than a pager.
+   * How far a rail can still travel, per rail. A rail packs its items
+   * continuously and pages by one visible width, so how many fit on a page is
+   * a layout outcome rather than a constant; only the row itself can report
+   * it. A rail that has never reported is assumed to fit, which hides both
+   * pagers until the first measurement proves otherwise.
    */
-  const stepIdeaPage$ = command(
-    ({ get, set }, task: ComposerIdeaTask, step: number, pageCount: number) => {
-      const pages = get(internalIdeaPages$);
-      set(internalIdeaPages$, {
-        ...pages,
-        [task]: Math.min(Math.max(pages[task] + step, 0), pageCount - 1),
-      });
+  const internalRailTravel$ = state<Readonly<Record<string, RailTravel>>>({});
+  const railTravel$ = computed((get) => {
+    return get(internalRailTravel$);
+  });
+  const setRailTravel$ = command(
+    ({ get, set }, rail: string, travel: RailTravel) => {
+      const current = get(internalRailTravel$)[rail];
+      if (
+        current?.canScrollBack === travel.canScrollBack &&
+        current.canScrollForward === travel.canScrollForward
+      ) {
+        return;
+      }
+      set(internalRailTravel$, { ...get(internalRailTravel$), [rail]: travel });
     },
   );
-  const internalTemplatePages$ = state({ image: 0, video: 0, website: 0 });
-  const templatePages$ = computed((get) => {
-    return get(internalTemplatePages$);
-  });
-  const stepTemplatePage$ = command(
-    (
-      { get, set },
-      task: ComposerTemplateTask,
-      step: number,
-      pageCount: number,
-    ) => {
-      const pages = get(internalTemplatePages$);
-      set(internalTemplatePages$, {
-        ...pages,
-        [task]: Math.min(Math.max(pages[task] + step, 0), pageCount - 1),
+  /**
+   * Owns one row's DOM lifecycle. The row reports its own travel because only
+   * layout knows it: the rail's width and its items' widths both move the end,
+   * and neither is settled until the browser has laid them out. The size
+   * observer covers a resized column and an item that changes width; the child
+   * observer covers a catalog that finishes loading after the row mounted, such
+   * as a presentation shelf's uploaded decks.
+   */
+  const bindRail$ = onRef(
+    command(({ set }, element: HTMLElement, signal: AbortSignal) => {
+      const rail = element.dataset.rail;
+      if (!rail) {
+        return;
+      }
+      const report = () => {
+        set(setRailTravel$, rail, measureRail(element));
+      };
+      const size = new ResizeObserver(report);
+      const observeAll = () => {
+        size.disconnect();
+        size.observe(element);
+        for (const child of element.children) {
+          size.observe(child);
+        }
+        report();
+      };
+      observeAll();
+      const children = new MutationObserver(observeAll);
+      children.observe(element, { childList: true });
+      signal.addEventListener("abort", () => {
+        size.disconnect();
+        children.disconnect();
       });
-    },
+    }),
   );
   return {
     enabled$,
@@ -127,9 +178,9 @@ export function createComposerTaskChipsSignals(
     selectTask$,
     ideaPages$,
     nextIdeas$,
-    stepIdeaPage$,
-    templatePages$,
-    stepTemplatePage$,
+    railTravel$,
+    setRailTravel$,
+    bindRail$,
     workflows,
     visualization,
   };

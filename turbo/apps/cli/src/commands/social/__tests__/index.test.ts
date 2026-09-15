@@ -12,7 +12,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { SocialKitResponse } from "@okouai/api-contracts/contracts/social";
+import type {
+  SocialKitDownloadResponse,
+  SocialKitResponse,
+} from "@okouai/api-contracts/contracts/social";
 import { HttpResponse, http } from "msw";
 import {
   afterAll,
@@ -86,6 +89,8 @@ function completedDownload() {
     platform: "youtube",
     quality: "720p",
     format: "mp4",
+    requested: { quality: "720p", format: "mp4" },
+    delivered: { quality: null, format: null },
     maxDuration: 600,
     billingCategory: "request",
     provider: {
@@ -105,7 +110,7 @@ function completedDownload() {
     error: null,
     createdAt: "2026-08-27T00:00:00.000Z",
     completedAt: "2026-08-27T00:01:00.000Z",
-  };
+  } satisfies SocialKitDownloadResponse;
 }
 
 function failedDownload(status: "artifact_failed" | "provider_failed") {
@@ -1519,6 +1524,8 @@ describe("okou social command", () => {
         {
           downloadId: task.downloadId,
           request: { url: "https://youtu.be/video123" },
+          requested: task.requested,
+          delivered: task.delivered,
           artifact: task.artifact,
         },
       ],

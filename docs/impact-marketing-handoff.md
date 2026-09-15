@@ -6,12 +6,12 @@ remaining App Google tags are subsequent slices.
 
 ## Ownership
 
-With cutover enabled, neither the App browser nor the canonical App API retrieves
+Neither the App browser nor the canonical App API retrieves
 Impact attribution from Marketing. Marketing owns consented cookies, capture
 history, order attribution decisions, submission state and refund receipts in its
 dedicated Neon PostgreSQL database. No new Impact fields are written to App
 purchase records, Clerk, or Stripe metadata, and no App DB migration is needed.
-Existing legacy fields are ignored after cutover; this change does not erase
+Existing legacy fields are ignored; this change does not erase
 historical billing data.
 
 Marketing captures `im_ref` only after initialized Termly advertising consent.
@@ -45,13 +45,13 @@ invoice creation does not move that boundary. Direct subscription Checkout uses
 its creation time; renewals use their own invoice creation time.
 This timestamp contains no referral information.
 
-Marketing allows a 10-minute window after the first payment webhook for a delayed
-iframe handoff. Its webhook returns an expected `503 pending_identity` with
-`Retry-After: 600`; Stripe owns redelivery, and the user's payment does not wait.
-After the window, Marketing selects the latest admin-associated click captured
-no later than the purchase, received within that window, and covered by consent.
-It freezes the capture reference or an unattributed result. Later clicks, handoffs,
-Customer metadata changes and webhook retries cannot rewrite that decision.
+Marketing immediately freezes and submits an eligible consented capture available
+at the first payment webhook. Orders awaiting an eligible iframe association get
+a 10-minute window and return `503 pending_identity` with `Retry-After: 600`.
+Stripe owns redelivery; a retry can submit as soon as eligible attribution arrives.
+The user's payment never waits. After the window expires, Marketing freezes an
+unattributed result if no qualifying capture exists. Later clicks, handoffs,
+Customer changes and retries cannot change a frozen attribution decision.
 
 Marketing rechecks consent and order eligibility before each new Impact submission.
 The existing program, trackers, 30-day referral window, amounts, stable order IDs,
@@ -60,51 +60,32 @@ receipts and adjustments. Historical Stripe submission receipts can be read for
 deduplication/refunds; their old click or consent fields are never imported.
 Refunds may correct known submissions after withdrawal, but never create a sale.
 
-## Configuration and rollout
+## Configuration
 
-The App mounts the bridge for every authenticated user with an organization,
-without an App feature switch. The API and Marketing retain server cutover
-configuration. Production activation requires both releases, a dedicated Marketing
-Neon PostgreSQL database and matching signing secrets.
-There is no production data, credential, provider or live-switch change in this PR.
+The hidden bridge loads for every authenticated user with an organization.
+Marketing attribution is permanent behavior, with no App or server rollout switch.
+The API requires:
 
-API configuration:
-
-- `IMPACT_MARKETING_ATTRIBUTION=true` disables legacy Impact ingestion, enrichment
-  and propagation. Cached Apps' old Impact inputs and pending preview snapshots
-  are ignored; business fields continue to work.
 - `MARKETING_ATTRIBUTION_SECRET`: the same random secret of at least 32 bytes in
   the Marketing Worker, used only to sign/verify identity proofs.
 - `MARKETING_ATTRIBUTION_ORIGIN`: defaults to `https://www.okou.ai`.
 - `IMPACT_APP_ORIGIN`: defaults to `https://app.okou.ai`, independently of the
   older generic `APP_URL`/Clerk auth domain.
 
-Follow the Marketing runbook to provision its separate Neon project, configure
-its database URL and deploy its PostgreSQL migration.
-Verify Termly opt-in advertising consent in every supported region, cookie
-classification and GPC behavior. Enable Marketing server cutover first, then API
-cutover. The App bridge is enabled for all authenticated organizations. During
-transition attribution may be omitted; checkout remains available. Require the new
-App release before measuring coverage.
-Do not reconstruct historical consent from old cookies or billing records.
+Follow the Marketing runbook for its dedicated Neon database, credentials and
+explicit Stripe live/test mode. Cached App signup requests may contain an old
+Impact field; the API ignores it while processing the ordinary acquisition data.
+Historical App schema columns remain for old API process compatibility, without
+active attribution readers or writers. No historical consent is reconstructed.
 
-To pause after cutover, disable Marketing `IMPACT_ENABLED`.
-Keep both server cutover modes enabled; re-enabling legacy ingestion/delivery would
-bypass the consent ledger.
+## Verification and completion
 
-## Verification and acceptance
+Focused tests cover signed identity, retired metadata filtering, original purchase
+times, delayed and out-of-order webhooks, immutable attribution, consent withdrawal,
+duplicate submissions and refunds. Marketing tests exercise the Neon HTTP driver
+against isolated real PostgreSQL schemas. No destructive App migration is needed.
 
-Focused tests cover identity-only handoff, legacy/cutover/new purchase combinations,
-retired metadata propagation, original purchase times, delayed and out-of-order
-webhooks, immutable attribution decisions, consent withdrawal, duplicate deliveries
-and refunds. Marketing tests exercise the Neon HTTP driver against isolated real
-PostgreSQL schemas. App/API tests use isolated PostgreSQL; no App schema change
-is introduced.
-
-Before production activation, validate Chrome/Safari Marketing -> authentication ->
-onboarding on paired HTTPS origins under the same registrable site. Current App
-and Marketing preview domains are on different sites and cannot validate
-SameSite=Lax iframe cookies. Complete a provider-supported Impact test for program
-57423 / Subscription 87218 / Deposit 87219, including eventual acceptance, amount,
-currency, order identity, duplicate count and refund. Automated tests send no live
-conversion and do not replace this acceptance.
+The owner marked the Impact phase of #33886 complete after subscription and Deposit
+receipts succeeded. Remaining browser acceptance and a separate adjustable-Action
+refund test were explicitly waived. The test-entry `ACTION_NOT_FOUND` was accepted
+as expected. GA/Google Ads, PostHog and other destinations remain later phases.
