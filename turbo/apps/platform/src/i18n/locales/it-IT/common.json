@@ -6087,7 +6087,6 @@
         "loading": "Caricamento delle impostazioni di Morning Brief...",
         "missingDefaultAgent": "Scegli un Agent predefinito utilizzabile prima di attivare Morning Brief.",
         "missingTimezone": "Imposta un fuso orario valido prima di attivare Morning Brief.",
-        "multipleInstallations": "Esistono più installazioni di Morning Brief. Risolvi il conflitto prima di modificare questa preferenza.",
         "nextBrief": "Prossimo riepilogo {{date}} ({{timezone}})",
         "paused": "In pausa",
         "preparationFailed": "La configurazione verrà ritentata automaticamente. Puoi riprovare anche ora.",

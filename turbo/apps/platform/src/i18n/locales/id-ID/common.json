@@ -6012,7 +6012,6 @@
         "loading": "Memuat pengaturan Morning Brief...",
         "missingDefaultAgent": "Pilih Agent default yang dapat digunakan sebelum mengaktifkan Morning Brief.",
         "missingTimezone": "Tetapkan zona waktu yang valid sebelum mengaktifkan Morning Brief.",
-        "multipleInstallations": "Ada beberapa instalasi Morning Brief. Selesaikan konflik sebelum mengubah preferensi ini.",
         "nextBrief": "Ringkasan berikutnya {{date}} ({{timezone}})",
         "paused": "Dijeda",
         "preparationFailed": "Penyiapan akan dicoba lagi secara otomatis. Anda juga dapat mencoba lagi sekarang.",

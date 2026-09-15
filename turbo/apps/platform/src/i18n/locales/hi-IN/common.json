@@ -6026,7 +6026,6 @@
         "loading": "Morning Brief सेटिंग लोड हो रही हैं...",
         "missingDefaultAgent": "Morning Brief चालू करने से पहले उपयोग योग्य डिफ़ॉल्ट Agent चुनें।",
         "missingTimezone": "Morning Brief चालू करने से पहले एक मान्य समय क्षेत्र सेट करें।",
-        "multipleInstallations": "Morning Brief के कई इंस्टॉलेशन मौजूद हैं। इस प्राथमिकता को बदलने से पहले विरोध हल करें।",
         "nextBrief": "अगला ब्रीफ़ {{date}} ({{timezone}})",
         "paused": "रुका हुआ",
         "preparationFailed": "सेटअप अपने आप फिर से आज़माया जाएगा। आप अभी भी दोबारा कोशिश कर सकते हैं।",

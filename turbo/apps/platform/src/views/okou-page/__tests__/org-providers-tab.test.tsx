@@ -202,7 +202,6 @@ function billingStatus(
   modelCapabilities?: {
     readonly supportByok?: boolean;
     readonly restrictedBuiltInModels?: boolean;
-    readonly restrictedVm0Models?: boolean;
   },
 ): BillingStatusResponse {
   return {
@@ -232,16 +231,6 @@ function billingStatus(
 function mockBillingCapabilities(modelCapabilities: {
   readonly supportByok: boolean;
   readonly restrictedBuiltInModels: boolean;
-}): void {
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, billingStatus("pro", modelCapabilities));
-  });
-}
-
-/** Billing status as an API from before #33658 step 1 returns it. */
-function mockLegacyBillingCapabilities(modelCapabilities: {
-  readonly supportByok: boolean;
-  readonly restrictedVm0Models: boolean;
 }): void {
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
     return respond(200, billingStatus("pro", modelCapabilities));
@@ -1116,39 +1105,6 @@ test("Offer an upgrade for restricted Pro models", async () => {
       "https://checkout.stripe.com/model-upgrade?tier=pro",
     );
   });
-});
-
-test("Offer an upgrade for restricted Pro models from an API before the rename", async () => {
-  mockAdminOrg();
-  mockLegacyBillingCapabilities({
-    supportByok: false,
-    restrictedVm0Models: true,
-  });
-  context.mocks.data.orgModelProviders([]);
-  context.mocks.data.orgModelPolicies([
-    builtInPolicy(
-      "00000000-0000-4000-a000-000000000221",
-      "claude-fable-5-1",
-      "Claude Fable 5.1",
-      false,
-    ),
-    builtInPolicy(
-      "00000000-0000-4000-a000-000000000222",
-      "gpt-5.6-luna",
-      "GPT 5.6 Luna",
-      true,
-    ),
-  ]);
-  await openModelSettings();
-
-  const defaultRow = screen.getByTestId("default-model-row");
-  click(within(defaultRow).getByRole("combobox"));
-
-  // The restriction can only come from the retired alias, so seeing the Pro
-  // affordance proves the page honored it.
-  await expect(
-    screen.findByRole("option", { name: /Claude Fable 5.*Pro/u }),
-  ).resolves.toBeInTheDocument();
 });
 
 test("Offer a plan change when bring-your-own-key is unavailable", async () => {

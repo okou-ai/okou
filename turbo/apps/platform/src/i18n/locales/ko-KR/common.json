@@ -6012,7 +6012,6 @@
         "loading": "Morning Brief 설정을 불러오는 중...",
         "missingDefaultAgent": "Morning Brief를 활성화하기 전에 사용 가능한 기본 Agent를 선택하세요.",
         "missingTimezone": "Morning Brief를 활성화하기 전에 유효한 시간대를 설정하세요.",
-        "multipleInstallations": "Morning Brief 설치가 여러 개 있습니다. 이 환경설정을 변경하기 전에 충돌을 해결하세요.",
         "nextBrief": "다음 브리핑 {{date}} ({{timezone}})",
         "paused": "일시 중지됨",
         "preparationFailed": "설정을 자동으로 다시 시도합니다. 지금 다시 시도할 수도 있습니다.",
