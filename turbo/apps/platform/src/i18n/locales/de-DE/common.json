@@ -1759,6 +1759,9 @@
       "upgradeToRun": "Auf Pro upgraden, um {{assistantName}} auszuführen",
       "upgradeWorkspace": "Arbeitsbereich upgraden"
     },
+    "cards": {
+      "viewDetails": "Details ansehen"
+    },
     "composer": {
       "agentSuggestions": "Agenten",
       "configureModel": "Modell konfigurieren",
@@ -2999,9 +3002,6 @@
     "workflows": {
       "named": "Workflow {{title}}",
       "open": "Workflow öffnen {{title}}"
-    },
-    "cards": {
-      "viewDetails": "Details ansehen"
     }
   },
   "connectors": {

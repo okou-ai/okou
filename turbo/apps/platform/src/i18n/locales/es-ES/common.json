@@ -1788,6 +1788,9 @@
       "upgradeToRun": "Actualizar a Pro para ejecutar {{assistantName}}",
       "upgradeWorkspace": "Actualizar el espacio de trabajo"
     },
+    "cards": {
+      "viewDetails": "Ver detalles"
+    },
     "composer": {
       "agentSuggestions": "Agentes",
       "configureModel": "Configurar modelo",
@@ -3045,9 +3048,6 @@
     "workflows": {
       "named": "Flujo de trabajo {{title}}",
       "open": "Abrir flujo de trabajo {{title}}"
-    },
-    "cards": {
-      "viewDetails": "Ver detalles"
     }
   },
   "connectors": {

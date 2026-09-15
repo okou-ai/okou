@@ -1756,6 +1756,9 @@
       "upgradeToRun": "{{assistantName}}를 실행하려면 Pro로 업그레이드하세요",
       "upgradeWorkspace": "워크스페이스 업그레이드"
     },
+    "cards": {
+      "viewDetails": "세부 정보 보기"
+    },
     "composer": {
       "agentSuggestions": "에이전트",
       "configureModel": "모델 구성",
@@ -2990,9 +2993,6 @@
     "workflows": {
       "named": "워크플로 {{title}}",
       "open": "워크플로 {{title}} 열기"
-    },
-    "cards": {
-      "viewDetails": "세부 정보 보기"
     }
   },
   "connectors": {

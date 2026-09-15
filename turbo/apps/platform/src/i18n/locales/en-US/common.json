@@ -1759,6 +1759,9 @@
       "upgradeToRun": "Upgrade to Pro to run {{assistantName}}",
       "upgradeWorkspace": "Upgrade your workspace"
     },
+    "cards": {
+      "viewDetails": "View details"
+    },
     "composer": {
       "agentSuggestions": "Agents",
       "configureModel": "Configure model",
@@ -2999,9 +3002,6 @@
     "workflows": {
       "named": "Workflow {{title}}",
       "open": "Open workflow {{title}}"
-    },
-    "cards": {
-      "viewDetails": "View details"
     }
   },
   "connectors": {

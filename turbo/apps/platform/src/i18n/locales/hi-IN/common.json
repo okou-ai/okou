@@ -1759,6 +1759,9 @@
       "upgradeToRun": "{{assistantName}} रन करने के लिए प्रो में अपग्रेड करें",
       "upgradeWorkspace": "अपने वर्कस्पेस को अपग्रेड करें"
     },
+    "cards": {
+      "viewDetails": "विवरण देखें"
+    },
     "composer": {
       "agentSuggestions": "एजेंट",
       "configureModel": "मॉडल कॉन्फ़िगर करें",
@@ -2999,9 +3002,6 @@
     "workflows": {
       "named": "वर्कफ़्लो {{title}}",
       "open": "वर्कफ़्लो {{title}} खोलें"
-    },
-    "cards": {
-      "viewDetails": "विवरण देखें"
     }
   },
   "connectors": {

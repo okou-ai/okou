@@ -1756,6 +1756,9 @@
       "upgradeToRun": "Upgrade ke Pro untuk menjalankan {{assistantName}}",
       "upgradeWorkspace": "Upgrade workspace Anda"
     },
+    "cards": {
+      "viewDetails": "Lihat detail"
+    },
     "composer": {
       "agentSuggestions": "Agen",
       "configureModel": "Konfigurasikan model",
@@ -2990,9 +2993,6 @@
     "workflows": {
       "named": "Alur kerja {{title}}",
       "open": "Buka alur kerja {{title}}"
-    },
-    "cards": {
-      "viewDetails": "Lihat detail"
     }
   },
   "connectors": {
