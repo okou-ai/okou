@@ -655,7 +655,7 @@ async function getHeyGenSampledVoice(
   return voice?.sampleUrl ? voice : undefined;
 }
 
-async function fetchHeyGenAvatarPage(
+async function listHeyGenPublicAvatars(
   options: HeyGenAvatarCatalogOptions,
   apiKey: string,
   signal: AbortSignal,
@@ -752,13 +752,18 @@ async function withHeyGenDefaultVoiceSamples(
   });
 }
 
-export async function listHeyGenPublicAvatars(
+/**
+ * The wizard's catalog: only looks whose own voice a user can audition first.
+ * Avatar verification still reads the unfiltered catalog, because an already
+ * selected look stays usable whether or not its voice offers a sample.
+ */
+export async function listHeyGenAvatarsWithVoiceSamples(
   options: HeyGenAvatarCatalogOptions,
   apiKey: string,
   signal: AbortSignal,
 ): Promise<HeyGenPublicAvatarPage | HeyGenErrorResponse> {
   const result = await scanHeyGenCatalog(options.token, async (token) => {
-    const page = await fetchHeyGenAvatarPage(
+    const page = await listHeyGenPublicAvatars(
       { ...options, token },
       apiKey,
       signal,
@@ -1108,7 +1113,7 @@ export async function verifyHeyGenPublicVoice(
   return false;
 }
 
-export async function listHeyGenPublicVoices(
+async function listHeyGenPublicVoices(
   options: HeyGenVoiceCatalogOptions,
   apiKey: string,
   signal: AbortSignal,

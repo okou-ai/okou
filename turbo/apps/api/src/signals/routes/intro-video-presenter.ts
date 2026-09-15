@@ -23,7 +23,7 @@ import { heyGenBuiltInGenerationWebhookUrl } from "../services/built-in-generati
 import {
   generateHeyGenSpeech,
   isHeyGenErrorResponse,
-  listHeyGenPublicAvatars,
+  listHeyGenAvatarsWithVoiceSamples,
   listHeyGenPublicStyles,
   listHeyGenPublicVoicesWithSamples,
   submitHeyGenAvatarVideo,
@@ -224,7 +224,7 @@ const getAvatarsInner$ = command(async ({ get }, signal: AbortSignal) => {
     );
   }
   const query = get(avatarsQuery$);
-  const result = await listHeyGenPublicAvatars(
+  const result = await listHeyGenAvatarsWithVoiceSamples(
     {
       token: query.token,
       pageSize: query.pageSize ?? 24,
