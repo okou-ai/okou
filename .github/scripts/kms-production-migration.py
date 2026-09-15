@@ -1048,9 +1048,10 @@ def source_retirement(mode):
             ],
             environment,
         )
+        # ScheduleKeyDeletion may omit KeyState. DescribeKey below verifies the
+        # actual state independently of the schedule response.
         require(
             scheduled["KeyId"] == SOURCE
-            and scheduled["KeyState"] == "PendingDeletion"
             and scheduled["PendingWindowInDays"] == 7,
             "schedule_response_mismatch_reconcile_before_retry",
         )

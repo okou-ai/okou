@@ -174,7 +174,6 @@ elif args[:2] == ["kms", "schedule-key-deletion"]:
         reject("DependencyTimeoutException")
     result = {
         "KeyId": source,
-        "KeyState": "PendingDeletion",
         "PendingWindowInDays": 7,
         "DeletionDate": date,
     }
