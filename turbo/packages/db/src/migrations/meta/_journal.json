@@ -397,15 +397,29 @@
     {
       "idx": 1134,
       "version": "7",
-      "when": 1789454207922,
-      "tag": "1134_pi_memory_stage1_billing_context",
+      "when": 1789453854392,
+      "tag": "1134_pi_inference_lifecycle",
       "breakpoints": true
     },
     {
       "idx": 1135,
       "version": "7",
-      "when": 1789454236876,
-      "tag": "1135_validate_pi_memory_stage1_billing_context",
+      "when": 1789453865355,
+      "tag": "1135_validate_pi_inference_launch",
+      "breakpoints": true
+    },
+    {
+      "idx": 1136,
+      "version": "7",
+      "when": 1789457842526,
+      "tag": "1136_pi_memory_stage1_billing_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 1137,
+      "version": "7",
+      "when": 1789457888278,
+      "tag": "1137_validate_pi_memory_stage1_billing_context",
       "breakpoints": true
     }
   ]

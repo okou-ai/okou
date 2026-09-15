@@ -165,6 +165,12 @@
       52%,
     var(--okou-color-theme-companion) 100%
   );
+
+  /* The app's own viewport height, so a surface that has to pin itself reaches
+     it through `h-*` / `min-h-*` / `max-h-*` instead of respelling the variable.
+     It is not `h-dvh`: the standalone block below moves it to `100lvh`. Inline
+     keeps the reference, so the media query still decides at use time. */
+  --height-viewport: var(--okou-viewport-height);
 }
 
 /* Safe area insets as CSS custom properties — more reliable than direct env() in inline
@@ -175,6 +181,14 @@
   --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left, 0px);
   --okou-viewport-height: 100dvh;
+}
+
+/* All four insets at once, for a surface that escapes the page shell and so
+   inherits none of the insets `#root` applies. The four sides carry different
+   values, which no single spacing token can express, so this is a utility
+   rather than a `@theme` entry. */
+@utility p-safe {
+  padding: var(--sat) var(--sar) var(--sab) var(--sal);
 }
 
 /* The effort bar's handle is a superellipse rather than a rounded rectangle --
@@ -357,15 +371,6 @@ body {
     height: var(--okou-keyboard-scroll-reserve, 0px);
     pointer-events: none;
   }
-}
-
-.okou-fixed-viewport-shell {
-  box-sizing: border-box;
-  height: var(--okou-viewport-height);
-  min-height: var(--okou-viewport-height);
-  max-height: var(--okou-viewport-height);
-  overflow: hidden;
-  padding: var(--sat) var(--sar) var(--sab) var(--sal);
 }
 
 @media (max-width: 767px) {
@@ -872,8 +877,7 @@ body {
   max-width: 100%;
 }
 
-.wmde-markdown p,
-.wmde-markdown .okou-markdown-card {
+.wmde-markdown p {
   margin-top: 6px;
   margin-bottom: 6px;
 }

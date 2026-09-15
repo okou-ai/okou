@@ -111,7 +111,7 @@ export async function validatePiMemoryStage1Cost(
     await client.query(
       "BEGIN; SET LOCAL lock_timeout='1s'; SET LOCAL statement_timeout='10s'",
     );
-    const expandMs = await apply("1134_pi_memory_stage1_billing_context");
+    const expandMs = await apply("1136_pi_memory_stage1_billing_context");
     assert.equal(
       (
         await client.query(
@@ -125,7 +125,7 @@ export async function validatePiMemoryStage1Cost(
       "BEGIN; SET LOCAL lock_timeout='1s'; SET LOCAL statement_timeout='10s'",
     );
     const validateMs = await apply(
-      "1135_validate_pi_memory_stage1_billing_context",
+      "1137_validate_pi_memory_stage1_billing_context",
     );
     assert.equal(
       (

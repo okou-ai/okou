@@ -61,7 +61,7 @@ async function setupEffortRolloutPage(args: {
     return respond(200, {
       switches: {},
       effectiveSwitches: {
-        [FeatureSwitchKey.RefactorModelSelect]: false,
+        [FeatureSwitchKey.Effort]: false,
         [FeatureSwitchKey.IntroVideo]: true,
       },
     });

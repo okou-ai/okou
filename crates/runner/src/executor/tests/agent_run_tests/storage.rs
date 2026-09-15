@@ -33,6 +33,20 @@ async fn spawn_storage_archive_server(body: &[u8]) -> RawHttpTestServer {
     .await
 }
 
+fn extracted_archive() -> Vec<u8> {
+    let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::none());
+    let mut builder = tar::Builder::new(encoder);
+    let mut header = tar::Header::new_ustar();
+    header.set_size(7);
+    header.set_mode(0o755);
+    header.set_mtime(1234);
+    header.set_cksum();
+    builder
+        .append_data(&mut header, "file", &b"content"[..])
+        .unwrap();
+    builder.into_inner().unwrap().finish().unwrap()
+}
+
 #[tokio::test]
 async fn run_in_sandbox_runs_guest_storage_apply_for_cached_instruction_normalization() {
     let dir = tempfile::tempdir().unwrap();
@@ -98,7 +112,7 @@ async fn run_in_sandbox_starts_deferred_cache_fill_after_agent_spawn() {
     overrides.set_start_process_lifecycle_gate(start_process_gate.clone());
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let mut ctx = minimal_context();
-    let mut archive_server = spawn_storage_archive_server(b"cache-archive").await;
+    let mut archive_server = spawn_storage_archive_server(&extracted_archive()).await;
     let archive_url = format!("{}/archive.tar.gz", archive_server.url());
     let mut storage = api_storage("instructions", "/home/user/.codex", "v1", &archive_url);
     storage.baseline_candidate = true;
@@ -144,6 +158,14 @@ async fn run_in_sandbox_starts_deferred_cache_fill_after_agent_spawn() {
             Err(tokio::sync::mpsc::error::TryRecvError::Empty)
         ));
         assert_eq!(overrides.storage_manifest_calls().len(), 1);
+        assert!(
+            config
+                .decoded_cache
+                .get_ready("instructions", "v1")
+                .await
+                .unwrap()
+                .is_none()
+        );
 
         start_process_gate.release_one();
         tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, &mut run)
@@ -156,6 +178,32 @@ async fn run_in_sandbox_starts_deferred_cache_fill_after_agent_spawn() {
         .next_request("deferred cache fill archive request after spawn")
         .await;
     archive_server.assert_finished().await;
+    // Waiting for the ready entry observes completion, not an arbitrary delay.
+    let files = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, async {
+        loop {
+            if let Some(files) = config
+                .decoded_cache
+                .get_ready("instructions", "v1")
+                .await
+                .unwrap()
+            {
+                break files;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("post-spawn owner must publish extracted files");
+    assert_eq!(files.files[0].content, b"content");
+    assert_eq!(files.files[0].mode, 0o755);
+    tokio::time::timeout(
+        RUN_IN_SANDBOX_TEST_TIMEOUT,
+        config.background_fill.wait_idle_for_test(),
+    )
+    .await
+    .unwrap();
+    config.background_fill.shutdown().await;
+    config.decoded_cache.shutdown().await;
     let ops = telemetry.pending_ops_snapshot();
     assert_successful_action_once(&ops, "runner_storage_manifest_has_work");
     assert_successful_action_once(&ops, "runner_storage_manifest_cache_populate");

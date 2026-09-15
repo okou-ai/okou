@@ -55,16 +55,22 @@ const AGENT_INSTRUCTIONS_STORAGE_NAME_PREFIX: &str = "agent-instructions@";
 /// This type deliberately remains separate from the guest wire manifest so planning, cleanup, and
 /// repair decisions stay explicit. Archive delivery may refine an eligible action's source from a
 /// remote URL to a guest-staged URL, but it does not change the action itself.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct StoragePlan {
     storages: Vec<StoragePlanEntry>,
     artifacts: Vec<ArtifactPlanEntry>,
     cleanup_paths: Vec<String>,
     instruction_cleanups: Vec<InstructionCleanup>,
     reused_entries: usize,
+    decoded_prepared: bool,
+    decoded_manifest_admitted: Option<bool>,
+    decoded: Vec<(
+        String,
+        std::sync::Arc<crate::storage_cache::decoded::CachedFiles>,
+    )>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct StoragePlanEntry {
     mount_path: String,
     extract_path: Option<String>,
@@ -75,7 +81,7 @@ struct StoragePlanEntry {
     action: StorageAction,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum StorageAction {
     Download { source: ArchiveSource },
     ReuseExisting,
@@ -83,7 +89,7 @@ enum StorageAction {
     NormalizeInPlace,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ArtifactPlanEntry {
     mount_path: String,
     vas_storage_name: String,
@@ -94,14 +100,14 @@ struct ArtifactPlanEntry {
     action: ArtifactAction,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum ArtifactAction {
     Download { source: ArchiveSource },
     ReuseOrRepair { source: ArchiveSource },
     PrepareEmpty { cached: bool },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum ArchiveSource {
     Remote(String),
     GuestStaged(String),
@@ -122,7 +128,7 @@ impl ArchiveSource {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct InstructionCleanup {
     mount_path: String,
     target_filename: Option<String>,
@@ -313,10 +319,144 @@ pub(crate) fn build_storage_plan(
         cleanup_paths,
         instruction_cleanups,
         reused_entries,
+        decoded_prepared: false,
+        decoded_manifest_admitted: None,
+        decoded: Vec::new(),
     })
 }
 
 impl StoragePlan {
+    pub(crate) fn decoded_prepared(&self) -> bool {
+        self.decoded_prepared
+    }
+
+    pub(crate) fn finish_decoded_preparation(&mut self) {
+        self.decoded_prepared = true;
+    }
+
+    pub(crate) fn has_decoded(&self, handle: ArchiveHandle) -> bool {
+        matches!(handle.kind, ArchiveKind::Storage)
+            && self.storages.get(handle.index).is_some_and(|entry| {
+                self.decoded
+                    .iter()
+                    .any(|(mount, _)| mount == &entry.mount_path)
+            })
+    }
+
+    pub(crate) fn decoded_archive_retirement_candidate(&self, handle: ArchiveHandle) -> bool {
+        matches!(handle.kind, ArchiveKind::Storage)
+            && self.storages.get(handle.index).is_some_and(|entry| {
+                self.decoded.iter().any(|(mount, files)| {
+                    mount == &entry.mount_path && files.archive_retirement_candidate
+                })
+            })
+    }
+
+    pub(crate) fn decoded_manifest_rejected(&self) -> bool {
+        self.decoded_manifest_admitted == Some(false)
+    }
+
+    /// Decide once, on a ready hit and before omitting any archive staging.
+    /// Misses never clone/serialize an otherwise unchanged manifest for this.
+    pub(crate) fn admit_decoded_manifest(&mut self) -> RunnerResult<bool> {
+        if let Some(admitted) = self.decoded_manifest_admitted {
+            return Ok(admitted);
+        }
+        let bytes = serde_json::to_vec(&self.clone().into_guest_manifest())
+            .map_err(|error| RunnerError::Internal(format!("manifest JSON: {error}")))?;
+        // Reserve for every remaining URL becoming a bounded staged URL.
+        let admitted = bytes
+            .len()
+            .saturating_add(self.entry_count().saturating_mul(192))
+            <= guest_contracts::storage_files::MAX_MANIFEST_BYTES;
+        self.decoded_manifest_admitted = Some(admitted);
+        Ok(admitted)
+    }
+
+    pub(crate) fn is_ordinary_storage_download(&self, handle: ArchiveHandle) -> bool {
+        matches!(handle.kind, ArchiveKind::Storage)
+            && self
+                .storages
+                .get(handle.index)
+                .is_some_and(|entry| matches!(entry.action, StorageAction::Download { .. }))
+    }
+
+    pub(crate) fn decoded_mount(&self, handle: ArchiveHandle) -> Option<&str> {
+        if !matches!(handle.kind, ArchiveKind::Storage) {
+            return None;
+        }
+        let entry = self.storages.get(handle.index)?;
+        if !matches!(entry.action, StorageAction::Download { .. }) {
+            return None;
+        }
+        let target = PathBuf::from(&entry.mount_path);
+        if entry.mount_path.len() > guest_contracts::storage_files::MAX_PATH_BYTES
+            || !target.is_absolute()
+            || target.components().any(|part| {
+                !matches!(
+                    part,
+                    std::path::Component::RootDir | std::path::Component::Normal(_)
+                )
+            })
+        {
+            return None;
+        }
+        for other in self
+            .storages
+            .iter()
+            .map(|s| &s.mount_path)
+            .chain(self.artifacts.iter().map(|a| &a.mount_path))
+        {
+            if other == &entry.mount_path {
+                continue;
+            }
+            let other = PathBuf::from(other);
+            if other.components().any(|part| {
+                !matches!(
+                    part,
+                    std::path::Component::RootDir | std::path::Component::Normal(_)
+                )
+            }) {
+                return None;
+            }
+            if target.starts_with(&other) || other.starts_with(&target) {
+                return None;
+            }
+        }
+        Some(&entry.mount_path)
+    }
+
+    pub(crate) fn add_decoded(
+        &mut self,
+        mount: String,
+        files: std::sync::Arc<crate::storage_cache::decoded::CachedFiles>,
+    ) {
+        self.decoded.push((mount, files));
+    }
+
+    pub(crate) fn take_decoded(
+        &mut self,
+    ) -> Vec<(
+        String,
+        std::sync::Arc<crate::storage_cache::decoded::CachedFiles>,
+    )> {
+        std::mem::take(&mut self.decoded)
+    }
+
+    pub(crate) fn decoded_bytes(&self) -> usize {
+        self.decoded
+            .iter()
+            .map(|(mount, files)| {
+                8 + mount.len()
+                    + files
+                        .files
+                        .iter()
+                        .map(|file| 20 + file.path.len() + file.content.len())
+                        .sum::<usize>()
+            })
+            .sum()
+    }
+
     /// Return whether applying this plan requires guest execution.
     ///
     /// The result is `false` only when there is no cleanup, every storage is

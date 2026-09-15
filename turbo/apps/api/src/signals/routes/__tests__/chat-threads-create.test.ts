@@ -955,10 +955,7 @@ describe("POST /api/chat-threads", () => {
     });
   });
 
-  it.each([
-    FeatureSwitchKey.CodexFastMode,
-    FeatureSwitchKey.RefactorModelSelect,
-  ])(
+  it.each([FeatureSwitchKey.CodexFastMode, FeatureSwitchKey.Effort])(
     "inherits priority from the run's chat thread and allows an explicit standard override with %s",
     async (fastSwitch) => {
       const fixture = await seedAgent();

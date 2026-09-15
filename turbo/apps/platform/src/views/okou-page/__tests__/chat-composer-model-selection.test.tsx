@@ -688,7 +688,7 @@ test("Switch chat models immediately and adjust Fast from settings", async () =>
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.CodexFastMode]: false,
       [FeatureSwitchKey.ChatPreference]: true,
@@ -740,7 +740,7 @@ test("Keep immediate Fast changes when navigating back through the menu", async 
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.CodexFastMode]: false,
     },
@@ -802,7 +802,7 @@ test("Keep unavailable routes disabled and open plan comparison from the compact
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.ModelPickerFlyout]: true,
     },
   });
@@ -834,7 +834,7 @@ test("Navigate the compact menu by keyboard and retain Fast after dismissal", as
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.CodexFastMode]: false,
     },
@@ -907,7 +907,7 @@ test("Offer Fast beside effort on the composer for a Fast-capable model", async 
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
@@ -944,7 +944,7 @@ test("Adjust effort from the composer without opening the model picker", async (
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
@@ -987,7 +987,7 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.PiLoop]: false,
@@ -1047,7 +1047,7 @@ test("Select the default effort on an existing thread without changing Fast", as
     context,
     path: RUN_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.PiLoop]: false,
@@ -1091,7 +1091,7 @@ test("Keep independent effort selections when changing models", async () => {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.PiLoop]: false,
       [FeatureSwitchKey.ChatPreference]: true,
@@ -1200,7 +1200,7 @@ test("Use the legacy picker and keep saved effort dormant when refactoring is di
     context,
     path: RUN_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.RefactorModelSelect]: false,
+      [FeatureSwitchKey.Effort]: false,
       [FeatureSwitchKey.ModelPickerFlyout]: false,
       [FeatureSwitchKey.CodexFastMode]: true,
     },
@@ -1255,7 +1255,7 @@ test("Keep effort on the composer while the model list stays on the legacy picke
     context,
     path: RUN_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.ModelPickerFlyout]: false,
       [FeatureSwitchKey.PiLoop]: false,
     },
@@ -1294,7 +1294,7 @@ test("Show the Pi fallback without overwriting a saved native preference", async
     context,
     path: RUN_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.PiLoop]: true,
     },
   });
@@ -1329,7 +1329,7 @@ test("Save the preferred effort for future chats when Pi displays a fallback", a
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.ChatPreference]: true,
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.ModelPickerFlyout]: true,
       [FeatureSwitchKey.PiLoop]: true,
     },
@@ -1382,7 +1382,7 @@ test("Follow model-scoped effort changes made in another session", async () => {
     context,
     path: RUN_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.ModelPickerFlyout]: true,
     },
   });
@@ -1435,7 +1435,7 @@ test("Adjust effort and Fast with keyboard controls on a desktop layout", async 
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.ModelPickerFlyout]: true,
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.CodexFastMode]: true,
       [FeatureSwitchKey.PiLoop]: false,
       [FeatureSwitchKey.ChatPreference]: true,
@@ -1530,7 +1530,7 @@ test.each([
       context,
       path: RUN_PATH,
       featureSwitches: {
-        [FeatureSwitchKey.RefactorModelSelect]: true,
+        [FeatureSwitchKey.Effort]: true,
         [FeatureSwitchKey.PiLoop]: true,
       },
     });

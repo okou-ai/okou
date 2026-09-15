@@ -32,6 +32,14 @@ expired transition validator must be deleted.
 
 ### Active transition validators
 
+- `scripts/test-pi-inference-lifecycle.ts` protects migrations
+  `1134_pi_inference_lifecycle` and `1135_validate_pi_inference_launch` (#34242):
+  old/new launch writes, sparse-table invariants, real lock and journal rollback,
+  bounded validation retry, unchanged historical records and indexed capacity
+  plans at representative retained-table scale. Retain it until all three
+  transition conditions above pass; current launch-shape and final schema
+  equivalence checks remain in the permanent migration suite.
+
 - `scripts/test-prepared-domain-trigger-retirement.ts` protects migration
   `1132_retire_prepared_domain_triggers` (#33747): all eight A–D drops in one
   transaction, exact original catalogs, invariant rejection, unchanged data,
@@ -41,7 +49,7 @@ expired transition validator must be deleted.
   variants. Keep these transition controls until the production journal and
   completed rollout satisfy all three conditions above. Current API route
   coverage, guard constraints and the exact remaining catalog are permanent.
-- `scripts/test-pi-memory-stage1-cost.ts` protects D's 1134/1135 context expansion
+- `scripts/test-pi-memory-stage1-cost.ts` protects D's 1136/1137 context expansion
   and separate validation transactions (#34267). It runs from the full
   schema-consistency test on isolated current-schema clones, with actual
   1118/1119 pre-D checks/capture, 134,426 raw and 321,528 hourly rows, default

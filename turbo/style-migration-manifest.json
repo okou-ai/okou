@@ -1051,6 +1051,42 @@
       "evidence": [],
       "pullRequest": "https://github.com/vm0-ai/vm0/pull/34271",
       "mergeCommit": null
+    },
+    {
+      "id": "fixed-viewport-cover",
+      "family": "platform-shell",
+      "tokens": ["okou-fixed-viewport-shell"],
+      "consumers": [
+        "apps/platform/src/views/browser-session/browser-session-page.tsx"
+      ],
+      "cases": [
+        "fixed-viewport-cover-light",
+        "fixed-viewport-cover-dark",
+        "fixed-viewport-cover-narrow",
+        "fixed-viewport-cover-narrow-dark"
+      ],
+      "status": "implemented",
+      "blockedReason": null,
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
+    },
+    {
+      "id": "markdown-card-spacing",
+      "family": "chat-and-content",
+      "tokens": ["okou-markdown-card"],
+      "consumers": ["apps/platform/src/views/components/rich-markdown.tsx"],
+      "cases": [
+        "markdown-card-light",
+        "markdown-card-dark",
+        "markdown-card-narrow",
+        "markdown-card-narrow-dark"
+      ],
+      "status": "implemented",
+      "blockedReason": null,
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
     }
   ],
   "caseFiles": [
@@ -1077,6 +1113,8 @@
     "../e2e/playwright/style-migration/chat-card-cases.json",
     "../e2e/playwright/style-migration/chat-thinking-cases.json",
     "../e2e/playwright/style-migration/pwa-safe-area-cover-cases.json",
-    "../e2e/playwright/style-migration/onboarding-diagram-cases.json"
+    "../e2e/playwright/style-migration/onboarding-diagram-cases.json",
+    "../e2e/playwright/style-migration/fixed-viewport-cover-cases.json",
+    "../e2e/playwright/style-migration/markdown-card-cases.json"
   ]
 }
