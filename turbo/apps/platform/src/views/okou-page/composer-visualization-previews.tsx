@@ -96,12 +96,6 @@ function PieChartArtwork() {
     { className: "fill-current opacity-60", end: 318, start: 255 },
     { className: "fill-current opacity-35", end: 358, start: 321 },
   ] as const;
-  const legend = [
-    ["42%", "fill-current opacity-75"],
-    ["28%", "fill-current opacity-40"],
-    ["18%", "fill-current opacity-60"],
-    ["12%", "fill-current opacity-35"],
-  ] as const;
   return (
     <>
       {slices.map((slice) => {
@@ -112,21 +106,6 @@ function PieChartArtwork() {
             className={`${slice.className} stroke-background`}
             strokeWidth="1.5"
           />
-        );
-      })}
-      {legend.map(([label, className], index) => {
-        return (
-          <g key={label} transform={`translate(103 ${24 + index * 14})`}>
-            <circle cx="0" cy="0" r="3" className={className} />
-            <line
-              x1="28"
-              x2="44"
-              y1="0"
-              y2="0"
-              className="stroke-current opacity-20"
-              strokeWidth="1.5"
-            />
-          </g>
         );
       })}
     </>
@@ -618,17 +597,13 @@ function FunnelChartArtwork() {
   ] as const;
   return (
     <>
-      {stages.map((stage, index) => {
+      {stages.map((stage) => {
         return (
-          <g key={stage.label}>
-            <polygon points={stage.points} className={stage.className} />
-            <circle
-              cx="129"
-              cy={20 + index * 19}
-              r="2.5"
-              className={stage.className}
-            />
-          </g>
+          <polygon
+            key={stage.label}
+            points={stage.points}
+            className={stage.className}
+          />
         );
       })}
     </>
@@ -710,18 +685,6 @@ function NestedDonutChartArtwork() {
         dashoffset={-76}
         className="stroke-current opacity-35"
       />
-      {[
-        ["42", "fill-current opacity-75"],
-        ["26", "fill-current opacity-60"],
-        ["18", "fill-current opacity-40"],
-        ["14", "fill-current opacity-35"],
-      ].map(([label, className], index) => {
-        return (
-          <g key={label} transform={`translate(113 ${23 + index * 14})`}>
-            <circle r="2.7" className={className} />
-          </g>
-        );
-      })}
     </>
   );
 }
