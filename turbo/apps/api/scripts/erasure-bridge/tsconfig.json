@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "disableSourceOfProjectReferenceRedirect": true,
+    "rootDir": "../.."
+  },
+  "include": ["*.ts"],
+  "references": [
+    {
+      "path": "../../tsconfig.gateways.json"
+    },
+    {
+      "path": "../../tsconfig.core.json"
+    }
+  ]
+}
