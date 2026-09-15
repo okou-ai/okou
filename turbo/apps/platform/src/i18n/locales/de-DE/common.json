@@ -1009,7 +1009,12 @@
     "toasts": {
       "copyLinkFailed": "Link konnte nicht kopiert werden",
       "downloadFailed": "Der Download ist fehlgeschlagen",
-      "linkCopied": "Link kopiert"
+      "linkCopied": "Link kopiert",
+      "sharing": "Wird geteilt…"
+    },
+    "viewer": {
+      "continuePrompt": "Hilf mir, mit diesem Artefakt zu arbeiten: {{url}}",
+      "continueWithBrand": "Mit {{brandName}} fortfahren"
     }
   },
   "auth": {
@@ -1745,15 +1750,10 @@
       "selectModel": "Modell auswählen",
       "slashPanel": {
         "browseAll": "Alle Vorlagen durchsuchen",
-        "illustrationDescription": "Ein einzelnes Bild im gewählten Stil",
         "make": "Erstellen",
-        "slidesDescription": "Eine HTML-Präsentation, die du direkt zeigen kannst",
         "templateCount_one": "{{count}} Vorlage",
         "templateCount_other": "{{count}} Vorlagen",
-        "useTemplate": "Vorlage {{title}} verwenden",
-        "videoDescription": "Text zu Video, mit den Parametern des gewählten Modells",
-        "websiteDescription": "Eine statische Website, die du veröffentlichen kannst",
-        "workflowDescription": "Ein gespeicherter Workflow, den du im Composer starten kannst"
+        "useTemplate": "Vorlage {{title}} verwenden"
       },
       "temporarilySwitchTo": "Vorübergehend wechseln zu",
       "threadSuggestions": "Chat-Threads",
@@ -2111,6 +2111,7 @@
         "wiring": "Komponenten werden verbunden..."
       },
       "viewActivityLogs": "Aktivitätsprotokolle anzeigen",
+      "viewLangfuseTrace": "Langfuse-Trace anzeigen",
       "viewLogs": "Ausführungsprotokolle anzeigen",
       "waitingIn": "Warten",
       "workedFor": "Ausgeführt in {{duration}}",
@@ -2125,6 +2126,7 @@
       "createFailed": "Die geteilte Unterhaltung konnte nicht erstellt werden. Versuche es erneut.",
       "deselectGroup": "Nachrichtengruppe abwählen",
       "linkCopied": "Link kopiert",
+      "publicDescription": "Ausgewählte Nachrichten und ihre Anhänge werden öffentlich.",
       "selectedCount_one": "{{count}} ausgewählt",
       "selectedCount_other": "{{count}} ausgewählt",
       "selectGroup": "Nachrichtengruppe auswählen",
@@ -2378,6 +2380,15 @@
       "moreTemplates": "Weitere Vorlagen",
       "presentationTemplates": "Präsentationsvorlagen",
       "removeTask": "{{task}} entfernen",
+      "shelf": {
+        "browseStyles": "Alle Stile durchsuchen",
+        "browseTemplates": "Alle Vorlagen durchsuchen",
+        "image": "Bildstile",
+        "nextPage": "Nächste Seite",
+        "previousPage": "Vorherige Seite",
+        "video": "Videovorlagen",
+        "website": "Website-Vorlagen"
+      },
       "tasks": {
         "image": "Bild",
         "presentation": "Folien",
@@ -2489,7 +2500,6 @@
         },
         "more": "More",
         "noCharts": "No matching charts",
-        "optional": "Optional",
         "outputFormat": "Output format",
         "outputs": {
           "presentation": "Presentation",
@@ -2505,7 +2515,6 @@
         "selectedCount_one": "{{count}} ausgewählt",
         "selectedCount_other": "{{count}} ausgewählt",
         "summary": "{{output}} · Methoden {{methodCount}} · Diagramme {{chartCount}}",
-        "title": "Visualisierung",
         "useWhenSuitable": "Use when suitable",
         "visualMethods": "Visual methods"
       },
@@ -2806,7 +2815,6 @@
       "importedLoadFailed": "Hochgeladene Vorlagen konnten nicht geladen werden.",
       "importedLoading": "Hochgeladene Vorlagen werden geladen…",
       "importedUnavailable": "Hochgeladene Vorlagen sind vorübergehend nicht verfügbar.",
-      "previewRefreshFailed": "Vorlagenvorschauen konnten nicht aktualisiert werden.",
       "previewTemplate": "Vorschauvorlage {{title}}",
       "previewVideo": "Vorschau der Videovorlage {{title}}",
       "previewWebsite": "Vorschau der Website-Vorlage {{title}}",
@@ -2909,7 +2917,6 @@
       "storageFailed": "Audio konnte nicht gespeichert werden. Erneut versuchen stellt nur bereits auf diesem Gerät gespeichertes Audio wieder her.",
       "textTakingShape": "Der Text nimmt Form an",
       "transcribing": "Transkribieren",
-      "transcribingProgress": "Transkribieren...",
       "transcriptionFailed": "Die Sprachtranskription ist fehlgeschlagen. Versuchen Sie es erneut."
     },
     "workflows": {
@@ -3143,9 +3150,11 @@
       "scope": {
         "aria": "Connector-Bereich",
         "attention": "Benötigt Aufmerksamkeit",
+        "connected": "Verbunden",
+        "custom": "Eigene",
         "discover": "Entdecken",
-        "mine": "Deine Konnektoren",
-        "searchMine": "Ihre Integrationen finden"
+        "searchConnected": "Verbundene Integrationen finden",
+        "searchCustom": "Eigene Integrationen finden"
       },
       "search": "Finden Sie Integrationen",
       "shelf": {
@@ -5624,7 +5633,7 @@
         "categoryImage": "Bild",
         "categoryVideo": "Video",
         "chatModels": "Chatmodelle",
-        "effort": "Denkaufwand",
+        "effort": "Aufwand",
         "fast": "Schnell",
         "fastImpact": {
           "apiCost": "2× API-Tokenkosten",
@@ -5648,10 +5657,8 @@
         "loadError": "Modelle können nicht geladen werden.",
         "loading": "Modelle werden geladen...",
         "menu": {
-          "adjustSettings": "Einstellungen für {{model}} anpassen",
           "backToModels": "Zurück zu Modellen",
-          "changeModel": "{{category}}-Modell ändern, {{model}}",
-          "chatSettings": "Chateinstellungen"
+          "changeModel": "{{category}}-Modell ändern, {{model}}"
         },
         "models": "Modelle",
         "noConfiguredModels": "Keine konfigurierten Modelle",
@@ -6153,6 +6160,9 @@
     "chooseFile": "Datei auswählen",
     "choosePrivateKeyFile": "Datei mit privatem Schlüssel auswählen",
     "connectionStatus": {
+      "accessProtocolFailure": "Cloudflare Access hat keinen SSH-Tunnel hergestellt. Prüfen Sie den veröffentlichten Hostnamen und das Tunnel-Routing.",
+      "accessRejected": "Cloudflare Access hat die Verbindung abgelehnt. Prüfen Sie das Service-Token und die Service-Auth-Richtlinie der Anwendung.",
+      "accessTlsFailure": "Die sichere Verbindung zu Cloudflare Access konnte nicht überprüft werden. Prüfen Sie den Hostnamen und das TLS-Zertifikat.",
       "attention_one": "{{count}} SSH-Host benötigt Aufmerksamkeit",
       "attention_other": "{{count}} SSH-Hosts benötigen Aufmerksamkeit",
       "authenticationFailed": "Die SSH-Authentifizierung ist fehlgeschlagen. Prüfen Sie Benutzername, privaten Schlüssel oder Passwort sowie Serverberechtigungen. Bearbeiten Sie die Zugangsdaten oder wählen Sie andere für diesen Host.",
@@ -6927,6 +6937,9 @@
       "noWorkflows": "Keine Workflows",
       "open": "Öffnen Sie {{title}}",
       "openRecovery": "Wiederherstellung für {{title}} öffnen",
+      "ownerLoading": "Autor wird geladen…",
+      "ownerRetry": "Autor nicht verfügbar. Zum Wiederholen erneut öffnen.",
+      "ownerUnavailable": "Autor nicht verfügbar",
       "runsAs": "Läuft als",
       "runsAsAria": "Läuft als {{agent}}",
       "section": {

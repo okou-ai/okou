@@ -4,6 +4,7 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { mockNow } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   ATTACHMENT_THREAD_ID,
@@ -25,6 +26,7 @@ const THUMBNAIL_URL = `https://a.okou.io/cdn-cgi/image/width=800,height=720,fit=
 test.each(["upload", "restored public", "restored private"] as const)(
   "%s composer images show a presigned thumbnail and reopen the same original",
   async (source) => {
+    mockNow(Date.parse("2026-09-11T00:00:00.000Z"), context.signal);
     const attachment = draftAttachment(FILENAME, {
       id: FILE_ID,
       url:

@@ -451,7 +451,7 @@ describe("managed artifact privacy", () => {
           Key: `private-artifacts/${image.id}/${image.filename}`,
         },
       },
-      2: { expiresIn: 3600 },
+      2: { expiresIn: 172_800 },
     });
     const next = await completeImage(fixture, nextId);
     expect(next.sourceImageUrls).toStrictEqual([image.url]);

@@ -6,36 +6,32 @@ const internalFeatureSwitchState$ = state<Record<FeatureSwitchKey, boolean>>(
   getAllFeatureStates({}),
 );
 
-const featureSwitchListeners$ = state<ReadonlySet<() => void>>(new Set());
+export const featureSwitchState$ = computed((get) => {
+  return get(internalFeatureSwitchState$);
+});
 
-/** Keep imperative DOM consumers subscribed only for their mounted lifetime. */
-export const observeFeatureSwitchChanges$ = command(
-  ({ get, set }, listener: () => void, signal: AbortSignal) => {
+const listeners$ = state<ReadonlySet<() => void>>(new Set());
+
+export const registerFeatureSwitchListener$ = command(
+  ({ get, set }, listener: () => void, signal: AbortSignal): void => {
     signal.throwIfAborted();
-    set(
-      featureSwitchListeners$,
-      new Set([...get(featureSwitchListeners$), listener]),
-    );
+    set(listeners$, new Set([...get(listeners$), listener]));
     signal.addEventListener(
       "abort",
       () => {
-        const remaining = new Set(get(featureSwitchListeners$));
+        const remaining = new Set(get(listeners$));
         remaining.delete(listener);
-        set(featureSwitchListeners$, remaining);
+        set(listeners$, remaining);
       },
       { once: true },
     );
   },
 );
 
-export const featureSwitchState$ = computed((get) => {
-  return get(internalFeatureSwitchState$);
-});
-
 export const setFeatureSwitchState$ = command(
   ({ get, set }, switches: Record<FeatureSwitchKey, boolean>) => {
     set(internalFeatureSwitchState$, switches);
-    for (const listener of get(featureSwitchListeners$)) {
+    for (const listener of get(listeners$)) {
       listener();
     }
   },

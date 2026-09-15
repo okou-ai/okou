@@ -225,7 +225,7 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     modelSettings,
     requested: body.data.reasoningEffort,
     enabled: isFeatureEnabled(
-      FeatureSwitchKey.ChatReasoningEffort,
+      FeatureSwitchKey.RefactorModelSelect,
       featureSwitchContext,
     ),
   });

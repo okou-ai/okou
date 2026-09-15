@@ -614,7 +614,7 @@ export function SettingsTab({
                       </div>
                     </div>
                     <div className="flex justify-start">
-                      <div className="okou-chat-bubble-assistant max-w-[85%] rounded-xl px-3 py-2 text-sm text-foreground leading-relaxed transition-colors duration-200">
+                      <div className="max-w-[85%] rounded-xl px-3 py-2 text-sm text-foreground leading-relaxed transition-colors duration-200 bg-transparent border-none border-current">
                         {toneCopy[tone].agent}
                       </div>
                     </div>

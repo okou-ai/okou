@@ -897,7 +897,7 @@ test.each(["desktop", "mobile"])(
     await setupPage({
       context,
       path: `/chats/${THREAD_ID}`,
-      featureSwitches: { [FeatureSwitchKey.ModelPickerMenu]: true },
+      featureSwitches: { [FeatureSwitchKey.RefactorModelSelect]: true },
     });
     await findComposerEditor();
     await waitFor(() => {

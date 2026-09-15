@@ -42,8 +42,6 @@ import {
 } from "../services/private-artifact-storage.service";
 import type { RouteEntry } from "../route-entry";
 
-const PUT_URL_TTL_SECONDS = 3600;
-
 const imageReferenceReadAuth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
@@ -87,7 +85,6 @@ function resolveImageReferencePreviewUrl(row: ImageReferenceRow) {
       generatePresignedGetUrl(
         privateArtifactsBucket(),
         row.sourceStorageKey,
-        IMAGE_REFERENCE_PREVIEW_URL_TTL_SECONDS,
         undefined,
         true,
       ),
@@ -137,7 +134,6 @@ const prepareUploadInner$ = command(
     );
     const uploadUrl = await get(
       generatePresignedPutUrl(artifact.bucket, artifact.key, contentType, {
-        expiresIn: PUT_URL_TTL_SECONDS,
         usePublicEndpoint: true,
         metadata: artifact.metadata,
       }),

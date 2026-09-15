@@ -12,7 +12,6 @@ use std::time::Duration;
 const ARCHIVE_PATH: &str = "/archive.tar.gz";
 const FILE_PATH: &str = "file.txt";
 const PAYLOAD: &[u8] = b"ORIGINAL_PAYLOAD";
-const RETRY_ATTEMPTS: usize = 3;
 
 fn create_stored_archive() -> io::Result<Vec<u8>> {
     let mut tar = tar::Builder::new(Vec::new());
@@ -55,7 +54,7 @@ fn assert_corrupt_archive_rejected(bytes: &[u8]) -> io::Result<()> {
             .body(bytes);
     });
     // The HTTP body is complete even when the gzip trailer is absent: this is
-    // an archive-format failure, not a retriable HTTP body-read failure.
+    // an archive-format failure.
     assert!(!apply_archive(
         &dir.path().join("remote"),
         &server.url(ARCHIVE_PATH),
@@ -127,10 +126,7 @@ fn valid_empty_archive_extracts() {
     assert_eq!(std::fs::read_dir(mount).unwrap().count(), 0);
 }
 
-fn start_late_truncation_server(
-    archive: Vec<u8>,
-    failures: usize,
-) -> io::Result<TcpTestServer<usize>> {
+fn start_late_truncation_server(archive: Vec<u8>) -> io::Result<TcpTestServer<usize>> {
     // Preserve the complete tar payload and both end markers, withholding only
     // the gzip trailer while advertising the full HTTP Content-Length.
     let partial: Vec<u8> = archive.iter().copied().take(archive.len() - 8).collect();
@@ -148,40 +144,16 @@ fn start_late_truncation_server(
                 "HTTP/1.1 200 OK\r\ncontent-type: application/gzip\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
                 archive.len(),
             )?;
-            let body = if requests < failures {
-                &partial
-            } else {
-                &archive
-            };
-            stream.write_all(body)?;
+            stream.write_all(&partial)?;
             requests += 1;
-            if requests == RETRY_ATTEMPTS {
-                break;
-            }
         }
         Ok(requests)
     })
 }
 
 #[test]
-fn late_http_body_failure_retries_then_extracts() {
-    let server = start_late_truncation_server(create_stored_archive().unwrap(), 1).unwrap();
-    let dir = tempfile::tempdir().unwrap();
-    let mount = dir.path().join("mount");
-    let url = format!("{}{ARCHIVE_PATH}", server.base_url());
-
-    let result = apply_archive(&mount, &url).unwrap();
-    let requests = server.finish().unwrap();
-
-    assert!(result);
-    assert_eq!(requests, 2);
-    assert_eq!(std::fs::read(mount.join(FILE_PATH)).unwrap(), PAYLOAD);
-}
-
-#[test]
-fn late_http_body_failures_exhaust_retries() {
-    let server =
-        start_late_truncation_server(create_stored_archive().unwrap(), RETRY_ATTEMPTS).unwrap();
+fn late_http_body_failure_is_rejected() {
+    let server = start_late_truncation_server(create_stored_archive().unwrap()).unwrap();
     let dir = tempfile::tempdir().unwrap();
     let url = format!("{}{ARCHIVE_PATH}", server.base_url());
 
@@ -189,5 +161,5 @@ fn late_http_body_failures_exhaust_retries() {
     let requests = server.finish().unwrap();
 
     assert!(!result);
-    assert_eq!(requests, RETRY_ATTEMPTS);
+    assert_eq!(requests, 1);
 }

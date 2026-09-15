@@ -1,7 +1,7 @@
 use crate::LOG_TAG;
 use crate::error::DownloadError;
 use crate::path::normalize_path;
-use crate::source::{ArchiveSource, HttpBodyReadFailure};
+use crate::source::ArchiveSource;
 use crate::tar_metadata::{MetadataBudget, MetadataReader};
 use guest_telemetry::log_warn;
 use std::io;
@@ -36,10 +36,8 @@ use std::path::Path;
 /// # Errors
 ///
 /// An unreadable archive entry or entry path, a failure to unpack an
-/// accepted entry, or a gzip validation failure terminates extraction. Archive
-/// errors are retriable when the source recorded an HTTP body-read failure;
-/// otherwise they are fatal. Files written before an error remain in the target
-/// directory.
+/// accepted entry, or a gzip validation failure terminates extraction. Files
+/// written before an error remain in the target directory.
 pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(), DownloadError> {
     let (reader, http_body_read_failure) = source.into_parts();
     let decoder = flate2::read::GzDecoder::new(reader);
@@ -49,22 +47,20 @@ pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(),
     // Extract entries one by one, validating paths to prevent symlink path traversal.
     let mut entries = archive
         .entries()
-        .map_err(|e| archive_error(&http_body_read_failure, "Failed to read archive entries", e))?;
+        .map_err(|e| archive_error("Failed to read archive entries", e))?;
     loop {
         budget.begin_entry();
         let Some(entry) = entries.next() else {
             break;
         };
-        let mut entry = entry.map_err(|e| {
-            archive_error(&http_body_read_failure, "Failed to read archive entry", e)
-        })?;
-        budget.allow_payload(&mut entry).map_err(|e| {
-            archive_error(&http_body_read_failure, "Failed to read archive entry", e)
-        })?;
+        let mut entry = entry.map_err(|e| archive_error("Failed to read archive entry", e))?;
+        budget
+            .allow_payload(&mut entry)
+            .map_err(|e| archive_error("Failed to read archive entry", e))?;
 
         let entry_path = entry
             .path()
-            .map_err(|e| archive_error(&http_body_read_failure, "Failed to read entry path", e))?
+            .map_err(|e| archive_error("Failed to read entry path", e))?
             .into_owned();
 
         let entry_type = entry.header().entry_type();
@@ -87,7 +83,6 @@ pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(),
                 Ok(Some(t)) => t,
                 Err(e) if http_body_read_failure.failed() => {
                     return Err(archive_error(
-                        &http_body_read_failure,
                         format!("Failed to read symlink target {}", entry_path.display()),
                         e,
                     ));
@@ -120,7 +115,6 @@ pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(),
                 Ok(Some(t)) => t,
                 Err(e) if http_body_read_failure.failed() => {
                     return Err(archive_error(
-                        &http_body_read_failure,
                         format!("Failed to read hardlink source {}", entry_path.display()),
                         e,
                     ));
@@ -167,7 +161,6 @@ pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(),
         // `extract_tar_gz`.
         entry.unpack_in(target).map_err(|e| {
             archive_error(
-                &http_body_read_failure,
                 format!("Failed to extract entry {}", entry_path.display()),
                 e,
             )
@@ -178,22 +171,13 @@ pub(crate) fn extract_tar_gz(source: ArchiveSource, target: &Path) -> Result<(),
     // trailer. Finish the same decoder to validate its CRC and uncompressed size.
     let mut decoder = archive.into_inner();
     io::copy(&mut decoder, &mut io::sink())
-        .map_err(|e| archive_error(&http_body_read_failure, "Failed to finish gzip archive", e))?;
+        .map_err(|e| archive_error("Failed to finish gzip archive", e))?;
 
     Ok(())
 }
 
-fn archive_error(
-    http_body_read_failure: &HttpBodyReadFailure,
-    message: impl Into<String>,
-    error: io::Error,
-) -> DownloadError {
-    let message = format!("{}: {error}", message.into());
-    if http_body_read_failure.failed() {
-        DownloadError::transport(message, true)
-    } else {
-        DownloadError::fatal(message)
-    }
+fn archive_error(message: impl Into<String>, error: io::Error) -> DownloadError {
+    DownloadError::new(format!("{}: {error}", message.into()))
 }
 
 /// Check whether `path` stays within `target` after lexical normalization.

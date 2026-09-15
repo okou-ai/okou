@@ -1256,6 +1256,64 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     );
   }
 
+  async function expectFeishuResourceDownloads(args: {
+    readonly actor: ApiTestUser;
+    readonly runId: string;
+    readonly prompt: string;
+    readonly resources: readonly {
+      readonly messageId: string;
+      readonly fileKey: string;
+      readonly type: "image" | "file";
+    }[];
+  }): Promise<void> {
+    const fileIds = [
+      ...args.prompt.matchAll(/ {3}\[FILE_KEY\] ([^\n]+)/gu),
+    ].map((match) => {
+      return requireValue(match[1], "Expected an opaque resource reference");
+    });
+    expect(fileIds).toHaveLength(args.resources.length);
+    const app = createAppWithRoutes({
+      signal: context.signal,
+      routes: integrationsFeishuFileRoutes,
+    });
+    for (const [index, resource] of args.resources.entries()) {
+      server.use(
+        http.get(
+          `${provider.apiOrigin}/open-apis/im/v1/messages/${resource.messageId}/resources/${resource.fileKey}`,
+          ({ request }) => {
+            expect(new URL(request.url).searchParams.get("type")).toBe(
+              resource.type,
+            );
+            return new HttpResponse(resource.fileKey, {
+              headers: { "content-type": "application/octet-stream" },
+            });
+          },
+        ),
+      );
+      const fileId = requireValue(fileIds[index], "Expected a file reference");
+      expect(fileId).toMatch(/^feishu_file_[A-Za-z0-9_-]{22}$/u);
+      expect(args.prompt).not.toContain(resource.fileKey);
+      const response = await app.request(
+        `/api/integrations/${platform}/download-file?${new URLSearchParams({
+          message_id: resource.messageId,
+          file_key: fileId,
+          type: resource.type,
+        })}`,
+        {
+          headers: {
+            authorization: `Bearer ${runsApi.okouTokenForRunWithCapabilities(
+              args.actor,
+              args.runId,
+              [`${platform}:write`],
+            )}`,
+          },
+        },
+      );
+      expect(response.status).toBe(200);
+      await expect(response.text()).resolves.toBe(resource.fileKey);
+    }
+  }
+
   async function startFeishuDmSession(fixture: FeishuRunFixture): Promise<{
     readonly firstMessageId: string;
     readonly mainSessionId: string;
@@ -3157,7 +3215,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
           openId: "ou_feishu_user",
           text: prompt,
           promptText: prompt,
-          file: null,
+          files: [],
         }),
       });
 
@@ -4171,6 +4229,366 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
       },
     );
     expect(wrongRunResponse.status).toBe(400);
+  });
+
+  it.each(["p2p", "group"] as const)(
+    "runs a rich post with text and multiple downloadable images in %s",
+    async (chatType) => {
+      const fixture = await setupFeishuRunFixture();
+      const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
+        fixture;
+      await connectFixtureUser(fixture);
+      const messageId = `om_post_${randomUUID()}`;
+      const rows = [
+        [
+          ...(chatType === "group" ? [{ tag: "at", user_id: "@_user_1" }] : []),
+          { tag: "text", text: "Compare these images with " },
+          { tag: "a", text: "the brief", href: "https://example.com/brief" },
+        ],
+        [{ tag: "img", image_key: "img_post_first", width: 720, height: 1080 }],
+        [{ tag: "img", image_key: "img_post_second" }],
+        [{ tag: "img", image_key: "img_post_first" }],
+      ];
+      const message = {
+        message_id: messageId,
+        chat_id: chatType === "p2p" ? "oc_feishu_dm" : "oc_feishu_group",
+        chat_type: chatType,
+        message_type: "post",
+        content: JSON.stringify({
+          title: "Image comparison",
+          content: rows,
+          content_v2: rows,
+        }),
+      };
+      const sender = {
+        sender_id: { open_id: "ou_feishu_user" },
+        sender_type: "user",
+      };
+      if (chatType === "group") {
+        await postEvent(
+          callbackUrl,
+          v2Event(appId, "im.message.receive_v1", {
+            sender,
+            message: {
+              ...message,
+              message_id: `om_unmentioned_${randomUUID()}`,
+            },
+          }),
+          { encrypted: true },
+        );
+        await flushWaitUntilForTest();
+        expect(
+          (await runsApi.listAgentRuns(actor, { limit: 20 })).runs,
+        ).toHaveLength(0);
+      }
+      const event = v2Event(appId, "im.message.receive_v1", {
+        sender,
+        message: {
+          ...message,
+          mentions:
+            chatType === "group"
+              ? [
+                  {
+                    key: "@_user_1",
+                    id: { open_id: BOT_OPEN_ID },
+                    name: "Nova",
+                  },
+                ]
+              : [],
+        },
+      });
+      expect(
+        (await postEvent(callbackUrl, event, { encrypted: true })).status,
+      ).toBe(200);
+      await postEvent(callbackUrl, event, { encrypted: true });
+      await flushWaitUntilForTest();
+      const listed = await runsApi.listAgentRuns(actor, { limit: 20 });
+      expect(listed.runs).toHaveLength(1);
+      const run = requireValue(listed.runs[0], "Expected a rich post run");
+      await runsApi.heartbeatRunner(runnerGroup);
+      const claim = await runsApi.claimRunnerJob(run.id);
+      expect(claim.prompt).toContain("Image comparison\n");
+      expect(claim.prompt).toContain(
+        "Compare these images with [the brief](https://example.com/brief)",
+      );
+      if (chatType === "group") {
+        expect(claim.prompt).toContain("@Nova");
+      }
+      await expectFeishuResourceDownloads({
+        actor,
+        runId: run.id,
+        prompt: claim.prompt,
+        resources: [
+          { messageId, fileKey: "img_post_first", type: "image" },
+          { messageId, fileKey: "img_post_second", type: "image" },
+        ],
+      });
+
+      const threads = await accept(
+        setupApp({ context, routes: chatThreadRoutes })(
+          chatThreadsContract,
+        ).events({
+          headers: { authorization: "Bearer clerk-session" },
+          query: {},
+        }),
+        [200],
+      );
+      const thread = requireValue(
+        threads.body.events.find((event) => {
+          return event.kind === "created" && event.agentId === defaultAgentId;
+        }),
+        "Expected a canonical rich post thread",
+      );
+      const events = await readProjectedChatEvents(context, {
+        threadId: thread.chatThreadId,
+        headers: { authorization: "Bearer clerk-session" },
+      });
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          userMessage: {
+            version: 1,
+            parts: [
+              expect.objectContaining({
+                type: "file",
+                filenameSnapshot: "image",
+              }),
+              expect.objectContaining({
+                type: "file",
+                filenameSnapshot: "image",
+              }),
+              {
+                type: "text",
+                text: "Image comparison\nCompare these images with [the brief](https://example.com/brief)",
+              },
+              expect.objectContaining({ type: "source", kind: "feishu" }),
+            ],
+          },
+        }),
+      );
+      await completeRunSession({
+        runId: run.id,
+        sandboxToken: claim.sandboxToken,
+        sessionId: `rich-post-${run.id}`,
+        history: `rich post history ${run.id}`,
+        assistantText: "Here is the image comparison.",
+      });
+      const reply = outboundMessages.find((outbound) => {
+        return messageContent(outbound).includes(
+          "Here is the image comparison.",
+        );
+      });
+      expect(reply).toMatchObject({
+        kind: chatType === "p2p" ? "send" : "reply",
+        target: chatType === "p2p" ? "oc_feishu_dm" : messageId,
+        replyInThread: chatType === "group",
+      });
+      await removeFeishuInstallation(fixture);
+    },
+  );
+
+  it("preserves agent card replies, artifact links and rich post resources in history", async () => {
+    const fixture = await setupFeishuRunFixture();
+    const { actor, runnerGroup, appId, callbackUrl } = fixture;
+    await connectFixtureUser(fixture);
+    const artifacts = {
+      deck: "https://example.com/artifacts/deck.html?version=2",
+      source: "https://example.com/artifacts/source.pptx",
+      report: "https://example.com/artifacts/report.pdf",
+    };
+    historyMessages = [
+      {
+        message_id: "om_history_post",
+        msg_type: "post",
+        create_time: "1",
+        sender: {
+          id: "ou_feishu_user",
+          sender_name: "Linghan",
+          sender_type: "user",
+        },
+        mentions: [{ key: "@_user_1", id: "ou_reviewer", name: "Reviewer" }],
+        body: {
+          content: JSON.stringify({
+            title: "Review request",
+            content: [
+              [
+                { tag: "at", user_id: "@_user_1" },
+                { tag: "text", text: " check this screenshot" },
+              ],
+              [{ tag: "img", image_key: "img_history_post" }],
+            ],
+          }),
+        },
+      },
+      {
+        message_id: "om_history_legacy_card",
+        msg_type: "interactive",
+        create_time: "2",
+        sender: { id: BOT_OPEN_ID, sender_name: "Okou", sender_type: "app" },
+        body: {
+          content: JSON.stringify({
+            header: { title: { tag: "plain_text", content: "Okou" } },
+            elements: [
+              {
+                tag: "div",
+                text: {
+                  tag: "lark_md",
+                  content: "The earlier report is ready.",
+                },
+              },
+              {
+                tag: "action",
+                actions: [
+                  {
+                    tag: "button",
+                    text: { tag: "plain_text", content: "Download report" },
+                    multi_url: { url: artifacts.report },
+                  },
+                ],
+              },
+            ],
+          }),
+        },
+      },
+      {
+        message_id: "om_history_card",
+        msg_type: "interactive",
+        create_time: "3",
+        sender: { id: BOT_OPEN_ID, sender_name: "Okou", sender_type: "app" },
+        body: {
+          content: JSON.stringify({
+            schema: "2.0",
+            header: { title: { tag: "plain_text", content: "Okou" } },
+            body: {
+              elements: [
+                {
+                  tag: "markdown",
+                  content: `I fixed the chart and created the [deck](${artifacts.deck}).`,
+                },
+                {
+                  tag: "column_set",
+                  columns: [
+                    {
+                      tag: "column",
+                      elements: [
+                        {
+                          tag: "button",
+                          text: {
+                            tag: "plain_text",
+                            content: "Download source",
+                          },
+                          behaviors: [
+                            { type: "open_url", default_url: artifacts.source },
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+                {
+                  tag: "img",
+                  img_key: "img_history_card",
+                  alt: { tag: "plain_text", content: "Chart preview" },
+                },
+              ],
+            },
+          }),
+        },
+      },
+      {
+        message_id: "om_history_file",
+        msg_type: "file",
+        create_time: "4",
+        sender: { id: BOT_OPEN_ID, sender_name: "Okou", sender_type: "app" },
+        body: {
+          content: JSON.stringify({
+            file_key: "file_history_deck",
+            file_name: "source.pptx",
+          }),
+        },
+      },
+    ];
+    server.use(
+      http.get(
+        `${provider.apiOrigin}/open-apis/im/v1/messages`,
+        ({ request }) => {
+          const originalCards =
+            new URL(request.url).searchParams.get("card_msg_content_type") ===
+            "user_card_content";
+          return HttpResponse.json({
+            code: 0,
+            data: {
+              items: historyMessages.map((message) => {
+                return message.msg_type === "interactive" && !originalCards
+                  ? {
+                      ...message,
+                      body: {
+                        content: JSON.stringify({
+                          title: "Okou",
+                          elements: [
+                            [{ tag: "img", image_key: "img_rendered_preview" }],
+                          ],
+                        }),
+                      },
+                    }
+                  : message;
+              }),
+              has_more: false,
+            },
+          });
+        },
+      ),
+    );
+    const prompt = "Revise the deck using the previous answer and screenshot";
+    await postEvent(callbackUrl, directMessage(appId, prompt), {
+      encrypted: true,
+    });
+    await flushWaitUntilForTest();
+    const run = await findRun(actor, prompt);
+    await runsApi.heartbeatRunner(runnerGroup);
+    const claim = await runsApi.claimRunnerJob(run.id);
+    const history = requireValue(
+      claim.appendSystemPrompt,
+      "Expected conversation history",
+    );
+    expect(history).toContain(`- SENDER: {id: ${BOT_OPEN_ID}, name: Okou}`);
+    expect(history).toContain("- SENDER: {id: ou_feishu_user, name: Linghan}");
+    expect(history).toContain("@Reviewer (ou_reviewer) check this screenshot");
+    expect(history).toContain("The earlier report is ready.");
+    expect(history).toContain(
+      `I fixed the chart and created the [deck](${artifacts.deck}).`,
+    );
+    expect(history).toContain(`[Download source](${artifacts.source})`);
+    expect(history).toContain(`[Download report](${artifacts.report})`);
+    expect(history).toContain("Chart preview");
+    expect(history).toContain(`[${provider.name} file] source.pptx`);
+    expect(history).toContain("- RELATIVE_INDEX: -4");
+    expect(history).toContain("- RELATIVE_INDEX: -1");
+    expect(history).not.toContain("[interactive message]");
+    await expectFeishuResourceDownloads({
+      actor,
+      runId: run.id,
+      prompt: history,
+      resources: [
+        {
+          messageId: "om_history_post",
+          fileKey: "img_history_post",
+          type: "image",
+        },
+        {
+          messageId: "om_history_card",
+          fileKey: "img_history_card",
+          type: "image",
+        },
+        {
+          messageId: "om_history_file",
+          fileKey: "file_history_deck",
+          type: "file",
+        },
+      ],
+    });
+    await runsApi.requestCancelRun(actor, run.id, [200]);
+    await flushWaitUntilForTest();
+    await removeFeishuInstallation(fixture);
   });
 
   it("claims a Feishu message when conversation history loading fails", async () => {

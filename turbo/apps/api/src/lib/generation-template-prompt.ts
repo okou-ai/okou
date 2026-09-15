@@ -28,6 +28,7 @@ import {
   PRESENTATION_STATIC_HTML_INSTRUCTION,
 } from "@okouai/core/presentation-generation-instructions";
 import { WEBSITE_IMAGE_BATCH_INSTRUCTION } from "@okouai/core/website-generation-instructions";
+import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import type { IntroVideoOptions } from "@okouai/api-contracts/contracts/intro-video-options";
 import {
   INTRO_VIDEO_TEMPLATE_ID,
@@ -110,20 +111,6 @@ type GenerationTemplatePromptResult =
       readonly message: string;
     };
 
-function generationTemplateTypeLabel(
-  generationTemplate: GenerationTemplateInput,
-): string {
-  if (
-    generationTemplate.type === "video" &&
-    parseAvatarTemplateStylePresetId(
-      generationTemplate.selection.stylePresetId,
-    ) !== undefined
-  ) {
-    return "avatar";
-  }
-  return generationTemplate.type;
-}
-
 /**
  * What a caller must tell the prompt builder about the run it is building for.
  *
@@ -205,7 +192,7 @@ export function buildGenerationTemplatesPrompt(
     }
     details.push(
       [
-        `## Template #${index + 1} (${generationTemplateTypeLabel(generationTemplate)})`,
+        `## Template #${index + 1} (${generationTemplateKind(generationTemplate)})`,
         "",
         stripGenerationTemplateContext(built.prompt),
       ].join("\n"),

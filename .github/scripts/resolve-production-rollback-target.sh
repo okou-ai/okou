@@ -11,6 +11,7 @@ readonly OKOU_GOAL_SCHEMA_REPAIR_COMMIT=077a9a644986e13bed4750796f91e55c4a876aad
 readonly OKOU_GOAL_SCHEMA_RELEASE=4a4881bf84cb1d79723fd38c83e00f2215bb1e31
 readonly OKOU_GOAL_RETIREMENT_RELEASE=1f68f182a2457ec3aea52d8063be2bd2d2263abd
 readonly COMPUTER_USE_HOST_CLIENT_PRODUCT_DROP_COMMIT=669d0befc9a181e44e3f1f9e39093efddabcc0f8
+readonly ORG_MEMBER_MORNING_BRIEF_ELIGIBILITY_DROP_COMMIT=6e1abbb785dc1613d0f5cd1b1dd80fae694abb46
 
 fail() {
   echo "::error::$*" >&2
@@ -77,6 +78,13 @@ fi
 if ! git merge-base --is-ancestor \
   "$COMPUTER_USE_HOST_CLIENT_PRODUCT_DROP_COMMIT" "$TARGET_COMMIT"; then
   fail "Target commit predates the computer_use_hosts.client_product drop: ${COMPUTER_USE_HOST_CLIENT_PRODUCT_DROP_COMMIT}."
+fi
+
+# Same barrier for morning_brief_default_eligible_at: an API target that still
+# declares it names a dropped column in every insert on org_members_metadata.
+if ! git merge-base --is-ancestor \
+  "$ORG_MEMBER_MORNING_BRIEF_ELIGIBILITY_DROP_COMMIT" "$TARGET_COMMIT"; then
+  fail "Target commit predates the org_members_metadata.morning_brief_default_eligible_at drop: ${ORG_MEMBER_MORNING_BRIEF_ELIGIBILITY_DROP_COMMIT}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

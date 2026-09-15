@@ -149,6 +149,50 @@ keys or automatically grant access. Browser notifications are separate from
 Runner authority invalidation and do not tighten
 the accepted Run-lifetime cache window.
 
+## Cloudflare Access backend preparation
+
+The backend foundation (#34077, parent #31996) adds reusable, user-owned Service
+Token configurations as SSH connection settings, independently of SSH login
+credentials. It remains default-off
+behind `cloudflareAccess` and requires `sshAccess`; no new management UI or
+working Access transport is delivered by this slice.
+
+The canonical `/api/ssh/cloudflare-access/configs` endpoints create, list, rename,
+replace credentials and delete configurations. Client ID and
+Client Secret are write-only. Reads return metadata and referencing host IDs/names;
+updates/deletion require the expected edit revision, and referenced deletion is
+rejected. Names may change without invalidating Runs. Token replacement advances
+a separate authority generation and all referencing SSH host generations.
+Configurations have no separate enabled state; the saved host binding selects
+Access, the existing SSH Agent grant authorizes use, and the feature switch
+controls rollout. Switching to Direct is not a way to disable a protected host.
+
+An SSH host explicitly selects a same-owner configuration, published DNS hostname
+and port 443. The origin SSH port belongs to Cloudflare, not this binding. Sharing
+a configuration across hosts does not share it across users or workspaces.
+Protected execution uses the existing SSH Agent grant; there is no separate
+Access grant. Creating or changing an Access configuration does not create a
+host, grant SSH or restore a manual denial. Existing first-SSH-host onboarding
+remains unchanged, and later Agents can use bound configurations once authorized
+for SSH. SSH username/key/password and server host-key trust remain independent
+of the Service Token.
+
+Configuration mutations reuse the owner's `ssh:changed` notification. The later
+Platform delivery manages these settings inside `/connectors/ssh`, not through
+an independent connector card, Agent Authorization row or Chat service. Access
+configuration counts do not replace SSH host-based visibility and summaries.
+
+SSH management uses one canonical contract. Protected metadata includes
+`transport: {type: "cloudflare_access", configId}`. Direct hosts omit the binding.
+An omitted transport on edit preserves the current binding; switching to Direct
+must be explicit and requires the current host generation. Unrelated Direct hosts
+remain manageable when Access is off.
+
+See [private authority](runner-ssh-authority.md#cloudflare-access-authority-preparation)
+and the [activation gate](deployment-compatibility.md#cloudflare-access-for-ssh).
+The accepted missed-notification window still lasts until Run end; this feature
+does not promise immediate revocation.
+
 ## Recent connection failures
 
 After an actual SSH attempt, the host card can show the last reported connection

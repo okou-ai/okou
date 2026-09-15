@@ -1122,7 +1122,7 @@ async function resolveNormalSendFeatureSwitches(
   return {
     codexFastModeEnabled: isCodexFastModeEnabled(context),
     reasoningEffortEnabled: isFeatureEnabled(
-      FeatureSwitchKey.ChatReasoningEffort,
+      FeatureSwitchKey.RefactorModelSelect,
       context,
     ),
     introVideoEnabled: loadIntroVideoTemplateAccess(templates, context),

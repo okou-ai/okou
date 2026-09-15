@@ -42,7 +42,6 @@ import { syncArtifactCatalogForFile$ } from "./artifact-catalog.service";
 import { publishArtifactsChangedForRun } from "./artifact-realtime.service";
 import { sourceForRun } from "./run-uploaded-files.service";
 
-const CANONICAL_UPLOAD_URL_TTL_SECONDS = 3600;
 const SLACK_INPUT_IMPORT_TIMEOUT_MS = 10_000;
 
 export interface CanonicalSlackInputAsset {
@@ -987,7 +986,6 @@ export const prepareCanonicalPublishedAsset$ = command(
         storageKey,
         args.contentType,
         {
-          expiresIn: CANONICAL_UPLOAD_URL_TTL_SECONDS,
           usePublicEndpoint: true,
           metadata,
         },

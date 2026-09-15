@@ -71,6 +71,7 @@ import {
   openVideoLightbox$ as openAttachmentVideoLightbox$,
 } from "../../signals/okou-page/attachment-chips.ts";
 import { BrowserSessionCard } from "./browser-session-card.tsx";
+import { ChatCard } from "./components/chat-card.tsx";
 import { BankingActionCard } from "./banking-action-card.tsx";
 import { ConnectorAccountActionCard } from "./connector-account-action-card.tsx";
 import { MailDraftCard } from "./mail-draft-card.tsx";
@@ -369,7 +370,7 @@ function ArtifactCardView({
         }}
         load={signals.previewImageLoad}
         placeholderClassName="h-full w-full"
-        resourceUrl$={signals.resourceUrl$}
+        resourceUrl$={signals.linkUrl$}
         thumbnailUrl$={signals.thumbnailUrl$}
         url={signals.url}
       />,
@@ -430,9 +431,9 @@ const CHAT_CONNECTOR_ACTION_CARD_HEIGHT_CLASS = "h-[136px] sm:h-[88px]";
 function UnavailableActionCard() {
   const { t } = useTranslation();
   return (
-    <div
+    <ChatCard
       data-testid="unavailable-action-card"
-      className="okou-chat-card flex min-h-[88px] w-full items-center gap-3 p-3 text-left"
+      className="flex min-h-[88px] w-full items-center gap-3 p-3 text-left"
     >
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
         <AlertCircle size={22} />
@@ -449,7 +450,7 @@ function UnavailableActionCard() {
           })}
         </div>
       </div>
-    </div>
+    </ChatCard>
   );
 }
 
@@ -579,9 +580,9 @@ function ComputerUseAuthorizationCard({
 }) {
   const { t } = useTranslation();
   return withChatScrollLayout(
-    <div
+    <ChatCard
       data-testid="computer-use-authorization-card"
-      className="okou-chat-card flex min-h-[88px] w-full flex-col gap-3 p-3 text-left sm:flex-row sm:items-center sm:justify-between"
+      className="flex min-h-[88px] w-full flex-col gap-3 p-3 text-left sm:flex-row sm:items-center sm:justify-between"
     >
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40">
@@ -611,7 +612,7 @@ function ComputerUseAuthorizationCard({
         })}
         <ArrowUpRight size={15} />
       </a>
-    </div>,
+    </ChatCard>,
   );
 }
 
@@ -625,9 +626,9 @@ function PlanUpgradeCard({ signals }: { signals: PlanUpgradeSignals }) {
   };
 
   return withChatScrollLayout(
-    <div
+    <ChatCard
       data-testid="plan-upgrade-card"
-      className="okou-chat-card flex min-h-[88px] w-full flex-col gap-3 p-3 text-left sm:flex-row sm:items-center sm:justify-between"
+      className="flex min-h-[88px] w-full flex-col gap-3 p-3 text-left sm:flex-row sm:items-center sm:justify-between"
     >
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40">
@@ -655,7 +656,7 @@ function PlanUpgradeCard({ signals }: { signals: PlanUpgradeSignals }) {
           return $.chat.billing.comparePlans;
         })}
       </Button>
-    </div>,
+    </ChatCard>,
   );
 }
 
@@ -1239,9 +1240,9 @@ function PermissionActionCardContent({
       status.kind === "saving" ||
       status.kind === "save-error");
   return (
-    <div
+    <ChatCard
       data-testid="permission-action-card"
-      className="okou-chat-card flex min-h-[88px] w-full flex-col gap-3 p-3 text-left sm:flex-row sm:items-center sm:justify-between"
+      className="flex min-h-[88px] w-full flex-col gap-3 p-3 text-left sm:flex-row sm:items-center sm:justify-between"
     >
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40">
@@ -1304,7 +1305,7 @@ function PermissionActionCardContent({
           <PermissionActionButton status={status} onClick={onClick} />
         </div>
       )}
-    </div>
+    </ChatCard>
   );
 }
 

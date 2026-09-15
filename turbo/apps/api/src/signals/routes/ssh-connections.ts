@@ -206,6 +206,7 @@ const deleteSshConnectionInner$ = command(
       orgId: auth.orgId,
       userId: auth.userId,
       connectionId: params.connectionId,
+      featureContext,
     });
     signal.throwIfAborted();
     if (!result.ok) {
@@ -243,6 +244,7 @@ const resetSshConnectionHostKeyInner$ = command(
       userId: auth.userId,
       connectionId: params.connectionId,
       expectedGeneration: bodyResult.data.expectedGeneration,
+      featureContext,
     });
     signal.throwIfAborted();
     if (!result.ok) {

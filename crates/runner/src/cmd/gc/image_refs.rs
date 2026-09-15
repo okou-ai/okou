@@ -193,13 +193,25 @@ async fn enabled_runner_service_config_paths_with_reader(
         units.push(unit);
     }
 
-    let results = stream::iter(units)
-        .map(enabled_runner_service_config_path)
-        .buffered(ENABLED_SERVICE_QUERY_CONCURRENCY)
+    let mut scan = enabled_runner_service_config_paths_for_units(units).await;
+    scan.inventory_complete &= inventory_complete;
+    scan
+}
+
+async fn enabled_runner_service_config_paths_for_units(
+    units: Vec<service::RunnerServiceUnit>,
+) -> EnabledRunnerServiceConfigPaths {
+    let mut results = stream::iter(units)
+        .enumerate()
+        .map(|(index, unit)| async move { (index, enabled_runner_service_config_path(unit).await) })
+        .buffer_unordered(ENABLED_SERVICE_QUERY_CONCURRENCY)
         .collect::<Vec<_>>()
         .await;
+    // Restore encounter order after collection so a slow unit cannot delay admission of later units.
+    results.sort_unstable_by_key(|(index, _)| *index);
     let mut paths = Vec::new();
-    for result in results {
+    let mut inventory_complete = true;
+    for (_, result) in results {
         if let Some(path) = result.path {
             paths.push(path);
         }

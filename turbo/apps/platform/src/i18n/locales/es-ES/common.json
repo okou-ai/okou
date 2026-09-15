@@ -1028,7 +1028,12 @@
     "toasts": {
       "copyLinkFailed": "No se pudo copiar el enlace",
       "downloadFailed": "Descarga fallida",
-      "linkCopied": "Enlace copiado"
+      "linkCopied": "Enlace copiado",
+      "sharing": "Compartiendo…"
+    },
+    "viewer": {
+      "continuePrompt": "Ayúdame a trabajar con este artefacto: {{url}}",
+      "continueWithBrand": "Continuar con {{brandName}}"
     }
   },
   "auth": {
@@ -1774,16 +1779,11 @@
       "selectModel": "Seleccionar modelo",
       "slashPanel": {
         "browseAll": "Ver todas las plantillas",
-        "illustrationDescription": "Una sola imagen, con el estilo que elijas",
         "make": "Crear",
-        "slidesDescription": "Una presentación HTML lista para mostrar",
         "templateCount_one": "{{count}} plantilla",
         "templateCount_many": "{{count}} plantillas",
         "templateCount_other": "{{count}} plantillas",
-        "useTemplate": "Usar la plantilla {{title}}",
-        "videoDescription": "De texto a vídeo, con los parámetros del modelo elegido",
-        "websiteDescription": "Un sitio estático que puedes publicar",
-        "workflowDescription": "Un flujo de trabajo guardado que puedes ejecutar desde el compositor"
+        "useTemplate": "Usar la plantilla {{title}}"
       },
       "temporarilySwitchTo": "Cambiar temporalmente a",
       "threadSuggestions": "Conversaciones",
@@ -2156,6 +2156,7 @@
         "wiring": "Conectándolo todo..."
       },
       "viewActivityLogs": "Ver registros de actividad",
+      "viewLangfuseTrace": "Ver traza de Langfuse",
       "viewLogs": "Ver registros de ejecución",
       "waitingIn": "Esperando",
       "workedFor": "Trabajo realizado durante {{duration}}",
@@ -2170,6 +2171,7 @@
       "createFailed": "No se pudo crear la conversación compartida. Inténtalo de nuevo.",
       "deselectGroup": "Deseleccionar grupo de mensajes",
       "linkCopied": "Enlace copiado",
+      "publicDescription": "Los mensajes seleccionados y sus archivos adjuntos serán públicos.",
       "selectedCount_one": "{{count}} seleccionado",
       "selectedCount_many": "{{count}} seleccionados",
       "selectedCount_other": "{{count}} seleccionados",
@@ -2424,6 +2426,15 @@
       "moreTemplates": "Más plantillas",
       "presentationTemplates": "Plantillas de presentación",
       "removeTask": "Quitar {{task}}",
+      "shelf": {
+        "browseStyles": "Ver todos los estilos",
+        "browseTemplates": "Ver todas las plantillas",
+        "image": "Estilos de imagen",
+        "nextPage": "Página siguiente",
+        "previousPage": "Página anterior",
+        "video": "Plantillas de vídeo",
+        "website": "Plantillas de sitio web"
+      },
       "tasks": {
         "image": "Imagen",
         "presentation": "Diapositivas",
@@ -2535,7 +2546,6 @@
         },
         "more": "More",
         "noCharts": "No matching charts",
-        "optional": "Optional",
         "outputFormat": "Output format",
         "outputs": {
           "presentation": "Presentation",
@@ -2551,7 +2561,6 @@
         "selectedCount_one": "{{count}} seleccionado",
         "selectedCount_other": "{{count}} seleccionados",
         "summary": "{{output}} · Métodos {{methodCount}} · Gráficos {{chartCount}}",
-        "title": "Visualización",
         "useWhenSuitable": "Use when suitable",
         "visualMethods": "Visual methods"
       },
@@ -2852,7 +2861,6 @@
       "importedLoadFailed": "No se pudieron cargar las plantillas subidas.",
       "importedLoading": "Cargando plantillas subidas…",
       "importedUnavailable": "Las plantillas subidas no están disponibles temporalmente.",
-      "previewRefreshFailed": "No se pudieron actualizar las vistas previas de las plantillas.",
       "previewTemplate": "Plantilla de vista previa {{title}}",
       "previewVideo": "Vista previa de la plantilla de vídeo {{title}}",
       "previewWebsite": "Vista previa de la plantilla de sitio web {{title}}",
@@ -2955,7 +2963,6 @@
       "storageFailed": "No se pudo guardar el audio. Reintentar solo recupera el audio ya guardado en este dispositivo.",
       "textTakingShape": "El texto está tomando forma",
       "transcribing": "Transcribiendo",
-      "transcribingProgress": "Transcribiendo...",
       "transcriptionFailed": "Falló la transcripción de voz. Inténtalo de nuevo."
     },
     "workflows": {
@@ -3193,9 +3200,11 @@
       "scope": {
         "aria": "Ámbito de conectores",
         "attention": "Requiere atención",
+        "connected": "Conectados",
+        "custom": "Personalizados",
         "discover": "Descubrir",
-        "mine": "Tus conectores",
-        "searchMine": "Buscar tus conectores"
+        "searchConnected": "Buscar conectores conectados",
+        "searchCustom": "Buscar conectores personalizados"
       },
       "search": "Buscar conectores",
       "shelf": {
@@ -5682,7 +5691,7 @@
         "categoryImage": "Imagen",
         "categoryVideo": "Vídeo",
         "chatModels": "Modelos de chat",
-        "effort": "Esfuerzo de razonamiento",
+        "effort": "Esfuerzo",
         "fast": "Rápido",
         "fastImpact": {
           "apiCost": "2× el coste de tokens de API",
@@ -5706,10 +5715,8 @@
         "loadError": "No se pudieron cargar los modelos.",
         "loading": "Cargando modelos...",
         "menu": {
-          "adjustSettings": "Ajustar la configuración de {{model}}",
           "backToModels": "Volver a los modelos",
-          "changeModel": "Cambiar modelo de {{category}}, {{model}}",
-          "chatSettings": "Configuración del chat"
+          "changeModel": "Cambiar modelo de {{category}}, {{model}}"
         },
         "models": "Modelos",
         "noConfiguredModels": "Sin modelos configurados",
@@ -6214,6 +6221,9 @@
     "chooseFile": "Elegir archivo",
     "choosePrivateKeyFile": "Elegir archivo de clave privada",
     "connectionStatus": {
+      "accessProtocolFailure": "Cloudflare Access no estableció un túnel SSH. Revisa el nombre de host publicado y el enrutamiento del Tunnel.",
+      "accessRejected": "Cloudflare Access rechazó la conexión. Revisa el token de servicio y la política Service Auth de la aplicación.",
+      "accessTlsFailure": "No se pudo verificar la conexión segura con Cloudflare Access. Revisa el nombre de host y el certificado TLS.",
       "attention_one": "{{count}} host SSH requiere atención",
       "attention_many": "{{count}} hosts SSH requieren atención",
       "attention_other": "{{count}} hosts SSH requieren atención",
@@ -6998,6 +7008,9 @@
       "noWorkflows": "Sin flujos de trabajo",
       "open": "Abrir {{title}}",
       "openRecovery": "Abrir la recuperación de {{title}}",
+      "ownerLoading": "Cargando autor…",
+      "ownerRetry": "Autor no disponible. Vuelve a abrir para reintentar.",
+      "ownerUnavailable": "Autor no disponible",
       "runsAs": "Se ejecuta como",
       "runsAsAria": "Se ejecuta como {{agent}}",
       "section": {

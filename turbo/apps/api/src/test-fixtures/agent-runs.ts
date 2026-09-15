@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import { createStore, state } from "ccstate";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
+import { storedExecutionContextSchema } from "@okouai/api-contracts/contracts/runners";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import type { AgentRunLaunchSnapshot } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 import { agents } from "@okouai/db/schema/agent";
@@ -22,6 +23,7 @@ import { checkpoints } from "@okouai/db/schema/checkpoint";
 import { conversations } from "@okouai/db/schema/conversation";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { storages } from "@okouai/db/schema/storage";
+import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { and, count, eq, inArray } from "drizzle-orm";
 
 import { db } from "../lib/db";
@@ -38,8 +40,49 @@ import {
   normalizeSessionHistoryBlobEncoding,
 } from "../signals/services/session-history-blobs";
 import { projectLegacyWritebackArtifacts } from "../signals/services/storage-legacy-projection.service";
+import { decryptPersistentSecretsMap } from "../signals/services/crypto.utils";
 
 const store = createStore();
+
+export async function readQueuedLangfuseContextFixture(args: {
+  readonly runId: string;
+  readonly userId: string;
+  readonly orgId: string;
+}): Promise<{
+  readonly platformEnvironment: Readonly<Record<string, string>>;
+  readonly encryptedSecrets: Readonly<Record<string, string>> | null;
+}> {
+  const [row] = await db()
+    .select({ executionContext: runnerJobQueue.executionContext })
+    .from(runnerJobQueue)
+    .where(eq(runnerJobQueue.runId, args.runId))
+    .limit(1);
+  if (!row) {
+    throw new Error("Expected the queued Agent Run fixture to exist");
+  }
+  const context = storedExecutionContextSchema.parse(row.executionContext);
+  return {
+    platformEnvironment: context.platformEnvironment,
+    encryptedSecrets: await decryptPersistentSecretsMap(
+      context.encryptedSecrets,
+      { userId: args.userId, orgId: args.orgId },
+    ),
+  };
+}
+
+export async function readRunLangfuseTraceEnabledFixture(
+  runId: string,
+): Promise<boolean> {
+  const [run] = await db()
+    .select({ langfuseTraceEnabled: agentRuns.langfuseTraceEnabled })
+    .from(agentRuns)
+    .where(eq(agentRuns.id, runId))
+    .limit(1);
+  if (!run) {
+    throw new Error("Expected the Agent Run fixture to exist");
+  }
+  return run.langfuseTraceEnabled;
+}
 
 export async function readSessionHistoryBlobRefCountFixture(
   hash: string,

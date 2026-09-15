@@ -19,8 +19,9 @@ import {
   isLegacyChatEventSnapshotObjectKey,
   refreshChatEventSnapshotThread$,
 } from "./cron-snapshot-chat-events.service";
+import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 
-const SNAPSHOT_URL_TTL_SECONDS = 900;
+const SNAPSHOT_URL_TTL_SECONDS = PRESIGNED_URL_TTL_SECONDS;
 /** Cursor that reads a thread from its very first event. */
 const THREAD_START_SEQ_ID = 0;
 
@@ -472,7 +473,6 @@ export function chatThreadEventSnapshot(args: {
         generatePresignedGetUrl(
           env("R2_USER_STORAGES_BUCKET_NAME"),
           pointer.objectKey,
-          SNAPSHOT_URL_TTL_SECONDS,
         ),
       );
       signal.throwIfAborted();

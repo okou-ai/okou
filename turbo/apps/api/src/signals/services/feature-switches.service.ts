@@ -13,6 +13,7 @@ import { nowDate } from "../../lib/time";
 export const ORG_SENTINEL_USER_ID = "__org__";
 
 const ORG_SCOPED_FEATURE_SWITCH_KEYS: readonly string[] = [
+  FeatureSwitchKey.PersonalSubscriptionPriority,
   FeatureSwitchKey.PiLoop,
   FeatureSwitchKey.ReferenceImages,
   // Bot setup and native command availability must agree for all members.

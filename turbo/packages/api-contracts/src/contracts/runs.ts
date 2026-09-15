@@ -185,6 +185,8 @@ const getRunResponseSchema = z.object({
   createdAt: z.string(),
   startedAt: z.string().optional(),
   completedAt: z.string().optional(),
+  /** Omitted when tracing was disabled for this run or by older APIs. */
+  langfuseTraceUrl: z.url().optional(),
 });
 
 /**

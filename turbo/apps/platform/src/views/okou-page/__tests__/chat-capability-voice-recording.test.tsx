@@ -1,5 +1,4 @@
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import { openDB, type DBSchema } from "idb";
 import { HttpResponse } from "msw";
@@ -81,8 +80,6 @@ async function uploadedAudio(request: Request): Promise<ArrayBuffer> {
   return await file.arrayBuffer();
 }
 
-const flags = { [FeatureSwitchKey.VoiceInputV2]: true } as const;
-
 test.each([
   { path: RUN_PATH, reloadAt: "recording" },
   { path: NEW_CHAT_PATH, reloadAt: "recording" },
@@ -134,7 +131,6 @@ test.each([
       locale: "en-US",
       context: { ...context, signal: firstPage.signal },
       path,
-      featureSwitches: flags,
     });
     click(await findEnabledButton("Voice input"));
     const emit = await capture.promise;
@@ -154,7 +150,6 @@ test.each([
         locale: "en-US",
         context: secondContext,
         path,
-        featureSwitches: flags,
       });
     }
     for (const retry of retries) {
@@ -171,7 +166,6 @@ test.each([
         locale: "en-US",
         context: secondContext,
         path,
-        featureSwitches: flags,
       });
     }
     const retryButton = await findEnabledButton("Retry");
@@ -216,7 +210,7 @@ test.each([RUN_PATH, NEW_CHAT_PATH])(
         });
       },
     );
-    await setupPage({ context, path, featureSwitches: flags });
+    await setupPage({ context, path });
     click(await findEnabledButton("Voice input"));
     const emit = await capture.promise;
     emit(new Float32Array(4096).fill(0.25));
@@ -264,7 +258,6 @@ test.each([
     await setupPage({
       context: { ...context, signal: firstPage.signal },
       path,
-      featureSwitches: flags,
     });
     click(await findEnabledButton("Voice input"));
     click(await findEnabledButton("Stop recording"));
@@ -272,7 +265,7 @@ test.each([
     expect(queryButton("Retry")).toBeNull();
     expect(uploads).toHaveLength(1);
     unload(firstPage);
-    await setupPage({ context: secondContext, path, featureSwitches: flags });
+    await setupPage({ context: secondContext, path });
     await findEnabledButton("Voice input");
     expect(queryButton("Retry")).toBeNull();
     expect(queryButton("Stop recording")).toBeNull();
@@ -287,7 +280,7 @@ test("Stop capture and expose a failed chunk write without discarding the saved 
     onPcmCapture: capture.resolve,
   });
   const consoleErrors = installVoiceBoundaries();
-  await setupPage({ context, path: RUN_PATH, featureSwitches: flags });
+  await setupPage({ context, path: RUN_PATH });
   click(await findEnabledButton("Voice input"));
   const emit = await capture.promise;
   emit(new Float32Array(4096).fill(0.25));

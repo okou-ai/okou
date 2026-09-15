@@ -7,7 +7,7 @@ import {
   Check,
   ChevronDown,
   Globe,
-  Workflow,
+  Route,
   X,
 } from "lucide-react";
 import { toast } from "@okouai/ui/components/ui/sonner";
@@ -37,7 +37,6 @@ import {
   composerCreateModeDescription,
   composerCreateModeLabel,
   composerCreateModeName,
-  type ComposerCreateMode,
 } from "../../signals/okou-page/composer-create.ts";
 import { cn } from "@okouai/ui/lib/utils";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -51,15 +50,17 @@ import {
 const CREATE_CONTROL_FOCUS =
   "focus-visible:bg-state-hover focus-visible:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0";
 
-const CREATE_MODE_ICON_CLASS = {
-  presentation: "text-artifact-presentation",
-  video: "text-artifact-video",
-  image: "text-artifact-image",
-} satisfies Record<ComposerCreateMode, string>;
+/**
+ * One muted ink for every type. Only presentation, video and image ever had an
+ * `--artifact-*` foreground, so the six choices read as three coloured and
+ * three grey; colour on a picker is decoration, and the real colour here comes
+ * from the template covers.
+ */
+const CREATE_MODE_ICON_CLASS = "text-muted-foreground";
 
 const TASK_ICONS = {
   ...COMPOSER_CREATE_ICONS,
-  workflow: Workflow,
+  workflow: Route,
   website: Globe,
   visualization: ChartNoAxesCombined,
 } as const;
@@ -84,43 +85,47 @@ export function ComposerSelectedTask({
   const Icon = TASK_ICONS[task];
   return withChatScrollLayout(
     <div className="flex min-w-0 px-4 pt-4">
-      <div
-        role="group"
-        aria-label={labels[task]}
-        className="inline-flex h-8 max-w-full items-center gap-2 rounded-lg bg-gray-50 pl-2.5 pr-1 text-[13px]"
+      {/*
+        One control, not a label plus a button. The chip is the exit: its
+        leading type icon becomes the cross on hover, so nothing operable is
+        visible while the selection is just a state, and the hit area is the
+        whole chip rather than a 28px square.
+      */}
+      <Button
+        type="button"
+        variant="neutral"
+        className={cn(
+          "group h-8 max-w-full gap-2 px-2.5 text-[13px] font-normal",
+          CREATE_CONTROL_FOCUS,
+        )}
+        aria-label={t(
+          ($) => {
+            return $.chat.taskChips.removeTask;
+          },
+          { task: labels[task] },
+        )}
+        onClick={() => {
+          selectTask(null);
+        }}
       >
-        <Icon
-          size={16}
-          className={cn(
-            "shrink-0",
-            task === "workflow" ||
-              task === "website" ||
-              task === "visualization"
-              ? "text-muted-foreground"
-              : CREATE_MODE_ICON_CLASS[task],
-          )}
-          aria-hidden
-        />
+        {/*
+          Both glyphs share one box and cross-fade, so the chip's width does
+          not change between rest and hover.
+        */}
+        <span className="relative inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground">
+          <Icon
+            size={16}
+            className="transition-opacity group-hover:opacity-0"
+            aria-hidden
+          />
+          <X
+            size={16}
+            className="absolute opacity-0 transition-opacity group-hover:opacity-100"
+            aria-hidden
+          />
+        </span>
         <span className="truncate">{labels[task]}</span>
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-xs"
-          className={cn("shrink-0 hover:bg-state-hover", CREATE_CONTROL_FOCUS)}
-          showTooltip
-          aria-label={t(
-            ($) => {
-              return $.chat.taskChips.removeTask;
-            },
-            { task: labels[task] },
-          )}
-          onClick={() => {
-            selectTask(null);
-          }}
-        >
-          <X size={14} aria-hidden />
-        </Button>
-      </div>
+      </Button>
     </div>,
   );
 }
@@ -236,10 +241,7 @@ export function ComposerCreateControls({
           }
         }}
       >
-        <Icon
-          className={mode ? CREATE_MODE_ICON_CLASS[mode] : undefined}
-          aria-hidden
-        />
+        <Icon className={CREATE_MODE_ICON_CLASS} aria-hidden />
         <span className="truncate">
           {mode
             ? composerCreateModeLabel(mode)
@@ -333,7 +335,7 @@ export function ComposerCreatePicker({
                 setMode(type);
               }}
             >
-              <Icon className={CREATE_MODE_ICON_CLASS[type]} aria-hidden />
+              <Icon className={CREATE_MODE_ICON_CLASS} aria-hidden />
               <span className="min-w-0">
                 <span className="block text-sm">
                   {composerCreateModeName(type)}

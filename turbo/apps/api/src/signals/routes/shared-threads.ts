@@ -36,6 +36,16 @@ const sharedThreadTooLarge = Object.freeze({
   }),
 });
 
+const sharedThreadAttachmentsForbidden = Object.freeze({
+  status: 403 as const,
+  body: {
+    error: {
+      message: "Sharing attachments requires file:read capability",
+      code: "FORBIDDEN",
+    },
+  },
+});
+
 const createSharedThreadInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const creationSignal = AbortSignal.any([signal, get(requestSignal$)]);
@@ -57,6 +67,9 @@ const createSharedThreadInner$ = command(
         threadId: params.threadId,
         eventIds: body.data.eventIds,
         publicBrand,
+        canReadAttachments:
+          auth.tokenType !== "agent" ||
+          auth.capabilities?.includes("file:read") === true,
       },
       creationSignal,
     );
@@ -70,6 +83,9 @@ const createSharedThreadInner$ = command(
     }
     if (result.kind === "too-large") {
       return sharedThreadTooLarge;
+    }
+    if (result.kind === "attachments-forbidden") {
+      return sharedThreadAttachmentsForbidden;
     }
     return { status: 201 as const, body: { id: result.id } };
   },

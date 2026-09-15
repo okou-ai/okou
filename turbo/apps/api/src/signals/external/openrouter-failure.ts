@@ -23,6 +23,38 @@ export interface OpenRouterTokenCounts {
   readonly reasoningTokens?: number;
 }
 
+/**
+ * Optional, caller-owned observation for one attempt. Only first-party finite
+ * values enter it; it never holds a response, exception, or provider string.
+ * Keeping it separate also preserves primitive rejection and error identity.
+ */
+export interface OpenRouterDiagnostics extends OpenRouterTokenCounts {
+  phase:
+    | "configuration"
+    | "fetch"
+    | "status"
+    | "body_read"
+    | "json_validation"
+    | "output_validation"
+    | "usage_validation"
+    | "settlement";
+  detail?:
+    | "invalid_json"
+    | "missing_choices"
+    | "completion_error"
+    | "non_stop"
+    | "invalid_content"
+    | "empty_content";
+  upstreamStatus?: number;
+  finishReason?: "stop" | "length" | "content_filter" | "tool_calls" | "error";
+  nativeFinishReason?:
+    | "MAX_TOKENS"
+    | "STOP"
+    | "SAFETY"
+    | "RECITATION"
+    | "OTHER";
+}
+
 const failureReasons = singleton(() => {
   return new WeakMap<object, OpenRouterFailureReason>();
 });

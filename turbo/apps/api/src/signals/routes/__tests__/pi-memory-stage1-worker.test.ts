@@ -1,7 +1,35 @@
+import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
+import {
+  modelProviderConnectionsMainContract,
+  modelProviderConnectionsByIdContract,
+} from "@okouai/api-contracts/contracts/model-provider-gateways";
+import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { modelProviderGatewayRoutes } from "../model-provider-gateways";
+import { meModelProviderAccountRoutes } from "../me-model-provider-accounts";
+import { createRouteMocks } from "./helpers/route-test";
+import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
+import { createBddApi } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import {
+  makeCodexAuthJson,
+  makeCodexJwt,
+  mockCodexDeviceAuthProvider,
+  createAuthDeviceApiActions,
+} from "./helpers/api-bdd-auth-device";
 import { createHash, randomUUID } from "node:crypto";
-import { gzipSync, zstdCompressSync } from "node:zlib";
+import { gzipSync, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 
 import { GetObjectCommand } from "@aws-sdk/client-s3";
+import {
+  getProvidersForModel,
+  getSecretNameForType,
+} from "@okouai/api-contracts/contracts/model-providers";
+import { isPiExecutionRoute } from "@okouai/core/pi-execution";
+import { PI_MEMORY_STAGE1_RESPONSE_SCHEMA } from "@okouai/pi-agent-runtime/api";
+import { encode } from "gpt-tokenizer/encoding/o200k_base";
 import { cronExtractPiMemoryStage1Contract } from "@okouai/api-contracts/contracts/cron";
 import {
   SESSION_HISTORY_ENCODING_GZIP,
@@ -11,12 +39,12 @@ import {
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
+import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   seedBuiltInModelKey,
@@ -27,8 +55,12 @@ import {
   deleteFeatureSwitchesForUser,
   updateFeatureSwitchesForUser,
 } from "./helpers/feature-switches";
-import { withBuiltInModelRuntimeRouteCandidateUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
+import {
+  withBuiltInModelRuntimeRouteCandidateUnavailableForTest,
+  withBuiltInModelRuntimeRouteUnavailableForTest,
+} from "../../../test-fixtures/built-in-model-runtime-route";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import {
   cronExtractPiMemoryStage1Routes,
@@ -61,7 +93,9 @@ interface CandidateFixture {
 interface ProviderInvocation {
   readonly sequence: number;
   readonly request: unknown;
+  readonly body: string;
   readonly url: string;
+  readonly headers: Headers;
 }
 
 interface ProviderUsage {
@@ -243,20 +277,36 @@ function installProvider(
   const calls: ProviderInvocation[] = [];
   server.use(
     http.post(
-      /https:\/\/(?:api\.openai\.com|(?:us\.)?openrouter\.ai)\/.*\/responses/u,
+      /https:\/\/(?:api\.openai\.com|(?:us\.)?openrouter\.ai|chatgpt\.com|ai-gateway\.vercel\.sh|stage1-gateway\.example)\/.*\/responses/u,
       async ({ request }) => {
         sequence += 1;
+        const body = (
+          request.headers.get("content-encoding") === "zstd"
+            ? zstdDecompressSync(Buffer.from(await request.arrayBuffer()))
+            : Buffer.from(await request.arrayBuffer())
+        ).toString("utf8");
         const invocation = {
           sequence,
           url: request.url,
-          request: (await request.json()) as unknown,
+          headers: request.headers,
+          body,
+          request: JSON.parse(body) as unknown,
         };
         calls.push(invocation);
         const reply = await responder(invocation);
         const { text, usage } =
           typeof reply === "string" ? { text: reply, usage: undefined } : reply;
         return new HttpResponse(
-          responsesSse(text, invocation.sequence, usage),
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(
+                new TextEncoder().encode(
+                  responsesSse(text, invocation.sequence, usage),
+                ),
+              );
+              controller.close();
+            },
+          }),
           {
             headers: { "content-type": "text/event-stream" },
           },
@@ -377,6 +427,10 @@ function createStorageFixture(
     readonly piSessionId?: string;
     readonly sourceCompletedAt?: string;
     readonly retryCount?: number;
+    readonly source?: Extract<
+      TestPiMemoryStage1StateActionBody,
+      { action: "seed" }
+    >["source"];
   }): Promise<CandidateFixture> {
     return await owner.run(async () => {
       if (piMemoryEnabled) {
@@ -394,10 +448,12 @@ function createStorageFixture(
         pi_session_id: piSessionId,
         source_history_hash: sourceHistoryHash,
         source_completed_at:
-          args.sourceCompletedAt ?? new Date(now() - 60_000).toISOString(),
+          args.sourceCompletedAt ??
+          new Date(now() - 7 * 3_600_000).toISOString(),
         encoding,
         raw_size: args.raw.length,
         encoded_size: encoded.length,
+        ...(args.source ? { source: args.source } : {}),
         ...(args.retryCount === undefined
           ? {}
           : { retry_count: args.retryCount }),
@@ -547,8 +603,67 @@ beforeEach(async () => {
   await seedBuiltInModelKey(context, "gpt-5.6-luna");
 });
 
+async function corruptStage1CatalogPayload(value: unknown): Promise<void> {
+  // Infrastructure exception: an unmeasurable SDK payload cannot be produced
+  // through a user API. Load the runtime-owned external SDK, retaining its
+  // actual serializer/onPayload/error folding and the worker's real route.
+  if (typeof value === "object" && value !== null) {
+    Object.defineProperty(value, "recursive", { value, enumerable: true });
+  }
+  const sdkUrl = new URL(
+    "../node_modules/@earendil-works/pi-ai/dist/providers/openai.js",
+    import.meta.resolve("@okouai/pi-agent-runtime/node"),
+  );
+  const sdk: unknown = await import(sdkUrl.href);
+  if (
+    typeof sdk !== "object" ||
+    sdk === null ||
+    !("openaiProvider" in sdk) ||
+    typeof sdk.openaiProvider !== "function"
+  ) {
+    throw new Error("Missing SDK provider");
+  }
+  const provider: unknown = sdk.openaiProvider();
+  if (
+    typeof provider !== "object" ||
+    provider === null ||
+    !("getModels" in provider) ||
+    typeof provider.getModels !== "function"
+  ) {
+    throw new Error("Missing SDK catalog");
+  }
+  const models: unknown = provider.getModels();
+  if (!Array.isArray(models)) {
+    throw new Error("Invalid SDK catalog");
+  }
+  const model: unknown = models.find((item: unknown) => {
+    return (
+      typeof item === "object" &&
+      item !== null &&
+      "id" in item &&
+      item.id === "gpt-5.6-luna"
+    );
+  });
+  if (typeof model !== "object" || model === null) {
+    throw new Error("Missing Luna");
+  }
+  const descriptor = Object.getOwnPropertyDescriptor(model, "thinkingLevelMap");
+  Object.defineProperty(model, "thinkingLevelMap", {
+    value: { low: value },
+    configurable: true,
+    writable: true,
+  });
+  onTestFinished(() => {
+    if (descriptor) {
+      Object.defineProperty(model, "thinkingLevelMap", descriptor);
+    } else {
+      Reflect.deleteProperty(model, "thinkingLevelMap");
+    }
+  });
+}
+
 describe("Pi memory Stage 1 worker", () => {
-  it("settles switch-off work terminal before any download or provider call", async () => {
+  it("leaves switch-off legacy work unclaimed before any download or provider call", async () => {
     const enabledStorage = createStorageFixture();
     const disabledStorage = createStorageFixture({ piMemoryEnabled: false });
     const enabledSessionId = randomUUID();
@@ -576,12 +691,12 @@ describe("Pi memory Stage 1 worker", () => {
 
     expect(result.body).toMatchObject({
       success: true,
-      scanned: 2,
-      claimed: 2,
+      scanned: 1,
+      claimed: 1,
       succeeded: 1,
       succeededNoOutput: 0,
       retryableFailure: 0,
-      terminalFailure: 1,
+      terminalFailure: 0,
       staleDiscarded: 0,
     });
     expect(provider.calls).toHaveLength(1);
@@ -601,12 +716,13 @@ describe("Pi memory Stage 1 worker", () => {
       retry_count: 0,
       last_error_class: null,
     });
-    // Terminal with the explicit class, and the seeded attempt count is
-    // untouched: no attempt was consumed.
+    // Unscheduled legacy work remains pending with its attempt count untouched.
     await expect(inspect(disabled)).resolves.toStrictEqual({
-      status: "terminal_failure",
+      status: "pending",
       retry_count: 2,
-      last_error_class: "pi_memory_disabled",
+      retry_at: null,
+      successful_source_history_hash: null,
+      last_error_class: null,
       raw_memory: null,
       rollout_summary: null,
       rollout_slug: null,
@@ -769,79 +885,126 @@ describe("Pi memory Stage 1 worker", () => {
     });
   });
 
-  it("decodes every encoding, redacts both boundaries, and records background usage", async () => {
-    const storage = createStorageFixture();
-    const fixtures: CandidateFixture[] = [];
-    for (const encoding of [
-      SESSION_HISTORY_ENCODING_IDENTITY,
-      SESSION_HISTORY_ENCODING_GZIP,
-      SESSION_HISTORY_ENCODING_ZSTD,
-    ] as const) {
-      const piSessionId = randomUUID();
-      fixtures.push(
-        await storage.seed({
-          piSessionId,
-          raw: settledHistory(
+  it.each([
+    SESSION_HISTORY_ENCODING_IDENTITY,
+    SESSION_HISTORY_ENCODING_GZIP,
+    SESSION_HISTORY_ENCODING_ZSTD,
+  ] as const)(
+    "decodes %s, redacts both boundaries, and records background usage",
+    async (encoding) => {
+      const storage = createStorageFixture();
+      const fixtures: CandidateFixture[] = [];
+      {
+        const piSessionId = randomUUID();
+        fixtures.push(
+          await storage.seed({
             piSessionId,
-            `perform durable work with ${INPUT_SECRET}`,
-          ),
-          encoding,
-        }),
-      );
-    }
-    const provider = installProvider();
+            raw: settledHistory(
+              piSessionId,
+              `perform durable work with ${INPUT_SECRET}`,
+            ),
+            encoding,
+          }),
+        );
+      }
+      const provider = installProvider();
 
-    await expect(runScoped(storage)).resolves.toMatchObject({
-      scanned: 3,
-      claimed: 3,
-      succeeded: 3,
-      retryableFailure: 0,
-      terminalFailure: 0,
-    });
-    expect(provider.calls).toHaveLength(3);
-    for (const invocation of provider.calls) {
-      const serialized = JSON.stringify(invocation.request);
-      expect(serialized).not.toContain(INPUT_SECRET);
-      expect(serialized).not.toContain(fixtures[0]?.pi_session_id);
-      expect(invocation.request).toMatchObject({
-        model: "gpt-5.6-luna",
-        reasoning: { effort: "low" },
-        text: {
-          format: {
-            type: "json_schema",
-            strict: true,
-            schema: { additionalProperties: false },
+      await expect(runScoped(storage)).resolves.toMatchObject({
+        scanned: 1,
+        claimed: 1,
+        succeeded: 1,
+        retryableFailure: 0,
+        terminalFailure: 0,
+      });
+      expect(provider.calls).toHaveLength(1);
+      for (const invocation of provider.calls) {
+        const serialized = JSON.stringify(invocation.request);
+        expect(serialized).not.toContain(INPUT_SECRET);
+        expect(serialized).not.toContain(fixtures[0]?.pi_session_id);
+        expect(invocation.request).toMatchObject({
+          model: "gpt-5.6-luna",
+          reasoning: { effort: "low" },
+          text: {
+            format: {
+              type: "json_schema",
+              strict: true,
+              schema: { additionalProperties: false },
+            },
           },
-        },
+        });
+        expect(invocation.request).not.toHaveProperty("tools");
+      }
+      for (const fixture of fixtures) {
+        await expect(inspect(fixture)).resolves.toMatchObject({
+          status: "succeeded",
+          raw_memory: "safe surrounding text [REDACTED_SECRET]",
+          rollout_summary: "Authorization: [REDACTED_SECRET]",
+          rollout_slug: "pi-stage1-result",
+        });
+      }
+      const usage = await inspectUsage(storage);
+      expect(usage.length).toBeGreaterThanOrEqual(3);
+      expect(usage).toStrictEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            run_id: null,
+            provider: "gpt-5.6-luna",
+            category: "tokens.input",
+          }),
+          expect.objectContaining({
+            run_id: null,
+            provider: "gpt-5.6-luna",
+            category: "tokens.output",
+          }),
+        ]),
+      );
+      await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+    },
+  );
+
+  it.each(["unmeasurable", "over_budget"])(
+    "settles a final %s SDK payload once without HTTP, usage or a success watermark",
+    async (failure) => {
+      await corruptStage1CatalogPayload(
+        failure === "unmeasurable"
+          ? { recursive: null }
+          : "overhead ".repeat(260_000),
+      );
+      const storage = createStorageFixture();
+      const piSessionId = randomUUID();
+      const fixture = await storage.seed({
+        piSessionId,
+        raw: settledHistory(piSessionId, "retain human decision"),
       });
-      expect(invocation.request).not.toHaveProperty("tools");
-    }
-    for (const fixture of fixtures) {
+      const provider = installProvider();
+      const result = await runScoped(storage);
+      expect(
+        provider.calls.map((call) => {
+          return call.url;
+        }),
+      ).toStrictEqual([]);
+      expect(result).toMatchObject({
+        claimed: 1,
+        terminalFailure: 1,
+        retryableFailure: 0,
+        succeeded: 0,
+        succeededNoOutput: 0,
+      });
+      expect(provider.calls).toHaveLength(0);
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
       await expect(inspect(fixture)).resolves.toMatchObject({
-        status: "succeeded",
-        raw_memory: "safe surrounding text [REDACTED_SECRET]",
-        rollout_summary: "Authorization: [REDACTED_SECRET]",
-        rollout_slug: "pi-stage1-result",
+        status: "terminal_failure",
+        last_error_class:
+          failure === "unmeasurable"
+            ? "input_payload_unmeasurable"
+            : "input_budget_exceeded",
+        raw_memory: null,
+        successful_source_history_hash: null,
       });
-    }
-    const usage = await inspectUsage(storage);
-    expect(usage.length).toBeGreaterThanOrEqual(9);
-    expect(usage).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          run_id: null,
-          provider: "gpt-5.6-luna",
-          category: "tokens.input",
-        }),
-        expect.objectContaining({
-          run_id: null,
-          provider: "gpt-5.6-luna",
-          category: "tokens.output",
-        }),
-      ]),
-    );
-    await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
-  });
+      await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+      expect(provider.calls).toHaveLength(0);
+    },
+  );
 
   it("bills the luna long-context tier from the 272,001 total-input boundary", async () => {
     const below = createStorageFixture();
@@ -893,7 +1056,16 @@ describe("Pi memory Stage 1 worker", () => {
     if (await runInIsolatedProcess(import.meta.url)) {
       return;
     }
-    const storage = createStorageFixture();
+    const storages: ReturnType<typeof createStorageFixture>[] = [];
+    const storage = {
+      seed: async (
+        args: Parameters<ReturnType<typeof createStorageFixture>["seed"]>[0],
+      ) => {
+        const owner = createStorageFixture();
+        storages.push(owner);
+        return await owner.seed(args);
+      },
+    };
     const futureId = randomUUID();
     const wrongExpectedId = randomUUID();
     const unsettledId = randomUUID();
@@ -960,7 +1132,11 @@ describe("Pi memory Stage 1 worker", () => {
     });
     const provider = installProvider();
 
-    await expect(runScoped(storage)).resolves.toMatchObject({
+    const response = await accept(
+      stage1Client(storages).extract({ headers: stage1Headers() }),
+      [200],
+    );
+    expect(response.body).toMatchObject({
       claimed: 7,
       succeeded: 1,
       terminalFailure: 6,
@@ -976,6 +1152,59 @@ describe("Pi memory Stage 1 worker", () => {
       status: "succeeded",
     });
   }, 150_000);
+
+  it.each(["encoded_size", "integrity", "utf8", "gzip", "zstd"])(
+    "rejects %s source corruption before extraction",
+    async (failure) => {
+      const storage = createStorageFixture();
+      const piSessionId = randomUUID();
+      const fixture = await storage.seed({
+        piSessionId,
+        raw:
+          failure === "utf8"
+            ? Buffer.from([0xff, 0xfe])
+            : settledHistory(piSessionId, "valid source"),
+        encoding:
+          failure === "gzip"
+            ? SESSION_HISTORY_ENCODING_GZIP
+            : failure === "zstd"
+              ? SESSION_HISTORY_ENCODING_ZSTD
+              : SESSION_HISTORY_ENCODING_IDENTITY,
+      });
+      const body = context.sessionHistoryBlobs.get(fixture.objectKey);
+      if (!body) {
+        throw new Error("Missing owned source fixture");
+      }
+      if (failure === "encoded_size") {
+        context.sessionHistoryBlobs.set(fixture.objectKey, body.subarray(1));
+      } else if (failure !== "utf8") {
+        const corrupted = Buffer.from(body);
+        corrupted[0] = 0;
+        context.sessionHistoryBlobs.set(fixture.objectKey, corrupted);
+      }
+      const provider = installProvider();
+      await expect(runScoped(storage)).resolves.toMatchObject({
+        claimed: 1,
+        terminalFailure: 1,
+        succeeded: 0,
+        retryableFailure: 0,
+      });
+      expect(provider.calls).toHaveLength(0);
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+      await expect(inspect(fixture)).resolves.toMatchObject({
+        status: "terminal_failure",
+        successful_source_history_hash: null,
+        last_error_class:
+          failure === "encoded_size"
+            ? "source_encoded_size_invalid"
+            : failure === "integrity"
+              ? "source_integrity_invalid"
+              : failure === "utf8"
+                ? "source_utf8_invalid"
+                : "source_decompression_invalid",
+      });
+    },
+  );
 
   it("fences concurrent claims and stale workers while recording both provider usages", async () => {
     const storage = createStorageFixture();
@@ -1054,17 +1283,17 @@ describe("Pi memory Stage 1 worker", () => {
     const provider = installProvider();
 
     await expect(runScoped(storage)).resolves.toMatchObject({
-      scanned: 3,
+      scanned: 1,
       claimed: 1,
-      sourceExpired: 1,
-      sourceActive: 1,
+      sourceExpired: 0,
+      sourceActive: 0,
       retryableFailure: 1,
-      terminalFailure: 1,
+      terminalFailure: 0,
     });
     expect(provider.calls).toHaveLength(0);
     await expect(inspect(expired)).resolves.toMatchObject({
-      status: "terminal_failure",
-      last_error_class: "source_expired",
+      status: "pending",
+      last_error_class: null,
     });
     await expect(inspect(active)).resolves.toMatchObject({ status: "pending" });
     await expect(inspect(retry)).resolves.toMatchObject({
@@ -1079,8 +1308,8 @@ describe("Pi memory Stage 1 worker", () => {
     });
     await storage.action({ action: "make-retry-due", pi_session_id: retryId });
     await expect(runScoped(storage)).resolves.toMatchObject({
-      claimed: 2,
-      succeeded: 2,
+      claimed: 1,
+      succeeded: 1,
     });
   });
 
@@ -1117,16 +1346,16 @@ describe("Pi memory Stage 1 worker", () => {
       settledHistory(piSessionId, "replacement generation"),
     );
     await expect(runScoped(storage, piSessionId)).resolves.toMatchObject({
-      claimed: 1,
-      succeeded: 1,
+      claimed: 0,
+      succeeded: 0,
     });
     oldReleased.resolve(undefined);
     await expect(oldWorker).resolves.toMatchObject({ staleDiscarded: 1 });
     await expect(inspect(replacement)).resolves.toMatchObject({
-      status: "succeeded",
-      raw_memory: "replacement source output",
+      status: "pending",
+      raw_memory: null,
     });
-    expect((await inspectUsage(storage)).length).toBeGreaterThanOrEqual(6);
+    expect((await inspectUsage(storage)).length).toBeGreaterThanOrEqual(3);
   });
 
   it("records consumed usage but cannot resurrect an owner deleted during provider work", async () => {
@@ -1260,7 +1489,7 @@ describe("Pi memory Stage 1 worker", () => {
     });
   });
 
-  it("claims at most eight candidates and starts at most eight providers", async () => {
+  it("claims only two threads for one user without refilling the daily batch", async () => {
     const storage = createStorageFixture();
     for (let index = 0; index < 9; index += 1) {
       const piSessionId = randomUUID();
@@ -1276,7 +1505,7 @@ describe("Pi memory Stage 1 worker", () => {
     const provider = installProvider(async () => {
       active += 1;
       maxActive = Math.max(maxActive, active);
-      if (active === 8) {
+      if (active === 2) {
         allStarted.resolve(undefined);
       }
       await released.promise;
@@ -1286,14 +1515,101 @@ describe("Pi memory Stage 1 worker", () => {
 
     const first = runScoped(storage);
     await allStarted.promise;
-    expect(provider.calls).toHaveLength(8);
-    expect(maxActive).toBe(8);
+    expect(provider.calls).toHaveLength(2);
+    expect(maxActive).toBe(2);
     released.resolve(undefined);
-    await expect(first).resolves.toMatchObject({ claimed: 8, succeeded: 8 });
+    await expect(first).resolves.toMatchObject({ claimed: 2, succeeded: 2 });
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      claimed: 0,
+      succeeded: 0,
+    });
+    expect(provider.calls).toHaveLength(2);
+  });
+
+  it("revalidates a fresh continuation after download and before the provider", async () => {
+    const storage = createStorageFixture();
+    const piSessionId = randomUUID();
+    const fixture = await storage.seed({
+      piSessionId,
+      raw: settledHistory(piSessionId, "frozen provider boundary"),
+    });
+    const entered = createDeferredPromise<void>(context.signal);
+    const released = createDeferredPromise<void>(context.signal);
+    const fallback = context.mocks.s3.send.getMockImplementation();
+    context.mocks.s3.send.mockImplementation(async (value: unknown) => {
+      if (
+        value instanceof GetObjectCommand &&
+        value.input.Key === fixture.objectKey
+      ) {
+        entered.resolve(undefined);
+        await released.promise;
+      }
+      return fallback ? await fallback(value) : {};
+    });
+    const provider = installProvider();
+    const worker = runScoped(storage);
+    await entered.promise;
+    await storage.createActive(fixture);
+    released.resolve(undefined);
+    await expect(worker).resolves.toMatchObject({
+      claimed: 1,
+      staleDiscarded: 1,
+    });
+    expect(provider.calls).toHaveLength(0);
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+  });
+
+  it("waits a full hour after a real failed provider attempt", async () => {
+    mockNow(new Date("2026-09-14T12:00:00Z"));
+    const storage = createStorageFixture();
+    const piSessionId = randomUUID();
+    const fixture = await storage.seed({
+      piSessionId,
+      raw: settledHistory(piSessionId, "hourly provider retry"),
+    });
+    const provider = installProvider(() => {
+      return "invalid structured output";
+    });
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      retryableFailure: 1,
+    });
+    await expect(inspect(fixture)).resolves.toMatchObject({
+      retry_at: "2026-09-14T13:00:00.000Z",
+    });
+    mockNow(new Date("2026-09-14T12:59:59.999Z"));
+    await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+    expect(provider.calls).toHaveLength(1);
+    mockNow(new Date("2026-09-14T13:00:00Z"));
     await expect(runScoped(storage)).resolves.toMatchObject({
       claimed: 1,
-      succeeded: 1,
+      retryableFailure: 1,
     });
+    expect(provider.calls).toHaveLength(2);
+  });
+
+  it("retains the independent eight-call global bound across nine owners", async () => {
+    const storages = [];
+    for (let index = 0; index < 9; index += 1) {
+      const storage = createStorageFixture();
+      const piSessionId = randomUUID();
+      await storage.seed({
+        piSessionId,
+        raw: settledHistory(piSessionId, "global capacity"),
+      });
+      storages.push(storage);
+    }
+    const provider = installProvider();
+    const first = await accept(
+      stage1Client(storages).extract({ headers: stage1Headers() }),
+      [200],
+    );
+    expect(first.body).toMatchObject({ claimed: 8, succeeded: 8 });
+    expect(provider.calls).toHaveLength(8);
+    const second = await accept(
+      stage1Client(storages).extract({ headers: stage1Headers() }),
+      [200],
+    );
+    expect(second.body).toMatchObject({ claimed: 1, succeeded: 1 });
     expect(provider.calls).toHaveLength(9);
   });
 
@@ -1319,5 +1635,1294 @@ describe("Pi memory Stage 1 worker", () => {
       raw_memory: null,
       rollout_summary: null,
     });
+  });
+});
+
+function installSourceProvider(
+  responder?: Parameters<typeof installProvider>[0],
+) {
+  // The provider-management BDD helper owns its own S3 fixture; restore the
+  // checkpoint HTTP boundary only after management setup has completed.
+  installS3Objects();
+  return installProvider(responder);
+}
+
+type SourceBinding = NonNullable<
+  Extract<TestPiMemoryStage1StateActionBody, { action: "seed" }>["source"]
+>;
+type StorageFixture = ReturnType<typeof createStorageFixture>;
+
+const lunaApiKeyRoutes = [
+  {
+    type: "openai-api-key",
+    url: "https://api.openai.com/v1/responses",
+    model: "gpt-5.6-luna",
+    contextWindow: 272_000,
+  },
+  {
+    type: "openrouter-codex",
+    url: "https://openrouter.ai/api/v1/responses",
+    model: "openai/gpt-5.6-luna",
+    contextWindow: 1_050_000,
+  },
+  {
+    type: "vercel-ai-gateway-codex",
+    url: "https://ai-gateway.vercel.sh/v1/responses",
+    model: "openai/gpt-5.6-luna",
+    contextWindow: 272_000,
+  },
+] as const;
+type LunaApiKeyProvider = (typeof lunaApiKeyRoutes)[number]["type"];
+
+function actorFor(storage: StorageFixture) {
+  return createBddApi(context).user({
+    userId: storage.user_id,
+    orgId: storage.org_id,
+    orgRole: "org:admin",
+  });
+}
+
+async function apiKeySource(
+  storage: StorageFixture,
+  key = "source-openai-key",
+  type: LunaApiKeyProvider = "openai-api-key",
+  scope: "org" | "member" = "org",
+) {
+  const actor = actorFor(storage);
+  const misc = createMiscRoutesApi(context);
+  const result = await misc.upsertOrgModelProvider(
+    actor,
+    { type, secret: key },
+    [200, 201],
+  );
+  if (result.status !== 200 && result.status !== 201) {
+    throw new Error("Missing key fixture");
+  }
+  if (scope === "member") {
+    await storage.action({
+      action: "historical-key-owner",
+      provider_id: result.body.provider.id,
+      scope,
+    });
+  }
+  onTestFinished(async () => {
+    if (scope === "member") {
+      await storage.action({
+        action: "historical-key-owner",
+        provider_id: result.body.provider.id,
+        scope: "org",
+      });
+    }
+    await misc.deleteOrgModelProvider(actor, type, [204, 404]);
+  });
+  return {
+    modelProvider: type,
+    modelProviderId: result.body.provider.id,
+    modelProviderCredentialScope: scope,
+  } satisfies SourceBinding;
+}
+
+async function codexSource(
+  storage: StorageFixture,
+  identity = "source-account-a",
+  expired = false,
+) {
+  const actor = actorFor(storage);
+  await updateFeatureSwitchesForUser(
+    context,
+    { orgId: storage.org_id, userId: storage.user_id },
+    {
+      [FeatureSwitchKey.PiMemory]: true,
+      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+    },
+  );
+  const token = makeCodexJwt({
+    exp: Math.floor(now() / 1000) + (expired ? -60 : 7200),
+    identity,
+  });
+  const misc = createMiscRoutesApi(context);
+  const result = await misc.upsertPersonalModelProvider(
+    actor,
+    {
+      type: "codex-oauth-token",
+      authMethod: "auth_json",
+      secrets: {
+        CODEX_AUTH_JSON: makeCodexAuthJson({
+          accessToken: token,
+          accountId: identity,
+          refreshToken: `refresh-${identity}`,
+        }),
+      },
+    },
+    [200, 201],
+  );
+  if (result.status !== 200 && result.status !== 201) {
+    throw new Error("Missing subscription fixture");
+  }
+  onTestFinished(async () => {
+    await misc.deletePersonalModelProvider(
+      actor,
+      "codex-oauth-token",
+      [204, 404],
+    );
+  });
+  return {
+    token,
+    identity,
+    binding: {
+      modelProvider: "codex-oauth-token",
+      modelProviderId: result.body.provider.id,
+      modelProviderCredentialScope: "member",
+    } satisfies SourceBinding,
+  };
+}
+
+async function activateAnotherCodexAccount(
+  storage: StorageFixture,
+  identity: string,
+) {
+  const actor = actorFor(storage);
+  await updateFeatureSwitchesForUser(
+    context,
+    { orgId: storage.org_id, userId: storage.user_id },
+    {
+      [FeatureSwitchKey.PiMemory]: true,
+      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+    },
+  );
+  const auth = createAuthDeviceApiActions(context);
+  mockCodexDeviceAuthProvider({ tokenScope: "personal", accountId: identity });
+  const started = await auth.requestCodexStart(actor, "personal", [200], {
+    mode: "add",
+  });
+  if (started.status !== 200) {
+    throw new Error("Expected device auth start");
+  }
+  const result = await auth.requestCodexComplete(
+    actor,
+    started.body.sessionToken,
+    [200],
+  );
+  if (!("status" in result.body) || result.body.status !== "complete") {
+    throw new Error("Expected device auth completion");
+  }
+  await createAuthDeviceSupportApi(
+    context,
+  ).activatePersonalModelProviderAccount(actor, result.body.provider.id);
+}
+
+async function gatewaySource(storage: StorageFixture, mapsLuna = true) {
+  createRouteMocks(context).clerk.session(
+    storage.user_id,
+    storage.org_id,
+    "org:admin",
+  );
+  const created = await accept(
+    setupApp({ context, routes: modelProviderGatewayRoutes })(
+      modelProviderConnectionsMainContract,
+    ).create({
+      headers: { authorization: "Bearer clerk-session" },
+      body: {
+        displayName: "Stage 1 gateway",
+        secret: "gateway-only-secret",
+        surfaces: [
+          {
+            protocol: "openai-responses",
+            apiBaseUrl: "https://stage1-gateway.example/v1",
+            authHeaderName: "x-source-key",
+            authHeaderTemplate: "Key {{secret}}",
+            modelMappings: mapsLuna
+              ? { "gpt-5.6-luna": "mapped-luna" }
+              : { "deepseek-v4-flash": "deepseek-only" },
+          },
+        ],
+      },
+    }),
+    [201],
+  );
+  const surface = created.body.surfaces[0];
+  if (!surface) {
+    throw new Error("Missing gateway surface");
+  }
+  onTestFinished(async () => {
+    createRouteMocks(context).clerk.session(
+      storage.user_id,
+      storage.org_id,
+      "org:admin",
+    );
+    await accept(
+      setupApp({ context, routes: modelProviderGatewayRoutes })(
+        modelProviderConnectionsByIdContract,
+      ).delete({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { id: created.body.id },
+      }),
+      [204],
+    );
+  });
+  return {
+    modelProvider: "custom-openai-responses",
+    modelProviderId: surface.id,
+    modelProviderCredentialScope: "org",
+  } satisfies SourceBinding;
+}
+
+async function seedSource(
+  storage: StorageFixture,
+  source: SourceBinding,
+  content = "owned source evidence",
+) {
+  const piSessionId = randomUUID();
+  // Historical completed checkpoints, fixed bindings and cron state have no
+  // user write API. The existing test-only fixture owns this exception; actual
+  // provider creation, rotation, deletion, HTTP and result processing stay real.
+  return await storage.seed({
+    piSessionId,
+    raw: settledHistory(piSessionId, content),
+    source,
+  });
+}
+
+describe("Stage 1 source credentials", () => {
+  it.each([null, "org"])(
+    "serves an explicit built-in source with %s scope under its original owner",
+    async (scope) => {
+      const storage = createStorageFixture();
+      await seedSource(storage, {
+        modelProvider: "built-in",
+        modelProviderId: null,
+        modelProviderCredentialScope: scope,
+      });
+      const provider = installSourceProvider();
+      await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
+      expect(provider.calls).toHaveLength(1);
+      expect(provider.calls[0]?.request).toMatchObject({
+        model: "gpt-5.6-luna",
+        reasoning: { effort: "low" },
+      });
+      const usage = await inspectUsage(storage);
+      expect(usage.length).toBeGreaterThan(0);
+      for (const row of usage) {
+        expect(row).toMatchObject({
+          run_id: null,
+          provider: "gpt-5.6-luna",
+        });
+      }
+    },
+  );
+
+  it.each([
+    { modelProviderId: randomUUID(), modelProviderCredentialScope: "org" },
+    { modelProviderId: null, modelProviderCredentialScope: "member" },
+  ])("rejects an ambiguous built-in binding %j", async (binding) => {
+    const storage = createStorageFixture();
+    const candidate = await seedSource(storage, {
+      modelProvider: "built-in",
+      ...binding,
+    });
+    const provider = installSourceProvider();
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      terminalFailure: 1,
+    });
+    expect(provider.calls).toHaveLength(0);
+    await expect(inspect(candidate)).resolves.toMatchObject({
+      last_error_class: "source_binding_invalid",
+      successful_source_history_hash: null,
+    });
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+  });
+
+  it("routes a mixed batch to each original source and charges only built-in", async () => {
+    const storages = Array.from({ length: 5 }, () => {
+      return createStorageFixture();
+    });
+    const [builtin, api, codex, gateway, vercel] = storages;
+    if (!builtin || !api || !codex || !gateway || !vercel) {
+      throw new Error("Missing owners");
+    }
+    const subscription = await codexSource(codex);
+    await seedSource(
+      builtin,
+      {
+        modelProvider: "built-in",
+        modelProviderId: null,
+        modelProviderCredentialScope: null,
+      },
+      "builtin evidence",
+    );
+    await seedSource(api, await apiKeySource(api), "api evidence");
+    await seedSource(codex, subscription.binding, "codex evidence");
+    await seedSource(gateway, await gatewaySource(gateway), "gateway evidence");
+    await seedSource(
+      vercel,
+      await apiKeySource(vercel, "vercel-owned-key", "vercel-ai-gateway-codex"),
+      "vercel evidence",
+    );
+    const provider = installSourceProvider();
+    const result = await accept(
+      stage1Client(storages).extract({ headers: stage1Headers() }),
+      [200],
+    );
+    expect(result.body).toMatchObject({
+      succeeded: 5,
+      terminalFailure: 0,
+      retryableFailure: 0,
+    });
+    expect(provider.calls).toHaveLength(5);
+    const callFor = (content: string) => {
+      const call = provider.calls.find((call) => {
+        return JSON.stringify(call.request).includes(content);
+      });
+      if (!call) {
+        throw new Error("Missing source HTTP request");
+      }
+      return call;
+    };
+    const apiCall = callFor("api evidence");
+    expect(apiCall.url).toBe("https://api.openai.com/v1/responses");
+    expect(apiCall.headers.get("authorization")).toBe(
+      "Bearer source-openai-key",
+    );
+    const vercelCall = callFor("vercel evidence");
+    expect(vercelCall.url).toBe("https://ai-gateway.vercel.sh/v1/responses");
+    expect(vercelCall.headers.get("authorization")).toBe(
+      "Bearer vercel-owned-key",
+    );
+    expect(vercelCall.request).toMatchObject({ model: "openai/gpt-5.6-luna" });
+    const native = callFor("codex evidence");
+    expect(native.url).toBe("https://chatgpt.com/backend-api/codex/responses");
+    expect(native.headers.get("authorization")).toBe(
+      `Bearer ${subscription.token}`,
+    );
+    expect(native.headers.get("chatgpt-account-id")).toBe(
+      subscription.identity,
+    );
+    expect(native.request).toMatchObject({
+      instructions: expect.any(String),
+      text: { format: { type: "json_schema", strict: true } },
+    });
+    expect(native.request).not.toHaveProperty("max_output_tokens");
+    const custom = callFor("gateway evidence");
+    expect(custom.url).toBe("https://stage1-gateway.example/v1/responses");
+    expect(custom.headers.get("x-source-key")).toBe("Key gateway-only-secret");
+    expect(custom.headers.get("authorization")).toBeNull();
+    expect(custom.request).toMatchObject({ model: "mapped-luna" });
+    for (const call of provider.calls) {
+      expect(call.request).toMatchObject({ reasoning: { effort: "low" } });
+      expect(call.request).not.toHaveProperty("service_tier");
+      expect(call.request).not.toHaveProperty("tools");
+      if (call !== custom && call !== vercelCall) {
+        expect(call.request).toMatchObject({ model: "gpt-5.6-luna" });
+      }
+    }
+    expect((await inspectUsage(builtin)).length).toBeGreaterThan(0);
+    for (const storage of [api, codex, gateway, vercel]) {
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    }
+  });
+
+  it.each(lunaApiKeyRoutes)(
+    "keeps the exact $type key after default changes and surviving-key rotation",
+    async ({ type, url }) => {
+      const storage = createStorageFixture();
+      const source = await apiKeySource(storage, "original-key", type);
+      const actor = actorFor(storage);
+      const runs = createRunsApi(context);
+      await runs.updateOrgModelPolicies(actor, [
+        {
+          model: "gpt-5.6-luna",
+          isDefault: true,
+          defaultProviderType: type,
+          credentialScope: "org",
+          modelProviderId: source.modelProviderId,
+        },
+      ]);
+      await seedSource(storage, source);
+      const rotated = await apiKeySource(storage, "rotated-key", type);
+      expect(rotated.modelProviderId).toBe(source.modelProviderId);
+      const replacement = await apiKeySource(
+        storage,
+        "new-default-key",
+        type === "openrouter-codex" ? "openai-api-key" : "openrouter-codex",
+      );
+      await runs.updateOrgModelPolicies(actor, [
+        {
+          model: "gpt-5.6-luna",
+          isDefault: true,
+          defaultProviderType: replacement.modelProvider,
+          credentialScope: "org",
+          modelProviderId: replacement.modelProviderId,
+        },
+      ]);
+      expect(
+        (await createMiscRoutesApi(context).listModelPolicies(actor)).policies,
+      ).toContainEqual(
+        expect.objectContaining({
+          model: "gpt-5.6-luna",
+          isDefault: true,
+          modelProviderId: replacement.modelProviderId,
+        }),
+      );
+      const provider = installSourceProvider();
+      await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
+      expect(provider.calls).toHaveLength(1);
+      expect(provider.calls[0]?.headers.get("authorization")).toBe(
+        "Bearer rotated-key",
+      );
+      expect(provider.calls[0]?.url).toBe(url);
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    },
+  );
+
+  it.each(lunaApiKeyRoutes)(
+    "cannot replace a deleted $type ID with a same-type provider",
+    async ({ type }) => {
+      const storage = createStorageFixture();
+      const source = await apiKeySource(storage, "deleted-key", type);
+      const candidate = await seedSource(storage, source);
+      await createMiscRoutesApi(context).deleteOrgModelProvider(
+        actorFor(storage),
+        type,
+        [204],
+      );
+      const replacement = await apiKeySource(storage, "replacement-key", type);
+      expect(replacement.modelProviderId).not.toBe(source.modelProviderId);
+      const provider = installSourceProvider();
+      await expect(runScoped(storage)).resolves.toMatchObject({
+        terminalFailure: 1,
+      });
+      expect(provider.calls).toHaveLength(0);
+      await expect(inspect(candidate)).resolves.toMatchObject({
+        last_error_class: "credential_unavailable",
+        successful_source_history_hash: null,
+      });
+      await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    },
+  );
+
+  it.each(["org", "member"] as const)(
+    "rejects a Vercel key whose %s owner disagrees with the source scope",
+    async (scope) => {
+      const storage = createStorageFixture();
+      const source = await apiKeySource(
+        storage,
+        "wrong-scope-key",
+        "vercel-ai-gateway-codex",
+        scope,
+      );
+      const candidate = await seedSource(storage, {
+        ...source,
+        modelProviderCredentialScope: scope === "org" ? "member" : "org",
+      });
+      const provider = installSourceProvider();
+      await expect(runScoped(storage)).resolves.toMatchObject({
+        terminalFailure: 1,
+      });
+      expect(provider.calls).toHaveLength(0);
+      await expect(inspect(candidate)).resolves.toMatchObject({
+        last_error_class: "credential_unavailable",
+        successful_source_history_hash: null,
+      });
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    },
+  );
+
+  it("rejects a Vercel provider ID owned by another organization", async () => {
+    const storage = createStorageFixture();
+    const foreign = createStorageFixture();
+    await seedSource(
+      storage,
+      await apiKeySource(foreign, "foreign-key", "vercel-ai-gateway-codex"),
+    );
+    const provider = installSourceProvider();
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      terminalFailure: 1,
+    });
+    expect(provider.calls).toHaveLength(0);
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    await expect(inspectUsage(foreign)).resolves.toStrictEqual([]);
+  });
+
+  it("does not select today's active subscription for a historical account", async () => {
+    const storage = createStorageFixture();
+    const original = await codexSource(storage);
+    await seedSource(storage, original.binding);
+    await activateAnotherCodexAccount(storage, "source-account-b");
+    const provider = installSourceProvider();
+    await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
+    expect(provider.calls[0]?.headers.get("chatgpt-account-id")).toBe(
+      original.identity,
+    );
+    expect(provider.calls[0]?.headers.get("authorization")).toBe(
+      `Bearer ${original.token}`,
+    );
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+  });
+
+  it.each([
+    "openai-api-key",
+    "openrouter-codex",
+    "vercel-ai-gateway-codex",
+    "codex",
+    "gateway",
+  ] as const)(
+    "never writes %s model credits for no-output, malformed output and replay",
+    async (kind) => {
+      const storage = createStorageFixture();
+      const source =
+        kind === "codex"
+          ? (await codexSource(storage)).binding
+          : kind === "gateway"
+            ? await gatewaySource(storage)
+            : await apiKeySource(storage, "byok-key", kind);
+      const candidate = await seedSource(storage, source);
+      installSourceProvider(() => {
+        return "not valid JSON";
+      });
+      await expect(runScoped(storage)).resolves.toMatchObject({
+        retryableFailure: 1,
+      });
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+      await storage.action({
+        action: "make-retry-due",
+        pi_session_id: candidate.pi_session_id,
+      });
+      installSourceProvider(() => {
+        return JSON.stringify({
+          raw_memory: "",
+          rollout_summary: "",
+          rollout_slug: null,
+        });
+      });
+      await expect(runScoped(storage)).resolves.toMatchObject({
+        succeededNoOutput: 1,
+      });
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+      // Writer boundary exception: deliberately replay reported vendor usage
+      // directly through the test route, independently from the worker's caller.
+      for (const usage of [
+        { input: 272_001, output: 5, cacheRead: 7, cacheWrite: 8 },
+        { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      ]) {
+        for (let replay = 0; replay < 2; replay += 1) {
+          await storage.action({
+            action: "record-usage",
+            pi_session_id: candidate.pi_session_id,
+            source_history_hash: candidate.source_history_hash,
+            response_source_id: "byok-replay",
+            billing_mode: "byok",
+            usage,
+          });
+        }
+      }
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    },
+  );
+
+  it.each([
+    "missing-provider",
+    "missing-id",
+    "missing-scope",
+    "wrong-scope",
+    "unsupported",
+    "deepseek-only",
+  ])(
+    "skips %s without a request, watermark or repeated attempt",
+    async (kind) => {
+      const storage = createStorageFixture();
+      const source: SourceBinding =
+        kind === "deepseek-only"
+          ? await gatewaySource(storage, false)
+          : kind === "wrong-scope"
+            ? {
+                ...(await apiKeySource(storage)),
+                modelProviderCredentialScope: "member",
+              }
+            : {
+                modelProvider:
+                  kind === "missing-provider"
+                    ? null
+                    : kind === "unsupported"
+                      ? "anthropic-api-key"
+                      : "openai-api-key",
+                modelProviderId: kind === "missing-id" ? null : randomUUID(),
+                modelProviderCredentialScope:
+                  kind === "missing-scope" ? null : "org",
+              };
+      const candidate = await seedSource(storage, source);
+      const provider = installSourceProvider();
+      await expect(runScoped(storage)).resolves.toMatchObject({
+        terminalFailure: 1,
+      });
+      expect(provider.calls).toHaveLength(0);
+      await expect(inspect(candidate)).resolves.toMatchObject({
+        successful_source_history_hash: null,
+        raw_memory: null,
+        status: "terminal_failure",
+      });
+      await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    },
+  );
+});
+
+async function disconnectCodex(storage: StorageFixture, id: string) {
+  createRouteMocks(context).clerk.session(
+    storage.user_id,
+    storage.org_id,
+    "org:admin",
+  );
+  await accept(
+    setupApp({ context, routes: meModelProviderAccountRoutes })(
+      personalModelProviderAccountsByIdContract,
+    ).delete({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { id },
+    }),
+    [204],
+  );
+}
+
+function installRefresh(
+  identity: string,
+  token: string,
+  beforeResponse?: () => Promise<void>,
+  revoke = false,
+) {
+  const requests: string[] = [];
+  server.use(
+    http.post("https://auth.openai.com/oauth/token", async ({ request }) => {
+      requests.push(await request.text());
+      await beforeResponse?.();
+      if (revoke) {
+        return HttpResponse.json(
+          { error: "invalid_grant", error_description: "refresh_token_reused" },
+          { status: 400 },
+        );
+      }
+      return HttpResponse.json({
+        access_token: token,
+        refresh_token: `refreshed-${identity}`,
+        token_type: "Bearer",
+        expires_in: 7200,
+        id_token: makeCodexJwt({
+          "https://api.openai.com/auth": {
+            chatgpt_account_id: identity,
+            chatgpt_plan_type: "plus",
+          },
+        }),
+      });
+    }),
+  );
+  return requests;
+}
+
+describe("Stage 1 credential lifecycle fences", () => {
+  it("keeps transient refresh failures on the existing hourly retry policy", async () => {
+    const storage = createStorageFixture();
+    const source = await codexSource(storage, "transient-refresh", true);
+    const candidate = await seedSource(storage, source.binding);
+    let refreshCalls = 0;
+    server.use(
+      http.post("https://auth.openai.com/oauth/token", () => {
+        refreshCalls += 1;
+        return HttpResponse.json({ error: "server_error" }, { status: 503 });
+      }),
+    );
+    const provider = installSourceProvider();
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      retryableFailure: 1,
+    });
+    expect(refreshCalls).toBe(1);
+    expect(provider.calls).toHaveLength(0);
+    await expect(inspect(candidate)).resolves.toMatchObject({
+      status: "retryable_failure",
+      last_error_class: "credential_refresh_failed",
+      successful_source_history_hash: null,
+    });
+    await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+    await storage.action({
+      action: "make-retry-due",
+      pi_session_id: candidate.pi_session_id,
+    });
+    installRefresh(
+      source.identity,
+      makeCodexJwt({ exp: Math.floor(now() / 1000) + 7200 }),
+    );
+    await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
+    expect(provider.calls).toHaveLength(1);
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+  });
+
+  it("refreshes the original subscription and then reads that same account ID", async () => {
+    const storage = createStorageFixture();
+    const original = await codexSource(storage, "refresh-account-a", true);
+    const candidate = await seedSource(storage, original.binding);
+    await activateAnotherCodexAccount(storage, "active-account-b");
+    const refreshed = makeCodexJwt({
+      exp: Math.floor(now() / 1000) + 7200,
+      identity: "refreshed-a",
+    });
+    const refreshes = installRefresh(original.identity, refreshed);
+    const provider = installSourceProvider();
+    await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
+    expect(refreshes).toHaveLength(1);
+    expect(refreshes[0]).toContain("refresh-refresh-account-a");
+    expect(provider.calls).toHaveLength(1);
+    expect(provider.calls[0]?.headers.get("authorization")).toBe(
+      `Bearer ${refreshed}`,
+    );
+    expect(provider.calls[0]?.headers.get("chatgpt-account-id")).toBe(
+      original.identity,
+    );
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    await expect(inspect(candidate)).resolves.toMatchObject({
+      status: "succeeded",
+    });
+  });
+
+  it.each(["disconnected", "refresh-revoked", "provider-revoked"])(
+    "settles %s without rapid retries or model credits",
+    async (mode) => {
+      const storage = createStorageFixture();
+      const original = await codexSource(
+        storage,
+        "revoked-account",
+        mode === "refresh-revoked",
+      );
+      const candidate = await seedSource(storage, original.binding);
+      // Keep account controls enabled after the checkpoint fixture's PiMemory setup.
+      await updateFeatureSwitchesForUser(
+        context,
+        { orgId: storage.org_id, userId: storage.user_id },
+        {
+          [FeatureSwitchKey.PiMemory]: true,
+          [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+          [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+        },
+      );
+      if (mode === "disconnected") {
+        await disconnectCodex(storage, original.binding.modelProviderId);
+      }
+      const refreshes = installRefresh(
+        original.identity,
+        "unused-token",
+        undefined,
+        true,
+      );
+      const provider = installSourceProvider();
+      let denied = 0;
+      if (mode === "provider-revoked") {
+        server.use(
+          http.post("https://chatgpt.com/backend-api/codex/responses", () => {
+            denied += 1;
+            return HttpResponse.json(
+              { error: { message: "revoked synthetic credential" } },
+              { status: 401 },
+            );
+          }),
+        );
+      }
+      await expect(runScoped(storage)).resolves.toMatchObject({
+        terminalFailure: 1,
+      });
+      await expect(inspect(candidate)).resolves.toMatchObject({
+        status: "terminal_failure",
+        last_error_class: "credential_unavailable",
+        successful_source_history_hash: null,
+      });
+      expect(provider.calls).toHaveLength(0);
+      expect(denied).toBe(mode === "provider-revoked" ? 1 : 0);
+      expect(refreshes).toHaveLength(mode === "refresh-revoked" ? 1 : 0);
+      await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    },
+  );
+
+  it.each(["cancel", "source-missing", "lease-expired", "new-source"])(
+    "sends no model request when %s wins during refresh",
+    async (race) => {
+      const storage = createStorageFixture();
+      const original = await codexSource(storage, "refresh-race", true);
+      const candidate = await seedSource(storage, original.binding);
+      await updateFeatureSwitchesForUser(
+        context,
+        { orgId: storage.org_id, userId: storage.user_id },
+        {
+          [FeatureSwitchKey.PiMemory]: true,
+          [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+          [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+        },
+      );
+      const controller = new AbortController();
+      onTestFinished(() => {
+        return controller.abort();
+      });
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      const refreshed = makeCodexJwt({ exp: Math.floor(now() / 1000) + 7200 });
+      const refreshes = installRefresh(
+        original.identity,
+        refreshed,
+        async () => {
+          entered.resolve();
+          await release.promise;
+        },
+      );
+      const provider = installSourceProvider();
+      const running = runScoped(storage, undefined, controller.signal);
+      const settled = running.then(
+        (value) => {
+          return { value };
+        },
+        (error) => {
+          return { error: String(error) };
+        },
+      );
+      await entered.promise;
+      if (race === "cancel") {
+        controller.abort();
+      }
+      if (race === "source-missing") {
+        await storage.action({
+          action: "delete-source",
+          pi_session_id: candidate.pi_session_id,
+        });
+      }
+      if (race === "lease-expired") {
+        await storage.action({
+          action: "expire-lease",
+          pi_session_id: candidate.pi_session_id,
+        });
+      }
+      if (race === "new-source") {
+        await storage.replace(
+          candidate,
+          settledHistory(candidate.pi_session_id, "new source revision"),
+        );
+      }
+      release.resolve();
+      await settled;
+      expect(refreshes).toHaveLength(1);
+      expect(provider.calls).toHaveLength(0);
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+      await expect(inspect(candidate)).resolves.toMatchObject({
+        raw_memory: null,
+        successful_source_history_hash: null,
+      });
+    },
+  );
+
+  it("preserves completed output after its source disappears", async () => {
+    const storage = createStorageFixture();
+    const candidate = await seedSource(storage, await apiKeySource(storage));
+    const provider = installSourceProvider();
+    await expect(runScoped(storage)).resolves.toMatchObject({ succeeded: 1 });
+    const before = await inspect(candidate);
+    await storage.action({
+      action: "delete-source",
+      pi_session_id: candidate.pi_session_id,
+    });
+    await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+    await expect(inspect(candidate)).resolves.toMatchObject({
+      raw_memory: before?.raw_memory,
+      status: "succeeded",
+    });
+    expect(provider.calls).toHaveLength(1);
+  });
+
+  it("does not refill a frozen daily slot when a selected source is unservable", async () => {
+    const storage = createStorageFixture();
+    for (let index = 0; index < 3; index += 1) {
+      await seedSource(storage, {
+        modelProvider: "anthropic-api-key",
+        modelProviderId: randomUUID(),
+        modelProviderCredentialScope: "org",
+      });
+    }
+    const provider = installSourceProvider();
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      claimed: 2,
+      terminalFailure: 2,
+    });
+    await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+    expect(provider.calls).toHaveLength(0);
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+  });
+});
+
+describe("Stage 1 source preparation identity", () => {
+  it.each(
+    lunaApiKeyRoutes.flatMap(({ type }) => {
+      return (["orgId", "userId"] as const).map((field) => {
+        return { type, field };
+      });
+    }),
+  )(
+    "rejects a $type $field change while history is being prepared",
+    async ({ type, field }) => {
+      const storage = createStorageFixture();
+      const source = await apiKeySource(storage, "owned-key", type);
+      const candidate = await seedSource(storage, source);
+      const provider = installSourceProvider();
+      const read = context.mocks.s3.send.getMockImplementation();
+      context.mocks.s3.send.mockImplementation(
+        async (commandValue: unknown) => {
+          if (
+            commandValue instanceof GetObjectCommand &&
+            commandValue.input.Key === candidate.objectKey
+          ) {
+            await storage.action({
+              action: "source-binding",
+              pi_session_id: candidate.pi_session_id,
+              source: { ...source, [field]: `changed-${randomUUID()}` },
+            });
+          }
+          return read ? await read(commandValue) : {};
+        },
+      );
+      await expect(runScoped(storage)).resolves.toMatchObject({
+        staleDiscarded: 1,
+      });
+      expect(provider.calls).toHaveLength(0);
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+      await expect(inspect(candidate)).resolves.toMatchObject({
+        raw_memory: null,
+        successful_source_history_hash: null,
+      });
+    },
+  );
+
+  it.each(lunaApiKeyRoutes)(
+    "revalidates an already prepared $type key after another history download",
+    async ({ type, url }) => {
+      const storage = createStorageFixture();
+      const source = await apiKeySource(storage, "prepared-key", type);
+      await seedSource(storage, source, "prepared source one");
+      await seedSource(storage, source, "prepared source two");
+      const provider = installSourceProvider();
+      const read = context.mocks.s3.send.getMockImplementation();
+      let downloads = 0;
+      context.mocks.s3.send.mockImplementation(
+        async (commandValue: unknown) => {
+          if (commandValue instanceof GetObjectCommand) {
+            downloads += 1;
+            if (downloads === 2) {
+              const replacement = await apiKeySource(
+                storage,
+                "rotated-during-preparation",
+                type,
+              );
+              expect(replacement.modelProviderId).toBe(source.modelProviderId);
+            }
+          }
+          return read ? await read(commandValue) : {};
+        },
+      );
+      await expect(runScoped(storage)).resolves.toMatchObject({
+        succeeded: 1,
+        terminalFailure: 1,
+      });
+      expect(provider.calls).toHaveLength(1);
+      expect(provider.calls[0]?.headers.get("authorization")).toBe(
+        "Bearer rotated-during-preparation",
+      );
+      expect(provider.calls[0]?.url).toBe(url);
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    },
+  );
+
+  it("rejects a Vercel key deleted after preparation before sending stale HTTP", async () => {
+    const storage = createStorageFixture();
+    const type = "vercel-ai-gateway-codex";
+    const source = await apiKeySource(storage, "prepared-vercel-key", type);
+    await seedSource(storage, source, "source one");
+    await seedSource(storage, source, "source two");
+    const provider = installSourceProvider();
+    const read = context.mocks.s3.send.getMockImplementation();
+    let downloads = 0;
+    context.mocks.s3.send.mockImplementation(async (commandValue: unknown) => {
+      if (commandValue instanceof GetObjectCommand && ++downloads === 2) {
+        await createMiscRoutesApi(context).deleteOrgModelProvider(
+          actorFor(storage),
+          type,
+          [204],
+        );
+      }
+      return read ? await read(commandValue) : {};
+    });
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      terminalFailure: 2,
+    });
+    expect(provider.calls).toHaveLength(0);
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+  });
+
+  it("keeps a missing-source candidate behind the existing selection fence", async () => {
+    const storage = createStorageFixture();
+    const candidate = await seedSource(storage, await apiKeySource(storage));
+    const provider = installSourceProvider();
+    const read = context.mocks.s3.send.getMockImplementation();
+    context.mocks.s3.send.mockImplementation(async (commandValue: unknown) => {
+      if (
+        commandValue instanceof GetObjectCommand &&
+        commandValue.input.Key === candidate.objectKey
+      ) {
+        await storage.action({
+          action: "delete-source",
+          pi_session_id: candidate.pi_session_id,
+        });
+      }
+      return read ? await read(commandValue) : {};
+    });
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      staleDiscarded: 1,
+    });
+    await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+    expect(provider.calls).toHaveLength(0);
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    await expect(inspect(candidate)).resolves.toMatchObject({
+      raw_memory: null,
+      successful_source_history_hash: null,
+    });
+  });
+});
+
+describe("Stage 1 background credential availability", () => {
+  it("covers every currently servable Luna Pi API-key source", () => {
+    const supported = getProvidersForModel("gpt-5.6-luna").filter((type) => {
+      return (
+        getSecretNameForType(type) !== undefined &&
+        isPiExecutionRoute({
+          selectedModel: "gpt-5.6-luna",
+          modelProviderType: type,
+          runtimeProviderType: type,
+          codexServiceTier: undefined,
+          piEnabled: true,
+          codexFastModeEnabled: false,
+        })
+      );
+    });
+    expect(supported.sort()).toStrictEqual(
+      lunaApiKeyRoutes
+        .map(({ type }) => {
+          return type;
+        })
+        .sort(),
+    );
+  });
+
+  it.each(
+    lunaApiKeyRoutes.flatMap((route) => {
+      return (["org", "member"] as const).map((scope) => {
+        return { ...route, scope };
+      });
+    }),
+  )(
+    "uses the exact $scope $type route while company routing is unavailable",
+    async ({ type, scope, url, model, contextWindow }) => {
+      const storage = createStorageFixture();
+      const source = await apiKeySource(
+        storage,
+        "exact-owned-key",
+        type,
+        scope,
+      );
+      const piSessionId = randomUUID();
+      const history = MemoryPiSession.create({
+        cwd: "/private/source",
+        id: piSessionId,
+      });
+      // Historical checkpoint fixture exception: exercise the actual worker's
+      // final serialized request with enough evidence to exceed its input budget.
+      for (let index = 0; index < 180; index += 1) {
+        history.appendMessage({
+          role: "user",
+          timestamp: index,
+          content: `human-${index} ${String.raw`"\汉😀 `.repeat(600)}`,
+        });
+      }
+      history.appendMessage(assistantMessage("completed safely", 181));
+      const candidate = await storage.seed({
+        piSessionId,
+        raw: Buffer.from(history.toJsonl(), "utf8"),
+        source,
+      });
+      const provider = installSourceProvider();
+      await expect(
+        withBuiltInModelRuntimeRouteUnavailableForTest(
+          "gpt-5.6-luna",
+          async () => {
+            return await runScoped(storage);
+          },
+        ),
+      ).resolves.toMatchObject({ succeeded: 1 });
+      expect(provider.calls).toHaveLength(1);
+      const call = provider.calls[0];
+      expect(call?.url).toBe(url);
+      expect(call?.headers.get("authorization")).toBe("Bearer exact-owned-key");
+      expect(call?.headers.get("chatgpt-account-id")).toBeNull();
+      expect(call?.request).toMatchObject({
+        model,
+        reasoning: { effort: "low" },
+        max_output_tokens: 32_768,
+        text: {
+          format: {
+            type: "json_schema",
+            strict: true,
+            schema: PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
+          },
+        },
+      });
+      expect(call?.request).not.toHaveProperty("service_tier");
+      expect(call?.request).not.toHaveProperty("tools");
+      if (!call) {
+        throw new Error("Missing source HTTP request");
+      }
+      const body = call.body;
+      const tokens = encode(body).length;
+      expect(tokens).toBeGreaterThan(100_000);
+      expect(tokens).toBeLessThanOrEqual(
+        Math.min(250_000, contextWindow - 32_768 - 8192),
+      );
+      expect(body).toContain("human-179");
+      expect(body).not.toContain("human-0 ");
+      await expect(inspect(candidate)).resolves.toMatchObject({
+        status: "succeeded",
+        successful_source_history_hash: candidate.source_history_hash,
+      });
+      await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+    },
+  );
+
+  it("does not borrow an account retained for another active foreground run", async () => {
+    const storage = createStorageFixture();
+    const source = await codexSource(storage, "retained-foreground-account");
+    const candidate = await seedSource(storage, source.binding);
+    const actor = actorFor(storage);
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    const runnerGroup = runs.configureRunnerGroup();
+    await runs.grantProEntitlement(actor);
+    await updateFeatureSwitchesForUser(
+      context,
+      { orgId: storage.org_id, userId: storage.user_id },
+      {
+        [FeatureSwitchKey.PiLoop]: false,
+        [FeatureSwitchKey.PiMemory]: true,
+        [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+      },
+    );
+    await runs.updateOrgModelPolicies(actor, [
+      {
+        model: "gpt-5.6-luna",
+        isDefault: true,
+        defaultProviderType: "codex-oauth-token",
+        credentialScope: "member",
+        modelProviderId: null,
+      },
+    ]);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Retained source account",
+      visibility: "private",
+    });
+    const sent = await createChatFilesBddApi(context).requestSendEvent(
+      actor,
+      {
+        agentId: agent.agentId,
+        prompt: "active foreground source",
+        model: "gpt-5.6-luna",
+      },
+      [201],
+    );
+    if (sent.status !== 201 || !sent.body.runId) {
+      throw new Error("Expected admitted foreground run");
+    }
+    const runId = sent.body.runId;
+    onTestFinished(async () => {
+      await runs.requestCancelRun(actor, runId, [200]);
+      // Cancellation schedules chat writes that must settle before fixture deletion.
+      await flushWaitUntilForTest();
+    });
+    const foregroundState = await runs.readRun(actor, runId);
+    expect(foregroundState.status, JSON.stringify(foregroundState)).toBe(
+      "pending",
+    );
+    await runs.heartbeatRunner(runnerGroup);
+    const claim = await runs.claimRunnerJob(runId);
+    expect(
+      claim.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN?.sourceId,
+    ).toBe(source.binding.modelProviderId);
+    await disconnectCodex(storage, source.binding.modelProviderId);
+    if (!claim.encryptedSecrets) {
+      throw new Error("Expected retained runtime envelope");
+    }
+    // This suite uses a separate storage bucket, which is part of catalog identity.
+    await installApiTestConnectorCatalog();
+    const foreground = await createFirewallApi(context).requestFirewallAuth(
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      {
+        encryptedSecrets: claim.encryptedSecrets,
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
+          "ChatGPT-Account-ID": secretTemplate("CHATGPT_ACCOUNT_ID"),
+        },
+        secretConnectorMap: claim.secretConnectorMap ?? undefined,
+        secretConnectorMetadataMap:
+          claim.secretConnectorMetadataMap ?? undefined,
+      },
+      [200],
+    );
+    expect(foreground.body).toMatchObject({
+      headers: { "ChatGPT-Account-ID": source.identity },
+    });
+    const provider = installSourceProvider();
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      terminalFailure: 1,
+    });
+    expect(provider.calls).toHaveLength(0);
+    await expect(inspect(candidate)).resolves.toMatchObject({
+      last_error_class: "credential_unavailable",
+      successful_source_history_hash: null,
+    });
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
+  });
+
+  it("rechecks disconnection after serial preparation and before native HTTP", async () => {
+    const storage = createStorageFixture();
+    const source = await codexSource(storage, "prepared-subscription");
+    await seedSource(storage, source.binding, "source one");
+    await seedSource(storage, source.binding, "source two");
+    await updateFeatureSwitchesForUser(
+      context,
+      { orgId: storage.org_id, userId: storage.user_id },
+      {
+        [FeatureSwitchKey.PiMemory]: true,
+        [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+      },
+    );
+    const provider = installSourceProvider();
+    const read = context.mocks.s3.send.getMockImplementation();
+    let downloads = 0;
+    context.mocks.s3.send.mockImplementation(async (commandValue: unknown) => {
+      if (commandValue instanceof GetObjectCommand && ++downloads === 2) {
+        await disconnectCodex(storage, source.binding.modelProviderId);
+      }
+      return read ? await read(commandValue) : {};
+    });
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      terminalFailure: 2,
+    });
+    expect(provider.calls).toHaveLength(0);
+    await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
   });
 });

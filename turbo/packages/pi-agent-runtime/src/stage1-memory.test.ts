@@ -1,3 +1,4 @@
+import { redactPiMemoryStage1Secrets } from "./stage1-secrets";
 import { createHash } from "node:crypto";
 import { createServer, type ServerResponse } from "node:http";
 
@@ -12,15 +13,19 @@ import {
 import { PI_MEMORY_STAGE1_MODEL } from "./memory-background-config";
 import {
   PI_MEMORY_STAGE1_RESPONSE_SCHEMA,
-  projectPiMemoryStage1History,
-  redactPiMemoryStage1Secrets,
+  projectPiMemoryStage1Evidence as projectEvidence,
   runPiMemoryStage1Extraction,
-  truncatePiMemoryStage1History,
 } from "./stage1-memory";
 import {
   PI_MEMORY_STAGE1_SYSTEM_PROMPT,
   PI_MEMORY_STAGE1_UPSTREAM_INPUT_TEMPLATE,
 } from "./stage1-prompts";
+
+function projectPiMemoryStage1Evidence(
+  args: Parameters<typeof projectEvidence>[0],
+): string {
+  return JSON.stringify(projectEvidence(args));
+}
 
 const SESSION_ID = "00000000-0000-4000-8000-000000000123";
 
@@ -205,11 +210,11 @@ describe("Pi memory Stage 1 runtime", () => {
   });
 
   it("projects only the settled official active branch and completed tools", () => {
-    const first = projectPiMemoryStage1History({
+    const first = projectPiMemoryStage1Evidence({
       jsonl: branchedJsonl(),
       expectedSessionId: SESSION_ID,
     });
-    const second = projectPiMemoryStage1History({
+    const second = projectPiMemoryStage1Evidence({
       jsonl: branchedJsonl(),
       expectedSessionId: SESSION_ID,
     });
@@ -217,10 +222,9 @@ describe("Pi memory Stage 1 runtime", () => {
     expect(second).toBe(first);
     expect(first).toContain('"content":"root request"');
     expect(first).toContain('"content":"active request"');
-    expect(first).toContain(
-      '"tool":{"name":"read","arguments":{"a":"first","z":"last"}}',
-    );
-    expect(first).toContain('"content":"useful contents"');
+    expect(first).toContain("Tool: read");
+    expect(first).toContain('a\\\":\\\"first');
+    expect(first).toContain("useful contents");
     expect(first).toContain('"content":"finished"');
     expect(first).not.toContain("discarded");
     expect(first).not.toContain("private reasoning");
@@ -235,7 +239,7 @@ describe("Pi memory Stage 1 runtime", () => {
     const hidden =
       "<oai-mem-citation><citation_entries>memory.md:1-1|note=[private]</citation_entries></oai-mem-citation>";
     const jsonl = branchedJsonl().replace("finished", `visible${hidden}`);
-    const projected = projectPiMemoryStage1History({
+    const projected = projectPiMemoryStage1Evidence({
       jsonl,
       expectedSessionId: SESSION_ID,
     });
@@ -247,7 +251,7 @@ describe("Pi memory Stage 1 runtime", () => {
   it("retains delimiter examples and the following answer in Stage 1 without private provenance", () => {
     const hidden = `${PI_MEMORY_CITATION_OPEN}<citation_entries>private.md:1-1|note=[private note]</citation_entries>${PI_MEMORY_CITATION_CLOSE}`;
     const text = `explain \`${PI_MEMORY_CITATION_OPEN}\` complete suffix${hidden}`;
-    const projected = projectPiMemoryStage1History({
+    const projected = projectPiMemoryStage1Evidence({
       jsonl: branchedJsonl().replace("finished", text),
       expectedSessionId: SESSION_ID,
     });
@@ -258,7 +262,7 @@ describe("Pi memory Stage 1 runtime", () => {
     expect(projected).not.toContain("private reasoning");
   });
 
-  it("redacts adversarial secret forms and truncates both ends deterministically", () => {
+  it("redacts adversarial and incomplete secret forms", () => {
     const slackToken = [
       "x",
       "o",
@@ -312,27 +316,6 @@ describe("Pi memory Stage 1 runtime", () => {
         "before\n-----BEGIN RSA PRIVATE KEY-----\nunclosed-secret",
       ),
     ).toBe("before\n[REDACTED_SECRET]");
-
-    const source = `${"head ".repeat(100)}MIDDLE${" tail".repeat(100)}`;
-    const first = truncatePiMemoryStage1History({
-      projectedHistory: source,
-      contextWindow: 40,
-      fallbackTokenLimit: 150_000,
-      maxBytes: 8 * 1024 * 1024,
-    });
-    expect(
-      truncatePiMemoryStage1History({
-        projectedHistory: source,
-        contextWindow: 40,
-        fallbackTokenLimit: 150_000,
-        maxBytes: 8 * 1024 * 1024,
-      }),
-    ).toStrictEqual(first);
-    expect(first.tokenCount).toBeLessThanOrEqual(28);
-    expect(first.content).toContain("head");
-    expect(first.content).toContain("tail");
-    expect(first.content).toContain("[... truncated ...]");
-    expect(first.content).not.toContain("MIDDLE");
   });
 
   it("sends one fixed luna low-reasoning strict-schema request without tools", async () => {
@@ -379,7 +362,7 @@ describe("Pi memory Stage 1 runtime", () => {
           dialect: "openai-responses",
           transport: "sse",
         },
-        projectedHistory: '{"role":"user","content":"work"}',
+        evidence: [{ kind: "human", content: "work" }],
         requestId: "00000000-0000-4000-8000-000000000999",
       });
 

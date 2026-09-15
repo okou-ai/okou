@@ -1,10 +1,8 @@
 use super::{BinaryLoggingFixture, assert_action_types_present};
 use crate::support::{TcpTestServer, create_tar_gz, read_http_request_path, write_manifest};
 use httpmock::prelude::*;
-use httpmock::{HttpMockRequest, HttpMockResponse};
 use serde_json::{Value, json};
 use std::io::{self, Write as _};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -502,59 +500,6 @@ fn binary_records_remote_artifact_attribution_and_compressed_byte_bucket() {
             .iter()
             .any(|action| action.starts_with(STORAGE_REMOTE_PREFIX)),
         "artifact emitted storage attribution: {actions:?}"
-    );
-}
-
-#[test]
-fn binary_aggregates_remote_attribution_across_retries() {
-    let server = MockServer::start();
-    let archive = create_tar_gz(&[("recovered.txt", b"recovered")]).unwrap();
-    let calls = AtomicUsize::new(0);
-    let archive_mock = server.mock(move |when, then| {
-        when.method(GET).path("/retry.tar.gz");
-        then.delay(Duration::from_millis(60))
-            .respond_with(move |_request: &HttpMockRequest| {
-                if calls.fetch_add(1, Ordering::SeqCst) == 0 {
-                    HttpMockResponse::builder().status(500).build()
-                } else {
-                    HttpMockResponse::builder()
-                        .status(200)
-                        .header("content-type", "application/gzip")
-                        .body(archive.clone())
-                        .build()
-                }
-            });
-    });
-
-    let fixture = BinaryLoggingFixture::new("remote-attribution-retry").unwrap();
-    let mount = fixture.dir.path().join("storage");
-    let url = server.url("/retry.tar.gz");
-    let manifest =
-        write_manifest(&fixture.dir, &[(mount.to_str().unwrap(), Some(&url))], None).unwrap();
-
-    let output = fixture.run_manifest_path(&manifest).unwrap();
-
-    assert!(
-        output.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    archive_mock.assert_calls(2);
-    let ops = fixture.ops_entries().unwrap();
-    let attempt = operation(&ops, "storage_download_remote_attempt_count_2").unwrap();
-    assert_eq!(attempt["success"], true);
-    assert!(attempt.get("error").is_none());
-    assert_eq!(
-        operation(&ops, "storage_download_remote_request_to_response_headers").unwrap()["success"],
-        true
-    );
-    let request_wait = operation(&ops, "storage_download_remote_request_to_response_headers")
-        .unwrap()["duration_ms"]
-        .as_u64()
-        .unwrap();
-    assert!(
-        request_wait >= 100,
-        "request wait did not include both attempts: {ops:?}"
     );
 }
 

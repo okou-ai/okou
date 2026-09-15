@@ -1834,7 +1834,12 @@ fn monitor_process_with_log_readers(
     context: ProcessMonitorContext,
     readers: ProcessLogReaders,
 ) -> ProcessMonitorHandle {
-    let exit_notifier = ChildExitNotifier::open(child.id());
+    // Direct children already own pre-reap readiness; only standard children
+    // need the separate best-effort notifier.
+    let exit_notifier = child
+        .exit_notification()
+        .is_none()
+        .then(|| ChildExitNotifier::open(child.id()));
     monitor_process_with_log_readers_and_exit_notifier(id, child, context, readers, exit_notifier)
 }
 
@@ -1843,10 +1848,13 @@ fn monitor_process_with_log_readers_and_exit_notifier(
     mut child: process_launch::asynchronous::Child,
     mut context: ProcessMonitorContext,
     readers: ProcessLogReaders,
-    exit_notifier: ChildExitNotifier,
+    exit_notifier: Option<ChildExitNotifier>,
 ) -> ProcessMonitorHandle {
     let guest_cpu_cgroup = context.guest_cpu_cgroup.take();
-    if let Some(reason) = exit_notifier.unavailable_reason() {
+    if let Some(reason) = exit_notifier
+        .as_ref()
+        .and_then(ChildExitNotifier::unavailable_reason)
+    {
         warn!(
             id = %id,
             reason = %reason,
@@ -1857,7 +1865,8 @@ fn monitor_process_with_log_readers_and_exit_notifier(
     let (kill_tx, mut kill_rx) = mpsc::channel::<control::ProcessTerminationRequest>(1);
     let (exit_tx, exit) = ProcessExitCompletion::channel();
     let task = tokio::spawn(async move {
-        let exit = wait_for_process_monitor_exit(&mut child, &exit_notifier, &mut kill_rx).await;
+        let exit =
+            wait_for_process_monitor_exit(&mut child, exit_notifier.as_ref(), &mut kill_rx).await;
         let (prev, status) = match exit {
             ProcessMonitorExit::NaturalPreReap => {
                 let prev = publish_process_monitor_exit(&context);
@@ -1903,21 +1912,29 @@ fn monitor_process_with_log_readers_and_exit_notifier(
 
 async fn wait_for_process_monitor_exit(
     child: &mut process_launch::asynchronous::Child,
-    exit_notifier: &ChildExitNotifier,
+    exit_notifier: Option<&ChildExitNotifier>,
     kill_rx: &mut mpsc::Receiver<control::ProcessTerminationRequest>,
 ) -> ProcessMonitorExit {
-    let has_exit_notifier = exit_notifier.is_available();
-    tokio::select! {
-        exit = exit_notifier.wait_for_exit(), if has_exit_notifier => {
-            match exit {
-                Ok(()) => ProcessMonitorExit::NaturalPreReap,
-                Err(error) => {
+    let natural_exit = async {
+        let observed = match child.exit_notification() {
+            Some(notification) => Some(notification.await),
+            None => match exit_notifier {
+                Some(notifier) if notifier.is_available() => Some(notifier.wait_for_exit().await),
+                _ => None,
+            },
+        };
+        match observed {
+            Some(Ok(())) => ProcessMonitorExit::NaturalPreReap,
+            result => {
+                if let Some(Err(error)) = result {
                     warn!(%error, "pidfd child exit notification failed; falling back to wait-only cleanup");
-                    ProcessMonitorExit::Reaped(child.wait().await)
                 }
+                ProcessMonitorExit::Reaped(child.wait().await)
             }
         }
-        status = child.wait(), if !has_exit_notifier => ProcessMonitorExit::Reaped(status),
+    };
+    tokio::select! {
+        exit = natural_exit => exit,
         request = kill_rx.recv() => {
             ProcessMonitorExit::Reaped(wait_after_process_termination_request(child, kill_rx, request).await)
         }

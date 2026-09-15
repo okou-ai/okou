@@ -1009,7 +1009,12 @@
     "toasts": {
       "copyLinkFailed": "Failed to copy link",
       "downloadFailed": "Download failed",
-      "linkCopied": "Link copied"
+      "linkCopied": "Link copied",
+      "sharing": "Sharing…"
+    },
+    "viewer": {
+      "continuePrompt": "Help me work with this artifact: {{url}}",
+      "continueWithBrand": "Continue with {{brandName}}"
     }
   },
   "auth": {
@@ -1745,15 +1750,10 @@
       "selectModel": "Select model",
       "slashPanel": {
         "browseAll": "Browse all templates",
-        "illustrationDescription": "A single image, in the style you pick",
         "make": "Make",
-        "slidesDescription": "An HTML slide deck you can present",
         "templateCount_one": "{{count}} template",
         "templateCount_other": "{{count}} templates",
-        "useTemplate": "Use template {{title}}",
-        "videoDescription": "Text to video, with parameters from the chosen model",
-        "websiteDescription": "A static site you can publish",
-        "workflowDescription": "A saved workflow you can run from the composer"
+        "useTemplate": "Use template {{title}}"
       },
       "temporarilySwitchTo": "Temporarily switch to",
       "threadSuggestions": "Chat threads",
@@ -2111,6 +2111,7 @@
         "wiring": "Wiring it together..."
       },
       "viewActivityLogs": "View activity logs",
+      "viewLangfuseTrace": "View Langfuse trace",
       "viewLogs": "View run logs",
       "waitingIn": "Waiting in",
       "workedFor": "Worked for {{duration}}",
@@ -2125,6 +2126,7 @@
       "createFailed": "Could not create the shared conversation. Try again.",
       "deselectGroup": "Deselect message group",
       "linkCopied": "Link copied",
+      "publicDescription": "Selected messages and their attachments will be public.",
       "selectedCount_one": "{{count}} selected",
       "selectedCount_other": "{{count}} selected",
       "selectGroup": "Select message group",
@@ -2378,6 +2380,15 @@
       "moreTemplates": "More templates",
       "presentationTemplates": "Presentation templates",
       "removeTask": "Remove {{task}}",
+      "shelf": {
+        "browseStyles": "Browse all styles",
+        "browseTemplates": "Browse all templates",
+        "image": "Image styles",
+        "nextPage": "Next page",
+        "previousPage": "Previous page",
+        "video": "Video templates",
+        "website": "Website templates"
+      },
       "tasks": {
         "image": "Image",
         "presentation": "Presentation",
@@ -2489,7 +2500,6 @@
         },
         "more": "More",
         "noCharts": "No matching charts",
-        "optional": "Optional",
         "outputFormat": "Output format",
         "outputs": {
           "presentation": "Presentation",
@@ -2505,7 +2515,6 @@
         "selectedCount_one": "{{count}} selected",
         "selectedCount_other": "{{count}} selected",
         "summary": "{{output}} · Methods {{methodCount}} · Charts {{chartCount}}",
-        "title": "Visualization",
         "useWhenSuitable": "Use when suitable",
         "visualMethods": "Visual methods"
       },
@@ -2806,7 +2815,6 @@
       "importedLoadFailed": "Couldn't load uploaded templates.",
       "importedLoading": "Loading uploaded templates…",
       "importedUnavailable": "Uploaded templates are temporarily unavailable.",
-      "previewRefreshFailed": "Couldn't refresh template previews.",
       "previewTemplate": "Preview template {{title}}",
       "previewVideo": "Preview video template {{title}}",
       "previewWebsite": "Preview website template {{title}}",
@@ -2909,7 +2917,6 @@
       "storageFailed": "Audio could not be saved. Retry can recover only audio already saved on this device.",
       "textTakingShape": "Text is taking shape",
       "transcribing": "Transcribing",
-      "transcribingProgress": "Transcribing...",
       "transcriptionFailed": "Voice transcription failed. Try again."
     },
     "workflows": {
@@ -3135,9 +3142,11 @@
       "scope": {
         "aria": "Connector scope",
         "attention": "Needs attention",
+        "connected": "Connected",
+        "custom": "Custom",
         "discover": "Discover",
-        "mine": "Your connectors",
-        "searchMine": "Find your connectors"
+        "searchConnected": "Find connected connectors",
+        "searchCustom": "Find custom connectors"
       },
       "search": "Find connectors",
       "shelf": {
@@ -5616,7 +5625,7 @@
         "categoryImage": "Image",
         "categoryVideo": "Video",
         "chatModels": "Chat models",
-        "effort": "Reasoning effort",
+        "effort": "Effort",
         "fast": "Fast",
         "fastImpact": {
           "apiCost": "2× API token cost",
@@ -5640,10 +5649,8 @@
         "loadError": "Unable to load models.",
         "loading": "Loading models...",
         "menu": {
-          "adjustSettings": "Adjust {{model}} settings",
           "backToModels": "Back to models",
-          "changeModel": "Change {{category}} model, {{model}}",
-          "chatSettings": "Chat settings"
+          "changeModel": "Change {{category}} model, {{model}}"
         },
         "models": "Models",
         "noConfiguredModels": "No configured models",
@@ -6145,6 +6152,9 @@
     "chooseFile": "Choose file",
     "choosePrivateKeyFile": "Choose private key file",
     "connectionStatus": {
+      "accessProtocolFailure": "Cloudflare Access did not establish an SSH tunnel. Check the published hostname and Tunnel routing.",
+      "accessRejected": "Cloudflare Access rejected the connection. Check the Service Token and the application's Service Auth policy.",
+      "accessTlsFailure": "The secure connection to Cloudflare Access could not be verified. Check the hostname and TLS certificate.",
       "attention_one": "{{count}} SSH host needs attention",
       "attention_other": "{{count}} SSH hosts need attention",
       "authenticationFailed": "SSH authentication failed. Check the selected credential's username, private key or password and the server's authorization. Edit the credential or select another one for this host.",
@@ -6919,6 +6929,9 @@
       "noWorkflows": "No workflows",
       "open": "Open {{title}}",
       "openRecovery": "Open {{title}} recovery",
+      "ownerLoading": "Loading author…",
+      "ownerRetry": "Author unavailable. Reopen to retry.",
+      "ownerUnavailable": "Author unavailable",
       "runsAs": "Runs as",
       "runsAsAria": "Runs as {{agent}}",
       "section": {

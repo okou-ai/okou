@@ -5,7 +5,7 @@ import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import { runInIsolatedProcess } from "../../../scripts/run-isolated-test.mjs";
-import { inspectPiSessionJsonl, projectPiMemoryStage1History } from "./api";
+import { inspectPiSessionJsonl, projectPiMemoryStage1Evidence } from "./api";
 import { runPiOfficialRpcMode } from "./rpc";
 import { MemoryPiSession } from "./session-memory";
 import { UnsupportedPiSessionVersionError } from "./errors";
@@ -58,7 +58,7 @@ describe("native Pi history structural boundaries", () => {
         return inspectPiSessionJsonl(history);
       }).toThrow("Pi session parent graph contains a cycle");
       expect(() => {
-        return projectPiMemoryStage1History({
+        return projectPiMemoryStage1Evidence({
           jsonl: history,
           expectedSessionId: SESSION_ID,
         });

@@ -5,7 +5,6 @@ import {
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
@@ -151,7 +150,6 @@ test.each([false, true])(
       context: { ...context, signal: initialPage.signal },
       path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
       auth,
-      featureSwitches: { [FeatureSwitchKey.VoiceInputV2]: true },
     });
     await fill(
       await screen.findByRole("textbox", { name: "Message" }),
@@ -188,7 +186,6 @@ test.each([false, true])(
         context: { ...refreshedContext, signal: refreshedPage.signal },
         path: `/chats/${createdThreadId}`,
         auth,
-        featureSwitches: { [FeatureSwitchKey.VoiceInputV2]: true },
       });
     } else {
       publishThreadConfirmation();

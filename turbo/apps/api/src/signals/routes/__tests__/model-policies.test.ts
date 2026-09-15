@@ -191,18 +191,6 @@ describe("GET/PUT /api/model-policies", () => {
       [400],
     );
     expect(oldPreference.body.error.message).toBe(retired.body.error.message);
-    await accept(
-      client.update({
-        headers: authHeaders(),
-        body: {
-          policies: [
-            ...toUpdate(existing.body),
-            makeBuiltInPolicy("claude-fable-5-1"),
-          ],
-        },
-      }),
-      [200],
-    );
     const successor = await accept(
       preferences.update({
         headers: authHeaders(),
@@ -271,7 +259,7 @@ describe("GET/PUT /api/model-policies", () => {
     );
   });
 
-  it("lists seeded curated models and the explicit default", async () => {
+  it("seeds Fable 5.1, Astra, and Luna with Luna as the workspace default", async () => {
     const fixture = await seedFixture();
     useSession(fixture);
 
@@ -286,21 +274,19 @@ describe("GET/PUT /api/model-policies", () => {
       response.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual(DEFAULT_ORG_MODEL_POLICY_MODELS);
+    ).toStrictEqual(["claude-fable-5-1", "gpt-6-astra", "gpt-5.6-luna"]);
     expect(response.body.policies[0]).toMatchObject({
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,
       routeStatus: "valid",
     });
-    expect(response.body.workspaceDefaultModel).toBe(
-      DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-    );
+    expect(response.body.workspaceDefaultModel).toBe("gpt-5.6-luna");
     expect(
       response.body.policies.find((policy) => {
         return policy.isDefault;
       })?.model,
-    ).toBe(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL);
+    ).toBe("gpt-5.6-luna");
   });
 
   it("advertises the current built-in provider for route-specific effort controls", async () => {
@@ -416,18 +402,21 @@ describe("GET/PUT /api/model-policies", () => {
       response.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual(DEFAULT_ORG_MODEL_POLICY_MODELS);
-    expect(response.body.workspaceDefaultModel).toBe(
-      LIMITED_FREE1_DEFAULT_RUN_MODEL,
-    );
+    ).toStrictEqual(["claude-fable-5-1", "gpt-6-astra", "gpt-5.6-luna"]);
+    expect(response.body.workspaceDefaultModel).toBe("gpt-5.6-luna");
     expect(
       response.body.policies.find((policy) => {
         return policy.isDefault;
       })?.model,
-    ).toBe(LIMITED_FREE1_DEFAULT_RUN_MODEL);
+    ).toBe("gpt-5.6-luna");
   });
 
-  it.each(["deepseek-v4-pro", "deepseek-v4-flash", "gpt-5.6-luna"] as const)(
+  it.each([
+    "deepseek-v4.1-flash",
+    "deepseek-v4-pro",
+    "deepseek-v4-flash",
+    "gpt-5.6-luna",
+  ] as const)(
     "keeps an existing %s default for limited-free-1 workspaces",
     async (previousDefaultModel) => {
       const fixture = seedFixture();
@@ -1110,7 +1099,10 @@ describe("GET/PUT /api/model-policies", () => {
     });
   });
 
-  it.each([FeatureSwitchKey.CodexFastMode, FeatureSwitchKey.ModelPickerMenu])(
+  it.each([
+    FeatureSwitchKey.CodexFastMode,
+    FeatureSwitchKey.RefactorModelSelect,
+  ])(
     "stores priority with a GPT 5.6 user model preference with %s",
     async (fastSwitch) => {
       const fixture = await seedFixture();

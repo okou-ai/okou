@@ -54,7 +54,10 @@ const resolveSsh$ = command(async ({ get, set }, signal: AbortSignal) => {
   const { runId } = get(pathParamsOf(runnerSshContract.resolve));
   const result = await resolveRunnerSsh(
     get(db$),
-    { runId, ...body.data },
+    {
+      runId,
+      ...body.data,
+    },
     signal,
   );
   return { status: 200 as const, body: result };
@@ -73,7 +76,10 @@ const pinSsh$ = command(async ({ get, set }, signal: AbortSignal) => {
   const { runId } = get(pathParamsOf(runnerSshContract.pin));
   const result = await pinRunnerSsh(
     set(writeDb$),
-    { runId, ...body.data },
+    {
+      runId,
+      ...body.data,
+    },
     signal,
   );
   return { status: 200 as const, body: result };

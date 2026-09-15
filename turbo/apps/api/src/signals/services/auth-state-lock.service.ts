@@ -37,6 +37,11 @@ export async function lockConnectorAccountTarget(
   );
 }
 
+/**
+ * Lifecycle callers acquire existing thread/session/run row locks before this
+ * lock. Settings and refresh only lock provider/account/secret state after it;
+ * their run-reference checks are MVCC reads, never run row locks.
+ */
 export async function lockModelProviderState(
   db: Db,
   args: {

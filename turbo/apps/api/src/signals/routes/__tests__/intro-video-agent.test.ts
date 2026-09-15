@@ -568,7 +568,7 @@ describe("Managed Intro Video Agent", () => {
           Key: `private-artifacts/${prepared.body.id}/brief.pdf`,
         },
       },
-      2: { expiresIn: 86_400 },
+      2: { expiresIn: 172_800 },
     });
     const other = await fixture();
     const before = provider.submissions.length;

@@ -11,8 +11,6 @@ import { allocateArtifactObject$ } from "../services/artifact-storage.service";
 import type { RouteEntry } from "../route-entry";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
-const PUT_URL_TTL_SECONDS = 3600;
-
 const init$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(authContext$);
   const bodyResult = await get(
@@ -42,7 +40,6 @@ const init$ = command(async ({ get, set }, signal: AbortSignal) => {
       artifact.key,
       body.contentType,
       {
-        expiresIn: PUT_URL_TTL_SECONDS,
         usePublicEndpoint: true,
         metadata: artifact.metadata,
       },

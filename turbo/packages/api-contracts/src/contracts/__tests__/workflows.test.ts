@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import {
+  workflowSummarySchema,
+  workflowOwnerProfileSchema,
   githubPullRequestEventConfigSchema,
   googleCalendarEventCancelledEventConfigSchema,
   googleCalendarEventCreatedEventConfigSchema,
@@ -507,5 +510,44 @@ describe("workflow update contract", () => {
     });
 
     expect(parsed.success).toBe(false);
+  });
+});
+
+describe("workflow display-profile rollout compatibility", () => {
+  const workflow = {
+    id: "11111111-1111-4111-8111-111111111111",
+    agentId: "22222222-2222-4222-8222-222222222222",
+    agentName: "agent",
+    agentDisplayName: null,
+    name: "workflow",
+    displayName: null,
+    description: null,
+    visibility: "private",
+    ownerUserId: "user-owner",
+    createdAt: "2026-09-14T00:00:00.000Z",
+    canManage: true,
+    canPublish: true,
+    official: null,
+  };
+
+  it("allows an old app's optional nullable fields to be omitted by a new API", () => {
+    const oldSummary = workflowSummarySchema.extend({
+      ownerUserDisplayName: z.string().nullable().optional(),
+      ownerUserImageUrl: z.string().nullable().optional(),
+    });
+    expect(oldSummary.parse(workflow).ownerUserId).toBe("user-owner");
+  });
+
+  it("allows a new app to read an older API's enriched response", () => {
+    expect(
+      workflowSummarySchema.parse({
+        ...workflow,
+        ownerUserDisplayName: "Older API",
+        ownerUserImageUrl: null,
+      }),
+    ).toEqual(workflow);
+    expect(
+      workflowOwnerProfileSchema.parse({ displayName: null, imageUrl: null }),
+    ).toEqual({ displayName: null, imageUrl: null });
   });
 });

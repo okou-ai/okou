@@ -324,7 +324,7 @@ interface ComposerSuggestionMenuState {
   readonly selectCreate: (mode: ComposerCreateCommand) => void;
   /** Non-empty only while ComposerSlashTemplatePanel is on. */
   readonly panelCategories: readonly SlashTemplateCategory[];
-  readonly previewIndex: number;
+  readonly previewIndex: number | null;
   readonly previewSuggestion: (index: number | null) => void;
   readonly selectCategory: (category: SlashTemplateCategory) => void;
   readonly selectTemplate: (preview: SlashTemplatePreview) => void;
@@ -467,9 +467,6 @@ function useComposerWorkflowSuggestions(
   query: string | undefined,
 ) {
   const workflowsLoadable = useLastLoadable(composer.workflow.workflows$);
-  const fuzzyWorkflows =
-    useGet(featureSwitch$)[FeatureSwitchKey.ComposerWorkflowFuzzySearch] ===
-    true;
   const workflows = buildComposerSlashWorkflows({
     agentId: composer.agentId,
     workflows:
@@ -477,9 +474,7 @@ function useComposerWorkflowSuggestions(
   });
   return {
     workflows:
-      query === undefined
-        ? []
-        : findWorkflowQueryMatches(workflows, query, fuzzyWorkflows),
+      query === undefined ? [] : findWorkflowQueryMatches(workflows, query),
     loading: workflowsLoadable.state === "loading",
   };
 }

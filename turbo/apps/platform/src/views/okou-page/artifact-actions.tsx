@@ -525,6 +525,7 @@ type ArtifactDownloadMenuProps = {
   className?: string;
   filename: string;
   iconSize?: number;
+  showGoogleDriveAction?: boolean;
   syncTarget?: ArtifactDownloadSyncTarget;
   url: string;
 };
@@ -536,6 +537,7 @@ export function ArtifactDownloadMenu({
   className,
   filename,
   iconSize = 16,
+  showGoogleDriveAction = true,
   syncTarget,
   url,
 }: ArtifactDownloadMenuProps) {
@@ -591,7 +593,9 @@ export function ArtifactDownloadMenu({
             return $.artifacts.actions.download;
           })}
         </DropdownMenuItem>
-        <GoogleDriveMenuItem syncTarget={syncTarget} />
+        {showGoogleDriveAction && (
+          <GoogleDriveMenuItem syncTarget={syncTarget} />
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

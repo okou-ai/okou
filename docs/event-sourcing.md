@@ -12,12 +12,12 @@ and are the authoritative input when the frontend rebuilds a projection from an
 event log or snapshot.
 
 Optimistic events are page-local projections created before persistence
-completes. They make an accepted user action visible immediately, but they are
+completes. They make user actions and streamed assistant text visible immediately, but they are
 not a second source of truth and do not have server ordering.
 
 ## Normal Reconciliation
 
-The frontend creates an event ID, appends an optimistic event with that ID, and
+For user actions, the frontend creates an event ID, appends an optimistic event with that ID, and
 passes the same ID to the server mutation. When the corresponding persistent
 event arrives through the normal event stream:
 
@@ -44,9 +44,35 @@ persisted but has not reached the client yet. A stale optimistic projection is
 recoverable: refreshing the page discards page-local optimistic state and
 reloads the authoritative persistent state, restoring eventual consistency.
 
+## Session Output Streaming
+
+API-first Pi turns can publish sanitized text deltas on a separate
+`run-output:<userId>:<orgId>:<runId>` Ably channel. Thinking and private memory
+citation markup are excluded. The `sessionOutputStreaming` feature switch,
+disabled by default, controls only the frontend subscription. A visible chat
+panel subscribes while it has a pending or running run; queued runs do not
+subscribe. Run changes, page cancellation, and switch changes reset that
+subscription. The SharedWorker shares the transport across tabs and releases
+the channel attachment when its final subscriber leaves.
+
+Each API attempt assigns `api-first:<attemptId>:<nativeContentIndex>` as the
+text block's `runEventId`. Streaming and final event insertion derive the same
+chat event UUID from the run ID and that source ID. The independent public
+event sequence still determines ordering and the sandbox handoff boundary.
+Filtering thinking or empty text therefore cannot shift a streamed block's
+identity, and sandbox fallback cannot reuse an abandoned attempt's identity.
+
+Chunk zero creates an optimistic `output.message`. Later chunks append only
+when that optimistic event exists. A persistent event with the same ID always
+wins, including over late packets. Chunk indices have no gap detection or
+replay semantics. Refreshing after missing chunk zero waits for the normal
+durable output. Deltas are never written to the database, IndexedDB, or an
+event log. The API publishes deltas through the shared Ably REST client;
+publication does not depend on frontend subscriptions.
+
 ## Review Checklist
 
-- The client-generated event ID is reused by the server mutation.
+- The originating event ID is reused by the server mutation or final output insertion.
 - Persistent and optimistic projections deduplicate by that shared event ID.
 - Persistent events are the only normal trigger for removing matching
   optimistic events.

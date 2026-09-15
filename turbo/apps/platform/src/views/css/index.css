@@ -85,6 +85,55 @@
      property, which would compose with the animation instead of being
      replaced by it. */
   --animate-mic-starting-spin: mic-starting-spin 0.7s linear infinite;
+
+  /* Reasoning-effort bar. The top step reveals a warm aurora behind the plain
+     track. Every length here is a fixed pixel value on purpose: the browser
+     resampling a tile is what reads as the texture "growing" during the
+     reveal, so nothing in this texture may be sized in percentages or scaled.
+     The four bands tile at 97 / 61 / 151 / 211px. Those widths are pairwise
+     coprime and each band drifts a whole number of tiles per cycle, so the
+     curtain's silhouette never repeats along the bar and tall peaks keep
+     sliding past short ones. The periods are primes for the same reason:
+     no two layers realign inside a session. */
+  --background-image-effort-aurora-ground: linear-gradient(
+    90deg,
+    oklch(0.955 0.028 72),
+    oklch(0.9 0.085 52)
+  );
+  --background-image-effort-aurora-peaks:
+    radial-gradient(
+      46px 40px at 50% 116%,
+      oklch(0.64 0.19 38 / 0.95),
+      transparent 70%
+    ),
+    radial-gradient(
+      30px 33px at 50% 121%,
+      oklch(0.7 0.175 56 / 0.9),
+      transparent 68%
+    );
+  --background-image-effort-aurora-curtain:
+    radial-gradient(
+      84px 27px at 50% 127%,
+      oklch(0.68 0.175 44 / 0.9),
+      transparent 72%
+    ),
+    radial-gradient(
+      120px 20px at 50% 132%,
+      oklch(0.76 0.145 72 / 0.85),
+      transparent 70%
+    );
+  --animate-effort-aurora-peaks:
+    effort-aurora-peaks 23s linear infinite,
+    effort-aurora-breathe 11s ease-in-out infinite;
+  --animate-effort-aurora-curtain:
+    effort-aurora-curtain 29s linear infinite,
+    effort-aurora-breathe 13s ease-in-out infinite;
+
+  /* Chat thinking indicator and skeleton reveal. Registered here so consumers
+     reach them through `animate-*` rather than an `animation` shorthand; their
+     keyframes stay below in this stylesheet. */
+  --animate-thinking-in: okou-thinking-in 0.3s ease-out;
+  --animate-chat-skeleton-reveal: okou-chat-skeleton-reveal 0s 100ms forwards;
 }
 
 /* Palette previews keep the fixed 135deg/52% sRGB blend in Light and Dark.
@@ -113,6 +162,124 @@
   --sal: env(safe-area-inset-left, 0px);
   --okou-viewport-height: 100dvh;
   --okou-desktop-titlebar-height: 48px;
+}
+
+/* The effort bar's handle is a superellipse rather than a rounded rectangle --
+   the same corner smoothing Figma applies -- sampled from
+   |x/r|^n + |y/r|^n = 1 at n = 3.6, twelve points per corner. It is a shape
+   rather than a radius, so it has to be a clip path, and `clip-path` cuts a
+   border off with everything else: the outline is the outer shape showing
+   through a 1px inset of the inner one. Both are fixed to the handle's
+   18x40 / 16x38 geometry. */
+:root {
+  --okou-effort-thumb-clip: polygon(
+    0px 8.2px,
+    0.04px 5.55px,
+    0.16px 4.33px,
+    0.35px 3.39px,
+    0.63px 2.62px,
+    0.99px 1.98px,
+    1.44px 1.44px,
+    1.98px 0.99px,
+    2.62px 0.63px,
+    3.39px 0.35px,
+    4.33px 0.16px,
+    5.55px 0.04px,
+    8.2px 0px,
+    9.8px 0px,
+    12.45px 0.04px,
+    13.67px 0.16px,
+    14.61px 0.35px,
+    15.38px 0.63px,
+    16.02px 0.99px,
+    16.56px 1.44px,
+    17.01px 1.98px,
+    17.37px 2.62px,
+    17.65px 3.39px,
+    17.84px 4.33px,
+    17.96px 5.55px,
+    18px 8.2px,
+    18px 31.8px,
+    17.96px 34.45px,
+    17.84px 35.67px,
+    17.65px 36.61px,
+    17.37px 37.38px,
+    17.01px 38.02px,
+    16.56px 38.56px,
+    16.02px 39.01px,
+    15.38px 39.37px,
+    14.61px 39.65px,
+    13.67px 39.84px,
+    12.45px 39.96px,
+    9.8px 40px,
+    8.2px 40px,
+    5.55px 39.96px,
+    4.33px 39.84px,
+    3.39px 39.65px,
+    2.62px 39.37px,
+    1.98px 39.01px,
+    1.44px 38.56px,
+    0.99px 38.02px,
+    0.63px 37.38px,
+    0.35px 36.61px,
+    0.16px 35.67px,
+    0.04px 34.45px,
+    0px 31.8px
+  );
+  --okou-effort-thumb-body-clip: polygon(
+    0px 7.4px,
+    0.04px 5.01px,
+    0.14px 3.91px,
+    0.32px 3.06px,
+    0.57px 2.37px,
+    0.89px 1.78px,
+    1.3px 1.3px,
+    1.78px 0.89px,
+    2.37px 0.57px,
+    3.06px 0.32px,
+    3.91px 0.14px,
+    5.01px 0.04px,
+    7.4px 0px,
+    8.6px 0px,
+    10.99px 0.04px,
+    12.09px 0.14px,
+    12.94px 0.32px,
+    13.63px 0.57px,
+    14.22px 0.89px,
+    14.7px 1.3px,
+    15.11px 1.78px,
+    15.43px 2.37px,
+    15.68px 3.06px,
+    15.86px 3.91px,
+    15.96px 5.01px,
+    16px 7.4px,
+    16px 30.6px,
+    15.96px 32.99px,
+    15.86px 34.09px,
+    15.68px 34.94px,
+    15.43px 35.63px,
+    15.11px 36.22px,
+    14.7px 36.7px,
+    14.22px 37.11px,
+    13.63px 37.43px,
+    12.94px 37.68px,
+    12.09px 37.86px,
+    10.99px 37.96px,
+    8.6px 38px,
+    7.4px 38px,
+    5.01px 37.96px,
+    3.91px 37.86px,
+    3.06px 37.68px,
+    2.37px 37.43px,
+    1.78px 37.11px,
+    1.3px 36.7px,
+    0.89px 36.22px,
+    0.57px 35.63px,
+    0.32px 34.94px,
+    0.14px 34.09px,
+    0.04px 32.99px,
+    0px 30.6px
+  );
 }
 
 @supports (height: 100lvh) {
@@ -186,12 +353,6 @@ body {
   max-height: var(--okou-viewport-height);
   overflow: hidden;
   padding: var(--sat) var(--sar) var(--sab) var(--sal);
-}
-
-@media (display-mode: standalone) {
-  .okou-pwa-fixed-cover {
-    bottom: calc(-1 * var(--sab));
-  }
 }
 
 @media (max-width: 767px) {
@@ -305,24 +466,11 @@ body {
     transform: translateY(0);
   }
 }
-.okou-thinking-enter {
-  animation: okou-thinking-in 0.3s ease-out;
-}
-
-.okou-thinking-spinner {
-  animation-duration: 1.4s;
-  will-change: transform;
-}
 
 @keyframes okou-chat-skeleton-reveal {
   to {
     opacity: 1;
   }
-}
-.okou-chat-skeleton-reveal {
-  /* Avoid flashing the skeleton when cached chat events resolve immediately. */
-  opacity: 0;
-  animation: okou-chat-skeleton-reveal 0s 100ms forwards;
 }
 
 /* Conversation locator: mark where a rail jump landed, then fade back out. */
@@ -343,46 +491,6 @@ body {
 @media (prefers-reduced-motion: reduce) {
   [data-locator-landed] {
     animation-duration: 0.01ms;
-  }
-}
-
-/* Thinking indicator: 3-block loader */
-.okou-blocks {
-  display: inline-grid;
-  grid-template-columns: repeat(2, 5px);
-  grid-template-rows: repeat(2, 5px);
-  gap: 1.5px;
-}
-.okou-blocks span {
-  border-radius: 1.5px;
-}
-.okou-blocks span:nth-child(1) {
-  background: var(--zb-c1);
-  grid-column: 2;
-  grid-row: 1;
-  animation: okou-block-pop 1.4s ease-in-out infinite;
-}
-.okou-blocks span:nth-child(2) {
-  background: var(--zb-c2);
-  grid-column: 1;
-  grid-row: 2;
-  animation: okou-block-pop 1.4s ease-in-out 0.2s infinite;
-}
-.okou-blocks span:nth-child(3) {
-  background: var(--zb-c3);
-  grid-column: 2;
-  grid-row: 2;
-  animation: okou-block-pop 1.4s ease-in-out 0.4s infinite;
-}
-@keyframes okou-block-pop {
-  0%,
-  100% {
-    transform: scale(0.8);
-    opacity: 0.5;
-  }
-  50% {
-    transform: scale(1);
-    opacity: 1;
   }
 }
 
@@ -587,46 +695,6 @@ body {
 
 /* Morandi outline buttons */
 
-/* Cards inside the chat transcript: notice cards, action cards, artifact and
-   media frames. One surface, one border, one shadow, one radius — before this
-   the transcript carried two radii, four border tokens and three fills.
-
-   `okou-chat-frame` is the same recipe without the fill, for the frames that
-   own their background (a video stage is black, not white).
-
-   These live in `@layer components` on purpose. Unlayered rules outrank every
-   Tailwind utility regardless of specificity, which would silently kill any
-   `border-*`, `bg-*`, or `hover:*` a caller composes onto the same element —
-   the selected and hover states of the browser session card, for instance.
-   Inside `components`, the utilities layer still wins, so this stays a base
-   that callers can override. */
-@layer components {
-  .okou-app .okou-chat-card,
-  .okou-app .okou-chat-frame {
-    /* Fractional borders visibly repaint when card contents resolve. */
-    border: 1px solid hsl(var(--gray-400));
-    border-radius: var(--okou-chat-card-radius);
-    box-shadow: var(--okou-chat-card-shadow);
-  }
-  .okou-app .okou-chat-card {
-    background-color: hsl(var(--card));
-  }
-}
-
-/* Gray-100 clears 1.06:1 against the white canvas, so
-   the bubble stops reading as a bubble and the turn boundary disappears. Take
-   the gray-200 step dark has always used here. */
-.okou-app .okou-chat-bubble-user {
-  background-color: hsl(var(--gray-200));
-  color: hsl(var(--foreground));
-}
-
-/* Chat: assistant message bubble */
-.okou-app .okou-chat-bubble-assistant {
-  background-color: transparent;
-  border: none;
-}
-
 /* Composer / input card (white, light border — “Just ask” / chat input) */
 .okou-app .okou-composer {
   --okou-composer-ring: var(--gray-500);
@@ -738,7 +806,6 @@ body {
   --color-success-emphasis: #2a7a4b;
   --color-done-fg: #6a5acd;
   --color-done-emphasis: #6a5acd;
-  --color-copied-active-bg: hsl(var(--gray-400));
 
   /* Syntax — muted earth tones on cool-neutral background */
   --color-prettylights-syntax-comment: hsl(var(--gray-600));
@@ -791,7 +858,6 @@ body {
   --color-success-emphasis: #7dba97;
   --color-done-fg: #b8a0d8;
   --color-done-emphasis: #b8a0d8;
-  --color-copied-active-bg: hsl(var(--gray-400));
 
   /* Syntax — softer tones for dark backgrounds */
   --color-prettylights-syntax-comment: hsl(var(--gray-600));
@@ -832,17 +898,6 @@ body {
 .wmde-markdown .okou-markdown-card {
   margin-top: 6px;
   margin-bottom: 6px;
-}
-
-/* Chat bubbles: relax paragraph spacing so 15px text doesn't read cramped.
-   Line-height is owned by the bubble container (leading-[1.7]) and inherited
-   by the markdown body, mirroring how the bubble owns the font size. */
-.okou-chat-bubble-assistant .wmde-markdown p,
-.okou-chat-bubble-user .wmde-markdown p,
-.okou-chat-bubble-assistant .wmde-markdown .okou-markdown-card,
-.okou-chat-bubble-user .wmde-markdown .okou-markdown-card {
-  margin-top: 8px;
-  margin-bottom: 8px;
 }
 
 .wmde-markdown h1,
@@ -985,10 +1040,6 @@ body {
   border-bottom-color: hsl(var(--border));
 }
 
-.okou-chat-bubble-assistant .wmde-markdown hr {
-  display: none;
-}
-
 /* --- Mark / highlight --------------------------------------------------- */
 .wmde-markdown mark {
   background-color: hsl(var(--brand-subtle));
@@ -1067,24 +1118,6 @@ body {
 /* Code block scrollbar */
 .wmde-markdown pre > code::-webkit-scrollbar-thumb {
   background: hsl(var(--gray-400));
-}
-
-/* --- Code Block Copy Button --------------------------------------------- */
-.wmde-markdown pre .copied {
-  background: hsl(var(--gray-200));
-  color: hsl(var(--muted-foreground));
-  border-radius: 6px;
-}
-
-.wmde-markdown pre:hover .copied:hover {
-  background: hsl(var(--gray-300));
-  color: hsl(var(--foreground));
-}
-
-.wmde-markdown pre:hover .copied:active,
-.wmde-markdown pre .copied.active {
-  background: hsl(var(--gray-400));
-  color: hsl(var(--foreground));
 }
 
 /* --- KBD ---------------------------------------------------------------- */
@@ -1204,6 +1237,53 @@ details > summary {
 /* ---------------------------------------------------------------------------
  * Mic button – voice activity fill
  * ------------------------------------------------------------------------- */
+
+/* Whole-tile drifts, so every cycle wraps seamlessly. Only background-position
+   moves; background-size is never touched, which is what makes it impossible
+   for the peaks to change size. */
+@keyframes effort-aurora-peaks {
+  to {
+    background-position:
+      -291px 0,
+      183px 0;
+  }
+}
+
+@keyframes effort-aurora-curtain {
+  to {
+    background-position:
+      302px 0,
+      -422px 0;
+  }
+}
+
+/* Uneven keyframes rather than a sine, so the breathing never reads as a beat. */
+@keyframes effort-aurora-breathe {
+  0% {
+    opacity: 0.74;
+  }
+  17% {
+    opacity: 0.96;
+  }
+  29% {
+    opacity: 0.81;
+  }
+  46% {
+    opacity: 1;
+  }
+  58% {
+    opacity: 0.86;
+  }
+  79% {
+    opacity: 0.97;
+  }
+  91% {
+    opacity: 0.78;
+  }
+  100% {
+    opacity: 0.74;
+  }
+}
 
 @keyframes mic-starting-spin {
   from {

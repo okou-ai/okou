@@ -186,9 +186,7 @@ export const resolveIntroVideoAgentReferences$ = command(
         );
       }
       urls.push(
-        await get(
-          generatePresignedGetUrl(bucket, key, 24 * 60 * 60, undefined, true),
-        ),
+        await get(generatePresignedGetUrl(bucket, key, undefined, true)),
       );
       signal.throwIfAborted();
     }

@@ -7,21 +7,13 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import { delay } from "signal-timers";
-import {
-  onRejection,
-  resetSignal,
-  setLoop,
-  settle,
-  tapError,
-} from "../utils.ts";
+import { resetSignal, settle, tapError } from "../utils.ts";
 import {
   createImageLoadSignals,
   type ImageLoadSignals,
 } from "../image-load.ts";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
-import { IN_VITEST } from "../../env.ts";
 import type {
   GenerationTemplateRequest,
   PersistedAttachment,
@@ -72,38 +64,6 @@ type AttachmentUploadState =
 const log = logger("chat-draft");
 
 const MULTIPART_UPLOAD_THRESHOLD_BYTES = 5 * 1024 * 1024;
-const MAX_PART_UPLOAD_ATTEMPTS = 5;
-const PART_UPLOAD_RETRY_BASE_DELAY_MS = 250;
-const MULTIPART_ABORT_TIMEOUT_MS = 5000;
-interface MultipartUploadReference {
-  id: string;
-  filename: string;
-  uploadId: string;
-}
-
-const abortMultipartUpload$ = command(
-  async (
-    { get },
-    upload: MultipartUploadReference,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const client = get(apiClient$)(uploadsContract);
-    await tapError(
-      accept(
-        client.abortMultipart({
-          body: upload,
-          fetchOptions: {
-            keepalive: true,
-            signal,
-          },
-        }),
-        [200],
-        signal,
-        { showErrorToast: false },
-      ),
-    );
-  },
-);
 
 function uploadContentTypeByExtension(ext: string): string | undefined {
   const contentTypeByExtension: Record<string, string | undefined> = {
@@ -199,51 +159,23 @@ function inferUploadContentType(file: File): string {
     : "application/octet-stream";
 }
 
-async function uploadPartWithRetry(
+async function uploadPart(
   uploadUrl: string,
   body: Blob,
   contentType: string,
   signal: AbortSignal,
 ): Promise<void> {
-  let attempt = 0;
-  await setLoop(
-    async (loopSignal) => {
-      attempt += 1;
-      const result = await settle(
-        fetchResource(
-          uploadUrl,
-          {
-            method: "PUT",
-            body,
-            headers: { "content-type": contentType },
-          },
-          loopSignal,
-        ),
-        loopSignal,
-      );
-      if (result.ok) {
-        if (result.value.ok) {
-          return true;
-        }
-        if (attempt === MAX_PART_UPLOAD_ATTEMPTS) {
-          throw new Error(
-            `storage returned ${result.value.status} ${result.value.statusText}`,
-          );
-        }
-      } else if (attempt === MAX_PART_UPLOAD_ATTEMPTS) {
-        throw result.error;
-      }
-      await delay(
-        IN_VITEST ? 0 : PART_UPLOAD_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1),
-        { signal: loopSignal },
-      );
-      return false;
-    },
-    0,
+  const response = await fetchResource(
+    uploadUrl,
+    { method: "PUT", body, headers: { "content-type": contentType } },
     signal,
-    { retryTransientErrors: false },
   );
   signal.throwIfAborted();
+  if (!response.ok) {
+    throw new Error(
+      `storage returned ${String(response.status)} ${response.statusText}`,
+    );
+  }
 }
 
 /**
@@ -255,12 +187,12 @@ async function uploadPartWithRetry(
  * app runtime in either case.
  */
 const uploadFileToStorage$ = command(
-  async ({ get, set }, file: File, signal: AbortSignal): Promise<FileInfo> => {
+  async ({ get }, file: File, signal: AbortSignal): Promise<FileInfo> => {
     const createClient = get(apiClient$);
     const client = createClient(uploadsContract);
     const contentType = inferUploadContentType(file);
 
-    // Step 1: ask the server to sign either one PUT URL or retryable R2
+    // Step 1: ask the server to sign either one PUT URL or R2
     // multipart URLs. The file body never travels through the app runtime.
     const prepared = await accept(
       client.prepare({
@@ -280,56 +212,32 @@ const uploadFileToStorage$ = command(
 
     if ("multipart" in prepared.body) {
       const multipart = prepared.body.multipart;
-      let completionStarted = false;
-      return await onRejection(
-        (async () => {
-          signal.throwIfAborted();
-          for (const part of multipart.parts) {
-            const start = (part.partNumber - 1) * multipart.partSize;
-            const end = Math.min(start + multipart.partSize, file.size);
-            await uploadPartWithRetry(
-              part.uploadUrl,
-              file.slice(start, end, prepared.body.contentType),
-              prepared.body.contentType,
-              signal,
-            );
-          }
+      for (const part of multipart.parts) {
+        const start = (part.partNumber - 1) * multipart.partSize;
+        const end = Math.min(start + multipart.partSize, file.size);
+        await uploadPart(
+          part.uploadUrl,
+          file.slice(start, end, prepared.body.contentType),
+          prepared.body.contentType,
+          signal,
+        );
+      }
 
-          signal.throwIfAborted();
-          completionStarted = true;
-          const completed = await accept(
-            client.completeMultipart({
-              body: {
-                id: prepared.body.id,
-                filename: prepared.body.filename,
-                uploadId: multipart.uploadId,
-                partCount: multipart.parts.length,
-              },
-              fetchOptions: { signal },
-            }),
-            [200],
-          );
-          signal.throwIfAborted();
-          return uploadFileInfo(completed.body, prepared.body.contentType);
-        })(),
-        async () => {
-          // Aborting after completion starts can remove the upload while R2
-          // is still finalizing it, so only clean up pre-completion failures.
-          if (completionStarted) {
-            return;
-          }
-          const cleanupSignal = AbortSignal.timeout(MULTIPART_ABORT_TIMEOUT_MS);
-          await set(
-            abortMultipartUpload$,
-            {
-              id: prepared.body.id,
-              filename: prepared.body.filename,
-              uploadId: multipart.uploadId,
-            },
-            cleanupSignal,
-          );
-        },
+      signal.throwIfAborted();
+      const completed = await accept(
+        client.completeMultipart({
+          body: {
+            id: prepared.body.id,
+            filename: prepared.body.filename,
+            uploadId: multipart.uploadId,
+            partCount: multipart.parts.length,
+          },
+          fetchOptions: { signal },
+        }),
+        [200],
       );
+      signal.throwIfAborted();
+      return uploadFileInfo(completed.body, prepared.body.contentType);
     }
 
     signal.throwIfAborted();

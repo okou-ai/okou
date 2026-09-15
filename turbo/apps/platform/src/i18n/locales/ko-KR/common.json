@@ -1008,7 +1008,12 @@
     "toasts": {
       "copyLinkFailed": "링크 복사 실패",
       "downloadFailed": "다운로드 실패",
-      "linkCopied": "링크 복사됨"
+      "linkCopied": "링크 복사됨",
+      "sharing": "공유 중…"
+    },
+    "viewer": {
+      "continuePrompt": "이 결과물로 작업할 수 있도록 도와주세요: {{url}}",
+      "continueWithBrand": "{{brandName}}에서 계속하기"
     }
   },
   "auth": {
@@ -1742,14 +1747,9 @@
       "selectModel": "모델 선택",
       "slashPanel": {
         "browseAll": "모든 템플릿 보기",
-        "illustrationDescription": "선택한 스타일로 이미지 한 장을 만듭니다",
         "make": "만들기",
-        "slidesDescription": "바로 발표할 수 있는 HTML 슬라이드",
         "templateCount_other": "템플릿 {{count}}개",
-        "useTemplate": "템플릿 {{title}} 사용",
-        "videoDescription": "텍스트로 영상을 만들며 매개변수는 선택한 모델을 따릅니다",
-        "websiteDescription": "게시할 수 있는 정적 사이트",
-        "workflowDescription": "작성 창에서 실행할 수 있는 저장된 워크플로"
+        "useTemplate": "템플릿 {{title}} 사용"
       },
       "temporarilySwitchTo": "임시로 전환할 모델",
       "threadSuggestions": "채팅 스레드",
@@ -2103,6 +2103,7 @@
         "wiring": "연결 중..."
       },
       "viewActivityLogs": "활동 로그 보기",
+      "viewLangfuseTrace": "Langfuse 트레이스 보기",
       "viewLogs": "실행 로그 보기",
       "waitingIn": "대기 중",
       "workedFor": "{{duration}} 동안 작업 완료",
@@ -2117,6 +2118,7 @@
       "createFailed": "공유된 대화를 만들지 못했습니다. 다시 시도하세요.",
       "deselectGroup": "메시지 그룹 선택 해제",
       "linkCopied": "링크가 복사되었습니다",
+      "publicDescription": "선택한 메시지와 첨부 파일이 공개됩니다.",
       "selectedCount_other": "{{count}}개 선택됨",
       "selectGroup": "메시지 그룹 선택",
       "shareLink": "공유된 대화 링크",
@@ -2369,6 +2371,15 @@
       "moreTemplates": "더 많은 템플릿",
       "presentationTemplates": "프레젠테이션 템플릿",
       "removeTask": "{{task}} 제거",
+      "shelf": {
+        "browseStyles": "모든 스타일 보기",
+        "browseTemplates": "모든 템플릿 보기",
+        "image": "이미지 스타일",
+        "nextPage": "다음 페이지",
+        "previousPage": "이전 페이지",
+        "video": "동영상 템플릿",
+        "website": "웹사이트 템플릿"
+      },
       "tasks": {
         "image": "이미지",
         "presentation": "슬라이드",
@@ -2480,7 +2491,6 @@
         },
         "more": "More",
         "noCharts": "No matching charts",
-        "optional": "Optional",
         "outputFormat": "Output format",
         "outputs": {
           "presentation": "Presentation",
@@ -2496,7 +2506,6 @@
         "selectedCount_one": "{{count}}개 선택됨",
         "selectedCount_other": "{{count}}개 선택됨",
         "summary": "{{output}} · 표현 방식 {{methodCount}} · 차트 {{chartCount}}",
-        "title": "시각화",
         "useWhenSuitable": "Use when suitable",
         "visualMethods": "Visual methods"
       },
@@ -2797,7 +2806,6 @@
       "importedLoadFailed": "업로드한 템플릿을 불러오지 못했습니다.",
       "importedLoading": "업로드한 템플릿 로딩 중…",
       "importedUnavailable": "업로드한 템플릿을 일시적으로 사용할 수 없습니다.",
-      "previewRefreshFailed": "템플릿 미리보기를 새로 고치지 못했습니다.",
       "previewTemplate": "템플릿 미리보기 {{title}}",
       "previewVideo": "비디오 템플릿 미리보기 {{title}}",
       "previewWebsite": "웹사이트 템플릿 미리보기 {{title}}",
@@ -2900,7 +2908,6 @@
       "storageFailed": "오디오를 저장하지 못했습니다. 재시도하면 이 기기에 이미 저장된 오디오만 복구됩니다.",
       "textTakingShape": "텍스트를 만드는 중",
       "transcribing": "전사 중",
-      "transcribingProgress": "전사 진행 중...",
       "transcriptionFailed": "음성 전사 실패. 다시 시도하세요."
     },
     "workflows": {
@@ -3130,9 +3137,11 @@
       "scope": {
         "aria": "커넥터 범위",
         "attention": "확인이 필요함",
+        "connected": "연결됨",
+        "custom": "사용자 지정",
         "discover": "둘러보기",
-        "mine": "내 커넥터",
-        "searchMine": "내 커넥터 찾기"
+        "searchConnected": "연결된 커넥터 찾기",
+        "searchCustom": "사용자 지정 커넥터 찾기"
       },
       "search": "커넥터 찾기",
       "shelf": {
@@ -5611,7 +5620,7 @@
         "categoryImage": "이미지",
         "categoryVideo": "동영상",
         "chatModels": "채팅 모델",
-        "effort": "추론 강도",
+        "effort": "강도",
         "fast": "빠름",
         "fastImpact": {
           "apiCost": "API 토큰 비용 2×",
@@ -5635,10 +5644,8 @@
         "loadError": "모델을 불러올 수 없습니다.",
         "loading": "모델 불러오는 중...",
         "menu": {
-          "adjustSettings": "{{model}} 설정 조정",
           "backToModels": "모델로 돌아가기",
-          "changeModel": "{{category}} 모델 변경, {{model}}",
-          "chatSettings": "채팅 설정"
+          "changeModel": "{{category}} 모델 변경, {{model}}"
         },
         "models": "모델",
         "noConfiguredModels": "구성된 모델 없음",
@@ -6139,6 +6146,9 @@
     "chooseFile": "파일 선택",
     "choosePrivateKeyFile": "개인 키 파일 선택",
     "connectionStatus": {
+      "accessProtocolFailure": "Cloudflare Access가 SSH 터널을 설정하지 못했습니다. 게시된 호스트 이름과 Tunnel 라우팅을 확인하세요.",
+      "accessRejected": "Cloudflare Access가 연결을 거부했습니다. 서비스 토큰과 애플리케이션의 Service Auth 정책을 확인하세요.",
+      "accessTlsFailure": "Cloudflare Access와의 보안 연결을 검증할 수 없습니다. 호스트 이름과 TLS 인증서를 확인하세요.",
       "attention_other": "SSH 호스트 {{count}}개에 확인이 필요합니다",
       "authenticationFailed": "SSH 인증에 실패했습니다. 사용자 이름, 개인 키 또는 비밀번호와 서버 권한을 확인하세요. 자격 증명을 편집하거나 이 호스트에 다른 자격 증명을 선택하세요.",
       "credentialResourceLimit": "개인 키가 지원되는 처리 한도를 초과합니다. 지원되는 암호화 설정으로 다시 내보낸 후 자격 증명을 교체하세요.",
@@ -6910,6 +6920,9 @@
       "noWorkflows": "워크플로가 없습니다",
       "open": "{{title}} 열기",
       "openRecovery": "{{title}} 복구 열기",
+      "ownerLoading": "작성자 불러오는 중…",
+      "ownerRetry": "작성자 정보를 사용할 수 없습니다. 다시 열어 재시도하세요.",
+      "ownerUnavailable": "작성자 정보를 사용할 수 없습니다",
       "runsAs": "다음 에이전트로 실행됨",
       "runsAsAria": "{{agent}}로 실행됨",
       "section": {

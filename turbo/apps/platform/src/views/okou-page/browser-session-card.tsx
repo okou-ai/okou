@@ -13,6 +13,7 @@ import {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ArtifactThumbnailImage } from "./artifact-thumbnail.tsx";
+import { ChatCard } from "./components/chat-card.tsx";
 
 interface BrowserSessionCardProps {
   readonly signals: BrowserSessionSignals;
@@ -21,7 +22,7 @@ interface BrowserSessionCardProps {
 const BROWSER_SESSION_CARD_SHELL_CLASS =
   "inline-flex w-[min(100%,400px)] align-top";
 const BROWSER_SESSION_CARD_CLASS =
-  "okou-chat-card flex w-full flex-col overflow-hidden text-left text-foreground transition-[background-color,border-color,transform] duration-200";
+  "flex w-full flex-col overflow-hidden text-left text-foreground transition-[background-color,border-color,transform] duration-200";
 const BROWSER_SESSION_CARD_HOVER_CLASS =
   "hover:scale-[1.015] hover:border-gray-500";
 
@@ -102,7 +103,7 @@ function BrowserSessionPreview({
 
 function BrowserSessionCardSkeleton() {
   return (
-    <div
+    <ChatCard
       data-testid="browser-session-card-loading"
       className={cn(
         BROWSER_SESSION_CARD_CLASS,
@@ -114,7 +115,7 @@ function BrowserSessionCardSkeleton() {
         <span className="ml-auto h-3 w-10 rounded bg-muted/60" />
       </span>
       <span className="block aspect-[16/10] w-full bg-muted/40" />
-    </div>
+    </ChatCard>
   );
 }
 
@@ -127,25 +128,31 @@ function BrowserSessionUnavailable({
   const openSidebar = useSet(openThreadBrowserSession$);
   const unavailable = signals === undefined;
   return (
-    <button
-      type="button"
-      data-browser-session-card
-      data-browser-session-status={unavailable ? "unavailable" : "suspended"}
-      disabled={unavailable}
-      aria-label={
-        unavailable
-          ? t(($) => {
-              return $.browserSession.unavailable.title;
-            })
-          : t(($) => {
-              return $.browserSession.openAction;
-            })
+    <ChatCard
+      render={
+        <button
+          type="button"
+          data-browser-session-card
+          data-browser-session-status={
+            unavailable ? "unavailable" : "suspended"
+          }
+          disabled={unavailable}
+          aria-label={
+            unavailable
+              ? t(($) => {
+                  return $.browserSession.unavailable.title;
+                })
+              : t(($) => {
+                  return $.browserSession.openAction;
+                })
+          }
+          onClick={() => {
+            if (signals) {
+              openSidebar(signals.threadId);
+            }
+          }}
+        />
       }
-      onClick={() => {
-        if (signals) {
-          openSidebar(signals.threadId);
-        }
-      }}
       className={cn(
         BROWSER_SESSION_CARD_CLASS,
         unavailable
@@ -162,7 +169,7 @@ function BrowserSessionUnavailable({
         <BrowserSessionStatus live={false} />
       </span>
       <BrowserSessionPreview />
-    </button>
+    </ChatCard>
   );
 }
 
@@ -201,22 +208,26 @@ export function BrowserSessionCard({ signals }: BrowserSessionCardProps) {
   const live = session.status === "active";
   return (
     <BrowserSessionCardShell>
-      <button
-        type="button"
-        data-browser-session-card
-        data-browser-session-status={session.status}
-        aria-label={t(
-          ($) => {
-            return $.browserSession.open;
-          },
-          { name: session.name },
-        )}
-        onClick={() => {
-          if (live && !selected) {
-            detach(start(pageSignal), Reason.DomCallback);
-          }
-          openSidebar(signals.threadId);
-        }}
+      <ChatCard
+        render={
+          <button
+            type="button"
+            data-browser-session-card
+            data-browser-session-status={session.status}
+            aria-label={t(
+              ($) => {
+                return $.browserSession.open;
+              },
+              { name: session.name },
+            )}
+            onClick={() => {
+              if (live && !selected) {
+                detach(start(pageSignal), Reason.DomCallback);
+              }
+              openSidebar(signals.threadId);
+            }}
+          />
+        }
         className={cn(
           BROWSER_SESSION_CARD_CLASS,
           BROWSER_SESSION_CARD_HOVER_CLASS,
@@ -235,7 +246,7 @@ export function BrowserSessionCard({ signals }: BrowserSessionCardProps) {
           screenshotUrl={session.screenshotUrl ?? undefined}
           load={signals.screenshotImageLoad}
         />
-      </button>
+      </ChatCard>
     </BrowserSessionCardShell>
   );
 }

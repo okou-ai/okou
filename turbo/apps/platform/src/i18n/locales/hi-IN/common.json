@@ -1009,7 +1009,12 @@
     "toasts": {
       "copyLinkFailed": "लिंक कॉपी करने में विफल",
       "downloadFailed": "डाउनलोड विफल रहा",
-      "linkCopied": "लिंक कॉपी किया गया"
+      "linkCopied": "लिंक कॉपी किया गया",
+      "sharing": "साझा किया जा रहा है…"
+    },
+    "viewer": {
+      "continuePrompt": "इस आर्टिफ़ैक्ट पर काम करने में मेरी मदद करें: {{url}}",
+      "continueWithBrand": "{{brandName}} के साथ जारी रखें"
     }
   },
   "auth": {
@@ -1745,15 +1750,10 @@
       "selectModel": "मॉडल चुनें",
       "slashPanel": {
         "browseAll": "सभी टेम्पलेट देखें",
-        "illustrationDescription": "आपकी चुनी हुई शैली में एक अकेली छवि",
         "make": "बनाएँ",
-        "slidesDescription": "प्रस्तुत करने लायक HTML स्लाइड",
         "templateCount_one": "{{count}} टेम्पलेट",
         "templateCount_other": "{{count}} टेम्पलेट",
-        "useTemplate": "टेम्पलेट {{title}} इस्तेमाल करें",
-        "videoDescription": "टेक्स्ट से वीडियो, चुने गए मॉडल के पैरामीटर के साथ",
-        "websiteDescription": "एक स्टैटिक साइट जिसे आप प्रकाशित कर सकते हैं",
-        "workflowDescription": "सहेजा गया वर्कफ़्लो जिसे आप कंपोज़र से चला सकते हैं"
+        "useTemplate": "टेम्पलेट {{title}} इस्तेमाल करें"
       },
       "temporarilySwitchTo": "अस्थायी रूप से इस पर स्विच करें",
       "threadSuggestions": "चैट थ्रेड",
@@ -2111,6 +2111,7 @@
         "wiring": "इसे एक साथ जोड़ना..."
       },
       "viewActivityLogs": "गतिविधि लॉग देखें",
+      "viewLangfuseTrace": "Langfuse ट्रेस देखें",
       "viewLogs": "रन लॉग देखें",
       "waitingIn": "प्रतीक्षा कर रहा है",
       "workedFor": "{{duration}} के लिए काम किया",
@@ -2125,6 +2126,7 @@
       "createFailed": "साझा बातचीत नहीं बनाई जा सकी। फिर से कोशिश करें।",
       "deselectGroup": "संदेश समूह का चयन हटाएँ",
       "linkCopied": "लिंक कॉपी हो गया",
+      "publicDescription": "चुने गए संदेश और उनके अटैचमेंट सार्वजनिक होंगे।",
       "selectedCount_one": "{{count}} चुना गया",
       "selectedCount_other": "{{count}} चुने गए",
       "selectGroup": "संदेश समूह चुनें",
@@ -2378,6 +2380,15 @@
       "moreTemplates": "और टेम्पलेट",
       "presentationTemplates": "प्रस्तुति टेम्पलेट",
       "removeTask": "{{task}} हटाएँ",
+      "shelf": {
+        "browseStyles": "सभी शैलियाँ देखें",
+        "browseTemplates": "सभी टेम्पलेट देखें",
+        "image": "चित्र शैलियाँ",
+        "nextPage": "अगला पृष्ठ",
+        "previousPage": "पिछला पृष्ठ",
+        "video": "वीडियो टेम्पलेट",
+        "website": "वेबसाइट टेम्पलेट"
+      },
       "tasks": {
         "image": "चित्र",
         "presentation": "स्लाइड",
@@ -2489,7 +2500,6 @@
         },
         "more": "More",
         "noCharts": "No matching charts",
-        "optional": "Optional",
         "outputFormat": "Output format",
         "outputs": {
           "presentation": "Presentation",
@@ -2505,7 +2515,6 @@
         "selectedCount_one": "{{count}} चुना गया",
         "selectedCount_other": "{{count}} चुने गए",
         "summary": "{{output}} · तरीके {{methodCount}} · चार्ट {{chartCount}}",
-        "title": "विज़ुअलाइज़ेशन",
         "useWhenSuitable": "Use when suitable",
         "visualMethods": "Visual methods"
       },
@@ -2806,7 +2815,6 @@
       "importedLoadFailed": "अपलोड किए गए टेम्पलेट लोड नहीं हो सके।",
       "importedLoading": "अपलोड किए गए टेम्पलेट लोड हो रहे हैं…",
       "importedUnavailable": "अपलोड किए गए टेम्पलेट फ़िलहाल उपलब्ध नहीं हैं।",
-      "previewRefreshFailed": "टेम्पलेट के प्रीव्यू रीफ़्रेश नहीं हो सके।",
       "previewTemplate": "पूर्वावलोकन टेम्पलेट {{title}}",
       "previewVideo": "पूर्वावलोकन वीडियो टेम्पलेट {{title}}",
       "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",
@@ -2909,7 +2917,6 @@
       "storageFailed": "ऑडियो सहेजा नहीं जा सका। दोबारा प्रयास करने पर केवल इस डिवाइस पर पहले से सहेजा गया ऑडियो मिलेगा।",
       "textTakingShape": "टेक्स्ट तैयार हो रहा है",
       "transcribing": "प्रतिलेखन",
-      "transcribingProgress": "प्रतिलेखन...",
       "transcriptionFailed": "ध्वनि प्रतिलेखन विफल रहा. पुनः प्रयास करें।"
     },
     "workflows": {
@@ -3143,9 +3150,11 @@
       "scope": {
         "aria": "कनेक्टर दायरा",
         "attention": "ध्यान देने की आवश्यकता",
+        "connected": "जुड़े हुए",
+        "custom": "कस्टम",
         "discover": "खोजें",
-        "mine": "आपके कनेक्टर",
-        "searchMine": "अपने कनेक्टर खोजें"
+        "searchConnected": "कनेक्टेड कनेक्टर खोजें",
+        "searchCustom": "कस्टम कनेक्टर खोजें"
       },
       "search": "कनेक्टर खोजें",
       "shelf": {
@@ -5624,7 +5633,7 @@
         "categoryImage": "इमेज",
         "categoryVideo": "वीडियो",
         "chatModels": "चैट मॉडल",
-        "effort": "तर्क का प्रयास",
+        "effort": "प्रयास",
         "fast": "तेज़",
         "fastImpact": {
           "apiCost": "2× API टोकन लागत",
@@ -5648,10 +5657,8 @@
         "loadError": "मॉडल लोड करने में असमर्थ.",
         "loading": "मॉडल लोड हो रहे हैं...",
         "menu": {
-          "adjustSettings": "{{model}} की सेटिंग समायोजित करें",
           "backToModels": "मॉडल पर वापस जाएँ",
-          "changeModel": "{{category}} मॉडल बदलें, {{model}}",
-          "chatSettings": "चैट सेटिंग"
+          "changeModel": "{{category}} मॉडल बदलें, {{model}}"
         },
         "models": "मॉडल",
         "noConfiguredModels": "कोई कॉन्फ़िगर मॉडल नहीं",
@@ -6153,6 +6160,9 @@
     "chooseFile": "फ़ाइल चुनें",
     "choosePrivateKeyFile": "निजी कुंजी की फ़ाइल चुनें",
     "connectionStatus": {
+      "accessProtocolFailure": "Cloudflare Access SSH टनल स्थापित नहीं कर सका। प्रकाशित होस्टनाम और Tunnel रूटिंग जाँचें।",
+      "accessRejected": "Cloudflare Access ने कनेक्शन अस्वीकार कर दिया। सर्विस टोकन और ऐप्लिकेशन की Service Auth नीति जाँचें।",
+      "accessTlsFailure": "Cloudflare Access से सुरक्षित कनेक्शन सत्यापित नहीं हो सका। होस्टनाम और TLS प्रमाणपत्र जाँचें।",
       "attention_one": "{{count}} SSH होस्ट पर ध्यान देने की ज़रूरत है",
       "attention_other": "{{count}} SSH होस्ट पर ध्यान देने की ज़रूरत है",
       "authenticationFailed": "SSH प्रमाणीकरण विफल हुआ। उपयोगकर्ता नाम, निजी कुंजी या पासवर्ड और सर्वर की अनुमति जांचें। क्रेडेंशियल संपादित करें या इस होस्ट के लिए दूसरा चुनें।",
@@ -6927,6 +6937,9 @@
       "noWorkflows": "कोई वर्कफ़्लो नहीं",
       "open": "{{title}} खोलें",
       "openRecovery": "{{title}} की रिकवरी खोलें",
+      "ownerLoading": "लेखक लोड हो रहा है…",
+      "ownerRetry": "लेखक उपलब्ध नहीं है। फिर से कोशिश करने के लिए दोबारा खोलें।",
+      "ownerUnavailable": "लेखक उपलब्ध नहीं है",
       "runsAs": "के रूप में चलता है",
       "runsAsAria": "{{agent}} के रूप में चलता है",
       "section": {

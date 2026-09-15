@@ -114,41 +114,6 @@ test("Open an individual invoice from invoice history", async () => {
   await user.click(invoiceLink);
 });
 
-test("Hide bulk receipt download when it is unavailable", async () => {
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Test Org",
-    role: "admin",
-  });
-  context.mocks.api(billingInvoicesContract.get, ({ respond }) => {
-    return respond(200, {
-      invoices: [
-        {
-          id: "in_legacy",
-          number: "INV-LEGACY",
-          date: unixSecondsFromIso("2026-03-15T00:00:00.000Z"),
-          amount: 2000,
-          status: "paid",
-          hostedInvoiceUrl: "https://billing.stripe.com/invoice/legacy",
-        },
-      ],
-    });
-  });
-
-  await openInvoicesTab();
-
-  await expect(screen.findByText("INV-LEGACY")).resolves.toBeInTheDocument();
-  expect(linkByLabel("Download March 2026 invoice")).toHaveAttribute(
-    "href",
-    "https://billing.stripe.com/invoice/legacy",
-  );
-  expect(
-    queryAllByRoleFast("button").some((button) => {
-      return button.textContent?.includes("Download receipts") === true;
-    }),
-  ).toBeFalsy();
-});
-
 test("Download receipts for a valid month range", async () => {
   const user = userEvent.setup();
   const browserDownload = context.mocks.browser.blobDownload();
