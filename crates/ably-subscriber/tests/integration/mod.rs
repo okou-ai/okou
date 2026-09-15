@@ -1,5 +1,6 @@
 mod support;
 
+mod auth_renewal;
 mod auth_token;
 mod backpressure;
 mod channel_state;

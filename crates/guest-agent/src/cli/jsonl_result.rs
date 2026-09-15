@@ -1,5 +1,7 @@
 //! Shared terminal `type=result` parsing for JSONL CLI backends.
 
+use guest_contracts::diagnostics::ModelRequestDiagnostic;
+
 /// Summary of a terminal JSONL `type=result` event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct JsonlResultSummary {
@@ -8,6 +10,8 @@ pub struct JsonlResultSummary {
 
     /// Semantic status of the terminal result event.
     pub status: JsonlResultStatus,
+    /// Structured model evidence supplied by the Pi RPC projection on failure.
+    pub model_request: Option<ModelRequestDiagnostic>,
 }
 
 /// Semantic status derived from a terminal JSONL `type=result` event.
@@ -38,9 +42,17 @@ pub enum JsonlResultStatus {
 
 impl JsonlResultSummary {
     pub(super) fn from_event(event: &serde_json::Value) -> Self {
+        let status = JsonlResultStatus::from_event(event);
         Self {
             num_turns: event.get("num_turns").and_then(|value| value.as_u64()),
-            status: JsonlResultStatus::from_event(event),
+            status,
+            model_request: if status == JsonlResultStatus::Error {
+                event
+                    .get("modelRequest")
+                    .and_then(|value| serde_json::from_value(value.clone()).ok())
+            } else {
+                None
+            },
         }
     }
 }
@@ -79,6 +91,7 @@ mod tests {
             JsonlResultSummary {
                 num_turns: Some(0),
                 status: JsonlResultStatus::Success,
+                model_request: None,
             }
         );
     }
