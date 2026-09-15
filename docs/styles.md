@@ -814,6 +814,42 @@ The hovered fill carries `:not(:active)` because Tailwind decides the order the 
 
 Measured against `main` with the App's own Tailwind compiler in Chromium over CDP, on the ancestor chain captured from the real chat thread page: 28 states — both fence shapes at rest, fence-hovered, control-hovered and pressed, in Light and Dark, on a fine and a coarse pointer — report zero changed pixels and zero computed-style or geometry differences. Negative controls that drop the control's padding, shift its offset by one spacing step and drop the reveal variant report 7,818, 3,579 and 9,164 changed pixels, so the zeros are not degenerate.
 
+### The Mermaid fence language annotation
+
+`language-mermaid` is audited and blocked. It is not a style token: no
+first-party declaration selects it, and the only vendored `language-*` rule is
+`.wmde-markdown .language-css .token.string`, which names a different language.
+Draining it as legacy styling would be a category error.
+
+The name is live vocabulary, but not at the element the baseline counts. The
+Markdown pipeline is where `language-*` is read: `lib/rehype-mermaid.ts` matches
+exactly `language-mermaid` to decide which fence becomes a diagram placeholder,
+and the `rehype-prism-plus` step mounted after it reads the `language-` prefix to
+pick a grammar and to append `code-highlight` and `code-line`. Both read the hast
+tree `marked` produced, before React. The single first-party `className` that
+spells the token, `MermaidCodeBlock` in `views/components/mermaid-diagram.tsx`,
+renders after that pipeline and is therefore invisible to it.
+
+That element has no reader. The three tests that query `code.language-mermaid`
+all resolve to the pipeline-produced node — two on a streaming fence, which stays
+a code block because the placeholder only replaces closed fences, and one on a
+surface that renders with diagrams disabled — so removing the class from
+`MermaidCodeBlock` leaves the Mermaid, diagram-rendering and Markdown-content
+suites green.
+
+Neither disposition is mechanical, which is why this stops here. Keeping the
+class cannot be authorized: the `<code>` is first-party markup, so it is the
+borrowed-name case above rather than a `third-party-dom-adapter`, and the
+allowlist has no category for a class usage. Removing the token from the
+shrink-only baseline while the class stays fails
+`better-tailwindcss/no-unknown-classes` with `Unknown class detected:
+language-mermaid`, so the baseline entry is the only mechanism that exists.
+Deleting the class is not a style change either — it drops the block's language
+annotation, which is the documented convention for `<code>`, and leaves the
+diagram-failure fallback annotating its language differently from the fence
+markup the pipeline emits for the same source. Decide whether that fallback keeps
+a language annotation first; the drain or the exception lands with that decision.
+
 ### Chat transcript cards
 
 `ChatCard` in `turbo/apps/platform/src/views/okou-page/components/chat-card.tsx`

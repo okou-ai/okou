@@ -939,6 +939,25 @@
       "evidence": [],
       "pullRequest": null,
       "mergeCommit": null
+    },
+    {
+      "id": "mermaid-fence-language",
+      "family": "external-contract-audit",
+      "tokens": ["language-mermaid"],
+      "consumers": ["apps/platform/src/views/components/mermaid-diagram.tsx"],
+      "cases": [
+        "mermaid-fence-language-light",
+        "mermaid-fence-language-dark",
+        "mermaid-fence-language-light-retina",
+        "mermaid-fence-language-dark-retina",
+        "mermaid-fence-language-narrow",
+        "mermaid-fence-language-narrow-dark"
+      ],
+      "status": "blocked",
+      "blockedReason": "The audit shows `language-mermaid` is not a style token at all: no first-party CSS declaration selects it, and the only vendored `language-*` rule is `.wmde-markdown .language-css .token.string`, which is a different language. The name is live vocabulary elsewhere — `lib/rehype-mermaid.ts:60` reads exactly `language-mermaid` and the mounted `rehype-prism-plus` at `lib/markdown/pipeline.ts:426` reads the `language-` prefix — but both read the hast tree that `marked` writes, never this component's rendered DOM. The one consumption site the baseline counts, `MermaidCodeBlock` at `views/components/mermaid-diagram.tsx:14`, therefore has no reader: the three tests that query `code.language-mermaid` all resolve to the pipeline-produced element, and deleting the class leaves markdown-mermaid, diagram-rendering and markdown-content green. Neither disposition is mechanical. Keeping it cannot be authorized: the `<code>` is first-party markup, so `third-party-dom-adapter` does not apply, and `turbo/style-allowlist.json` holds only selectors, style injections and vendored files, so removing the token from the baseline while the class stays fails `better-tailwindcss/no-unknown-classes` with `Unknown class detected: language-mermaid`. Deleting it drops the code block's language annotation and desynchronizes the diagram-failure fallback from the fence markup the pipeline emits, which is a markup-semantics decision rather than a style replacement. Decide whether the fallback keeps a language annotation; the drain or the exception then lands with it.",
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
     }
   ],
   "caseFiles": [
