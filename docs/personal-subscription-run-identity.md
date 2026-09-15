@@ -216,6 +216,22 @@ trigger acquires a provider lock. Ordinary profile requests happen after the
 snapshot transaction commits. The second transaction compares the complete
 provider, active selection, account identities, secret IDs and ciphertext
 bundle; a winning write, activation or deletion discards the delayed result.
+Exact environment preparation reuses the existing coordinator's completed
+account, selected model and encrypted account-secret rows. It retains the initial
+scoped account lookup and filters the completed inventory by the fixed
+ID/org/user/type and connected state, including connected inactive accounts.
+The coherent fragment uses six SQL statements instead of nine, excluding
+transaction control. Metadata-only Codex reconciliation supplies its updated
+account through `UPDATE RETURNING`. After a legacy import, this data reader
+refreshes the inventory inside the same transaction; it never returns the
+pre-import account or secrets. Compared with the account-only post-import read,
+that exceptional refresh adds four statements while replacing the three later
+environment reads for a surviving identity. Capture/readiness coordination
+callers retain their account-only result and existing SQL count.
+Environment builders preserve auth-method/required-secret checks and lazy
+firewall materialization; these encrypted observations are not persisted,
+logged, or retained for runtime auth or admission.
+
 Final admission is database-only; stored-secret decryption belongs to
 preparation. After environment/launch preparation,
 `preparePersonalSubscriptionAdmission` captures
