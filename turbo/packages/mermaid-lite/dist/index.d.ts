@@ -21,7 +21,7 @@ export interface MermaidLiteConfig {
   readonly startOnLoad?: boolean;
   readonly securityLevel?: "strict";
   readonly suppressErrorRendering?: boolean;
-  readonly theme?: "base" | "redux" | "redux-dark";
+  readonly theme?: "base";
   readonly fontFamily?: string;
   readonly themeVariables?: MermaidThemeVariables;
   readonly flowchart?: MermaidFlowchartOptions;
