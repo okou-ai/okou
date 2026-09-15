@@ -284,17 +284,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  // Retired in favour of `effort`, which carries the same audience. An app
-  // bundle deployed before that move still reads this key, so it keeps its
-  // rollout until those bundles drain; `isChatEffortEnabled` honours both.
-  [FeatureSwitchKey.RefactorModelSelect]: {
-    maintainer: "bingjie@okou.ai",
-    description: "Retired: use `effort` instead.",
-    enabled: false,
-    enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
-    enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ModelPickerFlyout]: {
     maintainer: "tongx@okou.ai",
     description:
