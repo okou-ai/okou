@@ -23,7 +23,11 @@ export function ChatCardDetails({
   readonly compact?: boolean;
 }) {
   const { t } = useTranslation();
-  const label = triggerLabel ?? t(($) => $.chat.cards.viewDetails);
+  const label =
+    triggerLabel ??
+    t(($) => {
+      return $.chat.cards.viewDetails;
+    });
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -39,7 +43,9 @@ export function ChatCardDetails({
       </DialogTrigger>
       <DialogContent
         aria-describedby={undefined}
-        closeLabel={t(($) => $.settings.shared.close)}
+        closeLabel={t(($) => {
+          return $.settings.shared.close;
+        })}
       >
         <DialogHeader className="pr-6">
           <DialogTitle>{title}</DialogTitle>

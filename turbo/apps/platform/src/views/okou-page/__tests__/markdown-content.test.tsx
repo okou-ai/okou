@@ -362,10 +362,13 @@ test("Mermaid content remains readable code on surfaces without diagrams", async
   }
   click(details);
   await screen.findByRole("dialog", { name: "This run couldn't finish" });
-  const code = document.querySelector("code.language-mermaid");
-  if (!code) {
-    throw new Error("Expected a readable Mermaid code block");
-  }
+  const code = await waitFor(() => {
+    const element = document.querySelector("code.language-mermaid");
+    if (!(element instanceof HTMLElement)) {
+      throw new Error("Expected a readable Mermaid code block");
+    }
+    return element;
+  });
   expect(code.textContent).toBe("flowchart TD\n  Reader --> Source\n");
   expect(code).toBeVisible();
   expect(frame).not.toContainElement(code);

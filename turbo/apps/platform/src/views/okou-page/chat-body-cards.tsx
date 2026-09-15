@@ -1289,10 +1289,15 @@ function PermissionActionCardContent({
         </div>
         <ChatCardDetails compact title={connectorLabel}>
           <p>
-            {t(($) => $.chat.permissions.actionDescription, {
-              action: actionLabel,
-              permissionName,
-            })}
+            {t(
+              ($) => {
+                return $.chat.permissions.actionDescription;
+              },
+              {
+                action: actionLabel,
+                permissionName,
+              },
+            )}
           </p>
           <PermissionActionInlineStatus status={status} />
           {expiryText && <p>{expiryText}</p>}

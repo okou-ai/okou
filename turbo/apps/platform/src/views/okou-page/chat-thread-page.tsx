@@ -4973,7 +4973,9 @@ function InsufficientCreditsCard() {
       ) : (
         <ChatCardDetails
           title={headline}
-          triggerLabel={t(($) => $.runErrors.actions.addCredits)}
+          triggerLabel={t(($) => {
+            return $.runErrors.actions.addCredits;
+          })}
         >
           <p>{helper}</p>
           <PaidCreditCheckoutActions
@@ -5263,10 +5265,47 @@ function AssistantErrorRecoveryCard({
   );
 }
 
-function AssistantErrorFallback({ error }: { error: string }) {
+function NoModelProviderErrorCard() {
   const { t } = useTranslation();
   const openSettings = useSet(openSettingsDialogAt$);
   const pageSignal = useGet(pageSignal$);
+
+  return (
+    <AssistantErrorCard
+      icon={AlertCircle}
+      title={t(($) => {
+        return $.chat.errors.genericTitle;
+      })}
+      description={t(($) => {
+        return $.chat.errors.noModelProviderPrefix;
+      })}
+      details={
+        <span>
+          {t(($) => {
+            return $.chat.errors.noModelProviderPrefix;
+          })}{" "}
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
+            onClick={() => {
+              detach(openSettings("model", pageSignal), Reason.DomCallback);
+            }}
+          >
+            {t(($) => {
+              return $.chat.errors.noModelProviderAction;
+            })}
+          </button>{" "}
+          {t(($) => {
+            return $.chat.errors.noModelProviderSuffix;
+          })}
+        </span>
+      }
+    />
+  );
+}
+
+function AssistantErrorFallback({ error }: { error: string }) {
+  const { t } = useTranslation();
 
   if (isBillingRecoveryError(error)) {
     return <InsufficientCreditsCard />;
@@ -5276,7 +5315,9 @@ function AssistantErrorFallback({ error }: { error: string }) {
     return (
       <AssistantErrorCard
         icon={Hand}
-        title={t(($) => $.chat.errors.runCancelled)}
+        title={t(($) => {
+          return $.chat.errors.runCancelled;
+        })}
         description=""
       />
     );
@@ -5288,34 +5329,7 @@ function AssistantErrorFallback({ error }: { error: string }) {
     error.toLowerCase().includes(noProviderGuidance.title.toLowerCase());
 
   if (isNoModelProvider) {
-    return (
-      <AssistantErrorCard
-        icon={AlertCircle}
-        title={t(($) => $.chat.errors.genericTitle)}
-        description={t(($) => $.chat.errors.noModelProviderPrefix)}
-        details={
-          <span>
-            {t(($) => {
-              return $.chat.errors.noModelProviderPrefix;
-            })}{" "}
-            <button
-              type="button"
-              className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
-              onClick={() => {
-                detach(openSettings("model", pageSignal), Reason.DomCallback);
-              }}
-            >
-              {t(($) => {
-                return $.chat.errors.noModelProviderAction;
-              })}
-            </button>{" "}
-            {t(($) => {
-              return $.chat.errors.noModelProviderSuffix;
-            })}
-          </span>
-        }
-      />
-    );
+    return <NoModelProviderErrorCard />;
   }
 
   const incompatibleGuidance = RUN_ERROR_GUIDANCE.PROVIDER_INCOMPATIBLE;
@@ -5329,8 +5343,12 @@ function AssistantErrorFallback({ error }: { error: string }) {
     return (
       <AssistantErrorCard
         icon={AlertCircle}
-        title={t(($) => $.chat.errors.genericTitle)}
-        description={t(($) => $.chat.errors.providerIncompatiblePrefix)}
+        title={t(($) => {
+          return $.chat.errors.genericTitle;
+        })}
+        description={t(($) => {
+          return $.chat.errors.providerIncompatiblePrefix;
+        })}
         details={
           <span>
             {t(($) => {
@@ -5360,8 +5378,12 @@ function AssistantErrorFallback({ error }: { error: string }) {
     return (
       <AssistantErrorCard
         icon={AlertCircle}
-        title={t(($) => $.chat.errors.genericTitle)}
-        description={t(($) => $.chat.errors.providerDeletedPrefix)}
+        title={t(($) => {
+          return $.chat.errors.genericTitle;
+        })}
+        description={t(($) => {
+          return $.chat.errors.providerDeletedPrefix;
+        })}
         details={
           <span>
             {t(($) => {

@@ -402,13 +402,20 @@ function LoadedBankingActionCard({
   const summary =
     controller.ui.localError ??
     (controller.pending
-      ? t(($) => $.chat.banking.waiting)
+      ? t(($) => {
+          return $.chat.banking.waiting;
+        })
       : controller.activeGrant &&
           controller.grantMatchesRequest &&
           controller.activeGrantAccountCount > 0
-        ? t(($) => $.chat.banking.active, {
-            count: controller.activeGrantAccountCount,
-          })
+        ? t(
+            ($) => {
+              return $.chat.banking.active;
+            },
+            {
+              count: controller.activeGrantAccountCount,
+            },
+          )
         : signals.reason);
   return (
     <div
@@ -423,7 +430,11 @@ function LoadedBankingActionCard({
         reason={summary}
         compact
       />
-      <ChatCardDetails title={t(($) => $.chat.banking.title)}>
+      <ChatCardDetails
+        title={t(($) => {
+          return $.chat.banking.title;
+        })}
+      >
         <BankingCardHeader
           agentName={status.agent.name}
           reason={signals.reason}

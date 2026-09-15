@@ -19,7 +19,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { click } from "../../../__tests__/page-helper.ts";
 import {
   parseChatClipboardPayload,
   readClipboardItemText,
@@ -582,9 +582,11 @@ test.each([
     const card = await screen.findByRole("status");
     expect(card).toHaveTextContent("Cette exécution n’a pas pu se terminer");
     expect(card).toHaveTextContent(expected);
-    expect(queryButton("Réessayer", card)).not.toBeInTheDocument();
+    click(within(card).getByRole("button", { name: "Voir les détails" }));
+    const details = await screen.findByRole("dialog");
+    expect(queryButton("Réessayer", details)).not.toBeInTheDocument();
     expect(
-      queryButton("Réinitialiser et réessayer", card),
+      queryButton("Réinitialiser et réessayer", details),
     ).not.toBeInTheDocument();
   },
 );
@@ -630,13 +632,13 @@ test.each([
     const card = await screen.findByRole("status");
     expect(card).toHaveTextContent(expected);
     expect(card).toHaveTextContent(action);
-    const link = queryAllByRoleFast("link", card).find((candidate) => {
-      return candidate.textContent === url;
-    });
+    click(within(card).getByRole("button", { name: "Voir les détails" }));
+    const details = await screen.findByRole("dialog");
+    const link = await within(details).findByRole("link", { name: url });
     expect(link).toHaveAttribute("href", url);
-    expect(queryButton("Réessayer", card)).not.toBeInTheDocument();
+    expect(queryButton("Réessayer", details)).not.toBeInTheDocument();
     expect(
-      queryButton("Réinitialiser et réessayer", card),
+      queryButton("Réinitialiser et réessayer", details),
     ).not.toBeInTheDocument();
   },
 );
@@ -674,9 +676,11 @@ test.each([
     await setupPage({ context, path: RUN_PATH, locale: "fr-FR" });
     const card = await screen.findByRole("status");
     expect(card).toHaveTextContent(expected);
-    expect(queryButton("Réessayer", card)).not.toBeInTheDocument();
+    click(within(card).getByRole("button", { name: "Voir les détails" }));
+    const details = await screen.findByRole("dialog");
+    expect(queryButton("Réessayer", details)).not.toBeInTheDocument();
     expect(
-      queryButton("Réinitialiser et réessayer", card),
+      queryButton("Réinitialiser et réessayer", details),
     ).not.toBeInTheDocument();
   },
 );
@@ -733,8 +737,10 @@ test.each([
     const card = screen.getByRole("status");
     expect(card).toHaveTextContent(title);
     expect(card).toHaveTextContent(description);
-    expect(queryButton("Réessayer", card)).toBeInTheDocument();
-    expect(within(card).getByRole("combobox")).toBeInTheDocument();
+    click(within(card).getByRole("button", { name: "Voir les détails" }));
+    const details = await screen.findByRole("dialog");
+    expect(queryButton("Réessayer", details)).toBeInTheDocument();
+    expect(within(details).getByRole("combobox")).toBeInTheDocument();
   },
 );
 

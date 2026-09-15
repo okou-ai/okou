@@ -206,10 +206,14 @@ function MailDraftCardState({ signals }: MailDraftCardProps) {
       >
         <AlertCircle size={20} className="shrink-0 text-muted-foreground" />
         <span className="min-w-0 flex-1 line-clamp-2 text-sm text-muted-foreground">
-          {t(($) => $.chat.mail.unavailable)}
+          {t(($) => {
+            return $.chat.mail.unavailable;
+          })}
         </span>
         <Button type="button" variant="outline" size="sm" onClick={reloadDraft}>
-          {t(($) => $.billing.common.retry)}
+          {t(($) => {
+            return $.billing.common.retry;
+          })}
         </Button>
       </div>
     );
