@@ -790,6 +790,34 @@ dropping the blockquote reset changes one observed margin per capture at zero
 pixels, and dropping `border-current` changes three observed border colours per
 capture at zero pixels.
 
+### Card geometry at the document root
+
+`--okou-card-radius`, `--okou-chat-card-radius`, `--okou-card-shadow` and
+`--okou-chat-card-shadow` are owned at `:root`, not inside the `.okou-app`
+scope, for the reason `--okou-composer-focus-veil` already records: a portaled
+surface is not a descendant of the app shell, so a scoped declaration never
+reaches it. The palette override follows them, keyed on the
+`data-gradient-color-themes` attribute `signals/theme.ts` writes onto the
+document element.
+
+That scope was carrying a defect. The queue drawer renders through
+`SheetContent`, which Base UI wraps in `SheetPortal`, so its plan, upgrade and
+concurrency cards and its two loading skeletons sit outside the shell. All five
+ask for the card radius in their markup, `var(--okou-card-radius)` resolved to
+nothing there, and `border-radius` fell back to its initial `0`: square corners
+on surfaces whose own code requests 1.25rem, beside in-shell cards that are
+rounded. Document scope gives them the radius they already ask for. Measured,
+that is the whole change — the five in-shell consumers and a `bg-sidebar` fill
+outside the shell report identical radius, shadow and background in Light and
+Dark, with and without a gradient palette, while the three portaled surfaces
+move from `0px` to `20px`.
+
+A second `.okou-app` block declared `--color-sidebar` and `--color-sidebar-rail`
+with values byte-identical to the `@theme` entries in
+`@okouai/ui/styles/globals.css`. It overrode the shared tokens with themselves,
+so it is deleted rather than promoted; the outside-the-shell `bg-sidebar` probe
+above is what shows it carried nothing.
+
 ### Desktop titlebar drag region — drained
 
 The `okou-desktop-no-drag` selector and its consumer were removed first. The

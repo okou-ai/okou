@@ -82,48 +82,6 @@
       },
       {
         "atRules": [],
-        "selector": ".okou-app",
-        "property": "--okou-card-radius",
-        "value": " 1.25rem",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app",
-        "property": "--okou-chat-card-radius",
-        "value": " 0.75rem",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app",
-        "property": "--okou-card-shadow",
-        "value": "\n    0 2px 12px hsl(30 6% 45% / 0.05), 0 0 0 0.5px hsl(30 6% 45% / 0.025)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app",
-        "property": "--okou-chat-card-shadow",
-        "value": " 0 1px 2px hsl(30 6% 45% / 0.05)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app[data-gradient-color-themes]",
-        "property": "--okou-card-shadow",
-        "value": "\n    0 2px 12px hsl(var(--state-layer) / 0.035),\n    0 0 0 0.5px hsl(var(--state-layer) / 0.018)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app[data-gradient-color-themes]",
-        "property": "--okou-chat-card-shadow",
-        "value": " 0 1px 2px hsl(var(--state-layer) / 0.035)",
-        "important": false
-      },
-      {
-        "atRules": [],
         "selector": ".okou-app[data-desktop-shell]",
         "property": "-webkit-user-select",
         "value": "none",
@@ -162,20 +120,6 @@
         "selector": ".okou-thumb-border",
         "property": "border",
         "value": "0.5px solid hsl(var(--gray-400))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app",
-        "property": "--color-sidebar",
-        "value": " hsl(var(--sidebar))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app",
-        "property": "--color-sidebar-rail",
-        "value": " hsl(var(--sidebar-rail))",
         "important": false
       },
       {
