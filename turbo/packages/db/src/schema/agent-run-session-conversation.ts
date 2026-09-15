@@ -260,6 +260,8 @@ export const agentSessions = pgTable(
     return [
       index("idx_agent_sessions_user_agent").on(table.userId, table.agentId),
       index("idx_agent_sessions_org").on(table.orgId),
+      index("idx_agent_sessions_agent").on(table.agentId),
+      index("idx_agent_sessions_conversation").on(table.conversationId),
     ];
   },
 );

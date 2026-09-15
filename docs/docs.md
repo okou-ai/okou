@@ -74,6 +74,8 @@ surface; the index does not replace their detailed rules.
 - [Pi candidate reference accounting](./database/pi-memory-candidate-accounting.md):
   explicit API ownership, guarded trigger retirement, parent cleanup, audit
   receipts and the B rollback floor.
+- [Conversation history deletion](./conversation-history-deletion.md): actual-row
+  reference releases, lifecycle locks, cascade inventory and bounded SQL costs.
 - [Pi runtime architecture](./pi-runtime-architecture.md): launch, SDK/session,
   memory, accounting, retained compatibility, and patch ownership boundaries.
 - [Runner host configuration](./runner-host-configuration.md): configure and

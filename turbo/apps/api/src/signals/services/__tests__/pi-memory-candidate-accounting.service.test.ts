@@ -14,10 +14,19 @@ import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { conversations } from "@okouai/db/schema/conversation";
+import { checkpoints } from "@okouai/db/schema/checkpoint";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storages } from "@okouai/db/schema/storage";
 
 import { createDeferredPromise } from "../../utils";
+import { deleteClerkAgentLifecycleData } from "../agent-lifecycle.service";
+import { persistAgentCheckpointInTransaction } from "../agent-webhook-checkpoints.service";
+import { lockAgentRunCheckpointLifecycle } from "../agent-run-checkpoint-lifecycle-lock.service";
+import {
+  deleteLockedRuns,
+  deleteRunConversations,
+  releaseDeletedConversationReferences,
+} from "../conversation-history-deletion.service";
 import { testContext } from "../../../__tests__/test-context";
 import { executeRawRows } from "../../../lib/db-raw-rows";
 import type { ApiDb, Tx } from "../../../lib/db-types";
@@ -48,7 +57,7 @@ const newHash = "2".repeat(64);
 
 type Harness = Awaited<ReturnType<typeof harness>>;
 
-async function harness(trigger: boolean) {
+async function harness(trigger: boolean, lifecycle = false) {
   const schema = `pi_accounting_${randomUUID().replaceAll("-", "")}`;
   const adminPool = new Pool({ connectionString: env("DATABASE_URL"), max: 1 });
   const admin = drizzle(adminPool);
@@ -74,6 +83,7 @@ async function harness(trigger: boolean) {
     "agent_runs",
     "chat_threads",
     "conversations",
+    "checkpoints",
   ]) {
     await db.execute(
       sql`CREATE TABLE ${sql.identifier(name)} (LIKE public.${sql.identifier(name)} INCLUDING ALL)`,
@@ -88,6 +98,22 @@ async function harness(trigger: boolean) {
   await db.execute(sql`ALTER TABLE pi_memory_phase2_jobs
     ADD FOREIGN KEY (memory_storage_id, org_id, user_id)
       REFERENCES storages(id, org_id, user_id) ON DELETE CASCADE`);
+  if (lifecycle) {
+    await db.execute(sql`ALTER TABLE agent_sessions
+      ADD FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE,
+      ADD FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE SET NULL`);
+    await db.execute(sql`ALTER TABLE agent_runs
+      ADD FOREIGN KEY (session_id) REFERENCES agent_sessions(id) ON DELETE CASCADE,
+      ADD FOREIGN KEY (chat_thread_id) REFERENCES chat_threads(id) ON DELETE SET NULL`);
+    await db.execute(sql`ALTER TABLE conversations
+      ADD FOREIGN KEY (run_id) REFERENCES agent_runs(id) ON DELETE CASCADE`);
+    await db.execute(sql`ALTER TABLE checkpoints
+      ADD FOREIGN KEY (run_id) REFERENCES agent_runs(id) ON DELETE CASCADE,
+      ADD FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE`);
+    await db.execute(sql`ALTER TABLE chat_threads
+      ADD FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE,
+      ADD FOREIGN KEY (agent_session_id) REFERENCES agent_sessions(id) ON DELETE SET NULL`);
+  }
   const baseline = await readFile(
     new URL(
       "../../../../../../packages/db/src/migrations/1078_baseline.sql",
@@ -950,4 +976,479 @@ test("c releases only the candidate reference from a preserved residual", async 
   await expect(refs(h.db)).resolves.toStrictEqual([
     { hash: oldHash, count: 1 },
   ]);
+});
+
+// Infrastructure-only #33973 exception: HTTP cannot inspect reference counts,
+// inject corrupt ledgers, or pause transactions at FK/blob locks. Production
+// Agent, Clerk, checkpoint/completion and threadless routes have separate tests.
+async function deleteSourceLifecycle(
+  h: Harness,
+  runIds: readonly string[],
+  root: "run" | "session" | "agent" = "run",
+  failAfterRelease = false,
+) {
+  return await h.db.transaction(async (tx) => {
+    const sessions = await tx
+      .select({ id: agentSessions.id, agentId: agentSessions.agentId })
+      .from(agentSessions)
+      .where(
+        inArray(
+          agentSessions.id,
+          tx
+            .select({ id: agentRuns.sessionId })
+            .from(agentRuns)
+            .where(inArray(agentRuns.id, [...runIds])),
+        ),
+      )
+      .orderBy(asc(agentSessions.id))
+      .for("update");
+    const runs = await tx
+      .select({ id: agentRuns.id })
+      .from(agentRuns)
+      .where(inArray(agentRuns.id, [...runIds]))
+      .orderBy(asc(agentRuns.id))
+      .for("update");
+    const ids = runs.map((run) => {
+      return run.id;
+    });
+    const removed = await deleteRunConversations(tx, ids);
+    if (root === "run") {
+      await deleteLockedRuns(tx, ids);
+    } else if (root === "session") {
+      await tx.delete(agentSessions).where(
+        inArray(
+          agentSessions.id,
+          sessions.map((session) => {
+            return session.id;
+          }),
+        ),
+      );
+    } else {
+      await tx.delete(agents).where(
+        inArray(
+          agents.id,
+          sessions.flatMap((session) => {
+            return session.agentId === null ? [] : [session.agentId];
+          }),
+        ),
+      );
+    }
+    const receipt = await releaseDeletedConversationReferences(tx, removed);
+    if (failAfterRelease) {
+      throw new Error("injected failure before commit");
+    }
+    return receipt;
+  });
+}
+
+async function attachCheckpoint(h: Harness, runId: string) {
+  const [row] = await h.db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(eq(conversations.runId, runId));
+  if (!row) {
+    throw new Error("Expected a conversation");
+  }
+  await h.db.insert(checkpoints).values({ runId, conversationId: row.id });
+  await h.db
+    .update(agentSessions)
+    .set({ conversationId: row.id })
+    .where(
+      inArray(
+        agentSessions.id,
+        h.db
+          .select({ id: agentRuns.sessionId })
+          .from(agentRuns)
+          .where(eq(agentRuns.id, runId)),
+      ),
+    );
+}
+
+describe("conversation history deletion accounting", () => {
+  it.each(["run", "session", "agent"] as const)(
+    "releases only the conversation in a %s cascade, then releases the candidate",
+    async (root) => {
+      const h = await harness(false, true);
+      const parent = await owner(h.db);
+      await blob(h.db);
+      const run = await source(h, parent);
+      await attachCheckpoint(h, run.runId);
+      await h.db.transaction(async (tx) => {
+        await insertPiMemoryStage1Candidates(tx, [
+          { ...candidate(parent), sourceRunId: run.runId },
+        ]);
+      });
+      await expect(refs(h.db)).resolves.toStrictEqual([
+        { hash: oldHash, count: 2 },
+      ]);
+      await expect(
+        deleteSourceLifecycle(h, [run.runId], root),
+      ).resolves.toStrictEqual({
+        deletedConversations: 1,
+        releasedReferences: 1,
+        releasedHashes: 1,
+      });
+      await expect(h.db.select().from(agentRuns)).resolves.toHaveLength(0);
+      await expect(h.db.select().from(conversations)).resolves.toHaveLength(0);
+      await expect(h.db.select().from(checkpoints)).resolves.toHaveLength(0);
+      await expect(
+        h.db.select().from(piMemoryStage1Candidates),
+      ).resolves.toHaveLength(1);
+      await expect(refs(h.db)).resolves.toStrictEqual([
+        { hash: oldHash, count: 1 },
+      ]);
+      if (root === "run") {
+        await expect(
+          h.db
+            .select({ conversationId: agentSessions.conversationId })
+            .from(agentSessions),
+        ).resolves.toStrictEqual([{ conversationId: null }]);
+      }
+      await deleteSourceLifecycle(h, [run.runId], root);
+      await expect(refs(h.db)).resolves.toStrictEqual([
+        { hash: oldHash, count: 1 },
+      ]);
+      await h.db.transaction(async (tx) => {
+        await deletePiMemoryStage1Candidates(tx, [parent.id]);
+      });
+      await expect(refs(h.db)).resolves.toStrictEqual([
+        { hash: oldHash, count: 0 },
+      ]);
+    },
+  );
+
+  it.each(["user", "organization"] as const)(
+    "accounts for direct and owned-agent cascades during Clerk %s deletion",
+    async (kind) => {
+      const h = await harness(false, true);
+      const parent = await owner(h.db);
+      const other = await owner(h.db);
+      await blob(h.db, oldHash, 4);
+      const overlap = await source(h, parent);
+      const indirect = await source(h, parent);
+      const direct = await source(h, other);
+      const survivor = await source(h, other);
+      // Cross-user owned-Agent runs are legitimate; a historical cross-org child
+      // also remains part of the physical Agent cascade during org deletion.
+      await h.db
+        .update(agentRuns)
+        .set({ userId: other.userId, orgId: other.orgId })
+        .where(eq(agentRuns.id, indirect.runId));
+      await h.db
+        .update(agentRuns)
+        .set(
+          kind === "user" ? { userId: parent.userId } : { orgId: parent.orgId },
+        )
+        .where(eq(agentRuns.id, direct.runId));
+      for (const run of [overlap, indirect, direct, survivor]) {
+        await attachCheckpoint(h, run.runId);
+      }
+      await h.db.transaction(async (tx) => {
+        await insertPiMemoryStage1Candidates(tx, [
+          { ...candidate(parent), sourceRunId: overlap.runId },
+          { ...candidate(other), sourceRunId: indirect.runId },
+        ]);
+      });
+      const scope =
+        kind === "user"
+          ? { kind, userId: parent.userId }
+          : { kind, orgId: parent.orgId };
+      await deleteClerkAgentLifecycleData(h.db, scope);
+      await expect(
+        h.db.select({ id: agentRuns.id }).from(agentRuns),
+      ).resolves.toStrictEqual([{ id: survivor.runId }]);
+      await expect(h.db.select().from(conversations)).resolves.toHaveLength(1);
+      await expect(h.db.select().from(checkpoints)).resolves.toHaveLength(1);
+      await expect(
+        h.db.select().from(piMemoryStage1Candidates),
+      ).resolves.toHaveLength(2);
+      await expect(refs(h.db)).resolves.toStrictEqual([
+        { hash: oldHash, count: 3 },
+      ]);
+      await deleteClerkAgentLifecycleData(h.db, scope);
+      await expect(refs(h.db)).resolves.toStrictEqual([
+        { hash: oldHash, count: 3 },
+      ]);
+    },
+  );
+
+  it("groups shared hashes across batches and ignores null and legacy inline history", async () => {
+    const h = await harness(false, true);
+    const parent = await owner(h.db);
+    await blob(h.db, oldHash, 1002); // 1001 removed references and one other owner.
+    const first = await source(h, parent);
+    const [run] = await h.db
+      .select({ sessionId: agentRuns.sessionId })
+      .from(agentRuns)
+      .where(eq(agentRuns.id, first.runId));
+    if (!run) {
+      throw new Error("Expected the first Run");
+    }
+    const ids = Array.from({ length: 1002 }, () => {
+      return randomUUID();
+    });
+    await h.db.insert(agentRuns).values(
+      ids.map((id) => {
+        return {
+          id,
+          sessionId: run.sessionId,
+          userId: parent.userId,
+          orgId: parent.orgId,
+          status: "completed",
+          prompt: "",
+        };
+      }),
+    );
+    await h.db.insert(conversations).values(
+      ids.map((id, index) => {
+        return {
+          runId: id,
+          cliAgentType: "pi",
+          cliAgentSessionId: id,
+          cliAgentSessionHistoryHash: index < 1000 ? oldHash : null,
+          cliAgentSessionHistory: index === 1001 ? "legacy inline" : null,
+        };
+      }),
+    );
+    await expect(
+      deleteSourceLifecycle(h, [first.runId, ...ids]),
+    ).resolves.toStrictEqual({
+      deletedConversations: 1003,
+      releasedReferences: 1001,
+      releasedHashes: 1,
+    });
+    await expect(refs(h.db)).resolves.toStrictEqual([
+      { hash: oldHash, count: 1 },
+    ]);
+  });
+
+  it.each(["missing", "insufficient"])(
+    "rolls back the entire Clerk cascade on a %s reference",
+    async (failure) => {
+      const h = await harness(false, true);
+      const parent = await owner(h.db);
+      await blob(h.db);
+      if (failure === "insufficient") {
+        await blob(h.db, newHash, 0);
+      }
+      const valid = await source(h, parent);
+      const invalid = await source(h, parent, newHash);
+      await attachCheckpoint(h, valid.runId);
+      await attachCheckpoint(h, invalid.runId);
+      await expect(
+        deleteClerkAgentLifecycleData(h.db, {
+          kind: "user",
+          userId: parent.userId,
+        }),
+      ).rejects.toThrow("Conversation history reference accounting failed");
+      await expect(h.db.select().from(agentRuns)).resolves.toHaveLength(2);
+      await expect(h.db.select().from(conversations)).resolves.toHaveLength(2);
+      await expect(h.db.select().from(agents)).resolves.toHaveLength(2);
+      await expect(h.db.select().from(checkpoints)).resolves.toHaveLength(2);
+      await expect(refs(h.db)).resolves.toStrictEqual(
+        failure === "missing"
+          ? [{ hash: oldHash, count: 1 }]
+          : [
+              { hash: oldHash, count: 1 },
+              { hash: newHash, count: 0 },
+            ],
+      );
+    },
+  );
+
+  it("rolls back a valid release when a later transaction operation fails", async () => {
+    const h = await harness(false, true);
+    const parent = await owner(h.db);
+    await blob(h.db);
+    const run = await source(h, parent);
+    await expect(
+      deleteSourceLifecycle(h, [run.runId], "agent", true),
+    ).rejects.toThrow("injected failure before commit");
+    await expect(refs(h.db)).resolves.toStrictEqual([
+      { hash: oldHash, count: 1 },
+    ]);
+    await expect(h.db.select().from(conversations)).resolves.toHaveLength(1);
+    await expect(h.db.select().from(agentRuns)).resolves.toHaveLength(1);
+    await expect(h.db.select().from(agents)).resolves.toHaveLength(1);
+  });
+
+  it("rolls back on a concurrent candidate release and succeeds on retry", async () => {
+    const h = await harness(false, true);
+    const parent = await owner(h.db);
+    await blob(h.db);
+    const run = await source(h, parent);
+    await h.db.transaction(async (tx) => {
+      await insertPiMemoryStage1Candidates(tx, [candidate(parent)]);
+    });
+    const gate = createDeferredPromise<void>(context.signal);
+    const ready = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      if (!gate.settled()) {
+        gate.resolve();
+      }
+    });
+    const cleanup = h.db.transaction(async (tx) => {
+      await deletePiMemoryStage1Candidates(tx, [parent.id]);
+      ready.resolve();
+      await gate.promise;
+    });
+    await ready.promise;
+    await expect(deleteSourceLifecycle(h, [run.runId])).rejects.toMatchObject({
+      cause: { code: "55P03" },
+    });
+    await expect(h.db.select().from(conversations)).resolves.toHaveLength(1);
+    gate.resolve();
+    await cleanup;
+    await deleteSourceLifecycle(h, [run.runId]);
+    await expect(refs(h.db)).resolves.toStrictEqual([
+      { hash: oldHash, count: 0 },
+    ]);
+  });
+
+  it.each(["commit", "rollback"])(
+    "keeps zero-count GC behind an uncommitted conversation %s",
+    async (finish) => {
+      const h = await harness(false, true);
+      const parent = await owner(h.db);
+      await blob(h.db);
+      const run = await source(h, parent);
+      const gate = createDeferredPromise<void>(context.signal);
+      const ready = createDeferredPromise<void>(context.signal);
+      onTestFinished(() => {
+        if (!gate.settled()) {
+          gate.resolve();
+        }
+      });
+      const deletion = Promise.allSettled([
+        h.db.transaction(async (tx) => {
+          await tx
+            .select({ id: agentRuns.id })
+            .from(agentRuns)
+            .where(eq(agentRuns.id, run.runId))
+            .for("update");
+          const removed = await deleteRunConversations(tx, [run.runId]);
+          await deleteLockedRuns(tx, [run.runId]);
+          await releaseDeletedConversationReferences(tx, removed);
+          ready.resolve();
+          await gate.promise;
+          if (finish === "rollback") {
+            throw new Error("rollback deletion");
+          }
+        }),
+      ]);
+      await ready.promise;
+      const backend = createDeferredPromise<number>(context.signal);
+      const gc = h.db.transaction(async (tx) => {
+        backend.resolve(await pid(tx));
+        // Lock first to exercise the recheck; an ordinary zero-count scan before
+        // commit cannot see the newly released row and simply does no work.
+        await tx
+          .select({ hash: blobs.hash })
+          .from(blobs)
+          .where(eq(blobs.hash, oldHash))
+          .for("update");
+        return await tx
+          .delete(blobs)
+          .where(and(eq(blobs.hash, oldHash), eq(blobs.refCount, 0)))
+          .returning({ hash: blobs.hash });
+      });
+      await blocked(h.db, await backend.promise);
+      gate.resolve();
+      await deletion;
+      await expect(gc).resolves.toStrictEqual(
+        finish === "commit" ? [{ hash: oldHash }] : [],
+      );
+      await expect(h.db.select().from(conversations)).resolves.toHaveLength(
+        finish === "commit" ? 0 : 1,
+      );
+    },
+  );
+});
+
+test("breaks the shared-blob and surviving-session checkpoint cycle without a deadlock", async () => {
+  const h = await harness(false, true);
+  const parent = await owner(h.db);
+  await blob(h.db);
+  const target = await source(h, parent);
+  await attachCheckpoint(h, target.runId);
+  const [targetRun] = await h.db
+    .select({ sessionId: agentRuns.sessionId })
+    .from(agentRuns)
+    .where(eq(agentRuns.id, target.runId));
+  if (!targetRun) {
+    throw new Error("Expected target Run");
+  }
+  const writerRunId = randomUUID();
+  await h.db.insert(agentRuns).values({
+    id: writerRunId,
+    sessionId: targetRun.sessionId,
+    orgId: parent.orgId,
+    userId: parent.userId,
+    status: "failed",
+    prompt: "",
+    storageMounts: [],
+  });
+  const gate = createDeferredPromise<void>(context.signal);
+  const ready = createDeferredPromise<void>(context.signal);
+  onTestFinished(() => {
+    if (!gate.settled()) {
+      gate.resolve();
+    }
+  });
+  const deletion = Promise.allSettled([
+    h.db.transaction(async (tx) => {
+      await tx
+        .select({ id: agentRuns.id })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, target.runId))
+        .for("update");
+      const removed = await deleteRunConversations(tx, [target.runId]);
+      ready.resolve(); // SET NULL now holds the Session needed by the other Run.
+      await gate.promise;
+      await deleteLockedRuns(tx, [target.runId]);
+      await releaseDeletedConversationReferences(tx, removed);
+    }),
+  ]);
+  await ready.promise;
+  const backend = createDeferredPromise<number>(context.signal);
+  const writer = h.db.transaction(async (tx) => {
+    backend.resolve(await pid(tx));
+    await lockAgentRunCheckpointLifecycle(tx, writerRunId);
+    return await persistAgentCheckpointInTransaction(
+      tx,
+      {
+        auth: {
+          orgId: parent.orgId,
+          userId: parent.userId,
+          runId: writerRunId,
+        },
+        body: {
+          runId: writerRunId,
+          cliAgentType: "claude-code",
+          cliAgentSessionId: writerRunId,
+          cliAgentSessionHistoryHash: oldHash,
+        },
+      },
+      {},
+      context.signal,
+      { source: "standalone-webhook" },
+    );
+  });
+  await blocked(h.db, await backend.promise);
+  gate.resolve();
+  await expect(deletion).resolves.toMatchObject([
+    { status: "rejected", reason: { cause: { code: "55P03" } } },
+  ]);
+  await expect(writer).resolves.toMatchObject({ status: 200 });
+  await expect(refs(h.db)).resolves.toStrictEqual([
+    { hash: oldHash, count: 2 },
+  ]);
+  await expect(h.db.select().from(conversations)).resolves.toHaveLength(2);
+  await deleteSourceLifecycle(h, [target.runId]);
+  await expect(refs(h.db)).resolves.toStrictEqual([
+    { hash: oldHash, count: 1 },
+  ]);
+  await expect(
+    h.db.select({ runId: conversations.runId }).from(conversations),
+  ).resolves.toStrictEqual([{ runId: writerRunId }]);
 });
