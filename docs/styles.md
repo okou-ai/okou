@@ -871,6 +871,7 @@ change 734,605 pixels.
 
 `okou-chat-frame` had exactly one consumer, that dialog's video stage, so it
 carried no live declaration anywhere.
+
 ### The standalone PWA fixed cover
 
 The `okou-pwa-fixed-cover` selector and its consumers have been removed. It was
