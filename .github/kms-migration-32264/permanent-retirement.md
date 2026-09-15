@@ -114,6 +114,28 @@ refresh registry evidence at retirement; do not infer recursive dependencies
 solely from the inventory's `outerHeadersOnly` flag. Backing database credential
 refresh and concrete state outside the registries require their own coverage.
 
+## Current production target-only verification
+
+To refresh current production ciphertext, dispatch **KMS Production Preflight**
+from `main` with `operation=verify-target` and the current production API
+`expected_deployment_id`, then use the protected `production` environment.
+This mode selects the read-only `--verify --recovery-schema` CLI and the same
+restricted target-only KMS session used for snapshot verification. It does not
+read the source credential backup or run source/rollback canaries. The original
+`operation=verify` retains migration canaries and is unsuitable for this check.
+
+The controller pins the production project, uniquely resolves its production
+database, and requires an unchanged database connection and API deployment
+before accepting the completed report. The recovery manifest covers historical
+and current SSH storage, including encrypted passwords. All fields must verify
+on the target key with zero source, unknown, uninspected, or updated values.
+Provider credentials and database contents stay out of the retained aggregate
+`target-verification.json`; a failed child retains sanitized diagnostics.
+
+This refresh checks current production state. It does not restore snapshots,
+verify other branches or PITR, change data or deployment configuration, or grant
+retirement clearance. Keep the independent retained-recovery gates below.
+
 ## Isolated snapshot inspection
 
 Run **KMS Recovery Snapshot Inspect** from `main` through the protected
