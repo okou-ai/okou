@@ -906,6 +906,21 @@ Every capture also asserts that both sides report the same number of running
 animations, because a finite animation that ends is dropped from
 `getAnimations()` and would otherwise be compared at a different phase.
 
+The skeleton reveal's delay boundary is verified separately. Those pauses land at
+0, 200, 400, 700 and 1050 ms and so never sample either side of the 100 ms delay,
+which is the only instant this recipe decides anything: its duration is zero, so
+the whole behaviour is one step from `opacity: 0` to the filled `opacity: 1`. On
+the real overlay chain — the `.okou-app` shell, the chat `<main>`, the skeleton
+overlay and the reveal wrapper, under `index.html`'s viewport meta copied
+verbatim — the retired rule and `opacity-0 animate-chat-skeleton-reveal` agree at
+0, 99, 101 and 500 ms in Light and Dark. `opacity` reads `0`, `0`, `1`, `1` on
+both sides; `animation-name`, `animation-duration`, `animation-delay` and
+`animation-fill-mode` are identical; and all eight full-page comparisons report
+zero changed pixels. Two negative controls keep those zeros honest and between
+them cover every sample: dropping `animate-chat-skeleton-reveal` changes 90,062
+Light and 90,106 Dark pixels at 101 and 500 ms, and dropping `opacity-0` changes
+the same counts at 0 and 99 ms.
+
 The three-block loader is not part of this batch. `okou-blocks` was retired by
 the separate removal of the chat thinking spinner switch, which deleted the
 loader, its colour state and its keyframes outright; the rotating mark is now
