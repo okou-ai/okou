@@ -59,7 +59,7 @@ fn parent_cleanup_preserves_instruction_inputs_and_cached_roots() {
 }
 
 #[test]
-fn decoded_input_cleans_removed_skills_beside_cached_instructions() {
+fn decoded_input_replaces_and_removes_skills_beneath_cached_instructions() {
     for (home_name, target) in [
         (".claude", "CLAUDE.md"),
         (".codex", "AGENTS.md"),
@@ -69,7 +69,7 @@ fn decoded_input_cleans_removed_skills_beside_cached_instructions() {
         let home = fixture.dir.path().join(home_name);
         let removed = home.join("skills/removed");
         let retained = home.join("skills/retained");
-        let decoded = fixture.dir.path().join("decoded");
+        let decoded = home.join("skills/decoded");
         for root in [&removed, &retained, &decoded] {
             fs::create_dir_all(root).unwrap();
         }
