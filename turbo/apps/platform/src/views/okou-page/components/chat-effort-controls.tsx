@@ -73,8 +73,10 @@ export function ChatEffortSettings({
   });
   return (
     <div className="flex flex-col gap-3 px-2 py-3">
+      {/* The same label/value pair the composer's video options use: the name
+          of the setting recedes, the chosen value carries the row. */}
       <div className="flex items-baseline justify-between gap-3 text-[13px]">
-        <span>{label}</span>
+        <span className="text-muted-foreground">{label}</span>
         <span className="font-medium text-foreground">{displayValue}</span>
       </div>
       {index !== -1 ? (
