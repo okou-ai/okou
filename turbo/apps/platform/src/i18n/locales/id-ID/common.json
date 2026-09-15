@@ -2805,7 +2805,6 @@
         "website": "Situs web",
         "workflow": "Alur kerja"
       },
-      "importedEmpty": "Belum ada templat yang diunggah.",
       "importedLoadFailed": "Tidak dapat memuat templat yang diunggah.",
       "importedLoading": "Memuat templat yang diunggah…",
       "importedUnavailable": "Templat yang diunggah untuk sementara tidak tersedia.",
@@ -5624,6 +5623,10 @@
         "categoryVideo": "Video",
         "chatModels": "Model chat",
         "effort": "Upaya",
+        "effortScale": {
+          "faster": "Lebih cepat",
+          "smarter": "Lebih cerdas"
+        },
         "fast": "Cepat",
         "fastImpact": {
           "apiCost": "2× biaya token API",

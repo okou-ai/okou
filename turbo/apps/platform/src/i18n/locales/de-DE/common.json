@@ -2814,7 +2814,6 @@
         "website": "Webseite",
         "workflow": "Workflow"
       },
-      "importedEmpty": "Noch keine hochgeladenen Vorlagen.",
       "importedLoadFailed": "Hochgeladene Vorlagen konnten nicht geladen werden.",
       "importedLoading": "Hochgeladene Vorlagen werden geladen…",
       "importedUnavailable": "Hochgeladene Vorlagen sind vorübergehend nicht verfügbar.",
@@ -5637,6 +5636,10 @@
         "categoryVideo": "Video",
         "chatModels": "Chatmodelle",
         "effort": "Aufwand",
+        "effortScale": {
+          "faster": "Schneller",
+          "smarter": "Intelligenter"
+        },
         "fast": "Schnell",
         "fastImpact": {
           "apiCost": "2× API-Tokenkosten",

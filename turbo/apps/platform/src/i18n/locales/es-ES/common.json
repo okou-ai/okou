@@ -2860,7 +2860,6 @@
         "website": "Sitio web",
         "workflow": "Flujo de trabajo"
       },
-      "importedEmpty": "Aún no hay plantillas subidas.",
       "importedLoadFailed": "No se pudieron cargar las plantillas subidas.",
       "importedLoading": "Cargando plantillas subidas…",
       "importedUnavailable": "Las plantillas subidas no están disponibles temporalmente.",
@@ -5695,6 +5694,10 @@
         "categoryVideo": "Vídeo",
         "chatModels": "Modelos de chat",
         "effort": "Esfuerzo",
+        "effortScale": {
+          "faster": "Más rápido",
+          "smarter": "Más inteligente"
+        },
         "fast": "Rápido",
         "fastImpact": {
           "apiCost": "2× el coste de tokens de API",

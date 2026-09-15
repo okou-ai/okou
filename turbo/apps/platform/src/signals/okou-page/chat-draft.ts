@@ -442,7 +442,9 @@ function createComposerAttachmentPreview(
   return computed(async (get) => {
     const file = await get(fileInfo$);
     return file
-      ? createAttachmentPreviewSignals(canonicalUserMessageFileUrl(file.id))
+      ? createAttachmentPreviewSignals(canonicalUserMessageFileUrl(file.id), {
+          contentType: file.contentType,
+        })
       : null;
   });
 }
@@ -615,9 +617,12 @@ export function createRestoredAttachment(
           preview: createAttachmentPreviewSignals(
             canonicalUserMessageFileUrl(persisted.id),
             {
-              token: resolved.body.url,
-              expiresAt: resolved.body.expiresAt,
-              publicUrl: resolved.body.publicUrl,
+              contentType: persisted.contentType,
+              resolvedToken: {
+                token: resolved.body.url,
+                expiresAt: resolved.body.expiresAt,
+                publicUrl: resolved.body.publicUrl,
+              },
             },
           ),
         };

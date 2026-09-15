@@ -4,6 +4,7 @@ import { createClerkClient } from "@clerk/backend";
 import { isClerkAPIResponseError } from "@clerk/backend/errors";
 import { verifyWebhook } from "@clerk/backend/webhooks";
 import { delay } from "signal-timers";
+import { z } from "zod";
 import { singleton } from "../../lib/singleton";
 import { env } from "../../lib/env";
 import { settle } from "../utils";
@@ -343,6 +344,68 @@ export interface ClerkSessionIdentity {
 export interface ClerkWebhookEvent {
   readonly type: string;
   readonly data: unknown;
+}
+
+export interface ClerkDeletionEnvelope {
+  readonly audience: string;
+  readonly eventId: string;
+  readonly subjectKind: "user" | "organization";
+  readonly subjectId: string;
+  readonly requestedAt: Date;
+}
+
+const deletionBody = z.object({
+  object: z.literal("event"),
+  type: z.enum(["user.deleted", "organization.deleted"]),
+  instance_id: z.string().min(1).max(192),
+  // Clerk's event timestamp is milliseconds since the Unix epoch. Keep it
+  // inside the supported 1970-9999 date range; never infer seconds or use Svix
+  // delivery time, which changes when an event is redelivered.
+  timestamp: z.number().int().min(0).max(253_402_300_799_999),
+  data: z.object({
+    id: z
+      .string()
+      .min(1)
+      .refine((id) => {
+        return Buffer.byteLength(id) <= 192 && !id.includes("\0");
+      }),
+    deleted: z.literal(true),
+  }),
+});
+
+/** Dormant bridge gateway. The configured instance and secret are trusted
+ * configuration, never request parameters. No production resolver is installed.
+ */
+export async function verifyClerkDeletion(
+  request: Request,
+  config: { readonly audience: string; readonly signingSecret: string },
+): Promise<ClerkDeletionEnvelope> {
+  if (!config.audience || !config.signingSecret) {
+    throw new Error("clerk_deletion:configuration_required");
+  }
+  const verifiedRequest = request.clone();
+  const original = verifiedRequest.clone();
+  const audience = config.audience;
+  const eventId = verifiedRequest.headers.get("svix-id")?.trim();
+  // @clerk/backend 3.13.1 verifies all bytes but drops timestamp/instance_id
+  // from its returned object. Decode the same bytes only AFTER SDK verification.
+  await verifyWebhook(verifiedRequest, { signingSecret: config.signingSecret });
+  const body: unknown = await original.json();
+  const event = deletionBody.parse(body);
+  if (
+    !eventId ||
+    Buffer.byteLength(eventId) > 192 ||
+    event.instance_id !== audience
+  ) {
+    throw new Error("clerk_deletion:identity_mismatch");
+  }
+  return {
+    audience,
+    eventId,
+    subjectKind: event.type === "user.deleted" ? "user" : "organization",
+    subjectId: event.data.id,
+    requestedAt: new Date(event.timestamp),
+  };
 }
 
 const clerkSdk = singleton(() => {

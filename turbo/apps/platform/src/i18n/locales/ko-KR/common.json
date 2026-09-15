@@ -2805,7 +2805,6 @@
         "website": "웹사이트",
         "workflow": "워크플로"
       },
-      "importedEmpty": "아직 업로드한 템플릿이 없습니다.",
       "importedLoadFailed": "업로드한 템플릿을 불러오지 못했습니다.",
       "importedLoading": "업로드한 템플릿 로딩 중…",
       "importedUnavailable": "업로드한 템플릿을 일시적으로 사용할 수 없습니다.",
@@ -5624,6 +5623,10 @@
         "categoryVideo": "동영상",
         "chatModels": "채팅 모델",
         "effort": "강도",
+        "effortScale": {
+          "faster": "빠르게",
+          "smarter": "똑똑하게"
+        },
         "fast": "빠름",
         "fastImpact": {
           "apiCost": "API 토큰 비용 2×",

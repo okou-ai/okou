@@ -1222,6 +1222,7 @@ const registerUserMessageRenderPart$ = command(
           signals: set(artifactCardSignals.register$, {
             filename: part.filenameSnapshot,
             url,
+            contentType: renderContentType,
             kind: classifyChatAttachment({
               filename: part.filenameSnapshot,
               url,

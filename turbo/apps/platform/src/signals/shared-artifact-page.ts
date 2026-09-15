@@ -34,9 +34,12 @@ export function createSharedArtifactPreview(
     filename: artifact.filename,
     url: referenceUrl,
     ...createAttachmentPreviewSignals(referenceUrl, {
-      token: contentUrl.href,
-      expiresAt: artifact.expiresAt,
-      publicUrl: null,
+      contentType: artifact.contentType,
+      resolvedToken: {
+        token: contentUrl.href,
+        expiresAt: artifact.expiresAt,
+        publicUrl: null,
+      },
     }),
   };
   let preview: AttachmentLightboxState;

@@ -2860,7 +2860,6 @@
         "website": "Site",
         "workflow": "Fluxo de trabalho"
       },
-      "importedEmpty": "Nenhum modelo enviado ainda.",
       "importedLoadFailed": "Não foi possível carregar os modelos enviados.",
       "importedLoading": "Carregando modelos enviados…",
       "importedUnavailable": "Os modelos enviados estão temporariamente indisponíveis.",
@@ -5695,6 +5694,10 @@
         "categoryVideo": "Vídeo",
         "chatModels": "Modelos de chat",
         "effort": "Esforço",
+        "effortScale": {
+          "faster": "Mais rápido",
+          "smarter": "Mais inteligente"
+        },
         "fast": "Rápido",
         "fastImpact": {
           "apiCost": "2× o custo de tokens da API",

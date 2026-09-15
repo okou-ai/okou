@@ -6,7 +6,7 @@ The mitmproxy addon (`crates/runner/mitm-addon/`) is a Python module that interc
 
 ## Runtime Contracts
 
-Read [addon runtime contracts](../mitm-addon-contracts.md) when changing logging,
+Read [addon runtime contracts](../mitm-addon-contracts.md) when changing control, logging,
 WebSocket framing or handshake inspection, path normalization, or dependency
 pins. That reference owns limits, redaction, failure handling, and rollout
 boundaries; the tests below exercise those contracts.
@@ -78,6 +78,29 @@ uv run --no-sync ruff format --check .
 uv run --no-sync ruff check .
 uv run --no-sync basedpyright -p .
 ```
+
+### Private control and packaged runtime
+
+`test_runner_control.py` exercises real Unix sockets: strict framing, correlation,
+bounded admission, partial peers, exclusive bind, long paths, shutdown, and
+generation changes. `test_addon_configuration.py` verifies JSONL initialization
+precedes control readiness. Rust's `proxy::control` and `proxy::process` tests
+cover bounded clients plus startup/restart/cleanup with the embedded Python server.
+
+Run the standalone-artifact suite from the repository root:
+
+```bash
+bash .github/scripts/check-packaged-addon-control.sh
+```
+
+The wrapper selects the native supported architecture through the shared Runner
+target helper, downloads the mitmproxy version pinned in `deps.rs`, verifies both
+archive and executable size/SHA-256, and invokes `tests/packaged_control.py`.
+That explicitly selected suite fails if its verified executable is absent; normal
+pytest discovery does not download binaries. It loads the production addon with
+fixture-owned configuration, checks socket and TCP readiness, stops it, and starts
+a fresh generation without contacting platform or model APIs. CI runs it on both
+x86_64 and aarch64 and includes it in the Crates gate.
 
 ### Flow metadata key contract check
 

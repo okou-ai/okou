@@ -19,6 +19,7 @@ import platform_api
 import runner_flush_lifecycle
 import usage
 import usage.buffer as usage_buffer
+from tests.control_helpers import exchange, status_request
 from tests.pending_helpers import assert_pending
 from tests.usage_helpers import install_recording_usage_timer
 
@@ -63,14 +64,14 @@ class _Options:
         self,
         *,
         usage_state_id: str = "runner-usage-state-id",
-        addon_ready_path: str = "",
+        control_socket_dir: str = "",
         flush_interval_seconds: float = usage.DEFAULT_FLUSH_INTERVAL_SECONDS,
         client_session_id: str = "runner-session-test",
         client_version: str = "runner-version-test",
         api_url: str = "https://api.okou.ai",
     ) -> None:
         self.okou_usage_state_id = usage_state_id
-        self.okou_addon_ready_path = addon_ready_path
+        self.okou_control_socket_dir = control_socket_dir
         self.okou_usage_flush_interval_seconds = flush_interval_seconds
         self.okou_client_session_id = client_session_id
         self.okou_client_version = client_version
@@ -89,6 +90,12 @@ def _usage_event(source_key: str) -> usage_buffer.UsageEvent:
         "category": "tokens.input",
         "quantity": 1,
     }
+
+
+@pytest.fixture
+def addon_control_cleanup():
+    yield
+    mitm_addon.done()
 
 
 class TestAddonConfiguration:
@@ -119,7 +126,7 @@ class TestAddonConfiguration:
 
         option_names = [option.name for option in master.options.added]
         assert "okou_usage_state_id" in option_names
-        assert "okou_addon_ready_path" in option_names
+        assert "okou_control_socket_dir" in option_names
         assert "okou_client_session_id" in option_names
         assert "okou_client_version" in option_names
         assert "okou_usage_flush_interval_seconds" in option_names
@@ -165,8 +172,8 @@ class TestAddonConfiguration:
         state = assert_pending(pending_path, flows=0, buffered=0, reports=0)
         assert state["usageStateId"] == "runner-usage-state-id"
 
-    def test_running_starts_jsonl_watcher_before_addon_ready(self, tmp_path):
-        ready_path = tmp_path / "addon-ready"
+    def test_running_starts_jsonl_watcher_before_addon_ready(self, tmp_path, addon_control_cleanup):
+        ready_path = tmp_path / "control.sock"
         log_path = tmp_path / "network.jsonl"
         (tmp_path / "jsonl-flush-request").write_text(
             json.dumps(
@@ -185,17 +192,19 @@ class TestAddonConfiguration:
             patch.object(
                 mitm_addon.ctx,
                 "options",
-                _Options(addon_ready_path=str(ready_path)),
+                _Options(control_socket_dir=str(tmp_path)),
                 create=True,
             ),
             patch.object(logging_utils, "flush_log_path", return_value=True) as flush_log_path,
         ):
-            mitm_addon.configure({"okou_addon_ready_path", "okou_usage_state_id"})
+            mitm_addon.configure({"okou_control_socket_dir", "okou_usage_state_id"})
             assert not ready_path.exists()
             mitm_addon.running()
             runner_flush_lifecycle.stop_runner_jsonl_flush_worker_for_tests()
 
-        assert ready_path.read_text(encoding="utf-8") == "runner-usage-state-id"
+        assert exchange(tmp_path, status_request("runner-usage-state-id"))["data"] == {
+            "state": "running"
+        }
         state = json.loads((tmp_path / "jsonl-flush-state").read_text())
         assert state["flushRequestId"] == "jsonl-request-1"
         assert state["path"] == str(log_path)
@@ -205,8 +214,10 @@ class TestAddonConfiguration:
             timeout=runner_flush_lifecycle.RUNNER_JSONL_FLUSH_TIMEOUT_SECONDS,
         )
 
-    def test_running_does_not_publish_ready_when_jsonl_watcher_fails_to_start(self, tmp_path):
-        ready_path = tmp_path / "addon-ready"
+    def test_running_does_not_serve_status_when_jsonl_watcher_fails_to_start(
+        self, tmp_path, addon_control_cleanup
+    ):
+        ready_path = tmp_path / "control.sock"
         startup_error = RuntimeError("can't start new thread")
         real_thread_start = runner_flush_lifecycle.threading.Thread.start
 
@@ -228,11 +239,11 @@ class TestAddonConfiguration:
             patch.object(
                 mitm_addon.ctx,
                 "options",
-                _Options(addon_ready_path=str(ready_path)),
+                _Options(control_socket_dir=str(tmp_path)),
                 create=True,
             ),
         ):
-            mitm_addon.configure({"okou_addon_ready_path", "okou_usage_state_id"})
+            mitm_addon.configure({"okou_control_socket_dir", "okou_usage_state_id"})
             assert not ready_path.exists()
             with (
                 patch.object(
@@ -256,7 +267,9 @@ class TestAddonConfiguration:
                     mitm_addon.running()
 
                 assert worker_started
-                assert ready_path.read_text(encoding="utf-8") == "runner-usage-state-id"
+                assert exchange(tmp_path, status_request("runner-usage-state-id"))["data"] == {
+                    "state": "running"
+                }
             finally:
                 runner_flush_lifecycle.stop_runner_jsonl_flush_worker_for_tests()
 
