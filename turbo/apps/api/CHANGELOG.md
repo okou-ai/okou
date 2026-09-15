@@ -8,6 +8,29 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.601.0](https://github.com/vm0-ai/vm0/compare/api-v1.600.1...api-v1.601.0) (2026-09-15)
+
+
+### Features
+
+* **ssh:** add reusable cloudflare access configuration ([#34105](https://github.com/vm0-ai/vm0/issues/34105)) ([21f7e6a](https://github.com/vm0-ai/vm0/commit/21f7e6a3d2870791cb705ebd37217457d9118890))
+
+
+### Bug Fixes
+
+* preserve captured subscription authority at the final pi boundary ([#34171](https://github.com/vm0-ai/vm0/issues/34171)) ([1a9f2cf](https://github.com/vm0-ai/vm0/commit/1a9f2cf46d709b10cff8e3c11e825567d0546ae7))
+* report and label intro video as its own template kind ([#34096](https://github.com/vm0-ai/vm0/issues/34096)) ([8d01e1a](https://github.com/vm0-ai/vm0/commit/8d01e1a9832cd0e73330d85e55709abe515acfe7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.441.0
+    * @okouai/core bumped to 8.665.0
+    * @okouai/db bumped to 1.258.0
+    * @okouai/pi-agent-runtime bumped to 1.30.3
+
 ## [1.600.1](https://github.com/vm0-ai/vm0/compare/api-v1.600.0...api-v1.600.1) (2026-09-15)
 
 

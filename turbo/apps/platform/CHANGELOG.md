@@ -11,6 +11,34 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.897.0](https://github.com/vm0-ai/vm0/compare/app-v0.896.2...app-v0.897.0) (2026-09-15)
+
+
+### Features
+
+* **app:** finish the composer's second level and quiet the chart picker ([#34161](https://github.com/vm0-ai/vm0/issues/34161)) ([2d18df5](https://github.com/vm0-ai/vm0/commit/2d18df55c4a751a296808d8393a2e77241b54641))
+* **ssh:** add reusable cloudflare access configuration ([#34105](https://github.com/vm0-ai/vm0/issues/34105)) ([21f7e6a](https://github.com/vm0-ai/vm0/commit/21f7e6a3d2870791cb705ebd37217457d9118890))
+
+
+### Bug Fixes
+
+* **app:** let the pointer own the slash panel's row mark ([#34163](https://github.com/vm0-ai/vm0/issues/34163)) ([c9cf287](https://github.com/vm0-ai/vm0/commit/c9cf2878a655c9be71ff0b3de5167607bef1e930))
+* report and label intro video as its own template kind ([#34096](https://github.com/vm0-ai/vm0/issues/34096)) ([8d01e1a](https://github.com/vm0-ai/vm0/commit/8d01e1a9832cd0e73330d85e55709abe515acfe7))
+
+
+### Refactoring
+
+* **app:** drain chat thinking-state legacy selectors ([#33843](https://github.com/vm0-ai/vm0/issues/33843)) ([e4a6743](https://github.com/vm0-ai/vm0/commit/e4a67435cedb4d8c57fcb99dc349b077c5c33dda))
+* **app:** drain pwa safe-area cover legacy styles ([#33952](https://github.com/vm0-ai/vm0/issues/33952)) ([5b5de1c](https://github.com/vm0-ai/vm0/commit/5b5de1c241dafb9f21d1ee8520312ac2b68c308c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.441.0
+    * @okouai/core bumped to 8.665.0
+
 ## [0.896.2](https://github.com/vm0-ai/vm0/compare/app-v0.896.1...app-v0.896.2) (2026-09-15)
 
 

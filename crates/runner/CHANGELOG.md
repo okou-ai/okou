@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.193.0](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.192.6...runner-rs-v0.193.0) (2026-09-15)
+
+
+### Features
+
+* **ssh:** add reusable cloudflare access configuration ([#34105](https://github.com/vm0-ai/vm0/issues/34105)) ([21f7e6a](https://github.com/vm0-ai/vm0/commit/21f7e6a3d2870791cb705ebd37217457d9118890))
+
 ## [0.192.6](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.192.5...runner-rs-v0.192.6) (2026-09-14)
 
 

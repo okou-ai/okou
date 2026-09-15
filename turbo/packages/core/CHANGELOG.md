@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.665.0](https://github.com/vm0-ai/vm0/compare/core-v8.664.2...core-v8.665.0) (2026-09-15)
+
+
+### Features
+
+* **ssh:** add reusable cloudflare access configuration ([#34105](https://github.com/vm0-ai/vm0/issues/34105)) ([21f7e6a](https://github.com/vm0-ai/vm0/commit/21f7e6a3d2870791cb705ebd37217457d9118890))
+
+
+### Bug Fixes
+
+* report and label intro video as its own template kind ([#34096](https://github.com/vm0-ai/vm0/issues/34096)) ([8d01e1a](https://github.com/vm0-ai/vm0/commit/8d01e1a9832cd0e73330d85e55709abe515acfe7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.441.0
+
 ## [8.664.2](https://github.com/vm0-ai/vm0/compare/core-v8.664.1...core-v8.664.2) (2026-09-15)
 
 

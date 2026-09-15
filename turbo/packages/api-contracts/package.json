@@ -1,6 +1,6 @@
 {
   "name": "@okouai/api-contracts",
-  "version": "1.440.1",
+  "version": "1.441.0",
   "private": true,
   "type": "module",
   "exports": {
