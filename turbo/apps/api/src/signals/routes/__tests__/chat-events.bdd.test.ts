@@ -1,4 +1,11 @@
 import {
+  piResponsesTextSse,
+  piResponsesContentSse,
+  piResponsesToolSse,
+  nativeCodexSseResponse,
+  readCodexRequestJson,
+} from "./helpers/pi-responses";
+import {
   sessionOutputDeltaSchema,
   type SessionOutputDelta,
 } from "@okouai/api-contracts/contracts/realtime";
@@ -13,12 +20,7 @@ import { piNativeFirewall } from "@okouai/api-contracts/contracts/pi-native-fire
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { chatThreadActivitySummaryRoutes } from "../chat-threads-activity-summary";
 import { createHash, randomUUID } from "node:crypto";
-import {
-  crc32,
-  gzipSync,
-  zstdCompressSync,
-  zstdDecompressSync,
-} from "node:zlib";
+import { crc32, gzipSync, zstdCompressSync } from "node:zlib";
 import {
   readGoalQueueStateFixture,
   seedGoalForRunFixture,
@@ -417,6 +419,7 @@ const GPT_USAGE_PRICING = [
 type PiApiFirstTurnUsageProvider =
   | z.infer<typeof piNativeCatalogModelSchema>
   | "deepseek-v4-flash"
+  | "deepseek-v4.1-flash"
   | "deepseek-v4-pro"
   | PiGptBddModel;
 const RUN_TIME_BUDGET_MESSAGE = `This runner has a hard maximum runtime of 2 hours. The current run has been active for 115 minutes, leaving approximately 5 minutes before it is terminated.
@@ -735,6 +738,9 @@ async function configureBuiltInPiModel(
   actor: ApiTestUser,
   selectedModel: PiApiFirstTurnUsageProvider,
 ): Promise<void> {
+  if (selectedModel === "deepseek-v4.1-flash") {
+    configureNativeCliArtifact();
+  }
   await seedBuiltInModelKey(selectedModel);
   await api.updateOrgModelPolicies(actor, [
     {
@@ -1385,6 +1391,9 @@ async function configureCustomPiModel(
   selectedModel: SupportedRunModel,
   upstreamModel = `company-${selectedModel}-production`,
 ) {
+  if (selectedModel === "deepseek-v4.1-flash") {
+    configureNativeCliArtifact();
+  }
   const secret = "custom-pi-gateway-secret";
   const surface = {
     protocol: "openai-responses" as const,
@@ -2960,22 +2969,31 @@ async function expectThreadPiTerminal(
 }
 
 describe("thread-bound Pi Automation and Goal execution", () => {
-  it.each(["schedule", "event"] as const)(
-    "rotates the %s Automation session into Pi and learns only from its user turns",
-    async (source) => {
+  it.each(
+    (["gpt-5.6-terra", "deepseek-v4.1-flash"] as const).flatMap(
+      (selectedModel) => {
+        return (["schedule", "event"] as const).map((source) => {
+          return { source, selectedModel };
+        });
+      },
+    ),
+  )(
+    "rotates the $source $selectedModel Automation session into Pi and learns only from its user turns",
+    async ({ source, selectedModel }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor(
         {},
         source === "event" ? "team" : "pro",
       );
       const orgId = requireOrgId(actor);
-      const usagePricingResolution = await createGptUsagePricingResolution();
+      const usagePricingResolution =
+        await createPiApiFirstTurnUsagePricingResolution(selectedModel);
       const workflows = createWorkflowsBddApi(context);
       const workflowId = await workflows.createWorkflow(actor, {
         agentId,
         name: `pi-source-${source}`,
       });
       if (source === "schedule") {
-        await configureBuiltInPiModel(actor, "gpt-5.6-terra");
+        await configureBuiltInPiModel(actor, selectedModel);
       }
       await updateFeatureSwitchesForUser(
         context,
@@ -3045,8 +3063,8 @@ describe("thread-bound Pi Automation and Goal execution", () => {
         readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
       ).resolves.toBeNull();
 
-      await configureBuiltInPiModel(actor, "gpt-5.6-terra");
-      await chat.updateThreadModelSelection(actor, threadId, "gpt-5.6-terra");
+      await configureBuiltInPiModel(actor, selectedModel);
+      await chat.updateThreadModelSelection(actor, threadId, selectedModel);
       await updateFeatureSwitchesForUser(
         context,
         { ...actor, orgId },
@@ -3061,7 +3079,9 @@ describe("thread-bound Pi Automation and Goal execution", () => {
       const requests: unknown[] = [];
       server.use(
         http.post(
-          "https://api.openai.com/v1/responses",
+          selectedModel === "deepseek-v4.1-flash"
+            ? "https://api.deepseek.com/responses"
+            : "https://api.openai.com/v1/responses",
           async ({ request }) => {
             requests.push(await request.json());
             return new HttpResponse(
@@ -3119,12 +3139,14 @@ describe("thread-bound Pi Automation and Goal execution", () => {
       await flushWaitUntilForTest();
       const piClaim = await claimChatRun(runnerGroup, piRunId);
       expect(piClaim.claim).toMatchObject({
-        piModelConfig: { model: "gpt-5.6-terra" },
+        piModelConfig: {
+          model: getProviderRuntimeModel("built-in", selectedModel),
+        },
       });
       const sandboxUsage = {
         idempotencyKey: randomUUID(),
         kind: "model" as const,
-        provider: "gpt-5.6-terra",
+        provider: selectedModel,
         category: "tokens.output",
         quantity: 3,
       };
@@ -3144,6 +3166,11 @@ describe("thread-bound Pi Automation and Goal execution", () => {
         prompt: piClaim.claim.prompt,
         answer: `owned ${source} answer`,
         outputTokens: 3,
+        responsesModel: {
+          provider:
+            selectedModel === "deepseek-v4.1-flash" ? "deepseek" : "openai",
+          model: getProviderRuntimeModel("built-in", selectedModel),
+        },
         usagePricingResolution,
       });
       await expectThreadPiTerminal(actor, threadId, piRunId);
@@ -3172,7 +3199,7 @@ describe("thread-bound Pi Automation and Goal execution", () => {
       expect(runState.agent_run).toMatchObject({
         triggerSource: `automation-${source}`,
       });
-      await expectPiApiUsage(piRunId, "gpt-5.6-terra", "", {
+      await expectPiApiUsage(piRunId, selectedModel, "", {
         input: 0,
         output: 3,
         cacheRead: 0,
@@ -3212,14 +3239,18 @@ describe("thread-bound Pi Automation and Goal execution", () => {
         runId: user.runId,
       });
       expect(requests).toHaveLength(1);
-      expect(requests[0]).toMatchObject({ model: "gpt-5.6-terra" });
-      await expectPiApiUsage(user.runId, "gpt-5.6-terra", "", {
+      expect(requests[0]).toMatchObject({
+        model: getProviderRuntimeModel("built-in", selectedModel),
+      });
+      await expectPiApiUsage(user.runId, selectedModel, "", {
         input: 5,
         output: 3,
         cacheRead: 0,
         cacheCreation: 0,
       });
-      await extractOwnedThreadPiMemory(actor, user.runId, agentId);
+      if (selectedModel === "gpt-5.6-terra") {
+        await extractOwnedThreadPiMemory(actor, user.runId, agentId);
+      }
       clearMockNow();
     },
     90_000,
@@ -6245,326 +6276,6 @@ function s3GetObjectCommandCalls(): readonly unknown[] {
   });
 }
 
-function piResponsesTextSse(
-  text: string,
-  sequence: number,
-  usage: {
-    readonly input_tokens: number;
-    readonly output_tokens: number;
-    readonly total_tokens: number;
-    readonly input_tokens_details?: {
-      readonly cached_tokens?: number;
-      readonly cache_write_tokens?: number;
-    };
-  } = { input_tokens: 5, output_tokens: 3, total_tokens: 8 },
-  observedServiceTier?: string | null,
-): string {
-  const responseId = `resp_pi_api_${sequence.toString()}`;
-  const messageId = `msg_pi_api_${sequence.toString()}`;
-  return [
-    {
-      type: "response.created",
-      response: {
-        id: responseId,
-        object: "response",
-        status: "in_progress",
-        output: [],
-        usage: null,
-      },
-    },
-    {
-      type: "response.output_item.added",
-      output_index: 0,
-      item: {
-        type: "message",
-        id: messageId,
-        role: "assistant",
-        status: "in_progress",
-        content: [],
-      },
-    },
-    {
-      type: "response.output_text.delta",
-      output_index: 0,
-      content_index: 0,
-      delta: text,
-    },
-    {
-      type: "response.output_item.done",
-      output_index: 0,
-      item: {
-        type: "message",
-        id: messageId,
-        role: "assistant",
-        status: "completed",
-        content: [{ type: "output_text", text, annotations: [] }],
-      },
-    },
-    {
-      type: "response.completed",
-      response: {
-        id: responseId,
-        object: "response",
-        status: "completed",
-        output: [
-          {
-            type: "message",
-            id: messageId,
-            role: "assistant",
-            status: "completed",
-            content: [{ type: "output_text", text, annotations: [] }],
-          },
-        ],
-        ...(observedServiceTier === undefined
-          ? {}
-          : { service_tier: observedServiceTier }),
-        usage,
-      },
-    },
-  ]
-    .map((event) => {
-      return `data: ${JSON.stringify(event)}\n\n`;
-    })
-    .join("");
-}
-
-type PiResponsesSemanticBlock =
-  | { readonly type: "text"; readonly text: string }
-  | {
-      readonly type: "toolCall";
-      readonly callId: string;
-      readonly name: string;
-      readonly arguments: Record<string, unknown>;
-    };
-
-function piResponsesContentSse(args: {
-  readonly blocks: readonly PiResponsesSemanticBlock[];
-  readonly sequence: number;
-  readonly includeReasoning?: boolean;
-  readonly observedServiceTier?: string | null;
-  readonly incomplete?: boolean;
-  readonly usage?: Parameters<typeof piResponsesTextSse>[2];
-}): string {
-  const responseId = `resp_pi_content_${args.sequence.toString()}`;
-  const output: Record<string, unknown>[] = [];
-  const events: Record<string, unknown>[] = [
-    {
-      type: "response.created",
-      response: {
-        id: responseId,
-        object: "response",
-        status: "in_progress",
-        output: [],
-        usage: null,
-      },
-    },
-  ];
-  if (args.includeReasoning) {
-    const reasoningText = "API-first reasoning preserved for Sandbox resume";
-    const reasoningItem = {
-      type: "reasoning",
-      id: `rs_pi_content_${args.sequence.toString()}`,
-      content: [{ type: "reasoning_text", text: reasoningText }],
-      summary: [],
-    };
-    output.push(reasoningItem);
-    events.push(
-      {
-        type: "response.output_item.added",
-        output_index: 0,
-        item: { ...reasoningItem, content: [] },
-      },
-      {
-        type: "response.reasoning_text.delta",
-        output_index: 0,
-        content_index: 0,
-        delta: reasoningText,
-      },
-      {
-        type: "response.output_item.done",
-        output_index: 0,
-        item: reasoningItem,
-      },
-    );
-  }
-  const outputIndexOffset = output.length;
-  for (const [blockIndex, block] of args.blocks.entries()) {
-    const outputIndex = outputIndexOffset + blockIndex;
-    if (block.type === "text") {
-      const item = {
-        type: "message",
-        id: `msg_pi_content_${args.sequence.toString()}_${blockIndex.toString()}`,
-        role: "assistant",
-        status: "completed",
-        content: [{ type: "output_text", text: block.text, annotations: [] }],
-      };
-      output.push(item);
-      events.push(
-        {
-          type: "response.output_item.added",
-          output_index: outputIndex,
-          item: { ...item, status: "in_progress", content: [] },
-        },
-        {
-          type: "response.output_text.delta",
-          output_index: outputIndex,
-          content_index: 0,
-          delta: block.text,
-        },
-        { type: "response.output_item.done", output_index: outputIndex, item },
-      );
-      continue;
-    }
-    const functionArguments = JSON.stringify(block.arguments);
-    const itemId = `fc_pi_content_${args.sequence.toString()}_${blockIndex.toString()}`;
-    const item = {
-      type: "function_call",
-      id: itemId,
-      call_id: block.callId,
-      name: block.name,
-      arguments: functionArguments,
-      status: "completed",
-    };
-    output.push(item);
-    events.push(
-      {
-        type: "response.output_item.added",
-        output_index: outputIndex,
-        item: { ...item, arguments: "", status: "in_progress" },
-      },
-      {
-        type: "response.function_call_arguments.delta",
-        output_index: outputIndex,
-        item_id: itemId,
-        delta: functionArguments,
-      },
-      {
-        type: "response.function_call_arguments.done",
-        output_index: outputIndex,
-        item_id: itemId,
-        arguments: functionArguments,
-      },
-      { type: "response.output_item.done", output_index: outputIndex, item },
-    );
-  }
-  events.push({
-    type: args.incomplete ? "response.incomplete" : "response.completed",
-    response: {
-      id: responseId,
-      object: "response",
-      status: args.incomplete ? "incomplete" : "completed",
-      ...(args.incomplete
-        ? { incomplete_details: { reason: "max_output_tokens" } }
-        : {}),
-      output,
-      ...(args.observedServiceTier === undefined
-        ? {}
-        : { service_tier: args.observedServiceTier }),
-      usage: args.usage ?? {
-        input_tokens: 5,
-        output_tokens: 3,
-        total_tokens: 8,
-      },
-    },
-  });
-  return events
-    .map((event) => {
-      return `data: ${JSON.stringify(event)}\n\n`;
-    })
-    .join("");
-}
-
-function piResponsesToolSse(args: {
-  readonly callId: string;
-  readonly name: string;
-  readonly arguments: Record<string, unknown>;
-  readonly sequence: number;
-  readonly observedServiceTier?: string | null;
-}): string {
-  const responseId = `resp_pi_tool_${args.sequence.toString()}`;
-  const reasoningId = `rs_pi_tool_${args.sequence.toString()}`;
-  const itemId = `fc_pi_tool_${args.sequence.toString()}`;
-  const functionArguments = JSON.stringify(args.arguments);
-  const reasoningText = "API-first reasoning preserved for Sandbox resume";
-  const reasoningItem = {
-    type: "reasoning",
-    id: reasoningId,
-    content: [{ type: "reasoning_text", text: reasoningText }],
-    summary: [],
-  };
-  const item = {
-    type: "function_call",
-    id: itemId,
-    call_id: args.callId,
-    name: args.name,
-    arguments: functionArguments,
-    status: "completed",
-  };
-  return [
-    {
-      type: "response.created",
-      response: {
-        id: responseId,
-        object: "response",
-        status: "in_progress",
-        output: [],
-        usage: null,
-      },
-    },
-    {
-      type: "response.output_item.added",
-      output_index: 0,
-      item: { ...reasoningItem, content: [] },
-    },
-    {
-      type: "response.reasoning_text.delta",
-      output_index: 0,
-      content_index: 0,
-      delta: reasoningText,
-    },
-    {
-      type: "response.output_item.done",
-      output_index: 0,
-      item: reasoningItem,
-    },
-    {
-      type: "response.output_item.added",
-      output_index: 1,
-      item: { ...item, arguments: "", status: "in_progress" },
-    },
-    {
-      type: "response.function_call_arguments.delta",
-      output_index: 1,
-      item_id: itemId,
-      delta: functionArguments,
-    },
-    {
-      type: "response.function_call_arguments.done",
-      output_index: 1,
-      item_id: itemId,
-      arguments: functionArguments,
-    },
-    { type: "response.output_item.done", output_index: 1, item },
-    {
-      type: "response.completed",
-      response: {
-        id: responseId,
-        object: "response",
-        status: "completed",
-        output: [reasoningItem, item],
-        ...(args.observedServiceTier === undefined
-          ? {}
-          : { service_tier: args.observedServiceTier }),
-        usage: { input_tokens: 5, output_tokens: 3, total_tokens: 8 },
-      },
-    },
-  ]
-    .map((event) => {
-      return `data: ${JSON.stringify(event)}\n\n`;
-    })
-    .join("");
-}
-
 function expectApiKeyGptRequest(
   request: unknown,
   route: (typeof GPT_API_KEY_BDD_ROUTES)[number],
@@ -6755,27 +6466,6 @@ function settledSubscriptionToolHistory(h1: string): string {
     timestamp: 3,
   });
   return h2Session.toJsonl();
-}
-
-function nativeCodexSseResponse(body: string): Response {
-  return new HttpResponse(
-    new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(body));
-        controller.close();
-      },
-    }),
-    { headers: { "content-type": "text/event-stream" } },
-  );
-}
-
-async function readCodexRequestJson(request: Request): Promise<unknown> {
-  const bytes = Buffer.from(await request.arrayBuffer());
-  const body =
-    request.headers.get("content-encoding") === "zstd"
-      ? zstdDecompressSync(bytes)
-      : bytes;
-  return JSON.parse(body.toString("utf8")) as unknown;
 }
 
 interface PiCheckpointS3Command {
@@ -7116,6 +6806,10 @@ async function completeSandboxFirstPiRun(args: {
   readonly answer: string;
   readonly outputTokens?: number;
   readonly nativeModel?: z.infer<typeof piNativeCatalogModelSchema>;
+  readonly responsesModel?: {
+    readonly provider: "openai" | "deepseek";
+    readonly model: string;
+  };
   readonly checkpointObjects: Map<string, Buffer>;
   readonly claim: Awaited<ReturnType<typeof claimChatRun>>;
   readonly prompt: string;
@@ -7137,8 +6831,10 @@ async function completeSandboxFirstPiRun(args: {
     role: "assistant",
     content: [{ type: "text", text: args.answer }],
     api: args.nativeModel ? "anthropic-messages" : "openai-responses",
-    provider: args.nativeModel ? "anthropic" : "openai",
-    model: args.nativeModel ?? "gpt-5.6-terra",
+    provider: args.nativeModel
+      ? "anthropic"
+      : (args.responsesModel?.provider ?? "openai"),
+    model: args.nativeModel ?? args.responsesModel?.model ?? "gpt-5.6-terra",
     usage: {
       input: 0,
       output: args.outputTokens ?? 0,
@@ -7991,7 +7687,125 @@ describe("CHAT-02: model-first provider policies", () => {
     ).toHaveLength(0);
   }, 90_000);
 
-  it.each(GPT_PI_BDD_MODELS)(
+  it.each(["deleted", "wrong-provider-key"] as const)(
+    "rejects V4.1 %s credentials without borrowing another route",
+    async (boundary) => {
+      const { actor, agentId } = await entitledChatActor();
+      configureNativeCliArtifact();
+      const { providerId } = await upsertOrgModelProvider(actor, {
+        type: "openrouter-codex",
+        secret:
+          boundary === "deleted"
+            ? "selected-or-key"
+            : "sk-ant-oat01-wrong-provider",
+      });
+      await upsertOrgModelProvider(actor, {
+        type: "deepseek",
+        secret: "unrelated-deepseek-key",
+      });
+      await api.updateOrgModelPolicies(actor, [
+        {
+          model: "deepseek-v4.1-flash",
+          isDefault: true,
+          defaultProviderType: "openrouter-codex",
+          credentialScope: "org",
+          modelProviderId: providerId,
+        },
+      ]);
+      await authDeviceSupport.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.PiLoop]: true,
+      });
+      const gate = holdAgentRunPiExecutionSnapshotFixture({
+        userId: actor.userId,
+        orgId: requireOrgId(actor),
+        signal: context.signal,
+      });
+      onTestFinished(gate.release);
+      let calls = 0;
+      server.use(
+        ...["https://api.deepseek.com/*", "https://openrouter.ai/*"].map(
+          (url) => {
+            return http.post(url, () => {
+              calls += 1;
+              return new HttpResponse(null, { status: 500 });
+            });
+          },
+        ),
+      );
+      const sent = chat.requestSendEvent(
+        actor,
+        {
+          agentId,
+          model: "deepseek-v4.1-flash",
+          clientEventId: randomUUID(),
+          prompt: "Reject unavailable selected credentials",
+        },
+        boundary === "deleted" ? [503] : [400],
+      );
+      await expect(gate.arrival).resolves.toMatchObject({ piExecution: true });
+      if (boundary === "deleted") {
+        await misc.deleteOrgModelProvider(actor, "openrouter-codex", [204]);
+      }
+      gate.release();
+      const response = await sent;
+      await flushWaitUntilForTest();
+      expect(response.status).toBe(boundary === "deleted" ? 503 : 400);
+      expect(calls).toBe(0);
+    },
+    90_000,
+  );
+
+  it.each(["old-cli", "mutable-cli", "effort"] as const)(
+    "rejects V4.1 %s before provider I/O",
+    async (boundary) => {
+      const { actor, agentId } = await entitledChatActor();
+      await configureBuiltInPiModel(actor, "deepseek-v4.1-flash");
+      await authDeviceSupport.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.Effort]: true,
+        [FeatureSwitchKey.PiLoop]: true,
+      });
+      if (boundary !== "effort") {
+        mockEnv(
+          "CLI_PKG_URL",
+          boundary === "old-cli"
+            ? `https://static.okou.io/okou-cli/${"b".repeat(40)}/package.tgz`
+            : "https://static.okou.io/okou-cli/latest/package.tgz",
+        );
+      }
+      let calls = 0;
+      server.use(
+        ...["https://api.deepseek.com/*", "https://openrouter.ai/*"].map(
+          (url) => {
+            return http.post(url, () => {
+              calls += 1;
+              return new HttpResponse(piResponsesTextSse("unexpected", calls), {
+                headers: { "content-type": "text/event-stream" },
+              });
+            });
+          },
+        ),
+      );
+      const response = await chat.requestSendEvent(
+        actor,
+        {
+          agentId,
+          model: "deepseek-v4.1-flash",
+          prompt: "Reject incompatible admission",
+          clientEventId: randomUUID(),
+          ...(boundary === "effort"
+            ? { runOptions: { reasoningEffort: "high" as const } }
+            : {}),
+        },
+        [400],
+      );
+      await flushWaitUntilForTest();
+      expect(response.status).toBe(400);
+      expect(calls).toBe(0);
+    },
+    90_000,
+  );
+
+  it.each([...GPT_PI_BDD_MODELS, "deepseek-v4.1-flash"] as const)(
     "keeps captured Pi admission after PiLoop turns off for %s",
     async (selectedModel) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -8028,9 +7842,12 @@ describe("CHAT-02: model-first provider policies", () => {
         context,
         baseline.threadId,
       );
-      chatCallbacks.mockChatOutputEvents([]);
+      chatCallbacks.mockChatOutputEvents([
+        assistantEvent(0, "preserved Codex answer"),
+      ]);
       await completeChatRunOk(baseline.runId, baselineClaim.sandboxHeaders, {
         cliAgentType: "codex",
+        lastEventSequence: 0,
       });
       await flushWaitUntilForTest();
 
@@ -8068,6 +7885,13 @@ describe("CHAT-02: model-first provider policies", () => {
       const enabledClaim = await claimChatRun(runnerGroup, enabled.runId);
       expect(enabledClaim.claim.cliAgentType).toBe("pi");
       expect(enabledClaim.claim.piLaunchConfig).toBeDefined();
+      expect(enabledClaim.claim.resumeSession).toBeNull();
+      expect(enabledClaim.claim.appendSystemPrompt).toContain(
+        "establish the captured Codex session family",
+      );
+      expect(enabledClaim.claim.appendSystemPrompt).toContain(
+        "preserved Codex answer",
+      );
       await expect(
         readRunLaunchSnapshotFixture(context, enabled.runId),
       ).resolves.toMatchObject({
@@ -10356,6 +10180,7 @@ describe("CHAT-02: model-first provider policies", () => {
 
   it.each([
     "deepseek-v4-flash",
+    "deepseek-v4.1-flash",
     "deepseek-v4-pro",
     ...GPT_PI_BDD_MODELS,
   ] as const)(
@@ -10431,7 +10256,9 @@ describe("CHAT-02: model-first provider policies", () => {
           agentId,
           prompt: firstPrompt,
           model: selectedModel,
-          runOptions: { reasoningEffort: "max" },
+          ...(selectedModel === "deepseek-v4.1-flash"
+            ? {}
+            : { runOptions: { reasoningEffort: "max" } }),
         },
         usagePricingResolution,
       );
@@ -10449,7 +10276,10 @@ describe("CHAT-02: model-first provider policies", () => {
       });
       expect(modelRequests).toHaveLength(1);
       expect(modelRequests[0]?.body).toMatchObject({
-        reasoning: { effort: "max" },
+        model: getProviderRuntimeModel("built-in", selectedModel),
+        reasoning: {
+          effort: selectedModel === "deepseek-v4.1-flash" ? "high" : "max",
+        },
       });
       const firstModelInput = JSON.stringify(modelRequests[0]?.body);
       expect(occurrences(firstModelInput, firstPrompt)).toBe(1);
@@ -10494,7 +10324,9 @@ describe("CHAT-02: model-first provider policies", () => {
         actor,
         first.threadId,
         selectedModel,
-        { reasoningEffort: "high" },
+        selectedModel === "deepseek-v4.1-flash"
+          ? {}
+          : { reasoningEffort: "high" },
       );
       const secondPrompt = "continue the same Pi session";
       const second = await sendChatRun(
@@ -10512,11 +10344,14 @@ describe("CHAT-02: model-first provider policies", () => {
       expect(modelRequests[1]?.body).toMatchObject({
         reasoning: { effort: "high" },
       });
-      await expect(
-        chat.readThreadMetadata(actor, first.threadId),
-      ).resolves.toMatchObject({
-        modelSettings: { [selectedModel]: { effort: "high" } },
-      });
+      const metadata = await chat.readThreadMetadata(actor, first.threadId);
+      if (selectedModel === "deepseek-v4.1-flash") {
+        expect(metadata.modelSettings).not.toHaveProperty(selectedModel);
+      } else {
+        expect(metadata.modelSettings).toMatchObject({
+          [selectedModel]: { effort: "high" },
+        });
+      }
       await expectPiApiUsage(second.runId, selectedModel, "", {
         input: 5,
         output: 3,
@@ -10547,6 +10382,10 @@ describe("CHAT-02: model-first provider policies", () => {
   );
 
   it.each([
+    {
+      selectedModel: "deepseek-v4.1-flash",
+      upstreamModel: "company-deepseek-v41-production",
+    },
     {
       selectedModel: "deepseek-v4-flash",
       upstreamModel: "company-deepseek-flash-production",
@@ -11135,13 +10974,15 @@ describe("CHAT-02: model-first provider policies", () => {
   );
 
   it.each(
-    GPT_PI_BDD_MODELS.flatMap((selectedModel) => {
-      return ["mapping", "connection"].map((removed) => {
-        return { selectedModel, removed };
-      });
-    }),
+    ([...GPT_PI_BDD_MODELS, "deepseek-v4.1-flash"] as const).flatMap(
+      (selectedModel) => {
+        return ["mapping", "connection"].map((removed) => {
+          return { selectedModel, removed };
+        });
+      },
+    ),
   )(
-    "fails custom $selectedModel Fast when its $removed disappears before credential capture",
+    "fails custom $selectedModel when its $removed disappears before credential capture",
     async ({ selectedModel, removed }) => {
       const { actor, agentId } = await entitledChatActor();
       const gateway = await configureCustomPiModel(actor, selectedModel);
@@ -11176,7 +11017,9 @@ describe("CHAT-02: model-first provider policies", () => {
           clientEventId: randomUUID(),
           model: selectedModel,
           prompt: "fail the unavailable custom route before any model call",
-          runOptions: { codexServiceTier: "fast" },
+          ...(selectedModel === "deepseek-v4.1-flash"
+            ? {}
+            : { runOptions: { codexServiceTier: "fast" as const } }),
         },
         [503],
       );
@@ -11222,8 +11065,8 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it.each(GPT_PI_BDD_MODELS)(
-    "preserves captured custom %s Fast credentials after gateway removal without substitution",
+  it.each([...GPT_PI_BDD_MODELS, "deepseek-v4.1-flash"] as const)(
+    "preserves captured custom %s credentials after gateway removal without substitution",
     async (selectedModel) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       await publishPendingPiInstructions(actor, agentId);
@@ -11281,7 +11124,9 @@ describe("CHAT-02: model-first provider policies", () => {
         agentId,
         model: selectedModel,
         prompt: "retain the captured custom credential authority",
-        runOptions: { codexServiceTier: "fast" },
+        ...(selectedModel === "deepseek-v4.1-flash"
+          ? {}
+          : { runOptions: { codexServiceTier: "fast" as const } }),
       });
       await entered.promise;
       await accept(
@@ -11304,7 +11149,9 @@ describe("CHAT-02: model-first provider policies", () => {
           url: gateway.endpoint,
           body: expect.objectContaining({
             model: gateway.upstreamModel,
-            service_tier: "priority",
+            ...(selectedModel === "deepseek-v4.1-flash"
+              ? {}
+              : { service_tier: "priority" }),
           }),
           apiKey: `Key ${gateway.secret}`,
           authorization: null,
@@ -11577,7 +11424,12 @@ describe("CHAT-02: model-first provider policies", () => {
 
   it.each(
     (
-      ["deepseek-v4-flash", "deepseek-v4-pro", "gpt-5.6-terra"] as const
+      [
+        "deepseek-v4-flash",
+        "deepseek-v4.1-flash",
+        "deepseek-v4-pro",
+        "gpt-5.6-terra",
+      ] as const
     ).flatMap((selectedModel) => {
       return [false, true].map((usRoutingEnabled) => {
         return {
@@ -11589,6 +11441,9 @@ describe("CHAT-02: model-first provider policies", () => {
   )(
     "runs built-in $selectedModel OpenRouter Responses with US switch $usRoutingEnabled",
     async ({ selectedModel, usRoutingEnabled }) => {
+      if (selectedModel === "deepseek-v4.1-flash") {
+        configureNativeCliArtifact();
+      }
       const { actor, agentId } = await entitledChatActor();
       const orgId = requireOrgId(actor);
       const usagePricingResolution =
@@ -11610,7 +11465,7 @@ describe("CHAT-02: model-first provider policies", () => {
       const modelRequests: unknown[] = [];
       server.use(
         http.post(
-          `https://${usRoutingEnabled ? "us." : ""}openrouter.ai/api/v1/responses`,
+          `https://${usRoutingEnabled && selectedModel !== "deepseek-v4.1-flash" ? "us." : ""}openrouter.ai/api/v1/responses`,
           async ({ request }) => {
             modelRequests.push(await request.json());
             return new HttpResponse(
@@ -11668,6 +11523,11 @@ describe("CHAT-02: model-first provider policies", () => {
         providerUrl: "https://api.openai.com/v1/responses",
       };
     }),
+    {
+      name: "DeepSeek V4.1 Flash",
+      selectedModel: "deepseek-v4.1-flash",
+      providerUrl: "https://api.deepseek.com/responses",
+    },
     {
       name: "DeepSeek Flash",
       selectedModel: "deepseek-v4-flash",
@@ -11770,6 +11630,11 @@ describe("CHAT-02: model-first provider policies", () => {
         providerUrl: "https://api.openai.com/v1/responses",
       };
     }),
+    {
+      name: "DeepSeek V4.1 Flash",
+      selectedModel: "deepseek-v4.1-flash",
+      providerUrl: "https://api.deepseek.com/responses",
+    },
     {
       name: "DeepSeek Pro",
       selectedModel: "deepseek-v4-pro",
@@ -15019,6 +14884,16 @@ describe("CHAT-02: model-first provider policies", () => {
       inputTokens: 300_000,
       expectedInput: 299_995,
     },
+    {
+      name: "built-in DeepSeek V4.1 Flash",
+      selectedModel: "deepseek-v4.1-flash",
+      providerUrl: "https://api.deepseek.com/responses",
+      observedServiceTier: "default",
+      codexServiceTier: undefined,
+      gptRoute: undefined,
+      inputTokens: 300_000,
+      expectedInput: 299_995,
+    },
   ] as const)(
     "bills one late $name result exactly once after cancellation wins",
     async ({
@@ -16974,245 +16849,262 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it("hands a Terra resource failure to Sandbox without replaying a later credential failure", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    await publishPendingPiInstructions(actor, agentId);
-    if (!actor.orgId) {
-      throw new Error("Expected entitled chat actor to have an org");
-    }
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    await api.heartbeatRunner(runnerGroup);
-    const anchor = await sendChatRun(actor, {
-      agentId,
-      prompt: "hold the thread while the future Pi launch is queued",
-      model: "claude-sonnet-5",
-    });
-    await flushWaitUntilForTest();
-    const anchorState = await api.readRun(actor, anchor.runId);
-    if (anchorState.status !== "pending") {
-      throw new Error(
-        `Expected pending anchor before claim: ${JSON.stringify(anchorState)}`,
-      );
-    }
-    const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
-    expect(anchorClaim.claim.cliAgentType).toBe("claude-code");
-
-    await configureBuiltInPiModel(actor, "gpt-5.6-terra");
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      { [FeatureSwitchKey.PiLoop]: true },
-    );
-    mockPiResourceArchiveDownloads(true);
-    let modelCalls = 0;
-    server.use(
-      http.post("https://api.openai.com/v1/responses", () => {
-        modelCalls += 1;
-        return HttpResponse.json(
-          {
-            error: { code: "invalid_api_key", message: "credential rejected" },
-          },
-          { status: 401 },
+  it.each(["gpt-5.6-terra", "deepseek-v4.1-flash"] as const)(
+    "hands a %s resource failure to Sandbox without replaying a later credential failure",
+    async (selectedModel) => {
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      await publishPendingPiInstructions(actor, agentId);
+      if (!actor.orgId) {
+        throw new Error("Expected entitled chat actor to have an org");
+      }
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+      await api.heartbeatRunner(runnerGroup);
+      const anchor = await sendChatRun(actor, {
+        agentId,
+        prompt: "hold the thread while the future Pi launch is queued",
+        model: "claude-sonnet-5",
+      });
+      await flushWaitUntilForTest();
+      const anchorState = await api.readRun(actor, anchor.runId);
+      if (anchorState.status !== "pending") {
+        throw new Error(
+          `Expected pending anchor before claim: ${JSON.stringify(anchorState)}`,
         );
-      }),
-    );
-    const checkpointObjects = mockPiCheckpointObjectStore();
-    const fallbackPrompt = "execute this fallback prompt exactly once";
-    const fallback = await sendChatRun(actor, {
-      agentId,
-      prompt: fallbackPrompt,
-      model: "gpt-5.6-terra",
-    });
-    await waitForRunStatus(actor, fallback.runId, "queued");
+      }
+      const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
+      expect(anchorClaim.claim.cliAgentType).toBe("claude-code");
 
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
-    await flushWaitUntilForTest();
-    const fallbackManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${fallback.runId}/manifest.json`;
-    expect(checkpointObjects.get(fallbackManifestKey)).toBeInstanceOf(Buffer);
-    expect(modelCalls).toBe(0);
+      await configureBuiltInPiModel(actor, selectedModel);
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId: actor.orgId },
+        { [FeatureSwitchKey.PiLoop]: true },
+      );
+      mockPiResourceArchiveDownloads(true);
+      let modelCalls = 0;
+      server.use(
+        http.post(
+          selectedModel === "deepseek-v4.1-flash"
+            ? "https://api.deepseek.com/responses"
+            : "https://api.openai.com/v1/responses",
+          () => {
+            modelCalls += 1;
+            return HttpResponse.json(
+              {
+                error: {
+                  code: "invalid_api_key",
+                  message: "credential rejected",
+                },
+              },
+              { status: 401 },
+            );
+          },
+        ),
+      );
+      const checkpointObjects = mockPiCheckpointObjectStore();
+      const fallbackPrompt = "execute this fallback prompt exactly once";
+      const fallback = await sendChatRun(actor, {
+        agentId,
+        prompt: fallbackPrompt,
+        model: selectedModel,
+      });
+      await waitForRunStatus(actor, fallback.runId, "queued");
 
-    const fallbackManifest = piApiFirstTurnManifestSchema.parse(
-      JSON.parse(
-        checkpointObjects.get(fallbackManifestKey)?.toString("utf8") ?? "{}",
-      ),
-    );
-    expect(fallbackManifest).toMatchObject({
-      schemaVersion: 3,
-      outcome: "ownership-transfer",
-      mode: "sandbox-first",
-      baseSession: { sessionId: fallback.threadId, sha256: null },
-      session: {
-        sessionId: fallback.threadId,
-        sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
-        rawSize: expect.any(Number),
-      },
-      sandboxEventSequenceStart: 1,
-    });
-    const fallbackSessionKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${fallback.runId}/session.jsonl`;
-    const fallbackH0 =
-      checkpointObjects.get(fallbackSessionKey)?.toString("utf8") ?? "";
-    expect(Buffer.byteLength(fallbackH0)).toBe(
-      fallbackManifest.session.rawSize,
-    );
-    expect(createHash("sha256").update(fallbackH0).digest("hex")).toBe(
-      fallbackManifest.session.sha256,
-    );
-    const sandboxSession = MemoryPiSession.fromJsonl(fallbackH0);
-    expect(sandboxSession.getSessionId()).toBe(fallback.threadId);
-    expect(sandboxSession.buildSessionContext().messages).toHaveLength(0);
+      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+      await flushWaitUntilForTest();
+      const fallbackManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${fallback.runId}/manifest.json`;
+      expect(checkpointObjects.get(fallbackManifestKey)).toBeInstanceOf(Buffer);
+      expect(modelCalls).toBe(0);
 
-    const fallbackClaim = await claimChatRun(runnerGroup, fallback.runId);
-    expect(fallbackClaim.claim).toMatchObject({
-      cliAgentType: "pi",
-      piSessionId: fallback.threadId,
-      prompt: fallbackPrompt,
-      piLaunchConfig: {
-        apiFirstTurn: {
-          sandboxEventSequenceStart: 1,
+      const fallbackManifest = piApiFirstTurnManifestSchema.parse(
+        JSON.parse(
+          checkpointObjects.get(fallbackManifestKey)?.toString("utf8") ?? "{}",
+        ),
+      );
+      expect(fallbackManifest).toMatchObject({
+        schemaVersion: 3,
+        outcome: "ownership-transfer",
+        mode: "sandbox-first",
+        baseSession: { sessionId: fallback.threadId, sha256: null },
+        session: {
+          sessionId: fallback.threadId,
+          sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
+          rawSize: expect.any(Number),
         },
-      },
-    });
-    const postProviderPrompt =
-      "fail a credential rejection after one provider request";
-    const postProvider = await sendChatRun(actor, {
-      agentId,
-      prompt: postProviderPrompt,
-      model: "gpt-5.6-terra",
-    });
-    await waitForRunStatus(actor, postProvider.runId, "queued");
+        sandboxEventSequenceStart: 1,
+      });
+      const fallbackSessionKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${fallback.runId}/session.jsonl`;
+      const fallbackH0 =
+        checkpointObjects.get(fallbackSessionKey)?.toString("utf8") ?? "";
+      expect(Buffer.byteLength(fallbackH0)).toBe(
+        fallbackManifest.session.rawSize,
+      );
+      expect(createHash("sha256").update(fallbackH0).digest("hex")).toBe(
+        fallbackManifest.session.sha256,
+      );
+      const sandboxSession = MemoryPiSession.fromJsonl(fallbackH0);
+      expect(sandboxSession.getSessionId()).toBe(fallback.threadId);
+      expect(sandboxSession.buildSessionContext().messages).toHaveLength(0);
 
-    mockPiResourceArchiveDownloads();
-    sandboxSession.appendMessage({
-      role: "user",
-      content: fallbackPrompt,
-      timestamp: 1,
-    });
-    const fallbackAnswer = "Sandbox completed the fallback exactly once";
-    sandboxSession.appendMessage({
-      role: "assistant",
-      content: [{ type: "text", text: fallbackAnswer }],
-      api: "openai-responses",
-      provider: "openai",
-      model: "gpt-5.6-terra",
-      usage: {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 0,
-        cost: {
+      const fallbackClaim = await claimChatRun(runnerGroup, fallback.runId);
+      expect(fallbackClaim.claim).toMatchObject({
+        cliAgentType: "pi",
+        piSessionId: fallback.threadId,
+        prompt: fallbackPrompt,
+        piLaunchConfig: {
+          apiFirstTurn: {
+            sandboxEventSequenceStart: 1,
+          },
+        },
+      });
+      const postProviderPrompt =
+        "fail a credential rejection after one provider request";
+      const postProvider = await sendChatRun(actor, {
+        agentId,
+        prompt: postProviderPrompt,
+        model: selectedModel,
+      });
+      await waitForRunStatus(actor, postProvider.runId, "queued");
+
+      mockPiResourceArchiveDownloads();
+      sandboxSession.appendMessage({
+        role: "user",
+        content: fallbackPrompt,
+        timestamp: 1,
+      });
+      const fallbackAnswer = "Sandbox completed the fallback exactly once";
+      sandboxSession.appendMessage({
+        role: "assistant",
+        content: [{ type: "text", text: fallbackAnswer }],
+        api: "openai-responses",
+        provider:
+          selectedModel === "deepseek-v4.1-flash" ? "deepseek" : "openai",
+        model: getProviderRuntimeModel("built-in", selectedModel),
+        usage: {
           input: 0,
           output: 0,
           cacheRead: 0,
           cacheWrite: 0,
-          total: 0,
+          totalTokens: 0,
+          cost: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            total: 0,
+          },
         },
-      },
-      stopReason: "stop",
-      timestamp: 2,
-    });
-    const fallbackH2 = sandboxSession.toJsonl();
-    expect(occurrences(fallbackH2, fallbackPrompt)).toBe(1);
-    expect(
-      MemoryPiSession.fromJsonl(fallbackH2).isSettledCheckpoint(),
-    ).toBeTruthy();
-    const fallbackH2Hash = createHash("sha256")
-      .update(fallbackH2)
-      .digest("hex");
-    const preparedH2 = await webhooks.requestAgentCheckpointPrepareHistory(
-      {
-        runId: fallback.runId,
-        hash: fallbackH2Hash,
-        rawSize: Buffer.byteLength(fallbackH2),
-        encodedSize: Buffer.byteLength(fallbackH2),
+        stopReason: "stop",
+        timestamp: 2,
+      });
+      const fallbackH2 = sandboxSession.toJsonl();
+      expect(occurrences(fallbackH2, fallbackPrompt)).toBe(1);
+      expect(
+        MemoryPiSession.fromJsonl(fallbackH2).isSettledCheckpoint(),
+      ).toBeTruthy();
+      const fallbackH2Hash = createHash("sha256")
+        .update(fallbackH2)
+        .digest("hex");
+      const preparedH2 = await webhooks.requestAgentCheckpointPrepareHistory(
+        {
+          runId: fallback.runId,
+          hash: fallbackH2Hash,
+          rawSize: Buffer.byteLength(fallbackH2),
+          encodedSize: Buffer.byteLength(fallbackH2),
+          encoding: "identity",
+        },
+        fallbackClaim.sandboxHeaders,
+        [200],
+      );
+      expect(preparedH2.body).toMatchObject({
+        existing: false,
         encoding: "identity",
-      },
-      fallbackClaim.sandboxHeaders,
-      [200],
-    );
-    expect(preparedH2.body).toMatchObject({
-      existing: false,
-      encoding: "identity",
-    });
-    checkpointObjects.set(
-      `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${fallbackH2Hash}.blob`,
-      Buffer.from(fallbackH2, "utf8"),
-    );
-    await webhooks.requestAgentEvents(
-      {
-        runId: fallback.runId,
-        events: [
-          {
-            type: "assistant",
-            sequenceNumber: 1,
-            message: {
-              content: [{ type: "text", text: fallbackAnswer }],
+      });
+      checkpointObjects.set(
+        `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${fallbackH2Hash}.blob`,
+        Buffer.from(fallbackH2, "utf8"),
+      );
+      await webhooks.requestAgentEvents(
+        {
+          runId: fallback.runId,
+          events: [
+            {
+              type: "assistant",
+              sequenceNumber: 1,
+              message: {
+                content: [{ type: "text", text: fallbackAnswer }],
+              },
             },
-          },
-          {
-            type: "result",
-            sequenceNumber: 2,
-            result: fallbackAnswer,
-          },
-        ],
-      },
-      fallbackClaim.sandboxHeaders,
-      [200],
-    );
-    const completedFallback = await webhooks.requestAgentComplete(
-      {
-        runId: fallback.runId,
-        exitCode: 0,
-        lastEventSequence: 2,
-        checkpoint: {
-          cliAgentType: "pi",
-          cliAgentSessionId: fallback.threadId,
-          cliAgentSessionHistoryHash: fallbackH2Hash,
+            {
+              type: "result",
+              sequenceNumber: 2,
+              result: fallbackAnswer,
+            },
+          ],
         },
-      },
-      fallbackClaim.sandboxHeaders,
-      [200],
-    );
-    expect(completedFallback.body).toStrictEqual({
-      success: true,
-      status: "completed",
-    });
-    await waitForRunStatus(actor, fallback.runId, "completed", 5000);
-    await waitForRunStatus(actor, postProvider.runId, "failed", 5000);
-    await flushWaitUntilForTest();
+        fallbackClaim.sandboxHeaders,
+        [200],
+      );
+      const completedFallback = await webhooks.requestAgentComplete(
+        {
+          runId: fallback.runId,
+          exitCode: 0,
+          lastEventSequence: 2,
+          checkpoint: {
+            cliAgentType: "pi",
+            cliAgentSessionId: fallback.threadId,
+            cliAgentSessionHistoryHash: fallbackH2Hash,
+          },
+        },
+        fallbackClaim.sandboxHeaders,
+        [200],
+      );
+      expect(completedFallback.body).toStrictEqual({
+        success: true,
+        status: "completed",
+      });
+      await waitForRunStatus(actor, fallback.runId, "completed", 5000);
+      await waitForRunStatus(actor, postProvider.runId, "failed", 5000);
+      await flushWaitUntilForTest();
 
-    expect(modelCalls).toBe(1);
-    expect((await api.readRun(actor, postProvider.runId)).error).toContain(
-      "[PI_API_MODEL_FAILED]",
-    );
-    const postProviderManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${postProvider.runId}/manifest.json`;
-    expect(checkpointObjects.has(postProviderManifestKey)).toBeFalsy();
-    const postProviderClaim = await api.requestClaimRunnerJob(
-      true,
-      postProvider.runId,
-      [404],
-    );
-    expect(postProviderClaim.status).toBe(404);
-    const finalThread = await waitForThreadMessages(
-      actor,
-      fallback.threadId,
-      (messages) => {
-        return eventBackedContents(messages, fallback.runId).some((message) => {
-          return message.content === fallbackAnswer;
-        });
-      },
-    );
-    expect(
-      eventBackedContents(finalThread.events, fallback.runId).filter(
-        (message) => {
-          return message.content === fallbackAnswer;
+      expect(modelCalls).toBe(1);
+      await expectNoBuiltInModelUsage(fallback.runId);
+      await expectNoBuiltInModelUsage(postProvider.runId);
+      expect((await api.readRun(actor, postProvider.runId)).error).toContain(
+        "[PI_API_MODEL_FAILED]",
+      );
+      const postProviderManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${postProvider.runId}/manifest.json`;
+      expect(checkpointObjects.has(postProviderManifestKey)).toBeFalsy();
+      const postProviderClaim = await api.requestClaimRunnerJob(
+        true,
+        postProvider.runId,
+        [404],
+      );
+      expect(postProviderClaim.status).toBe(404);
+      const finalThread = await waitForThreadMessages(
+        actor,
+        fallback.threadId,
+        (messages) => {
+          return eventBackedContents(messages, fallback.runId).some(
+            (message) => {
+              return message.content === fallbackAnswer;
+            },
+          );
         },
-      ),
-    ).toHaveLength(1);
-    await expect(
-      readThreadSessionConversation(context, fallback.threadId),
-    ).resolves.toMatchObject({ conversation_run_id: fallback.runId });
-  }, 90_000);
+      );
+      expect(
+        eventBackedContents(finalThread.events, fallback.runId).filter(
+          (message) => {
+            return message.content === fallbackAnswer;
+          },
+        ),
+      ).toHaveLength(1);
+      await expect(
+        readThreadSessionConversation(context, fallback.threadId),
+      ).resolves.toMatchObject({ conversation_run_id: fallback.runId });
+    },
+    90_000,
+  );
 
   it("transfers compaction-required OpenRouter H0 before provider transport", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -17608,12 +17500,18 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(modelCalls).toBe(2);
   }, 150_000);
 
-  it.each(["deepseek-v4-flash", ...GPT_PI_BDD_MODELS] as const)(
+  it.each([
+    "deepseek-v4-flash",
+    "deepseek-v4.1-flash",
+    ...GPT_PI_BDD_MODELS,
+  ] as const)(
     "keeps %s API-first and Sandbox usage as separate billable rows",
     async (selectedModel) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const orgId = requireOrgId(actor);
-      const isDeepSeek = selectedModel === "deepseek-v4-flash";
+      const isDeepSeek =
+        selectedModel === "deepseek-v4-flash" ||
+        selectedModel === "deepseek-v4.1-flash";
       const usagePricingResolution =
         await createPiApiFirstTurnUsagePricingResolution(selectedModel);
       await configureBuiltInPiModel(actor, selectedModel);
@@ -17680,10 +17578,16 @@ describe("CHAT-02: model-first provider policies", () => {
       const claimed = await claimChatRun(runnerGroup, run.runId);
       expect(claimed.claim.piModelConfig).toMatchObject({
         provider: isDeepSeek ? "deepseek" : "openai",
-        model: selectedModel,
+        model: getProviderRuntimeModel("built-in", selectedModel),
       });
       expect(claimed.claim.piModelConfig).not.toHaveProperty("api");
       expect(claimed.claim.piModelConfig).not.toHaveProperty("serviceTier");
+      expect(claimEnvironment(claimed.claim).OPENAI_API_KEY).toBe(
+        modelProviderSecretPlaceholder(
+          isDeepSeek ? "deepseek" : "openai-api-key",
+          isDeepSeek ? "DEEPSEEK_API_KEY" : "OPENAI_API_KEY",
+        ),
+      );
       const sandboxUsageEvent = {
         idempotencyKey: randomUUID(),
         kind: "model" as const,
@@ -30076,6 +29980,11 @@ async function completeNativeToolHandoff({
 describe("shared native Pi route activation", () => {
   it.each([
     {
+      type: "openrouter-codex",
+      model: "deepseek-v4.1-flash",
+      url: "https://openrouter.ai/api/v1/responses",
+    },
+    {
       type: "deepseek",
       model: "deepseek-v4-flash",
       url: "https://api.deepseek.com/responses",
@@ -30098,6 +30007,9 @@ describe("shared native Pi route activation", () => {
   ] as const)(
     "launches canonical $type $model Responses and continues the owned Pi session",
     async ({ type, model, url }) => {
+      if (model === "deepseek-v4.1-flash") {
+        configureNativeCliArtifact();
+      }
       const { actor, agentId } = await entitledChatActor();
       const { providerId } = await upsertOrgModelProvider(actor, {
         type,

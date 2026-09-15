@@ -1585,3 +1585,11 @@ consumer/recovery, cancellation, capacity counting, credential retention and era
 A v1–v3-only application is below the rollback floor while v4 records remain.
 Do not shrink the CHECK or cascade away releasing leases. See the linked contract
 for exact DDL timeouts, failure/retry behavior, scale receipts and activation gates.
+
+## DeepSeek V4.1 Flash Pi coverage
+
+The [V4.1 Pi catalog and deployment contract](../turbo/packages/pi-agent-runtime/src/deepseek-v41-catalog.md)
+requires the API's matching commit-addressed CLI for new admission and preserves
+old captured contexts. Existing Responses schemas and Runner claims are unchanged.
+Retain the V4.1 reader and API billing writer in serving/recovery and rollback
+targets while admitted V4.1 Pi work remains.

@@ -4,7 +4,7 @@ import {
   measurePiPreparationSync,
   startPiPreparationObservation,
 } from "@okouai/pi-agent-runtime/api";
-import { isPiNativeModel } from "@okouai/core/pi-execution";
+import { isPiNativeModel, isPiDeepSeekModel } from "@okouai/core/pi-execution";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
 import {
   assertPiNativeCredential,
@@ -3070,7 +3070,7 @@ async function resolveCandidateModelProviderEnvironment(
   const captureSecret =
     args.piExecution &&
     (isPiNativeModel(args.selectedModelOverride) ||
-      args.selectedModelOverride?.startsWith("deepseek-v4-"));
+      isPiDeepSeekModel(args.selectedModelOverride));
   if (getModelProviderFirewall(row.type) !== undefined && !captureSecret) {
     return modelProviderEnvironment({
       id: row.id,
@@ -9088,6 +9088,26 @@ interface FinalizedPreparedRunContext extends PreparedRunContext {
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
 }
 
+function assertCurrentPiCliArtifact(): void {
+  // The writer and CLI reader are built from the same commit. A mutable or
+  // differently pinned package cannot consume a newly captured model.
+  const commit = env("GIT_COMMIT_SHA");
+  const cliUrl = new URL(env("CLI_PKG_URL"));
+  if (
+    !/^[0-9a-f]{40}$/u.test(commit) ||
+    cliUrl.origin !== "https://static.okou.io" ||
+    cliUrl.username ||
+    cliUrl.password ||
+    cliUrl.search ||
+    cliUrl.hash ||
+    cliUrl.pathname !== `/okou-cli/${commit}/package.tgz`
+  ) {
+    throw new PiNativeConfigurationError(
+      "Pi requires the current commit-addressed CLI reader artifact",
+    );
+  }
+}
+
 async function materializePreparedPiProvider(
   createArgs: CreateAgentRunArgs,
   provider: ResolvedModelProviderEnvironment | null,
@@ -9105,11 +9125,14 @@ async function materializePreparedPiProvider(
       "Selected Pi execution requires a supported model provider configuration",
     );
   }
+  if (provider.selectedModel === "deepseek-v4.1-flash") {
+    assertCurrentPiCliArtifact();
+  }
   if (!("schemaVersion" in config) || config.schemaVersion !== 4) {
     if (
       !("schemaVersion" in config) &&
       (provider.type === "deepseek" || provider.type === "openrouter-codex") &&
-      provider.selectedModel?.startsWith("deepseek-v4-")
+      isPiDeepSeekModel(provider.selectedModel)
     ) {
       const credential = safeSync(() => {
         return assertPiNativeCredential(
@@ -9130,23 +9153,7 @@ async function materializePreparedPiProvider(
     }
     return { ...provider, piModelConfig: config };
   }
-  // The writer and CLI reader are built from the same commit. A mutable or
-  // differently pinned package cannot consume a newly captured native route.
-  const commit = env("GIT_COMMIT_SHA");
-  const cliUrl = new URL(env("CLI_PKG_URL"));
-  if (
-    !/^[0-9a-f]{40}$/u.test(commit) ||
-    cliUrl.origin !== "https://static.okou.io" ||
-    cliUrl.username ||
-    cliUrl.password ||
-    cliUrl.search ||
-    cliUrl.hash ||
-    cliUrl.pathname !== `/okou-cli/${commit}/package.tgz`
-  ) {
-    throw new PiNativeConfigurationError(
-      "Native Pi requires the current commit-addressed CLI reader artifact",
-    );
-  }
+  assertCurrentPiCliArtifact();
   const secrets: Record<string, string> = {};
   const route = normalizePiExecutionRoute(config);
   await materializePiExecutionRoute({
