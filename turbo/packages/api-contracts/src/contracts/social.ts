@@ -228,19 +228,14 @@ export const socialKitDownloadResponseSchema = z.object({
   // Retain the request aliases for already selected commit-addressed CLIs.
   quality: socialKitDownloadQualitySchema,
   format: socialKitDownloadFormatSchema,
-  // Optional while older API artifacts remain supported rollout/rollback targets.
-  requested: z
-    .object({
-      quality: socialKitDownloadQualitySchema,
-      format: socialKitDownloadFormatSchema,
-    })
-    .optional(),
-  delivered: z
-    .object({
-      quality: socialKitDownloadDeliveredQualitySchema.nullable(),
-      format: socialKitDownloadArtifactFormatSchema.nullable(),
-    })
-    .optional(),
+  requested: z.object({
+    quality: socialKitDownloadQualitySchema,
+    format: socialKitDownloadFormatSchema,
+  }),
+  delivered: z.object({
+    quality: socialKitDownloadDeliveredQualitySchema.nullable(),
+    format: socialKitDownloadArtifactFormatSchema.nullable(),
+  }),
   maxDuration: z.number().int().positive(),
   billingCategory: z.literal(MANAGED_SOCIALKIT_BILLING_CATEGORY),
   provider: socialKitDownloadProviderResultSchema.nullable(),
@@ -559,16 +554,6 @@ export function projectPublicSocialResponse(
   }
 
   let collection = response.collection;
-  // New CLI -> old API compatibility. Remove this projection once every serving
-  // API and retained rollback target emits the fixed batch metadata (#34053).
-  if (tool.collection?.sourceLimit && collection) {
-    collection = {
-      state: "provider_limited",
-      itemsReturned: collection.itemsReturned,
-      reason: "provider_ceiling",
-      sourceLimit: tool.collection.sourceLimit,
-    };
-  }
   if (
     tool.collection?.emptyResult?.reliability === "unreliable" &&
     collection?.state === "complete" &&

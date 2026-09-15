@@ -211,41 +211,34 @@ describe("managed SocialKit contract", () => {
     expect(search?.collection?.retrieval).not.toHaveProperty("maxPage");
   });
 
-  it.each([
-    { state: "complete", itemsReturned: 0 },
-    { state: "more", itemsReturned: 0, nextInput: { page: 2 } },
-    { state: "provider_limited", itemsReturned: 0, reason: "provider_ceiling" },
-  ])(
-    "projects older Instagram $state metadata without claiming completeness",
-    (collection) => {
+  it.each([0, 3, 12])(
+    "preserves canonical Instagram source limits for %s items",
+    (count) => {
       const response = socialKitResponseSchema.parse({
         tool: "instagram_reels_search",
         billingCategory: "request",
         billingQuantity: 1,
         creditsCharged: 3,
-        collection,
-        result: { items: [], count: 0, hasMore: false },
+        collection: {
+          state: "provider_limited",
+          itemsReturned: count,
+          reason: "provider_ceiling",
+          sourceLimit: { kind: "single_batch", maxItems: 12 },
+        },
+        result: {
+          items: Array.from({ length: count }, (_, id) => {
+            return { id: String(id) };
+          }),
+          count,
+          hasMore: false,
+        },
       });
       const projected = projectPublicSocialResponse(response);
 
       expect(projected).toStrictEqual({
         ok: true,
-        response: {
-          ...response,
-          collection: {
-            state: "provider_limited",
-            itemsReturned: 0,
-            reason: "provider_ceiling",
-            sourceLimit: { kind: "single_batch", maxItems: 12 },
-          },
-        },
+        response,
       });
-      if (!projected.ok) {
-        throw new Error("Expected a projected response");
-      }
-      expect(socialKitResponseSchema.parse(projected.response)).toStrictEqual(
-        projected.response,
-      );
     },
   );
 

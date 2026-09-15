@@ -7,7 +7,8 @@ import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { createChildAbortController } from "../../../signals/utils.ts";
+import { resetSignal } from "../../../signals/utils.ts";
+import { decodeVoiceDraftPcmWav } from "../../../signals/voice-io/voice-draft-pcm.ts";
 import {
   completedConversation,
   context,
@@ -42,10 +43,7 @@ async function recordings() {
   return saved;
 }
 
-function unload(page: AbortController) {
-  const aborted = new Error("Page reloaded");
-  aborted.name = "AbortError";
-  page.abort(aborted);
+function releasePageDom() {
   cleanup();
   vi.mocked(window.history.pushState).mockRestore();
   vi.mocked(window.history.replaceState).mockRestore();
@@ -120,11 +118,148 @@ test.each(targets)(
   },
 );
 
+test("Keep the replacement forward capture when an old startup completes late", async () => {
+  installVoiceBoundaries();
+  const moduleRequested = context.mocks.deferred<void>();
+  const moduleReady = context.mocks.deferred<void>();
+  const oldContextClosed = context.mocks.deferred<void>();
+  const pcmWorkletReady = vi
+    .fn<() => Promise<void>>()
+    .mockResolvedValue(undefined)
+    .mockImplementationOnce(() => {
+      moduleRequested.resolve();
+      return moduleReady.promise;
+    });
+  context.mocks.browser.voiceInput({
+    rms: 0.12,
+    pcmWorkletReady,
+    onAudioContextClose: () => {
+      if (!oldContextClosed.settled()) {
+        oldContextClosed.resolve();
+      }
+    },
+  });
+  context.mocks.http.post("*/api/voice-io/transcribe/segment", () => {
+    return HttpResponse.json({
+      transcript: "replacement recording",
+      polishedText: "Replacement recording.",
+      language: "en-US",
+    });
+  });
+  await setupPage({ context, path: RUN_PATH });
+  await findEnabledButton("Voice input");
+  const dialog = await openForwardComposer("Okou");
+  click(await findEnabledButton("Voice input", dialog));
+  await moduleRequested.promise;
+  click(await findEnabledButton("Back", dialog));
+  click(
+    await within(dialog).findByRole("option", {
+      name: "Capability conversation",
+    }),
+  );
+  click(await findEnabledButton("Voice input", dialog));
+  await findEnabledButton("Stop recording", dialog);
+
+  moduleReady.resolve();
+  await oldContextClosed.promise;
+  click(await findEnabledButton("Stop recording", dialog));
+  await findEnabledButton("Voice input", dialog);
+  expect(
+    within(dialog).getByRole("textbox", { name: "Message" }),
+  ).toHaveTextContent("Replacement recording.");
+  expect(
+    screen.queryByText("Voice transcription failed. Try again."),
+  ).not.toBeInTheDocument();
+});
+
+test("Keep the main recording alive when a simultaneous forward transcription is cancelled", async () => {
+  installVoiceBoundaries();
+  const mainCapture = context.mocks.deferred<(samples: Float32Array) => void>();
+  let connected = false;
+  context.mocks.browser.voiceInput({
+    rms: 0.12,
+    finalPcmSamples: new Float32Array(0),
+    onPcmCapture: (emit) => {
+      if (!connected) {
+        connected = true;
+        mainCapture.resolve(emit);
+      }
+      emit(new Float32Array(4096).fill(0.25));
+    },
+  });
+  const requested = context.mocks.deferred<void>();
+  const cancelled = context.mocks.deferred<void>();
+  const response = context.mocks.deferred<void>();
+  const responseReturned = context.mocks.deferred<void>();
+  const mainUpload = context.mocks.deferred<ArrayBuffer>();
+  let forwardRequested = false;
+  context.mocks.http.post(
+    "*/api/voice-io/transcribe/segment",
+    async ({ request }) => {
+      if (!forwardRequested) {
+        forwardRequested = true;
+        request.signal.addEventListener(
+          "abort",
+          () => {
+            cancelled.resolve();
+          },
+          { once: true },
+        );
+        requested.resolve();
+        await response.promise;
+        responseReturned.resolve();
+        return HttpResponse.json({
+          transcript: "discarded forward text",
+          polishedText: "Discarded forward text.",
+          language: "en-US",
+        });
+      }
+      mainUpload.resolve(await uploadedAudio(request));
+      return HttpResponse.json({
+        transcript: "main recording",
+        polishedText: "Main recording.",
+        language: "en-US",
+      });
+    },
+  );
+  await setupPage({ context, path: RUN_PATH });
+  const mainEditor = await screen.findByRole("textbox", { name: "Message" });
+  click(await findEnabledButton("Voice input"));
+  const emit = await mainCapture.promise;
+  await findEnabledButton("Stop recording");
+
+  const dialog = await openForwardComposer("Okou");
+  click(await findEnabledButton("Voice input", dialog));
+  click(await findEnabledButton("Stop recording", dialog));
+  await requested.promise;
+  expect(within(dialog).getByRole("status")).toHaveTextContent("Transcribing");
+  click(await findEnabledButton("Close", dialog));
+  await cancelled.promise;
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+  });
+
+  // The other owner's reset must leave this capture accepting new PCM.
+  emit(new Float32Array(4096).fill(-0.5));
+  response.resolve();
+  await responseReturned.promise;
+  click(await findEnabledButton("Stop recording"));
+  const samples = decodeVoiceDraftPcmWav(await mainUpload.promise);
+  expect(samples).toHaveLength(8192);
+  expect(samples?.slice(4096)).toStrictEqual(new Float32Array(4096).fill(-0.5));
+  await findEnabledButton("Voice input");
+  expect(mainEditor).toHaveTextContent("Main recording.");
+  expect(mainEditor).not.toHaveTextContent("Discarded forward text.");
+});
+
 test.each(targets)(
   "Reuse an unfinished $target recording in the forward dialog without replacing it",
   async ({ name, path }) => {
-    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-    const initialPage = createChildAbortController(context.signal);
+    const resetInitialPage$ = resetSignal();
+    const initialPageSignal = context.store.set(
+      resetInitialPage$,
+      context.signal,
+    );
     installVoiceBoundaries();
     context.mocks.browser.voiceInput({ rms: 0.12 });
     const uploads: ArrayBuffer[] = [];
@@ -144,14 +279,15 @@ test.each(targets)(
     );
     await setupPage({
       locale: "en-US",
-      context: { ...context, signal: initialPage.signal },
+      context: { ...context, signal: initialPageSignal },
       path,
     });
     click(await findEnabledButton("Voice input"));
     click(await findEnabledButton("Stop recording"));
     await findEnabledButton("Retry");
     const saved = await recordings();
-    unload(initialPage);
+    context.store.set(resetInitialPage$);
+    releasePageDom();
     await setupPage({
       locale: "en-US",
       context: refreshedContext,

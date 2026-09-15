@@ -2934,8 +2934,16 @@ describe("managed SocialKit route", () => {
         quality: "720p",
         format: "mp4",
       });
-      expect(created.body.status).toBe("processing");
-      expect(processing.body.status).toBe("processing");
+      expect(created.body).toMatchObject({
+        status: "processing",
+        requested: { quality: "720p", format: "mp4" },
+        delivered: { quality: null, format: null },
+      });
+      expect(processing.body).toMatchObject({
+        status: "processing",
+        requested: { quality: "720p", format: "mp4" },
+        delivered: { quality: null, format: null },
+      });
       expect(completed.body).toMatchObject({
         status: "completed",
         quality: "720p",

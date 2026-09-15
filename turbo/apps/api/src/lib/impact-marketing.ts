@@ -2,16 +2,12 @@ import { createHmac, randomUUID } from "node:crypto";
 import { optionalEnv } from "./env";
 import { nowDate } from "./time";
 
-export function marketingImpactEnabled(): boolean {
-  return optionalEnv("IMPACT_MARKETING_ATTRIBUTION") === "true";
-}
-
 export function retireImpactMetadata<T>(
   metadata: Readonly<Record<string, T>>,
 ): Record<string, T> {
   return Object.fromEntries(
     Object.entries(metadata).filter(([key]) => {
-      return !marketingImpactEnabled() || !key.startsWith("impact_");
+      return !key.startsWith("impact_");
     }),
   );
 }

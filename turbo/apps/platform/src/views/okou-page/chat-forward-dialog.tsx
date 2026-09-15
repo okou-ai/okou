@@ -1,4 +1,4 @@
-import { prepareChatForwardComposer$ } from "../../signals/chat-page/chat-forward-composer.ts";
+import { createChatForwardComposerSignals } from "../../signals/chat-page/chat-forward-composer.ts";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ChatThreadFeedbackSignals } from "../../signals/chat-page/chat-thread-feedback.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -254,7 +254,7 @@ export function ChatForwardDialog({
     };
     detach(
       prepare(
-        prepareChatForwardComposer$,
+        createChatForwardComposerSignals,
         { target: nextTarget, forward, onOptimisticSend },
         signal,
       ),
