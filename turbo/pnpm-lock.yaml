@@ -582,6 +582,40 @@ importers:
         specifier: ^4.129.0
         version: 4.129.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
 
+  apps/media-worker:
+    dependencies:
+      zod:
+        specifier: ^4.3.6
+        version: 4.5.4
+    devDependencies:
+      '@okouai/eslint-config':
+        specifier: workspace:*
+        version: link:../../packages/eslint-config
+      '@okouai/typescript-config':
+        specifier: workspace:*
+        version: link:../../packages/typescript-config
+      '@types/node':
+        specifier: ^24.3.0
+        version: 24.13.4
+      '@typescript/native':
+        specifier: npm:typescript@7.0.2
+        version: typescript@7.0.2
+      esbuild:
+        specifier: ^0.28.1
+        version: 0.28.1
+      eslint:
+        specifier: ^9.34.0
+        version: 9.39.4(jiti@2.7.0)
+      oxlint:
+        specifier: ^1.75.0
+        version: 1.75.0(oxlint-tsgolint@7.0.2001)
+      typescript:
+        specifier: npm:@typescript/typescript6@6.0.2
+        version: '@typescript/typescript6@6.0.2'
+      vitest:
+        specifier: ^5.0.0
+        version: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@24.13.4)(@vitest/coverage-v8@5.0.0)(@vitest/ui@5.0.0)(happy-dom@20.11.6(bufferutil@4.1.0)(utf-8-validate@6.0.6))(msw@2.13.2(@types/node@24.13.4)(@typescript/typescript6@6.0.2))(vite@8.0.16(@types/node@24.13.4)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.47.1)(tsx@4.21.0)(yaml@2.9.0))
+
   apps/platform:
     dependencies:
       '@axiomhq/js':
@@ -13741,7 +13775,7 @@ snapshots:
 
   '@slack/logger@4.0.1':
     dependencies:
-      '@types/node': 24.3.0
+      '@types/node': 24.13.4
 
   '@slack/types@2.20.1': {}
 
@@ -14932,7 +14966,7 @@ snapshots:
     dependencies:
       '@types/http-cache-semantics': 4.2.0
       '@types/keyv': 3.1.4
-      '@types/node': 24.3.0
+      '@types/node': 24.13.4
       '@types/responselike': 1.0.3
 
   '@types/chai@5.2.3':
@@ -14942,7 +14976,7 @@ snapshots:
 
   '@types/connect@3.4.38':
     dependencies:
-      '@types/node': 24.3.0
+      '@types/node': 24.13.4
 
   '@types/debug@4.1.13':
     dependencies:
@@ -14980,7 +15014,7 @@ snapshots:
 
   '@types/keyv@3.1.4':
     dependencies:
-      '@types/node': 24.3.0
+      '@types/node': 24.13.4
 
   '@types/linkify-it@5.0.0': {}
 
@@ -14999,7 +15033,7 @@ snapshots:
 
   '@types/mute-stream@0.0.4':
     dependencies:
-      '@types/node': 22.20.2
+      '@types/node': 24.13.4
 
   '@types/node@12.20.55': {}
 
@@ -15040,11 +15074,11 @@ snapshots:
 
   '@types/readdir-glob@1.1.5':
     dependencies:
-      '@types/node': 24.3.0
+      '@types/node': 24.13.4
 
   '@types/responselike@1.0.3':
     dependencies:
-      '@types/node': 24.3.0
+      '@types/node': 24.13.4
 
   '@types/retry@0.12.0': {}
 
@@ -15078,7 +15112,7 @@ snapshots:
 
   '@types/ws@7.4.7':
     dependencies:
-      '@types/node': 12.20.55
+      '@types/node': 24.13.4
 
   '@types/ws@8.18.1':
     dependencies:
@@ -15086,7 +15120,7 @@ snapshots:
 
   '@types/yauzl@2.10.3':
     dependencies:
-      '@types/node': 24.3.0
+      '@types/node': 24.13.4
     optional: true
 
   '@typescript-eslint/eslint-plugin@8.70.0(@typescript-eslint/parser@8.70.0(@typescript/typescript6@6.0.2)(eslint@9.39.4(jiti@2.7.0)))(@typescript/typescript6@6.0.2)(eslint@9.39.4(jiti@2.7.0))':
@@ -17896,7 +17930,7 @@ snapshots:
 
   jest-worker@27.5.1:
     dependencies:
-      '@types/node': 24.3.0
+      '@types/node': 24.13.4
       merge-stream: 2.0.0
       supports-color: 8.1.1
 
@@ -19322,7 +19356,7 @@ snapshots:
       '@protobufjs/path': 1.1.2
       '@protobufjs/pool': 1.1.0
       '@protobufjs/utf8': 1.1.1
-      '@types/node': 24.3.0
+      '@types/node': 24.13.4
       long: 5.3.2
 
   proxy-addr@2.0.7:

@@ -101,6 +101,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/render-video-posters",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/extract-pi-memory-stage1",
       "schedule": "* * * * *"
     },

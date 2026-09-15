@@ -8,9 +8,10 @@ import { describe, expect, it } from "vitest";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { signSandboxJwtForTests } from "../../auth/tokens";
+import { testContext } from "../../../__tests__/test-context";
+import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -33,6 +34,8 @@ const CLOUDFLARE_SNAPSHOT_URL =
 const CLOUDFLARE_MEDIA_FRAME_URL =
   /^https:\/\/cdn\.vm7\.io\/cdn-cgi\/media\/mode=frame,time=1s,width=640,format=jpg\//;
 const ARTIFACT_PREVIEW_WAF_SECRET = "test-artifact-preview-waf-secret-value";
+const MEDIA_WORKER_URL = "https://media-worker.test";
+const MEDIA_WORKER_SECRET = "test-media-worker-secret-with-32-chars";
 type RunnerClaim = Awaited<ReturnType<typeof api.claimRunnerJob>>;
 type ChatObjectStorage = ReturnType<
   typeof chatCallbacks.acceptChatObjectStorage
@@ -113,6 +116,33 @@ function mockCloudflareSnapshot(
             "<!doctype html><html><body>artifact</body></html>",
           screenshot: fixture.screenshot ?? "UklGRg==",
         },
+      });
+    }),
+  );
+  return requests;
+}
+
+interface PosterRequest {
+  readonly sourceUrl: string;
+  readonly authorization: string | null;
+}
+
+function mockFfmpegPosterService(status = 200): PosterRequest[] {
+  mockEnv("MEDIA_WORKER_URL", MEDIA_WORKER_URL);
+  mockEnv("MEDIA_WORKER_SECRET", MEDIA_WORKER_SECRET);
+  const requests: PosterRequest[] = [];
+  server.use(
+    http.post(`${MEDIA_WORKER_URL}/poster`, async ({ request }) => {
+      const body = (await request.json()) as { sourceUrl: string };
+      requests.push({
+        sourceUrl: body.sourceUrl,
+        authorization: request.headers.get("authorization"),
+      });
+      if (status !== 200) {
+        return HttpResponse.json({ code: "decode_failed" }, { status });
+      }
+      return new HttpResponse(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), {
+        headers: { "Content-Type": "image/png" },
       });
     }),
   );
@@ -362,6 +392,54 @@ describe("video Artifact previews", () => {
       /\/artifacts\/[0-9a-z]{10}\.jpg$/u,
     );
   }, 180_000);
+
+  it.each(["mp4", "webm"])(
+    "renders a %s poster with the FFmpeg service when the switch is on",
+    async (extension) => {
+      const owner = await artifactActor(
+        `Artifacts API ffmpeg ${extension} agent`,
+      );
+      await createBillingMediaApi(context).updateFeatureSwitches(owner.actor, {
+        artifactVideoPosterFfmpeg: true,
+      });
+      const frameRequests = mockCloudflareVideoFrame(owner.actor.userId);
+      const posterRequests = mockFfmpegPosterService();
+
+      const videoArtifact = await createRunUploadedFile({
+        owner,
+        prompt: "upload reference footage",
+        filename: `reference-footage.${extension}`,
+        contentType: extension === "mp4" ? "video/mp4" : "video/webm",
+      });
+      await flushWaitUntilForTest();
+
+      // The transformer cannot decode WebM at all, and rejects MP4 over 100 MiB.
+      expect(frameRequests).toHaveLength(0);
+      expect(posterRequests).toStrictEqual([
+        {
+          sourceUrl: videoArtifact.url,
+          authorization: `Bearer ${MEDIA_WORKER_SECRET}`,
+        },
+      ]);
+      const posterPuts = owner.objectStore.puts.filter((put) => {
+        return /^artifacts\/[0-9a-z]{10}\.png$/u.test(put.key);
+      });
+      expect(posterPuts).toHaveLength(1);
+      expect(posterPuts[0]).toMatchObject({
+        bucket: "test-user-artifacts",
+        contentType: "image/png",
+        ifNoneMatch: "*",
+      });
+      const previewedArtifact = await findCatalogArtifact(
+        owner.actor,
+        `reference-footage.${extension}`,
+      );
+      expect(previewedArtifact?.thumbnail?.url).toMatch(
+        /\/artifacts\/[0-9a-z]{10}\.png$/u,
+      );
+    },
+    180_000,
+  );
 
   it("skips the poster request for a container the transformer cannot decode", async () => {
     const owner = await artifactActor("Artifacts API webm preview agent");

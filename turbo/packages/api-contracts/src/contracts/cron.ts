@@ -655,6 +655,23 @@ export const cronMaterializePiResourceIndexesContract = c.router({
   },
 });
 
+export const cronRenderVideoPostersContract = c.router({
+  render: {
+    method: "GET",
+    path: "/api/cron/render-video-posters",
+    headers: authHeadersSchema,
+    responses: {
+      200: z.object({
+        success: z.literal(true),
+        reserved: z.number().int().nonnegative(),
+        rendered: z.number().int().nonnegative(),
+      }),
+      401: apiErrorSchema,
+    },
+    summary: "Render posters for a bounded batch of recent videos without one",
+  },
+});
+
 export const cronExtractPiMemoryStage1Contract = c.router({
   extract: {
     method: "GET",

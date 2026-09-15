@@ -1,6 +1,21 @@
 import { command } from "ccstate";
-import { eq } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  like,
+  lt,
+  or,
+} from "drizzle-orm";
+import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { RunUploadedFileMetadata } from "@okouai/db/jsonb-contracts/run-uploaded-file";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { z } from "zod";
 
@@ -11,10 +26,11 @@ import { nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import { writeDb$ } from "../external/db";
 import { putImmutableS3Object } from "../external/s3";
-import { safeJsonParse, tapError } from "../utils";
+import { safeJsonParse, settle, tapError } from "../utils";
 import { allocateArtifactObject$ } from "./artifact-storage.service";
 import { syncArtifactCatalogForFile$ } from "./artifact-catalog.service";
 import { publishArtifactsChangedForRun } from "./artifact-realtime.service";
+import { userFeatureSwitchContext } from "./feature-switches.service";
 
 const log = logger("artifacts:preview");
 
@@ -69,6 +85,14 @@ const browserSnapshotErrorSchema = z.object({
 // Transformations frame endpoint only outputs jpg/png.
 const VIDEO_POSTER_FILENAME = "poster-v2.jpg";
 const VIDEO_POSTER_CONTENT_TYPE = "image/jpeg";
+const FFMPEG_POSTER_FILENAME = "poster-v3.png";
+const FFMPEG_POSTER_CONTENT_TYPE = "image/png";
+const FFMPEG_POSTER_TIMEOUT_MS = 90_000;
+// Videos stop being worth a retry once they leave the artifact grid's recent
+// window; nothing else bounds how often the backfill re-reads a broken source.
+const POSTER_BACKFILL_WINDOW_HOURS = 24;
+const POSTER_BACKFILL_BATCH = 5;
+const POSTER_RETRY_INTERVAL_MS = 15 * 60_000;
 
 export interface RenderArtifactPreviewArgs {
   // The run_uploaded_files row id; also namespaces the R2 object key.
@@ -121,6 +145,40 @@ async function extractVideoPoster(
     throw new Error(
       `media frame extraction failed (${response.status}): ${await response.text()}`,
     );
+  }
+  return Buffer.from(await response.arrayBuffer());
+}
+
+/**
+ * Sample a poster frame with the FFmpeg media service. It reads the same public
+ * artifact URL the Cloudflare transformation reads, over range requests, so the
+ * input's size and container are not limited the way the transformation is.
+ */
+async function renderVideoPosterWithFfmpeg(
+  videoUrl: string,
+  signal: AbortSignal,
+): Promise<Buffer> {
+  const url = env("MEDIA_WORKER_URL");
+  const secret = env("MEDIA_WORKER_SECRET");
+  if (!url || !secret) {
+    throw new Error("MEDIA_WORKER_URL and MEDIA_WORKER_SECRET are required");
+  }
+  const response = await fetch(new URL("/poster", url), {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${secret}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ sourceUrl: videoUrl }),
+    signal: AbortSignal.any([
+      signal,
+      AbortSignal.timeout(FFMPEG_POSTER_TIMEOUT_MS),
+    ]),
+    redirect: "error",
+  });
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw new Error(`video poster render failed (${response.status})`);
   }
   return Buffer.from(await response.arrayBuffer());
 }
@@ -310,12 +368,24 @@ const renderAndStoreArtifactPreview$ = command(
     let filename: string;
     let contentType: string;
     if (isVideo) {
-      if (!canExtractVideoPoster(args.contentType)) {
-        return false;
+      const context = await get(
+        userFeatureSwitchContext(args.orgId, args.userId),
+      );
+      signal.throwIfAborted();
+      if (
+        isFeatureEnabled(FeatureSwitchKey.ArtifactVideoPosterFfmpeg, context)
+      ) {
+        image = await renderVideoPosterWithFfmpeg(args.url, signal);
+        filename = FFMPEG_POSTER_FILENAME;
+        contentType = FFMPEG_POSTER_CONTENT_TYPE;
+      } else {
+        if (!canExtractVideoPoster(args.contentType)) {
+          return false;
+        }
+        image = await extractVideoPoster(args.url, args.publicBrand, signal);
+        filename = VIDEO_POSTER_FILENAME;
+        contentType = VIDEO_POSTER_CONTENT_TYPE;
       }
-      image = await extractVideoPoster(args.url, args.publicBrand, signal);
-      filename = VIDEO_POSTER_FILENAME;
-      contentType = VIDEO_POSTER_CONTENT_TYPE;
     } else {
       const token = env("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN");
       if (!token) {
@@ -368,6 +438,134 @@ const renderAndStoreArtifactPreview$ = command(
     await set(syncArtifactCatalogForFile$, args.id, signal);
     await publishArtifactsChangedForRun(db, args.runId, signal);
     return true;
+  },
+);
+
+interface BackfillCandidate {
+  readonly id: string;
+  readonly runId: string | null;
+  readonly userId: string;
+  readonly orgId: string | null;
+  readonly url: string | null;
+  readonly contentType: string | null;
+  readonly metadata: RunUploadedFileMetadata;
+}
+
+/** Apply the creation-time eligibility rules to a row selected much later. */
+function backfillRenderArgs(
+  row: BackfillCandidate,
+): RenderArtifactPreviewArgs | null {
+  if (!row.runId || !row.orgId || !row.url) {
+    return null;
+  }
+  // The public renderer cannot read authenticated sources; private derivatives
+  // join the generation slice in #32492.
+  if (
+    parseArtifactReference(row.url) !== null ||
+    new URL(row.url).pathname === "/api/web/download-file"
+  ) {
+    return null;
+  }
+  return {
+    id: row.id,
+    runId: row.runId,
+    userId: row.userId,
+    orgId: row.orgId,
+    url: row.url,
+    contentType: row.contentType,
+    publicBrand: row.metadata.publicBrand === "okou" ? "okou" : "vm0",
+  };
+}
+
+/**
+ * Retry the videos whose creation-time render never produced a poster: inputs
+ * the Cloudflare transformation rejects, and transient failures that no longer
+ * have a request to run under. Reserving the row first bounds how often one
+ * undecodable video can take a slot, and keeps overlapping ticks apart.
+ */
+export const renderMissingVideoPosters$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    const now = nowDate();
+    const eligible = and(
+      like(runUploadedFiles.contentType, "video/%"),
+      isNull(runUploadedFiles.previewImageUrl),
+      isNotNull(runUploadedFiles.url),
+      isNotNull(runUploadedFiles.orgId),
+      isNotNull(runUploadedFiles.runId),
+      gt(
+        runUploadedFiles.createdAt,
+        new Date(now.getTime() - POSTER_BACKFILL_WINDOW_HOURS * 3_600_000),
+      ),
+      or(
+        isNull(runUploadedFiles.previewAttemptedAt),
+        lt(
+          runUploadedFiles.previewAttemptedAt,
+          new Date(now.getTime() - POSTER_RETRY_INTERVAL_MS),
+        ),
+      ),
+    );
+    // Repeating the predicate on the update re-checks it under the row lock, so
+    // overlapping ticks cannot both reserve the same video.
+    const rows = await db
+      .update(runUploadedFiles)
+      .set({ previewAttemptedAt: now })
+      .where(
+        and(
+          eligible,
+          inArray(
+            runUploadedFiles.id,
+            db
+              .select({ id: runUploadedFiles.id })
+              .from(runUploadedFiles)
+              .where(eligible)
+              .orderBy(desc(runUploadedFiles.createdAt))
+              .limit(POSTER_BACKFILL_BATCH),
+          ),
+        ),
+      )
+      .returning({
+        id: runUploadedFiles.id,
+        runId: runUploadedFiles.runId,
+        userId: runUploadedFiles.userId,
+        orgId: runUploadedFiles.orgId,
+        url: runUploadedFiles.url,
+        contentType: runUploadedFiles.contentType,
+        metadata: runUploadedFiles.metadata,
+      });
+    signal.throwIfAborted();
+    let rendered = 0;
+    for (const row of rows) {
+      const args = backfillRenderArgs(row);
+      if (!args) {
+        continue;
+      }
+      const context = await get(
+        userFeatureSwitchContext(args.orgId, args.userId),
+      );
+      signal.throwIfAborted();
+      if (
+        !isFeatureEnabled(FeatureSwitchKey.ArtifactVideoPosterFfmpeg, context)
+      ) {
+        continue;
+      }
+      const result = await settle(
+        set(renderAndStoreArtifactPreview$, args, signal),
+        signal,
+      );
+      if (result.ok) {
+        rendered += result.value ? 1 : 0;
+      } else {
+        log.warn("Failed to backfill a video poster", {
+          artifactId: args.id,
+          error:
+            result.error instanceof Error
+              ? result.error.message
+              : String(result.error),
+        });
+      }
+    }
+    return { reserved: rows.length, rendered };
   },
 );
 

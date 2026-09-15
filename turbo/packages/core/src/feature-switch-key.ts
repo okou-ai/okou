@@ -5,6 +5,7 @@
  */
 export enum FeatureSwitchKey {
   PersonalSubscriptionPriority = "personalSubscriptionPriority",
+  ArtifactVideoPosterFfmpeg = "artifactVideoPosterFfmpeg",
   WelcomeThread = "welcomeThread",
   ThreadActivitySummary = "threadActivitySummary",
   SessionOutputStreaming = "sessionOutputStreaming",

@@ -961,6 +961,16 @@ jobs:
           pnpm --filter @okouai/db db:migrate
           pnpm --filter api exec vitest run --config vitest.maintenance.config.ts
 
+  test-media-worker:
+    needs: [detect-turbo-ts-checks]
+    if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build and verify the FFmpeg media service image
+        run: docker build --build-arg GIT_COMMIT_SHA="$GITHUB_SHA" -f turbo/apps/media-worker/Dockerfile .
+
   test-other:
     needs: [detect-turbo-ts-checks]
     if: needs.detect-turbo-ts-checks.outputs.turbo-ts-checks-needed == 'true'
@@ -3173,6 +3183,7 @@ jobs:
       - test-api
       - test-pi-memory-boundary
       - test-other
+      - test-media-worker
       - deploy-api
       - deploy-app
       - deploy-stripe-listener
@@ -3277,6 +3288,7 @@ jobs:
           check_result "test-api" "${{ needs.test-api.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-pi-memory-boundary" "${{ needs.test-pi-memory-boundary.result }}" "$TS_CHECK_SKIP_ALLOWED"
           check_result "test-other" "${{ needs.test-other.result }}" "$TS_CHECK_SKIP_ALLOWED"
+          check_result "test-media-worker" "${{ needs.test-media-worker.result }}" "$TS_CHECK_SKIP_ALLOWED"
 
           # May-skip: 'success' or 'skipped' are both acceptable
           check_result "test-migrate" "${{ needs.test-migrate.result }}" "true"

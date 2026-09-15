@@ -1,0 +1,9 @@
+{
+  "extends": ["../../.oxlintrc.json"],
+  "overrides": [
+    {
+      "files": ["eslint.config.mjs", "vitest.config.ts"],
+      "rules": { "import/no-default-export": "off" }
+    }
+  ]
+}

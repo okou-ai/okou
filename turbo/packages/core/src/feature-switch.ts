@@ -375,6 +375,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ArtifactVideoPosterFfmpeg]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Sample video poster frames with the FFmpeg media service instead of Cloudflare.",
+    enabled: false,
+  },
   // Every artifact privacy slice in #32492 uses this same rollout switch.
   [FeatureSwitchKey.PrivateArtifacts]: {
     maintainer: "yuma@okou.ai",

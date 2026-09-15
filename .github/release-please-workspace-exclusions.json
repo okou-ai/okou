@@ -1,5 +1,6 @@
 {
   "crates/xtask": "Development-only Rust task runner",
+  "turbo/apps/media-worker": "Private FFmpeg service built and deployed by commit-addressed container image",
   "turbo/packages/eslint-config": "Development-only lint configuration",
   "turbo/packages/eslint-rules": "Development-only lint rules",
   "turbo/packages/mermaid-lite": "Private vendored Flowchart-only build consumed by the platform",

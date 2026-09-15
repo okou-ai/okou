@@ -136,6 +136,10 @@
     "packages/pi-agent-runtime": {
       "entry": ["src/**/*.{test,spec}.ts"],
       "project": ["src/**/*.ts"]
+    },
+    "apps/media-worker": {
+      "entry": ["src/index.ts", "src/__tests__/*.test.ts"],
+      "project": ["src/**/*.ts", "*.config.*"]
     }
   },
   "ignoreIssues": {

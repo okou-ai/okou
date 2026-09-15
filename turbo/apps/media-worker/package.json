@@ -1,0 +1,27 @@
+{
+  "name": "@okouai/media-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node24 --format=esm --outfile=dist/index.mjs",
+    "start": "node dist/index.mjs",
+    "check-types": "tsc --noEmit",
+    "lint": "oxlint && eslint . --max-warnings 0",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@okouai/eslint-config": "workspace:*",
+    "@okouai/typescript-config": "workspace:*",
+    "@typescript/native": "npm:typescript@7.0.2",
+    "esbuild": "^0.28.1",
+    "eslint": "^9.34.0",
+    "oxlint": "^1.75.0",
+    "typescript": "npm:@typescript/typescript6@6.0.2",
+    "vitest": "^5.0.0"
+  }
+}

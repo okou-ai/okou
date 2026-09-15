@@ -1,0 +1,1 @@
+ALTER TABLE "run_uploaded_files" ADD COLUMN "preview_attempted_at" timestamp;

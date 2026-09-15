@@ -92,6 +92,9 @@ export const runUploadedFiles = pgTable(
     sizeBytes: bigint("size_bytes", { mode: "number" }),
     url: text("url"),
     previewImageUrl: text("preview_image_url"),
+    // Reserves a row for one preview attempt, so a repeatedly failing video
+    // cannot hold a backfill slot on every tick.
+    previewAttemptedAt: timestamp("preview_attempted_at"),
     metadata: jsonb("metadata")
       .$type<RunUploadedFileMetadata>()
       .notNull()

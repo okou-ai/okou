@@ -78,6 +78,8 @@ const SCHEMA = {
   GOOGLE_WORKSPACE_EVENTS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL: z
     .email()
     .optional(),
+  MEDIA_WORKER_URL: z.url().optional(),
+  MEDIA_WORKER_SECRET: z.string().min(32).optional(),
   CRON_SECRET: z.string().min(1),
   R2_ACCESS_KEY_ID: z.string().min(1),
   R2_ACCOUNT_ID: z.string().min(1),
