@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { FeatureSwitchKey, isFeatureEnabled } from "@okouai/core";
+import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import {
   loadMemberModelRouteContext,
@@ -7,7 +10,7 @@ import {
 import { checkOrgPlanRunAdmission } from "./run-admission.service";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
 import { command } from "ccstate";
-import { and, eq, inArray, notInArray } from "drizzle-orm";
+import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import {
   DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
   LIMITED_FREE1_DEFAULT_RUN_MODEL,
@@ -41,7 +44,7 @@ import {
 } from "@okouai/db/schema/model-provider-gateway";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgModelPolicies } from "@okouai/db/schema/org-model-policy";
-import { insufficientCredits } from "../../lib/error";
+import { conflict, insufficientCredits } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import {
@@ -74,7 +77,9 @@ type ServiceResult<T> =
   | { readonly ok: false; readonly message: string }
   | {
       readonly ok: false;
-      readonly response: ReturnType<typeof insufficientCredits>;
+      readonly response:
+        | ReturnType<typeof insufficientCredits>
+        | ReturnType<typeof conflict>;
     };
 
 const ORG_SENTINEL_USER_ID = "__org__";
@@ -131,7 +136,11 @@ function parseCredentialScope(
   return value === "org" || value === "member" ? value : null;
 }
 
-function loadRows(db: Db, orgId: string): Promise<OrgModelPolicyRow[]> {
+function loadRows(
+  db: Db,
+  orgId: string,
+  allModels = false,
+): Promise<OrgModelPolicyRow[]> {
   return db
     .select({
       id: orgModelPolicies.id,
@@ -151,9 +160,69 @@ function loadRows(db: Db, orgId: string): Promise<OrgModelPolicyRow[]> {
     .where(
       and(
         eq(orgModelPolicies.orgId, orgId),
-        inArray(orgModelPolicies.model, [...ACTIVE_RUN_MODELS]),
+        allModels
+          ? undefined
+          : inArray(orgModelPolicies.model, [...ACTIVE_RUN_MODELS]),
       ),
     );
+}
+
+// Seeds/repaired defaults and replacement writes share one organization-local
+// fence. Normal selection reads take no lock when no repair is needed.
+async function lockPolicyWrites(db: Db, orgId: string): Promise<void> {
+  await db.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`model-policy:${orgId}`}, 0))`,
+  );
+}
+
+function policyRevision(rows: readonly OrgModelPolicyRow[]): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify(
+        [...rows].sort((a, b) => {
+          return a.model.localeCompare(b.model);
+        }),
+      ),
+    )
+    .digest("hex");
+}
+
+async function lockPolicyParents(db: Db, orgId: string): Promise<void> {
+  // Parent rows precede child policy rows. This also fences FK SET NULL from
+  // provider/surface deletion without acquiring A's credential lifecycle lock.
+  await db
+    .select({ id: modelProviders.id })
+    .from(modelProviders)
+    .where(
+      and(
+        eq(modelProviders.orgId, orgId),
+        eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
+      ),
+    )
+    .orderBy(asc(modelProviders.id))
+    .for("share");
+  await db
+    .select({ id: modelProviderConnections.id })
+    .from(modelProviderConnections)
+    .where(eq(modelProviderConnections.orgId, orgId))
+    .orderBy(asc(modelProviderConnections.id))
+    .for("share");
+  await db
+    .select({ id: modelProviderSurfaces.id })
+    .from(modelProviderSurfaces)
+    .innerJoin(
+      modelProviderConnections,
+      eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
+    )
+    .where(eq(modelProviderConnections.orgId, orgId))
+    .orderBy(asc(modelProviderSurfaces.id))
+    .for("share", { of: modelProviderSurfaces });
+  await db
+    .select({ id: orgModelPolicies.id })
+    .from(orgModelPolicies)
+    .where(eq(orgModelPolicies.orgId, orgId))
+    .orderBy(asc(orgModelPolicies.id))
+    .for("no key update");
 }
 
 function resolveOmittedModelProviderSurfaceIds(
@@ -336,7 +405,7 @@ async function setDefaultModelPolicy(
     );
 }
 
-export async function ensureOrgModelPolicies(
+async function ensureOrgModelPoliciesLocked(
   db: Db,
   orgId: string,
   userId: string,
@@ -414,6 +483,30 @@ export async function ensureOrgModelPolicies(
     });
 
   return sortRowsByCatalog(await loadRows(db, orgId));
+}
+
+export async function ensureOrgModelPolicies(
+  db: Db,
+  orgId: string,
+  userId: string,
+): Promise<OrgModelPolicyRow[]> {
+  const capabilities = await orgModelCapabilities(db, orgId);
+  const existing = await loadRows(db, orgId);
+  if (
+    existing.length > 0 &&
+    !shouldReplaceExistingDefaultForPlan(
+      existing.find((policy) => {
+        return policy.isDefault;
+      }),
+      capabilities,
+    )
+  ) {
+    return sortRowsByCatalog(existing);
+  }
+  return db.transaction(async (tx) => {
+    await lockPolicyWrites(tx, orgId);
+    return ensureOrgModelPoliciesLocked(tx, orgId, userId);
+  });
 }
 
 async function listOrgProviderRoutes(
@@ -795,7 +888,13 @@ async function listOrgModelPolicies(
   orgId: string,
   userId: string,
 ): Promise<OrgModelPoliciesResponse> {
-  const rows = await ensureOrgModelPolicies(db, orgId, userId);
+  await ensureOrgModelPolicies(db, orgId, userId);
+  const persistedRows = await loadRows(db, orgId, true);
+  const rows = sortRowsByCatalog(
+    persistedRows.filter((row) => {
+      return parseSupportedModel(row.model);
+    }),
+  );
   const member = await loadMemberModelRouteContext(db, orgId, userId);
   const capabilities = member.priorityEnabled
     ? await loadOrgPlanCapabilities(db, orgId)
@@ -875,6 +974,8 @@ async function listOrgModelPolicies(
 
   return {
     policies,
+    revision: policyRevision(persistedRows),
+    writePreconditionRequired: member.priorityEnabled,
     workspaceDefaultModel: workspaceDefault?.model ?? null,
     workspaceDefaultPolicyId: workspaceDefault?.id ?? null,
   };
@@ -887,93 +988,92 @@ async function persistOrgModelPolicyUpdates(params: {
   readonly policies: UpdateOrgModelPolicy[];
   readonly now: Date;
 }): Promise<void> {
-  await params.db.transaction(async (tx) => {
-    await tx
-      .insert(orgModelPolicies)
-      .values(
-        params.policies.map((policy) => {
-          return {
-            orgId: params.orgId,
-            model: policy.model,
-            isDefault: false,
-            defaultProviderType: policy.defaultProviderType,
-            credentialScope: policy.credentialScope,
-            modelProviderId: policy.modelProviderId,
-            modelProviderSurfaceId: policy.modelProviderSurfaceId ?? null,
-            createdByUserId: params.userId,
-            updatedByUserId: params.userId,
-            createdAt: params.now,
-            updatedAt: params.now,
-          };
-        }),
-      )
-      .onConflictDoNothing({
-        target: [orgModelPolicies.orgId, orgModelPolicies.model],
-      });
-
-    const removedRows = await tx
-      .delete(orgModelPolicies)
-      .where(
-        and(
-          eq(orgModelPolicies.orgId, params.orgId),
-          inArray(orgModelPolicies.model, [...ACTIVE_RUN_MODELS]),
-          notInArray(
-            orgModelPolicies.model,
-            params.policies.map((policy) => {
-              return policy.model;
-            }),
-          ),
-        ),
-      )
-      .returning({ model: orgModelPolicies.model });
-
-    const removedModels = removedRows.map((row) => {
-      return row.model;
-    });
-    const defaultPolicy = params.policies.find((policy) => {
-      return policy.isDefault;
-    });
-    if (removedModels.length > 0 && defaultPolicy) {
-      await tx
-        .update(orgMembersMetadata)
-        .set({
-          selectedModel: defaultPolicy.model,
-          serviceTier: null,
-          updatedAt: params.now,
-        })
-        .where(
-          and(
-            eq(orgMembersMetadata.orgId, params.orgId),
-            inArray(orgMembersMetadata.selectedModel, removedModels),
-          ),
-        );
-    }
-
-    await tx
-      .update(orgModelPolicies)
-      .set({ isDefault: false })
-      .where(eq(orgModelPolicies.orgId, params.orgId));
-
-    for (const policy of params.policies) {
-      await tx
-        .update(orgModelPolicies)
-        .set({
-          isDefault: policy.isDefault,
+  const tx = params.db;
+  await tx
+    .insert(orgModelPolicies)
+    .values(
+      params.policies.map((policy) => {
+        return {
+          orgId: params.orgId,
+          model: policy.model,
+          isDefault: false,
           defaultProviderType: policy.defaultProviderType,
           credentialScope: policy.credentialScope,
           modelProviderId: policy.modelProviderId,
           modelProviderSurfaceId: policy.modelProviderSurfaceId ?? null,
-          updatedAt: params.now,
+          createdByUserId: params.userId,
           updatedByUserId: params.userId,
-        })
-        .where(
-          and(
-            eq(orgModelPolicies.orgId, params.orgId),
-            eq(orgModelPolicies.model, policy.model),
-          ),
-        );
-    }
+          createdAt: params.now,
+          updatedAt: params.now,
+        };
+      }),
+    )
+    .onConflictDoNothing({
+      target: [orgModelPolicies.orgId, orgModelPolicies.model],
+    });
+
+  const removedRows = await tx
+    .delete(orgModelPolicies)
+    .where(
+      and(
+        eq(orgModelPolicies.orgId, params.orgId),
+        inArray(orgModelPolicies.model, [...ACTIVE_RUN_MODELS]),
+        notInArray(
+          orgModelPolicies.model,
+          params.policies.map((policy) => {
+            return policy.model;
+          }),
+        ),
+      ),
+    )
+    .returning({ model: orgModelPolicies.model });
+
+  const removedModels = removedRows.map((row) => {
+    return row.model;
   });
+  const defaultPolicy = params.policies.find((policy) => {
+    return policy.isDefault;
+  });
+  if (removedModels.length > 0 && defaultPolicy) {
+    await tx
+      .update(orgMembersMetadata)
+      .set({
+        selectedModel: defaultPolicy.model,
+        serviceTier: null,
+        updatedAt: params.now,
+      })
+      .where(
+        and(
+          eq(orgMembersMetadata.orgId, params.orgId),
+          inArray(orgMembersMetadata.selectedModel, removedModels),
+        ),
+      );
+  }
+
+  await tx
+    .update(orgModelPolicies)
+    .set({ isDefault: false })
+    .where(eq(orgModelPolicies.orgId, params.orgId));
+
+  for (const policy of params.policies) {
+    await tx
+      .update(orgModelPolicies)
+      .set({
+        isDefault: policy.isDefault,
+        defaultProviderType: policy.defaultProviderType,
+        credentialScope: policy.credentialScope,
+        modelProviderId: policy.modelProviderId,
+        modelProviderSurfaceId: policy.modelProviderSurfaceId ?? null,
+        updatedAt: params.now,
+        updatedByUserId: params.userId,
+      })
+      .where(
+        and(
+          eq(orgModelPolicies.orgId, params.orgId),
+          eq(orgModelPolicies.model, policy.model),
+        ),
+      );
+  }
 }
 
 export const listOrgModelPolicies$ = command(
@@ -1000,39 +1100,95 @@ export const updateOrgModelPolicies$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly policies: UpdateOrgModelPolicy[];
+      readonly revision?: string;
     },
     signal: AbortSignal,
   ): Promise<ServiceResult<OrgModelPoliciesResponse>> => {
     const db = set(writeDb$);
-    const capabilities = await orgModelCapabilities(db, params.orgId);
-    signal.throwIfAborted();
-    const policies = resolveOmittedModelProviderSurfaceIds(
-      params.policies,
-      await loadRows(db, params.orgId),
-    );
-    signal.throwIfAborted();
-    const validation = await validateUpdatePolicies(
+    const context = await loadUserFeatureSwitchContext(
       db,
       params.orgId,
-      policies,
-      capabilities,
+      params.userId,
     );
     signal.throwIfAborted();
-    if (!validation.ok) {
-      return validation;
+    const priorityEnabled = isFeatureEnabled(
+      FeatureSwitchKey.PersonalSubscriptionPriority,
+      context,
+    );
+    const refreshConflict = () => {
+      return {
+        ok: false as const,
+        response: conflict(
+          "Model settings changed or this client is out of date. Refresh model settings and try again, or upgrade your client.",
+        ),
+      };
+    };
+    // Reject unidentified old writers before even the lazy seed/default path.
+    if (priorityEnabled && !params.revision) {
+      return refreshConflict();
     }
-
-    await ensureOrgModelPolicies(db, params.orgId, params.userId);
-    signal.throwIfAborted();
-
-    await persistOrgModelPolicyUpdates({
-      db,
-      orgId: params.orgId,
-      userId: params.userId,
-      policies: validation.data,
-      now: nowDate(),
+    const written = await db.transaction(async (tx) => {
+      await lockPolicyWrites(tx, params.orgId);
+      await lockPolicyParents(tx, params.orgId);
+      signal.throwIfAborted();
+      const existing = await loadRows(tx, params.orgId, true);
+      if (
+        params.revision !== undefined &&
+        params.revision !== policyRevision(existing)
+      ) {
+        return refreshConflict();
+      }
+      const policies = resolveOmittedModelProviderSurfaceIds(
+        params.policies,
+        existing,
+      );
+      if (
+        priorityEnabled &&
+        policies.some((policy) => {
+          if (policy.credentialScope !== "member") {
+            return false;
+          }
+          const previous = existing.find((row) => {
+            return row.model === policy.model;
+          });
+          return (
+            !previous ||
+            previous.credentialScope !== "member" ||
+            previous.defaultProviderType !== policy.defaultProviderType ||
+            previous.modelProviderId !== policy.modelProviderId ||
+            previous.modelProviderSurfaceId !== policy.modelProviderSurfaceId
+          );
+        })
+      ) {
+        return bad<undefined>(
+          "Subscriptions are managed in personal settings. Choose an API route for new workspace routes.",
+        );
+      }
+      const capabilities = await orgModelCapabilities(tx, params.orgId);
+      const validation = await validateUpdatePolicies(
+        tx,
+        params.orgId,
+        policies,
+        capabilities,
+      );
+      signal.throwIfAborted();
+      if (!validation.ok) {
+        return validation;
+      }
+      await persistOrgModelPolicyUpdates({
+        db: tx,
+        orgId: params.orgId,
+        userId: params.userId,
+        policies: validation.data,
+        now: nowDate(),
+      });
+      signal.throwIfAborted();
+      return ok(undefined);
     });
     signal.throwIfAborted();
+    if (!written.ok) {
+      return written;
+    }
 
     const response = await listOrgModelPolicies(
       db,

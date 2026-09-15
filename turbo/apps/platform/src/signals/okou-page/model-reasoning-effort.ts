@@ -1,14 +1,15 @@
 import { isPiExecutionRoute } from "@okouai/core/pi-execution";
-import {
-  isBuiltInModelProviderType,
-  type OrgModelPolicy,
-} from "@okouai/api-contracts/contracts/model-providers";
+import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
 import {
   defaultModelReasoningEffort,
   getRouteReasoningEfforts,
   modelReasoningEffort,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import {
+  getMemberModelPolicyRoute,
+  isMemberModelPolicyConfigurable,
+} from "@okouai/api-contracts/contracts/member-model-policy";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 
@@ -35,22 +36,19 @@ export function availableChatReasoningEfforts(
   if (
     !selection ||
     !policy ||
-    policy.routeStatus !== "valid" ||
+    !isMemberModelPolicyConfigurable(policy) ||
     !switches[FeatureSwitchKey.RefactorModelSelect]
   ) {
     return [];
   }
-  const runtimeProviderType = isBuiltInModelProviderType(
-    policy.defaultProviderType,
-  )
-    ? policy.runtimeProviderType
-    : policy.defaultProviderType;
+  const route = getMemberModelPolicyRoute(policy);
+  const runtimeProviderType = route.runtimeProviderType;
   if (runtimeProviderType === null) {
     return [];
   }
   const piExecution = isPiExecutionRoute({
     selectedModel: selection.selectedModel,
-    modelProviderType: policy.defaultProviderType,
+    modelProviderType: route.providerType,
     runtimeProviderType,
     codexServiceTier: selection.codexServiceTier ?? undefined,
     piEnabled: switches[FeatureSwitchKey.PiLoop] === true,

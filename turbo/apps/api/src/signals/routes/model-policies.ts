@@ -5,6 +5,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { badRequestMessage } from "../../lib/error";
+import { publishModelPoliciesChangedForOrgSafely } from "../external/realtime";
 import type { RouteEntry } from "../route-entry";
 import {
   listOrgModelPolicies$,
@@ -54,6 +55,7 @@ const updateModelPoliciesInner$ = command(
         orgId: auth.orgId,
         userId: auth.userId,
         policies: body.data.policies,
+        revision: body.data.revision,
       },
       signal,
     );
@@ -64,6 +66,8 @@ const updateModelPoliciesInner$ = command(
       return badRequestMessage(result.message);
     }
 
+    await publishModelPoliciesChangedForOrgSafely(auth.orgId);
+    signal.throwIfAborted();
     return { status: 200 as const, body: result.data };
   },
 );

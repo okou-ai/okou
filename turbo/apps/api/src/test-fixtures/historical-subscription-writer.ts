@@ -6,6 +6,7 @@ import {
   modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
 import { secrets } from "@okouai/db/schema/secret";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { db } from "../lib/db";
 import { createStore } from "ccstate";
 import { createTestFixtureAgentRun$ } from "../signals/services/agent-runs-create.service";
@@ -28,6 +29,29 @@ function fixtureOwner(owner: HistoricalWriterOwner) {
     );
   }
   return { orgId: owner.orgId, userId: owner.userId };
+}
+
+/** Infrastructure exception: old admitted rows predate the nullable identity
+ * column and cannot be produced by today's admission endpoint. */
+export async function restorePreRecoveryRunIdentityFixture(
+  owner: HistoricalWriterOwner,
+  runId: string,
+  sourceLess: boolean,
+): Promise<void> {
+  const owned = fixtureOwner(owner);
+  await db()
+    .update(agentRuns)
+    .set({
+      modelProviderAccountIdentity: null,
+      ...(sourceLess ? { modelProviderId: null } : {}),
+    })
+    .where(
+      and(
+        eq(agentRuns.id, runId),
+        eq(agentRuns.userId, owned.userId),
+        eq(agentRuns.orgId, owned.orgId),
+      ),
+    );
 }
 
 /** Infrastructure exception: no API runs the bounded KMS migration. Reproduce

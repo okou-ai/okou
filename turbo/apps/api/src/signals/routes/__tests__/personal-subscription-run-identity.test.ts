@@ -5,6 +5,7 @@ import {
   historicalCodexRefreshFixture,
   historicalDeleteSubscriptionFixture,
   reencryptSubscriptionStoresFixture,
+  restorePreRecoveryRunIdentityFixture,
 } from "../../../test-fixtures/historical-subscription-writer";
 import { createHash, randomUUID } from "node:crypto";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
@@ -167,7 +168,7 @@ async function fixture(
   await support.updateFeatureSwitches(actor, {
     [FeatureSwitchKey.PiLoop]: false,
     [FeatureSwitchKey.PersonalModelProviderAccounts]: accountsEnabled,
-    [FeatureSwitchKey.PersonalSubscriptionPriority]: priorityEnabled,
+    [FeatureSwitchKey.PersonalSubscriptionPriority]: false,
   });
   mockClaudeCodeTokenEndpoint();
   const connected = historicalFirst
@@ -184,6 +185,9 @@ async function fixture(
       modelProviderId: null,
     },
   ]);
+  await support.updateFeatureSwitches(actor, {
+    [FeatureSwitchKey.PersonalSubscriptionPriority]: priorityEnabled,
+  });
   const agent = await bdd.createAgent(actor, {
     displayName: "Subscription identity",
     visibility: "private",
@@ -315,6 +319,339 @@ async function finish(
 }
 
 describe("personal subscription run identity", () => {
+  it("preserves proven singleton recovery while both UI switches remain off", async () => {
+    const f = await fixture("codex-oauth-token", false, false);
+    const runId = await f.start();
+    const claim = await f.claim(runId);
+    const captured = accountId(claim, f.type);
+    expect(captured).not.toBe(f.connected.id);
+    await finish(f.actor, runId, claim, "failed");
+    const requests: string[] = [];
+    server.use(
+      http.post(
+        "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume",
+        ({ request }) => {
+          requests.push(request.headers.get("chatgpt-account-id") ?? "missing");
+          return HttpResponse.json({ code: "reset", windows_reset: 1 });
+        },
+      ),
+    );
+    expect(
+      (
+        await support.readPersonalModelProviderAccount(
+          f.actor,
+          captured,
+          runId,
+          [200],
+        )
+      ).body,
+    ).toMatchObject({ id: captured });
+    expect(
+      (
+        await support.resetPersonalModelProviderAccount(
+          f.actor,
+          captured,
+          randomUUID(),
+          [200],
+          runId,
+        )
+      ).body,
+    ).toStrictEqual({ outcome: "reset" });
+    expect(requests).toStrictEqual(["identity-a"]);
+    expect(
+      (
+        await support.resetPersonalModelProviderAccount(
+          f.actor,
+          captured,
+          randomUUID(),
+          [404],
+        )
+      ).status,
+    ).toBe(404);
+    expect(requests).toStrictEqual(["identity-a"]);
+  });
+  it("rejects a recovery reset after a legacy writer replaces the already-read account", async () => {
+    const f = await fixture("codex-oauth-token");
+    const runId = await f.start();
+    const claim = await f.claim(runId);
+    const captured = accountId(claim, f.type);
+    await finish(f.actor, runId, claim, "failed");
+    expect((await runs.readRun(f.actor, runId)).source?.account).toStrictEqual({
+      status: "connected",
+      id: captured,
+    });
+    await writeHistoricalSubscription(f.actor, f.type, "identity-b", 2);
+    const requests: string[] = [];
+    server.use(
+      http.post(
+        "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume",
+        ({ request }) => {
+          requests.push(request.headers.get("chatgpt-account-id") ?? "missing");
+          return HttpResponse.json({ code: "reset", windows_reset: 1 });
+        },
+      ),
+    );
+    expect(
+      (
+        await support.resetPersonalModelProviderAccount(
+          f.actor,
+          captured,
+          randomUUID(),
+          [404],
+          runId,
+        )
+      ).status,
+    ).toBe(404);
+    expect(requests).toStrictEqual([]);
+  });
+  it.each([false, true])(
+    "keeps historical account identity unknown, source-less=%s",
+    async (sourceLess) => {
+      const f = await fixture("codex-oauth-token");
+      const runId = await f.start();
+      const claim = await f.claim(runId);
+      const captured = accountId(claim, f.type);
+      await finish(f.actor, runId, claim, "failed");
+      await restorePreRecoveryRunIdentityFixture(f.actor, runId, sourceLess);
+      expect((await runs.readRun(f.actor, runId)).source).toMatchObject({
+        providerType: f.type,
+        model: f.model,
+        credentialScope: "member",
+        account: { status: "unknown" },
+      });
+      const requests: string[] = [];
+      server.use(
+        http.post(
+          "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume",
+          ({ request }) => {
+            requests.push(request.url);
+            return HttpResponse.json({ code: "reset", windows_reset: 1 });
+          },
+        ),
+      );
+      expect(
+        (
+          await support.readPersonalModelProviderAccount(
+            f.actor,
+            captured,
+            runId,
+            [404],
+          )
+        ).status,
+      ).toBe(404);
+      expect(
+        (
+          await support.resetPersonalModelProviderAccount(
+            f.actor,
+            captured,
+            randomUUID(),
+            [404],
+            runId,
+          )
+        ).status,
+      ).toBe(404);
+      expect(requests).toStrictEqual([]);
+      const wrongMember = createBddApi(context).user({ orgId: f.actor.orgId });
+      expect(
+        (await runs.requestReadRun(wrongMember, runId, [404])).status,
+      ).toBe(404);
+      const wrongOrg = createBddApi(context).user();
+      expect((await runs.requestReadRun(wrongOrg, runId, [404])).status).toBe(
+        404,
+      );
+    },
+  );
+  it.each([false, true])(
+    "recovers failed A after active B and API policy changes with accounts UI=%s",
+    async (accountsEnabled) => {
+      const f = await fixture("codex-oauth-token");
+      const runId = await f.start();
+      const claim = await f.claim(runId);
+      const captured = accountId(claim, f.type);
+      await finish(f.actor, runId, claim, "failed");
+      const auth = createAuthDeviceApiActions(context);
+      mockCodexDeviceAuthProvider({
+        tokenScope: "personal",
+        accountId: "identity-b",
+      });
+      const started = await auth.requestCodexStart(f.actor, "personal", [200], {
+        mode: "add",
+      });
+      if (started.status !== 200) {
+        throw new Error("Expected device auth start");
+      }
+      const connected = await auth.requestCodexComplete(
+        f.actor,
+        started.body.sessionToken,
+        [200],
+      );
+      if (
+        !("status" in connected.body) ||
+        connected.body.status !== "complete"
+      ) {
+        throw new Error("Expected connected account B");
+      }
+      await support.activatePersonalModelProviderAccount(
+        f.actor,
+        connected.body.provider.id,
+      );
+      await configureOrganizationApi(f, "built-in");
+      await support.updateFeatureSwitches(f.actor, {
+        [FeatureSwitchKey.PersonalModelProviderAccounts]: accountsEnabled,
+      });
+      const listed = await support.listPersonalModelProviders(f.actor, [200]);
+      if (listed.status !== 200) {
+        throw new Error("Expected personal accounts");
+      }
+      if (!accountsEnabled) {
+        expect(listed.body.modelProviders).toHaveLength(1);
+        expect(listed.body.modelProviders[0]?.id).not.toBe(captured);
+        expect(listed.body.modelProviders[0]?.modelProviderId).toBeUndefined();
+      }
+      const observed: {
+        readonly path: string;
+        readonly account: string | null;
+      }[] = [];
+      for (const path of ["usage", "rate-limit-reset-credits"] as const) {
+        server.use(
+          http.get(
+            `https://chatgpt.com/backend-api/wham/${path}`,
+            ({ request }) => {
+              observed.push({
+                path,
+                account: request.headers.get("chatgpt-account-id"),
+              });
+              return HttpResponse.json(
+                path === "usage"
+                  ? {
+                      plan_type: "plus",
+                      rate_limit_reset_credits: { available_count: 1 },
+                    }
+                  : { credits: [] },
+              );
+            },
+          ),
+        );
+      }
+      const resetKeys: unknown[] = [];
+      server.use(
+        http.post(
+          "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume",
+          async ({ request }) => {
+            observed.push({
+              path: "consume",
+              account: request.headers.get("chatgpt-account-id"),
+            });
+            resetKeys.push(await request.json());
+            return HttpResponse.json({
+              code: resetKeys.length === 1 ? "reset" : "already_redeemed",
+              windows_reset: 1,
+            });
+          },
+        ),
+      );
+      expect((await runs.readRun(f.actor, runId)).source).toMatchObject({
+        providerType: f.type,
+        model: f.model,
+        credentialScope: "member",
+        account: { status: "connected", id: captured },
+      });
+      const exact = await support.readPersonalModelProviderAccount(
+        f.actor,
+        captured,
+        runId,
+        [200],
+      );
+      expect(exact.body).toMatchObject({
+        id: captured,
+        subscriptionResetCredits: 1,
+      });
+      const idempotencyKey = randomUUID();
+      const first = await support.resetPersonalModelProviderAccount(
+        f.actor,
+        captured,
+        idempotencyKey,
+        [200],
+        runId,
+      );
+      expect(first.body).toMatchObject({ outcome: "reset" });
+      const second = await support.resetPersonalModelProviderAccount(
+        f.actor,
+        captured,
+        idempotencyKey,
+        [200],
+        runId,
+      );
+      expect(second.body).toMatchObject({ outcome: "alreadyRedeemed" });
+      expect(resetKeys[1]).toStrictEqual(resetKeys[0]);
+      expect(
+        observed.map(({ account }) => {
+          return account;
+        }),
+      ).not.toContain("identity-b");
+      expect(
+        observed.some(({ path }) => {
+          return path === "consume";
+        }),
+      ).toBeTruthy();
+
+      const foreign = createBddApi(context).user({ orgId: f.actor.orgId });
+      expect(
+        (
+          await support.readPersonalModelProviderAccount(
+            foreign,
+            captured,
+            runId,
+            [404],
+          )
+        ).status,
+      ).toBe(404);
+      expect(
+        (
+          await support.resetPersonalModelProviderAccount(
+            foreign,
+            captured,
+            randomUUID(),
+            [404],
+            runId,
+          )
+        ).status,
+      ).toBe(404);
+      await support.updateFeatureSwitches(f.actor, {
+        [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+      });
+      await support.deletePersonalModelProviderAccount(f.actor, captured);
+      expect(
+        (await runs.readRun(f.actor, runId)).source?.account,
+      ).toStrictEqual({
+        status: "unavailable",
+      });
+      const beforeRejected = observed.length;
+      expect(
+        (
+          await support.readPersonalModelProviderAccount(
+            f.actor,
+            captured,
+            runId,
+            [404],
+          )
+        ).status,
+      ).toBe(404);
+      expect(
+        (
+          await support.resetPersonalModelProviderAccount(
+            f.actor,
+            captured,
+            randomUUID(),
+            [404],
+            runId,
+          )
+        ).status,
+      ).toBe(404);
+      expect(observed).toHaveLength(beforeRejected);
+    },
+  );
+
   it.each([
     [false, "completed"],
     [true, "completed"],
@@ -2495,7 +2832,12 @@ describe("member-effective model policy contract", () => {
     expect(administrative(before)).toStrictEqual(administrative(other));
     expect(JSON.stringify(before)).not.toContain(f.connected.id);
     expect(JSON.stringify(before)).not.toContain(f.connected.token);
-    const put = await misc.updateModelPolicies(f.actor, before.policies, [200]);
+    const put = await misc.updateModelPolicies(
+      f.actor,
+      before.policies,
+      [200],
+      before.revision,
+    );
     expect(put.body).toMatchObject({
       policies: [
         {

@@ -49,6 +49,7 @@ import {
 } from "../bootstrap/google-ads-paid-conversion.ts";
 import { currentLocale, i18n } from "../../i18n/index.ts";
 import { refreshOrgMembers$ } from "../external/org-members.ts";
+import { invalidateOrgModelPolicies$ } from "../external/org-model-policies.ts";
 import { sessionStorageSignals } from "../external/session-storage.ts";
 import {
   setUsagePackMigrationRevisionPreview$,
@@ -516,6 +517,7 @@ export const usagePackMigrationAsync$ = computed(
 
 /** Force a refetch of billing status (e.g. after onboarding creates the org row). */
 export const reloadBillingStatus$ = command(({ set }) => {
+  set(invalidateOrgModelPolicies$);
   set(billingReload$, (x) => {
     return x + 1;
   });

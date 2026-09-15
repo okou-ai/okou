@@ -181,6 +181,21 @@ export async function publishUserPreferenceChangedForUserSafely(
   } satisfies UserPreferenceChangedPayload);
 }
 
+/** Account notices contain no account identity or credentials. */
+export function publishPersonalModelProvidersChangedSafely(
+  userId: string,
+): Promise<void> {
+  return publishUserSignal([userId], "modelPoliciesChanged");
+}
+
+/** Publish only after the policy/provider transaction has committed. */
+export function publishModelPoliciesChangedForOrgSafely(
+  orgId: string,
+): Promise<void> {
+  waitUntil(bestEffort(publishOrgSignal(orgId, "modelPoliciesChanged")));
+  return Promise.resolve();
+}
+
 /**
  * Fire the per-user-org "thread list shape changed" signal. The SharedWorker
  * consumes this topic to invalidate its local thread-event view; the App then
