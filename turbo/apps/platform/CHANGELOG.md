@@ -11,6 +11,21 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.899.0](https://github.com/vm0-ai/vm0/compare/app-v0.898.0...app-v0.899.0) (2026-09-15)
+
+
+### Features
+
+* **attribution:** keep impact data exclusively in marketing ([#33929](https://github.com/vm0-ai/vm0/issues/33929)) ([d72ff4b](https://github.com/vm0-ai/vm0/commit/d72ff4b88be43dbc571777858d4b688140d9835c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.443.0
+    * @okouai/core bumped to 8.666.1
+
 ## [0.898.0](https://github.com/vm0-ai/vm0/compare/app-v0.897.0...app-v0.898.0) (2026-09-15)
 
 
