@@ -369,12 +369,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ReferenceImages]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Enable reusable private and organization-visible image references.",
-    enabled: false,
-  },
   // Every artifact privacy slice in #32492 uses this same rollout switch.
   [FeatureSwitchKey.PrivateArtifacts]: {
     maintainer: "yuma@okou.ai",
