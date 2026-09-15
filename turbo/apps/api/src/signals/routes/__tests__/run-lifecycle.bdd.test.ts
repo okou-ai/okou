@@ -83,6 +83,7 @@ import {
   setApiTestConnectorCatalogValidationAuthority,
 } from "../../../test-fixtures/connector-catalog";
 import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
+import { setHistoricalModelProviderSelectionFixture } from "../../../test-fixtures/model-provider-selection";
 import {
   cleanupOwnedSkillsState,
   seedCurrentSkillVersionsState,
@@ -6085,6 +6086,83 @@ describe("RUN-02: model provider selection and built-in admission", () => {
   });
 
   it.each([
+    undefined,
+    "deepseek-flash",
+    "deepseek-v4-flash",
+    "deepseek-v4-pro",
+  ] as const)(
+    "claims native DeepSeek with saved selection %s or the provider default",
+    async (selectedModel) => {
+      const api = createRunsApi(context);
+      const { actor, runnerGroup } = await entitledRunActor();
+      const { providerId } = await api.createOrgModelProvider(actor, {
+        type: "deepseek",
+        secret: "native-deepseek-key",
+      });
+      if (selectedModel !== undefined) {
+        // The current credential API cannot write a saved model. Seed the
+        // historical state to verify the default cannot overwrite it.
+        if (!actor.orgId) {
+          throw new Error(
+            "Expected a workspace for the native DeepSeek fixture",
+          );
+        }
+        await setHistoricalModelProviderSelectionFixture({
+          orgId: actor.orgId,
+          providerId,
+          selectedModel,
+        });
+      }
+      // Model-first chat supplies a canonical selection. The direct-run
+      // fixture exercises provider-default resolution without that override.
+      const compose = await api.createDirectAgent(actor, {
+        version: "1",
+        agents: { main: { framework: "codex" } },
+      });
+      const run = await api.createDirectRun(actor, {
+        agentId: compose.agentId,
+        modelProviderType: "deepseek",
+        prompt: "native DeepSeek provider selection",
+      });
+      await api.heartbeatRunner(runnerGroup);
+      const claim = await api.claimRunnerJob(run.runId);
+      const runtimeModel = selectedModel ?? "deepseek-flash";
+
+      expect(claim.environment).toMatchObject({
+        OPENAI_MODEL: runtimeModel,
+        OPENAI_BASE_URL: "https://api.deepseek.com/",
+      });
+      expect(claim.codexRuntimeConfig).toMatchObject({
+        providerId: "deepseek",
+        modelCatalog: {
+          models: expect.arrayContaining([
+            expect.objectContaining({
+              slug: runtimeModel,
+              input_modalities:
+                runtimeModel === "deepseek-v4-pro"
+                  ? ["text"]
+                  : ["text", "image"],
+            }),
+          ]),
+        },
+      });
+      const providers = await api.listOrgModelProviders(actor);
+      expect(
+        providers.find((provider) => {
+          return provider.id === providerId;
+        }),
+      ).toMatchObject({
+        selectedModel: selectedModel ?? null,
+      });
+      expect(claim.modelUsageProvider).toBe(
+        runtimeModel === "deepseek-flash" ? undefined : runtimeModel,
+      );
+      expect(claim.billableFirewalls).not.toContain("model-provider:deepseek");
+      await api.requestCancelRun(actor, run.runId, [200]);
+    },
+  );
+
+  it.each([
     "deepseek-v4-flash",
     "deepseek-v4-pro",
     "deepseek-v4.1-flash",
@@ -6154,9 +6232,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
           apply_patch_tool_type: "freeform",
           default_reasoning_level: "high",
           input_modalities:
-            selectedModel === "deepseek-v4.1-flash"
-              ? ["text", "image"]
-              : ["text"],
+            selectedModel === "deepseek-v4-pro" ? ["text"] : ["text", "image"],
           base_instructions: expect.stringContaining("You are Codex"),
           model_messages: expect.objectContaining({
             instructions_template: expect.stringContaining("You are Codex"),
@@ -6175,77 +6251,112 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       ).toContain("model-provider:deepseek");
       expect(claim.billableFirewalls).toContain("model-provider:deepseek");
       expect(claim.modelUsageProvider).toBe(selectedModel);
+      const token = claim.platformEnvironment.OKOU_TOKEN;
+      if (!token) {
+        throw new Error(
+          "Expected the native DeepSeek run to expose OKOU_TOKEN",
+        );
+      }
+      expect(
+        (claim.appendSystemPrompt ?? "").includes("okou image-recognition"),
+      ).toBe(selectedModel === "deepseek-v4-pro");
+      expect(
+        verifyOkouToken(token)?.capabilities.includes(
+          "image-recognition:write",
+        ),
+      ).toBe(selectedModel === "deepseek-v4-pro");
 
       await api.requestCancelRun(actor, sent.body.runId, [200]);
     },
   );
 
-  it("projects DeepSeek V4.1 Flash metadata for an OpenRouter workspace key", async () => {
-    const api = createRunsApi(context);
-    const chat = createChatFilesBddApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-    const { providerId } = await api.createOrgModelProvider(actor, {
-      type: "openrouter-codex",
-      secret: "openrouter-deepseek-v4-1-flash-key",
-    });
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "deepseek-v4.1-flash",
-        isDefault: true,
-        defaultProviderType: "openrouter-codex",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+  it.each(["deepseek-v4.1-flash", "deepseek-v4-flash"] as const)(
+    "projects DeepSeek %s metadata for an OpenRouter workspace key",
+    async (selectedModel) => {
+      const api = createRunsApi(context);
+      const chat = createChatFilesBddApi(context);
+      const { actor, agentId, runnerGroup } = await entitledRunActor();
+      const { providerId } = await api.createOrgModelProvider(actor, {
+        type: "openrouter-codex",
+        secret: "openrouter-deepseek-flash-key",
+      });
+      await api.updateOrgModelPolicies(actor, [
+        {
+          model: selectedModel,
+          isDefault: true,
+          defaultProviderType: "openrouter-codex",
+          credentialScope: "org",
+          modelProviderId: providerId,
+        },
+      ]);
 
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        prompt: "use DeepSeek V4.1 Flash through OpenRouter",
-        model: "deepseek-v4.1-flash",
-      },
-      [201],
-    );
-    if (sent.status !== 201 || sent.body.runId === null) {
-      throw new Error("Expected DeepSeek V4.1 Flash to create a run");
-    }
-    await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(sent.body.runId);
+      const sent = await chat.requestSendEvent(
+        actor,
+        {
+          agentId,
+          prompt: "use DeepSeek Flash through OpenRouter",
+          model: selectedModel,
+        },
+        [201],
+      );
+      if (sent.status !== 201 || sent.body.runId === null) {
+        throw new Error("Expected DeepSeek Flash to create a run");
+      }
+      await api.heartbeatRunner(runnerGroup);
+      const claim = await api.claimRunnerJob(sent.body.runId);
 
-    expect(claim.cliAgentType).toBe("codex");
-    expect(claim.environment).toMatchObject({
-      OPENAI_API_KEY: modelProviderPlaceholder(
-        "openrouter-codex",
-        "OPENROUTER_API_KEY",
-      ),
-      OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
-      OPENAI_MODEL: "deepseek/deepseek-v4.1-flash",
-    });
-    expect(claim.codexRuntimeConfig).toMatchObject({
-      providerId: "openrouter-codex",
-      baseUrl: "https://openrouter.ai/api/v1",
-      wireApi: "responses",
-      modelCatalog: {
-        models: [
-          expect.objectContaining({
-            slug: "deepseek/deepseek-v4.1-flash",
-            context_window: 1_048_576,
-            input_modalities: ["text", "image"],
-            apply_patch_tool_type: null,
-          }),
-        ],
-      },
-    });
-    expect(claim.modelUsageProvider).toBe("deepseek-v4.1-flash");
+      expect(claim.cliAgentType).toBe("codex");
+      expect(claim.environment).toMatchObject({
+        OPENAI_API_KEY: modelProviderPlaceholder(
+          "openrouter-codex",
+          "OPENROUTER_API_KEY",
+        ),
+        OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
+        OPENAI_MODEL: `deepseek/${selectedModel}`,
+      });
+      expect(claim.codexRuntimeConfig).toMatchObject({
+        providerId: "openrouter-codex",
+        baseUrl: "https://openrouter.ai/api/v1",
+        wireApi: "responses",
+        modelCatalog: {
+          models: [
+            expect.objectContaining({
+              slug: `deepseek/${selectedModel}`,
+              context_window: 1_048_576,
+              input_modalities:
+                selectedModel === "deepseek-v4.1-flash"
+                  ? ["text", "image"]
+                  : ["text"],
+              apply_patch_tool_type: null,
+            }),
+          ],
+        },
+      });
+      expect(claim.modelUsageProvider).toBe(selectedModel);
+      const token = claim.platformEnvironment.OKOU_TOKEN;
+      if (!token) {
+        throw new Error(
+          "Expected the OpenRouter DeepSeek run to expose OKOU_TOKEN",
+        );
+      }
+      expect(
+        (claim.appendSystemPrompt ?? "").includes("okou image-recognition"),
+      ).toBe(selectedModel === "deepseek-v4-flash");
+      expect(
+        verifyOkouToken(token)?.capabilities.includes(
+          "image-recognition:write",
+        ),
+      ).toBe(selectedModel === "deepseek-v4-flash");
 
-    await api.requestCancelRun(actor, sent.body.runId, [200]);
-  });
+      await api.requestCancelRun(actor, sent.body.runId, [200]);
+    },
+  );
 
   it("offers image recognition only for image-unsupported models", async () => {
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
-    const unsupportedModel = "deepseek-v4-flash";
+    const unsupportedModel = "deepseek-v4-pro";
+    const nativeFlashModel = "deepseek-v4-flash";
     const supportedModel = "claude-sonnet-5";
     const unknownModel = "gpt-5.6-sol";
     const { actor, agentId, runnerGroup } = await entitledRunActor();
@@ -6270,6 +6381,13 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       {
         model: unsupportedModel,
         isDefault: true,
+        defaultProviderType: "deepseek",
+        credentialScope: "org",
+        modelProviderId: deepseekProviderId,
+      },
+      {
+        model: nativeFlashModel,
+        isDefault: false,
         defaultProviderType: "deepseek",
         credentialScope: "org",
         modelProviderId: deepseekProviderId,
@@ -6324,6 +6442,20 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       "image-recognition:write",
     );
     await api.requestCancelRun(actor, unsupported.runId, [200]);
+
+    const nativeFlash = await claimModel(nativeFlashModel);
+    const nativeFlashToken = nativeFlash.claim.platformEnvironment.OKOU_TOKEN;
+    if (!nativeFlashToken) {
+      throw new Error("Expected the native Flash run to expose OKOU_TOKEN");
+    }
+    expect(nativeFlash.claim.appendSystemPrompt ?? "").not.toContain(
+      "okou image-recognition",
+    );
+    expect(verifyOkouToken(nativeFlashToken)?.capabilities).not.toContain(
+      "image-recognition:write",
+    );
+    expect(nativeFlash.claim.modelUsageProvider).toBe(nativeFlashModel);
+    await api.requestCancelRun(actor, nativeFlash.runId, [200]);
 
     const supported = await claimModel(supportedModel);
     const supportedToken = supported.claim.platformEnvironment.OKOU_TOKEN;
