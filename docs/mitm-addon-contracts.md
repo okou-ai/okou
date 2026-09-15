@@ -99,6 +99,10 @@ within its existing five-second connection deadline. A timeout or disconnect
 does not cancel admitted work or release its slot; owner completion does. Owner
 shutdown closes admission and cancels queued, not-yet-started work before the
 control server stops. No arbitrary worker mutates enforcement caches.
+The application owner records internal failures using only their exception type,
+even after the control waiter has timed out or stopped. Raw exceptions never
+enter the cross-thread application future; an active waiter receives the fixed
+`internal_error` response instead of an application receipt.
 
 The result contains `expectedDigest`, `state: applied|superseded|rejected`, and
 the actual `snapshot`. `applied` means the bytes actually loaded and compiled

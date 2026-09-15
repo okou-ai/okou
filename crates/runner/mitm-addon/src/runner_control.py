@@ -242,10 +242,10 @@ class ControlServer:
             return self._error(request_id, "invalid_request")
         if self._registry_owner is None:
             return self._error(request_id, "not_ready")
-        future = self._registry_owner.apply(digest)
-        if future is None:
-            return self._error(request_id, "busy")
         try:
+            future = self._registry_owner.apply(digest)
+            if future is None:
+                return self._error(request_id, "busy")
             async with asyncio.timeout(4.0):
                 result = await asyncio.shield(asyncio.wrap_future(future))
         except TimeoutError:
@@ -254,6 +254,8 @@ class ControlServer:
             addon_process_logging.emit_addon_process_event(
                 "error", f"Registry control application failed ({type(error).__name__})"
             )
+            return self._error(request_id, "internal_error")
+        if result is None:
             return self._error(request_id, "internal_error")
         return self._result(request_id, result)
 

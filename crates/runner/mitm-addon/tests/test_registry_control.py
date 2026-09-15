@@ -236,6 +236,51 @@ async def test_stalled_application_retains_admission_and_allows_status_and_logs(
         assert (await apply(tmp_path, expected))["state"] == "applied"
 
 
+@pytest.mark.parametrize("after_deadline", [False, True])
+async def test_internal_failure_remains_owned_and_redacted_after_waiter_deadline(
+    tmp_path, control, mitm_ctx, monkeypatch, caplog, after_deadline
+):
+    path = tmp_path / "registry.json"
+    write_simple_registry(path)
+    expected = digest(path)
+    inode = path.stat().st_ino
+    entered = threading.Event()
+    release = threading.Event()
+    real_read = os.read
+
+    def failed_read(fd, count):
+        if os.fstat(fd).st_ino == inode:
+            entered.set()
+            assert release.wait(10), "test peer did not release the filesystem read"
+            raise RuntimeError("private registry failure detail")
+        return real_read(fd, count)
+
+    def peer():
+        try:
+            with control_connection(tmp_path) as connection:
+                connection.sendall(frame(json.dumps(registry_apply_request(expected)).encode()))
+                assert entered.wait(5)
+                if after_deadline:
+                    assert read_reply(connection)["code"] == "deadline"
+                    assert exchange(tmp_path, registry_apply_request(expected))["code"] == "busy"
+                else:
+                    release.set()
+                    assert read_reply(connection)["code"] == "internal_error"
+        finally:
+            release.set()
+
+    with mitm_ctx(registry_path=str(path)) as log:
+        monkeypatch.setattr(os, "read", failed_read)
+        await asyncio.to_thread(peer)
+        monkeypatch.setattr(os, "read", real_read)
+        # A new real request proves the owner and control loop have progressed
+        # beyond the failed operation, including its completion callbacks.
+        assert (await apply(tmp_path, expected))["state"] == "applied"
+        assert "private registry failure detail" not in caplog.text
+        assert "exception was never retrieved" not in caplog.text
+        log.error.assert_called_once_with("Registry control application failed (RuntimeError)")
+
+
 async def test_shutdown_cancels_queued_application_without_loading_files(tmp_path, control):
     path = tmp_path / "registry.json"
     write_simple_registry(path)
