@@ -8290,6 +8290,7 @@ describe("CHAT-02: model-first provider policies", () => {
       },
       extraHeaders: {
         "content-type": "application/json",
+        "x-langfuse-ingestion-version": "3",
         "x-langfuse-public-key": "user-selected-dev-project",
         "x-untrusted-header": "must-not-be-forwarded",
       },
@@ -8301,6 +8302,7 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(exports[0]?.headers.get("authorization")).toBe(
       `Basic ${Buffer.from("pk-lf-bdd-trace-admission:sk-lf-bdd-trace-admission").toString("base64")}`,
     );
+    expect(exports[0]?.headers.get("x-langfuse-ingestion-version")).toBe("4");
     expect(exports[0]?.headers.get("x-langfuse-public-key")).toBeNull();
     expect(exports[0]?.headers.get("x-untrusted-header")).toBeNull();
     await accept(

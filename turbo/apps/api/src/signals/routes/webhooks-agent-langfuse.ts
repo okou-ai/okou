@@ -138,6 +138,8 @@ const exportTraces$ = command(async ({ get }, signal: AbortSignal) => {
           headers: {
             Authorization: `Basic ${Buffer.from(`${config.publicKey}:${config.secretKey}`).toString("base64")}`,
             "Content-Type": contentType,
+            // Native ingestion stores real spans without a synthetic trace root.
+            "x-langfuse-ingestion-version": "4",
             ...(contentEncoding ? { "Content-Encoding": contentEncoding } : {}),
           },
           body,

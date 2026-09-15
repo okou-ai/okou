@@ -363,6 +363,12 @@ change this destination or authentication. Existing trace and parent IDs are
 preserved, and sandbox-first handoffs now carry the deterministic Run End-to-End
 parent so their observations join the run trace even without an API model turn.
 
+The relay sets `x-langfuse-ingestion-version: 4` on its upstream request so
+Langfuse stores native observations without synthesizing an extra trace span.
+The API owns this version declaration; incoming headers cannot downgrade it.
+This staff-only feature requires v4 ingestion and has no legacy ingestion
+fallback or historical trace backfill.
+
 The API and its pinned CLI must ship together through the existing deployment
 pipeline. Existing Guests already pass the first-party API URL, run token, and
 trusted platform environment to that CLI; no Runner promotion is needed.
