@@ -125,6 +125,16 @@ async function modelPicker(name: string): Promise<HTMLElement> {
 }
 
 /**
+ * The menu's pages are the narrow viewport's layout: a desktop has the room the
+ * flyout's two panels need, so it takes those instead.
+ */
+function setNarrowViewport(): void {
+  context.mocks.browser.matchMedia((query) => {
+    return query === "(pointer: coarse)";
+  });
+}
+
+/**
  * Effort and Fast live on the composer now, so every test reaches them the way
  * a user does: through the control beside the model, not through a page inside
  * the model picker.
@@ -671,6 +681,7 @@ test("Let an existing thread send while model availability is reconciling", asyn
 });
 
 test("Switch chat models immediately and adjust Fast from settings", async () => {
+  setNarrowViewport();
   const user = userEvent.setup({ delay: null });
   installNewChat(["gpt-5.6-sol", "gpt-5.6-luna"], "gpt-5.6-sol");
   await setupPage({
@@ -722,6 +733,7 @@ test("Switch chat models immediately and adjust Fast from settings", async () =>
 });
 
 test("Keep immediate Fast changes when navigating back through the menu", async () => {
+  setNarrowViewport();
   const user = userEvent.setup({ delay: null });
   installNewChat(["gpt-5.6-sol", "gpt-5.6-luna"], "gpt-5.6-sol");
   await setupPage({
@@ -769,6 +781,7 @@ test("Keep immediate Fast changes when navigating back through the menu", async 
 });
 
 test("Keep unavailable routes disabled and open plan comparison from the compact menu", async () => {
+  setNarrowViewport();
   installNewChat(
     ["deepseek-v4-flash", "claude-fable-5-1", "gpt-5.6-sol"],
     "deepseek-v4-flash",
@@ -814,6 +827,7 @@ test("Keep unavailable routes disabled and open plan comparison from the compact
 // The pages are the narrow viewport's layout, so this walks them there; the
 // flyout's own keyboard walk is the desktop test below.
 test("Navigate the compact menu by keyboard and retain Fast after dismissal", async () => {
+  setNarrowViewport();
   const user = userEvent.setup({ delay: null });
   installNewChat(["gpt-5.6-sol"], "gpt-5.6-sol");
   await setupPage({
@@ -1067,6 +1081,7 @@ test("Select the default effort on an existing thread without changing Fast", as
 });
 
 test("Keep independent effort selections when changing models", async () => {
+  setNarrowViewport();
   const user = userEvent.setup({ delay: null });
   installNewChat(
     ["claude-sonnet-5", "gpt-5.6-sol", "gpt-5.5"],
@@ -1294,6 +1309,7 @@ test("Show the Pi fallback without overwriting a saved native preference", async
 });
 
 test("Save the preferred effort for future chats when Pi displays a fallback", async () => {
+  setNarrowViewport();
   const user = userEvent.setup({ delay: null });
   const updates: UpdateUserModelPreferenceRequest[] = [];
   installNewChat(["claude-sonnet-5", "gpt-5.6-sol"], "claude-sonnet-5");
