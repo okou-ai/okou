@@ -1756,11 +1756,27 @@ async function credentialValues(
   featureSwitchContext: FeatureSwitchContext,
 ): Promise<ReadonlyMap<string, string>> {
   const values = new Map<string, string>();
-  for (const row of rows) {
-    values.set(
-      row.name,
-      await decryptStoredSecretValue(row.encryptedValue, featureSwitchContext),
+  // Keep the locked snapshot and its connection until every started decrypt
+  // settles, including on failure/abort. Small batches bound KMS fan-out per
+  // bundle without a cross-request queue or plaintext cache.
+  for (let offset = 0; offset < rows.length; offset += 2) {
+    const batch = await Promise.allSettled(
+      rows.slice(offset, offset + 2).map(async (row) => {
+        return [
+          row.name,
+          await decryptStoredSecretValue(
+            row.encryptedValue,
+            featureSwitchContext,
+          ),
+        ] as const;
+      }),
     );
+    for (const result of batch) {
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+      values.set(...result.value);
+    }
   }
   return values;
 }

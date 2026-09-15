@@ -248,6 +248,16 @@ their percentiles must not be added to parent phase percentiles.
 Rotating refresh retains its existing single transaction/provider owner and
 checks the locked current bundle before spending the refresh token.
 
+Complete bundle materialization decrypts at most two stored fields concurrently
+under the same provider/credential owner. Each batch is joined before returning
+or propagating its first input-order failure; later batches do not start after
+failure. This adds no plaintext cache, early lock release, retry or transport
+cancellation. A slow sibling can extend error-return/lock-held time. Independent
+providers multiply this per-bundle fan-out; it is not a fleet-wide limit. See the
+[controlled experiment and limitations](subscription-decryption-experiment.md).
+Normal ciphertext equality and the exceptional serial equivalence proof remain
+unchanged, as do lazy environment preparation and database-only final admission.
+
 | Consumer                                                 | Coordination and observable boundary                                                                                                                                                                                                                                |
 | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Settings list / lazy seed                                | Coordinates before returning accounts. An unresolved active Claude identity reports existing reconnect guidance and does not fetch usage with stale credentials.                                                                                                    |

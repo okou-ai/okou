@@ -32,6 +32,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { holdSubscriptionKmsBatch } from "./helpers/subscription-kms-batch";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
@@ -1237,13 +1238,39 @@ describe("personal subscription run identity", () => {
         expires_in: 7200,
       });
     });
-    const responses = await Promise.all([
-      resolve(claim, f.type),
-      resolve(claim, f.type),
-    ]);
+    if (!f.actor.orgId) {
+      throw new Error("Expected an organization");
+    }
+    const orgId = f.actor.orgId;
+    const batch = holdSubscriptionKmsBatch(context.signal);
+    const requests: Promise<unknown>[] = [];
+    onTestFinished(async () => {
+      batch.release();
+      await Promise.allSettled(requests);
+      useSecretKmsProbe();
+      await runs.requestCancelRun(f.actor, runId, [200]);
+    });
+    const first = resolve(claim, f.type);
+    requests.push(first);
+    await batch.entered;
+    const second = resolve(claim, f.type);
+    requests.push(second);
+    await expect
+      .poll(async () => {
+        return await countWaitingPersonalSubscriptionMutationsFixture({
+          orgId,
+          userId: f.actor.userId,
+          type: f.type,
+        });
+      })
+      .toBeGreaterThan(0);
+    batch.release();
+    const responses = await Promise.all([first, second]);
     for (const headers of responses) {
       expect(headers.Authorization).toBe("Bearer refreshed-a");
+      expect(headers["ChatGPT-Account-ID"]).toBe("identity-a");
     }
+    expect(batch.active).toBe(0);
     expect(refreshes).toBe(1);
     expect(
       (
@@ -3123,6 +3150,222 @@ describe("personal effective provider entitlement", () => {
         }),
       });
       expect(missing.status).toBe(500);
+    },
+  );
+});
+
+describe("subscription bundle decryption ownership", () => {
+  it("joins a failed KMS batch before releasing the provider to disconnect", async () => {
+    const f = await fixture("codex-oauth-token");
+    const runId = await f.start();
+    const claim = await f.claim(runId);
+    const captured = accountId(claim, f.type);
+    if (!f.actor.orgId) {
+      throw new Error("Expected an organization");
+    }
+    const orgId = f.actor.orgId;
+    const batch = holdSubscriptionKmsBatch(context.signal);
+    const requests: Promise<unknown>[] = [];
+    onTestFinished(async () => {
+      batch.release();
+      await Promise.allSettled(requests);
+      useSecretKmsProbe();
+      await runs.requestCancelRun(f.actor, runId, [200]);
+    });
+    let responded = false;
+    const reading = firewall
+      .requestFirewallAuthRaw(JSON.stringify(authBody(claim, f.type)), {
+        authorization: `Bearer ${claim.sandboxToken}`,
+      })
+      .then((response) => {
+        responded = true;
+        return response;
+      });
+    requests.push(reading);
+    await batch.entered;
+    batch.failFirst();
+    const disconnecting = support.deletePersonalModelProviderAccount(
+      f.actor,
+      captured,
+    );
+    requests.push(disconnecting);
+    // Infrastructure-only synchronization: the API does not expose DB waiters.
+    await expect
+      .poll(async () => {
+        return await countWaitingPersonalSubscriptionMutationsFixture({
+          orgId,
+          userId: f.actor.userId,
+          type: f.type,
+        });
+      })
+      .toBeGreaterThan(0);
+    expect(responded).toBeFalsy();
+    expect(batch.active).toBe(1);
+    expect(batch.calls).toBe(3);
+    batch.release();
+    const denied = await reading;
+    await disconnecting;
+    expect(denied.status).toBe(500);
+    expect(denied.body).toStrictEqual({ error: "Internal server error" });
+    expect(batch.active).toBe(0);
+    expect(batch.peak).toBe(2);
+    expect(batch.calls).toBe(3);
+    useSecretKmsProbe();
+    // The failed read neither exposed credentials nor poisoned the next owner.
+    await expect(resolve(claim, f.type)).resolves.toMatchObject({
+      Authorization: `Bearer ${f.connected.token}`,
+      "ChatGPT-Account-ID": "identity-a",
+    });
+    expect(
+      (await support.listPersonalModelProviders(f.actor, [200])).body,
+    ).toMatchObject({ modelProviders: [] });
+  });
+
+  it.each([
+    "reconnect",
+    "activation",
+    "disconnect",
+    "membership",
+    "final-cancel",
+  ] as const)(
+    "preserves exact authority when %s waits behind delayed bundle decrypts",
+    async (mutation) => {
+      const f = await fixture("codex-oauth-token");
+      const runId = await f.start();
+      const claim = await f.claim(runId);
+      const captured = accountId(claim, f.type);
+      if (!f.actor.orgId) {
+        throw new Error("Expected an organization");
+      }
+      const orgId = f.actor.orgId;
+      let accountB: string | undefined;
+      if (mutation === "activation") {
+        const auth = createAuthDeviceApiActions(context);
+        mockCodexDeviceAuthProvider({
+          tokenScope: "personal",
+          accountId: "identity-b",
+        });
+        const started = await auth.requestCodexStart(
+          f.actor,
+          "personal",
+          [200],
+          { mode: "add" },
+        );
+        if (started.status !== 200) {
+          throw new Error("Expected device auth start");
+        }
+        const connected = await auth.requestCodexComplete(
+          f.actor,
+          started.body.sessionToken,
+          [200],
+        );
+        if (
+          !("status" in connected.body) ||
+          connected.body.status !== "complete"
+        ) {
+          throw new Error("Expected connected account B");
+        }
+        accountB = connected.body.provider.id;
+      }
+      if (mutation === "final-cancel") {
+        await support.deletePersonalModelProviderAccount(f.actor, captured);
+      }
+      const webhooks = createWebhookCallbackApi(context);
+      if (mutation === "membership") {
+        webhooks.configureClerkWebhookSecret();
+        webhooks.verifyNextClerkWebhook({
+          type: "organizationMembership.deleted",
+          data: {
+            id: f.actor.userId,
+            organization_id: orgId,
+            user_id: f.actor.userId,
+          },
+        });
+      }
+      const batch = holdSubscriptionKmsBatch(context.signal);
+      const requests: Promise<unknown>[] = [];
+      onTestFinished(async () => {
+        batch.release();
+        await Promise.allSettled(requests);
+        useSecretKmsProbe();
+        if (mutation !== "membership") {
+          await runs.requestCancelRun(f.actor, runId, [200]);
+        }
+      });
+      const reading = firewall.requestFirewallAuth(
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        authBody(claim, f.type),
+        [200, 400, 403, 424],
+      );
+      requests.push(reading);
+      await batch.entered;
+      let replacement: Awaited<ReturnType<typeof connect>> | undefined;
+      const mutate = async () => {
+        if (mutation === "reconnect") {
+          replacement = await connect(f.actor, f.type, "identity-a");
+        } else if (mutation === "activation" && accountB) {
+          await support.activatePersonalModelProviderAccount(f.actor, accountB);
+        } else if (mutation === "disconnect") {
+          await support.deletePersonalModelProviderAccount(f.actor, captured);
+        } else if (mutation === "membership") {
+          await webhooks.requestClerkWebhook("{}", {}, [200]);
+        } else {
+          await runs.requestCancelRun(f.actor, runId, [200]);
+        }
+      };
+      const writing = mutate();
+      requests.push(writing);
+      await expect
+        .poll(async () => {
+          return await countWaitingPersonalSubscriptionMutationsFixture({
+            orgId,
+            userId: f.actor.userId,
+            type: f.type,
+          });
+        })
+        .toBeGreaterThan(0);
+      batch.release();
+      const observed = await reading;
+      await writing;
+      await flushWaitUntilForTest();
+      expect(batch.active).toBe(0);
+      if (observed.status === 200) {
+        expect(observed.body.headers["ChatGPT-Account-ID"]).toBe("identity-a");
+        expect([
+          `Bearer ${f.connected.token}`,
+          ...(replacement ? [`Bearer ${replacement.token}`] : []),
+        ]).toContain(observed.body.headers.Authorization);
+      }
+      if (mutation === "membership" || mutation === "final-cancel") {
+        const denied = await firewall.requestFirewallAuth(
+          { authorization: `Bearer ${claim.sandboxToken}` },
+          authBody(claim, f.type),
+          [400, 401, 403, 424],
+        );
+        expect(denied.status).not.toBe(200);
+        if (mutation === "final-cancel") {
+          expect((await connect(f.actor, f.type, "identity-a")).id).not.toBe(
+            captured,
+          );
+        }
+      } else {
+        expect(observed.status).toBe(200);
+        await expect(resolve(claim, f.type)).resolves.toMatchObject({
+          Authorization: `Bearer ${replacement?.token ?? f.connected.token}`,
+          "ChatGPT-Account-ID": "identity-a",
+        });
+        if (mutation === "activation") {
+          const next = await f.start();
+          onTestFinished(async () => {
+            await runs.requestCancelRun(f.actor, next, [200]);
+          });
+          const nextClaim = await f.claim(next);
+          expect(accountId(nextClaim, f.type)).toBe(accountB);
+          await expect(resolve(nextClaim, f.type)).resolves.toMatchObject({
+            "ChatGPT-Account-ID": "identity-b",
+          });
+        }
+      }
     },
   );
 });
