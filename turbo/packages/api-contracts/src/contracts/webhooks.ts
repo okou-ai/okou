@@ -581,6 +581,16 @@ const piMemoryCitationTransportSchema = z
     }
   });
 
+const webhookSessionOutputBodySchema = z
+  .object({
+    runId: z.uuid(),
+    threadId: z.uuid(),
+    runEventId: z.string().min(1).max(512),
+    chunkIndex: z.number().int().nonnegative().max(4_294_967_295),
+    delta: z.string().min(1).max(4096),
+  })
+  .strict();
+
 const webhookEventsBodySchema = z
   .object({
     runId: z.string().min(1, "runId is required"),
@@ -711,6 +721,30 @@ export const webhookFirewallAuthContract = c.router({
       500: apiErrorSchema,
     },
     summary: "Resolve firewall auth templates",
+  },
+});
+
+/**
+ * Best-effort Sandbox session output contract.
+ *
+ * The sandbox token, rather than body fields, supplies the user and
+ * organization that own the realtime channel. The thread ID is only a client
+ * display hint inside that run-scoped channel. This path never enters durable
+ * event ingestion.
+ */
+export const webhookSessionOutputContract = c.router({
+  send: {
+    method: "POST",
+    path: "/api/webhooks/agent/session-output",
+    headers: authHeadersSchema,
+    body: webhookSessionOutputBodySchema,
+    responses: {
+      204: c.noBody(),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      503: apiErrorSchema,
+    },
+    summary: "Publish transient session output from sandbox",
   },
 });
 

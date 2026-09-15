@@ -44,6 +44,7 @@ mod line_reader;
 mod pi_event_delivery;
 mod pi_memory_citation;
 mod pi_rpc;
+mod pi_session_output;
 mod process_group;
 mod provider_event_normalization;
 mod reasoning_effort;
@@ -1245,8 +1246,22 @@ async fn execute_cli_inner(
     let (pi_rpc_startup_tx, pi_rpc_startup_rx) = tokio::sync::oneshot::channel();
     let mut pi_rpc_startup_tx = pi_rpc_execution.then_some(pi_rpc_startup_tx);
     let pi_rpc_cancellation = CancellationToken::new();
+    let pi_session_output = pi_rpc_execution
+        .then(|| {
+            pi_session_output::start(
+                http.clone(),
+                runtime.run_id.as_ref(),
+                runtime.pi_session_id.as_ref(),
+            )
+        })
+        .flatten();
     let mut pi_rpc_projection = pi_rpc_execution.then(|| {
-        pi_rpc::PiRpcProjection::new(runtime.run_id.as_ref(), runtime.pi_session_id.as_ref())
+        let projection =
+            pi_rpc::PiRpcProjection::new(runtime.run_id.as_ref(), runtime.pi_session_id.as_ref());
+        match pi_session_output {
+            Some(output) => projection.with_session_output(output),
+            None => projection,
+        }
     });
     let mut pi_rpc_startup_boundary = pi_rpc_execution.then(pi_rpc::PiRpcStartupBoundary::default);
     let mut stdin_write_handle = Some({
