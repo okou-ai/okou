@@ -1559,20 +1559,24 @@ describe("POST /api/webhooks/notion", () => {
       }
       await racingExecutionPromise;
     });
-    await notionReadStarted.promise;
-    await accept(
-      chatThreadConnectorSelectionsClient().update({
-        headers: authHeaders(),
-        params: { id: threadId },
-        body: {
-          connectionId: firstAccount.id,
-          target: { kind: "builtin", connectorSlug: "notion" },
-        },
-      }),
-      [200],
-    );
-    releaseNotionRead.resolve();
-    const racingExecution = await racingExecutionPromise;
+    const [racingExecution] = await Promise.all([
+      racingExecutionPromise,
+      (async () => {
+        await notionReadStarted.promise;
+        await accept(
+          chatThreadConnectorSelectionsClient().update({
+            headers: authHeaders(),
+            params: { id: threadId },
+            body: {
+              connectionId: firstAccount.id,
+              target: { kind: "builtin", connectorSlug: "notion" },
+            },
+          }),
+          [200],
+        );
+        releaseNotionRead.resolve();
+      })(),
+    ]);
     expect(racingExecution.body).toStrictEqual({
       success: true,
       executed: 0,
