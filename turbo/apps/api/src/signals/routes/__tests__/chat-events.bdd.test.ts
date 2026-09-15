@@ -8074,7 +8074,8 @@ describe("CHAT-02: model-first provider policies", () => {
     mockPiCheckpointObjectStore();
     mockOptionalEnv("LANGFUSE_PUBLIC_KEY", "pk-lf-bdd-trace-link");
     mockOptionalEnv("LANGFUSE_SECRET_KEY", "sk-lf-bdd-trace-link");
-    mockOptionalEnv("LANGFUSE_BASE_URL", "https://langfuse.example/");
+    mockOptionalEnv("LANGFUSE_BASE_URL", undefined);
+    mockOptionalEnv("LANGFUSE_PROJECT_ID", undefined);
     server.use(
       http.post("https://api.openai.com/v1/responses", () => {
         return new HttpResponse(piResponsesTextSse("Completed answer", 0), {
@@ -8108,7 +8109,7 @@ describe("CHAT-02: model-first provider policies", () => {
         [FeatureSwitchKey.LangfuseTrace]: false,
       },
     );
-    const traceUrl = `https://langfuse.example/trace/${traced.runId.replaceAll("-", "")}`;
+    const traceUrl = `https://us.cloud.langfuse.com/project/cmu0bvhcu012gad0drbw8ddts/traces/${traced.runId.replaceAll("-", "")}`;
     expect((await api.readRun(actor, traced.runId)).langfuseTraceUrl).toBe(
       traceUrl,
     );
@@ -8132,6 +8133,11 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     const peer = { ...actor, userId: `${actor.userId}_peer` };
     await api.requestReadRun(peer, traced.runId, [404]);
+    mockOptionalEnv("LANGFUSE_BASE_URL", "https://langfuse.example/");
+    mockOptionalEnv("LANGFUSE_PROJECT_ID", "  project-debug  ");
+    expect((await api.readRun(actor, traced.runId)).langfuseTraceUrl).toBe(
+      `https://langfuse.example/project/project-debug/traces/${traced.runId.replaceAll("-", "")}`,
+    );
     mockOptionalEnv("LANGFUSE_BASE_URL", "javascript:alert(1)");
     await expect(api.readRun(actor, traced.runId)).resolves.not.toHaveProperty(
       "langfuseTraceUrl",
