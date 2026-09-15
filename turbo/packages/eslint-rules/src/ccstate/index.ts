@@ -19,7 +19,7 @@
  * - no-getter-setter-params: Functions must not accept ccstate Getter/Setter — use command()
  * - no-accessor-escape: ccstate get/set accessors must only be called directly
  * - no-new-abort-controller: Disallow new AbortController() — use signal hierarchy
- * - no-create-child-abort-controller: Disallow createChildAbortController() lifecycle escape hatches
+ * - no-create-child-abort-controller: Prevent reintroducing imperative child ownership
  * - no-direct-local-storage: Disallow direct localStorage access — use localStorageSignals()
  * - no-direct-session-storage: Disallow direct sessionStorage access — use sessionStorageSignals()
  * - no-detach-in-signals: Disallow detach() in signals/ — use await or signal chain
