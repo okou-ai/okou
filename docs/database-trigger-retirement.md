@@ -197,11 +197,12 @@ verified through production HTTP routes and App pages.
 
 The 1132 release boundary above records the prepared artifact and enforced
 rollback floor. #34317 adds migration 1137 to remove the two physical invitation
-columns and removes the remaining client query opt-in. The final test cleanup
-must remain a draft until the
-[invitation contraction gate](deployment-compatibility.md#legacy-invitation-column-contraction-2026-09-15)
-records production release and committed journal evidence. Application rollback
-does not recreate the retired triggers or columns.
+columns and removes the remaining client query opt-in. Release #34303 shipped
+that contraction in API 1.604.0 / App 0.900.0. The
+[invitation production receipt](deployment-compatibility.md#legacy-invitation-column-contraction-2026-09-15)
+records the committed journal evidence, serving artifacts and supported rollback
+projection that permit the final test cleanup. Application rollback does not
+recreate the retired triggers or columns.
 
 The purchase, OAuth, hosting, and privacy work packages remain tracked in
 #33747. In particular, [the privacy implementation rollback](marketing-privacy-choices.md)

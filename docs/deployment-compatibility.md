@@ -1093,11 +1093,34 @@ Free-member support. Existing route coverage checks all-Free configuration
 without a query parameter; invitation admission continues to use normalized
 status and administrator authorization, and package controls use `showUsagePack`.
 
-The final #32575 cleanup is prepared as a separate draft after #34317. Its
-merge requires a production release containing migration 1137, a committed
-production journal frontier of at least `1789460587817`, and confirmation that
-serving and supported rollback APIs retain the canonical projection. Preparing
-or passing CI for the cleanup does not establish that production gate.
+The final #32575 cleanup follows production release [#34303](https://github.com/vm0-ai/vm0/pull/34303),
+which promoted API 1.604.0 and App 0.900.0 from
+`8a391b88833ae0b075c4df194010641955d4f936`. That actual artifact contains
+#34317. The release PR's earlier branch head does not contain #34317 and is
+not the production artifact used for this verification.
+
+The [API production job](https://github.com/vm0-ai/vm0/actions/runs/34957141130/job/104345191059)
+checked out that exact artifact and completed **Run Production Migrations** at
+**2026-09-15 10:31:12.0275988 UTC**. This is the real production completion,
+separate from the preceding smoke clone's 10:31:09.4559442 UTC completion. The
+artifact's final journal entry is 1137, `when=1789460587817`. Its 1137 SQL,
+migration runner and entry point are byte-identical to #34317: the runner awaits
+both column drops and the journal insertion in one transaction before the entry
+point prints `Migrations complete`. That acknowledged execution establishes the
+committed frontier and column contraction; no direct production journal or
+catalog SELECT is claimed.
+
+Fresh serving-alias reads resolve both `api.vm0.ai` and `api.okou.ai` to READY
+production deployment `dpl_AFZ3enCuHEt768R3HaqanNg8ZxtH` at that same artifact.
+The [App production job](https://github.com/vm0-ai/vm0/actions/runs/34957141130/job/104346013714)
+verified the immutable App artifact and assets, then completed promotion at
+10:33:12 UTC. The serving `https://app.okou.ai/` HTML reports that exact SHA and
+version 0.900.0. Current main still loads the rollback resolver from main and
+enforces API 1.600.1 at `eb2f211a9af41450d0d5dad10c0c8ad12fac0a24` as the
+prepared-writer floor. Both that floor and the serving API use the canonical
+entitlement mapping and return migration state without a query opt-in. The
+serving/rollback compatibility cycle covered by the invitation validators is
+complete.
 
 The cleanup removes both invitation transition validators, the frozen outgoing
 API projection, and the retained/trigger-free private-schema variants. Permanent
@@ -1106,8 +1129,7 @@ generated schemas. Historical `showUsagePack` backfill checks remain. Current AP
 coverage retains infrastructure failure/transaction cases and verifies
 persisted status normalization through the billing endpoint; existing invitation
 and page suites retain Free, suspended, administrator, reactivation and explicit
-`showUsagePack: false` behavior. Record the production evidence here before
-marking the cleanup ready, then close #32575 after its merge.
+`showUsagePack: false` behavior. Close #32575 after the final cleanup merges.
 
 ### Prepared billing, OAuth and hosting trigger contraction (2026-09-15)
 

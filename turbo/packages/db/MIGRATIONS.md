@@ -30,14 +30,18 @@ to the last migration in the most recent production release. When that removes a
 referenced migration tag from the journal, the consistency suite fails and the
 expired transition validator must be deleted.
 
-### Invitation cleanup merge gate
+### Retired invitation transition validators
 
 The #32575 cleanup removes the invitation transition validators and frozen
 outgoing API fixture after migration `1137_retire_legacy_invitation_columns`
-from #34317. Preparation of this cleanup is not a production completion receipt.
-Before merging it, record a production release containing #34317 and a committed
-journal frontier of at least `1789460587817`, confirm the serving/rollback
-compatibility cycle is complete, and pass the permanent coverage below.
+from #34317 shipped in API 1.604.0 / App 0.900.0. The
+[production receipt](../../../docs/deployment-compatibility.md#legacy-invitation-column-contraction-2026-09-15)
+records release #34303, the real production migration completion at
+2026-09-15 10:31:12.0275988 UTC, and the immutable runner/SQL evidence establishing
+the committed journal frontier `1789460587817` and column contraction. It also
+records current serving artifacts and the enforced canonical-only API rollback
+floor. This is execution evidence, not a direct production journal SELECT. The
+compatibility cycle is complete and the surviving coverage is permanent below.
 
 `test-org-plan-entitlement-permanent.ts` exercises canonical
 INSERT/UPSERT/SELECT/RETURNING, suspension/reactivation and explicit package
