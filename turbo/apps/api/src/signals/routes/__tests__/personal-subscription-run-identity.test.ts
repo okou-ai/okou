@@ -1309,6 +1309,46 @@ async function writeHistoricalSubscription(
 }
 
 describe("actual historical subscription writers", () => {
+  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
+    "converges first %s initialization from concurrent runs and settings",
+    async (type) => {
+      // Only an actual historical writer can leave a singleton without a
+      // concrete account. All observations below use production APIs.
+      const f = await fixture(type, true, false, true);
+      const [first, second, listed] = await Promise.all([
+        f.start(),
+        f.start(),
+        support.listPersonalModelProviders(f.actor, [200]),
+      ]);
+      const firstClaim = await f.claim(first);
+      const secondClaim = await f.claim(second);
+      const captured = accountId(firstClaim, type);
+      expect(captured).not.toBe(f.connected.id);
+      expect(accountId(secondClaim, type)).toBe(captured);
+      expect(listed.body).toMatchObject({
+        modelProviders: [
+          {
+            id: captured,
+            isActive: true,
+            ...(type === "codex-oauth-token"
+              ? { accountEmail: "identity-a@example.com" }
+              : {}),
+          },
+        ],
+      });
+      for (const claim of [firstClaim, secondClaim]) {
+        await expect(resolve(claim, type)).resolves.toMatchObject({
+          Authorization: `Bearer ${f.connected.token}`,
+          ...(type === "codex-oauth-token"
+            ? { "ChatGPT-Account-ID": "identity-a" }
+            : {}),
+        });
+      }
+      await runs.requestCancelRun(f.actor, first, [200]);
+      await runs.requestCancelRun(f.actor, second, [200]);
+    },
+  );
+
   it.each([false, true])(
     "returns 404 when exact reset itself imports a different old identity, priority=%s",
     async (priority) => {
@@ -2387,6 +2427,68 @@ describe("historical writer consumer fences", () => {
 });
 
 describe("historical exact selection and retained-only parent", () => {
+  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
+    "rejects an exact %s capture replaced during legacy coordination",
+    async (type) => {
+      const f = await fixture(type);
+      const replacement = await writeHistoricalSubscription(
+        f.actor,
+        type,
+        "identity-b",
+        2,
+      );
+      const rejected = await createHistoricalPinnedSubscriptionRunFixture(
+        {
+          owner: f.actor,
+          agentId: f.agentId,
+          accountId: f.connected.id,
+          type,
+          model: f.model,
+        },
+        context.signal,
+      );
+      expect(rejected.status).toBe(409);
+      const next = await f.start();
+      const claim = await f.claim(next);
+      expect(accountId(claim, type)).not.toBe(f.connected.id);
+      await expect(resolve(claim, type)).resolves.toMatchObject({
+        Authorization: `Bearer ${replacement.token}`,
+        ...(type === "codex-oauth-token"
+          ? { "ChatGPT-Account-ID": "identity-b" }
+          : {}),
+      });
+      await runs.requestCancelRun(f.actor, next, [200]);
+    },
+  );
+
+  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
+    "rejects missing and foreign %s sources without selecting the owned account",
+    async (type) => {
+      const f = await fixture(type);
+      const foreign = await fixture(type);
+      for (const sourceId of [randomUUID(), foreign.connected.id]) {
+        const rejected = await createHistoricalPinnedSubscriptionRunFixture(
+          {
+            owner: f.actor,
+            agentId: f.agentId,
+            accountId: sourceId,
+            type,
+            model: f.model,
+          },
+          context.signal,
+        );
+        expect(rejected.status).toBe(409);
+      }
+      const next = await f.start();
+      const claim = await f.claim(next);
+      expect(accountId(claim, type)).toBe(f.connected.id);
+      await expect(resolve(claim, type)).resolves.toMatchObject({
+        Authorization: `Bearer ${f.connected.token}`,
+      });
+      await runs.requestCancelRun(f.actor, next, [200]);
+    },
+  );
+
   it("admits a captured connected account while another account is active", async () => {
     const f = await fixture("codex-oauth-token");
     const auth = createAuthDeviceApiActions(context);
