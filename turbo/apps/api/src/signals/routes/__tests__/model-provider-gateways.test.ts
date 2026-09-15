@@ -221,41 +221,44 @@ describe("custom model provider gateway routes", () => {
     expect(afterDelete.body.connections).toStrictEqual([]);
   });
 
-  it.each([
+  it.each<{
+    name: string;
+    surface: CreateModelProviderConnectionRequest["surfaces"][number];
+  }>([
     {
       name: "non-HTTPS base URL",
       surface: {
-        protocol: "anthropic-messages" as const,
+        protocol: "anthropic-messages",
         apiBaseUrl: "http://gateway.example.com",
         authHeaderName: "Authorization",
         authHeaderTemplate: "Bearer {{secret}}",
-        modelMappings: {} as Record<string, string>,
+        modelMappings: {},
       },
     },
     {
       name: "protected auth header",
       surface: {
-        protocol: "anthropic-messages" as const,
+        protocol: "anthropic-messages",
         apiBaseUrl: "https://gateway.example.com",
         authHeaderName: "Host",
         authHeaderTemplate: "{{secret}}",
-        modelMappings: {} as Record<string, string>,
+        modelMappings: {},
       },
     },
     {
       name: "missing secret placeholder",
       surface: {
-        protocol: "anthropic-messages" as const,
+        protocol: "anthropic-messages",
         apiBaseUrl: "https://gateway.example.com",
         authHeaderName: "Authorization",
         authHeaderTemplate: "Bearer static",
-        modelMappings: {} as Record<string, string>,
+        modelMappings: {},
       },
     },
     {
       name: "retired GPT 5.5 model mapping",
       surface: {
-        protocol: "openai-responses" as const,
+        protocol: "openai-responses",
         apiBaseUrl: "https://gateway.example.com",
         authHeaderName: "Authorization",
         authHeaderTemplate: "Bearer {{secret}}",
@@ -265,7 +268,7 @@ describe("custom model provider gateway routes", () => {
     {
       name: "incompatible model mapping",
       surface: {
-        protocol: "anthropic-messages" as const,
+        protocol: "anthropic-messages",
         apiBaseUrl: "https://gateway.example.com",
         authHeaderName: "Authorization",
         authHeaderTemplate: "Bearer {{secret}}",
@@ -275,17 +278,14 @@ describe("custom model provider gateway routes", () => {
     {
       name: "retired GPT 5.5 upstream behind an active model mapping",
       surface: {
-        protocol: "openai-responses" as const,
+        protocol: "openai-responses",
         apiBaseUrl: "https://gateway.example.com",
         authHeaderName: "Authorization",
         authHeaderTemplate: "Bearer {{secret}}",
         modelMappings: { "gpt-5.6-sol": "openai/gpt-5.5" },
       },
     },
-  ] satisfies readonly {
-    name: string;
-    surface: CreateModelProviderConnectionRequest["surfaces"][number];
-  }[])("rejects $name", async ({ surface }) => {
+  ])("rejects $name", async ({ surface }) => {
     useSession();
     const response = await accept(
       mainClient().create({
