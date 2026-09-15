@@ -230,7 +230,7 @@ async fn execute_job_reuse_materializes_runner_owned_decoded_files_once() {
 
     let (outcome, telemetry) = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, task)
         .await
-        .expect("reused run should finish after proxy registration is released")
+        .expect("decoded-only reused run should finish without downloading the archive")
         .expect("reused execution task should not panic");
 
     assert_eq!(outcome.exit_code(), 0, "error={:?}", outcome.error());

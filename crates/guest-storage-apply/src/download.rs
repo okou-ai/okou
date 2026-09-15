@@ -458,9 +458,8 @@ fn panic_message(payload: &(dyn Any + Send)) -> String {
 /// Download and extract one archive. Files written before an error remain in place.
 fn run_download_attempt(download: &mut StartedDownload) -> Result<(), DownloadError> {
     if let Some(files) = &download.task.task.files {
-        return crate::files::materialize(files, download.task.effective_mount_path()).map_err(
-            |error| DownloadError::new(format!("Decoded storage write failed: {error}")),
-        );
+        return crate::files::materialize(files, download.task.effective_mount_path())
+            .map_err(|error| DownloadError::new(format!("Decoded storage write failed: {error}")));
     }
     download_and_extract(
         &download.task.task.url,

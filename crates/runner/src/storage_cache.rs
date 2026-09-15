@@ -4446,7 +4446,14 @@ mod tests {
         let certificates = fs::read(&cert_file).await.unwrap();
         fs::write(&cert_file, b"").await.unwrap();
 
-        for case in ["empty", "warm", "oversized", "lock-busy", "capacity"] {
+        for case in [
+            "empty",
+            "warm",
+            "decoded-only",
+            "oversized",
+            "lock-busy",
+            "capacity",
+        ] {
             let temp = tempfile::tempdir().unwrap();
             let home = home_at(&temp);
             let admission = FreshArchiveDeliveryAdmission::new();
@@ -4454,7 +4461,7 @@ mod tests {
             let storages = (0..if case == "empty" { 0 } else { 2 })
                 .map(|index| {
                     let name = format!("{case}-{index}");
-                    if case == "warm" {
+                    if matches!(case, "warm" | "decoded-only") {
                         write_cached_archive(&home, &name, "v1", &body);
                     }
                     storage_entry_with_archive_size(
@@ -4471,6 +4478,18 @@ mod tests {
                 })
                 .collect();
             let mut plan = plan_from_entries(storages, Vec::new(), None);
+            let decoded =
+                (case == "decoded-only").then(|| decoded::DecodedCache::new(home.clone()));
+            if let Some(cache) = &decoded {
+                for index in 0..2 {
+                    let name = format!("decoded-only-{index}");
+                    write_storage_lock(&home, &name, "v1");
+                    cache.warm_from_archive(&name, "v1").await.unwrap();
+                    fs::remove_file(home.storage_cache_dir(&name, "v1").join("archive.tar.gz"))
+                        .await
+                        .unwrap();
+                }
+            }
             let mut writers = Vec::new();
             if case == "lock-busy" {
                 for index in 0..2 {
@@ -4487,10 +4506,16 @@ mod tests {
                     .unwrap()
             });
 
-            let mut delivery =
-                prepare_fresh_archive_delivery(&plan, &home, &admission, &cancel, &mut telemetry)
-                    .await
-                    .unwrap_or_else(|error| panic!("{case} should not need a client: {error}"));
+            let mut delivery = prepare_fresh_archive_delivery(
+                &mut plan,
+                &home,
+                &admission,
+                &cancel,
+                &mut telemetry,
+                decoded.as_ref(),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{case} should not need a client: {error}"));
             if case == "warm" {
                 let sandbox = MockSandbox::new("test");
                 let deferred = populate_cache_with_fresh_delivery(
@@ -4499,6 +4524,7 @@ mod tests {
                     &home,
                     &mut telemetry,
                     Some(&mut delivery),
+                    None,
                 )
                 .await
                 .unwrap();
@@ -4518,6 +4544,33 @@ mod tests {
                         Some(format!("file://{path}").as_str())
                     );
                 }
+            }
+            if let Some(cache) = &decoded {
+                let sandbox = MockSandbox::new("decoded-only");
+                let deferred = populate_cache_with_fresh_delivery(
+                    &mut plan,
+                    &sandbox,
+                    &home,
+                    &mut telemetry,
+                    Some(&mut delivery),
+                    Some(cache),
+                )
+                .await
+                .unwrap();
+                assert!(deferred.is_none());
+                assert!(sandbox.write_files_calls().is_empty());
+                let files = plan.take_decoded();
+                assert_eq!(files.len(), 2);
+                for (index, (mount, cached)) in files.iter().enumerate() {
+                    assert_eq!(mount, &format!("/mnt/decoded-only-{index}"));
+                    assert_eq!(cached.files.len(), 1);
+                    assert_eq!(cached.files[0].path, "file.txt");
+                    assert_eq!(
+                        cached.files[0].content,
+                        b"storage cache test file\n".as_slice()
+                    );
+                }
+                cache.shutdown().await;
             }
             delivery.cancel_and_drain(&mut telemetry).await;
             drop(held_capacity);
@@ -4539,11 +4592,17 @@ mod tests {
             "v1",
             body.len() as u64,
         );
-        let error =
-            prepare_fresh_archive_delivery(&plan, &home, &admission, &cancel, &mut telemetry)
-                .await
-                .err()
-                .expect("an admitted miss still requires a valid client");
+        let error = prepare_fresh_archive_delivery(
+            &mut plan,
+            &home,
+            &admission,
+            &cancel,
+            &mut telemetry,
+            None,
+        )
+        .await
+        .err()
+        .expect("an admitted miss still requires a valid client");
         assert!(
             error
                 .to_string()
@@ -4559,10 +4618,16 @@ mod tests {
         // Restoring the CA store makes the same archive eligible again. A leaked
         // writer lock would skip this fetch; a cached failed client would fail it.
         fs::write(&cert_file, certificates).await.unwrap();
-        let mut delivery =
-            prepare_fresh_archive_delivery(&plan, &home, &admission, &cancel, &mut telemetry)
-                .await
-                .unwrap();
+        let mut delivery = prepare_fresh_archive_delivery(
+            &mut plan,
+            &home,
+            &admission,
+            &cancel,
+            &mut telemetry,
+            None,
+        )
+        .await
+        .unwrap();
         let sandbox = MockSandbox::new("test");
         assert!(
             populate_cache_with_fresh_delivery(
@@ -4571,6 +4636,7 @@ mod tests {
                 &home,
                 &mut telemetry,
                 Some(&mut delivery),
+                None,
             )
             .await
             .unwrap()
