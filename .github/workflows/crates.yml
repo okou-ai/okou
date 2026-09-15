@@ -572,6 +572,33 @@ jobs:
         working-directory: crates/runner/mitm-addon
         run: uv run --no-sync python -m pytest tests/ -v
 
+  mitm-addon-packaged-control:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    needs: [detect]
+    if: |
+      needs.detect.outputs.any-changed == 'true' ||
+      needs.detect.outputs.mitm-addon-test-inputs-changed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7
+        with:
+          python-version-file: crates/runner/mitm-addon/.python-version
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          working-directory: crates/runner/mitm-addon
+          enable-cache: true
+      - name: Sync locked environment
+        working-directory: crates/runner/mitm-addon
+        run: uv sync --locked
+      - name: Check packaged addon control lifecycle
+        shell: bash
+        run: bash .github/scripts/check-packaged-addon-control.sh
+
   nbd-cow-test:
     runs-on: ubuntu-latest
     container:
@@ -1126,6 +1153,7 @@ jobs:
       - api-contracts-rust-bindings
       - runner-firewall-contract-test
       - mitm-addon-test
+      - mitm-addon-packaged-control
       - runner-host-groups
       - runner-build
       - runner-image-architecture-manifest
@@ -1190,6 +1218,7 @@ jobs:
           check_result "api-contracts-rust-bindings" "${{ needs.api-contracts-rust-bindings.result }}" "true"
           check_result "runner-firewall-contract-test" "${{ needs.runner-firewall-contract-test.result }}" "true"
           check_result "mitm-addon-test" "${{ needs.mitm-addon-test.result }}" "true"
+          check_result "mitm-addon-packaged-control" "${{ needs.mitm-addon-packaged-control.result }}" "true"
           check_result "runner-host-groups" "${{ needs.runner-host-groups.result }}" "$RUNNER_IMAGE_ALLOW_SKIP"
           check_result "runner-build" "${{ needs.runner-build.result }}" "$RUNNER_IMAGE_ALLOW_SKIP"
           check_result "runner-image-architecture-manifest" "${{ needs.runner-image-architecture-manifest.result }}" "$OTHER_TARGETS_ALLOW_SKIP"
