@@ -29,10 +29,7 @@ const RAIL_ITEM_FRAME = "shrink-0 snap-start";
  * catalog of eighteen still finishes in about a fifth of a second: past the
  * first few the eye reads the row as one movement, not as a queue.
  */
-const RAIL_ITEM_ENTER = cn(
-  "motion-safe:animate-composer-rail-item-in",
-  "[animation-delay:calc(var(--rail-enter-index)*28ms)]",
-);
+const RAIL_ITEM_ENTER = "motion-safe:animate-composer-rail-item-in";
 const RAIL_ITEM_ENTER_CAP = 7;
 /**
  * Every shelf tile across the types: art in its own box, caption underneath and
