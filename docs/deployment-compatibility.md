@@ -154,6 +154,43 @@ apply; a failed cleanup blocks release and rolls back. #29777 removes the
 remaining singleton contract only after this migration release succeeds.
 Investigate unexpected new singleton writes rather than adding a cleanup loop.
 
+#### Slack connector OAuth rollout cleanup
+
+The combined Slack integration and user OAuth flow from
+[#33421](https://github.com/vm0-ai/vm0/pull/33421) first shipped in App `0.887.0`
+and API `1.584.1`, release
+`9ce193854ab828baeec40579a6d36cdf2d4dbf73`. Its
+[API promotion](https://github.com/vm0-ai/vm0/actions/runs/34578216432/job/103198883138)
+completed on 2026-09-11 at 08:30:58 UTC, followed by
+[App promotion](https://github.com/vm0-ai/vm0/actions/runs/34578216432/job/103199718280)
+at 08:33:05 UTC. App `0.886.0` still omitted `requestUserScopes`.
+
+On 2026-09-15, the production App HTML identified App `0.899.1` from
+`caa4352ddba6ef4b1912cbbb7838afb94ac4aa82`, whose
+[release](https://github.com/vm0-ai/vm0/actions/runs/34936717500) successfully
+promoted API `1.603.1` and the App. The canonical rollback resolver already
+requires `PREPARED_DOMAIN_TRIGGER_RELEASE`
+`eb2f211a9af41450d0d5dad10c0c8ad12fac0a24`, which contains #33421. Consequently,
+pre-OAuth APIs are outside the supported production rollback boundary without
+adding a new rollback restriction.
+
+The App now requires `202 { authorizationUrl }` from Slack Connect and follows
+that OAuth URL. It no longer accepts the old API's direct-connect `200` response.
+The API's no-field request and `200` contract remain for already-open old Apps:
+the production minimum App version was still `0.873.0` during verification.
+Read-only requests advertising `0.886.0` reached authentication (`401`), while
+`0.872.0` received `426`; being deployed does not retire those older pages.
+
+[#33474](https://github.com/vm0-ai/vm0/issues/33474) owns the remaining API
+cleanup after the App floor excludes pre-`0.887.0` builds. A floor change also
+affects their other handled API requests. Missing or unparseable versions and
+non-App callers are not excluded by that floor. Current repository production
+code has one caller, the App, which sends `requestUserScopes: true`; no CLI
+caller was found. The complete retained 72-hour request-log query ending
+2026-09-15 at 07:14:20 UTC contained one POST: App `0.893.2`, response `202`.
+That bounded observation found no non-App or unidentified POST, but does not
+establish a permanent absence of external callers.
+
 ### Backend
 
 The backend is the compatibility boundary for both frontend and runner traffic.
