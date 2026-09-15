@@ -8,7 +8,7 @@ import { expect, test, vi } from "vitest";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { createChildAbortController } from "../../../signals/utils.ts";
+import { resetSignal } from "../../../signals/utils.ts";
 import { AGENT_ID } from "./chat-lifecycle-test-helpers.ts";
 import {
   assistantEvent,
@@ -26,8 +26,7 @@ import {
 
 const refreshedContext = testContext();
 
-function unloadVoicePage(page: AbortController): void {
-  page.abort(new DOMException("Page reloaded", "AbortError"));
+function releasePageDom() {
   cleanup();
   vi.mocked(window.history.pushState).mockRestore();
   vi.mocked(window.history.replaceState).mockRestore();
@@ -693,8 +692,11 @@ test.each([
 ])(
   "Restore a retryable recording at $path after $recovery (failed: $failed)",
   async ({ path, failed, recovery }) => {
-    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-    const initialPage = createChildAbortController(context.signal);
+    const resetInitialPage$ = resetSignal();
+    const initialPageSignal = context.store.set(
+      resetInitialPage$,
+      context.signal,
+    );
     const firstRequest = context.mocks.deferred<void>();
     const firstResponse = context.mocks.deferred<void>();
     const recordings: ArrayBuffer[] = [];
@@ -733,7 +735,7 @@ test.each([
     );
     installRunChat();
     await setupPage({
-      context: { ...context, signal: initialPage.signal },
+      context: { ...context, signal: initialPageSignal },
       path,
     });
     click(await findEnabledButton("Voice input"));
@@ -749,7 +751,8 @@ test.each([
       await screen.findByRole("heading", { name: "Agents" });
     } else {
       // A browser reload ends the old page's daemons as well as its React tree.
-      unloadVoicePage(initialPage);
+      context.store.set(resetInitialPage$);
+      releasePageDom();
     }
     if (!failed) {
       firstResponse.resolve(undefined);
@@ -810,8 +813,11 @@ test("Keep a saved voice recording isolated from another signed-in user", async 
 });
 
 test("Discard a failed recording without removing typed notes", async () => {
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const initialPage = createChildAbortController(context.signal);
+  const resetInitialPage$ = resetSignal();
+  const initialPageSignal = context.store.set(
+    resetInitialPage$,
+    context.signal,
+  );
   context.mocks.browser.voiceInput({ rms: 0.12 });
   installAvailableVoiceQuota();
   context.mocks.http.post("*/api/voice-io/transcribe/segment", () => {
@@ -827,7 +833,7 @@ test("Discard a failed recording without removing typed notes", async () => {
   });
   installRunChat();
   await setupPage({
-    context: { ...context, signal: initialPage.signal },
+    context: { ...context, signal: initialPageSignal },
     path: RUN_PATH,
   });
   const voiceInput = await readyVoiceInput();
@@ -845,7 +851,8 @@ test("Discard a failed recording without removing typed notes", async () => {
 
   click(await findLink("Agents"));
   await screen.findByRole("heading", { name: "Agents" });
-  unloadVoicePage(initialPage);
+  context.store.set(resetInitialPage$);
+  releasePageDom();
   await setupPage({
     context: refreshedContext,
     path: RUN_PATH,

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.194.3](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.194.2...runner-rs-v0.194.3) (2026-09-15)
+
+
+### Bug Fixes
+
+* **runner:** prevent addon stderr backpressure from blocking proxy hooks ([#34351](https://github.com/vm0-ai/vm0/issues/34351)) ([2119c7c](https://github.com/vm0-ai/vm0/commit/2119c7c6d465c35c1dd2b283931c298505d441fb))
+
 ## [0.194.2](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.194.1...runner-rs-v0.194.2) (2026-09-15)
 
 

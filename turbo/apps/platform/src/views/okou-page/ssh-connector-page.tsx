@@ -49,7 +49,22 @@ import {
   mountSshPrivateKey$,
   mountSshForm$,
   sshPrivateKeyFileResult$,
+  sshCloudflareEnabled$,
+  sshCloudflareConfigs$,
+  sshTransportEditor$,
+  chooseSshTransport$,
+  sshAccessCreateStep$,
+  closeSshAccessStep$,
+  saveSshCloudflare$,
+  mountSshAccessForm$,
 } from "../../signals/ssh.ts";
+import {
+  AccessFields,
+  AccessImpact,
+  AccessSelection,
+  CloudflareAccessConfigs,
+  SshConflictReview,
+} from "./ssh-cloudflare-access.tsx";
 import {
   SSH_PASSWORD_MAX_LENGTH,
   type SshCredentialResponse,
@@ -70,10 +85,18 @@ import {
 
 function EndpointFields({
   connection,
+  disabled,
+  active,
 }: {
   readonly connection: SshConnectionResponse | null;
+  readonly disabled: boolean;
+  readonly active: boolean;
 }) {
   const { t } = useTranslation();
+  const enabled = useGet(sshCloudflareEnabled$);
+  const editor = useGet(sshTransportEditor$);
+  const choose = useSet(chooseSshTransport$);
+  const protectedHost = editor.mode === "cloudflare_access";
   return (
     <fieldset className="grid min-w-0 gap-4">
       <legend className="mb-3 text-sm font-semibold">
@@ -93,10 +116,37 @@ function EndpointFields({
           defaultValue={connection?.displayName}
         />
       </label>
+      {(enabled || (connection && "transport" in connection)) && (
+        <div className="grid gap-2">
+          <span id="ssh-connection-mode">
+            {t(($) => {
+              return $.ssh.cloudflare.mode;
+            })}
+          </span>
+          <SegmentControl
+            className="justify-self-start"
+            aria-labelledby="ssh-connection-mode"
+            disabled={disabled}
+            value={editor.mode}
+            onValueChange={choose}
+          >
+            <SegmentControlItem value="direct">
+              {t(($) => {
+                return $.ssh.cloudflare.direct;
+              })}
+            </SegmentControlItem>
+            <SegmentControlItem value="cloudflare_access" disabled={!enabled}>
+              {t(($) => {
+                return $.ssh.cloudflare.title;
+              })}
+            </SegmentControlItem>
+          </SegmentControl>
+        </div>
+      )}
       <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_6rem]">
         <label className="grid gap-2">
           {t(($) => {
-            return $.ssh.host;
+            return protectedHost ? $.ssh.cloudflare.publishedHost : $.ssh.host;
           })}
           <Input
             name="host"
@@ -106,21 +156,28 @@ function EndpointFields({
             defaultValue={connection?.host}
           />
         </label>
-        <label className="grid gap-2">
+        <label
+          hidden={protectedHost}
+          className={protectedHost ? "hidden" : "grid gap-2"}
+        >
           {t(($) => {
             return $.ssh.port;
           })}
           <Input
             name="port"
+            disabled={protectedHost}
             type="number"
             className="[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
             required
             min={1}
             max={65_535}
-            defaultValue={connection?.port ?? 22}
+            defaultValue={
+              connection && !("transport" in connection) ? connection.port : 22
+            }
           />
         </label>
       </div>
+      {protectedHost && <AccessSelection disabled={disabled} active={active} />}
     </fieldset>
   );
 }
@@ -488,31 +545,260 @@ function useDialogCopy(kind: SshDialogState["kind"] | undefined) {
         }),
       };
     }
+    case "create-access": {
+      return {
+        title: t(($) => {
+          return $.ssh.cloudflare.add;
+        }),
+        description: null,
+      };
+    }
+    case "rename-access": {
+      return {
+        title: t(($) => {
+          return $.ssh.cloudflare.rename;
+        }),
+        description: null,
+      };
+    }
+    case "replace-access": {
+      return {
+        title: t(($) => {
+          return $.ssh.cloudflare.replace;
+        }),
+        description: null,
+      };
+    }
+    case "delete-access": {
+      return {
+        title: t(($) => {
+          return $.ssh.cloudflare.delete;
+        }),
+        description: t(($) => {
+          return $.ssh.cloudflare.deleteHelp;
+        }),
+      };
+    }
     case undefined: {
       return { title: "", description: null };
     }
   }
 }
 
-function SshDialog() {
+interface SshFormProps {
+  readonly dialog: SshDialogState;
+  readonly isSaving: boolean;
+  readonly save: (form: FormData, signal: AbortSignal) => Promise<void>;
+}
+
+function SshFormActions({
+  isSaving,
+  blocked,
+  destructive,
+  title,
+  accessStep = false,
+}: {
+  readonly isSaving: boolean;
+  readonly blocked: boolean;
+  readonly destructive: boolean;
+  readonly title: string;
+  readonly accessStep?: boolean;
+}) {
   const { t } = useTranslation();
-  const data = useLoadable(sshDialog$);
   const close = useSet(closeSshDialog$);
-  const [saving, save] = useLoadableSet(saveSsh$);
-  const mountForm = useSet(mountSshForm$);
-  const signal = useGet(pageSignal$);
+  const closeStep = useSet(closeSshAccessStep$);
+  return (
+    <div className="flex justify-end gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        disabled={isSaving}
+        onClick={accessStep ? closeStep : close}
+      >
+        {accessStep
+          ? t(($) => {
+              return $.ssh.cloudflare.back;
+            })
+          : t(($) => {
+              return $.ssh.cancel;
+            })}
+      </Button>
+      <Button
+        type="submit"
+        disabled={blocked}
+        variant={destructive ? "destructive" : "default"}
+      >
+        {isSaving
+          ? t(($) => {
+              return $.connectors.actions.saving;
+            })
+          : destructive
+            ? title
+            : t(($) => {
+                return $.ssh.save;
+              })}
+      </Button>
+    </div>
+  );
+}
+
+function useSshHostSaveBlocked(dialog: SshDialogState, isSaving: boolean) {
+  const enabled = useGet(sshCloudflareEnabled$);
+  const configs = useLoadable(sshCloudflareConfigs$);
+  const transport = useGet(sshTransportEditor$);
+  const conflict = useGet(sshConflict$);
   const fileResult = useLoadable(sshPrivateKeyFileResult$);
   const credentials = useLoadable(sshCredentials$);
-  const dialog = data.state === "hasData" ? data.data : null;
-  const { title, description } = useDialogCopy(dialog?.kind);
-  const isSaving = saving.state === "loading";
-  if (!dialog) {
-    return null;
-  }
+  const hostEditor = dialog.kind === "create" || dialog.kind === "edit";
+  const unavailableProtectedHost =
+    dialog.connection !== null &&
+    "transport" in dialog.connection &&
+    (!enabled || (configs.state === "hasData" && configs.data === null));
+  const invalidAccess =
+    hostEditor &&
+    transport.mode === "cloudflare_access" &&
+    (!enabled ||
+      configs.state !== "hasData" ||
+      !configs.data?.some((config) => {
+        return config.id === transport.configId;
+      }));
+  const invalidCredential =
+    hostEditor &&
+    (credentials.state !== "hasData" || credentials.data === null);
+  return (
+    isSaving ||
+    fileResult.state === "loading" ||
+    unavailableProtectedHost ||
+    invalidAccess ||
+    invalidCredential ||
+    !!conflict
+  );
+}
+
+function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
+  const accessStep = useGet(sshAccessCreateStep$);
+  const mountForm = useSet(mountSshForm$);
+  const signal = useGet(pageSignal$);
+  const blocked = useSshHostSaveBlocked(dialog, isSaving);
+  const { title } = useDialogCopy(dialog.kind);
   const hostEditor = dialog.kind === "create" || dialog.kind === "edit";
   const destructive = ["delete", "reset", "delete-credential"].includes(
     dialog.kind,
   );
+  return (
+    <form
+      ref={mountForm}
+      hidden={accessStep}
+      className={accessStep ? "hidden" : "grid gap-4"}
+      autoComplete="off"
+      aria-busy={isSaving}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (blocked || accessStep) {
+          return;
+        }
+        // Keep retryable input only in this form, never in ccstate or caches.
+        detach(
+          save(new FormData(event.currentTarget), signal),
+          Reason.DomCallback,
+        );
+      }}
+    >
+      {!destructive && (
+        <fieldset
+          disabled={isSaving || accessStep}
+          className="grid min-w-0 gap-4"
+        >
+          {hostEditor ? (
+            <>
+              <EndpointFields
+                connection={dialog.connection}
+                disabled={isSaving || accessStep}
+                active={!accessStep}
+              />
+              <div aria-hidden="true" className="h-px bg-divider" />
+              <CredentialSelection disabled={isSaving} />
+            </>
+          ) : (
+            <CredentialFields
+              credential={dialog.credential}
+              disabled={isSaving}
+            />
+          )}
+        </fieldset>
+      )}
+      {dialog.credential && <CredentialImpact credential={dialog.credential} />}
+      <SshConflictReview />
+      <SshFormActions
+        isSaving={isSaving}
+        blocked={blocked}
+        destructive={destructive}
+        title={title}
+      />
+    </form>
+  );
+}
+
+function SshAccessForm({ dialog, isSaving, save }: SshFormProps) {
+  const mountForm = useSet(mountSshAccessForm$);
+  const signal = useGet(pageSignal$);
+  const accessStep = useGet(sshAccessCreateStep$);
+  const conflict = useGet(sshConflict$);
+  const { title } = useDialogCopy(accessStep ? "create-access" : dialog.kind);
+  const destructive = dialog.kind === "delete-access";
+  return (
+    <form
+      ref={mountForm}
+      className="grid gap-4"
+      autoComplete="off"
+      aria-busy={isSaving}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!isSaving && !conflict) {
+          detach(
+            save(new FormData(event.currentTarget), signal),
+            Reason.DomCallback,
+          );
+        }
+      }}
+    >
+      {!destructive && (
+        <fieldset disabled={isSaving} className="grid min-w-0 gap-4">
+          <AccessFields
+            config={accessStep ? null : dialog.config}
+            replace={dialog.kind === "replace-access"}
+          />
+        </fieldset>
+      )}
+      {dialog.config && <AccessImpact config={dialog.config} />}
+      <SshConflictReview />
+      <SshFormActions
+        isSaving={isSaving}
+        blocked={isSaving || !!conflict}
+        destructive={destructive}
+        title={title}
+        accessStep={accessStep}
+      />
+    </form>
+  );
+}
+
+function SshDialog() {
+  const data = useLoadable(sshDialog$);
+  const close = useSet(closeSshDialog$);
+  const [saving, save] = useLoadableSet(saveSsh$);
+  const [accessSaving, saveAccess] = useLoadableSet(saveSshCloudflare$);
+  const accessStep = useGet(sshAccessCreateStep$);
+  const dialog = data.state === "hasData" ? data.data : null;
+  const { title, description } = useDialogCopy(
+    accessStep ? "create-access" : dialog?.kind,
+  );
+  const isSaving =
+    saving.state === "loading" || accessSaving.state === "loading";
+  if (!dialog) {
+    return null;
+  }
+  const accessEditor = dialog.kind.endsWith("-access");
   return (
     <Dialog
       open
@@ -523,81 +809,22 @@ function SshDialog() {
       }}
     >
       <DialogContent
-        key={`${dialog.identity}:${dialog.kind}:${dialog.connection?.id ?? dialog.credential?.id ?? "new"}`}
+        key={`${dialog.identity}:${dialog.kind}:${dialog.connection?.id ?? dialog.credential?.id ?? dialog.config?.id ?? "new"}`}
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>
-        <form
-          ref={mountForm}
-          className="grid gap-4"
-          autoComplete="off"
-          aria-busy={isSaving}
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (isSaving) {
-              return;
-            }
-            // Keep retryable input only in this form, never in ccstate or caches.
-            const values = new FormData(event.currentTarget);
-            detach(save(values, signal), Reason.DomCallback);
-          }}
-        >
-          {!destructive && (
-            <fieldset disabled={isSaving} className="grid min-w-0 gap-4">
-              {hostEditor ? (
-                <>
-                  <EndpointFields connection={dialog.connection} />
-                  <div aria-hidden="true" className="h-px bg-divider" />
-                  <CredentialSelection disabled={isSaving} />
-                </>
-              ) : (
-                <CredentialFields
-                  credential={dialog.credential}
-                  disabled={isSaving}
-                />
-              )}
-            </fieldset>
-          )}
-          {dialog.credential && (
-            <CredentialImpact credential={dialog.credential} />
-          )}
-          <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isSaving}
-              onClick={() => {
-                return close();
-              }}
-            >
-              {t(($) => {
-                return $.ssh.cancel;
-              })}
-            </Button>
-            <Button
-              type="submit"
-              disabled={
-                [saving.state, fileResult.state].includes("loading") ||
-                (hostEditor &&
-                  (credentials.state !== "hasData" ||
-                    credentials.data === null))
-              }
-              variant={destructive ? "destructive" : "default"}
-            >
-              {isSaving
-                ? t(($) => {
-                    return $.connectors.actions.saving;
-                  })
-                : destructive
-                  ? title
-                  : t(($) => {
-                      return $.ssh.save;
-                    })}
-            </Button>
-          </div>
-        </form>
+        {!accessEditor && (
+          <SshHostForm dialog={dialog} isSaving={isSaving} save={save} />
+        )}
+        {(accessEditor || accessStep) && (
+          <SshAccessForm
+            dialog={dialog}
+            isSaving={isSaving}
+            save={saveAccess}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -611,6 +838,19 @@ function HostCard({
   const { t } = useTranslation();
   const open = useSet(openSshDialog$);
   const signal = useGet(pageSignal$);
+  const enabled = useGet(sshCloudflareEnabled$);
+  const configs = useLoadable(sshCloudflareConfigs$);
+  const configId =
+    "transport" in connection ? connection.transport.configId : null;
+  const unavailable =
+    configId !== null &&
+    (!enabled || (configs.state === "hasData" && configs.data === null));
+  const config =
+    configs.state === "hasData"
+      ? configs.data?.find((value) => {
+          return value.id === configId;
+        })
+      : null;
   return (
     <article className="grid gap-3 rounded-xl border bg-card p-5">
       <h2 className="font-semibold">{connection.displayName}</h2>
@@ -624,6 +864,24 @@ function HostCard({
       <p className="break-all text-sm">
         {connection.username}@{connection.host}:{connection.port}
       </p>
+      {configId && (
+        <p className="text-sm text-muted-foreground">
+          {unavailable
+            ? t(($) => {
+                return $.ssh.cloudflare.unavailable;
+              })
+            : config
+              ? t(
+                  ($) => {
+                    return $.ssh.cloudflare.protectedHost;
+                  },
+                  { name: config.name },
+                )
+              : t(($) => {
+                  return $.ssh.cloudflare.title;
+                })}
+        </p>
+      )}
       <p className="break-all text-sm">
         {connection.learnedHostKey ? (
           <>
@@ -642,6 +900,7 @@ function HostCard({
       <div className="flex flex-wrap gap-2">
         <Button
           variant="outline"
+          disabled={unavailable}
           onClick={() => {
             return detach(open("edit", connection, signal), Reason.DomCallback);
           }}
@@ -652,7 +911,7 @@ function HostCard({
         </Button>
         <Button
           variant="outline"
-          disabled={!connection.learnedHostKey}
+          disabled={unavailable || !connection.learnedHostKey}
           onClick={() => {
             return detach(
               open("reset", connection, signal),
@@ -666,6 +925,7 @@ function HostCard({
         </Button>
         <Button
           variant="outline"
+          disabled={unavailable}
           onClick={() => {
             return detach(
               open("delete", connection, signal),
@@ -888,6 +1148,7 @@ export function SshConnectorPage() {
   const { t } = useTranslation();
   const view = useGet(sshView$);
   const changeView = useSet(changeSshView$);
+  const accessEnabled = useGet(sshCloudflareEnabled$);
   return (
     <DetailPageShell>
       <DetailPageBreadcrumbBar>
@@ -948,9 +1209,22 @@ export function SshConnectorPage() {
                 return $.ssh.credentialsTab;
               })}
             </SegmentControlItem>
+            {accessEnabled && (
+              <SegmentControlItem value="access">
+                {t(($) => {
+                  return $.ssh.cloudflare.title;
+                })}
+              </SegmentControlItem>
+            )}
           </SegmentControl>
         </div>
-        {view === "hosts" ? <SshHosts /> : <Credentials />}
+        {view === "hosts" ? (
+          <SshHosts />
+        ) : view === "access" ? (
+          <CloudflareAccessConfigs />
+        ) : (
+          <Credentials />
+        )}
         <SshDialog />
       </DetailPageMain>
     </DetailPageShell>

@@ -4,7 +4,7 @@ import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { createChildAbortController } from "../../../signals/utils.ts";
+import { resetSignal } from "../../../signals/utils.ts";
 import {
   context,
   findEnabledButton,
@@ -22,10 +22,7 @@ function restoreHistory() {
   vi.mocked(window.history.back).mockRestore();
 }
 
-function unload(page: AbortController) {
-  const error = new Error("Page reloaded");
-  error.name = "AbortError";
-  page.abort(error);
+function releasePageDom() {
   cleanup();
   restoreHistory();
 }
@@ -52,20 +49,21 @@ test.each(["user", "org", "target"] as const)(
   "Keep local recordings isolated when the composer changes %s",
   async (part) => {
     installVoiceBoundaries();
-    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-    const firstPage = createChildAbortController(context.signal);
+    const resetFirstPage$ = resetSignal();
+    const firstPageSignal = context.store.set(resetFirstPage$, context.signal);
     context.mocks.http.post("*/api/voice-io/transcribe/segment", () => {
       return HttpResponse.json({ error: "Temporary outage" }, { status: 503 });
     });
     await setupPage({
       locale: "en-US",
-      context: { ...context, signal: firstPage.signal },
+      context: { ...context, signal: firstPageSignal },
       path: RUN_PATH,
     });
     click(await findEnabledButton("Voice input"));
     click(await findEnabledButton("Stop recording"));
     await findEnabledButton("Retry");
-    unload(firstPage);
+    context.store.set(resetFirstPage$);
+    releasePageDom();
     await setupPage({
       locale: "en-US",
       context: secondContext,

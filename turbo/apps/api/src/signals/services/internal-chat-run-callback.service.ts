@@ -20,6 +20,7 @@ import {
   type PublicBrand,
 } from "@okouai/api-contracts/contracts/public-brand";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
+import { publicProviderBalanceFailureReason } from "@okouai/api-contracts/contracts/run-balance-errors";
 import {
   isFeatureEnabled,
   type FeatureSwitchContext,
@@ -651,6 +652,7 @@ interface ChatRunInfo {
   readonly prompt: string;
   readonly error: string | null;
   readonly failureReason: RunFailureReasonToken | null;
+  readonly modelProvider: string | null;
   readonly lastEventSequence: number | null;
   readonly cancellationRecoveryCompleted: boolean | null;
 }
@@ -3922,6 +3924,7 @@ async function loadTerminalChatCallback(
       prompt: agentRuns.prompt,
       error: agentRuns.error,
       failureReason: agentRuns.failureReason,
+      modelProvider: agentRuns.modelProvider,
       lastEventSequence: agentRuns.lastEventSequence,
       cancellationRecoveryCompleted: agentRuns.cancellationRecoveryCompleted,
     })
@@ -4082,7 +4085,11 @@ async function prepareFailedTerminalChatCallbackWork(
         runId: args.runId,
         chatThread: args.chatThread,
         errorMessage: args.errorMessage,
-        failureReason: args.run.failureReason,
+        failureReason:
+          args.run.failureReason === "provider_insufficient_credits"
+            ? (publicProviderBalanceFailureReason(args.run.modelProvider) ??
+              null)
+            : args.run.failureReason,
         hasCancellationRecoveryState:
           args.run.cancellationRecoveryCompleted !== null,
         getFormattedError: () => {

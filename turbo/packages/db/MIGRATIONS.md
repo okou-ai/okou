@@ -32,6 +32,15 @@ expired transition validator must be deleted.
 
 ### Active transition validators
 
+- `scripts/test-marketing-privacy-retirement.ts` protects migration
+  `1139_retire_marketing_privacy_storage` (#33747): populated/empty storage,
+  unrelated state preservation, restrictive external dependencies, shared
+  cleanup/table locks, default lock timeout, retry and journal-failure rollback.
+  Keep it until the production journal and completed prepared-cleanup rollout
+  satisfy the three retirement conditions. Current schema equivalence and exact
+  trigger/function inventory remain permanent. Historical 1108–1110 SQL and the
+  A–D 1132 transition controls remain unchanged.
+
 - `scripts/test-pi-inference-lifecycle.ts` protects migrations
   `1134_pi_inference_lifecycle` and `1135_validate_pi_inference_launch` (#34242):
   old/new launch writes, sparse-table invariants, real lock and journal rollback,

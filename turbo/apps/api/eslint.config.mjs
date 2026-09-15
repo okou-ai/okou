@@ -646,9 +646,6 @@ export default [
       // Pending guard coexistence, repair and row-lock races require private
       // PostgreSQL schemas; route suites exercise checkout/webhook/cron.
       "src/signals/services/__tests__/usage-pack-pending-snapshot.service.test.ts",
-      // Historical privacy data and schema-drop races cannot be produced by
-      // current endpoints; actual user-deletion routes cover their contract.
-      "src/signals/services/__tests__/marketing-privacy-cleanup.service.test.ts",
       // Trigger DDL, transaction snapshots and corrupt ledgers are not HTTP inputs.
       "src/signals/services/__tests__/pi-memory-candidate-accounting.service.test.ts",
       // #34044 requires real transactions, UTC clock, deletion and old-writer races.
@@ -814,9 +811,6 @@ export default [
       // Pending guard coexistence, repair and row-lock races require private
       // PostgreSQL schemas; route suites exercise checkout/webhook/cron.
       "src/signals/services/__tests__/usage-pack-pending-snapshot.service.test.ts",
-      // Historical privacy data and schema-drop races cannot be produced by
-      // current endpoints; actual user-deletion routes cover their contract.
-      "src/signals/services/__tests__/marketing-privacy-cleanup.service.test.ts",
       // Trigger DDL, transaction snapshots and corrupt ledgers are not HTTP inputs.
       "src/signals/services/__tests__/pi-memory-candidate-accounting.service.test.ts",
       // #34044 requires real transactions, UTC clock, deletion and old-writer races.

@@ -18,6 +18,9 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
+import { createThreadMetaLookup } from "../../../signals/chat-page/chat-thread-event-sourcing.ts";
+import { resetSignal } from "../../../signals/utils.ts";
+
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const FIRST_THREAD_ID = "b0000000-0000-4000-a000-000000000101";
 const SECOND_THREAD_ID = "b0000000-0000-4000-a000-000000000102";
@@ -358,3 +361,254 @@ test("Returning to an interrupted chat does not reuse abandoned details", async 
     ).not.toBeInTheDocument();
   });
 });
+
+test("Metadata opens a cold conversation while canonical synchronization continues", async () => {
+  configureChatPrerequisites();
+  const snapshotRequested = context.mocks.deferred<AbortSignal>();
+  const snapshot = context.mocks.deferred<void>();
+  context.mocks.api(
+    chatThreadsContract.snapshot,
+    async ({ request, respond }) => {
+      snapshotRequested.resolve(request.signal);
+      await snapshot.promise;
+      return respond(200, {
+        chatThreads: [
+          snapshotThread(FIRST_THREAD_ID, "Canonical conversation"),
+        ],
+        latestEventId: SNAPSHOT_EVENT_ID,
+        latestSeqId: 1,
+      });
+    },
+  );
+  context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
+    return respond(200, threadMetadata(FIRST_THREAD_ID, "Quick conversation"));
+  });
+
+  await setupPage({
+    context,
+    path: `/chats/${FIRST_THREAD_ID}`,
+    auth: isolatedAuth(),
+  });
+  await expectReadyChat("Quick conversation");
+  const snapshotSignal = await snapshotRequested.promise;
+  expect(snapshotSignal.aborted).toBeFalsy();
+
+  snapshot.resolve();
+  await expectReadyChat("Canonical conversation");
+  expect(document.title).toBe("Canonical conversation | Okou");
+});
+
+test("Canonical synchronization wins and cancels the losing metadata request", async () => {
+  configureChatPrerequisites();
+  const snapshot = context.mocks.deferred<void>();
+  const metadataRequested = context.mocks.deferred<AbortSignal>();
+  const metadata = context.mocks.deferred<void>();
+  context.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
+    await snapshot.promise;
+    return respond(200, {
+      chatThreads: [snapshotThread(FIRST_THREAD_ID, "Stream conversation")],
+      latestEventId: SNAPSHOT_EVENT_ID,
+      latestSeqId: 1,
+    });
+  });
+  context.mocks.api(
+    chatThreadMetadataContract.get,
+    async ({ request, respond }) => {
+      metadataRequested.resolve(request.signal);
+      await metadata.promise;
+      return respond(200, threadMetadata(FIRST_THREAD_ID, "Losing metadata"));
+    },
+  );
+
+  const page = await startPage({
+    context,
+    path: `/chats/${FIRST_THREAD_ID}`,
+    auth: isolatedAuth(),
+  });
+  const requestSignal = await metadataRequested.promise;
+  snapshot.resolve();
+  await page.ready;
+  await expectReadyChat("Stream conversation");
+  expect(requestSignal.aborted).toBeTruthy();
+
+  metadata.resolve();
+  expect(document.title).toBe("Stream conversation | Okou");
+  expect(screen.queryByText("Losing metadata")).not.toBeInTheDocument();
+});
+
+test.each([404, 500] as const)(
+  "Unavailable metadata (%s) still waits for the canonical conversation",
+  async (status) => {
+    configureChatPrerequisites();
+    const snapshot = context.mocks.deferred<void>();
+    const metadataRequested = context.mocks.deferred<void>();
+    context.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
+      await snapshot.promise;
+      return respond(200, {
+        chatThreads: [
+          snapshotThread(FIRST_THREAD_ID, "Recovered conversation"),
+          snapshotThread(SECOND_THREAD_ID, "Available sidebar conversation"),
+        ],
+        latestEventId: SNAPSHOT_EVENT_ID,
+        latestSeqId: 1,
+      });
+    });
+    context.mocks.api(chatThreadMetadataContract.get, ({ params, respond }) => {
+      if (params.id === SECOND_THREAD_ID) {
+        return respond(
+          200,
+          threadMetadata(SECOND_THREAD_ID, "Available sidebar conversation"),
+        );
+      }
+      metadataRequested.resolve();
+      return respond(status, {
+        error: { code: "UNAVAILABLE", message: "Metadata unavailable" },
+      });
+    });
+
+    const page = await startPage({
+      context,
+      path: `/chats/${FIRST_THREAD_ID}?sidebar=${SECOND_THREAD_ID}`,
+      auth: isolatedAuth(),
+    });
+    await metadataRequested.promise;
+    await expectReadyChat("Available sidebar conversation");
+    // An unavailable shortcut must leave the primary lookup waiting, while
+    // the independently loaded sidebar is already usable.
+    expect(screen.getAllByRole("region", { name: "Chat thread" })).toHaveLength(
+      1,
+    );
+    snapshot.resolve();
+    await page.ready;
+    await expectReadyChat("Recovered conversation");
+  },
+);
+
+test("Cold left and right conversations resolve independently", async () => {
+  configureChatPrerequisites();
+  const snapshot = context.mocks.deferred<void>();
+  const left = context.mocks.deferred<void>();
+  const right = context.mocks.deferred<void>();
+  const leftRequested = context.mocks.deferred<AbortSignal>();
+  const rightRequested = context.mocks.deferred<AbortSignal>();
+  context.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
+    await snapshot.promise;
+    return respond(200, {
+      chatThreads: [],
+      latestEventId: null,
+      latestSeqId: null,
+    });
+  });
+  context.mocks.api(
+    chatThreadMetadataContract.get,
+    async ({ params, request, respond }) => {
+      if (params.id === FIRST_THREAD_ID) {
+        leftRequested.resolve(request.signal);
+        await left.promise;
+        return respond(
+          200,
+          threadMetadata(FIRST_THREAD_ID, "Left conversation"),
+        );
+      }
+      rightRequested.resolve(request.signal);
+      await right.promise;
+      return respond(
+        200,
+        threadMetadata(SECOND_THREAD_ID, "Right conversation"),
+      );
+    },
+  );
+
+  const page = await startPage({
+    context,
+    path: `/chats/${FIRST_THREAD_ID}?sidebar=${SECOND_THREAD_ID}`,
+    auth: isolatedAuth(),
+  });
+  await leftRequested.promise;
+  const rightSignal = await rightRequested.promise;
+  left.resolve();
+  await expectReadyChat("Left conversation");
+  expect(rightSignal.aborted).toBeFalsy();
+  right.resolve();
+  await page.ready;
+  await expectReadyChat("Right conversation");
+  expect(document.title).toBe("Left conversation | Okou");
+});
+
+test.each(["reader reset", "parent abort"] as const)(
+  "An independent same-thread %s leaves the mounted conversation loading",
+  async (cancellation) => {
+    // The Router deduplicates a same-thread sidebar. Exercise that otherwise
+    // unreachable simultaneous lookup through its production requesting graph,
+    // while the actual mounted page remains the surviving reader.
+    const resolveOtherSurface$ = createThreadMetaLookup();
+    const resetOtherSurface$ = resetSignal();
+    const resetOtherParent$ = resetSignal();
+    const otherParent = context.store.set(resetOtherParent$, context.signal);
+    const otherSignal = context.store.set(resetOtherSurface$, otherParent);
+    configureChatPrerequisites();
+    const snapshot = context.mocks.deferred<void>();
+    const pageMetadata = context.mocks.deferred<void>();
+    const otherMetadata = context.mocks.deferred<void>();
+    const pageRequested = context.mocks.deferred<AbortSignal>();
+    const otherRequested = context.mocks.deferred<AbortSignal>();
+    let requestNumber = 0;
+    context.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
+      await snapshot.promise;
+      return respond(200, {
+        chatThreads: [],
+        latestEventId: null,
+        latestSeqId: null,
+      });
+    });
+    context.mocks.api(
+      chatThreadMetadataContract.get,
+      async ({ request, respond }) => {
+        requestNumber++;
+        if (requestNumber === 1) {
+          pageRequested.resolve(request.signal);
+          await pageMetadata.promise;
+          return respond(
+            200,
+            threadMetadata(FIRST_THREAD_ID, "Surviving conversation"),
+          );
+        }
+        otherRequested.resolve(request.signal);
+        await otherMetadata.promise;
+        return respond(
+          200,
+          threadMetadata(FIRST_THREAD_ID, "Cancelled reader title"),
+        );
+      },
+    );
+
+    const page = await startPage({
+      context,
+      path: `/chats/${FIRST_THREAD_ID}`,
+      auth: isolatedAuth(),
+    });
+    const pageRequestSignal = await pageRequested.promise;
+    const otherResult = context.store.set(
+      resolveOtherSurface$,
+      FIRST_THREAD_ID,
+      otherSignal,
+    );
+    const otherRequestSignal = await otherRequested.promise;
+    context.store.set(
+      cancellation === "reader reset" ? resetOtherSurface$ : resetOtherParent$,
+    );
+    const expectedReason =
+      cancellation === "parent abort" ? otherParent.reason : otherSignal.reason;
+    await expect(otherResult).rejects.toBe(expectedReason);
+    expect(otherRequestSignal.aborted).toBeTruthy();
+    expect(pageRequestSignal.aborted).toBeFalsy();
+
+    otherMetadata.resolve();
+    pageMetadata.resolve();
+    await page.ready;
+    await expectReadyChat("Surviving conversation");
+    expect(
+      screen.queryByText("Cancelled reader title"),
+    ).not.toBeInTheDocument();
+  },
+);

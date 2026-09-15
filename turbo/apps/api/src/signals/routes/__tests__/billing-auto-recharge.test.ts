@@ -1,13 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { acquisitionAttributionContract } from "@okouai/api-contracts/contracts/acquisition-attribution";
-import { acquisitionAttributionRoutes } from "../acquisition-attribution";
 
 import { billingAutoRechargeContract } from "@okouai/api-contracts/contracts/billing";
 import StripeSDK from "stripe";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { nowDate } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
@@ -231,34 +228,13 @@ describe("PUT /api/billing/auto-recharge", () => {
     });
   });
 
-  it("snapshots org Impact attribution when enabling auto-recharge below threshold", async () => {
+  it("creates and pays an invoice when enabling auto-recharge below threshold", async () => {
     const { admin, entitlement } = await createProActor();
     const status = await billingApi.readBillingStatus(admin);
     const threshold = status.credits + 1000;
     const amount = threshold + 5000;
     const invoiceId = acceptAutoRechargeStripeInvoice(entitlement.customerId);
 
-    context.mocks.stripe.subscriptions.list.mockResolvedValue({
-      data: [],
-      has_more: false,
-    });
-    const impact = {
-      clickId: "recharge-partner",
-      capturedAt: nowDate().toISOString(),
-    };
-    mocks.clerk.session(admin.userId, admin.orgId, "org:admin");
-    context.mocks.clerk.users.getUserList.mockResolvedValue({
-      data: [{ id: admin.userId, privateMetadata: {} }],
-    });
-    await accept(
-      setupApp({ context, routes: acquisitionAttributionRoutes })(
-        acquisitionAttributionContract,
-      ).recordSignup({
-        body: { attribution: {}, impactAttribution: impact },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
     const response = await billingApi.updateAutoRecharge(
       admin,
       { enabled: true, threshold, amount },
@@ -279,8 +255,6 @@ describe("PUT /api/billing/auto-recharge", () => {
           type: "auto_recharge",
           orgId: admin.orgId,
           creditsAmount: String(amount),
-          impact_click_id: impact.clickId,
-          impact_click_at: impact.capturedAt,
         }),
       }),
     );

@@ -11,6 +11,27 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.901.0](https://github.com/vm0-ai/vm0/compare/app-v0.900.0...app-v0.901.0) (2026-09-15)
+
+
+### Features
+
+* complete personal subscription launch support ([#34263](https://github.com/vm0-ai/vm0/issues/34263)) ([f2731f5](https://github.com/vm0-ai/vm0/commit/f2731f57b6d9ff924ae87f7c5222aa78e5f1cce4))
+* offer only intro video voices that can be auditioned ([#34331](https://github.com/vm0-ai/vm0/issues/34331)) ([3396db8](https://github.com/vm0-ai/vm0/commit/3396db842be8b37d4f21772baecd56d328830532))
+
+
+### Bug Fixes
+
+* **platform:** clear the connectors toolbar from the scroll edge ([#34349](https://github.com/vm0-ai/vm0/issues/34349)) ([ef5f750](https://github.com/vm0-ai/vm0/commit/ef5f750b8af6905d2ad4ada04563125f5c942d44))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.444.0
+    * @okouai/core bumped to 8.666.5
+
 ## [0.900.0](https://github.com/vm0-ai/vm0/compare/app-v0.899.2...app-v0.900.0) (2026-09-15)
 
 

@@ -93,6 +93,7 @@
    * Semantic Colors
    * =================================== */
   --color-border: hsl(var(--border));
+  --color-border-on-fill: hsl(var(--border-on-fill));
   --color-surface-focus: hsl(var(--surface-focus));
   --color-input: hsl(var(--input));
   /* Neutral standalone controls follow the runtime palette in both themes. */
@@ -439,6 +440,11 @@
        reading on a near-white card. gray-300 restores ~87% of the original
        weight while staying lighter than the old 1px line. */
     --border: var(--gray-300);
+    /* A rule drawn on a filled surface, one step off that fill rather than off
+       the canvas. `--divider` is pinned to gray-200 in every theme and the
+       filled surfaces that carry these rules are gray-200 themselves, so a rule
+       reading either neutral token would resolve to its own background. */
+    --border-on-fill: var(--gray-300);
     /* Large editable surfaces emphasize their existing edge on focus. One step
        is enough: the composer is the widest border on the page, so its stroke
        carries far more ink than a control-sized one at the same color. */
@@ -596,6 +602,7 @@
     --interrupt-foreground: var(--on-filled); /* white on Coral 500 */
 
     --border: var(--gray-300); /* one stop up: see the light note above */
+    --border-on-fill: var(--gray-300); /* see the rule-on-fill note above */
     /* Saturation, not lightness, carries focus here: lifting a neutral against a
        dark card reads as a white outline rather than as emphasis. */
     --surface-focus: 38.8 38% 38%;

@@ -1,3 +1,4 @@
+import type { ChatLayoutSignals } from "../../signals/chat-page/chat-layout.ts";
 import type { ThinkingSummaries } from "../../signals/chat-page/thread-activity-summary.ts";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ScrollArea } from "@base-ui/react/scroll-area";
@@ -247,6 +248,7 @@ import type { ChatRunModelSelection } from "../../signals/chat-page/chat-event-s
 import type { AgentReferenceSignals } from "../../signals/chat-page/agent-reference-signals.ts";
 import type { RunDetailSignals } from "../../signals/chat-page/run-detail.ts";
 import type { AssistantErrorRecovery } from "../../signals/chat-page/assistant-error-recovery.ts";
+import { localizedRunError } from "../../lib/run-error.ts";
 import { userMessageFileAttachments } from "../../signals/chat-page/user-message-files.ts";
 import type {
   ChatPanelSignals,
@@ -2920,13 +2922,18 @@ function ThreadAutomationsSidebarSlot({
   return <HeaderAutomationSidebar thread={thread} onClose={close} />;
 }
 
-export function ChatThreadPage() {
+export function ChatThreadPage({
+  layout,
+}: {
+  readonly layout: ChatLayoutSignals;
+}) {
   const activeThreadSidebar = useGet(activeThreadSidebar$);
   const leftPane = useGet(currentLeftPane$);
   const rightPane = useGet(currentRightPane$);
   return withChatScrollLayout(
     <>
       <ChatThreadSidebarShell
+        layout={layout}
         animateEntry={activeThreadSidebar?.animateEntry ?? true}
         open={activeThreadSidebar !== null}
         sidebar={
@@ -5376,7 +5383,7 @@ function AssistantErrorFallback({ error }: { error: string }) {
       description={
         <Markdown
           className="!text-muted-foreground"
-          source={error}
+          source={localizedRunError(error)}
           style={{ fontSize: "inherit", lineHeight: "inherit" }}
         />
       }
@@ -6517,12 +6524,12 @@ function UserMessageFeedbackGroup({
             {showDivider ? (
               <div
                 data-structured-feedback-divider=""
-                className="border-t border-border"
+                className="border-t border-border-on-fill"
               />
             ) : null}
             <blockquote
               data-structured-feedback-quote=""
-              className="border-l-2 border-border pl-3 text-muted-foreground"
+              className="border-l-2 border-border-on-fill pl-3 text-muted-foreground"
             >
               {renderPart.part.quote}
             </blockquote>
