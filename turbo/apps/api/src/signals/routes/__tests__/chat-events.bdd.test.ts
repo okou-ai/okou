@@ -8218,7 +8218,6 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     expect(queuedContext.platformEnvironment).toMatchObject({
       OKOU_PI_LANGFUSE_DEBUG_ENABLED: "true",
-      OKOU_PI_LANGFUSE_RELAY_ENABLED: "true",
       LANGFUSE_TRACING_ENABLED: "true",
     });
     expect(queuedContext.platformEnvironment).not.toHaveProperty(

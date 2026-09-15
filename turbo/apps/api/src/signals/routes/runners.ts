@@ -80,10 +80,6 @@ import { now, nowDate } from "../../lib/time";
 import { env } from "../../lib/env";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
-import {
-  isPiLangfuseDebugRunEnvironment,
-  piLangfuseDebugCredentialsFromEnvironment,
-} from "../../lib/pi-langfuse-debug";
 import { executeRawRows } from "../../lib/db-raw-rows";
 import {
   nullableDriverValueDecoder,
@@ -1372,43 +1368,6 @@ async function secretValuesForRunner(
   });
 }
 
-async function piLangfuseCredentialsForRunner(args: {
-  readonly runId: string;
-  readonly storedContext: StoredExecutionContext;
-  readonly timing: ClaimRouteTimingCollector;
-}): Promise<Readonly<Record<string, string>> | undefined> {
-  if (
-    !isPiLangfuseDebugRunEnvironment(args.storedContext.platformEnvironment) ||
-    args.storedContext.platformEnvironment.OKOU_PI_LANGFUSE_RELAY_ENABLED ===
-      "true"
-  ) {
-    return undefined;
-  }
-  const decrypted = await settle(
-    args.timing.measure(
-      "claim_route_secret_materialization",
-      "top_level",
-      async () => {
-        return await decryptPersistentSecretsMap(
-          args.storedContext.encryptedSecrets,
-          {},
-        );
-      },
-    ),
-  );
-  if (!decrypted.ok) {
-    L.warn("Pi Langfuse credentials could not be materialized", {
-      runId: args.runId,
-      errorName:
-        decrypted.error instanceof Error
-          ? decrypted.error.name
-          : "UnknownError",
-    });
-    return undefined;
-  }
-  return piLangfuseDebugCredentialsFromEnvironment(decrypted.value ?? {});
-}
-
 function connectorPermissionBaselineMatchesStoredContext(
   storedContext: StoredExecutionContext,
   baseline: StoredConnectorPermissionBaseline,
@@ -1895,24 +1854,11 @@ async function buildClaimResponseBody(
   },
   signal: AbortSignal,
 ): Promise<ExecutionContext> {
-  const storedSecretValues = await secretValuesForRunner(
+  const secretValues = await secretValuesForRunner(
     args.storedContext,
     args.timing,
   );
   signal.throwIfAborted();
-  const langfuseCredentials = await piLangfuseCredentialsForRunner({
-    runId: args.run.id,
-    storedContext: args.storedContext,
-    timing: args.timing,
-  });
-  signal.throwIfAborted();
-  const secretValues =
-    storedSecretValues === null && langfuseCredentials === undefined
-      ? null
-      : [
-          ...(storedSecretValues ?? []),
-          ...Object.values(langfuseCredentials ?? {}),
-        ];
   return await args.timing.measure(
     "claim_route_response_assembly",
     "top_level",
@@ -1969,13 +1915,6 @@ async function buildClaimResponseBody(
       } = args.storedContext;
       return {
         ...runnerStoredContext,
-        // Claim context is consumed by the trusted Guest. Langfuse keys are
-        // materialized only here; the Guest removes them from the Pi child's
-        // exec environment and converts them into its private one-shot file.
-        platformEnvironment: {
-          ...runnerStoredContext.platformEnvironment,
-          ...langfuseCredentials,
-        },
         runId: args.run.id,
         reuseKey: args.reuseKey,
         prompt: args.run.prompt,

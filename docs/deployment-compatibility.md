@@ -421,8 +421,8 @@ There is no history truncation, migration, or alternate reader for that rollback
 
 ### Pi Langfuse trace relay
 
-New run contexts set `OKOU_PI_LANGFUSE_RELAY_ENABLED=true` and no longer
-store or inject platform Langfuse credentials. The commit-pinned CLI exports
+New run contexts no longer store or inject platform Langfuse credentials.
+The commit-pinned CLI exports
 OTLP to `POST /api/webhooks/agent/:runId/langfuse/traces` using its existing
 `OKOU_TOKEN`. The API checks that token's run/user/org and the run's captured
 `langfuseTraceEnabled`, then forwards only the OTLP body and encoding headers
@@ -450,14 +450,25 @@ fallback or historical trace backfill.
 The API and its pinned CLI must ship together through the existing deployment
 pipeline. Existing Guests already pass the first-party API URL, run token, and
 trusted platform environment to that CLI; no Runner promotion is needed.
-Queued contexts created by older APIs retain their older CLI URL and encrypted
-Langfuse configuration. Claim-time decryption and the Guest bootstrap file
-remain for those contexts, whose pinned CLI retains its own reader. The new
-CLI only configures the relay; it has no direct-export fallback. Remove the
-remaining claim/Guest handling after old queued and running contexts drain.
-This change does not repair exports from an already-running legacy CLI. An
-API rollback that removes the relay route drops optional trace exports from
-relay-enabled runs; agent execution continues independently.
+
+The relay first reached production on 2026-09-15 at 05:11:55 UTC in API 1.603.0
+and CLI 9.331.0, at commit `4a60b74daa3cba9e11fdb6a072fa989dd1a242d3`
+([deployment](https://github.com/vm0-ai/vm0/actions/runs/34931381962/job/104260645155)).
+[#34256](https://github.com/vm0-ai/vm0/issues/34256) explicitly retires optional
+legacy tracing support: claim-time credential extraction and the Guest bootstrap
+file are removed. The 07:19 and 07:21 UTC observations found empty admission and
+runner queues and only post-rollout nonterminal Pi runs. Those observations do
+not certify complete draining of captured legacy contexts or close the rollback
+window; the retirement decision accepts loss of optional tracing for such contexts.
+
+An older context retains its captured CLI URL. That CLI treats an absent bootstrap
+path as tracing disabled, so agent execution continues without legacy exports.
+Guests still filter platform Langfuse project keys from tracing-enabled Pi child
+environments. The current CLI only configures the relay and has no direct-export
+fallback. This change does not repair exports from an already-running legacy CLI.
+An API rollback that removes the relay route drops optional trace exports from
+relay-enabled runs; agent execution continues independently. This retirement does
+not change production rollback policy.
 
 ### Runner
 
