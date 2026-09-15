@@ -30,6 +30,30 @@ to the last migration in the most recent production release. When that removes a
 referenced migration tag from the journal, the consistency suite fails and the
 expired transition validator must be deleted.
 
+### Invitation cleanup merge gate
+
+The #32575 cleanup removes the invitation transition validators and frozen
+outgoing API fixture after migration `1137_retire_legacy_invitation_columns`
+from #34317. Preparation of this cleanup is not a production completion receipt.
+Before merging it, record a production release containing #34317 and a committed
+journal frontier of at least `1789460587817`, confirm the serving/rollback
+compatibility cycle is complete, and pass the permanent coverage below.
+
+`test-org-plan-entitlement-permanent.ts` exercises canonical
+INSERT/UPSERT/SELECT/RETURNING, suspension/reactivation and explicit package
+visibility for all managed entitlement sources. The schema consistency suite
+runs it against both replayed historical migrations and a freshly generated
+schema. It has no historical migration-tag or outgoing-schema dependency.
+The runner suite retains generic timeout, retry and transactional journal
+coverage; the exact current trigger/function inventory remains enforced.
+
+`test-show-usage-pack-migration.ts` retains historical backfill and data
+preservation coverage. Current API transaction tests retain corruption,
+constraint-failure rollback and verified lock-contention cases. Billing status,
+invitation and App page suites retain normalized status, Free invitations,
+suspended direct/paid rejection, administrator authorization, reactivation and
+explicit `showUsagePack: false` behavior.
+
 ### Active transition validators
 
 - `scripts/test-pi-inference-lifecycle.ts` protects migrations
@@ -39,15 +63,6 @@ expired transition validator must be deleted.
   plans at representative retained-table scale. Retain it until all three
   transition conditions above pass; current launch-shape and final schema
   equivalence checks remain in the permanent migration suite.
-
-- `scripts/test-member-invitation-column-retirement.ts` protects migration
-  `1137_retire_legacy_invitation_columns` (#32575): persisted SQL and dependency
-  rejection, unchanged canonical values and ordinary constraints/indexes,
-  canonical INSERT/UPSERT/SELECT/RETURNING, default lock timeout, retry and
-  journal-failure rollback. Keep this validator and the older invitation
-  transition controls until the column contraction ships and all three
-  conditions above pass. Current billing/invitation route tests retain the
-  Free, suspended, administrator, reactivation and package-visibility contracts.
 
 - `scripts/test-prepared-domain-trigger-retirement.ts` protects migration
   `1132_retire_prepared_domain_triggers` (#33747): all eight A–D drops in one
@@ -67,21 +82,6 @@ expired transition validator must be deleted.
   candidate accounting suite. Retain both until the contract migration has
   shipped and the B rollback window is closed; permanent current-schema
   trigger/function inventory and C ownership coverage remain.
-
-- `scripts/test-member-invitation-retirement.ts` protects migration
-  `1098_retire_member_invitation_capability` (#32573). It checks removal of
-  manual invitation overrides, legacy INSERT/UPSERT/RETURNING statements, and
-  current status-only writes observed by old API readers. Migration 1132 removes
-  the derived-status trigger and shipped in API 1.603.1. Migration 1137 removes
-  the physical columns; keep this validator until that column transition
-  passes its production release gates. The current
-  application uses a canonical-only runtime mapping and no longer mirrors the
-  legacy usage-pack column. The validator also exercises that mapping's real
-  insert, conflict update, select and returning on an isolated contracted table.
-  This is readiness coverage, not evidence that production contraction shipped;
-  retain the validator until the
-  [remaining release gates](../../../docs/deployment-compatibility.md#invitation-and-free-member-contract-cleanup-2026-09-14)
-  pass.
 
 - `scripts/test-pi-memory-checkpoint-settlement.ts` protects migration
   `1079_pi_memory_checkpoint_settlement` (#31937): real PostgreSQL checks exact

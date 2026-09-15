@@ -1093,14 +1093,21 @@ Free-member support. Existing route coverage checks all-Free configuration
 without a query parameter; invitation admission continues to use normalized
 status and administrator authorization, and package controls use `showUsagePack`.
 
-Keep `test-member-invitation-retirement.ts`, its frozen outgoing API fixture,
-the private retained-schema controls, and the new column transition validator
-until **1137 itself is deployed**, its production journal is verified, and the
-surviving invariants have permanent coverage. Free invitations, suspended
-direct/paid rejection, admin authorization, reactivation, historical backfill,
-and explicit `showUsagePack: false` remain covered. Issue #32575 stays open for
-that release verification and validator retirement; this PR performs no
-production migration or release.
+The final #32575 cleanup is prepared as a separate draft after #34317. Its
+merge requires a production release containing migration 1137, a committed
+production journal frontier of at least `1789460587817`, and confirmation that
+serving and supported rollback APIs retain the canonical projection. Preparing
+or passing CI for the cleanup does not establish that production gate.
+
+The cleanup removes both invitation transition validators, the frozen outgoing
+API projection, and the retained/trigger-free private-schema variants. Permanent
+schema validation exercises the canonical projection on both replayed and freshly
+generated schemas. Historical `showUsagePack` backfill checks remain. Current API
+coverage retains infrastructure failure/transaction cases and verifies
+persisted status normalization through the billing endpoint; existing invitation
+and page suites retain Free, suspended, administrator, reactivation and explicit
+`showUsagePack: false` behavior. Record the production evidence here before
+marking the cleanup ready, then close #32575 after its merge.
 
 ### Prepared billing, OAuth and hosting trigger contraction (2026-09-15)
 

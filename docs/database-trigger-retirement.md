@@ -159,8 +159,10 @@ complete their metadata writes. `upsertOrgMetadataFixture` already writes the
 managed entitlement. Deliberately divergent entitlement fixtures use the same
 canonical runtime mapping and explicit status.
 
-The frozen private-schema compatibility fixtures still simulate old writers.
-The current-route-only legacy metadata/plan fixtures are retired with 1132.
+The #32575 cleanup removes the entitlement suite's outgoing private-schema
+variants after its production gate. Its current-schema infrastructure cases
+retain historical corruption, constraint-failure rollback and lock-contention
+coverage. Shared private fixtures remain for the other #33747 domains.
 
 ### Repair and backfill writes
 
@@ -185,19 +187,21 @@ before the API ensure runs; `ON CONFLICT DO NOTHING` preserves it without reappl
 overwriting a manual entitlement. During preparation the retained invitation
 trigger served outgoing API statements; current API writers do not depend on it.
 
-The compatibility tests use private schemas with actual PostgreSQL constraints
-on the retained schema, without entitlement triggers, and after dropping both
-legacy invitation columns. They exercise all tiers, managed sources, status
-changes, preservation, rollback,
-retry, and a verified blocked concurrent writer. Shared/public triggers are
-never disabled by the tests. Full route suites run in the PR pipeline.
+The prepared compatibility matrix covered retained triggers, absent entitlement
+triggers and contracted columns. After the #32575 cleanup gate, the permanent
+entitlement schema validator exercises canonical writes on both historical
+migration replay and a regenerated schema. Current API infrastructure cases
+inject constraints, historical corrupt state and a verified blocked writer in
+private current-schema tables. Routine billing and invitation behavior is
+verified through production HTTP routes and App pages.
 
 The 1132 release boundary above records the prepared artifact and enforced
-rollback floor. Production migration/journal completion remains a release gate;
-application rollback does not recreate triggers. The two physical invitation
-columns and remaining client cleanup stay with the
-[invitation contraction gate](deployment-compatibility.md#invitation-and-free-member-contract-cleanup-2026-09-14)
-owned by #32575.
+rollback floor. #34317 adds migration 1137 to remove the two physical invitation
+columns and removes the remaining client query opt-in. The final test cleanup
+must remain a draft until the
+[invitation contraction gate](deployment-compatibility.md#legacy-invitation-column-contraction-2026-09-15)
+records production release and committed journal evidence. Application rollback
+does not recreate the retired triggers or columns.
 
 The purchase, OAuth, hosting, and privacy work packages remain tracked in
 #33747. In particular, [the privacy implementation rollback](marketing-privacy-choices.md)
