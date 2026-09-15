@@ -1,4 +1,4 @@
-# Private site previews and short Public file links
+# Private site/video previews and short Public file links
 
 Part of [#32492](https://github.com/vm0-ai/vm0/issues/32492).
 
@@ -10,6 +10,22 @@ Part of [#32492](https://github.com/vm0-ai/vm0/issues/32492).
   artifact storage. Only the stable private reference enters the catalog and
   thread metadata. Rendering failure leaves the existing live-preview fallback.
   A flag change during rendering cannot publish private screenshot bytes.
+- Completing a new private MP4 upload or managed generation with a run artifact
+  schedules a poster from the first second at 640 pixels wide. The API checks
+  the stored file's owner and organization, then writes a five-minute capability for that exact
+  object into private R2. It sends the capability only in an Authorization
+  header on a POST to the host Worker. The `MEDIA` binding reads private bytes
+  directly; no source URL or automatic derivative cache is involved. The API
+  deletes the capability after success, failure or cancellation, and stores the
+  JPEG as a stable private reference. A process interruption can leave an expired,
+  unusable grant record. Changing the creation flag never makes the poster public.
+  The POST carries the configured App origin as its Referer, matching the
+  first-party exemption in the `okou.app` WAF read on 2026-09-15. The capability
+  independently authorizes extraction. No WAF rule change is included.
+  Chat cards resolve that reference and open the original video on click.
+  Inputs must be MP4/H.264, below 100 MB and within the provider's ten-minute
+  duration limit. Unsupported inputs and renderer failures retain the existing
+  playable video fallback. Existing private videos are not backfilled.
 - Public **file** shares allocate ten lowercase alphanumeric characters, with
   atomic delivery registration and at most ten collision attempts. Legacy files
   and new publications share one namespace; registration determines ownership.
@@ -43,7 +59,8 @@ On 2026-09-15 a read-only check found the live `a.okou.io` cache override exclud
 only 24-character file names. Ten-character shares would otherwise receive a
 one-year cache override, defeating revocation.
 
-1. Deploy the host Worker reader and its `IMAGES` binding in `wrangler.jsonc`.
+1. Deploy the host Worker reader and its `IMAGES` and `MEDIA` bindings in
+   `wrangler.jsonc`.
    Verify legacy files, GET/HEAD/Range, Image Resizing and private previews on the
    actual deployment. Preserve the R2 custom domain and existing registration.
 2. Before any API emits ten-character shares, update the existing `a.okou.io`
@@ -57,8 +74,10 @@ one-year cache override, defeating revocation.
    original download, warm cache, revoke, organization audience, and republish.
    Repeat with a retained 24-character link and a legacy ten-character file.
    Verify private hosted screenshots, a new deployment version, and flag-off
-   access to already-created screenshots. Browser Rendering and Images must
-   both be enabled on the deployed account; mocks do not prove those services.
+   access to already-created screenshots and video posters. Verify a private
+   generated MP4 and upload, successful grant cleanup, and failed/expired grants.
+   Browser Rendering, Images and Media Transformations must be enabled on the
+   deployed account; mocks do not prove those services.
 4. Do not restore the old cache expression once ten-character shares exist.
    Any Worker rollback must retain policy-aware ten-character readers and
    response headers. API rollback can stop new creation, but it must not turn
@@ -102,10 +121,14 @@ operate on registered source-file records, not share policy URLs.
 The original-image fallback for formats/size outside the binding's documented
 limits is a reachable input, owned by #32492 until the renderer supports those
 inputs. Private screenshot rendering reuses the existing temporary owner grant
-lifetime and cleanup policy. This change does not expand retention cleanup,
-private video posters, provider ingestion or historical registration work.
+lifetime and cleanup policy. The existing playable-video fallback covers
+unsupported containers, oversized inputs and rendering failures; #32492 owns
+broader poster support. Remove that branch only when those inputs have another
+supported preview. This change does not expand retention cleanup, provider
+ingestion or historical registration work.
 
 [Cloudflare Images binding API](https://developers.cloudflare.com/images/optimization/binding/).
+[Cloudflare Media binding API](https://developers.cloudflare.com/stream/transform-videos/bindings/).
 Local route/Worker/page tests check behavior with external services mocked.
 Production service availability, real image fidelity and regional cold/warm
 latency remain deployment acceptance checks; no latency target is inferred from

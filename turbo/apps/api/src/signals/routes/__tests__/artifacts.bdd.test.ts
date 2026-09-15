@@ -293,7 +293,8 @@ async function createRunUploadedFile(args: {
   readonly prompt: string;
   readonly filename: string;
   readonly contentType: string;
-}): Promise<{ readonly url: string }> {
+  readonly privateUpload?: boolean;
+}): Promise<{ readonly url: string; readonly threadId: string }> {
   const run = await sendChatRun(args.owner.actor, {
     agentId: args.owner.agentId,
     prompt: args.prompt,
@@ -303,10 +304,23 @@ async function createRunUploadedFile(args: {
     run.runId,
   );
   const bearer = `Bearer ${okouTokenFromClaim(claim)}`;
-  const fileId = randomUUID();
+  const fileId = args.privateUpload
+    ? (
+        await chat.prepareUpload(args.owner.actor, {
+          filename: args.filename,
+          contentType: args.contentType,
+          size: 1024,
+        })
+      ).id
+    : randomUUID();
   args.owner.objectStore.addObject({
-    bucket: "test-user-artifacts",
-    key: `artifacts/${args.owner.actor.userId}/${fileId}/${args.filename}`,
+    bucket: args.privateUpload
+      ? "test-private-artifacts"
+      : "test-user-artifacts",
+    key: args.privateUpload
+      ? `private-artifacts/${fileId}/${args.filename}`
+      : `artifacts/${args.owner.actor.userId}/${fileId}/${args.filename}`,
+    contentType: args.contentType,
     size: 1024,
   });
   const completed = await chat.completeUploadWithBearer(
@@ -318,7 +332,7 @@ async function createRunUploadedFile(args: {
     throw new Error("Expected run upload completion to succeed");
   }
   await completeChatRunOk(run.runId, sandboxHeaders);
-  return { url: completed.body.url };
+  return { url: completed.body.url, threadId: run.threadId };
 }
 
 async function findCatalogArtifact(
@@ -332,6 +346,145 @@ async function findCatalogArtifact(
 }
 
 describe("video Artifact previews", () => {
+  it.each([false, true])(
+    "generates an owner-only private video poster (rollback during rendering=%s)",
+    async (rollback) => {
+      const owner = await artifactActor("Private video preview");
+      if (!owner.actor.orgId) {
+        throw new Error("Expected organization");
+      }
+      const actor = { ...owner.actor, orgId: owner.actor.orgId };
+      mockEnv("APP_URL", "https://app.okou.ai");
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.PrivateArtifacts]: true,
+      });
+      const requests: string[] = [];
+      server.use(
+        http.post(
+          "https://files.okou.app/__artifact-video-poster",
+          async ({ request }) => {
+            requests.push(request.headers.get("Authorization") ?? "");
+            expect(request.headers.get("Referer")).toBe("https://app.okou.ai/");
+            await expect(request.text()).resolves.toBe("");
+            if (rollback) {
+              await updateFeatureSwitchesForUser(context, actor, {
+                [FeatureSwitchKey.PrivateArtifacts]: false,
+              });
+            }
+            return new HttpResponse(new Uint8Array([0xff, 0xd8, 0xff]), {
+              headers: { "Content-Type": "image/jpeg" },
+            });
+          },
+        ),
+      );
+      const file = await createRunUploadedFile({
+        owner,
+        prompt: "Private video",
+        filename: "private-video.mp4",
+        contentType: "video/mp4",
+        privateUpload: true,
+      });
+      await flushWaitUntilForTest();
+      expect(requests).toStrictEqual([
+        expect.stringMatching(/^Bearer [a-f0-9]{48}$/u),
+      ]);
+      const artifact = await findCatalogArtifact(actor, "private-video.mp4");
+      const reference = parseArtifactReference(artifact?.thumbnail?.url ?? "");
+      if (!reference?.id) {
+        throw new Error("Expected private poster reference");
+      }
+      expect(
+        owner.objectStore.puts.filter((put) => {
+          return put.contentType === "image/jpeg";
+        }),
+      ).toStrictEqual([
+        expect.objectContaining({
+          bucket: "test-private-artifacts",
+          key: `private-artifacts/${reference.id}/poster-v2.jpg`,
+          ifNoneMatch: "*",
+        }),
+      ]);
+      expect(owner.objectStore.deletedKeys).toContain(
+        `private-video-previews/${requests[0]!.slice(7)}.json`,
+      );
+      const thread = await chat.listThreadArtifacts(actor, file.threadId);
+      expect(thread.runs[0]?.files).toStrictEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            url: file.url,
+            previewImageUrl: artifact?.thumbnail?.url,
+          }),
+        ]),
+      );
+      expect((await chat.listArtifactCatalog(actor)).artifacts).toHaveLength(1);
+      expect(JSON.stringify(thread)).not.toContain(requests[0]!.slice(7));
+      owner.objectStore.addObject({
+        bucket: "test-private-artifacts",
+        key: `private-artifacts/${reference.id}/poster-v2.jpg`,
+        size: 3,
+      });
+      await updateFeatureSwitchesForUser(context, actor, {
+        [FeatureSwitchKey.PrivateArtifacts]: false,
+      });
+      const client = setupApp({ context, routes: webFileUrlRoutes })(
+        webFilesContract,
+      );
+      const preview = await accept(
+        client.fileUrl({
+          headers: { authorization: "Bearer clerk-session" },
+          query: { file_id: reference.id },
+        }),
+        [200],
+      );
+      expect(preview.body.publicUrl).toBeNull();
+      await bdd.completeOnboarding(bdd.user());
+      await accept(
+        client.fileUrl({
+          headers: { authorization: "Bearer clerk-session" },
+          query: { file_id: reference.id },
+        }),
+        [404],
+      );
+    },
+    180_000,
+  );
+
+  it("keeps the video usable and removes its temporary grant when private extraction fails", async () => {
+    const owner = await artifactActor("Private video failure");
+    if (!owner.actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    const actor = { ...owner.actor, orgId: owner.actor.orgId };
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.PrivateArtifacts]: true,
+    });
+    server.use(
+      http.post("https://files.okou.app/__artifact-video-poster", () => {
+        return new HttpResponse("unavailable", { status: 503 });
+      }),
+    );
+    await createRunUploadedFile({
+      owner,
+      prompt: "Private video",
+      filename: "failed-poster.mp4",
+      contentType: "video/mp4",
+      privateUpload: true,
+    });
+    await flushWaitUntilForTest();
+    const artifact = await findCatalogArtifact(actor, "failed-poster.mp4");
+    expect(artifact?.thumbnail).toBeNull();
+    expect(
+      owner.objectStore.puts.some((put) => {
+        return put.contentType === "image/jpeg";
+      }),
+    ).toBeFalsy();
+    expect(
+      owner.objectStore.deletedKeys.some((key) => {
+        return key.startsWith("private-video-previews/");
+      }),
+    ).toBeTruthy();
+  }, 180_000);
+
   it("generates a poster immediately for an ordinary video upload", async () => {
     const owner = await artifactActor("Artifacts API video preview agent");
     if (!owner.actor.orgId) {

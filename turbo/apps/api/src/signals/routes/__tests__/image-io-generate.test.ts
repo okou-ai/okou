@@ -1942,10 +1942,10 @@ describe("POST /api/image-io/generate", () => {
     expect(putInput.Key).toMatch(/^artifacts\/[0-9a-z]{10}\.webp$/u);
     const publicPath = String(putInput.Key).replace(/^artifacts\//u, "");
     expect(url).toBe(`https://a.okou.io/${publicPath}`);
-    // The embed URL serves the same stored object through the CDN image
-    // transform so a PNG-only model still reaches browsers as AVIF/WebP.
+    // Short file URLs use the policy-aware Worker thumbnail endpoint, which
+    // also resolves historical generated files in the shared namespace.
     expect(body).toMatchObject({
-      embedUrl: `https://a.okou.io/cdn-cgi/image/fit=scale-down,format=auto,quality=85,metadata=none/${publicPath}`,
+      embedUrl: `https://a.okou.io/${publicPath}?thumbnail=1&fit=scale-down&quality=85`,
     });
     expect(putInput.Metadata).toStrictEqual({
       "artifact-id": fileId,

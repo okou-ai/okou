@@ -1,5 +1,4 @@
 import { command } from "ccstate";
-import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import type { HostedArtifactKind } from "@okouai/api-contracts/contracts/host";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
@@ -122,11 +121,7 @@ function videoArtifactPreviewArgs(
     row.previewImageUrl ||
     !args.orgId ||
     !args.url ||
-    !args.contentType?.startsWith("video/") ||
-    // The public thumbnail pipeline cannot read authenticated sources.
-    // Private derivatives join the generation slice in #32492.
-    parseArtifactReference(args.url) !== null ||
-    new URL(args.url).pathname === "/api/web/download-file"
+    !args.contentType?.startsWith("video/")
   ) {
     return null;
   }

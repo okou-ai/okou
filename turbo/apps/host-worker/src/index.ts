@@ -17,6 +17,11 @@ import {
   serveArtifactThumbnail,
   type ImagesBinding,
 } from "./artifact-thumbnail";
+import { PRIVATE_VIDEO_POSTER_PATH } from "@okouai/api-contracts/contracts/artifact-video-preview";
+import {
+  servePrivateVideoPoster,
+  type MediaBinding,
+} from "./private-video-preview";
 
 interface R2ObjectBody {
   readonly size: number;
@@ -37,6 +42,7 @@ interface R2Bucket {
 
 interface Env {
   readonly IMAGES?: ImagesBinding;
+  readonly MEDIA?: MediaBinding;
   readonly HOSTED_SITES_BUCKET: R2Bucket;
   readonly PRIVATE_ARTIFACTS_BUCKET?: R2Bucket;
   readonly PUBLIC_ARTIFACTS_BUCKET?: R2Bucket;
@@ -395,6 +401,19 @@ async function serveHostedSite(
   env: Env,
   execution: ExecutionContext,
 ): Promise<Response> {
+  const url = new URL(request.url);
+  if (
+    url.pathname === PRIVATE_VIDEO_POSTER_PATH &&
+    [env.HOST_DOMAIN, env.OKOU_HOST_DOMAIN].some((domain) => {
+      return url.hostname === `files.${domain}`;
+    })
+  ) {
+    return servePrivateVideoPoster(
+      request,
+      env.PRIVATE_ARTIFACTS_BUCKET,
+      env.MEDIA,
+    );
+  }
   if (request.method !== "GET" && request.method !== "HEAD") {
     return new Response("Method not allowed", {
       status: 405,
@@ -402,7 +421,6 @@ async function serveHostedSite(
     });
   }
 
-  const url = new URL(request.url);
   const pathname = normalizeRequestPath(url.pathname);
   if (!pathname) return new Response("Bad path", { status: 400 });
   const fileHost = url.hostname === env.PUBLIC_ARTIFACT_HOST;

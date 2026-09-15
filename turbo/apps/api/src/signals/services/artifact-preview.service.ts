@@ -16,6 +16,7 @@ import { safeJsonParse, tapError } from "../utils";
 import { allocateArtifactObject$ } from "./artifact-storage.service";
 import {
   allocatePrivateArtifact$,
+  artifactFileReference,
   completePrivateArtifact$,
   privateArtifactCreationEnabled,
   privateArtifactRecord,
@@ -23,6 +24,7 @@ import {
 import { syncArtifactCatalogForFile$ } from "./artifact-catalog.service";
 import { publishArtifactsChangedForRun } from "./artifact-realtime.service";
 import { createPrivateHostedPreview$ } from "./private-hosted-preview.service";
+import { extractPrivateVideoPoster$ } from "./private-video-preview.service";
 
 const log = logger("artifacts:preview");
 
@@ -133,6 +135,34 @@ async function extractVideoPoster(
   }
   return Buffer.from(await response.arrayBuffer());
 }
+
+const renderVideoPoster$ = command(
+  async ({ set }, args: RenderArtifactPreviewArgs, signal: AbortSignal) => {
+    if (!canExtractVideoPoster(args.contentType)) {
+      return null;
+    }
+    const reference = artifactFileReference(args.url);
+    if (reference) {
+      if (!reference.id) {
+        return null;
+      }
+      const image = await set(
+        extractPrivateVideoPoster$,
+        {
+          id: reference.id,
+          userId: args.userId,
+          orgId: args.orgId,
+        },
+        signal,
+      );
+      return image ? { image, isPrivate: true } : null;
+    }
+    return {
+      image: await extractVideoPoster(args.url, args.publicBrand, signal),
+      isPrivate: false,
+    };
+  },
+);
 
 function isCloudflareChallenge(content: string, title?: string): boolean {
   const page = `${title ?? ""}\n${content}`.toLowerCase();
@@ -315,14 +345,17 @@ const renderAndStoreArtifactPreview$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const isVideo = isVideoContentType(args.contentType);
+    let privateSource = args.privateHosted === true;
     let image: Buffer;
     let filename: string;
     let contentType: string;
     if (isVideo) {
-      if (!canExtractVideoPoster(args.contentType)) {
+      const poster = await set(renderVideoPoster$, args, signal);
+      if (!poster) {
         return false;
       }
-      image = await extractVideoPoster(args.url, args.publicBrand, signal);
+      image = poster.image;
+      privateSource ||= poster.isPrivate;
       filename = VIDEO_POSTER_FILENAME;
       contentType = VIDEO_POSTER_CONTENT_TYPE;
     } else {
@@ -365,7 +398,7 @@ const renderAndStoreArtifactPreview$ = command(
     const existing = await get(privateArtifactRecord(privateId));
     signal.throwIfAborted();
     const privatePreview =
-      args.privateHosted === true ||
+      privateSource ||
       existing !== null ||
       (await get(privateArtifactCreationEnabled(args.orgId, args.userId)));
     signal.throwIfAborted();

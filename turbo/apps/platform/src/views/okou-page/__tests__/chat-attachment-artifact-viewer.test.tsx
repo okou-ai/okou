@@ -587,3 +587,52 @@ test("A private site card resolves its screenshot and opens the site on click", 
     );
   });
 });
+
+test("A private generated video shows its authorized poster and opens the original", async () => {
+  const videoId = "00000000-0000-4000-8000-000000000021";
+  const posterId = "00000000-0000-4000-8000-000000000022";
+  const video = artifactReferencePath(videoId, "generated.mp4");
+  const poster = artifactReferencePath(posterId, "poster-v2.jpg");
+  const videoUrl =
+    "https://private-files.example/generated.mp4?signature=owner";
+  const posterUrl =
+    "https://private-files.example/poster-v2.jpg?signature=owner";
+  mockAttachmentChat(context, {
+    chatEvents: [assistantMessage(`![Generated video](${video})`)],
+    artifacts: [
+      artifactFile("generated.mp4", {
+        id: videoId,
+        contentType: "video/mp4",
+        url: video,
+        previewImageUrl: poster,
+      }),
+    ],
+  });
+  context.mocks.api(
+    artifactReferencesContract.resolve,
+    ({ params, respond }) => {
+      const isPoster = params.reference === poster.slice("/artifacts/".length);
+      return respond(200, {
+        url: isPoster ? posterUrl : videoUrl,
+        filename: isPoster ? "poster-v2.jpg" : "generated.mp4",
+        contentType: isPoster ? "image/jpeg" : "video/mp4",
+        target: { kind: "file", id: isPoster ? posterId : videoId },
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      });
+    },
+  );
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  const thumbnail = await screen.findByTestId("chat-video-preview-thumbnail");
+  expect(thumbnail).toHaveAttribute("src", posterUrl);
+  fireEvent.load(thumbnail);
+  expect(screen.queryByTestId("chat-video-preview-fallback")).toBeNull();
+  const card = thumbnail.closest("button");
+  if (!card) {
+    throw new Error("Expected a video preview button");
+  }
+  click(card);
+  const stage = await screen.findByTestId("artifact-dialog-video-stage");
+  await waitFor(() => {
+    expect(stage.querySelector("video")).toHaveAttribute("src", videoUrl);
+  });
+});
