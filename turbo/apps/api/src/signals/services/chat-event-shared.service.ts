@@ -31,6 +31,11 @@ import {
   type ChatThreadEventTransaction,
 } from "./chat-thread-event.service";
 
+import {
+  withRunContentWrite,
+  type RunContentOwnership,
+} from "./run-content-erasure-admission.service";
+
 const EXT_MIMETYPE_MAP: Readonly<Record<string, string>> = {
   png: "image/png",
   jpg: "image/jpeg",
@@ -70,6 +75,12 @@ type InsertAssistantEventItem =
       readonly runEventId: string;
     }
   | {
+      readonly eventType: "output.error";
+      readonly runEventSequenceNumber: number;
+      readonly error: string;
+      readonly runEventId: string;
+    }
+  | {
       readonly eventType: "output.thinking";
       readonly runEventSequenceNumber: number;
       readonly thinking: string;
@@ -77,6 +88,7 @@ type InsertAssistantEventItem =
     };
 
 export interface InsertAssistantEventsInput {
+  readonly ownership: RunContentOwnership;
   readonly runId: string;
   readonly threadId: string;
   readonly userId: string;
@@ -157,9 +169,7 @@ export function visibleChatEventCondition(
 async function assistantEventRunContextForRun(
   db: ChatThreadEventTransaction,
   runId: string,
-  signal: AbortSignal,
 ): Promise<{
-  readonly goalId: string | undefined;
   readonly shouldAttemptFirstAssistantEventClaim: boolean;
 }> {
   const [run] = await db
@@ -172,7 +182,6 @@ async function assistantEventRunContextForRun(
     .where(and(eq(agentRuns.id, runId), isNotNull(agentRuns.triggerSource)))
     .limit(1);
   return {
-    goalId: await historicalRunGroupId(db, runId, undefined, signal),
     shouldAttemptFirstAssistantEventClaim:
       run !== undefined &&
       run.apiStartedAt !== null &&
@@ -187,7 +196,9 @@ interface InsertAssistantEventsTransactionResult {
 
 export async function insertAssistantEventsInTransaction(
   tx: ChatThreadEventTransaction,
-  args: InsertAssistantEventsInput,
+  args: Omit<InsertAssistantEventsInput, "ownership"> & {
+    readonly runGroupId: string | undefined;
+  },
   signal: AbortSignal,
 ): Promise<InsertAssistantEventsTransactionResult> {
   if (args.items.length === 0) {
@@ -197,11 +208,7 @@ export async function insertAssistantEventsInTransaction(
     };
   }
 
-  const runContext = await assistantEventRunContextForRun(
-    tx,
-    args.runId,
-    signal,
-  );
+  const runContext = await assistantEventRunContextForRun(tx, args.runId);
   signal.throwIfAborted();
 
   const insertedRows = await insertChatEvents(
@@ -211,7 +218,7 @@ export async function insertAssistantEventsInTransaction(
         id: assistantEventIdForRunEvent(args.runId, item.runEventId),
         chatThreadId: args.threadId,
         runId: args.runId,
-        runGroupId: runContext.goalId,
+        runGroupId: args.runGroupId,
         runEventSequenceNumber: item.runEventSequenceNumber,
         runEventId: item.runEventId,
       };
@@ -220,6 +227,14 @@ export async function insertAssistantEventsInTransaction(
           ...eventIdentity,
           eventType: item.eventType,
           content: item.content,
+        };
+      }
+      if (item.eventType === "output.error") {
+        return {
+          ...eventIdentity,
+          eventType: item.eventType,
+          content: null,
+          error: item.error,
         };
       }
       return {
@@ -247,15 +262,35 @@ export async function insertAssistantEvents(
     return 0;
   }
 
-  const result = await writeDb.transaction(async (tx) => {
-    return await insertAssistantEventsInTransaction(tx, args, signal);
-  });
+  const runGroupId = await historicalRunGroupId(
+    writeDb,
+    args.runId,
+    undefined,
+    signal,
+  );
+  const admitted = await withRunContentWrite(
+    writeDb,
+    { runId: args.runId, destination: args, ownership: args.ownership },
+    async (tx) => {
+      return await insertAssistantEventsInTransaction(
+        tx,
+        { ...args, runGroupId },
+        signal,
+      );
+    },
+    signal,
+  );
+  if (admitted.outcome === "closed") {
+    return 0;
+  }
+  const result = admitted.value;
   signal.throwIfAborted();
 
   if (result.insertedRowCount > 0) {
     if (result.shouldAttemptFirstAssistantEventClaim) {
       await publishFirstAssistantEventCreatedSafely({
         db: writeDb,
+        ownership: admitted.ownership,
         orgId: args.orgId,
         userId: args.userId,
         threadId: args.threadId,

@@ -1,8 +1,8 @@
 //! One-request Runner-private addon control. Never automatically replay work.
 //!
 //! A timeout or lost reply after transmission is an unknown outcome. The only
-//! current caller is a read-only startup probe, which may retry within its
-//! original readiness budget. Business handlers keep their own state owners.
+//! startup probe may retry within its original readiness budget. Log flush
+//! observes a writer-owned prefix and is never automatically replayed.
 
 use std::io;
 use std::os::fd::AsRawFd;
@@ -20,11 +20,11 @@ pub(super) const SOCKET_NAME: &str = "control.sock";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Request<'a> {
+struct Request<'a, P> {
     request_id: &'a str,
     generation: &'a str,
     method: &'a str,
-    params: EmptyParams,
+    params: P,
 }
 
 #[derive(Serialize)]
@@ -32,12 +32,12 @@ struct EmptyParams {}
 
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
-enum Response {
+enum Response<T> {
     Result {
         #[serde(rename = "requestId")]
         request_id: String,
         generation: String,
-        data: Status,
+        data: T,
     },
     Error {
         #[serde(rename = "requestId")]
@@ -53,6 +53,7 @@ enum ErrorCode {
     InvalidRequest,
     StaleGeneration,
     UnknownMethod,
+    Busy,
 }
 
 #[derive(Deserialize)]
@@ -73,6 +74,26 @@ pub(super) async fn status(
     generation: &str,
     deadline: Instant,
 ) -> io::Result<()> {
+    let Status {
+        state: State::Running,
+    } = exchange(
+        directory,
+        generation,
+        "proxy.status",
+        EmptyParams {},
+        deadline,
+    )
+    .await?;
+    Ok(())
+}
+
+pub(super) async fn exchange<P: Serialize, T: serde::de::DeserializeOwned>(
+    directory: &Path,
+    generation: &str,
+    method: &str,
+    params: P,
+    deadline: Instant,
+) -> io::Result<T> {
     tokio::time::timeout_at(deadline, async {
         let directory = tokio::fs::OpenOptions::new()
             .read(true)
@@ -95,8 +116,8 @@ pub(super) async fn status(
         let bytes = serde_json::to_vec(&Request {
             request_id: &request_id,
             generation,
-            method: "proxy.status",
-            params: EmptyParams {},
+            method,
+            params,
         })?;
         if bytes.len() > MAX_FRAME_BYTES {
             return Err(invalid("addon control request exceeds frame limit"));
@@ -109,7 +130,7 @@ pub(super) async fn status(
         }
         let mut bytes = vec![0; length];
         stream.read_exact(&mut bytes).await?;
-        let response: Response = serde_json::from_slice(&bytes)
+        let response: Response<T> = serde_json::from_slice(&bytes)
             .map_err(|_| invalid("invalid addon control response"))?;
         if stream.read(&mut [0]).await? != 0 {
             return Err(invalid("unexpected bytes after addon control response"));
@@ -118,10 +139,8 @@ pub(super) async fn status(
             Response::Result {
                 request_id: actual_id,
                 generation: actual_generation,
-                data: Status {
-                    state: State::Running,
-                },
-            } if actual_id == request_id && actual_generation == generation => Ok(()),
+                data,
+            } if actual_id == request_id && actual_generation == generation => Ok(data),
             Response::Error {
                 request_id: Some(actual_id),
                 generation: actual_generation,

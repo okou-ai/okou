@@ -14,11 +14,11 @@ import type { SandboxAuth } from "../../types/auth";
 import { refreshAgentPhoneTypingEvents$ } from "./agent-event-consumer-agentphone-typing.service";
 import { ingestAxiomEvents } from "./agent-event-consumer-axiom.service";
 import {
-  AgentEventRunNotFoundError,
   materializeRunOutputEvents$,
   publishMaterializedChatProjection,
   type MaterializedChatProjection,
 } from "./agent-event-consumer-run-output.service";
+import { AgentEventRunNotFoundError } from "./run-content-erasure-admission.service";
 import type { EventCitation } from "./pi-memory-citation-events";
 import { refreshTelegramTypingEvents$ } from "./agent-event-consumer-telegram-typing.service";
 import { settle, tapError } from "../utils";
@@ -233,13 +233,7 @@ export const receiveAgentEvents$ = command(
       };
     }
 
-    if (projectionResult.value.outcome === "ignored-timeout") {
-      L.debug("Ignored events for timed-out run", {
-        runId: payload.runId,
-        status: "timeout",
-        eventCount: payload.events.length,
-        ...range,
-      });
+    if (projectionResult.value.outcome !== "accepted") {
       return {
         response: {
           status: 200 as const,

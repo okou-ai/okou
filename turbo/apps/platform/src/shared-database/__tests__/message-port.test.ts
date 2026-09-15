@@ -4,15 +4,13 @@ import {
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { expect, test, vi } from "vitest";
+import type { Store } from "ccstate";
 
 import {
   chatEventRowsResponse,
   testContext,
 } from "../../signals/__tests__/test-helpers.ts";
-import {
-  createChildAbortController,
-  createDeferredPromise,
-} from "../../signals/utils.ts";
+import { resetSignal, createDeferredPromise } from "../../signals/utils.ts";
 import { mockNow } from "../../lib/time.ts";
 import { ApiError } from "../../lib/api-error.ts";
 import { SharedDatabaseHttpError } from "../http-error.ts";
@@ -32,8 +30,12 @@ import {
   type SharedDatabaseHeartbeatLoop,
 } from "../message-port-client.ts";
 import { SharedDatabaseMessagePortServer } from "../message-port-server.ts";
-import { sharedDatabaseClientMessageSchema } from "../protocol.ts";
 import {
+  sharedDatabaseClientMessageSchema,
+  sharedDatabaseWorkerMessageSchema,
+} from "../protocol.ts";
+import {
+  openConnection$,
   recordConnectionHeartbeat$,
   registerConnection$,
   requestTokenFromLatestConnection$,
@@ -154,19 +156,19 @@ const holdHeartbeatLoop: SharedDatabaseHeartbeatLoop = async (
   await createDeferredPromise<void>(signal).promise;
 };
 
-function initializeWorker(signal: AbortSignal = context.signal): void {
+function initializeWorker(
+  signal: AbortSignal = context.signal,
+  workerStore: Store = context.workerStore,
+): void {
   const workerIdentity = identity();
-  context.workerStore.set(
+  workerStore.set(
     initializeSharedDatabaseWorker$,
     {
       appVersion: WORKER_APP_VERSION,
       identity: workerIdentity,
       apiBaseUrl: location.origin,
       getToken: (signal) => {
-        return context.workerStore.set(
-          requestTokenFromLatestConnection$,
-          signal,
-        );
+        return workerStore.set(requestTokenFromLatestConnection$, signal);
       },
       oauthApiBaseUrl: location.origin,
       onForceUpgrade: vi.fn<() => void>(),
@@ -181,17 +183,14 @@ function connectProtocolTransport(
     return Promise.resolve("message-port-token");
   },
   events: SharedDatabaseBridgeEvents = bridgeEvents(),
+  workerStore: Store = context.workerStore,
 ): {
   readonly bridge: MessagePortSharedDatabaseBridge;
   readonly platformPort: InMemoryMessagePort;
   readonly workerPort: InMemoryMessagePort;
 } {
   const [platformPort, workerPort] = messagePortPair();
-  new SharedDatabaseMessagePortServer(
-    context.workerStore,
-    workerPort,
-    context.signal,
-  );
+  new SharedDatabaseMessagePortServer(workerStore, workerPort, context.signal);
   return {
     bridge: new MessagePortSharedDatabaseBridge(
       platformPort,
@@ -207,12 +206,15 @@ function connectProtocolTransport(
 
 test("share one Worker realtime subscription until tabs disconnect", async () => {
   initializeWorker();
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const firstOwner = createChildAbortController(context.signal);
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const secondOwner = createChildAbortController(context.signal);
-  const first = connectProtocolTransport(firstOwner.signal);
-  const second = connectProtocolTransport(secondOwner.signal);
+  const resetFirstOwner$ = resetSignal();
+  const firstOwnerSignal = context.store.set(resetFirstOwner$, context.signal);
+  const resetSecondOwner$ = resetSignal();
+  const secondOwnerSignal = context.store.set(
+    resetSecondOwner$,
+    context.signal,
+  );
+  const first = connectProtocolTransport(firstOwnerSignal);
+  const second = connectProtocolTransport(secondOwnerSignal);
   const firstMessages: unknown[] = [];
   const secondMessages: unknown[] = [];
   let firstResyncs = 0;
@@ -220,8 +222,8 @@ test("share one Worker realtime subscription until tabs disconnect", async () =>
   const topic = "connectorPermissionUpdated";
   const channelName = `user:${identity().userId}`;
 
-  await first.bridge.registerTab(firstOwner.signal);
-  await second.bridge.registerTab(secondOwner.signal);
+  await first.bridge.registerTab(firstOwnerSignal);
+  await second.bridge.registerTab(secondOwnerSignal);
   await Promise.all([
     first.bridge.subscribeRealtime(
       "first-subscription",
@@ -271,14 +273,14 @@ test("share one Worker realtime subscription until tabs disconnect", async () =>
     expect(secondResyncs).toBe(1);
   });
 
-  firstOwner.abort(new DOMException("First tab closed", "AbortError"));
+  context.store.set(resetFirstOwner$);
   context.mocks.ably.triggerOnChannel(channelName, topic, { revision: 2 });
   await vi.waitFor(() => {
     expect(secondMessages).toStrictEqual([{ revision: 1 }, { revision: 2 }]);
   });
   expect(firstMessages).toStrictEqual([{ revision: 1 }]);
 
-  secondOwner.abort(new DOMException("Second tab closed", "AbortError"));
+  context.store.set(resetSecondOwner$);
   await vi.waitFor(() => {
     expect(
       context.mocks.ably.hasSubscriptionOnChannel(channelName, topic),
@@ -288,14 +290,14 @@ test("share one Worker realtime subscription until tabs disconnect", async () =>
 
 test("route workspace realtime subscriptions through the organization channel", async () => {
   initializeWorker();
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const owner = createChildAbortController(context.signal);
-  const { bridge } = connectProtocolTransport(owner.signal);
+  const resetOwner$ = resetSignal();
+  const ownerSignal = context.store.set(resetOwner$, context.signal);
+  const { bridge } = connectProtocolTransport(ownerSignal);
   const messages: unknown[] = [];
   const topic = "presentationTemplatesChanged";
   const channelName = `org:${identity().orgId}`;
 
-  await bridge.registerTab(owner.signal);
+  await bridge.registerTab(ownerSignal);
   await bridge.subscribeRealtime(
     "workspace-subscription",
     "org",
@@ -400,10 +402,10 @@ test.each([401, 426])(
 
 test("Keep concurrent shared chat loads independent", async () => {
   initializeWorker();
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const owner = createChildAbortController(context.signal);
-  const { bridge } = connectProtocolTransport(owner.signal);
-  await bridge.registerTab(owner.signal);
+  const resetOwner$ = resetSignal();
+  const ownerSignal = context.store.set(resetOwner$, context.signal);
+  const { bridge } = connectProtocolTransport(ownerSignal);
+  await bridge.registerTab(ownerSignal);
   const firstKey = dataKey(crypto.randomUUID());
   const secondKey = dataKey(crypto.randomUUID());
   const firstRow = row(firstKey.threadId, 1);
@@ -439,11 +441,11 @@ test("Keep concurrent shared chat loads independent", async () => {
 
   const first = bridge.query(
     { dataKey: firstKey, afterSeqId: null, consistency: "catch-up" },
-    owner.signal,
+    ownerSignal,
   );
   const second = bridge.query(
     { dataKey: secondKey, afterSeqId: null, consistency: "catch-up" },
-    owner.signal,
+    ownerSignal,
   );
   await vi.waitFor(() => {
     expect(started).toStrictEqual(
@@ -459,20 +461,23 @@ test("Keep concurrent shared chat loads independent", async () => {
 
 test("Authenticate worker requests through the tab with the latest heartbeat", async () => {
   initializeWorker();
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const firstOwner = createChildAbortController(context.signal);
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const secondOwner = createChildAbortController(context.signal);
-  const first = connectProtocolTransport(firstOwner.signal, () => {
+  const resetFirstOwner$ = resetSignal();
+  const firstOwnerSignal = context.store.set(resetFirstOwner$, context.signal);
+  const resetSecondOwner$ = resetSignal();
+  const secondOwnerSignal = context.store.set(
+    resetSecondOwner$,
+    context.signal,
+  );
+  const first = connectProtocolTransport(firstOwnerSignal, () => {
     return Promise.resolve("first-tab-token");
   });
-  const second = connectProtocolTransport(secondOwner.signal, () => {
+  const second = connectProtocolTransport(secondOwnerSignal, () => {
     return Promise.resolve("second-tab-token");
   });
   mockNow(1000, context.signal);
-  await first.bridge.registerTab(firstOwner.signal);
+  await first.bridge.registerTab(firstOwnerSignal);
   mockNow(2000, context.signal);
-  await second.bridge.registerTab(secondOwner.signal);
+  await second.bridge.registerTab(secondOwnerSignal);
   const key = dataKey(crypto.randomUUID());
   let requestTokens = new Set<string | null>();
 
@@ -495,7 +500,7 @@ test("Authenticate worker requests through the tab with the latest heartbeat", a
   await expect(
     second.bridge.query(
       { dataKey: key, afterSeqId: null, consistency: "catch-up" },
-      secondOwner.signal,
+      secondOwnerSignal,
     ),
   ).resolves.toStrictEqual([]);
   expect(requestTokens).toStrictEqual(new Set(["Bearer second-tab-token"]));
@@ -510,7 +515,7 @@ test("Authenticate worker requests through the tab with the latest heartbeat", a
         afterSeqId: null,
         consistency: "catch-up",
       },
-      secondOwner.signal,
+      secondOwnerSignal,
     ),
   ).resolves.toStrictEqual([]);
   expect(requestTokens).toStrictEqual(new Set(["Bearer first-tab-token"]));
@@ -524,7 +529,7 @@ test("Authenticate worker requests through the tab with the latest heartbeat", a
         afterSeqId: null,
         consistency: "catch-up",
       },
-      firstOwner.signal,
+      firstOwnerSignal,
     ),
   ).resolves.toStrictEqual([]);
   expect(requestTokens).toStrictEqual(new Set(["Bearer second-tab-token"]));
@@ -532,10 +537,10 @@ test("Authenticate worker requests through the tab with the latest heartbeat", a
 
 test("Cancel one shared chat load without cancelling worker progress", async () => {
   initializeWorker();
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const owner = createChildAbortController(context.signal);
-  const { bridge, workerPort } = connectProtocolTransport(owner.signal);
-  await bridge.registerTab(owner.signal);
+  const resetOwner$ = resetSignal();
+  const ownerSignal = context.store.set(resetOwner$, context.signal);
+  const { bridge, workerPort } = connectProtocolTransport(ownerSignal);
+  await bridge.registerTab(ownerSignal);
   const key = dataKey(crypto.randomUUID());
   const canonicalRow = row(key.threadId, 1);
   const requestStarted = context.mocks.deferred<void>();
@@ -561,14 +566,14 @@ test("Cancel one shared chat load without cancelling worker progress", async () 
     },
   );
 
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const caller = createChildAbortController(owner.signal);
+  const resetCaller$ = resetSignal();
+  const callerSignal = context.store.set(resetCaller$, ownerSignal);
   const pending = bridge.query(
     { dataKey: key, afterSeqId: null, consistency: "catch-up" },
-    caller.signal,
+    callerSignal,
   );
   await requestStarted.promise;
-  caller.abort(new DOMException("Caller left", "AbortError"));
+  context.store.set(resetCaller$);
   await expect(pending).rejects.toMatchObject({ name: "AbortError" });
   releaseRequest.resolve(undefined);
 
@@ -576,7 +581,7 @@ test("Cancel one shared chat load without cancelling worker progress", async () 
     await expect(
       bridge.query(
         { dataKey: key, afterSeqId: null, consistency: "cache-only" },
-        owner.signal,
+        ownerSignal,
       ),
     ).resolves.toStrictEqual([canonicalRow]);
   });
@@ -585,16 +590,19 @@ test("Cancel one shared chat load without cancelling worker progress", async () 
 
 test("Disconnect one tab without interrupting another tab", async () => {
   initializeWorker();
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const firstOwner = createChildAbortController(context.signal);
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const secondOwner = createChildAbortController(context.signal);
-  const first = connectProtocolTransport(firstOwner.signal);
-  const second = connectProtocolTransport(secondOwner.signal);
-  await first.bridge.registerTab(firstOwner.signal);
-  await second.bridge.registerTab(secondOwner.signal);
+  const resetFirstOwner$ = resetSignal();
+  const firstOwnerSignal = context.store.set(resetFirstOwner$, context.signal);
+  const resetSecondOwner$ = resetSignal();
+  const secondOwnerSignal = context.store.set(
+    resetSecondOwner$,
+    context.signal,
+  );
+  const first = connectProtocolTransport(firstOwnerSignal);
+  const second = connectProtocolTransport(secondOwnerSignal);
+  await first.bridge.registerTab(firstOwnerSignal);
+  await second.bridge.registerTab(secondOwnerSignal);
 
-  firstOwner.abort(new DOMException("First tab closed", "AbortError"));
+  context.store.set(resetFirstOwner$);
   await vi.waitFor(() => {
     expect(first.workerPort.closed).toBeTruthy();
   });
@@ -606,7 +614,7 @@ test("Disconnect one tab without interrupting another tab", async () => {
         afterSeqId: null,
         consistency: "cache-only",
       },
-      secondOwner.signal,
+      secondOwnerSignal,
     ),
   ).resolves.toStrictEqual([]);
   expect(second.workerPort.closed).toBeFalsy();
@@ -626,17 +634,17 @@ test("Send a heartbeat immediately after tab registration", async () => {
 
 test("Keep sending heartbeats while the tab bridge is active", async () => {
   const [platformPort] = messagePortPair();
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const owner = createChildAbortController(context.signal);
+  const resetOwner$ = resetSignal();
+  const ownerSignal = context.store.set(resetOwner$, context.signal);
   const bridge = new MessagePortSharedDatabaseBridge(
     platformPort,
     bridgeEvents(),
-    owner.signal,
+    ownerSignal,
     () => {
       return Promise.resolve("test-token");
     },
   );
-  await bridge.registerTab(owner.signal);
+  await bridge.registerTab(ownerSignal);
 
   await vi.waitFor(() => {
     expect(
@@ -647,7 +655,7 @@ test("Keep sending heartbeats while the tab bridge is active", async () => {
       }).length,
     ).toBeGreaterThanOrEqual(2);
   });
-  owner.abort(new DOMException("Tab closed", "AbortError"));
+  context.store.set(resetOwner$);
 });
 
 test("Reject shared-data access before the tab is registered", async () => {
@@ -670,12 +678,12 @@ test("Reject shared-data access before the tab is registered", async () => {
 
 test("Validate shared chat results received from the worker", async () => {
   const [platformPort, workerPort] = messagePortPair();
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const owner = createChildAbortController(context.signal);
+  const resetOwner$ = resetSignal();
+  const ownerSignal = context.store.set(resetOwner$, context.signal);
   const bridge = new MessagePortSharedDatabaseBridge(
     platformPort,
     bridgeEvents(),
-    owner.signal,
+    ownerSignal,
     () => {
       return Promise.resolve("test-token");
     },
@@ -698,7 +706,7 @@ test("Validate shared chat results received from the worker", async () => {
     }
   });
   workerPort.start();
-  await bridge.registerTab(owner.signal);
+  await bridge.registerTab(ownerSignal);
 
   await expect(
     bridge.query(
@@ -707,19 +715,19 @@ test("Validate shared chat results received from the worker", async () => {
         afterSeqId: null,
         consistency: "cache-only",
       },
-      owner.signal,
+      ownerSignal,
     ),
   ).rejects.toMatchObject({ name: "ZodError" });
 });
 
 test("Stop pending requests when the bridge lifecycle ends", async () => {
   const [platformPort, workerPort] = messagePortPair();
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const owner = createChildAbortController(context.signal);
+  const resetOwner$ = resetSignal();
+  const ownerSignal = context.store.set(resetOwner$, context.signal);
   const bridge = new MessagePortSharedDatabaseBridge(
     platformPort,
     bridgeEvents(),
-    owner.signal,
+    ownerSignal,
     () => {
       return Promise.resolve("test-token");
     },
@@ -743,22 +751,22 @@ test("Stop pending requests when the bridge lifecycle ends", async () => {
     }
   });
   workerPort.start();
-  await bridge.registerTab(owner.signal);
+  await bridge.registerTab(ownerSignal);
 
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const caller = createChildAbortController(context.signal);
+  const resetCaller$ = resetSignal();
+  const callerSignal = context.store.set(resetCaller$, context.signal);
   const pendingQuery = bridge.query(
     {
       dataKey: dataKey(crypto.randomUUID()),
       afterSeqId: null,
       consistency: "cache-only",
     },
-    caller.signal,
+    callerSignal,
   );
   const pendingComputed = bridge.getComputed("chat-thread-indicators");
   await requestsStarted.promise;
-  const reason = new DOMException("Bridge closed", "AbortError");
-  owner.abort(reason);
+  context.store.set(resetOwner$);
+  const reason: unknown = ownerSignal.reason;
 
   await expect(pendingQuery).rejects.toBe(reason);
   await expect(pendingComputed).rejects.toBe(reason);
@@ -952,8 +960,8 @@ test("Keep indicators readable when chat warming fails", async () => {
 test("Cancel waiting indicator reads when their Worker lifecycle ends", async () => {
   mockNow(30_000, context.signal);
   const threadId = crypto.randomUUID();
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const worker = createChildAbortController(context.signal);
+  const resetWorker$ = resetSignal();
+  const workerSignal = context.store.set(resetWorker$, context.signal);
   const refreshLoaded = context.mocks.deferred<void>();
   let refreshing = false;
   mockUnreadIndicators(threadId);
@@ -973,19 +981,23 @@ test("Cancel waiting indicator reads when their Worker lifecycle ends", async ()
       notFoundThreads: [],
     });
   });
-  initializeWorker(worker.signal);
+  initializeWorker(workerSignal);
   const connectionId = crypto.randomUUID();
+  const connectionSignal = context.workerStore.set(
+    openConnection$,
+    connectionId,
+    workerSignal,
+  );
   context.workerStore.set(
     registerConnection$,
     connectionId,
-    worker,
     {
       getToken: () => {
         return Promise.resolve("message-port-token");
       },
       port: new InMemoryMessagePort(),
     },
-    worker.signal,
+    connectionSignal,
   );
   context.workerStore.set(recordConnectionHeartbeat$, connectionId);
   // Observe the Worker request directly: abort closes its message port before
@@ -999,7 +1011,7 @@ test("Cancel waiting indicator reads when their Worker lifecycle ends", async ()
         requestId: crypto.randomUUID(),
         computedKey: "chat-thread-indicators",
       },
-      worker.signal,
+      workerSignal,
     );
   };
   await readIndicators();
@@ -1015,7 +1027,406 @@ test("Cancel waiting indicator reads when their Worker lifecycle ends", async ()
     }),
     (async () => {
       await refreshLoaded.promise;
-      worker.abort(new DOMException("Worker stopped", "AbortError"));
+      context.store.set(resetWorker$);
     })(),
   ]);
+});
+
+test("Keep scopes, topics, and subscriber releases independent on one port", async () => {
+  initializeWorker();
+  const { bridge } = connectProtocolTransport(context.signal);
+  await bridge.registerTab(context.signal);
+  const topic = "presentationTemplatesChanged";
+  const userChannel = `user:${identity().userId}`;
+  const orgChannel = `org:${identity().orgId}`;
+  const messages: string[] = [];
+  const subscribe = (id: string, scope: "user" | "org", topicName = topic) => {
+    return bridge.subscribeRealtime(
+      id,
+      scope,
+      topicName,
+      () => {
+        messages.push(id);
+      },
+      () => {},
+    );
+  };
+  await subscribe("first", "user");
+  // Joining an already-ready topic must acknowledge the new subscriber too.
+  await subscribe("second", "user");
+  await subscribe("organization", "org");
+  await subscribe("other-topic", "user", "connectorPermissionUpdated");
+
+  bridge.unsubscribeRealtime("first");
+  // A completed query is a barrier for the preceding unsubscribe message.
+  await cachedRows(bridge, crypto.randomUUID());
+  context.mocks.ably.triggerOnChannel(userChannel, topic);
+  context.mocks.ably.triggerOnChannel(orgChannel, topic);
+  context.mocks.ably.triggerOnChannel(
+    userChannel,
+    "connectorPermissionUpdated",
+  );
+  await vi.waitFor(() => {
+    expect([...messages].sort()).toStrictEqual([
+      "organization",
+      "other-topic",
+      "second",
+    ]);
+  });
+
+  bridge.unsubscribeRealtime("second");
+  await vi.waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(userChannel, topic),
+    ).toBeFalsy();
+  });
+  expect(
+    context.mocks.ably.hasSubscriptionOnChannel(orgChannel, topic),
+  ).toBeTruthy();
+  expect(
+    context.mocks.ably.hasSubscriptionOnChannel(
+      userChannel,
+      "connectorPermissionUpdated",
+    ),
+  ).toBeTruthy();
+  await subscribe("reacquired", "user");
+  context.mocks.ably.triggerOnChannel(userChannel, topic);
+  await vi.waitFor(() => {
+    expect(messages.at(-1)).toBe("reacquired");
+  });
+  expect(messages).toHaveLength(4);
+});
+
+test.each(["attach", "fail"] as const)(
+  "Ignore a stale subscription %s after cancellation and reacquisition",
+  async (completion) => {
+    initializeWorker();
+    const { bridge, workerPort } = connectProtocolTransport(context.signal);
+    await bridge.registerTab(context.signal);
+    const topic = "connectorPermissionUpdated";
+    const channel = `user:${identity().userId}`;
+    const oldAttach = context.mocks.ably.deferSubscribeOnChannel(
+      channel,
+      topic,
+    );
+    const oldMessages: unknown[] = [];
+    const oldSubscription = bridge.subscribeRealtime(
+      "reused-id",
+      "user",
+      topic,
+      (message) => {
+        oldMessages.push(message.data);
+      },
+      () => {},
+    );
+    const cancelled = Promise.allSettled([oldSubscription]);
+    await oldAttach.started;
+    bridge.unsubscribeRealtime("reused-id");
+    await expect(cancelled).resolves.toMatchObject([
+      { status: "rejected", reason: { name: "AbortError" } },
+    ]);
+    await vi.waitFor(() => {
+      expect(
+        context.mocks.ably.hasSubscriptionOnChannel(channel, topic),
+      ).toBeFalsy();
+    });
+
+    const nextAttach = context.mocks.ably.deferSubscribeOnChannel(
+      channel,
+      topic,
+    );
+    const messages: unknown[] = [];
+    const subscription = bridge.subscribeRealtime(
+      "reused-id",
+      "user",
+      topic,
+      (message) => {
+        messages.push(message.data);
+      },
+      () => {},
+    );
+    await nextAttach.started;
+    if (completion === "attach") {
+      oldAttach.attach();
+    } else {
+      oldAttach.fail(new Error("Old subscription failed"));
+    }
+    nextAttach.attach();
+    await subscription;
+    context.mocks.ably.triggerOnChannel(channel, topic, { revision: 1 });
+    await vi.waitFor(() => {
+      expect(messages).toStrictEqual([{ revision: 1 }]);
+    });
+    expect(oldMessages).toStrictEqual([]);
+    const replies = workerPort.postedMessages
+      .map((message) => {
+        return sharedDatabaseWorkerMessageSchema.parse(message);
+      })
+      .filter((message) => {
+        return (
+          message.type === "realtime-subscribed" ||
+          message.type === "realtime-subscription-error"
+        );
+      });
+    expect(replies).toStrictEqual([
+      { type: "realtime-subscribed", subscriptionId: "reused-id" },
+    ]);
+  },
+);
+
+test("Deliver an attach failure to every subscriber and permit reacquisition", async () => {
+  initializeWorker();
+  const first = connectProtocolTransport(context.signal);
+  const second = connectProtocolTransport(context.signal);
+  await first.bridge.registerTab(context.signal);
+  await second.bridge.registerTab(context.signal);
+  const topic = "connectorPermissionUpdated";
+  const channel = `user:${identity().userId}`;
+  const attach = context.mocks.ably.deferSubscribeOnChannel(channel, topic);
+  const failed = Promise.allSettled([
+    first.bridge.subscribeRealtime(
+      "first",
+      "user",
+      topic,
+      () => {},
+      () => {},
+    ),
+    second.bridge.subscribeRealtime(
+      "second",
+      "user",
+      topic,
+      () => {},
+      () => {},
+    ),
+  ]);
+  await attach.started;
+  await cachedRows(second.bridge, crypto.randomUUID());
+  attach.fail(new Error("Attach rejected"));
+  await expect(failed).resolves.toMatchObject([
+    { status: "rejected", reason: { message: "Attach rejected" } },
+    { status: "rejected", reason: { message: "Attach rejected" } },
+  ]);
+  expect(
+    context.mocks.ably.hasSubscriptionOnChannel(channel, topic),
+  ).toBeFalsy();
+
+  const messages: unknown[] = [];
+  await second.bridge.subscribeRealtime(
+    "second",
+    "user",
+    topic,
+    (message) => {
+      messages.push(message.data);
+    },
+    () => {},
+  );
+  context.mocks.ably.triggerOnChannel(channel, topic, { recovered: true });
+  await vi.waitFor(() => {
+    expect(messages).toStrictEqual([{ recovered: true }]);
+  });
+});
+
+test("Keep identical subscription keys in separate worker Stores independent", async () => {
+  const resetWorker$ = resetSignal();
+  const firstSignal = context.workerStore.set(resetWorker$, context.signal);
+  const secondSignal = context.store.set(resetWorker$, context.signal);
+  initializeWorker(firstSignal, context.workerStore);
+  initializeWorker(secondSignal, context.store);
+  const first = connectProtocolTransport(firstSignal);
+  const second = connectProtocolTransport(
+    secondSignal,
+    undefined,
+    undefined,
+    context.store,
+  );
+  await first.bridge.registerTab(firstSignal);
+  await second.bridge.registerTab(secondSignal);
+  const topic = "connectorPermissionUpdated";
+  const channel = `user:${identity().userId}`;
+  const messages: unknown[] = [];
+  await first.bridge.subscribeRealtime(
+    "same-id",
+    "user",
+    topic,
+    () => {},
+    () => {},
+  );
+  await second.bridge.subscribeRealtime(
+    "same-id",
+    "user",
+    topic,
+    (message) => {
+      messages.push(message.data);
+    },
+    () => {},
+  );
+
+  context.workerStore.set(resetWorker$);
+  expect(firstSignal.aborted).toBeTruthy();
+  expect(secondSignal.aborted).toBeFalsy();
+  await vi.waitFor(() => {
+    expect(first.workerPort.closed).toBeTruthy();
+  });
+  expect(first.workerPort.listeners.size).toBe(0);
+  context.mocks.ably.triggerOnChannel(channel, topic, { revision: 1 });
+  await vi.waitFor(() => {
+    expect(messages).toStrictEqual([{ revision: 1 }]);
+  });
+  await expect(
+    cachedRows(second.bridge, crypto.randomUUID()),
+  ).resolves.toStrictEqual([]);
+});
+
+test("Close an unregistered port on parent cancellation and reject a pre-aborted parent", () => {
+  const resetWorker$ = resetSignal();
+  const workerSignal = context.store.set(resetWorker$, context.signal);
+  const [platformPort, workerPort] = messagePortPair();
+  new SharedDatabaseMessagePortServer(
+    context.workerStore,
+    workerPort,
+    workerSignal,
+  );
+  const queuedListener = [...workerPort.listeners][0]!;
+  platformPort.postMessage({ type: "register-tab" });
+  context.store.set(resetWorker$);
+  expect(workerPort.closed).toBeTruthy();
+  expect(workerPort.listeners.size).toBe(0);
+  // An already queued browser callback cannot register or reply after closure.
+  queuedListener(
+    new MessageEvent("message", { data: { type: "register-tab" } }),
+  );
+  queuedListener(new MessageEvent("message", { data: { type: "disconnect" } }));
+  expect(workerPort.postedMessages).toStrictEqual([]);
+
+  const reason = new DOMException("Worker was already stopped", "AbortError");
+  const [, unopenedPort] = messagePortPair();
+  expect(() => {
+    new SharedDatabaseMessagePortServer(
+      context.workerStore,
+      unopenedPort,
+      AbortSignal.abort(reason),
+    );
+  }).toThrow(reason);
+  expect(unopenedPort.listeners.size).toBe(0);
+});
+
+test("Reject pending token work on disconnect and ignore its late completion", async () => {
+  initializeWorker();
+  const resetOwner$ = resetSignal();
+  const ownerSignal = context.store.set(resetOwner$, context.signal);
+  const tokenStarted = context.mocks.deferred<void>();
+  const token = context.mocks.deferred<string>();
+  const first = connectProtocolTransport(ownerSignal, () => {
+    if (!tokenStarted.settled()) {
+      tokenStarted.resolve();
+    }
+    return token.promise;
+  });
+  // Registration queues a heartbeat. It must reach the worker before token routing.
+  await first.bridge.registerTab(ownerSignal);
+  await cachedRows(first.bridge, crypto.randomUUID());
+  const pending = context.workerStore.set(
+    requestTokenFromLatestConnection$,
+    context.signal,
+  );
+  const cancelled = Promise.allSettled([pending]);
+  await tokenStarted.promise;
+  context.store.set(resetOwner$);
+  await expect(cancelled).resolves.toMatchObject([
+    { status: "rejected", reason: { name: "AbortError" } },
+  ]);
+  expect(first.workerPort.closed).toBeTruthy();
+  expect(first.workerPort.listeners.size).toBe(0);
+  const replies = first.workerPort.postedMessages.length;
+  token.resolve("stale-token");
+
+  const second = connectProtocolTransport(context.signal, () => {
+    return Promise.resolve("fresh-token");
+  });
+  await second.bridge.registerTab(context.signal);
+  await cachedRows(second.bridge, crypto.randomUUID());
+  await expect(
+    context.workerStore.set(requestTokenFromLatestConnection$, context.signal),
+  ).resolves.toBe("fresh-token");
+  expect(first.workerPort.postedMessages).toHaveLength(replies);
+});
+
+test("Settle a disconnected query while another port completes the shared load", async () => {
+  initializeWorker();
+  const resetOwner$ = resetSignal();
+  const ownerSignal = context.store.set(resetOwner$, context.signal);
+  const first = connectProtocolTransport(ownerSignal);
+  const second = connectProtocolTransport(context.signal);
+  await first.bridge.registerTab(ownerSignal);
+  await second.bridge.registerTab(context.signal);
+  const key = dataKey(crypto.randomUUID());
+  const canonicalRow = row(key.threadId, 1);
+  const started = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    chatThreadEventsContract.rows,
+    async ({ query, respond }) => {
+      if (query.sinceSeqId === 0) {
+        if (!started.settled()) {
+          started.resolve();
+        }
+        await release.promise;
+        return respond(200, chatEventRowsResponse([canonicalRow], query));
+      }
+      return respond(200, chatEventRowsResponse([], query));
+    },
+  );
+  const query = {
+    dataKey: key,
+    afterSeqId: null,
+    consistency: "catch-up",
+  } as const;
+  const pending = first.bridge.query(query, ownerSignal);
+  const cancelled = Promise.allSettled([pending]);
+  const surviving = second.bridge.query(query, context.signal);
+  await started.promise;
+  context.store.set(resetOwner$);
+  await expect(cancelled).resolves.toStrictEqual([
+    { status: "rejected", reason: ownerSignal.reason },
+  ]);
+  await vi.waitFor(() => {
+    expect(first.workerPort.closed).toBeTruthy();
+  });
+  const replies = first.workerPort.postedMessages.length;
+  release.resolve();
+  await expect(surviving).resolves.toStrictEqual([canonicalRow]);
+  expect(first.workerPort.postedMessages).toHaveLength(replies);
+  expect(first.workerPort.listeners.size).toBe(0);
+});
+
+test("Propagate the worker parent's reason through pending token work", async () => {
+  const resetWorker$ = resetSignal();
+  const workerSignal = context.store.set(resetWorker$, context.signal);
+  initializeWorker(workerSignal);
+  const token = context.mocks.deferred<string>();
+  const tokenStarted = context.mocks.deferred<void>();
+  const { bridge, workerPort } = connectProtocolTransport(
+    context.signal,
+    () => {
+      if (!tokenStarted.settled()) {
+        tokenStarted.resolve();
+      }
+      return token.promise;
+    },
+  );
+  await bridge.registerTab(context.signal);
+  await cachedRows(bridge, crypto.randomUUID());
+  const pending = context.workerStore.set(
+    requestTokenFromLatestConnection$,
+    context.signal,
+  );
+  const cancelled = Promise.allSettled([pending]);
+  await tokenStarted.promise;
+  context.store.set(resetWorker$);
+  await expect(cancelled).resolves.toStrictEqual([
+    { status: "rejected", reason: workerSignal.reason },
+  ]);
+  expect(workerPort.closed).toBeTruthy();
+  expect(workerPort.listeners.size).toBe(0);
+  token.resolve("late-token");
 });

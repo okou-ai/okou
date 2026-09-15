@@ -7,6 +7,7 @@ import {
   type VisualizationChart,
   type VisualizationOutput,
 } from "../../signals/okou-page/composer-visualization.ts";
+import { ComposerRail, RAIL_TILE_CAPTION } from "./composer-rail.tsx";
 import { CURATED_VISUALIZATION_CHARTS } from "./composer-visualization-chart-data.ts";
 import { VisualizationChartPreview } from "./composer-visualization-previews.tsx";
 
@@ -31,17 +32,19 @@ function VisualizationOutputButton({
   return (
     <ToggleButton
       selected={selected}
-      layout="tile"
+      // `tile` is `block w-full`, which made every chip claim its own row once
+      // the picker stopped being a grid. `inline` is the layout that shrinks.
+      layout="inline"
       aria-label={label}
       className={cn(
-        "h-8 rounded-full px-3.5 text-xs font-medium",
+        "h-8 shrink-0 rounded-full px-3.5 py-0 text-xs font-medium",
         !selected && "border-control-border bg-transparent",
       )}
       onClick={() => {
         setOutput(output);
       }}
     >
-      <span className="block truncate">{label}</span>
+      {label}
     </ToggleButton>
   );
 }
@@ -99,22 +102,51 @@ function VisualizationChartButton({
   const label = copy.charts[chart];
   const selected = charts.includes(chart);
   return (
+    /*
+      A persistent pressed state, so the shared toggle owns `aria-pressed`, the
+      focus ring and the disabled appearance. Its own selected treatment is for
+      a control that is itself the surface; here the art box is, and the caption
+      sits outside it the way every other type's shelf tile does. So the outer
+      control is neutralised and the box below carries the state - and only the
+      resting branch is overridden, because overriding both is what erased the
+      selected state the first time.
+    */
     <ToggleButton
       selected={selected}
       layout="tile"
       aria-label={label}
+      // The button base clamps any nested icon to `size-4`; this tile's child is
+      // a drawing that has to fill its box, not an icon.
       className={cn(
-        "group min-h-[104px] overflow-hidden rounded-xl border-transparent bg-muted/60 p-1.5",
-        selected ? "text-foreground" : "text-foreground/50",
+        "group/tile w-[140px] border-0 p-0 text-left font-normal",
+        // `bg-transparent` alone leaves the toggle's dark selected fill: a
+        // theme-prefixed utility is a different merge key, so it survives an
+        // unprefixed one and would wash the tile in dark.
+        "bg-transparent dark:bg-transparent",
+        "[&:hover]:bg-transparent [&_svg]:size-full",
       )}
       onClick={() => {
         toggleChart(chart);
       }}
     >
-      <span className="block h-[70px]">
+      <span
+        className={cn(
+          "flex h-[84px] items-center justify-center rounded-lg border-2 p-2.5 transition-colors",
+          // Selection is a heavier stroke, which survives a row of grey
+          // silhouettes in a way a fill alone does not.
+          selected
+            ? "border-primary bg-primary/10 text-foreground"
+            : "border-transparent bg-muted/60 text-foreground/45 group-hover/tile:bg-muted group-hover/tile:text-foreground/70",
+        )}
+      >
         <VisualizationChartPreview chart={chart} />
       </span>
-      <span className="mt-1.5 block truncate px-1 text-center text-xs font-medium">
+      <span
+        className={cn(
+          RAIL_TILE_CAPTION,
+          selected ? "text-foreground" : "text-muted-foreground",
+        )}
+      >
         {label}
       </span>
     </ToggleButton>
@@ -136,12 +168,12 @@ function VisualizationChartPicker({
   return (
     <section className="flex min-w-0 flex-col gap-2.5">
       <h4 className="text-xs font-medium">{copy.preferredCharts}</h4>
-      <div
-        className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6"
-        role="group"
-        aria-label={copy.preferredCharts}
-      >
-        {CURATED_VISUALIZATION_CHARTS.map((chart) => {
+      <ComposerRail
+        signals={signals}
+        rail="charts"
+        label={copy.preferredCharts}
+        gap="gap-2"
+        items={CURATED_VISUALIZATION_CHARTS.map((chart) => {
           return (
             <VisualizationChartButton
               key={chart}
@@ -150,7 +182,7 @@ function VisualizationChartPicker({
             />
           );
         })}
-      </div>
+      />
     </section>
   );
 }
@@ -175,7 +207,6 @@ export function ComposerVisualizationOptions({
     >
       <VisualizationOutputPicker signals={signals} />
       <VisualizationChartPicker signals={signals} />
-      <p className="text-xs text-muted-foreground">{copy.chartSafety}</p>
     </section>
   );
 }

@@ -7,12 +7,7 @@ import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { logger } from "../log.ts";
-import {
-  onRef,
-  onRejection,
-  settle,
-  createChildAbortController,
-} from "../utils.ts";
+import { onRef, onRejection, settle } from "../utils.ts";
 import {
   readVoiceDraftRecording,
   createVoiceDraftRecording,
@@ -51,6 +46,10 @@ interface OwnedVoiceDraftRecording {
 export type ComposerVoiceInputSignals = ReturnType<
   typeof createComposerVoiceInputSignals
 >;
+export interface ComposerVoiceInputOwner {
+  readonly element: HTMLElement;
+  readonly signal: AbortSignal;
+}
 
 // Local audio/storage failures need a recovery message. API errors belong to
 // accept and must propagate directly to the action's loadable.
@@ -345,14 +344,13 @@ function createVoiceActionBindings(
 ) {
   const { state$, capture, restoreRecording$ } = data;
   const { start$, finish$, discard$, transcribe$ } = mutations;
-  const internalOwner$ = state<AbortController | null>(null);
+  const internalOwner$ = state<ComposerVoiceInputOwner | null>(null);
   const owner$ = computed((get) => {
     return get(internalOwner$);
   });
-  const element$ = state<HTMLElement | null>(null);
   const invocation$ = state<{
     readonly action: "start" | "finish" | "retry" | "discard";
-    readonly owner: AbortController;
+    readonly owner: ComposerVoiceInputOwner;
   } | null>(null);
   const action$ = computed((get) => {
     const invocation = get(invocation$);
@@ -397,16 +395,17 @@ function createVoiceActionBindings(
     },
   );
   const mount$ = onRef(
-    command(async ({ set }, element: HTMLElement, signal: AbortSignal) => {
-      set(element$, element);
-      // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-      set(internalOwner$, createChildAbortController(signal));
+    command(async ({ get, set }, element: HTMLElement, signal: AbortSignal) => {
+      const owner = { element, signal };
+      set(internalOwner$, owner);
       signal.addEventListener(
         "abort",
         () => {
+          if (get(internalOwner$)?.signal !== signal) {
+            return;
+          }
           set(capture.cancel$);
           set(internalOwner$, null);
-          set(element$, null);
         },
         { once: true },
       );
@@ -416,8 +415,8 @@ function createVoiceActionBindings(
   // The global shortcut activates the same enabled control as a click, so it
   // shares the React invocation's loadable state and cannot bypass disabled UI.
   const toggle$ = command(({ get }) => {
-    get(element$)
-      ?.querySelector<HTMLButtonElement>("[data-composer-voice-toggle]")
+    get(owner$)
+      ?.element.querySelector<HTMLButtonElement>("[data-composer-voice-toggle]")
       ?.click();
   });
   return { owner$, action$, run$, setRootRef$: mount$, toggle$ };

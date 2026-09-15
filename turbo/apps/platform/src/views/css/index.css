@@ -138,6 +138,20 @@
   /* Shimmer sweep for the thinking label, on the same contract. */
   --animate-shimmer: okou-shimmer 3.5s linear infinite;
 
+  /* The composer's second level. The panel settles once when a type is picked,
+     then each row's items resolve left to right, which is the order they are
+     read in. Opacity has exactly one owner - the items - so the two do not
+     multiply into a wash. Consumers reach both through `motion-safe:animate-*`,
+     so reduced motion drops the class entirely and the content is simply
+     present. The item entry is `backwards` so a staggered item does not paint
+     at full opacity while it waits; the row sets each item's delay inline,
+     because `animate-*` compiles to the `animation` shorthand and a shorthand
+     resets any separate `animation-delay` rule back to zero. Keyframes stay
+     below. */
+  --animate-composer-panel-in: okou-composer-panel-in 220ms ease-out;
+  --animate-composer-rail-item-in: okou-composer-rail-item-in 260ms ease-out
+    backwards;
+
   /* Onboarding workflow diagram beam. Its keyframes stay below; the consumer
      reaches this entry through `motion-safe:animate-owf-beam-flow`. */
   --animate-owf-beam-flow: owf-beam-flow 2.8s linear infinite;
@@ -393,35 +407,6 @@ body {
   }
 }
 
-@media (max-width: 767px) {
-  /* Fixed mobile surfaces escape the page shell, so their interactive content
-     owns an immutable safe-area boundary. */
-  .okou-mobile-fixed-safe-area {
-    box-sizing: border-box;
-    padding: var(--sat) var(--sar) var(--sab) var(--sal);
-  }
-}
-
-.okou-mobile-sidebar {
-  isolation: isolate;
-}
-
-.okou-mobile-sidebar::before {
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  background-color: hsl(var(--sidebar));
-  content: "";
-  pointer-events: none;
-}
-
-@media (display-mode: standalone) {
-  /* Paint may extend below the viewport without moving drawer content. */
-  .okou-mobile-sidebar::before {
-    bottom: calc(-1 * var(--sab));
-  }
-}
-
 /* Shimmer text effect for active/thinking states. Reached through
    `--animate-shimmer` and `--background-image-shimmer-text` above; the rest of
    the treatment is utilities on `ShimmerText`.
@@ -445,6 +430,29 @@ body {
   from {
     opacity: 0;
     transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Transform only. The items inside own the fade, and two nested opacity
+   animations multiply: at 100ms a cover was rendering at 34% with both
+   running, which read as washed out rather than as arriving. */
+@keyframes okou-composer-panel-in {
+  from {
+    transform: translateY(0.375rem);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes okou-composer-rail-item-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.25rem);
   }
   to {
     opacity: 1;
@@ -554,8 +562,15 @@ body {
   --okou-color-theme-ring: 74.2 53.8% 41.6%;
 }
 
-/* Okou app: inherits global neutral tokens; only card-specific tokens defined here */
-.okou-app {
+/* Card geometry and elevation. These are document-level runtime theme values, so
+   they are owned at `:root` rather than inside the `.okou-app` scope, for the
+   reason `--okou-composer-focus-veil` already records: a portaled surface is not
+   a descendant of the app shell, so a scoped declaration never reaches it. The
+   queue drawer is that case — `SheetContent` renders inside `SheetPortal`, so its
+   plan, upgrade and concurrency cards resolved `--okou-card-radius` to nothing
+   and painted square corners despite asking for the card radius. Document scope
+   gives them the radius their markup already requests. */
+:root {
   --okou-card-radius: 1.25rem;
   /* Cards rendered inside a chat message sit one level in from the page, so
      they take one step down the radius scale. */
@@ -565,6 +580,16 @@ body {
   /* A card inside a message is not elevated off the page the way a page-level
      card is, so it gets contact rather than lift: a 2px blur instead of 12px. */
   --okou-chat-card-shadow: 0 1px 2px hsl(30 6% 45% / 0.05);
+}
+
+/* A gradient palette tints the elevation with the palette's own state layer.
+   `signals/theme.ts` writes this attribute onto the document element, so the
+   override sits at `:root` beside the values it refines. */
+:root[data-gradient-color-themes] {
+  --okou-card-shadow:
+    0 2px 12px hsl(var(--state-layer) / 0.035),
+    0 0 0 0.5px hsl(var(--state-layer) / 0.018);
+  --okou-chat-card-shadow: 0 1px 2px hsl(var(--state-layer) / 0.035);
 }
 
 /* Static focus veil for the composer. Fading this layer through opacity lets
@@ -602,13 +627,6 @@ body {
   --okou-composer-focus-veil: none;
 }
 
-.okou-app[data-gradient-color-themes] {
-  --okou-card-shadow:
-    0 2px 12px hsl(var(--state-layer) / 0.035),
-    0 0 0 0.5px hsl(var(--state-layer) / 0.018);
-  --okou-chat-card-shadow: 0 1px 2px hsl(var(--state-layer) / 0.035);
-}
-
 /* Reusable 0.7px border utilities — replaces inline style={{ border: "0.7px solid ..." }}
 
    Do not delete this rule yet, and do not trust the tooling about it. Its last
@@ -635,12 +653,6 @@ body {
    a picture stays readable without the stroke reading as a frame. */
 .okou-thumb-border {
   border: 0.5px solid hsl(var(--gray-400));
-}
-
-/* The sidebars take the site's own two greys. */
-.okou-app {
-  --color-sidebar: hsl(var(--sidebar));
-  --color-sidebar-rail: hsl(var(--sidebar-rail));
 }
 
 /* The travel a sidebar thread title is scrolled by while its row is hovered or

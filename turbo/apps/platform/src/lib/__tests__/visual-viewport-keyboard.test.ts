@@ -1,7 +1,7 @@
 import { expect, test, vi, type Mock } from "vitest";
 
 import { testContext } from "../../signals/__tests__/test-helpers.ts";
-import { createChildAbortController } from "../../signals/utils.ts";
+import { resetSignal } from "../../signals/utils.ts";
 import { setupVisualViewportKeyboardState } from "../visual-viewport-keyboard.ts";
 
 const context = testContext();
@@ -144,13 +144,11 @@ async function resizeAndSettle(
 }
 
 function startViewportKeyboardState(): ControlledViewportClock {
-  const clock = new ControlledViewportClock(context.signal);
-  let settledController: AbortController | null = null;
-  setupVisualViewportKeyboardState(context.signal, () => {
-    settledController?.abort();
-    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-    settledController = createChildAbortController(context.signal);
-    return settledController.signal;
+  const resetSettled$ = resetSignal();
+  const { store, signal } = context;
+  const clock = new ControlledViewportClock(signal);
+  setupVisualViewportKeyboardState(signal, () => {
+    return store.set(resetSettled$, signal);
   });
   return clock;
 }

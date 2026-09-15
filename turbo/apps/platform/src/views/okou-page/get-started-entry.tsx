@@ -1,0 +1,553 @@
+import type { ReactNode } from "react";
+import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useTranslation } from "react-i18next";
+import {
+  CalendarCheck,
+  Check,
+  Coins,
+  Link2,
+  UserPlus,
+  Workflow,
+} from "lucide-react";
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  Input,
+} from "@okouai/ui";
+import { assistantName$ } from "../../signals/branding.ts";
+import { detachedNavigateTo$ } from "../../signals/route.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
+import {
+  getStartedQuests$,
+  getStartedSummary$,
+  setShareDialogOpen$,
+  setSharePostDraft$,
+  shareDialogOpen$,
+  sharePostDraft$,
+  submitSharePost$,
+  type GetStartedQuest,
+  type GetStartedQuestKey,
+  type GetStartedSummary,
+} from "../../signals/okou-page/get-started.ts";
+import { detach, Reason } from "../../signals/utils.ts";
+import { formatLocalizedNumber } from "../../i18n/format.ts";
+import { DropdownMenuModalItem } from "../components/dropdown-menu-modal-item.tsx";
+import { SlackMark } from "./components/slack-mark.tsx";
+
+/** What each quest pays. Rewards are per person, not per org. */
+const QUEST_REWARDS = {
+  connector: 100,
+  slack: 2000,
+  workflow: 1000,
+  invite: 100,
+  share: 2000,
+  checkin: 100,
+} as const satisfies Record<GetStartedQuestKey, number>;
+
+// The ring is drawn at 16px so it agrees with the `[&_svg]:size-4` that Button
+// enforces on its descendants, and its geometry is fixed at that size.
+const RING_RADIUS = 7;
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+
+function QuestRing({ completed, total }: { completed: number; total: number }) {
+  const fraction = completed / total;
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      className="size-4 shrink-0"
+      fill="none"
+      strokeWidth={2}
+      aria-hidden="true"
+    >
+      <circle cx={8} cy={8} r={RING_RADIUS} className="stroke-divider" />
+      {fraction > 0 && (
+        <circle
+          cx={8}
+          cy={8}
+          r={RING_RADIUS}
+          className="stroke-primary"
+          strokeLinecap="round"
+          strokeDasharray={RING_CIRCUMFERENCE}
+          strokeDashoffset={RING_CIRCUMFERENCE * (1 - fraction)}
+          transform="rotate(-90 8 8)"
+        />
+      )}
+    </svg>
+  );
+}
+
+/** X publishes no icon font and lucide dropped brand marks, so it is inlined. */
+function XMark() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="size-4 shrink-0"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M17.53 3H21l-7.19 8.21L22.24 21h-6.63l-5.2-6.79L4.46 21H1l7.69-8.79L1.27 3h6.8l4.7 6.22L17.53 3Zm-1.16 16h1.83L7.75 4.9H5.79L16.37 19Z" />
+    </svg>
+  );
+}
+
+const QUEST_ICONS = Object.freeze<Record<GetStartedQuestKey, ReactNode>>({
+  connector: <Link2 className="text-muted-foreground" />,
+  slack: <SlackMark size={16} />,
+  workflow: <Workflow className="text-muted-foreground" />,
+  invite: <UserPlus className="text-muted-foreground" />,
+  share: <XMark />,
+  checkin: <CalendarCheck className="text-muted-foreground" />,
+});
+
+interface QuestCopy {
+  readonly name: string;
+  readonly description: string;
+  /** The trailing unit on a reward that is paid more than once, if any. */
+  readonly unit: string | null;
+}
+
+function useQuestCopy(): Record<GetStartedQuestKey, QuestCopy> {
+  const { t } = useTranslation();
+  const assistantName = useGet(assistantName$);
+  return {
+    connector: {
+      name: t(($) => {
+        return $.chat.agentPage.getStarted.connector.name;
+      }),
+      description: t(($) => {
+        return $.chat.agentPage.getStarted.connector.description;
+      }),
+      unit: t(($) => {
+        return $.chat.agentPage.getStarted.connector.unit;
+      }),
+    },
+    slack: {
+      name: t(
+        ($) => {
+          return $.chat.agentPage.getStarted.slack.name;
+        },
+        { assistantName },
+      ),
+      description: t(($) => {
+        return $.chat.agentPage.getStarted.slack.description;
+      }),
+      unit: null,
+    },
+    workflow: {
+      name: t(($) => {
+        return $.chat.agentPage.getStarted.workflow.name;
+      }),
+      description: t(($) => {
+        return $.chat.agentPage.getStarted.workflow.description;
+      }),
+      unit: null,
+    },
+    invite: {
+      name: t(($) => {
+        return $.chat.agentPage.getStarted.invite.name;
+      }),
+      description: t(($) => {
+        return $.chat.agentPage.getStarted.invite.description;
+      }),
+      unit: t(($) => {
+        return $.chat.agentPage.getStarted.invite.unit;
+      }),
+    },
+    share: {
+      name: t(
+        ($) => {
+          return $.chat.agentPage.getStarted.share.name;
+        },
+        { assistantName },
+      ),
+      description: t(($) => {
+        return $.chat.agentPage.getStarted.share.description;
+      }),
+      unit: null,
+    },
+    checkin: {
+      name: t(($) => {
+        return $.chat.agentPage.getStarted.checkin.name;
+      }),
+      description: t(($) => {
+        return $.chat.agentPage.getStarted.checkin.description;
+      }),
+      unit: t(($) => {
+        return $.chat.agentPage.getStarted.checkin.unit;
+      }),
+    },
+  };
+}
+
+function QuestReward({
+  questKey,
+  unit,
+}: {
+  questKey: GetStartedQuestKey;
+  unit: string | null;
+}) {
+  const { t } = useTranslation();
+  return (
+    <span className="shrink-0 text-xs font-semibold tabular-nums text-brand-text">
+      {t(
+        ($) => {
+          return $.chat.agentPage.getStarted.reward;
+        },
+        { amount: formatLocalizedNumber(QUEST_REWARDS[questKey]) },
+      )}
+      {unit !== null && (
+        <span className="font-normal text-muted-foreground"> {unit}</span>
+      )}
+    </span>
+  );
+}
+
+const QUEST_ROW_CLASS = "gap-3 px-3 py-2.5";
+
+function QuestRowBody({
+  quest,
+  copy,
+}: {
+  quest: GetStartedQuest;
+  copy: QuestCopy;
+}) {
+  const { t } = useTranslation();
+  const done = quest.status === "done";
+  const description =
+    quest.status === "inReview"
+      ? t(($) => {
+          return $.chat.agentPage.getStarted.inReviewDescription;
+        })
+      : copy.description;
+  return (
+    <>
+      {QUEST_ICONS[quest.key]}
+      <span className="min-w-0 flex-1">
+        <span
+          className={`block truncate ${done ? "text-muted-foreground" : ""}`}
+        >
+          {copy.name}
+        </span>
+        <span className="block truncate text-xs text-muted-foreground">
+          {description}
+        </span>
+      </span>
+      {done && <Check className="shrink-0 text-[#2EB67D]" />}
+      {quest.status === "inReview" && (
+        <span className="shrink-0 rounded-full bg-gray-50 px-2 py-0.5 text-xs text-muted-foreground">
+          {t(($) => {
+            return $.chat.agentPage.getStarted.inReview;
+          })}
+        </span>
+      )}
+      {quest.status === "todo" && (
+        <QuestReward questKey={quest.key} unit={copy.unit} />
+      )}
+    </>
+  );
+}
+
+function QuestRow({
+  quest,
+  copy,
+  onSelect,
+}: {
+  quest: GetStartedQuest;
+  copy: QuestCopy;
+  onSelect: (() => void) | null;
+}) {
+  const body = <QuestRowBody quest={quest} copy={copy} />;
+  const testId = `get-started-quest-${quest.key}`;
+
+  // A quest with nothing left to open is a status line, not a control, so it
+  // renders without a hover state rather than as a menu item that does nothing.
+  if (onSelect === null) {
+    return <div className={`flex items-center ${QUEST_ROW_CLASS}`}>{body}</div>;
+  }
+
+  // Keep the share dialog on the shared modal-item composition path.
+  if (quest.key === "share") {
+    return (
+      <DropdownMenuModalItem
+        className={QUEST_ROW_CLASS}
+        onModalSelect={onSelect}
+        data-testid={testId}
+      >
+        {body}
+      </DropdownMenuModalItem>
+    );
+  }
+
+  return (
+    <DropdownMenuItem
+      className={QUEST_ROW_CLASS}
+      onClick={onSelect}
+      data-testid={testId}
+    >
+      {body}
+    </DropdownMenuItem>
+  );
+}
+
+function ShareOnXDialog() {
+  const { t } = useTranslation();
+  const assistantName = useGet(assistantName$);
+  const open = useGet(shareDialogOpen$);
+  const postUrl = useGet(sharePostDraft$);
+  const setOpen = useSet(setShareDialogOpen$);
+  const setDraft = useSet(setSharePostDraft$);
+  const submitShare = useSet(submitSharePost$);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent smMaxWidth="sm" maxWidth={420}>
+        <DialogHeader>
+          <DialogTitle>
+            {t(
+              ($) => {
+                return $.chat.agentPage.getStarted.shareDialog.title;
+              },
+              { assistantName },
+            )}
+          </DialogTitle>
+          <DialogDescription>
+            {t(($) => {
+              return $.chat.agentPage.getStarted.shareDialog.description;
+            })}
+          </DialogDescription>
+        </DialogHeader>
+        <div>
+          <Input
+            type="url"
+            value={postUrl}
+            aria-label={t(($) => {
+              return $.chat.agentPage.getStarted.shareDialog.inputLabel;
+            })}
+            placeholder={t(($) => {
+              return $.chat.agentPage.getStarted.shareDialog.placeholder;
+            })}
+            onChange={(event) => {
+              setDraft(event.target.value);
+            }}
+          />
+          <p className="mt-2 text-xs text-muted-foreground">
+            {t(
+              ($) => {
+                return $.chat.agentPage.getStarted.shareDialog.helper;
+              },
+              { assistantName },
+            )}
+          </p>
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setOpen(false);
+            }}
+          >
+            {t(($) => {
+              return $.chat.actions.cancel;
+            })}
+          </Button>
+          <Button
+            type="button"
+            disabled={postUrl.trim() === ""}
+            onClick={() => {
+              submitShare();
+            }}
+          >
+            {t(($) => {
+              return $.chat.agentPage.getStarted.shareDialog.submit;
+            })}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function useQuestActions(): Record<GetStartedQuestKey, (() => void) | null> {
+  const pageSignal = useGet(pageSignal$);
+  const openSettings = useSet(openSettingsDialogAt$);
+  const navigate = useSet(detachedNavigateTo$);
+  const setShareDialogOpen = useSet(setShareDialogOpen$);
+  return {
+    connector: () => {
+      navigate("/connectors");
+    },
+    slack: () => {
+      navigate("/works");
+    },
+    workflow: () => {
+      navigate("/workflows");
+    },
+    invite: () => {
+      detach(openSettings("people", pageSignal), Reason.DomCallback);
+    },
+    share: () => {
+      setShareDialogOpen(true);
+    },
+    // Opening the app is the check-in, so there is nothing to navigate to.
+    checkin: null,
+  };
+}
+
+function GetStartedPanel({
+  quests,
+  summary,
+}: {
+  quests: readonly GetStartedQuest[];
+  summary: GetStartedSummary;
+}) {
+  const { t } = useTranslation();
+  const copy = useQuestCopy();
+  const actions = useQuestActions();
+  const percent = (summary.completed / summary.total) * 100;
+  // Checking in is the one quest that never finishes, so it sits below a
+  // divider instead of competing with the steps that can be completed.
+  const oneTimeQuests = quests.filter((quest) => {
+    return quest.key !== "checkin";
+  });
+  const recurringQuests = quests.filter((quest) => {
+    return quest.key === "checkin";
+  });
+  const selectHandler = (quest: GetStartedQuest): (() => void) | null => {
+    return quest.status === "todo" ? actions[quest.key] : null;
+  };
+
+  return (
+    <DropdownMenuContent align="end" className="w-[356px]">
+      <div className="flex items-start gap-2.5 px-3 pb-2 pt-2.5">
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-semibold">
+            {t(($) => {
+              return $.chat.agentPage.getStarted.title;
+            })}
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {t(($) => {
+              return $.chat.agentPage.getStarted.subtitle;
+            })}
+          </p>
+        </div>
+        <span className="flex h-[22px] shrink-0 items-center gap-1.5 rounded-full bg-brand-subtle px-2 text-xs font-semibold tabular-nums text-brand-text">
+          <Coins />
+          {formatLocalizedNumber(summary.earnedCredits)}
+        </span>
+      </div>
+      <div className="px-3 pb-2.5">
+        <span
+          role="progressbar"
+          aria-label={t(($) => {
+            return $.chat.agentPage.getStarted.progressLabel;
+          })}
+          aria-valuemin={0}
+          aria-valuemax={summary.total}
+          aria-valuenow={summary.completed}
+          className="block h-1 overflow-hidden rounded-full bg-divider"
+        >
+          <span
+            className="block h-full rounded-full bg-primary"
+            style={{ width: `${percent}%` }}
+          />
+        </span>
+      </div>
+      <DropdownMenuSeparator />
+      {oneTimeQuests.map((quest) => {
+        return (
+          <QuestRow
+            key={quest.key}
+            quest={quest}
+            copy={copy[quest.key]}
+            onSelect={selectHandler(quest)}
+          />
+        );
+      })}
+      {recurringQuests.length > 0 && <DropdownMenuSeparator />}
+      {recurringQuests.map((quest) => {
+        return (
+          <QuestRow
+            key={quest.key}
+            quest={quest}
+            copy={copy[quest.key]}
+            onSelect={selectHandler(quest)}
+          />
+        );
+      })}
+      <DropdownMenuSeparator />
+      <p className="px-3 pb-1 pt-1.5 text-xs text-muted-foreground">
+        {t(($) => {
+          return $.chat.agentPage.getStarted.personalBalanceNote;
+        })}
+      </p>
+    </DropdownMenuContent>
+  );
+}
+
+/**
+ * The home corner's onboarding entry.
+ *
+ * It takes the same shape as the growth control beside it — 32px tall, the same
+ * 12px radius, hairline and card shadow — so the two read as one row rather
+ * than as a control and a banner. The ring is the only mark the corner gains.
+ */
+export function GetStartedEntry() {
+  const { t } = useTranslation();
+  const questsLoadable = useLastLoadable(getStartedQuests$);
+  const summaryLoadable = useLastLoadable(getStartedSummary$);
+
+  if (
+    questsLoadable.state !== "hasData" ||
+    summaryLoadable.state !== "hasData"
+  ) {
+    return null;
+  }
+  const summary = summaryLoadable.data;
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="quiet"
+            size="sm"
+            className="h-8 gap-2 rounded-surface-compact border border-surface-border bg-card px-[11px] text-foreground shadow-surface data-popup-open:bg-state-hover"
+            data-testid="get-started-entry"
+          >
+            <QuestRing completed={summary.completed} total={summary.total} />
+            <span className="text-[13px] font-medium">
+              {t(($) => {
+                return $.chat.agentPage.getStarted.title;
+              })}
+            </span>
+            <span aria-hidden="true" className="h-4 w-px shrink-0 bg-divider" />
+            <span className="text-xs font-semibold tabular-nums text-muted-foreground">
+              {t(
+                ($) => {
+                  return $.chat.agentPage.getStarted.stepCount;
+                },
+                { completed: summary.completed, total: summary.total },
+              )}
+            </span>
+          </Button>
+        </DropdownMenuTrigger>
+        <GetStartedPanel quests={questsLoadable.data} summary={summary} />
+      </DropdownMenu>
+      <ShareOnXDialog />
+    </>
+  );
+}

@@ -5,6 +5,8 @@ import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 
 import {
+  HeadObjectCommand,
+  DeleteObjectsCommand,
   PutObjectCommand,
   type PutObjectCommandInput,
 } from "@aws-sdk/client-s3";
@@ -1337,7 +1339,26 @@ describe("POST /api/video-io/generate", () => {
 
       let observedAuthorization: string | null = null;
       let observedBody: unknown = null;
+      const posterGrants: string[] = [];
+      context.mocks.s3.send.mockImplementation((command) => {
+        if (command instanceof HeadObjectCommand) {
+          return Promise.resolve({
+            ContentLength: VIDEO_BYTES.byteLength,
+            ContentType: "video/mp4",
+          });
+        }
+        return Promise.resolve({});
+      });
       server.use(
+        http.post(
+          "https://files.okou.app/__artifact-video-poster",
+          ({ request }) => {
+            posterGrants.push(request.headers.get("Authorization") ?? "");
+            return new HttpResponse(new Uint8Array([0xff, 0xd8, 0xff]), {
+              headers: { "Content-Type": "image/jpeg" },
+            });
+          },
+        ),
         http.post(BYTEPLUS_VIDEO_TASKS_URL, async ({ request }) => {
           observedAuthorization = request.headers.get("authorization");
           observedBody = await request.json();
@@ -1468,6 +1489,56 @@ describe("POST /api/video-io/generate", () => {
       const putInput = putObjectInput();
       if (privateArtifacts) {
         expect(body).not.toHaveProperty("sourceUrl");
+        expect(posterGrants).toStrictEqual([
+          expect.stringMatching(/^Bearer [a-f0-9]{48}$/u),
+        ]);
+        const storageCommands = context.mocks.s3.send.mock.calls.map(
+          ([command]) => {
+            return command;
+          },
+        );
+        expect(
+          storageCommands
+            .filter((command) => {
+              return command instanceof PutObjectCommand;
+            })
+            .map((command) => {
+              return command.input;
+            }),
+        ).toStrictEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              Bucket: "test-private-artifacts",
+              Key: expect.stringMatching(
+                /^private-artifacts\/[0-9a-f-]{36}\/poster-v2\.jpg$/u,
+              ),
+              ContentType: "image/jpeg",
+              IfNoneMatch: "*",
+            }),
+          ]),
+        );
+        expect(
+          storageCommands
+            .filter((command) => {
+              return command instanceof DeleteObjectsCommand;
+            })
+            .map((command) => {
+              return command.input;
+            }),
+        ).toStrictEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              Bucket: "test-private-artifacts",
+              Delete: {
+                Objects: [
+                  {
+                    Key: `private-video-previews/${posterGrants[0]!.slice(7)}.json`,
+                  },
+                ],
+              },
+            }),
+          ]),
+        );
         expect(putInput.Bucket).toBe("test-private-artifacts");
         expect(putInput.Key).toBe(`private-artifacts/${fileId}/${filename}`);
         expect(url).toBe(artifactReferencePath(fileId, filename));

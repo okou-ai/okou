@@ -385,33 +385,6 @@ export function resetSignal(): Command<AbortSignal, AbortSignal[]> {
   });
 }
 
-/**
- * Create a local cancellation owner that always cascades its parent signal.
- * Aborting the child also removes its listener from the parent immediately.
- *
- * @deprecated Inherit an existing owner or use a stable resetSignal() command.
- */
-export function createChildAbortController(
-  parentSignal: AbortSignal,
-): AbortController {
-  const controller = new AbortController();
-  const onParentAbort = () => {
-    controller.abort(parentSignal.reason);
-  };
-  if (parentSignal.aborted) {
-    onParentAbort();
-  } else {
-    const removeParentListener = () => {
-      parentSignal.removeEventListener("abort", onParentAbort);
-    };
-    parentSignal.addEventListener("abort", onParentAbort, { once: true });
-    controller.signal.addEventListener("abort", removeParentListener, {
-      once: true,
-    });
-  }
-  return controller;
-}
-
 export function onDomEventFn<T>(callback: (e: T) => void | Promise<void>) {
   return function (e: T) {
     detach(callback(e), Reason.DomCallback);

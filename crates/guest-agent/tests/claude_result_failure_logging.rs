@@ -25,6 +25,10 @@ async fn claude_error_result_is_written_to_system_log() -> Result<(), Box<dyn st
     let masker = SecretMasker::from_raw("");
     for (failure_message, expected_reason) in [
         (
+            "Credit balance is too low",
+            Some(FailureReason::ProviderInsufficientCredits),
+        ),
+        (
             "Failed to authenticate. API Error: 401 OAuth access token is invalid.",
             Some(FailureReason::ReconnectRequired),
         ),
@@ -88,6 +92,15 @@ async fn claude_error_result_is_written_to_system_log() -> Result<(), Box<dyn st
             "system log should include Claude JSONL failure reason: {system_log}"
         );
     }
+
+    runtime.config.prompt = "printf 'Credit balance is too low'".to_string();
+    let successful = tokio::time::timeout(
+        Duration::from_secs(5),
+        common::execute_cli_for_runtime(&runtime, &masker, common::spawn_dummy_heartbeat()),
+    )
+    .await??;
+    assert_eq!(successful.exit_code, 0);
+    assert!(successful.failure_diagnostic.is_none());
 
     Ok(())
 }

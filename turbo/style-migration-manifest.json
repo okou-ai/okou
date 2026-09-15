@@ -962,13 +962,15 @@
       "tokens": ["okou-mobile-fixed-safe-area", "okou-mobile-sidebar"],
       "consumers": ["apps/platform/src/views/okou-page/sidebar.tsx"],
       "cases": [
-        "pwa-safe-area-cover-shell-light",
-        "pwa-safe-area-cover-shell-dark",
-        "pwa-safe-area-cover-scrim-light",
-        "pwa-safe-area-cover-scrim-dark"
+        "mobile-drawer-light",
+        "mobile-drawer-dark",
+        "mobile-drawer-boundary-light",
+        "mobile-drawer-boundary-dark",
+        "mobile-drawer-desktop-light",
+        "mobile-drawer-desktop-dark"
       ],
-      "status": "blocked",
-      "blockedReason": "Both remaining tokens sit on one element, the mobile drawer aside at apps/platform/src/views/okou-page/sidebar.tsx, and draining them needs a design decision about where this shape belongs. okou-mobile-sidebar is isolation isolate plus a six-declaration ::before paint layer plus a standalone-only bottom extension on that layer; okou-mobile-fixed-safe-area is box-sizing and a four-value safe-area padding inside max-width 767px. Spelled as utilities on the consumer that is isolate, before:pointer-events-none, before:absolute, before:inset-0, before:-z-1, before:bg-sidebar, before:content-[\"\"], before:[@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))], max-md:box-border and max-md:p-[var(--sat)_var(--sar)_var(--sab)_var(--sal)]. Measured, that takes the element from 288 to 499 characters of class list and from 2 to 6 bracketed arbitrary values, four of them new. The element already carried a 235-character single string before any change. Whether that belongs inline, behind a shared safe-area padding decision, or inside a drawer-surface component is a design call about the token layer, not a mechanical substitution, so no value was chosen here. The mechanics are otherwise clear and unblocked: both legacy rules are unlayered, nothing else on the element sets isolation, ::before, padding or box-sizing, so the utilities would not have to outrank anything and no important marker is needed. max-md is also not an exact restatement of the retired condition. Tailwind emits @media (width < 48rem), so between 767px and 768px of viewport width the padding would newly apply while the retired rule stopped at 767px; the element already gates its whole fixed-drawer geometry on max-md, so the two spellings disagree there today. Nothing about this batch depends on data-desktop-shell, so it is independent of the desktop-titlebar block in the same family.",
+      "status": "implemented",
+      "blockedReason": null,
       "evidence": [],
       "pullRequest": null,
       "mergeCommit": null
@@ -1153,6 +1155,31 @@
       "mergeCommit": null
     },
     {
+      "id": "app-card-tokens",
+      "family": "platform-shell",
+      "tokens": ["okou-app"],
+      "consumers": [
+        "apps/platform/src/views/css/index.css",
+        "apps/platform/src/views/queue-page/queue-drawer.tsx",
+        "apps/platform/src/views/okou-page/components/chat-card.tsx",
+        "apps/platform/src/views/okou-page/chat-composer.tsx",
+        "apps/platform/src/views/agents-page/agents-page-tabs.tsx"
+      ],
+      "cases": [
+        "queue-drawer-card-light",
+        "queue-drawer-card-dark",
+        "queue-drawer-card-light-retina",
+        "queue-drawer-card-dark-retina",
+        "queue-drawer-card-narrow",
+        "queue-drawer-card-narrow-dark"
+      ],
+      "status": "implemented",
+      "blockedReason": null,
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
+    },
+    {
       "id": "desktop-shell-selection",
       "family": "platform-shell",
       "tokens": ["okou-app"],
@@ -1199,6 +1226,8 @@
     "../e2e/playwright/style-migration/markdown-card-cases.json",
     "../e2e/playwright/style-migration/markdown-body-cases.json",
     "../e2e/playwright/style-migration/shimmer-text-cases.json",
-    "../e2e/playwright/style-migration/composer-surface-cases.json"
+    "../e2e/playwright/style-migration/composer-surface-cases.json",
+    "../e2e/playwright/style-migration/mobile-drawer-cases.json",
+    "../e2e/playwright/style-migration/queue-drawer-card-cases.json"
   ]
 }

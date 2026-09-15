@@ -4,9 +4,11 @@ The requested end state is permanent deletion of the old **production** key:
 `arn:aws:kms:us-west-2:072707626411:key/a1b3922b-fab1-4ed3-aa9e-40f86f92a7a8`.
 Its replacement is
 `arn:aws:kms:us-west-2:251964670836:key/e68917e2-5541-4597-b6ef-7e9eb5670947`.
-Keep the old key enabled while retained recovery paths still need it. This plan
-does not retire staging, the old account, historical audit logs, CloudTrail, or
-AWS Config.
+On September 15 the owner authorized deletion after current target-only production
+verification, accepting loss of historical old-key recovery. Follow the
+[protected retirement operation](source-retirement.md); this supersedes the
+historical retention gates below. Preserve original backups. This plan does not
+retire staging, the old account, historical audit logs, CloudTrail, or AWS Config.
 
 ## Accepted evidence as of September 14, 2026 (UTC)
 

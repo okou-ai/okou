@@ -187,6 +187,53 @@ describe("GET /api/billing/status", () => {
     });
   });
 
+  it.each([
+    ["active", "active"],
+    ["trialing", "active"],
+    ["past_due", "active"],
+    ["unpaid", "active"],
+    ["atom_grant", "active"],
+    ["manual_active", "active"],
+    ["suspended", "suspended"],
+    ["canceled", "suspended"],
+    ["unknown", "suspended"],
+  ] as const)(
+    "normalizes the persisted %s status without enabling package controls",
+    async (status, expected) => {
+      const fixture = await track(
+        store.set(seedBillingStatusOrg$, { credits: 0 }, context.signal),
+      );
+      // Historical entitlement statuses cannot all be produced by current APIs.
+      // Seed only that persisted state, then verify the production HTTP response.
+      await upsertOrgPlanEntitlementFixture({
+        orgId: fixture.orgId,
+        status,
+        showUsagePack: false,
+      });
+      mocks.clerk.session(fixture.userId, fixture.orgId);
+      const client = setupApp({ context, routes: billingStatusRoutes })(
+        billingStatusContract,
+      );
+      const headers = { authorization: "Bearer clerk-session" };
+      const response = await accept(client.get({ headers }), [200]);
+      expect(response.body).toMatchObject({
+        status: expected,
+        showUsagePack: false,
+      });
+
+      const changedStatus = expected === "active" ? "suspended" : "active";
+      await upsertOrgPlanEntitlementFixture({
+        orgId: fixture.orgId,
+        status: changedStatus,
+      });
+      const updated = await accept(client.get({ headers }), [200]);
+      expect(updated.body).toMatchObject({
+        status: changedStatus,
+        showUsagePack: false,
+      });
+    },
+  );
+
   it("returns correct data for subscribed org", async () => {
     const periodEnd = new Date("2099-04-20T00:00:00Z");
     const fixture = await track(

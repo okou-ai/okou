@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.194.4](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.194.3...runner-rs-v0.194.4) (2026-09-15)
+
+
+### Bug Fixes
+
+* distinguish balance ownership and localize run errors ([#34251](https://github.com/vm0-ai/vm0/issues/34251)) ([0367d97](https://github.com/vm0-ai/vm0/commit/0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6))
+
+## [0.194.3](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.194.2...runner-rs-v0.194.3) (2026-09-15)
+
+
+### Bug Fixes
+
+* **runner:** prevent addon stderr backpressure from blocking proxy hooks ([#34351](https://github.com/vm0-ai/vm0/issues/34351)) ([2119c7c](https://github.com/vm0-ai/vm0/commit/2119c7c6d465c35c1dd2b283931c298505d441fb))
+
 ## [0.194.2](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.194.1...runner-rs-v0.194.2) (2026-09-15)
 
 

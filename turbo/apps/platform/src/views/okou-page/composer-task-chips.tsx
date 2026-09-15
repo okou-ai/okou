@@ -1,4 +1,3 @@
-import type { CSSProperties, ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -6,8 +5,6 @@ import {
   ArrowUpRight,
   CalendarDays,
   ChartNoAxesCombined,
-  ChevronLeft,
-  ChevronRight,
   FileText,
   Globe,
   Image,
@@ -24,12 +21,18 @@ import { Button } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type {
+  ComposerPromptRowTask,
   ComposerTask,
   ComposerTemplateTask,
 } from "../../signals/okou-page/composer-task-chips.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ComposerPresentationRecommendations } from "./chat-composer.tsx";
+import {
+  ComposerRail,
+  RAIL_TILE,
+  RAIL_TILE_CAPTION,
+} from "./composer-rail.tsx";
 import {
   slashTemplatePreviewGroup,
   type SlashTemplatePreview,
@@ -47,6 +50,16 @@ const TASK_ICONS = {
   visualization: ChartNoAxesCombined,
 } as const;
 const IDEA_ICONS = {
+  presentation: [
+    Presentation,
+    MessageSquare,
+    Sparkles,
+    FileText,
+    UserRound,
+    ChartNoAxesCombined,
+    Globe,
+    CalendarDays,
+  ],
   image: [
     Image,
     UserRound,
@@ -76,13 +89,6 @@ const IDEA_ICONS = {
     CalendarDays,
   ],
 } as const;
-/**
- * What one page can show inside the 900px column once the pagers take their
- * 88px. Idea labels are sentences and run 150-260px, so three is the count
- * that fits the widest three; covers are a fixed 200px, so four land 24px
- * into the 56px fade rather than past it.
- */
-const IDEAS_PER_PAGE = 3;
 const IMAGE_IDEAS = [
   "productScene",
   "headshot",
@@ -113,6 +119,16 @@ const VIDEO_IDEAS = [
   "brandIntro",
   "videoGreeting",
 ] as const;
+const PRESENTATION_IDEAS = [
+  "pitchDeck",
+  "teamUpdate",
+  "productIntro",
+  "clientProposal",
+  "training",
+  "resultsReadout",
+  "companyOverview",
+  "eventTalk",
+] as const;
 const WEBSITE_IDEAS = [
   "businessSite",
   "portfolio",
@@ -123,35 +139,6 @@ const WEBSITE_IDEAS = [
   "linkPage",
   "bookingPage",
 ] as const;
-const TEMPLATES_PER_PAGE = 4;
-/**
- * Both rows are a single line that usually overruns the 900px column. The rail
- * hides the overrun and the mask dissolves its last 56px, so the row ends in a
- * fade instead of a hard cut through a chip or a cover. Focus lifts the mask:
- * the page is fixed, so a keyboard user could otherwise land on a control that
- * the fade has dimmed.
- */
-const ROW_RAIL = "min-w-0 flex-1 overflow-hidden";
-const ROW_FADE = cn(
-  "[-webkit-mask-image:linear-gradient(to_right,#000_calc(100%_-_56px),transparent)]",
-  "[mask-image:linear-gradient(to_right,#000_calc(100%_-_56px),transparent)]",
-  "focus-within:[-webkit-mask-image:none] focus-within:[mask-image:none]",
-);
-/**
- * The pager sits outside the rail, so it always has an unmasked surface. It is
- * the `icon` counterpart of the default-size neutral control the rows use.
- */
-const ROW_PAGER = "shrink-0";
-/**
- * Each page is exactly as wide as the rail, so the track can slide by whole
- * percentages without measuring anything. `--page` is the only runtime value
- * the component computes; the motion itself stays a utility.
- */
-const ROW_TRACK = cn(
-  "flex w-full [transform:translateX(calc(var(--page)*-100%))]",
-  "transition-transform duration-300 ease-out motion-reduce:transition-none",
-);
-const ROW_PAGE = "flex w-full shrink-0 items-start";
 /**
  * Illustration styles run 20 portrait, 9 square and 3 landscape, so their own
  * proportions cannot line up. One 4:5 tile centre-crops them into a single
@@ -177,91 +164,6 @@ const TASK_TEMPLATE_SHELF = {
 >;
 
 /**
- * One row, paged. The rail masks its right edge so a page that overruns the
- * column fades instead of being cut, and the two pagers sit outside that mask
- * so they always have a solid surface. `‹` appears only once there is a page
- * to go back to.
- */
-function ComposerPagedRow({
-  label,
-  page,
-  pageCount,
-  onStep,
-  gap,
-  children,
-}: {
-  /** Set only when the row is the whole group; a shelf labels its wrapper. */
-  readonly label?: string;
-  readonly page: number;
-  readonly pageCount: number;
-  readonly onStep: (step: number) => void;
-  readonly gap: string;
-  /** One entry per page, in order; the key is the page it paints. */
-  readonly children: readonly ReactNode[];
-}) {
-  const { t } = useTranslation();
-  return (
-    <div
-      className="flex min-w-0 items-center gap-2"
-      role="group"
-      aria-label={label}
-    >
-      {page > 0 && (
-        <Button
-          type="button"
-          variant="neutral"
-          size="icon"
-          className={ROW_PAGER}
-          aria-label={t(($) => {
-            return $.chat.taskChips.shelf.previousPage;
-          })}
-          onClick={() => {
-            onStep(-1);
-          }}
-        >
-          <ChevronLeft className="size-4" aria-hidden />
-        </Button>
-      )}
-      <div className={cn(ROW_RAIL, ROW_FADE)}>
-        <div className={ROW_TRACK} style={{ "--page": page } as CSSProperties}>
-          {children.map((content, index) => {
-            const pageKey = `page-${String(index)}`;
-            // Every page stays mounted so the track can slide, so the ones
-            // off-screen have to leave the tab order and the accessibility
-            // tree with it.
-            return (
-              <div
-                key={pageKey}
-                className={cn(ROW_PAGE, gap)}
-                inert={index !== page}
-              >
-                {content}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      {page < pageCount - 1 && (
-        <Button
-          type="button"
-          variant="neutral"
-          size="icon"
-          className={ROW_PAGER}
-          aria-label={t(($) => {
-            return $.chat.taskChips.shelf.nextPage;
-          })}
-          onClick={() => {
-            onStep(1);
-          }}
-        >
-          <ChevronRight className="size-4" aria-hidden />
-        </Button>
-      )}
-    </div>
-  );
-}
-
-/**
  * One cover. Selecting it attaches the template to the composer the same way
  * the slash panel does; the catalog already pairs each preview with the
  * attachment its chip stores.
@@ -282,10 +184,7 @@ function ComposerTemplateCover({
     <Button
       type="button"
       variant="quiet"
-      className={cn(
-        "group/cover block h-auto shrink-0 rounded-lg p-0 text-left font-normal",
-        width,
-      )}
+      className={cn(RAIL_TILE, width)}
       aria-label={t(
         ($) => {
           return $.chat.composer.slashPanel.useTemplate;
@@ -306,12 +205,10 @@ function ComposerTemplateCover({
           src={preview.coverUrl}
           alt=""
           loading="lazy"
-          className="h-full w-full object-cover object-center transition-transform duration-200 group-hover/cover:scale-[1.04]"
+          className="h-full w-full object-cover object-center transition-transform duration-200 group-hover/tile:scale-[1.04]"
         />
       </span>
-      <span className="mt-2 block truncate text-[12px] leading-4">
-        {preview.title}
-      </span>
+      <span className={RAIL_TILE_CAPTION}>{preview.title}</span>
     </Button>
   );
 }
@@ -331,16 +228,10 @@ function ComposerTemplateShelf({
   const { t } = useTranslation();
   const { category, width, ratio } = TASK_TEMPLATE_SHELF[task];
   const group = slashTemplatePreviewGroup(category);
-  const page = useGet(signals.taskChips.templatePages$)[task];
-  const stepPage = useSet(signals.taskChips.stepTemplatePage$);
   const insertTemplate = useSet(signals.template.insertTemplate$);
   const openTemplates = useSet(signals.template.openTemplatePicker$);
   const saveDraft = useSet(signals.draft.save$);
   const pageSignal = useGet(pageSignal$);
-  const pageCount = Math.max(
-    Math.ceil(group.previews.length / TEMPLATES_PER_PAGE),
-    1,
-  );
   // Named one key at a time: the extractor only keeps keys it can see.
   const labels = {
     image: t(($) => {
@@ -354,24 +245,6 @@ function ComposerTemplateShelf({
     }),
   };
   const label = labels[task];
-  const pages = Array.from({ length: pageCount }, (_, index) => {
-    return group.previews
-      .slice(index * TEMPLATES_PER_PAGE, (index + 1) * TEMPLATES_PER_PAGE)
-      .map((preview) => {
-        return (
-          <ComposerTemplateCover
-            key={preview.slug}
-            preview={preview}
-            width={width}
-            ratio={ratio}
-            onSelect={() => {
-              insertTemplate(preview.template, preview.attachment);
-              detach(saveDraft(pageSignal), Reason.DomCallback);
-            }}
-          />
-        );
-      });
-  });
   return (
     <div
       className="flex min-w-0 flex-col gap-3"
@@ -397,16 +270,25 @@ function ComposerTemplateShelf({
           <ArrowRight className="size-3" aria-hidden />
         </Button>
       </div>
-      <ComposerPagedRow
-        page={page}
-        pageCount={pageCount}
+      <ComposerRail
+        signals={signals}
+        rail={`templates:${task}`}
         gap="gap-3"
-        onStep={(step) => {
-          stepPage(task, step, pageCount);
-        }}
-      >
-        {pages}
-      </ComposerPagedRow>
+        items={group.previews.map((preview) => {
+          return (
+            <ComposerTemplateCover
+              key={preview.slug}
+              preview={preview}
+              width={width}
+              ratio={ratio}
+              onSelect={() => {
+                insertTemplate(preview.template, preview.attachment);
+                detach(saveDraft(pageSignal), Reason.DomCallback);
+              }}
+            />
+          );
+        })}
+      />
     </div>
   );
 }
@@ -416,7 +298,7 @@ function ComposerTaskIdeas({
   task,
 }: {
   readonly signals: ComposerSignals;
-  readonly task: ComposerTemplateTask;
+  readonly task: ComposerPromptRowTask;
 }) {
   const { t } = useTranslation();
   const copy = t(
@@ -435,20 +317,24 @@ function ComposerTaskIdeas({
     website: WEBSITE_IDEAS.map((key) => {
       return copy.website[key];
     }),
+    presentation: PRESENTATION_IDEAS.map((key) => {
+      return copy.presentation[key];
+    }),
   }[task];
-  const page = useGet(signals.taskChips.ideaPages$)[task];
-  const stepPage = useSet(signals.taskChips.stepIdeaPage$);
   const insertPrompt = useSet(signals.editor.replacePromptText$);
   const saveDraft = useSet(signals.draft.save$);
   const pageSignal = useGet(pageSignal$);
   const icons = IDEA_ICONS[task];
-  const pageCount = Math.max(Math.ceil(ideas.length / IDEAS_PER_PAGE), 1);
-  const pages = Array.from({ length: pageCount }, (_, pageIndex) => {
-    return ideas
-      .slice(pageIndex * IDEAS_PER_PAGE, (pageIndex + 1) * IDEAS_PER_PAGE)
-      .map((idea, index) => {
-        const Icon =
-          icons[(pageIndex * IDEAS_PER_PAGE + index) % icons.length]!;
+  return (
+    <ComposerRail
+      signals={signals}
+      rail={`ideas:${task}`}
+      label={t(($) => {
+        return $.chat.taskChips.ideasLabel;
+      })}
+      gap="gap-2"
+      items={ideas.map((idea, index) => {
+        const Icon = icons[index % icons.length]!;
         return (
           <Button
             key={idea.label}
@@ -468,22 +354,8 @@ function ComposerTaskIdeas({
             {idea.label}
           </Button>
         );
-      });
-  });
-  return (
-    <ComposerPagedRow
-      label={t(($) => {
-        return $.chat.taskChips.ideasLabel;
       })}
-      page={page}
-      pageCount={pageCount}
-      gap="gap-2"
-      onStep={(step) => {
-        stepPage(task, step, pageCount);
-      }}
-    >
-      {pages}
-    </ComposerPagedRow>
+    />
   );
 }
 
@@ -555,24 +427,39 @@ export function ComposerTaskChips({
             })}
         </div>
       )}
-      {selected === "presentation" && (
-        <ComposerPresentationRecommendations signals={signals} />
+      {selected !== null && (
+        // Keyed by the type so switching remounts the panel: a CSS entry runs
+        // on mount, and the rails inside start again from their first item and
+        // their own left edge, which is where a new catalog should begin.
+        <div
+          key={selected}
+          className={cn(
+            "flex min-w-0 flex-col gap-5",
+            "motion-safe:animate-composer-panel-in",
+          )}
+        >
+          {selected === "presentation" && (
+            <>
+              <ComposerTaskIdeas signals={signals} task="presentation" />
+              <ComposerPresentationRecommendations signals={signals} />
+            </>
+          )}
+          {selected === "workflow" && (
+            <ComposerWorkflowRecommendations signals={signals} />
+          )}
+          {selected === "visualization" && (
+            <ComposerVisualizationOptions signals={signals} />
+          )}
+          {selected !== "presentation" &&
+            selected !== "workflow" &&
+            selected !== "visualization" && (
+              <>
+                <ComposerTaskIdeas signals={signals} task={selected} />
+                <ComposerTemplateShelf signals={signals} task={selected} />
+              </>
+            )}
+        </div>
       )}
-      {selected === "workflow" && (
-        <ComposerWorkflowRecommendations signals={signals} />
-      )}
-      {selected === "visualization" && (
-        <ComposerVisualizationOptions signals={signals} />
-      )}
-      {selected !== null &&
-        selected !== "presentation" &&
-        selected !== "workflow" &&
-        selected !== "visualization" && (
-          <>
-            <ComposerTaskIdeas signals={signals} task={selected} />
-            <ComposerTemplateShelf signals={signals} task={selected} />
-          </>
-        )}
     </section>
   );
 }

@@ -11,17 +11,19 @@ import { inArray } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
 
 import type { Db } from "../external/db";
-import { isPiGptModel, type PiGptModel } from "@okouai/core/pi-execution";
+import {
+  isPiGptModel,
+  isPiDeepSeekModel,
+  type PiDeepSeekModel,
+  type PiGptModel,
+} from "@okouai/core/pi-execution";
 
 const PI_API_FIRST_TURN_USAGE_NAMESPACE =
   "26e1c547-485d-4438-bf6d-4b77959da0cb";
-const DEEPSEEK_FLASH_MODEL = "deepseek-v4-flash";
-const DEEPSEEK_PRO_MODEL = "deepseek-v4-pro";
 
 type PiApiFirstTurnUsageProvider =
   | PiGptModel
-  | typeof DEEPSEEK_FLASH_MODEL
-  | typeof DEEPSEEK_PRO_MODEL
+  | PiDeepSeekModel
   | z.infer<typeof piNativeCatalogModelSchema>;
 
 function gptLongContextMinimumInputTokens(model: PiGptModel): number {
@@ -150,11 +152,7 @@ function baseApiFirstTurnUsageEntries(
 function piApiFirstTurnUsageProvider(
   provider: string | undefined,
 ): PiApiFirstTurnUsageProvider | null {
-  if (
-    isPiGptModel(provider) ||
-    provider === DEEPSEEK_FLASH_MODEL ||
-    provider === DEEPSEEK_PRO_MODEL
-  ) {
+  if (isPiGptModel(provider) || isPiDeepSeekModel(provider)) {
     return provider;
   }
   const native = piNativeCatalogModelSchema.safeParse(provider);
