@@ -885,5 +885,6 @@ bubble carried its 8px, and the `[&_blockquote>*:first-child]:mt-0!` pair that
 replaced it flushes them. That is a real spacing change inside a batch recorded
 as an equivalence, so it is tracked as its own decision in
 [#34278](https://github.com/vm0-ai/vm0/issues/34278) rather than repaired here.
-It also means the `chat-message-bubbles` harness did not reproduce this cascade
-order; confirm that before reusing it.
+It also means that batch's evidence never exercised the case: either its sample
+carried no blockquote inside a bubble, or its fixture did not reproduce this
+cascade order. Establish which before reusing that harness.
