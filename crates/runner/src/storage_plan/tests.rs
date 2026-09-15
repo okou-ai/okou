@@ -155,6 +155,85 @@ fn unchanged_instructions_normalize_in_place() {
 }
 
 #[test]
+fn decoded_skills_are_selected_beside_downloaded_and_reused_instructions() {
+    for (home, filename) in [
+        ("/home/user/.claude", "CLAUDE.md"),
+        ("/home/user/.codex", "AGENTS.md"),
+        ("/home/user/.pi/agent", "AGENTS.md"),
+    ] {
+        let skill = format!("{home}/skills/workflow");
+        let source = manifest(
+            vec![
+                storage(home, "instructions", "v1", Some(filename)),
+                storage(&skill, "skill", "v1", None),
+            ],
+            Vec::new(),
+        );
+        let previous = StorageFingerprints {
+            storages: HashMap::from([(home.into(), StorageFingerprint::new("instructions", "v1"))]),
+            artifacts: HashMap::new(),
+        };
+        for previous in [None, Some(&previous)] {
+            let plan = build_storage_plan(&source, "/run/test", previous).unwrap();
+            let selected: Vec<_> = plan
+                .cache_candidates()
+                .iter()
+                .filter_map(|candidate| plan.decoded_mount(candidate.handle))
+                .collect();
+            assert_eq!(selected, [skill.as_str()]);
+        }
+    }
+}
+
+#[test]
+fn decoded_selection_preserves_instruction_and_duplicate_target_ownership() {
+    for target in [
+        "/home/user/.claude",
+        "/home/user",
+        "/home/user/.claude/CLAUDE.md/child",
+        "/home/user/.claude/AGENTS.md",
+        "/home/user/.claude/.CLAUDE.md.vm0-copy-1-0.tmp",
+        "/run/test/storage-instructions/0/child",
+    ] {
+        let source = manifest(
+            vec![
+                storage(
+                    "/home/user/.claude",
+                    "instructions",
+                    "v1",
+                    Some("CLAUDE.md"),
+                ),
+                storage(target, "skill", "v1", None),
+            ],
+            Vec::new(),
+        );
+        let plan = build_storage_plan(&source, "/run/test", None).unwrap();
+        assert!(
+            plan.cache_candidates()
+                .iter()
+                .all(|candidate| plan.decoded_mount(candidate.handle).is_none()),
+            "{target}"
+        );
+    }
+    for artifacts in [false, true] {
+        let mut source = manifest(vec![storage("/data", "first", "v1", None)], Vec::new());
+        if artifacts {
+            source
+                .artifacts
+                .push(artifact("/data", "other", "v1", false));
+        } else {
+            source.storages.push(storage("/data", "other", "v1", None));
+        }
+        let plan = build_storage_plan(&source, "/run/test", None).unwrap();
+        assert!(
+            plan.cache_candidates()
+                .iter()
+                .all(|candidate| plan.decoded_mount(candidate.handle).is_none())
+        );
+    }
+}
+
+#[test]
 fn fresh_and_changed_instructions_share_staging_but_not_cleanup() {
     let manifest = manifest(
         vec![storage(
