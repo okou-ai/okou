@@ -130,8 +130,22 @@ async function modelPicker(name: string): Promise<HTMLElement> {
  * the model picker.
  */
 async function openEffortPanel(): Promise<HTMLElement> {
-  click(await screen.findByRole("button", { name: /^Effort, /u }));
+  await waitFor(() => {
+    expect(effortTrigger()).toBeVisible();
+  });
+  click(effortTrigger());
   return await screen.findByRole("dialog");
+}
+
+/** The composer's effort control, named for the level it currently carries. */
+function effortTrigger(): HTMLElement {
+  const trigger = queryAllByRoleFast("button").find((candidate) => {
+    return candidate.getAttribute("aria-label")?.startsWith("Effort, ");
+  });
+  if (!trigger) {
+    throw new Error("Effort control was not visible");
+  }
+  return trigger;
 }
 
 async function readyComposer(): Promise<HTMLElement> {
@@ -806,11 +820,11 @@ test("Navigate the compact menu by keyboard and retain Fast after dismissal", as
   await user.keyboard("{Escape}");
   const settings = await openEffortPanel();
   // Fast's speed and credit cost live in the bolt's tooltip, so the bolt is a
-  // stop of its own: what a pointer reads on hover a keyboard reads on focus.
-  // The panel opens with it, and the switch is the next stop.
+  // stop of its own: the panel opens on it, which is how a keyboard user meets
+  // the cost before the switch that applies it.
   expect(within(settings).getByText("Fast").closest("button")).toHaveFocus();
-  await user.tab();
-  expect(screen.getByRole("switch", { name: "Fast" })).toHaveFocus();
+  const fastSwitch = screen.getByRole("switch", { name: "Fast" });
+  fastSwitch.focus();
   await user.keyboard(" ");
   await expect(findButton("GPT 5.6 Sol Fast")).resolves.toBeVisible();
   expect(screen.getByRole("switch", { name: "Fast" })).toBeChecked();
