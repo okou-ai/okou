@@ -275,7 +275,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.RefactorModelSelect]: {
+  [FeatureSwitchKey.Effort]: {
     maintainer: "bingjie@okou.ai",
     description:
       "Set Fast mode and chat reasoning effort from the composer's run controls.",
@@ -302,6 +302,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     description:
       "Send preview chat runs through real agent CLIs instead of preview mock runners.",
+    enabled: false,
+  },
+  [FeatureSwitchKey.PiDeferredSandbox]: {
+    maintainer: "lancy@okou.ai",
+    description:
+      "Allow Pi inference before Sandbox admission after lifecycle activation prerequisites are met.",
     enabled: false,
   },
   [FeatureSwitchKey.PiLoop]: {

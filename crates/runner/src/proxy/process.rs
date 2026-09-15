@@ -10,6 +10,7 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead};
 use tokio::sync::{Mutex as AsyncMutex, mpsc};
 use tracing::{Instrument, error, info, warn};
 
+use super::control;
 use super::flush::{
     MitmJsonlFlushHandle, UsageFlushTarget, new_usage_state_id, usage_flush_state_guard,
 };
@@ -25,7 +26,6 @@ include!(concat!(env!("OUT_DIR"), "/addon_files.rs"));
 /// Timeout for waiting for mitmdump to become ready after spawn.
 const READY_TIMEOUT: Duration = Duration::from_secs(10);
 const START_MAX_ATTEMPTS: usize = 3;
-const ADDON_READY_FILENAME: &str = "addon-ready";
 /// Maximum raw bytes retained from one mitmdump stdout or stderr record.
 const MITMDUMP_LOG_RECORD_MAX_BYTES: usize = 64 * 1024;
 /// Short bounded retry for Linux `execve` returning ETXTBSY while a freshly
@@ -705,18 +705,6 @@ async fn spawn_mitmdump(
     let _prepared_ca = crate::ca::prepare_for_proxy(&config.ca_dir, &config.ca_lock_path).await?;
     let launch = runtime.create_launch_dir().await?;
     let launch_path = launch.path().to_path_buf();
-    let addon_ready_path = config.addon_dir.join(ADDON_READY_FILENAME);
-    match tokio::fs::remove_file(&addon_ready_path).await {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => {
-            return Err(RunnerError::Internal(format!(
-                "remove stale addon ready marker {}: {error}",
-                addon_ready_path.display()
-            ))
-            .into());
-        }
-    }
     let mut cmd = tokio::process::Command::new(&config.mitmdump_bin);
     cmd.arg("--mode")
         .arg("transparent")
@@ -734,10 +722,7 @@ async fn spawn_mitmdump(
         .arg("--set")
         .arg(format!("okou_usage_state_id={usage_state_id}"))
         .arg("--set")
-        .arg(format!(
-            "okou_addon_ready_path={}",
-            addon_ready_path.display()
-        ))
+        .arg(format!("okou_control_socket_dir={}", launch_path.display()))
         .arg("--set")
         .arg(format!(
             "okou_builtin_firewall_catalog_cache_path={}",
@@ -802,7 +787,7 @@ async fn spawn_mitmdump(
             RunnerError::Internal("missing mitmdump child during readiness check".to_string())
         })?,
         port,
-        &addon_ready_path,
+        &launch_path,
         usage_state_id,
         READY_TIMEOUT,
     )
@@ -912,15 +897,15 @@ async fn retry_text_busy_spawn<T>(
 async fn wait_for_ready(
     child: &mut tokio::process::Child,
     port: u16,
-    addon_ready_path: &Path,
+    control_directory: &Path,
     expected_usage_state_id: &str,
     timeout: Duration,
 ) -> RunnerResult<()> {
     let poll_interval = Duration::from_millis(200);
-    let start = std::time::Instant::now();
+    let deadline = tokio::time::Instant::now() + timeout;
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
 
-    while start.elapsed() < timeout {
+    while tokio::time::Instant::now() < deadline {
         // Check if process died.
         match child.try_wait() {
             Ok(Some(status)) => {
@@ -938,20 +923,20 @@ async fn wait_for_ready(
                 )));
             }
         }
-        let addon_is_ready = match tokio::fs::read_to_string(addon_ready_path).await {
-            Ok(usage_state_id) => usage_state_id == expected_usage_state_id,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
-            Err(error) => {
-                return Err(RunnerError::Internal(format!(
-                    "read addon ready marker {}: {error}",
-                    addon_ready_path.display()
-                )));
-            }
-        };
-        if addon_is_ready && tokio::net::TcpStream::connect(addr).await.is_ok() {
+        let probe_deadline = deadline.min(tokio::time::Instant::now() + Duration::from_secs(1));
+        let addon_is_ready =
+            control::status(control_directory, expected_usage_state_id, probe_deadline)
+                .await
+                .is_ok();
+        if addon_is_ready
+            && matches!(
+                tokio::time::timeout_at(deadline, tokio::net::TcpStream::connect(addr)).await,
+                Ok(Ok(_))
+            )
+        {
             return Ok(());
         }
-        tokio::time::sleep(poll_interval).await;
+        tokio::time::sleep_until(deadline.min(tokio::time::Instant::now() + poll_interval)).await;
     }
 
     Err(RunnerError::Internal(format!(
@@ -1165,7 +1150,7 @@ printf '%s\n%s\n%s\n' "$TMPDIR" "$OKOU_MITMDUMP_RUNTIME_DIR" \
   "${OKOU_MITM_RUNNER_TOKEN-}" > "$0.env"
 cp -f "/proc/$$/environ" "$0.environ"
 port=""
-ready_path=""
+control_dir=""
 usage_state_id=""
 prev=""
 for arg in "$@"; do
@@ -1173,18 +1158,18 @@ for arg in "$@"; do
     port="$arg"
   fi
   case "$arg" in
-    okou_addon_ready_path=*) ready_path="${arg#okou_addon_ready_path=}" ;;
+    okou_control_socket_dir=*) control_dir="${arg#okou_control_socket_dir=}" ;;
     okou_usage_state_id=*) usage_state_id="${arg#okou_usage_state_id=}" ;;
   esac
   prev="$arg"
 done
-exec python3 - "$port" "$ready_path" "$usage_state_id" <<'PY'
+exec python3 - "$port" "$control_dir" "$usage_state_id" "$@" <<'PY'
 import socket
 import sys
 from pathlib import Path
 
 port = int(sys.argv[1])
-ready_path = Path(sys.argv[2])
+control_dir = Path(sys.argv[2])
 sock = socket.socket()
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 try:
@@ -1196,8 +1181,10 @@ except OSError as error:
     )
     raise SystemExit(1) from error
 sock.listen(1)
-ready_path.parent.mkdir(parents=True, exist_ok=True)
-ready_path.write_text(sys.argv[3], encoding="utf-8")
+sys.path.insert(0, str(Path(sys.argv[sys.argv.index("--scripts") + 1]).parent))
+from runner_control import ControlServer
+control = ControlServer(control_dir, sys.argv[3])
+control.start()
 while True:
     conn, _ = sock.accept()
     conn.close()
@@ -1226,15 +1213,15 @@ PY
             r#"#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n%s\n' "$TMPDIR" "$OKOU_MITMDUMP_RUNTIME_DIR" > "$0.env"
-ready_path=""
+control_dir=""
 usage_state_id=""
 for arg in "$@"; do
   case "$arg" in
-    okou_addon_ready_path=*) ready_path="${arg#okou_addon_ready_path=}" ;;
+    okou_control_socket_dir=*) control_dir="${arg#okou_control_socket_dir=}" ;;
     okou_usage_state_id=*) usage_state_id="${arg#okou_usage_state_id=}" ;;
   esac
 done
-python3 - "$ready_path" "$usage_state_id" "$0.descendant" <<'PY' &
+python3 - "$control_dir" "$usage_state_id" "$0.descendant" "$@" <<'PY' &
 import os
 import signal
 import sys
@@ -1243,9 +1230,11 @@ from pathlib import Path
 for handled in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
     signal.signal(handled, signal.SIG_IGN)
 Path(sys.argv[3]).write_text(str(os.getpid()), encoding="utf-8")
-ready_path = Path(sys.argv[1])
-ready_path.parent.mkdir(parents=True, exist_ok=True)
-ready_path.write_text(sys.argv[2], encoding="utf-8")
+control_dir = Path(sys.argv[1])
+sys.path.insert(0, str(Path(sys.argv[sys.argv.index("--scripts") + 1]).parent))
+from runner_control import ControlServer
+control = ControlServer(control_dir, sys.argv[2])
+control.start()
 while True:
     signal.pause()
 PY
@@ -1275,14 +1264,14 @@ Path(f"{sys.argv[0]}.env").write_text(
     encoding="utf-8",
 )
 port = None
-ready_path = None
+control_dir = None
 usage_state_id = None
 previous = None
 for argument in sys.argv[1:]:
     if previous == "--listen-port":
         port = int(argument)
-    if argument.startswith("okou_addon_ready_path="):
-        ready_path = Path(argument.removeprefix("okou_addon_ready_path="))
+    if argument.startswith("okou_control_socket_dir="):
+        control_dir = Path(argument.removeprefix("okou_control_socket_dir="))
     if argument.startswith("okou_usage_state_id="):
         usage_state_id = argument.removeprefix("okou_usage_state_id=")
     previous = argument
@@ -1302,8 +1291,10 @@ sock = socket.socket()
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 sock.bind(("127.0.0.1", port))
 sock.listen(1)
-ready_path.parent.mkdir(parents=True, exist_ok=True)
-ready_path.write_text(usage_state_id, encoding="utf-8")
+sys.path.insert(0, str(Path(sys.argv[sys.argv.index("--scripts") + 1]).parent))
+from runner_control import ControlServer
+control = ControlServer(control_dir, usage_state_id)
+control.start()
 while True:
     connection, _ = sock.accept()
     connection.close()
@@ -1546,6 +1537,17 @@ exit 42
     }
 
     async fn acquire_test_runtime(config: &ProxyConfig) -> Arc<MitmdumpRuntime> {
+        tokio::fs::create_dir_all(&config.addon_dir).await.unwrap();
+        for name in ["runner_control.py", "addon_process_logging.py"] {
+            let content = ADDON_FILES
+                .iter()
+                .find(|(file, _)| *file == name)
+                .unwrap()
+                .1;
+            tokio::fs::write(config.addon_dir.join(name), content)
+                .await
+                .unwrap();
+        }
         MitmdumpRuntime::acquire(config.runtime_dir.clone(), config.runtime_lock_path.clone())
             .await
             .unwrap()
@@ -1771,13 +1773,11 @@ exit 42
         let pid = nix::unistd::Pid::from_raw(raw_pid);
         let port = find_available_port().unwrap();
         let dir = tempfile::tempdir().unwrap();
-        let addon_ready_path = dir.path().join(ADDON_READY_FILENAME);
-        std::fs::write(&addon_ready_path, "usage-state-test").unwrap();
 
         let result = wait_for_ready(
             &mut child,
             port,
-            &addon_ready_path,
+            dir.path(),
             "usage-state-test",
             Duration::from_millis(500),
         )
@@ -1819,7 +1819,7 @@ exit 42
         let result = wait_for_ready(
             &mut child,
             port,
-            &dir.path().join(ADDON_READY_FILENAME),
+            dir.path(),
             "usage-state-test",
             Duration::from_secs(5),
         )
@@ -1828,7 +1828,7 @@ exit 42
     }
 
     #[tokio::test]
-    async fn wait_for_ready_rejects_missing_marker_when_port_is_open() {
+    async fn wait_for_ready_requires_control_when_port_is_open() {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
             .unwrap();
@@ -1845,7 +1845,7 @@ exit 42
         let error = wait_for_ready(
             &mut child,
             port,
-            &dir.path().join(ADDON_READY_FILENAME),
+            dir.path(),
             "current-usage-state",
             Duration::from_millis(500),
         )
@@ -1857,14 +1857,15 @@ exit 42
     }
 
     #[tokio::test]
-    async fn wait_for_ready_rejects_stale_marker_when_port_is_open() {
+    async fn wait_for_ready_rejects_unresponsive_control_when_port_is_open() {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
             .unwrap();
         let port = listener.local_addr().unwrap().port();
         let dir = tempfile::tempdir().unwrap();
-        let addon_ready_path = dir.path().join(ADDON_READY_FILENAME);
-        std::fs::write(&addon_ready_path, "old-usage-state").unwrap();
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        let control_listener =
+            tokio::net::UnixListener::bind(dir.path().join(control::SOCKET_NAME)).unwrap();
         let mut child = tokio::process::Command::new("sleep")
             .arg("60")
             .kill_on_drop(true)
@@ -1876,7 +1877,7 @@ exit 42
         let error = wait_for_ready(
             &mut child,
             port,
-            &addon_ready_path,
+            dir.path(),
             "current-usage-state",
             Duration::from_millis(500),
         )
@@ -1884,6 +1885,14 @@ exit 42
         .unwrap_err();
 
         assert!(error.to_string().contains("did not initialize its addon"));
+        // Prove this exercised an unanswered request, not a directory rejection.
+        let (mut connection, _) =
+            tokio::time::timeout(Duration::from_secs(1), control_listener.accept())
+                .await
+                .unwrap()
+                .unwrap();
+        use tokio::io::AsyncReadExt;
+        assert!(connection.read(&mut [0; 4]).await.unwrap() > 0);
         let _ = child.kill().await;
     }
 
@@ -1980,13 +1989,9 @@ exit 42
             "mitmdump args should include okou_usage_state_id option; got:\n{args}",
         );
         assert!(
-            args.lines().any(|arg| {
-                arg == format!(
-                    "okou_addon_ready_path={}",
-                    config.addon_dir.join(ADDON_READY_FILENAME).display()
-                )
-            }),
-            "mitmdump args should include okou_addon_ready_path option; got:\n{args}",
+            args.lines()
+                .any(|arg| { arg == format!("okou_control_socket_dir={}", launch_path.display()) }),
+            "mitmdump args should include its owned control directory; got:\n{args}",
         );
         assert!(
             args.lines().any(|arg| {

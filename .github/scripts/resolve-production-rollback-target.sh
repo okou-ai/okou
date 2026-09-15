@@ -95,7 +95,7 @@ if ! git merge-base --is-ancestor "$PREPARED_DOMAIN_TRIGGER_RELEASE" "$TARGET_CO
   fail "Rollback target lacks prepared billing, OAuth and hosting writers; first supported release is ${PREPARED_DOMAIN_TRIGGER_RELEASE}."
 fi
 
-# #34296 introduced optional-storage cleanup before 1134 removed that helper.
+# #34296 introduced optional-storage cleanup before 1137 removed that helper.
 # Resolve its first addition on canonical main, including after file deletion,
 # so squash merging the preparation cannot turn an unmerged branch SHA into a
 # permanent rollback floor. Missing/shallow history fails before artifact I/O.

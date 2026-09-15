@@ -1,6 +1,6 @@
 {
   "name": "@okouai/cli",
-  "version": "9.332.0",
+  "version": "9.332.1",
   "private": true,
   "description": "Okou command-line interface",
   "repository": {
@@ -47,6 +47,7 @@
     "ably": "^2.21.0",
     "chalk": "^5.6.2",
     "commander": "^14.0.0",
+    "entities": "7.0.1",
     "eslint": "^9.34.0",
     "ignore": "^7.0.5",
     "json": "^11.0.0",

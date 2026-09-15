@@ -10,9 +10,10 @@ import {
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { UserPreferenceChangedPayload } from "@okouai/api-contracts/contracts/realtime";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import { isCodexFastModeEnabled } from "@okouai/core/model-feature-switch";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  isChatEffortEnabled,
+  isCodexFastModeEnabled,
+} from "@okouai/core/model-feature-switch";
 
 import { badRequestMessage } from "../../lib/error";
 import { publishUserPreferenceChangedForUserSafely } from "../external/realtime";
@@ -129,10 +130,7 @@ const updateUserModelPreferenceInner$ = command(
       selectedModel: body.data.selectedModel,
       enabled:
         featureSwitchContext !== undefined &&
-        isFeatureEnabled(
-          FeatureSwitchKey.RefactorModelSelect,
-          featureSwitchContext,
-        ),
+        isChatEffortEnabled(featureSwitchContext),
     });
     if (modelSettingsError) {
       return modelSettingsError;

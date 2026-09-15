@@ -53,7 +53,7 @@
       "zoomConnector": false,
       "workdayConnector": false,
       "_fastModel": false,
-      "refactorModelSelect": true,
+      "effort": true,
       "modelPickerFlyout": false,
       "chatPreference": false,
       "_realAgentInPreview": false,

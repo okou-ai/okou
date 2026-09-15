@@ -21,7 +21,8 @@ export function captureIntegrationInputUploads(context: TestContext) {
   context.mocks.s3.send.mockImplementation((command: unknown) => {
     if (
       command instanceof PutObjectCommand &&
-      command.input.Bucket === "test-user-artifacts"
+      (command.input.Bucket === "test-user-artifacts" ||
+        command.input.Bucket === "test-private-artifacts")
     ) {
       uploads.push(command.input);
       return Promise.resolve({});
@@ -74,11 +75,14 @@ export async function expectIntegrationInputPreview(
     readonly bytes: Buffer;
     readonly uploads: readonly PutObjectCommand["input"][];
     readonly okouToken: string | undefined;
+    readonly privateFiles?: boolean;
   },
 ): Promise<void> {
   expect(args.uploads).toContainEqual(
     expect.objectContaining({
-      Bucket: "test-user-artifacts",
+      Bucket: args.privateFiles
+        ? "test-private-artifacts"
+        : "test-user-artifacts",
       Body: args.bytes,
       ContentType: args.contentType,
     }),
@@ -96,7 +100,11 @@ export async function expectIntegrationInputPreview(
     [200],
   );
   expect(response.body.url).toBeTruthy();
-  expect(response.body.publicUrl).toBeTruthy();
+  if (args.privateFiles) {
+    expect(response.body.publicUrl).toBeNull();
+  } else {
+    expect(response.body.publicUrl).toBeTruthy();
+  }
   if (!args.okouToken) {
     throw new Error("Expected the dispatched run's Okou token");
   }

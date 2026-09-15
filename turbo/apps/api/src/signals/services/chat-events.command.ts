@@ -131,7 +131,7 @@ import {
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { registerCanonicalWebInputAssets } from "./canonical-asset.service";
-import { resolveArtifactObject$ } from "./artifact-storage.service";
+import { uploadedArtifactObject } from "./uploaded-artifact.service";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import {
   resolveBuiltInModelRuntimeRoute,
@@ -157,7 +157,10 @@ import {
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isCodexFastModeEnabled } from "@okouai/core/model-feature-switch";
+import {
+  isChatEffortEnabled,
+  isCodexFastModeEnabled,
+} from "@okouai/core/model-feature-switch";
 import { buildGenerationTemplatePrompt } from "../../lib/generation-template-prompt";
 import { buildVideoRunOptionsPrompt } from "@okouai/core/video-run-options-prompt";
 import {
@@ -845,9 +848,10 @@ function unwrapSettledResult<T>(result: PromiseSettledResult<T>): T {
 
 const resolveIncomingAttachFileMetadata$ = command(
   async (
-    { set },
+    { get },
     args: {
       readonly userId: string;
+      readonly orgId: string;
       readonly userMessage: UserMessageDocument;
       readonly timing?: ApiDispatchTimingCollector;
     },
@@ -874,14 +878,13 @@ const resolveIncomingAttachFileMetadata$ = command(
           );
           const results = await Promise.allSettled(
             wave.map(async (file) => {
-              const object = await set(
-                resolveArtifactObject$,
-                {
+              const object = await get(
+                uploadedArtifactObject({
                   userId: args.userId,
+                  orgId: args.orgId,
                   id: file.fileId,
                   filenameHint: file.filenameSnapshot,
-                },
-                signal,
+                }),
               );
               return { file, object };
             }),
@@ -1120,10 +1123,7 @@ async function resolveNormalSendFeatureSwitches(
   const context = await loadUserFeatureSwitchContext(db, orgId, userId);
   return {
     codexFastModeEnabled: isCodexFastModeEnabled(context),
-    reasoningEffortEnabled: isFeatureEnabled(
-      FeatureSwitchKey.RefactorModelSelect,
-      context,
-    ),
+    reasoningEffortEnabled: isChatEffortEnabled(context),
     introVideoEnabled: loadIntroVideoTemplateAccess(templates, context),
     featureSwitchContext: context,
   };
@@ -2958,6 +2958,7 @@ const prepareNormalSend$ = command(
 
     const attachFileMetadataArgs = {
       userId: args.userId,
+      orgId: args.orgId,
       userMessage: runtimeBody.userMessage,
       timing: args.timing,
     };

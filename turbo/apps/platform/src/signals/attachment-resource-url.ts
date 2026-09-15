@@ -133,8 +133,12 @@ function createAttachmentPresignedToken$(
 /** Resolve the authenticated resource once for its owning preview. */
 export function createAttachmentPreviewSignals(
   inputUrl: string,
-  resolvedToken?: AttachmentPresignedToken,
+  options: {
+    readonly contentType?: string;
+    readonly resolvedToken?: AttachmentPresignedToken;
+  } = {},
 ) {
+  const { contentType, resolvedToken } = options;
   const url = publicAttachmentUrl(inputUrl);
   const presignedToken$ = resolvedToken
     ? computed(() => {
@@ -151,7 +155,7 @@ export function createAttachmentPreviewSignals(
   const thumbnailUrl$ = computed(async (get) => {
     return r2ImageTransformUrl(
       await get(resourceUrl$),
-      { width: 800, height: 720 },
+      { width: 800, height: 720, contentType },
       resolveArtifactImageTransformOrigin(),
     );
   });

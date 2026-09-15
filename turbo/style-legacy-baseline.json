@@ -3,60 +3,14 @@
   "legacyClassTokens": [
     "okou-app",
     "okou-composer",
-    "okou-fixed-viewport-shell",
-    "okou-markdown-card",
     "okou-mobile-fixed-safe-area",
     "okou-mobile-sidebar",
-    "okou-shimmer-text",
     "okou-workspace-bg",
     "toaster",
-    "wmde-markdown",
-    "wmde-markdown-color"
+    "wmde-markdown"
   ],
   "cssAtoms": {
     "apps/platform/src/views/css/index.css": [
-      {
-        "atRules": [],
-        "selector": ".okou-fixed-viewport-shell",
-        "property": "box-sizing",
-        "value": "border-box",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-fixed-viewport-shell",
-        "property": "height",
-        "value": "var(--okou-viewport-height)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-fixed-viewport-shell",
-        "property": "min-height",
-        "value": "var(--okou-viewport-height)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-fixed-viewport-shell",
-        "property": "max-height",
-        "value": "var(--okou-viewport-height)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-fixed-viewport-shell",
-        "property": "overflow",
-        "value": "hidden",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-fixed-viewport-shell",
-        "property": "padding",
-        "value": "var(--sat) var(--sar) var(--sab) var(--sal)",
-        "important": false
-      },
       {
         "atRules": ["@media (max-width:767px)"],
         "selector": ".okou-mobile-fixed-safe-area",
@@ -125,55 +79,6 @@
         "selector": ".okou-mobile-sidebar::before",
         "property": "bottom",
         "value": "calc(-1*var(--sab))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-shimmer-text",
-        "property": "background",
-        "value": "linear-gradient(90deg,hsl(var(--muted-foreground)/0.8) 0%,hsl(var(--muted-foreground)/0.8) 35%,hsl(var(--foreground)) 48%,hsl(var(--foreground)) 52%,hsl(var(--muted-foreground)/0.8) 65%,hsl(var(--muted-foreground)/0.8) 100%)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-shimmer-text",
-        "property": "background-size",
-        "value": "200% 100%",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-shimmer-text",
-        "property": "-webkit-background-clip",
-        "value": "text",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-shimmer-text",
-        "property": "background-clip",
-        "value": "text",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-shimmer-text",
-        "property": "-webkit-text-fill-color",
-        "value": "transparent",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-shimmer-text",
-        "property": "contain",
-        "value": "paint",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-shimmer-text",
-        "property": "animation",
-        "value": "okou-shimmer 3.5s linear infinite",
         "important": false
       },
       {
@@ -402,20 +307,6 @@
       },
       {
         "atRules": [],
-        "selector": ".wmde-markdown p,.wmde-markdown .okou-markdown-card",
-        "property": "margin-top",
-        "value": "6px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown p,.wmde-markdown .okou-markdown-card",
-        "property": "margin-bottom",
-        "value": "6px",
-        "important": false
-      },
-      {
-        "atRules": [],
         "selector": ".okou-workspace-bg",
         "property": "position",
         "value": "relative",
@@ -532,20 +423,12 @@
     "apps/platform/src/views/auth/auth-shell.tsx": {
       "okou-app": 1
     },
-    "apps/platform/src/views/browser-session/browser-session-page.tsx": {
-      "okou-app": 1,
-      "okou-fixed-viewport-shell": 1
-    },
     "apps/platform/src/views/components/instatus-status-notice.tsx": {
       "okou-app": 1,
       "okou-composer": 1
     },
     "apps/platform/src/views/components/markdown-frame.tsx": {
-      "wmde-markdown": 1,
-      "wmde-markdown-color": 1
-    },
-    "apps/platform/src/views/components/rich-markdown.tsx": {
-      "okou-markdown-card": 2
+      "wmde-markdown": 1
     },
     "apps/platform/src/views/export-page/export-page.tsx": {
       "okou-app": 1,
@@ -556,9 +439,6 @@
     },
     "apps/platform/src/views/okou-page/chat-forward-dialog.tsx": {
       "okou-app": 1
-    },
-    "apps/platform/src/views/okou-page/chat-thread-page.tsx": {
-      "okou-shimmer-text": 1
     },
     "apps/platform/src/views/okou-page/components/org-manage/org-billing-tab.tsx": {
       "okou-app": 1

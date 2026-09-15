@@ -1,3 +1,5 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { gzipSync } from "node:zlib";
 
 import {
@@ -385,6 +387,65 @@ describe("presentation template publish", () => {
     expect(
       fixture.keys().some((key) => {
         return key.endsWith("/archive.tar.gz");
+      }),
+    ).toBeTruthy();
+  });
+
+  it("imports and previews private template files after creation is disabled", async () => {
+    const actor = bdd.user();
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    const flagActor = { ...actor, orgId: actor.orgId };
+    await updateFeatureSwitchesForUser(context, flagActor, {
+      [FeatureSwitchKey.PrivateArtifacts]: true,
+    });
+    const fixture = installS3Fixture();
+    const inputs = await uploadInputs(actor, fixture, tarGz(guidance()));
+    await updateFeatureSwitchesForUser(context, flagActor, {
+      [FeatureSwitchKey.PrivateArtifacts]: false,
+    });
+    const published = await accept(
+      templateClient().publish({
+        headers: webHeaders(),
+        body: { title: "Private template", ...inputs },
+      }),
+      [200],
+    );
+    const detail = await accept(
+      templateClient().get({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+      }),
+      [200],
+    );
+    expect(detail.body.pageUrls).toHaveLength(2);
+    const downloads = context.mocks.s3.send.mock.calls
+      .map(([command]) => {
+        return command;
+      })
+      .filter((command) => {
+        return command instanceof GetObjectCommand;
+      });
+    expect(
+      downloads.some((command) => {
+        return (
+          command.input.Bucket === "test-private-artifacts" &&
+          command.input.Key?.endsWith("package.tar.gz")
+        );
+      }),
+    ).toBeTruthy();
+    const previews = context.mocks.s3.getSignedUrl.mock.calls
+      .map(([, command]) => {
+        return command;
+      })
+      .filter((command) => {
+        return command instanceof GetObjectCommand;
+      });
+    expect(previews.length).toBeGreaterThan(0);
+    expect(
+      previews.every((command) => {
+        return command.input.Bucket === "test-private-artifacts";
       }),
     ).toBeTruthy();
   });

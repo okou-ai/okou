@@ -74,6 +74,7 @@ import request_classification
 import request_streaming
 import response_encoding_negotiation
 import response_streaming
+import runner_control
 import runner_flush_lifecycle
 import tcp_logging
 import terminal_usage
@@ -216,10 +217,10 @@ def load(loader: Loader) -> None:
         help="Runner-generated usage-pending state id",
     )
     loader.add_option(
-        name="okou_addon_ready_path",
+        name="okou_control_socket_dir",
         typespec=str,
         default="",
-        help="Path for the runner's addon initialization marker",
+        help="Runner-owned private launch directory for the control socket",
     )
     loader.add_option(
         name="okou_client_session_id",
@@ -263,12 +264,19 @@ def configure(updated: set[str]) -> None:
         )
 
 
+_runner_control: runner_control.ControlServer | None = None
+
+
 def running() -> None:
-    ready_path = ctx.options.okou_addon_ready_path
+    global _runner_control
+
+    control_dir = ctx.options.okou_control_socket_dir
     usage_state_id = ctx.options.okou_usage_state_id
-    if ready_path and usage_state_id:
+    if control_dir and usage_state_id:
         runner_flush_lifecycle.start_runner_jsonl_flush_worker()
-        Path(ready_path).write_text(usage_state_id, encoding="utf-8")
+        control = runner_control.ControlServer(Path(control_dir), usage_state_id)
+        control.start()
+        _runner_control = control
 
 
 def get_api_url() -> str:
@@ -2019,6 +2027,17 @@ def done():
     Catalog validation and SigV4 hashing close admission and join their bounded
     off-loop work.
     """
+    global _runner_control
+
+    try:
+        if _runner_control is not None:
+            _runner_control.stop()
+            _runner_control = None
+    finally:
+        _drain_addon_workers()
+
+
+def _drain_addon_workers() -> None:
     try:
         runner_flush_lifecycle.drain_and_close()
     finally:

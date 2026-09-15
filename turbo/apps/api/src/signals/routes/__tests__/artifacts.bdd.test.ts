@@ -1,3 +1,9 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
+import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { webFileUrlRoutes } from "../web-file-url";
 import { createHash, randomUUID } from "node:crypto";
 import { createStore } from "ccstate";
 
@@ -8,7 +14,7 @@ import { describe, expect, it } from "vitest";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -361,6 +367,64 @@ describe("video Artifact previews", () => {
     expect(previewedArtifact?.thumbnail?.url).toMatch(
       /\/artifacts\/[0-9a-z]{10}\.jpg$/u,
     );
+  }, 180_000);
+
+  it("stores new posters for historical public videos in private storage", async () => {
+    const owner = await artifactActor("Private video poster");
+    if (!owner.actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    const actor = { ...owner.actor, orgId: owner.actor.orgId };
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.PrivateArtifacts]: true,
+    });
+    mockCloudflareVideoFrame(actor.userId);
+    await createRunUploadedFile({
+      owner,
+      prompt: "Preview an older video",
+      filename: "old-video.mp4",
+      contentType: "video/mp4",
+    });
+    await flushWaitUntilForTest();
+    const artifact = await findCatalogArtifact(actor, "old-video.mp4");
+    const reference = parseArtifactReference(artifact?.thumbnail?.url ?? "");
+    if (!reference?.id) {
+      throw new Error("Expected a stable private poster reference");
+    }
+    expect(
+      owner.objectStore.puts.filter((put) => {
+        return put.contentType === "image/jpeg";
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({
+        bucket: "test-private-artifacts",
+        key: `private-artifacts/${reference.id}/poster-v2.jpg`,
+      }),
+    ]);
+    const catalog = await chat.listArtifactCatalog(actor);
+    expect(
+      catalog.artifacts.map((entry) => {
+        return entry.title;
+      }),
+    ).toStrictEqual(["old-video.mp4"]);
+    owner.objectStore.addObject({
+      bucket: "test-private-artifacts",
+      key: `private-artifacts/${reference.id}/poster-v2.jpg`,
+      size: 3,
+    });
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.PrivateArtifacts]: false,
+    });
+    const preview = await accept(
+      setupApp({ context, routes: webFileUrlRoutes })(webFilesContract).fileUrl(
+        {
+          headers: { authorization: "Bearer clerk-session" },
+          query: { file_id: reference.id },
+        },
+      ),
+      [200],
+    );
+    expect(preview.body.publicUrl).toBeNull();
   }, 180_000);
 
   it("skips the poster request for a container the transformer cannot decode", async () => {

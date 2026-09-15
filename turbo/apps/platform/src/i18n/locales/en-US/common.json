@@ -2810,7 +2810,6 @@
         "website": "Website",
         "workflow": "Workflow"
       },
-      "importedEmpty": "No uploaded templates yet.",
       "importedLoadFailed": "Couldn't load uploaded templates.",
       "importedLoading": "Loading uploaded templates…",
       "importedUnavailable": "Uploaded templates are temporarily unavailable.",
@@ -5625,6 +5624,10 @@
         "categoryVideo": "Video",
         "chatModels": "Chat models",
         "effort": "Effort",
+        "effortScale": {
+          "faster": "Faster",
+          "smarter": "Smarter"
+        },
         "fast": "Fast",
         "fastImpact": {
           "apiCost": "2× API token cost",

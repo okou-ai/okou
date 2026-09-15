@@ -23,7 +23,7 @@ requires the withdrawn authorization API. Its current guards must not be
 deployed against this rollback: they would suppress optional delivery when the
 API is unavailable. A revised implementation needs a new coordinated rollout.
 
-## Storage retirement: migration 1134
+## Storage retirement: migration 1137
 
 On 2026-09-15 the owner explicitly requested complete retirement of
 `privacy_choices`, `privacy_choice_revisions`, `marketing_privacy_receipts`, and
@@ -31,7 +31,7 @@ On 2026-09-15 the owner explicitly requested complete retirement of
 plan. The withdrawn store is retired rather than replaced with a new consent
 API; the revised DCF-552 work remains in #33275.
 
-Migration `1134_retire_marketing_privacy_storage` removes:
+Migration `1137_retire_marketing_privacy_storage` removes:
 
 - personal/browser choice rows, including user associations, token hashes,
   purpose decisions, policy/revision identifiers and purpose epochs;
@@ -82,7 +82,7 @@ production artifact or a claimed merge/serving receipt.
 
 The preparation acquires a shared transaction advisory lock on
 `hashtext('marketing_privacy_storage_retirement')` before its relation checks
-and deletion. Migration 1134 acquires the exclusive form **before** locking
+and deletion. Migration 1137 acquires the exclusive form **before** locking
 `privacy_choices` → `privacy_choice_revisions` → `marketing_privacy_receipts`.
 It drops the trigger, then child tables before parents, then the function.
 A waiting prepared cleanup reads the committed schema under READ COMMITTED;
@@ -111,7 +111,7 @@ storage in separate databases. These are test-owned data, not production rows.
 
 Contraction passed eight real PostgreSQL migration scenarios, the complete
 database migration-consistency chain, and the same two actual account-deletion
-webhook cases against the database migrated through 1134. Generated metadata
+webhook cases against the database migrated through 1137. Generated metadata
 removes exactly the three tables; other schema objects are unchanged. Rollback
 resolver tests cover old targets, missing history and the canonical introduction
 after the preparation helper is deleted. API/database types, scoped lints and

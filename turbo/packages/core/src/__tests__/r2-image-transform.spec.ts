@@ -19,12 +19,48 @@ describe("r2ImageTransformUrl", () => {
     );
   });
 
-  it("does not forward unrelated signed URLs to the image service", () => {
-    const url = "https://example.com/photo.png?X-Amz-Signature=signature";
-    expect(r2ImageTransformUrl(url, { width: 800 }, "https://cdn.vm7.io")).toBe(
-      url,
-    );
-  });
+  it.each([
+    ["image/jpeg", "photo.bin"],
+    [" IMAGE/PNG ; charset=binary", "image"],
+  ])(
+    "resizes %s inputs without an image extension",
+    (contentType, filename) => {
+      const url =
+        `https://${"a".repeat(32)}.r2.cloudflarestorage.com/private/${filename}` +
+        "?X-Amz-Security-Token=token%2B%2F%3D&X-Amz-Signature=signature";
+      expect(
+        r2ImageTransformUrl(
+          url,
+          { width: 800, height: 720, contentType },
+          "https://cdn.vm7.io",
+        ),
+      ).toBe(
+        `https://cdn.vm7.io/cdn-cgi/image/width=800,height=720,fit=scale-down,format=auto,quality=85,metadata=none/${url}`,
+      );
+    },
+  );
+
+  it.each(["image/bmp", "image/tiff", "image/*", "application/pdf"])(
+    "keeps unsupported %s content on its original URL despite an image extension",
+    (contentType) => {
+      const url = "https://cdn.vm7.io/artifacts/photo.png";
+      expect(r2ImageTransformUrl(url, { width: 800, contentType })).toBe(url);
+    },
+  );
+
+  it.each([undefined, "image/png"])(
+    "does not forward unrelated signed URLs to the image service with MIME %s",
+    (contentType) => {
+      const url = "https://example.com/photo.png?X-Amz-Signature=signature";
+      expect(
+        r2ImageTransformUrl(
+          url,
+          { width: 800, contentType },
+          "https://cdn.vm7.io",
+        ),
+      ).toBe(url);
+    },
+  );
 
   it.each([
     `https://${"a".repeat(32)}.r2.cloudflarestorage.com/private/photo.BMP?X-Amz-Signature=signature#preview`,
@@ -40,10 +76,15 @@ describe("r2ImageTransformUrl", () => {
     },
   );
 
-  it("keeps public shares on their policy-checked URL", () => {
-    const url = `https://a.okou.io/${"a".repeat(24)}.png?download=1#preview`;
-    expect(r2ImageTransformUrl(url, { width: 400, height: 300 })).toBe(url);
-  });
+  it.each([undefined, "image/png"])(
+    "keeps public shares on their policy-checked URL with MIME %s",
+    (contentType) => {
+      const url = `https://a.okou.io/${"a".repeat(24)}.png?download=1#preview`;
+      expect(
+        r2ImageTransformUrl(url, { width: 400, height: 300, contentType }),
+      ).toBe(url);
+    },
+  );
 
   it("continues resizing historical short artifact URLs", () => {
     expect(
@@ -53,16 +94,20 @@ describe("r2ImageTransformUrl", () => {
     );
   });
 
-  it("adds image transform directives for vm0 CDN artifact URLs", () => {
-    expect(
-      r2ImageTransformUrl("https://cdn.vm0.io/artifacts/user/id/image.png", {
-        width: 320,
-        height: 180,
-      }),
-    ).toBe(
-      "https://cdn.vm0.io/cdn-cgi/image/width=320,height=180,fit=scale-down,format=auto,quality=85,metadata=none/artifacts/user/id/image.png",
-    );
-  });
+  it.each([undefined, "", "application/octet-stream"])(
+    "uses the URL extension when MIME %s does not identify a format",
+    (contentType) => {
+      expect(
+        r2ImageTransformUrl("https://cdn.vm0.io/artifacts/user/id/image.png", {
+          width: 320,
+          height: 180,
+          contentType,
+        }),
+      ).toBe(
+        "https://cdn.vm0.io/cdn-cgi/image/width=320,height=180,fit=scale-down,format=auto,quality=85,metadata=none/artifacts/user/id/image.png",
+      );
+    },
+  );
 
   it("supports vm7 CDN artifact URLs", () => {
     expect(

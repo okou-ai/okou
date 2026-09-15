@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.194.1](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.194.0...runner-rs-v0.194.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* **runner:** clean up quiet ignored-child descendants ([#34261](https://github.com/vm0-ai/vm0/issues/34261)) ([92923ba](https://github.com/vm0-ai/vm0/commit/92923ba9eb5b0c0593362b6702b0fd3775c9c28f))
+
 ## [0.194.0](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.193.0...runner-rs-v0.194.0) (2026-09-15)
 
 

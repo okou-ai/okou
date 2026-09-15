@@ -516,8 +516,53 @@ Viewport sizing stays on the existing native roots through
 the bottom safe-area inset with `pb-(--sab)`; `SidebarLayout` uses `pb-0` so its
 scrollports reach the viewport edge and its content/composer owns the inset.
 Document sizing, top and horizontal insets, and PWA keyboard handling remain
-owned by the existing global environment rules. The `okou-viewport-shell` and
-`okou-managed-bottom-safe-area` selectors and their consumers have been removed.
+owned by the existing global environment rules. The `okou-viewport-shell`,
+`okou-managed-bottom-safe-area` and `okou-fixed-viewport-shell` selectors and
+their consumers have been removed.
+
+A page that covers the viewport is the exception to the paragraph above. The
+browser session page is `fixed inset-0`, so it is positioned against the
+viewport rather than inside `#root` and inherits none of the insets that element
+applies; `#root` reserves the top and horizontal insets for every route, but a
+fixed descendant is laid out past them. That page therefore takes all four
+insets with `p-safe` and pins its own height with
+`h-viewport max-h-viewport min-h-viewport`.
+
+Both are registered names rather than respelled variables, for the reason the
+`--animate-*` entries above give: a consumer should reach a decision through its
+utility, not restate the declaration. `--height-viewport` is an `@theme inline`
+entry over `--okou-viewport-height`, so `h-viewport` emits that variable
+directly and `@media (display-mode: standalone)` still decides at use time — it
+is not `h-dvh`, because standalone moves the variable to `100lvh`. A percentage
+would not do either: `h-full` on a fixed element resolves against the viewport
+rather than the height the rest of the app measures.
+
+`p-safe` is an `@utility` instead of a theme entry because its four sides carry
+four different values, which no single spacing token can express. Registering it
+is not an exception to the selector boundary: `@utility` emits into
+`@layer utilities` and declares no class selector, so the shrink-only baseline
+does not record it.
+
+A page does not restate the shell it renders inside. This one is mounted with
+the `standalone` layout, so `StandaloneLayout` is its ancestor and already
+carries `okou-app` along with the theme attributes; the page's own copy of that
+class was redundant and is gone. `position: fixed` changes where a box is laid
+out, not where it sits in the DOM, so the shell's custom properties still
+inherit into the cover.
+
+The retired rule was unlayered, which decided one value that the utilities now
+have to state outright. The element also carried `min-h-0`, and the rule's
+`min-height` outranked it from outside every layer, so the page has always
+measured the viewport height rather than zero. `min-h-0` is dropped rather than
+kept beside the new `min-h-viewport`: the two would be one `@layer utilities`
+apart with nothing left to break the tie, and the value the browser computes
+today is the viewport one. `box-sizing: border-box` reappears
+as `box-border` for the same reason the sibling page roots spell it — the base
+layer's universal rule already sets it, but the shell owns its own box model
+rather than depending on that.
+
+Visual evidence for this batch is not captured yet; it is recorded `implemented`
+rather than `verified` in `turbo/style-migration-manifest.json`.
 
 ### Table header rules and the global scrollbar treatment
 
@@ -593,24 +638,37 @@ prop and composes the whole treatment onto the frame it already owns:
 ```
 
 Every margin there is important, and the four resets exist only because of it.
-The competitor for the paragraphs and cards is the App's own unlayered
-`.wmde-markdown p, .wmde-markdown .okou-markdown-card` rule, which a utility in
-`@layer utilities` cannot outrank without one; a layered important declaration
-does. But that same promotion would also beat the two competitors the retired
-rule _lost_ to — the vendored `.wmde-markdown > *:first-child` /
-`> *:last-child` resets, which are themselves important, and the vendored
-`blockquote > :first-child` / `:last-child` pair, which ties the retired rule on
-specificity and wins on source order because the Markdown chunk's stylesheet
-loads after the App's. Restating those four at the same tier is what keeps the
-edge paragraphs flush. `[&_hr]:hidden` needs no important, because nothing
-unlayered declares `display` on a Markdown rule.
+The competitor for the paragraphs is the App's own unlayered `.wmde-markdown p`
+rule, which a utility in `@layer utilities` cannot outrank without one; a layered
+important declaration does. The card slot has since been drained to a `my-1.5`
+utility of its own, which the important declaration outranks from inside the same
+layer, so both halves still land on the bubble's 8px. That same promotion also
+clears the vendored `.wmde-markdown > *:first-child` / `> *:last-child` resets,
+which carry `!important` and therefore beat every unlayered rule whatever the
+source order is. The retired rule lost to those two, so restating them at the
+same tier is what keeps the frame's own edge paragraphs flush.
+
+The vendored `blockquote > :first-child` / `:last-child` pair is a different
+case, and the source order decides it. That order runs the other way from what
+this section first recorded: the Markdown chunk's stylesheet reaches the bundle
+through a static `router.tsx` import chain that `main.tsx` evaluates before its
+own `./css/index.css`, so Rollup emits the vendored rules first and the App
+block wins every tie. The pair is not important and ties the retired
+`.okou-chat-bubble-* .wmde-markdown p` rule at (0,2,1), so the retired rule won:
+inside a bubble, a blockquote's first and last paragraph carried its 8px.
+`[&_blockquote>*:first-child]:mt-0!` and its `mb-0!` sibling flush those two
+edges instead, which narrows that spacing rather than restating it. See the
+Markdown body batch in the migration log for the measurement, and
+[#34278](https://github.com/vm0-ai/vm0/issues/34278) for the spacing decision
+itself. `[&_hr]:hidden` needs no important, because nothing unlayered declares
+`display` on a Markdown rule.
 
 The card slot is addressed through `data-slot="markdown-card"` rather than its
-`okou-markdown-card` class, for the same reason the desktop titlebar block below
-cannot be respelled: naming a legacy class inside an arbitrary variant registers
-a new dependency on it, and that token belongs to a later batch. The slot
-carries no styles. `data-slot="chat-user-message"` likewise replaces the
-attachment-preview test's `.okou-chat-bubble-user` query.
+`okou-markdown-card` class. At the time this batch landed that was because
+naming a legacy class inside an arbitrary variant registers a new dependency on
+it under the shrink-only baseline; the class has since been drained, so the slot
+is now the only handle the element has. The slot carries no styles. `data-slot="chat-user-message"` likewise
+replaces the attachment-preview test's `.okou-chat-bubble-user` query.
 
 This narrows a contract on purpose, the way the nav chrome above does. The
 retired rules applied to _any_ Markdown frame that happened to sit inside a
@@ -894,6 +952,35 @@ component. Removing the detector's class check would stop rendering
 raw-HTML-authored Mermaid blocks as diagrams, which is a product decision with
 no current test coverage, and is tracked separately from this drain.
 
+### Markdown card block spacing
+
+The `okou-markdown-card` selector and its consumers have been removed. It never
+had a rule of its own: it shared one with `.wmde-markdown p`, so a card slot that
+enters the tree as a paragraph and leaves it as a `div` kept the paragraph's 6px
+block rhythm. Both consumers in `rich-markdown.tsx` now spell that rhythm as
+`my-1.5`, and the vendored selector keeps its half of the split rule as a
+`third-party-dom-adapter` entry alongside the fifteen sibling `.wmde-markdown`
+spacing selectors that were already allowlisted. `p` was the one missing from
+that group precisely because it had been welded to a first-party class.
+
+`my-1.5` is exactly the retired 6px: it emits `calc(var(--spacing) * 1.5)` over
+the default `0.25rem`, and neither stylesheet overrides `--spacing` or the root
+font size. It emits `margin-block` where the retired rule set `margin-top` and
+`margin-bottom`; the App has no vertical writing mode, so the two resolve to the
+same physical edges.
+
+The split changes which rule wins for a card at either end of the document, and
+it changes it to the same answer. `.wmde-markdown > :first-child` and
+`> :last-child` are unlayered and have the same `(0,2,0)` specificity the retired
+`.wmde-markdown .okou-markdown-card` had, and they come later in the file, so
+they already zeroed the outer margin of a first or last card by source order.
+They now win because they are unlayered and `my-1.5` sits in `@layer utilities`.
+A card anywhere else matched only the retired rule and now matches only the
+utility. All three positions therefore keep the margins they had.
+
+Visual evidence for this batch is not captured yet; it is recorded `implemented`
+rather than `verified` in `turbo/style-migration-manifest.json`.
+
 ### Chat transcript cards
 
 `ChatCard` in `turbo/apps/platform/src/views/okou-page/components/chat-card.tsx`
@@ -991,12 +1078,31 @@ the separate removal of the chat thinking spinner switch, which deleted the
 loader, its colour state and its keyframes outright; the rotating mark is now
 the only thinking indicator, so these states are the online-visible path.
 
-`okou-shimmer-text` was scoped out of this batch. Its gradient has six colour
-stops, and Tailwind's gradient utilities interpolate in oklab, so only the exact
-`bg-[linear-gradient(...)]` form reproduces it — 229 characters for that one
-utility, past the length this family keeps its class strings under. Choosing
-between that and an App-owned gradient token for a single consumer is a design
-decision rather than a mechanical replacement.
+`okou-shimmer-text` was scoped out of that batch and has since been drained on
+its own terms. Its gradient has six colour stops, and Tailwind's own gradient
+utilities interpolate in oklab and compose from three positions, so no `bg-*`
+utility can express it and the inline `bg-[linear-gradient(…)]` form runs to 229
+characters for one class. The decision that batch deferred was between that and
+an App-owned token; the token won.
+
+`--background-image-shimmer-text` is an `@theme inline` entry, so `bg-shimmer-text`
+emits the gradient with its `--muted-foreground` and `--foreground` references
+intact and each theme still resolves them on the element. `--animate-shimmer`
+joins the `--animate-*` entries beside it on the same contract, and the
+`okou-shimmer` keyframes stay in the stylesheet, because keyframes are not class
+selectors. The remaining declarations are ordinary utilities on `ShimmerText` in
+`chat-thread-page.tsx`, which already existed as a component and needed no new
+wrapper.
+
+Two of them need stating. `[background-size:200%_100%]` is an arbitrary property
+rather than `bg-size-*`, matching the effort slider's `[background-size:…]`
+beside its own aurora tokens. And `[-webkit-background-clip:text]` stays beside
+`bg-clip-text` because Tailwind emits only the unprefixed property: its default
+targets do not need the prefix, but the retired rule declared both, so keeping it
+is the no-change choice. Chromium treats the two as aliases, so no measurement
+here can separate them — dropping either one leaves both computing to `text`.
+Removing the prefixed declaration is a browser-support decision, not part of this
+drain.
 
 ### The standalone PWA fixed cover
 

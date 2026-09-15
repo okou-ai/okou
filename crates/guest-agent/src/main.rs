@@ -1263,6 +1263,7 @@ mod tests {
         let success_result = cli::JsonlResultSummary {
             num_turns: Some(1),
             status: cli::JsonlResultStatus::Success,
+            model_request: None,
         };
         let make_result = |jsonl_result: cli::JsonlResultSummary,
                            cleanup_result: cli::JsonlResultSummary,
@@ -1304,6 +1305,7 @@ mod tests {
             cli::JsonlResultSummary {
                 num_turns: Some(1),
                 status: cli::JsonlResultStatus::Error,
+                model_request: None,
             },
             success_result,
             CliTerminationReason::PostResultReap,
@@ -1318,6 +1320,7 @@ mod tests {
             cli::JsonlResultSummary {
                 num_turns: Some(1),
                 status: cli::JsonlResultStatus::Error,
+                model_request: None,
             },
             CliTerminationReason::PostResultReap,
         );

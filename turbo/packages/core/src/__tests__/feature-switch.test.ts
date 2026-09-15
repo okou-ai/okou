@@ -317,18 +317,18 @@ describe("getAllFeatureStates", () => {
     expect(colleagueStates[FeatureSwitchKey.PiLoop]).toBe(true);
   });
 
-  it("should enable model selection refactoring for Bingjie by email outside the staff org", () => {
+  it("should enable effort for Bingjie by email outside the staff org", () => {
     const bingjieStates = getAllFeatureStates({
       email: "BINGJIE@OKOU.AI",
       orgId: "org_nonexistent",
     });
-    expect(bingjieStates[FeatureSwitchKey.RefactorModelSelect]).toBe(true);
+    expect(bingjieStates[FeatureSwitchKey.Effort]).toBe(true);
 
     const otherStates = getAllFeatureStates({
       email: "ethan@okou.ai",
       orgId: "org_nonexistent",
     });
-    expect(otherStates[FeatureSwitchKey.RefactorModelSelect]).toBe(false);
+    expect(otherStates[FeatureSwitchKey.Effort]).toBe(false);
   });
 
   it("should apply overrides to enable disabled features", () => {

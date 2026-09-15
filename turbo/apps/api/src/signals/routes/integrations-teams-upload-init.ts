@@ -1,13 +1,12 @@
 import { command } from "ccstate";
 import { integrationsTeamsUploadInitContract } from "@okouai/api-contracts/contracts/integrations";
 
-import { env } from "../../lib/env";
 import { sanitizeArtifactFilename } from "../../lib/file-url";
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { generatePresignedPutUrl, s3MetadataHeaders } from "../external/s3";
-import { allocateArtifactObject$ } from "../services/artifact-storage.service";
+import { allocateUploadedArtifact$ } from "../services/uploaded-artifact.service";
 import type { RouteEntry } from "../route-entry";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
@@ -24,19 +23,21 @@ const init$ = command(async ({ get, set }, signal: AbortSignal) => {
   const body = bodyResult.data;
   const filename = sanitizeArtifactFilename(body.filename);
   const artifact = await set(
-    allocateArtifactObject$,
+    allocateUploadedArtifact$,
     {
       userId: auth.userId,
+      orgId: auth.orgId,
+      contentType: body.contentType,
+      size: body.length,
       filename: body.filename,
       publicBrand: PUBLIC_BRAND,
     },
     signal,
   );
   const uploadHeaders = s3MetadataHeaders(artifact.metadata);
-  const bucket = env("R2_USER_ARTIFACTS_BUCKET_NAME");
   const uploadUrl = await get(
     generatePresignedPutUrl(
-      bucket,
+      artifact.bucket,
       artifact.key,
       body.contentType,
       {

@@ -90,7 +90,7 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { debounceCommand } from "../command-scheduling.ts";
 import {
-  refactorModelSelectEnabled$,
+  chatEffortEnabled$,
   codexFastModeEnabled$,
   featureSwitch$,
 } from "../external/feature-switch.ts";
@@ -471,7 +471,7 @@ function createModelSelection(
   );
 
   const modelSettings$ = computed((get) => {
-    return get(refactorModelSelectEnabled$)
+    return get(chatEffortEnabled$)
       ? (get(threadMeta$)?.modelSettings ?? {})
       : {};
   });
@@ -1222,6 +1222,7 @@ const registerUserMessageRenderPart$ = command(
           signals: set(artifactCardSignals.register$, {
             filename: part.filenameSnapshot,
             url,
+            contentType: renderContentType,
             kind: classifyChatAttachment({
               filename: part.filenameSnapshot,
               url,

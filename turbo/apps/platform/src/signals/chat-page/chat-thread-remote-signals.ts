@@ -16,7 +16,7 @@ import type { ModelSettingsPatch } from "@okouai/api-contracts/contracts/model-r
 import { accept } from "../../lib/accept.ts";
 import { nowDate } from "../../lib/time.ts";
 import { apiClient$ } from "../api-client.ts";
-import { refactorModelSelectEnabled$ } from "../external/feature-switch.ts";
+import { chatEffortEnabled$ } from "../external/feature-switch.ts";
 import { threadCodexServiceTierFromSelection } from "./model-selection-request.ts";
 import {
   setAblyInvalidationLoop$,
@@ -149,7 +149,7 @@ export const patchChatThreadModelSelection$ = command(
   ) => {
     const threadMeta = get(chatThreadMetaMap$).get(threadId);
     const modelSettingsPatch = changedModelSettingsPatch({
-      enabled: get(refactorModelSelectEnabled$),
+      enabled: get(chatEffortEnabled$),
       threadMeta,
       selection: modelSelection,
     });

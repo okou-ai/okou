@@ -1,3 +1,10 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { uploadsPrepareRoutes } from "../uploads-prepare";
+import { uploadsCompleteRoutes } from "../uploads-complete";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 import { randomUUID } from "node:crypto";
 
 import { createStore } from "ccstate";
@@ -958,6 +965,88 @@ describe("POST /api/image-recognition", () => {
         credits: EXPECTED_CHARGE * 2,
       }),
     ]);
+  });
+
+  it("signs a private input for image recognition after creation is disabled", async () => {
+    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
+    const actor = await seedImageRecognitionActor();
+    const pricing = await seedImageRecognitionBilling(actor);
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.PrivateArtifacts]: true,
+    });
+    installSharedThreadStorage(context);
+    const uploads = setupApp({
+      context,
+      routes: [...uploadsPrepareRoutes, ...uploadsCompleteRoutes],
+    })(uploadsContract);
+    const headers = { authorization: "Bearer clerk-session" };
+    const prepared = await accept(
+      uploads.prepare({
+        headers,
+        body: { filename: "screen.png", contentType: "image/png", size: 12 },
+      }),
+      [200],
+    );
+    if (!("uploadUrl" in prepared.body)) {
+      throw new Error("Expected single upload");
+    }
+    await fetch(prepared.body.uploadUrl, {
+      method: "PUT",
+      body: "image bytes!",
+    });
+    await accept(
+      uploads.complete({ headers, body: { id: prepared.body.id } }),
+      [200],
+    );
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.PrivateArtifacts]: false,
+    });
+    const requests: unknown[] = [];
+    server.use(
+      http.post(OPENROUTER_URL, async ({ request }) => {
+        requests.push(await request.json());
+        return HttpResponse.json({
+          choices: [
+            {
+              finish_reason: "stop",
+              message: { content: "A private screenshot" },
+            },
+          ],
+          usage: {
+            prompt_tokens: 3000,
+            completion_tokens: 1000,
+            prompt_tokens_details: { cached_tokens: 1000 },
+          },
+        });
+      }),
+    );
+    const response = await requestImageRecognition({
+      token: okouToken(actor),
+      fileId: prepared.body.id,
+      prompt: "Describe",
+      usagePricingResolution: pricing.resolution,
+    });
+    expect(response.status).toBe(200);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Describe" },
+            {
+              type: "image_url",
+              image_url: { url: "https://attachment-storage.example/download" },
+            },
+          ],
+        },
+      ],
+    });
+    const signed = context.mocks.s3.getSignedUrl.mock.calls.at(-1)?.[1];
+    expect(signed).toBeInstanceOf(GetObjectCommand);
+    expect(signed).toMatchObject({
+      input: { Bucket: "test-private-artifacts" },
+    });
   });
 
   it("continues an admitted run after credits are exhausted", async () => {

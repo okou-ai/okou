@@ -1,5 +1,4 @@
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { isChatEffortEnabled } from "@okouai/core/model-feature-switch";
 import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
 import { resolveChatReasoningEffort } from "../services/chat-reasoning-effort.service";
 import { command } from "ccstate";
@@ -103,10 +102,7 @@ const updateModelSelectionInner$ = command(
         selectedModel: pin.selectedModel,
         modelSettings: modelSettingsSchema.parse(current.modelSettings),
         requested: body.data.reasoningEffort,
-        enabled: isFeatureEnabled(
-          FeatureSwitchKey.RefactorModelSelect,
-          context,
-        ),
+        enabled: isChatEffortEnabled(context),
       });
       if ("status" in effort) {
         return effort;

@@ -86,7 +86,7 @@ surface; the index does not replace their detailed rules.
 - [Runner multi-architecture rollout](./runner-multi-architecture.md): build,
   deploy, and validate runner artifacts for supported host architectures.
 - [Testing catalog](./testing/anti-patterns.md): detailed testing anti-patterns.
-- [Addon runtime contracts](./mitm-addon-contracts.md): logging ownership,
+- [Addon runtime contracts](./mitm-addon-contracts.md): private control, logging ownership,
   WebSocket framing and handshake limits, and path normalization boundaries.
 - [Chat Event Snapshot timeout diagnostics](./chat-event-snapshot-timeout-logging.md):
   expected per-head deadlines, stage diagnostics, convergence and retention

@@ -1,6 +1,7 @@
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { command, computed } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { isChatEffortEnabled } from "@okouai/core/model-feature-switch";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
 import type { VideoModel } from "@okouai/core/video-model-catalog";
 import {
@@ -476,8 +477,9 @@ const startNewChatThreadCreate$ = command(
           clientThreadId: threadId,
           eventId,
           modelSelection,
-          reasoningEffortEnabled:
-            featureSwitches[FeatureSwitchKey.RefactorModelSelect] ?? false,
+          reasoningEffortEnabled: isChatEffortEnabled({
+            overrides: featureSwitches,
+          }),
         },
         signal,
       );
@@ -607,8 +609,7 @@ const sendNewThreadMessage$ = command(
         clientThreadId: threadId,
         eventId: chatThreadEventId,
         modelSelection: resolvedModelSelection,
-        reasoningEffortEnabled:
-          features[FeatureSwitchKey.RefactorModelSelect] ?? false,
+        reasoningEffortEnabled: isChatEffortEnabled({ overrides: features }),
         imageModel,
         videoModel,
         connectorSelections: request.connectorSelections,

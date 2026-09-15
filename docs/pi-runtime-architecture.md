@@ -122,6 +122,28 @@ existing trust boundaries.
    the original response/category idempotency, but cannot publish output,
    checkpoint, or a second terminal event.
 
+## Codex model failure diagnostics
+
+The owned Codex Responses fetch boundary records only the last transport
+attempt's observed HTTP status and the number of fetch attempts for that model
+call. Failed native assistant messages carry these numeric fields in the SDK's
+`okou_model_request` diagnostic; provider text and session retry policy remain
+unchanged. Both stream iteration and `result()` expose the same diagnostic.
+
+Guest projects this evidence into the failed terminal result and optional
+`FailureDiagnostic.modelRequest`. A failed retry records the attempt number and
+limit from its native `auto_retry_start` event. A scheduled sleep does not count
+as a completed retry. Native retry completion, successful assistant output and
+settlement clear pending retry state; queued input and compaction do not inherit
+an earlier retry budget. Aborted messages and tool results cannot supply model
+HTTP evidence. Historical messages without this diagnostic remain supported.
+
+Observed HTTP 429 supplies `provider_rate_limited` after existing explicit
+usage-limit/reconnect classification. Runner uses its existing INFO rule and
+records the numeric request/retry fields. Completion keeps the established
+failure reason and user-owned-provider warning suppression. This does not
+change displayed error copy, API-first recovery policy, or terminal ownership.
+
 ## Shared bootstrap, distinct session policies
 
 `createPiModelRuntime` receives the **already-resolved model**, captured stream
@@ -331,5 +353,5 @@ the CLI and configuration they captured. API rollback does not rewrite stored ef
 or history; this staff-only feature requires the updated API and CLI to honor changed
 effort on resume.
 The existing Pi model-config generations and Runner/Guest schemas are unchanged.
-`RefactorModelSelect` gates model selection and reasoning effort; `PiLoop`
-retains its independent runtime rollout gate.
+`Effort` gates reasoning effort and Fast, and `ModelPickerFlyout` gates the model
+picker's layout; `PiLoop` retains its independent runtime rollout gate.

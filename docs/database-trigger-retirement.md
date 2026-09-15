@@ -5,14 +5,14 @@ nine-trigger migration plan, domain-specific concurrency requirements, and
 release evidence. A–D preparation shipped before migration `1132`; the sections
 below retain the writer and repair contracts established by those releases.
 
-## Withdrawn marketing privacy storage: migration 1134
+## Withdrawn marketing privacy storage: migration 1137
 
 The owner changed E's scope on 2026-09-15 to complete retirement of its three
 storage tables, withdrawal trigger and epoch function. No replacement privacy
 API is introduced. Preparation #34296 must first serve and define the supported
 rollback boundary; its source merge alone does not permit contraction.
 See the [storage inventory, lock order and release gates](marketing-privacy-choices.md#required-release-order-and-rollback-boundary).
-Migration 1134 removes E after those gates; it does not complete #33275's revised
+Migration 1137 removes E after those gates; it does not complete #33275's revised
 privacy remediation. Historical A–D evidence below records what 1132 preserved.
 
 ## A-D contraction: migration 1132
@@ -212,7 +212,7 @@ owned by #32575.
 The purchase, OAuth, hosting, and privacy work packages remain tracked in
 #33747. The original [privacy implementation rollback](marketing-privacy-choices.md)
 retained its database state. The owner's later storage retirement request is
-implemented by migration 1134 under the separate release gates above. Neither
+implemented by migration 1137 under the separate release gates above. Neither
 change resumes the withdrawn privacy feature.
 
 ## Custom connector OAuth preparation
