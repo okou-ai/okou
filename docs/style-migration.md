@@ -766,9 +766,11 @@ deployed-preview capture.
 
 ## Markdown body classes — partially drained, audit blocked
 
-The `markdown-body-classes` batch owns `wmde-markdown`, `wmde-markdown-color`
-and `okou-markdown-card`. One is retired; the other two are not renames and are
-returned to the external-contract audit their family already asks for.
+The `markdown-body-classes` batch owns `wmde-markdown` and
+`wmde-markdown-color`. One is retired; the other is not a rename and is returned
+to the external-contract audit its family already asks for. The batch opened
+with `okou-markdown-card` as well, which the fixed viewport and markdown card
+batch drained separately while this one was open.
 
 `wmde-markdown-color` was applied by `MarkdownFrame` and selected by nothing:
 zero rules in the App stylesheet, zero in `packages/ui`, and zero in the
@@ -794,8 +796,8 @@ middle alignment, `hr` drops from 3.5px to 1px and loses its 24px margins, `img`
 loses `content-box` and `border-style: none`, and `strong` shifts from 600 to 700.
 
 Spelling the hook as `[data-slot="markdown-body"]` in the stylesheet would also
-contradict this guide's companion: the style guide records four times that a
-`data-slot` carries no styles, and no handwritten first-party rule selects one
+contradict this guide's companion: the style guide records in five places that
+a `data-slot` carries no styles, and no handwritten first-party rule selects one
 today. The one `[data-slot=markdown-card]` selector in the shipped bundle is the
 utility Tailwind emits for `CHAT_BUBBLE_MARKDOWN_CLASS`, which is authored on
 the component, not in a stylesheet, and stays inside the ratchet. It would
@@ -803,28 +805,17 @@ convert a tracked class selector into the attribute selector this document still
 lists as an unenforced follow-up, hiding the debt from the ratchet instead of
 draining it.
 
-`okou-markdown-card` is blocked because it is mechanically coupled to
-`wmde-markdown`. It keeps its own family, `chat-and-content`, and appears in
-this batch only because that coupling decides it — the one batch whose tokens
-span two families — and it is consumed at `rich-markdown.tsx`, not at the frame.
-Its only declarations live in the shared rule
-`.wmde-markdown p, .wmde-markdown .okou-markdown-card`, which is the one rule of
-this block held in the legacy baseline; the other 42 are already
-`third-party-dom-adapter` allowlist entries. Any re-spelling changes that rule's
-baseline atoms, and `style-policy/growth` rejected both attempted forms.
-Addressing the card as `.wmde-markdown [data-slot="markdown-card"]`, at the same
-(0,2,0) specificity and zero changed pixels, failed with two new first-party
-class selector declarations, and the rule cannot be reclassified into the
-allowlist while half of it selects a first-party slot rather than
-renderer-generated DOM. Deleting the rule and moving both halves onto the frame
-as Tailwind arbitrary variants — the pattern `CHAT_BUBBLE_MARKDOWN_CLASS` uses —
-does not fit either: promoting the spacing to a layered important utility then
-outranks the unlayered `> :first-child`, `> :last-child` and `li > p` resets it
-currently loses to, so those must be restated, and the resulting frame
-`className` is 235 characters against this batch's 200-character limit.
+`okou-markdown-card` was held here at first, because its only declarations lived
+in the shared rule `.wmde-markdown p, .wmde-markdown .okou-markdown-card` — then
+the only rule of this block still held in the legacy baseline, against 42
+`third-party-dom-adapter` allowlist entries — and re-spelling that rule changed
+its baseline atoms. The markdown card batch drained it instead by splitting the
+rule: the two card sites took a `my-1.5` utility, and `.wmde-markdown p` became
+the 43rd adapter entry. Every rule of this block is now a declared adapter entry
+and the legacy baseline holds none of them.
 
-`turbo/style-allowlist.json` already holds 42 `third-party-dom-adapter` entries
-for these selectors plus the sheet's hash-pinned `vendorFiles` record, so the
+That leaves the class token itself, and `turbo/style-allowlist.json` already
+holds those 43 entries plus the sheet's hash-pinned `vendorFiles` record, so the
 remaining decision — keep the declared adapter, or replace the Markdown
 renderer's styling wholesale — is a product decision rather than an equivalence.
 

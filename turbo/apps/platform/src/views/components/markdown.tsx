@@ -20,10 +20,12 @@ import {
  *
  * Every declaration is important because its competitors are unlayered rules
  * that a utility in `@layer utilities` cannot outrank — the App's own
- * `.wmde-markdown p` spacing for the paragraphs and cards, and the vendored
+ * `.wmde-markdown p` spacing for the paragraphs, and the vendored
  * `.wmde-markdown > *:first-child` / `:last-child` resets, which are themselves
  * important and which the retired rule therefore lost to. Reproducing those two
- * at the same tier is what keeps the frame's own edge paragraphs flush.
+ * at the same tier is what keeps the frame's own edge paragraphs flush. The
+ * card slot now carries its own `my-1.5`, which this important declaration
+ * outranks from inside the same layer.
  *
  * The blockquote pair is the vendored `blockquote > :first-child` /
  * `:last-child` reset, which is not important and ties the retired rule on
@@ -31,9 +33,10 @@ import {
  * rule won that tie and its 8px applied at those edges; flushing them here
  * narrows that spacing rather than restating it. See vm0-ai/vm0#34278.
  *
- * The card slot is addressed through `data-slot` rather than its class, because
- * naming a legacy class inside an arbitrary variant registers a new dependency
- * on it.
+ * The card slot is addressed through `data-slot` rather than its class. That
+ * started as the shrink-only rule against naming a legacy class inside an
+ * arbitrary variant; the class has since been drained, so the slot is the only
+ * handle the element has.
  */
 const CHAT_BUBBLE_MARKDOWN_CLASS =
   "[&_:is(p,[data-slot=markdown-card])]:my-2! [&>*:first-child]:mt-0! [&>*:last-child]:mb-0! [&_blockquote>*:first-child]:mt-0! [&_blockquote>*:last-child]:mb-0! [&_hr]:hidden";
