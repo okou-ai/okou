@@ -20,19 +20,28 @@ import {
  *
  * Every declaration is important because its competitors are unlayered rules
  * that a utility in `@layer utilities` cannot outrank — the App's own
- * `.wmde-markdown p` spacing for the paragraphs and cards, and the vendored
+ * `.wmde-markdown p` spacing for the paragraphs, and the vendored
  * `.wmde-markdown > *:first-child` / `:last-child` resets, which are themselves
- * important and which the retired rule therefore lost to. The blockquote pair
- * is the vendored `blockquote > :first-child` / `:last-child` reset, which the
- * retired rule also lost to on source order. Reproducing those four resets at
- * the same tier is what keeps the edge paragraphs flush.
+ * important and which the retired rule therefore lost to. Reproducing those two
+ * at the same tier is what keeps the frame's own edge paragraphs flush. The
+ * card slot now carries its own `my-1.5`, which this important declaration
+ * outranks from inside the same layer.
  *
- * The card slot is addressed through `data-slot` rather than its class, because
- * naming a legacy class inside an arbitrary variant registers a new dependency
- * on it.
+ * A quote's own edges are padding, not margin. The blockquote pair keeps the
+ * inner paragraphs' margins from collapsing out through a quote that declares
+ * no block padding and no block border: before #34076 the retired rule's 8px
+ * escaped that way and pushed the whole quote off the frame's own
+ * `> *:first-child` reset, while never once appearing inside the quote —
+ * measured 0px of inset on both sides of that change. `py-2` puts the bubble's
+ * 8px where a quote actually shows it. See vm0-ai/vm0#34278.
+ *
+ * The card slot is addressed through `data-slot` rather than its class. That
+ * started as the shrink-only rule against naming a legacy class inside an
+ * arbitrary variant; the class has since been drained, so the slot is the only
+ * handle the element has.
  */
 const CHAT_BUBBLE_MARKDOWN_CLASS =
-  "[&_:is(p,[data-slot=markdown-card])]:my-2! [&>*:first-child]:mt-0! [&>*:last-child]:mb-0! [&_blockquote>*:first-child]:mt-0! [&_blockquote>*:last-child]:mb-0! [&_hr]:hidden";
+  "[&_:is(p,[data-slot=markdown-card])]:my-2! [&>*:first-child]:mt-0! [&>*:last-child]:mb-0! [&_blockquote]:py-2! [&_blockquote>*:first-child]:mt-0! [&_blockquote>*:last-child]:mb-0! [&_hr]:hidden";
 
 interface MarkdownProps {
   readonly source: string;

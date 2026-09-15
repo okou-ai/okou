@@ -62,6 +62,7 @@ import {
 import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
 import { ensureTeamsChatThreadRoute } from "./teams-chat-ingress.service";
+import { integrationDmSessionKey } from "../../lib/integration-dm-session";
 import { formatTeamsFileForContext } from "./teams-prompt";
 import { InputFileImportError } from "./canonical-asset.service";
 import { isAllowedTeamsDownloadUrl } from "../../lib/teams-file-url";
@@ -107,7 +108,6 @@ const TEAMS_FILE_DOWNLOAD_INFO_CONTENT_TYPE =
   "application/vnd.microsoft.teams.file.download.info";
 const TEAMS_REFERENCE_ATTACHMENT_CONTENT_TYPE = "reference";
 const TEAMS_CHAT_MESSAGE_ID_NAMESPACE = "b60a5846-d85f-4db8-b9aa-d7d803efbb57";
-const TEAMS_DIRECT_MESSAGE_THREAD_ID = "direct-message";
 const teamsQueueEventRevoker = alias(chatEvents, "teams_queue_event_revoker");
 
 type TeamsBotCommand = "help" | "connect" | "disconnect" | "switch" | "model";
@@ -1258,8 +1258,7 @@ function teamsSessionThreadId(args: {
     activity.conversationType === "personal" &&
     !isTeamsThreadReply(activity)
   ) {
-    const session = `${TEAMS_DIRECT_MESSAGE_THREAD_ID}:${args.agentId}:${args.selectedModel ?? "default"}`;
-    return args.serviceTier === "priority" ? `${session}:priority` : session;
+    return integrationDmSessionKey(args);
   }
   return activity.threadId;
 }
@@ -1747,6 +1746,7 @@ const persistTeamsChatMessage$ = command(
       serviceTier: args.modelRoute?.serviceTier ?? null,
     });
     const route = await ensureTeamsChatThreadRoute(args.db, {
+      isDirectMessage: args.activity.conversationType === "personal",
       connectionId: args.connection.id,
       conversationId: args.activity.conversationId,
       threadId,

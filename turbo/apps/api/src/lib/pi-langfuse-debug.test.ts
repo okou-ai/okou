@@ -5,7 +5,6 @@ import { clearMockedEnv, mockOptionalEnv } from "./env";
 import {
   createPiLangfuseCredentialMask,
   isPiLangfuseDebugRunEnvironment,
-  piLangfuseDebugCredentialsFromEnvironment,
   piLangfuseDebugPlatformEnvironment,
   piLangfuseDebugUserId,
   resolvePiLangfuseDebugConfig,
@@ -118,7 +117,6 @@ describe("Pi Langfuse debug configuration", () => {
     });
     expect(platformEnvironment).toMatchObject({
       OKOU_PI_LANGFUSE_DEBUG_ENABLED: "true",
-      OKOU_PI_LANGFUSE_RELAY_ENABLED: "true",
       LANGFUSE_TRACING_ENABLED: "true",
       LANGFUSE_MEDIA_UPLOAD_ENABLED: "false",
       LANGFUSE_TRACING_ENVIRONMENT: "internal-debug",
@@ -132,13 +130,6 @@ describe("Pi Langfuse debug configuration", () => {
     expect(isPiLangfuseDebugRunEnvironment(platformEnvironment)).toBe(true);
     expect(isPiLangfuseDebugRunEnvironment({})).toBe(false);
     expect(platformEnvironment.LANGFUSE_USER_ID).not.toContain(USER_ID);
-    const credentials = {
-      LANGFUSE_PUBLIC_KEY: "pk-lf-debug",
-      LANGFUSE_SECRET_KEY: "sk-lf-debug",
-    };
-    expect(
-      piLangfuseDebugCredentialsFromEnvironment(credentials),
-    ).toStrictEqual(credentials);
   });
 });
 

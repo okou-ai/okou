@@ -64,9 +64,11 @@ import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import {
   AlertTriangle,
   ArrowLeft,
+  ArrowRight,
   ArrowUp,
   Bolt,
   Check,
+  Clapperboard,
   Download,
   Globe,
   Image as ImageIcon,
@@ -75,8 +77,8 @@ import {
   Lock,
   Mic,
   Monitor,
-  Paperclip,
   Palette,
+  Paperclip,
   Play,
   Plug,
   Plus,
@@ -84,16 +86,16 @@ import {
   Route,
   Search,
   SlidersHorizontal,
-  Terminal,
   Square,
   SwatchBook,
+  Terminal,
   Trash2,
+  type LucideIcon,
   User,
   UserCheck,
   Users,
   Video,
   X,
-  type LucideIcon,
 } from "lucide-react";
 import {
   Dialog,
@@ -203,6 +205,11 @@ import {
   toVideoGenerationTemplate,
   toWebsiteGenerationTemplate,
 } from "./composer-template-catalog.ts";
+import {
+  ComposerRail,
+  RAIL_TILE,
+  RAIL_TILE_CAPTION,
+} from "./composer-rail.tsx";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type {
   ConnectorAccountConnection,
@@ -313,8 +320,11 @@ import {
   AvatarTemplatePickerContent,
   AvatarTemplatePickerToolbar,
 } from "./avatar-template-picker.tsx";
-import { ComposerVideoOptionsChip } from "./composer-video-options.tsx";
-import { ComposerPresentationOptions } from "./composer-presentation-options.tsx";
+import {
+  markVideoPreviewPlaying,
+  resetVideoPreview,
+  startVideoPreview,
+} from "./video-preview-hover.ts";
 import {
   localizedWorkflowTemplate,
   localizedWorkflowTemplateCategory,
@@ -859,43 +869,6 @@ function websiteTemplateCardImageUrl(item: WebsiteTemplateItem): string {
   return r2ImageTransformUrl(item.previewImageUrl, TEMPLATE_CARD_PREVIEW_SIZE);
 }
 
-function playVideoTemplatePreview(video: HTMLVideoElement | null): void {
-  if (!video) {
-    return;
-  }
-  video.defaultMuted = true;
-  video.muted = true;
-  video.playsInline = true;
-  video.preload = "metadata";
-  detach(video.play(), Reason.DomCallback);
-}
-
-function markVideoTemplatePreviewPlaying(
-  video: HTMLVideoElement | null,
-  playing: boolean,
-): void {
-  if (!video) {
-    return;
-  }
-  video.dataset.previewPlaying = playing ? "true" : "false";
-}
-
-function resetVideoTemplatePreview(video: HTMLVideoElement | null): void {
-  if (!video) {
-    return;
-  }
-  video.pause();
-  video.currentTime = 0;
-  markVideoTemplatePreviewPlaying(video, false);
-}
-
-function toggleVideoTemplatePreview(video: HTMLVideoElement | null): void {
-  if (!video || (!video.paused && !video.ended)) {
-    return;
-  }
-  playVideoTemplatePreview(video);
-}
-
 function videoTemplatePosterImage(item: VideoTemplateItem): string {
   if (item.cardPreviewImage !== undefined) {
     return r2ImageTransformUrl(
@@ -914,10 +887,10 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
       data-video-template-preview=""
       className="group/video-template-preview relative h-full w-full overflow-hidden bg-muted"
       onMouseEnter={(event) => {
-        toggleVideoTemplatePreview(event.currentTarget.querySelector("video"));
+        startVideoPreview(event.currentTarget.querySelector("video"));
       }}
       onMouseLeave={(event) => {
-        resetVideoTemplatePreview(event.currentTarget.querySelector("video"));
+        resetVideoPreview(event.currentTarget.querySelector("video"));
       }}
     >
       <video
@@ -928,16 +901,16 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
         muted
         loop
         onPlaying={(event) => {
-          markVideoTemplatePreviewPlaying(event.currentTarget, true);
+          markVideoPreviewPlaying(event.currentTarget, true);
         }}
         onPause={(event) => {
-          markVideoTemplatePreviewPlaying(event.currentTarget, false);
+          markVideoPreviewPlaying(event.currentTarget, false);
         }}
         onEnded={(event) => {
-          resetVideoTemplatePreview(event.currentTarget);
+          resetVideoPreview(event.currentTarget);
         }}
         onError={(event) => {
-          markVideoTemplatePreviewPlaying(event.currentTarget, false);
+          markVideoPreviewPlaying(event.currentTarget, false);
         }}
       >
         <source src={item.previewWebm} type="video/webm; codecs=vp9" />
@@ -964,7 +937,7 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
         onClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
-          toggleVideoTemplatePreview(
+          startVideoPreview(
             event.currentTarget.parentElement?.querySelector("video") ?? null,
           );
         }}
@@ -1006,6 +979,8 @@ const TEMPLATE_TILE_USE =
 // Caption metrics track the illustration card: same text size, and enough
 // breathing room under the artwork that the title never crowds it.
 const TEMPLATE_TILE_CAPTION = "flex items-baseline gap-2 px-2 pb-2 pt-2";
+/** The cover width every type's shelf uses, so the rows line up across tabs. */
+const PRESENTATION_SHELF_COVER = "w-[200px]";
 const TEMPLATE_TILE_NAME =
   "min-w-0 truncate text-sm font-medium leading-5 text-foreground";
 
@@ -4365,7 +4340,7 @@ function TemplatePickerCategoryNav({
             label: t(($) => {
               return $.artifacts.templates.introVideo;
             }),
-            Icon: Presentation,
+            Icon: Clapperboard,
           },
         ]
       : []),
@@ -4584,10 +4559,12 @@ function PptImportCard({
   signals,
   onImported,
   compact = false,
+  className,
 }: {
   signals: ComposerSignals;
   onImported: () => void;
   compact?: boolean;
+  className?: string;
 }) {
   const { t } = useTranslation();
   const rootSignal = useGet(rootSignal$);
@@ -4598,7 +4575,7 @@ function PptImportCard({
   return (
     <label
       data-presentation-template-import=""
-      className={TEMPLATE_TILE_WRAPPER}
+      className={cn(TEMPLATE_TILE_WRAPPER, className)}
     >
       <span
         className={cn(
@@ -4636,11 +4613,22 @@ function PptImportCard({
       <span
         className={cn(
           TEMPLATE_TILE_CAPTION,
-          compact && "flex-col items-stretch gap-0.5",
+          // On a shelf the import tile is one cover among many, so its caption
+          // takes the shelf's metrics rather than the picker dialog's.
+          compact
+            ? "flex-col items-stretch gap-0 px-0 pb-0 pt-0"
+            : "flex-col items-stretch gap-0.5",
         )}
       >
-        <span className={TEMPLATE_TILE_NAME}>{label}</span>
-        <span className="shrink-0 text-xs text-muted-foreground">
+        <span className={compact ? RAIL_TILE_CAPTION : TEMPLATE_TILE_NAME}>
+          {label}
+        </span>
+        <span
+          className={cn(
+            "shrink-0 truncate text-muted-foreground",
+            compact ? "text-[12px] leading-4" : "text-xs",
+          )}
+        >
           {t(($) => {
             return $.artifacts.templates.importDeckHint;
           })}
@@ -5804,10 +5792,6 @@ function ImportedPresentationTemplateLibraryStatus({
       });
       retry = retryCatalog;
     }
-  } else if (templates.data.length === 0) {
-    message = t(($) => {
-      return $.chat.templates.importedEmpty;
-    });
   } else {
     return null;
   }
@@ -5849,22 +5833,20 @@ function ComposerPresentationSuggestion({
     <Button
       type="button"
       variant="quiet"
-      className="group/tile block h-auto min-w-0 rounded-xl p-0 text-left font-normal hover:bg-gray-50"
+      className={cn(RAIL_TILE, PRESENTATION_SHELF_COVER)}
       onClick={onSelect}
     >
       <span
         className={cn(
           TEMPLATE_TILE_MEDIA,
           TEMPLATE_TILE_RING,
-          "block aspect-video group-hover/tile:opacity-90",
+          "block aspect-video rounded-lg group-hover/tile:opacity-90",
         )}
       >
         {children}
       </span>
-      <span className={cn(TEMPLATE_TILE_CAPTION, "block")}>
-        <span className={cn(TEMPLATE_TILE_NAME, "block")} title={title}>
-          {title}
-        </span>
+      <span className={RAIL_TILE_CAPTION} title={title}>
+        {title}
       </span>
     </Button>
   );
@@ -5877,30 +5859,29 @@ export function ComposerPresentationRecommendations({
 }) {
   const { t } = useTranslation();
   const picker = useComposerTemplatePicker(signals);
-  const imported = useImportedPresentationTemplatePickerItems(signals).slice(
-    0,
-    3,
-  );
-  const builtIn = PRESENTATION_TEMPLATE_PICKER_ITEMS.slice(
-    0,
-    3 - imported.length,
-  );
+  const imported = useImportedPresentationTemplatePickerItems(signals);
+  const builtIn = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   const openTemplates = useSet(signals.template.openTemplatePicker$);
   const setMode = useSet(signals.create.setMode$);
+  const label = t(($) => {
+    return $.chat.taskChips.presentationTemplates;
+  });
+  // The same header line, rail and cover metrics as every other type's shelf.
+  // The import tile leads the rail because uploading a deck is the one action
+  // this catalog has that the others do not.
   return (
     <div
-      className="flex flex-col gap-2"
+      className="flex min-w-0 flex-col gap-3"
       role="group"
-      aria-label={t(($) => {
-        return $.chat.taskChips.presentationTemplates;
-      })}
+      aria-label={label}
     >
-      <div className="flex justify-end">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <p className="min-w-0 truncate text-[13px] font-medium">{label}</p>
         <Button
           type="button"
           variant="quiet"
           size="xs"
-          className="font-normal hover:bg-gray-50"
+          className="shrink-0 gap-1.5 font-normal"
           onClick={() => {
             openTemplates({ kind: "insert", category: "slides" });
           }}
@@ -5908,59 +5889,68 @@ export function ComposerPresentationRecommendations({
           {t(($) => {
             return $.chat.taskChips.moreTemplates;
           })}
+          <ArrowRight className="size-3" aria-hidden />
         </Button>
       </div>
-      <div className="grid min-w-0 grid-cols-2 items-start gap-4 sm:grid-cols-4">
-        <ImportedPresentationTemplateLibraryStatus signals={signals} />
-        <PptImportCard
-          signals={signals}
-          compact
-          onImported={() => {
-            setMode(null);
-          }}
-        />
-        {imported.map(({ imageBuffers, template }) => {
-          return (
-            <ComposerPresentationSuggestion
-              key={template.id}
-              title={template.title}
-              onSelect={() => {
-                picker.onChange(
-                  toImportedPresentationGenerationTemplate(template),
-                );
-              }}
-            >
-              <ImportedPptImage
-                imageSignals={imageBuffers.card}
-                label=""
-                loading="eager"
-                fetchPriority="high"
-                size={TEMPLATE_CARD_PREVIEW_SIZE}
-                placeholder={<ImageIcon size={24} aria-hidden />}
-                className="pointer-events-none absolute inset-0 h-full w-full bg-background object-cover"
-              />
-            </ComposerPresentationSuggestion>
-          );
-        })}
-        {builtIn.map((item) => {
-          return (
-            <ComposerPresentationSuggestion
-              key={item.slug}
-              title={item.title}
-              onSelect={() => {
-                picker.onChange(toPresentationGenerationTemplate(item));
-              }}
-            >
-              <img
-                src={presentationTemplateCardSlideImage(item, 0)}
-                alt=""
-                loading="lazy"
-                className="absolute inset-0 h-full w-full object-cover"
-              />
-            </ComposerPresentationSuggestion>
-          );
-        })}
-      </div>
+      <ComposerRail
+        signals={signals}
+        rail="templates:presentation"
+        gap="gap-3"
+        items={[
+          <PptImportCard
+            key="import"
+            signals={signals}
+            compact
+            // A `label` is inline by default, so the shelf width only lands once
+            // the tile is a block.
+            className={cn("group/tile block", PRESENTATION_SHELF_COVER)}
+            onImported={() => {
+              setMode(null);
+            }}
+          />,
+          ...imported.map(({ imageBuffers, template }) => {
+            return (
+              <ComposerPresentationSuggestion
+                key={template.id}
+                title={template.title}
+                onSelect={() => {
+                  picker.onChange(
+                    toImportedPresentationGenerationTemplate(template),
+                  );
+                }}
+              >
+                <ImportedPptImage
+                  imageSignals={imageBuffers.card}
+                  label=""
+                  loading="eager"
+                  fetchPriority="high"
+                  size={TEMPLATE_CARD_PREVIEW_SIZE}
+                  placeholder={<ImageIcon size={24} aria-hidden />}
+                  className="pointer-events-none absolute inset-0 h-full w-full bg-background object-cover"
+                />
+              </ComposerPresentationSuggestion>
+            );
+          }),
+          ...builtIn.map((item) => {
+            return (
+              <ComposerPresentationSuggestion
+                key={item.slug}
+                title={item.title}
+                onSelect={() => {
+                  picker.onChange(toPresentationGenerationTemplate(item));
+                }}
+              >
+                <img
+                  src={presentationTemplateCardSlideImage(item, 0)}
+                  alt=""
+                  loading="lazy"
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+              </ComposerPresentationSuggestion>
+            );
+          }),
+        ]}
+      />
     </div>
   );
 }
@@ -6904,13 +6894,9 @@ function TemplatePickerButton({
             <Button
               type="button"
               variant="quiet"
-              size={templateMode ? "sm" : "icon-sm"}
+              size="icon-sm"
               iconSize="md"
-              className={
-                templateMode
-                  ? "min-w-0 max-w-[13rem] gap-1 font-normal"
-                  : "shrink-0"
-              }
+              className="shrink-0"
               aria-label={templateLabel}
               aria-pressed={false}
               onPointerEnter={prewarmPicker}
@@ -6924,14 +6910,10 @@ function TemplatePickerButton({
                 });
               }}
             >
-              {templateMode ? (
-                <>
-                  <Plus size={16} className="shrink-0" aria-hidden />
-                  <span className="min-w-0 truncate">{templateLabel}</span>
-                </>
-              ) : (
-                <SwatchBook size={18} aria-hidden="true" />
-              )}
+              {/* The label stays in the tooltip and the accessible name; the
+                  row beside it is all icons, and one worded control in it read
+                  as a different kind of thing. */}
+              <SwatchBook size={18} aria-hidden="true" />
             </Button>
           </TooltipTrigger>
           <TooltipContent side="top" className="text-xs">
@@ -10920,9 +10902,7 @@ function ComposerFooter({
                 signals={signals}
                 actions={connectorActions}
               />
-              <ComposerPresentationOptions signals={signals} />
             </div>
-            <ComposerVideoOptionsChip signals={signals} />
           </div>
           <div
             className={cn(
@@ -10956,11 +10936,9 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
   return (
     <Card
       data-slot="chat-composer-card"
+      surface="composer"
       className={cn(
-        // Paint focus on the existing border. A separately promoted border
-        // with a negative inset can snap differently from the card and SVGs.
-        "@container/composer relative z-10 overflow-visible rounded-3xl border-gray-300 bg-card shadow-[var(--okou-card-shadow)] transition-[border-color] duration-[220ms] ease-[cubic-bezier(0.4,0,0.2,1)] focus-within:border-surface-focus motion-reduce:transition-none",
-        "after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:opacity-0 after:shadow-[var(--okou-composer-focus-veil)] after:transition-opacity after:duration-[220ms] after:ease-[cubic-bezier(0.4,0,0.2,1)] after:content-[''] focus-within:after:opacity-100 motion-reduce:after:transition-none",
+        "@container/composer z-10",
         "[@media(display-mode:standalone)]:[[data-chat-composer]_&]:scroll-mb-4",
         dragOver && "outline outline-2 outline-blue-400/60",
       )}

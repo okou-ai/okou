@@ -8,6 +8,10 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { artifactDeliveryRecordSchema } from "@okouai/api-contracts/contracts/artifact-delivery";
+import {
+  sharedThreadArtifactPolicyKey,
+  sharedThreadArtifactPolicySchema,
+} from "@okouai/api-contracts/contracts/shared-thread-artifacts";
 import { http, HttpResponse } from "msw";
 
 import type { TestContext } from "../../../../__tests__/test-context";
@@ -77,7 +81,11 @@ function copyStoredObject(
   const source = objects.get(
     decodeURIComponent(command.input.CopySource ?? ""),
   );
-  if (!source || command.input.CopySourceIfMatch !== etag(source)) {
+  if (
+    !source ||
+    (command.input.CopySourceIfMatch !== undefined &&
+      command.input.CopySourceIfMatch !== etag(source))
+  ) {
     throw new Error("Copy source is missing or changed");
   }
   objects.set(`${command.input.Bucket}/${command.input.Key}`, {
@@ -191,7 +199,7 @@ export function installSharedThreadStorage(context: TestContext) {
       });
       return new HttpResponse(null, { status: 200 });
     }),
-    http.get("https://a.okou.io/shared-threads/*", ({ request }) => {
+    http.get("https://a.okou.io/*", ({ request }) => {
       const alias = new URL(request.url).pathname.slice(1);
       const registration = objects.get(
         `test-hosted-sites/artifact-delivery/files/${encodeURIComponent(alias)}.json`,
@@ -202,6 +210,27 @@ export function installSharedThreadStorage(context: TestContext) {
       const record = artifactDeliveryRecordSchema.parse(
         JSON.parse(registration.bytes.toString()),
       );
+      if (record.kind === "thread-resource") {
+        const policyObject = objects.get(
+          `test-hosted-sites/${sharedThreadArtifactPolicyKey(record.publicBrand, record.threadId)}`,
+        );
+        if (!policyObject) {
+          return new HttpResponse(null, { status: 404 });
+        }
+        const policy = sharedThreadArtifactPolicySchema.parse(
+          JSON.parse(policyObject.bytes.toString()),
+        );
+        const target = policy.resources[record.publicToken];
+        if (policy.status !== "active" || target?.kind !== "file") {
+          return new HttpResponse(null, { status: 404 });
+        }
+        const object = objects.get(`test-private-artifacts/${target.key}`);
+        return object
+          ? new HttpResponse(new Uint8Array(object.bytes), {
+              headers: { "Content-Type": target.contentType },
+            })
+          : new HttpResponse(null, { status: 404 });
+      }
       if (record.kind !== "legacy-file") {
         throw new Error("Expected public file delivery");
       }

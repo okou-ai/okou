@@ -1,4 +1,5 @@
 import { requestPiMemoryStage1Day } from "./pi-memory-stage1-schedule.service";
+import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 import {
   measurePiPreparation,
   measurePiPreparationSync,
@@ -152,7 +153,7 @@ import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import type {
-  AgentRunLaunchSnapshot,
+  AgentRunFullLaunchSnapshot,
   AgentRunOfficialWorkflowProvenance,
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -349,6 +350,11 @@ import {
 } from "./chat-queued-event.service";
 import { recordFirstAssistantEventEligibility } from "./chat-first-assistant-event-metric.service";
 import { bindPiMemoryPhase2MaintenanceRun } from "./pi-memory-phase2-maintenance.service";
+import {
+  admitNewComputeRun,
+  validateNewComputeSession,
+  withComputeOwnershipRetry,
+} from "./compute-erasure-admission.service";
 import { isWebChatTriggerSource } from "./chat-trigger-source.service";
 import { resolveMediaModelsForRun } from "./run-media-model.service";
 import {
@@ -6347,7 +6353,7 @@ interface LaunchRunRowsArgs {
   readonly agentRunMetadata: AgentRunMetadata | undefined;
   readonly apiStartTime: number;
   readonly runnerGroup: string | undefined;
-  readonly launchSnapshot: AgentRunLaunchSnapshot;
+  readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly langfuseTraceEnabled: boolean;
   readonly officialWorkflowProvenance:
     | AgentRunOfficialWorkflowProvenance
@@ -7113,7 +7119,7 @@ interface BuildRunnerJobPayloadInput {
   readonly body: CreateRunBody;
   readonly artifacts: readonly ContextArtifact[];
   readonly framework: SupportedFramework;
-  readonly launchSnapshot: AgentRunLaunchSnapshot;
+  readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly piSandbox: PiModelConfig | undefined;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly connectorContext: ConnectorRuntimeContext;
@@ -7327,7 +7333,7 @@ function piBaseSession(
 function storedExecutionContextWithPiResources(
   context: StoredExecutionContext,
   resources: PreparedPiLaunchResources | undefined,
-  launchFramework: AgentRunLaunchSnapshot["framework"],
+  launchFramework: AgentRunFullLaunchSnapshot["framework"],
 ): StoredExecutionContext {
   const finalizedContext = { ...context, cliAgentType: launchFramework };
   if (resources === undefined) {
@@ -8239,6 +8245,22 @@ async function persistFailedLaunch(
   args: CommitFailedLaunchArgs,
   message: string,
 ): Promise<FailedLaunchCommitResult> {
+  if (
+    !(await admitNewComputeRun(tx, {
+      userId: args.createArgs.userId,
+      orgId: args.createArgs.orgId,
+      agentId: args.context.resolved.agentId,
+      ownerUserId: args.context.resolved.ownerUserId,
+      agentOrgId: args.context.resolved.orgId,
+      maintenanceStorageId:
+        args.createArgs.piMemoryPhase2Maintenance?.memoryStorageId,
+      existingSessionId: args.identity.shouldCreateSession
+        ? undefined
+        : args.identity.sessionId,
+    }))
+  ) {
+    return conflict("Run admission is unavailable");
+  }
   if (args.createArgs.piMemoryPhase2Maintenance) {
     const validate = args.createArgs.validatePiMemoryPhase2Admission;
     if (!validate) {
@@ -8276,6 +8298,18 @@ async function persistFailedLaunch(
     sessionSnapshotState: "unvalidated",
     timing: args.timing,
   });
+  if (
+    !(await validateNewComputeSession(tx, {
+      userId: args.createArgs.userId,
+      orgId: args.createArgs.orgId,
+      agentId: args.context.resolved.agentId,
+      existingSessionId: args.identity.shouldCreateSession
+        ? undefined
+        : args.identity.sessionId,
+    }))
+  ) {
+    return conflict("Run admission is unavailable");
+  }
   const queueFirstClaim = await claimQueueFirstAssociationForLaunch({
     tx,
     admission: queueFirstAdmission,
@@ -8323,8 +8357,10 @@ async function commitFailedLaunch(
   CreateRunSuccessResult | CreateRunErrorResult | QueueFirstRunClaimLost
 > {
   const message = runFailureMessage(args.error);
-  const committed = await args.db.transaction(async (tx) => {
-    return await persistFailedLaunch(tx, args, message);
+  const committed = await withComputeOwnershipRetry(() => {
+    return args.db.transaction(async (tx) => {
+      return await persistFailedLaunch(tx, args, message);
+    });
   });
 
   if (isRouteError(committed)) {
@@ -8703,6 +8739,7 @@ async function validateCapturedSubscriptionAccount(
         "The selected subscription account was disconnected. Reconnect it before starting another run.",
       );
     }
+    return { identity: personalSubscriptionAccountIdentity(account) };
   }
   return undefined;
 }
@@ -8732,6 +8769,19 @@ async function commitPreparedLaunchUnderLock(
     identity: args.identity,
     timing: args.timing,
   });
+  if (
+    !(await validateNewComputeSession(tx, {
+      userId: args.createArgs.userId,
+      orgId: args.createArgs.orgId,
+      agentId: args.context.resolved.agentId,
+      existingSessionId: args.identity.shouldCreateSession
+        ? undefined
+        : args.identity.sessionId,
+    }))
+  ) {
+    return conflict("Run admission is unavailable");
+  }
+  let capturedIdentity: string | null = null;
   if (threadSessionValidation?.kind !== "thread-session-snapshot-stale") {
     if (args.createArgs.piMemoryPhase2Maintenance) {
       const validate = args.createArgs.validatePiMemoryPhase2Admission;
@@ -8745,16 +8795,31 @@ async function commitPreparedLaunchUnderLock(
       args,
       threadSessionValidation,
     );
-    if (failure) {
+    if (failure && "identity" in failure) {
+      capturedIdentity = failure.identity;
+    } else if (failure) {
       return failure;
     }
   }
-  return await commitValidatedPreparedLaunch(
+  const result = await commitValidatedPreparedLaunch(
     tx,
     args,
     payload,
     threadSessionValidation,
   );
+  if (
+    capturedIdentity &&
+    "kind" in result &&
+    (result.kind === "pending" || result.kind === "queued")
+  ) {
+    // The new run and its validated account are still owned by this admission
+    // transaction. Historical and preparation-failure rows remain unknown.
+    await tx
+      .update(agentRuns)
+      .set({ modelProviderAccountIdentity: capturedIdentity })
+      .where(eq(agentRuns.id, result.run.id));
+  }
+  return result;
 }
 
 async function commitValidatedPreparedLaunch(
@@ -8859,41 +8924,62 @@ async function commitValidatedPreparedLaunch(
 async function commitPreparedLaunch(
   args: CommitPreparedLaunchArgs,
 ): Promise<AtomicLaunchCommitCompletion> {
-  const committed = await args.db.transaction(async (tx) => {
-    const payload = queuedRunnerJobPayload({
-      ...args.launch.runnerJobPayload,
-      reuseKey: runnerReuseKey(args.createArgs.chatThreadId),
-    });
-    await acquireOfficialWorkflowRunCatalogAdmissionLock(
-      tx,
-      args.context.officialWorkflowRun,
-    );
-    await args.timing.measure(
-      "api_dispatch_admission_lock_wait",
-      "nested",
-      async () => {
-        await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(hashtext(${args.createArgs.orgId}))`,
-        );
-      },
-    );
-    const admissionLockHeldStartedAt = now();
-    const result = await commitPreparedLaunchUnderLock(tx, args, payload);
-    if (
-      "kind" in result &&
-      (result.kind === "pending" || result.kind === "queued")
-    ) {
-      await requestPiMemoryStage1Day(tx, {
-        ...result.run,
-        userId: args.createArgs.userId,
-        orgId: args.createArgs.orgId,
-        chatThreadId: args.createArgs.chatThreadId ?? null,
-        triggerSource: args.context.body.triggerSource,
-        launchSnapshot: args.context.launchSnapshot,
-        completedAt: null,
+  const committed = await withComputeOwnershipRetry(() => {
+    return args.db.transaction(async (tx) => {
+      if (
+        !(await admitNewComputeRun(tx, {
+          userId: args.createArgs.userId,
+          orgId: args.createArgs.orgId,
+          agentId: args.context.resolved.agentId,
+          ownerUserId: args.context.resolved.ownerUserId,
+          agentOrgId: args.context.resolved.orgId,
+          maintenanceStorageId:
+            args.createArgs.piMemoryPhase2Maintenance?.memoryStorageId,
+          existingSessionId: args.identity.shouldCreateSession
+            ? undefined
+            : args.identity.sessionId,
+        }))
+      ) {
+        return {
+          result: conflict("Run admission is unavailable"),
+          admissionLockHeldStartedAt: now(),
+        };
+      }
+      const payload = queuedRunnerJobPayload({
+        ...args.launch.runnerJobPayload,
+        reuseKey: runnerReuseKey(args.createArgs.chatThreadId),
       });
-    }
-    return { result, admissionLockHeldStartedAt };
+      await acquireOfficialWorkflowRunCatalogAdmissionLock(
+        tx,
+        args.context.officialWorkflowRun,
+      );
+      await args.timing.measure(
+        "api_dispatch_admission_lock_wait",
+        "nested",
+        async () => {
+          await tx.execute(
+            sql`SELECT pg_advisory_xact_lock(hashtext(${args.createArgs.orgId}))`,
+          );
+        },
+      );
+      const admissionLockHeldStartedAt = now();
+      const result = await commitPreparedLaunchUnderLock(tx, args, payload);
+      if (
+        "kind" in result &&
+        (result.kind === "pending" || result.kind === "queued")
+      ) {
+        await requestPiMemoryStage1Day(tx, {
+          ...result.run,
+          userId: args.createArgs.userId,
+          orgId: args.createArgs.orgId,
+          chatThreadId: args.createArgs.chatThreadId ?? null,
+          triggerSource: args.context.body.triggerSource,
+          launchSnapshot: args.context.launchSnapshot,
+          completedAt: null,
+        });
+      }
+      return { result, admissionLockHeldStartedAt };
+    });
   });
   const transactionReturnedAt = now();
   args.timing.recordElapsed(
@@ -9017,7 +9103,7 @@ interface PreparedRunContext {
 }
 
 interface FinalizedPreparedRunContext extends PreparedRunContext {
-  readonly launchSnapshot: AgentRunLaunchSnapshot;
+  readonly launchSnapshot: AgentRunFullLaunchSnapshot;
 }
 
 async function materializePreparedPiProvider(

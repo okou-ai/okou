@@ -15,7 +15,7 @@ import {
 } from "../../signals/__tests__/test-helpers.ts";
 import { createChatEventSignals } from "../../signals/chat-page/chat-event-signals.ts";
 import { eventDrivenChatThreads$ } from "../../signals/chat-page/chat-thread-event-sourcing.ts";
-import { createChildAbortController } from "../../signals/utils.ts";
+import { resetSignal } from "../../signals/utils.ts";
 import {
   CHAT_EVENT_CURSOR_STORE,
   CHAT_EVENT_ROWS_STORE,
@@ -24,6 +24,7 @@ import {
 } from "../../signals/external/chat-idb-schema.ts";
 import { openDB } from "idb";
 import {
+  queryChatEventSharedDatabase$,
   indexedDbSnapshotMeasurementFromWorker$,
   measureIndexedDbSnapshotFromWorker$,
 } from "../../signals/shared-database.ts";
@@ -223,17 +224,17 @@ test("Show cached chat data before catching up live", async () => {
     expect(prewarmedThreadIds).toContain(unreadThreadId);
   });
 
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const owner = createChildAbortController(context.signal);
+  const resetOwner$ = resetSignal();
+  const ownerSignal = context.store.set(resetOwner$, context.signal);
   const signals = createChatEventSignals(threadId);
-  await context.store.set(signals.setup$, owner.signal);
+  await context.store.set(signals.setup$, ownerSignal);
   expect(
     context.store.get(signals.chatEvents$).map((event) => {
       return event.seqId;
     }),
   ).toStrictEqual([1]);
 
-  const catchUp = context.store.set(signals.catchUp$, owner.signal);
+  const catchUp = context.store.set(signals.catchUp$, ownerSignal);
   await vi.waitFor(() => {
     expect(requestedSeqIds).toStrictEqual([1]);
   });
@@ -271,7 +272,7 @@ test("Show cached chat data before catching up live", async () => {
     }),
   ).toBeTruthy();
 
-  owner.abort(new DOMException("chat closed", "AbortError"));
+  context.store.set(resetOwner$);
   const requestsBeforeAbort = requestedSeqIds.length;
   context.mocks.ably.triggerOnChannel(
     realtimeChannel(),
@@ -337,17 +338,17 @@ test("Cache incoming chat messages before the conversation is opened", async () 
     expect(batchedThreadIds).toContain(unopenedThreadId);
   });
 
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const owner = createChildAbortController(context.signal);
+  const resetOwner$ = resetSignal();
+  const ownerSignal = context.store.set(resetOwner$, context.signal);
   const signals = createChatEventSignals(unopenedThreadId);
-  await context.store.set(signals.setup$, owner.signal);
+  await context.store.set(signals.setup$, ownerSignal);
 
   expect(
     context.store.get(signals.chatEvents$).map((event) => {
       return event.seqId;
     }),
   ).toStrictEqual([1, 2]);
-  owner.abort();
+  context.store.set(resetOwner$);
 });
 
 test("Preserve every message during a burst of realtime notifications", async () => {
@@ -422,10 +423,10 @@ test("Preserve every message during a burst of realtime notifications", async ()
   await vi.waitFor(() => {
     expect(prewarmedThreadIds).toContain(unopenedThreadId);
   });
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const owner = createChildAbortController(context.signal);
+  const resetOwner$ = resetSignal();
+  const ownerSignal = context.store.set(resetOwner$, context.signal);
   const signals = createChatEventSignals(threadId);
-  await context.store.set(signals.setup$, owner.signal);
+  await context.store.set(signals.setup$, ownerSignal);
   expect(
     context.store.get(signals.chatEvents$).map((event) => {
       return event.seqId;
@@ -455,7 +456,7 @@ test("Preserve every message during a burst of realtime notifications", async ()
     ).toStrictEqual([1, 2, 3]);
   });
   expect(catchUpRequests).toBeGreaterThan(0);
-  owner.abort();
+  context.store.set(resetOwner$);
 });
 
 test("Subscribe shared chat data through the worker", async () => {
@@ -578,3 +579,88 @@ test("Keep the chat list current with realtime thread changes", async () => {
     ).toBe("Second remote title");
   });
 });
+
+test.each(["direct", "message-port"] as const)(
+  "Cancel only the requesting reader across the %s bridge",
+  async (transport) => {
+    // The page cannot isolate one wait from another concurrent reader. Use the
+    // production bootstrap and bridge query boundary to exercise that contract.
+    const threadId = crypto.randomUUID();
+    const canonicalRow = row(threadId, 1);
+    const started = context.mocks.deferred<void>();
+    const release = context.mocks.deferred<void>();
+    context.mocks.api(
+      chatThreadEventsContract.rows,
+      async ({ query, respond }) => {
+        if (query.sinceSeqId === 0) {
+          if (!started.settled()) {
+            started.resolve();
+          }
+          await release.promise;
+          return respond(200, chatEventRowsResponse([canonicalRow], query));
+        }
+        return respond(200, chatEventRowsResponse([], query));
+      },
+    );
+    await setupPage({
+      context,
+      path: "/error",
+      sharedWorkerTestTransport: transport,
+      auth: {
+        user: { id: userId(), fullName: "Direct Bridge User" },
+        session: { token: "direct-bridge-token" },
+        organization: {
+          activeOrg: { id: orgId(), name: "Direct Bridge Org" },
+          memberships: [{ id: orgId() }],
+        },
+      },
+    });
+    const resetParent$ = resetSignal();
+    const resetReader$ = resetSignal();
+    const parentSignal = context.store.set(resetParent$, context.signal);
+    const readerSignal = context.store.set(resetReader$, parentSignal);
+    const query = {
+      dataKey: { kind: "chat-event", threadId },
+      afterSeqId: null,
+      consistency: "catch-up",
+    } as const;
+    const first = context.store.set(
+      queryChatEventSharedDatabase$,
+      query,
+      readerSignal,
+    );
+    const cancelled = Promise.allSettled([first]);
+    const second = context.store.set(
+      queryChatEventSharedDatabase$,
+      query,
+      context.signal,
+    );
+    await started.promise;
+    context.store.set(resetParent$);
+    await expect(cancelled).resolves.toStrictEqual([
+      { status: "rejected", reason: parentSignal.reason },
+    ]);
+    expect(readerSignal.reason).toBe(parentSignal.reason);
+    release.resolve();
+    await expect(second).resolves.toStrictEqual([canonicalRow]);
+    await expect(
+      context.store.set(
+        queryChatEventSharedDatabase$,
+        {
+          ...query,
+          consistency: "cache-only",
+        },
+        context.signal,
+      ),
+    ).resolves.toStrictEqual([canonicalRow]);
+
+    const reason = new DOMException("Reader already cancelled", "AbortError");
+    await expect(
+      context.store.set(
+        queryChatEventSharedDatabase$,
+        query,
+        AbortSignal.abort(reason),
+      ),
+    ).rejects.toBe(reason);
+  },
+);

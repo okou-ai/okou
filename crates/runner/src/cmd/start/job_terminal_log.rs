@@ -89,6 +89,14 @@ fn log_job_execution_failed(
                 failure_reason = diagnostic
                     .and_then(|diagnostic| diagnostic.failure_reason)
                     .map(|reason| reason.as_str()),
+                model_http_status = diagnostic.and_then(|diagnostic| diagnostic.model_request)
+                    .and_then(|request| request.http_status),
+                model_transport_attempts = diagnostic.and_then(|diagnostic| diagnostic.model_request)
+                    .map(|request| request.transport_attempts),
+                model_retry_attempts = diagnostic.and_then(|diagnostic| diagnostic.model_request)
+                    .map(|request| request.retry_attempts),
+                model_retry_limit = diagnostic.and_then(|diagnostic| diagnostic.model_request)
+                    .and_then(|request| request.retry_limit),
                 cli_termination_initiator = cli_termination_fields.initiator,
                 cli_termination_reason = cli_termination_fields.reason,
                 cli_termination_signal_sent = cli_termination_fields.signal_sent,
@@ -465,6 +473,7 @@ fn is_info_level_job_failure(diagnostic: &FailureDiagnostic) -> bool {
             diagnostic.failure_reason,
             Some(
                 FailureReason::InsufficientCredits
+                    | FailureReason::ProviderInsufficientCredits
                     | FailureReason::InvalidApiKey
                     | FailureReason::InvalidCredentials
                     | FailureReason::TermsAcceptanceRequired
@@ -671,6 +680,7 @@ mod tests {
     fn expected_cli_failure_reasons_log_job_execution_failed_at_info() {
         for reason in [
             FailureReason::InsufficientCredits,
+            FailureReason::ProviderInsufficientCredits,
             FailureReason::InvalidApiKey,
             FailureReason::InvalidCredentials,
             FailureReason::TermsAcceptanceRequired,
@@ -819,6 +829,36 @@ mod tests {
         assert_field_eq(&event, "failure_class", "cli_nonzero");
         assert_field_eq(&event, "failure_framework", "pi");
         assert_field_eq(&event, "failure_detail_source", "pi_result");
+    }
+
+    #[test]
+    fn pi_rate_limit_logs_info_with_observed_request_and_retry_evidence() {
+        let mut diagnostic = FailureDiagnostic::new(
+            FailureClass::CliNonzero,
+            AgentFramework::Pi,
+            PromptMetadata::from_prompt("plain prompt"),
+        )
+        .with_failure_reason(FailureReason::ProviderRateLimited)
+        .with_failure_detail_source(FailureDetailSource::PiResult);
+        diagnostic.model_request = Some(guest_contracts::diagnostics::ModelRequestDiagnostic {
+            http_status: Some(429),
+            transport_attempts: 1,
+            retry_attempts: 3,
+            retry_limit: Some(3),
+        });
+        let failure = executor::ExecutionFailure::new(
+            1,
+            r#"{"detail":"Rate limit exceeded"}"#,
+            Some(diagnostic),
+        );
+        let event = capture_job_failure_log(&failure);
+        assert_eq!(event.level, Level::INFO);
+        assert_field_eq(&event, "failure_reason", "provider_rate_limited");
+        assert_field_eq(&event, "failure_framework", "pi");
+        assert_field_eq(&event, "model_http_status", "429");
+        assert_field_eq(&event, "model_transport_attempts", "1");
+        assert_field_eq(&event, "model_retry_attempts", "3");
+        assert_field_eq(&event, "model_retry_limit", "3");
     }
 
     #[test]

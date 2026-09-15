@@ -2,7 +2,7 @@
 
 mod common;
 
-use std::io;
+use std::io::{self, Write};
 use std::os::fd::OwnedFd;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
@@ -18,6 +18,9 @@ const DESCENDANT_EXIT_TIMEOUT: Duration = Duration::from_secs(1);
 const DESCENDANT_READY_ENV: &str = "OKOU_TEST_DESCENDANT_READY_FILE";
 const DESCENDANT_RELEASE_ENV: &str = "OKOU_TEST_DESCENDANT_RELEASE_FILE";
 const DESCENDANT_FIXTURE: &str = "command_output_timeout_descendant_fixture";
+const QUIET_EXIT_CODE_ENV: &str = "OKOU_TEST_QUIET_EXIT_CODE";
+const ECHO_STDIN_ENV: &str = "OKOU_TEST_ECHO_STDIN";
+const STDIN_PAYLOAD: &[u8] = b"serialized request\n";
 
 struct DescendantCleanup {
     pidfd: AsyncFd<OwnedFd>,
@@ -192,7 +195,7 @@ async fn command_output_timeout_terminates_separate_group_descendant()
 }
 
 #[test]
-#[ignore = "subprocess fixture invoked by the descendant timeout integration test"]
+#[ignore = "subprocess fixture invoked by the descendant cleanup integration tests"]
 fn command_output_timeout_descendant_fixture() -> Result<(), Box<dyn std::error::Error>> {
     let (Some(readiness_path), Some(release_path)) = (
         std::env::var_os(DESCENDANT_READY_ENV),
@@ -201,11 +204,23 @@ fn command_output_timeout_descendant_fixture() -> Result<(), Box<dyn std::error:
         return Ok(());
     };
 
+    let quiet_exit_code = std::env::var(QUIET_EXIT_CODE_ENV)
+        .ok()
+        .map(|code| code.parse::<i32>())
+        .transpose()?;
     let mut descendant = StdCommand::new("/bin/sleep")
         .arg("60")
         .stdin(Stdio::null())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
+        .stdout(if quiet_exit_code.is_some() {
+            Stdio::null()
+        } else {
+            Stdio::inherit()
+        })
+        .stderr(if quiet_exit_code.is_some() {
+            Stdio::null()
+        } else {
+            Stdio::inherit()
+        })
         .process_group(0)
         .spawn()?;
     let descendant_pid = descendant.id();
@@ -229,6 +244,123 @@ fn command_output_timeout_descendant_fixture() -> Result<(), Box<dyn std::error:
     }
 
     drop(descendant);
+    if let Some(exit_code) = quiet_exit_code {
+        if std::env::var_os(ECHO_STDIN_ENV).is_some() {
+            io::copy(&mut io::stdin().lock(), &mut io::stdout().lock())?;
+        }
+        io::stdout().write_all(b"captured stdout")?;
+        io::stderr().write_all(b"captured stderr")?;
+        io::stdout().flush()?;
+        io::stderr().flush()?;
+        std::process::exit(exit_code);
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn completed_command_cleans_quiet_descendant_on_success()
+-> Result<(), Box<dyn std::error::Error>> {
+    check_quiet_descendant_cleanup(0, false).await
+}
+
+#[tokio::test]
+async fn completed_command_cleans_quiet_descendant_on_failure()
+-> Result<(), Box<dyn std::error::Error>> {
+    check_quiet_descendant_cleanup(7, false).await
+}
+
+#[tokio::test]
+async fn completed_stdin_command_cleans_quiet_descendant_on_success()
+-> Result<(), Box<dyn std::error::Error>> {
+    check_quiet_descendant_cleanup(0, true).await
+}
+
+#[tokio::test]
+async fn completed_stdin_command_cleans_quiet_descendant_on_failure()
+-> Result<(), Box<dyn std::error::Error>> {
+    check_quiet_descendant_cleanup(7, true).await
+}
+
+async fn check_quiet_descendant_cleanup(
+    exit_code: i32,
+    with_stdin: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let tmp = tempfile::tempdir()?;
+    let readiness_path = tmp.path().join("descendant-ready");
+    let release_path = tmp.path().join("release-parent");
+    let mut command = Command::new(std::env::current_exe()?);
+    command
+        .arg("--ignored")
+        .arg("--exact")
+        .arg(DESCENDANT_FIXTURE)
+        .arg("--nocapture")
+        .env(DESCENDANT_READY_ENV, &readiness_path)
+        .env(DESCENDANT_RELEASE_ENV, &release_path)
+        .env(QUIET_EXIT_CODE_ENV, exit_code.to_string());
+    if with_stdin {
+        command.env(ECHO_STDIN_ENV, "1");
+    }
+    let execution = tokio::spawn(async move {
+        if with_stdin {
+            common::command_output_with_stdin_timeout(
+                &mut command,
+                STDIN_PAYLOAD,
+                MANAGED_TIMEOUT,
+                "quiet descendant fixture exceeded its budget",
+            )
+            .await
+        } else {
+            common::command_output_with_timeout(
+                &mut command,
+                MANAGED_TIMEOUT,
+                "quiet descendant fixture exceeded its budget",
+            )
+            .await
+        }
+    });
+
+    common::wait_for_file_contains(&readiness_path, "\n", FIXTURE_READY_TIMEOUT).await?;
+    let (parent_pid, descendant_pid) = read_fixture_pids(&readiness_path)?;
+    let descendant = DescendantCleanup {
+        pidfd: open_pidfd(descendant_pid)?,
+    };
+    let parent_pid = rustix_pid(parent_pid)?;
+    let descendant_pid = rustix_pid(descendant_pid)?;
+    assert_eq!(rustix::process::getsid(Some(parent_pid))?, parent_pid);
+    assert_eq!(rustix::process::getpgid(Some(parent_pid))?, parent_pid);
+    assert_eq!(rustix::process::getsid(Some(descendant_pid))?, parent_pid);
+    assert_eq!(
+        rustix::process::getpgid(Some(descendant_pid))?,
+        descendant_pid
+    );
+
+    std::fs::write(&release_path, b"release\n")?;
+    let output = execution.await??;
+    // Query the kernel immediately: waiting here would allow cleanup after the
+    // helper returns to incorrectly satisfy the ownership contract.
+    let mut poll_fd =
+        rustix::event::PollFd::new(descendant.pidfd.get_ref(), rustix::event::PollFlags::IN);
+    rustix::event::poll(
+        std::slice::from_mut(&mut poll_fd),
+        Some(&rustix::event::Timespec::default()),
+    )?;
+    assert!(
+        poll_fd.revents().contains(rustix::event::PollFlags::IN),
+        "quiet descendant {descendant_pid} remained live after helper returned"
+    );
+    assert!(
+        !PathBuf::from(format!("/proc/{parent_pid}")).exists(),
+        "completed fixture parent must be reaped before the helper returns"
+    );
+    assert_eq!(output.status.code(), Some(exit_code));
+    let mut expected_stdout = Vec::new();
+    if with_stdin {
+        expected_stdout.extend_from_slice(STDIN_PAYLOAD);
+    }
+    expected_stdout.extend_from_slice(b"captured stdout");
+    // The self-executed libtest fixture also prints its own test-start banner.
+    assert!(output.stdout.ends_with(&expected_stdout));
+    assert_eq!(output.stderr, b"captured stderr");
     Ok(())
 }
 

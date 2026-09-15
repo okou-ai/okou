@@ -1,6 +1,8 @@
 """Test capture for addon process events."""
 
 import json
+import os
+import stat
 from collections.abc import Iterator
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
@@ -14,7 +16,7 @@ def capture_addon_process_events() -> Iterator[MagicMock]:
     log = MagicMock()
 
     def capture(fd: int, record: bytes) -> int:
-        assert fd == 2
+        assert fd == 42
         prefix = addon_process_logging.ADDON_PROCESS_EVENT_PREFIX.encode()
         assert record.startswith(prefix)
         assert record.endswith(b"\n")
@@ -36,6 +38,12 @@ def capture_addon_process_events() -> Iterator[MagicMock]:
         return len(record)
 
     stderr = MagicMock()
+    stderr.O_WRONLY = os.O_WRONLY
+    stderr.O_NONBLOCK = os.O_NONBLOCK
+    stderr.O_CLOEXEC = os.O_CLOEXEC
+    stderr.open.return_value = 42
+    stderr.fstat.return_value.st_mode = stat.S_IFIFO
+    stderr.fpathconf.return_value = 4096
     stderr.write.side_effect = capture
     with patch.object(addon_process_logging, "os", stderr):
         yield log

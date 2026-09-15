@@ -209,6 +209,52 @@ test("Retrying a failed catalog restores uploaded templates", async () => {
   ).not.toBeInTheDocument();
 });
 
+test("A resolved empty catalog leaves the import card as the only prompt", async () => {
+  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
+  mockTemplateChat();
+  mockPresentationTemplateLibrary([]);
+  const gates = {
+    user: context.mocks.ably.deferSubscribeOnChannel(
+      "user:test-user-123",
+      "presentationTemplatesChanged",
+    ),
+    org: context.mocks.ably.deferSubscribeOnChannel(
+      "org:org_default",
+      "presentationTemplatesChanged",
+    ),
+  };
+  const user = userEvent.setup();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    host: "app.okou.ai",
+    sharedWorkerTestTransport: "message-port",
+  });
+  await Promise.all([gates.user.started, gates.org.started]);
+  const picker = await openTemplatePicker(user, "Presentation");
+  expect(
+    within(picker).getByText("Loading uploaded templates…"),
+  ).toBeInTheDocument();
+  gates.user.attach();
+  gates.org.attach();
+  await waitFor(() => {
+    expect(
+      within(picker).queryByText("Loading uploaded templates…"),
+    ).not.toBeInTheDocument();
+  });
+  // An empty library is the default state, not a condition worth reporting: the
+  // import card already carries both the affordance and the absence.
+  expect(
+    within(presentationGrid()).queryByRole("status"),
+  ).not.toBeInTheDocument();
+  expect(
+    within(picker).getByLabelText("Import your own deck"),
+  ).toBeInTheDocument();
+  expect(
+    within(picker).getByLabelText(`Select template ${firstBuiltInTitle()}`),
+  ).toBeEnabled();
+});
+
 test("An obsolete catalog leaves the current template cover displayed", async () => {
   mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
   mockTemplateChat();

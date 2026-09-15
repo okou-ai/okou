@@ -18,7 +18,6 @@ import {
 } from "../../lib/feishu-message-content";
 import {
   replyWithFeishuMessage,
-  sendFeishuMessage,
   downloadFeishuMessageResource,
 } from "../external/feishu-client";
 import {
@@ -61,11 +60,11 @@ import {
   replyFeishuAgentUnavailable,
   replyToUnconnectedFeishuMessage,
   resolveEffectiveFeishuAgent,
-  shouldReplyInFeishuThread,
   type FeishuDispatchConnection,
   type FeishuDispatchInstallation,
   type FeishuInboundMessage,
 } from "./feishu-dispatch.service";
+import { integrationDmSessionKey } from "../../lib/integration-dm-session";
 
 const L = logger("CanonicalFeishuIngressProcessor");
 const PROCESSING_STALE_AFTER_MS = 5 * 60 * 1000;
@@ -109,8 +108,7 @@ function canonicalThreadId(args: {
     if (message.threadId) {
       return `thread:${message.threadId}`;
     }
-    const session = `direct-message:${args.agentId}:${args.selectedModel ?? "default"}`;
-    return args.serviceTier === "priority" ? `${session}:priority` : session;
+    return integrationDmSessionKey(args);
   }
   return replyThreadId ?? message.messageId;
 }
@@ -330,7 +328,7 @@ function canonicalFeishuLaunchContext(args: {
       args.message.rootId ??
       args.message.parentId ??
       args.message.messageId,
-    replyInThread: shouldReplyInFeishuThread(args.message),
+    replyInThread: true,
     reactionId: args.reactionId ?? null,
     senderOpenId: args.message.openId,
     connectionId: args.connectionId,
@@ -541,20 +539,6 @@ async function notifyQueuedFeishuRun(
     text: `Concurrency limit reached. Will start automatically when a slot is available.\n\n[View queue](${env("APP_URL")}/?queue=1)`,
     kind: "warning",
   });
-  if (!shouldReplyInFeishuThread(args.message)) {
-    await sendFeishuMessage(
-      {
-        db: args.db,
-        installationId: args.message.installationId,
-        receiveIdType: "chat_id",
-        receiveId: args.message.chatId,
-        message,
-        idempotencyKey: `queued-${args.ingressId}`,
-      },
-      signal,
-    );
-    return;
-  }
   await replyWithFeishuMessage(
     {
       db: args.db,
@@ -562,6 +546,7 @@ async function notifyQueuedFeishuRun(
       messageId: args.message.messageId,
       message,
       replyInThread: true,
+      idempotencyKey: `queued-${args.ingressId}`,
     },
     signal,
   );

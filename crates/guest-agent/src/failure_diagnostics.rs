@@ -256,6 +256,11 @@ fn cli_result_failure_diagnostic_for_config(
     {
         diagnostic = diagnostic.with_claude_num_turns(result.num_turns);
     }
+    if matches!(config.framework, env::Framework::Pi)
+        && let Some(result) = jsonl_result
+    {
+        diagnostic.model_request = result.model_request;
+    }
     diagnostic
 }
 
@@ -269,7 +274,13 @@ fn with_cli_failure_reason(
         failure_message.message.as_str(),
     )
     .or(failure_message.failure_reason)
-    {
+    .or_else(|| {
+        (diagnostic.framework == AgentFramework::Pi
+            && diagnostic
+                .model_request
+                .is_some_and(|request| request.http_status == Some(429)))
+        .then_some(FailureReason::ProviderRateLimited)
+    }) {
         diagnostic.with_failure_reason(reason)
     } else {
         diagnostic
@@ -312,6 +323,27 @@ fn classify_cli_failure_reason(
     }
 
     let normalized = failure_message.to_ascii_lowercase();
+    if framework == AgentFramework::ClaudeCode
+        && source == FailureDetailSource::ClaudeResult
+        && normalized.trim() == "credit balance is too low"
+    {
+        return Some(FailureReason::ProviderInsufficientCredits);
+    }
+    if normalized.starts_with("api error: 402 ")
+        && normalized.contains("requires more credits")
+        && normalized.contains("can only afford")
+    {
+        return Some(FailureReason::ProviderInsufficientCredits);
+    }
+    if matches!(
+        source,
+        FailureDetailSource::ClaudeResult
+            | FailureDetailSource::CodexJsonl
+            | FailureDetailSource::PiResult
+    ) && is_provider_balance_response_error(&normalized)
+    {
+        return Some(FailureReason::ProviderInsufficientCredits);
+    }
     if is_insufficient_credits_error(&normalized) {
         return Some(FailureReason::InsufficientCredits);
     }
@@ -464,11 +496,39 @@ fn is_codex_safety_policy_refusal(source: FailureDetailSource, failure_message: 
 }
 
 fn is_insufficient_credits_error(normalized: &str) -> bool {
-    normalized.contains("402 insufficient credits")
-        || (normalized.contains("api error: 402")
-            && normalized.contains("requires more credits")
-            && normalized.contains("can only afford"))
+    normalized.trim()
+        == "api error: 402 insufficient credits. add credits or configure your own api key to continue."
         || has_insufficient_credits_response_envelope(normalized)
+}
+
+fn is_provider_balance_response_error(normalized: &str) -> bool {
+    if !normalized.starts_with("api error: ") && !normalized.starts_with("unexpected status ") {
+        return false;
+    }
+    let Some((Some(body), _)) = failure_patterns::parse_next_json_object(normalized, 0) else {
+        return false;
+    };
+    let Some(error) = body.get("error").and_then(Value::as_object) else {
+        return false;
+    };
+    let code = error.get("code");
+    let error_type = error.get("type").and_then(Value::as_str);
+    matches!(
+        code.and_then(Value::as_str),
+        Some("billing" | "billing_error" | "insufficient_quota" | "payment_required")
+    ) || code.and_then(Value::as_u64) == Some(402)
+        || matches!(
+            error_type,
+            Some("billing" | "billing_error" | "insufficient_quota" | "payment_required")
+        )
+        || (error_type == Some("invalid_request_error")
+            && error
+                .get("message")
+                .and_then(Value::as_str)
+                .is_some_and(|message| {
+                    message
+                        .starts_with("your credit balance is too low to access the anthropic api.")
+                }))
 }
 
 fn has_insufficient_credits_response_envelope(normalized: &str) -> bool {

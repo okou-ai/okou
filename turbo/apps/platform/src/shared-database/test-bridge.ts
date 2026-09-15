@@ -16,12 +16,11 @@ import {
   type SharedDatabaseBridgeHost,
 } from "../signals/shared-database-browser.ts";
 import {
-  createChildAbortController,
   createDeferredPromise,
   detach,
   onDomEventFn,
   Reason,
-  withCleanup,
+  waitForOperation,
 } from "../signals/utils.ts";
 import type {
   SharedDatabaseBridge,
@@ -53,6 +52,7 @@ import {
 import { SharedDatabaseMessagePortServer } from "./message-port-server.ts";
 import {
   forwardChatThreadReadCursorUpdated$,
+  openConnection$,
   recordConnectionHeartbeat$,
   registerConnection$,
   reportWorkerUnavailableForConnections$,
@@ -133,21 +133,6 @@ function directRealtimeChannelName(
       return `user:${identity.userId}`;
     }
   }
-}
-
-function waitForWorkerOperation<T>(
-  operation: Promise<T>,
-  signal: AbortSignal,
-): Promise<T> {
-  signal.throwIfAborted();
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const waitController = createChildAbortController(signal);
-  const aborted = createDeferredPromise<never>(waitController.signal);
-  return withCleanup(Promise.race([operation, aborted.promise]), () => {
-    waitController.abort(
-      new DOMException("Worker operation completed", "AbortError"),
-    );
-  });
 }
 
 function directWorkerPort(
@@ -257,13 +242,15 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
     if (this.connectionSignal) {
       throw new Error("Shared database tab is already registered");
     }
-    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-    const connectionController = createChildAbortController(signal);
-    const connectionSignal = connectionController.signal;
+    signal.throwIfAborted();
+    const connectionSignal = this.workerStore.set(
+      openConnection$,
+      this.connectionId,
+      AbortSignal.any([this.workerSignal, signal]),
+    );
     this.connectionSignal = this.workerStore.set(
       registerConnection$,
       this.connectionId,
-      connectionController,
       { getToken: this.getToken, port: directWorkerPort(this.emit) },
       connectionSignal,
     );
@@ -318,7 +305,8 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
     computedKey: TKey,
   ): Promise<ComputedValue<TKey>> {
     const signal = this.requireConnectionSignal();
-    const value = await waitForWorkerOperation(
+    signal.throwIfAborted();
+    const value = await waitForOperation(
       this.workerStore.set(
         getComputedStoreMessage$,
         this.connectionId,
@@ -339,6 +327,7 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
     query: SharedDatabaseQuery<TKey>,
     signal: AbortSignal,
   ): Promise<SharedDatabaseQueryResult<TKey>> {
+    signal.throwIfAborted();
     if (
       query.dataKey.kind === "chat-thread-event" &&
       query.consistency === "cache-only" &&
@@ -355,7 +344,7 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
       query,
       this.requireConnectionSignal(),
     );
-    const result = await waitForWorkerOperation(operation, signal);
+    const result = await waitForOperation(operation, signal);
     const cloned: unknown = structuredClone(result);
     return parseSharedDatabaseQueryResult(query.dataKey, cloned);
   }

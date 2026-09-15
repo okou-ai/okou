@@ -6,11 +6,9 @@ import {
 import { command, computed, state } from "ccstate";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { onRef } from "../utils.ts";
 
 function createIntroVideoStyleGallerySignals() {
   const internalReload$ = state(0);
-  const internalPreviewId$ = state<string | null>(null);
   return {
     catalog$: computed(async (get) => {
       get(internalReload$);
@@ -50,23 +48,6 @@ function createIntroVideoStyleGallerySignals() {
       set(internalReload$, (revision) => {
         return revision + 1;
       });
-    }),
-    setGalleryRef$: onRef<HTMLDivElement>(
-      command(({ set }, _node: HTMLDivElement, signal: AbortSignal) => {
-        signal.addEventListener(
-          "abort",
-          () => {
-            set(internalPreviewId$, null);
-          },
-          { once: true },
-        );
-      }),
-    ),
-    previewId$: computed((get) => {
-      return get(internalPreviewId$);
-    }),
-    previewStyle$: command(({ set }, id: string) => {
-      set(internalPreviewId$, id);
     }),
   };
 }

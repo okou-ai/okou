@@ -22,7 +22,6 @@ import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 
-import { env } from "../../lib/env";
 import { sanitizeArtifactFilename } from "../../lib/file-url";
 import { inferMimetype } from "../../lib/mimetype";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -43,9 +42,9 @@ import {
   s3MetadataHeaders,
 } from "../external/s3";
 import {
-  allocateArtifactObject$,
-  resolveArtifactObject$,
-} from "../services/artifact-storage.service";
+  allocateUploadedArtifact$,
+  materializeUploadedArtifact$,
+} from "../services/uploaded-artifact.service";
 import { feishuOrgCallbackPayloadSchema } from "../services/feishu-org-callback-payload";
 import { recordFeishuUploadedFile$ } from "../services/run-uploaded-files.service";
 import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
@@ -446,19 +445,21 @@ const initUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const filename = sanitizeArtifactFilename(bodyResult.data.filename);
   const artifact = await set(
-    allocateArtifactObject$,
+    allocateUploadedArtifact$,
     {
       userId: auth.userId,
       filename: bodyResult.data.filename,
+      orgId: auth.orgId,
+      contentType: bodyResult.data.contentType,
+      size: bodyResult.data.length,
       publicBrand: PUBLIC_BRAND,
     },
     signal,
   );
   const uploadHeaders = s3MetadataHeaders(artifact.metadata);
-  const bucket = env("R2_USER_ARTIFACTS_BUCKET_NAME");
   const uploadUrl = await get(
     generatePresignedPutUrl(
-      bucket,
+      artifact.bucket,
       artifact.key,
       bodyResult.data.contentType,
       {
@@ -531,8 +532,8 @@ const completeUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const object = await set(
-    resolveArtifactObject$,
-    { userId: auth.userId, id: body.uploadId },
+    materializeUploadedArtifact$,
+    { userId: auth.userId, orgId: auth.orgId, id: body.uploadId },
     signal,
   );
   if (!object) {
@@ -546,8 +547,7 @@ const completeUpload$ = command(async ({ get, set }, signal: AbortSignal) => {
   const filename = object.filename;
   const contentType = body.contentType ?? object.contentType;
   const fileUrl = object.url;
-  const bucket = env("R2_USER_ARTIFACTS_BUCKET_NAME");
-  const content = await get(downloadS3Buffer(bucket, object.key));
+  const content = await get(downloadS3Buffer(object.bucket, object.key));
   signal.throwIfAborted();
   const uploadInput = {
     db,

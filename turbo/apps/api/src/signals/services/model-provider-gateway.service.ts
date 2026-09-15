@@ -21,6 +21,7 @@ import { modelProviders } from "@okouai/db/schema/model-provider";
 import { secrets } from "@okouai/db/schema/secret";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { publishModelPoliciesChangedForOrgSafely } from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import { safeSync } from "../utils";
 import { encryptStoredSecretValue } from "./crypto.utils";
@@ -365,6 +366,8 @@ export const createModelProviderConnection$ = command(
     if (!created) {
       throw new Error("Expected custom model provider connection insert");
     }
+    await publishModelPoliciesChangedForOrgSafely(args.orgId);
+    signal.throwIfAborted();
     return created;
   },
 );
@@ -450,6 +453,8 @@ export const updateModelProviderConnection$ = command(
     if (!updated) {
       throw new Error("Expected custom model provider connection update");
     }
+    await publishModelPoliciesChangedForOrgSafely(args.orgId);
+    signal.throwIfAborted();
     return updated;
   },
 );
@@ -504,6 +509,8 @@ export const deleteModelProviderConnection$ = command(
     if (!deleted) {
       return notFound("Resource not found");
     }
+    await publishModelPoliciesChangedForOrgSafely(args.orgId);
+    signal.throwIfAborted();
     return undefined;
   },
 );

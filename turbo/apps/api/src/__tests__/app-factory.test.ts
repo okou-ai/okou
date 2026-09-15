@@ -1265,7 +1265,7 @@ describe("createApp", () => {
       expect(response.headers.get("cache-control")).toBe("no-store");
     });
 
-    it.each(["0.621.0", "0.843.1", "0.855.1", "0.856.0"])(
+    it.each(["0.621.0", "0.843.1", "0.855.1", "0.856.0", "0.886.0"])(
       "force-upgrades App %s before current route matching",
       async (version) => {
         const app = createApp({

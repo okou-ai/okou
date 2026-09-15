@@ -1087,6 +1087,70 @@
       "evidence": [],
       "pullRequest": null,
       "mergeCommit": null
+    },
+    {
+      "id": "markdown-body-classes",
+      "family": "external-contract-audit",
+      "tokens": ["wmde-markdown", "wmde-markdown-color"],
+      "consumers": ["apps/platform/src/views/components/markdown-frame.tsx"],
+      "cases": [
+        "markdown-body-light",
+        "markdown-body-dark",
+        "markdown-body-light-hover",
+        "markdown-body-dark-hover",
+        "markdown-body-narrow",
+        "markdown-body-narrow-dark"
+      ],
+      "status": "blocked",
+      "blockedReason": "Partially drained, then blocked on the audit its own family requires. `wmde-markdown-color` is retired: markdown-frame.tsx applied it, but no rule anywhere selects it — zero matches in index.css, in packages/ui, and in the vendored @uiw/react-markdown-preview 5.2.0 sheet — so removing it is a pure deletion, measured at zero changed pixels and zero observation differences across six rendered states. `wmde-markdown` is not drainable as a rename. It is the live hook for a third-party stylesheet rather than a first-party typography class: 300 of the vendored sheet's 302 selector instances are gated on `.wmde-markdown`, and the remaining two are `body[data-color-mode*=...]`, which nothing in the repository ever sets, so they are already dead. The App block in index.css is a patch layer over that base, not a replacement for it — it declares 48 --color-prettylights-syntax-* variables and zero `.token` rules, and the vendored sheet owns every one of them. Measured with the App's own Tailwind 4.2.2 engine in Chromium over CDP against a real parseMarkdownTree DOM, renaming the selectors to [data-slot=\"markdown-body\"] and dropping the vendored import changes 2,785,793 pixels and 396 observations over six states: all Prism token colours collapse to the plain foreground, inline code loses its padding, size and mono family, `pre` loses its fill, size and leading, `kbd` loses its border, padding, radius, inline-block box and middle alignment, `hr` drops from 3.5px to 1px and loses its 24px margins, `img` loses content-box and border-style none, and `strong` shifts from 600 to 700. `okou-markdown-card` left this batch: #34233 drained it while this PR was open, moving the two card sites onto a my-1.5 utility and splitting the shared rule so that `.wmde-markdown p` became the 43rd third-party-dom-adapter allowlist entry. Every rule of this block is now a declared adapter entry and the legacy baseline holds none of them, so what is left here is the class token itself. Restoring the vendored paint is likewise not mechanical. Re-authoring roughly 300 vendored rules as first-party CSS is what docs/styles.md prohibits and the shrink-only baseline refuses, and spelling the hook as [data-slot=\"markdown-body\"] in the stylesheet contradicts docs/styles.md, which records in five places that a data-slot carries no styles and which no handwritten first-party rule selects today — the shipped bundle's single [data-slot=markdown-card] selector is the utility Tailwind emits for CHAT_BUBBLE_MARKDOWN_CLASS, authored on the component rather than in a stylesheet; it would convert a tracked class selector into the attribute selector docs/style-migration.md still lists as an unenforced follow-up, hiding the debt from the ratchet instead of draining it. The remaining work is the external-contract audit this family already asks for: keep the vendored sheet as the declared adapter it is — turbo/style-allowlist.json holds 43 third-party-dom-adapter entries for these selectors plus the sheet's hash-pinned vendorFiles record — or replace the Markdown renderer's styling wholesale. Both are product decisions, not equivalences.",
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
+    },
+    {
+      "id": "shimmer-text",
+      "family": "motion-and-injection",
+      "tokens": ["okou-shimmer-text"],
+      "consumers": ["apps/platform/src/views/okou-page/chat-thread-page.tsx"],
+      "cases": [
+        "shimmer-text-light",
+        "shimmer-text-dark",
+        "shimmer-text-light-retina",
+        "shimmer-text-dark-retina",
+        "shimmer-text-narrow",
+        "shimmer-text-narrow-dark"
+      ],
+      "status": "implemented",
+      "blockedReason": null,
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
+    },
+    {
+      "id": "composer-surface",
+      "family": "chat-and-content",
+      "tokens": ["okou-composer"],
+      "consumers": [
+        "packages/ui/src/components/ui/card.tsx",
+        "apps/platform/src/views/okou-page/chat-composer.tsx",
+        "apps/platform/src/views/components/instatus-status-notice.tsx",
+        "apps/platform/src/views/shared-thread-page/shared-thread-page.tsx"
+      ],
+      "cases": [
+        "composer-surface-light",
+        "composer-surface-dark",
+        "composer-surface-light-retina",
+        "composer-surface-dark-retina",
+        "composer-surface-shared-thread-light",
+        "composer-surface-shared-thread-dark",
+        "composer-surface-narrow",
+        "composer-surface-narrow-dark"
+      ],
+      "status": "implemented",
+      "blockedReason": null,
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
     }
   ],
   "caseFiles": [
@@ -1115,6 +1179,9 @@
     "../e2e/playwright/style-migration/pwa-safe-area-cover-cases.json",
     "../e2e/playwright/style-migration/onboarding-diagram-cases.json",
     "../e2e/playwright/style-migration/fixed-viewport-cover-cases.json",
-    "../e2e/playwright/style-migration/markdown-card-cases.json"
+    "../e2e/playwright/style-migration/markdown-card-cases.json",
+    "../e2e/playwright/style-migration/markdown-body-cases.json",
+    "../e2e/playwright/style-migration/shimmer-text-cases.json",
+    "../e2e/playwright/style-migration/composer-surface-cases.json"
   ]
 }

@@ -274,6 +274,7 @@ fn build_mock_run_config_with_runtime(
             session_history_cpu: executor::SessionHistoryCpuPool::with_capacity(1),
             session_history_probe: executor::SessionHistoryProbe::default(),
             fresh_archive_delivery: crate::storage_cache::FreshArchiveDeliveryAdmission::new(),
+            decoded_cache: crate::storage_cache::decoded::DecodedCache::new(home.clone()),
             background_fill: crate::storage_cache::StorageCacheBackgroundFillCoordinator::new()
                 .unwrap(),
             pre_spawn_admission: crate::pre_spawn_admission::PreSpawnAdmission::new(2).unwrap(),

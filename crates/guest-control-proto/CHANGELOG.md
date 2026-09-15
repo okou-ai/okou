@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.3](https://github.com/vm0-ai/vm0/compare/guest-control-proto-v0.21.2...guest-control-proto-v0.21.3) (2026-09-15)
+
+
+### Performance Improvements
+
+* **runner:** persist extracted storage files for cache-hit delivery ([#33976](https://github.com/vm0-ai/vm0/issues/33976)) ([b961911](https://github.com/vm0-ai/vm0/commit/b961911d0516fbdc06d3e8387bedb0653eee5ea9))
+
 ## [0.21.2](https://github.com/vm0-ai/vm0/compare/guest-control-proto-v0.21.1...guest-control-proto-v0.21.2) (2026-09-14)
 
 

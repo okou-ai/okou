@@ -51,7 +51,7 @@ surface; the index does not replace their detailed rules.
 - [Dependency override audit](./dependency-overrides.md): retained dependency
   constraints, their origins, and evidence for removing obsolete overrides.
 - [Marketing privacy rollback](./marketing-privacy-choices.md): withdrawn runtime
-  behavior, retained database state, and rollout boundaries.
+  behavior, storage retirement, and rollout boundaries.
 - [Google Cloud LLM voice routing](./google-llm-voice.md): shared Vercel workload
   identities, API configuration, Oregon-first model routing, and rollout gates.
 - [Google Ads browser routing](./google-ads-browser-routing.md): verified account
@@ -83,10 +83,12 @@ surface; the index does not replace their detailed rules.
   memory, accounting, retained compatibility, and patch ownership boundaries.
 - [Runner host configuration](./runner-host-configuration.md): configure and
   verify host-local concurrency and I/O capacity overrides.
+- [Workspace history restore telemetry](./workspace-history-restore-telemetry.md):
+  local source and restored payload sizes, representation and timing semantics.
 - [Runner multi-architecture rollout](./runner-multi-architecture.md): build,
   deploy, and validate runner artifacts for supported host architectures.
 - [Testing catalog](./testing/anti-patterns.md): detailed testing anti-patterns.
-- [Addon runtime contracts](./mitm-addon-contracts.md): logging ownership,
+- [Addon runtime contracts](./mitm-addon-contracts.md): private control, logging ownership,
   WebSocket framing and handshake limits, and path normalization boundaries.
 - [Chat Event Snapshot timeout diagnostics](./chat-event-snapshot-timeout-logging.md):
   expected per-head deadlines, stage diagnostics, convergence and retention

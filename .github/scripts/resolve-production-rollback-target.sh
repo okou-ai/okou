@@ -11,8 +11,10 @@ readonly OKOU_GOAL_SCHEMA_REPAIR_COMMIT=077a9a644986e13bed4750796f91e55c4a876aad
 readonly OKOU_GOAL_SCHEMA_RELEASE=4a4881bf84cb1d79723fd38c83e00f2215bb1e31
 readonly OKOU_GOAL_RETIREMENT_RELEASE=1f68f182a2457ec3aea52d8063be2bd2d2263abd
 readonly COMPUTER_USE_HOST_CLIENT_PRODUCT_DROP_COMMIT=669d0befc9a181e44e3f1f9e39093efddabcc0f8
+readonly PERSONAL_SUBSCRIPTION_PRIORITY_COMMIT=8a5e1299b4d26bd114ccec017b84b7a83fb4a164
 readonly ORG_MEMBER_MORNING_BRIEF_ELIGIBILITY_DROP_COMMIT=6e1abbb785dc1613d0f5cd1b1dd80fae694abb46
 readonly PREPARED_DOMAIN_TRIGGER_RELEASE=eb2f211a9af41450d0d5dad10c0c8ad12fac0a24
+readonly MARKETING_PRIVACY_CLEANUP_READER_PATH=turbo/apps/api/src/signals/services/marketing-privacy-cleanup.service.ts
 
 fail() {
   echo "::error::$*" >&2
@@ -88,10 +90,30 @@ if ! git merge-base --is-ancestor \
   fail "Target commit predates the org_members_metadata.morning_brief_default_eligible_at drop: ${ORG_MEMBER_MORNING_BRIEF_ELIGIBILITY_DROP_COMMIT}."
 fi
 
+# A/B runtime identity and personal precedence must survive allowed rollback.
+# D raises this to the accepted C writer boundary before policy conversion.
+if ! git merge-base --is-ancestor \
+  "$PERSONAL_SUBSCRIPTION_PRIORITY_COMMIT" "$TARGET_COMMIT"; then
+  fail "Target commit predates personal subscription priority: ${PERSONAL_SUBSCRIPTION_PRIORITY_COMMIT}."
+fi
+
 # Migration 1132 removes the remaining A-D business triggers. API rollback does
 # not restore schema, so only already-released explicit writers are supported.
 if ! git merge-base --is-ancestor "$PREPARED_DOMAIN_TRIGGER_RELEASE" "$TARGET_COMMIT"; then
   fail "Rollback target lacks prepared billing, OAuth and hosting writers; first supported release is ${PREPARED_DOMAIN_TRIGGER_RELEASE}."
+fi
+
+# #34296 introduced optional-storage cleanup before 1139 removed that helper.
+# Resolve its first addition on canonical main, including after file deletion,
+# so squash merging the preparation cannot turn an unmerged branch SHA into a
+# permanent rollback floor. Missing/shallow history fails before artifact I/O.
+privacy_cleanup_reader_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$MARKETING_PRIVACY_CLEANUP_READER_PATH" | sed -n '1p')
+if [[ ! "$privacy_cleanup_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged marketing privacy cleanup preparation on main."
+fi
+if ! git merge-base --is-ancestor "$privacy_cleanup_reader_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates marketing privacy storage cleanup preparation: ${privacy_cleanup_reader_commit}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

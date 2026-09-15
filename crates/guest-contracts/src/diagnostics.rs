@@ -34,6 +34,9 @@ pub struct FailureDiagnostic {
     pub failure_detail_source: Option<FailureDetailSource>,
     /// Parsed detailed failure reason, when available.
     pub failure_reason: Option<FailureReason>,
+    /// Observed model-request status and completed retry evidence, when available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_request: Option<ModelRequestDiagnostic>,
     /// Conservative session-history target status recorded during failure handling.
     pub session_history_status: SessionHistoryStatus,
     /// Content-safe shape classification for the submitted prompt.
@@ -53,6 +56,23 @@ pub struct FailureDiagnostic {
     pub workload_resource_limit: Option<WorkloadResourceLimitDiagnostic>,
 }
 
+/// Content-free evidence from the final failed model call and its session retries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelRequestDiagnostic {
+    /// HTTP status actually observed on the final transport attempt, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_status: Option<u16>,
+    /// Fetch attempts made by the final model call, including transport failures.
+    pub transport_attempts: u32,
+    /// Completed session retries, including the final failed response; excludes scheduled sleeps.
+    #[serde(default)]
+    pub retry_attempts: u32,
+    /// Session retry maximum observed from an SDK retry event, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_limit: Option<u32>,
+}
+
 impl FailureDiagnostic {
     /// Create a diagnostic with required fields and empty optional details.
     #[must_use]
@@ -70,6 +90,7 @@ impl FailureDiagnostic {
             claude_num_turns: None,
             failure_detail_source: None,
             failure_reason: None,
+            model_request: None,
             session_history_status: SessionHistoryStatus::Unknown,
             prompt_shape: prompt.prompt_shape,
             prompt_bytes: prompt.prompt_bytes,
@@ -668,8 +689,10 @@ pub enum FailureReason {
     SessionHistoryLimit,
     /// The run reached its execution time limit.
     ExecutionTimeout,
-    /// The provider account has insufficient credits.
+    /// The vm0 workspace has insufficient credits.
     InsufficientCredits,
+    /// The upstream model provider account has insufficient credits.
+    ProviderInsufficientCredits,
     /// The configured API key is invalid.
     InvalidApiKey,
     /// The configured credentials are invalid.
@@ -710,6 +733,7 @@ impl FailureReason {
             Self::SessionHistoryLimit => "session_history_limit",
             Self::ExecutionTimeout => "execution_timeout",
             Self::InsufficientCredits => "insufficient_credits",
+            Self::ProviderInsufficientCredits => "provider_insufficient_credits",
             Self::InvalidApiKey => "invalid_api_key",
             Self::InvalidCredentials => "invalid_credentials",
             Self::TermsAcceptanceRequired => "terms_acceptance_required",
@@ -737,6 +761,7 @@ impl From<FailureReason>
             FailureReason::SessionHistoryLimit => Self::SessionHistoryLimit,
             FailureReason::ExecutionTimeout => Self::ExecutionTimeout,
             FailureReason::InsufficientCredits => Self::InsufficientCredits,
+            FailureReason::ProviderInsufficientCredits => Self::ProviderInsufficientCredits,
             FailureReason::InvalidApiKey => Self::InvalidApiKey,
             FailureReason::InvalidCredentials => Self::InvalidCredentials,
             FailureReason::TermsAcceptanceRequired => Self::TermsAcceptanceRequired,
@@ -1455,6 +1480,10 @@ mod tests {
             (FailureReason::SessionHistoryLimit, "session_history_limit"),
             (FailureReason::ExecutionTimeout, "execution_timeout"),
             (FailureReason::InsufficientCredits, "insufficient_credits"),
+            (
+                FailureReason::ProviderInsufficientCredits,
+                "provider_insufficient_credits",
+            ),
             (FailureReason::InvalidApiKey, "invalid_api_key"),
             (FailureReason::InvalidCredentials, "invalid_credentials"),
             (

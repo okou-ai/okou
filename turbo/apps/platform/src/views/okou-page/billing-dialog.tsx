@@ -23,7 +23,7 @@ import {
   setFormAmount$,
   saveAutoRecharge$,
 } from "../../signals/okou-page/billing.ts";
-import { UnsavedBar } from "./components/org-manage/unsaved-bar.tsx";
+import { UnsavedBar } from "./unsaved-bar.tsx";
 import { formatUsd } from "../../i18n/format.ts";
 
 const CREDITS_PER_DOLLAR = 1000;
@@ -228,6 +228,7 @@ export function AutoRechargeSection({
       </section>
       {dirty && (
         <UnsavedBar
+          anchor="settings-dialog"
           onDiscard={discard}
           onSave={handleSave}
           saving={saving}

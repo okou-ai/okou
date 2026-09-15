@@ -125,11 +125,15 @@ test.each([
     emit(openingAudio);
     const stop = await findEnabledButton("Stop recording");
     expect(deadline.signal.aborted).toBeTruthy();
+    const continuedAudio = new Float32Array(4096).fill(0.25);
+    emit(continuedAudio);
+    deadline.expire();
     click(stop);
     const samples = decodeVoiceDraftPcmWav(await uploaded.promise);
-    expect(samples).toHaveLength(12_288);
+    expect(samples).toHaveLength(16_384);
     expect(samples?.slice(0, 8192)).toStrictEqual(new Float32Array(8192));
-    expect(samples?.slice(8192)).toStrictEqual(openingAudio);
+    expect(samples?.slice(8192, 12_288)).toStrictEqual(openingAudio);
+    expect(samples?.slice(12_288)).toStrictEqual(continuedAudio);
     await findEnabledButton("Voice input");
   },
 );
@@ -208,12 +212,14 @@ test("Cancel Safari startup and its deadline when switching agents", async () =>
   const trackStopped = context.mocks.deferred<void>();
   const disconnected = context.mocks.deferred<void>();
   const portClosed = context.mocks.deferred<void>();
+  const contextClosed = context.mocks.deferred<void>();
   context.mocks.browser.voiceInput({
     rms: 0.12,
     onPcmCapture: connected.resolve,
     onTrackStop: trackStopped.resolve,
     onPcmDisconnect: disconnected.resolve,
     onPcmPortClose: portClosed.resolve,
+    onAudioContextClose: contextClosed.resolve,
   });
   await setupPage({ context, path: NEW_CHAT_PATH });
   click(await findEnabledButton("Voice input"));
@@ -225,6 +231,7 @@ test("Cancel Safari startup and its deadline when switching agents", async () =>
     trackStopped.promise,
     disconnected.promise,
     portClosed.promise,
+    contextClosed.promise,
   ]);
   await findEnabledButton("Voice input");
   expect(deadline.signal.aborted).toBeTruthy();

@@ -1,10 +1,40 @@
 # Artifact sharing
 
+For private site screenshots, protected Public thumbnails and ten-character
+Public file names, see [behavior and required deployment order](artifact-preview-rollout.md).
+
 New-policy private artifacts use the existing `privateArtifacts` switch. Its
 code default remains `false`. The API resolves the owner/original-org switch
 for new grants and audience/version changes; the app uses the same switch for
 its Share menu and standalone viewer. Stored policy enforcement, organization
 resolution and stopping an existing share do not depend on the rollout switch.
+
+## Upload storage and historical files
+
+With `privateArtifacts` enabled, new chat attachments (including annotated images
+and multipart uploads), integration input/output files, browser screenshots,
+Social downloads, and generated preview images use the private artifact bucket.
+The upload purpose is not a storage-policy selector. Private objects have an
+ownership record with `metadata.storage: "private-artifact-v1"`, the bucket and
+object key, and a stable `/artifacts/` reference. Missing private configuration or
+bytes never falls back to a public write or public lookup.
+
+Reads authorize the recorded owner and organization and use the stored location,
+regardless of the current switch. Old public URLs, V1/V2 object keys, and canonical
+input records with `accessLevel: "private"` but no storage marker retain their
+original public storage behavior. Enabling the switch does not migrate or make
+historical public bytes private. Existing canonical operations and multipart
+uploads retain their allocated bucket on retry. Social jobs record the storage
+choice in their request snapshot; older jobs without that field remain public.
+
+Web previews, Agent downloads, image recognition, template import/preview, and
+Drive sync resolve the stored location. Providers that fetch bytes receive
+temporary signed URLs; durable records retain the stable reference. Teams and
+GitHub message links to new private files use the authenticated App URL.
+Conversation sharing copies private attachment bytes into private snapshots
+controlled by the conversation's existing share policy, including when creation
+has subsequently been disabled. Reattaching an existing output preserves its
+original run and publication identity.
 
 ## User flow
 

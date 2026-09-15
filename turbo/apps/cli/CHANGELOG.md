@@ -1,5 +1,58 @@
 # Changelog
 
+## [9.334.0](https://github.com/vm0-ai/vm0/compare/cli-v9.333.0...cli-v9.334.0) (2026-09-15)
+
+
+### Features
+
+* complete personal subscription launch support ([#34263](https://github.com/vm0-ai/vm0/issues/34263)) ([f2731f5](https://github.com/vm0-ai/vm0/commit/f2731f57b6d9ff924ae87f7c5222aa78e5f1cce4))
+
+
+### Refactoring
+
+* retire instagram views compatibility negotiation ([#34315](https://github.com/vm0-ai/vm0/issues/34315)) ([7be4135](https://github.com/vm0-ai/vm0/commit/7be41358b2322e621f0c5408346367747275ba41))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.444.0
+    * @okouai/core bumped to 8.666.5
+    * @okouai/pi-agent-runtime bumped to 1.30.9
+
+## [9.333.0](https://github.com/vm0-ai/vm0/compare/cli-v9.332.1...cli-v9.333.0) (2026-09-15)
+
+
+### Features
+
+* **cli:** export social transcripts as text and subtitles ([#34298](https://github.com/vm0-ai/vm0/issues/34298)) ([87904ed](https://github.com/vm0-ai/vm0/commit/87904ed468031d03ca6694a950b736171402ca92))
+
+
+### Refactoring
+
+* retire the pi langfuse credential bootstrap ([#34326](https://github.com/vm0-ai/vm0/issues/34326)) ([7d93840](https://github.com/vm0-ai/vm0/commit/7d93840dba64065a157662079527495623adb676))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.443.3
+    * @okouai/core bumped to 8.666.4
+    * @okouai/pi-agent-runtime bumped to 1.30.8
+
+## [9.332.1](https://github.com/vm0-ai/vm0/compare/cli-v9.332.0...cli-v9.332.1) (2026-09-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.443.2
+    * @okouai/core bumped to 8.666.3
+    * @okouai/pi-agent-runtime bumped to 1.30.7
+
 ## [9.332.0](https://github.com/vm0-ai/vm0/compare/cli-v9.331.0...cli-v9.332.0) (2026-09-15)
 
 

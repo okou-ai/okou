@@ -49,6 +49,7 @@ import {
 } from "../bootstrap/google-ads-paid-conversion.ts";
 import { currentLocale, i18n } from "../../i18n/index.ts";
 import { refreshOrgMembers$ } from "../external/org-members.ts";
+import { invalidateOrgModelPolicies$ } from "../external/org-model-policies.ts";
 import { sessionStorageSignals } from "../external/session-storage.ts";
 import {
   setUsagePackMigrationRevisionPreview$,
@@ -500,12 +501,7 @@ export const usagePackMigrationAsync$ = computed(
     get(usagePackMigrationReload$);
     const createClient = get(apiClient$);
     const client = createClient(billingUsagePackMigrationContract);
-    // Retained rollback APIs still require this opt-in to return all-Free
-    // configuration. Retire with the contract query after their gate (#32575).
-    const result = await accept(
-      client.get({ query: { supportsFreeMembers: "true" } }),
-      [200, 403, 404, 409],
-    );
+    const result = await accept(client.get(), [200, 403, 404, 409]);
     return result.status === 200 ? result.body : null;
   },
 );
@@ -516,6 +512,7 @@ export const usagePackMigrationAsync$ = computed(
 
 /** Force a refetch of billing status (e.g. after onboarding creates the org row). */
 export const reloadBillingStatus$ = command(({ set }) => {
+  set(invalidateOrgModelPolicies$);
   set(billingReload$, (x) => {
     return x + 1;
   });

@@ -37,6 +37,8 @@ One hairline serves the whole product. `--default-border-width` in the shared `@
 
 This is a real hairline, not a rounding no-op. On a 2x display 0.5px paints one device pixel where 1px paints two, so every bare border carries half the ink it used to; layout is unaffected, because the used value is still rounded to whole pixels. Colour has to carry what the width no longer does, which is why `--border` sits one stop darker than the surface ramp's lightest step: `gray-200` was calibrated for a 1px line and stops reading on a near-white card at half the thickness.
 
+A third token covers the case neither of those can. `--border` and `--divider` are both measured against the page canvas, and `--divider` is pinned to `gray-200` in every theme; the gradient color presets also keep `gray-200` for `--border`. The filled surfaces that carry their own rules are `gray-200` themselves, so under those presets a rule reading either neutral token resolves to its own background and disappears — the user message bubble's quote rule and its group divider were both painted in the bubble's fill, byte-identical, in all eight presets in both modes. `--border-on-fill` is one step off that fill rather than off the canvas. Use `border-border-on-fill` for a border or rule drawn on a filled surface, and keep `border-border` for one drawn on the canvas or a card. It equals `--border` in the neutral themes, so adopting it changes nothing there; moving `--border` itself would instead have restyled all 390 of its usages across 125 files, and the presets' `gray-200` already matches the neutral border weight against their lighter card.
+
 Borders and rules are separate decisions with separate tokens. `--border` is for real borders, which follow `--default-border-width`. `--divider` is the lightest neutral rule — separators, `h-px` / `w-px` hairlines painted as backgrounds, and resting rail ticks. Those are sized explicitly, so they never lost thickness to the border hairline and must not inherit its compensating darkening. Use `bg-divider` for a painted rule and `border-border` for an actual border; do not reach for a raw ramp stop such as `border-gray-200` for either, because that bypasses both decisions.
 
 Color-theme presets in the App stylesheet share their anchor and companion colors between picker swatches and workspace ambience. Daydream uses cool blue and violet, while Cotton sky uses pastel pink and blue. Each preset's hue and ring values keep semantic surfaces, selected states, and focus indicators aligned with that palette in Light/Dark.
@@ -92,6 +94,40 @@ Both buttons keep `showTooltip` off by default. Enabling it requires an
 removed to avoid duplicate hints. The shared tooltip supports disabled triggers
 and preserves full-width tile layout. Visible labels and essential explanations
 remain available without hovering.
+
+### The composer card surface
+
+`Card` from `@okouai/ui` takes `surface="composer"` for the composer card and the
+two surfaces that sit in its place: the service-status notice and the shared
+thread's claim prompt. The variant carries the fill, radius, border, shadow, the
+focus border transition and the `after` veil layer; callers keep layout,
+stacking and container context, which is why the composer still spells
+`@container/composer z-10` itself. The `okou-composer` selector and its
+consumers have been removed.
+
+It is a `cva` variant on the component rather than an exported class string,
+because a class constant is not a component API: a caller can reorder it against
+its own utilities, and nothing types which surfaces may take it. `surface`
+defaults to `default`, so every existing `Card` is unchanged. The variant reads
+the App's `--okou-card-shadow` and `--okou-composer-focus-veil` from the shared
+package, the way `DialogContent` already reads `--okou-viewport-height`.
+
+The two borrowed surfaces did change, on purpose. They had been pinned to an
+earlier spelling of the composer that the composer itself no longer used, so
+draining the selector meant choosing which one they follow. At rest their border
+moves one step — lighter in Light, darker in Dark — and the measured difference
+stays under 17/255 on a one-device-pixel line, because the retired `0.7px` and
+the shared hairline both round to the same single device pixel at every scale
+factor tested. On focus in Light the retired rule also drew a second ring
+outside the card at `--gray-500`; the shared surface paints focus on the border
+the card already has, for the reason the guide gives above. Dark focus keeps the
+muted amber either way.
+
+`--okou-composer-ring` and `--okou-composer-radius` are removed with the rule.
+The ring had no consumer left once the extra layer was gone, and the radius is
+`rounded-3xl`, which is the same 1.5rem. `--okou-composer-focus-veil` stays: the
+shared surface still reads it, and it remains a `:root` runtime theme value for
+the reason recorded above.
 
 ### Page surfaces
 
@@ -564,6 +600,25 @@ rather than depending on that.
 Visual evidence for this batch is not captured yet; it is recorded `implemented`
 rather than `verified` in `turbo/style-migration-manifest.json`.
 
+### Top-edge clearance
+
+A control that meets the top edge of the surface holding it clears that edge by
+24px, and never by less than the vertical gap between the items below it.
+`DialogContent` carries `p-6` and the shared `DetailPageHeader` carries `pt-6`,
+so a page that composes its own header owes the same value rather than a smaller
+one of its own. The edge is read against the group's own rhythm: a clearance
+equal to the gap inside the group makes the first control read as cropped by the
+edge instead of placed against it.
+
+A sticky strip is measured in the state it is latched in, not only at rest. The
+connectors toolbar hands the page's top padding back with a negative margin and
+restates it as its own padding, so that padding is the clearance the segment
+control keeps once the strip is pinned to the scrollport. Page padding and strip
+padding therefore come from one value; raising only the strip would move the
+controls at the moment it latches. A header that hides its content at a
+breakpoint stops contributing padding there, so below `md` the page's own top
+padding owns the whole clearance.
+
 ### Table header rules and the global scrollbar treatment
 
 The `table-wrapper` selector and its injected stylesheet have been removed. It
@@ -633,8 +688,9 @@ prop and composes the whole treatment onto the frame it already owns:
 
 ```
 [&_:is(p,[data-slot=markdown-card])]:my-2! [&>*:first-child]:mt-0!
-[&>*:last-child]:mb-0! [&_blockquote>*:first-child]:mt-0!
-[&_blockquote>*:last-child]:mb-0! [&_hr]:hidden
+[&>*:last-child]:mb-0! [&_blockquote]:py-2!
+[&_blockquote>*:first-child]:mt-0! [&_blockquote>*:last-child]:mb-0!
+[&_hr]:hidden
 ```
 
 Every margin there is important, and the four resets exist only because of it.
@@ -642,15 +698,44 @@ The competitor for the paragraphs is the App's own unlayered `.wmde-markdown p`
 rule, which a utility in `@layer utilities` cannot outrank without one; a layered
 important declaration does. The card slot has since been drained to a `my-1.5`
 utility of its own, which the important declaration outranks from inside the same
-layer, so both halves still land on the bubble's 8px. But that same promotion
-would also beat the two competitors the retired
-rule _lost_ to — the vendored `.wmde-markdown > *:first-child` /
-`> *:last-child` resets, which are themselves important, and the vendored
-`blockquote > :first-child` / `:last-child` pair, which ties the retired rule on
-specificity and wins on source order because the Markdown chunk's stylesheet
-loads after the App's. Restating those four at the same tier is what keeps the
-edge paragraphs flush. `[&_hr]:hidden` needs no important, because nothing
-unlayered declares `display` on a Markdown rule.
+layer, so both halves still land on the bubble's 8px. That same promotion also
+clears the vendored `.wmde-markdown > *:first-child` / `> *:last-child` resets,
+which carry `!important` and therefore beat every unlayered rule whatever the
+source order is. The retired rule lost to those two, so restating them at the
+same tier is what keeps the frame's own edge paragraphs flush.
+
+The vendored `blockquote > :first-child` / `:last-child` pair is a different
+case, and the source order decides it. That order runs the other way from what
+this section first recorded: the Markdown chunk's stylesheet reaches the bundle
+through a static `router.tsx` import chain that `main.tsx` evaluates before its
+own `./css/index.css`, so Rollup emits the vendored rules first and the App
+block wins every tie. The pair is not important and ties the retired
+`.okou-chat-bubble-* .wmde-markdown p` rule at (0,2,1), so the retired rule won:
+inside a bubble, a blockquote's first and last paragraph carried its 8px.
+`[&_blockquote>*:first-child]:mt-0!` and its `mb-0!` sibling flush those two
+edges instead. See the Markdown body batch in the migration log for the
+measurement.
+
+That 8px was never spacing inside the quote, which is why flushing those edges
+looked inert and why restoring the margin would not bring it back. A blockquote
+here declares `padding: 0 1em` and a left border only, so a first or last
+child's block margin has no block padding or border to stop it and collapses
+straight out through the quote's own edges. Measured across a quote between
+paragraphs, alone, first, and last in the body, the inset from the quote's edge
+to its first and last line was 0px both before and after that change; the only
+geometry that moved was 8px of leaked space at the bubble's own top and bottom,
+which is exactly what the vendored `> *:first-child` reset exists to remove.
+`[&_blockquote]:py-2!` gives the quote the bubble's 8px as block padding, where
+it is both visible and contained, and the flushing pair is what keeps the inner
+margins from adding a second, escaping copy. Resolves
+[#34278](https://github.com/vm0-ai/vm0/issues/34278).
+
+The padding needs its important for the same reason the margins do, and for a
+sharper reason: `.wmde-markdown blockquote` declares `padding: 0 1em` unlayered,
+and an unlayered normal declaration outranks a layered one whatever its
+specificity. A non-important `[&_blockquote]:py-2` compiles and matches but
+changes nothing. `[&_hr]:hidden` needs no important, because nothing unlayered
+declares `display` on a Markdown rule.
 
 The card slot is addressed through `data-slot="markdown-card"` rather than its
 `okou-markdown-card` class. At the time this batch landed that was because
@@ -1067,12 +1152,31 @@ the separate removal of the chat thinking spinner switch, which deleted the
 loader, its colour state and its keyframes outright; the rotating mark is now
 the only thinking indicator, so these states are the online-visible path.
 
-`okou-shimmer-text` was scoped out of this batch. Its gradient has six colour
-stops, and Tailwind's gradient utilities interpolate in oklab, so only the exact
-`bg-[linear-gradient(...)]` form reproduces it — 229 characters for that one
-utility, past the length this family keeps its class strings under. Choosing
-between that and an App-owned gradient token for a single consumer is a design
-decision rather than a mechanical replacement.
+`okou-shimmer-text` was scoped out of that batch and has since been drained on
+its own terms. Its gradient has six colour stops, and Tailwind's own gradient
+utilities interpolate in oklab and compose from three positions, so no `bg-*`
+utility can express it and the inline `bg-[linear-gradient(…)]` form runs to 229
+characters for one class. The decision that batch deferred was between that and
+an App-owned token; the token won.
+
+`--background-image-shimmer-text` is an `@theme inline` entry, so `bg-shimmer-text`
+emits the gradient with its `--muted-foreground` and `--foreground` references
+intact and each theme still resolves them on the element. `--animate-shimmer`
+joins the `--animate-*` entries beside it on the same contract, and the
+`okou-shimmer` keyframes stay in the stylesheet, because keyframes are not class
+selectors. The remaining declarations are ordinary utilities on `ShimmerText` in
+`chat-thread-page.tsx`, which already existed as a component and needed no new
+wrapper.
+
+Two of them need stating. `[background-size:200%_100%]` is an arbitrary property
+rather than `bg-size-*`, matching the effort slider's `[background-size:…]`
+beside its own aurora tokens. And `[-webkit-background-clip:text]` stays beside
+`bg-clip-text` because Tailwind emits only the unprefixed property: its default
+targets do not need the prefix, but the retired rule declared both, so keeping it
+is the no-change choice. Chromium treats the two as aliases, so no measurement
+here can separate them — dropping either one leaves both computing to `text`.
+Removing the prefixed declaration is a browser-support decision, not part of this
+drain.
 
 ### The standalone PWA fixed cover
 

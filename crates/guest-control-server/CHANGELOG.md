@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.10](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.9...guest-control-server-v0.21.10) (2026-09-15)
+
+
+### Performance Improvements
+
+* **runner:** persist extracted storage files for cache-hit delivery ([#33976](https://github.com/vm0-ai/vm0/issues/33976)) ([b961911](https://github.com/vm0-ai/vm0/commit/b961911d0516fbdc06d3e8387bedb0653eee5ea9))
+
 ## [0.21.9](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.8...guest-control-server-v0.21.9) (2026-09-15)
 
 ## [0.21.8](https://github.com/vm0-ai/vm0/compare/guest-control-server-v0.21.7...guest-control-server-v0.21.8) (2026-09-14)

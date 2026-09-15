@@ -1859,6 +1859,10 @@
         "claudeCode": "Claude Code",
         "codex": "Codex",
         "continue": "続ける",
+        "newRunCurrentSettings": "続行すると、現在の設定で新しい実行が開始されます。",
+        "originalAccount": "この実行では、あなたの個人サブスクリプション（{{account}}）が使用されました。",
+        "originalAccountUnavailable": "この実行では個人サブスクリプションが使用されました。元のアカウントは現在接続されていません。",
+        "originalAccountUnknown": "この実行では個人サブスクリプションが使用されました。元のアカウントを確認できませんでした。",
         "resetAndTryAgain": "リセットして再試行",
         "resetsAt": "{{time}} にリセット",
         "selectModel": "モデルを切り替える",
@@ -1920,10 +1924,8 @@
         "changeAvatar": "アバターを変更",
         "chooseStyle": "スタイルを選択",
         "chooseStyleAndVoice": "スタイルと音声を選択してください。",
-        "noMatches": "見つかりませんでした。検索条件やカテゴリを変更してください。",
+        "noMatches": "見つかりませんでした。",
         "ready": "準備ができました。チャットにコンテンツを追加してください。",
-        "searchAvatars": "アバターを検索",
-        "searchStyles": "スタイルを検索",
         "settings": "イントロ動画の設定",
         "style": "スタイル",
         "useSelection": "この設定を使用"
@@ -1940,8 +1942,7 @@
           "print": "印刷と出版",
           "retro-tech": "レトロテックとインターフェース"
         },
-        "preview": "{{title}} のプレビュー",
-        "previewUnavailable": "このスタイルの動画プレビューはありません。"
+        "preview": "{{title}} のプレビュー"
       },
       "voice": {
         "auto": "Okou におまかせ",
@@ -2262,6 +2263,40 @@
             "prompt": "ウェブサイトの画像を作る"
           }
         },
+        "presentation": {
+          "clientProposal": {
+            "label": "クライアント向けの提案書を作る",
+            "prompt": "クライアント提案デッキを作成してください。クライアント、提案する業務、スケジュール、価格を質問してください。"
+          },
+          "companyOverview": {
+            "label": "自社の事業を説明する",
+            "prompt": "会社概要デッキを作成してください。事業内容、顧客層、聞き手に残したい印象を質問してください。"
+          },
+          "eventTalk": {
+            "label": "イベントの講演を準備する",
+            "prompt": "講演用のデッキを作成してください。イベント、聴衆、伝えたい中心的な考えを質問してください。"
+          },
+          "pitchDeck": {
+            "label": "投資家向けにピッチする",
+            "prompt": "事業の投資家向けピッチデッキを作成してください。課題、プロダクト、これまでの実績、調達額について質問してください。"
+          },
+          "productIntro": {
+            "label": "新しいプロダクトを紹介する",
+            "prompt": "新しいプロダクトを紹介するデッキを作成してください。機能、対象ユーザー、差別化要因を質問してください。"
+          },
+          "resultsReadout": {
+            "label": "成果を発表する",
+            "prompt": "成果を報告デッキにまとめてください。数値、対象期間、支える判断について質問してください。"
+          },
+          "teamUpdate": {
+            "label": "チーム向けの進捗報告をまとめる",
+            "prompt": "チームの進捗報告用デッキを作成してください。今期の出来事、次の予定、聞き手が誰かを質問してください。"
+          },
+          "training": {
+            "label": "チームに何かを教える",
+            "prompt": "指定したテーマの研修デッキを作成してください。受講者と、受講後にできるようになることを質問してください。"
+          }
+        },
         "video": {
           "animatePhoto": {
             "label": "写真を動画にする",
@@ -2467,7 +2502,6 @@
           "waterfall": "Waterfall chart",
           "word-cloud": "Word cloud"
         },
-        "chartSafety": "Leave blank and Okou will choose what fits your content.",
         "chooseAny": "Choose any",
         "chooseCharts": "Choose charts",
         "chooseOne": "Choose one",
@@ -2801,7 +2835,6 @@
         "website": "ウェブサイト",
         "workflow": "ワークフロー"
       },
-      "importedEmpty": "アップロード済みテンプレートはまだありません。",
       "importedLoadFailed": "アップロード済みテンプレートを読み込めませんでした。",
       "importedLoading": "アップロード済みテンプレートを読み込み中…",
       "importedUnavailable": "アップロード済みテンプレートは一時的に利用できません。",
@@ -5346,6 +5379,31 @@
       "teamDescription": "10 回の並列実行とより多くのクレジットでチームを拡張します。"
     }
   },
+  "runErrors": {
+    "actions": {
+      "addCredits": "クレジットを追加",
+      "openModelProviders": "モデルプロバイダーを開く",
+      "reconnectClaude": "Claude Code を再接続",
+      "shareWithAdmin": "管理者に共有"
+    },
+    "anthropicKeyAdmin": "設定された Anthropic API キーで Claude Code を認証できませんでした。モデルプロバイダーで API キーを更新または置き換えてから、もう一度お試しください。",
+    "anthropicKeyMember": "設定された Anthropic API キーで Claude Code を認証できませんでした。ワークスペースの管理者に API キーの更新または置き換えを依頼してください。",
+    "askAdmin": "ワークスペースの管理者にクレジットの追加またはプランのアップグレードを依頼してください。",
+    "claudeReconnect": "Claude Code サブスクリプションの認証に失敗しました。モデルプロバイダーで Claude Code を再接続してから、もう一度お試しください。",
+    "claudeTerms": "Claude Code を利用するには、更新された利用規約とプライバシーポリシーへの同意が必要です。モデルプロバイダーに接続した Claude アカウントで https://claude.ai にログインし、更新内容に同意してから、もう一度お試しください。",
+    "codexOverloaded": "選択したモデルは混雑しています。別のモデルをお試しください。",
+    "codexReconnect": "ChatGPT セッションの再接続が必要です。モデルプロバイダーで ChatGPT (Codex) を再接続してから、もう一度お試しください。",
+    "contentPolicyRejected": "モデルプロバイダーのコンテンツ安全ポリシーにより、このリクエストは拒否されました。同じ入力で再試行しても失敗します。リクエストを言い換えるか、新しい会話を始めるか、別のモデルに切り替えてください。",
+    "executionTimeout": "この実行は時間制限に達しました。",
+    "failed": "実行に失敗しました",
+    "modelRoutesUnavailable": "このモデルのすべての組み込みルートは一時的に利用できません。しばらくしてからもう一度お試しください。",
+    "modelTemporarilyUnavailable": "モデルは一時的に利用できません",
+    "modelUnavailable": "現在のモデルは利用できません。",
+    "overloaded": "{{model}} は混雑しています。数分待ってからもう一度試すか、別のモデルに切り替えてください。",
+    "providerBalance": "接続されているモデルプロバイダーのアカウント残高が不足しています。",
+    "transient": "エラーが発生しました。しばらくしてからもう一度お試しください。",
+    "vm0Credits": "クレジットが不足しています。続行するにはクレジットを追加するか、ご自身の API キーを設定してください。"
+  },
   "serviceStatus": {
     "dismiss": "サービス更新を閉じる",
     "label": "サービスステータスの更新",
@@ -5620,6 +5678,10 @@
         "categoryVideo": "動画",
         "chatModels": "チャットモデル",
         "effort": "強度",
+        "effortScale": {
+          "faster": "速さ",
+          "smarter": "賢さ"
+        },
         "fast": "速い",
         "fastImpact": {
           "apiCost": "APIトークン料金 2×",
@@ -6144,6 +6206,40 @@
     "cancel": "キャンセル",
     "chooseFile": "ファイルを選択",
     "choosePrivateKeyFile": "秘密鍵ファイルを選択",
+    "cloudflare": {
+      "add": "Access 設定を追加",
+      "back": "ホストに戻る",
+      "changed": "編集中にこの Access 設定が変更されました。保存する前に最新の設定を確認してください。",
+      "clientId": "Service Token のクライアント ID",
+      "clientSecret": "Service Token のクライアントシークレット",
+      "configuration": "Access 設定",
+      "createNew": "Access 設定を作成",
+      "delete": "設定を削除",
+      "deleteHelp": "未使用の Access 設定を削除しますか？保存された Service Token は復元できません。",
+      "direct": "直接接続",
+      "empty": "Access 設定はまだありません。Service Token を追加して Cloudflare Access で保護された SSH ホストに接続します。",
+      "gatewayHelp": "暗号化された WebSocket でポート 443 に接続します。プライベート SSH アドレスとポートは Cloudflare で設定してください。",
+      "inUse": "この Access 設定はホストが使用しています。対象ホストを確認し、先に別の設定に変更するか削除してください。",
+      "inUseHelp": "この設定を削除する前に、対象ホストに別の Access 設定を選択するか、明示的に直接接続に切り替えるか、ホストを削除してください。",
+      "keepChanges": "このバージョンに自分の変更を適用",
+      "latest": "最後に保存された設定",
+      "loadFailed": "Access 設定を読み込めませんでした。もう一度お試しください。",
+      "loading": "Access 設定を読み込み中…",
+      "missing": "この Access 設定は利用できなくなりました。別の設定を選択するか作成してください。",
+      "mode": "接続",
+      "name": "設定名",
+      "protectedHost": "Cloudflare Access · {{name}}",
+      "publishedHost": "公開ホスト名",
+      "rename": "設定名を変更",
+      "replace": "Service Token を置換",
+      "reviewHelp": "下書きは保持されています。変更を適用する前に、最後に保存された設定を確認してください。",
+      "select": "設定を選択",
+      "summary_other": "Access 設定 {{count}} 件",
+      "title": "Cloudflare Access",
+      "tokenHelp": "SSH アプリケーションの Service Auth ポリシーで許可された Service Token を使用してください。SSH ログインとは別のものです。",
+      "unavailable": "このアカウントでは Cloudflare Access を利用できません。保護されたホストには接続できませんが、直接接続のホストには影響しません。",
+      "usedBy_other": "{{count}} 台のホストが使用："
+    },
     "connectionStatus": {
       "accessProtocolFailure": "Cloudflare Access が SSH トンネルを確立できませんでした。公開ホスト名と Tunnel のルーティングを確認してください。",
       "accessRejected": "Cloudflare Access が接続を拒否しました。サービストークンとアプリケーションの Service Auth ポリシーを確認してください。",
@@ -6187,7 +6283,7 @@
     "description": "エージェントがリモートコマンドを実行できる SSH ホストを設定します。",
     "displayName": "表示名",
     "edit": "ホストを編集",
-    "editHelp": "別の認証情報を選択しても、このホストだけが変更されます。接続先アドレスやポートを変更すると、記憶済みのホスト鍵が消去されます。",
+    "editHelp": "別の認証情報を選ぶと、このホストだけが変更されます。直接接続先の変更は保存済みホスト鍵を消去します。Cloudflare Access が関係する変更では保持されます。",
     "empty": "SSH ホストが設定されていません。ホストを追加すると、SSH アクセスを持つ Agent が利用できます。",
     "errors": {
       "agentUnavailable": "このエージェントは利用できなくなりました。別のエージェントを選択してください。",

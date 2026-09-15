@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, time::Duration};
 
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{SinkExt, StreamExt, future::BoxFuture};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::Instant;
 use tokio_tungstenite::tungstenite;
@@ -103,6 +103,7 @@ pub(crate) struct EventLoopState {
     pub rest_host: String,
     pub http: reqwest::Client,
     pub get_token: Box<dyn Fn() -> TokenFuture + Send + Sync>,
+    pub pending_token_renewal: Option<PendingTokenRenewal>,
     pub timing: TimingConfig,
     pub drop_warnings: DropWarningState,
     pub transport_close_tracker: TransportCloseTracker,
@@ -126,6 +127,7 @@ async fn enter_suspended_retry(p: &mut EventLoopState, close_rx: &mut CloseRecei
 // Caller-requested shutdown should send Ably CLOSE before closing the WebSocket
 // so the connection state is explicitly terminated.
 async fn send_close_message(p: &mut EventLoopState) -> Result<(), Error> {
+    p.pending_token_renewal = None;
     p.session.request_closing();
     let result = if let Some(transport) = p.transport.take() {
         let WsTransport {
@@ -207,6 +209,7 @@ async fn complete_close_request(
 // not delayed by a slow close handshake. The bounded background close still
 // releases the socket without keeping it in `EventLoopState`.
 fn close_websocket_transport(p: &mut EventLoopState) {
+    p.pending_token_renewal = None;
     let Some(transport) = p.transport.take() else {
         return;
     };
@@ -316,7 +319,9 @@ pub(crate) async fn run_event_loop(mut p: EventLoopState, mut close_rx: CloseRec
                     ReceiveLoopEvent::CloseRequested(request)
                 }
 
-                _ = sleep_until_optional(p.session.token_renewal_at()), if p.session.token_renewal_at().is_some() => {
+                event = wait_for_token_renewal(&mut p.pending_token_renewal) => event,
+
+                _ = sleep_until_optional(p.session.token_renewal_at()), if p.pending_token_renewal.is_none() && p.session.token_renewal_at().is_some() => {
                     ReceiveLoopEvent::TokenRenewal
                 }
 
@@ -351,15 +356,22 @@ pub(crate) async fn run_event_loop(mut p: EventLoopState, mut close_rx: CloseRec
                     return;
                 }
                 ReceiveLoopEvent::TokenRenewal => {
-                    let connect_timeout = p.timing.connect_timeout;
-                    let result = tokio::select! {
-                        biased;
-                        request = &mut close_rx => {
-                            tracing::info!("Close requested during token renewal");
-                            complete_close_request(&mut p, request).await;
-                            return;
-                        }
-                        result = tokio::time::timeout(connect_timeout, renew_token(&mut p)) => result,
+                    start_token_renewal(&mut p);
+                }
+                ReceiveLoopEvent::TokenAcquired { result, deadline } => {
+                    p.pending_token_renewal = None;
+                    let result = match result {
+                        Ok(Ok(token)) => tokio::select! {
+                            biased;
+                            request = &mut close_rx => {
+                                tracing::info!("Close requested during token renewal");
+                                complete_close_request(&mut p, request).await;
+                                return;
+                            }
+                            result = tokio::time::timeout_at(deadline, send_auth(&mut p, token)) => result,
+                        },
+                        Ok(Err(error)) => Ok(Err(error)),
+                        Err(elapsed) => Err(elapsed),
                     };
                     if handle_renewal_result(&mut p, &mut close_rx, result).await {
                         return;
@@ -480,6 +492,9 @@ pub(crate) async fn run_event_loop(mut p: EventLoopState, mut close_rx: CloseRec
         }
 
         // --- Reconnection ---
+        // Acquisition belongs to the transport that started it. Cancel it
+        // before status-event backpressure or any replacement connection.
+        p.pending_token_renewal = None;
         p.session.mark_connection_disconnected(Instant::now());
         if close_before_reconnect {
             close_websocket_transport(&mut p);
@@ -622,11 +637,17 @@ pub(crate) async fn run_event_loop(mut p: EventLoopState, mut close_rx: CloseRec
 enum ReceiveLoopEvent {
     CloseRequested(Result<CloseRequest, oneshot::error::RecvError>),
     TokenRenewal,
+    TokenAcquired {
+        result: Result<Result<TokenDetails, Error>, tokio::time::error::Elapsed>,
+        deadline: Instant,
+    },
     DropWarningDeadline,
     ChannelOperationDeadline,
     ChannelRetry,
     Frame(Option<Result<tungstenite::Message, tungstenite::Error>>),
-    HeartbeatTimeout { idle_timeout: Duration },
+    HeartbeatTimeout {
+        idle_timeout: Duration,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -903,19 +924,7 @@ async fn handle_message(
         }
         action::AUTH => {
             tracing::info!("Server requested reauthentication");
-            let connect_timeout = p.timing.connect_timeout;
-            let result = tokio::select! {
-                biased;
-                request = &mut *close_rx => {
-                    tracing::info!("Close requested during server-requested token renewal");
-                    complete_close_request(p, request).await;
-                    return LoopAction::Stop;
-                }
-                result = tokio::time::timeout(connect_timeout, renew_token(p)) => result,
-            };
-            if handle_renewal_result(p, close_rx, result).await {
-                return LoopAction::Stop;
-            }
+            start_token_renewal(p);
         }
         _ => {
             tracing::info!(action = msg.action, "Ignoring unknown action");
@@ -927,6 +936,42 @@ async fn handle_message(
 // ---------------------------------------------------------------------------
 // Token renewal
 // ---------------------------------------------------------------------------
+
+pub(crate) struct PendingTokenRenewal {
+    acquisition:
+        BoxFuture<'static, Result<Result<TokenDetails, Error>, tokio::time::error::Elapsed>>,
+    deadline: Instant,
+}
+
+fn start_token_renewal(p: &mut EventLoopState) {
+    if p.pending_token_renewal.is_some() {
+        return;
+    }
+
+    tracing::info!("Renewing token");
+    // Keep Tokio's overflow-safe conversion for caller-supplied timeouts.
+    let deadline = tokio::time::sleep(p.timing.connect_timeout).deadline();
+    let token_request = (p.get_token)();
+    let http = p.http.clone();
+    let rest_host = p.rest_host.clone();
+    p.pending_token_renewal = Some(PendingTokenRenewal {
+        acquisition: Box::pin(tokio::time::timeout_at(deadline, async move {
+            let token_request = token_request.await.map_err(Error::TokenFetch)?;
+            exchange_token(&http, &token_request, &rest_host).await
+        })),
+        deadline,
+    });
+}
+
+async fn wait_for_token_renewal(pending: &mut Option<PendingTokenRenewal>) -> ReceiveLoopEvent {
+    match pending {
+        Some(renewal) => ReceiveLoopEvent::TokenAcquired {
+            result: renewal.acquisition.as_mut().await,
+            deadline: renewal.deadline,
+        },
+        None => std::future::pending().await,
+    }
+}
 
 /// Handle the result of a token renewal attempt. Returns `true` if the failure
 /// is fatal (caller should terminate).
@@ -974,13 +1019,8 @@ async fn handle_renewal_result(
     false
 }
 
-/// Renew the token and send an AUTH message. Callers are responsible for
-/// applying an outer timeout (e.g. `timing.connect_timeout`).
-async fn renew_token(p: &mut EventLoopState) -> Result<(), Error> {
-    tracing::info!("Renewing token");
-    let token_request = (p.get_token)().await.map_err(Error::TokenFetch)?;
-    let new_token = exchange_token(&p.http, &token_request, &p.rest_host).await?;
-
+/// Send AUTH and commit the token within the acquisition's original deadline.
+async fn send_auth(p: &mut EventLoopState, new_token: TokenDetails) -> Result<(), Error> {
     let auth_msg = ProtocolMessage {
         action: action::AUTH,
         auth: Some(AuthDetails {
@@ -1283,6 +1323,7 @@ mod tests {
                     })
                 })
             }),
+            pending_token_renewal: None,
             timing,
             drop_warnings: DropWarningState::default(),
             transport_close_tracker: TransportCloseTracker::new(),

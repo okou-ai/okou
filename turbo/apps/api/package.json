@@ -1,6 +1,6 @@
 {
   "name": "api",
-  "version": "1.603.1",
+  "version": "1.605.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,14 +12,16 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "oxlint --deny-warnings && GOMAXPROCS=1 oxlint src --type-aware -c ../../.oxlintrc.typeaware.json --ignore-pattern '**/__tests__/**' --deny-warnings && GOMAXPROCS=1 oxlint $(find src -type d -name __tests__) --type-aware -c ../../.oxlintrc.typeaware.json --deny-warnings && eslint . --max-warnings 0",
-    "check-types": "bash scripts/check-types.sh",
+    "check-types": "bash scripts/check-types.sh && pnpm check-types:erasure-bridge",
     "check-types:deps": "bash scripts/check-types.sh deps",
     "check-types:boundaries": "bash scripts/check-types.sh boundaries",
     "check-types:gateways": "tsc -p tsconfig.gateways.json --checkers $(node ../../scripts/tsc-checkers.mjs)",
     "check-types:core": "bash scripts/check-types.sh core",
     "check-types:bootstrap": "bash scripts/check-types.sh bootstrap",
     "check-types:tests": "bash scripts/check-types.sh tests",
-    "check-types:bootstrap-wiring": "bash scripts/check-types.sh bootstrap-wiring"
+    "check-types:bootstrap-wiring": "bash scripts/check-types.sh bootstrap-wiring",
+    "test:erasure-bridge": "tsx scripts/erasure-bridge/acceptance.ts",
+    "check-types:erasure-bridge": "tsc -p scripts/erasure-bridge/tsconfig.json --checkers $(node ../../scripts/tsc-checkers.mjs)"
   },
   "dependencies": {
     "@aws-sdk/client-kms": "^3.1127.0",

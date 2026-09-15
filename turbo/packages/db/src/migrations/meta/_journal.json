@@ -393,6 +393,48 @@
       "when": 1789452513294,
       "tag": "1133_retire_image_references",
       "breakpoints": true
+    },
+    {
+      "idx": 1134,
+      "version": "7",
+      "when": 1789453854392,
+      "tag": "1134_pi_inference_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 1135,
+      "version": "7",
+      "when": 1789453865355,
+      "tag": "1135_validate_pi_inference_launch",
+      "breakpoints": true
+    },
+    {
+      "idx": 1136,
+      "version": "7",
+      "when": 1789456925809,
+      "tag": "1136_plain_marvex",
+      "breakpoints": true
+    },
+    {
+      "idx": 1137,
+      "version": "7",
+      "when": 1789460587817,
+      "tag": "1137_retire_legacy_invitation_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 1138,
+      "version": "7",
+      "when": 1789465340161,
+      "tag": "1138_swift_mephistopheles",
+      "breakpoints": true
+    },
+    {
+      "idx": 1139,
+      "version": "7",
+      "when": 1789469455598,
+      "tag": "1139_retire_marketing_privacy_storage",
+      "breakpoints": true
     }
   ]
 }

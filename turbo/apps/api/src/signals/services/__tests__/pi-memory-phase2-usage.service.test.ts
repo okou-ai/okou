@@ -2,6 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { webhookUsageEventContract } from "@okouai/api-contracts/contracts/webhooks";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { projectErasureDecision } from "@okouai/db/operations/account-erasure";
+import { accountErasureJobs } from "@okouai/db/schema/account-erasure";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -27,6 +29,7 @@ import {
   updateFeatureSwitchesForUser,
 } from "../../routes/__tests__/helpers/feature-switches";
 import { seedBuiltInModelKey } from "../../routes/__tests__/helpers/runtime-state";
+import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
 import { testCronCleanupSandboxesStateRoutes } from "../../routes/test-cron-cleanup-sandboxes-state";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
 import {
@@ -271,6 +274,41 @@ function canonicalLedger(run: Awaited<ReturnType<typeof launchMaintenance>>) {
 }
 
 describe("Pi memory Phase 2 proxy billing", () => {
+  it("settles an admitted maintenance claim exactly once after subject closure", async () => {
+    createRunsApi(context).acceptStorageDownloads();
+    const run = await launchMaintenance();
+    await claimPhase2Execution(context, run.runId);
+    const before = await db()
+      .select()
+      .from(agentRuns)
+      .where(eq(agentRuns.id, run.runId));
+    const job = await projectErasureDecision(db(), {
+      subjectId: run.scope.userId,
+      subjectKind: "user",
+      generation: 1,
+      authorityId: randomUUID(),
+      decisionRef: randomUUID(),
+      decisionSequence: 1n,
+      confirmationRef: randomUUID(),
+      previousDecisionRef: null,
+      dispositionVersion: 1,
+      requestedAt: nowDate(),
+      deadlineAt: new Date("2099-01-01T00:00:00Z"),
+    });
+    onTestFinished(async () => {
+      await db()
+        .delete(accountErasureJobs)
+        .where(eq(accountErasureJobs.id, job.id));
+    });
+    await Promise.all([run.proxy(), run.proxy()]);
+    await run.proxy();
+    await expect(run.ledger()).resolves.toHaveLength(4);
+    await expect(run.ledger()).resolves.toStrictEqual(canonicalLedger(run));
+    await expect(
+      db().select().from(agentRuns).where(eq(agentRuns.id, run.runId)),
+    ).resolves.toStrictEqual(before);
+  });
+
   it("charges one provider vector with concurrent batches and retries", async () => {
     const run = await launchMaintenance();
     await Promise.all([run.proxy(), run.proxy()]);

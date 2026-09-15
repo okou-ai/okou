@@ -1,3 +1,8 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
+import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
+import { webFileUrlRoutes } from "../web-file-url";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -397,7 +402,7 @@ describe("managed SocialKit route", () => {
   });
 
   it.each(["session", "sandbox"] as const)(
-    "preserves Instagram views and legacy reader compatibility for %s callers",
+    "preserves null, omitted, zero and positive Instagram views for %s callers",
     async (tokenType) => {
       const actor = createBddApi(context).user();
       if (!actor.orgId) {
@@ -424,60 +429,51 @@ describe("managed SocialKit route", () => {
             };
       let providerRequests = 0;
 
-      for (const nullable of [false, true]) {
-        for (const views of [null, undefined, 0, 12]) {
-          const availableData = {
-            likes: 4,
-            comments: 2,
-            author: "example",
-            videoUrl: "https://media.example/video.mp4",
-          };
-          server.use(
-            http.get(`${SOCIALKIT_BASE}/instagram/stats`, ({ request }) => {
-              providerRequests += 1;
-              expect(
-                new URL(request.url).searchParams.has("requireViews"),
-              ).toBeFalsy();
-              return HttpResponse.json(
-                providerResponse({
-                  ...availableData,
-                  ...(views === undefined ? {} : { views }),
-                }),
-              );
-            }),
-          );
+      for (const views of [null, undefined, 0, 12]) {
+        const availableData = {
+          likes: 4,
+          comments: 2,
+          author: "example",
+          videoUrl: "https://media.example/video.mp4",
+        };
+        server.use(
+          http.get(`${SOCIALKIT_BASE}/instagram/stats`, ({ request }) => {
+            providerRequests += 1;
+            expect(
+              new URL(request.url).searchParams.has("requireViews"),
+            ).toBeFalsy();
+            return HttpResponse.json(
+              providerResponse({
+                ...availableData,
+                ...(views === undefined ? {} : { views }),
+              }),
+            );
+          }),
+        );
 
-          const response = await accept(
-            client(pricing.resolution)(socialContract).request({
-              headers: {
-                ...headers,
-                ...(nullable
-                  ? { "x-okou-instagram-views": "nullable" as const }
-                  : {}),
-              },
-              body: {
-                tool: "instagram_stats",
-                input: { url: "https://www.instagram.com/reel/example/" },
-              },
-            }),
-            [200],
-          );
+        const response = await accept(
+          client(pricing.resolution)(socialContract).request({
+            headers,
+            body: {
+              tool: "instagram_stats",
+              input: { url: "https://www.instagram.com/reel/example/" },
+            },
+          }),
+          [200],
+        );
 
-          expect(response.body.result).toStrictEqual({
-            ...availableData,
-            ...(views === undefined || (views === null && !nullable)
-              ? {}
-              : { views }),
-          });
-          expect(response.body.provider).toBe(
-            tokenType === "session" ? "socialkit" : undefined,
-          );
-          expect(response.body.creditsCharged).toBe(SOCIALKIT_REQUEST_CREDITS);
-        }
+        expect(response.body.result).toStrictEqual({
+          ...availableData,
+          ...(views === undefined ? {} : { views }),
+        });
+        expect(response.body.provider).toBe(
+          tokenType === "session" ? "socialkit" : undefined,
+        );
+        expect(response.body.creditsCharged).toBe(SOCIALKIT_REQUEST_CREDITS);
       }
-      expect(providerRequests).toBe(8);
+      expect(providerRequests).toBe(4);
       expect(beforeCredits - (await credits(actor))).toBe(
-        8 * SOCIALKIT_REQUEST_CREDITS,
+        4 * SOCIALKIT_REQUEST_CREDITS,
       );
     },
   );
@@ -500,10 +496,7 @@ describe("managed SocialKit route", () => {
 
       const response = await accept(
         client(pricing.resolution)(socialContract).request({
-          headers: {
-            ...authenticate(actor),
-            "x-okou-instagram-views": "nullable",
-          },
+          headers: authenticate(actor),
           body: {
             tool: "instagram_stats",
             input: {
@@ -2795,175 +2788,233 @@ describe("managed SocialKit route", () => {
     );
   });
 
-  it("materializes a ready v2 download and bills provider credits once", async () => {
-    const actor = createBddApi(context).user();
-    configureProvider();
-    const pricing = await setupConfiguredPricing();
-    await fundActor(actor);
-    const beforeCredits = await credits(actor);
-    mockNow(Date.UTC(2000, 0, 1));
-    const payload = new TextEncoder().encode("downloaded social video");
-    const providerJobId = `provider-download-${randomUUID()}`;
-    let startBody: unknown;
-    let providerPolls = 0;
-    context.mocks.dns.lookupOverrides.set("media.socialkit.test", [
-      { address: "8.8.8.8", family: 4 },
-    ]);
-    server.use(
-      http.post(
-        `${SOCIALKIT_BASE}/v2/youtube/download`,
-        async ({ request }) => {
-          startBody = await request.json();
-          return HttpResponse.json({
-            success: true,
-            data: {
-              jobId: providerJobId,
-              status: "queued",
-              statusUrl: `${SOCIALKIT_BASE}/v2/downloads/${providerJobId}`,
-            },
-          });
-        },
-      ),
-      http.get(`${SOCIALKIT_BASE}/v2/downloads/${providerJobId}`, () => {
-        providerPolls += 1;
-        if (providerPolls === 1) {
-          return HttpResponse.json({
-            success: true,
-            data: {
-              jobId: providerJobId,
-              status: "processing",
-            },
-          });
-        }
-        return HttpResponse.json({
-          success: true,
-          data: {
-            jobId: providerJobId,
-            status: "ready",
-            platform: "youtube",
-            downloadUrl: "https://media.socialkit.test/download-1",
-            durationSeconds: 61,
-            fileSizeMB: "1.5 MB",
-            creditsCost: 2,
-            quality: "480p",
-            format: "mp4",
-            title: "Public / 视频.mp4",
-            thumbnail: "https://media.socialkit.test/thumbnail.jpg",
+  it.each([
+    { privateFiles: false, historical: false },
+    { privateFiles: false, historical: true },
+    { privateFiles: true, historical: false },
+  ])(
+    "pins download storage before a flag change and bills once (private=$privateFiles, historical=$historical)",
+    async ({ privateFiles, historical }) => {
+      const actor = createBddApi(context).user();
+      configureProvider();
+      const pricing = await setupConfiguredPricing();
+      await fundActor(actor);
+      if (!actor.orgId) {
+        throw new Error("Expected organization");
+      }
+      const flagActor = { ...actor, orgId: actor.orgId };
+      await updateFeatureSwitchesForUser(context, flagActor, {
+        [FeatureSwitchKey.PrivateArtifacts]: privateFiles,
+      });
+      const beforeCredits = await credits(actor);
+      mockNow(Date.UTC(2000, 0, 1));
+      const payload = new TextEncoder().encode("downloaded social video");
+      const providerJobId = `provider-download-${randomUUID()}`;
+      let startBody: unknown;
+      let providerPolls = 0;
+      context.mocks.dns.lookupOverrides.set("media.socialkit.test", [
+        { address: "8.8.8.8", family: 4 },
+      ]);
+      server.use(
+        http.post(
+          `${SOCIALKIT_BASE}/v2/youtube/download`,
+          async ({ request }) => {
+            startBody = await request.json();
+            return HttpResponse.json({
+              success: true,
+              data: {
+                jobId: providerJobId,
+                status: "queued",
+                statusUrl: `${SOCIALKIT_BASE}/v2/downloads/${providerJobId}`,
+              },
+            });
           },
-        });
-      }),
-      http.get("https://media.socialkit.test/download-1", () => {
-        return new HttpResponse(payload, {
-          headers: { "content-length": String(payload.byteLength) },
-        });
-      }),
-    );
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      if (command instanceof ListObjectsV2Command) {
-        return Promise.resolve({ Contents: [] });
-      }
-      if (command instanceof CreateMultipartUploadCommand) {
-        return Promise.resolve({ UploadId: "socialkit-upload-1" });
-      }
-      if (command instanceof UploadPartCommand) {
-        return Promise.resolve({ ETag: '"socialkit-etag-1"' });
-      }
-      if (command instanceof CompleteMultipartUploadCommand) {
+        ),
+        http.get(`${SOCIALKIT_BASE}/v2/downloads/${providerJobId}`, () => {
+          providerPolls += 1;
+          if (providerPolls === 1) {
+            return HttpResponse.json({
+              success: true,
+              data: {
+                jobId: providerJobId,
+                status: "processing",
+              },
+            });
+          }
+          return HttpResponse.json({
+            success: true,
+            data: {
+              jobId: providerJobId,
+              status: "ready",
+              platform: "youtube",
+              downloadUrl: "https://media.socialkit.test/download-1",
+              durationSeconds: 61,
+              fileSizeMB: "1.5 MB",
+              creditsCost: 2,
+              quality: "480p",
+              format: "mp4",
+              title: "Public / 视频.mp4",
+              thumbnail: "https://media.socialkit.test/thumbnail.jpg",
+            },
+          });
+        }),
+        http.get("https://media.socialkit.test/download-1", () => {
+          return new HttpResponse(payload, {
+            headers: { "content-length": String(payload.byteLength) },
+          });
+        }),
+      );
+      context.mocks.s3.send.mockImplementation((command: unknown) => {
+        if (command instanceof ListObjectsV2Command) {
+          return Promise.resolve({ Contents: [] });
+        }
+        if (command instanceof CreateMultipartUploadCommand) {
+          expect(command.input.Bucket).toBe(
+            privateFiles ? "test-private-artifacts" : "test-user-artifacts",
+          );
+          return Promise.resolve({ UploadId: "socialkit-upload-1" });
+        }
+        if (command instanceof UploadPartCommand) {
+          return Promise.resolve({ ETag: '"socialkit-etag-1"' });
+        }
+        if (command instanceof CompleteMultipartUploadCommand) {
+          return Promise.resolve({});
+        }
         return Promise.resolve({});
+      });
+      const socialClient = client(pricing.resolution)(socialContract);
+
+      const created = await accept(
+        socialClient.createDownload({
+          headers: authenticate(actor),
+          body: {
+            platform: "youtube",
+            url: "https://youtu.be/public-video",
+            maxDuration: 120,
+            quality: "720p",
+            format: "mp4",
+          },
+        }),
+        [202],
+      );
+      await flushWaitUntilForTest();
+      if (historical) {
+        await restoreLegacyDownloadMetadataFixture(created.body.downloadId);
       }
-      return Promise.resolve({});
-    });
-    const socialClient = client(pricing.resolution)(socialContract);
+      await updateFeatureSwitchesForUser(context, flagActor, {
+        [FeatureSwitchKey.PrivateArtifacts]: !privateFiles,
+      });
+      const processing = await accept(
+        socialClient.getDownload({
+          headers: authenticate(actor),
+          params: { downloadId: created.body.downloadId },
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+      const completed = await accept(
+        socialClient.getDownload({
+          headers: authenticate(actor),
+          params: { downloadId: created.body.downloadId },
+        }),
+        [200],
+      );
+      const creditsAfterCompletion = await credits(actor);
+      await accept(
+        socialClient.getDownload({
+          headers: authenticate(actor),
+          params: { downloadId: created.body.downloadId },
+        }),
+        [200],
+      );
 
-    const created = await accept(
-      socialClient.createDownload({
-        headers: authenticate(actor),
-        body: {
-          platform: "youtube",
-          url: "https://youtu.be/public-video",
-          maxDuration: 120,
-          quality: "720p",
-          format: "mp4",
-        },
-      }),
-      [202],
-    );
-    await flushWaitUntilForTest();
-    const processing = await accept(
-      socialClient.getDownload({
-        headers: authenticate(actor),
-        params: { downloadId: created.body.downloadId },
-      }),
-      [200],
-    );
-    await flushWaitUntilForTest();
-    const completed = await accept(
-      socialClient.getDownload({
-        headers: authenticate(actor),
-        params: { downloadId: created.body.downloadId },
-      }),
-      [200],
-    );
-    const creditsAfterCompletion = await credits(actor);
-    await accept(
-      socialClient.getDownload({
-        headers: authenticate(actor),
-        params: { downloadId: created.body.downloadId },
-      }),
-      [200],
-    );
-
-    expect(startBody).toStrictEqual({
-      url: "https://youtu.be/public-video",
-      max_duration: 120,
-      quality: "720p",
-      format: "mp4",
-    });
-    expect(created.body.status).toBe("processing");
-    expect(processing.body.status).toBe("processing");
-    expect(completed.body).toMatchObject({
-      status: "completed",
-      quality: "720p",
-      format: "mp4",
-      requested: { quality: "720p", format: "mp4" },
-      delivered: { quality: "480p", format: null },
-      provider: {
-        durationSeconds: 61,
-        creditsCost: 2,
-        quality: "480p",
+      expect(startBody).toStrictEqual({
+        url: "https://youtu.be/public-video",
+        max_duration: 120,
+        quality: "720p",
         format: "mp4",
-        thumbnail: "https://media.socialkit.test/thumbnail.jpg",
-      },
-      billing: { quantity: 2, creditsCharged: 6 },
-      artifact: {
-        id: created.body.downloadId,
-        filename: "Public _ 视频.mp4",
-        contentType: "video/mp4",
-        sizeBytes: payload.byteLength,
-      },
-    });
-    expect(beforeCredits - creditsAfterCompletion).toBe(6);
-    const discovered = await accept(
-      socialClient.listDownloads({
-        headers: authenticate(actor),
-        query: { status: "completed" },
-      }),
-      [200],
-    );
-    expect(discovered.body.downloads).toMatchObject([
-      {
-        ...completed.body,
-        request: { url: "https://youtu.be/public-video" },
-        resumeCommand: `okou social download --resume ${created.body.downloadId}`,
-      },
-    ]);
-    await expect(credits(actor)).resolves.toBe(creditsAfterCompletion);
-    expect(
-      context.mocks.s3.send.mock.calls.filter(([command]) => {
-        return command instanceof UploadPartCommand;
-      }),
-    ).toHaveLength(1);
-  });
+      });
+      expect(created.body).toMatchObject({
+        status: "processing",
+        requested: { quality: "720p", format: "mp4" },
+        delivered: { quality: null, format: null },
+      });
+      expect(processing.body).toMatchObject({
+        status: "processing",
+        requested: { quality: "720p", format: "mp4" },
+        delivered: { quality: null, format: null },
+      });
+      expect(completed.body).toMatchObject({
+        status: "completed",
+        quality: "720p",
+        format: "mp4",
+        requested: { quality: "720p", format: "mp4" },
+        delivered: { quality: "480p", format: null },
+        provider: {
+          durationSeconds: 61,
+          creditsCost: 2,
+          quality: "480p",
+          format: "mp4",
+          thumbnail: "https://media.socialkit.test/thumbnail.jpg",
+        },
+        billing: { quantity: 2, creditsCharged: 6 },
+        artifact: {
+          id: created.body.downloadId,
+          filename: "Public _ 视频.mp4",
+          contentType: "video/mp4",
+          sizeBytes: payload.byteLength,
+        },
+      });
+      if (privateFiles) {
+        expect(completed.body.artifact?.url).toBe(
+          artifactReferencePath(created.body.downloadId, "Public _ 视频.mp4"),
+        );
+        context.mocks.s3.send.mockImplementation((command) => {
+          expect(command).toBeInstanceOf(HeadObjectCommand);
+          if (!(command instanceof HeadObjectCommand)) {
+            throw new Error("Expected private object read");
+          }
+          expect(command.input.Bucket).toBe("test-private-artifacts");
+          return Promise.resolve({ ContentLength: payload.byteLength });
+        });
+        const preview = await accept(
+          setupApp({ context, routes: webFileUrlRoutes })(
+            webFilesContract,
+          ).fileUrl({
+            headers: authenticate(actor),
+            query: { file_id: created.body.downloadId },
+          }),
+          [200],
+        );
+        expect(preview.body.publicUrl).toBeNull();
+      } else {
+        expect(completed.body.artifact?.url).toMatch(
+          /^https:\/\/a\.okou\.io\//u,
+        );
+      }
+      expect(beforeCredits - creditsAfterCompletion).toBe(6);
+      const discovered = await accept(
+        socialClient.listDownloads({
+          headers: authenticate(actor),
+          query: { status: "completed" },
+        }),
+        [200],
+      );
+      expect(discovered.body.downloads).toMatchObject([
+        {
+          ...completed.body,
+          request: { url: "https://youtu.be/public-video" },
+          resumeCommand: `okou social download --resume ${created.body.downloadId}`,
+        },
+      ]);
+      await expect(credits(actor)).resolves.toBe(creditsAfterCompletion);
+      expect(
+        context.mocks.s3.send.mock.calls.filter(([command]) => {
+          return command instanceof UploadPartCommand;
+        }),
+      ).toHaveLength(1);
+    },
+  );
 
   // An ID3v2 header followed by an MPEG audio frame, which is what an upstream
   // audio-only fallback returns for a `format=mp4` request.

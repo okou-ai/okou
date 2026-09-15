@@ -68,6 +68,13 @@ interface SandboxOperationDimensionInput {
   readonly session_history_content_encoding_state?: string;
   readonly session_history_transfer_encoding_state?: string;
   readonly session_history_download_source?: string;
+  readonly session_history_framework?: string;
+  readonly session_history_raw_bytes?: number;
+  readonly session_history_source_bytes?: number;
+  readonly session_history_guest_bytes?: number;
+  readonly session_history_source_representation?: string;
+  readonly session_history_restore_representation?: string;
+  readonly session_history_restore_reason?: string;
 }
 
 interface SandboxRunnerDimensionInput {
@@ -149,6 +156,7 @@ function sandboxOperationDimensions(
         }
       : {}),
     ...runnerResourceBudgetDimensions(op),
+    ...workspaceHistoryRestoreDimensions(op),
     ...(op.encoding ? { encoding: op.encoding } : {}),
     ...(op.session_history_raw_size_bucket
       ? {
@@ -199,6 +207,40 @@ function sandboxOperationDimensions(
       : {}),
     ...(op.session_history_download_source
       ? { session_history_download_source: op.session_history_download_source }
+      : {}),
+  };
+}
+
+function workspaceHistoryRestoreDimensions(
+  op: SandboxOperationDimensionInput,
+): Record<string, string | number> {
+  return {
+    ...(op.session_history_framework
+      ? { session_history_framework: op.session_history_framework }
+      : {}),
+    ...(op.session_history_raw_bytes !== undefined
+      ? { session_history_raw_bytes: op.session_history_raw_bytes }
+      : {}),
+    ...(op.session_history_source_bytes !== undefined
+      ? { session_history_source_bytes: op.session_history_source_bytes }
+      : {}),
+    ...(op.session_history_guest_bytes !== undefined
+      ? { session_history_guest_bytes: op.session_history_guest_bytes }
+      : {}),
+    ...(op.session_history_source_representation
+      ? {
+          session_history_source_representation:
+            op.session_history_source_representation,
+        }
+      : {}),
+    ...(op.session_history_restore_representation
+      ? {
+          session_history_restore_representation:
+            op.session_history_restore_representation,
+        }
+      : {}),
+    ...(op.session_history_restore_reason
+      ? { session_history_restore_reason: op.session_history_restore_reason }
       : {}),
   };
 }

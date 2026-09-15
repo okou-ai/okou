@@ -1,8 +1,9 @@
-import { isArtifactPublicationFilePath } from "@okouai/api-contracts/contracts/artifact-delivery";
+import { isArtifactDeliveryFilePath } from "@okouai/api-contracts/contracts/artifact-delivery";
 
 const R2_IMAGE_TRANSFORM_HOSTS = new Set([
   "cdn.vm0.io",
   "a.okou.io",
+  "files.sites.vm7.io",
   "cdn.okou.io",
   "cdn.vm7.io",
   "static.vm0.io",
@@ -11,12 +12,23 @@ const R2_IMAGE_TRANSFORM_HOSTS = new Set([
 const R2_IMAGE_TRANSFORM_PREFIX = "/cdn-cgi/image/";
 const R2_IMAGE_TRANSFORM_INPUT_PATH =
   /\.(?:avif|gif|heic|jpe?g|png|svg|webp)$/iu;
+const R2_IMAGE_TRANSFORM_CONTENT_TYPES = new Set([
+  "image/avif",
+  "image/gif",
+  "image/heic",
+  "image/jpeg",
+  "image/png",
+  "image/svg+xml",
+  "image/webp",
+]);
 
 // Output quality for Cloudflare Image Resizing. Tuned to stay crisp on
 // text-heavy presentation thumbnails while still shrinking payloads.
 const R2_IMAGE_TRANSFORM_QUALITY = 85;
 
 export interface R2ImageTransformOptions {
+  /** A known source MIME type takes precedence over the URL extension. */
+  readonly contentType?: string;
   readonly width?: number;
   readonly height?: number;
   readonly fit?: "cover" | "scale-down";
@@ -67,6 +79,15 @@ function parseAbsoluteUrl(url: string): URL | null {
   }
 }
 
+function isSupportedImageInput(url: URL, contentType?: string): boolean {
+  const type = contentType?.split(";")[0]?.trim().toLowerCase();
+  if (type && type !== "application/octet-stream") {
+    return R2_IMAGE_TRANSFORM_CONTENT_TYPES.has(type);
+  }
+  // URL-only previews and generic binary metadata do not identify a format.
+  return R2_IMAGE_TRANSFORM_INPUT_PATH.test(url.pathname);
+}
+
 export function r2ImageTransformUrl(
   url: string,
   options: R2ImageTransformOptions,
@@ -75,7 +96,7 @@ export function r2ImageTransformUrl(
   const parsed = parseAbsoluteUrl(url);
   // Unsupported or unknown input formats keep their original URL. A browser
   // can display formats such as BMP that Cloudflare cannot transform.
-  if (parsed === null || !R2_IMAGE_TRANSFORM_INPUT_PATH.test(parsed.pathname)) {
+  if (parsed === null || !isSupportedImageInput(parsed, options.contentType)) {
     return url;
   }
 
@@ -92,12 +113,34 @@ export function r2ImageTransformUrl(
 
   if (
     !R2_IMAGE_TRANSFORM_HOSTS.has(parsed.hostname) ||
-    // Cloudflare's image cache cannot enforce a share's current permissions.
-    (parsed.hostname === "a.okou.io" &&
-      isArtifactPublicationFilePath(parsed.pathname)) ||
     parsed.pathname.startsWith(R2_IMAGE_TRANSFORM_PREFIX)
   ) {
     return url;
+  }
+
+  if (
+    (parsed.hostname === "a.okou.io" ||
+      parsed.hostname === "files.sites.vm7.io") &&
+    isArtifactDeliveryFilePath(parsed.pathname)
+  ) {
+    // Ten-character names span legacy public files and revocable shares. Only
+    // the Worker registry can choose the policy, before reading resized bytes.
+    if (parsed.searchParams.has("thumbnail")) return url;
+    parsed.searchParams.set("thumbnail", "1");
+    for (const name of ["width", "height"] as const) {
+      const value = normalizedDimension(options[name]);
+      if (value !== null)
+        parsed.searchParams.set(
+          name,
+          String(Math.min(2048, Math.max(1, value))),
+        );
+    }
+    parsed.searchParams.set("fit", options.fit ?? "scale-down");
+    parsed.searchParams.set(
+      "quality",
+      String(normalizedQuality(options.quality)),
+    );
+    return parsed.toString();
   }
 
   const directives = r2ImageTransformDirectives(options);

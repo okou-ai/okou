@@ -1222,6 +1222,7 @@ const registerUserMessageRenderPart$ = command(
           signals: set(artifactCardSignals.register$, {
             filename: part.filenameSnapshot,
             url,
+            contentType: renderContentType,
             kind: classifyChatAttachment({
               filename: part.filenameSnapshot,
               url,
@@ -2644,6 +2645,7 @@ function createChatThreadMessagePipeline({
     threadId,
     chatEvents,
     visibleRenderedChatGroups$: renderWindow.visibleRenderedChatGroups$,
+    runDetails$: resources.publicSignals.runDetails$,
   });
   const readyScrollAfterRenderRequest$ = createReadyScrollAfterRenderRequest(
     scroll.pendingScrollAfterRenderRequest$,
