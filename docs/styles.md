@@ -408,8 +408,8 @@ compound selector and dropped the rail tint under every gradient palette.
 Three of the five declarations were inert. `.okou-nav` re-declared
 `--color-sidebar-border` as `hsl(var(--gray-200))`, which is already the App
 `@theme` default, and the gradient and dark rules re-declared `--color-sidebar`
-as `hsl(var(--sidebar))`, which both `:root` and `.okou-app` already set to the
-same substituted value. `--sidebar` and `--gray-200` are only ever assigned at
+as `hsl(var(--sidebar))`, which document scope already set to the same
+substituted value. `--sidebar` and `--gray-200` are only ever assigned at
 document scope, so re-anchoring them on a descendant could not change what the
 nav resolved. Removing all three is measured below as zero change, including
 for descendants that read the inherited tokens.
@@ -1089,8 +1089,8 @@ rather than `verified` in `turbo/style-migration-manifest.json`.
 owns the surface shared by transcript notice cards, action cards and media
 frames. It follows `Badge`'s `useRender` shape, so a caller picks the host
 element with `render` and gets no wrapper. It is App-owned rather than shared, because its radius and
-shadow read the App-only `--okou-chat-card-*` variables declared on
-`.okou-app`.
+shadow read the App-only `--okou-chat-card-*` variables, which the App
+stylesheet declares at `:root`.
 
 The border is deliberately `border-[1px] border-gray-400` rather than the shared
 `border` hairline and a semantic border token. The retired rule pinned a whole
@@ -1132,11 +1132,12 @@ the rule painted nothing there. Measured on the rendered page before the change,
 all five report `closest(".okou-app") === null` while a transcript card reports
 `true`. Their class names were therefore deleted rather than replaced: the
 container keeps the treatment-free appearance it actually had. Giving the
-artifact preview a card surface is a separate visual decision, and it is not a
-one-line one — those two custom properties are scoped to `.okou-app`, so a
-`ChatCard` rendered in the portal resolves to a square, shadowless border
-instead. Measured on the portaled surface, adopting the shared base there would
-change 734,605 pixels.
+artifact preview a card surface remains a separate visual decision: measured on
+the portaled surface, adopting the shared base there would change 734,605
+pixels. It is no longer blocked by scope. Those two custom properties were
+declared on `.okou-app` at the time, so a `ChatCard` rendered in the portal
+resolved to a square, shadowless border; they now sit at `:root` and a portaled
+card would resolve both.
 
 `okou-chat-frame` had exactly one consumer, that dialog's video stage, so it
 carried no live declaration anywhere.
