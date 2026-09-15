@@ -991,12 +991,31 @@ the separate removal of the chat thinking spinner switch, which deleted the
 loader, its colour state and its keyframes outright; the rotating mark is now
 the only thinking indicator, so these states are the online-visible path.
 
-`okou-shimmer-text` was scoped out of this batch. Its gradient has six colour
-stops, and Tailwind's gradient utilities interpolate in oklab, so only the exact
-`bg-[linear-gradient(...)]` form reproduces it — 229 characters for that one
-utility, past the length this family keeps its class strings under. Choosing
-between that and an App-owned gradient token for a single consumer is a design
-decision rather than a mechanical replacement.
+`okou-shimmer-text` was scoped out of that batch and has since been drained on
+its own terms. Its gradient has six colour stops, and Tailwind's own gradient
+utilities interpolate in oklab and compose from three positions, so no `bg-*`
+utility can express it and the inline `bg-[linear-gradient(…)]` form runs to 229
+characters for one class. The decision that batch deferred was between that and
+an App-owned token; the token won.
+
+`--background-image-shimmer-text` is an `@theme inline` entry, so `bg-shimmer-text`
+emits the gradient with its `--muted-foreground` and `--foreground` references
+intact and each theme still resolves them on the element. `--animate-shimmer`
+joins the `--animate-*` entries beside it on the same contract, and the
+`okou-shimmer` keyframes stay in the stylesheet, because keyframes are not class
+selectors. The remaining declarations are ordinary utilities on `ShimmerText` in
+`chat-thread-page.tsx`, which already existed as a component and needed no new
+wrapper.
+
+Two of them need stating. `[background-size:200%_100%]` is an arbitrary property
+rather than `bg-size-*`, matching the effort slider's `[background-size:…]`
+beside its own aurora tokens. And `[-webkit-background-clip:text]` stays beside
+`bg-clip-text` because Tailwind emits only the unprefixed property: its default
+targets do not need the prefix, but the retired rule declared both, so keeping it
+is the no-change choice. Chromium treats the two as aliases, so no measurement
+here can separate them — dropping either one leaves both computing to `text`.
+Removing the prefixed declaration is a browser-support decision, not part of this
+drain.
 
 ### The standalone PWA fixed cover
 

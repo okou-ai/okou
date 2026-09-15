@@ -7,7 +7,6 @@
     "okou-markdown-card",
     "okou-mobile-fixed-safe-area",
     "okou-mobile-sidebar",
-    "okou-shimmer-text",
     "okou-workspace-bg",
     "owf-diagram",
     "owf-diagram-action",
@@ -138,55 +137,6 @@
         "selector": ".okou-mobile-sidebar::before",
         "property": "bottom",
         "value": "calc(-1*var(--sab))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-shimmer-text",
-        "property": "background",
-        "value": "linear-gradient(90deg,hsl(var(--muted-foreground)/0.8) 0%,hsl(var(--muted-foreground)/0.8) 35%,hsl(var(--foreground)) 48%,hsl(var(--foreground)) 52%,hsl(var(--muted-foreground)/0.8) 65%,hsl(var(--muted-foreground)/0.8) 100%)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-shimmer-text",
-        "property": "background-size",
-        "value": "200% 100%",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-shimmer-text",
-        "property": "-webkit-background-clip",
-        "value": "text",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-shimmer-text",
-        "property": "background-clip",
-        "value": "text",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-shimmer-text",
-        "property": "-webkit-text-fill-color",
-        "value": "transparent",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-shimmer-text",
-        "property": "contain",
-        "value": "paint",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-shimmer-text",
-        "property": "animation",
-        "value": "okou-shimmer 3.5s linear infinite",
         "important": false
       },
       {
@@ -1388,9 +1338,6 @@
     },
     "apps/platform/src/views/okou-page/chat-forward-dialog.tsx": {
       "okou-app": 1
-    },
-    "apps/platform/src/views/okou-page/chat-thread-page.tsx": {
-      "okou-shimmer-text": 1
     },
     "apps/platform/src/views/okou-page/components/org-manage/org-billing-tab.tsx": {
       "okou-app": 1

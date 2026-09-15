@@ -135,6 +135,9 @@
   --animate-thinking-in: okou-thinking-in 0.3s ease-out;
   --animate-chat-skeleton-reveal: okou-chat-skeleton-reveal 0s 100ms forwards;
 
+  /* Shimmer sweep for the thinking label, on the same contract. */
+  --animate-shimmer: okou-shimmer 3.5s linear infinite;
+
   /* Onboarding workflow diagram beam. Its keyframes stay below; the consumer
      reaches this entry through `motion-safe:animate-owf-beam-flow`. */
   --animate-owf-beam-flow: owf-beam-flow 2.8s linear infinite;
@@ -154,6 +157,23 @@
       )
       52%,
     var(--okou-color-theme-companion) 100%
+  );
+
+  /* The thinking label's shimmer. Six stops, so the sweep reads as a band with
+     a flat core rather than a point: the two inner stops hold the bright
+     foreground across 48-52% while the outer pairs hold the muted colour flat
+     to each edge. Tailwind's own gradient utilities interpolate in oklab and
+     compose from three positions, so they cannot express this; it is inline so
+     the muted/foreground runtime variables still resolve per theme on the
+     element. */
+  --background-image-shimmer-text: linear-gradient(
+    90deg,
+    hsl(var(--muted-foreground) / 0.8) 0%,
+    hsl(var(--muted-foreground) / 0.8) 35%,
+    hsl(var(--foreground)) 48%,
+    hsl(var(--foreground)) 52%,
+    hsl(var(--muted-foreground) / 0.8) 65%,
+    hsl(var(--muted-foreground) / 0.8) 100%
   );
 }
 
@@ -387,17 +407,16 @@ body {
   }
 }
 
-/* Shimmer text effect for active/thinking states.
+/* Shimmer text effect for active/thinking states. Reached through
+   `--animate-shimmer` and `--background-image-shimmer-text` above; the rest of
+   the treatment is utilities on `ShimmerText`.
 
-   The bright band lives in the label's own background gradient, so the only
-   thing that moves is the gradient's paint origin. Sweeping it instead with a
-   translated overlay needs the overlay and the text copy inside it to cancel
-   each other out on every frame, and the compositor rasterises each animated
-   layer against its own whole-device-pixel origin, so that cancellation drifts
-   by up to a pixel and the status text jitters sideways. Nothing here moves a
-   box that holds glyphs, so the text cannot shift.
-
-   `contain: paint` keeps the per-frame repaint inside the label. */
+   Only the gradient's paint origin moves. Sweeping the band with a translated
+   overlay instead needs the overlay and the text copy inside it to cancel each
+   other out on every frame, and the compositor rasterises each animated layer
+   against its own whole-device-pixel origin, so that cancellation drifts by up
+   to a pixel and the status text jitters sideways. Nothing here moves a box
+   that holds glyphs, so the text cannot shift. */
 @keyframes okou-shimmer {
   from {
     background-position: 100% center;
@@ -405,23 +424,6 @@ body {
   to {
     background-position: -100% center;
   }
-}
-.okou-shimmer-text {
-  background: linear-gradient(
-    90deg,
-    hsl(var(--muted-foreground) / 0.8) 0%,
-    hsl(var(--muted-foreground) / 0.8) 35%,
-    hsl(var(--foreground)) 48%,
-    hsl(var(--foreground)) 52%,
-    hsl(var(--muted-foreground) / 0.8) 65%,
-    hsl(var(--muted-foreground) / 0.8) 100%
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  contain: paint;
-  animation: okou-shimmer 3.5s linear infinite;
 }
 
 @keyframes okou-thinking-in {
