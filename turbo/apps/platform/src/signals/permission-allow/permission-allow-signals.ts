@@ -112,8 +112,8 @@ const onPermissionUpdated$ = command(({ set }) => {
 });
 
 export const subscribePermissionUpdate$ = command(
-  async ({ set }, signal: AbortSignal) => {
-    await set(
+  ({ set }, signal: AbortSignal) => {
+    set(
       setAblyLoop$,
       {
         topic: "connectorPermissionUpdated",

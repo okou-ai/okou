@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.21.6](https://github.com/vm0-ai/vm0/compare/guest-control-proto-v0.21.5...guest-control-proto-v0.21.6) (2026-09-15)
+
 ## [0.21.5](https://github.com/vm0-ai/vm0/compare/guest-control-proto-v0.21.4...guest-control-proto-v0.21.5) (2026-09-15)
 
 ## [0.21.4](https://github.com/vm0-ai/vm0/compare/guest-control-proto-v0.21.3...guest-control-proto-v0.21.4) (2026-09-15)

@@ -287,21 +287,40 @@ export function capturePageView(): void {
 
 const BOOTSTRAP_PHASE_TIMING_EVENT = "app_bootstrap_phase_timing";
 
-type BootstrapThreadMetadataSource =
+type BootstrapThreadMetadataResolutionPath =
+  | "after-cache-hydration"
+  | "canonical-event-stream"
+  | "canonical-not-found"
+  | "current-projection"
+  | "metadata-shortcut";
+
+type LegacyBootstrapThreadMetadataSource =
   | "local"
   | "memory"
   | "not_found"
   | "remote";
+
+// Preserve the existing PostHog schema while runtime names describe lookup semantics.
+const legacyBootstrapThreadMetadataSourceByResolutionPath = {
+  "after-cache-hydration": "local",
+  "canonical-event-stream": "remote",
+  "canonical-not-found": "not_found",
+  "current-projection": "memory",
+  "metadata-shortcut": "remote",
+} satisfies Record<
+  BootstrapThreadMetadataResolutionPath,
+  LegacyBootstrapThreadMetadataSource
+>;
 
 interface BootstrapPhaseTimingState {
   readonly finalRoute?: string;
   readonly initialRoute?: string;
   readonly localeInitDurationMs?: number;
   readonly localeInitStartedAt?: number;
-  readonly localThreadMetadataDurationMs?: number;
-  readonly remoteThreadMetadataDurationMs?: number;
   readonly routeSetupStartedAt?: number;
-  readonly threadMetadataSource?: BootstrapThreadMetadataSource;
+  readonly threadMetadataCacheHydrationWaitMs?: number;
+  readonly threadMetadataCacheMissResolutionMs?: number;
+  readonly threadMetadataResolutionPath?: BootstrapThreadMetadataResolutionPath;
 }
 
 const bootstrapPhaseTimingState$ = state<BootstrapPhaseTimingState | null>(
@@ -351,10 +370,10 @@ export const markBootstrapRouteSetup$ = command(
       ...current,
       finalRoute: route,
       initialRoute: current.initialRoute ?? route,
-      localThreadMetadataDurationMs: undefined,
-      remoteThreadMetadataDurationMs: undefined,
       routeSetupStartedAt: current.routeSetupStartedAt ?? performance.now(),
-      threadMetadataSource: undefined,
+      threadMetadataCacheHydrationWaitMs: undefined,
+      threadMetadataCacheMissResolutionMs: undefined,
+      threadMetadataResolutionPath: undefined,
     });
   },
 );
@@ -363,9 +382,9 @@ export const recordBootstrapThreadMetadataTiming$ = command(
   (
     { get, set },
     timing: {
-      readonly localDurationMs?: number;
-      readonly remoteDurationMs?: number;
-      readonly source: BootstrapThreadMetadataSource;
+      readonly cacheHydrationWaitMs?: number;
+      readonly cacheMissResolutionMs?: number;
+      readonly resolutionPath: BootstrapThreadMetadataResolutionPath;
     },
   ) => {
     const current = get(bootstrapPhaseTimingState$);
@@ -374,9 +393,9 @@ export const recordBootstrapThreadMetadataTiming$ = command(
     }
     set(bootstrapPhaseTimingState$, {
       ...current,
-      localThreadMetadataDurationMs: timing.localDurationMs,
-      remoteThreadMetadataDurationMs: timing.remoteDurationMs,
-      threadMetadataSource: timing.source,
+      threadMetadataCacheHydrationWaitMs: timing.cacheHydrationWaitMs,
+      threadMetadataCacheMissResolutionMs: timing.cacheMissResolutionMs,
+      threadMetadataResolutionPath: timing.resolutionPath,
     });
   },
 );
@@ -448,15 +467,18 @@ export const captureBootstrapPhaseTiming$ = command(({ get, set }) => {
     setDurationProperty(
       properties,
       "local_thread_metadata_ms",
-      current?.localThreadMetadataDurationMs,
+      current?.threadMetadataCacheHydrationWaitMs,
     );
     setDurationProperty(
       properties,
       "remote_thread_metadata_ms",
-      current?.remoteThreadMetadataDurationMs,
+      current?.threadMetadataCacheMissResolutionMs,
     );
-    if (current?.threadMetadataSource !== undefined) {
-      properties.thread_metadata_source = current.threadMetadataSource;
+    if (current?.threadMetadataResolutionPath !== undefined) {
+      properties.thread_metadata_source =
+        legacyBootstrapThreadMetadataSourceByResolutionPath[
+          current.threadMetadataResolutionPath
+        ];
     }
     posthog.capture(BOOTSTRAP_PHASE_TIMING_EVENT, properties);
   });

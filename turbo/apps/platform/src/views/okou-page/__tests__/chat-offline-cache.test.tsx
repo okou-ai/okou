@@ -629,15 +629,18 @@ test("Saved messages appear without an empty-state flash", async () => {
     });
   });
 
-  await setupPage({
+  await startPage({
     context,
     path: `/chats/${thread.id}`,
     host: "app.okou.ai",
     auth: identity.auth,
   });
 
+  await visibleAppSkeleton();
+
   const visibleSavedResponse = await screen.findByText(savedResponse);
   expect(visibleSavedResponse).toBeVisible();
+  await expectAppSkeletonDismissed();
 
   await housekeepingStarted.promise;
   expect(

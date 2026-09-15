@@ -202,7 +202,9 @@ test("A failed language download falls back without blocking chat", async () => 
   mockAgent();
   mockChatLifecycle(chatContext);
 
-  await setupPage({ context: chatContext, path: `/agents/${AGENT_ID}/chat` });
+  await expect(
+    setupPage({ context: chatContext, path: `/agents/${AGENT_ID}/chat` }),
+  ).rejects.toThrow(/Failed to load fr-FR .* locale resources \(HTTP 503\)/u);
 
   await expect(
     screen.findByText("Ask me to automate workflows, manage tasks..."),
@@ -260,7 +262,7 @@ test("Run error copy follows a language change without rewriting the run", async
       events: [],
       hasMore: false,
       status: "failed",
-      lastEventSequence: -1,
+      lastEventSequence: null,
     });
   });
   await setupPage({ context, path: `/activities/${runId}` });

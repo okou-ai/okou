@@ -32,7 +32,7 @@ const CHANNEL = sessionOutputChannelName(
   RUN_ID,
 );
 const featureSwitches = Object.freeze({
-  [FeatureSwitchKey.SessionOutputStreaming]: true,
+  [FeatureSwitchKey.PiLoop]: true,
 });
 
 function activeRun(additionalRunIds: readonly string[] = []) {
@@ -131,12 +131,12 @@ test("A viewer missing chunk zero waits for the durable output and can receive t
   ).resolves.toBeVisible();
 });
 
-test("The disabled flag leaves final output available without a streaming subscription", async () => {
+test("PiLoop disabled leaves final output available without a streaming subscription", async () => {
   const events = activeRun();
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.SessionOutputStreaming]: false },
+    featureSwitches: { [FeatureSwitchKey.PiLoop]: false },
   });
   await readyChat();
   expect(hasSubscriptionOnChannel(CHANNEL, RUN_ID)).toBeFalsy();

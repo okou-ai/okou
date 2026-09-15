@@ -275,7 +275,7 @@ test("Completed Mermaid diagrams remain accessible and inspectable", async () =>
     diagramSource,
     "```",
   ].join("\n");
-  const rows = completedMessageRows(chat, source);
+  const rows = [chat.outputMessage("Preparing diagrams.", { seqId: 1 })];
   chat.install({
     rows: () => {
       return rows;
@@ -287,6 +287,13 @@ test("Completed Mermaid diagrams remain accessible and inspectable", async () =>
     path: chat.path,
     host: "app.okou.ai",
   });
+  await expect(screen.findByText("Preparing diagrams.")).resolves.toBeVisible();
+
+  rows.push(
+    chat.outputMessage(source, { seqId: 2 }),
+    chat.runCompleted({ seqId: 3 }),
+  );
+  context.mocks.ably.trigger(chat.realtimeTopic);
 
   const pendingActions = await waitFor(() => {
     const actions = diagramButtons();

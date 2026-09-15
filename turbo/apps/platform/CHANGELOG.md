@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.902.2](https://github.com/vm0-ai/vm0/compare/app-v0.902.1...app-v0.902.2) (2026-09-15)
+
+
+### Bug Fixes
+
+* **app:** clear replaced replies from share selection ([#34406](https://github.com/vm0-ai/vm0/issues/34406)) ([cd3f756](https://github.com/vm0-ai/vm0/commit/cd3f756a99b03ce5f5ba88629e52b321fb7353d7))
+* keep mermaid diagrams white across app themes ([#34410](https://github.com/vm0-ai/vm0/issues/34410)) ([0d60752](https://github.com/vm0-ai/vm0/commit/0d6075230195f1e52804f6eaed37ecfd01552a81))
+
+
+### Refactoring
+
+* **app:** delete the dead desktop shell selection rules ([#34388](https://github.com/vm0-ai/vm0/issues/34388)) ([3f72de6](https://github.com/vm0-ai/vm0/commit/3f72de62f13ed4cdfb259502a97a787bcbdae5ef))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.667.0
+
 ## [0.902.1](https://github.com/vm0-ai/vm0/compare/app-v0.902.0...app-v0.902.1) (2026-09-15)
 
 

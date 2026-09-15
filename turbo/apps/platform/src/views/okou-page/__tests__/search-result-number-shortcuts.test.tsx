@@ -20,6 +20,7 @@ import {
   fill,
   queryAllByRoleFast,
   setupPage,
+  startPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
@@ -176,7 +177,7 @@ test("Limit empty search to 25 cached chats in sidebar order", async () => {
     threads,
     chatListRemoteGate: remoteChatList.promise,
   });
-  await setupPage({
+  await startPage({
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     ...workspace.pageOptions,
@@ -252,7 +253,7 @@ test.each([
       threads,
       chatListRemoteGate: remoteChatList.promise,
     });
-    await setupPage({
+    await startPage({
       context,
       path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
       ...workspace.pageOptions,

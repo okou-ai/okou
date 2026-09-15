@@ -168,30 +168,34 @@ detach(
 );
 ```
 
-### Scope of `detach()` usage
+### Background loops and `detach()`
 
-**`detach()` should only appear in the views layer (React components), not in the signals directory.**
+`setLoop` and `setAbly*Loop$` start background work and return `void`. Their
+internal implementations own the pending promise through `detach` with
+`Reason.Daemon`. The caller still passes the real owner signal; switching a run
+resets a child of that owner before starting the next subscription.
 
-`detach` with `Reason.DomCallback` is designed for DOM event handlers — in React components, event callbacks cannot return a promise, so `detach` is needed to track the fire-and-forget promise.
-
-In the signals layer, the caller can always `await` the return value or manage the lifecycle through the signal chain. If you find yourself needing `detach` in signals, it usually means the signal chain or command composition is flawed — fix the root cause instead of working around it with `detach`.
+Use `waitLoopUntil` and `waitAbly*LoopUntil$` when a command must wait for the
+body to report completion. Waiting calls propagate failure and cancellation.
+The two entry points share their internal loop and cleanup implementation.
+Ably startup does not imply attachment or baseline readiness: use `onSubscribed`
+for attachment and retain feature-specific `onError` handling where needed.
 
 ```typescript
-// ✅ Views layer: use detach in DOM event callbacks
-const handleClick = () => {
-  detach(commandFn(pageSignal), Reason.DomCallback);
-};
+// Background refresh: setup completes while the refresh remains owner-scoped.
+setLoop(refresh, interval, signal);
 
-// ❌ Signals layer: detach should not appear here, use await or signal chain
-export const someCommand$ = command(async ({ set }, signal) => {
-  detach(set(anotherCommand$, signal), Reason.Daemon); // ← misuse
-});
-
-// ✅ Signals layer: correct approach is to await directly
-export const someCommand$ = command(async ({ set }, signal) => {
-  await set(anotherCommand$, signal);
-});
+// Subsequent work requires the operation's result.
+await waitLoopUntil(pollAuthorization, interval, signal);
+signal.throwIfAborted();
 ```
+
+`setDaemon(operation, signal)` in `signals/utils.ts` implements daemon
+detachment. Non-periodic background processes, such as realtime initialization
+and Desktop sign-in, use it directly with their real owner signal. Feature
+commands must not add `detach` or wrap these starters in another one. Ordinary
+finite commands still return or await their work. React DOM callbacks and real
+application entry points use `detach` when their caller cannot await a promise.
 
 ### `detach()` tracks promises for cleanup
 
@@ -208,8 +212,8 @@ detach(someAsyncWork(), Reason.DomCallback);
 // ❌ Floating promise — escapes all cleanup, causes DOMException on teardown
 set(startLoop$, { runId }, signal).catch((e) => { ... });
 
-// ✅ Tracked by detach in the views layer — clearAllDetached will await it
-detach(set(startLoop$, { runId }, signal), Reason.Daemon);
+// ✅ The shared starter tracks its own daemon and stops when signal aborts.
+set(setAblyPayloadLoop$, { scope: "run-output", topic: runId, loopCommand$: receive$ }, signal);
 ```
 
 But don't use `detach` to paper over orphaned signals. Fix the signal chain first.

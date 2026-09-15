@@ -384,7 +384,7 @@ test("Metadata opens a cold conversation while canonical synchronization continu
     return respond(200, threadMetadata(FIRST_THREAD_ID, "Quick conversation"));
   });
 
-  await setupPage({
+  const page = await startPage({
     context,
     path: `/chats/${FIRST_THREAD_ID}`,
     auth: isolatedAuth(),
@@ -394,6 +394,7 @@ test("Metadata opens a cold conversation while canonical synchronization continu
   expect(snapshotSignal.aborted).toBeFalsy();
 
   snapshot.resolve();
+  await page.ready;
   await expectReadyChat("Canonical conversation");
   expect(document.title).toBe("Canonical conversation | Okou");
 });
@@ -519,7 +520,8 @@ test("Cold left and right conversations resolve independently", async () => {
     },
   );
 
-  const page = await startPage({
+  // The canonical snapshot remains pending while each pane becomes usable.
+  await startPage({
     context,
     path: `/chats/${FIRST_THREAD_ID}?sidebar=${SECOND_THREAD_ID}`,
     auth: isolatedAuth(),
@@ -530,7 +532,6 @@ test("Cold left and right conversations resolve independently", async () => {
   await expectReadyChat("Left conversation");
   expect(rightSignal.aborted).toBeFalsy();
   right.resolve();
-  await page.ready;
   await expectReadyChat("Right conversation");
   expect(document.title).toBe("Left conversation | Okou");
 });
@@ -582,7 +583,8 @@ test.each(["reader reset", "parent abort"] as const)(
       },
     );
 
-    const page = await startPage({
+    // Keep global synchronization pending to exercise only reader ownership.
+    await startPage({
       context,
       path: `/chats/${FIRST_THREAD_ID}`,
       auth: isolatedAuth(),
@@ -605,7 +607,6 @@ test.each(["reader reset", "parent abort"] as const)(
 
     otherMetadata.resolve();
     pageMetadata.resolve();
-    await page.ready;
     await expectReadyChat("Surviving conversation");
     expect(
       screen.queryByText("Cancelled reader title"),

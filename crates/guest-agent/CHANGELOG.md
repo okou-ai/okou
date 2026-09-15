@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.91.1](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.91.0...guest-agent-v0.91.1) (2026-09-15)
+
 ## [0.91.0](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.5...guest-agent-v0.91.0) (2026-09-15)
 
 

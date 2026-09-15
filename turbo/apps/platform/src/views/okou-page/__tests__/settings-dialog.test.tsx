@@ -15,6 +15,7 @@ import {
   click,
   holdElementAnimations,
   setupPage,
+  startPage,
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -608,7 +609,8 @@ test("Inspect empty IndexedDB storage before the first snapshot arrives", async 
       latestSeqId: null,
     });
   });
-  await setupPage({
+  // Keep initial sync pending while inspecting the empty cache.
+  await startPage({
     context,
     path: "/?settings=debug",
     featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
@@ -694,7 +696,7 @@ test("Measure the threads inside a singleton snapshot on demand", async () => {
   context.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });
   });
-  await setupPage({
+  const page = await startPage({
     context,
     path: `/agents/${agentId}/chat`,
     featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
@@ -706,6 +708,7 @@ test("Measure the threads inside a singleton snapshot on demand", async () => {
   await snapshotRequested.promise;
   expect(within(sidebar).queryByText("Snapshot 文 😀")).not.toBeInTheDocument();
   releaseSnapshot.resolve();
+  await page.ready;
   await within(sidebar).findByText("Snapshot 文 😀");
   const rail = await screen.findByTestId("labeled-nav-rail");
   click(within(rail).getByLabelText("Test User"));

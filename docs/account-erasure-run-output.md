@@ -72,7 +72,9 @@ ignored-delivery response contains no `acceptedEvents`, so that batch starts no
 optional consumers. This is delivery disposition, not an erasure-completion ACK
 and not a claim that prior egress stopped. Missing runs and timeouts retain their
 ignored disposition. Other database failures, lock timeouts and aborts remain
-failures/backpressure; identity mismatch never becomes successful closure denial.
+failures/backpressure. Closure may be returned before supplied snapshot or
+destination mismatches are checked. Every admitted write validates the pinned
+identity; a closed outcome grants no write capability.
 
 Open-account running, completed and ordinarily cancelled runs remain eligible.
 Event IDs, sequence allocation/deduplication, out-of-order latest-result
@@ -135,11 +137,11 @@ planner or cache measurements; no forced plan or new index is required.
 
 ## Remaining obligations
 
-Other callback lifecycle/delivery markers, summaries, followups and automation
-results remain B2b2-R. In particular, the lifecycle-owned
-`insertIntegrationCompletionFallback` still creates its separate
-`output.message` placeholder; it is outside the named assistant history/result
-projection and is not fenced here. Chat input/creation/editing, activity/search/
+Terminal lifecycle/error markers, integration completion placeholders and
+transactionally coupled delivery/sidebar writes are covered by
+[B2b2-T](account-erasure-terminal-callback.md). Summaries, followups and automation
+results remain B2b2-R. The lifecycle-owned `insertIntegrationCompletionFallback`
+is outside this B2b2-O assistant history/result projection. Chat input/creation/editing, activity/search/
 sidebar/archive copies and previously admitted optional consumers also remain
 outside this slice. Files/sites,
 credentials, remote sessions, transient Ably/provider egress and existing

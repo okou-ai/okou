@@ -37,7 +37,7 @@ export const chatPageTaglineDisplayed$ = computed((get) => {
 });
 
 const startTaglineTypewriter$ = command(
-  async ({ set }, element: HTMLElement, signal: AbortSignal) => {
+  ({ set }, element: HTMLElement, signal: AbortSignal) => {
     const text = element.dataset.typewriterText ?? "";
     const parsedSpeed = Number.parseInt(
       element.dataset.typewriterSpeed ?? "40",
@@ -47,7 +47,7 @@ const startTaglineTypewriter$ = command(
 
     set(internalTaglineDisplayed$, "");
     let index = 0;
-    await setLoop(
+    setLoop(
       () => {
         index += 1;
         set(internalTaglineDisplayed$, text.slice(0, index));

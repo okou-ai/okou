@@ -2742,10 +2742,9 @@ interface RunTrackingDeps {
   setupChatEvents$: Command<Promise<void>, [AbortSignal]>;
   catchUpChatEvents$: Command<Promise<void>, [AbortSignal]>;
   reloadArtifacts$: Command<void, []>;
-  subscribeBrowserSessions$: Command<Promise<void>, [AbortSignal]>;
-  subscribeSessionOutput$: Command<Promise<void>, [AbortSignal]>;
+  subscribeBrowserSessions$: Command<void, [AbortSignal]>;
+  subscribeSessionOutput$: Command<void, [AbortSignal]>;
   subscribeThinkingSummaries$: ThreadActivitySummarySignals["subscribe$"];
-  thinkingSummarySubscription: ThreadActivitySummarySignals["subscription"];
   automationSignals: Pick<ChatPanelSignals, "headerAutomations">;
   cancellationRecovery: ReturnType<typeof createCancellationRecoverySignals>;
   reloadConnectorAccounts$: Command<void, []>;
@@ -3146,7 +3145,6 @@ function createRunTracking({
   subscribeBrowserSessions$,
   subscribeSessionOutput$,
   subscribeThinkingSummaries$,
-  thinkingSummarySubscription,
   automationSignals,
   cancellationRecovery,
   reloadConnectorAccounts$,
@@ -3168,7 +3166,7 @@ function createRunTracking({
     await Promise.all([
       set(subscribeBrowserSessions$, signal),
       set(subscribeSessionOutput$, signal),
-      set(subscribeThinkingSummaries$, thinkingSummarySubscription, signal),
+      set(subscribeThinkingSummaries$, signal),
       set(
         subscribeChatThreadRealtime$,
         {
@@ -4123,7 +4121,6 @@ export function createChatPanelSignals(
     subscribeBrowserSessions$: messages.subscribeBrowserSessions$,
     subscribeThinkingSummaries$: activity.subscribe$,
     subscribeSessionOutput$: sessionOutput.subscribe$,
-    thinkingSummarySubscription: activity.subscription,
     automationSignals: threadOwned,
     cancellationRecovery,
     reloadConnectorAccounts$: composer.connector.accounts.reload$,

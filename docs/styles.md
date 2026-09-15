@@ -818,6 +818,53 @@ with values byte-identical to the `@theme` entries in
 so it is deleted rather than promoted; the outside-the-shell `bg-sidebar` probe
 above is what shows it carried nothing.
 
+### The workspace canvas
+
+The `okou-workspace-bg` selector and its consumers have been removed. It was a
+`::before` paint layer behind the workspace pane, and it had four variants —
+default and gradient palette, each in Light and Dark — that differed only in a
+fill colour and a gradient. Those are two runtime values, so they are now keyed
+at `:root` and reached through one `bg-workspace-canvas` and one
+`bg-workspace-canvas-image`, registered as `@theme inline` entries over
+`--okou-workspace-canvas-fill` and `--okou-workspace-canvas-image`. `inline`
+keeps the reference, so the theme and palette attributes still decide at use
+time.
+
+Keying at `:root` is what removes the selectors, and it widens their scope on
+purpose rather than restating the same condition. `signals/theme.ts` writes
+`data-theme` and `data-gradient-color-themes` onto the document element, while
+the retired gradient rules reached the canvas through a _descendant_
+`.okou-app` that carried the palette attribute itself. Only the sidebar and
+standalone shells carry it, so `workspace-inset.tsx` is the one consumer those
+rules ever matched. `export-page.tsx`, `connect-page-shell.tsx` and
+`shared-thread-page.tsx` carry `okou-app` on the canvas element itself and
+never carry the attribute, so they always painted the default canvas, and they
+still do — but because of a routing invariant, not because of the selector.
+Their routes register with the `"none"` layout, so `LayoutHost` mounts neither
+shell, `applyColorThemeDocumentAttributes` never runs, and
+`:root[data-gradient-color-themes]` is never set while they are on screen.
+Forced onto `:root` against a same-element fixture, the two sides do differ in
+both gradient states. The canvas is therefore now available to any
+`:root`-attributed context, which is the contract a future consumer inherits.
+Each theme test wraps in `:where()` so it stays at the specificity of the rule
+it refines and source order decides between them.
+
+The retired dark rule matched `.dark .okou-workspace-bg::before` as well as the
+attribute form. `applyTheme` always sets both, so the attribute alone is
+equivalent, and dropping the class is required rather than optional: a class in
+the selector registers a first-party class-selector declaration against the
+shrink-only baseline, which is the same reason the composer veil records.
+
+The recorded cases pin routes and viewports. `VisualCase` carries no palette
+field, so a case cannot distinguish a gradient state from a default one; the
+gradient palette is measured through the computed-style harness instead, and
+the case list carries only the six configurations it can tell apart.
+
+`before:bg-[length:100%_100%]` is retained although no measurement can move it.
+`background-size: 100% 100%` and the initial `auto auto` size a gradient to the
+same box, so dropping it changes zero pixels; it is kept because the retired
+rule declared it and the computed value is part of what this drain preserves.
+
 ### Desktop titlebar drag region — drained
 
 The `okou-desktop-no-drag` selector and its consumer were removed first. The
@@ -834,8 +881,8 @@ That left one `@media (min-width: 768px)` block behind
 `--okou-desktop-titlebar-height` variable its only reader used, the
 `okou-sidebar-header` class on the drawer header, and both `aria-hidden` drag
 region divs. `okou-desktop-titlebar-drag-region` and `okou-sidebar-header` are
-retired; `okou-workspace-bg` keeps the fifteen declarations that are unrelated
-to the desktop shell.
+retired; `okou-workspace-bg` kept the fifteen declarations unrelated to the
+desktop shell, and "The workspace canvas" above drains those.
 
 **Nothing in the repository ever set that attribute.** It occurred only in the
 App stylesheet, in the baseline derived from it, in the migration ledger, and in
@@ -863,10 +910,10 @@ That deletion also retires the last references to `.okou-chat-bubble-user` and
 from every element and recorded that they survived only inside this selection
 exception; with the exception gone, neither name appears anywhere in the
 repository outside the migration ledger. With the card tokens promoted to
-`:root`, `.okou-app` now declares nothing of its own: the one selector left in
-the stylesheet is the workspace canvas's
-`.okou-app[data-gradient-color-themes] .okou-workspace-bg::before`, which uses
-the class as a scoping ancestor rather than to carry a declaration.
+`:root` and the workspace canvas drained above, `.okou-app` no longer appears in
+the stylesheet at all — it neither carries a declaration nor scopes one. The
+class survives only on the elements that still spell it, which is what the
+final call-site removal clears.
 
 Deleting rather than porting is the right move because there is nothing to
 port. A replacement could only be a condition no element satisfies, and

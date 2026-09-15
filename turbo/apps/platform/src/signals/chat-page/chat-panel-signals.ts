@@ -89,7 +89,7 @@ export interface MessageListSignals {
   >;
   readonly eventImageGroups$: Computed<Promise<EventImageGroupProjection[]>>;
   readonly browserSessionSignals: BrowserSessionSignals;
-  readonly subscribeBrowserSessions$: Command<Promise<void>, [AbortSignal]>;
+  readonly subscribeBrowserSessions$: Command<void, [AbortSignal]>;
   readonly hasEvents$: Computed<Promise<boolean>>;
   readonly thinkingIndicatorMode$: Computed<Promise<ThinkingIndicatorMode>>;
   readonly thinkingEventId$: Computed<Promise<string | null>>;

@@ -340,7 +340,7 @@ function createVoiceDraftMutations(
 function createVoiceActionBindings(
   data: VoiceDraftData,
   mutations: ReturnType<typeof createVoiceDraftMutations>,
-  watch$: VoiceDraftCommand,
+  watch$: Command<void, [AbortSignal]>,
 ) {
   const { state$, capture, restoreRecording$ } = data;
   const { start$, finish$, discard$, transcribe$ } = mutations;
@@ -395,7 +395,7 @@ function createVoiceActionBindings(
     },
   );
   const mount$ = onRef(
-    command(async ({ get, set }, element: HTMLElement, signal: AbortSignal) => {
+    command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
       const owner = { element, signal };
       set(internalOwner$, owner);
       signal.addEventListener(
@@ -409,7 +409,7 @@ function createVoiceActionBindings(
         },
         { once: true },
       );
-      await set(watch$, signal);
+      set(watch$, signal);
     }),
   );
   // The global shortcut activates the same enabled control as a click, so it

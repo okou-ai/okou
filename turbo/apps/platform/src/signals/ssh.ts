@@ -449,20 +449,18 @@ const onSshChanged$ = command(
     return false;
   },
 );
-export const subscribeSshChanged$ = command(
-  async ({ set }, signal: AbortSignal) => {
-    await set(
-      setAblyPayloadLoop$,
-      {
-        topic: "ssh:changed",
-        loopCommand$: onSshChanged$,
-        catchUpCommand$: catchUpSsh$,
-        options: { runOnSubscribe: true },
-      },
-      signal,
-    );
-  },
-);
+export const subscribeSshChanged$ = command(({ set }, signal: AbortSignal) => {
+  set(
+    setAblyPayloadLoop$,
+    {
+      topic: "ssh:changed",
+      loopCommand$: onSshChanged$,
+      catchUpCommand$: catchUpSsh$,
+      options: { runOnSubscribe: true },
+    },
+    signal,
+  );
+});
 export const openSshDialog$ = command(
   async (
     { get, set },

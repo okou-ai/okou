@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.42.8](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.42.7...sandbox-firecracker-v0.42.8) (2026-09-15)
+
 ## [0.42.7](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.42.6...sandbox-firecracker-v0.42.7) (2026-09-15)
 
 ## [0.42.6](https://github.com/vm0-ai/vm0/compare/sandbox-firecracker-v0.42.5...sandbox-firecracker-v0.42.6) (2026-09-15)
