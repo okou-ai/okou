@@ -1,3 +1,4 @@
+mod access;
 mod admission;
 mod cache;
 mod credentials;
@@ -128,10 +129,10 @@ async fn unavailable_old_api_and_malformed_credentials_fail_before_network() {
 }
 
 #[tokio::test]
-async fn protected_authority_never_falls_back_to_direct_before_carrier_support() {
+async fn protected_authority_rejects_non_gateway_ports_before_network() {
     let h = Harness::new(Reply::default()).await;
     let body = json!({
-        "outcome": "resolved_access", "host": "ssh.example.com", "port": 443,
+        "outcome": "resolved_access", "host": "ssh.example.com", "port": 22,
         "username": "test-user", "generation": 7, "learnedHostKey": null,
         "authentication": {"method": "password", "password": "ssh-password-canary"},
         "access": {"configId": "a10df3be-c1cd-4d62-b180-4462679acf63", "generation": 1,
@@ -139,7 +140,7 @@ async fn protected_authority_never_falls_back_to_direct_before_carrier_support()
     });
     let resolve = h.resolve(body).await;
     let frames = h.request(params()).await;
-    assert_eq!(terminal(&frames)["failure_reason"], "unavailable");
+    assert_eq!(terminal(&frames)["failure_reason"], "authority_failure");
     assert_eq!(terminal(&frames)["effects"], "not_started");
     resolve.assert_calls_async(1).await;
     assert!(h.observed.queries.lock().unwrap().is_empty());

@@ -106,7 +106,7 @@ export const sshCommand = new Command("ssh")
   .description("Access owner-configured SSH hosts from an authorized Run")
   .addHelpText(
     "after",
-    `\nFile transfers (upload/download): ${FILE_LIMIT_HELP}\n`,
+    `\nConnections use the owner's saved Direct or Cloudflare Access configuration; no proxy or token options are needed. For Access hosts, the listed hostname and port 443 identify the gateway, not the origin SSH port. Ask the owner to check connection diagnostics in /connectors/ssh when setup fails.\n\nFile transfers (upload/download): ${FILE_LIMIT_HELP}\n`,
   )
   .addCommand(
     new Command("host")

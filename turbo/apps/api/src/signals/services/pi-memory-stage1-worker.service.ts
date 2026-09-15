@@ -1,4 +1,19 @@
 import {
+  checkPiMemoryQuota,
+  PiMemoryQuotaError,
+} from "./pi-memory-quota.service";
+import { checkOrgCreditsForRunAdmission } from "./run-admission.service";
+import {
+  PI_MEMORY_STAGE1_MODEL,
+  PiMemoryStage1ProviderError,
+  PiMemoryStage1BudgetError,
+  type PiMemoryStage1Evidence,
+  projectPiMemoryStage1Evidence,
+  redactPiMemoryStage1Secrets,
+  runPiMemoryStage1Extraction,
+  type PiMemoryStage1ProviderResult,
+} from "@okouai/pi-agent-runtime/api";
+import {
   resolvePiMemoryStage1Credential,
   PiMemoryStage1CredentialError,
   PiMemoryStage1CredentialRefreshError,
@@ -24,15 +39,6 @@ import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { blobs } from "@okouai/db/schema/blob";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storages } from "@okouai/db/schema/storage";
-import {
-  PiMemoryStage1ProviderError,
-  PiMemoryStage1BudgetError,
-  type PiMemoryStage1Evidence,
-  projectPiMemoryStage1Evidence,
-  redactPiMemoryStage1Secrets,
-  runPiMemoryStage1Extraction,
-  type PiMemoryStage1ProviderResult,
-} from "@okouai/pi-agent-runtime/api";
 import { command } from "ccstate";
 import {
   and,
@@ -687,6 +693,19 @@ function isCredentialFailure(
   );
 }
 
+function workErrorClass(error: unknown): string {
+  return error instanceof PermanentSourceError ||
+    error instanceof RetryableWorkError ||
+    error instanceof PiMemoryQuotaError ||
+    isCredentialFailure(error) ||
+    error instanceof PiMemoryStage1BudgetError ||
+    error instanceof DisabledWorkError
+    ? error.errorClass
+    : error instanceof DOMException && error.name === "AbortError"
+      ? "abort"
+      : "worker_failure";
+}
+
 async function failWork(
   db: Db,
   work: ClaimedPiMemoryStage1Work,
@@ -698,16 +717,7 @@ async function failWork(
     error instanceof DisabledWorkError ||
     error instanceof PiMemoryStage1CredentialError ||
     error instanceof PiMemoryStage1BudgetError;
-  const errorClass =
-    error instanceof PermanentSourceError ||
-    error instanceof RetryableWorkError ||
-    isCredentialFailure(error) ||
-    error instanceof PiMemoryStage1BudgetError ||
-    error instanceof DisabledWorkError
-      ? error.errorClass
-      : error instanceof DOMException && error.name === "AbortError"
-        ? "abort"
-        : "worker_failure";
+  const errorClass = workErrorClass(error);
   const committedResult = await settleIncludingAbort(
     commitWorkResult(
       db,
@@ -716,7 +726,8 @@ async function failWork(
         ? { kind: "terminal_failure", errorClass }
         : { kind: "retryable_failure", errorClass },
       {
-        revalidateSelection: isCredentialFailure(error),
+        revalidateSelection:
+          isCredentialFailure(error) || error instanceof PiMemoryQuotaError,
       },
     ),
   );
@@ -854,6 +865,25 @@ async function processPreparedWork(
         evidence: args.prepared.evidence,
         requestId,
         beforeRequest: async (requestSignal) => {
+          const admission = await checkOrgCreditsForRunAdmission({
+            db: args.db,
+            ...args.prepared.credential.billing,
+            modelProviderType: args.prepared.credential.modelProviderType,
+            selectedModel: PI_MEMORY_STAGE1_MODEL,
+          });
+          requestSignal.throwIfAborted();
+          if (admission) {
+            throw new RetryableWorkError("source_admission_denied");
+          }
+          await checkPiMemoryQuota(
+            args.db,
+            {
+              ...args.prepared.credential.billing,
+              stage: "stage1",
+              source: args.prepared.credential.quota,
+            },
+            requestSignal,
+          );
           await args.prepared.credential.validate(requestSignal);
           await validatePreparedWork(
             args.db,

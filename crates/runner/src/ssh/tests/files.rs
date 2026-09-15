@@ -50,7 +50,7 @@ async fn response(guest: impl tokio::io::AsyncRead + Unpin) -> (Value, Vec<u8>) 
     .unwrap()
 }
 
-async fn upload(h: &Harness, path: &Path, bytes: &[u8], overwrite: bool) -> Value {
+pub(super) async fn upload(h: &Harness, path: &Path, bytes: &[u8], overwrite: bool) -> Value {
     let guest = open(
         h,
         "upload",
@@ -73,7 +73,7 @@ async fn upload(h: &Harness, path: &Path, bytes: &[u8], overwrite: bool) -> Valu
     outcome
 }
 
-async fn download(h: &Harness, path: &Path) -> (Value, Vec<u8>) {
+pub(super) async fn download(h: &Harness, path: &Path) -> (Value, Vec<u8>) {
     response(
         open(
             h,

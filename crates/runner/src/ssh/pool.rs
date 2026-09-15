@@ -176,7 +176,12 @@ impl Pool {
                 // A fresh authoritative generation cannot reuse an older idle snapshot.
                 idle.retain(|entry| {
                     entry.transport.connection != request.connection
-                        || generation_matches(&entry.transport.credential, generation)
+                        || (generation_matches(&entry.transport.credential, generation)
+                            && entry
+                                .transport
+                                .credential
+                                .transport
+                                .same_authority(&request.credential.transport))
                 });
                 idle.iter()
                     .position(|entry| entry.transport.connection == request.connection)
@@ -232,6 +237,7 @@ impl Pool {
                 connection: request.connection,
                 lease: Arc::clone(&host_lease),
                 credential: Arc::clone(&request.credential),
+                access_tls: Arc::clone(&runtime.access_tls),
             }
             .connect(stream, scope, &transport_scope, config, observation)
             .await

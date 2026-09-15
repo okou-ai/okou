@@ -23,6 +23,7 @@ import {
 
 import { safeSync, settleIncludingAbort } from "../signals/utils";
 import { PI_LANGFUSE_MAX_CAPTURED_CHARS } from "./pi-langfuse-debug";
+import { nowDate } from "./time";
 import { singleton } from "./singleton";
 
 const LANGFUSE_TRACE_NAME = "Pi Agent Run";
@@ -44,11 +45,11 @@ export const PI_LANGFUSE_API_OBSERVATION_NAMES: readonly string[] =
   ]);
 
 export interface PiApiFirstTurnTraceContext {
-  readonly rootSpanContext: SpanContext;
+  readonly runSpanContext: SpanContext;
   readonly runId: string;
   readonly sessionId: string;
   readonly userId: string;
-  readonly end: (error?: unknown) => void;
+  readonly end: (error?: unknown, endedAt?: Date) => void;
 }
 
 export interface PiApiFirstTurnTraceResult {
@@ -57,8 +58,7 @@ export interface PiApiFirstTurnTraceResult {
 }
 
 interface PiLangfuseOwnershipTransfer {
-  readonly parent: PiLangfuseParent;
-  readonly end: (error?: unknown) => void;
+  readonly end: (error?: unknown, endedAt?: Date) => void;
 }
 
 interface PiApiFirstTurnTraceArgs {
@@ -139,6 +139,29 @@ function runEndToEndSpanContext(traceId: string): SpanContext {
     spanId: runEndToEndSpanId(traceId),
     traceFlags: TraceFlags.SAMPLED,
     isRemote: true,
+  };
+}
+
+/** Join sandbox phases to the run root and preserve the publication boundary. */
+export function piLangfuseSandboxParent(args: {
+  readonly enabled: boolean;
+  readonly runId: string;
+  readonly sessionId: string;
+  readonly sandboxWaitStartedAt: number;
+}): PiLangfuseParent | undefined {
+  if (!args.enabled) {
+    return undefined;
+  }
+  const traceId = normalizePiLangfuseTraceId(args.runId);
+  if (!traceId) {
+    return undefined;
+  }
+  return {
+    traceId,
+    spanId: runEndToEndSpanId(traceId),
+    traceFlags: 1,
+    sessionId: args.sessionId,
+    sandboxWaitStartedAt: args.sandboxWaitStartedAt,
   };
 }
 
@@ -336,9 +359,12 @@ function usageDetails(
   return Object.keys(details).length > 0 ? details : undefined;
 }
 
-function safeEnd(observation: LangfuseSpan | LangfuseGeneration): void {
+function safeEnd(
+  observation: LangfuseSpan | LangfuseGeneration,
+  endedAt = nowDate(),
+): void {
   safeSync(() => {
-    observation.end();
+    observation.end(endedAt);
   });
 }
 
@@ -367,6 +393,7 @@ function startApiTrace(
       {
         asType: "span",
         parentSpanContext: runEndToEndSpanContext(traceId),
+        startTime: nowDate(),
       },
     );
     stampObservation(root, {
@@ -396,7 +423,7 @@ function startGeneration(
   let generation: LangfuseGeneration | undefined;
   const started = safeSync(() => {
     const input = capturePiLangfuseText(args.prompt);
-    generation = root.startObservation(
+    generation = startObservation(
       "API LLM Call",
       {
         input: { role: "user", content: input.text },
@@ -409,7 +436,11 @@ function startGeneration(
           content_capture: "official-plugin-parity",
         },
       },
-      { asType: "generation" },
+      {
+        asType: "generation",
+        parentSpanContext: root.otelSpan.spanContext(),
+        startTime: nowDate(),
+      },
     );
     stampObservation(generation, {
       sessionId: args.sessionId,
@@ -485,7 +516,7 @@ function sampledSpanContext(
 function createApiFirstTurnTraceContext(
   args: {
     readonly root: LangfuseSpan;
-    readonly rootSpanContext: SpanContext;
+    readonly runSpanContext: SpanContext;
     readonly runId: string;
     readonly sessionId: string;
     readonly userId: string;
@@ -495,11 +526,11 @@ function createApiFirstTurnTraceContext(
   let ended = false;
   let onAbort: (() => void) | undefined;
   const context: PiApiFirstTurnTraceContext = {
-    rootSpanContext: args.rootSpanContext,
+    runSpanContext: args.runSpanContext,
     runId: args.runId,
     sessionId: args.sessionId,
     userId: args.userId,
-    end(error?: unknown): void {
+    end(error?: unknown, endedAt?: Date): void {
       if (ended) {
         return;
       }
@@ -516,7 +547,7 @@ function createApiFirstTurnTraceContext(
           });
         });
       }
-      safeEnd(args.root);
+      safeEnd(args.root, endedAt);
     },
   };
   if (signal) {
@@ -533,9 +564,9 @@ function createApiFirstTurnTraceContext(
 }
 
 /**
- * Start the real transfer observation only after the API commit decides that
- * Sandbox will own the run. The observation remains open while H1 is
- * published, so a failed publication cannot look like a successful handoff.
+ * API execution and handoff preparation are sibling phases. On success the
+ * transfer ends at publication start, where Sandbox Wait begins. Keep it open
+ * until publication succeeds so a failed publication is still marked as failed.
  */
 export function startPiLangfuseOwnershipTransfer(
   traceContext: PiApiFirstTurnTraceContext | undefined,
@@ -544,6 +575,8 @@ export function startPiLangfuseOwnershipTransfer(
     return undefined;
   }
 
+  const startedAt = nowDate();
+  traceContext.end(undefined, startedAt);
   let ownership: LangfuseSpan | undefined;
   const started = safeSync(() => {
     ownership = startObservation(
@@ -558,7 +591,8 @@ export function startPiLangfuseOwnershipTransfer(
       },
       {
         asType: "span",
-        parentSpanContext: traceContext.rootSpanContext,
+        parentSpanContext: traceContext.runSpanContext,
+        startTime: startedAt,
       },
     );
     stampObservation(ownership, {
@@ -588,13 +622,7 @@ export function startPiLangfuseOwnershipTransfer(
   let ended = false;
   const observation = started.ok;
   return {
-    parent: {
-      traceId: context.traceId,
-      spanId: context.spanId,
-      traceFlags: 1,
-      sessionId: traceContext.sessionId,
-    },
-    end(error?: unknown): void {
+    end(error?: unknown, endedAt?: Date): void {
       if (ended) {
         return;
       }
@@ -613,7 +641,7 @@ export function startPiLangfuseOwnershipTransfer(
               },
         );
       });
-      safeEnd(observation);
+      safeEnd(observation, endedAt);
     },
   };
 }
@@ -710,7 +738,7 @@ export async function tracePiApiFirstTurn(
     traceContext: createApiFirstTurnTraceContext(
       {
         root,
-        rootSpanContext,
+        runSpanContext: runEndToEndSpanContext(rootSpanContext.traceId),
         runId: args.runId,
         sessionId: args.sessionId,
         userId: args.userId,

@@ -12,9 +12,11 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { PI_LANGFUSE_MAX_CAPTURED_CHARS } from "./pi-langfuse-debug";
+import { nowDate } from "./time";
 import {
   normalizePiLangfuseTraceId,
   piLangfuseIdGenerator,
+  piLangfuseSandboxParent,
   PI_LANGFUSE_API_OBSERVATION_NAMES,
   recordPiLangfuseRunEndToEnd,
   startPiLangfuseOwnershipTransfer,
@@ -161,6 +163,13 @@ describe("Pi run E2E Langfuse tracing", () => {
     const apiStartedAt = Date.parse("2026-09-13T23:57:22.208Z");
     const terminalCommittedAt = Date.parse("2026-09-13T23:57:31.186Z");
 
+    const sandboxParent = piLangfuseSandboxParent({
+      enabled: true,
+      runId: RUN_ID,
+      sessionId: SESSION_ID,
+      sandboxWaitStartedAt: apiStartedAt,
+    });
+
     recordPiLangfuseRunEndToEnd({
       enabled: true,
       runId: RUN_ID,
@@ -177,6 +186,13 @@ describe("Pi run E2E Langfuse tracing", () => {
     const [e2e] = spans;
     expect(e2e?.name).toBe("Run End-to-End");
     expect(e2e?.spanContext().traceId).toBe(normalizePiLangfuseTraceId(RUN_ID));
+    expect(sandboxParent).toStrictEqual({
+      traceId: e2e?.spanContext().traceId,
+      spanId: e2e?.spanContext().spanId,
+      traceFlags: 1,
+      sessionId: SESSION_ID,
+      sandboxWaitStartedAt: apiStartedAt,
+    });
     expect(e2e?.parentSpanContext).toBeUndefined();
     expect(epochMillis(e2e?.startTime ?? [0, 0])).toBe(apiStartedAt);
     expect(epochMillis(e2e?.endTime ?? [0, 0])).toBe(terminalCommittedAt);
@@ -224,7 +240,8 @@ describe("Pi API-first Langfuse tracing", () => {
     if (!transfer) {
       throw new Error("Expected a transfer observation");
     }
-    transfer.end();
+    const publicationStartedAt = nowDate();
+    transfer.end(undefined, publicationStartedAt);
     result.traceContext?.end();
     const terminalCommittedAt = Date.parse("2026-09-14T03:39:10.832Z");
     recordPiLangfuseRunEndToEnd({
@@ -257,18 +274,19 @@ describe("Pi API-first Langfuse tracing", () => {
       undefined,
     );
     expect(ownership.attributes[LangfuseOtelSpanAttributes.IS_APP_ROOT]).toBe(
-      undefined,
+      true,
     );
     expect(generation.parentSpanContext?.spanId).toBe(
       root.spanContext().spanId,
     );
-    expect(ownership.parentSpanContext?.spanId).toBe(root.spanContext().spanId);
-    expect(transfer.parent).toStrictEqual({
-      traceId,
-      spanId: ownership.spanContext().spanId,
-      traceFlags: 1,
-      sessionId: SESSION_ID,
-    });
+    expect(ownership.parentSpanContext?.spanId).toBe(
+      runEndToEnd.spanContext().spanId,
+    );
+    expect(epochMillis(root.endTime)).toBe(epochMillis(ownership.startTime));
+    expect(epochMillis(ownership.endTime)).toBe(publicationStartedAt.getTime());
+    expect(epochMillis(generation.endTime)).toBeLessThanOrEqual(
+      epochMillis(root.endTime),
+    );
     expect(generation.attributes).toMatchObject({
       "vm0.pi.run_id": RUN_ID,
       "vm0.pi.phase": "api-first-generation",
@@ -429,6 +447,40 @@ describe("Pi API-first Langfuse payloads", () => {
 });
 
 describe("Pi API-first Langfuse transfer", () => {
+  it("marks publication failure on the transfer without extending API execution", async () => {
+    const { exporter, provider } = installMemoryExporter();
+    const result = await tracePiApiFirstTurn({
+      enabled: true,
+      runId: RUN_ID,
+      sessionId: SESSION_ID,
+      userId: "user-1",
+      prompt: "transfer this run",
+      model: "model-1",
+      provider: "provider-1",
+      execute() {
+        return Promise.resolve(turnResult(true));
+      },
+    });
+
+    const transfer = startPiLangfuseOwnershipTransfer(result.traceContext);
+    const error = new Error("publication failed");
+    transfer?.end(error);
+    result.traceContext?.end(error);
+    await provider.forceFlush();
+
+    const api = requireFinishedSpan(exporter, "API First Turn");
+    const ownership = requireFinishedSpan(exporter, "Ownership Transfer");
+    expect(ownership.parentSpanContext?.spanId).toBe(
+      api.parentSpanContext?.spanId,
+    );
+    expect(epochMillis(api.endTime)).toBe(epochMillis(ownership.startTime));
+    expect(ownership.attributes).toMatchObject({
+      "langfuse.observation.level": "ERROR",
+      "langfuse.observation.metadata.publication": "failed",
+    });
+    expect(api.attributes["langfuse.observation.level"]).not.toBe("ERROR");
+  });
+
   it("can transfer a settled API result when active input moves ownership", async () => {
     const { exporter, provider } = installMemoryExporter();
     const result = await tracePiApiFirstTurn({
@@ -454,7 +506,7 @@ describe("Pi API-first Langfuse transfer", () => {
       exporter.getFinishedSpans().find((span) => {
         return span.name === "Ownership Transfer";
       })?.parentSpanContext?.spanId,
-    ).toBe(result.traceContext?.rootSpanContext.spanId);
+    ).toBe(result.traceContext?.runSpanContext.spanId);
   });
 });
 

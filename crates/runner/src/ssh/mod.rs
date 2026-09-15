@@ -1,5 +1,6 @@
 //! Official Runner-owned SSH execution and sessions. No guest-supplied authority.
 
+mod access;
 mod authority;
 mod cache;
 mod engine;
@@ -79,6 +80,7 @@ pub(crate) struct SshRuntime {
     cpu: Arc<Semaphore>,
     reports: Arc<Semaphore>,
     cache: cache::Cache,
+    access_tls: Arc<rustls::ClientConfig>,
 }
 
 impl SshRuntime {
@@ -134,6 +136,9 @@ impl SshRuntime {
             cpu: Arc::new(Semaphore::new(2)),
             reports: Arc::new(Semaphore::new(4)),
             cache: cache::Cache::new(),
+            access_tls: access::tls_config().map_err(|_| {
+                crate::error::RunnerError::Internal("SSH Access TLS initialization failed".into())
+            })?,
         })))
     }
 
@@ -457,6 +462,7 @@ impl SshRuntime {
                         pin: credential.pin,
                     }),
                     auth: PreparedAuth::Password(password),
+                    transport: credential.transport,
                 });
             }
         };
@@ -485,6 +491,7 @@ impl SshRuntime {
                     pin: credential.pin,
                 }),
                 auth: PreparedAuth::PrivateKey(key),
+                transport: credential.transport,
             })
         });
         let result = scope
@@ -601,7 +608,17 @@ async fn reject(accepted: AcceptedGuestRpc, code: ErrorCode, cancel: &Cancellati
 }
 
 pub(crate) fn safe_log_metadata(metadata: &tracing::Metadata<'_>) -> bool {
-    !["russh", "ssh_key", "ssh_cipher"].iter().any(|prefix| {
+    ![
+        "russh",
+        "ssh_key",
+        "ssh_cipher",
+        "tungstenite",
+        "tokio_tungstenite",
+        "rustls",
+        "tokio_rustls",
+    ]
+    .iter()
+    .any(|prefix| {
         metadata.target() == *prefix
             || metadata
                 .target()

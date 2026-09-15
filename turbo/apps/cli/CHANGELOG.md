@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.331.0](https://github.com/vm0-ai/vm0/compare/cli-v9.330.0...cli-v9.331.0) (2026-09-15)
+
+
+### Features
+
+* **cli:** resume social collections from durable checkpoints ([#34207](https://github.com/vm0-ai/vm0/issues/34207)) ([de87aa7](https://github.com/vm0-ai/vm0/commit/de87aa7c0e75df187eecfdf8c14b90b0bde5fe0f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.443.0
+    * @okouai/core bumped to 8.666.1
+    * @okouai/pi-agent-runtime bumped to 1.30.5
+
 ## [9.330.0](https://github.com/vm0-ai/vm0/compare/cli-v9.329.3...cli-v9.330.0) (2026-09-15)
 
 

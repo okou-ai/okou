@@ -28,7 +28,7 @@ type UsageAllowanceStore = Pick<Db, "execute" | "insert" | "select" | "update">;
 type UsageAllowanceWindowKind = "short" | "weekly";
 
 const L = logger("UsageAllowance");
-const ACTIVE_ALLOWANCE_STATUSES = [
+export const ACTIVE_ALLOWANCE_STATUSES = [
   "active",
   "manual_active",
   "trialing",
@@ -216,7 +216,7 @@ function allowanceIsPaymentFailed(status: string): boolean {
   );
 }
 
-function activeAllowanceCutoff(status: string, now: Date): Date {
+export function activeAllowanceCutoff(status: string, now: Date): Date {
   return allowanceIsPaymentFailed(status)
     ? new Date(now.getTime() - PAYMENT_FAILURE_ALLOWANCE_GRACE_MS)
     : now;

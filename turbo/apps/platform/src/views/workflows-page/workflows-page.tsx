@@ -1,5 +1,6 @@
 // Workflow list surfaces for agent-scoped tabs and the workspace index page.
 import type { ReactNode } from "react";
+import { Avatar } from "@base-ui/react/avatar";
 import {
   useGet,
   useLoadable,
@@ -34,6 +35,7 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
+  Skeleton,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -183,24 +185,22 @@ function MemberAvatar({
   label,
   imageUrl,
 }: {
-  readonly label: string;
+  readonly label?: string;
   readonly imageUrl?: string | null;
 }) {
-  if (imageUrl) {
-    return (
-      <span className="h-6 w-6 shrink-0 overflow-hidden rounded-full border border-border/60 bg-gray-50">
-        <img
+  return (
+    <Avatar.Root className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-gray-50 text-[10px] font-semibold text-muted-foreground">
+      {imageUrl && (
+        <Avatar.Image
           src={imageUrl}
           alt={label}
           className="h-full w-full object-cover"
         />
-      </span>
-    );
-  }
-  return (
-    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border/60 bg-gray-50 text-[10px] font-semibold text-muted-foreground">
-      {labelInitials(label)}
-    </span>
+      )}
+      <Avatar.Fallback aria-hidden="true">
+        {label ? labelInitials(label) : <User className="size-3" />}
+      </Avatar.Fallback>
+    </Avatar.Root>
   );
 }
 
@@ -414,46 +414,75 @@ function WorkflowHoverContent({
 }) {
   useTranslation();
   const title = workflowTitle(workflow);
+  const loading = !profile && !failed;
+  const ownerLabel =
+    profile?.displayName || profile?.imageUrl
+      ? profile.displayName?.trim() || workflow.ownerUserId
+      : undefined;
+  const ownerStatus = failed
+    ? i18n.t(($) => {
+        return $.workflows.list.ownerRetry;
+      })
+    : profile
+      ? i18n.t(($) => {
+          return $.workflows.list.ownerUnavailable;
+        })
+      : i18n.t(($) => {
+          return $.workflows.list.ownerLoading;
+        });
   return (
-    <div className="max-w-xs">
+    <div className="min-w-0 wrap-anywhere">
       <p className="text-sm font-semibold text-foreground">{title}</p>
       <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
         {workflow.description ?? workflow.name}
       </p>
       <div className="mt-2.5 flex flex-col gap-3 border-t border-border/60 pt-2.5 text-xs text-foreground/80">
-        <div className="flex items-center gap-2">
+        <div
+          data-slot="workflow-owner"
+          className="flex h-6 min-w-0 items-center gap-2"
+        >
           <span className="w-16 shrink-0 text-muted-foreground">
             {i18n.t(($) => {
               return $.workflows.list.createdBy;
             })}
           </span>
-          {profile?.displayName || profile?.imageUrl ? (
-            <>
-              <MemberAvatar
-                label={profile.displayName?.trim() || workflow.ownerUserId}
-                imageUrl={profile.imageUrl}
-              />
-              <span className="truncate">
-                {profile.displayName?.trim() || workflow.ownerUserId}
-              </span>
-            </>
+          {loading ? (
+            <Skeleton
+              aria-hidden="true"
+              className="size-6 shrink-0 rounded-full animate-none motion-safe:animate-pulse"
+            />
           ) : (
-            <span role="status" className="text-muted-foreground">
-              {failed
-                ? i18n.t(($) => {
-                    return $.workflows.list.ownerRetry;
-                  })
-                : profile
-                  ? i18n.t(($) => {
-                      return $.workflows.list.ownerUnavailable;
-                    })
-                  : i18n.t(($) => {
-                      return $.workflows.list.ownerLoading;
-                    })}
-            </span>
+            <MemberAvatar label={ownerLabel} imageUrl={profile?.imageUrl} />
           )}
+          <div
+            role="status"
+            aria-busy={loading}
+            className="flex h-6 min-w-0 flex-1 items-center"
+          >
+            {loading ? (
+              <>
+                <Skeleton
+                  aria-hidden="true"
+                  className="h-3 w-24 max-w-full animate-none motion-safe:animate-pulse"
+                />
+                <span className="sr-only">{ownerStatus}</span>
+              </>
+            ) : (
+              <span
+                className={cn(
+                  "block min-w-0 truncate",
+                  !ownerLabel && "text-muted-foreground",
+                )}
+              >
+                {ownerLabel ?? ownerStatus}
+              </span>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div
+          data-slot="workflow-runs-as"
+          className="flex h-6 min-w-0 items-center gap-2"
+        >
           <span className="w-16 shrink-0 text-muted-foreground">
             {i18n.t(($) => {
               return $.workflows.list.runsAs;
@@ -499,7 +528,8 @@ export function WorkflowTooltip({
           role="tooltip"
           side="bottom"
           align="start"
-          className="rounded-lg border border-[hsl(var(--gray-400))] p-3"
+          collisionPadding={8}
+          className="w-80 max-w-(--available-width) rounded-lg border border-[hsl(var(--gray-400))] p-3"
           style={{
             backgroundColor: "hsl(var(--card))",
             color: "hsl(var(--card-foreground))",

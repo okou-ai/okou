@@ -49,6 +49,8 @@ import {
 } from "../external/realtime";
 import { checkTelegramDomain } from "../external/telegram-domain";
 import {
+  buildFileDownloadUrl,
+  getFile,
   getMe,
   isTelegramApiError,
   sendChatAction,
@@ -84,6 +86,17 @@ import { insertChatEvent } from "./chat-event.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { createUserMessageDocument } from "./chat-user-message.service";
 import {
+  InputFileImportError,
+  type CanonicalInputAsset,
+} from "./canonical-asset.service";
+import {
+  canonicalInputFilePrompt,
+  integrationInputMessageFiles,
+  materializeIntegrationInputAssets$,
+  readyIntegrationInputAsset,
+  type IntegrationInputFile,
+} from "./integration-input-assets.service";
+import {
   chatEventTypeIn,
   chatInputPromptDispatchCondition,
 } from "./chat-event-type.service";
@@ -102,6 +115,7 @@ import type { ApiOrgRole, AuthTokenType } from "../../types/auth";
 
 const log = logger("api:telegram:post");
 const MAX_CONTEXT_MESSAGES = 10;
+const MAX_TELEGRAM_DOWNLOAD_BYTES = 20 * 1024 * 1024;
 const PENDING_TELEGRAM_USER_ID = "pending";
 const QUEUED_MESSAGE =
   "Run queued - concurrency limit reached. Will start automatically when a slot is available.";
@@ -246,6 +260,10 @@ interface TelegramFileContext {
   readonly width?: number;
   readonly height?: number;
   readonly duration?: number;
+}
+
+interface TelegramInboundFileContext extends TelegramFileContext {
+  readonly file_unique_id: string;
 }
 
 interface WorkspaceAgent {
@@ -934,11 +952,12 @@ function selectLargestPhoto(
 
 function extractTelegramFileForContext(
   message: TelegramMessage,
-): TelegramFileContext | undefined {
+): TelegramInboundFileContext | undefined {
   const photo = selectLargestPhoto(message.photo);
   if (photo) {
     return {
       file_id: photo.file_id,
+      file_unique_id: photo.file_unique_id,
       file_type: "photo",
       file_size: photo.file_size,
       width: photo.width,
@@ -948,6 +967,7 @@ function extractTelegramFileForContext(
   if (message.document) {
     return {
       file_id: message.document.file_id,
+      file_unique_id: message.document.file_unique_id,
       file_type: "document",
       file_name: message.document.file_name,
       mime_type: message.document.mime_type,
@@ -957,6 +977,7 @@ function extractTelegramFileForContext(
   if (message.video) {
     return {
       file_id: message.video.file_id,
+      file_unique_id: message.video.file_unique_id,
       file_type: "video",
       file_name: message.video.file_name,
       mime_type: message.video.mime_type,
@@ -969,6 +990,7 @@ function extractTelegramFileForContext(
   if (message.audio) {
     return {
       file_id: message.audio.file_id,
+      file_unique_id: message.audio.file_unique_id,
       file_type: "audio",
       file_name: message.audio.file_name,
       mime_type: message.audio.mime_type,
@@ -979,6 +1001,7 @@ function extractTelegramFileForContext(
   if (message.voice) {
     return {
       file_id: message.voice.file_id,
+      file_unique_id: message.voice.file_unique_id,
       file_type: "voice",
       mime_type: message.voice.mime_type,
       file_size: message.voice.file_size,
@@ -988,6 +1011,7 @@ function extractTelegramFileForContext(
   if (message.animation) {
     return {
       file_id: message.animation.file_id,
+      file_unique_id: message.animation.file_unique_id,
       file_type: "animation",
       file_name: message.animation.file_name,
       mime_type: message.animation.mime_type,
@@ -1000,6 +1024,7 @@ function extractTelegramFileForContext(
   if (message.video_note) {
     return {
       file_id: message.video_note.file_id,
+      file_unique_id: message.video_note.file_unique_id,
       file_type: "video_note",
       file_size: message.video_note.file_size,
       width: message.video_note.length,
@@ -1010,6 +1035,7 @@ function extractTelegramFileForContext(
   if (message.sticker) {
     return {
       file_id: message.sticker.file_id,
+      file_unique_id: message.sticker.file_unique_id,
       file_type: "sticker",
       file_size: message.sticker.file_size,
       width: message.sticker.width,
@@ -1103,12 +1129,15 @@ function appendTelegramMessageContext(
   prompt: string,
   message: TelegramMessage,
   botId: string,
+  canonicalAsset?: CanonicalInputAsset,
 ): string {
   const file = extractTelegramFileForContext(message);
   if (!file) {
     return prompt;
   }
-  const fileContext = formatTelegramFileForContext(file, botId);
+  const fileContext = canonicalAsset
+    ? canonicalInputFilePrompt(canonicalAsset)
+    : formatTelegramFileForContext(file, botId);
   return prompt ? `${prompt}\n\n${fileContext}` : fileContext;
 }
 
@@ -1682,8 +1711,10 @@ function rootMessageIdForAgentMessage(args: {
 function buildTelegramAgentPrompt(args: {
   readonly message: TelegramMessage;
   readonly botId: string;
+  readonly canonicalAsset?: CanonicalInputAsset;
 }): {
   readonly prompt: string;
+  readonly text: string;
   readonly userInfoExtras: TelegramUserInfoExtras;
 } {
   const enriched = enrichTelegramPrompt(args.message);
@@ -1692,10 +1723,12 @@ function buildTelegramAgentPrompt(args: {
     ? `${replyQuote}\n\n${enriched.prompt}`
     : enriched.prompt;
   return {
+    text: promptWithReply,
     prompt: appendTelegramMessageContext(
       promptWithReply,
       args.message,
       args.botId,
+      args.canonicalAsset,
     ),
     userInfoExtras: enriched.userInfoExtras,
   };
@@ -1785,99 +1818,173 @@ function telegramChatMessageId(args: {
   );
 }
 
-async function persistTelegramChatMessage(
-  args: {
-    readonly source: TelegramAgentMessageArgs;
-    readonly chatId: string;
-    readonly rootMessageId: string | undefined;
-    readonly context: string;
-    readonly prompt: string;
-    readonly userInfoExtras: TelegramUserInfoExtras;
-    readonly modelRoute: ModelRoutePin | undefined;
-  },
-  signal: AbortSignal,
-): Promise<
-  | {
-      readonly inserted: true;
-      readonly chatThreadId: string;
-      readonly chatEventId: string;
-    }
-  | { readonly inserted: false }
-> {
-  const currentTime = new Date(args.source.apiStartTime);
-  const chatEventId = telegramChatMessageId(args);
-  const [existingMessage] = await args.source.db
-    .select({ id: chatEvents.id })
-    .from(chatEvents)
-    .where(eq(chatEvents.id, chatEventId))
-    .limit(1);
-  signal.throwIfAborted();
-  if (existingMessage) {
-    return { inserted: false };
-  }
-  const threadArgs = {
-    userId: args.source.userLink.userId,
-    orgId: args.source.orgId,
-    agentId: args.source.composeId,
-    selectedModel: args.modelRoute?.selectedModel ?? null,
-    serviceTier: args.modelRoute?.serviceTier ?? null,
-    currentTime,
-  };
-  const binding =
-    args.rootMessageId === undefined
-      ? await createTelegramChatThread(args.source.db, threadArgs)
-      : await ensureTelegramChatThreadRoute(args.source.db, {
-          ...threadArgs,
-          ownerLink: telegramOwnerLink(args.source),
-          chatId: args.chatId,
-          rootMessageId: args.rootMessageId,
-        });
-  signal.throwIfAborted();
-
-  const inserted = await args.source.db.transaction(async (tx) => {
-    const event = await insertChatEvent(
-      tx,
-      {
-        id: chatEventId,
-        chatThreadId: binding.chatThreadId,
-        eventType: "input.prompt",
-        content: null,
-        userMessage: createUserMessageDocument({
-          text: args.prompt,
-          nonContentPart: createChatEventSourcePart({
-            kind: "telegram",
-            chatId: args.chatId,
-            messageId: String(args.source.message.message_id),
-            isDm: args.source.isDM,
-          }),
-        }),
-        runId: null,
-        telegramContext: telegramLaunchContext(args),
-        createdAt: currentTime,
-      },
-      "id",
-    );
-    signal.throwIfAborted();
-    if (!event) {
-      return false;
-    }
-    await touchChatThreadLastMessageAt(
-      tx,
-      binding.chatThreadId,
-      currentTime,
-      chatEventId,
-    );
-    return true;
-  });
-  signal.throwIfAborted();
-  return inserted
-    ? {
-        inserted: true,
-        chatThreadId: binding.chatThreadId,
-        chatEventId,
-      }
-    : { inserted: false };
+function telegramInputFiles(
+  source: TelegramAgentMessageArgs,
+  chatId: string,
+  file: TelegramInboundFileContext | undefined,
+): readonly IntegrationInputFile[] {
+  return file
+    ? [
+        {
+          sourceId: file.file_id,
+          filename:
+            file.file_name ??
+            `${file.file_type}-${source.message.message_id}${file.file_type === "photo" ? ".jpg" : ""}`,
+          contentType:
+            file.mime_type ??
+            (file.file_type === "photo" ? "image/jpeg" : undefined),
+          size: file.file_size,
+          maxBytes: MAX_TELEGRAM_DOWNLOAD_BYTES,
+          provenance: {
+            provider: "telegram",
+            installationId: source.botId,
+            messageId: `${chatId}:${source.message.message_id}`,
+            externalFileId: file.file_unique_id,
+          },
+          download: async (downloadSignal) => {
+            const metadata = await getFile(
+              source.botToken,
+              file.file_id,
+              downloadSignal,
+            );
+            if (!metadata.file_path) {
+              throw new Error("Telegram file has no download path");
+            }
+            if ((metadata.file_size ?? 0) > MAX_TELEGRAM_DOWNLOAD_BYTES) {
+              throw new InputFileImportError(
+                "too-large",
+                "Telegram file exceeds the download limit",
+              );
+            }
+            return fetch(
+              buildFileDownloadUrl(source.botToken, metadata.file_path),
+              { signal: downloadSignal },
+            );
+          },
+        },
+      ]
+    : [];
 }
+
+const persistTelegramChatMessage$ = command(
+  async (
+    { set },
+    args: {
+      readonly source: TelegramAgentMessageArgs;
+      readonly chatId: string;
+      readonly rootMessageId: string | undefined;
+      readonly context: string;
+      readonly prompt: string;
+      readonly userInfoExtras: TelegramUserInfoExtras;
+      readonly modelRoute: ModelRoutePin | undefined;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | {
+        readonly inserted: true;
+        readonly chatThreadId: string;
+        readonly chatEventId: string;
+      }
+    | { readonly inserted: false }
+  > => {
+    const currentTime = new Date(args.source.apiStartTime);
+    const chatEventId = telegramChatMessageId(args);
+    const [existingMessage] = await args.source.db
+      .select({ id: chatEvents.id })
+      .from(chatEvents)
+      .where(eq(chatEvents.id, chatEventId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (existingMessage) {
+      return { inserted: false };
+    }
+    const threadArgs = {
+      userId: args.source.userLink.userId,
+      orgId: args.source.orgId,
+      agentId: args.source.composeId,
+      selectedModel: args.modelRoute?.selectedModel ?? null,
+      serviceTier: args.modelRoute?.serviceTier ?? null,
+      currentTime,
+    };
+    const binding =
+      args.rootMessageId === undefined
+        ? await createTelegramChatThread(args.source.db, threadArgs)
+        : await ensureTelegramChatThreadRoute(args.source.db, {
+            ...threadArgs,
+            ownerLink: telegramOwnerLink(args.source),
+            chatId: args.chatId,
+            rootMessageId: args.rootMessageId,
+          });
+    signal.throwIfAborted();
+
+    const file = extractTelegramFileForContext(args.source.message);
+    const assets = await set(
+      materializeIntegrationInputAssets$,
+      {
+        userId: args.source.userLink.userId,
+        orgId: args.source.orgId,
+        chatThreadId: binding.chatThreadId,
+        publicBrand: args.source.publicBrand,
+        files: telegramInputFiles(args.source, args.chatId, file),
+      },
+      signal,
+    );
+    const canonicalAsset = file
+      ? readyIntegrationInputAsset(assets, file.file_id)
+      : undefined;
+    const runPrompt = buildTelegramAgentPrompt({
+      ...args.source,
+      canonicalAsset,
+    });
+    const inserted = await args.source.db.transaction(async (tx) => {
+      const event = await insertChatEvent(
+        tx,
+        {
+          id: chatEventId,
+          chatThreadId: binding.chatThreadId,
+          eventType: "input.prompt",
+          content: null,
+          userMessage: createUserMessageDocument({
+            text: canonicalAsset ? runPrompt.text : args.prompt,
+            files: integrationInputMessageFiles(assets),
+            nonContentPart: createChatEventSourcePart({
+              kind: "telegram",
+              chatId: args.chatId,
+              messageId: String(args.source.message.message_id),
+              isDm: args.source.isDM,
+            }),
+          }),
+          runId: null,
+          telegramContext: telegramLaunchContext({
+            ...args,
+            prompt: runPrompt.prompt,
+          }),
+          createdAt: currentTime,
+        },
+        "id",
+      );
+      signal.throwIfAborted();
+      if (!event) {
+        return false;
+      }
+      await touchChatThreadLastMessageAt(
+        tx,
+        binding.chatThreadId,
+        currentTime,
+        chatEventId,
+      );
+      return true;
+    });
+    signal.throwIfAborted();
+    return inserted
+      ? {
+          inserted: true,
+          chatThreadId: binding.chatThreadId,
+          chatEventId,
+        }
+      : { inserted: false };
+  },
+);
 
 async function telegramMessageDispatchState(
   db: Db,
@@ -1945,7 +2052,8 @@ const runAgentForTelegram$ = command(
     },
     signal: AbortSignal,
   ): Promise<TelegramMessageDispatchResult> => {
-    const persisted = await persistTelegramChatMessage(
+    const persisted = await set(
+      persistTelegramChatMessage$,
       {
         ...args,
       },

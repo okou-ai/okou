@@ -22,6 +22,17 @@ export const artifactSharePolicySchema = z
     publicBrand: z.enum(["vm0", "okou"]),
     // Absent only on persisted shares from before the delivery registry.
     delivery: z.literal("artifact-registry-v1").optional(),
+    // Existing shared links/policies remain valid until an explicit owner
+    // update allocates aliases. #32492 owns any later durable-link retirement.
+    organizationReference: z
+      .string()
+      .regex(/^[a-z0-9]{10}$/u)
+      .optional(),
+    publicSlug: z
+      .string()
+      .max(63)
+      .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u)
+      .optional(),
     audience: audienceSchema,
     status: z.enum(["active", "revoked"]),
     publicToken: z
@@ -101,6 +112,10 @@ const statusSchema = z.object({
   selectedVersion: z.number().nullable(),
   candidateVersion: z.number().nullable(),
   url: z.url().nullable(),
+  // Existing-link compatibility (#32492): retire optionality when old API
+  // targets leave serving/rollback; retire the legacy `url` projection only
+  // after a capable App is live and its minimum version excludes old bundles.
+  shortUrl: z.url().nullable().optional(),
 });
 export type ArtifactShareStatus = z.infer<typeof statusSchema>;
 

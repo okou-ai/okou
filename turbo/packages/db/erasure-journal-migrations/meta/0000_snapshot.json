@@ -1,0 +1,209 @@
+{
+  "id": "96ba0dee-ac34-4e4f-ab44-ccc8bca55c88",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.erasure_journal_decisions": {
+      "name": "erasure_journal_decisions",
+      "schema": "",
+      "columns": {
+        "decision_sequence": {
+          "name": "decision_sequence",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "authority_id": {
+          "name": "authority_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decision_ref": {
+          "name": "decision_ref",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "confirmation_ref": {
+          "name": "confirmation_ref",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject_kind": {
+          "name": "subject_kind",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject_id": {
+          "name": "subject_id",
+          "type": "varchar(192)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "previous_decision_ref": {
+          "name": "previous_decision_ref",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "disposition_version": {
+          "name": "disposition_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "requested_at": {
+          "name": "requested_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deadline_at": {
+          "name": "deadline_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "erasure_journal_decision_ref": {
+          "name": "erasure_journal_decision_ref",
+          "columns": [
+            {
+              "expression": "decision_ref",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "erasure_journal_confirmation_ref": {
+          "name": "erasure_journal_confirmation_ref",
+          "columns": [
+            {
+              "expression": "confirmation_ref",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "erasure_journal_subject_generation": {
+          "name": "erasure_journal_subject_generation",
+          "columns": [
+            {
+              "expression": "subject_kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "subject_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "generation",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "erasure_journal_positive_versions": {
+          "name": "erasure_journal_positive_versions",
+          "value": "\"erasure_journal_decisions\".\"decision_sequence\" > 0 AND \"erasure_journal_decisions\".\"generation\" > 0 AND \"erasure_journal_decisions\".\"disposition_version\" > 0"
+        },
+        "erasure_journal_subject": {
+          "name": "erasure_journal_subject",
+          "value": "\"erasure_journal_decisions\".\"subject_kind\" IN ('user', 'organization') AND octet_length(\"erasure_journal_decisions\".\"subject_id\") BETWEEN 1 AND 192"
+        },
+        "erasure_journal_deadline": {
+          "name": "erasure_journal_deadline",
+          "value": "isfinite(\"erasure_journal_decisions\".\"requested_at\") AND isfinite(\"erasure_journal_decisions\".\"deadline_at\") AND \"erasure_journal_decisions\".\"deadline_at\" > \"erasure_journal_decisions\".\"requested_at\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.erasure_journal_head": {
+      "name": "erasure_journal_head",
+      "schema": "",
+      "columns": {
+        "slot": {
+          "name": "slot",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "authority_id": {
+          "name": "authority_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "committed_sequence": {
+          "name": "committed_sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "erasure_journal_single_head": {
+          "name": "erasure_journal_single_head",
+          "value": "\"erasure_journal_head\".\"slot\" = 1"
+        },
+        "erasure_journal_watermark": {
+          "name": "erasure_journal_watermark",
+          "value": "\"erasure_journal_head\".\"committed_sequence\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

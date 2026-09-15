@@ -1,3 +1,8 @@
+import {
+  checkPiMemoryQuota,
+  PiMemoryQuotaError,
+} from "./pi-memory-quota.service";
+import { checkOrgCreditsForRunAdmission } from "./run-admission.service";
 import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
 import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
@@ -168,6 +173,39 @@ async function recoverMaintenanceRun(
   return { outcome: "dispatched", runId: job.maintenanceRunId };
 }
 
+async function checkNewAttemptQuotaAdmission(
+  db: Db,
+  claim: ClaimedPiMemoryPhase2Job,
+  credential: Awaited<ReturnType<typeof resolvePiMemoryPhase2Credential>>,
+  signal: AbortSignal,
+): Promise<boolean> {
+  // Prepare ordinary admission first; quota then sees locally reconciled data.
+  // Canonical createAgentRun admission and final transaction remain authoritative.
+  const admission = await checkOrgCreditsForRunAdmission({
+    db,
+    orgId: claim.orgId,
+    userId: claim.userId,
+    modelProviderType: credential.pin.modelProvider,
+    selectedModel: PI_MEMORY_PHASE2_MODEL,
+  });
+  signal.throwIfAborted();
+  if (admission) {
+    return false;
+  }
+  await checkPiMemoryQuota(
+    db,
+    {
+      orgId: claim.orgId,
+      userId: claim.userId,
+      stage: "phase2",
+      source: credential.quota,
+    },
+    signal,
+  );
+
+  return true;
+}
+
 const dispatchClaim$ = command(
   async (
     { set },
@@ -188,6 +226,10 @@ const dispatchClaim$ = command(
     }
     const credential = await resolvePiMemoryPhase2Credential(db, claim, signal);
     signal.throwIfAborted();
+
+    if (!(await checkNewAttemptQuotaAdmission(db, claim, credential, signal))) {
+      return await failClaim(db, claim, nowDate(), "source_admission_denied");
+    }
 
     const selectionDigest = piMemoryPhase2SelectionDigest(claim.selected);
     const maintenance = {
@@ -314,7 +356,10 @@ export const executePiMemoryPhase2Work$ = command(
     if (dispatched.ok) {
       return dispatched.value;
     }
-    if (dispatched.error instanceof PiMemoryPhase2CredentialError) {
+    if (
+      dispatched.error instanceof PiMemoryPhase2CredentialError ||
+      dispatched.error instanceof PiMemoryQuotaError
+    ) {
       return await failClaim(db, claim, nowDate(), dispatched.error.errorClass);
     }
     log.error("Pi memory maintenance run dispatch failed", {

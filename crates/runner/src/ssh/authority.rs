@@ -26,6 +26,24 @@ pub(super) struct Credential {
     pub(super) generation: i64,
     pub(super) pin: Option<ResolveResponseResolvedLearnedHostKey>,
     pub(super) auth: CredentialAuth,
+    pub(super) transport: Transport,
+}
+
+pub(super) enum Transport {
+    Direct,
+    CloudflareAccess(ResolveResponseResolvedAccessAccess),
+}
+
+impl Transport {
+    pub(super) fn same_authority(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Direct, Self::Direct) => true,
+            (Self::CloudflareAccess(a), Self::CloudflareAccess(b)) => {
+                a.config_id == b.config_id && a.generation == b.generation
+            }
+            _ => false,
+        }
+    }
 }
 
 pub(super) enum CredentialAuth {
@@ -42,6 +60,7 @@ pub(super) struct PreparedCredential {
     pub(super) username: String,
     pub(super) trust: Mutex<Trust>,
     pub(super) auth: PreparedAuth,
+    pub(super) transport: Transport,
 }
 
 pub(super) enum PreparedAuth {
@@ -173,11 +192,40 @@ impl Authority {
                 &body,
             )
             .await?;
-        let (host, port, username, generation, learned_host_key, auth) = match response {
+        let (host, port, username, generation, learned_host_key, auth, transport) = match response {
             ResolveResponse::Unavailable => return Err(FailureReason::Unavailable),
-            // #34080 installs the native carrier. Until then this transport is
-            // unsupported; never forward its token or dial it as Direct SSH.
-            ResolveResponse::ResolvedAccess { .. } => return Err(FailureReason::Unavailable),
+            ResolveResponse::ResolvedAccess {
+                host,
+                port,
+                username,
+                generation,
+                learned_host_key,
+                authentication,
+                access,
+            } => {
+                super::access::validate(&host, port, &access)?;
+                let auth = match authentication {
+                    ResolveResponseResolvedAccessAuthentication::PrivateKey {
+                        private_key,
+                        passphrase,
+                    } => CredentialAuth::PrivateKey {
+                        private_key,
+                        passphrase,
+                    },
+                    ResolveResponseResolvedAccessAuthentication::Password { password } => {
+                        CredentialAuth::Password(password)
+                    }
+                };
+                (
+                    host,
+                    port,
+                    username,
+                    generation,
+                    learned_host_key,
+                    auth,
+                    Transport::CloudflareAccess(access),
+                )
+            }
             ResolveResponse::Resolved {
                 host,
                 port,
@@ -196,6 +244,7 @@ impl Authority {
                     private_key,
                     passphrase,
                 },
+                Transport::Direct,
             ),
             ResolveResponse::ResolvedPassword {
                 host,
@@ -211,6 +260,7 @@ impl Authority {
                 generation,
                 learned_host_key,
                 CredentialAuth::Password(password),
+                Transport::Direct,
             ),
         };
         let port = u16::try_from(port).map_err(|_| FailureReason::AuthorityFailure)?;
@@ -233,6 +283,7 @@ impl Authority {
             generation,
             pin: learned_host_key,
             auth,
+            transport,
         })
     }
 
