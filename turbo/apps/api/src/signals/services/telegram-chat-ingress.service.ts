@@ -13,6 +13,7 @@ import {
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { Tx } from "../../lib/db-types";
+import { isIntegrationDmSessionKey } from "../../lib/integration-dm-session";
 
 export type TelegramOwnerLink =
   | { readonly kind: "custom"; readonly id: string }
@@ -262,12 +263,15 @@ export async function createTelegramChatThread(
 
 export async function ensureTelegramChatThreadRoute(
   db: Db,
-  args: TelegramChatThreadRouteKey & TelegramChatThreadCreateArgs,
+  args: TelegramChatThreadRouteKey &
+    TelegramChatThreadCreateArgs & { readonly isDirectMessage: boolean },
 ): Promise<TelegramChatThreadBinding> {
   return await db.transaction(async (tx) => {
     const existing = await loadRoute(tx, args);
     if (existing) {
-      return await reconcileExistingRoute(tx, args, existing);
+      return args.isDirectMessage
+        ? existing
+        : await reconcileExistingRoute(tx, args, existing);
     }
 
     const thread = await createCanonicalTelegramChatThread(tx, args);
@@ -290,7 +294,9 @@ export async function ensureTelegramChatThreadRoute(
           "Failed to resolve Telegram chat thread route after conflict",
         );
       }
-      return await reconcileExistingRoute(tx, args, conflicted);
+      return args.isDirectMessage
+        ? conflicted
+        : await reconcileExistingRoute(tx, args, conflicted);
     }
 
     await appendCanonicalTelegramChatThreadCreatedEvent(tx, args, thread, null);
@@ -303,40 +309,28 @@ export async function persistTelegramReplyChainRoute(args: {
   readonly ownerLink: TelegramOwnerLink;
   readonly chatId: string;
   readonly previousRootMessageId: string | null;
+  readonly isDirectMessage: boolean;
   readonly botReplyMessageId: string;
   readonly chatThreadId: string;
   readonly runStatus: "completed" | "failed";
   readonly currentTime: Date;
 }): Promise<void> {
-  if (args.previousRootMessageId === "dm") {
+  if (
+    args.previousRootMessageId === "dm" ||
+    (args.previousRootMessageId !== null &&
+      isIntegrationDmSessionKey(args.previousRootMessageId))
+  ) {
     return;
   }
 
-  if (args.previousRootMessageId === null) {
-    const [inserted] = await args.db
-      .insert(telegramChatThreadRoutes)
-      .values({
-        ...routeOwnerValues(args.ownerLink),
-        chatId: args.chatId,
-        rootMessageId: args.botReplyMessageId,
-        chatThreadId: args.chatThreadId,
-        createdAt: args.currentTime,
-      })
-      .onConflictDoNothing()
-      .returning({ id: telegramChatThreadRoutes.id });
-    if (inserted) {
-      return;
-    }
-    const existing = await loadRoute(args.db, {
+  if (args.previousRootMessageId === null || args.isDirectMessage) {
+    await bindTelegramReplyMessageRoute(args.db, {
       ownerLink: args.ownerLink,
       chatId: args.chatId,
       rootMessageId: args.botReplyMessageId,
+      chatThreadId: args.chatThreadId,
+      currentTime: args.currentTime,
     });
-    if (existing?.chatThreadId !== args.chatThreadId) {
-      throw new Error(
-        "Telegram reply-chain route conflicts with another thread",
-      );
-    }
     return;
   }
 
@@ -367,5 +361,32 @@ export async function persistTelegramReplyChainRoute(args: {
   });
   if (existing?.chatThreadId !== args.chatThreadId) {
     throw new Error("Failed to advance Telegram reply-chain route");
+  }
+}
+
+export async function bindTelegramReplyMessageRoute(
+  db: Pick<Db, "insert" | "select">,
+  args: TelegramChatThreadRouteKey & {
+    readonly chatThreadId: string;
+    readonly currentTime: Date;
+  },
+): Promise<void> {
+  const [inserted] = await db
+    .insert(telegramChatThreadRoutes)
+    .values({
+      ...routeOwnerValues(args.ownerLink),
+      chatId: args.chatId,
+      rootMessageId: args.rootMessageId,
+      chatThreadId: args.chatThreadId,
+      createdAt: args.currentTime,
+    })
+    .onConflictDoNothing()
+    .returning({ id: telegramChatThreadRoutes.id });
+  if (inserted) {
+    return;
+  }
+  const existing = await loadRoute(db, args);
+  if (existing?.chatThreadId !== args.chatThreadId) {
+    throw new Error("Telegram reply-chain route conflicts with another thread");
   }
 }

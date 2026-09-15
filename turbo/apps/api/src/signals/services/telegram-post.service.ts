@@ -32,7 +32,11 @@ import { telegramInstallations } from "@okouai/db/schema/telegram-installation";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
 import { telegramUserAgentPreferences } from "@okouai/db/schema/telegram-user-agent-preference";
 import { telegramUserLinks } from "@okouai/db/schema/telegram-user-link";
-import { and, desc, eq, isNull, notExists } from "drizzle-orm";
+import { and, desc, eq, isNull, like, notExists, or } from "drizzle-orm";
+import {
+  INTEGRATION_DM_SESSION_PREFIX,
+  integrationDmSessionKey,
+} from "../../lib/integration-dm-session";
 import { alias } from "drizzle-orm/pg-core";
 import { escapeHtml } from "../../lib/telegram-format";
 import { env } from "../../lib/env";
@@ -77,6 +81,7 @@ import { listOrgModelPolicies$ } from "./model-policy.service";
 import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
 import {
+  bindTelegramReplyMessageRoute,
   createTelegramChatThread,
   ensureTelegramChatThreadRoute,
   type TelegramOwnerLink,
@@ -1699,9 +1704,17 @@ function rootMessageIdForAgentMessage(args: {
   readonly isDM: boolean;
   readonly message: TelegramMessage;
   readonly botId: string;
+  readonly agentId: string;
+  readonly modelRoute: ModelRoutePin | undefined;
 }): string | undefined {
   if (args.isDM) {
-    return "dm";
+    return args.message.reply_to_message
+      ? String(args.message.reply_to_message.message_id)
+      : integrationDmSessionKey({
+          agentId: args.agentId,
+          selectedModel: args.modelRoute?.selectedModel ?? null,
+          serviceTier: args.modelRoute?.serviceTier ?? null,
+        });
   }
   return isTelegramReplyToBotId(args.message, args.botId)
     ? String(args.message.reply_to_message?.message_id)
@@ -1771,7 +1784,13 @@ async function resetTelegramDmConversation(
               ownerLink.id,
             ),
         eq(telegramChatThreadRoutes.chatId, chatId),
-        eq(telegramChatThreadRoutes.rootMessageId, "dm"),
+        or(
+          eq(telegramChatThreadRoutes.rootMessageId, "dm"),
+          like(
+            telegramChatThreadRoutes.rootMessageId,
+            `${INTEGRATION_DM_SESSION_PREFIX}%`,
+          ),
+        ),
       ),
     );
 }
@@ -1911,6 +1930,7 @@ const persistTelegramChatMessage$ = command(
         ? await createTelegramChatThread(args.source.db, threadArgs)
         : await ensureTelegramChatThreadRoute(args.source.db, {
             ...threadArgs,
+            isDirectMessage: args.source.isDM,
             ownerLink: telegramOwnerLink(args.source),
             chatId: args.chatId,
             rootMessageId: args.rootMessageId,
@@ -1966,6 +1986,16 @@ const persistTelegramChatMessage$ = command(
       signal.throwIfAborted();
       if (!event) {
         return false;
+      }
+      if (args.source.isDM && args.source.message.reply_to_message) {
+        await bindTelegramReplyMessageRoute(tx, {
+          ownerLink: telegramOwnerLink(args.source),
+          chatId: args.chatId,
+          rootMessageId: String(args.source.message.message_id),
+          chatThreadId: binding.chatThreadId,
+          currentTime,
+        });
+        signal.throwIfAborted();
       }
       await touchChatThreadLastMessageAt(
         tx,
@@ -2105,7 +2135,7 @@ const handleTelegramAgentMessage$ = command(
           args.userLinkKind === "official"
             ? `The workspace default agent is not configured. Please choose an agent in ${PUBLIC_BRAND_PRESENTATION.brandName} first.`
             : "The agent is not available. Please contact the admin.",
-        replyToMessageId: args.isDM ? undefined : args.message.message_id,
+        replyToMessageId: args.message.message_id,
       });
       signal.throwIfAborted();
       return;
@@ -2127,7 +2157,6 @@ const handleTelegramAgentMessage$ = command(
     });
     signal.throwIfAborted();
 
-    const rootMessageId = rootMessageIdForAgentMessage(args);
     const modelRoute = await set(
       resolveIntegrationModelRouteForUser$,
       {
@@ -2137,6 +2166,11 @@ const handleTelegramAgentMessage$ = command(
       signal,
     );
     signal.throwIfAborted();
+    const rootMessageId = rootMessageIdForAgentMessage({
+      ...args,
+      agentId: args.composeId,
+      modelRoute,
+    });
     const context = await fetchTelegramContext({
       db: args.db,
       scope,
@@ -2167,7 +2201,7 @@ const handleTelegramAgentMessage$ = command(
         botToken: args.botToken,
         chatId,
         text: QUEUED_MESSAGE,
-        replyToMessageId: args.isDM ? undefined : args.message.message_id,
+        replyToMessageId: args.message.message_id,
       });
       signal.throwIfAborted();
       return;

@@ -237,12 +237,14 @@ async function sendAgentPhoneReply(
   const result = await sendAgentPhoneMessage(
     {
       agentphoneAgentId: args.target.agentphoneAgentId,
-      ...(args.target.isGroup && args.target.conversationId
+      ...(args.target.channel === "imessage" && args.target.conversationId
         ? {
             conversationId: args.target.conversationId,
-            replyToMessageId: args.target.messageId,
           }
         : { toNumber: args.target.phoneHandle }),
+      ...(args.target.channel === "imessage"
+        ? { replyToMessageId: args.target.messageId }
+        : {}),
       body: args.body,
     },
     signal,
