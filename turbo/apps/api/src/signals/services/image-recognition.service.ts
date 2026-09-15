@@ -28,10 +28,8 @@ import {
   type OpenRouterFailureReason,
 } from "../external/openrouter-failure";
 import { onRejection, settle } from "../utils";
-import {
-  resolveArtifactObject$,
-  type ResolvedArtifactObject,
-} from "./artifact-storage.service";
+import type { ResolvedArtifactObject } from "./artifact-storage.service";
+import { uploadedArtifactObject } from "./uploaded-artifact.service";
 import { checkBillableOperationCredits$ } from "./billable-operation-admission.service";
 import {
   checkOpenRouterUsagePricing$,
@@ -397,10 +395,12 @@ export const imageRecognition$ = command(
     const requestSignal = AbortSignal.any([signal, clientSignal]);
     requestSignal.throwIfAborted();
 
-    const resolved = await set(
-      resolveArtifactObject$,
-      { userId: args.auth.userId, id: args.body.fileId },
-      requestSignal,
+    const resolved = await get(
+      uploadedArtifactObject({
+        userId: args.auth.userId,
+        orgId: args.auth.orgId,
+        id: args.body.fileId,
+      }),
     );
     signal.throwIfAborted();
     requestSignal.throwIfAborted();

@@ -1,3 +1,6 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createHash, randomUUID } from "node:crypto";
 import {
   afterEach,
@@ -474,344 +477,427 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     });
   });
 
-  it("keeps one Okou canonical output in artifact, Slack, and Google Drive surfaces", async () => {
-    const { orgId, userId, runId, threadId, runnerGroup, agentId } =
-      await seedRunScoped();
-    const objectStore = chatCallbacks.acceptChatObjectStorage();
-    const operationId = randomUUID();
-    const token = okouToken({
-      userId,
-      orgId,
-      runId,
-    });
-    context.mocks.slack.files.getUploadURLExternal.mockClear();
-    context.mocks.slack.files.getUploadURLExternal.mockResolvedValue({
-      ok: true,
-      upload_url: "https://files.slack.com/upload/v1/canonical",
-      file_id: "F-CANONICAL",
-    });
-    mockSlackFileInfo("F-CANONICAL");
+  it.each([false, true])(
+    "keeps one canonical output across Slack and Drive after a flag change (private=%s)",
+    async (privateFiles) => {
+      const { orgId, userId, runId, threadId, runnerGroup, agentId } =
+        await seedRunScoped();
+      await updateFeatureSwitchesForUser(
+        context,
+        { userId, orgId },
+        { [FeatureSwitchKey.PrivateArtifacts]: privateFiles },
+      );
+      const objectStore = chatCallbacks.acceptChatObjectStorage();
+      const operationId = randomUUID();
+      const token = okouToken({
+        userId,
+        orgId,
+        runId,
+      });
+      context.mocks.slack.files.getUploadURLExternal.mockClear();
+      context.mocks.slack.files.getUploadURLExternal.mockResolvedValue({
+        ok: true,
+        upload_url: "https://files.slack.com/upload/v1/canonical",
+        file_id: "F-CANONICAL",
+      });
+      mockSlackFileInfo("F-CANONICAL");
 
-    const initClient = setupApp({
-      context,
-      routes: integrationsSlackUploadInitRoutes,
-    })(integrationsSlackUploadInitContract);
-    const initialized = await accept(
-      initClient.init({
-        body: {
+      const initClient = setupApp({
+        context,
+        routes: integrationsSlackUploadInitRoutes,
+      })(integrationsSlackUploadInitContract);
+      const initialized = await accept(
+        initClient.init({
+          body: {
+            filename: "report.csv",
+            length: 42,
+            canonical: {
+              operationId,
+              contentType: "text/csv",
+              checksumSha256: "a".repeat(64),
+              channel: "C123",
+              threadTs: "123.456",
+              title: "Canonical report",
+            },
+          },
+          headers: { authorization: `Bearer ${token}` },
+        }),
+        [200],
+      );
+      if (!("kind" in initialized.body)) {
+        throw new Error("Expected canonical Slack upload initialization");
+      }
+      const canonicalAssetId = initialized.body.assetId;
+      expect(initialized.body.kind).toBe("canonical");
+      expect(initialized.body.uploadHeaders).toStrictEqual(
+        privateFiles
+          ? {
+              "x-amz-meta-artifact-id": canonicalAssetId,
+            }
+          : {
+              "x-amz-meta-artifact-id": canonicalAssetId,
+              "x-amz-meta-filename": "report.csv",
+              "x-amz-meta-public-brand": "okou",
+              "x-amz-meta-user-id": encodeURIComponent(userId),
+            },
+      );
+      expect(
+        context.mocks.slack.files.getUploadURLExternal,
+      ).not.toHaveBeenCalled();
+      const storageKey = privateFiles
+        ? `private-artifacts/${canonicalAssetId}/report.csv`
+        : `artifacts/${new URL(initialized.body.url).pathname.replace(/^\/+/u, "")}`;
+      if (privateFiles) {
+        expect(initialized.body.url).toBe(
+          artifactReferencePath(canonicalAssetId, "report.csv"),
+        );
+      } else {
+        expect(initialized.body.url).toMatch(
+          /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.csv$/u,
+        );
+      }
+      await updateFeatureSwitchesForUser(
+        context,
+        { userId, orgId },
+        { [FeatureSwitchKey.PrivateArtifacts]: !privateFiles },
+      );
+      const retry = await accept(
+        initClient.init({
+          body: {
+            filename: "report.csv",
+            length: 42,
+            canonical: {
+              operationId,
+              contentType: "text/csv",
+              checksumSha256: "a".repeat(64),
+              channel: "C123",
+              threadTs: "123.456",
+              title: "Canonical report",
+            },
+          },
+          headers: { authorization: `Bearer ${token}` },
+        }),
+        [200],
+      );
+      expect(retry.body).toMatchObject({
+        assetId: canonicalAssetId,
+        url: initialized.body.url,
+      });
+      expect(
+        context.mocks.s3.getSignedUrl.mock.calls.at(-1)?.[1],
+      ).toMatchObject({
+        input: {
+          Bucket: privateFiles
+            ? "test-private-artifacts"
+            : "test-user-artifacts",
+          Key: storageKey,
+        },
+      });
+      objectStore.addObject({
+        bucket: privateFiles ? "test-private-artifacts" : "test-user-artifacts",
+        key: storageKey,
+        size: 42,
+        body: Buffer.alloc(42, "a"),
+        metadata: {
+          "artifact-id": canonicalAssetId,
           filename: "report.csv",
-          length: 42,
-          canonical: {
+          "public-brand": "okou",
+          "user-id": encodeURIComponent(userId),
+        },
+      });
+
+      const materializeClient = setupApp({
+        context,
+        routes: integrationsSlackUploadMaterializeRoutes,
+      })(integrationsSlackUploadMaterializeContract);
+      const materialized = await accept(
+        materializeClient.materialize({
+          body: {
+            assetId: canonicalAssetId,
             operationId,
-            contentType: "text/csv",
-            checksumSha256: "a".repeat(64),
+          },
+          headers: { authorization: `Bearer ${token}` },
+        }),
+        [200],
+      );
+      expect(materialized.body).toMatchObject({
+        assetId: canonicalAssetId,
+        delivery: {
+          status: "pending",
+          fileId: "F-CANONICAL",
+        },
+      });
+      expect(
+        context.mocks.slack.files.getUploadURLExternal,
+      ).toHaveBeenCalledTimes(1);
+
+      const catalog = await chatApi.listArtifactCatalog(
+        actorFor({ orgId, userId }),
+      );
+      const catalogEntry = catalog.artifacts.find((artifact) => {
+        return artifact.title === "report.csv";
+      });
+      expect(catalogEntry).toMatchObject({
+        kind: "file",
+        title: "report.csv",
+      });
+      if (!catalogEntry) {
+        throw new Error(
+          "Expected the canonical output in the artifact catalog",
+        );
+      }
+      const catalogDetail = await chatApi.getArtifactCatalogEntry(
+        actorFor({ orgId, userId }),
+        catalogEntry.id,
+      );
+      if (catalogDetail.kind !== "file") {
+        throw new Error("Expected canonical output to use the file kind");
+      }
+      expect(catalogDetail.file.id).toBe(canonicalAssetId);
+
+      const completeClient = setupApp({
+        context,
+        routes: integrationsSlackUploadCompleteRoutes,
+      })(integrationsSlackUploadCompleteContract);
+      const completed = await accept(
+        completeClient.complete({
+          body: {
+            fileId: "F-CANONICAL",
             channel: "C123",
             threadTs: "123.456",
-            title: "Canonical report",
+            canonicalAssetId,
+            operationId,
           },
-        },
-        headers: { authorization: `Bearer ${token}` },
-      }),
-      [200],
-    );
-    if (!("kind" in initialized.body)) {
-      throw new Error("Expected canonical Slack upload initialization");
-    }
-    const canonicalAssetId = initialized.body.assetId;
-    expect(initialized.body.kind).toBe("canonical");
-    expect(initialized.body).toMatchObject({
-      uploadHeaders: {
-        "x-amz-meta-artifact-id": canonicalAssetId,
-        "x-amz-meta-filename": "report.csv",
-        "x-amz-meta-public-brand": "okou",
-        "x-amz-meta-user-id": encodeURIComponent(userId),
-      },
-    });
-    expect(
-      context.mocks.slack.files.getUploadURLExternal,
-    ).not.toHaveBeenCalled();
-    const storageKey = `artifacts/${new URL(
-      initialized.body.url,
-    ).pathname.replace(/^\/+/u, "")}`;
-    expect(initialized.body.url).toMatch(
-      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.csv$/u,
-    );
-    objectStore.addObject({
-      bucket: "test-user-artifacts",
-      key: storageKey,
-      size: 42,
-      body: Buffer.alloc(42, "a"),
-      metadata: {
-        "artifact-id": canonicalAssetId,
-        filename: "report.csv",
-        "public-brand": "okou",
-        "user-id": encodeURIComponent(userId),
-      },
-    });
-
-    const materializeClient = setupApp({
-      context,
-      routes: integrationsSlackUploadMaterializeRoutes,
-    })(integrationsSlackUploadMaterializeContract);
-    const materialized = await accept(
-      materializeClient.materialize({
-        body: {
-          assetId: canonicalAssetId,
-          operationId,
-        },
-        headers: { authorization: `Bearer ${token}` },
-      }),
-      [200],
-    );
-    expect(materialized.body).toMatchObject({
-      assetId: canonicalAssetId,
-      delivery: {
-        status: "pending",
-        fileId: "F-CANONICAL",
-      },
-    });
-    expect(
-      context.mocks.slack.files.getUploadURLExternal,
-    ).toHaveBeenCalledTimes(1);
-
-    const catalog = await chatApi.listArtifactCatalog(
-      actorFor({ orgId, userId }),
-    );
-    const catalogEntry = catalog.artifacts.find((artifact) => {
-      return artifact.title === "report.csv";
-    });
-    expect(catalogEntry).toMatchObject({
-      kind: "file",
-      title: "report.csv",
-    });
-    if (!catalogEntry) {
-      throw new Error("Expected the canonical output in the artifact catalog");
-    }
-    const catalogDetail = await chatApi.getArtifactCatalogEntry(
-      actorFor({ orgId, userId }),
-      catalogEntry.id,
-    );
-    if (catalogDetail.kind !== "file") {
-      throw new Error("Expected canonical output to use the file kind");
-    }
-    expect(catalogDetail.file.id).toBe(canonicalAssetId);
-
-    const completeClient = setupApp({
-      context,
-      routes: integrationsSlackUploadCompleteRoutes,
-    })(integrationsSlackUploadCompleteContract);
-    const completed = await accept(
-      completeClient.complete({
-        body: {
-          fileId: "F-CANONICAL",
-          channel: "C123",
-          threadTs: "123.456",
-          canonicalAssetId,
-          operationId,
-        },
-        headers: { authorization: `Bearer ${token}` },
-      }),
-      [200],
-    );
-    expect(completed.body).toMatchObject({
-      fileId: "F-CANONICAL",
-      assetId: canonicalAssetId,
-      deliveryStatus: "delivered",
-    });
-
-    const files = await visibleUploadedFiles({
-      orgId,
-      userId,
-      runId,
-      threadId,
-    });
-    expect(files).toHaveLength(1);
-    expect(files[0]).toMatchObject({
-      id: canonicalAssetId,
-      filename: "report.csv",
-      url: initialized.body.url,
-      assetRef: {
-        id: canonicalAssetId,
-        classification: "published-output",
-        access: "published",
-        materialization: { status: "ready" },
-      },
-    });
-
-    mockGoogleDriveConnectorOAuth();
-    const oauth = await connectorsApi.startOauth(
-      actorFor({ orgId, userId }),
-      "google-drive",
-      "oauth",
-    );
-    await connectorsApi.completeOauthCallback("google-drive", {
-      code: "canonical-asset-drive",
-      state: authorizationState(oauth.authorizationUrl),
-    });
-    await runsApi.enableAgentConnectors(actorFor({ orgId, userId }), agentId, [
-      "google-drive",
-    ]);
-
-    const driveFolders: DriveFolderFixture[] = [];
-    const driveUploadBodies: string[] = [];
-    const driveUploadContentTypes: (string | null)[] = [];
-    server.use(
-      http.get("https://www.googleapis.com/drive/v3/files", ({ request }) => {
-        const query = new URL(request.url).searchParams.get("q");
-        if (!query) {
-          throw new Error("Expected Google Drive folder query");
-        }
-        const folder = driveFolders.find((candidate) => {
-          const parentClause = candidate.parentFolderId
-            ? `'${candidate.parentFolderId}' in parents`
-            : "'root' in parents";
-          return (
-            query.includes(`name = '${candidate.name}'`) &&
-            query.includes(parentClause)
-          );
-        });
-        return HttpResponse.json({ files: folder ? [folder] : [] });
-      }),
-      http.post(
-        "https://www.googleapis.com/drive/v3/files",
-        async ({ request }) => {
-          const body = (await request.json()) as {
-            readonly name?: string;
-            readonly parents?: readonly string[];
-          };
-          if (!body.name) {
-            throw new Error("Expected Google Drive folder name");
-          }
-          const folder = {
-            id: `drive-folder-${String(driveFolders.length + 1)}`,
-            name: body.name,
-            parentFolderId: body.parents?.[0] ?? null,
-          };
-          driveFolders.push(folder);
-          return HttpResponse.json(folder);
-        },
-      ),
-      http.post(
-        "https://www.googleapis.com/upload/drive/v3/files",
-        async ({ request }) => {
-          driveUploadContentTypes.push(request.headers.get("content-type"));
-          driveUploadBodies.push(await request.text());
-          return HttpResponse.json({
-            id: "drive-canonical-asset",
-            name: "report.csv",
-            webViewLink:
-              "https://drive.google.com/file/d/drive-canonical-asset/view",
-          });
-        },
-      ),
-    );
-    mocks.clerk.session(userId, orgId);
-    const driveClient = setupApp({
-      baseUrl: "https://api.okou.ai",
-      context,
-      routes: chatThreadsArtifactsSyncRoutes,
-    })(chatThreadArtifactsContract);
-    const driveSync = await accept(
-      driveClient.syncGoogleDrive({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { threadId },
-        body: { runId, fileId: canonicalAssetId },
-      }),
-      [200],
-    );
-    expect(driveSync.body).toStrictEqual({
-      id: "drive-canonical-asset",
-      name: "report.csv",
-      webViewLink: "https://drive.google.com/file/d/drive-canonical-asset/view",
-    });
-
-    const retryDriveSync = await accept(
-      driveClient.syncGoogleDrive({
-        headers: { authorization: "Bearer clerk-session" },
-        params: { threadId },
-        body: { runId, fileId: canonicalAssetId },
-      }),
-      [200],
-    );
-    expect(retryDriveSync.body.name).toBe("report.csv");
-
-    const runDriveSync = await accept(
-      driveClient.syncGoogleDrive({
-        headers: {
-          authorization: `Bearer ${okouToken({
-            userId,
-            orgId,
-            runId,
-            capabilities: ["file:write"],
-          })}`,
-        },
-        params: { threadId },
-        body: { runId, fileId: canonicalAssetId },
-      }),
-      [200],
-    );
-    expect(runDriveSync.body.name).toBe("report.csv");
-
-    expect(driveFolders).toHaveLength(2);
-    expect(
-      driveFolders
-        .filter((folder) => {
-          return folder.parentFolderId === null;
-        })
-        .map((folder) => {
-          return folder.name;
+          headers: { authorization: `Bearer ${token}` },
         }),
-    ).toStrictEqual(["Okou Artifacts"]);
-    expect(driveUploadBodies).toHaveLength(3);
-    for (const body of driveUploadBodies) {
-      expect(body).toContain('"parents":["drive-folder-2"]');
-      expect(body).toContain(`"vm0Artifact":"true"`);
-      expect(body).toContain(`"vm0ThreadId":"${threadId}"`);
-      expect(body).toContain(`"vm0RunId":"${runId}"`);
-      expect(body).toContain(`"vm0FileId":"${canonicalAssetId}"`);
-    }
-    expect(
-      driveUploadContentTypes.every((contentType) => {
-        return contentType?.startsWith(
-          "multipart/related; boundary=multipart-",
-        );
-      }),
-    ).toBeTruthy();
-
-    const claim = await claimRun(runnerGroup, runId);
-    await completeRun({
-      runId,
-      sandboxToken: claim.sandboxToken,
-      events: [assistantEvent(0, "The canonical report is ready.")],
-      lastEventSequence: 0,
-    });
-
-    const messages = await chatApi.listThreadEvents(
-      actorFor({ orgId, userId }),
-      threadId,
-    );
-    const finalReply = messages.events.find((message) => {
-      return (
-        message.eventType === "output.message" &&
-        message.content === "The canonical report is ready."
+        [200],
       );
-    });
-    expect(finalReply).toBeDefined();
-    expect(finalReply).not.toHaveProperty("attachFiles");
+      expect(completed.body).toMatchObject({
+        fileId: "F-CANONICAL",
+        assetId: canonicalAssetId,
+        deliveryStatus: "delivered",
+      });
 
-    const lifecycleMarker = messages.events.find(
-      (message): message is CompletedChatEvent => {
-        return (
-          message.eventType === "run.completed" &&
-          message.runId === runId &&
-          message.runLifecycleEvent === "completed"
+      if (privateFiles) {
+        await chatApi.requestSendEvent(
+          actorFor({ orgId, userId }),
+          {
+            agentId,
+            prompt: "Reuse the existing output as an attachment",
+            userMessage: {
+              version: 1,
+              parts: [
+                {
+                  type: "file",
+                  fileId: canonicalAssetId,
+                  filenameSnapshot: "report.csv",
+                  contentType: "text/csv",
+                },
+              ],
+            },
+          },
+          [201],
         );
-      },
-    );
-    expect(lifecycleMarker).toBeDefined();
-    expect(lifecycleMarker?.content).toBeNull();
-    expect(lifecycleMarker).not.toHaveProperty("attachFiles");
-  }, 20_000);
+        await flushWaitUntilForTest();
+      }
+      const files = await visibleUploadedFiles({
+        orgId,
+        userId,
+        runId,
+        threadId,
+      });
+      expect(files).toHaveLength(1);
+      expect(files[0]).toMatchObject({
+        id: canonicalAssetId,
+        filename: "report.csv",
+        url: initialized.body.url,
+        assetRef: {
+          id: canonicalAssetId,
+          classification: "published-output",
+          access: "published",
+          materialization: { status: "ready" },
+        },
+      });
+
+      mockGoogleDriveConnectorOAuth();
+      const oauth = await connectorsApi.startOauth(
+        actorFor({ orgId, userId }),
+        "google-drive",
+        "oauth",
+      );
+      await connectorsApi.completeOauthCallback("google-drive", {
+        code: "canonical-asset-drive",
+        state: authorizationState(oauth.authorizationUrl),
+      });
+      await runsApi.enableAgentConnectors(
+        actorFor({ orgId, userId }),
+        agentId,
+        ["google-drive"],
+      );
+
+      const driveFolders: DriveFolderFixture[] = [];
+      const driveUploadBodies: string[] = [];
+      const driveUploadContentTypes: (string | null)[] = [];
+      server.use(
+        http.get("https://www.googleapis.com/drive/v3/files", ({ request }) => {
+          const query = new URL(request.url).searchParams.get("q");
+          if (!query) {
+            throw new Error("Expected Google Drive folder query");
+          }
+          const folder = driveFolders.find((candidate) => {
+            const parentClause = candidate.parentFolderId
+              ? `'${candidate.parentFolderId}' in parents`
+              : "'root' in parents";
+            return (
+              query.includes(`name = '${candidate.name}'`) &&
+              query.includes(parentClause)
+            );
+          });
+          return HttpResponse.json({ files: folder ? [folder] : [] });
+        }),
+        http.post(
+          "https://www.googleapis.com/drive/v3/files",
+          async ({ request }) => {
+            const body = (await request.json()) as {
+              readonly name?: string;
+              readonly parents?: readonly string[];
+            };
+            if (!body.name) {
+              throw new Error("Expected Google Drive folder name");
+            }
+            const folder = {
+              id: `drive-folder-${String(driveFolders.length + 1)}`,
+              name: body.name,
+              parentFolderId: body.parents?.[0] ?? null,
+            };
+            driveFolders.push(folder);
+            return HttpResponse.json(folder);
+          },
+        ),
+        http.post(
+          "https://www.googleapis.com/upload/drive/v3/files",
+          async ({ request }) => {
+            driveUploadContentTypes.push(request.headers.get("content-type"));
+            driveUploadBodies.push(await request.text());
+            return HttpResponse.json({
+              id: "drive-canonical-asset",
+              name: "report.csv",
+              webViewLink:
+                "https://drive.google.com/file/d/drive-canonical-asset/view",
+            });
+          },
+        ),
+      );
+      mocks.clerk.session(userId, orgId);
+      const driveClient = setupApp({
+        baseUrl: "https://api.okou.ai",
+        context,
+        routes: chatThreadsArtifactsSyncRoutes,
+      })(chatThreadArtifactsContract);
+      const driveSync = await accept(
+        driveClient.syncGoogleDrive({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { threadId },
+          body: { runId, fileId: canonicalAssetId },
+        }),
+        [200],
+      );
+      expect(driveSync.body).toStrictEqual({
+        id: "drive-canonical-asset",
+        name: "report.csv",
+        webViewLink:
+          "https://drive.google.com/file/d/drive-canonical-asset/view",
+      });
+
+      const retryDriveSync = await accept(
+        driveClient.syncGoogleDrive({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { threadId },
+          body: { runId, fileId: canonicalAssetId },
+        }),
+        [200],
+      );
+      expect(retryDriveSync.body.name).toBe("report.csv");
+
+      const runDriveSync = await accept(
+        driveClient.syncGoogleDrive({
+          headers: {
+            authorization: `Bearer ${okouToken({
+              userId,
+              orgId,
+              runId,
+              capabilities: ["file:write"],
+            })}`,
+          },
+          params: { threadId },
+          body: { runId, fileId: canonicalAssetId },
+        }),
+        [200],
+      );
+      expect(runDriveSync.body.name).toBe("report.csv");
+
+      expect(driveFolders).toHaveLength(2);
+      expect(
+        driveFolders
+          .filter((folder) => {
+            return folder.parentFolderId === null;
+          })
+          .map((folder) => {
+            return folder.name;
+          }),
+      ).toStrictEqual(["Okou Artifacts"]);
+      expect(driveUploadBodies).toHaveLength(3);
+      for (const body of driveUploadBodies) {
+        expect(body).toContain('"parents":["drive-folder-2"]');
+        expect(body).toContain(`"vm0Artifact":"true"`);
+        expect(body).toContain(`"vm0ThreadId":"${threadId}"`);
+        expect(body).toContain(`"vm0RunId":"${runId}"`);
+        expect(body).toContain(`"vm0FileId":"${canonicalAssetId}"`);
+      }
+      expect(
+        driveUploadContentTypes.every((contentType) => {
+          return contentType?.startsWith(
+            "multipart/related; boundary=multipart-",
+          );
+        }),
+      ).toBeTruthy();
+
+      const claim = await claimRun(runnerGroup, runId);
+      await completeRun({
+        runId,
+        sandboxToken: claim.sandboxToken,
+        events: [assistantEvent(0, "The canonical report is ready.")],
+        lastEventSequence: 0,
+      });
+
+      const messages = await chatApi.listThreadEvents(
+        actorFor({ orgId, userId }),
+        threadId,
+      );
+      const finalReply = messages.events.find((message) => {
+        return (
+          message.eventType === "output.message" &&
+          message.content === "The canonical report is ready."
+        );
+      });
+      expect(finalReply).toBeDefined();
+      expect(finalReply).not.toHaveProperty("attachFiles");
+
+      const lifecycleMarker = messages.events.find(
+        (message): message is CompletedChatEvent => {
+          return (
+            message.eventType === "run.completed" &&
+            message.runId === runId &&
+            message.runLifecycleEvent === "completed"
+          );
+        },
+      );
+      expect(lifecycleMarker).toBeDefined();
+      expect(lifecycleMarker?.content).toBeNull();
+      expect(lifecycleMarker).not.toHaveProperty("attachFiles");
+    },
+    20_000,
+  );
 
   it("keeps an attachment-only output out of the event stream", async () => {
     const { orgId, userId, runId, threadId, runnerGroup } =

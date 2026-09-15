@@ -113,6 +113,33 @@ referrer policy and the host Worker's same-origin resource policy. Both must be
 deployed to verify full HTML resource loading against the hosted-domain WAF.
 The viewer and sharing use the existing `privateArtifacts` rollout switch.
 
+#### Private attachment uploads
+
+The API accepts the previous attachment prepare request without `purpose`, and
+selects private storage from the existing `privateArtifacts` switch. The current
+App completes a private single PUT before exposing a ready attachment; multipart
+completion finalizes the ownership record on the API. Older composers omit the
+single-upload complete call, so authenticated reference resolution verifies the
+owned object with HEAD before signing it. An incomplete multipart upload has no
+readable object. This previous-App bridge can be removed only after a later App
+floor excludes those composers; #32492 owns that retirement.
+
+Storage reads are independent of the rollout switch. Historical public objects
+and canonical `accessLevel: private` records without a versioned storage marker
+remain public objects; new private IDs never fall through to public storage.
+This is a durable-data compatibility boundary, with no bulk migration in this
+change. Template records select storage from their persisted source/page key
+namespace, and Social job snapshots use an optional `privateArtifacts` field
+(absent means the historical public mode). These readers must remain until the
+corresponding persisted records have been migrated or explicitly retired.
+
+Integration upload and Social responses use the existing stable `/artifacts/`
+reference format for new private files. API, App and CLI consumers must support
+that format before enabling the cohort; existing public response values are
+unchanged. Signed provider/preview URLs are issued on reads and are not stored as
+the durable file identity. No database migration, force-upgrade floor, Worker
+protocol change, or infrastructure change is introduced here.
+
 #### Connector App retirement
 
 The first singleton-free connector App release is `0.843.1`, built from

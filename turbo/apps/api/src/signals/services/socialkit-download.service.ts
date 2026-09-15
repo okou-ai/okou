@@ -38,10 +38,13 @@ import {
   settleIncludingAbort,
   startUntrackedBestEffortCleanup,
 } from "../utils";
+import { allocateArtifactObject$ } from "./artifact-storage.service";
+import { uploadedArtifactObject } from "./uploaded-artifact.service";
 import {
-  allocateArtifactObject$,
-  resolveArtifactObject$,
-} from "./artifact-storage.service";
+  allocatePrivateArtifact$,
+  completePrivateArtifact$,
+  privateArtifactCreationEnabled,
+} from "./private-artifact-storage.service";
 import {
   checkManagedCredits$,
   recordManagedUsage$,
@@ -1027,7 +1030,7 @@ async function startAndPersistProviderJob(
 
 export const createSocialKitDownload$ = command(
   async (
-    { set },
+    { get, set },
     args: CreateSocialKitDownloadArgs,
     signal: AbortSignal,
   ): Promise<CreateSocialKitDownloadResponse> => {
@@ -1061,6 +1064,10 @@ export const createSocialKitDownload$ = command(
       return creditError;
     }
 
+    const privateArtifacts = await get(
+      privateArtifactCreationEnabled(args.auth.orgId, args.auth.userId),
+    );
+    signal.throwIfAborted();
     const writeDb = set(writeDb$);
     const [created] = await writeDb
       .insert(socialKitDownloadJobs)
@@ -1069,7 +1076,7 @@ export const createSocialKitDownload$ = command(
         userId: args.auth.userId,
         runId: runId(args.auth),
         publicBrand: args.publicBrand,
-        request: args.body,
+        request: { ...args.body, privateArtifacts },
       })
       .onConflictDoNothing()
       .returning();
@@ -1378,9 +1385,46 @@ const DOWNLOAD_CONTENT_TYPES = {
   mp3: "audio/mpeg",
 } satisfies Record<SocialKitDownloadRequest["format"], string>;
 
-const materializeSocialKitArtifact$ = command(
+const allocateSocialKitArtifact$ = command(
   async (
     { set },
+    args: {
+      readonly job: DownloadJob;
+      readonly filename: string;
+      readonly contentType: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const identity = {
+      userId: args.job.userId,
+      id: args.job.id,
+      filename: args.filename,
+      publicBrand: args.job.publicBrand,
+    };
+    if (args.job.request.privateArtifacts === true) {
+      return await set(
+        allocatePrivateArtifact$,
+        {
+          ...identity,
+          orgId: args.job.orgId,
+          contentType: args.contentType,
+          size: 0,
+        },
+        signal,
+      );
+    }
+    const artifact = await set(
+      allocateArtifactObject$,
+      { ...identity, variant: "socialkit" },
+      signal,
+    );
+    return { ...artifact, bucket: env("R2_USER_ARTIFACTS_BUCKET_NAME") };
+  },
+);
+
+const materializeSocialKitArtifact$ = command(
+  async (
+    { get, set },
     args: {
       readonly job: DownloadJob;
       readonly ready: ProviderReady;
@@ -1404,15 +1448,14 @@ const materializeSocialKitArtifact$ = command(
     // rather than depending on a link that has since expired.
     const stored = await onRejection(
       (async (): Promise<StoredArtifactObject> => {
-        const existing = await set(
-          resolveArtifactObject$,
-          {
+        const existing = await get(
+          uploadedArtifactObject({
             userId: args.job.userId,
+            orgId: args.job.orgId,
             id: args.job.id,
             filenameHint: filename,
             variant: "socialkit",
-          },
-          signal,
+          }),
         );
         if (existing) {
           // A previous attempt already stored this object, so drop the stream
@@ -1425,21 +1468,15 @@ const materializeSocialKitArtifact$ = command(
           };
         }
         const location = await set(
-          allocateArtifactObject$,
-          {
-            userId: args.job.userId,
-            id: args.job.id,
-            variant: "socialkit",
-            filename,
-            publicBrand: args.job.publicBrand,
-          },
+          allocateSocialKitArtifact$,
+          { job: args.job, filename, contentType },
           signal,
         );
         const sizeBytes = await set(
           streamDownloadToArtifact$,
           {
             download,
-            bucket: env("R2_USER_ARTIFACTS_BUCKET_NAME"),
+            bucket: location.bucket,
             key: location.key,
             contentType,
             metadata: location.metadata,
@@ -1456,6 +1493,18 @@ const materializeSocialKitArtifact$ = command(
       },
     );
     signal.throwIfAborted();
+    if (args.job.request.privateArtifacts === true) {
+      await set(
+        completePrivateArtifact$,
+        {
+          id: args.job.id,
+          url: stored.url,
+          contentType,
+          size: stored.sizeBytes,
+        },
+        signal,
+      );
+    }
     const artifact = {
       id: args.job.id,
       url: stored.url,

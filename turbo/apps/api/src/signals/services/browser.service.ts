@@ -46,7 +46,10 @@ import {
 } from "../external/realtime";
 import { now, nowDate } from "../../lib/time";
 import { flushAxiom, getDatasetName, ingestToAxiom } from "../external/axiom";
-import { putImmutableS3Object } from "../external/s3";
+import {
+  generateArtifactPreviewUrl,
+  putImmutableS3Object,
+} from "../external/s3";
 import { settle, settleIncludingAbort } from "../utils";
 import {
   BrowserUseProviderError,
@@ -62,7 +65,12 @@ import {
   stopBrowserUseSessionForCleanup,
   type BrowserUseSession,
 } from "./browser-use.service";
-import { allocateArtifactObject$ } from "./artifact-storage.service";
+import { allocateUploadedArtifact$ } from "./uploaded-artifact.service";
+import {
+  artifactFileReference,
+  completePrivateArtifact$,
+  privateArtifactRecord,
+} from "./private-artifact-storage.service";
 import { browserScreenshotSchemaAvailable } from "./browser-screenshot-schema.service";
 import {
   decryptPersistentSecretValue,
@@ -365,23 +373,62 @@ async function loadBrowserScreen(
     : null;
 }
 
-async function loadBrowserScreenshotUrl(
-  db: Db,
-  chatThreadId: string,
-  signal: AbortSignal,
-): Promise<string | null> {
-  if (!(await browserScreenshotSchemaAvailable(db))) {
+const loadBrowserScreenshotUrl$ = command(
+  async (
+    { get },
+    db: Db,
+    chatThreadId: string,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    if (!(await browserScreenshotSchemaAvailable(db))) {
+      signal.throwIfAborted();
+      return null;
+    }
+    const [screenshot] = await db
+      .select({
+        url: browserSessionScreenshots.url,
+        objectKey: browserSessionScreenshots.objectKey,
+        userId: browserSessions.userId,
+        orgId: browserSessions.orgId,
+      })
+      .from(browserSessionScreenshots)
+      .innerJoin(
+        browserSessions,
+        eq(
+          browserSessions.chatThreadId,
+          browserSessionScreenshots.chatThreadId,
+        ),
+      )
+      .where(eq(browserSessionScreenshots.chatThreadId, chatThreadId))
+      .limit(1);
     signal.throwIfAborted();
-    return null;
-  }
-  const [screenshot] = await db
-    .select({ url: browserSessionScreenshots.url })
-    .from(browserSessionScreenshots)
-    .where(eq(browserSessionScreenshots.chatThreadId, chatThreadId))
-    .limit(1);
-  signal.throwIfAborted();
-  return screenshot?.url ?? null;
-}
+    if (!screenshot) {
+      return null;
+    }
+    const reference = artifactFileReference(screenshot.url);
+    if (!reference) {
+      return screenshot.url;
+    }
+    const file = await get(privateArtifactRecord(reference.id));
+    signal.throwIfAborted();
+    if (
+      !file ||
+      file.userId !== screenshot.userId ||
+      file.orgId !== screenshot.orgId ||
+      file.key !== screenshot.objectKey ||
+      file.materializationStatus !== "ready"
+    ) {
+      return null;
+    }
+    const preview = await get(
+      generateArtifactPreviewUrl(file.bucket, file.key, {
+        signingDate: nowDate(),
+      }),
+    );
+    signal.throwIfAborted();
+    return preview.url;
+  },
+);
 
 async function loadBrowserScreenHeightForThread(
   db: Db,
@@ -910,15 +957,18 @@ const captureAndStoreBrowserScreenshot$ = command(
         signal.throwIfAborted();
         stage = "upload";
         const artifact = await set(
-          allocateArtifactObject$,
+          allocateUploadedArtifact$,
           {
             userId: browser.userId,
+            orgId: browser.orgId,
             filename: BROWSER_SCREENSHOT_FILENAME,
+            contentType: BROWSER_SCREENSHOT_CONTENT_TYPE,
+            size: image.byteLength,
             publicBrand: browser.publicBrand,
           },
           signal,
         );
-        const bucket = env("R2_USER_ARTIFACTS_BUCKET_NAME");
+        const bucket = artifact.bucket;
         await get(
           putImmutableS3Object(
             bucket,
@@ -931,6 +981,18 @@ const captureAndStoreBrowserScreenshot$ = command(
         signal.throwIfAborted();
 
         stage = "save";
+        if ("storage" in artifact.storageMetadata) {
+          await set(
+            completePrivateArtifact$,
+            {
+              id: artifact.id,
+              url: artifact.url,
+              contentType: BROWSER_SCREENSHOT_CONTENT_TYPE,
+              size: image.byteLength,
+            },
+            signal,
+          );
+        }
         await db.transaction(async (tx) => {
           await lockBrowserThread(tx, browser.chatThreadId);
           await tx
@@ -1729,7 +1791,8 @@ const startProviderInstance$ = command(
       started.cdpUrl,
       signal,
     );
-    const screenshotUrl = await loadBrowserScreenshotUrl(
+    const screenshotUrl = await set(
+      loadBrowserScreenshotUrl$,
       db,
       claimed.browser.chatThreadId,
       signal,
@@ -1957,7 +2020,8 @@ const inspectActiveConnection$ = command(
         instance.providerSessionId,
         signal,
       );
-      const screenshotUrl = await loadBrowserScreenshotUrl(
+      const screenshotUrl = await set(
+        loadBrowserScreenshotUrl$,
         db,
         browser.chatThreadId,
         signal,
@@ -2384,7 +2448,7 @@ const leaseInstanceForBrowser$ = command(
     }
     const [screen, screenshotUrl] = await Promise.all([
       loadBrowserScreen(db, leased.providerSessionId, signal),
-      loadBrowserScreenshotUrl(db, browser.chatThreadId, signal),
+      set(loadBrowserScreenshotUrl$, db, browser.chatThreadId, signal),
     ]);
     signal.throwIfAborted();
     return {
@@ -2533,7 +2597,8 @@ export const resizeBrowserByThread$ = command(
       threadId: browser.chatThreadId,
     });
     signal.throwIfAborted();
-    const screenshotUrl = await loadBrowserScreenshotUrl(
+    const screenshotUrl = await set(
+      loadBrowserScreenshotUrl$,
       db,
       browser.chatThreadId,
       signal,
@@ -2567,7 +2632,8 @@ export const getBrowser$ = command(
     if (accessError) {
       return accessError;
     }
-    const screenshotUrl = await loadBrowserScreenshotUrl(
+    const screenshotUrl = await set(
+      loadBrowserScreenshotUrl$,
       db,
       row.chatThreadId,
       signal,

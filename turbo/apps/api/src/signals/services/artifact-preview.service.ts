@@ -1,4 +1,5 @@
 import { command } from "ccstate";
+import { v5 as uuidv5 } from "uuid";
 import { eq } from "drizzle-orm";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
@@ -13,6 +14,12 @@ import { writeDb$ } from "../external/db";
 import { putImmutableS3Object } from "../external/s3";
 import { safeJsonParse, tapError } from "../utils";
 import { allocateArtifactObject$ } from "./artifact-storage.service";
+import {
+  allocatePrivateArtifact$,
+  completePrivateArtifact$,
+  privateArtifactCreationEnabled,
+  privateArtifactRecord,
+} from "./private-artifact-storage.service";
 import { syncArtifactCatalogForFile$ } from "./artifact-catalog.service";
 import { publishArtifactsChangedForRun } from "./artifact-realtime.service";
 
@@ -293,8 +300,8 @@ async function renderArtifactSnapshot(
 
 /**
  * Render a static preview image for a single hosted-site/HTML artifact row,
- * upload it to the user-artifacts R2 bucket next to the artifact, and persist
- * the CDN URL on the row. Returns false (no-op) when the browser-rendering
+ * upload it according to the artifact storage policy, and persist its stable
+ * URL on the row. Returns false (no-op) when the browser-rendering
  * token is unset, or when the video container has no poster frame we can
  * extract. Keyed by the row id so it always targets the exact artifact of that
  * run.
@@ -333,28 +340,61 @@ const renderAndStoreArtifactPreview$ = command(
     }
     signal.throwIfAborted();
 
-    const artifact = await set(
-      allocateArtifactObject$,
-      {
-        userId: args.userId,
-        id: args.id,
-        filename,
-        variant: filename,
-        publicBrand: args.publicBrand,
-      },
-      signal,
-    );
+    const privateId = uuidv5(`${args.id}:${filename}`, uuidv5.URL);
+    const existing = await get(privateArtifactRecord(privateId));
+    signal.throwIfAborted();
+    const privatePreview =
+      existing !== null ||
+      (await get(privateArtifactCreationEnabled(args.orgId, args.userId)));
+    signal.throwIfAborted();
+    const artifact = privatePreview
+      ? await set(
+          allocatePrivateArtifact$,
+          {
+            userId: args.userId,
+            orgId: args.orgId,
+            id: privateId,
+            filename,
+            contentType,
+            size: image.byteLength,
+            publicBrand: args.publicBrand,
+          },
+          signal,
+        )
+      : {
+          ...(await set(
+            allocateArtifactObject$,
+            {
+              userId: args.userId,
+              id: args.id,
+              filename,
+              variant: filename,
+              publicBrand: args.publicBrand,
+            },
+            signal,
+          )),
+          bucket: env("R2_USER_ARTIFACTS_BUCKET_NAME"),
+        };
     await get(
-      putImmutableS3Object(
-        env("R2_USER_ARTIFACTS_BUCKET_NAME"),
-        artifact.key,
-        image,
-        contentType,
-        { signal, metadata: artifact.metadata },
-      ),
+      putImmutableS3Object(artifact.bucket, artifact.key, image, contentType, {
+        signal,
+        metadata: artifact.metadata,
+      }),
     );
     signal.throwIfAborted();
 
+    if (privatePreview) {
+      await set(
+        completePrivateArtifact$,
+        {
+          id: artifact.id,
+          url: artifact.url,
+          contentType,
+          size: image.byteLength,
+        },
+        signal,
+      );
+    }
     const db = set(writeDb$);
     await db
       .update(runUploadedFiles)

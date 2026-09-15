@@ -21,6 +21,7 @@ import type {
   ImageAnnotation,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import type { EditorDocumentSnapshot } from "./user-message-document-codec.ts";
@@ -259,6 +260,17 @@ const uploadFileToStorage$ = command(
       throw new Error(`storage returned ${putRes.status} ${putRes.statusText}`);
     }
 
+    if (parseArtifactReference(prepared.body.url)) {
+      const completed = await accept(
+        client.complete({
+          body: { id: prepared.body.id },
+          fetchOptions: { signal },
+        }),
+        [200],
+      );
+      signal.throwIfAborted();
+      return uploadFileInfo(completed.body, completed.body.contentType);
+    }
     return uploadFileInfo(prepared.body, prepared.body.contentType);
   },
 );
