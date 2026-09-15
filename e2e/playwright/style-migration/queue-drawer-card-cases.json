@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "batch": "app-card-tokens",
+  "cases": [
+    {
+      "id": "queue-drawer-card-light",
+      "path": "/agents/:agentId/chat?queue=1",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "queue-drawer-card-dark",
+      "path": "/agents/:agentId/chat?queue=1",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "queue-drawer-card-light-retina",
+      "path": "/agents/:agentId/chat?queue=1",
+      "theme": "light",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 2
+    },
+    {
+      "id": "queue-drawer-card-dark-retina",
+      "path": "/agents/:agentId/chat?queue=1",
+      "theme": "dark",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "deviceScaleFactor": 2
+    },
+    {
+      "id": "queue-drawer-card-narrow",
+      "path": "/agents/:agentId/chat?queue=1",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "deviceScaleFactor": 2,
+      "hasTouch": true,
+      "isMobile": true
+    },
+    {
+      "id": "queue-drawer-card-narrow-dark",
+      "path": "/agents/:agentId/chat?queue=1",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "deviceScaleFactor": 2,
+      "hasTouch": true,
+      "isMobile": true
+    }
+  ]
+}

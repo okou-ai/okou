@@ -951,11 +951,18 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
 }
 
 /**
- * Soft, cool-tinted card shadow matching the home chat composer
- * (`--okou-card-shadow`). The token is scoped to `.okou-app`, but the template
- * picker renders through a Base UI portal on `document.body` — outside that
- * scope — so the value is inlined here instead of referencing the CSS var.
- * Replaces Tailwind `shadow-sm`, whose hard black tint reads muddy on white.
+ * Soft, cool-tinted card shadow for the template picker. It reads as the home
+ * chat composer's elevation but is not that value: the blue-grey `220 12% 50%`
+ * here is a different tint from `--okou-card-shadow`'s warm `30 6% 45%`, and it
+ * carries slightly less alpha. Replaces Tailwind `shadow-sm`, whose hard black
+ * tint reads muddy on white.
+ *
+ * The picker renders through a Base UI portal on `document.body`, which used to
+ * force the literal because the token was scoped to `.okou-app`. That scope is
+ * gone — `--okou-card-shadow` is declared at `:root` and would resolve here —
+ * so keeping the literal is now a colour decision rather than a constraint.
+ * Adopting the token would also pick up its gradient-palette override, which
+ * this surface has never had.
  */
 const TEMPLATE_CARD_SHADOW =
   "shadow-[0_2px_12px_hsl(220_12%_50%/0.04),0_0_0_0.5px_hsl(220_12%_50%/0.02)]";

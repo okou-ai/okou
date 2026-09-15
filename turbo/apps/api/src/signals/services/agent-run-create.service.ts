@@ -301,7 +301,6 @@ import {
   piApiFirstTurnObjectKey,
   requirePiApiFirstTurnExecutionContext,
 } from "./pi-api-first-turn-config";
-import { lockModelProviderState } from "./auth-state-lock.service";
 import {
   activePersonalModelProviderAccount,
   ensurePersonalModelProviderAccount,
@@ -8749,32 +8748,26 @@ async function validateCapturedSubscriptionAccount(
         .where(eq(agentSessions.id, args.identity.sessionId))
         .for("key share");
     }
-    await lockModelProviderState(tx, {
-      orgId: args.createArgs.orgId,
-      userId: args.createArgs.userId,
-      type: provider.type,
-    });
-    const coherent = await validatePersonalSubscriptionAdmission(
-      {
-        db: tx,
-        orgId: args.createArgs.orgId,
-        userId: args.createArgs.userId,
-        type: provider.type,
-        sourceId: provider.id ?? undefined,
-        featureSwitchContext: args.context.featureSwitchContext,
-      },
-      args.subscriptionAdmission,
-    );
-    const account =
-      coherent && provider.id
-        ? await personalModelProviderAccountById({
+    const type = provider.type;
+    const account = await args.timing.measure(
+      "api_dispatch_subscription_validate_admission",
+      "nested",
+      async () => {
+        return await validatePersonalSubscriptionAdmission(
+          {
             db: tx,
             orgId: args.createArgs.orgId,
             userId: args.createArgs.userId,
-            id: provider.id,
-          })
-        : null;
-    if (!account || account.type !== provider.type) {
+            type,
+            sourceId: provider.id ?? undefined,
+            featureSwitchContext: args.context.featureSwitchContext,
+          },
+          args.subscriptionAdmission,
+        );
+      },
+      { subscription_provider_type: type },
+    );
+    if (!account) {
       return conflict(
         "The selected subscription account was disconnected. Reconnect it before starting another run.",
       );
@@ -10883,6 +10876,7 @@ const commitAndActivateAtomicLaunch$ = command(
               type: provider.type,
               sourceId: provider.id,
               featureSwitchContext: input.context.featureSwitchContext,
+              timing: input.timing,
             },
             signal,
           )

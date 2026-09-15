@@ -2,7 +2,7 @@ import { command } from "ccstate";
 import { expect, test } from "vitest";
 import { mockNow } from "../../lib/time.ts";
 import { debounceCommand, throttleCommand } from "../command-scheduling.ts";
-import { createChildAbortController } from "../utils.ts";
+import { resetSignal } from "../utils.ts";
 import { testContext } from "./test-helpers.ts";
 
 const context = testContext();
@@ -65,18 +65,20 @@ test("A cancelled debounce can be reused without running the discarded command",
     return value;
   });
   const debounced$ = debounceCommand(read$, 20);
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const caller = createChildAbortController(context.signal);
-  const reason = new DOMException("Search closed", "AbortError");
-  const pending = context.store.set(debounced$, "discarded", caller.signal);
-  caller.abort(reason);
-  await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  const resetCaller$ = resetSignal();
+  const callerSignal = context.store.set(resetCaller$, context.signal);
+  const pending = context.store.set(debounced$, "discarded", callerSignal);
+  context.store.set(resetCaller$);
+  await expect(pending).rejects.toMatchObject({
+    name: "AbortError",
+    message: String(callerSignal.reason),
+  });
 
   // A pre-aborted invocation must not cancel another caller's valid work.
   const latest = context.store.set(debounced$, "latest", context.signal);
   await expect(
-    context.store.set(debounced$, "invalid", caller.signal),
-  ).rejects.toBe(reason);
+    context.store.set(debounced$, "invalid", callerSignal),
+  ).rejects.toBe(callerSignal.reason);
   await expect(latest).resolves.toBe("latest");
   expect(executions).toStrictEqual(["latest"]);
 });

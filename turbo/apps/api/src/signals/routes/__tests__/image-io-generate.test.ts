@@ -1856,7 +1856,7 @@ describe("POST /api/image-io/generate", () => {
       fixture.userId,
     );
 
-    await postFalWebhook(app, observedRequestUrl, {
+    const completionPayload = {
       images: [
         {
           url: FAL_GPT_MEDIA_URL,
@@ -1866,8 +1866,29 @@ describe("POST /api/image-io/generate", () => {
         },
       ],
       prompt: "A small robot paints a sunflower.",
+    };
+    await postFalWebhook(app, observedRequestUrl, completionPayload);
+    await flushWaitUntilForTest();
+    await postFalWebhook(app, observedRequestUrl, completionPayload);
+    await postFalWebhookEnvelope(app, observedRequestUrl, {
+      status: "ERROR",
+      error: "Invalid status code: 503",
+      payload: { detail: { type: "downstream_service_error" } },
     });
     await flushWaitUntilForTest();
+    expect(
+      context.mocks.ably.publish.mock.calls.filter(([eventName]) => {
+        return eventName === `built-in-generation:${generationId}`;
+      }),
+    ).toHaveLength(1);
+    expect(
+      context.mocks.s3.send.mock.calls.filter(([command]) => {
+        return (
+          command instanceof PutObjectCommand &&
+          command.input.Key?.startsWith("artifacts/")
+        );
+      }),
+    ).toHaveLength(1);
     const webhookUrl = new URL(readWebhookUrl(observedRequestUrl));
     expect(webhookUrl.origin).toBe(API_ORIGIN);
     expect(webhookUrl.pathname).toBe(
@@ -2001,9 +2022,9 @@ describe("POST /api/image-io/generate", () => {
       detail: FAL_OUTPUT_SAFETY_FILTER_MESSAGE,
     },
     {
-      detailShape: "Pydantic detail entries",
+      detailShape: "Pydantic output safety detail with a provider status",
+      reportedStatus: 503,
       detail: [
-        { type: "file_download_error", msg: "Unrelated provider diagnostic" },
         {
           type: "content_policy_violation",
           loc: ["body", "prompt"],
@@ -2015,9 +2036,20 @@ describe("POST /api/image-io/generate", () => {
         },
       ],
     },
+    {
+      detailShape: "a downstream type without prose or location",
+      detail: { type: "downstream_service_unavailable" },
+      providerUnavailable: true,
+    },
+    {
+      detailShape: "a status-only provider failure",
+      detail: undefined,
+      reportedStatus: 429,
+      providerUnavailable: true,
+    },
   ])(
-    "maps Fal output safety failures from $detailShape without charging or retaining private diagnostics",
-    async ({ detail }) => {
+    "settles Fal failures from $detailShape once and releases admission without charging",
+    async ({ detail, reportedStatus = 422, providerUnavailable = false }) => {
       const fixture = await seedImageFixture({ credits: 1000 });
       const pricingFixture = await createScopedImagePricing({
         configured: GPT_IMAGE_1_PRICING,
@@ -2060,7 +2092,7 @@ describe("POST /api/image-io/generate", () => {
         request_id: "private-fal-request-id",
         gateway_request_id: "private-fal-gateway-request-id",
         status: "ERROR",
-        error: "Unexpected status code: 422",
+        error: `Unexpected status code: ${reportedStatus}`,
         payload: {
           detail,
           input: {
@@ -2075,10 +2107,16 @@ describe("POST /api/image-io/generate", () => {
       ]);
       await flushWaitUntilForTest();
 
-      const expectedError = {
-        message: FAL_OUTPUT_SAFETY_FILTER_MESSAGE,
-        code: "GENERATION_OUTPUT_SAFETY_BLOCKED",
-      };
+      const expectedError = providerUnavailable
+        ? {
+            message:
+              "The image generation provider is temporarily unavailable.",
+            code: "GENERATION_PROVIDER_UNAVAILABLE",
+          }
+        : {
+            message: FAL_OUTPUT_SAFETY_FILTER_MESSAGE,
+            code: "GENERATION_OUTPUT_SAFETY_BLOCKED",
+          };
       expect(context.mocks.ably.publish).toHaveBeenCalledWith(
         `built-in-generation:${generationId}`,
         expect.objectContaining({
@@ -2104,6 +2142,9 @@ describe("POST /api/image-io/generate", () => {
       // A repeated provider callback is acknowledged but cannot create a
       // second terminal failure event.
       await postFalWebhookEnvelope(app, initialRequestUrl, webhookPayload);
+      await postFalWebhook(app, initialRequestUrl, {
+        images: [{ url: FAL_GPT_MEDIA_URL, width: 1024, height: 1024 }],
+      });
       await flushWaitUntilForTest();
       const failureEvents = context.mocks.ably.publish.mock.calls.filter(
         ([eventName]) => {
@@ -2135,6 +2176,9 @@ describe("POST /api/image-io/generate", () => {
         expect(publicSurfaces).not.toContain(privateValue);
       }
 
+      expect(statusBody).not.toHaveProperty("result");
+      expect(falCalls).toBe(1);
+
       // Three new starts prove that the failed job released its per-run active
       // admission slot instead of remaining in flight.
       for (let index = 0; index < 3; index += 1) {
@@ -2163,7 +2207,8 @@ describe("POST /api/image-io/generate", () => {
 
   it.each([
     {
-      caseName: "input safety rejection",
+      caseName: "input safety rejection despite a provider status",
+      reportedStatus: 503,
       providerErrorType: "content_policy_violation",
       providerMessage: FAL_INPUT_SAFETY_FILTER_MESSAGE,
       location: ["body", "prompt"],
@@ -2280,7 +2325,13 @@ describe("POST /api/image-io/generate", () => {
     },
   ])(
     "maps Fal $caseName through realtime and status without recording artifacts or usage",
-    async ({ providerErrorType, providerMessage, location, publicError }) => {
+    async ({
+      providerErrorType,
+      providerMessage,
+      location,
+      publicError,
+      reportedStatus = 422,
+    }) => {
       const fixture = await seedImageFixture({ credits: 1000 });
       const pricingFixture = await createScopedImagePricing({
         configured: GPT_IMAGE_1_PRICING,
@@ -2319,7 +2370,7 @@ describe("POST /api/image-io/generate", () => {
         request_id: "private-classified-fal-request-id",
         gateway_request_id: "private-classified-fal-gateway-request-id",
         status: "ERROR",
-        error: "Unexpected status code: 422",
+        error: `Unexpected status code: ${reportedStatus}`,
         payload: {
           detail: [
             {
@@ -2387,7 +2438,15 @@ describe("POST /api/image-io/generate", () => {
     },
   );
 
-  it.each([
+  it.each<{
+    caseName: string;
+    status: string;
+    wrapper: string;
+    error: unknown;
+    detail: unknown;
+    payloadBody?: unknown;
+    providerUnavailable?: boolean;
+  }>([
     {
       caseName: "near-match safety text",
       status: "FAILED",
@@ -2397,7 +2456,7 @@ describe("POST /api/image-io/generate", () => {
         {
           type: "content_policy_violation",
           loc: ["body", "prompt"],
-          // Missing punctuation must not change the public classification.
+          // Near-match prose must not invent an output safety classification.
           msg: "The generated image was blocked by the safety filter",
         },
       ],
@@ -2416,6 +2475,7 @@ describe("POST /api/image-io/generate", () => {
     },
     {
       caseName: "downstream error with changed message",
+      providerUnavailable: true,
       status: "ERROR",
       wrapper: "payload",
       error: "Invalid status code: 500",
@@ -2427,6 +2487,7 @@ describe("POST /api/image-io/generate", () => {
     },
     {
       caseName: "downstream error at an unrecognized location",
+      providerUnavailable: true,
       status: "ERROR",
       wrapper: "payload",
       error: "Invalid status code: 500",
@@ -2485,9 +2546,142 @@ describe("POST /api/image-io/generate", () => {
       error: "Invalid status code: 422 private-provider-token",
       detail: "private-provider-message https://private.example/input",
     },
+    ...["private-provider-message", 503, true, []].map((payloadBody, index) => {
+      return {
+        caseName: `unsupported body despite status 503 (${index})`,
+        status: "ERROR",
+        wrapper: "payload",
+        error: "Invalid status code: 503",
+        detail: undefined,
+        payloadBody,
+      };
+    }),
+    ...[429, 500, 502, 503, 504].map((reportedStatus) => {
+      return {
+        caseName: `status-only provider failure ${reportedStatus}`,
+        status: "ERROR",
+        wrapper: "payload",
+        error: `Unexpected status code: ${reportedStatus}`,
+        detail: undefined,
+        providerUnavailable: true,
+      };
+    }),
+    ...[200, 400, 401, 403, 422, 501, 505].map((reportedStatus) => {
+      return {
+        caseName: `status outside the provider fallback set ${reportedStatus}`,
+        status: "ERROR",
+        wrapper: "payload",
+        error: `Invalid status code: ${reportedStatus}`,
+        detail: undefined,
+      };
+    }),
+    ...[
+      "Invalid status code: 503 private-provider-token",
+      "Invalid status code: 503\n",
+      "Invalid status code: 503\r\n",
+      " Invalid status code: 503",
+      "Invalid status code: 0503",
+      "Invalid status code: 503.0",
+      "Unexpected status code: 999",
+      "Unexpected status code: 099",
+      503,
+      { status: 503 },
+    ].map((error, index) => {
+      return {
+        caseName: `malformed status-only evidence ${index}`,
+        status: "ERROR",
+        wrapper: "payload",
+        error,
+        detail: undefined,
+      };
+    }),
+    ...["downstream_service_error", "downstream_service_unavailable"].map(
+      (type) => {
+        return {
+          caseName: `${type} without human-readable fields or a status`,
+          status: "FAILED",
+          wrapper: "response",
+          error: undefined,
+          detail: { type },
+          providerUnavailable: true,
+        };
+      },
+    ),
+    ...[
+      {
+        type: "file_download_error",
+        loc: ["body", "image_urls"],
+        msg: "private-provider-message",
+      },
+      { type: "downstream_service_error:private-provider-token" },
+      { type: 503 },
+      { type: null },
+      null,
+      "private-provider-message",
+      [null, { type: "downstream_service_error" }],
+      [
+        { type: "downstream_service_error" },
+        { type: "private-provider-token" },
+      ],
+      [
+        { type: "downstream_service_error" },
+        {
+          type: "content_policy_violation",
+          loc: ["body", "prompt"],
+          msg: FAL_INPUT_SAFETY_FILTER_MESSAGE,
+        },
+      ],
+      [
+        {
+          type: "content_policy_violation",
+          loc: ["body", "prompt"],
+          msg: FAL_INPUT_SAFETY_FILTER_MESSAGE,
+        },
+        { type: "downstream_service_unavailable" },
+      ],
+      [
+        { type: "file_download_error", msg: "Unrelated provider diagnostic" },
+        {
+          type: "content_policy_violation",
+          loc: ["body", "prompt"],
+          msg: FAL_OUTPUT_SAFETY_FILTER_MESSAGE,
+        },
+      ],
+      {
+        type: "downstream_service_error",
+        msg: FAL_OUTPUT_SAFETY_FILTER_MESSAGE,
+      },
+      [
+        {
+          type: "content_policy_violation",
+          loc: ["body", "prompt"],
+          msg: FAL_INPUT_SAFETY_FILTER_MESSAGE,
+        },
+        {
+          type: "content_policy_violation",
+          loc: ["body", "prompt"],
+          msg: FAL_OUTPUT_SAFETY_FILTER_MESSAGE,
+        },
+      ],
+    ].map((detail, index) => {
+      return {
+        caseName: `ambiguous structured evidence despite status 503 (${index})`,
+        status: "ERROR",
+        wrapper: "payload",
+        error: "Invalid status code: 503",
+        detail,
+      };
+    }),
   ])(
-    "falls back to the generic Fal image failure for $caseName",
-    async ({ status, wrapper, error, detail }) => {
+    "maps Fal failure evidence for $caseName through status and realtime",
+    async ({
+      status,
+      wrapper,
+      error,
+      detail,
+      payloadBody,
+      providerUnavailable = false,
+    }) => {
       const fixture = await seedImageFixture({ credits: 1000 });
       const pricingFixture = await createScopedImagePricing({
         configured: GPT_IMAGE_1_PRICING,
@@ -2519,7 +2713,7 @@ describe("POST /api/image-io/generate", () => {
         error,
         request_id: "private-fal-request-id",
         gateway_request_id: "private-fal-gateway-request-id",
-        [wrapper]: {
+        [wrapper]: payloadBody ?? {
           detail,
           input: {
             prompt: "private-unknown-failure-prompt",
@@ -2529,10 +2723,13 @@ describe("POST /api/image-io/generate", () => {
       });
       await flushWaitUntilForTest();
 
-      const expectedError = {
-        message: "Image generation failed.",
-        code: "GENERATION_FAILED",
-      };
+      const expectedError = providerUnavailable
+        ? {
+            message:
+              "The image generation provider is temporarily unavailable.",
+            code: "GENERATION_PROVIDER_UNAVAILABLE",
+          }
+        : { message: "Image generation failed.", code: "GENERATION_FAILED" };
       expect(context.mocks.ably.publish).toHaveBeenCalledWith(
         `built-in-generation:${generationId}`,
         expect.objectContaining({
@@ -2573,8 +2770,17 @@ describe("POST /api/image-io/generate", () => {
       ]) {
         expect(publicSurfaces).not.toContain(privateValue);
       }
+      expect(statusBody).not.toHaveProperty("result");
       expect(context.mocks.s3.send).not.toHaveBeenCalled();
       await expect(orgCredits(fixture)).resolves.toBe(1000);
+      const usageResponse = await app.request("/api/usage/record", {
+        headers: authHeaders(),
+      });
+      expect(usageResponse.status).toBe(200);
+      await expect(usageResponse.json()).resolves.toMatchObject({
+        totalCredits: 0,
+        rows: [],
+      });
     },
   );
 

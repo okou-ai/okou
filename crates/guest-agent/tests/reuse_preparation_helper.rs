@@ -11,7 +11,7 @@ use std::process::Output;
 use std::time::Duration;
 
 use guest_contracts::process_containment::{
-    CONTROL_MEMORY_MIN_BYTES, WORKLOAD_MEMORY_RESERVE_BYTES, WorkloadResourcePolicy,
+    AGENT_MEMORY_MIN_BYTES, WORKLOAD_MEMORY_RESERVE_BYTES, WorkloadResourcePolicy,
 };
 use guest_contracts::reuse_preparation::{
     REUSE_PREPARATION_EXIT_CLEANUP_FAILED, REUSE_PREPARATION_EXIT_CONTAINMENT_FAILED,
@@ -599,6 +599,24 @@ async fn prepare_for_reuse_rejects_direct_processes_in_operation_parent() -> Tes
 }
 
 #[tokio::test]
+async fn prepare_for_reuse_rejects_previous_control_only_protection() -> TestResult {
+    let (request, _runtime) = reusable_request()?;
+    let containment = ContainmentFixture::new()?;
+    std::fs::write(
+        containment.base.join("memory.min"),
+        (384 * 1024 * 1024).to_string(),
+    )?;
+
+    let output = run_helper_with_containment(&request, &containment).await?;
+
+    assert_eq!(
+        output.status.code(),
+        Some(REUSE_PREPARATION_EXIT_CONTAINMENT_FAILED)
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn prepare_for_reuse_rejects_populated_control_leaf() -> TestResult {
     let (request, _runtime) = reusable_request()?;
     let containment = ContainmentFixture::new()?;
@@ -654,7 +672,7 @@ async fn prepare_for_reuse_rejects_stale_workload_memory_high() -> TestResult {
     let (request, _runtime) = reusable_request()?;
     let containment = ContainmentFixture::new()?;
     let policy =
-        WorkloadResourcePolicy::for_current_guest_capacity().map_err(std::io::Error::other)?;
+        WorkloadResourcePolicy::for_current_guest_capacity(false).map_err(std::io::Error::other)?;
     let legacy_memory_high = policy
         .memory_max_bytes
         .checked_sub(256 * 1024 * 1024)
@@ -680,8 +698,9 @@ async fn prepare_for_reuse_rejects_stale_workload_memory_max() -> TestResult {
     let (request, _runtime) = reusable_request()?;
     let containment = ContainmentFixture::new()?;
     let policy =
-        WorkloadResourcePolicy::for_current_guest_capacity().map_err(std::io::Error::other)?;
-    let retired_reserve_delta = CONTROL_MEMORY_MIN_BYTES - WORKLOAD_MEMORY_RESERVE_BYTES;
+        WorkloadResourcePolicy::for_current_guest_capacity(false).map_err(std::io::Error::other)?;
+    // The retired policy reserved 384 MiB regardless of today's control floor.
+    let retired_reserve_delta = 384 * 1024 * 1024 - WORKLOAD_MEMORY_RESERVE_BYTES;
     let legacy_memory_max = policy
         .memory_max_bytes
         .checked_sub(retired_reserve_delta)
@@ -759,10 +778,7 @@ impl ContainmentFixture {
         ] {
             std::fs::write(base.join(filename), content)?;
         }
-        std::fs::write(
-            base.join("memory.min"),
-            CONTROL_MEMORY_MIN_BYTES.to_string(),
-        )?;
+        std::fs::write(base.join("memory.min"), AGENT_MEMORY_MIN_BYTES.to_string())?;
         let operation = base.join("exec-current");
         std::fs::create_dir(&operation)?;
         for (filename, content) in [
@@ -793,8 +809,8 @@ impl ContainmentFixture {
                 std::fs::write(leaf.join(filename), content)?;
             }
         }
-        let policy =
-            WorkloadResourcePolicy::for_current_guest_capacity().map_err(std::io::Error::other)?;
+        let policy = WorkloadResourcePolicy::for_current_guest_capacity(false)
+            .map_err(std::io::Error::other)?;
         let workload = operation.join("workload");
         for (filename, value) in [
             (

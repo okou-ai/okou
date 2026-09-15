@@ -1153,6 +1153,31 @@
       "evidence": [],
       "pullRequest": null,
       "mergeCommit": null
+    },
+    {
+      "id": "app-card-tokens",
+      "family": "platform-shell",
+      "tokens": ["okou-app"],
+      "consumers": [
+        "apps/platform/src/views/css/index.css",
+        "apps/platform/src/views/queue-page/queue-drawer.tsx",
+        "apps/platform/src/views/okou-page/components/chat-card.tsx",
+        "apps/platform/src/views/okou-page/chat-composer.tsx",
+        "apps/platform/src/views/agents-page/agents-page-tabs.tsx"
+      ],
+      "cases": [
+        "queue-drawer-card-light",
+        "queue-drawer-card-dark",
+        "queue-drawer-card-light-retina",
+        "queue-drawer-card-dark-retina",
+        "queue-drawer-card-narrow",
+        "queue-drawer-card-narrow-dark"
+      ],
+      "status": "implemented",
+      "blockedReason": null,
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
     }
   ],
   "caseFiles": [
@@ -1185,6 +1210,7 @@
     "../e2e/playwright/style-migration/markdown-body-cases.json",
     "../e2e/playwright/style-migration/shimmer-text-cases.json",
     "../e2e/playwright/style-migration/composer-surface-cases.json",
-    "../e2e/playwright/style-migration/mobile-drawer-cases.json"
+    "../e2e/playwright/style-migration/mobile-drawer-cases.json",
+    "../e2e/playwright/style-migration/queue-drawer-card-cases.json"
   ]
 }

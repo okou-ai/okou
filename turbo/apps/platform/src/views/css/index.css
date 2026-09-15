@@ -562,8 +562,15 @@ body {
   --okou-color-theme-ring: 74.2 53.8% 41.6%;
 }
 
-/* Okou app: inherits global neutral tokens; only card-specific tokens defined here */
-.okou-app {
+/* Card geometry and elevation. These are document-level runtime theme values, so
+   they are owned at `:root` rather than inside the `.okou-app` scope, for the
+   reason `--okou-composer-focus-veil` already records: a portaled surface is not
+   a descendant of the app shell, so a scoped declaration never reaches it. The
+   queue drawer is that case — `SheetContent` renders inside `SheetPortal`, so its
+   plan, upgrade and concurrency cards resolved `--okou-card-radius` to nothing
+   and painted square corners despite asking for the card radius. Document scope
+   gives them the radius their markup already requests. */
+:root {
   --okou-card-radius: 1.25rem;
   /* Cards rendered inside a chat message sit one level in from the page, so
      they take one step down the radius scale. */
@@ -573,6 +580,16 @@ body {
   /* A card inside a message is not elevated off the page the way a page-level
      card is, so it gets contact rather than lift: a 2px blur instead of 12px. */
   --okou-chat-card-shadow: 0 1px 2px hsl(30 6% 45% / 0.05);
+}
+
+/* A gradient palette tints the elevation with the palette's own state layer.
+   `signals/theme.ts` writes this attribute onto the document element, so the
+   override sits at `:root` beside the values it refines. */
+:root[data-gradient-color-themes] {
+  --okou-card-shadow:
+    0 2px 12px hsl(var(--state-layer) / 0.035),
+    0 0 0 0.5px hsl(var(--state-layer) / 0.018);
+  --okou-chat-card-shadow: 0 1px 2px hsl(var(--state-layer) / 0.035);
 }
 
 /* Static focus veil for the composer. Fading this layer through opacity lets
@@ -608,13 +625,6 @@ body {
 
 :root:where([data-theme="dark"])[data-gradient-color-themes] {
   --okou-composer-focus-veil: none;
-}
-
-.okou-app[data-gradient-color-themes] {
-  --okou-card-shadow:
-    0 2px 12px hsl(var(--state-layer) / 0.035),
-    0 0 0 0.5px hsl(var(--state-layer) / 0.018);
-  --okou-chat-card-shadow: 0 1px 2px hsl(var(--state-layer) / 0.035);
 }
 
 /* Desktop shell: avoid accidental selection on app chrome while preserving content/editors. */
@@ -663,12 +673,6 @@ body {
    a picture stays readable without the stroke reading as a frame. */
 .okou-thumb-border {
   border: 0.5px solid hsl(var(--gray-400));
-}
-
-/* The sidebars take the site's own two greys. */
-.okou-app {
-  --color-sidebar: hsl(var(--sidebar));
-  --color-sidebar-rail: hsl(var(--sidebar-rail));
 }
 
 /* The travel a sidebar thread title is scrolled by while its row is hovered or
