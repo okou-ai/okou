@@ -80,6 +80,8 @@ surface; the index does not replace their detailed rules.
   memory, accounting, retained compatibility, and patch ownership boundaries.
 - [Runner host configuration](./runner-host-configuration.md): configure and
   verify host-local concurrency and I/O capacity overrides.
+- [Workspace history restore telemetry](./workspace-history-restore-telemetry.md):
+  local source and restored payload sizes, representation and timing semantics.
 - [Runner multi-architecture rollout](./runner-multi-architecture.md): build,
   deploy, and validate runner artifacts for supported host architectures.
 - [Testing catalog](./testing/anti-patterns.md): detailed testing anti-patterns.
