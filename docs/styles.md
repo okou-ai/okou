@@ -37,6 +37,8 @@ One hairline serves the whole product. `--default-border-width` in the shared `@
 
 This is a real hairline, not a rounding no-op. On a 2x display 0.5px paints one device pixel where 1px paints two, so every bare border carries half the ink it used to; layout is unaffected, because the used value is still rounded to whole pixels. Colour has to carry what the width no longer does, which is why `--border` sits one stop darker than the surface ramp's lightest step: `gray-200` was calibrated for a 1px line and stops reading on a near-white card at half the thickness.
 
+Every theme owes that stop, including the gradient color presets. Those presets redeclare the whole ramp, and they kept the pre-hairline `gray-200` for `--border` after the neutral themes moved up. That made each preset's borders a stop lighter than the neutral themes, collapsed `--border` onto the `--divider` value beside it, and erased any border drawn on a `bg-gray-200` surface outright, because the stroke resolved to that surface's own fill — the user message bubble's quote rule and its group divider were both painted in the bubble's background color. A preset that redeclares the ramp has to carry the ramp's decisions with it.
+
 Borders and rules are separate decisions with separate tokens. `--border` is for real borders, which follow `--default-border-width`. `--divider` is the lightest neutral rule — separators, `h-px` / `w-px` hairlines painted as backgrounds, and resting rail ticks. Those are sized explicitly, so they never lost thickness to the border hairline and must not inherit its compensating darkening. Use `bg-divider` for a painted rule and `border-border` for an actual border; do not reach for a raw ramp stop such as `border-gray-200` for either, because that bypasses both decisions.
 
 Color-theme presets in the App stylesheet share their anchor and companion colors between picker swatches and workspace ambience. Daydream uses cool blue and violet, while Cotton sky uses pastel pink and blue. Each preset's hue and ring values keep semantic surfaces, selected states, and focus indicators aligned with that palette in Light/Dark.
@@ -633,8 +635,9 @@ prop and composes the whole treatment onto the frame it already owns:
 
 ```
 [&_:is(p,[data-slot=markdown-card])]:my-2! [&>*:first-child]:mt-0!
-[&>*:last-child]:mb-0! [&_blockquote>*:first-child]:mt-0!
-[&_blockquote>*:last-child]:mb-0! [&_hr]:hidden
+[&>*:last-child]:mb-0! [&_blockquote]:py-2!
+[&_blockquote>*:first-child]:mt-0! [&_blockquote>*:last-child]:mb-0!
+[&_hr]:hidden
 ```
 
 Every margin there is important, and the four resets exist only because of it.
@@ -657,11 +660,29 @@ block wins every tie. The pair is not important and ties the retired
 `.okou-chat-bubble-* .wmde-markdown p` rule at (0,2,1), so the retired rule won:
 inside a bubble, a blockquote's first and last paragraph carried its 8px.
 `[&_blockquote>*:first-child]:mt-0!` and its `mb-0!` sibling flush those two
-edges instead, which narrows that spacing rather than restating it. See the
-Markdown body batch in the migration log for the measurement, and
-[#34278](https://github.com/vm0-ai/vm0/issues/34278) for the spacing decision
-itself. `[&_hr]:hidden` needs no important, because nothing unlayered declares
-`display` on a Markdown rule.
+edges instead. See the Markdown body batch in the migration log for the
+measurement.
+
+That 8px was never spacing inside the quote, which is why flushing those edges
+looked inert and why restoring the margin would not bring it back. A blockquote
+here declares `padding: 0 1em` and a left border only, so a first or last
+child's block margin has no block padding or border to stop it and collapses
+straight out through the quote's own edges. Measured across a quote between
+paragraphs, alone, first, and last in the body, the inset from the quote's edge
+to its first and last line was 0px both before and after that change; the only
+geometry that moved was 8px of leaked space at the bubble's own top and bottom,
+which is exactly what the vendored `> *:first-child` reset exists to remove.
+`[&_blockquote]:py-2!` gives the quote the bubble's 8px as block padding, where
+it is both visible and contained, and the flushing pair is what keeps the inner
+margins from adding a second, escaping copy. Resolves
+[#34278](https://github.com/vm0-ai/vm0/issues/34278).
+
+The padding needs its important for the same reason the margins do, and for a
+sharper reason: `.wmde-markdown blockquote` declares `padding: 0 1em` unlayered,
+and an unlayered normal declaration outranks a layered one whatever its
+specificity. A non-important `[&_blockquote]:py-2` compiles and matches but
+changes nothing. `[&_hr]:hidden` needs no important, because nothing unlayered
+declares `display` on a Markdown rule.
 
 The card slot is addressed through `data-slot="markdown-card"` rather than its
 `okou-markdown-card` class. At the time this batch landed that was because

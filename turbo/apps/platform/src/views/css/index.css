@@ -1330,7 +1330,12 @@ details > summary {
   --secondary: var(--okou-color-theme-hue) 22% 96.7%;
   --muted: var(--gray-100);
   --accent: var(--okou-color-theme-hue) 24% 96.7%;
-  --border: var(--gray-200);
+  /* One stop darker than the surface ramp's lightest step, matching the shared
+     token layer. These presets kept the pre-hairline gray-200, which left every
+     border here a stop lighter than the neutral themes and collapsed `--border`
+     onto `--divider`. It also made a border invisible on any gray-200 surface,
+     because the stroke resolved to that surface's own fill. */
+  --border: var(--gray-300);
   --input: var(--card);
   --ring: var(--okou-color-theme-ring);
   /* Halved with the neutral sidebar: this surface now frames the workspace
@@ -1375,7 +1380,7 @@ details > summary {
   --secondary: var(--okou-color-theme-hue) 9% 20.5%;
   --muted: var(--gray-200);
   --accent: var(--okou-color-theme-hue) 12% 26.5%;
-  --border: var(--gray-200);
+  --border: var(--gray-300); /* one stop up: see the light note above */
   --input: var(--gray-200);
   --ring: var(--okou-color-theme-hue) 45% 62%;
   --sidebar: var(--okou-color-theme-hue) 14% 12%;
