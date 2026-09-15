@@ -72,6 +72,10 @@ export interface CliTokenRecord {
 }
 
 export interface SandboxAuth {
+  readonly piSandbox?: {
+    readonly ownerEpoch: number;
+    readonly generation: number;
+  };
   readonly userId: string;
   readonly runId: string;
   readonly orgId: string;

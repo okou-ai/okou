@@ -1,3 +1,4 @@
+import { getApiUrl, getToken } from "./api/config.js";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -6,10 +7,13 @@ import { gunzip, zstdDecompress } from "node:zlib";
 
 import {
   PI_API_FIRST_TURN_SESSION_MAX_BYTES,
+  piDeferredHandoffChunkSchema,
+  piDeferredHandoffDataSchema,
   piApiFirstTurnManifestSchema,
   type PiApiFirstTurnConfig,
   type PiApiFirstTurnManifest,
   type PiApiFirstTurnOwnershipTransferMode,
+  type PiDeferredSandboxConfig,
 } from "@okouai/api-contracts/contracts/runners";
 import {
   inspectPiSessionJsonl,
@@ -55,6 +59,9 @@ export interface PiApiFirstTurnBoundaryControl {
 }
 
 interface PiApiFirstTurnHandoff {
+  readonly resourceSnapshot?: ReturnType<
+    typeof piDeferredHandoffDataSchema.parse
+  >["resourceSnapshot"];
   readonly sessionFile: string;
   readonly boundaryControl: PiApiFirstTurnBoundaryControl;
   readonly ownershipTransferMode: PiApiFirstTurnOwnershipTransferMode;
@@ -439,12 +446,19 @@ async function restoreSession(args: {
 
 /** Poll the wire coordination deadline and restore the validated checkpoint. */
 export async function resolvePiApiFirstTurnHandoff(args: {
-  readonly config: PiApiFirstTurnConfig;
+  readonly config: PiApiFirstTurnConfig | PiDeferredSandboxConfig;
   readonly sessionDir: string;
   readonly sessionId: string;
   readonly runtime?: HandoffRuntime;
 }): Promise<PiApiFirstTurnHandoff> {
   const runtime = args.runtime ?? defaultRuntime;
+  if (args.config.schemaVersion === 2) {
+    return restoreDeferredSandboxHandoff({
+      ...args,
+      config: args.config,
+      runtime,
+    });
+  }
   const manifest = await pollManifest(args.config, runtime);
   const boundaryControl: PiApiFirstTurnBoundaryControl = {
     schemaVersion: 2,
@@ -465,5 +479,149 @@ export async function resolvePiApiFirstTurnHandoff(args: {
       sessionId: args.sessionId,
       mode: manifest.mode,
     }),
+  };
+}
+
+async function readDeferredHandoffData(
+  config: PiDeferredSandboxConfig,
+  runtime: HandoffRuntime,
+) {
+  const token = await getToken();
+  if (!token) {
+    throw new Error("Deferred Pi requires its Sandbox token");
+  }
+  const apiUrl = await getApiUrl();
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for (let offset: number | null = 0; offset !== null; ) {
+    if (runtime.now() >= config.deadlineAt) {
+      throw new Error("Pi durable handoff deadline expired");
+    }
+    const response = await runtime.fetch(
+      `${apiUrl}/api/runners/jobs/${config.runId}/pi-handoff/${offset}`,
+      {
+        headers: { authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(
+          Math.min(30_000, config.deadlineAt - runtime.now()),
+        ),
+        redirect: "error",
+      },
+    );
+    if (!response.ok) {
+      throw new Error(`Pi durable handoff read failed: ${response.status}`);
+    }
+    const encoded = await responseBufferWithMaxBytes({
+      response,
+      maxBytes: 1_500_000,
+      code: "PI_HANDOFF_H1_TOO_LARGE",
+      readErrorCode: "PI_HANDOFF_H1_DOWNLOAD_FAILED",
+      label: "Pi durable handoff chunk",
+    });
+    const chunk = piDeferredHandoffChunkSchema.parse(
+      JSON.parse(encoded.toString("utf8")),
+    );
+    const decoded = Buffer.from(chunk.chunk, "base64");
+    size += decoded.length;
+    if (
+      !decoded.length ||
+      decoded.length > 1024 * 1024 ||
+      size > 32 * 1024 * 1024 ||
+      (chunk.nextOffset !== null &&
+        (decoded.length !== 1024 * 1024 ||
+          chunk.nextOffset !== offset + decoded.length))
+    ) {
+      throw new Error("Pi durable handoff chunk bounds mismatch");
+    }
+    chunks.push(decoded);
+    offset = chunk.nextOffset;
+  }
+  return piDeferredHandoffDataSchema.parse(
+    JSON.parse(Buffer.concat(chunks, size).toString("utf8")),
+  );
+}
+
+/** The durable payload has already won Runner claim. Validate its exact native
+ * checkpoint before RPC startup; no polling or first-provider replay. */
+async function restoreDeferredSandboxHandoff(args: {
+  readonly config: PiDeferredSandboxConfig;
+  readonly sessionDir: string;
+  readonly sessionId: string;
+  readonly runtime: HandoffRuntime;
+}): Promise<PiApiFirstTurnHandoff> {
+  const { config } = args;
+  const data = await readDeferredHandoffData(config, args.runtime);
+  const bytes = Buffer.from(data.sessionHistory, "utf8");
+  if (
+    bytes.length > PI_API_FIRST_TURN_SESSION_MAX_BYTES ||
+    createHash("sha256").update(bytes).digest("hex") !== config.historyHash ||
+    createHash("sha256")
+      .update(JSON.stringify(data.resourceSnapshot))
+      .digest("hex") !== config.resourceSnapshotDigest ||
+    args.runtime.now() >= config.deadlineAt
+  ) {
+    throw new Error(
+      "Pi durable handoff failed its integrity or deadline check",
+    );
+  }
+  const inspection = inspectPiSessionJsonl(data.sessionHistory);
+  if (
+    inspection.sessionId !== args.sessionId ||
+    config.baseSession.sessionId !== args.sessionId
+  ) {
+    throw new Error("Pi durable handoff session identity mismatch");
+  }
+  const mode =
+    config.continuation.mode === "pending-tools"
+      ? "pending-tool-continuation"
+      : config.continuation.mode === "settled-session"
+        ? "settled-session-continuation"
+        : "sandbox-first";
+  if (
+    config.continuation.mode === "pending-tools" &&
+    JSON.stringify(inspection.pendingToolIds) !==
+      JSON.stringify(config.continuation.pendingToolIds)
+  ) {
+    throw new Error("Pi durable handoff pending tool identities mismatch");
+  }
+  if (
+    config.continuation.mode !== "untouched-h0" &&
+    config.sandboxEventSequenceStart !==
+      config.continuation.lastEventSequence + 1
+  ) {
+    throw new Error("Pi durable handoff event sequence mismatch");
+  }
+  validateSessionMode({
+    inspection,
+    mode,
+    manifest: {
+      schemaVersion: 3,
+      outcome: "ownership-transfer",
+      mode,
+      baseSession: config.baseSession,
+      session: {
+        sessionId: args.sessionId,
+        sha256: config.historyHash,
+        rawSize: bytes.length,
+      },
+      sandboxEventSequenceStart: config.sandboxEventSequenceStart,
+    },
+  });
+  const sessionFile = join(
+    args.sessionDir,
+    `deferred-${config.ownerEpoch}-${config.generation}-${args.sessionId}.jsonl`,
+  );
+  const temporaryFile = `${sessionFile}.${randomUUID()}.tmp`;
+  await mkdir(args.sessionDir, { recursive: true });
+  await writeFile(temporaryFile, bytes, { mode: 0o600 });
+  await rename(temporaryFile, sessionFile);
+  return {
+    sessionFile,
+    resourceSnapshot: data.resourceSnapshot,
+    ownershipTransferMode: mode,
+    boundaryControl: {
+      schemaVersion: 2,
+      sandboxEventSequenceStart: config.sandboxEventSequenceStart,
+      ownershipTransferMode: mode,
+    },
   };
 }

@@ -1,3 +1,5 @@
+import { agentRunInferenceObjects } from "@okouai/db/schema/pi-inference-object";
+import { deleteUnreferencedPiObjects } from "./pi-inference-object.service";
 import { assertPiInferenceErasureReady } from "./pi-inference-lifecycle.service";
 import {
   agentRunInference,
@@ -36,9 +38,24 @@ export async function deleteRunConversations(
   runIds: readonly string[],
 ) {
   await assertPiInferenceErasureReady(tx, runIds);
+  const piObjectHashes: string[] = [];
   // All erasure owners call this before parent cascades. Only proven releases
   // may be removed; the lease FK blocks unknown external cleanup atomically.
   for (let offset = 0; offset < runIds.length; offset += DELETION_BATCH_SIZE) {
+    const references = await tx
+      .select({ hash: agentRunInferenceObjects.hash })
+      .from(agentRunInferenceObjects)
+      .where(
+        inArray(
+          agentRunInferenceObjects.runId,
+          runIds.slice(offset, offset + DELETION_BATCH_SIZE),
+        ),
+      );
+    piObjectHashes.push(
+      ...references.map((reference) => {
+        return reference.hash;
+      }),
+    );
     await tx
       .delete(agentRunSandboxLease)
       .where(
@@ -90,7 +107,7 @@ export async function deleteRunConversations(
       }
     }
   }
-  return { references, deletedConversations };
+  return { references, deletedConversations, piObjectHashes };
 }
 
 /** Delete only the locked Run set; a later scoped INSERT is not our evidence. */
@@ -186,6 +203,7 @@ export async function releaseDeletedConversationReferences(
       );
     }
   }
+  await deleteUnreferencedPiObjects(tx, [...new Set(removed.piObjectHashes)]);
   return {
     deletedConversations: removed.deletedConversations,
     releasedReferences: references.reduce((total, entry) => {

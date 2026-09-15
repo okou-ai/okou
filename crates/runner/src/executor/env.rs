@@ -1,5 +1,6 @@
 mod native;
 
+use api_contracts::generated::types::runners::runs::PiDeferredLaunchConfig;
 use std::collections::HashMap;
 
 use api_contracts::generated::constants::model_provider_env::placeholders as model_provider_placeholders;
@@ -165,6 +166,34 @@ fn is_sha256(value: &str) -> bool {
 // unknown additive object fields remain safe because the original JSON is
 // forwarded after this validation view is discarded.
 fn validate_pi_launch_config(value: &serde_json::Value, session_id: &str) -> Result<(), String> {
+    if value
+        .pointer("/apiFirstTurn/schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        == Some(2)
+    {
+        let launch: PiDeferredLaunchConfig = serde_json::from_value(value.clone())
+            .map_err(|error| format!("Deferred Pi launch is invalid: {error}"))?;
+        let slot = launch.api_first_turn;
+        if launch.schema_version != 2
+            || slot.schema_version != 2
+            || slot.owner_epoch <= 0
+            || slot.generation <= 0
+            || slot.deadline_at <= 0
+            || !(1..=i32::MAX as u64).contains(&slot.sandbox_event_sequence_start)
+            || slot.base_session.session_id != session_id
+            || !is_sha256(&slot.history_hash)
+            || !is_sha256(&slot.resource_snapshot_digest)
+            || value.pointer("/apiFirstTurn/baseSession/sha256").is_none()
+            || slot
+                .base_session
+                .sha256
+                .as_ref()
+                .is_some_and(|hash| !is_sha256(hash))
+        {
+            return Err("Deferred Pi launch identity is invalid".to_string());
+        }
+        return Ok(());
+    }
     let launch: PiLaunchConfig = serde_json::from_value(value.clone())
         .map_err(|error| format!("Pi launch config v2 is invalid: {error}"))?;
     if value.pointer("/apiFirstTurn/baseSession/sha256").is_none() {

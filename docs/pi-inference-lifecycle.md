@@ -114,3 +114,10 @@ The migration validator builds the real pre-expansion schema in an isolated Post
 Focused HTTP/infrastructure behavior covers jobless read/cancel/failure and successful canonical checkpoint completion; waiting expiry beyond ten minutes; provider uncertainty; stale/common epochs; capacity coexistence and retained terminal reservations; active thread ordering; isolated corrupt-state cleanup; H0 ownership/hash and retention; erasure after proven release; capacity-lock independence; captured personal-source disconnect/final-reference cleanup and hard authority loss. Existing legacy lifecycle tests and CI remain the broader regression boundary.
 
 No runtime producer/consumer, actual provider uncertainty reconciliation, remote Sandbox release, durable object uploader, independent inference policy thresholds, production migration timing, provider-start benchmark or release acceptance is implemented or claimed here. Those are the explicit activation prerequisites and subsequent child responsibilities, not evidence supplied by green CI. Keep #34242 and #34236 open for controller acceptance.
+
+## Deferred Sandbox consumer
+
+The default-off durable consumer, retained object interfaces, bounded Runner/CLI
+transport, recovery and release-proof ownership are specified in
+[Durable Pi Sandbox consumer](./pi-deferred-sandbox-consumer.md). The API producer
+and production enablement remain separate changes.

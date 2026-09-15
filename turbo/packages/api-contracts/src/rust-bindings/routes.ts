@@ -54,6 +54,11 @@ export const rustRouteBindings = [
     rustConstName: "POLL",
   },
   {
+    route: runnersJobClaimContract.release,
+    rustModulePath: ["runners", "jobs", "by_id", "release"],
+    rustConstName: "RELEASE",
+  },
+  {
     route: runnersJobClaimContract.claim,
     rustModulePath: ["runners", "jobs", "by_id", "claim"],
     rustConstName: "CLAIM",

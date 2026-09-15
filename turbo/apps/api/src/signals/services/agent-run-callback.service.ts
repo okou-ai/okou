@@ -283,6 +283,30 @@ const dispatchSingleInternalCallback$ = command(
   },
 );
 
+/** Durable consumer recovery must observe delivery, not only dispatcher return. */
+export async function hasUndeliveredRunCallbacks(
+  db: Pick<Db, "select">,
+  runId: string,
+): Promise<boolean> {
+  const [pending] = await db
+    .select({ id: agentRunCallbacks.id })
+    .from(agentRunCallbacks)
+    .where(
+      and(
+        eq(agentRunCallbacks.runId, runId),
+        inArray(agentRunCallbacks.status, ["pending", "failed"]),
+        or(
+          isNull(agentRunCallbacks.internalKind),
+          notInArray(agentRunCallbacks.internalKind, [
+            ...INLINE_ONLY_INTEGRATION_DELIVERY_CALLBACK_KINDS,
+          ]),
+        ),
+      ),
+    )
+    .limit(1);
+  return pending !== undefined;
+}
+
 export async function dispatchRunCallbacks(
   db: Db,
   runId: string,

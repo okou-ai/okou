@@ -1418,6 +1418,7 @@ export async function captureActivePersonalModelProviderAccount(
 
 export async function personalModelProviderAccountById(args: {
   readonly db: Db;
+  readonly runId?: string;
   readonly id: string;
   readonly orgId: string;
   readonly userId: string;
@@ -1428,7 +1429,7 @@ export async function personalModelProviderAccountById(args: {
     .where(
       and(
         eq(modelProviderAccounts.id, args.id),
-        isNull(modelProviderAccounts.disconnectedAt),
+        personalSubscriptionAccountAccessCondition(args.db, args.runId),
         eq(modelProviderAccounts.orgId, args.orgId),
         eq(modelProviderAccounts.userId, args.userId),
       ),

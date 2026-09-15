@@ -1,3 +1,4 @@
+import { deletePiObjectOrphansForOwner } from "./pi-inference-object.service";
 import {
   assertPiInferenceScopeErasureReady,
   piInferenceErasureScopePredicate,
@@ -851,6 +852,7 @@ async function deleteOrgData(
     .delete(morningBriefEnrollments)
     .where(eq(morningBriefEnrollments.orgId, orgId));
   await db.delete(orgMetadata).where(eq(orgMetadata.orgId, orgId));
+  await deletePiObjectOrphansForOwner(db, { orgId });
 }
 
 async function deleteUserData(
@@ -928,6 +930,7 @@ async function deleteUserData(
     );
     await tx.delete(users).where(eq(users.id, userId));
   });
+  await deletePiObjectOrphansForOwner(db, { userId });
 }
 
 export const cleanupClerkDeletedOrg$ = command(
