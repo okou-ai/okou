@@ -774,18 +774,33 @@ impl PiRpcProjection {
         }
         self.failed_model_attempts = 0;
         self.retry_limit = None;
-        let mut result = json!({
-            "type": "result",
-            "subtype": if assistant.failed { "error_during_execution" } else { "success" },
-            "is_error": assistant.failed,
-            "result": assistant.result,
-            "session_id": self.session_id,
-            "duration_ms": self.started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
-        });
+        let mut result = serde_json::Map::from_iter([
+            ("type".to_owned(), json!("result")),
+            (
+                "subtype".to_owned(),
+                json!(if assistant.failed {
+                    "error_during_execution"
+                } else {
+                    "success"
+                }),
+            ),
+            ("is_error".to_owned(), json!(assistant.failed)),
+            ("result".to_owned(), json!(assistant.result)),
+            ("session_id".to_owned(), json!(self.session_id)),
+            (
+                "duration_ms".to_owned(),
+                json!(
+                    self.started_at
+                        .elapsed()
+                        .as_millis()
+                        .min(u128::from(u64::MAX)) as u64
+                ),
+            ),
+        ]);
         if let Some(request) = assistant.model_request {
-            result["modelRequest"] = json!(request);
+            result.insert("modelRequest".to_owned(), json!(request));
         }
-        result
+        Value::Object(result)
     }
 }
 
