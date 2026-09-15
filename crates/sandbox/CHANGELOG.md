@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.8](https://github.com/vm0-ai/vm0/compare/sandbox-v0.22.7...sandbox-v0.22.8) (2026-09-15)
+
+
+### Performance Improvements
+
+* **runner:** persist extracted storage files for cache-hit delivery ([#33976](https://github.com/vm0-ai/vm0/issues/33976)) ([b961911](https://github.com/vm0-ai/vm0/commit/b961911d0516fbdc06d3e8387bedb0653eee5ea9))
+
 ## [0.22.7](https://github.com/vm0-ai/vm0/compare/sandbox-v0.22.6...sandbox-v0.22.7) (2026-09-14)
 
 

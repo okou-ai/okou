@@ -106,6 +106,10 @@ function isVideoContentType(contentType: string | null): boolean {
   return contentType?.startsWith("video/") ?? false;
 }
 
+// Cloudflare Media Transformations rejects input at or above this size with
+// `9402`, so a larger artifact can never yield a poster frame either.
+export const VIDEO_POSTER_MAX_INPUT_BYTES = 104_857_600;
+
 // Cloudflare Media Transformations only decodes MP4 input, so a WebM artifact
 // can never yield a poster frame. Recognizing that up front avoids a request
 // that always fails and a warning nobody can act on.

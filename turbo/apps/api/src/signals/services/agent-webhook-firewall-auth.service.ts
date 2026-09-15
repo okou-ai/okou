@@ -5,6 +5,10 @@ import {
   reconcileLockedPersonalSubscriptionCredentials,
   readPersonalSubscriptionCredentialBundle,
 } from "./model-provider-account.service";
+import {
+  publishModelPoliciesChangedForOrgSafely,
+  publishPersonalModelProvidersChangedSafely,
+} from "../external/realtime";
 import { Buffer } from "node:buffer";
 import { performance } from "node:perf_hooks";
 
@@ -3092,7 +3096,7 @@ async function refreshAccessTokenForSource(
     ? args.forceRefreshStartedAtMicros
     : await currentDatabaseTimestampMicros(args.db);
   const initialState = await loadRefreshState(args.db, args, prepared.context);
-  return await args.db.transaction(async (tx) => {
+  const result = await args.db.transaction(async (tx) => {
     await lockPreparedRefreshSource(tx, args, prepared);
     return await refreshLockedAccessToken({
       refreshArgs: { ...args, db: tx },
@@ -3101,6 +3105,22 @@ async function refreshAccessTokenForSource(
       requestStartedAtMicros,
     });
   });
+  // The reconnect projection is local metadata. Publish after the refresh
+  // transaction, never while holding the credential lifecycle locks.
+  if (
+    prepared.sourceType === "model-provider" &&
+    ((result.ok && result.status === "refreshed") ||
+      (!result.ok && result.failureReason === "reconnect_required"))
+  ) {
+    if (prepared.context.secretUserId === ORG_SENTINEL_USER_ID) {
+      await publishModelPoliciesChangedForOrgSafely(args.orgId);
+    } else {
+      await publishPersonalModelProvidersChangedSafely(
+        prepared.context.secretUserId,
+      );
+    }
+  }
+  return result;
 }
 
 function buildMetadataByAccessSource(

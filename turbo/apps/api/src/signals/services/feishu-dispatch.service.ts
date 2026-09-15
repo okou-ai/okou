@@ -31,7 +31,6 @@ import {
   addFeishuMessageReaction,
   listFeishuChatMessages,
   replyWithFeishuMessage,
-  sendFeishuMessage,
   type FeishuHistoryMessage,
   type FeishuOutboundMessage,
 } from "../external/feishu-client";
@@ -73,12 +72,6 @@ export interface FeishuInboundMessage {
   readonly text: string;
   readonly promptText: string;
   readonly files: readonly FeishuPromptFile[];
-}
-
-export function shouldReplyInFeishuThread(
-  message: FeishuInboundMessage,
-): boolean {
-  return message.chatType !== "p2p" || message.threadId !== null;
 }
 
 interface FeishuAgent {
@@ -154,19 +147,6 @@ async function reply(
   },
   signal: AbortSignal,
 ): Promise<void> {
-  if (!shouldReplyInFeishuThread(args.message)) {
-    await sendFeishuMessage(
-      {
-        db: args.db,
-        installationId: args.message.installationId,
-        receiveIdType: "chat_id",
-        receiveId: args.message.chatId,
-        message: args.outbound,
-      },
-      signal,
-    );
-    return;
-  }
   await replyWithFeishuMessage(
     {
       db: args.db,

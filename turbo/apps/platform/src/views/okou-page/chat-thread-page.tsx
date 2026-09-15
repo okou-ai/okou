@@ -5135,6 +5135,11 @@ function AssistantErrorRecoveryCard({
   const { t } = useTranslation();
   const resetText = assistantRecoveryResetText(recovery);
   const title = (() => {
+    if (recovery.kind === "subscription-error") {
+      return t(($) => {
+        return $.chat.errors.genericTitle;
+      });
+    }
     if (recovery.kind === "execution-timeout") {
       return t(($) => {
         return $.chat.errors.recovery.timeoutTitle;
@@ -5166,21 +5171,42 @@ function AssistantErrorRecoveryCard({
     );
   })();
   const description =
-    recovery.kind === "execution-timeout"
-      ? t(($) => {
-          return $.chat.errors.recovery.timeoutDescription;
-        })
-      : recovery.kind === "usage-limit"
+    recovery.kind === "subscription-error"
+      ? recovery.providerMessage
+      : recovery.kind === "execution-timeout"
         ? t(($) => {
-            return $.chat.errors.recovery.usageDescription;
+            return $.chat.errors.recovery.timeoutDescription;
           })
-        : recovery.kind === "model-unavailable"
+        : recovery.kind === "usage-limit"
           ? t(($) => {
-              return $.chat.errors.recovery.unavailableDescription;
+              return $.chat.errors.recovery.usageDescription;
             })
-          : t(($) => {
-              return $.chat.errors.recovery.capacityDescription;
-            });
+          : recovery.kind === "model-unavailable"
+            ? t(($) => {
+                return $.chat.errors.recovery.unavailableDescription;
+              })
+            : t(($) => {
+                return $.chat.errors.recovery.capacityDescription;
+              });
+  const personalSource = recovery.source?.credentialScope === "member";
+  const sourceDescription = personalSource
+    ? recovery.source?.account.status === "unavailable"
+      ? t(($) => {
+          return $.chat.errors.recovery.originalAccountUnavailable;
+        })
+      : recovery.source?.account.status === "unknown"
+        ? t(($) => {
+            return $.chat.errors.recovery.originalAccountUnknown;
+          })
+        : recovery.accountLabel
+          ? t(
+              ($) => {
+                return $.chat.errors.recovery.originalAccount;
+              },
+              { account: recovery.accountLabel },
+            )
+          : null
+    : null;
 
   return (
     <AssistantErrorCard
@@ -5190,7 +5216,19 @@ function AssistantErrorRecoveryCard({
           : Coffee
       }
       title={title}
-      description={`${description}${resetText ? ` ${resetText}` : ""}`}
+      description={
+        <>
+          {`${description}${resetText ? ` ${resetText}` : ""}`}
+          {sourceDescription && <p className="mt-1">{sourceDescription}</p>}
+          {personalSource && (
+            <p className="mt-1">
+              {t(($) => {
+                return $.chat.errors.recovery.newRunCurrentSettings;
+              })}
+            </p>
+          )}
+        </>
+      }
       actions={<AssistantRecoveryActions recovery={recovery} thread={thread} />}
       testId="assistant-error-recovery"
     />
@@ -6479,12 +6517,12 @@ function UserMessageFeedbackGroup({
             {showDivider ? (
               <div
                 data-structured-feedback-divider=""
-                className="border-t border-border"
+                className="border-t border-border-on-fill"
               />
             ) : null}
             <blockquote
               data-structured-feedback-quote=""
-              className="border-l-2 border-border pl-3 text-muted-foreground"
+              className="border-l-2 border-border-on-fill pl-3 text-muted-foreground"
             >
               {renderPart.part.quote}
             </blockquote>

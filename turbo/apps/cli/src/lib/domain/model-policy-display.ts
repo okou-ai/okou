@@ -1,3 +1,4 @@
+import { getMemberModelPolicyRoute } from "@okouai/api-contracts/contracts/member-model-policy";
 import {
   getModelProviderPresentationLabel,
   isBuiltInModelProviderType,
@@ -8,13 +9,14 @@ import {
 type ModelProviderRouteKind = "built-in" | "api key" | "subscription";
 
 export function getModelProviderRouteKind(
-  policy: Pick<OrgModelPolicy, "credentialScope" | "defaultProviderType">,
+  policy: OrgModelPolicy,
 ): ModelProviderRouteKind {
-  if (isBuiltInModelProviderType(policy.defaultProviderType)) {
+  const route = getMemberModelPolicyRoute(policy);
+  if (isBuiltInModelProviderType(route.providerType)) {
     return "built-in";
   }
 
-  if (policy.credentialScope === "member") {
+  if (route.credentialScope === "member") {
     return "subscription";
   }
 
@@ -27,11 +29,26 @@ export function getModelProviderTypeLabel(type: ModelProviderType): string {
 
 export function formatModelProviderRoute(policy: OrgModelPolicy): string {
   const kind = getModelProviderRouteKind(policy);
-  const label = getModelProviderTypeLabel(policy.defaultProviderType);
-  return `${kind} (${label}; ${policy.defaultProviderType})`;
+  const route = getMemberModelPolicyRoute(policy);
+  const label = getModelProviderTypeLabel(route.providerType);
+  return `${kind} (${label}; ${route.providerType})`;
 }
 
 export function formatModelPolicyStatus(policy: OrgModelPolicy): string | null {
+  if (policy.memberEffective) {
+    switch (policy.memberEffective.availability) {
+      case "available":
+        return null;
+      case "reconnect_required":
+        return "reconnect_required: Reconnect your personal subscription in Preferences / Personal Models.";
+      case "plan_restricted":
+        return "plan_restricted: Review your organization's plan in Billing.";
+      case "unavailable":
+        return policy.memberEffective.credentialScope === "member"
+          ? "unavailable: Connect your personal subscription in Preferences / Personal Models."
+          : "unavailable: Ask an organization admin to review this model provider.";
+    }
+  }
   if (policy.routeStatus === "valid") {
     return null;
   }

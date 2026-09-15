@@ -58,7 +58,7 @@ expired transition validator must be deleted.
   variants. Keep these transition controls until the production journal and
   completed rollout satisfy all three conditions above. Current API route
   coverage, guard constraints and the exact remaining catalog are permanent.
-- `scripts/test-pi-memory-stage1-cost.ts` protects D's 1138/1139 context expansion
+- `scripts/test-pi-memory-stage1-cost.ts` protects D's 1139/1140 context expansion
   and separate validation transactions (#34267). It runs from the full
   schema-consistency test on isolated current-schema clones, with actual
   1118/1119 pre-D checks/capture, 134,426 raw and 321,528 hourly rows, default

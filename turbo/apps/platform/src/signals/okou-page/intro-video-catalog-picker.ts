@@ -65,8 +65,29 @@ function createCatalogSentinelRef(
   );
 }
 
+/** Keeps the first row for each key, so a repeated provider row shows once. */
+function collapseCatalogItems<T>(
+  items: readonly T[],
+  itemKey: (item: T) => string,
+): readonly T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = itemKey(item);
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
 export function createPagedCatalogSignals<T>(
   loadPage$: Computed<CatalogLoader<T>>,
+  /**
+   * Collapses rows the provider repeats. Pages arrive one cursor at a time, so
+   * a repeat is only visible once both pages sit in the accumulated list.
+   */
+  itemKey?: (item: T) => string,
 ) {
   const internalPages$ = state<readonly CatalogPage<T>[]>([]);
   const internalRequestedTokens$ = state<readonly string[]>([]);
@@ -93,13 +114,14 @@ export function createPagedCatalogSignals<T>(
       const firstPage = await get(firstPage$);
       const pages = get(internalPages$);
       const lastPage = pages.at(-1) ?? firstPage;
+      const items = [
+        ...firstPage.items,
+        ...pages.flatMap((page) => {
+          return page.items;
+        }),
+      ];
       return {
-        items: [
-          ...firstPage.items,
-          ...pages.flatMap((page) => {
-            return page.items;
-          }),
-        ],
+        items: itemKey ? collapseCatalogItems(items, itemKey) : items,
         hasNext: lastPage.hasNext,
         nextToken: lastPage.nextToken,
         generation,

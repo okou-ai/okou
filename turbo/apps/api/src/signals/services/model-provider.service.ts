@@ -26,6 +26,10 @@ import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account"
 import { secrets } from "@okouai/db/schema/secret";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db$, writeDb$, type Db } from "../external/db";
+import {
+  publishModelPoliciesChangedForOrgSafely,
+  publishPersonalModelProvidersChangedSafely,
+} from "../external/realtime";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
@@ -47,6 +51,15 @@ const L = logger("model-provider.service");
 
 const ORG_SENTINEL_USER_ID = "__org__";
 type ModelProviderRow = typeof modelProvidersTable.$inferSelect;
+
+function publishProviderChanged(args: {
+  readonly orgId: string;
+  readonly userId: string;
+}): Promise<void> {
+  return args.userId === ORG_SENTINEL_USER_ID
+    ? publishModelPoliciesChangedForOrgSafely(args.orgId)
+    : publishPersonalModelProvidersChangedSafely(args.userId);
+}
 
 function hasUsableSecretValue(value: string | undefined): value is string {
   return value !== undefined && value.trim().length > 0;
@@ -172,7 +185,7 @@ async function disconnectPersonalSubscriptionProvider(
   signal.throwIfAborted();
   await identifyPersonalSubscriptionAccountsBeforeDisconnect(args, signal);
   signal.throwIfAborted();
-  return await args.db.transaction(async (tx) => {
+  const result = await args.db.transaction(async (tx) => {
     await lockModelProviderState(tx, args);
     const accounts = await tx
       .select({ id: modelProviderAccounts.id })
@@ -202,6 +215,12 @@ async function disconnectPersonalSubscriptionProvider(
     }
     return undefined;
   });
+  signal.throwIfAborted();
+  if (result === undefined) {
+    await publishProviderChanged(args);
+    signal.throwIfAborted();
+  }
+  return result;
 }
 
 /**
@@ -247,7 +266,7 @@ export const deleteUserModelProvider$ = command(
       );
     }
 
-    return await writeDb.transaction(async (tx) => {
+    const result = await writeDb.transaction(async (tx) => {
       await lockModelProviderState(tx, {
         orgId: args.orgId,
         userId: args.userId,
@@ -318,6 +337,12 @@ export const deleteUserModelProvider$ = command(
 
       return undefined;
     });
+    signal.throwIfAborted();
+    if (result === undefined) {
+      await publishProviderChanged(args);
+      signal.throwIfAborted();
+    }
+    return result;
   },
 );
 
@@ -787,7 +812,8 @@ export const upsertUserModelProvider$ = command(
       throw new Error("Expected model provider upsert to return a row");
     }
 
-    const wasCreated = !existingProvider;
+    await publishProviderChanged(args);
+    signal.throwIfAborted();
 
     return {
       provider: toModelProviderInfoFromRow({
@@ -796,7 +822,7 @@ export const upsertUserModelProvider$ = command(
         type: args.type,
         secretName,
       }),
-      created: wasCreated,
+      created: !existingProvider,
     };
   },
 );
@@ -1070,6 +1096,8 @@ export const upsertUserMultiAuthModelProvider$ = command(
     signal.throwIfAborted();
 
     const { provider } = result;
+    await publishProviderChanged(args);
+    signal.throwIfAborted();
 
     return {
       provider: toModelProviderInfoFromRow({
@@ -1180,6 +1208,8 @@ export const upsertOrgNoSecretModelProvider$ = command(
     );
     signal.throwIfAborted();
 
+    await publishModelPoliciesChangedForOrgSafely(args.orgId);
+    signal.throwIfAborted();
     return {
       provider: toModelProviderInfoFromRow({
         provider: result.provider,

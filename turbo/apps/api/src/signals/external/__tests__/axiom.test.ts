@@ -1,11 +1,22 @@
+import { randomUUID } from "node:crypto";
+
+import { RESUME_SESSION_HISTORY_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
+import { webhookTelemetryContract } from "@okouai/api-contracts/contracts/webhooks";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { getApiTestMocks } from "../../../__tests__/mocks";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
+import { createBddApi } from "../../routes/__tests__/helpers/api-bdd";
+import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
+import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
 import { createDeferredPromise } from "../../utils";
+
+const context = testContext();
 
 function sdkClientForDataset(
   mocks: ReturnType<typeof getApiTestMocks>,
@@ -23,6 +34,100 @@ function sdkClientForDataset(
 }
 
 describe("shared SDK ingestion", () => {
+  it("preserves workspace restore measurements through the sandbox-operation SDK transport", async () => {
+    // Logger-suite exception: the SDK ingestion record is the subject, and no
+    // production read endpoint exposes it. Exercise the real webhook so its
+    // validation and field projection remain part of this transport contract.
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    runs.configureRunnerGroup();
+    await runs.grantProEntitlement(actor);
+    await runs.ensureOrgModelProvider(actor);
+    const agent = await bdd.createAgent(actor, {
+      displayName: `Workspace history telemetry ${randomUUID()}`,
+      visibility: "private",
+    });
+    const { runId } = await runs.createRun(actor, {
+      agentId: agent.agentId,
+      prompt: "restore workspace history",
+      modelProvider: "anthropic-api-key",
+    });
+    const token = runs.sandboxTokenForRun(actor, runId);
+    const ts = "2026-09-15T00:00:00Z";
+    const metadata = {
+      session_history_framework: "codex",
+      session_history_raw_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
+      session_history_source_bytes: 1024,
+      session_history_source_representation: "codex_zstd",
+      session_history_restore_representation: "raw",
+      session_history_restore_reason: "codex_pruning_guard",
+    } as const;
+    const operation = {
+      ts,
+      action_type: "session_history_workspace_cache_guest_restore",
+      duration_ms: 1234,
+      success: true,
+    };
+    const measured = {
+      ...operation,
+      ...metadata,
+      session_history_guest_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
+      session_history_ref_hash: "must-not-reach-axiom",
+    };
+    const zero = {
+      session_history_raw_bytes: 0,
+      session_history_source_bytes: 0,
+      session_history_guest_bytes: 0,
+    };
+    const response = await accept(
+      setupApp({ context, routes: webhooksAgentHealthUsageTelemetryRoutes })(
+        webhookTelemetryContract,
+      ).send({
+        headers: { authorization: `Bearer ${token}` },
+        body: {
+          runId,
+          sandboxOperations: [
+            measured,
+            { ...operation, ...metadata, success: false },
+            { ...operation, ...zero },
+            { ...operation, action_type: "legacy_operation" },
+          ],
+        },
+      }),
+      [200],
+    );
+    expect(response.body).toStrictEqual({ success: true, id: runId });
+
+    const expected = {
+      _time: ts,
+      source: "sandbox",
+      sandbox_type: "runner",
+      op_type: operation.action_type,
+      duration_ms: operation.duration_ms,
+      success: true,
+      run_id: runId,
+    };
+    for (const event of [
+      {
+        ...expected,
+        ...metadata,
+        session_history_guest_bytes: RESUME_SESSION_HISTORY_MAX_BYTES,
+      },
+      { ...expected, ...metadata, success: false },
+      { ...expected, ...zero },
+      { ...expected, op_type: "legacy_operation" },
+    ]) {
+      expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
+        "vm0-sandbox-op-log-dev",
+        [event],
+      );
+    }
+  });
+
   it("attributes dataset failures and flushes every selected client", async () => {
     const { flushAxiom, ingestToAxiom } =
       await vi.importActual<typeof import("../axiom")>("../axiom");

@@ -4,6 +4,7 @@ import { clerk$, clerkUser$, setupClerk$ } from "./auth.ts";
 import { setAuthenticatedIdentity$ } from "./auth-context.ts";
 import { subscribeEventDrivenChatThreads$ } from "./chat-page/chat-thread-event-sourcing.ts";
 import { setupUserPreferenceRealtime$ } from "./external/user-model-preference.ts";
+import { setupModelPolicyRealtime$ } from "./external/model-policy-realtime.ts";
 import { subscribePermissionUpdate$ } from "./permission-allow/permission-allow-signals.ts";
 import {
   setRealtimeDegradedNotifier$,
@@ -39,6 +40,7 @@ const runAppRealtimeDaemons$ = command(
       set(subscribePermissionUpdate$, signal),
       set(setupBillingRealtime$, signal),
       set(setupUserPreferenceRealtime$, signal),
+      set(setupModelPolicyRealtime$, signal),
       set(setupMorningBriefRealtime$, signal),
       set(subscribeCustomConnectorListChanged$, signal),
       set(subscribeSshChanged$, signal),

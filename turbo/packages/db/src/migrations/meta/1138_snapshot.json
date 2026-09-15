@@ -1,5 +1,5 @@
 {
-  "id": "75eedc29-575d-45f9-8e94-d39cb87813d8",
+  "id": "ba11033b-3ddb-4f68-b6fb-71edcc68ea4b",
   "prevId": "73cfea9f-5c81-40e9-991c-68291583ae11",
   "version": "7",
   "dialect": "postgresql",
@@ -2390,6 +2390,12 @@
         "model_provider_id": {
           "name": "model_provider_id",
           "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "model_provider_account_identity": {
+          "name": "model_provider_account_identity",
+          "type": "varchar(64)",
           "primaryKey": false,
           "notNull": false
         },
@@ -29068,7 +29074,7 @@
       "checkConstraints": {
         "usage_event_hourly_rollup_billing_context_check": {
           "name": "usage_event_hourly_rollup_billing_context_check",
-          "value": "(\n        (\"usage_event_hourly_rollup\".\"billing_context\" = 'run' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NOT NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'runless' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'pi_memory_stage1' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NULL AND \"usage_event_hourly_rollup\".\"run_id\" IS NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NOT NULL AND \"usage_event_hourly_rollup\".\"kind\" = 'model')\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'missing_run' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NOT NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NULL)\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'legacy_unknown' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NULL)\n      )"
+          "value": "(\n        (\"usage_event_hourly_rollup\".\"billing_context\" = 'run' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NOT NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'runless' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'missing_run' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NOT NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NULL)\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'legacy_unknown' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NULL)\n      )"
         },
         "chk_usage_event_hourly_rollup_processed_hour": {
           "name": "chk_usage_event_hourly_rollup_processed_hour",
@@ -29391,7 +29397,7 @@
       "checkConstraints": {
         "usage_event_billing_context_check": {
           "name": "usage_event_billing_context_check",
-          "value": "(\n        (\"usage_event\".\"billing_context\" = 'run' AND \"usage_event\".\"billing_run_id\" IS NOT NULL AND \"usage_event\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event\".\"billing_context\" = 'runless' AND \"usage_event\".\"billing_run_id\" IS NULL AND \"usage_event\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event\".\"billing_context\" = 'pi_memory_stage1' AND \"usage_event\".\"billing_run_id\" IS NULL AND \"usage_event\".\"run_id\" IS NULL AND \"usage_event\".\"billing_anchor_at\" IS NOT NULL AND \"usage_event\".\"kind\" = 'model' AND \"usage_event\".\"billing_anchor_at\" = \"usage_event\".\"created_at\")\n        OR (\"usage_event\".\"billing_context\" = 'missing_run' AND \"usage_event\".\"billing_run_id\" IS NOT NULL AND \"usage_event\".\"billing_anchor_at\" IS NULL)\n        OR (\"usage_event\".\"billing_context\" = 'legacy_unknown' AND \"usage_event\".\"billing_run_id\" IS NULL AND \"usage_event\".\"billing_anchor_at\" IS NULL)\n      )"
+          "value": "(\n        (\"usage_event\".\"billing_context\" = 'run' AND \"usage_event\".\"billing_run_id\" IS NOT NULL AND \"usage_event\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event\".\"billing_context\" = 'runless' AND \"usage_event\".\"billing_run_id\" IS NULL AND \"usage_event\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event\".\"billing_context\" = 'missing_run' AND \"usage_event\".\"billing_run_id\" IS NOT NULL AND \"usage_event\".\"billing_anchor_at\" IS NULL)\n        OR (\"usage_event\".\"billing_context\" = 'legacy_unknown' AND \"usage_event\".\"billing_run_id\" IS NULL AND \"usage_event\".\"billing_anchor_at\" IS NULL)\n      )"
         }
       },
       "isRLSEnabled": false
