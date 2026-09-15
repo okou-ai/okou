@@ -30,38 +30,37 @@ describe("generationTemplateKind", () => {
       type: "website",
       selection: { websiteTemplateId: "website-template:landing" },
     };
+    const introVideo: GenerationTemplateRequest = {
+      type: "intro-video",
+      selection: { options: undefined },
+    };
 
     expect(generationTemplateKind(presentation)).toBe("presentation");
     expect(generationTemplateKind(illustration)).toBe("illustration");
     expect(generationTemplateKind(workflow)).toBe("workflow");
     expect(generationTemplateKind(website)).toBe("website");
+    // Classified by `type`, so a picker selection whose style, avatar, and
+    // voice are not chosen yet is still Intro Video.
+    expect(generationTemplateKind(introVideo)).toBe("intro-video");
   });
 
-  it("splits the three products that share the video envelope", () => {
+  it("splits the two products that still share the video envelope", () => {
     expect(
       generationTemplateKind(videoTemplate("video-template:kinetic")),
     ).toBe("video");
     expect(
       generationTemplateKind(videoTemplate(avatarTemplateStylePresetId(42))),
     ).toBe("avatar");
-    expect(generationTemplateKind(videoTemplate(INTRO_VIDEO_TEMPLATE_ID))).toBe(
-      "intro-video",
-    );
   });
 
-  it("classifies an Intro Video selection whose settings are still unset", () => {
-    // A draft can hold the selection before the user picks a style, avatar, or
-    // voice. Reading the kind from the absent options object would report it as
-    // creative video and hide it from its own product.
-    const withoutOptions: GenerationTemplateRequest = {
-      type: "video",
-      selection: {
-        stylePresetId: INTRO_VIDEO_TEMPLATE_ID,
-        explainerOptions: undefined,
-      },
-    };
-
-    expect(generationTemplateKind(withoutOptions)).toBe("intro-video");
+  it("classifies a selection stored before the Intro Video split as creative video", () => {
+    // Intro Video used to ride inside the video envelope as
+    // `stylePresetId: "explainer-video"`. Those rows were staff-only and were
+    // deliberately not backfilled, so they now read as creative video. This
+    // records that accepted cost rather than asserting a removed code path.
+    expect(generationTemplateKind(videoTemplate("explainer-video"))).toBe(
+      "video",
+    );
   });
 
   it("does not mistake a malformed avatar preset id for an avatar", () => {
@@ -74,16 +73,22 @@ describe("generationTemplateKind", () => {
   });
 });
 
-describe("generationTemplateIdentity video envelope reporting", () => {
-  it("reports Intro Video separately from creative video and avatar", () => {
+describe("generationTemplateIdentity reporting", () => {
+  it("reports Intro Video as its own category and product identifier", () => {
     expect(
-      generationTemplateIdentity(videoTemplate(INTRO_VIDEO_TEMPLATE_ID)),
+      generationTemplateIdentity({
+        type: "intro-video",
+        selection: { options: undefined },
+      }),
     ).toStrictEqual({
       category: "intro-video",
       templateId: INTRO_VIDEO_TEMPLATE_ID,
       templateSlug: INTRO_VIDEO_TEMPLATE_ID,
       source: "builtin",
     });
+  });
+
+  it("keeps creative video and avatar apart inside the video envelope", () => {
     expect(
       generationTemplateIdentity(videoTemplate("video-template:kinetic"))
         .category,

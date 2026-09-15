@@ -24377,10 +24377,9 @@ describe("CHAT-02: prior rounds and thread titles", () => {
 
 describe("CHAT-02: generation templates and attachments", () => {
   const introVideoTemplate: GenerationTemplateRequest = {
-    type: "video",
+    type: "intro-video",
     selection: {
-      stylePresetId: "explainer-video",
-      explainerOptions: {
+      options: {
         style: {
           kind: "catalog",
           style: {
@@ -24460,8 +24459,8 @@ describe("CHAT-02: generation templates and attachments", () => {
         agentId,
         prompt: "Explain it",
         userMessage: userMessageWithTemplate("Explain it", {
-          type: "video",
-          selection: { stylePresetId: "explainer-video" },
+          type: "intro-video",
+          selection: {},
         }),
       },
       [400],
