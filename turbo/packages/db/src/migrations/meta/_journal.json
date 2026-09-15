@@ -383,15 +383,22 @@
     {
       "idx": 1132,
       "version": "7",
-      "when": 1789450694138,
-      "tag": "1132_pi_inference_lifecycle",
+      "when": 1789448024786,
+      "tag": "1132_retire_prepared_domain_triggers",
       "breakpoints": true
     },
     {
       "idx": 1133,
       "version": "7",
-      "when": 1789450700293,
-      "tag": "1133_validate_pi_inference_launch",
+      "when": 1789452908425,
+      "tag": "1133_pi_inference_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 1134,
+      "version": "7",
+      "when": 1789452916500,
+      "tag": "1134_validate_pi_inference_launch",
       "breakpoints": true
     }
   ]
