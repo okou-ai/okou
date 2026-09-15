@@ -1928,10 +1928,8 @@
         "changeAvatar": "Change avatar",
         "chooseStyle": "Choose a style",
         "chooseStyleAndVoice": "Choose a style and a voice.",
-        "noMatches": "No matches found. Try a different search or category.",
+        "noMatches": "No matches found.",
         "ready": "Ready to use. Add your content in the chat.",
-        "searchAvatars": "Search avatars",
-        "searchStyles": "Search styles",
         "settings": "Intro video settings",
         "style": "Style",
         "useSelection": "Use selection"
@@ -1948,8 +1946,7 @@
           "print": "Print and publishing",
           "retro-tech": "Retro tech and interfaces"
         },
-        "preview": "Preview {{title}}",
-        "previewUnavailable": "A video preview is not available for this style."
+        "preview": "Preview {{title}}"
       },
       "voice": {
         "auto": "Let Okou choose",

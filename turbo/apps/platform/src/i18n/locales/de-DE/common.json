@@ -1928,10 +1928,8 @@
         "changeAvatar": "Avatar ändern",
         "chooseStyle": "Stil auswählen",
         "chooseStyleAndVoice": "Wähle einen Stil und eine Stimme.",
-        "noMatches": "Keine Treffer. Versuche eine andere Suche oder Kategorie.",
+        "noMatches": "Keine Treffer.",
         "ready": "Bereit. Füge deinen Inhalt im Chat hinzu.",
-        "searchAvatars": "Avatare suchen",
-        "searchStyles": "Stile suchen",
         "settings": "Einstellungen für Intro-Videos",
         "style": "Stil",
         "useSelection": "Auswahl verwenden"
@@ -1948,8 +1946,7 @@
           "print": "Druck und Verlagswesen",
           "retro-tech": "Retro-Technik und Oberflächen"
         },
-        "preview": "Vorschau von {{title}}",
-        "previewUnavailable": "Für diesen Stil ist keine Videovorschau verfügbar."
+        "preview": "Vorschau von {{title}}"
       },
       "voice": {
         "auto": "Okou wählen lassen",

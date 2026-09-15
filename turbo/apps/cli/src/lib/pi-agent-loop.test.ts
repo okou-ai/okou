@@ -961,7 +961,6 @@ describe("sandbox Pi agent loop", () => {
     const env = piEnv({ OKOU_RUN_ID: RUN_ID });
     Object.assign(env, {
       OKOU_PI_LANGFUSE_DEBUG_ENABLED: "true",
-      OKOU_PI_LANGFUSE_RELAY_ENABLED: "true",
       OKOU_API_BACKEND_URL: "https://api.okou.test",
       OKOU_TOKEN: "run-scoped-token",
       LANGFUSE_BASE_URL: "https://user-langfuse.example",

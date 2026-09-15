@@ -48,7 +48,7 @@ export const fireGoogleAdsPaidConversion$ = command(
         ? GOOGLE_ADS_ADSMARCH_PAID_IN_ONBOARDING_SEND_TO
         : GOOGLE_ADS_ADSMARCH_PAID_AFTER_ONBOARDING_SEND_TO;
     const fired = fireGoogleAdsConversion({
-      accountId: conversion.googleAdsAccountId ?? null,
+      accountId: conversion.googleAdsAccountId,
       sendTo,
       dedupeValue: conversion.transactionId,
       value: kind === "paid_in_onboarding" ? conversion.valueUsd : 40,

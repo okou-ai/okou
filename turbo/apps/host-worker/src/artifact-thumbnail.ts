@@ -53,7 +53,7 @@ function thumbnailOptions(url: URL): ThumbnailOptions | null {
   )
     return null;
   return {
-    width: width ?? (height === undefined ? 800 : undefined),
+    width,
     height,
     fit,
     quality,

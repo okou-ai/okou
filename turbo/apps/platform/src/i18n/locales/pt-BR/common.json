@@ -1965,10 +1965,8 @@
         "changeAvatar": "Alterar avatar",
         "chooseStyle": "Escolha um estilo",
         "chooseStyleAndVoice": "Escolha um estilo e uma voz.",
-        "noMatches": "Nenhum resultado. Tente outra busca ou categoria.",
+        "noMatches": "Nenhum resultado.",
         "ready": "Pronto para usar. Adicione seu conteúdo na conversa.",
-        "searchAvatars": "Buscar avatares",
-        "searchStyles": "Buscar estilos",
         "settings": "Configurações do vídeo de introdução",
         "style": "Estilo",
         "useSelection": "Usar seleção"
@@ -1985,8 +1983,7 @@
           "print": "Impressão e publicação",
           "retro-tech": "Tecnologia retrô e interfaces"
         },
-        "preview": "Prévia de {{title}}",
-        "previewUnavailable": "Não há prévia de vídeo disponível para este estilo."
+        "preview": "Prévia de {{title}}"
       },
       "voice": {
         "auto": "Deixar o Okou escolher",

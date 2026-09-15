@@ -599,6 +599,9 @@ export default [
       // The dormant persistence boundary has no HTTP ingress. Real PostgreSQL
       // sessions exercise first closure, lease recovery, and selector retirement.
       "src/signals/services/__tests__/account-erasure.service.test.ts",
+      // B2b1 races the dormant real projector with actual compute writers;
+      // no HTTP route owns closure or can observe PostgreSQL lock ordering.
+      "src/signals/services/__tests__/compute-erasure-admission.service.test.ts",
       // Content hashes are a byte-identical cryptographic contract shared with
       // guest-agent; route behavior cannot pin the serializer's full corpus.
       "src/signals/services/__tests__/storage-content-hash.service.test.ts",
@@ -788,6 +791,9 @@ export default [
       "src/signals/services/__tests__/pi-memory-phase2-job.test-fixture.ts",
       // No production endpoint can construct B1's dormant jobs or DB races.
       "src/signals/services/__tests__/account-erasure.service.test.ts",
+      // B2b1 races the dormant real projector with actual compute writers;
+      // no HTTP route owns closure or can observe PostgreSQL lock ordering.
+      "src/signals/services/__tests__/compute-erasure-admission.service.test.ts",
       // Preview job-ref aliases are process environment state, and both Stripe
       // metadata entry points must share one value-free resolution matrix that
       // cannot be observed completely through a single production API route.

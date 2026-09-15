@@ -182,10 +182,13 @@ function imageFixture(token = publicToken) {
   const render = vi.fn(async (body: ReadableStream) => {
     return new Response(`Thumbnail of ${await new Response(body).text()}`);
   });
+  const transforms: { readonly width?: number; readonly height?: number }[] =
+    [];
   const images: NonNullable<Env["IMAGES"]> = {
     input: (body) => {
       return {
-        transform: () => {
+        transform: (options) => {
+          transforms.push(options);
           return {
             output: async () => {
               const response = await render(body);
@@ -204,9 +207,29 @@ function imageFixture(token = publicToken) {
     ...f,
     env: { ...f.env, IMAGES: images },
     render,
+    transforms,
     url: `https://a.okou.io/${token}.png?thumbnail=1&width=400`,
   };
 }
+
+test.each([
+  { dimensions: "", width: undefined, height: undefined },
+  { dimensions: "&width=1200", width: 1200, height: undefined },
+  { dimensions: "&height=900", width: undefined, height: 900 },
+])(
+  "image embeds resize only when dimensions are requested (%j)",
+  async ({ dimensions, width, height }) => {
+    const f = imageFixture("a1b2c3d4e5");
+    const url = f.url.replace("&width=400", dimensions);
+    const response = await fetchWorker(new Request(url), f.env);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe("image/webp");
+    expect(await response.text()).toBe("Thumbnail of Private PDF bytes");
+    // The Images binding is the external renderer. An authoring embed with
+    // no bounds must retain its source dimensions; cards pass explicit bounds.
+    expect(f.transforms).toStrictEqual([{ width, height, fit: "scale-down" }]);
+  },
+);
 
 test.each(["a".repeat(24), "a1b2c3d4e5"])(
   "cached thumbnails recheck public authorization for %s",

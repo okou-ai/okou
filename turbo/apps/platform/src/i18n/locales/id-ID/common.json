@@ -1920,10 +1920,8 @@
         "changeAvatar": "Ubah avatar",
         "chooseStyle": "Pilih gaya",
         "chooseStyleAndVoice": "Pilih gaya dan suara.",
-        "noMatches": "Tidak ada hasil. Coba pencarian atau kategori lain.",
+        "noMatches": "Tidak ada hasil.",
         "ready": "Siap digunakan. Tambahkan konten Anda di obrolan.",
-        "searchAvatars": "Cari avatar",
-        "searchStyles": "Cari gaya",
         "settings": "Pengaturan video intro",
         "style": "Gaya",
         "useSelection": "Gunakan pilihan"
@@ -1940,8 +1938,7 @@
           "print": "Percetakan dan penerbitan",
           "retro-tech": "Teknologi retro dan antarmuka"
         },
-        "preview": "Pratinjau {{title}}",
-        "previewUnavailable": "Pratinjau video tidak tersedia untuk gaya ini."
+        "preview": "Pratinjau {{title}}"
       },
       "voice": {
         "auto": "Biarkan Okou memilih",

@@ -47,8 +47,10 @@ Part of [#32492](https://github.com/vm0-ai/vm0/issues/32492).
   can finish, and downloaded bytes cannot be recalled. Shared-thread resources
   retain their existing private browser cache contract. Legacy public images
   retain one-year public caching and their original download URLs.
-- The binding outputs WebP, limits dimensions to 2048 and accepts inputs up to
-  20 MB. Unsupported formats (including SVG) and larger inputs return the
+- The binding outputs WebP, limits requested dimensions to 2048 and accepts inputs up to
+  20 MB. Requests without width or height preserve source dimensions, including
+  generated-image authoring embeds; chat cards pass explicit thumbnail bounds.
+  Unsupported formats (including SVG) and larger inputs return the
   authorized original. Transform failures remain errors. No public-copy fallback
   is added. No historical screenshot backfill is performed.
 

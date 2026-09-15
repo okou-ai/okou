@@ -647,6 +647,7 @@ export async function replyWithFeishuMessage(
     readonly messageId: string;
     readonly message: FeishuOutboundMessage;
     readonly replyInThread?: boolean;
+    readonly idempotencyKey?: string;
   },
   signal: AbortSignal,
 ): Promise<FeishuSentMessage> {
@@ -665,6 +666,7 @@ export async function replyWithFeishuMessage(
       body: JSON.stringify({
         ...messagePayload(args.message),
         ...(args.replyInThread ? { reply_in_thread: true } : {}),
+        ...(args.idempotencyKey ? { uuid: args.idempotencyKey } : {}),
       }),
       signal,
     },

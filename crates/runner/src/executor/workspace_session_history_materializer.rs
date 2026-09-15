@@ -17,6 +17,7 @@ use super::cli_framework::EffectiveCliFramework;
 use super::session_history_cpu::{SessionHistoryCpuJob, SessionHistoryCpuPool};
 use super::session_restore::MaterializedResumeSession;
 use crate::error::{RunnerError, RunnerResult};
+use crate::telemetry::WorkspaceSessionHistoryTelemetry;
 use crate::types::ResumeSession;
 use crate::workspace_image_cache::{
     WorkspaceSessionHistorySidecar, WorkspaceSessionHistorySidecarRepresentation,
@@ -50,6 +51,7 @@ pub(super) enum WorkspaceSessionHistoryMaterialization {
     Materialized {
         session: MaterializedResumeSession,
         timings: WorkspaceSessionHistoryTimings,
+        telemetry: WorkspaceSessionHistoryTelemetry,
     },
     Failed {
         timings: WorkspaceSessionHistoryTimings,
@@ -378,6 +380,14 @@ async fn materialize_workspace_sidecar(
     timings.cpu_admission_wait = Some(cpu_outcome.timings.admission_wait());
     match cpu_outcome.result {
         Ok(materialization) => WorkspaceSessionHistoryMaterialization::Materialized {
+            telemetry: WorkspaceSessionHistoryTelemetry::new(
+                framework.into(),
+                expected_raw_size,
+                sidecar.encoded_size,
+                sidecar.representation,
+                materialization.session.codex_zstd_history().is_some(),
+                materialization.session.history_bytes().len() as u64,
+            ),
             session: materialization.session,
             timings,
         },

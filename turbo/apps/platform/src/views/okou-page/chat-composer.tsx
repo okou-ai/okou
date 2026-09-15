@@ -317,6 +317,11 @@ import {
 import { ComposerVideoOptionsChip } from "./composer-video-options.tsx";
 import { ComposerPresentationOptions } from "./composer-presentation-options.tsx";
 import {
+  markVideoPreviewPlaying,
+  resetVideoPreview,
+  startVideoPreview,
+} from "./video-preview-hover.ts";
+import {
   localizedWorkflowTemplate,
   localizedWorkflowTemplateCategory,
 } from "./workflow-template-copy.ts";
@@ -860,43 +865,6 @@ function websiteTemplateCardImageUrl(item: WebsiteTemplateItem): string {
   return r2ImageTransformUrl(item.previewImageUrl, TEMPLATE_CARD_PREVIEW_SIZE);
 }
 
-function playVideoTemplatePreview(video: HTMLVideoElement | null): void {
-  if (!video) {
-    return;
-  }
-  video.defaultMuted = true;
-  video.muted = true;
-  video.playsInline = true;
-  video.preload = "metadata";
-  detach(video.play(), Reason.DomCallback);
-}
-
-function markVideoTemplatePreviewPlaying(
-  video: HTMLVideoElement | null,
-  playing: boolean,
-): void {
-  if (!video) {
-    return;
-  }
-  video.dataset.previewPlaying = playing ? "true" : "false";
-}
-
-function resetVideoTemplatePreview(video: HTMLVideoElement | null): void {
-  if (!video) {
-    return;
-  }
-  video.pause();
-  video.currentTime = 0;
-  markVideoTemplatePreviewPlaying(video, false);
-}
-
-function toggleVideoTemplatePreview(video: HTMLVideoElement | null): void {
-  if (!video || (!video.paused && !video.ended)) {
-    return;
-  }
-  playVideoTemplatePreview(video);
-}
-
 function videoTemplatePosterImage(item: VideoTemplateItem): string {
   if (item.cardPreviewImage !== undefined) {
     return r2ImageTransformUrl(
@@ -915,10 +883,10 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
       data-video-template-preview=""
       className="group/video-template-preview relative h-full w-full overflow-hidden bg-muted"
       onMouseEnter={(event) => {
-        toggleVideoTemplatePreview(event.currentTarget.querySelector("video"));
+        startVideoPreview(event.currentTarget.querySelector("video"));
       }}
       onMouseLeave={(event) => {
-        resetVideoTemplatePreview(event.currentTarget.querySelector("video"));
+        resetVideoPreview(event.currentTarget.querySelector("video"));
       }}
     >
       <video
@@ -929,16 +897,16 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
         muted
         loop
         onPlaying={(event) => {
-          markVideoTemplatePreviewPlaying(event.currentTarget, true);
+          markVideoPreviewPlaying(event.currentTarget, true);
         }}
         onPause={(event) => {
-          markVideoTemplatePreviewPlaying(event.currentTarget, false);
+          markVideoPreviewPlaying(event.currentTarget, false);
         }}
         onEnded={(event) => {
-          resetVideoTemplatePreview(event.currentTarget);
+          resetVideoPreview(event.currentTarget);
         }}
         onError={(event) => {
-          markVideoTemplatePreviewPlaying(event.currentTarget, false);
+          markVideoPreviewPlaying(event.currentTarget, false);
         }}
       >
         <source src={item.previewWebm} type="video/webm; codecs=vp9" />
@@ -965,7 +933,7 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
         onClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
-          toggleVideoTemplatePreview(
+          startVideoPreview(
             event.currentTarget.parentElement?.querySelector("video") ?? null,
           );
         }}
@@ -10953,11 +10921,9 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
   return (
     <Card
       data-slot="chat-composer-card"
+      surface="composer"
       className={cn(
-        // Paint focus on the existing border. A separately promoted border
-        // with a negative inset can snap differently from the card and SVGs.
-        "@container/composer relative z-10 overflow-visible rounded-3xl border-gray-300 bg-card shadow-[var(--okou-card-shadow)] transition-[border-color] duration-[220ms] ease-[cubic-bezier(0.4,0,0.2,1)] focus-within:border-surface-focus motion-reduce:transition-none",
-        "after:pointer-events-none after:absolute after:inset-0 after:rounded-[inherit] after:opacity-0 after:shadow-[var(--okou-composer-focus-veil)] after:transition-opacity after:duration-[220ms] after:ease-[cubic-bezier(0.4,0,0.2,1)] after:content-[''] focus-within:after:opacity-100 motion-reduce:after:transition-none",
+        "@container/composer z-10",
         "[@media(display-mode:standalone)]:[[data-chat-composer]_&]:scroll-mb-4",
         dragOver && "outline outline-2 outline-blue-400/60",
       )}

@@ -11,12 +11,6 @@ const slackConnectStatusSchema = z.object({
   defaultAgentName: z.string().nullable().optional(),
 });
 
-const slackConnectResponseSchema = z.object({
-  success: z.boolean(),
-  connectionId: z.string(),
-  role: z.string(),
-});
-
 /**
  * Slack connect contract (GET/POST /api/integrations/slack/connect)
  * Manages per-user Slack connection.
@@ -41,10 +35,9 @@ export const slackConnectContract = c.router({
       slackUserId: z.string().min(1),
       channelId: z.string().optional(),
       threadTs: z.string().optional(),
-      requestUserScopes: z.boolean().optional(),
+      requestUserScopes: z.literal(true),
     }),
     responses: {
-      200: slackConnectResponseSchema,
       202: z.object({ authorizationUrl: z.string().url() }),
       400: apiErrorSchema,
       401: apiErrorSchema,

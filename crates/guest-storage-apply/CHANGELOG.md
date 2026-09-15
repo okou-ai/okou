@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.86](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.85...guest-storage-apply-v0.23.86) (2026-09-15)
+
+
+### Performance Improvements
+
+* **runner:** persist extracted storage files for cache-hit delivery ([#33976](https://github.com/vm0-ai/vm0/issues/33976)) ([b961911](https://github.com/vm0-ai/vm0/commit/b961911d0516fbdc06d3e8387bedb0653eee5ea9))
+
 ## [0.23.85](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.84...guest-storage-apply-v0.23.85) (2026-09-15)
 
 ## [0.23.84](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.83...guest-storage-apply-v0.23.84) (2026-09-14)

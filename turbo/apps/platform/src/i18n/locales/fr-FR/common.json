@@ -1965,10 +1965,8 @@
         "changeAvatar": "Changer d’avatar",
         "chooseStyle": "Choisir un style",
         "chooseStyleAndVoice": "Choisissez un style et une voix.",
-        "noMatches": "Aucun résultat. Essayez une autre recherche ou catégorie.",
+        "noMatches": "Aucun résultat.",
         "ready": "Prêt à utiliser. Ajoutez votre contenu dans le chat.",
-        "searchAvatars": "Rechercher des avatars",
-        "searchStyles": "Rechercher des styles",
         "settings": "Paramètres de la vidéo d’intro",
         "style": "Style",
         "useSelection": "Utiliser la sélection"
@@ -1985,8 +1983,7 @@
           "print": "Impression et édition",
           "retro-tech": "Technologie rétro et interfaces"
         },
-        "preview": "Aperçu de {{title}}",
-        "previewUnavailable": "Aucun aperçu vidéo n’est disponible pour ce style."
+        "preview": "Aperçu de {{title}}"
       },
       "voice": {
         "auto": "Laisser Okou choisir",

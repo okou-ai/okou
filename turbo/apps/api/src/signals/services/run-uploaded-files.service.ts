@@ -17,6 +17,7 @@ import { syncArtifactCatalogForFile$ } from "./artifact-catalog.service";
 import { publishArtifactsChangedForRun } from "./artifact-realtime.service";
 import {
   scheduleArtifactPreviewRender$,
+  VIDEO_POSTER_MAX_INPUT_BYTES,
   type RenderArtifactPreviewArgs,
 } from "./artifact-preview.service";
 
@@ -85,6 +86,7 @@ export async function sourceForRun(
 interface RecordedUploadedFile {
   readonly id: string;
   readonly previewImageUrl: string | null;
+  readonly sizeBytes: number | null;
 }
 
 const L = logger("RunUploadedFiles");
@@ -121,7 +123,10 @@ function videoArtifactPreviewArgs(
     row.previewImageUrl ||
     !args.orgId ||
     !args.url ||
-    !args.contentType?.startsWith("video/")
+    !args.contentType?.startsWith("video/") ||
+    // An oversized input always fails with `9402`; the video element fallback
+    // covers it instead. An unknown size still gets one attempt.
+    (row.sizeBytes !== null && row.sizeBytes >= VIDEO_POSTER_MAX_INPUT_BYTES)
   ) {
     return null;
   }
@@ -237,6 +242,7 @@ export const recordHostedSiteArtifact$ = command(
       .returning({
         id: runUploadedFiles.id,
         previewImageUrl: runUploadedFiles.previewImageUrl,
+        sizeBytes: runUploadedFiles.sizeBytes,
       });
     const row = await recordRunUploadedFileWrite(write, args.runId, signal);
     signal.throwIfAborted();
@@ -313,6 +319,7 @@ export const recordWebUploadedFile$ = command(
       .returning({
         id: runUploadedFiles.id,
         previewImageUrl: runUploadedFiles.previewImageUrl,
+        sizeBytes: runUploadedFiles.sizeBytes,
       });
     const row = await recordRunUploadedFileWrite(write, args.runId, signal);
     signal.throwIfAborted();
@@ -409,6 +416,7 @@ export const recordTelegramUploadedFile$ = command(
       .returning({
         id: runUploadedFiles.id,
         previewImageUrl: runUploadedFiles.previewImageUrl,
+        sizeBytes: runUploadedFiles.sizeBytes,
       });
     const row = await recordRunUploadedFileWrite(write, args.runId, signal);
     signal.throwIfAborted();
@@ -547,6 +555,7 @@ export const recordGithubUploadedFile$ = command(
       .returning({
         id: runUploadedFiles.id,
         previewImageUrl: runUploadedFiles.previewImageUrl,
+        sizeBytes: runUploadedFiles.sizeBytes,
       });
     const row = await recordRunUploadedFileWrite(write, args.runId, signal);
     signal.throwIfAborted();
@@ -620,6 +629,7 @@ export const recordFeishuUploadedFile$ = command(
       .returning({
         id: runUploadedFiles.id,
         previewImageUrl: runUploadedFiles.previewImageUrl,
+        sizeBytes: runUploadedFiles.sizeBytes,
       });
     const row = await recordRunUploadedFileWrite(write, args.runId, signal);
     signal.throwIfAborted();
@@ -693,6 +703,7 @@ export const recordTeamsUploadedFile$ = command(
       .returning({
         id: runUploadedFiles.id,
         previewImageUrl: runUploadedFiles.previewImageUrl,
+        sizeBytes: runUploadedFiles.sizeBytes,
       });
     const row = await recordRunUploadedFileWrite(write, args.runId, signal);
     signal.throwIfAborted();
@@ -777,6 +788,7 @@ export const recordAgentPhoneUploadedFile$ = command(
       .returning({
         id: runUploadedFiles.id,
         previewImageUrl: runUploadedFiles.previewImageUrl,
+        sizeBytes: runUploadedFiles.sizeBytes,
       });
     const row = await recordRunUploadedFileWrite(write, args.runId, signal);
     signal.throwIfAborted();
@@ -861,6 +873,7 @@ export const recordSlackUploadedFile$ = command(
       .returning({
         id: runUploadedFiles.id,
         previewImageUrl: runUploadedFiles.previewImageUrl,
+        sizeBytes: runUploadedFiles.sizeBytes,
       });
     const row = await recordRunUploadedFileWrite(write, args.runId, signal);
     signal.throwIfAborted();

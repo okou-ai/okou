@@ -2040,6 +2040,14 @@ fn wait_stdin_writable_or_cancelled(
                 revents: 0,
             },
         ];
+        // Observe readiness only after the final cancellation check. Even if
+        // cancellation arrives before poll starts, the wake pipe must be ready.
+        #[cfg(test)]
+        tests::STDIN_POLL_READY.with(|ready| {
+            if let Some(ready) = ready.take() {
+                let _ = ready.send(());
+            }
+        });
         // SAFETY: `pollfds` points to two initialized descriptor entries.
         let result = unsafe { libc::poll(pollfds.as_mut_ptr(), pollfds.len() as libc::nfds_t, -1) };
         if result > 0 {
@@ -2419,6 +2427,8 @@ fn log_exec_terminal_if_notable(
 mod tests {
     use super::*;
     use crate::threading::test_support::FailingThreadSpawner;
+    use crate::threading::{UnitTask, VecTask};
+    use std::cell::Cell;
     use std::fs::File;
     use std::io::{Read, Write};
     use std::net::Shutdown;
@@ -2426,6 +2436,32 @@ mod tests {
     use std::os::unix::net::UnixStream;
     use std::process::Command;
     use std::time::Duration;
+
+    thread_local! {
+        pub(super) static STDIN_POLL_READY: Cell<Option<mpsc::Sender<()>>> = const { Cell::new(None) };
+    }
+
+    #[derive(Clone)]
+    struct StdinPollReadySpawner {
+        ready: mpsc::Sender<()>,
+    }
+
+    impl ThreadSpawner for StdinPollReadySpawner {
+        fn spawn_unit(&self, name: &'static str, task: UnitTask) -> io::Result<JoinHandle<()>> {
+            let ready = self.ready.clone();
+            SystemThreadSpawner.spawn_unit(
+                name,
+                Box::new(move || {
+                    STDIN_POLL_READY.set(Some(ready));
+                    task();
+                }),
+            )
+        }
+
+        fn spawn_vec(&self, name: &'static str, task: VecTask) -> io::Result<JoinHandle<Vec<u8>>> {
+            SystemThreadSpawner.spawn_vec(name, task)
+        }
+    }
 
     fn read_message(stream: &mut UnixStream) -> guest_control_proto::RawMessage {
         let mut hdr = [0u8; 4];
@@ -3145,6 +3181,9 @@ mod tests {
 
     #[test]
     fn stdin_writer_cancel_unblocks_full_pipe() {
+        // The exec protocol cannot synchronize on this private worker's final
+        // pre-poll check, and child cleanup can independently release stdin.
+        // Keep the actual writer, full pipe, poll, and cancellation wakeup here.
         let mut fds = [0; 2];
         // SAFETY: `pipe` initializes two file descriptors in `fds` on success.
         assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
@@ -3164,17 +3203,38 @@ mod tests {
             }
         }
 
-        let writer =
-            spawn_exec_operation_stdin(write_file, b"blocked".to_vec(), SystemThreadSpawner)
-                .unwrap();
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let writer = spawn_exec_operation_stdin(
+            write_file,
+            b"blocked".to_vec(),
+            StdinPollReadySpawner { ready: ready_tx },
+        )
+        .unwrap();
+        let ready = ready_rx.recv_timeout(Duration::from_secs(5));
         request_stdin_writer_cancel(&writer);
-        if let Err(e) = writer.done_rx.recv_timeout(Duration::from_secs(5)) {
-            drop(read_fd);
-            join_stdin_writer(writer, 0, "");
-            panic!("stdin writer cancel did not wake blocked writer: {e}");
-        }
-        join_stdin_writer(writer, 0, "");
+        let completed = writer.done_rx.recv_timeout(Duration::from_secs(5));
+        let result = writer.result_rx.try_recv();
+
+        // Record completion while the peer is still open and undrained. Release
+        // it and join before asserting, including readiness and wakeup failures.
         drop(read_fd);
+        join_stdin_writer(writer, 0, "");
+        ready.expect("stdin writer did not reach its blocking poll");
+        completed.expect("stdin writer cancel did not wake blocked writer");
+        assert!(is_stdin_write_cancelled(&result.unwrap().unwrap_err()));
+    }
+
+    #[test]
+    fn write_stdin_rejects_pre_cancelled_input() {
+        let mut stdin = tempfile::tempfile().unwrap();
+        let (cancel_reader, _cancel_writer) = stdin_cancel_pipe().unwrap();
+        let cancel = AtomicBool::new(true);
+
+        let result =
+            write_stdin_cancellable(&mut stdin, b"input", &cancel, cancel_reader.as_raw_fd());
+
+        assert!(is_stdin_write_cancelled(&result.unwrap_err()));
+        assert_eq!(stdin.metadata().unwrap().len(), 0);
     }
 
     #[test]

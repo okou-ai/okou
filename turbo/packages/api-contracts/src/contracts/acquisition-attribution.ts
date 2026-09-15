@@ -68,7 +68,7 @@ const recordSignupAttributionRequestSchema = z.object({
 
 const recordSignupAttributionResponseSchema = z.object({
   recorded: z.boolean(),
-  googleAdsAccountId: z.string().nullable().optional(),
+  googleAdsAccountId: z.string().nullable(),
 });
 
 export const GOOGLE_ADS_CONVERSION_MILESTONE_KINDS = [
@@ -87,7 +87,7 @@ const googleAdsConversionMilestoneSchema = z.object({
 
 const googleAdsConversionMilestonesResponseSchema = z.object({
   milestones: z.array(googleAdsConversionMilestoneSchema),
-  googleAdsAccountId: z.string().nullable().optional(),
+  googleAdsAccountId: z.string().nullable(),
 });
 
 export const acquisitionAttributionContract = c.router({
@@ -100,7 +100,6 @@ export const acquisitionAttributionContract = c.router({
       200: z.object({ googleAdsAccountId: z.string().nullable() }),
       400: apiErrorSchema,
       401: apiErrorSchema,
-      404: apiErrorSchema,
       500: apiErrorSchema,
     },
     summary:
