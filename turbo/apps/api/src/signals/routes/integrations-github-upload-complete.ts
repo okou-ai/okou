@@ -1,4 +1,5 @@
 import { command } from "ccstate";
+import { env } from "../../lib/env";
 import {
   integrationsGithubUploadCompleteContract,
   type GithubUploadCompleteBody,
@@ -8,7 +9,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { db$ } from "../external/db";
-import { resolveArtifactObject$ } from "../services/artifact-storage.service";
+import { materializeUploadedArtifact$ } from "../services/uploaded-artifact.service";
 import { postGithubIssueComment } from "../services/github-issues-api.service";
 import {
   getGithubIntegrationAccessToken,
@@ -96,8 +97,8 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const object = await set(
-    resolveArtifactObject$,
-    { userId: auth.userId, id: body.uploadId },
+    materializeUploadedArtifact$,
+    { userId: auth.userId, orgId: auth.orgId, id: body.uploadId },
     signal,
   );
   if (!object) {
@@ -109,7 +110,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   const mimetype = body.contentType ?? object.contentType;
   const commentBody = buildCommentBody({
     filename,
-    fileUrl,
+    fileUrl: new URL(fileUrl, env("APP_URL")).href,
     caption: body.caption,
   });
   const commentResult = await settle(

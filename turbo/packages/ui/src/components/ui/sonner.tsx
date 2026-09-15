@@ -56,7 +56,9 @@ function Toaster({ onReady, ...props }: ToasterProps) {
   const toaster = (
     <>
       <Sonner
-        className="toaster group !flex !flex-col !items-center"
+        // Let clicks pass through the list's empty space. Keep the toast rule
+        // non-important so Sonner can still disable hidden toast interactions.
+        className="toaster group pointer-events-none !flex !flex-col !items-center [&>[data-sonner-toast]]:pointer-events-auto"
         duration={3000}
         icons={{ warning: DEFAULT_WARNING_ICON, ...icons }}
         mobileOffset={mobileOffset}

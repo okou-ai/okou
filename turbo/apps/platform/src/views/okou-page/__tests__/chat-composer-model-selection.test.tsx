@@ -970,6 +970,42 @@ test("Adjust effort from the composer without opening the model picker", async (
   });
 });
 
+test("Name the ends of the effort scale beside the bar", async () => {
+  const user = userEvent.setup({ delay: null });
+  installNewChat(["gpt-5.6-sol"], "gpt-5.6-sol");
+  configurePolicies(["gpt-5.6-sol"], "gpt-5.6-sol");
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+    featureSwitches: {
+      [FeatureSwitchKey.Effort]: true,
+      [FeatureSwitchKey.CodexFastMode]: true,
+      [FeatureSwitchKey.ChatPreference]: true,
+    },
+  });
+  await readyComposer();
+  const panel = await openEffortPanel();
+  // A level name says where the handle is, never which way the bar points, so
+  // the track's two ends are named instead.
+  expect(within(panel).getByText("Faster")).toBeVisible();
+  expect(within(panel).getByText("Smarter")).toBeVisible();
+  // They are a caption on the track, not a second value to read out: the
+  // slider already reports its own step, so the words stay out of the
+  // accessibility tree and out of the way of the pointer.
+  const slider = await within(panel).findByRole("slider", { name: "Effort" });
+  expect(slider).toHaveAttribute("aria-valuetext", "Max");
+  expect(
+    within(panel).getByText("Faster").closest("[aria-hidden='true']"),
+  ).not.toBeNull();
+  // Naming the ends does not move them: the bar still runs the whole scale.
+  slider.focus();
+  await user.keyboard("{Home}");
+  await waitFor(() => {
+    expect(slider).toHaveAttribute("aria-valuetext", "Low");
+  });
+  expect(within(panel).getByText("Faster")).toBeVisible();
+});
+
 test("Choose effort for a new chat and keep Fast independent", async () => {
   const user = userEvent.setup({ delay: null });
   const creates: {

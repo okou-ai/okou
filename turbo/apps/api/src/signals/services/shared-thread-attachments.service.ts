@@ -16,6 +16,7 @@ import { uploadedArtifactObject } from "./uploaded-artifact.service";
 import { copyPublicArtifactObject$ } from "../external/s3";
 
 export interface SharedThreadAttachmentCopy {
+  readonly isPrivate: boolean;
   readonly sourceBucket: string;
   readonly sourceKey: string;
   readonly key: string;
@@ -54,6 +55,7 @@ const prepareSharedThreadAttachment$ = command(
       : args.part.filenameSnapshot;
     const key = `artifacts/shared-threads/${args.shareId}/${randomUUID()}-${sanitizeArtifactFilename(filename)}`;
     return {
+      isPrivate: object.isPrivate,
       sourceBucket: object.bucket,
       sourceKey: object.key,
       key,
@@ -62,7 +64,9 @@ const prepareSharedThreadAttachment$ = command(
         filename,
         contentType: object.contentType,
         size: object.size,
-        url: buildFileUrlFromKey(key, args.publicBrand),
+        url: object.isPrivate
+          ? object.url
+          : buildFileUrlFromKey(key, args.publicBrand),
       },
     };
   },
@@ -112,6 +116,10 @@ export const publishSharedThreadAttachments$ = command(
     signal: AbortSignal,
   ) => {
     for (const copy of copies) {
+      if (copy.isPrivate) {
+        // The shared-thread policy snapshots these bytes in private storage.
+        continue;
+      }
       await set(
         copyPublicArtifactObject$,
         {

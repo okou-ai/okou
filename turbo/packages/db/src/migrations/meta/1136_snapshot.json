@@ -1,9 +1,275 @@
 {
-  "id": "df452eff-9a60-4fb8-a47d-ca7e8888d41f",
+  "id": "c3e783be-c4b6-4bcb-803e-3ab85a6b82a3",
   "prevId": "9e0e3d19-83ca-459a-a32f-6b7f05181273",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
+    "public.account_erasure_ingress": {
+      "name": "account_erasure_ingress",
+      "schema": "",
+      "columns": {
+        "confirmation_ref": {
+          "name": "confirmation_ref",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "audience": {
+          "name": "audience",
+          "type": "varchar(192)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_id": {
+          "name": "event_id",
+          "type": "varchar(192)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "authority_id": {
+          "name": "authority_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject_kind": {
+          "name": "subject_kind",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject_id": {
+          "name": "subject_id",
+          "type": "varchar(192)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decision_ref": {
+          "name": "decision_ref",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "previous_decision_ref": {
+          "name": "previous_decision_ref",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "disposition_version": {
+          "name": "disposition_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "requested_at": {
+          "name": "requested_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deadline_at": {
+          "name": "deadline_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "decision_sequence": {
+          "name": "decision_sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "state": {
+          "name": "state",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "available_at": {
+          "name": "available_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "lease_id": {
+          "name": "lease_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "account_erasure_ingress_event": {
+          "name": "account_erasure_ingress_event",
+          "columns": [
+            {
+              "expression": "audience",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "account_erasure_ingress_retry": {
+          "name": "account_erasure_ingress_retry",
+          "columns": [
+            {
+              "expression": "authority_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "audience",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "available_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "confirmation_ref",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"account_erasure_ingress\".\"state\" IN ('pending', 'external_committed') AND \"account_erasure_ingress\".\"attempts\" < 5",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "account_erasure_ingress_shape": {
+          "name": "account_erasure_ingress_shape",
+          "value": "\"account_erasure_ingress\".\"subject_kind\" IN ('user', 'organization') AND octet_length(\"account_erasure_ingress\".\"subject_id\") BETWEEN 1 AND 192 AND octet_length(\"account_erasure_ingress\".\"audience\") BETWEEN 1 AND 192 AND octet_length(\"account_erasure_ingress\".\"event_id\") BETWEEN 1 AND 192 AND \"account_erasure_ingress\".\"generation\" > 0 AND \"account_erasure_ingress\".\"disposition_version\" > 0 AND \"account_erasure_ingress\".\"deadline_at\" > \"account_erasure_ingress\".\"requested_at\" AND \"account_erasure_ingress\".\"attempts\" BETWEEN 0 AND 5 AND (\"account_erasure_ingress\".\"decision_sequence\" IS NULL OR \"account_erasure_ingress\".\"decision_sequence\" > 0)"
+        },
+        "account_erasure_ingress_state": {
+          "name": "account_erasure_ingress_state",
+          "value": "\"account_erasure_ingress\".\"state\" IN ('pending', 'external_committed', 'projection_committed', 'unresolved') AND (\"account_erasure_ingress\".\"state\" NOT IN ('external_committed', 'projection_committed') OR \"account_erasure_ingress\".\"decision_sequence\" IS NOT NULL)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.account_erasure_replay": {
+      "name": "account_erasure_replay",
+      "schema": "",
+      "columns": {
+        "authority_id": {
+          "name": "authority_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "audience": {
+          "name": "audience",
+          "type": "varchar(192)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_id": {
+          "name": "target_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "replay_generation": {
+          "name": "replay_generation",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "watermark": {
+          "name": "watermark",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cursor": {
+          "name": "cursor",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "0"
+        },
+        "state": {
+          "name": "state",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "lease_id": {
+          "name": "lease_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lease_expires_at": {
+          "name": "lease_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "account_erasure_replay_authority_id_target_id_replay_generation_pk": {
+          "name": "account_erasure_replay_authority_id_target_id_replay_generation_pk",
+          "columns": [
+            "authority_id",
+            "target_id",
+            "replay_generation"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "account_erasure_replay_shape": {
+          "name": "account_erasure_replay_shape",
+          "value": "\"account_erasure_replay\".\"watermark\" >= 0 AND \"account_erasure_replay\".\"cursor\" >= 0 AND \"account_erasure_replay\".\"cursor\" <= \"account_erasure_replay\".\"watermark\" AND octet_length(\"account_erasure_replay\".\"audience\") BETWEEN 1 AND 192 AND \"account_erasure_replay\".\"state\" IN ('pending', 'complete', 'unresolved') AND (\"account_erasure_replay\".\"state\" <> 'complete' OR \"account_erasure_replay\".\"cursor\" = \"account_erasure_replay\".\"watermark\") AND ((\"account_erasure_replay\".\"lease_id\" IS NULL) = (\"account_erasure_replay\".\"lease_expires_at\" IS NULL))"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.account_erasure_jobs": {
       "name": "account_erasure_jobs",
       "schema": "",
@@ -28816,7 +29082,7 @@
       "checkConstraints": {
         "usage_event_hourly_rollup_billing_context_check": {
           "name": "usage_event_hourly_rollup_billing_context_check",
-          "value": "(\n        (\"usage_event_hourly_rollup\".\"billing_context\" = 'run' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NOT NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'runless' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'pi_memory_stage1' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NULL AND \"usage_event_hourly_rollup\".\"run_id\" IS NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NOT NULL AND \"usage_event_hourly_rollup\".\"kind\" = 'model')\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'missing_run' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NOT NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NULL)\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'legacy_unknown' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NULL)\n      )"
+          "value": "(\n        (\"usage_event_hourly_rollup\".\"billing_context\" = 'run' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NOT NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'runless' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'missing_run' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NOT NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NULL)\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'legacy_unknown' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NULL)\n      )"
         },
         "chk_usage_event_hourly_rollup_processed_hour": {
           "name": "chk_usage_event_hourly_rollup_processed_hour",
@@ -29139,7 +29405,7 @@
       "checkConstraints": {
         "usage_event_billing_context_check": {
           "name": "usage_event_billing_context_check",
-          "value": "(\n        (\"usage_event\".\"billing_context\" = 'run' AND \"usage_event\".\"billing_run_id\" IS NOT NULL AND \"usage_event\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event\".\"billing_context\" = 'runless' AND \"usage_event\".\"billing_run_id\" IS NULL AND \"usage_event\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event\".\"billing_context\" = 'pi_memory_stage1' AND \"usage_event\".\"billing_run_id\" IS NULL AND \"usage_event\".\"run_id\" IS NULL AND \"usage_event\".\"billing_anchor_at\" IS NOT NULL AND \"usage_event\".\"kind\" = 'model' AND \"usage_event\".\"billing_anchor_at\" = \"usage_event\".\"created_at\")\n        OR (\"usage_event\".\"billing_context\" = 'missing_run' AND \"usage_event\".\"billing_run_id\" IS NOT NULL AND \"usage_event\".\"billing_anchor_at\" IS NULL)\n        OR (\"usage_event\".\"billing_context\" = 'legacy_unknown' AND \"usage_event\".\"billing_run_id\" IS NULL AND \"usage_event\".\"billing_anchor_at\" IS NULL)\n      )"
+          "value": "(\n        (\"usage_event\".\"billing_context\" = 'run' AND \"usage_event\".\"billing_run_id\" IS NOT NULL AND \"usage_event\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event\".\"billing_context\" = 'runless' AND \"usage_event\".\"billing_run_id\" IS NULL AND \"usage_event\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event\".\"billing_context\" = 'missing_run' AND \"usage_event\".\"billing_run_id\" IS NOT NULL AND \"usage_event\".\"billing_anchor_at\" IS NULL)\n        OR (\"usage_event\".\"billing_context\" = 'legacy_unknown' AND \"usage_event\".\"billing_run_id\" IS NULL AND \"usage_event\".\"billing_anchor_at\" IS NULL)\n      )"
         }
       },
       "isRLSEnabled": false

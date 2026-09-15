@@ -21,6 +21,7 @@ import type {
   ImageAnnotation,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import type { EditorDocumentSnapshot } from "./user-message-document-codec.ts";
@@ -259,6 +260,17 @@ const uploadFileToStorage$ = command(
       throw new Error(`storage returned ${putRes.status} ${putRes.statusText}`);
     }
 
+    if (parseArtifactReference(prepared.body.url)) {
+      const completed = await accept(
+        client.complete({
+          body: { id: prepared.body.id },
+          fetchOptions: { signal },
+        }),
+        [200],
+      );
+      signal.throwIfAborted();
+      return uploadFileInfo(completed.body, completed.body.contentType);
+    }
     return uploadFileInfo(prepared.body, prepared.body.contentType);
   },
 );
@@ -442,7 +454,9 @@ function createComposerAttachmentPreview(
   return computed(async (get) => {
     const file = await get(fileInfo$);
     return file
-      ? createAttachmentPreviewSignals(canonicalUserMessageFileUrl(file.id))
+      ? createAttachmentPreviewSignals(canonicalUserMessageFileUrl(file.id), {
+          contentType: file.contentType,
+        })
       : null;
   });
 }
@@ -615,9 +629,12 @@ export function createRestoredAttachment(
           preview: createAttachmentPreviewSignals(
             canonicalUserMessageFileUrl(persisted.id),
             {
-              token: resolved.body.url,
-              expiresAt: resolved.body.expiresAt,
-              publicUrl: resolved.body.publicUrl,
+              contentType: persisted.contentType,
+              resolvedToken: {
+                token: resolved.body.url,
+                expiresAt: resolved.body.expiresAt,
+                publicUrl: resolved.body.publicUrl,
+              },
             },
           ),
         };
