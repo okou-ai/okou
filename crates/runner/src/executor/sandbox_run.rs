@@ -1818,7 +1818,6 @@ pub(super) async fn register_proxy(
         .register_sandbox(source_ip, &registration)
         .await
         .map_err(|e| RunnerError::Internal(format!("register sandbox in proxy registry: {e}")))?;
-    publication.observe().await;
     let network_log_session = config
         .network_log_manager
         .register_source_ip(source_ip, network_log_path)
@@ -1834,6 +1833,7 @@ pub(super) async fn register_proxy(
             })
             .await;
     }
+    publication.observe().await;
     Ok(network_log_session)
 }
 

@@ -86,6 +86,8 @@ evidence. Registration, unregistration and connector synchronization request
 acknowledgement after releasing registry and active-run locks. Their success and
 retry policies still describe publication: an unconfirmed acknowledgement never
 rolls back or automatically republishes configuration.
+Initial registration establishes local network-log attribution and runtime-sync
+tracking before waiting, including for already-unparked reused sandboxes.
 
 `registry.apply` takes exactly `{"digest":"<64 lowercase hex characters>"}`.
 It reads only the configured registry/catalog paths; neither policies nor caller
