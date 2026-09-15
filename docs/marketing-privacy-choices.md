@@ -33,6 +33,43 @@ while the rollback deploys.
 
 Existing privacy choices, revision evidence, and capture receipts are preserved
 without new application writers. Account deletion still removes personal and
-linked anonymous choices and cascades to their revisions and receipts. Physical
-table retirement or reuse is a separate schema change after the outgoing API
-has drained and the replacement design is decided.
+linked anonymous choices and cascades to their revisions and receipts.
+
+## Authorized storage retirement (2026-09-15)
+
+The owner explicitly requested complete retirement of `privacy_choices`,
+`privacy_choice_revisions`, `marketing_privacy_receipts`, and
+`marketing_privacy_withdrawal` under #33747. The contract migration will delete
+their stored rows as well as the epoch function and schema declarations. This
+supersedes E's earlier retention decision; it does not resume the withdrawn
+runtime or complete the revised DCF-552 remediation in #33275. Historical shipped
+migrations, snapshots and journals remain immutable replay records.
+
+There is one remaining runtime dependency: `cleanupClerkDeletedUser` deletes
+personal choices and linked browser choices during the `user.deleted` webhook.
+Those deletes cascade to revisions and receipts. No current creation, consent
+update, marketing delivery authorization, cron or backfill writer was found at
+`main@bc9a254f8005d20b6514254c30c903649f7f1b00`; marketing senders and existing attribution metadata are outside
+this three-table retirement.
+
+The cleanup preparation preserves that deletion while storage exists and skips
+it after contraction. Its transaction first takes a shared advisory lock on
+`hashtext('marketing_privacy_storage_retirement')`, then checks relation presence
+and deletes the matching subjects. Partial schema loss is rejected; only all
+three tables present or all three absent are supported. The drop migration must take the exclusive
+transaction lock with the same key **before** any table lock. A waiting cleanup
+reads the final schema after the lock, using READ COMMITTED. Query failures and
+cancellation remain errors; there is no blanket missing-table exception catch.
+
+Release the preparation first. The destructive migration runs before API traffic
+promotion, so merging cleanup and table drops into one first release would still
+break the outgoing unconditional DELETE. Before merging/releasing contraction,
+record the immutable serving preparation artifact, verify outgoing writers have
+drained, and enforce a rollback floor that contains the prepared cleanup. A
+healthy release tag or merged PR alone does not establish this gate. Keep this
+temporary helper until the contraction PR removes it together with the tables.
+
+The read-only MaskDB inventory did not expose these three tables on 2026-09-15;
+their production row counts remain unknown. This is not zero-row evidence.
+Deletion is authorized regardless of row count. This preparation performs no
+production data deletion and makes no claim that storage contraction has run.
