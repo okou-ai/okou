@@ -421,6 +421,20 @@
       "when": 1789460587817,
       "tag": "1137_retire_legacy_invitation_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 1138,
+      "version": "7",
+      "when": 1789465340161,
+      "tag": "1138_swift_mephistopheles",
+      "breakpoints": true
+    },
+    {
+      "idx": 1139,
+      "version": "7",
+      "when": 1789469455598,
+      "tag": "1139_retire_marketing_privacy_storage",
+      "breakpoints": true
     }
   ]
 }

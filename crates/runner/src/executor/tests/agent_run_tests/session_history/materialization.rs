@@ -21,7 +21,7 @@ use crate::executor::{
     SessionHistoryCpuPool, SessionHistoryMaterializer, SessionHistoryRestorePlan,
     effective_cli_framework,
 };
-use crate::telemetry::SessionHistoryTelemetrySnapshot;
+use crate::telemetry::{JobTelemetry, SessionHistoryTelemetrySnapshot};
 use crate::test_fixtures::session_history::OneShotSessionHistoryServer;
 use crate::types::{
     ResumeSession, ResumeSessionHistory, ResumeSessionHistoryDownloadSource,
@@ -40,6 +40,23 @@ fn gzip_bytes(raw: &[u8]) -> Vec<u8> {
 
 fn zstd_bytes(raw: &[u8]) -> Vec<u8> {
     zstd::encode_all(raw, 0).unwrap()
+}
+
+fn assert_workspace_restore_metadata(telemetry: &JobTelemetry, expected: serde_json::Value) {
+    let ops = telemetry.pending_workspace_history_restore_payloads();
+    assert_eq!(
+        ops.len(),
+        1,
+        "expected one local restore operation: {ops:?}"
+    );
+    let metadata: serde_json::Map<String, serde_json::Value> = ops[0]
+        .as_object()
+        .unwrap()
+        .iter()
+        .filter(|(key, _)| key.starts_with("session_history_"))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    assert_eq!(serde_json::Value::Object(metadata), expected);
 }
 async fn serve_history_once_after_request(
     body: &'static [u8],
@@ -533,13 +550,14 @@ async fn run_in_sandbox_restores_session_history_from_workspace_sidecar() {
     let config = test_executor_config(dir.path()).await;
     let sandbox = sandbox_mock::MockSandbox::new("test");
     let history = br#"{"type":"init"}"#;
+    let remote_history = zstd_bytes(history);
     let sidecar_path = dir.path().join("session-history.blob");
     tokio::fs::write(&sidecar_path, history).await.unwrap();
     let server = MockServer::start_async().await;
     let history_mock = server
         .mock_async(|when, then| {
             when.method(GET).path("/history.blob");
-            then.status(200).body(history);
+            then.status(200).body(&remote_history);
         })
         .await;
     let mut ctx = minimal_context();
@@ -550,9 +568,9 @@ async fn run_in_sandbox_restores_session_history_from_workspace_sidecar() {
                 kind: ResumeSessionHistoryRefKind::Blob,
                 hash: hex::encode(Sha256::digest(history)),
                 url: server.url("/history.blob?token=secret"),
-                encoding: ResumeSessionHistoryEncoding::Identity,
+                encoding: ResumeSessionHistoryEncoding::Zstd,
                 raw_size: history.len() as u64,
-                encoded_size: history.len() as u64,
+                encoded_size: remote_history.len() as u64,
                 download_source: None,
             },
         },
@@ -600,6 +618,18 @@ async fn run_in_sandbox_restores_session_history_from_workspace_sidecar() {
     assert_successful_action_once(&ops, "session_history_workspace_cache_restore");
     assert_successful_action_once(&ops, "session_restore");
     assert_no_action(&ops, "session_history_download");
+    assert_workspace_restore_metadata(
+        &telemetry,
+        serde_json::json!({
+            "session_history_framework": "claude-code",
+            "session_history_raw_bytes": history.len(),
+            "session_history_source_bytes": history.len(),
+            "session_history_guest_bytes": history.len(),
+            "session_history_source_representation": "raw",
+            "session_history_restore_representation": "raw",
+            "session_history_restore_reason": "raw_source",
+        }),
+    );
 }
 
 #[tokio::test]
@@ -843,6 +873,17 @@ async fn run_in_sandbox_falls_back_when_workspace_sidecar_guest_restore_fails() 
         "workspace session history phase failed",
     );
     assert_successful_action_once(&ops, "session_history_download");
+    assert_workspace_restore_metadata(
+        &telemetry,
+        serde_json::json!({
+            "session_history_framework": "claude-code",
+            "session_history_raw_bytes": history.len(),
+            "session_history_source_bytes": history.len(),
+            "session_history_source_representation": "raw",
+            "session_history_restore_representation": "raw",
+            "session_history_restore_reason": "raw_source",
+        }),
+    );
 }
 
 #[tokio::test]
@@ -928,6 +969,18 @@ async fn run_in_sandbox_restores_codex_zstd_sidecar_with_session_timestamp() {
         "fresh workspace restore must not scan retained Codex sessions"
     );
     history_mock.assert_calls_async(0).await;
+    assert_workspace_restore_metadata(
+        &telemetry,
+        serde_json::json!({
+            "session_history_framework": "codex",
+            "session_history_raw_bytes": history.len(),
+            "session_history_source_bytes": compressed_history.len(),
+            "session_history_guest_bytes": compressed_history.len(),
+            "session_history_source_representation": "codex_zstd",
+            "session_history_restore_representation": "codex_zstd",
+            "session_history_restore_reason": "retained_zstd",
+        }),
+    );
 }
 
 #[tokio::test]
@@ -1007,6 +1060,18 @@ async fn run_in_sandbox_materializes_prune_eligible_codex_zstd_sidecar_as_raw() 
     );
     assert_eq!(writes[0].content, history);
     history_mock.assert_calls_async(0).await;
+    assert_workspace_restore_metadata(
+        &telemetry,
+        serde_json::json!({
+            "session_history_framework": "codex",
+            "session_history_raw_bytes": history.len(),
+            "session_history_source_bytes": compressed_history.len(),
+            "session_history_guest_bytes": history.len(),
+            "session_history_source_representation": "codex_zstd",
+            "session_history_restore_representation": "raw",
+            "session_history_restore_reason": "codex_pruning_guard",
+        }),
+    );
 }
 
 #[tokio::test]

@@ -2,8 +2,8 @@
 
 import json
 
-import addon_process_logging
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
+from tests.process_log_helpers import capture_addon_process_events
 from usage.underbilling import log_usage_underbilling
 
 
@@ -14,23 +14,24 @@ def _captured_process_log(log) -> tuple[str, dict[str, object]]:
     return message, fields
 
 
-def test_underbilling_writes_proxy_row_and_process_event(tmp_path, capfd):
+def test_underbilling_writes_proxy_row_and_process_event(tmp_path):
     proxy_log_path = tmp_path / "proxy.jsonl"
 
-    log_usage_underbilling(
-        str(proxy_log_path),
-        "Usage underbilling signal",
-        "expected_reason",
-        "risk",
-        type="usage_event",
-        reason="wrong_reason",
-        component="wrong_component",
-        underbilling_class="confirmed",
-        run_id="run-1",
-        level="debug",
-        message="wrong_message",
-        timestamp="wrong_timestamp",
-    )
+    with capture_addon_process_events() as log:
+        log_usage_underbilling(
+            str(proxy_log_path),
+            "Usage underbilling signal",
+            "expected_reason",
+            "risk",
+            type="usage_event",
+            reason="wrong_reason",
+            component="wrong_component",
+            underbilling_class="confirmed",
+            run_id="run-1",
+            level="debug",
+            message="wrong_message",
+            timestamp="wrong_timestamp",
+        )
 
     [entry] = read_jsonl_entries_after_flush(proxy_log_path)
     assert entry["type"] == "usage_underbilling"
@@ -42,13 +43,10 @@ def test_underbilling_writes_proxy_row_and_process_event(tmp_path, capfd):
     assert entry["message"] == "Usage underbilling signal"
     assert entry["timestamp"] != "wrong_timestamp"
 
-    process_record = capfd.readouterr().err.strip()
-    payload = process_record.removeprefix(addon_process_logging.ADDON_PROCESS_EVENT_PREFIX)
-    event = json.loads(payload)
-    assert event == {
-        "version": 1,
-        "level": "error",
-        "message": "Usage underbilling signal",
+    log.error.assert_called_once()
+    message, fields = _captured_process_log(log)
+    assert message == "Usage underbilling signal"
+    assert fields == {
         "type": "usage_underbilling",
         "reason": "expected_reason",
         "underbilling_class": "risk",

@@ -304,33 +304,33 @@ dual-protocol preparation release remains safe for canonical clients.
 
 #### Instagram nullable views
 
-Instagram stats accepts provider `views` as a nonnegative integer, null, or
-omitted. New CLI packages send `x-okou-instagram-views: nullable` on stats
-requests so explicit null survives through inspection output. Zero is a verified
-count; null is unavailable and is never converted to zero. The optional
-`requireViews` input requests the provider's bounded recovery. Its documented
-missing-view HTTP 503 returns without managed billing or automatic retries.
+Instagram stats preserves provider `views` as a nonnegative integer, null, or
+omitted for every caller, without capability-header negotiation. Zero is a
+verified count; null is unavailable and is never converted to zero. Engagement,
+author data, extensions and the existing provider-identity redaction boundary
+remain unchanged. The optional `requireViews` input requests the provider's
+bounded recovery. Its documented missing-view HTTP 503 returns without managed
+billing or automatic retries.
 
-The API retains the old response format for callers without that header: only
-explicit null views are omitted, preserving engagement, author data, extensions,
-and numeric zero. This projection applies to session/PAT and agent/sandbox
-requests, alongside the existing provider-identity redaction boundary.
+The [#34047 retirement receipt](https://github.com/vm0-ai/vm0/issues/34047#issuecomment-5676398885)
+records the first capable API release, `api-v1.597.0`, promoted on September 14,
+2026 at 13:54:04 UTC. That release selected the immutable CLI artifact
+`1c1d6963d034592bc9b3ca671f5f9475c2314234`. On September 15, after the queue,
+execution and finalization window, the operator explicitly confirmed both queues
+empty, all pre-cutoff runs finished, and no supported independently pinned older
+CLI caller. This is operator-confirmed drain, not an automated database census
+or an inference from runner versions alone.
 
-- Old CLI -> new API: unchanged requests receive numeric or omitted views,
-  which the pinned older reader accepts. This legacy format cannot distinguish
-  unavailable null from an originally omitted field.
-- New CLI -> new API: null, omitted, zero, and positive views stay distinct.
-- New CLI -> old API: the additional header does not change the old request
-  body. Numeric/omitted successes remain readable; the old API can still reject
-  provider null. The new strict input is rejected before provider I/O until the
-  supporting API is deployed. Deploy that API before selecting the new package.
+- Capable pre-cleanup CLI -> canonical API: nullable results remain readable;
+  the old capability header is no longer needed.
+- Headerless CLI -> canonical API: null, omitted, zero and positive views stay
+  distinct.
+- Headerless CLI -> capable bridge API: null is temporarily omitted but remains
+  readable; strict lookup remains supported. This also applies to rollback to
+  the bridge API until the canonical API serves again.
 
-Keep the old response projection until the backend selects a capable
-commit-addressed CLI artifact and the maximum queue, execution, and finalization
-lifetimes have passed. Confirm no pre-deployment context or supported external
-caller still depends on the old format before removing it in a later release.
-CLI semantic versions and runner binary drain alone are insufficient evidence.
-Removal is tracked in [#34047](https://github.com/vm0-ai/vm0/issues/34047).
+Pre-reader CLI artifacts are outside the confirmed supported caller set. This
+cleanup changes no persisted format, Runner protocol, or other social operation.
 
 ### Instagram search collection limits
 
@@ -349,20 +349,32 @@ including `hasMore: false`, do not establish exhaustive search. The provider's
 `count` describes the batch and is not a reported global total.
 
 Retained CLI response schemas accept these existing discriminants and ignore
-the new optional field. Current CLI public projection also applies the fixed
-source limit to older API responses, including `complete` and page-2 `more`
-metadata, so it never follows the unsupported continuation. Aggregate and
-streamed terminal output preserve the source limit; `callerLimited` independently
+the new optional field. The API owns source-limit normalization; public projection
+preserves its canonical metadata. Aggregate and streamed terminal output preserve
+the source limit; `callerLimited` independently
 records whether the fetched batch was trimmed. `status: complete` still means
 the caller's requested count was satisfied, while collection state describes
 source completeness. Unsatisfied source-limited requests remain partial.
 
-No response variant is retired and no CLI drain, schema migration, or release
-floor change is required. Rolling back the API retains request compatibility
-for the current CLI; it does not restore pagination in that CLI.
-Remove the old-API metadata projection and its compatibility-only tests after
-every serving API and retained rollback target emits the canonical source limit;
-[issue #34053](https://github.com/vm0-ai/vm0/issues/34053) owns that removal gate.
+The old-API metadata projection is retired by
+[#34053](https://github.com/vm0-ai/vm0/issues/34053), using the following
+production and supported rollback evidence from 2026-09-15:
+
+- Writer commit `e43a677e7508192b61801356f234dbcf231a0fbe` (#34067) first
+  shipped in API 1.596.0. The [API 1.603.2 production promotion](https://github.com/vm0-ai/vm0/actions/runs/34940290360/job/104290489082)
+  checked out and built `05af5a0fe3cdbd9188a9b3d66545bab2dab2a834`, which
+  contains that writer, and published the production alias at 07:24:43 UTC.
+- The existing rollback resolver requires
+  `eb2f211a9af41450d0d5dad10c0c8ad12fac0a24` (API 1.600.1) for prepared
+  domain writers. That release already contains the Instagram writer, so every
+  supported rollback target emits canonical source-limit metadata. The rollback
+  workflow loads the resolver from current `main`.
+
+No response variant is retired and no CLI drain, schema migration, or additional
+release floor is required. Old CLI -> current API remains readable. New CLI ->
+supported rollback API preserves the same single-batch metadata. Pre-fix APIs
+are no longer repaired by the new CLI; historical fixed deployment URLs or a
+manual bypass of the official rollback workflow are outside this boundary.
 
 ### Social download accounting and media metadata
 
@@ -381,15 +393,17 @@ cost or the prior one-credit-per-minute cost from the authenticated ready job.
 It does not assume the production account's transition date or bill the
 preflight maximum. Remove the legacy allowance only after verifying the managed
 account's transition and that no recoverable historical jobs need the old rate.
-Follow-up [#34056](https://github.com/vm0-ai/vm0/issues/34056) owns these gates
-and the old-API normalization cleanup described below.
+Parent [#34056](https://github.com/vm0-ai/vm0/issues/34056) retains these
+unverified provider-account and historical-job gates. Its response-only child
+[#34320](https://github.com/vm0-ai/vm0/issues/34320) removes the separately
+drained old-API normalization described below; it does not remove legacy rates.
 An explicitly unbilled ready response is rejected. Polling headers may report
 zero new usage on a paid-link refresh; the original job cost remains authoritative.
 
-The additive response fields distinguish media intent from delivery evidence:
+The response fields distinguish media intent from delivery evidence:
 
 - `quality` and `format` remain request aliases for older CLI artifacts;
-  `requested` explicitly contains those same values.
+  the required `requested` block explicitly contains those same values.
 - `provider.quality` and `provider.format` preserve the accepted ready metadata.
   Provider-reported resolution accepts renditions such as `576p`, independently
   of the finite request-quality choices. It is not a byte-level resolution
@@ -398,8 +412,9 @@ The additive response fields distinguish media intent from delivery evidence:
   unrecognized. `delivered.format` uses only that evidence. Existing filenames
   and content types may be request-derived and are not used to infer it.
 - `delivered.quality` uses stored provider reporting and is null for audio.
-  Missing historical delivery metadata remains null. New artifact recovery can
-  establish a sniffed format without fabricating missing original quality.
+  The `delivered` block is required, but both members remain nullable. Missing
+  historical delivery metadata remains null. New artifact recovery can establish
+  a sniffed format without fabricating missing original quality.
 
 No relational migration or stored-job rewrite is required. Old JSONB writers
 legitimately omit the new optional media fields; new readers keep their original
@@ -407,12 +422,33 @@ usage and return unknown delivery metadata. Interrupted settlement and paid-link
 refresh keep the same job and usage idempotency key. Refresh metadata must match
 the original accepted duration and cost, rather than reprice a paid download.
 
-| Pairing            | Supported behavior                                                                                                                                                                              |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Old CLI, new API   | Existing request aliases and response fields remain valid; additional fields can be ignored.                                                                                                    |
-| New CLI, old API   | Optional response fields allow parsing; output adds explicit requested values and null delivered values. Remove this normalization only when old API targets leave the rollout/rollback window. |
-| Old API, new JSONB | Additive keys do not change existing required values; rollback retains the old API's pre-existing HD validation limitation.                                                                     |
-| New API, old JSONB | Completed jobs remain readable; pending settlement and artifact recovery preserve original usage and unknown media fields.                                                                      |
+The response-envelope retirement was verified on **2026-09-15**:
+
+- [#34070](https://github.com/vm0-ai/vm0/pull/34070), merge
+  `9c55bc983c52f37369576d36eb32fbb0aec94994`, first shipped the unconditional
+  create/get/list writer in API **1.598.0**.
+- The [API production promotion](https://github.com/vm0-ai/vm0/actions/runs/34940290360/job/104290489082)
+  checked out and built `05af5a0fe3cdbd9188a9b3d66545bab2dab2a834`, API
+  **1.603.2**, and published `api.vm0.ai` at **07:24:43 UTC**. This is the
+  build's release SHA, not the moving GitHub deployment metadata SHA.
+- The [rollback resolver](../.github/scripts/resolve-production-rollback-target.sh)
+  already enforces `eb2f211a9af41450d0d5dad10c0c8ad12fac0a24`, API **1.600.1**,
+  which contains that writer. The [rollback workflow](../.github/workflows/rollback-production.yml)
+  loads the resolver from `main`, so a historical target cannot replace the guard.
+  No additional rollback floor is introduced.
+
+APIs without these blocks are therefore outside supported canonical serving and
+rollback targets. The CLI passes through the API's redacted response without
+synthesizing missing blocks. This receipt retires only absent response blocks:
+it proves neither a provider-rate transition nor an old-CLI drain, and does not
+replace the independent MP3 compatibility requirements below.
+
+| Pairing                      | Supported behavior                                                                                                         |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Old CLI, new API             | Existing request aliases remain valid for mutually supported formats; additional blocks can be ignored.                    |
+| New CLI, supported old API   | Writer-capable APIs already emit both blocks, including explicit nulls. No CLI normalization is needed.                    |
+| Supported old API, new JSONB | Additive media keys preserve existing required values for mutually supported formats.                                      |
+| New API, old JSONB           | Completed jobs remain readable; pending settlement and artifact recovery preserve original usage and unknown media fields. |
 
 #### Explicit MP3 social downloads
 
@@ -865,6 +901,25 @@ production rollback resolver rejects targets that do not contain the reader
 commit. The reason is stored outside strict payload JSON so old API instances
 remain compatible during the additive database migration and traffic overlap.
 
+Balance failures keep `insufficient_credits` for vm0 credit admission and add
+`provider_insufficient_credits` for upstream model-account balance. Completion
+stores that real failure reason for both BYOK and built-in runs. Public presentation
+uses persisted run ownership to display a platform-owned balance failure as
+"The current model is unavailable." and omit its billing reason from public chat
+metadata. Model unavailability is presentation, not a completion failure reason.
+The webhook and Chat Event V7 schemas accept all valid reason tokens; older readers
+use generic failure copy for an unknown token instead of rejecting the run or
+showing the vm0 recharge card. No schema migration is required.
+
+Prefer API readers before the runner writer for this change. Old runners and
+retained rows can still have missing reasons or legacy upstream affordability
+text labeled `insufficient_credits`; exact legacy presentation remains supported
+without inferring an unobserved status or suppressing unknown diagnostics. Remove
+that compatibility only after old runners drain and affected retained rows are
+gone or migrated. Public run, activity, HTTP callback, model-error event, and network-export
+projections keep built-in balance details internal; rolling back these readers
+can restore the prior disclosure behavior even though the tokens remain readable.
+
 Avoid one-shot protocol flips:
 
 - Do not require a new request field from frontend or runner in the same PR that
@@ -1158,6 +1213,29 @@ and App query opt-in remain #32575 work. E's privacy trigger is excluded, and
 the withdrawn feature remains withdrawn. See the
 [writer inventory, repair rules and migration receipts](database-trigger-retirement.md#a-d-contraction-migration-1132).
 
+### Withdrawn marketing privacy storage contraction (2026-09-15)
+
+Migration 1139 drops the three withdrawn privacy tables and their trigger/function
+under #33747. The old `user.deleted` cleanup still unconditionally names
+`privacy_choices`, so preparation #34296 must be released and its old writers
+drained before contraction can merge/release. The prepared cleanup handles all
+three relations present or absent under the shared advisory lock also taken
+exclusively by the migration. Current contraction code removes that temporary
+helper and schema dependency entirely.
+
+The rollback resolver derives the preparation's actual introduction from main's
+first-parent history of `marketing-privacy-cleanup.service.ts`, preserving that
+boundary after the file is deleted and across a squash merge. It rejects absent
+history and targets predating preparation before looking up artifacts. The retained
+target must also be a released READY artifact. The canonical preparation
+introduction is `e98391290d01e88ece8bf1acfcfc258b3f1e3c13`. Record the immutable
+production artifact and old-invocation drain on
+[contraction #34305](https://github.com/vm0-ai/vm0/pull/34305) before it becomes
+ready; this source guard alone does not prove serving or drain. See the
+[explicit release and rollback gates](marketing-privacy-choices.md#required-release-order-and-rollback-boundary).
+API rollback cannot recreate the retired rows. The withdrawn feature stays
+withdrawn, and #33275 owns any replacement privacy design.
+
 ### Workflow automation connector-account projections
 
 Connector-backed workflow event automations persist account authority in an
@@ -1381,6 +1459,16 @@ setting under the existing SSH Agent grant, not a separately authorized service.
 The Access feature switch controls rollout; it does not add an Agent permission.
 Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
+
+The management UI uses the existing canonical Access endpoints; it adds no
+schema or private Runner contract. With Access off it keeps Direct management
+available and hides Access creation. Already-bound hosts still identify their
+protected transport; editing, resetting keys and deleting them remain unavailable
+under the canonical API gate. Removing a binding requires Access eligibility and
+an explicit Direct selection. Losing the feature or changing
+owner clears open secret forms and cancels their pending UI work. API authorization
+and same-owner foreign keys remain authoritative; frontend visibility is not an
+access check.
 
 | State                                                                 | Required behavior                                                                                      |
 | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |

@@ -5,7 +5,7 @@ import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { createChildAbortController } from "../../../signals/utils.ts";
+import { resetSignal } from "../../../signals/utils.ts";
 import { decodeVoiceDraftPcmWav } from "../../../signals/voice-io/voice-draft-pcm.ts";
 import {
   context,
@@ -36,13 +36,6 @@ function releasePageDom() {
   vi.mocked(window.history.pushState).mockRestore();
   vi.mocked(window.history.replaceState).mockRestore();
   vi.mocked(window.history.back).mockRestore();
-}
-
-function unload(page: AbortController) {
-  const error = new Error("Page reloaded");
-  error.name = "AbortError";
-  page.abort(error);
-  releasePageDom();
 }
 
 function installVoiceBoundaries() {
@@ -88,8 +81,8 @@ test.each([
 ])(
   "Recover committed PCM across a reload ($reloadAt) at $path",
   async ({ path, reloadAt }) => {
-    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-    const firstPage = createChildAbortController(context.signal);
+    const resetFirstPage$ = resetSignal();
+    const firstPageSignal = context.store.set(resetFirstPage$, context.signal);
     const capture = context.mocks.deferred<(samples: Float32Array) => void>();
     context.mocks.browser.voiceInput({
       rms: 0.12,
@@ -129,7 +122,7 @@ test.each([
     );
     await setupPage({
       locale: "en-US",
-      context: { ...context, signal: firstPage.signal },
+      context: { ...context, signal: firstPageSignal },
       path,
     });
     click(await findEnabledButton("Voice input"));
@@ -145,7 +138,8 @@ test.each([
     // Keep interrupted capture and repeated transcription failures independent:
     // each case needs only one reload before its successful recovery.
     if (reloadAt === "recording") {
-      unload(firstPage);
+      context.store.set(resetFirstPage$);
+      releasePageDom();
       await setupPage({
         locale: "en-US",
         context: secondContext,
@@ -161,7 +155,8 @@ test.each([
       await findEnabledButton("Retry");
     }
     if (reloadAt === "failed retries") {
-      unload(firstPage);
+      context.store.set(resetFirstPage$);
+      releasePageDom();
       await setupPage({
         locale: "en-US",
         context: secondContext,
@@ -237,8 +232,8 @@ test.each([
 ])(
   "Do not restore a completed silent recording at $path (empty: $empty)",
   async ({ path, empty }) => {
-    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-    const firstPage = createChildAbortController(context.signal);
+    const resetFirstPage$ = resetSignal();
+    const firstPageSignal = context.store.set(resetFirstPage$, context.signal);
     context.mocks.browser.voiceInput({
       rms: 0,
       onPcmCapture: (emit) => {
@@ -256,7 +251,7 @@ test.each([
       },
     );
     await setupPage({
-      context: { ...context, signal: firstPage.signal },
+      context: { ...context, signal: firstPageSignal },
       path,
     });
     click(await findEnabledButton("Voice input"));
@@ -264,7 +259,8 @@ test.each([
     await findEnabledButton("Voice input");
     expect(queryButton("Retry")).toBeNull();
     expect(uploads).toHaveLength(1);
-    unload(firstPage);
+    context.store.set(resetFirstPage$);
+    releasePageDom();
     await setupPage({ context: secondContext, path });
     await findEnabledButton("Voice input");
     expect(queryButton("Retry")).toBeNull();

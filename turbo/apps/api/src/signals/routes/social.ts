@@ -13,7 +13,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
-import { request$, setResHeader$ } from "../context/hono";
+import { setResHeader$ } from "../context/hono";
 import { db$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
 import { notFound } from "../../lib/error";
@@ -134,21 +134,6 @@ const socialKitRequestInner$ = command(
       { auth, body: bodyResult.data },
       signal,
     );
-    if (
-      response.status === 200 &&
-      response.body.tool === "instagram_stats" &&
-      response.body.result.views === null &&
-      get(request$).header("x-okou-instagram-views") !== "nullable"
-    ) {
-      // Pinned older CLI packages only accept numeric or omitted views.
-      // Retire after the CLI-context drain in docs/deployment-compatibility.md.
-      const result = { ...response.body.result };
-      delete result.views;
-      return agentSafeResponse(auth, {
-        ...response,
-        body: { ...response.body, result },
-      });
-    }
     return agentSafeResponse(auth, response);
   },
 );

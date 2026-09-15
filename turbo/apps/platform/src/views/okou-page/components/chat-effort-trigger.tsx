@@ -1,3 +1,4 @@
+import { isMemberModelPolicyConfigurable } from "@okouai/api-contracts/contracts/member-model-policy";
 import { isCodexFastModeModel } from "@okouai/api-contracts/contracts/model-providers";
 import { Button, Popover, PopoverContent, PopoverTrigger } from "@okouai/ui";
 import { useGet, useLastResolved } from "ccstate-react";
@@ -52,11 +53,12 @@ export function ChatEffortTrigger({
   });
   const displayValue = formatChatEffort(effort);
   const fast = value.codexServiceTier === "fast";
-  const disabled = policy?.routeStatus !== "valid";
+  const disabled =
+    policy === undefined || !isMemberModelPolicyConfigurable(policy);
   const fastAvailable =
     codexFastModeEnabled &&
     policy !== undefined &&
-    policy.routeStatus === "valid" &&
+    isMemberModelPolicyConfigurable(policy) &&
     isCodexFastModeModel(policy.model);
   return (
     <Popover>

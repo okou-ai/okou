@@ -2284,7 +2284,7 @@ describe("POST /api/webhooks/teams/bot", () => {
   });
 
   it.each(["agent", "model"] as const)(
-    "applies a Teams %s switch to an existing chat thread",
+    "preserves the pinned Teams %s in an existing DM thread",
     async (selection) => {
       const { fixture, actor, runnerGroup } =
         await setupConnectedTeamsBotActor();
@@ -2406,7 +2406,9 @@ describe("POST /api/webhooks/teams/bot", () => {
       const switchedAgentClaim =
         await runsApi.claimRunnerJob(switchedAgentRunId);
       expect(switchedAgentClaim.appendSystemPrompt).toContain(
-        "Your name is Teams switched agent.",
+        selection === "agent"
+          ? "Your name is Okou."
+          : "Your name is Teams switched agent.",
       );
       await runsApi.requestCancelRun(actor, switchedAgentRunId, [200]);
       await completeCancelledRun(
@@ -2466,7 +2468,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       expect(switchedModelClaim.appendSystemPrompt).not.toContain(
         "LOG_COMMAND",
       );
-      expect(switchedModelClaim.modelUsageProvider).toBe("gpt-5.6-sol");
+      expect(switchedModelClaim.modelUsageProvider).toBe("claude-sonnet-5");
       await runsApi.requestCancelRun(actor, switchedModelRunId, [200]);
     },
   );

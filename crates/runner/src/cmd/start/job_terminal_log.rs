@@ -473,6 +473,7 @@ fn is_info_level_job_failure(diagnostic: &FailureDiagnostic) -> bool {
             diagnostic.failure_reason,
             Some(
                 FailureReason::InsufficientCredits
+                    | FailureReason::ProviderInsufficientCredits
                     | FailureReason::InvalidApiKey
                     | FailureReason::InvalidCredentials
                     | FailureReason::TermsAcceptanceRequired
@@ -679,6 +680,7 @@ mod tests {
     fn expected_cli_failure_reasons_log_job_execution_failed_at_info() {
         for reason in [
             FailureReason::InsufficientCredits,
+            FailureReason::ProviderInsufficientCredits,
             FailureReason::InvalidApiKey,
             FailureReason::InvalidCredentials,
             FailureReason::TermsAcceptanceRequired,

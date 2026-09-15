@@ -20,10 +20,14 @@ import { agentphoneMessages } from "@okouai/db/schema/agentphone-message";
 import { agentphoneUserAgentPreferences } from "@okouai/db/schema/agentphone-user-agent-preference";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { and, desc, eq, isNull, notExists } from "drizzle-orm";
+import { and, desc, eq, isNull, like, notExists, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { env } from "../../lib/env";
 import { inferMimetype } from "../../lib/mimetype";
+import {
+  INTEGRATION_DM_SESSION_PREFIX,
+  integrationDmSessionKey,
+} from "../../lib/integration-dm-session";
 import { now } from "../../lib/time";
 import {
   publishChatThreadMessageCreatedSafely,
@@ -991,12 +995,14 @@ async function sendAgentPhoneText(
   await sendAgentPhoneMessage(
     {
       agentphoneAgentId: event.agentphoneAgentId,
-      ...(isAgentPhoneGroupEvent(event) && event.conversationId
+      ...(event.channel === "imessage" && event.conversationId
         ? {
             conversationId: event.conversationId,
-            replyToMessageId: event.messageId,
           }
         : { toNumber: event.fromNumber }),
+      ...(event.channel === "imessage"
+        ? { replyToMessageId: event.messageId }
+        : {}),
       body,
     },
     signal,
@@ -1200,7 +1206,15 @@ async function handleNewSessionCommand(
     .where(
       and(
         eq(agentphoneChatThreadRoutes.agentphoneUserLinkId, userLinkId),
-        eq(agentphoneChatThreadRoutes.rootMessageId, rootMessageId),
+        isAgentPhoneGroupEvent(args.event)
+          ? eq(agentphoneChatThreadRoutes.rootMessageId, rootMessageId)
+          : or(
+              eq(agentphoneChatThreadRoutes.rootMessageId, "dm"),
+              like(
+                agentphoneChatThreadRoutes.rootMessageId,
+                `${INTEGRATION_DM_SESSION_PREFIX}%`,
+              ),
+            ),
       ),
     );
   signal.throwIfAborted();
@@ -1850,8 +1864,14 @@ export const handleAgentPhoneMessage$ = command(
     );
     signal.throwIfAborted();
 
-    const rootMessageId = agentPhoneThreadRootMessageId(params.event);
     const isGroup = isAgentPhoneGroupEvent(params.event);
+    const rootMessageId = isGroup
+      ? agentPhoneThreadRootMessageId(params.event)
+      : integrationDmSessionKey({
+          agentId: agent.composeId,
+          selectedModel: modelRoute?.selectedModel ?? null,
+          serviceTier: modelRoute?.serviceTier ?? null,
+        });
     const { executionContext } = await fetchAgentPhoneContext(db, {
       userLinkId: params.userLink.id,
       phoneHandle: params.event.fromNumber,

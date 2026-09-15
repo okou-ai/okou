@@ -2839,8 +2839,8 @@ describe("Stage 1 background credential availability", () => {
       {
         model: "gpt-5.6-luna",
         isDefault: true,
-        defaultProviderType: "codex-oauth-token",
-        credentialScope: "member",
+        defaultProviderType: "built-in",
+        credentialScope: "org",
         modelProviderId: null,
       },
     ]);

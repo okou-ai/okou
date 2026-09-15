@@ -840,6 +840,26 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
         `${provider.apiOrigin}/open-apis/im/v1/messages/:messageId/reply`,
         async ({ params, request }) => {
           const body = (await request.json()) as FeishuMessageRequestBody;
+          const failedTargetIndex = failedSendTargets.indexOf(
+            String(params.messageId),
+          );
+          const failedContentIndex = failedSendContentFragments.findIndex(
+            (fragment) => {
+              return body.content.includes(fragment);
+            },
+          );
+          if (failedTargetIndex !== -1 || failedContentIndex !== -1) {
+            if (failedTargetIndex !== -1) {
+              failedSendTargets.splice(failedTargetIndex, 1);
+            }
+            if (failedContentIndex !== -1) {
+              failedSendContentFragments.splice(failedContentIndex, 1);
+            }
+            return HttpResponse.json({
+              code: 1,
+              msg: "temporary message failure",
+            });
+          }
           outboundMessages.push({
             kind: "reply",
             target: String(params.messageId),
@@ -848,6 +868,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
               Record<string, unknown>
             >,
             replyInThread: body.reply_in_thread ?? false,
+            idempotencyKey: body.uuid,
           });
           return HttpResponse.json({
             code: 0,
@@ -1109,7 +1130,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     const loginReply = requireValue(
       outboundMessages.find((message) => {
         return (
-          message.kind === "send" &&
+          message.kind === "reply" &&
           messageContent(message).includes("Connect your account")
         );
       }),
@@ -3010,8 +3031,11 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
   it("retries a durably admitted Feishu event after dispatch fails", async () => {
     const fixture = await setupFeishuRunFixture();
     const { appId, callbackUrl } = fixture;
-    const event = directMessage(appId, "retry this Feishu event");
-    failedSendTargets.push("oc_feishu_dm");
+    const messageId = `om_${randomUUID()}`;
+    const event = directMessage(appId, "retry this Feishu event", undefined, {
+      messageId,
+    });
+    failedSendTargets.push(messageId);
 
     const firstResponse = await postEvent(callbackUrl, event, {
       encrypted: true,
@@ -3516,7 +3540,10 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     const fixture = await setupFeishuRunFixture();
     const { appId, callbackUrl } = fixture;
 
-    const firstEvent = directMessage(appId, "hello");
+    const firstMessageId = `om_${randomUUID()}`;
+    const firstEvent = directMessage(appId, "hello", undefined, {
+      messageId: firstMessageId,
+    });
     const firstMessage = await postEvent(callbackUrl, firstEvent, {
       encrypted: true,
     });
@@ -3531,11 +3558,12 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
       null,
     );
     const loginReplies = outboundMessages.filter((message) => {
-      return message.kind === "send";
+      return message.kind === "reply";
     });
     expect(loginReplies).toHaveLength(1);
     const firstReply = loginReplies[0];
-    expect(firstReply?.target).toBe("oc_feishu_dm");
+    expect(firstReply?.target).toBe(firstMessageId);
+    expect(firstReply?.replyInThread).toBeTruthy();
     expect(firstReply?.msgType).toBe("interactive");
     const firstReplyContent = firstReply ? messageContent(firstReply) : "";
     expect(firstReplyContent).toContain("Connect your account");
@@ -3859,7 +3887,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     }
     const commandReplies = outboundMessages
       .filter((message) => {
-        return message.kind === "send";
+        return message.kind === "reply";
       })
       .map(messageContent);
     const helpReply = requireValue(
@@ -4614,9 +4642,9 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
         );
       });
       expect(reply).toMatchObject({
-        kind: chatType === "p2p" ? "send" : "reply",
-        target: chatType === "p2p" ? "oc_feishu_dm" : messageId,
-        replyInThread: chatType === "group",
+        kind: "reply",
+        target: messageId,
+        replyInThread: true,
       });
       await removeFeishuInstallation(fixture);
     },
@@ -5241,7 +5269,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
       feishuChatId: "oc_feishu_dm",
       feishuMessageId: firstMessageId,
       feishuThreadId: firstMessageId,
-      feishuReplyInThread: false,
+      feishuReplyInThread: true,
       feishuReactionId: expect.any(String),
       feishuSenderOpenId: "ou_feishu_user",
       feishuConnectionId: expect.any(String),
@@ -5256,12 +5284,13 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     });
     const completedReply = [...outboundMessages].reverse().find((message) => {
       return (
-        message.kind === "send" &&
+        message.kind === "reply" &&
         messageContent(message).includes("Canonical Feishu answer")
       );
     });
     expect(completedReply?.msgType).toBe("interactive");
-    expect(completedReply?.target).toBe("oc_feishu_dm");
+    expect(completedReply?.target).toBe(firstMessageId);
+    expect(completedReply?.replyInThread).toBeTruthy();
     const completedReplyContent = completedReply
       ? messageContent(completedReply)
       : "";
@@ -5321,7 +5350,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     );
   });
 
-  it("resumes quoted Feishu DM replies without opening a thread", async () => {
+  it("keeps quoted Feishu DM input on the main session and replies in a thread", async () => {
     const fixture = await setupFeishuRunFixture();
     const { actor, runnerGroup, appId, callbackUrl } = fixture;
     const { firstMessageId, mainSessionId } =
@@ -5360,11 +5389,12 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
       .reverse()
       .find((message) => {
         return (
-          message.kind === "send" &&
+          message.kind === "reply" &&
           messageContent(message).includes("Feishu quoted reply answer")
         );
       });
-    expect(completedQuotedReply?.replyInThread).toBeFalsy();
+    expect(completedQuotedReply?.replyInThread).toBeTruthy();
+    expect(completedQuotedReply?.target).toBe(quotedReplyMessageId);
 
     const client = setupApp({ context, routes: feishuConnectRoutes })(
       connectContract,
@@ -5795,8 +5825,9 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     });
     expect(deliveredErrors).toStrictEqual([
       expect.objectContaining({
-        kind: "send",
-        target: "oc_feishu_dm",
+        kind: "reply",
+        target: queuedMessageId,
+        replyInThread: true,
         idempotencyKey: errorEvent.id,
       }),
     ]);

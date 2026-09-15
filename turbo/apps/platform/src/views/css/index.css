@@ -1285,6 +1285,10 @@ details > summary {
   --muted: var(--gray-100);
   --accent: var(--okou-color-theme-hue) 24% 96.7%;
   --border: var(--gray-200);
+  /* One step off the gray-200 fill it is drawn on: here `--border` and
+     `--divider` both resolve to that fill, so a rule on a filled surface needs
+     its own stop. See the rule-on-fill note in the styles guide. */
+  --border-on-fill: var(--gray-300);
   --input: var(--card);
   --ring: var(--okou-color-theme-ring);
   /* Halved with the neutral sidebar: this surface now frames the workspace
@@ -1330,6 +1334,7 @@ details > summary {
   --muted: var(--gray-200);
   --accent: var(--okou-color-theme-hue) 12% 26.5%;
   --border: var(--gray-200);
+  --border-on-fill: var(--gray-300); /* see the light note above */
   --input: var(--gray-200);
   --ring: var(--okou-color-theme-hue) 45% 62%;
   --sidebar: var(--okou-color-theme-hue) 14% 12%;

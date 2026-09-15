@@ -39,7 +39,6 @@ import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-r
 import { validateOfficialAutomationResultEmailSchema } from "./test-official-automation-result-email-schema";
 import { validatePermanentBuiltInModelCooldownState } from "./test-built-in-model-cooldown-permanent";
 import { validatePermanentBuiltInModelKeyState } from "./test-built-in-model-keys-permanent";
-import { validatePermanentMarketingPrivacyState } from "./test-marketing-privacy-permanent";
 import { validatePermanentSlackPublicBrandState } from "./test-slack-public-brand-permanent";
 import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitlement-permanent";
 
@@ -1272,13 +1271,6 @@ const EXPECTED_PERMANENT_TRIGGERS = [
   },
   {
     definition:
-      "CREATE TRIGGER marketing_privacy_withdrawal BEFORE UPDATE ON public.privacy_choices FOR EACH ROW EXECUTE FUNCTION invalidate_marketing_privacy_epochs()",
-    schemaName: "public",
-    tableName: "privacy_choices",
-    triggerName: "marketing_privacy_withdrawal",
-  },
-  {
-    definition:
       "CREATE TRIGGER chat_events_reject_update BEFORE UPDATE ON public.chat_events FOR EACH ROW EXECUTE FUNCTION reject_chat_event_source_update()",
     schemaName: "public",
     tableName: "chat_events",
@@ -1412,13 +1404,6 @@ const EXPECTED_PERMANENT_FUNCTIONS = [
     functionName: "purge_quiescent_provisional_billing_attribution",
     identityArguments:
       "billed_org text, billed_user text, quiescent_run_ids uuid[]",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "7c040af77f50f9b85eb592fc30da7fcb",
-    functionName: "invalidate_marketing_privacy_epochs",
-    identityArguments: "",
     kind: "f",
     schemaName: "public",
   },
@@ -3354,7 +3339,6 @@ async function main(): Promise<void> {
 
     await validateCanonicalIntegrationIdentitySchema(dbUrl1);
     await validatePermanentTriggerAndFunctionInventory(dbUrl1);
-    await validatePermanentMarketingPrivacyState(dbUrl1);
     await validatePermanentUsagePackPendingSnapshotState(dbUrl1);
     await validatePermanentArtifactTriggerBehavior(dbUrl1);
     await validatePermanentAgentRunMetadataState(dbUrl1);

@@ -6,6 +6,8 @@ import {
   type OrgModelPolicy,
 } from "@okouai/api-contracts/contracts/model-providers";
 
+import { getMemberModelPolicyRoute } from "@okouai/api-contracts/contracts/member-model-policy";
+
 import { orgPlanCapabilities$ } from "./org-plan-capabilities.ts";
 
 export interface ModelPlanCapabilities {
@@ -53,5 +55,18 @@ export function modelPolicyAllowedForPlan(
   return (
     modelAllowedForPlan(policy.model, capabilities) &&
     modelProviderAllowedForPlan(policy.defaultProviderType, capabilities)
+  );
+}
+
+/** Member controls use the server projection; organization settings keep the helper above. */
+export function memberModelPolicyAllowedForPlan(
+  policy: OrgModelPolicy,
+  capabilities: ModelPlanCapabilities,
+): boolean {
+  const route = getMemberModelPolicyRoute(policy);
+  return (
+    route.availability !== "plan_restricted" &&
+    modelAllowedForPlan(policy.model, capabilities) &&
+    modelProviderAllowedForPlan(route.providerType, capabilities)
   );
 }
