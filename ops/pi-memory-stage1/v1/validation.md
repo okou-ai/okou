@@ -268,3 +268,16 @@ The table records actual service rows, not JavaScript-calculated costs. Health c
 Use the [runbook](../README.md#actual-query-validation-and-evidence) commands and a new output directory. Each invocation writes the exact request, complete response and request SHA-256 before checking status/results. It stops on errors or partial responses without retry. The checked-in fixture inputs and source hashes reproduce the query-only request text; the local 24-case oracle is separate evidence.
 
 UTC grouping, repeated evaluation, midnight retention and group expiry are query-result checks. No live monitor state machine, notifier binding, notification opening/recovery/repeat, or delivery was tested. Those remain controller-owned post-deployment gates. Aggregate precision outside the documented range, absent original logs, late data outside retention and complete ingestion require the existing bounded reconciliation and operational disposition. No pricing, writer, migration, ledger, inference or feature switch changed.
+
+## Separate CI infrastructure recovery
+
+GitHub renamed this repository to `vm0-ai/okou` during the repair. Required Turbo
+[prepare job 104484360036](https://github.com/vm0-ai/okou/actions/runs/34999532665/job/104484360036)
+on `c84e0900e429bf7b3653694979c908f33e4116c7` failed at `Detect changes` with
+`fatal: detected dubious ownership in repository at '/__w/okou/okou'` and exit 128.
+The preceding configuration step still trusted `/__w/vm0/vm0`; refreshed main
+`fbededc38266747f4c75e01102b84815d4c7f0ec` had the same literal. No blind rerun
+was sent. The necessary one-line correction uses quoted `$GITHUB_WORKSPACE`, as
+the repository's other container jobs already do. This scope deviation was
+documented in the PR before the edit. Gates, permissions, timeouts and runtime
+behavior are unchanged; the new HEAD requires new review and CI receipts.
