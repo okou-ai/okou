@@ -702,32 +702,6 @@ body {
 
 /* Morandi outline buttons */
 
-/* Cards inside the chat transcript: notice cards, action cards, artifact and
-   media frames. One surface, one border, one shadow, one radius — before this
-   the transcript carried two radii, four border tokens and three fills.
-
-   `okou-chat-frame` is the same recipe without the fill, for the frames that
-   own their background (a video stage is black, not white).
-
-   These live in `@layer components` on purpose. Unlayered rules outrank every
-   Tailwind utility regardless of specificity, which would silently kill any
-   `border-*`, `bg-*`, or `hover:*` a caller composes onto the same element —
-   the selected and hover states of the browser session card, for instance.
-   Inside `components`, the utilities layer still wins, so this stays a base
-   that callers can override. */
-@layer components {
-  .okou-app .okou-chat-card,
-  .okou-app .okou-chat-frame {
-    /* Fractional borders visibly repaint when card contents resolve. */
-    border: 1px solid hsl(var(--gray-400));
-    border-radius: var(--okou-chat-card-radius);
-    box-shadow: var(--okou-chat-card-shadow);
-  }
-  .okou-app .okou-chat-card {
-    background-color: hsl(var(--card));
-  }
-}
-
 /* Composer / input card (white, light border — “Just ask” / chat input) */
 .okou-app .okou-composer {
   --okou-composer-ring: var(--gray-500);

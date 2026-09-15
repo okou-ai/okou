@@ -814,6 +814,63 @@ The hovered fill carries `:not(:active)` because Tailwind decides the order the 
 
 Measured against `main` with the App's own Tailwind compiler in Chromium over CDP, on the ancestor chain captured from the real chat thread page: 28 states — both fence shapes at rest, fence-hovered, control-hovered and pressed, in Light and Dark, on a fine and a coarse pointer — report zero changed pixels and zero computed-style or geometry differences. Negative controls that drop the control's padding, shift its offset by one spacing step and drop the reveal variant report 7,818, 3,579 and 9,164 changed pixels, so the zeros are not degenerate.
 
+### Chat transcript cards
+
+`ChatCard` in `turbo/apps/platform/src/views/okou-page/components/chat-card.tsx`
+owns the surface shared by transcript notice cards, action cards and media
+frames. It follows `Badge`'s `useRender` shape, so a caller picks the host
+element with `render` and gets no wrapper. It is App-owned rather than shared, because its radius and
+shadow read the App-only `--okou-chat-card-*` variables declared on
+`.okou-app`.
+
+The border is deliberately `border-[1px] border-gray-400` rather than the shared
+`border` hairline and a semantic border token. The retired rule pinned a whole
+pixel because fractional borders visibly repaint when card contents resolve, so
+a card flickers at its edge as an image or an iframe lands. This migration
+preserves that; unifying the transcript's border width and colour with the rest
+of the product is a separate visual decision.
+
+The retired rule sat in `@layer components` so a caller's composed `border-*`,
+`bg-*` or `hover:*` utility could still outrank it — the browser session card's
+hover and selected borders are the only consumers that ever needed it. A
+component removes that arrangement rather than reproducing it: `cn()` merges the
+base with the caller's `className`, so a conflicting base utility is dropped
+instead of being outranked, and no layer ordering is involved. Measured on a
+reconstructed ancestor chain, the card's resting, hover, selected and
+selected-hover borders are identical before and after, and a control that drops
+the hover override moves 5,236 pixels, so the override is load-bearing rather
+than inert.
+
+The radius and shadow use `rounded-[var(…)]` and `shadow-[var(…)]`, matching the
+19 call sites that read the page-level `--okou-card-*` siblings the same way.
+Tailwind's shadow utility composes `--tw-shadow` in either spelling, so the
+serialized `box-shadow` carries four fully transparent placeholders the retired
+shorthand did not. The painted result is identical; a comparison should
+normalize those placeholders away rather than treat the string as the contract.
+One consequence is that `tailwind-merge` cannot classify an arbitrary
+`shadow-[var(…)]` as a box-shadow and so will not drop it for a caller's own
+`shadow-*`. No consumer overrides the shadow. Registering `@theme` tokens and a
+named `shadow-*` scale in `cn()` would restore that, and is the documented route
+if a consumer ever needs it.
+
+The `okou-chat-card` and `okou-chat-frame` selectors and their consumers have
+been removed.
+
+Five of the eighteen consumers never rendered that treatment. They live in the
+artifact preview dialog, and `DialogContent` portals to `document.body`, so the
+`.okou-app` ancestor `.okou-app .okou-chat-card` requires was never present and
+the rule painted nothing there. Measured on the rendered page before the change,
+all five report `closest(".okou-app") === null` while a transcript card reports
+`true`. Their class names were therefore deleted rather than replaced: the
+container keeps the treatment-free appearance it actually had. Giving the
+artifact preview a card surface is a separate visual decision, and it is not a
+one-line one — those two custom properties are scoped to `.okou-app`, so a
+`ChatCard` rendered in the portal resolves to a square, shadowless border
+instead. Measured on the portaled surface, adopting the shared base there would
+change 734,605 pixels.
+
+`okou-chat-frame` had exactly one consumer, that dialog's video stage, so it
+carried no live declaration anywhere.
 ### The standalone PWA fixed cover
 
 The `okou-pwa-fixed-cover` selector and its consumers have been removed. It was
