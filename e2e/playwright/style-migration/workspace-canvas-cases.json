@@ -23,27 +23,7 @@
       "deviceScaleFactor": 1
     },
     {
-      "id": "workspace-canvas-gradient-light",
-      "path": "/chats/:threadId",
-      "theme": "light",
-      "viewport": {
-        "width": 1440,
-        "height": 1000
-      },
-      "deviceScaleFactor": 1
-    },
-    {
-      "id": "workspace-canvas-gradient-dark",
-      "path": "/chats/:threadId",
-      "theme": "dark",
-      "viewport": {
-        "width": 1440,
-        "height": 1000
-      },
-      "deviceScaleFactor": 1
-    },
-    {
-      "id": "workspace-canvas-connect-light",
+      "id": "workspace-canvas-connectors-light",
       "path": "/connectors",
       "theme": "light",
       "viewport": {

@@ -781,20 +781,35 @@ at `:root` and reached through one `bg-workspace-canvas` and one
 keeps the reference, so the theme and palette attributes still decide at use
 time.
 
-Keying at `:root` is what removes the selectors. `signals/theme.ts` writes
-`data-theme` and `data-gradient-color-themes` onto the document element, and the
-shell carrying `okou-app` is mounted exactly when
-`applyColorThemeDocumentAttributes` sets that palette attribute, so
-`.okou-app[data-gradient-color-themes] .okou-workspace-bg::before` and
-`:root[data-gradient-color-themes]` select the same states. Each theme test
-wraps in `:where()` so it stays at the specificity of the rule it refines and
-source order decides between them.
+Keying at `:root` is what removes the selectors, and it widens their scope on
+purpose rather than restating the same condition. `signals/theme.ts` writes
+`data-theme` and `data-gradient-color-themes` onto the document element, while
+the retired gradient rules reached the canvas through a _descendant_
+`.okou-app` that carried the palette attribute itself. Only the sidebar and
+standalone shells carry it, so `workspace-inset.tsx` is the one consumer those
+rules ever matched. `export-page.tsx`, `connect-page-shell.tsx` and
+`shared-thread-page.tsx` carry `okou-app` on the canvas element itself and
+never carry the attribute, so they always painted the default canvas, and they
+still do — but because of a routing invariant, not because of the selector.
+Their routes register with the `"none"` layout, so `LayoutHost` mounts neither
+shell, `applyColorThemeDocumentAttributes` never runs, and
+`:root[data-gradient-color-themes]` is never set while they are on screen.
+Forced onto `:root` against a same-element fixture, the two sides do differ in
+both gradient states. The canvas is therefore now available to any
+`:root`-attributed context, which is the contract a future consumer inherits.
+Each theme test wraps in `:where()` so it stays at the specificity of the rule
+it refines and source order decides between them.
 
 The retired dark rule matched `.dark .okou-workspace-bg::before` as well as the
 attribute form. `applyTheme` always sets both, so the attribute alone is
 equivalent, and dropping the class is required rather than optional: a class in
 the selector registers a first-party class-selector declaration against the
 shrink-only baseline, which is the same reason the composer veil records.
+
+The recorded cases pin routes and viewports. `VisualCase` carries no palette
+field, so a case cannot distinguish a gradient state from a default one; the
+gradient palette is measured through the computed-style harness instead, and
+the case list carries only the six configurations it can tell apart.
 
 `before:bg-[length:100%_100%]` is retained although no measurement can move it.
 `background-size: 100% 100%` and the initial `auto auto` size a gradient to the

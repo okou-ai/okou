@@ -1109,9 +1109,13 @@ details > summary {
    Light and Dark — differ only in the fill and the gradient, so they are two
    runtime values keyed at `:root` rather than four selectors. `signals/theme.ts`
    writes `data-theme` and `data-gradient-color-themes` onto the document
-   element, which is what lets these key off `:root` alone; the retired rules
-   reached the palette variants through a `.okou-app` ancestor, and the shell
-   carrying that class is mounted exactly when the document attribute is set.
+   element, which is what lets these key off `:root` alone. The retired gradient
+   rules reached the canvas through a descendant `.okou-app` carrying the
+   palette attribute, which only the sidebar and standalone shells do, so
+   `workspace-inset.tsx` is the one consumer they matched; the three consumers
+   that carry `okou-app` on the canvas element itself keep the default canvas
+   because their routes mount neither shell. Keying at `:root` widens that scope
+   on purpose — see "The workspace canvas" in docs/styles.md.
    Each theme test is wrapped in `:where()` so it stays at the specificity of
    the rule it refines and source order decides between them. The retired dark
    rule also matched the paired `.dark` class; `applyTheme` always sets both,

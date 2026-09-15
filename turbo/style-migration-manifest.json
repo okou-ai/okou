@@ -1165,9 +1165,7 @@
       "cases": [
         "workspace-canvas-light",
         "workspace-canvas-dark",
-        "workspace-canvas-gradient-light",
-        "workspace-canvas-gradient-dark",
-        "workspace-canvas-connect-light",
+        "workspace-canvas-connectors-light",
         "workspace-canvas-shared-thread-dark",
         "workspace-canvas-narrow",
         "workspace-canvas-narrow-dark"
