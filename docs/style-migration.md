@@ -795,13 +795,19 @@ loses `content-box` and `border-style: none`, and `strong` shifts from 600 to 70
 
 Spelling the hook as `[data-slot="markdown-body"]` in the stylesheet would also
 contradict this guide's companion: the style guide records four times that a
-`data-slot` carries no styles, and no stylesheet selects one today. It would
+`data-slot` carries no styles, and no handwritten first-party rule selects one
+today. The one `[data-slot=markdown-card]` selector in the shipped bundle is the
+utility Tailwind emits for `CHAT_BUBBLE_MARKDOWN_CLASS`, which is authored on
+the component, not in a stylesheet, and stays inside the ratchet. It would
 convert a tracked class selector into the attribute selector this document still
 lists as an unenforced follow-up, hiding the debt from the ratchet instead of
 draining it.
 
 `okou-markdown-card` is blocked because it is mechanically coupled to
-`wmde-markdown`. Its only declarations live in the shared rule
+`wmde-markdown`. It keeps its own family, `chat-and-content`, and appears in
+this batch only because that coupling decides it — the one batch whose tokens
+span two families — and it is consumed at `rich-markdown.tsx`, not at the frame.
+Its only declarations live in the shared rule
 `.wmde-markdown p, .wmde-markdown .okou-markdown-card`, which is the one rule of
 this block held in the legacy baseline; the other 42 are already
 `third-party-dom-adapter` allowlist entries. Any re-spelling changes that rule's
@@ -865,6 +871,19 @@ The chat bubble section of the style guide stated that the Markdown chunk's
 stylesheet loads _after_ the App's. The bundler says otherwise, and the claim is
 corrected there. The vendored sheet is imported by `rich-markdown.tsx`, which
 `router.tsx` reaches through a static chain that `main.tsx` evaluates before its
-own `./css/index.css` import, so Rollup emits the vendored rules first. The two
-vendored resets that section relies on still win, but by `!important` rather
-than by source order.
+own `./css/index.css` import, so Rollup emits the vendored rules first. The
+shipped bundle shows the same gap: in `index-Cte7Pkoy.css` the vendored
+`.wmde-markdown blockquote>:first-child` sits at byte 16,205 and the App's
+`.wmde-markdown p,.wmde-markdown .okou-markdown-card` at byte 302,592.
+
+Two of the four resets that section relies on still win, but by `!important`
+rather than by source order. The other two do not. The vendored `blockquote >
+:first-child` / `:last-child` pair carries no `!important` and ties the retired
+`.okou-chat-bubble-* .wmde-markdown p` rule at (0,2,1), so with the App emitted
+second the retired rule won: a blockquote's first and last paragraph inside a
+bubble carried its 8px, and the `[&_blockquote>*:first-child]:mt-0!` pair that
+replaced it flushes them. That is a real spacing change inside a batch recorded
+as an equivalence, so it is tracked as its own decision in
+[#34278](https://github.com/vm0-ai/vm0/issues/34278) rather than repaired here.
+It also means the `chat-message-bubbles` harness did not reproduce this cascade
+order; confirm that before reusing it.

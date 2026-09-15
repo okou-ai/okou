@@ -642,18 +642,26 @@ The competitor for the paragraphs is the App's own unlayered `.wmde-markdown p`
 rule, which a utility in `@layer utilities` cannot outrank without one; a layered
 important declaration does. The card slot has since been drained to a `my-1.5`
 utility of its own, which the important declaration outranks from inside the same
-layer, so both halves still land on the bubble's 8px. But that same promotion
-would also beat the two competitors the retired
-rule _lost_ to — the vendored `.wmde-markdown > *:first-child` /
-`> *:last-child` resets, which carry `!important` and therefore win whatever the
-source order is, and the vendored `blockquote > :first-child` / `:last-child`
-pair, which ties the retired rule on specificity. (The Markdown chunk's
-stylesheet in fact loads _before_ the App's: it reaches the bundle through a
-static `router.tsx` import chain, so Rollup emits it first and the App block
-wins every tie. See the Markdown body batch in the migration log.) Restating
-those four at the same tier is what keeps the
-edge paragraphs flush. `[&_hr]:hidden` needs no important, because nothing
-unlayered declares `display` on a Markdown rule.
+layer, so both halves still land on the bubble's 8px. That same promotion also
+clears the vendored `.wmde-markdown > *:first-child` / `> *:last-child` resets,
+which carry `!important` and therefore beat every unlayered rule whatever the
+source order is. The retired rule lost to those two, so restating them at the
+same tier is what keeps the frame's own edge paragraphs flush.
+
+The vendored `blockquote > :first-child` / `:last-child` pair is a different
+case, and the source order decides it. That order runs the other way from what
+this section first recorded: the Markdown chunk's stylesheet reaches the bundle
+through a static `router.tsx` import chain that `main.tsx` evaluates before its
+own `./css/index.css`, so Rollup emits the vendored rules first and the App
+block wins every tie. The pair is not important and ties the retired
+`.okou-chat-bubble-* .wmde-markdown p` rule at (0,2,1), so the retired rule won:
+inside a bubble, a blockquote's first and last paragraph carried its 8px.
+`[&_blockquote>*:first-child]:mt-0!` and its `mb-0!` sibling flush those two
+edges instead, which narrows that spacing rather than restating it. See the
+Markdown body batch in the migration log for the measurement, and
+[#34278](https://github.com/vm0-ai/vm0/issues/34278) for the spacing decision
+itself. `[&_hr]:hidden` needs no important, because nothing unlayered declares
+`display` on a Markdown rule.
 
 The card slot is addressed through `data-slot="markdown-card"` rather than its
 `okou-markdown-card` class. At the time this batch landed that was because
