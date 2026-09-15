@@ -1,5 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { command, computed } from "ccstate";
+import { FeatureSwitchKey, isFeatureEnabled } from "@okouai/core";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   DEFAULT_AGENT_DISPLAY_NAME,
@@ -1706,8 +1707,12 @@ function rootMessageIdForAgentMessage(args: {
   readonly botId: string;
   readonly agentId: string;
   readonly modelRoute: ModelRoutePin | undefined;
+  readonly scopedDmSessions: boolean;
 }): string | undefined {
   if (args.isDM) {
+    if (!args.scopedDmSessions) {
+      return "dm";
+    }
     return args.message.reply_to_message
       ? String(args.message.reply_to_message.message_id)
       : integrationDmSessionKey({
@@ -1925,12 +1930,13 @@ const persistTelegramChatMessage$ = command(
       serviceTier: args.modelRoute?.serviceTier ?? null,
       currentTime,
     };
+    const isScopedDm = args.source.isDM && args.rootMessageId !== "dm";
     const binding =
       args.rootMessageId === undefined
         ? await createTelegramChatThread(args.source.db, threadArgs)
         : await ensureTelegramChatThreadRoute(args.source.db, {
             ...threadArgs,
-            isDirectMessage: args.source.isDM,
+            preserveThreadSettings: isScopedDm,
             ownerLink: telegramOwnerLink(args.source),
             chatId: args.chatId,
             rootMessageId: args.rootMessageId,
@@ -1987,7 +1993,7 @@ const persistTelegramChatMessage$ = command(
       if (!event) {
         return false;
       }
-      if (args.source.isDM && args.source.message.reply_to_message) {
+      if (isScopedDm && args.source.message.reply_to_message) {
         await bindTelegramReplyMessageRoute(tx, {
           ownerLink: telegramOwnerLink(args.source),
           chatId: args.chatId,
@@ -2120,7 +2126,7 @@ const runAgentForTelegram$ = command(
 
 const handleTelegramAgentMessage$ = command(
   async (
-    { set },
+    { get, set },
     args: TelegramAgentMessageArgs,
     signal: AbortSignal,
   ): Promise<void> => {
@@ -2166,10 +2172,18 @@ const handleTelegramAgentMessage$ = command(
       signal,
     );
     signal.throwIfAborted();
+    const featureSwitchContext = await get(
+      userFeatureSwitchContext(args.orgId, args.userLink.userId),
+    );
+    signal.throwIfAborted();
     const rootMessageId = rootMessageIdForAgentMessage({
       ...args,
       agentId: args.composeId,
       modelRoute,
+      scopedDmSessions: isFeatureEnabled(
+        FeatureSwitchKey.TelegramDmSessions,
+        featureSwitchContext,
+      ),
     });
     const context = await fetchTelegramContext({
       db: args.db,

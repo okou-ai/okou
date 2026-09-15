@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
+import { FeatureSwitchKey } from "@okouai/core";
 
 import {
   OFFICIAL_TELEGRAM_BOT_ID,
@@ -40,6 +41,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { testTelegramStateRoutes } from "../test-telegram-state";
 import { integrationsTelegramRoutes } from "../integrations-telegram";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const TEST_APP_ROUTES = Object.freeze([...integrationsTelegramRoutes]);
 
@@ -249,6 +251,11 @@ async function seedTelegramPostFixture(
   if (!fixture) {
     throw new Error("seedTelegramPostFixture: response missing fixture");
   }
+  await updateFeatureSwitchesForUser(
+    context,
+    { userId: String(fixture.user_id), orgId: String(fixture.org_id) },
+    { [FeatureSwitchKey.TelegramDmSessions]: true },
+  );
   return {
     orgId: String(fixture.org_id),
     userId: String(fixture.user_id),
@@ -1713,19 +1720,29 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     );
   });
 
-  it.each(["custom", "official"] as const)(
-    "isolates %s Telegram DM reply chains and resumes each selected model",
-    async (ownerKind) => {
+  it.each([
+    { ownerKind: "custom", enabled: true },
+    { ownerKind: "official", enabled: true },
+    { ownerKind: "custom", enabled: false },
+    { ownerKind: "official", enabled: false },
+  ] as const)(
+    "routes $ownerKind Telegram DMs with scoped sessions enabled=$enabled",
+    async ({ ownerKind, enabled }) => {
       const runnerGroup = configureCanonicalTelegramRunner();
       configureOfficialBotEnv();
-      const fixture = await trackFixture(
-        seedTelegramPostFixture({
-          installBot: ownerKind === "custom",
-          linkTelegramUser: ownerKind === "custom",
-          seedOfficialLink: ownerKind === "official",
-        }),
+      const actor = authOrgApi.user();
+      if (!actor.orgId) {
+        throw new Error("Expected an organization for Telegram onboarding");
+      }
+      await runsApi.grantProEntitlement(actor);
+      const onboarded = await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
+        displayName: "Telegram DM agent",
+      });
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId: actor.orgId },
+        { [FeatureSwitchKey.TelegramDmSessions]: enabled },
       );
-      const actor = actorForFixture(fixture);
       const provider = await runsApi.createOrgModelProvider(actor, {
         type: "anthropic-api-key",
         secret: "telegram-dm-model-routing-key",
@@ -1749,13 +1766,63 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       const telegram = telegramApiMocks(
         ownerKind === "custom" ? TEST_BOT_TOKEN : OFFICIAL_BOT_TOKEN,
       );
-      const botId = ownerKind === "custom" ? fixture.telegramBotId : "official";
-      const secret =
-        ownerKind === "custom"
-          ? fixture.webhookSecret
-          : OFFICIAL_WEBHOOK_SECRET;
-      const fromId =
-        ownerKind === "custom" ? Number(fixture.telegramUserId) : 99_002;
+      const botId = ownerKind === "custom" ? newTelegramBotId() : "official";
+      let secret = OFFICIAL_WEBHOOK_SECRET;
+      const headers = authOrgApi.authenticate(actor);
+      if (ownerKind === "custom") {
+        mockTelegramGetMe({ botId });
+        context.mocks.telegram.setWebhook.mockImplementation(
+          (_token, _url, secretToken) => {
+            if (typeof secretToken !== "string") {
+              throw new Error("Expected a Telegram webhook secret");
+            }
+            secret = secretToken;
+            return Promise.resolve();
+          },
+        );
+        await accept(
+          telegramClient().register({
+            headers,
+            body: {
+              botToken: TEST_BOT_TOKEN,
+              defaultAgentId: onboarded.body.agentId,
+            },
+          }),
+          [201],
+        );
+      }
+      const fromId = Number(newTelegramBotId());
+      const telegramAuth = {
+        id: fromId,
+        auth_date: Math.floor(nowDate().getTime() / 1000),
+        first_name: "Alice",
+      };
+      const authData = Object.entries(telegramAuth)
+        .sort(([left], [right]) => {
+          return left.localeCompare(right);
+        })
+        .map(([key, value]) => {
+          return `${key}=${value}`;
+        })
+        .join("\n");
+      const secretKey = createHash("sha256")
+        .update(ownerKind === "custom" ? TEST_BOT_TOKEN : OFFICIAL_BOT_TOKEN)
+        .digest();
+      await accept(
+        telegramClient().link({
+          headers,
+          body: {
+            telegramBotId: botId,
+            telegramAuth: {
+              ...telegramAuth,
+              hash: createHmac("sha256", secretKey)
+                .update(authData)
+                .digest("hex"),
+            },
+          },
+        }),
+        [200],
+      );
       const chatId = 78_501;
 
       async function sendDm(text: string, messageId: number, replyTo?: number) {
@@ -1843,6 +1910,16 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       expect(main.claim.resumeSession).toBeNull();
       const followUp = await completeDm("continue the main DM", 3502);
       expect(followUp.claim.resumeSession?.sessionId).toBe(main.sessionId);
+
+      if (!enabled) {
+        const reply = await completeDm("continue the unsplit DM", 3503, 3501);
+        expect(reply.claim.resumeSession?.sessionId).toBe(followUp.sessionId);
+        await sendDm("/model claude-opus-4-8", 3504);
+        const switched = await completeDm("change the unsplit DM model", 3505);
+        expect(switched.claim.modelUsageProvider).toBe("claude-opus-4-8");
+        expect(switched.claim.resumeSession?.sessionId).toBe(reply.sessionId);
+        return;
+      }
 
       const branch = await completeDm(
         "start a reply chain",

@@ -264,12 +264,12 @@ export async function createTelegramChatThread(
 export async function ensureTelegramChatThreadRoute(
   db: Db,
   args: TelegramChatThreadRouteKey &
-    TelegramChatThreadCreateArgs & { readonly isDirectMessage: boolean },
+    TelegramChatThreadCreateArgs & { readonly preserveThreadSettings: boolean },
 ): Promise<TelegramChatThreadBinding> {
   return await db.transaction(async (tx) => {
     const existing = await loadRoute(tx, args);
     if (existing) {
-      return args.isDirectMessage
+      return args.preserveThreadSettings
         ? existing
         : await reconcileExistingRoute(tx, args, existing);
     }
@@ -294,7 +294,7 @@ export async function ensureTelegramChatThreadRoute(
           "Failed to resolve Telegram chat thread route after conflict",
         );
       }
-      return args.isDirectMessage
+      return args.preserveThreadSettings
         ? conflicted
         : await reconcileExistingRoute(tx, args, conflicted);
     }
