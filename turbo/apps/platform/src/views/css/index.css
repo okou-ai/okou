@@ -241,6 +241,13 @@
    through a 1px inset of the inner one. Both are fixed to the handle's
    18x36 / 16x34 geometry. */
 :root {
+  /* The dots drawn on the texture the top step reveals. That texture's colours
+     are fixed rather than theme-paired, so a mark on it cannot take a grey ramp
+     stop: the ramp inverts in dark and the dots would turn light against a
+     light ground. This is the light ramp's `gray-700` at the alpha the dots
+     reach on the plain track, which is what keeps the scale at one weight
+     either side of the reveal. */
+  --okou-effort-dot-on-texture: rgb(106 105 104 / 0.75);
   --okou-effort-thumb-clip: polygon(
     0px 8.2px,
     0.04px 5.55px,
@@ -633,26 +640,6 @@ body {
 
 :root:where([data-theme="dark"])[data-gradient-color-themes] {
   --okou-composer-focus-veil: none;
-}
-
-/* Desktop shell: avoid accidental selection on app chrome while preserving content/editors. */
-.okou-app[data-desktop-shell] {
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-.okou-app[data-desktop-shell]
-  :where(
-    input,
-    textarea,
-    select,
-    [contenteditable]:not([contenteditable="false"]),
-    [role="textbox"],
-    .okou-chat-bubble-user,
-    .okou-chat-bubble-assistant
-  ) {
-  -webkit-user-select: text;
-  user-select: text;
 }
 
 /* Reusable 0.7px border utilities — replaces inline style={{ border: "0.7px solid ..." }}

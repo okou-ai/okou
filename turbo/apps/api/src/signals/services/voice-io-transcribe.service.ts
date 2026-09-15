@@ -44,7 +44,7 @@ const L = logger("VoiceSegment");
 // Character rate is noisy for short clips, so only context-sized output can
 // trigger the conservative upper bound for human speech.
 const VOICE_TRANSCRIPT_MAX_CHARACTERS_PER_SECOND = 25;
-const VOICE_TRANSCRIPT_MINIMUM_SUSPICIOUS_CHARACTERS = 200;
+const VOICE_TRANSCRIPT_MINIMUM_SUSPICIOUS_CHARACTERS = 100;
 
 type VoiceDraftTranscriptionInput = VoiceIoTranscribeContext &
   VoiceIoTranscribeSegmentOptions & {

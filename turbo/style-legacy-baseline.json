@@ -5,34 +5,6 @@
     "apps/platform/src/views/css/index.css": [
       {
         "atRules": [],
-        "selector": ".okou-app[data-desktop-shell]",
-        "property": "-webkit-user-select",
-        "value": "none",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app[data-desktop-shell]",
-        "property": "user-select",
-        "value": "none",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app[data-desktop-shell] :where(input,textarea,select,[contenteditable]:not([contenteditable=\"false\"]),[role=\"textbox\"],.okou-chat-bubble-user,.okou-chat-bubble-assistant)",
-        "property": "-webkit-user-select",
-        "value": "text",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app[data-desktop-shell] :where(input,textarea,select,[contenteditable]:not([contenteditable=\"false\"]),[role=\"textbox\"],.okou-chat-bubble-user,.okou-chat-bubble-assistant)",
-        "property": "user-select",
-        "value": "text",
-        "important": false
-      },
-      {
-        "atRules": [],
         "selector": ".okou-border",
         "property": "border",
         "value": "0.7px solid hsl(var(--gray-400))",

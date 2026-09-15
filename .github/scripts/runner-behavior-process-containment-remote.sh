@@ -118,22 +118,28 @@ for controller in cpu memory pids; do
   grep -qw "$controller" "$parent/cgroup.subtree_control"
   grep -qw "$controller" "$parent/workload/cgroup.subtree_control"
 done
-expected_control_memory_min=$((384 * 1024 * 1024))
+expected_control_memory_min=$((128 * 1024 * 1024))
+expected_runtime_memory_min=$((384 * 1024 * 1024))
+expected_agent_memory_min=$((expected_control_memory_min + expected_runtime_memory_min))
 expected_workload_memory_reserve=$((128 * 1024 * 1024))
 guest_memory_bytes=$(( $(getconf _PHYS_PAGES) * $(getconf PAGE_SIZE) ))
 expected_workload_memory_max=$((guest_memory_bytes - expected_workload_memory_reserve))
-test "$(cat "$base/memory.min")" = "$expected_control_memory_min"
-test "$(cat "$parent/memory.min")" = "$expected_control_memory_min"
+test "$(cat "$base/memory.min")" = "$expected_agent_memory_min"
+test "$(cat "$parent/memory.min")" = "$expected_agent_memory_min"
 test "$(cat "$parent/control/memory.min")" = "$expected_control_memory_min"
+test "$(cat "$parent/workload/memory.min")" = "$expected_runtime_memory_min"
+test "$(cat "$parent/workload/runtime/memory.min")" = "$expected_runtime_memory_min"
 grep -Eq '^[0-9]+ [0-9]+$' "$parent/workload/cpu.max"
 test "$(cat "$parent/workload/memory.high")" = max
 test "$(cat "$parent/workload/memory.max")" = "$expected_workload_memory_max"
 test "$(cat "$parent/workload/memory.oom.group")" = 0
 test "$(cat "$parent/workload/pids.max")" = max
 test "$(cat "$parent/workload/tools/memory.max")" = max
+test "$(cat "$parent/workload/tools/memory.min")" = 0
 test "$(cat "$parent/workload/tools/memory.oom.group")" = 0
 grep -qw memory "$parent/workload/tools/cgroup.subtree_control"
 test "$(cat "/sys/fs/cgroup$relative/memory.oom.group")" = 1
+test "$(cat "/sys/fs/cgroup$relative/memory.min")" = 0
 test "$(cat /proc/self/oom_score_adj)" = 1000
 bash -c 'test "$(cat /proc/self/oom_score_adj)" = 1000'
 for runtime_pid in $(cat "$parent/workload/runtime/cgroup.procs"); do

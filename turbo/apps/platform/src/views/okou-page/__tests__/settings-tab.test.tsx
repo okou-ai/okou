@@ -288,6 +288,41 @@ test.each(["preset:0", "svg:r3s2h4c1f5h"])(
   },
 );
 
+test("Keep avatar save controls disabled until failure and allow retry", async () => {
+  prepareAgentProfile(FULL_BEARD_AVATAR_URL);
+  const response = context.mocks.deferred<void>();
+  context.mocks.api(
+    agentsByIdContract.updateMetadata,
+    async ({ respond, withSignal }) => {
+      await withSignal(response.promise);
+      return respond(500, {
+        error: { code: "INTERNAL_SERVER_ERROR", message: "Avatar save failed" },
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}?tab=profile`,
+  });
+  click(await findCustomizeAvatarButton());
+  const dialog = await screen.findByRole("dialog", { name: "Edit avatar" });
+  const previewLayers = renderedAvatarSvgLayerSrcs(dialog);
+  click(within(dialog).getByText("Use this avatar"));
+
+  await expect(within(dialog).findByText("Saving…")).resolves.toBeDisabled();
+  expect(within(dialog).getByText("Cancel")).toBeDisabled();
+
+  response.resolve();
+  await expect(
+    screen.findByText("Avatar save failed"),
+  ).resolves.toBeInTheDocument();
+  await expect(
+    within(dialog).findByText("Use this avatar"),
+  ).resolves.toBeEnabled();
+  expect(within(dialog).getByText("Cancel")).toBeEnabled();
+  expect(renderedAvatarSvgLayerSrcs(dialog)).toStrictEqual(previewLayers);
+});
+
 test("Cancel a pending avatar save and reopen an editable dialog", async () => {
   prepareAgentProfile();
   const saveStarted = context.mocks.deferred<void>();

@@ -51,7 +51,7 @@ function LoadedCustomConnectorPermissions({
   const draft = useGet(customConnectorPermissionDraft$);
   const setDraftPermission = useSet(setCustomConnectorPermissionDraftValue$);
   const [saveLoadable, save] = useLoadableSet(saveCustomConnectorPermissions$);
-  const pageSignal = useGet(pageSignal$);
+  const signal = useGet(pageSignal$);
   const permissions = bundle.permissions.filter((permission) => {
     return bundle.defaultPolicies[permission.name] === "deny";
   });
@@ -77,13 +77,14 @@ function LoadedCustomConnectorPermissions({
   };
 
   const handleApply = () => {
-    if (saving || !changed) {
+    if (!activeDraft || saving || !changed) {
       return;
     }
     detach(
       (async () => {
         await save(
           {
+            surface: activeDraft.surface,
             agentId,
             connectorId,
             permissionNames: permissions
@@ -94,7 +95,7 @@ function LoadedCustomConnectorPermissions({
                 return selected.has(permissionName);
               }),
           },
-          pageSignal,
+          signal,
         );
         toast.success(
           t(($) => {

@@ -46,6 +46,7 @@ import {
   reloadOfficialWorkflows$,
   setOfficialWorkflowConfigurationForm$,
   setOfficialWorkflowSearch$,
+  type OfficialWorkflowConfigurationForm,
 } from "../../signals/workflows-page/official-workflows-signals.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
@@ -309,10 +310,11 @@ function OfficialWorkflowCatalogPage() {
 
 function InstallDialog({
   definition,
+  form,
 }: {
   readonly definition: OfficialWorkflowCatalogDetail;
+  readonly form: OfficialWorkflowConfigurationForm;
 }) {
-  const form = useGet(officialWorkflowConfigurationForm$);
   const setForm = useSet(setOfficialWorkflowConfigurationForm$);
   const agentsLoadable = useLoadable(agents$);
   const pageSignal = useGet(pageSignal$);
@@ -320,17 +322,13 @@ function InstallDialog({
   const [installLoadable, install] = useLoadableSet(installOfficialWorkflow$);
   const installing = installLoadable.state === "loading";
   const agents = agentsLoadable.state === "hasData" ? agentsLoadable.data : [];
-  const activeForm =
-    form?.target.operation === "install" &&
-    form.definitionName === definition.name
-      ? form
-      : null;
-  const complete = activeForm
-    ? officialWorkflowConfigurationComplete(activeForm, definition.blueprints)
-    : false;
+  const complete = officialWorkflowConfigurationComplete(
+    form,
+    definition.blueprints,
+  );
   return (
     <Dialog
-      open={activeForm !== null}
+      open
       onOpenChange={(nextOpen) => {
         if (!nextOpen) {
           setForm(null);
@@ -353,17 +351,15 @@ function InstallDialog({
             })}
           </DialogDescription>
         </DialogHeader>
-        {activeForm ? (
-          <OfficialWorkflowConfigurationFields
-            form={activeForm}
-            blueprints={definition.blueprints}
-            agents={agents}
-            agentsLoaded={agentsLoadable.state === "hasData"}
-            showAgent
-            disabled={installing}
-          />
-        ) : null}
-        {activeForm?.submitted && installLoadable.state === "hasError" ? (
+        <OfficialWorkflowConfigurationFields
+          form={form}
+          blueprints={definition.blueprints}
+          agents={agents}
+          agentsLoaded={agentsLoadable.state === "hasData"}
+          showAgent
+          disabled={installing}
+        />
+        {installLoadable.state === "hasError" ? (
           <Alert variant="destructive">
             <AlertTitle>
               {i18n.t(($) => {
@@ -392,18 +388,15 @@ function InstallDialog({
           </Button>
           <Button
             type="button"
-            disabled={!activeForm || !complete || installing}
+            disabled={!complete || installing}
             onClick={() => {
-              if (!activeForm) {
-                return;
-              }
               detach(
                 (async () => {
                   const result = await install(
                     {
                       definitionName: definition.name,
-                      agentId: activeForm.agentId,
-                      blueprints: activeForm.blueprints,
+                      agentId: form.agentId,
+                      blueprints: form.blueprints,
                     },
                     pageSignal,
                   );
@@ -433,10 +426,39 @@ function InstallDialog({
   );
 }
 
-function OfficialWorkflowDefinitionPage() {
-  const definitionLoadable = useLoadable(currentOfficialWorkflowDefinition$);
+function OfficialWorkflowInstallButton({
+  definition,
+}: {
+  readonly definition: OfficialWorkflowCatalogDetail;
+}) {
   const defaultAgentId = useLastResolved(defaultAgentId$) ?? "";
   const setForm = useSet(setOfficialWorkflowConfigurationForm$);
+  return (
+    <Button
+      variant="neutral"
+      className="h-9 shrink-0 gap-2 rounded-lg hover:bg-primary-hover active:bg-primary-pressed"
+      onClick={() => {
+        setForm(
+          createOfficialWorkflowConfigurationForm({
+            target: { operation: "install" },
+            definitionName: definition.name,
+            agentId: defaultAgentId,
+            blueprints: definition.blueprints,
+          }),
+        );
+      }}
+    >
+      <Bot size={14} />
+      {i18n.t(($) => {
+        return $.workflows.official.install;
+      })}
+    </Button>
+  );
+}
+
+function OfficialWorkflowDefinitionPage() {
+  const definitionLoadable = useLoadable(currentOfficialWorkflowDefinition$);
+  const form = useGet(officialWorkflowConfigurationForm$);
   const reload = useSet(reloadOfficialWorkflows$);
   const definition =
     definitionLoadable.state === "hasData" ? definitionLoadable.data : null;
@@ -467,25 +489,7 @@ function OfficialWorkflowDefinitionPage() {
               </p>
             </div>
             {definition.lifecycle === "active" ? (
-              <Button
-                variant="neutral"
-                className="h-9 shrink-0 gap-2 rounded-lg hover:bg-primary-hover active:bg-primary-pressed"
-                onClick={() => {
-                  setForm(
-                    createOfficialWorkflowConfigurationForm({
-                      target: { operation: "install" },
-                      definitionName: definition.name,
-                      agentId: defaultAgentId,
-                      blueprints: definition.blueprints,
-                    }),
-                  );
-                }}
-              >
-                <Bot size={14} />
-                {i18n.t(($) => {
-                  return $.workflows.official.install;
-                })}
-              </Button>
+              <OfficialWorkflowInstallButton definition={definition} />
             ) : null}
           </div>
         ) : (
@@ -557,7 +561,15 @@ function OfficialWorkflowDefinitionPage() {
           </div>
         ) : null}
       </DetailPageMain>
-      {definition ? <InstallDialog definition={definition} /> : null}
+      {definition &&
+      form?.target.operation === "install" &&
+      form.definitionName === definition.name ? (
+        <InstallDialog
+          key={definition.name}
+          definition={definition}
+          form={form}
+        />
+      ) : null}
     </DetailPageShell>
   );
 }

@@ -1,5 +1,14 @@
 export interface MermaidThemeVariables {
   readonly fontSize?: string;
+  readonly background?: string;
+  readonly primaryColor?: string;
+  readonly primaryTextColor?: string;
+  readonly primaryBorderColor?: string;
+  readonly secondaryColor?: string;
+  readonly tertiaryColor?: string;
+  readonly lineColor?: string;
+  readonly noteBkgColor?: string;
+  readonly noteTextColor?: string;
 }
 
 export interface MermaidFlowchartOptions {
@@ -12,7 +21,7 @@ export interface MermaidLiteConfig {
   readonly startOnLoad?: boolean;
   readonly securityLevel?: "strict";
   readonly suppressErrorRendering?: boolean;
-  readonly theme?: "redux" | "redux-dark";
+  readonly theme?: "base";
   readonly fontFamily?: string;
   readonly themeVariables?: MermaidThemeVariables;
   readonly flowchart?: MermaidFlowchartOptions;

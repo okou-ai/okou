@@ -882,7 +882,7 @@ That left one `@media (min-width: 768px)` block behind
 `okou-sidebar-header` class on the drawer header, and both `aria-hidden` drag
 region divs. `okou-desktop-titlebar-drag-region` and `okou-sidebar-header` are
 retired; `okou-workspace-bg` kept the fifteen declarations unrelated to the
-desktop shell, and the section below drains those.
+desktop shell, and "The workspace canvas" above drains those.
 
 **Nothing in the repository ever set that attribute.** It occurred only in the
 App stylesheet, in the baseline derived from it, in the migration ledger, and in
@@ -893,6 +893,27 @@ both drag regions were always `display: none`, and the header always kept its
 its only consumer sits inside the mobile drawer `aside`, which is `md:hidden`.
 `.okou-workspace-bg`'s `position: relative` was dead three times over: the
 unconditional `.okou-workspace-bg` rule already declares it.
+
+The two unlayered `.okou-app[data-desktop-shell]` selection rules outside that
+media block are now deleted as well, on the same evidence: one set
+`user-select: none` on app chrome and one restored `user-select: text` inside
+inputs, editors and the two chat bubbles. Measured on a reconstructed shell,
+with the attribute absent — which is every shipped build — `user-select`
+computes to `auto` on chrome, input and contenteditable both before and after.
+Forcing the attribute on separates the two sides: before gives `none` on chrome
+and `text` on the input, after gives `auto` for both. So the rules were real
+rather than no-ops, and the only thing that ever kept them inert was an
+attribute nothing writes.
+
+That deletion also retires the last references to `.okou-chat-bubble-user` and
+`.okou-chat-bubble-assistant`. The chat-bubble batch removed those class names
+from every element and recorded that they survived only inside this selection
+exception; with the exception gone, neither name appears anywhere in the
+repository outside the migration ledger. With the card tokens promoted to
+`:root` and the workspace canvas drained above, `.okou-app` no longer appears in
+the stylesheet at all — it neither carries a declaration nor scopes one. The
+class survives only on the elements that still spell it, which is what the
+final call-site removal clears.
 
 Deleting rather than porting is the right move because there is nothing to
 port. A replacement could only be a condition no element satisfies, and

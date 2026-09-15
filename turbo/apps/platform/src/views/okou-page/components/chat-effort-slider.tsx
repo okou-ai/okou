@@ -40,9 +40,12 @@ function InteriorTicks({
               // line through the bar, which is what Claude and ChatGPT do.
               "absolute top-1/2 size-1 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-200",
               passed === undefined
-                ? "bg-gray-400/45"
+                ? // The top step wipes the plain track away, taking the heavier
+                  // marks with it, so the layer that survives carries the weight
+                  // itself against the texture underneath.
+                  "bg-gray-500/80 group-data-[at-max=true]/effort:bg-[color:var(--okou-effort-dot-on-texture)]"
                 : step <= passed
-                  ? "bg-gray-500/40"
+                  ? "bg-gray-600/75"
                   : "bg-transparent",
             )}
             style={{

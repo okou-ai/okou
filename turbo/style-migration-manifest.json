@@ -1180,6 +1180,23 @@
       "mergeCommit": null
     },
     {
+      "id": "desktop-shell-selection",
+      "family": "platform-shell",
+      "tokens": ["okou-app"],
+      "consumers": ["apps/platform/src/views/css/index.css"],
+      "cases": [
+        "desktop-titlebar-rail-light",
+        "desktop-titlebar-rail-dark",
+        "desktop-titlebar-drawer-light",
+        "desktop-titlebar-drawer-dark"
+      ],
+      "status": "implemented",
+      "blockedReason": null,
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
+    },
+    {
       "id": "workspace-canvas",
       "family": "platform-shell",
       "tokens": ["okou-workspace-bg"],

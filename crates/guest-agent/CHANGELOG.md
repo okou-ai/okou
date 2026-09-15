@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.91.0](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.5...guest-agent-v0.91.0) (2026-09-15)
+
+
+### Features
+
+* stream Pi sandbox assistant output ([#34299](https://github.com/vm0-ai/vm0/issues/34299)) ([2c12008](https://github.com/vm0-ai/vm0/commit/2c12008061eaf9d1fc8e0d2c1240697433182c8d))
+
+
+### Bug Fixes
+
+* **runner:** protect native runtime memory from tool reclaim ([#34398](https://github.com/vm0-ai/vm0/issues/34398)) ([756b6bc](https://github.com/vm0-ai/vm0/commit/756b6bce47a0a4b341359971ebc7ae9a4c24c62e))
+
 ## [0.90.5](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.4...guest-agent-v0.90.5) (2026-09-15)
 
 

@@ -17,7 +17,7 @@ use std::io;
 use std::path::Path;
 
 use guest_contracts::process_containment::{
-    CGROUP_V2_MOUNT_PATH, CONTROL_MEMORY_MIN_BYTES, EXEC_CGROUP_BASE_PATH,
+    AGENT_MEMORY_MIN_BYTES, CGROUP_V2_MOUNT_PATH, EXEC_CGROUP_BASE_PATH,
     REQUIRED_CGROUP_CONTROLLERS, REQUIRED_CGROUP_SUBTREE_CONTROL,
 };
 
@@ -161,9 +161,8 @@ impl std::error::Error for InitError {}
 /// Cgroup v2 is mounted at `CGROUP_V2_MOUNT_PATH`. The exec base at
 /// `EXEC_CGROUP_BASE_PATH` must be empty, distribute the `cpu`, `memory`, and
 /// `pids` controllers, and carry the ancestor `memory.min` required for
-/// effective control-process protection. `guest-control-server` creates an empty
-/// operation parent and two controlled leaves beneath it for each exec
-/// operation.
+/// effective control and native-runtime protection. `guest-control-server`
+/// creates each operation's control/workload hierarchy beneath it.
 fn initialize_process_containment() -> Result<(), InitError> {
     create_dir_all(Path::new(CGROUP_V2_MOUNT_PATH))?;
     // CLI children and managed tools migrate before exec. Favor these dynamic
@@ -189,10 +188,10 @@ fn initialize_process_containment() -> Result<(), InitError> {
     let memory_min_path = base.join(MEMORY_MIN_FILE);
     fs::write(
         &memory_min_path,
-        CONTROL_MEMORY_MIN_BYTES.to_string().as_bytes(),
+        AGENT_MEMORY_MIN_BYTES.to_string().as_bytes(),
     )
     .map_err(|source| InitError::Filesystem {
-        operation: "configure control memory protection in",
+        operation: "configure control and runtime memory protection in",
         path: memory_min_path.display().to_string(),
         source,
     })?;
@@ -307,9 +306,9 @@ fn verify_process_containment_base(base: &Path) -> Result<(), InitError> {
             path: base.join(MEMORY_MIN_FILE).display().to_string(),
             source,
         })?;
-    if memory_min.trim() != CONTROL_MEMORY_MIN_BYTES.to_string() {
+    if memory_min.trim() != AGENT_MEMORY_MIN_BYTES.to_string() {
         return Err(InitError::InvalidProcessContainment(format!(
-            "exec cgroup base {MEMORY_MIN_FILE} does not preserve control memory"
+            "exec cgroup base {MEMORY_MIN_FILE} does not preserve control and runtime memory"
         )));
     }
     Ok(())
@@ -372,7 +371,7 @@ mod tests {
         }
         fs::write(
             base.join(MEMORY_MIN_FILE),
-            CONTROL_MEMORY_MIN_BYTES.to_string(),
+            AGENT_MEMORY_MIN_BYTES.to_string(),
         )
         .unwrap();
     }
@@ -496,6 +495,23 @@ mod tests {
 
         let error = verify_process_containment_base(dir.path()).unwrap_err();
 
-        assert!(error.to_string().contains("preserve control memory"));
+        assert!(
+            error
+                .to_string()
+                .contains("preserve control and runtime memory")
+        );
+    }
+
+    #[test]
+    fn process_containment_base_rejects_previous_control_only_protection() {
+        let dir = tempfile::tempdir().unwrap();
+        write_cgroup_core_files(dir.path(), "cpu memory pids\n");
+        fs::write(
+            dir.path().join(MEMORY_MIN_FILE),
+            (384 * 1024 * 1024).to_string(),
+        )
+        .unwrap();
+
+        assert!(verify_process_containment_base(dir.path()).is_err());
     }
 }
