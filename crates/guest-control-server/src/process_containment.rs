@@ -18,11 +18,11 @@ use guest_contracts::exec_terminal::{
     EXEC_PROCESS_CONTAINMENT_TERM_GRACE,
 };
 use guest_contracts::process_containment::{
-    CGROUP_V2_MOUNT_PATH, CONTROL_CGROUP_NAME, CONTROL_CPU_WEIGHT, EXEC_CGROUP_BASE_PATH,
-    EXEC_CGROUP_NAME_PREFIX, REQUIRED_CGROUP_CONTROLLERS, REQUIRED_CGROUP_SUBTREE_CONTROL,
-    RUNTIME_CGROUP_NAME, TOOL_CGROUP_NAME_PREFIX, TOOL_MEMORY_OOM_GROUP, TOOLS_CGROUP_NAME,
-    WORKLOAD_CGROUP_NAME, WORKLOAD_MEMORY_OOM_GROUP, WorkloadResourceEvents,
-    WorkloadResourcePolicy,
+    AGENT_MEMORY_MIN_BYTES, CGROUP_V2_MOUNT_PATH, CONTROL_CGROUP_NAME, CONTROL_CPU_WEIGHT,
+    EXEC_CGROUP_BASE_PATH, EXEC_CGROUP_NAME_PREFIX, REQUIRED_CGROUP_CONTROLLERS,
+    REQUIRED_CGROUP_SUBTREE_CONTROL, RUNTIME_CGROUP_NAME, TOOL_CGROUP_NAME_PREFIX,
+    TOOL_MEMORY_OOM_GROUP, TOOLS_CGROUP_NAME, WORKLOAD_CGROUP_NAME, WORKLOAD_MEMORY_OOM_GROUP,
+    WorkloadResourceEvents, WorkloadResourcePolicy,
 };
 use guest_contracts::storage_resources::StorageResourceUsage;
 use guest_control_proto::ExecProcessRole;
@@ -504,6 +504,12 @@ impl CgroupGuard {
                     fs::create_dir(&runtime_path).map_err(|error| {
                         ProcessContainmentError::new("create runtime cgroup", error)
                     })?;
+                    write_cgroup_value(
+                        &runtime_path,
+                        MEMORY_MIN_FILE,
+                        &policy.runtime_memory_min_bytes.to_string(),
+                        "protect native agent runtime memory",
+                    )?;
                     fs::create_dir(&tools_path).map_err(|error| {
                         ProcessContainmentError::new("create tools cgroup", error)
                     })?;
@@ -863,7 +869,7 @@ fn configure_resource_policy(
         write_cgroup_value(
             group_path,
             MEMORY_MIN_FILE,
-            &policy.control_memory_min_bytes.to_string(),
+            &AGENT_MEMORY_MIN_BYTES.to_string(),
             "protect controlled operation memory",
         )?;
         write_cgroup_value(
@@ -871,6 +877,12 @@ fn configure_resource_policy(
             MEMORY_MIN_FILE,
             &policy.control_memory_min_bytes.to_string(),
             "protect Guest Agent memory",
+        )?;
+        write_cgroup_value(
+            workload_path,
+            MEMORY_MIN_FILE,
+            &policy.runtime_memory_min_bytes.to_string(),
+            "preserve runtime ancestor memory protection",
         )?;
     }
     Ok(())
@@ -2505,6 +2517,71 @@ mod tests {
         remove_cgroup_hierarchy(&operation).unwrap();
 
         assert!(!operation.exists());
+    }
+
+    #[test]
+    fn controlled_operation_preserves_both_memory_floors_without_partitioning_workload() {
+        let operation = tempfile::tempdir().unwrap();
+        let control = operation.path().join(CONTROL_CGROUP_NAME);
+        let workload = operation.path().join(WORKLOAD_CGROUP_NAME);
+        fs::create_dir(&control).unwrap();
+        fs::create_dir(&workload).unwrap();
+        let policy = WorkloadResourcePolicy::for_guest_capacity(2, 4096 * 1024 * 1024).unwrap();
+
+        configure_resource_policy(operation.path(), &control, &workload, true, policy).unwrap();
+
+        for (path, expected) in [
+            (operation.path(), 512 * 1024 * 1024),
+            (control.as_path(), 128 * 1024 * 1024),
+            (workload.as_path(), 384 * 1024 * 1024),
+        ] {
+            assert_eq!(
+                fs::read_to_string(path.join(MEMORY_MIN_FILE)).unwrap(),
+                expected.to_string()
+            );
+        }
+        assert_eq!(
+            fs::read_to_string(workload.join(MEMORY_MAX_FILE)).unwrap(),
+            (3968_u64 * 1024 * 1024).to_string()
+        );
+        assert_eq!(
+            fs::read_to_string(workload.join(MEMORY_HIGH_FILE)).unwrap(),
+            "max"
+        );
+    }
+
+    #[test]
+    fn ordinary_exec_does_not_receive_agent_memory_protection() {
+        let operation = tempfile::tempdir().unwrap();
+        let control = operation.path().join(CONTROL_CGROUP_NAME);
+        let workload = operation.path().join(WORKLOAD_CGROUP_NAME);
+        fs::create_dir(&control).unwrap();
+        fs::create_dir(&workload).unwrap();
+        for path in [operation.path(), control.as_path(), workload.as_path()] {
+            fs::write(path.join(MEMORY_MIN_FILE), "0").unwrap();
+        }
+        let policy = WorkloadResourcePolicy::for_guest_capacity(2, 4096 * 1024 * 1024).unwrap();
+
+        configure_resource_policy(operation.path(), &control, &workload, false, policy).unwrap();
+
+        for path in [operation.path(), control.as_path(), workload.as_path()] {
+            assert_eq!(fs::read_to_string(path.join(MEMORY_MIN_FILE)).unwrap(), "0");
+        }
+    }
+
+    #[test]
+    fn controlled_operation_rejects_failed_runtime_ancestor_protection() {
+        let operation = tempfile::tempdir().unwrap();
+        let control = operation.path().join(CONTROL_CGROUP_NAME);
+        let workload = operation.path().join(WORKLOAD_CGROUP_NAME);
+        fs::create_dir(&control).unwrap();
+        fs::create_dir_all(workload.join(MEMORY_MIN_FILE)).unwrap();
+        let policy = WorkloadResourcePolicy::for_guest_capacity(2, 4096 * 1024 * 1024).unwrap();
+
+        let error = configure_resource_policy(operation.path(), &control, &workload, true, policy)
+            .unwrap_err();
+
+        assert_eq!(error.stage, "preserve runtime ancestor memory protection");
     }
 
     #[test]

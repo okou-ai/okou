@@ -76,10 +76,23 @@ pub const MATERIAL_CPU_THROTTLED_USEC: u64 = 1_000_000;
 
 /// Minimum protected memory for Guest control services.
 ///
-/// Cgroup v2 limits effective `memory.min` protection by every ancestor. The
-/// exec base, controlled operation, and control leaf must therefore all use
-/// this value so concurrent operation siblings cannot reclaim protected use.
-pub const CONTROL_MEMORY_MIN_BYTES: u64 = 384 * 1024 * 1024;
+/// This protects charged Guest Agent use, not an allocation or usage ceiling.
+pub const CONTROL_MEMORY_MIN_BYTES: u64 = 128 * 1024 * 1024;
+
+/// Protected memory for the native agent runtime, including its file-backed pages.
+///
+/// Managed tools share the workload hard limit but must not reclaim this working
+/// set and stall native model/control processing before an OOM victim is chosen.
+/// Unused protection remains available to tools; runtime use above this floor
+/// remains reclaimable. This does not make the runtime immune to OOM killing.
+pub const RUNTIME_MEMORY_MIN_BYTES: u64 = 384 * 1024 * 1024;
+
+/// Combined control/runtime protection carried by the exec base and Agent operation.
+///
+/// Cgroup v2 caps effective protection at every ancestor. The workload ancestor
+/// carries only [`RUNTIME_MEMORY_MIN_BYTES`]; ordinary execs and tools have no
+/// leaf protection. Ancestor values do not allocate additional physical memory.
+pub const AGENT_MEMORY_MIN_BYTES: u64 = CONTROL_MEMORY_MIN_BYTES + RUNTIME_MEMORY_MIN_BYTES;
 
 /// Memory kept outside the workload hard limit for new Guest control use.
 ///
@@ -225,6 +238,8 @@ pub struct WorkloadResourcePolicy {
     pub memory_oom_group: &'static str,
     /// Protected Guest Agent memory in bytes.
     pub control_memory_min_bytes: u64,
+    /// Protected native agent runtime memory in bytes.
+    pub runtime_memory_min_bytes: u64,
     /// Value written to the workload `pids.max` cgroup file.
     pub pids_max: &'static str,
 }
@@ -257,7 +272,7 @@ impl WorkloadResourcePolicy {
     ///
     /// `vcpu` is the number of online processors and `memory_bytes` is physical
     /// memory visible to the Guest. The calculation fails when the Guest cannot
-    /// preserve the fixed control memory minimum.
+    /// preserve the combined control and runtime memory minimum.
     pub fn for_guest_capacity(vcpu: u32, memory_bytes: u64) -> Result<Self, &'static str> {
         let total_cpu_us = u64::from(vcpu)
             .checked_mul(WORKLOAD_CPU_PERIOD_US)
@@ -268,9 +283,9 @@ impl WorkloadResourcePolicy {
             .ok_or("guest CPU capacity cannot preserve control headroom")?;
 
         memory_bytes
-            .checked_sub(CONTROL_MEMORY_MIN_BYTES)
+            .checked_sub(AGENT_MEMORY_MIN_BYTES)
             .filter(|remaining| *remaining > 0)
-            .ok_or("guest memory capacity cannot preserve control memory minimum")?;
+            .ok_or("guest memory capacity cannot preserve control and runtime memory minimum")?;
         let memory_max_bytes = memory_bytes
             .checked_sub(WORKLOAD_MEMORY_RESERVE_BYTES)
             .filter(|limit| *limit > 0)
@@ -282,6 +297,7 @@ impl WorkloadResourcePolicy {
             memory_max_bytes,
             memory_oom_group: WORKLOAD_MEMORY_OOM_GROUP,
             control_memory_min_bytes: CONTROL_MEMORY_MIN_BYTES,
+            runtime_memory_min_bytes: RUNTIME_MEMORY_MIN_BYTES,
             pids_max: WORKLOAD_PIDS_MAX,
         })
     }
@@ -314,18 +330,19 @@ mod tests {
         assert_eq!(policy.memory_high, "max");
         assert_eq!(policy.memory_max_bytes, 3968 * 1024 * 1024);
         assert_eq!(policy.memory_oom_group, "0");
-        assert_eq!(policy.control_memory_min_bytes, 384 * 1024 * 1024);
+        assert_eq!(policy.control_memory_min_bytes, 128 * 1024 * 1024);
+        assert_eq!(policy.runtime_memory_min_bytes, 384 * 1024 * 1024);
         assert_eq!(policy.pids_max, "max");
     }
 
     #[test]
-    fn rejects_capacity_without_control_memory_minimum() {
+    fn rejects_capacity_without_control_and_runtime_memory_minimum() {
         let error =
-            WorkloadResourcePolicy::for_guest_capacity(1, CONTROL_MEMORY_MIN_BYTES).unwrap_err();
+            WorkloadResourcePolicy::for_guest_capacity(1, AGENT_MEMORY_MIN_BYTES).unwrap_err();
 
         assert_eq!(
             error,
-            "guest memory capacity cannot preserve control memory minimum"
+            "guest memory capacity cannot preserve control and runtime memory minimum"
         );
     }
 
@@ -338,6 +355,8 @@ mod tests {
         assert_eq!(policy.cpu_quota_us, 90_000);
         assert_eq!(policy.memory_high, "max");
         assert_eq!(policy.memory_max_bytes, 896 * 1024 * 1024);
+        assert_eq!(policy.control_memory_min_bytes, 128 * 1024 * 1024);
+        assert_eq!(policy.runtime_memory_min_bytes, 384 * 1024 * 1024);
     }
 
     #[test]
