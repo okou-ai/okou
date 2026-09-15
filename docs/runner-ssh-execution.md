@@ -289,6 +289,49 @@ TCP stream. Protected hosts require a saved canonical DNS name, port 443 and
 separate bounded Service Token headers; there are no guest-supplied URL, proxy,
 cookie, redirect, browser-login or cloudflared subprocess paths.
 
+#### Protocol references and interoperability baseline
+
+The Access-specific carrier follows Cloudflare's documented Service Token
+authentication and the official open-source cloudflared implementation:
+
+- [Service tokens](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/)
+  documents `CF-Access-Client-Id` / `CF-Access-Client-Secret` headers and the
+  **Service Auth** policy needed for non-interactive authentication.
+- [SSH with client-side cloudflared](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/use-cases/ssh/ssh-cloudflared-authentication/)
+  documents the client-side SSH access model. Okou implements the carrier natively
+  instead of launching the documented client-side executable.
+- [carrier/websocket.go](https://github.com/cloudflare/cloudflared/blob/733bfb939963e150dcf5c4faddb1603f744fbc98/carrier/websocket.go)
+  provides the reference HTTP-to-WebSocket handshake, request headers and stream
+  setup (`createWebsocketStream`, `clientConnect`).
+- [websocket/connection.go](https://github.com/cloudflare/cloudflared/blob/733bfb939963e150dcf5c4faddb1603f744fbc98/websocket/connection.go)
+  provides the byte-stream adapter: `GorillaConn.Write` sends binary messages and
+  `GorillaConn.Read` preserves unread bytes across caller reads. This is the
+  reference for carrying SSH bytes, not a separate SSH protocol.
+
+The source links pin commit `733bfb939963e150dcf5c4faddb1603f744fbc98`, the
+[cloudflared 2026.8.2 release](https://github.com/cloudflare/cloudflared/releases/tag/2026.8.2)
+used for real-provider comparison. Initial research pinned
+`f11dea9cb7079e90a982c1a2d5548ab40847fdcf`; both carrier files are unchanged between
+those revisions. The official Linux amd64 comparison binary's SHA-256 is
+`fcfb02b575a52ca1af2e3267af4e1517bcdeb30ac48c834c69abaed3c0576ad2`.
+
+This is an implementation-derived interoperability baseline, not a claim of a
+separately versioned Access-over-WebSocket specification or a provider guarantee
+of permanent compatibility. Standard TLS, WebSocket and SSH handling use rustls,
+tokio-tungstenite and russh. The saved-recipient restrictions, buffer limits and
+no-login/no-redirect behavior below are Okou's security and resource policies;
+they are not copied as Cloudflare protocol requirements. Recheck upstream changes
+and repeat authorized provider acceptance when changing this baseline.
+
+[Acceptance recorded on 2026-09-15](https://github.com/vm0-ai/vm0/issues/34080#issuecomment-5674394652)
+compares native Runner and the pinned official binary on an authorized endpoint:
+SSH authentication, bidirectional IO across 65 seconds of idle time, invalid-token
+rejection and connection cleanup. It records the native lane's private API and
+public-DNS-answer fixtures; it does not establish deployed-Run, production-DNS or
+full two-hour Session acceptance.
+
+#### Runner transport and lifecycle
+
 The existing network policy validates all DNS answers and selects one public IP.
 TLS verifies the saved hostname using the bundled WebPKI roots and uses that name
 for SNI. It explicitly selects the Runner's existing AWS-LC TLS provider; enabling
