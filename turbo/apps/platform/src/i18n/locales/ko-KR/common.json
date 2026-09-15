@@ -5643,10 +5643,8 @@
         "loadError": "모델을 불러올 수 없습니다.",
         "loading": "모델 불러오는 중...",
         "menu": {
-          "adjustSettings": "{{model}} 설정 조정",
           "backToModels": "모델로 돌아가기",
-          "changeModel": "{{category}} 모델 변경, {{model}}",
-          "chatSettings": "채팅 설정"
+          "changeModel": "{{category}} 모델 변경, {{model}}"
         },
         "models": "모델",
         "noConfiguredModels": "구성된 모델 없음",

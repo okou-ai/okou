@@ -5648,10 +5648,8 @@
         "loadError": "Unable to load models.",
         "loading": "Loading models...",
         "menu": {
-          "adjustSettings": "Adjust {{model}} settings",
           "backToModels": "Back to models",
-          "changeModel": "Change {{category}} model, {{model}}",
-          "chatSettings": "Chat settings"
+          "changeModel": "Change {{category}} model, {{model}}"
         },
         "models": "Models",
         "noConfiguredModels": "No configured models",

@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Cpu,
   MessageCircle,
-  SlidersHorizontal,
 } from "lucide-react";
 import { Button, cn } from "@okouai/ui";
 import {
@@ -17,12 +16,7 @@ import { useTranslation } from "react-i18next";
 import type { ModelPickerMenuSignals } from "../../../signals/okou-page/model-picker-menu.ts";
 import { pageSignal$ } from "../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../signals/utils.ts";
-import {
-  ChatEffortSettings,
-  ChatFastSetting,
-  formatChatEffort,
-  useChatEffort,
-} from "./chat-effort-controls.tsx";
+import { formatChatEffort, useChatEffort } from "./chat-effort-controls.tsx";
 import { PriceTierBadge } from "./model-picker-price-tier.tsx";
 import {
   getMediaModelPriceTierLabel,
@@ -77,24 +71,19 @@ function CurrentModelRow({
   icon,
   summary,
   onChange,
-  onSettings,
 }: {
   model: string;
   category: string;
   icon: ReactNode;
   summary?: string;
   onChange: () => void;
-  onSettings?: () => void;
 }) {
   const { t } = useTranslation();
   return (
     <div className="relative h-12 rounded-lg">
       <Button
         variant="ghost"
-        className={cn(
-          "h-full w-full justify-start gap-2 px-2 pr-7 text-left font-normal text-foreground",
-          onSettings && "pr-16",
-        )}
+        className="h-full w-full justify-start gap-2 px-2 pr-7 text-left font-normal text-foreground"
         aria-label={t(
           ($) => {
             return $.settings.models.picker.menu.changeModel;
@@ -119,22 +108,6 @@ function CurrentModelRow({
           className="absolute right-2 text-muted-foreground"
         />
       </Button>
-      {onSettings && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="absolute right-7 top-1/2 h-7 w-7 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-          aria-label={t(
-            ($) => {
-              return $.settings.models.picker.menu.adjustSettings;
-            },
-            { model },
-          )}
-          onClick={onSettings}
-        >
-          <SlidersHorizontal size={15} aria-hidden="true" />
-        </Button>
-      )}
     </div>
   );
 }
@@ -177,15 +150,6 @@ interface ModelPickerMenuContentProps {
   onSelected?: (() => void) | undefined;
 }
 
-function canAdjustChatSettings(
-  option: ModelPickerMenuOption | undefined,
-  hasEffortControls: boolean,
-) {
-  return (
-    option?.disabled === false && (option.fastAvailable || hasEffortControls)
-  );
-}
-
 function ModelPickerOverview({
   signals,
   value,
@@ -194,9 +158,8 @@ function ModelPickerOverview({
   mediaModelPanel,
 }: Omit<ModelPickerMenuContentProps, "onChange">) {
   const { t } = useTranslation();
-  const { efforts, effort: savedEffort } = useChatEffort(value);
+  const { effort: savedEffort } = useChatEffort(value);
   const showModels = useSet(signals.showModels$);
-  const editSettings = useSet(signals.editSettings$);
   const selectedOption = options.find((option) => {
     return option.model === value?.selectedModel;
   });
@@ -248,18 +211,6 @@ function ModelPickerOverview({
             mediaModelPanel?.onActiveCategoryChange(null);
             showModels("chat");
           }}
-          onSettings={
-            value &&
-            canAdjustChatSettings(
-              selectedOption,
-              efforts.length > 0 || Boolean(savedEffort),
-            )
-              ? () => {
-                  mediaModelPanel?.onActiveCategoryChange(null);
-                  editSettings();
-                }
-              : undefined
-          }
         />
         {mediaModelPanel?.categories.map((category) => {
           const selected = category.options.find((option) => {
@@ -279,52 +230,6 @@ function ModelPickerOverview({
           );
         })}
       </div>
-    </>
-  );
-}
-
-function ChatModelSettings({
-  signals,
-  options,
-  selection,
-  onChange,
-}: Pick<ModelPickerMenuContentProps, "signals" | "options" | "onChange"> & {
-  selection: ModelProviderSelection;
-}) {
-  const { t } = useTranslation();
-  const back = useSet(signals.reset$);
-  const option = options.find((candidate) => {
-    return candidate.model === selection.selectedModel;
-  });
-  return (
-    <>
-      <MenuHeader
-        label={t(($) => {
-          return $.settings.models.picker.menu.chatSettings;
-        })}
-        onBack={back}
-        backLabel={t(($) => {
-          return $.settings.models.picker.menu.backToModels;
-        })}
-      />
-      <div className="border-b border-border/60 px-2 py-2.5 text-sm">
-        {option?.content ??
-          getCanonicalModelDisplayName(selection.selectedModel)}
-      </div>
-      {/* Effort and Fast belong together, so space separates them, not a rule. */}
-      <ChatEffortSettings
-        selection={selection}
-        disabled={option?.disabled ?? true}
-        onChange={onChange}
-      />
-      {option?.fastAvailable && (
-        <ChatFastSetting
-          selection={selection}
-          disabled={option.disabled}
-          fastImpact={option.fastImpact}
-          onChange={onChange}
-        />
-      )}
     </>
   );
 }
@@ -658,36 +563,7 @@ function ModelPickerFlyoutPanel({
   panelLabel: string;
 }) {
   const { t } = useTranslation();
-  const page = useGet(props.signals.page$);
-  const editSettings = useSet(props.signals.editSettings$);
   const panelRef = useSet(props.signals.focusFlyoutPanelRef$);
-  const settingsRef = useSet(props.signals.focusPanelRef$);
-  const selectedOption = props.options.find((option) => {
-    return option.model === props.value?.selectedModel;
-  });
-  const { efforts, effort: savedEffort } = useChatEffort(props.value);
-  const showSettingsRow =
-    !activeMedia &&
-    Boolean(props.value) &&
-    Boolean(selectedOption) &&
-    canAdjustChatSettings(
-      selectedOption,
-      efforts.length > 0 || Boolean(savedEffort),
-    );
-  if (!activeMedia && page.kind === "settings" && props.value) {
-    return (
-      <div
-        ref={settingsRef}
-        role="region"
-        className="max-h-[360px] overflow-y-auto overscroll-contain"
-        aria-label={t(($) => {
-          return $.settings.models.picker.menu.chatSettings;
-        })}
-      >
-        <ChatModelSettings {...props} selection={props.value} />
-      </div>
-    );
-  }
   return (
     <>
       <div
@@ -701,11 +577,8 @@ function ModelPickerFlyoutPanel({
           // restate it as scroll padding: the list still rests clear of the
           // border at either end, but a row mid-scroll runs to the edge.
           // The heights keep the visible area at 244px either way.
-          "-mt-1 flex flex-col gap-0.5 overflow-y-auto overscroll-contain pt-1",
-          showSettingsRow
-            ? "max-h-[248px]"
-            : // Nothing follows, so the bottom reaches the card's edge too.
-              "-mb-1 max-h-[252px] pb-1",
+          // Nothing follows the list, so the bottom reaches the card's edge too.
+          "-mt-1 -mb-1 flex max-h-[252px] flex-col gap-0.5 overflow-y-auto overscroll-contain pt-1 pb-1",
         )}
       >
         <ModelPickerFlyoutOptions
@@ -721,24 +594,6 @@ function ModelPickerFlyoutPanel({
           </p>
         )}
       </div>
-      {showSettingsRow && selectedOption && (
-        <Button
-          variant="ghost"
-          className="h-9 shrink-0 justify-start gap-2 border-t border-border/60 px-2 text-xs text-muted-foreground"
-          aria-label={t(
-            ($) => {
-              return $.settings.models.picker.menu.adjustSettings;
-            },
-            { model: selectedOption.label },
-          )}
-          onClick={editSettings}
-        >
-          <SlidersHorizontal size={14} aria-hidden="true" />
-          {t(($) => {
-            return $.settings.models.picker.menu.chatSettings;
-          })}
-        </Button>
-      )}
     </>
   );
 }
@@ -966,13 +821,6 @@ export function ModelPickerMenuContent(props: ModelPickerMenuContentProps) {
       return $.settings.models.picker.models;
     });
     content = <ModelPickerOverview {...props} />;
-  } else if (page.kind === "settings") {
-    label = t(($) => {
-      return $.settings.models.picker.menu.chatSettings;
-    });
-    content = props.value && (
-      <ChatModelSettings {...props} selection={props.value} />
-    );
   } else if (page.category === "chat") {
     label = t(($) => {
       return $.settings.models.picker.chatModels;

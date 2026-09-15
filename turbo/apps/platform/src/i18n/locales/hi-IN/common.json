@@ -5656,10 +5656,8 @@
         "loadError": "मॉडल लोड करने में असमर्थ.",
         "loading": "मॉडल लोड हो रहे हैं...",
         "menu": {
-          "adjustSettings": "{{model}} की सेटिंग समायोजित करें",
           "backToModels": "मॉडल पर वापस जाएँ",
-          "changeModel": "{{category}} मॉडल बदलें, {{model}}",
-          "chatSettings": "चैट सेटिंग"
+          "changeModel": "{{category}} मॉडल बदलें, {{model}}"
         },
         "models": "मॉडल",
         "noConfiguredModels": "कोई कॉन्फ़िगर मॉडल नहीं",

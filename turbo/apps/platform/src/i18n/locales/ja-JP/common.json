@@ -5643,10 +5643,8 @@
         "loadError": "モデルをロードできません。",
         "loading": "モデルをロード中...",
         "menu": {
-          "adjustSettings": "{{model}} の設定を調整",
           "backToModels": "モデルに戻る",
-          "changeModel": "{{category}}モデルを変更、{{model}}",
-          "chatSettings": "チャット設定"
+          "changeModel": "{{category}}モデルを変更、{{model}}"
         },
         "models": "モデル",
         "noConfiguredModels": "設定されたモデルはありません",

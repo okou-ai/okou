@@ -5656,10 +5656,8 @@
         "loadError": "Modelle können nicht geladen werden.",
         "loading": "Modelle werden geladen...",
         "menu": {
-          "adjustSettings": "Einstellungen für {{model}} anpassen",
           "backToModels": "Zurück zu Modellen",
-          "changeModel": "{{category}}-Modell ändern, {{model}}",
-          "chatSettings": "Chateinstellungen"
+          "changeModel": "{{category}}-Modell ändern, {{model}}"
         },
         "models": "Modelle",
         "noConfiguredModels": "Keine konfigurierten Modelle",

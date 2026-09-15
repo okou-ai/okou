@@ -5714,10 +5714,8 @@
         "loadError": "Impossible de charger les modèles.",
         "loading": "Chargement des modèles...",
         "menu": {
-          "adjustSettings": "Ajuster les paramètres de {{model}}",
           "backToModels": "Retour aux modèles",
-          "changeModel": "Changer le modèle {{category}}, {{model}}",
-          "chatSettings": "Paramètres du chat"
+          "changeModel": "Changer le modèle {{category}}, {{model}}"
         },
         "models": "Modèles",
         "noConfiguredModels": "Aucun modèle configuré",

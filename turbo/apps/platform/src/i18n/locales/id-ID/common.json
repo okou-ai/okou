@@ -5643,10 +5643,8 @@
         "loadError": "Tidak dapat memuat model.",
         "loading": "Memuat model...",
         "menu": {
-          "adjustSettings": "Sesuaikan pengaturan {{model}}",
           "backToModels": "Kembali ke model",
-          "changeModel": "Ubah model {{category}}, {{model}}",
-          "chatSettings": "Pengaturan chat"
+          "changeModel": "Ubah model {{category}}, {{model}}"
         },
         "models": "Model",
         "noConfiguredModels": "Tidak ada model yang dikonfigurasi",
