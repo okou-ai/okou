@@ -213,7 +213,15 @@ function detailsFor(entry: ReturnType<typeof socialOperationBindings>[number]) {
     },
     ...(tool ? collectionDetails(tool) : {}),
     ...(entry.operation !== "download"
-      ? { export: socialExportCapabilities(tool?.collection !== undefined) }
+      ? {
+          export: socialExportCapabilities(
+            entry.operation === "transcript"
+              ? "transcript"
+              : tool?.collection
+                ? "collection"
+                : "single",
+          ),
+        }
       : {}),
   };
 }

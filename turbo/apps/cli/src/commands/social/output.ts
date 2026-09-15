@@ -3,6 +3,9 @@ import { link, lstat, open, rename, unlink } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import { Command, InvalidArgumentError } from "commander";
+import { formatTranscript } from "./transcript-output";
+
+type SocialOutputMode = "single" | "collection" | "transcript";
 
 export interface SocialExportOptions {
   readonly json?: boolean;
@@ -25,9 +28,18 @@ const MAX_FIELD_LENGTH = 128;
 const MAX_FIELD_DEPTH = 8;
 const FORBIDDEN_SEGMENTS = new Set(["__proto__", "prototype", "constructor"]);
 
-export function socialExportCapabilities(collection: boolean) {
+function formatsForMode(mode: SocialOutputMode): readonly string[] {
+  return mode === "transcript"
+    ? ["json", "text", "srt", "vtt"]
+    : mode === "collection"
+      ? ["json", "csv"]
+      : ["json"];
+}
+
+export function socialExportCapabilities(mode: SocialOutputMode) {
+  const collection = mode === "collection";
   return {
-    formats: collection ? ["json", "csv"] : ["json"],
+    formats: formatsForMode(mode),
     destination: "--output <path> (local file; existing parent required)",
     overwrite:
       "--overwrite (regular files only; default refuses existing paths)",
@@ -39,6 +51,7 @@ export function socialExportCapabilities(collection: boolean) {
       maxDepth: MAX_FIELD_DEPTH,
       syntax:
         "comma-separated own-property dot paths; no arrays, wildcards, or prototype properties",
+      ...(mode === "transcript" ? { formats: ["json"] } : {}),
     },
     stream: false,
     metadata:
@@ -48,10 +61,27 @@ export function socialExportCapabilities(collection: boolean) {
           csv: "Requires --output and --select; retain stdout receipt for status, limits, errors, and credits",
         }
       : {}),
+    ...(mode === "transcript"
+      ? {
+          transcript: {
+            output: "text/srt/vtt require --output and cannot use --select",
+            text: "Uses full transcript once, otherwise segment texts in source order",
+            timing:
+              "Extraction does not guarantee timestamped output; srt/vtt require every segment's finite nonnegative start and positive duration in seconds, ordered starts, and valid millisecond intervals",
+            markup:
+              "SRT preserves source cue text; reader markup support varies. WebVTT escapes literal markup",
+            recovery:
+              "Missing or invalid timing fails without retrying; save plain text from the recovered stdout JSON",
+          },
+        }
+      : {}),
   };
 }
 
-export function addSocialExportOptions(command: Command): void {
+export function addSocialExportOptions(
+  command: Command,
+  mode: SocialOutputMode,
+): void {
   command
     .option(
       "--output <path>",
@@ -63,7 +93,7 @@ export function addSocialExportOptions(command: Command): void {
     )
     .option(
       "--format <format>",
-      "Output format: json (default) or csv (collections only)",
+      `Output format: ${formatsForMode(mode).join(", ")} (default: json)`,
     )
     .option("--overwrite", "Explicitly replace an existing regular output file")
     .addHelpText(
@@ -81,6 +111,22 @@ Export:
   --stream cannot be combined with --output, --select, --format, or --overwrite.
   Local files need okou web upload-file for delivery in web chat.`,
     );
+  if (mode === "transcript") {
+    command.addHelpText(
+      "after",
+      `
+Transcript export:
+  --format text|srt|vtt requires --output and cannot use --select; --json controls receipt compactness.
+  Text uses the full transcript once, otherwise joins segment texts. Empty text fails.
+  SRT/WebVTT require every segment's numeric start and positive duration in seconds.
+  Extraction support does not guarantee timestamped output. Missing timing is never inferred.
+  Cue starts must be ordered; overlaps are preserved. Unsafe or zero-length millisecond intervals fail.
+  Cue text keeps Unicode; line endings are normalized and blank cue lines removed.
+  SRT preserves source cue text; reader markup support varies. Choose vtt for escaped literal markup.
+  On failure, save plain text from the recovered stdout JSON without repeating the request.
+  Example: okou social transcript https://youtu.be/<id> --format srt --output captions.srt`,
+    );
+  }
 }
 
 function selectedFields(
@@ -119,7 +165,7 @@ function selectedFields(
   return fields;
 }
 
-function validateOptions(options: SocialExportOptions, collection: boolean) {
+function validateOutputOptions(options: SocialExportOptions): void {
   if (
     options.stream &&
     (options.output !== undefined ||
@@ -131,19 +177,37 @@ function validateOptions(options: SocialExportOptions, collection: boolean) {
       "--stream cannot be combined with export options",
     );
   }
-  const format = options.format ?? "json";
-  if (format !== "json" && format !== "csv") {
-    throw new InvalidArgumentError("--format must be json or csv");
-  }
-  const fields = selectedFields(options.select);
   if (options.overwrite && options.output === undefined) {
     throw new InvalidArgumentError("--overwrite requires --output");
   }
   if (options.output !== undefined && options.output.trim().length === 0) {
     throw new InvalidArgumentError("--output must name a local file");
   }
+}
+
+function validateOptions(options: SocialExportOptions, mode: SocialOutputMode) {
+  validateOutputOptions(options);
+  const format = options.format ?? "json";
+  if (format === "text" || format === "srt" || format === "vtt") {
+    if (
+      mode !== "transcript" ||
+      options.output === undefined ||
+      options.select !== undefined
+    ) {
+      throw new InvalidArgumentError(
+        "text/srt/vtt require transcript with --output and cannot use --select",
+      );
+    }
+    return { format, fields: undefined } as const;
+  }
+  if (format !== "json" && format !== "csv") {
+    throw new InvalidArgumentError(
+      `--format must be ${formatsForMode(mode).join(", ")}`,
+    );
+  }
+  const fields = selectedFields(options.select);
   if (format === "csv") {
-    if (!collection || options.output === undefined || !fields) {
+    if (mode !== "collection" || options.output === undefined || !fields) {
       throw new InvalidArgumentError(
         "CSV requires posts/search/comments with --output and --select",
       );
@@ -281,10 +345,10 @@ function printJson(output: unknown, compact: boolean): void {
 
 export async function withSocialOutput(
   options: SocialExportOptions,
-  collection: boolean,
+  mode: SocialOutputMode,
   action: (write: (output: TerminalOutput) => Promise<void>) => Promise<void>,
 ): Promise<void> {
-  const { format, fields } = validateOptions(options, collection);
+  const { format, fields } = validateOptions(options, mode);
   const compact = options.json === true || options.stream === true;
   const file =
     options.output === undefined
@@ -292,19 +356,27 @@ export async function withSocialOutput(
       : await prepareDestination(options.output, options.overwrite === true);
   try {
     await action(async (output) => {
+      let transcriptLanguage: string | undefined;
       try {
         const projected =
           format === "json" && fields
-            ? projectOutput(output, fields, collection)
+            ? projectOutput(output, fields, mode === "collection")
             : output;
         if (!file) {
           printJson(projected, compact);
           return;
         }
-        const contents =
-          format === "csv"
-            ? csvOutput(output, fields)
-            : JSON.stringify(projected, null, compact ? undefined : 2) + "\n";
+        let contents: string;
+        if (format === "text" || format === "srt" || format === "vtt") {
+          const transcript = formatTranscript(output.data, format);
+          contents = transcript.contents;
+          transcriptLanguage = transcript.language;
+        } else {
+          contents =
+            format === "csv"
+              ? csvOutput(output, fields)
+              : JSON.stringify(projected, null, compact ? undefined : 2) + "\n";
+        }
         await file.handle.writeFile(contents, "utf8");
         await file.handle.sync();
         await file.handle.close();
@@ -332,6 +404,9 @@ export async function withSocialOutput(
               path: file.destination,
               format,
               ...(fields ? { fields } : {}),
+              ...(transcriptLanguage === undefined
+                ? {}
+                : { language: transcriptLanguage }),
               visibility: "local",
               guidance:
                 "This is a local file. Use okou web upload-file to deliver it in web chat.",

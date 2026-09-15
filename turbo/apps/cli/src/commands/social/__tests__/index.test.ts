@@ -264,6 +264,393 @@ describe("okou social command", () => {
       return requests;
     }
 
+    function serveTranscript(data: Readonly<Record<string, unknown>>) {
+      const requests: unknown[] = [];
+      server.use(
+        http.post(
+          "http://localhost:3000/api/social/request",
+          async ({ request }) => {
+            requests.push(await request.json());
+            return HttpResponse.json({
+              ...socialResponse("youtube_transcript", null, data),
+              creditsCharged: 0,
+            });
+          },
+        ),
+      );
+      return requests;
+    }
+
+    const transcriptArgs = [
+      "node",
+      "okou",
+      "transcript",
+      "https://youtu.be/example",
+    ];
+
+    it.each([
+      {
+        name: "full text without duplicating segments",
+        data: {
+          transcript: "你好 & <b>世界</b>\r\nA second line.\n",
+          transcriptSegments: [
+            { text: "Duplicated segment", start: 0, duration: 2 },
+          ],
+          language: "zh",
+        },
+        expected: "你好 & <b>世界</b>\r\nA second line.\n",
+      },
+      {
+        name: "untimed segment text when the full transcript is absent",
+        data: {
+          transcriptSegments: [
+            { text: "你好 🌍" },
+            { text: "Une autre ligne\nAnd another" },
+          ],
+          language: "zh",
+        },
+        expected: "你好 🌍\nUne autre ligne\nAnd another\n",
+      },
+      {
+        name: "segment text when the full transcript is blank",
+        data: {
+          transcript: " \n",
+          transcriptSegments: [{ text: "Available text" }],
+          language: "zh",
+        },
+        expected: "Available text\n",
+      },
+    ])(
+      "exports $name as plain text with a separate receipt",
+      async ({ data, expected }) => {
+        const requests = serveTranscript(data);
+        const path = join(directory, "transcript.txt");
+        await socialCommand.parseAsync([
+          ...transcriptArgs,
+          "--format",
+          "text",
+          "--output",
+          path,
+          "--json",
+        ]);
+        expect(await readFile(path, "utf8")).toBe(expected);
+        expect(JSON.parse(output()) as unknown).toMatchObject({
+          kind: "export",
+          status: "complete",
+          operation: "transcript",
+          collection: null,
+          billing: { quantity: 1, creditsCharged: 0 },
+          warnings: [],
+          export: { path, format: "text", language: "zh", visibility: "local" },
+        });
+        expect(JSON.parse(output()) as unknown).not.toHaveProperty("data");
+        expect(requests).toEqual([
+          {
+            tool: "youtube_transcript",
+            input: { url: "https://youtu.be/example" },
+          },
+        ]);
+        expect(await readdir(directory)).toEqual(["transcript.txt"]);
+      },
+    );
+
+    it.each([
+      {
+        format: "srt",
+        expected:
+          "1\n00:00:00,000 --> 00:00:01,235\n你好 & <b>世界</b>\nLine --> next\n\n2\n00:00:01,000 --> 00:00:02,000\nOverlap 🌍\n\n3\n00:01:00,000 --> 00:01:00,500\nMinute carry\n\n4\n25:01:01,234 --> 25:01:03,579\nLong video\n\n",
+      },
+      {
+        format: "vtt",
+        expected:
+          "WEBVTT\n\n1\n00:00:00.000 --> 00:00:01.235\n你好 &amp; &lt;b&gt;世界&lt;/b&gt;\nLine --&gt; next\n\n2\n00:00:01.000 --> 00:00:02.000\nOverlap 🌍\n\n3\n00:01:00.000 --> 00:01:00.500\nMinute carry\n\n4\n25:01:01.234 --> 25:01:03.579\nLong video\n\n",
+      },
+    ])(
+      "exports valid $format cues with precise timing and format-specific multiline text",
+      async ({ format, expected }) => {
+        const requests = serveTranscript({
+          transcript: "Full text must not be duplicated in subtitles",
+          language: "zh",
+          transcriptSegments: [
+            {
+              text: "你好 & <b>世界</b>\r\n \r\nLine --> next\r",
+              start: 0,
+              duration: 1.23456,
+            },
+            { text: "Overlap 🌍", start: 1.0004, duration: 0.9996 },
+            { text: "Minute carry", start: 59.9996, duration: 0.5 },
+            { text: "Long video", start: 90061.234, duration: 2.345 },
+          ],
+        });
+        const path = join(directory, `captions.${format}`);
+        await socialCommand.parseAsync([
+          ...transcriptArgs,
+          "--format",
+          format,
+          "--output",
+          path,
+        ]);
+        expect(await readFile(path, "utf8")).toBe(expected);
+        expect(JSON.parse(output()) as unknown).toMatchObject({
+          kind: "export",
+          status: "complete",
+          warnings: [],
+          billing: { quantity: 1, creditsCharged: 0 },
+          export: { format, language: "zh" },
+        });
+        expect(output()).not.toContain("Full text must not");
+        expect(requests).toHaveLength(1);
+        expect(await readdir(directory)).toEqual([`captions.${format}`]);
+      },
+    );
+
+    it.each([
+      { name: "missing segments", segments: undefined },
+      { name: "empty segments", segments: [] },
+      {
+        name: "display timestamp without timing",
+        segments: [{ text: "One", timestamp: "00:00:01" }],
+      },
+      { name: "missing start", segments: [{ text: "One", duration: 1 }] },
+      {
+        name: "missing duration",
+        segments: [
+          { text: "One", start: 0 },
+          { text: "Two", start: 2, duration: 1 },
+        ],
+      },
+      {
+        name: "zero duration",
+        segments: [{ text: "One", start: 0, duration: 0 }],
+      },
+      {
+        name: "unsafe start",
+        segments: [
+          { text: "One", start: Number.MAX_SAFE_INTEGER, duration: 1 },
+        ],
+      },
+      {
+        name: "overflowed end",
+        segments: [{ text: "One", start: 1, duration: Number.MAX_VALUE }],
+      },
+      {
+        name: "rounded zero interval",
+        segments: [{ text: "One", start: 0, duration: 0.0001 }],
+      },
+      {
+        name: "decreasing source starts within the same millisecond",
+        segments: [
+          { text: "One", start: 1.0004, duration: 1 },
+          { text: "Two", start: 1.0003, duration: 1 },
+        ],
+      },
+      { name: "missing text", segments: [{ start: 0, duration: 1 }] },
+      {
+        name: "blank text",
+        segments: [{ text: " \n\t", start: 0, duration: 1 }],
+      },
+      {
+        name: "NUL cue text",
+        segments: [{ text: "One\0Two", start: 0, duration: 1 }],
+      },
+    ])(
+      "recovers the billed result after rejecting $name without publishing subtitles",
+      async ({ segments }) => {
+        const data = {
+          transcript: "Save this existing text",
+          transcriptSegments: segments,
+        };
+        const requests = serveTranscript(data);
+        await socialCommand.parseAsync([
+          ...transcriptArgs,
+          "--format",
+          "srt",
+          "--output",
+          join(directory, "captions.srt"),
+          "--json",
+        ]);
+        expect(process.exitCode).toBe(1);
+        expect(JSON.parse(output()) as unknown).toMatchObject({
+          kind: "result",
+          data: { transcript: "Save this existing text" },
+          billing: { quantity: 1, creditsCharged: 0 },
+        });
+        const error = errorOutput();
+        expect(error).toContain("--format text");
+        expect(error).toContain(
+          "recovered stdout JSON without repeating the Social request",
+        );
+        expect(requests).toHaveLength(1);
+        expect(await readdir(directory)).toEqual([]);
+      },
+    );
+
+    it.each([
+      { text: "One", start: -1, duration: 1 },
+      { text: "One", start: 0, duration: -1 },
+      { text: "One", start: null, duration: 1 },
+      { text: "One", start: 0, duration: "1" },
+    ])(
+      "rejects an invalid API transcript before subtitle publication: %j",
+      async (segment) => {
+        const requests = serveTranscript({ transcriptSegments: [segment] });
+        await expect(
+          socialCommand.parseAsync([
+            ...transcriptArgs,
+            "--format",
+            "srt",
+            "--output",
+            join(directory, "captions.srt"),
+            "--json",
+          ]),
+        ).rejects.toThrow("process.exit called");
+        expect(mockExit).toHaveBeenCalledWith(1);
+        expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+          status: "error",
+          error: {
+            message: "Okou Social returned an inconsistent result",
+            retryable: false,
+          },
+        });
+        expect(output()).toBe("");
+        expect(requests).toHaveLength(1);
+        expect(await readdir(directory)).toEqual([]);
+      },
+    );
+
+    it.each([
+      {},
+      { transcript: " \n", transcriptSegments: [] },
+      { transcriptSegments: [{ text: " \n" }] },
+      { transcriptSegments: [{ text: "One" }, {}] },
+    ])(
+      "rejects unusable plain text without publishing an empty or incomplete file: %j",
+      async (data) => {
+        const requests = serveTranscript(data);
+        await socialCommand.parseAsync([
+          ...transcriptArgs,
+          "--format",
+          "text",
+          "--output",
+          join(directory, "transcript.txt"),
+          "--json",
+        ]);
+        expect(process.exitCode).toBe(1);
+        expect(JSON.parse(output()) as unknown).toMatchObject({
+          kind: "result",
+          data,
+        });
+        expect(errorOutput()).toContain("Retrieved results are on stdout");
+        expect(requests).toHaveLength(1);
+        expect(await readdir(directory)).toEqual([]);
+      },
+    );
+
+    it.each([
+      ["transcript", "text", "missing-output"],
+      ["transcript", "srt", "selection"],
+      ["transcript", "vtt", "blank-output"],
+      ["inspect", "text", "unsupported"],
+      ["comments", "srt", "unsupported"],
+      ["summarize", "vtt", "unsupported"],
+    ])(
+      "rejects %s %s with %s before files or requests",
+      async (command, format, combination) => {
+        const requests = serveTranscript({ transcript: "One" });
+        const args = [
+          "node",
+          "okou",
+          command,
+          "https://youtu.be/example",
+          "--format",
+          format,
+          "--json",
+        ];
+        if (combination !== "missing-output")
+          args.push(
+            "--output",
+            combination === "blank-output" ? " " : join(directory, "file"),
+          );
+        if (combination === "selection") args.push("--select", "transcript");
+        await expect(socialCommand.parseAsync(args)).rejects.toThrow(
+          "process.exit called",
+        );
+        expect(JSON.parse(errorOutput()) as unknown).toMatchObject({
+          status: "error",
+          error: { kind: "invalid_input" },
+        });
+        expect(requests).toHaveLength(0);
+        expect(await readdir(directory)).toEqual([]);
+      },
+    );
+
+    it("requires explicit overwrite for an existing subtitle file before requesting a transcript", async () => {
+      const requests = serveTranscript({
+        transcriptSegments: [{ text: "One", start: 0, duration: 1 }],
+      });
+      const path = join(directory, "captions.vtt");
+      await writeFile(path, "original");
+      await expect(
+        socialCommand.parseAsync([
+          ...transcriptArgs,
+          "--format",
+          "vtt",
+          "--output",
+          path,
+          "--json",
+        ]),
+      ).rejects.toThrow("process.exit called");
+      expect(errorOutput()).toContain("--overwrite");
+      expect(await readFile(path, "utf8")).toBe("original");
+      expect(requests).toHaveLength(0);
+      expect(await readdir(directory)).toEqual(["captions.vtt"]);
+    });
+
+    it("preserves an existing subtitle file when replacement timing is unavailable", async () => {
+      const requests = serveTranscript({ transcript: "Text only" });
+      const path = join(directory, "captions.vtt");
+      await writeFile(path, "original");
+      await socialCommand.parseAsync([
+        ...transcriptArgs,
+        "--format",
+        "vtt",
+        "--output",
+        path,
+        "--overwrite",
+        "--json",
+      ]);
+      expect(process.exitCode).toBe(1);
+      expect(await readFile(path, "utf8")).toBe("original");
+      expect(JSON.parse(output()) as unknown).toMatchObject({
+        data: { transcript: "Text only" },
+      });
+      expect(errorOutput()).toContain("--format text");
+      expect(requests).toHaveLength(1);
+      expect(await readdir(directory)).toEqual(["captions.vtt"]);
+    });
+
+    it("atomically replaces an existing subtitle file with explicit overwrite", async () => {
+      const requests = serveTranscript({
+        transcriptSegments: [{ text: "One", start: 0, duration: 1 }],
+      });
+      const path = join(directory, "captions.srt");
+      await writeFile(path, "original");
+      await socialCommand.parseAsync([
+        ...transcriptArgs,
+        "--format",
+        "srt",
+        "--output",
+        path,
+        "--overwrite",
+        "--json",
+      ]);
+      expect(await readFile(path, "utf8")).toBe(
+        "1\n00:00:00,000 --> 00:00:01,000\nOne\n\n",
+      );
+      expect(requests).toHaveLength(1);
+      expect(await readdir(directory)).toEqual(["captions.srt"]);
+    });
+
     it("exports ordered JSON fields while preserving context, metadata, null, false, and zero", async () => {
       const requests = serveRows([
         {
@@ -1333,6 +1720,51 @@ describe("okou social command", () => {
         },
       ],
     });
+  });
+
+  it("discovers transcript formats separately from source timing availability without HTTP", async () => {
+    vi.stubEnv("OKOU_TOKEN", undefined);
+    let requests = 0;
+    server.use(
+      http.all("*", () => {
+        requests += 1;
+        return HttpResponse.error();
+      }),
+    );
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "capabilities",
+      "youtube",
+      "--json",
+    ]);
+    expect(JSON.parse(output()) as unknown).toMatchObject({
+      capabilities: [
+        {
+          platform: "youtube",
+          details: expect.arrayContaining([
+            expect.objectContaining({
+              operation: "transcript",
+              export: expect.objectContaining({
+                formats: ["json", "text", "srt", "vtt"],
+                selection: expect.objectContaining({ formats: ["json"] }),
+                transcript: expect.objectContaining({
+                  timing: expect.stringContaining(
+                    "Extraction does not guarantee timestamped output",
+                  ),
+                  recovery: expect.stringContaining("without retrying"),
+                }),
+              }),
+            }),
+            expect.objectContaining({
+              operation: "summarize",
+              export: expect.objectContaining({ formats: ["json"] }),
+            }),
+          ]),
+        },
+      ],
+    });
+    expect(requests).toBe(0);
   });
 
   it("discovers source limits and only supported advanced inputs without HTTP", async () => {
@@ -4777,6 +5209,27 @@ describe("okou social command", () => {
       "one kind=page record per fetched page, followed by one metadata-only kind=summary record",
     );
     expect(renderedHelp).toContain("--fields-file summary-fields.json");
+    const transcript = socialCommand.commands.find((command) => {
+      return command.name() === "transcript";
+    });
+    renderedHelp = "";
+    transcript?.configureOutput({
+      writeOut: (value) => {
+        renderedHelp += value;
+      },
+    });
+    transcript?.outputHelp();
+    expect(renderedHelp).toContain("json, text, srt, vtt");
+    expect(renderedHelp).toContain(
+      "--format text|srt|vtt requires --output and cannot use --select",
+    );
+    expect(renderedHelp).toContain(
+      "Extraction support does not guarantee timestamped output",
+    );
+    expect(renderedHelp).toContain("Choose vtt for escaped literal markup");
+    expect(renderedHelp).toContain(
+      "recovered stdout JSON without repeating the request",
+    );
     const summarize = socialCommand.commands.find((command) => {
       return command.name() === "summarize";
     });
