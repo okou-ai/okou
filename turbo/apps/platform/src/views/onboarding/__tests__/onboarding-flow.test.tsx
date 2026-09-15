@@ -92,13 +92,6 @@ function firstItem<Item>(items: readonly Item[]): Item {
   return item;
 }
 
-const ONBOARDING_START_SEND_TO = "AW-18144854014/GVKdCLbQ9LscEP7_kcxD";
-const CHECKOUT_START_SEND_TO = "AW-18144854014/EEovCKmuvbscEP7_kcxD";
-const ADSMARCH_ONBOARDING_START_SEND_TO = "AW-18407336975/xkGcCLaRrOccEI_YpslE";
-const ADSMARCH_CHECKOUT_START_SEND_TO = "AW-18407336975/hWi8CPWRrOccEI_YpslE";
-const ADSMARCH_PAID_IN_ONBOARDING_SEND_TO =
-  "AW-18407336975/M7QYCPiRrOccEI_YpslE";
-
 type GtagFn = (...args: unknown[]) => void;
 
 type WindowWithGtag = Window & {
@@ -1369,12 +1362,7 @@ test("A completed video checkout resumes onboarding and the run", async () => {
     expect(checkoutCompletionAttempts).toBe(2);
     expect(pathname()).toMatch(/^\/chats\//u);
   });
-  expect(gtag).toHaveBeenCalledWith("event", "conversion", {
-    send_to: ADSMARCH_PAID_IN_ONBOARDING_SEND_TO,
-    value: 49,
-    currency: "USD",
-    transaction_id: "in_onboarding_paid",
-  });
+  expect(gtag).not.toHaveBeenCalled();
 });
 
 test("Missing checkout state recovers to video configuration", async () => {
@@ -1418,17 +1406,17 @@ test("An invalid template link returns to the matching picker", async () => {
 test.each([
   {
     accountId: "1001302527",
-    onboarding: [ONBOARDING_START_SEND_TO],
-    checkout: [CHECKOUT_START_SEND_TO],
+    onboarding: [],
+    checkout: [],
   },
   {
     accountId: "7935750692",
-    onboarding: [ADSMARCH_ONBOARDING_START_SEND_TO],
-    checkout: [ADSMARCH_CHECKOUT_START_SEND_TO],
+    onboarding: [],
+    checkout: [],
   },
   { accountId: null, onboarding: [], checkout: [] },
 ])(
-  "Onboarding and checkout route only to $accountId",
+  "Onboarding and checkout do not call Google directly for $accountId",
   async ({ accountId, onboarding, checkout }) => {
     context.mocks.api(
       acquisitionAttributionContract.resolveGoogleAdsAccount,

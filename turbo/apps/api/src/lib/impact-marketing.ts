@@ -1,6 +1,7 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { optionalEnv } from "./env";
 import { nowDate } from "./time";
+import type { ObservedAcquisitionEvent } from "@okouai/api-contracts/contracts/impact-marketing";
 
 export function retireImpactMetadata<T>(
   metadata: Readonly<Record<string, T>>,
@@ -34,6 +35,11 @@ export function createImpactHandoff(identity: {
   userId: string;
   orgId: string;
   orgRole: string | undefined;
+  acquisition?: {
+    version: 2;
+    signupAt?: number;
+    events: ObservedAcquisitionEvent[];
+  };
 }) {
   const { origin, parent, secret } = config();
   const issuedAt = Math.floor(nowDate().getTime() / 1000);
@@ -48,6 +54,7 @@ export function createImpactHandoff(identity: {
       iat: issuedAt,
       exp: issuedAt + 120,
       nonce,
+      ...(identity.acquisition ? { acquisition: identity.acquisition } : {}),
     }),
   ).toString("base64url");
   const signature = createHmac("sha256", secret)

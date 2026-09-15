@@ -49,7 +49,7 @@ test("The authenticated app binds consented Marketing attribution without a feat
   const posted = vi.spyOn(window, "postMessage").mockImplementation(() => {});
   window.dispatchEvent(
     new MessageEvent("message", {
-      data: { type: "okou:impact:ready" },
+      data: { type: "okou:acquisition:ready" },
       origin: "https://attacker.example",
       source: frame.contentWindow,
     }),
@@ -58,7 +58,7 @@ test("The authenticated app binds consented Marketing attribution without a feat
   expect(posted).not.toHaveBeenCalled();
   window.dispatchEvent(
     new MessageEvent("message", {
-      data: { type: "okou:impact:ready" },
+      data: { type: "okou:acquisition:ready" },
       origin: "https://www.okou.ai",
       source: frame.contentWindow,
     }),
@@ -75,7 +75,7 @@ test("The authenticated app binds consented Marketing attribution without a feat
   });
   window.dispatchEvent(
     new MessageEvent("message", {
-      data: { type: "okou:impact:complete", nonce: "wrong" },
+      data: { type: "okou:acquisition:complete", nonce: "wrong" },
       origin: "https://www.okou.ai",
       source: frame.contentWindow,
     }),
@@ -84,7 +84,7 @@ test("The authenticated app binds consented Marketing attribution without a feat
   expect(posted).toHaveBeenCalledTimes(1);
   window.dispatchEvent(
     new MessageEvent("message", {
-      data: { type: "okou:impact:complete", nonce: "expected-nonce" },
+      data: { type: "okou:acquisition:complete", nonce: "expected-nonce" },
       origin: "https://www.okou.ai",
       source: frame.contentWindow,
     }),

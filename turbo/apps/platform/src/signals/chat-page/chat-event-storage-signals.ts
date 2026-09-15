@@ -9,8 +9,6 @@ import {
 import { chatEventFromRow } from "@okouai/api-contracts/contracts/chat-event-row-projection";
 import type { ChatEvent as PersistedChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { captureTaskCompletedSuccessfully } from "../../lib/posthog.ts";
-import { settle } from "../utils.ts";
-import { syncGoogleAdsConversionMilestones$ } from "../bootstrap/google-ads-conversion-milestones.ts";
 import type { ChatEventDataKey } from "../../shared-database/data-key.ts";
 import { queryChatEventSharedDatabase$ } from "../shared-database.ts";
 import { notifyChatEventsChanged$ } from "./chat-event-change-registry.ts";
@@ -218,7 +216,7 @@ export function createChatEventStorageSignals({
       if (events.length === 0) {
         return;
       }
-      const hasNewCompletedRun = reportNewCompletedRuns({
+      reportNewCompletedRuns({
         persistentEvents: get(persistentChatEvents$),
         events,
       });
@@ -228,9 +226,6 @@ export function createChatEventStorageSignals({
       set(reconcileOptimisticChatEvents$, { threadId, events });
       await set(notifyChatEventsChanged$, chatEvents$, signal);
       signal.throwIfAborted();
-      if (hasNewCompletedRun) {
-        await settle(set(syncGoogleAdsConversionMilestones$, signal), signal);
-      }
     },
   );
   const sharedDatabase = createSharedDatabaseEventSignals({

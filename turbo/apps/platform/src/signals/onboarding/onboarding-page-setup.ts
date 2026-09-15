@@ -124,7 +124,7 @@ function createOnboardingPageSetup(
         );
         const handoffParams = promptHandoffParams(searchParams);
         handoffParams.set("prompt", checkoutPrompt);
-        set(capturePaidOnboardingAppHandoff$, checkoutPrompt);
+        await set(capturePaidOnboardingAppHandoff$, checkoutPrompt, signal);
         set(detachedNavigateTo$, ROUTES.prompt, {
           searchParams: handoffParams,
           replace: true,

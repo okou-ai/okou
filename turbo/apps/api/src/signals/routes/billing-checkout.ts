@@ -626,12 +626,10 @@ const checkoutAuthed$ = command(async ({ get, set }, signal: AbortSignal) => {
   } = bodyResult.data;
   const previewEnabled = supportsInAppPreview === true;
   const clerk = get(clerk$);
-  const resolvedAttribution = await checkoutAttribution(
-    clerk,
-    auth.userId,
-    adAttribution,
-    signal,
-  );
+  const resolvedAttribution =
+    bodyResult.data.marketingAttributionVersion === 2
+      ? { marketing_attribution_version: "2" }
+      : await checkoutAttribution(clerk, auth.userId, adAttribution, signal);
 
   if (!checkoutRedirectsAllowed(successUrl, cancelUrl)) {
     return badRequestMessage(
@@ -838,12 +836,15 @@ const usagePackCheckoutAuthed$ = command(
 
     const previewEnabled = body.supportsInAppPreview === true;
     const clerk = get(clerk$);
-    const resolvedAttribution = await checkoutAttribution(
-      clerk,
-      auth.userId,
-      body.adAttribution,
-      signal,
-    );
+    const resolvedAttribution =
+      body.marketingAttributionVersion === 2
+        ? { marketing_attribution_version: "2" }
+        : await checkoutAttribution(
+            clerk,
+            auth.userId,
+            body.adAttribution,
+            signal,
+          );
 
     if (!checkoutRedirectsAllowed(body.successUrl, body.cancelUrl)) {
       return badRequestMessage(

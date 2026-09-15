@@ -213,9 +213,18 @@ test("Clerk cross-origin navigation stays browser-owned", async () => {
 });
 
 test("The hosted sign-up form renders with an allowed redirect URL", async () => {
-  const redirectUrl = PRESENTATION_ONBOARDING_URL;
+  const destination = new URL(PRESENTATION_ONBOARDING_URL);
+  for (const key of [
+    "vm0_source",
+    "landing_host",
+    "landing_path",
+    "source_type",
+  ]) {
+    destination.searchParams.delete(key);
+  }
+  const redirectUrl = destination.toString();
   await setupSignedOutPage(
-    `/sign-up?redirect_url=${encodeURIComponent(redirectUrl)}`,
+    `/sign-up?redirect_url=${encodeURIComponent(PRESENTATION_ONBOARDING_URL)}`,
   );
 
   const signUp = screen.getByTestId("clerk-sign-up");
@@ -354,9 +363,9 @@ test("Ad-attributed sign-ups continue to onboarding with their attribution", asy
   );
   expect(redirectUrl.origin).toBe("https://app.okou.ai");
   expect(redirectUrl.pathname).toBe("/onboarding");
-  expect(redirectUrl.searchParams.get("gclid")).toBe("click-123");
-  expect(redirectUrl.searchParams.get("utm_campaign")).toBe("summer");
-  expect(redirectUrl.searchParams.get("vm0_source")).toBe("homepage");
+  expect(redirectUrl.searchParams.has("gclid")).toBeFalsy();
+  expect(redirectUrl.searchParams.has("utm_campaign")).toBeFalsy();
+  expect(redirectUrl.searchParams.has("vm0_source")).toBeFalsy();
 });
 
 test("Sign-up redirects to sibling origins of the current host are kept", async () => {

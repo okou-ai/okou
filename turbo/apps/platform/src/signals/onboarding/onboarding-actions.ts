@@ -11,7 +11,6 @@ import { reloadAgents$ } from "../agent.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { ROUTES } from "../route-paths.ts";
 import { billingStatusAsync$ } from "../okou-page/billing.ts";
-import { readStoredAdAttributionMetadata$ } from "../bootstrap/ad-attribution.ts";
 import { reloadOnboardingStatus$ } from "../okou-page/onboarding.ts";
 import {
   ONBOARDING_CHECKOUT_STATE_PARAM,
@@ -24,7 +23,7 @@ import {
   capturePaidOnboardingRedirectToStripe$,
   capturePaidOnboardingRoleConfirmed$,
 } from "../bootstrap/paid-funnel-telemetry.ts";
-import { completeGoogleAdsPaidCheckout$ } from "../bootstrap/google-ads-paid-conversion.ts";
+import { completePaidCheckout$ } from "../bootstrap/paid-checkout.ts";
 
 export const completeOnboarding$ = command(
   async (
@@ -59,7 +58,7 @@ export const completeOnboarding$ = command(
     );
     signal.throwIfAborted();
     if (role) {
-      set(capturePaidOnboardingRoleConfirmed$, role);
+      await set(capturePaidOnboardingRoleConfirmed$, role, signal);
     }
     // Both a prior route and the Worker's HTML prefetch can retain an empty
     // list from before the status endpoint provisioned the default agent.
@@ -120,7 +119,6 @@ export const prepareOnboardingVideoRun$ = command(
       prompt: input.prompt,
       note: input.note,
     });
-    const adAttribution = set(readStoredAdAttributionMetadata$);
     const successUrl = checkoutReturnUrl(input, "pro", checkoutState);
     const cancelUrl = checkoutReturnUrl(input, "canceled", checkoutState);
     const { userId } = await get(authenticatedIdentity$);
@@ -130,10 +128,10 @@ export const prepareOnboardingVideoRun$ = command(
       client.create({
         body: {
           tier: "pro",
+          marketingAttributionVersion: 2,
           memberUsagePacks: [{ memberId: userId, usagePackUsd: 20 }],
           successUrl,
           cancelUrl,
-          ...(adAttribution === undefined ? {} : { adAttribution }),
         },
         fetchOptions: { signal },
       }),
@@ -144,7 +142,11 @@ export const prepareOnboardingVideoRun$ = command(
       throw new Error("Onboarding checkout unexpectedly returned a preview");
     }
     const checkoutUrl = result.body.url;
-    set(capturePaidOnboardingCheckoutCreated$, "onboarding_video");
+    await set(
+      capturePaidOnboardingCheckoutCreated$,
+      "onboarding_video",
+      signal,
+    );
     await bestEffort(
       set(capturePaidOnboardingRedirectToStripe$, "onboarding_video", signal),
       signal,
@@ -157,7 +159,7 @@ export const prepareOnboardingVideoRun$ = command(
 export const completeOnboardingCheckoutReturn$ = command(
   async ({ set }, sessionId: string, signal: AbortSignal): Promise<void> => {
     await set(
-      completeGoogleAdsPaidCheckout$,
+      completePaidCheckout$,
       { sessionId, kind: "paid_in_onboarding" },
       signal,
     );

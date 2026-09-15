@@ -1,6 +1,11 @@
 import { timeout } from "signal-timers";
 import { command } from "ccstate";
 import { impactMarketingContract } from "@okouai/api-contracts/contracts/impact-marketing";
+import { authenticatedIdentity$ } from "../auth.ts";
+import {
+  pendingMarketingEvents$,
+  acknowledgeMarketingEvents$,
+} from "./marketing-events.ts";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
 import {
@@ -38,25 +43,50 @@ function waitForMessage(
     () => {
       finish(false);
     },
-    type === "okou:impact:complete" ? 15_000 : 60_000,
+    type === "okou:acquisition:complete" ? 15_000 : 60_000,
     { signal },
   );
+  const queued = () => {
+    finish(true);
+  };
+  if (type === "okou:acquisition:ready" && frame.src) {
+    window.addEventListener("okou:acquisition:queued", queued);
+  }
   window.addEventListener("message", listener);
   return withCleanup(deferred.promise, () => {
     window.removeEventListener("message", listener);
+    window.removeEventListener("okou:acquisition:queued", queued);
   });
 }
 
 const runImpactHandoff$ = command(
-  async ({ get }, frame: HTMLIFrameElement, signal: AbortSignal) => {
+  async ({ get, set }, frame: HTMLIFrameElement, signal: AbortSignal) => {
     const client = get(apiClient$)(impactMarketingContract, {
       apiBase: "api",
     });
     let loaded = false;
+    let checkSignup = true;
     while (!signal.aborted) {
+      const identity = await get(authenticatedIdentity$);
+      signal.throwIfAborted();
+      const pending = get(pendingMarketingEvents$)
+        .filter((entry) => {
+          return (
+            entry.userId === identity.userId && entry.orgId === identity.orgId
+          );
+        })
+        .slice(0, 2);
       const response = await accept(
         client.handoff({
-          body: {},
+          body: {
+            acquisition: {
+              version: 2,
+              checkSignup,
+              events: pending.map((entry) => {
+                return entry.event;
+              }),
+            },
+          },
           fetchOptions: {
             signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
           },
@@ -73,7 +103,7 @@ const runImpactHandoff$ = command(
         const ready = waitForMessage(
           frame,
           origin,
-          "okou:impact:ready",
+          "okou:acquisition:ready",
           undefined,
           signal,
         );
@@ -87,7 +117,7 @@ const runImpactHandoff$ = command(
       const complete = waitForMessage(
         frame,
         origin,
-        "okou:impact:complete",
+        "okou:acquisition:complete",
         proof.nonce,
         signal,
       );
@@ -99,14 +129,32 @@ const runImpactHandoff$ = command(
         },
         origin,
       );
-      await complete;
+      const recorded = await complete;
       signal.throwIfAborted();
+      if (recorded) {
+        checkSignup = false;
+        const ids = new Set(
+          pending.map((entry) => {
+            return entry.event.id;
+          }),
+        );
+        set(acknowledgeMarketingEvents$, ids);
+        if (
+          get(pendingMarketingEvents$).some((entry) => {
+            return (
+              entry.userId === identity.userId && entry.orgId === identity.orgId
+            );
+          })
+        ) {
+          continue;
+        }
+      }
       // Keep the bridge alive for returning subscribers and consent changes.
       // The timer also renews expired identity proofs after transient failures.
       await waitForMessage(
         frame,
         origin,
-        "okou:impact:ready",
+        "okou:acquisition:ready",
         undefined,
         signal,
       );

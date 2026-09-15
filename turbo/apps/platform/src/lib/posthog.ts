@@ -1,8 +1,49 @@
+import { removeAcquisitionParameters } from "./remove-acquisition.ts";
 import { isDesktopAuthFlow } from "./desktop-auth-flow.ts";
 import { command, state } from "ccstate";
 import { posthog, type CaptureResult } from "posthog-js/dist/module.slim";
 import { isStandalonePwa } from "./keyboard-dismiss-gesture.ts";
 import { resolvePlatformRuntimeConfig } from "./platform-host.ts";
+
+const ACQUISITION_PROPERTIES = Object.freeze([
+  "source_type",
+  "referrer_domain",
+  "landing_host",
+  "landing_path",
+  "vm0_source",
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "utm_content",
+  "utm_term",
+  "okou_campaign_id",
+  "okou_ad_group_id",
+  "vm0_campaign_id",
+  "vm0_ad_group_id",
+  "vm0_experiment",
+  "vm0_variant",
+  "lp_variant",
+  "gclid",
+  "gbraid",
+  "wbraid",
+  "ga_client_id",
+  "gclid_present",
+  "gbraid_present",
+  "wbraid_present",
+]);
+const RETIRED_POSTHOG_PROPERTIES = Object.freeze([
+  ...ACQUISITION_PROPERTIES,
+  ...ACQUISITION_PROPERTIES.map((key) => {
+    return `$initial_${key}`;
+  }),
+  "$referrer",
+  "$referring_domain",
+  "$initial_referrer",
+  "$initial_referring_domain",
+  "$initial_current_url",
+  "$search_engine",
+  "ph_keyword",
+]);
 
 const RUNTIME_CONFIG = resolvePlatformRuntimeConfig();
 const POSTHOG_HOST = RUNTIME_CONFIG.postHogHost;
@@ -52,6 +93,14 @@ function sanitizePostHogCaptureResult(
       uuid: captureResult.uuid,
     };
   }
+  for (const field of ["$set", "$set_once"]) {
+    const properties = captureResult.properties[field];
+    if (properties && typeof properties === "object") {
+      for (const key of RETIRED_POSTHOG_PROPERTIES) {
+        delete properties[key];
+      }
+    }
+  }
   return captureResult;
 }
 
@@ -72,6 +121,9 @@ export function initPostHog(): void {
       ui_host: "https://us.posthog.com",
       autocapture: false,
       capture_pageview: false,
+      save_campaign_params: false,
+      save_referrer: false,
+      property_denylist: [...RETIRED_POSTHOG_PROPERTIES],
       before_send: sanitizePostHogCaptureResult,
       disable_session_recording: true,
       session_recording: {
@@ -81,6 +133,9 @@ export function initPostHog(): void {
       persistence: "localStorage+cookie",
       sanitize_properties(properties, _event) {
         if (properties?.$current_url) {
+          const currentUrl = new URL(properties["$current_url"]);
+          removeAcquisitionParameters(currentUrl.searchParams);
+          properties["$current_url"] = currentUrl.toString();
           properties["$current_url"] = properties["$current_url"].replace(
             /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
             "/:id",
@@ -157,16 +212,17 @@ export function setPostHogUser(user: PostHogUser): void {
   });
 }
 
-/**
- * Register first-touch acquisition fields as super properties so product
- * events, including task completion, retain the campaign and ad group that
- * brought the user into the app.
- */
-export function registerPostHogAttribution(
-  properties: Record<string, string>,
-): void {
+/** Retire previously persisted acquisition super properties after the cutover. */
+export function clearPostHogAttribution(): void {
   runPostHog(() => {
-    posthog.register(properties);
+    for (const key of [
+      ...RETIRED_POSTHOG_PROPERTIES,
+      "$initial_person_info",
+      "$initial_campaign_params",
+      "$initial_referrer_info",
+    ]) {
+      posthog.unregister(key);
+    }
   });
 }
 
@@ -205,19 +261,6 @@ export const captureChatThreadMetadataShortcut$ = command(
     });
   },
 );
-
-/**
- * Paid-onboarding funnel events. The `PaidOnboarding: ` prefix is load-bearing:
- * the acquisition dashboards and Google Ads reconciliation both key off it.
- */
-export function capturePaidOnboardingEvent(
-  name: string,
-  properties: Record<string, string | number | boolean>,
-): void {
-  runPostHog(() => {
-    posthog.capture(`PaidOnboarding: ${name}`, properties);
-  });
-}
 
 // ── Navigation timing (ccstate-based) ──────────────────────────────
 //
