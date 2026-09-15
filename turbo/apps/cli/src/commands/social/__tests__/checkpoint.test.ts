@@ -326,6 +326,36 @@ describe("social collection checkpoints through the CLI", () => {
   });
 
   it.each([false, true])(
+    "preserves accepted output when checkpoint publication and lock cleanup both fail (stream: %s)",
+    async (stream) => {
+      server.use(
+        http.post(endpoint, async () => {
+          await mkdir(checkpoint);
+          await rm(`${checkpoint}.lock`);
+          await mkdir(`${checkpoint}.lock`);
+          return HttpResponse.json(response(["one", "two", "three"], "next"));
+        }),
+      );
+      const result = await start("2", stream ? ["--stream"] : []);
+      expect(result.code).toBe(1);
+      expect(result.result).toMatchObject({
+        status: "partial",
+        kind: stream ? "summary" : "result",
+        collection: { state: "failed" },
+        billing: { quantity: 1, creditsCharged: 3 },
+      });
+      expect(result.records).toHaveLength(stream ? 2 : 1);
+      expect(result.records[0]).toMatchObject({
+        data: { items: [{ id: "one" }, { id: "two" }] },
+      });
+      expect(result.result).not.toHaveProperty("collection.continuation");
+      expect(result.errors).toContain("could not be saved");
+      expect(result.errors).toContain("lock");
+      expect((await stat(`${checkpoint}.lock`)).isDirectory()).toBe(true);
+    },
+  );
+
+  it.each([false, true])(
     "replays the two-of-three tail without requests (source has more: %s)",
     async (hasMore) => {
       const requests: unknown[] = [];
@@ -417,6 +447,27 @@ describe("social collection checkpoints through the CLI", () => {
     },
   );
 
+  it("reports lock cleanup failure even when collection and checkpoint publication succeed", async () => {
+    server.use(
+      http.post(endpoint, async () => {
+        await rm(`${checkpoint}.lock`);
+        await mkdir(`${checkpoint}.lock`);
+        return HttpResponse.json(response(["one", "two"]));
+      }),
+    );
+    const result = await start();
+    expect(result.code).toBe(1);
+    expect(result.records).toHaveLength(1);
+    expect(result.result).toMatchObject({
+      status: "complete",
+      data: { items: [{ id: "one" }, { id: "two" }] },
+      collection: { continuation: { available: false } },
+    });
+    expect(result.errors).toContain("lock cleanup failed");
+    expect((await stat(checkpoint)).isFile()).toBe(true);
+    expect((await stat(`${checkpoint}.lock`)).isDirectory()).toBe(true);
+  });
+
   it("retains a tail across several resumes and preserves the exact target and filters", async () => {
     const requests: unknown[] = [];
     server.use(
@@ -459,61 +510,75 @@ describe("social collection checkpoints through the CLI", () => {
     });
   });
 
-  it("resumes only a failed pending page and preserves accepted accounting", async () => {
-    const requests: unknown[] = [];
-    server.use(
-      http.post(endpoint, async ({ request }) => {
-        requests.push(await request.json());
-        if (requests.length === 2)
-          return HttpResponse.json(
-            {
-              error: {
-                code: "UPSTREAM_ERROR",
-                message: "Temporary page failure",
-                retryable: true,
+  it.each(["api", "network"])(
+    "resumes only a failed pending page after a %s error and preserves accepted accounting",
+    async (failure) => {
+      const requests: unknown[] = [];
+      server.use(
+        http.post(endpoint, async ({ request }) => {
+          requests.push(await request.json());
+          if (requests.length === 2) {
+            if (failure === "network") return HttpResponse.error();
+            return HttpResponse.json(
+              {
+                error: {
+                  code: "UPSTREAM_ERROR",
+                  message: "Temporary page failure",
+                  retryable: true,
+                },
               },
-            },
-            { status: 502 },
+              { status: 502 },
+            );
+          }
+          return HttpResponse.json(
+            requests.length === 1
+              ? response(["one"], "next")
+              : response(["two"]),
           );
-        return HttpResponse.json(
-          requests.length === 1 ? response(["one"], "next") : response(["two"]),
-        );
-      }),
-    );
-    const first = await start("5");
-    expect(first.code).toBe(1);
-    expect(first.result).toMatchObject({
-      status: "partial",
-      data: { items: [{ id: "one" }] },
-      collection: { state: "failed", continuation: { available: true } },
-    });
-    const resumed = await invoke([
-      "resume",
-      checkpoint,
-      "--limit",
-      "5",
-      "--json",
-    ]);
-    expect(resumed.code).toBe(0);
-    expect(resumed.result).toMatchObject({
-      data: { items: [{ id: "two" }] },
-      billing: { quantity: 1, creditsCharged: 3 },
-      collection: {
-        cumulative: { pages: 2, itemsReturned: 2, creditsCharged: 6 },
-      },
-    });
-    expect(requests).toHaveLength(3);
-    expect(requests[1]).toHaveProperty("input.cursor", "next");
-    expect(requests[2]).toHaveProperty("input.cursor", "next");
-  });
+        }),
+      );
+      const first = await start("5");
+      expect(first.code).toBe(1);
+      expect(first.result).toMatchObject({
+        status: "partial",
+        data: { items: [{ id: "one" }] },
+        collection: { state: "failed", continuation: { available: true } },
+        error: { retryable: true },
+      });
+      if (failure === "network") {
+        expect(first.result).toHaveProperty("error.code", "TRANSPORT_ERROR");
+        expect(first.result).not.toHaveProperty("error.httpStatus");
+      }
+      const resumed = await invoke([
+        "resume",
+        checkpoint,
+        "--limit",
+        "5",
+        "--json",
+      ]);
+      expect(resumed.code).toBe(0);
+      expect(resumed.result).toMatchObject({
+        data: { items: [{ id: "two" }] },
+        billing: { quantity: 1, creditsCharged: 3 },
+        collection: {
+          cumulative: { pages: 2, itemsReturned: 2, creditsCharged: 6 },
+        },
+      });
+      expect(requests).toHaveLength(3);
+      expect(requests[1]).toHaveProperty("input.cursor", "next");
+      expect(requests[2]).toHaveProperty("input.cursor", "next");
+    },
+  );
 
-  it.each(["repeated", "expired"])(
+  it.each(["repeated", "expired", "malformed"])(
     "ends continuation on a %s provider cursor",
     async (failure) => {
       let requests = 0;
       server.use(
         http.post(endpoint, () => {
           requests += 1;
+          if (requests === 2 && failure === "malformed")
+            return HttpResponse.json({ invalid: true });
           if (requests === 2 && failure === "expired")
             return HttpResponse.json(
               {

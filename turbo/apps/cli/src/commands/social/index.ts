@@ -27,6 +27,7 @@ import {
 
 import {
   callSocialKit,
+  SocialTransportError,
   createSocialKitDownload,
   getSocialKitDownload,
   listSocialKitDownloads,
@@ -374,6 +375,18 @@ function structuredError(error: unknown): {
         : undefined;
   const progress =
     error instanceof SocialCollectionError ? error.progress : undefined;
+  if (root instanceof SocialTransportError) {
+    return {
+      status: "error",
+      error: {
+        kind: "transport",
+        code: "TRANSPORT_ERROR",
+        message: root.message,
+        retryable: true,
+      },
+      progress,
+    };
+  }
   if (root instanceof ApiRequestError) {
     return {
       status: "error",
@@ -535,6 +548,14 @@ function humanError(error: unknown): string {
   return root instanceof Error ? root.message : "An unexpected error occurred";
 }
 
+function printSocialError(error: unknown, machineReadable: boolean): void {
+  if (machineReadable) {
+    console.error(JSON.stringify(structuredError(error)));
+  } else {
+    console.error(chalk.red(`✗ ${humanError(error)}`));
+  }
+}
+
 async function runSocialAction(
   machineReadable: boolean,
   action: () => Promise<void>,
@@ -542,11 +563,7 @@ async function runSocialAction(
   try {
     await action();
   } catch (error) {
-    if (machineReadable) {
-      console.error(JSON.stringify(structuredError(error)));
-    } else {
-      console.error(chalk.red(`✗ ${humanError(error)}`));
-    }
+    printSocialError(error, machineReadable);
     if (
       error instanceof SocialCollectionError ||
       error instanceof SocialExportError
@@ -1282,18 +1299,40 @@ async function printCollectionIntent(
     const file = await CollectionCheckpoint.open(options.checkpoint, false);
     try {
       await printCollectionResult(intent, options, {
-          file,
-          saved: newCollectionCheckpoint(intent),
-          resumed: false,
-          lastPage: null,
-          pendingRequest: null,
+        file,
+        saved: newCollectionCheckpoint(intent),
+        resumed: false,
+        lastPage: null,
+        pendingRequest: null,
       });
     } finally {
-      await file.close();
+      await closeCollectionCheckpoint(
+        file,
+        options.stream === true || options.json === true,
+      );
     }
     return;
   }
   await printCollectionResult(intent, options);
+}
+
+async function closeCollectionCheckpoint(
+  file: CollectionCheckpoint,
+  machineReadable: boolean,
+): Promise<void> {
+  try {
+    await file.close();
+  } catch (error) {
+    // Keep any pending partial-result error intact while reporting cleanup failure.
+    printSocialError(
+      new Error(
+        `Checkpoint lock cleanup failed: ${humanError(error)}. Inspect '${file.path}.lock' after the command stops before removing a stale lock.`,
+        { cause: error },
+      ),
+      machineReadable,
+    );
+    process.exitCode = 1;
+  }
 }
 
 function resumeDownloadCommand(downloadId: string): string {
@@ -1673,14 +1712,17 @@ const resumeCollectionCommand = new Command()
           const saved = await file.read();
           const intent = checkpointIntent(saved, options.limit);
           await printCollectionResult(intent, options, {
-              file,
-              saved,
-              resumed: true,
-              lastPage: saved.lastPage,
-              pendingRequest: saved.pendingRequest,
+            file,
+            saved,
+            resumed: true,
+            lastPage: saved.lastPage,
+            pendingRequest: saved.pendingRequest,
           });
         } finally {
-          await file.close();
+          await closeCollectionCheckpoint(
+            file,
+            options.stream === true || options.json === true,
+          );
         }
       },
     );

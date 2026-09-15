@@ -118,6 +118,12 @@ continuation. Repeated/invalid cursors and permanent cursor rejection stop
 network continuation. The CLI never restarts or retries automatically, and
 cannot guarantee that a saved provider cursor remains usable.
 
+Connection failures, timeouts, and interrupted response transfers retain an
+already saved pending page for explicit resume. They report a retryable
+`TRANSPORT_ERROR` without inventing an HTTP status or assuming that the
+failed request had no provider effects or charges. Invalid responses and
+explicit permanent API errors still stop network continuation.
+
 ### File and credential lifetime
 
 Version 1 is a private local file authenticated with a domain-separated HMAC
@@ -136,6 +142,11 @@ resume atomically updates that same file. An exclusive `.lock` file prevents
 concurrent use of the same canonical path. Symbolic links and hard-linked files
 are rejected. Wait for active invocations; remove a stale lock only after
 confirming the command stopped and inspecting its output.
+
+Lock-cleanup failures are reported separately on stderr and set exit code 1.
+They do not replace accepted stdout results or an existing collection failure.
+Machine-readable stderr may contain separate JSON Lines for cleanup and
+collection errors; stdout still contains exactly one terminal record.
 
 Saving a checkpoint is part of handled completion, not a crash-safe output
 transaction. A save failure preserves accepted terminal output and reports an
