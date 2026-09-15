@@ -73,9 +73,10 @@ async function openChat(
     featureSwitches: {
       [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
       [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
+      [FeatureSwitchKey.RefactorModelSelect]: false,
       [FeatureSwitchKey.ModelPickerFlyout]: true,
-      [FeatureSwitchKey.CodexFastMode]: true,
+      [FeatureSwitchKey.CodexFastMode]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });

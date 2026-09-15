@@ -88,21 +88,17 @@ describe("/api/feature-switches", () => {
       "org:member",
     );
     const owner = await accept(client().get({ headers }), [200]);
-    expect(
-      owner.body.effectiveSwitches[FeatureSwitchKey.RefactorModelSelect],
-    ).toBeTruthy();
+    expect(owner.body.effectiveSwitches[FeatureSwitchKey.Effort]).toBeTruthy();
 
     const staffUserId = `user_${randomUUID()}`;
     clerk.session(staffUserId, "org_3ANttyrbWYJk6JKRSTRLEsbsDLe", "org:member");
     const staff = await accept(client().get({ headers }), [200]);
-    expect(
-      staff.body.effectiveSwitches[FeatureSwitchKey.RefactorModelSelect],
-    ).toBeTruthy();
+    expect(staff.body.effectiveSwitches[FeatureSwitchKey.Effort]).toBeTruthy();
 
     clerk.session(staffUserId, `org_${randomUUID()}`, "org:member");
     const nonStaffOrg = await accept(client().get({ headers }), [200]);
     expect(
-      nonStaffOrg.body.effectiveSwitches[FeatureSwitchKey.RefactorModelSelect],
+      nonStaffOrg.body.effectiveSwitches[FeatureSwitchKey.Effort],
     ).toBeFalsy();
   });
 
@@ -121,7 +117,7 @@ describe("/api/feature-switches", () => {
           headers,
           body: {
             switches: {
-              [FeatureSwitchKey.RefactorModelSelect]: enabled,
+              [FeatureSwitchKey.Effort]: enabled,
             },
           },
         }),
@@ -129,19 +125,19 @@ describe("/api/feature-switches", () => {
       );
 
       expect(updated.body.switches).toStrictEqual({
-        [FeatureSwitchKey.RefactorModelSelect]: enabled,
+        [FeatureSwitchKey.Effort]: enabled,
       });
-      expect(
-        updated.body.effectiveSwitches[FeatureSwitchKey.RefactorModelSelect],
-      ).toBe(enabled);
+      expect(updated.body.effectiveSwitches[FeatureSwitchKey.Effort]).toBe(
+        enabled,
+      );
 
       const current = await accept(client().get({ headers }), [200]);
       expect(current.body.switches).toStrictEqual({
-        [FeatureSwitchKey.RefactorModelSelect]: enabled,
+        [FeatureSwitchKey.Effort]: enabled,
       });
-      expect(
-        current.body.effectiveSwitches[FeatureSwitchKey.RefactorModelSelect],
-      ).toBe(enabled);
+      expect(current.body.effectiveSwitches[FeatureSwitchKey.Effort]).toBe(
+        enabled,
+      );
     },
   );
 });

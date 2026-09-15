@@ -34,8 +34,7 @@ import { chatThreadServiceTierFromCodex } from "../services/chat-thread-event.se
 import { loadNewChatThreadModelSettings } from "../services/chat-thread-model-settings.service";
 import { resolveChatReasoningEffort } from "../services/chat-reasoning-effort.service";
 import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { isChatEffortEnabled } from "@okouai/core/model-feature-switch";
 import type { RouteEntry } from "../route-entry";
 
 const createBody$ = bodyResultOf(chatThreadsContract.create);
@@ -224,10 +223,7 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     selectedModel: pin.selectedModel,
     modelSettings,
     requested: body.data.reasoningEffort,
-    enabled: isFeatureEnabled(
-      FeatureSwitchKey.RefactorModelSelect,
-      featureSwitchContext,
-    ),
+    enabled: isChatEffortEnabled(featureSwitchContext),
   });
   if ("status" in effort) {
     return effort;

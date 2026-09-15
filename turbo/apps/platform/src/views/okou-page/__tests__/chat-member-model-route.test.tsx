@@ -66,7 +66,7 @@ test.each(["select", "compact", "flyout"] as const)(
       path: NEW_CHAT_PATH,
       featureSwitches: {
         [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-        [FeatureSwitchKey.RefactorModelSelect]: layout === "compact",
+        [FeatureSwitchKey.Effort]: layout === "compact",
         [FeatureSwitchKey.ModelPickerFlyout]: layout !== "select",
       },
     });
@@ -126,13 +126,22 @@ test("Uses the effective subscription for reasoning and Fast guidance", async ()
     codexServiceTier: "fast",
     modelSettings: { "gpt-5.6-sol": { effort: "max" } },
   });
-  context.mocks.data.orgModelPolicies([policy("available")]);
+  context.mocks.data.orgModelPolicies([
+    {
+      ...policy("available"),
+      defaultProviderType: "openai-api-key",
+      routeStatus: "missing_provider",
+      routeStatusReason: "The selected workspace provider is missing.",
+    },
+  ]);
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-      [FeatureSwitchKey.RefactorModelSelect]: true,
+      [FeatureSwitchKey.Effort]: true,
+      [FeatureSwitchKey.RefactorModelSelect]: false,
+      [FeatureSwitchKey.CodexFastMode]: false,
       [FeatureSwitchKey.PiLoop]: true,
     },
   });

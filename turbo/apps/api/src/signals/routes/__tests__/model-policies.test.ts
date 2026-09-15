@@ -1110,10 +1110,7 @@ describe("GET/PUT /api/model-policies", () => {
     });
   });
 
-  it.each([
-    FeatureSwitchKey.CodexFastMode,
-    FeatureSwitchKey.RefactorModelSelect,
-  ])(
+  it.each([FeatureSwitchKey.CodexFastMode, FeatureSwitchKey.Effort])(
     "stores priority with a GPT 5.6 user model preference with %s",
     async (fastSwitch) => {
       const fixture = await seedFixture();
@@ -1199,7 +1196,9 @@ describe("GET/PUT /api/model-policies", () => {
     await seedOrgMetadata({ orgId: fixture.orgId, tier: "pro", credits: 0 });
     await updateFeatureSwitchesForUser(context, fixture, {
       [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-      [FeatureSwitchKey.CodexFastMode]: true,
+      [FeatureSwitchKey.Effort]: true,
+      [FeatureSwitchKey.CodexFastMode]: false,
+      [FeatureSwitchKey.RefactorModelSelect]: false,
     });
     useSession(fixture);
     const preferences = setupApp({
