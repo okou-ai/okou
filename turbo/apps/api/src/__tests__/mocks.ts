@@ -122,8 +122,13 @@ export interface ApiTestMocks {
   };
   readonly console: {
     readonly capture: () => () => void;
+    readonly log: SyncMock;
     readonly error: SyncMock;
     readonly warn: SyncMock;
+  };
+  readonly httpResponse: {
+    /** Own the gap after body consumption, before the caller resumes. */
+    readonly observeText: (observe: (text: string) => void) => () => void;
   };
   readonly ably: {
     readonly channelGet: Mock<(channelName: string) => void>;
@@ -358,15 +363,19 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
 
   const consoleWarn = vi.fn<(...args: unknown[]) => void>();
   const consoleError = vi.fn<(...args: unknown[]) => void>();
+  const consoleLog = vi.fn<(...args: unknown[]) => void>();
   const consoleOutput = {
     capture: (): (() => void) => {
+      const log = vi.spyOn(console, "log").mockImplementation(consoleLog);
       const warn = vi.spyOn(console, "warn").mockImplementation(consoleWarn);
       const error = vi.spyOn(console, "error").mockImplementation(consoleError);
       return () => {
+        log.mockRestore();
         warn.mockRestore();
         error.mockRestore();
       };
     },
+    log: consoleLog,
     error: consoleError,
     warn: consoleWarn,
   };
@@ -567,6 +576,21 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
     axiom,
     axiomLogging,
     console: consoleOutput,
+    httpResponse: {
+      observeText: (observe) => {
+        const original = Response.prototype.text;
+        const spy = vi
+          .spyOn(Response.prototype, "text")
+          .mockImplementation(async function (this: Response) {
+            const text = await original.call(this);
+            observe(text);
+            return text;
+          });
+        return () => {
+          spy.mockRestore();
+        };
+      },
+    },
     browserUseCdp: {
       connect: vi.fn<(url: string) => void>(),
       command: vi.fn<(command: BrowserUseCdpCommand) => unknown>(),
@@ -1566,6 +1590,7 @@ export function resetApiTestMocks(): void {
   apiTestMocks.axiomLogging.error.mockReset();
   apiTestMocks.axiomLogging.flush.mockReset();
   apiTestMocks.console.error.mockReset();
+  apiTestMocks.console.log.mockReset();
   apiTestMocks.console.warn.mockReset();
   apiTestMocks.browserUseCdp.connect.mockReset();
   apiTestMocks.browserUseCdp.command.mockReset();
