@@ -48,15 +48,25 @@ async fn cooldown_timer_releases_expired_claim_without_waiter() {
 #[tokio::test]
 async fn expired_cooldown_with_waiter_hands_off_same_claim() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let mut pool = test_pool(0, Duration::from_millis(20), dir.path(), always_free);
+    let mut pool = test_pool(0, Duration::ZERO, dir.path(), always_free);
     pool.in_flight.insert(3);
-    let handle = DevicePoolHandle::from_pool(pool);
+    // Keep the acquire queued before release without exhausting the zero-device scan.
+    let (pending, _complete_scan) = pending_controlled_scan();
+    let handle = DevicePoolHandle::from_pool_with_pending(pool, pending);
 
-    handle.release_clean(lease(3, dir.path())).await;
     let acquire_task = tokio::spawn({
         let handle = handle.clone();
         async move { handle.acquire().await }
     });
+    wait_for_scan_waiter(&handle).await;
+
+    // Immediate expiry happens only after the waiter exists, even if release is delayed.
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        handle.release_clean(lease(3, dir.path())),
+    )
+    .await
+    .expect("clean release timed out");
 
     let lease = tokio::time::timeout(Duration::from_secs(1), acquire_task)
         .await
@@ -66,8 +76,12 @@ async fn expired_cooldown_with_waiter_hands_off_same_claim() {
     assert_eq!(lease.index(), 3);
     assert_eq!(lease.source(), DeviceAcquireSource::CooledClaim);
     assert_eq!(lease.scan_duration(), None);
-    handle.discard(lease.into_lease()).await;
-    handle.cleanup().await;
+    tokio::time::timeout(Duration::from_secs(1), async {
+        handle.discard(lease.into_lease()).await;
+        handle.cleanup().await;
+    })
+    .await
+    .expect("cooldown handoff cleanup timed out");
 }
 
 #[tokio::test]

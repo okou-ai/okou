@@ -53,7 +53,8 @@ function url(name: string) {
 const applicationUrl = url(applicationName);
 const controlUrl = url(controlName);
 const authorityId = randomUUID();
-const signal = new AbortController().signal;
+const suiteController = new AbortController();
+const signal = suiteController.signal;
 const admin = new Client({ connectionString: base.toString() });
 await admin.connect();
 const temp = await mkdtemp(join(tmpdir(), "b2a-test-"));
@@ -935,6 +936,7 @@ try {
     assert.equal(remaining[0]?.decisionRef, second.decisionRef);
   });
 } finally {
+  suiteController.abort();
   for (const value of fixtures) {
     await value.close();
   }

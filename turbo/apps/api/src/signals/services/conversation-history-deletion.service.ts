@@ -1,3 +1,8 @@
+import { assertPiInferenceErasureReady } from "./pi-inference-lifecycle.service";
+import {
+  agentRunInference,
+  agentRunSandboxLease,
+} from "@okouai/db/schema/agent-run-inference";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { blobs } from "@okouai/db/schema/blob";
 import { conversations } from "@okouai/db/schema/conversation";
@@ -30,6 +35,30 @@ export async function deleteRunConversations(
   tx: Tx,
   runIds: readonly string[],
 ) {
+  await assertPiInferenceErasureReady(tx, runIds);
+  // All erasure owners call this before parent cascades. Only proven releases
+  // may be removed; the lease FK blocks unknown external cleanup atomically.
+  for (let offset = 0; offset < runIds.length; offset += DELETION_BATCH_SIZE) {
+    await tx
+      .delete(agentRunSandboxLease)
+      .where(
+        and(
+          inArray(
+            agentRunSandboxLease.runId,
+            runIds.slice(offset, offset + DELETION_BATCH_SIZE),
+          ),
+          eq(agentRunSandboxLease.state, "released"),
+        ),
+      );
+    await tx
+      .delete(agentRunInference)
+      .where(
+        inArray(
+          agentRunInference.runId,
+          runIds.slice(offset, offset + DELETION_BATCH_SIZE),
+        ),
+      );
+  }
   const references = new Map<string, number>();
   let deletedConversations = 0;
   for (let offset = 0; offset < runIds.length; offset += DELETION_BATCH_SIZE) {

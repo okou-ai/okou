@@ -397,8 +397,22 @@
     {
       "idx": 1134,
       "version": "7",
-      "when": 1789456162905,
-      "tag": "1134_magical_speed",
+      "when": 1789453854392,
+      "tag": "1134_pi_inference_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 1135,
+      "version": "7",
+      "when": 1789453865355,
+      "tag": "1135_validate_pi_inference_launch",
+      "breakpoints": true
+    },
+    {
+      "idx": 1136,
+      "version": "7",
+      "when": 1789456925809,
+      "tag": "1136_plain_marvex",
       "breakpoints": true
     }
   ]

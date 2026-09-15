@@ -65,8 +65,9 @@ if (!process.send) {
   throw new Error("test_ipc_required");
 }
 process.send({ state: "ready" });
+const attemptController = new AbortController();
 try {
-  const signal = new AbortController().signal;
+  const signal = attemptController.signal;
   const result =
     input.targetId && input.replayGeneration
       ? await bridge.replayPage(
@@ -91,5 +92,6 @@ try {
     }),
   );
 } finally {
+  attemptController.abort();
   await f.close();
 }

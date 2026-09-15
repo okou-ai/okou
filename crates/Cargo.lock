@@ -1015,7 +1015,7 @@ checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
 name = "claude-mock"
-version = "0.21.148"
+version = "0.21.149"
 dependencies = [
  "api-contracts",
  "guest-contracts",
@@ -1908,7 +1908,7 @@ dependencies = [
 
 [[package]]
 name = "guest-tool-exec"
-version = "0.1.64"
+version = "0.1.65"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -3487,7 +3487,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.194.0"
+version = "0.194.1"
 dependencies = [
  "ably-subscriber",
  "api-contracts",

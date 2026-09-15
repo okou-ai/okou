@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.666.3](https://github.com/vm0-ai/vm0/compare/core-v8.666.2...core-v8.666.3) (2026-09-15)
+
+
+### Refactoring
+
+* give effort its own switch ([#34269](https://github.com/vm0-ai/vm0/issues/34269)) ([df5644a](https://github.com/vm0-ai/vm0/commit/df5644a8cb7e7905813ba4d1dc40aa9b98e4de92))
+* remove the reference images feature switch ([#34272](https://github.com/vm0-ai/vm0/issues/34272)) ([bc9a254](https://github.com/vm0-ai/vm0/commit/bc9a254f8005d20b6514254c30c903649f7f1b00))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.443.2
+
 ## [8.666.2](https://github.com/vm0-ai/vm0/compare/core-v8.666.1...core-v8.666.2) (2026-09-15)
 
 
