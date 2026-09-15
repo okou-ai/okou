@@ -5,6 +5,16 @@ nine-trigger migration plan, domain-specific concurrency requirements, and
 release evidence. A–D preparation shipped before migration `1132`; the sections
 below retain the writer and repair contracts established by those releases.
 
+## Withdrawn marketing privacy storage: migration 1139
+
+The owner changed E's scope on 2026-09-15 to complete retirement of its three
+storage tables, withdrawal trigger and epoch function. No replacement privacy
+API is introduced. Preparation #34296 must first serve and define the supported
+rollback boundary; its source merge alone does not permit contraction.
+See the [storage inventory, lock order and release gates](marketing-privacy-choices.md#required-release-order-and-rollback-boundary).
+Migration 1139 removes E after those gates; it does not complete #33275's revised
+privacy remediation. Historical A–D evidence below records what 1132 preserved.
+
 ## A-D contraction: migration 1132
 
 `1132_retire_prepared_domain_triggers` removes exactly the eight A–D triggers
@@ -159,8 +169,10 @@ complete their metadata writes. `upsertOrgMetadataFixture` already writes the
 managed entitlement. Deliberately divergent entitlement fixtures use the same
 canonical runtime mapping and explicit status.
 
-The frozen private-schema compatibility fixtures still simulate old writers.
-The current-route-only legacy metadata/plan fixtures are retired with 1132.
+The #32575 cleanup removes the entitlement suite's outgoing private-schema
+variants after its production gate. Its current-schema infrastructure cases
+retain historical corruption, constraint-failure rollback and lock-contention
+coverage. Shared private fixtures remain for the other #33747 domains.
 
 ### Repair and backfill writes
 
@@ -185,24 +197,28 @@ before the API ensure runs; `ON CONFLICT DO NOTHING` preserves it without reappl
 overwriting a manual entitlement. During preparation the retained invitation
 trigger served outgoing API statements; current API writers do not depend on it.
 
-The compatibility tests use private schemas with actual PostgreSQL constraints
-on the retained schema, without entitlement triggers, and after dropping both
-legacy invitation columns. They exercise all tiers, managed sources, status
-changes, preservation, rollback,
-retry, and a verified blocked concurrent writer. Shared/public triggers are
-never disabled by the tests. Full route suites run in the PR pipeline.
+The prepared compatibility matrix covered retained triggers, absent entitlement
+triggers and contracted columns. After the #32575 cleanup gate, the permanent
+entitlement schema validator exercises canonical writes on both historical
+migration replay and a regenerated schema. Current API infrastructure cases
+inject constraints, historical corrupt state and a verified blocked writer in
+private current-schema tables. Routine billing and invitation behavior is
+verified through production HTTP routes and App pages.
 
 The 1132 release boundary above records the prepared artifact and enforced
-rollback floor. Production migration/journal completion remains a release gate;
-application rollback does not recreate triggers. The two physical invitation
-columns and remaining client cleanup stay with the
-[invitation contraction gate](deployment-compatibility.md#invitation-and-free-member-contract-cleanup-2026-09-14)
-owned by #32575.
+rollback floor. #34317 adds migration 1137 to remove the two physical invitation
+columns and removes the remaining client query opt-in. Release #34303 shipped
+that contraction in API 1.604.0 / App 0.900.0. The
+[invitation production receipt](deployment-compatibility.md#legacy-invitation-column-contraction-2026-09-15)
+records the committed journal evidence, serving artifacts and supported rollback
+projection that permit the final test cleanup. Application rollback does not
+recreate the retired triggers or columns.
 
 The purchase, OAuth, hosting, and privacy work packages remain tracked in
-#33747. In particular, [the privacy implementation rollback](marketing-privacy-choices.md)
-retains shipped privacy data and triggers while the replacement design is
-reconsidered. Entitlement preparation does not resume that withdrawn feature.
+#33747. The original [privacy implementation rollback](marketing-privacy-choices.md)
+retained its database state. The owner's later storage retirement request is
+implemented by migration 1139 under the separate release gates above. Neither
+change resumes the withdrawn privacy feature.
 
 ## Custom connector OAuth preparation
 

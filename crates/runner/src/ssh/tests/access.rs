@@ -93,13 +93,46 @@ async fn byte_adapter_handles_partial_writes_and_ping_during_socket_backpressure
 }
 
 #[tokio::test]
+async fn access_sessions_survive_notification_outages_without_replaying_work() {
+    let (mut h, gateway) = gateway::setup(Reply::Process, Mode::Proxy, "ssh.example.com").await;
+    let resolve = h.resolve(credential(&h, true, true)).await;
+    super::notifications::session_continuity(&h).await;
+    resolve.assert_calls_async(1).await;
+    h.shutdown().await;
+    wait_for(|| {
+        gateway.observed.closed.load(Ordering::SeqCst) == h.observed.auth.load(Ordering::SeqCst)
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn access_in_flight_exec_completes_once_across_notification_outages() {
+    let (mut h, gateway) = gateway::setup(Reply::Process, Mode::Proxy, "ssh.example.com").await;
+    let _resolve = h.resolve(credential(&h, true, true)).await;
+    super::notifications::exec_continuity(&h).await;
+    h.shutdown().await;
+    wait_for(|| gateway.observed.closed.load(Ordering::SeqCst) == 1).await;
+}
+
+#[tokio::test]
+async fn access_file_transfer_completes_across_notification_outages() {
+    let (mut h, gateway) =
+        gateway::setup(Reply::Sftp("normal"), Mode::Proxy, "ssh.example.com").await;
+    let _resolve = h.resolve(credential(&h, true, true)).await;
+    super::files::upload_across_notification_outages(&h).await;
+    h.shutdown().await;
+    wait_for(|| gateway.observed.closed.load(Ordering::SeqCst) == 2).await;
+}
+
+#[tokio::test]
 async fn tls_binary_carrier_preserves_key_password_output_and_idle_reuse() {
     for password in [false, true] {
         let (mut h, gateway) =
             gateway::setup(Reply::default(), Mode::Fragmented, "ssh.example.com").await;
-        h.runtime.ably_connected(true);
         let resolve = h.resolve(credential(&h, password, true)).await;
-        for _ in 0..2 {
+        let mut notifications = h.notifications();
+        for event in super::notifications::outage_events() {
+            notifications.send(event).await;
             let frames = h.request(params()).await;
             assert_eq!(terminal(&frames)["type"], "finished", "{frames:?}");
             assert_eq!(terminal(&frames)["exit"]["code"], 7);
@@ -228,7 +261,6 @@ async fn gateway_authentication_does_not_replace_ssh_host_trust() {
 async fn invalidation_during_upgrade_closes_the_old_token_connection_without_retry() {
     let (mut h, gateway) =
         gateway::setup(Reply::default(), Mode::StallUpgrade, "ssh.example.com").await;
-    h.runtime.ably_connected(true);
     let resolve = h.resolve(credential(&h, true, true)).await;
     let (frames, ()) = tokio::join!(h.request(params()), async {
         wait_for(|| gateway.observed.stalled.load(Ordering::SeqCst) == 1).await;
@@ -321,7 +353,6 @@ async fn access_backpressured_stdin_keeps_output_and_controls_responsive() {
     use base64::Engine;
     let (mut h, gateway) =
         gateway::setup(Reply::BlockedInput, Mode::Proxy, "ssh.example.com").await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(credential(&h, true, true)).await;
     let id = sessions::start(&h, json!({"type":"exec","command":"hold"}), false).await;
     sessions::state(&h, &id, "running").await;
@@ -348,7 +379,6 @@ async fn access_backpressured_stdin_keeps_output_and_controls_responsive() {
 #[tokio::test]
 async fn session_stdin_and_invalidation_use_the_same_carrier_without_replay() {
     let (mut h, gateway) = gateway::setup(Reply::Process, Mode::Proxy, "ssh.example.com").await;
-    h.runtime.ably_connected(true);
     let resolve = h.resolve(credential(&h, true, true)).await;
     let id = sessions::start(&h, json!({"type":"shell"}), false).await;
     sessions::state(&h, &id, "running").await;
@@ -390,7 +420,6 @@ async fn session_stdin_and_invalidation_use_the_same_carrier_without_replay() {
 #[tokio::test]
 async fn shared_token_rotation_reopens_bound_hosts_without_evicting_another_configuration() {
     let (mut h, gateway) = gateway::setup(Reply::default(), Mode::Proxy, "ssh.example.com").await;
-    h.runtime.ably_connected(true);
     let ids = [
         CONNECTION.to_owned(),
         uuid::Uuid::new_v4().to_string(),
@@ -488,7 +517,6 @@ async fn sftp_files_roundtrip_over_access_with_real_bytes_and_hashes() {
     use sha2::{Digest, Sha256};
     let (mut h, gateway) =
         gateway::setup(Reply::Sftp("normal"), Mode::Fragmented, "ssh.example.com").await;
-    h.runtime.ably_connected(true);
     let _resolve = h.resolve(credential(&h, true, true)).await;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("file with spaces");

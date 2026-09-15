@@ -1,4 +1,4 @@
-import { command, computed, state, type Computed } from "ccstate";
+import { command, computed, state, type Command } from "ccstate";
 import {
   chatThreadMetadataContract,
   type ChatThreadEvent,
@@ -19,7 +19,8 @@ import { updateDocumentTitle$ } from "../document-title.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { pathParams$ } from "../route.ts";
 import {
-  createChildAbortController,
+  resetSignal,
+  waitForOperation,
   createDeferredPromise,
   settle,
   withCleanup,
@@ -397,31 +398,20 @@ const fetchRemoteThreadMeta$ = command(
   },
 );
 
-function waitForSharedWork<T>(
-  work: Promise<T>,
-  signal: AbortSignal,
-): Promise<T> {
-  signal.throwIfAborted();
-  // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-  const waitController = createChildAbortController(signal);
-  const aborted = createDeferredPromise<never>(waitController.signal);
-  return withCleanup(Promise.race([work, aborted.promise]), () => {
-    waitController.abort(
-      new DOMException("Thread metadata wait completed", "AbortError"),
-    );
-  });
-}
-
 const lookupEventStreamThreadMeta$ = command(
   async (
     { get },
-    meta$: Computed<ThreadMeta | null>,
+    threadId: string,
     sync: Promise<void>,
     signal: AbortSignal,
   ): Promise<ColdThreadMetaResolution> => {
-    await waitForSharedWork(sync, signal);
     signal.throwIfAborted();
-    return { source: "event-stream", meta: get(meta$) };
+    await waitForOperation(sync, signal);
+    signal.throwIfAborted();
+    return {
+      source: "event-stream",
+      meta: get(chatThreadMetaMap$).get(threadId) ?? null,
+    };
   },
 );
 
@@ -455,97 +445,105 @@ async function resolveThreadMetaAttempts(
   return first.source === "metadata-unavailable" ? eventStream : first;
 }
 
-const resolveColdThreadMeta$ = command(
-  async (
-    { set },
-    threadId: string,
-    meta$: Computed<ThreadMeta | null>,
-    canonicalSync: Promise<void>,
-    signal: AbortSignal,
-  ): Promise<ColdThreadMetaResolution> => {
-    // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
-    const controller = createChildAbortController(signal);
-    const metadata = set(attemptRemoteThreadMeta$, threadId, controller.signal);
-    const eventStream = set(
-      lookupEventStreamThreadMeta$,
-      meta$,
-      canonicalSync,
-      controller.signal,
-    );
-    return await withCleanup(
-      resolveThreadMetaAttempts(metadata, eventStream),
-      () => {
-        controller.abort(
-          new DOMException("Thread metadata resolved", "AbortError"),
-        );
-      },
-    );
-  },
-);
+/** Construct one lookup graph for each requesting surface, including same-thread readers. */
+export function createThreadMetaLookup(): Command<
+  Promise<ResolvedThreadMeta>,
+  [string, AbortSignal]
+> {
+  const resetRace$ = resetSignal();
+  const resolveColdThreadMeta$ = command(
+    async (
+      { set },
+      threadId: string,
+      canonicalSync: Promise<void>,
+      signal: AbortSignal,
+    ): Promise<ColdThreadMetaResolution> => {
+      signal.throwIfAborted();
+      const raceSignal = set(resetRace$, signal);
+      const metadata = set(attemptRemoteThreadMeta$, threadId, raceSignal);
+      const eventStream = set(
+        lookupEventStreamThreadMeta$,
+        threadId,
+        canonicalSync,
+        raceSignal,
+      );
+      return await withCleanup(
+        resolveThreadMetaAttempts(metadata, eventStream),
+        () => {
+          // A replaced or cancelled lookup must not reset a newer race.
+          if (!raceSignal.aborted) {
+            set(resetRace$);
+          }
+        },
+      );
+    },
+  );
 
-export const resolveThreadMeta$ = command(
-  async (
-    { get, set },
-    threadId: string,
-    signal: AbortSignal,
-  ): Promise<ResolvedThreadMeta> => {
-    const meta$ = threadMeta(threadId);
-    let meta = get(meta$);
-    if (meta) {
-      return { meta, source: "memory" };
-    }
+  return command(
+    async (
+      { get, set },
+      threadId: string,
+      signal: AbortSignal,
+    ): Promise<ResolvedThreadMeta> => {
+      signal.throwIfAborted();
+      let meta = get(chatThreadMetaMap$).get(threadId) ?? null;
+      if (meta) {
+        return { meta, source: "memory" };
+      }
 
-    const localStartedAt = performance.now();
-    await waitForSharedWork(get(initialLocalChatThreadEventsLoaded$), signal);
-    signal.throwIfAborted();
-    const localDurationMs = Math.round(performance.now() - localStartedAt);
-    meta = get(meta$);
-    if (meta) {
-      return { localDurationMs, meta, source: "local" };
-    }
+      const localStartedAt = performance.now();
+      await waitForOperation(get(initialLocalChatThreadEventsLoaded$), signal);
+      signal.throwIfAborted();
+      const localDurationMs = Math.round(performance.now() - localStartedAt);
+      meta = get(chatThreadMetaMap$).get(threadId) ?? null;
+      if (meta) {
+        return { localDurationMs, meta, source: "local" };
+      }
 
-    const remoteStartedAt = performance.now();
-    const initialRemoteSync = get(initialRemoteChatThreadEventsSyncedDeferred$);
-    // Refresh missing threads against current server state after initial sync.
-    // This reader owns its own refresh, so another caller's cancellation can
-    // never finish it.
-    const canonicalSync = initialRemoteSync.settled()
-      ? set(syncSharedEventDrivenChatThreads$, get(rootSignal$))
-      : initialRemoteSync.promise;
-    const syncVersion = get(chatThreadEventSyncVersion$);
-    const resolution = await set(
-      resolveColdThreadMeta$,
-      threadId,
-      meta$,
-      canonicalSync,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (resolution.meta && resolution.source === "metadata") {
-      const registered = set(
-        registerBootstrapThreadMeta$,
-        resolution.meta,
-        syncVersion,
+      const remoteStartedAt = performance.now();
+      const initialRemoteSync = get(
+        initialRemoteChatThreadEventsSyncedDeferred$,
+      );
+      // Refresh missing threads against current server state after initial sync.
+      // This reader owns its own refresh, so another caller's cancellation can
+      // never finish it.
+      const canonicalSync = initialRemoteSync.settled()
+        ? set(syncSharedEventDrivenChatThreads$, get(rootSignal$))
+        : initialRemoteSync.promise;
+      const syncVersion = get(chatThreadEventSyncVersion$);
+      const resolution = await set(
+        resolveColdThreadMeta$,
+        threadId,
+        canonicalSync,
         signal,
       );
-      if (!registered) {
-        meta = get(canonicalThreadMetaMap$).get(threadId) ?? null;
-        return {
-          localDurationMs,
-          meta,
-          remoteDurationMs: Math.round(performance.now() - remoteStartedAt),
-          source: meta ? "remote" : "not_found",
-        };
+      signal.throwIfAborted();
+      if (resolution.meta && resolution.source === "metadata") {
+        const registered = set(
+          registerBootstrapThreadMeta$,
+          resolution.meta,
+          syncVersion,
+          signal,
+        );
+        if (!registered) {
+          meta = get(canonicalThreadMetaMap$).get(threadId) ?? null;
+          return {
+            localDurationMs,
+            meta,
+            remoteDurationMs: Math.round(performance.now() - remoteStartedAt),
+            source: meta ? "remote" : "not_found",
+          };
+        }
       }
-    }
-    return {
-      localDurationMs,
-      meta: resolution.meta,
-      remoteDurationMs: Math.round(performance.now() - remoteStartedAt),
-      source: resolution.meta ? "remote" : "not_found",
-    };
-  },
-);
+      return {
+        localDurationMs,
+        meta: resolution.meta,
+        remoteDurationMs: Math.round(performance.now() - remoteStartedAt),
+        source: resolution.meta ? "remote" : "not_found",
+      };
+    },
+  );
+}
 
 /** Synchronize the active primary chat tab title after committed thread data changes. */
 const syncCurrentChatThreadDocumentTitle$ = command(

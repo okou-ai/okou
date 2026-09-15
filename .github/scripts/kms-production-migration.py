@@ -4,6 +4,7 @@
 from contextlib import ExitStack
 import datetime
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,7 @@ import subprocess
 import sys
 import time
 import urllib.parse
+import zipfile
 
 from kms_recovery_verify import (
     RecoveryVerificationError,
@@ -48,12 +50,26 @@ class AwsOperationError(MigrationError):
         match = re.search(r"An error occurred \(([A-Za-z0-9]+)\)", result.stderr)
         error_code = "UnclassifiedAwsCliFailure"
         if match and match[1] in {
-            "AccessDenied", "AccessDeniedException", "ExpiredToken",
-            "ExpiredTokenException", "IDPCommunicationError", "IDPRejectedClaim",
-            "InvalidClientTokenId", "InvalidIdentityToken", "MalformedPolicyDocument",
-            "PackedPolicyTooLarge", "RegionDisabledException", "RequestExpired",
-            "ServiceUnavailable", "SignatureDoesNotMatch", "Throttling",
-            "ThrottlingException", "ValidationError",
+            "AccessDenied",
+            "AccessDeniedException",
+            "ExpiredToken",
+            "ExpiredTokenException",
+            "IDPCommunicationError",
+            "IDPRejectedClaim",
+            "InvalidClientTokenId",
+            "InvalidIdentityToken",
+            "MalformedPolicyDocument",
+            "PackedPolicyTooLarge",
+            "RegionDisabledException",
+            "RequestExpired",
+            "ServiceUnavailable",
+            "SignatureDoesNotMatch",
+            "Throttling",
+            "ThrottlingException",
+            "ValidationError",
+            "NotFoundException",
+            "KMSInvalidStateException",
+            "DependencyTimeoutException",
         }:
             error_code = match[1]
         elif any(
@@ -151,6 +167,8 @@ def aws(arguments, environment, payload=None):
         ("sts", "get-caller-identity"): "sts:GetCallerIdentity",
         ("sts", "assume-role-with-web-identity"): "sts:AssumeRoleWithWebIdentity",
         ("cloudtrail", "lookup-events"): "cloudtrail:LookupEvents",
+        ("kms", "describe-key"): "kms:DescribeKey",
+        ("kms", "schedule-key-deletion"): "kms:ScheduleKeyDeletion",
     }[tuple(arguments[:2])]
     with ExitStack() as resources:
         descriptors = ()
@@ -741,10 +759,349 @@ def verify_target_production():
         )
 
 
+def retirement_time(value):
+    if isinstance(value, (int, float)):
+        return datetime.datetime.fromtimestamp(value, datetime.timezone.utc)
+    parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    require(parsed.utcoffset() == datetime.timedelta(0), "non_utc_retirement_time")
+    return parsed
+
+
+def retirement_verification():
+    """Bind the approved current-production proof to its original GitHub artifact."""
+    run_id = required_env("VERIFICATION_RUN_ID")
+    digest = required_env("VERIFICATION_ARTIFACT_SHA256")
+    require(run_id.isdigit(), "invalid_verification_run")
+    require(re.fullmatch(r"[0-9a-f]{64}", digest), "invalid_verification_digest")
+    base = "https://api.github.com/repos/vm0-ai/vm0/actions"
+    token = required_env("GH_TOKEN")
+    run = request_json(base + "/runs/" + run_id, token)
+    require(
+        str(run["id"]) == run_id
+        and run["repository"]["full_name"] == "vm0-ai/vm0"
+        and run["workflow_id"] == 353130414
+        and run["path"] == ".github/workflows/kms-production-preflight.yml"
+        and run["event"] == "workflow_dispatch"
+        and run["actor"]["login"] == "hulh122"
+        and run["head_branch"] == "main"
+        and run["status"] == "completed"
+        and run["conclusion"] == "success"
+        and run["run_attempt"] == 1
+        and re.fullmatch(r"[0-9a-f]{40}", run["head_sha"]),
+        "verification_run_not_accepted",
+    )
+    listing = request_json(base + "/runs/" + run_id + "/artifacts?per_page=100", token)
+    require(listing["total_count"] == len(listing["artifacts"]), "incomplete_artifacts")
+    matches = [
+        artifact
+        for artifact in listing["artifacts"]
+        if artifact["name"] == "kms-production-verification-" + run_id + "-1"
+    ]
+    require(len(matches) == 1, "verification_artifact_not_unique")
+    artifact = matches[0]
+    require(
+        not artifact["expired"]
+        and 0 < artifact["size_in_bytes"] < 1_000_000
+        and artifact["workflow_run"]["id"] == int(run_id)
+        and artifact["workflow_run"]["head_sha"] == run["head_sha"]
+        and artifact["digest"] == "sha256:" + digest,
+        "verification_artifact_mismatch",
+    )
+    downloaded = subprocess.run(
+        [
+            "gh",
+            "api",
+            "repos/vm0-ai/vm0/actions/artifacts/" + str(artifact["id"]) + "/zip",
+            "--allow-escape-sequences",
+        ],
+        capture_output=True,
+        timeout=45,
+        check=False,
+    )
+    require(downloaded.returncode == 0, "verification_artifact_download_failed")
+    require(
+        len(downloaded.stdout) < 1_000_000
+        and hashlib.sha256(downloaded.stdout).hexdigest() == digest,
+        "verification_archive_digest_mismatch",
+    )
+    with zipfile.ZipFile(io.BytesIO(downloaded.stdout)) as archive:
+        files = [entry for entry in archive.infolist() if not entry.is_dir()]
+        require(
+            len(files) == 1
+            and files[0].filename == "target-verification.json"
+            and files[0].file_size < 500_000,
+            "verification_archive_scope_mismatch",
+        )
+        raw = archive.read(files[0])
+    report = json.loads(raw)
+    require(
+        report["version"] == 1
+        and report["operation"] == "verify-target"
+        and report["runId"] == run_id
+        and report["commit"] == run["head_sha"]
+        and report["source"] == SOURCE
+        and report["target"] == TARGET
+        and report["result"] == "passed"
+        and all(
+            report[name] is True
+            for name in [
+                "collectionComplete",
+                "verificationStarted",
+                "kmsCallsMade",
+            ]
+        )
+        and all(
+            report[name] is False
+            for name in [
+                "retirementCleared",
+                "productionConfigurationChanged",
+                "productionDataChanged",
+                "sourceCredentialsRead",
+                "sourceCanaryCreated",
+            ]
+        ),
+        "current_production_verification_incomplete",
+    )
+    session = report["targetSession"]
+    require(
+        session["onlyTargetDecryptAllowed"] is True
+        and session["principal"]
+        == "arn:aws:sts::251964670836:assumed-role/"
+        "vm0-kms-migration-github-32264/kms-recovery-"
+        + run_id
+        and session["sessionPolicySha256"]
+        == "1cd509f6b8254482cd89b649b1a574eaa300ca1ee095a3f656770dfad91a4231"
+        and report["verification"]["manifest"]
+        == "cf1a3570fa3fd0039e7e40979a5047f7f90f597149dff6deda146c2bf340ffb8",
+        "target_verification_scope_mismatch",
+    )
+    finished = retirement_time(report["finishedAt"])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    require(
+        retirement_time(report["startedAt"]) < finished <= now
+        and now - finished < datetime.timedelta(hours=6)
+        and retirement_time(session["expiration"]) > finished,
+        "target_verification_expired",
+    )
+    totals = report["verification"]["totals"]
+    require(
+        type(totals["rows"]) is int
+        and totals["rows"] > 0
+        and totals["rows"] == totals["target"] == totals["verified"]
+        and all(
+            totals[name] == 0
+            for name in [
+                "source",
+                "nestedSource",
+                "nestedUninspected",
+                "unknownKey",
+                "invalid",
+                "nonArn",
+                "updated",
+                "concurrentChanges",
+            ]
+        ),
+        "current_production_source_dependency",
+    )
+    require(
+        production_deployment(required_env("EXPECTED_DEPLOYMENT_ID"))
+        == report["deployment"],
+        "verified_deployment_changed",
+    )
+    return {
+        "runId": run_id,
+        "commit": run["head_sha"],
+        "artifactId": artifact["id"],
+        "archiveSha256": digest,
+        "reportSha256": hashlib.sha256(raw).hexdigest(),
+        "finishedAt": report["finishedAt"],
+        "totals": totals,
+        "deployment": report["deployment"],
+    }
+
+
+def source_key_metadata(environment):
+    key = aws(["kms", "describe-key", "--key-id", SOURCE], environment)["KeyMetadata"]
+    require(
+        key["Arn"] == SOURCE
+        and key["KeyId"] == SOURCE.rsplit("/", 1)[1]
+        and key["AWSAccountId"] == "072707626411"
+        and key["KeyManager"] == "CUSTOMER"
+        and key["Origin"] == "AWS_KMS"
+        and key["KeyUsage"] == "ENCRYPT_DECRYPT"
+        and key["KeySpec"] == "SYMMETRIC_DEFAULT"
+        and key["MultiRegion"] is False,
+        "source_key_identity_mismatch",
+    )
+    result = {"arn": key["Arn"], "state": key["KeyState"], "enabled": key["Enabled"]}
+    if key["KeyState"] == "PendingDeletion":
+        require(key["Enabled"] is False, "pending_key_enabled")
+        result["deletionDate"] = retirement_time(key["DeletionDate"]).isoformat()
+    return result
+
+
+def source_retirement(mode):
+    """Schedule only the pinned old key; never automatically replay a mutation."""
+    output = Path(required_env("RUNNER_TEMP")) / "kms-source-retirement-reports"
+    output.mkdir(mode=0o700)
+    path = output / "source-retirement.json"
+    report = {
+        "version": 1,
+        "operation": mode,
+        "runId": required_env("GITHUB_RUN_ID"),
+        "commit": required_env("GITHUB_SHA"),
+        "startedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "source": SOURCE,
+        "target": TARGET,
+        "result": "running",
+        "mutationAttempted": False,
+        "mutationEffects": "none",
+        "physicalDeletionConfirmed": False,
+        "productionDataChanged": False,
+        "productionConfigurationChanged": False,
+        "originalBackupsChanged": False,
+        "auditServicesChanged": False,
+    }
+    try:
+        if mode == "retire-source":
+            require(
+                required_env("ACCEPT_HISTORICAL_RECOVERY_LOSS") == "true",
+                "recovery_disposition_required",
+            )
+            report["acceptedHistoricalRecoveryLoss"] = True
+            report["verification"] = retirement_verification()
+            # This repeats only the audit's bounded historical window, never a
+            # completed data migration or snapshot restore. It makes no KMS calls.
+            source_audit()
+            audit = json.loads(
+                (
+                    Path(required_env("RUNNER_TEMP"))
+                    / "kms-production-reports/source-audit.json"
+                ).read_text()
+            )
+            require(
+                audit["collectionComplete"] is True
+                and audit["result"] == "collected"
+                and all(
+                    audit["totals"][name] == 0
+                    for name in [
+                        "cryptographicOperations",
+                        "unclassifiedOperations",
+                        "reportedErrors",
+                    ]
+                ),
+                "source_audit_requires_review",
+            )
+            report["audit"] = {
+                name: audit[name]
+                for name in [
+                    "windowStart",
+                    "windowEnd",
+                    "visibilityBufferSeconds",
+                    "lateArrivalExcluded",
+                    "totals",
+                ]
+            }
+        environment = runtime_environment(backup_configuration())
+        # A schedule request can have succeeded even if its response is lost.
+        # Disable AWS CLI retries; an operator must reconcile DescribeKey first.
+        environment["AWS_MAX_ATTEMPTS"] = "1"
+        identity = aws(["sts", "get-caller-identity"], environment)
+        require(
+            identity["Account"] == "072707626411"
+            and identity["Arn"] == "arn:aws:iam::072707626411:user/vm0-kms-prod",
+            "source_retirement_principal_mismatch",
+        )
+        report["sourcePrincipalVerified"] = True
+        try:
+            report["keyBefore"] = source_key_metadata(environment)
+        except AwsOperationError as error:
+            if (
+                mode == "source-status"
+                and error.details["errorCode"] == "NotFoundException"
+            ):
+                report["result"] = "key_not_found"
+                return
+            raise
+        if mode == "source-status" or report["keyBefore"]["state"] == "PendingDeletion":
+            report["result"] = "observed"
+            return
+        require(
+            report["keyBefore"]["state"] in {"Enabled", "Disabled"},
+            "source_key_state_not_schedulable",
+        )
+        require(
+            production_deployment(required_env("EXPECTED_DEPLOYMENT_ID"))
+            == report["verification"]["deployment"],
+            "verified_deployment_changed",
+        )
+        report.update(mutationAttempted=True, mutationEffects="unknown")
+        path.write_text(json.dumps(report, indent=2) + "\n")
+        scheduled = aws(
+            [
+                "kms",
+                "schedule-key-deletion",
+                "--key-id",
+                SOURCE,
+                "--pending-window-in-days",
+                "7",
+            ],
+            environment,
+        )
+        # ScheduleKeyDeletion may omit KeyState. DescribeKey below verifies the
+        # actual state independently of the schedule response.
+        require(
+            scheduled["KeyId"] == SOURCE
+            and scheduled["PendingWindowInDays"] == 7,
+            "schedule_response_mismatch_reconcile_before_retry",
+        )
+        deletion_date = retirement_time(scheduled["DeletionDate"])
+        now = datetime.datetime.now(datetime.timezone.utc)
+        require(
+            datetime.timedelta(days=7, minutes=-5)
+            <= deletion_date - now
+            <= datetime.timedelta(days=8, minutes=5),
+            "unexpected_deletion_date_reconcile_before_retry",
+        )
+        report.update(
+            mutationEffects="scheduled",
+            deletionDate=deletion_date.isoformat(),
+            pendingWindowInDays=7,
+        )
+        path.write_text(json.dumps(report, indent=2) + "\n")
+        report["keyAfter"] = source_key_metadata(environment)
+        require(
+            report["keyAfter"]["state"] == "PendingDeletion"
+            and report["keyAfter"]["deletionDate"] == report["deletionDate"],
+            "schedule_readback_mismatch_reconcile_before_retry",
+        )
+        report["result"] = "pending_deletion"
+    except BaseException as error:
+        report["result"] = "failed"
+        report["failure"] = (
+            str(error) if isinstance(error, MigrationError) else "unexpected_error"
+        )
+        if isinstance(error, AwsOperationError):
+            report["awsFailure"] = error.details
+        raise
+    finally:
+        report["finishedAt"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        path.write_text(json.dumps(report, indent=2) + "\n")
+
+
 def main():
     mode = required_env("KMS_OPERATION")
     require(
-        mode in {"verify", "verify-target", "verify-business", "migrate", "source-audit"},
+        mode
+        in {
+            "verify",
+            "verify-target",
+            "verify-business",
+            "migrate",
+            "source-audit",
+            "retire-source",
+            "source-status",
+        },
         "invalid_operation",
     )
     workflow = {
@@ -753,6 +1110,8 @@ def main():
         "verify-business": "kms-production-business-verify.yml",
         "migrate": "kms-production-migrate.yml",
         "source-audit": "kms-production-preflight.yml",
+        "retire-source": "kms-production-retire.yml",
+        "source-status": "kms-production-retire.yml",
     }[mode]
     require(
         required_env("GITHUB_REPOSITORY") == "vm0-ai/vm0"
@@ -779,6 +1138,13 @@ def main():
     )
     if mode == "source-audit":
         source_audit()
+        return
+    if mode in {"retire-source", "source-status"}:
+        require(
+            required_env("GITHUB_RUN_ATTEMPT") == "1",
+            "retirement_rerun_requires_reconciliation",
+        )
+        source_retirement(mode)
         return
     expected = required_env("EXPECTED_DEPLOYMENT_ID")
     require(re.fullmatch(r"dpl_[A-Za-z0-9]+", expected), "invalid_expected_deployment")
@@ -847,14 +1213,20 @@ def main():
                 if not name.startswith("AWS_") and name != "SECRETS_KMS_KEY_ID"
             }
             for name in [
-                "CLERK_SECRET_KEY", "CLERK_PUBLISHABLE_KEY",
+                "CLERK_SECRET_KEY",
+                "CLERK_PUBLISHABLE_KEY",
             ]:
                 business_environment[name] = required_env(name)
             report_path = output / "business-verification.json"
             run_tool(
-                [MIGRATION + "/verify-business.ts", str(fixture), str(report_path),
-                 required_env("BUSINESS_USER_ID"), required_env("BUSINESS_ORG_ID"),
-                 required_env("BUSINESS_AGENT_ID")],
+                [
+                    MIGRATION + "/verify-business.ts",
+                    str(fixture),
+                    str(report_path),
+                    required_env("BUSINESS_USER_ID"),
+                    required_env("BUSINESS_ORG_ID"),
+                    required_env("BUSINESS_AGENT_ID"),
+                ],
                 business_environment,
             )
             business = json.loads(report_path.read_text())
@@ -864,7 +1236,8 @@ def main():
                 and business["cleanupFailures"] == []
                 and business["historicalCiphertextWrites"] == 0
                 and business["fixtureWrites"] == 4
-                and business["checks"] == [
+                and business["checks"]
+                == [
                     "deployed_webhook_create_and_reveal_target_key",
                     "deployed_connector_add_and_shared_reader",
                     "deployed_connector_reconnect_and_shared_reader",

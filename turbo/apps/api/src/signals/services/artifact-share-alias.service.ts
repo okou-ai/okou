@@ -1,4 +1,5 @@
 import { command, computed } from "ccstate";
+import { randomUUID } from "node:crypto";
 import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import type { ArtifactSharePolicy } from "@okouai/api-contracts/contracts/artifact-shares";
@@ -155,6 +156,52 @@ const allocatePublicArtifactSlug$ = command(
   },
 );
 
+const registerPublicArtifactFile$ = command(
+  async (
+    { set },
+    args: { policy: ArtifactSharePolicy; preserveToken: boolean },
+    signal: AbortSignal,
+  ): Promise<string> => {
+    const { policy } = args;
+    if (policy.target.kind !== "file" || !policy.publicToken) {
+      throw new Error("A public file is required");
+    }
+    for (let attempt = 0; attempt < MAX_ALIAS_ATTEMPTS; attempt += 1) {
+      const token =
+        attempt === 0 ? policy.publicToken : artifactHash(randomUUID());
+      const registered = await settle(
+        set(
+          registerArtifactDelivery$,
+          {
+            alias: `${token}${artifactFilenameExtension(policy.target.filename)}`,
+            targetKind: "file",
+            record: {
+              version: 1,
+              kind: "publication",
+              publicBrand: policy.publicBrand,
+              shareId: policy.shareId,
+              publicToken: token,
+              targetKind: "file",
+            },
+          },
+          signal,
+        ),
+        signal,
+      );
+      if (registered.ok) {
+        return token;
+      }
+      if (
+        args.preserveToken ||
+        !(registered.error instanceof ArtifactDeliveryAliasConflict)
+      ) {
+        throw registered.error;
+      }
+    }
+    throw new Error("Unable to allocate a unique public artifact file name");
+  },
+);
+
 export const prepareArtifactShareAliases$ = command(
   async (
     { set },
@@ -179,6 +226,17 @@ export const prepareArtifactShareAliases$ = command(
     if (!next.publicToken) {
       return next;
     }
+    if (next.target.kind === "file") {
+      next.publicToken = await set(
+        registerPublicArtifactFile$,
+        {
+          policy: next,
+          preserveToken: args.previous?.publicToken === next.publicToken,
+        },
+        signal,
+      );
+      return next;
+    }
     if (
       args.previous?.publicToken === next.publicToken &&
       args.previous.publicSlug
@@ -191,10 +249,7 @@ export const prepareArtifactShareAliases$ = command(
     await set(
       registerArtifactDelivery$,
       {
-        alias:
-          next.target.kind === "file"
-            ? `${next.publicToken}${artifactFilenameExtension(next.target.filename)}`
-            : next.publicToken,
+        alias: next.publicToken,
         targetKind: next.target.kind,
         record: {
           version: 1,

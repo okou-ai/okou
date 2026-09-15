@@ -663,9 +663,15 @@ try {
   });
 
   await test("indexed point lookup validates store authority and persisted decision fields", async () => {
-    const before = await state();
-    const ref = before.captures[0]?.confirmationRef;
-    assert.ok(ref);
+    const eventId = randomUUID();
+    assert.equal(
+      (await f.bridge.handle(request(event(), eventId), signal)).status,
+      "projection_committed",
+    );
+    const [row] = await captures(eventId);
+    assert.ok(row);
+    const ref = row.confirmationRef;
+    assert.ok(await f.journal.readDecisionByConfirmationRef(ref));
     const wrong = fixture(applicationUrl, controlUrl, randomUUID());
     fixtures.push(wrong);
     await assert.rejects(
@@ -686,18 +692,15 @@ try {
       await control.query(
         "ALTER TABLE erasure_journal_decisions DROP CONSTRAINT erasure_journal_subject",
       );
-      await control.query(
+      const corrupted = await control.query(
         "UPDATE erasure_journal_decisions SET subject_id='' WHERE confirmation_ref=$1",
         [ref],
       );
+      assert.equal(corrupted.rowCount, 1);
       await assert.rejects(
         f.journal.readDecisionByConfirmationRef(ref),
         /invalid_subject/,
       );
-      const row = before.captures.find((r) => {
-        return r.confirmationRef === ref;
-      });
-      assert.ok(row);
       await control.query(
         "UPDATE erasure_journal_decisions SET subject_id=$1 WHERE confirmation_ref=$2",
         [row.subjectId, ref],

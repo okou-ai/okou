@@ -1,126 +1,8 @@
 {
   "version": 1,
-  "legacyClassTokens": [
-    "okou-app",
-    "okou-mobile-fixed-safe-area",
-    "okou-mobile-sidebar",
-    "toaster",
-    "wmde-markdown"
-  ],
+  "legacyClassTokens": ["okou-app", "toaster", "wmde-markdown"],
   "cssAtoms": {
     "apps/platform/src/views/css/index.css": [
-      {
-        "atRules": ["@media (max-width:767px)"],
-        "selector": ".okou-mobile-fixed-safe-area",
-        "property": "box-sizing",
-        "value": "border-box",
-        "important": false
-      },
-      {
-        "atRules": ["@media (max-width:767px)"],
-        "selector": ".okou-mobile-fixed-safe-area",
-        "property": "padding",
-        "value": "var(--sat) var(--sar) var(--sab) var(--sal)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-mobile-sidebar",
-        "property": "isolation",
-        "value": "isolate",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-mobile-sidebar::before",
-        "property": "position",
-        "value": "absolute",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-mobile-sidebar::before",
-        "property": "z-index",
-        "value": "-1",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-mobile-sidebar::before",
-        "property": "inset",
-        "value": "0",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-mobile-sidebar::before",
-        "property": "background-color",
-        "value": "hsl(var(--sidebar))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-mobile-sidebar::before",
-        "property": "content",
-        "value": "\"\"",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-mobile-sidebar::before",
-        "property": "pointer-events",
-        "value": "none",
-        "important": false
-      },
-      {
-        "atRules": ["@media (display-mode:standalone)"],
-        "selector": ".okou-mobile-sidebar::before",
-        "property": "bottom",
-        "value": "calc(-1*var(--sab))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app",
-        "property": "--okou-card-radius",
-        "value": " 1.25rem",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app",
-        "property": "--okou-chat-card-radius",
-        "value": " 0.75rem",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app",
-        "property": "--okou-card-shadow",
-        "value": "\n    0 2px 12px hsl(30 6% 45% / 0.05), 0 0 0 0.5px hsl(30 6% 45% / 0.025)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app",
-        "property": "--okou-chat-card-shadow",
-        "value": " 0 1px 2px hsl(30 6% 45% / 0.05)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app[data-gradient-color-themes]",
-        "property": "--okou-card-shadow",
-        "value": "\n    0 2px 12px hsl(var(--state-layer) / 0.035),\n    0 0 0 0.5px hsl(var(--state-layer) / 0.018)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app[data-gradient-color-themes]",
-        "property": "--okou-chat-card-shadow",
-        "value": " 0 1px 2px hsl(var(--state-layer) / 0.035)",
-        "important": false
-      },
       {
         "atRules": [],
         "selector": ".okou-app[data-desktop-shell]",
@@ -161,20 +43,6 @@
         "selector": ".okou-thumb-border",
         "property": "border",
         "value": "0.5px solid hsl(var(--gray-400))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app",
-        "property": "--color-sidebar",
-        "value": " hsl(var(--sidebar))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app",
-        "property": "--color-sidebar-rail",
-        "value": " hsl(var(--sidebar-rail))",
         "important": false
       }
     ]
@@ -224,10 +92,6 @@
     },
     "apps/platform/src/views/okou-page/sidebar-layout.tsx": {
       "okou-app": 1
-    },
-    "apps/platform/src/views/okou-page/sidebar.tsx": {
-      "okou-mobile-fixed-safe-area": 1,
-      "okou-mobile-sidebar": 1
     },
     "apps/platform/src/views/okou-page/unsaved-bar.tsx": {
       "okou-app": 1

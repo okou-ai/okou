@@ -128,10 +128,12 @@ what the remote process did. Partial input failure closes the session and is
 never replayed. Closing retires the ID and local transport; it does not confirm
 remote descendants stopped. Lost start replies can be investigated using `list`.
 
-Retained authority requires an active invalidation subscription. Delivered
-targeted/Run-wide invalidation, registration replacement and observed Ably
-disconnect cancel the affected sessions and retire their IDs. New sessions fail
-explicitly while disconnected. Cache saturation uses session-owned, uncached
+Retained authority belongs to the Run, independently of notification connectivity.
+Ably disconnects, reconnects, errors and initial subscription unavailability do
+not retire Session IDs or block new starts. First use and cache misses still
+require current API authorization. Delivered targeted/Run-wide invalidation and
+registration replacement cancel affected sessions and retire their IDs.
+Cache saturation uses operation-owned, uncached
 credentials with weak cancellation watchers on the exact Run registration, so
 the 256 cache cells do not become a global session cap. Per-Run admission bounds
 these extra retained credentials, and dead watchers are pruned. Failed
@@ -154,10 +156,12 @@ Only these validated methods extend the helper work envelope to at most 900,000
 ms; initial request and connection/SFTP setup retain their 60-second bounds.
 Two Run-local transfer permits cover active transfer and owned staging cleanup,
 within the existing eight RPC and 24 physical limits. A two-second reserve
-bounds cleanup and final reporting. Retained notification-backed authority is
+bounds cleanup and final reporting. Run-owned, invalidation-tracked authority is
 required, including uncached watchers at cache saturation. Delivered
-invalidation, observed notification disconnect and Run/sandbox end interrupt
+invalidation and Run/sandbox end interrupt
 the whole operation. File channels always retire their exclusive pool lease.
+Notification unavailability neither interrupts transfers nor gates their admission;
+API authorization is still required on first use or a cache miss.
 
 A private sequential SFTP v3 client requests only the `sftp` subsystem after
 authentication. It has one outstanding request, monotonically checked IDs,
@@ -240,12 +244,13 @@ Guest park reservations remain exclusively owned by live guest RPC streams.
 
 Reuse matches the configured connection ID and current authority generation, never
 just the endpoint. Cancellation watchers are registered before credential preparation,
-including when the credential cache is full. Delivered invalidation, notification
-disconnect and Run/sandbox retirement close active and idle retained transports.
+including when the credential cache is full. Delivered invalidation and
+Run/sandbox retirement close active and idle retained transports.
 This also interrupts an in-flight one-shot command using retained authority; a
 late pin result cannot revive its retired transport or evict a newer snapshot.
-Before notification readiness, one-shot commands still resolve/connect afresh and
-retain no idle socket; managed sessions keep their existing readiness requirement.
+Notification connectivity does not affect authority or idle-socket reuse, including
+before initial readiness and throughout prolonged outages. This applies equally to
+one-shot commands, managed sessions, SFTP and Direct/Cloudflare Access transports.
 
 Each physical connection independently validates the public destination and server
 proof/pin before authentication. Reused sockets keep their original verified peer;
@@ -414,9 +419,9 @@ additionally preserve an authorized snapshot until Run end.
 
 The first use of a connection resolves current authority and prepares exactly one
 authentication method. Private keys are parsed under the existing CPU/admission
-limits; passwords require no key-decoding slot. While the Runner's Ably subscription
-is connected, later commands in the same Run reuse that prepared configuration,
-generation, host trust and parsed key or bounded zeroizing password. The credential
+limits; passwords require no key-decoding slot. Later commands in the same Run
+reuse that prepared configuration, generation, host trust and parsed key or bounded
+zeroizing password, independently of Ably connectivity. The credential
 cache has no TTL, periodic refresh, disk persistence or cross-Run sharing; idle
 authenticated transports have the separate bounded lifetime above. Raw private
 key/passphrase text is released after preparation rather than retained alongside
@@ -440,17 +445,19 @@ for the affected user's Agent Runs, including after revocation removes the grant
 First-use pin/match records the confirmed identity locally only after the
 authorized N+1 response.
 
-Before subscription readiness or while disconnected/failed, the Runner bypasses
-shared caching and resolves each command. Observed connection loss clears cached
-entries; recovery rebuilds them lazily from the API. A relevant invalidation or one-shot
+Ably connection loss, recovery, subscription failure and lack of initial readiness
+do not invalidate authority or change the caching policy. First use and cache misses
+resolve through the API even during an outage. A relevant invalidation or one-shot
 authentication/trust/configuration failure evicts the entry for later commands.
 Required re-resolution failure never restores an invalidated credential, and no
 failure or invalidation automatically replays a command or silently repins a host.
 
 Publishing is best effort and subscriber business messages can be dropped when
 its queue is full. **A missed notice can leave old authority usable for the rest
-of the Run, even after deletion or revocation.** There is no 30-second freshness
-guarantee; observed-disconnect clearing does not guarantee delivery. This window
+of the Run, even after deletion or revocation, including during an observed Ably
+outage.** There is no fixed revocation deadline, reconnect reauthorization, grace
+deadline or periodic authority polling. Delivered notices still immediately cancel
+affected authority; reconnection cannot revive retired entries or Sessions. This window
 and longer bounded retention of parsed keys in Runner memory are accepted product
 trade-offs. Cache invalidation does not promise to stop an already-started remote
 command. HTTP/proxy caching remains disabled with `Cache-Control: no-store`.

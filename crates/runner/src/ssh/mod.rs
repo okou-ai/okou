@@ -84,10 +84,6 @@ pub(crate) struct SshRuntime {
 }
 
 impl SshRuntime {
-    pub(crate) fn ably_connected(&self, connected: bool) {
-        self.cache.connected(connected);
-    }
-
     pub(crate) fn ably_message(&self, message: &ably_subscriber::Message) -> bool {
         use api_contracts::generated::types::runners::ssh::InvalidateNotification;
         if message.name.as_deref() != Some("ssh-authority-invalidated") {
@@ -363,7 +359,6 @@ impl SshRuntime {
         let run = request.run;
         let connection = request.connection;
         let access = sessions.registration.lookup(connection)?;
-        let retained = access.retain()?;
         let result = async {
             let credential = scope
                 .wait(access.prepare(self.prepare(
@@ -391,7 +386,6 @@ impl SshRuntime {
                         credential: Arc::clone(&credential),
                         access: access.clone(),
                         operation: lease,
-                        retained,
                     },
                     scope,
                     &mut output.connection,

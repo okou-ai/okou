@@ -73,6 +73,36 @@ function isCodexResponsesModel(
 }
 
 function sourceModel(provider: string, model: string): Model<Api> | undefined {
+  // pi-ai 0.85.1 predates V4.1. These exact identities use the provider
+  // metadata recorded in deepseek-v41-catalog.md, never the V4 text-only model.
+  if (
+    (provider === "deepseek" &&
+      (model === "deepseek-flash" || model === "deepseek-v4.1-flash")) ||
+    (provider === "openrouter" && model === "deepseek/deepseek-v4.1-flash")
+  ) {
+    return {
+      id: model,
+      name: "DeepSeek V4.1 Flash",
+      provider,
+      api: "openai-responses",
+      baseUrl:
+        provider === "deepseek"
+          ? "https://api.deepseek.com"
+          : "https://openrouter.ai/api/v1",
+      reasoning: true,
+      thinkingLevelMap: {
+        minimal: null,
+        low: "low",
+        medium: null,
+        high: "high",
+        max: "max",
+      },
+      input: ["text", "image"],
+      contextWindow: 1_048_576,
+      maxTokens: 384_000,
+      cost: { input: 0.3, output: 1.2, cacheRead: 0.006, cacheWrite: 0 },
+    };
+  }
   return providerModels(provider).find((candidate) => {
     return candidate.id === model;
   });

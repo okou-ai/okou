@@ -36,6 +36,7 @@ import { badRequestMessage, notFound } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
 import { publishPersonalModelProvidersChangedSafely } from "../external/realtime";
+import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
 import { lockModelProviderState } from "./auth-state-lock.service";
 import {
   decryptStoredSecretValue,
@@ -2032,19 +2033,38 @@ export interface PreparedPersonalSubscriptionAdmission {
  * owns legacy identity import; a mismatch here rejects that fixed capture.
  * This proof is operation-local and never enters a persisted run/queue payload. */
 export async function preparePersonalSubscriptionAdmission(
-  args: SubscriptionCredentialOwner & { readonly sourceId: string },
+  args: SubscriptionCredentialOwner & {
+    readonly sourceId: string;
+    readonly timing: ApiDispatchTimingCollector;
+  },
   signal: AbortSignal,
 ): Promise<PreparedPersonalSubscriptionAdmission | null> {
-  const snapshot = await args.db.transaction(async (tx) => {
-    return await lockSubscriptionCredentialSnapshot({ ...args, db: tx });
-  });
+  const dimensions = { subscription_provider_type: args.type };
+  const snapshot = await args.timing.measure(
+    "api_dispatch_subscription_prepare_snapshot",
+    "nested",
+    async () => {
+      return await args.db.transaction(async (tx) => {
+        return await lockSubscriptionCredentialSnapshot({ ...args, db: tx });
+      });
+    },
+    dimensions,
+  );
   signal.throwIfAborted();
   if (!snapshot) {
     return null;
   }
-  const coherent =
-    !snapshotNeedsCoordination(snapshot, args.sourceId) ||
-    (await subscriptionBundlesMatch(snapshot, args.featureSwitchContext));
+  const coherent = await args.timing.measure(
+    "api_dispatch_subscription_prepare_bundle_proof",
+    "nested",
+    async () => {
+      return (
+        !snapshotNeedsCoordination(snapshot, args.sourceId) ||
+        (await subscriptionBundlesMatch(snapshot, args.featureSwitchContext))
+      );
+    },
+    dimensions,
+  );
   signal.throwIfAborted();
   return coherent
     ? { sourceId: args.sourceId, snapshot: JSON.stringify(snapshot) }
@@ -2059,18 +2079,30 @@ export async function preparePersonalSubscriptionAdmission(
 export async function validatePersonalSubscriptionAdmission(
   args: SubscriptionCredentialOwner,
   prepared: PreparedPersonalSubscriptionAdmission | null,
-): Promise<boolean> {
+): Promise<AccountRow | null> {
   if (!prepared || prepared.sourceId !== args.sourceId) {
-    return false;
+    return null;
   }
   const snapshot = await lockSubscriptionCredentialSnapshot(args);
   if (!snapshot || JSON.stringify(snapshot) !== prepared.snapshot) {
-    return false;
+    return null;
   }
   if (snapshotNeedsCoordination(snapshot, args.sourceId)) {
     await reconcileCodexRefreshMetadata(args.db, snapshot);
   }
-  return true;
+  // The snapshot locks these rows through run insertion. Return the exact
+  // connected source for recovery identity without another SELECT or reselection.
+  return (
+    snapshot.accounts.find((account) => {
+      return (
+        account.id === args.sourceId &&
+        account.orgId === args.orgId &&
+        account.userId === args.userId &&
+        account.type === args.type &&
+        account.disconnectedAt === null
+      );
+    }) ?? null
+  );
 }
 
 function hasClaudeIdentity(identity: PersonalProviderAccountMetadata): boolean {

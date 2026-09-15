@@ -24,6 +24,9 @@ use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
+#[cfg(test)]
+pub(super) mod testing;
+
 use super::api::ApiClient;
 use super::api_direct_candidates::{
     DirectCandidateInbox, DirectCandidateInsertOutcome, DirectCandidatePruneSnapshot,
@@ -463,14 +466,6 @@ struct SupervisorTaskConfig {
     shutdown: CancellationToken,
 }
 
-impl Drop for SupervisorTaskConfig {
-    fn drop(&mut self) {
-        if let Some(ssh) = &self.ssh {
-            ssh.ably_connected(false);
-        }
-    }
-}
-
 impl AblySupervisor {
     pub(super) fn spawn(config: AblySupervisorConfig) -> Self {
         let shutdown = CancellationToken::new();
@@ -562,65 +557,14 @@ async fn run_supervisor(config: SupervisorTaskConfig) {
                 break;
             }
             event = recv_ably(&mut ably) => {
-                match event {
-                    Some(ably_subscriber::Event::Message(msg)) => {
-                        if config.ssh.as_ref().is_some_and(|ssh| ssh.ably_message(&msg)) {
-                            continue;
-                        }
-                        if let Some(run_id) = parse_active_input_notification(&msg) {
-                            config.active_input_notifications.notify(run_id);
-                            continue;
-                        }
-                        if enqueue_cancel_delivery(
-                            &msg,
-                            &config.cancel_tokens,
-                            &mut cancel_deliveries,
-                        ).await {
-                            continue;
-                        }
-                        handle_ably_message_with_connector_runtime_sync(
-                            &msg,
-                            &config.profiles,
-                            &config.poll_wakeups,
-                            &config.direct_candidates,
-                            &config.cancel_tokens,
-                            Some(&config.connector_runtime_sync),
-                            Some(&config.shutdown),
-                        )
-                        .await;
-                    }
-                    Some(ably_subscriber::Event::Connected) => {
-                        if let Some(ssh) = &config.ssh { ssh.ably_connected(true); }
-                        if !disconnect.is_connected() {
-                            info!("ably reconnected");
-                        }
-                        disconnect.mark_connected();
-                        config.poll_wakeups.mark_ably_connected();
-                    }
-                    Some(ably_subscriber::Event::Disconnected { reason }) => {
-                        if let Some(ssh) = &config.ssh { ssh.ably_connected(false); }
-                        let reason = reason.unwrap_or_else(|| "unknown".to_string());
-                        disconnect.record_disconnected(reason.clone());
-                        config.poll_wakeups.mark_ably_disconnected();
-                        info!(reason = %reason, "ably disconnected, switching to fast poll");
-                    }
-                    Some(ably_subscriber::Event::Error { code, message }) => {
-                        if let Some(ssh) = &config.ssh { ssh.ably_connected(false); }
-                        error!(code, message = %message, "ably fatal error, will reconnect");
-                        disconnect.record_disconnected(message.clone());
-                        config.poll_wakeups.mark_ably_disconnected();
-                        ably = None;
-                        ably_retry.schedule();
-                    }
-                    None => {
-                        if let Some(ssh) = &config.ssh { ssh.ably_connected(false); }
-                        warn!("ably subscription closed, will reconnect");
-                        disconnect.record_disconnected("subscription closed".to_string());
-                        config.poll_wakeups.mark_ably_disconnected();
-                        ably = None;
-                        ably_retry.schedule();
-                    }
-                }
+                handle_ably_event(
+                    &config,
+                    event,
+                    &mut ably,
+                    &mut ably_retry,
+                    &mut disconnect,
+                    &mut cancel_deliveries,
+                ).await;
             }
             Some(()) = cancel_deliveries.next(), if !cancel_deliveries.is_empty() => {}
             result = recv_retry(&mut ably_retry.handle) => {
@@ -647,15 +591,79 @@ async fn run_supervisor(config: SupervisorTaskConfig) {
         }
     }
 
-    if let Some(ssh) = &config.ssh {
-        ssh.ably_connected(false);
-    }
     if let Some(sub) = ably.take() {
         sub.close();
     }
     if let Some(handle) = ably_retry.handle.take() {
         handle.abort();
         let _ = handle.await;
+    }
+}
+
+// Only delivered authority messages can change SSH authorization. Subscription
+// health still controls discovery polling, but is not evidence of revoked access.
+async fn handle_ably_event(
+    config: &SupervisorTaskConfig,
+    event: Option<ably_subscriber::Event>,
+    ably: &mut Option<ably_subscriber::Subscription>,
+    ably_retry: &mut RetryState<AblyConnectHandle>,
+    disconnect: &mut AblyDisconnectState,
+    cancel_deliveries: &mut FuturesUnordered<CancelDelivery>,
+) {
+    match event {
+        Some(ably_subscriber::Event::Message(msg)) => {
+            if config
+                .ssh
+                .as_ref()
+                .is_some_and(|ssh| ssh.ably_message(&msg))
+            {
+                return;
+            }
+            if let Some(run_id) = parse_active_input_notification(&msg) {
+                config.active_input_notifications.notify(run_id);
+                return;
+            }
+            if enqueue_cancel_delivery(&msg, &config.cancel_tokens, cancel_deliveries).await {
+                return;
+            }
+            handle_ably_message_with_connector_runtime_sync(
+                &msg,
+                &config.profiles,
+                &config.poll_wakeups,
+                &config.direct_candidates,
+                &config.cancel_tokens,
+                Some(&config.connector_runtime_sync),
+                Some(&config.shutdown),
+            )
+            .await;
+        }
+        Some(ably_subscriber::Event::Connected) => {
+            if !disconnect.is_connected() {
+                info!("ably reconnected");
+            }
+            disconnect.mark_connected();
+            config.poll_wakeups.mark_ably_connected();
+        }
+        Some(ably_subscriber::Event::Disconnected { reason }) => {
+            let reason = reason.unwrap_or_else(|| "unknown".to_string());
+            disconnect.record_disconnected(reason.clone());
+            config.poll_wakeups.mark_ably_disconnected();
+            info!(reason = %reason, "ably disconnected, switching to fast poll");
+        }
+        Some(ably_subscriber::Event::Error { code, message }) => {
+            error!(code, message = %message, "ably fatal error, will reconnect");
+            disconnect.record_disconnected(message.clone());
+            config.poll_wakeups.mark_ably_disconnected();
+            *ably = None;
+            ably_retry.schedule();
+        }
+        None => {
+            warn!("ably subscription closed, will reconnect");
+            disconnect.record_disconnected("subscription closed".to_string());
+            config.poll_wakeups.mark_ably_disconnected();
+            *ably = None;
+            ably_retry.schedule();
+        }
     }
 }
 

@@ -19,7 +19,7 @@ import platform_api
 import runner_flush_lifecycle
 import usage
 import usage.buffer as usage_buffer
-from tests.control_helpers import exchange, status_request
+from tests.control_helpers import exchange, log_flush_request, status_request
 from tests.pending_helpers import assert_pending
 from tests.usage_helpers import install_recording_usage_timer
 
@@ -172,106 +172,51 @@ class TestAddonConfiguration:
         state = assert_pending(pending_path, flows=0, buffered=0, reports=0)
         assert state["usageStateId"] == "runner-usage-state-id"
 
-    def test_running_starts_jsonl_watcher_before_addon_ready(self, tmp_path, addon_control_cleanup):
-        ready_path = tmp_path / "control.sock"
-        log_path = tmp_path / "network.jsonl"
-        (tmp_path / "jsonl-flush-request").write_text(
-            json.dumps(
-                {
-                    "usageStateId": "runner-usage-state-id",
-                    "flushRequestId": "jsonl-request-1",
-                    "requestedAtMs": 1_770_000_000_000,
-                    "path": str(log_path),
-                }
-            )
-        )
-
+    def test_running_serves_status_and_log_flush(self, tmp_path, addon_control_cleanup):
+        run_id = str(uuid.uuid4())
+        log_path = tmp_path / f"network-{run_id}.jsonl"
         with (
             patch.object(mitm_addon, "__file__", _addon_file_path(tmp_path)),
-            patch.object(runner_flush_lifecycle, "__file__", str(tmp_path / "runner_flush.py")),
             patch.object(
                 mitm_addon.ctx,
                 "options",
                 _Options(control_socket_dir=str(tmp_path)),
                 create=True,
             ),
-            patch.object(logging_utils, "flush_log_path", return_value=True) as flush_log_path,
         ):
             mitm_addon.configure({"okou_control_socket_dir", "okou_usage_state_id"})
-            assert not ready_path.exists()
             mitm_addon.running()
-            runner_flush_lifecycle.stop_runner_jsonl_flush_worker_for_tests()
-
+        logging_utils.log_proxy_entry(str(log_path), "info", "queued before flush")
         assert exchange(tmp_path, status_request("runner-usage-state-id"))["data"] == {
             "state": "running"
         }
-        state = json.loads((tmp_path / "jsonl-flush-state").read_text())
-        assert state["flushRequestId"] == "jsonl-request-1"
-        assert state["path"] == str(log_path)
-        assert state["pending"] == 0
-        flush_log_path.assert_called_once_with(
-            str(log_path),
-            timeout=runner_flush_lifecycle.RUNNER_JSONL_FLUSH_TIMEOUT_SECONDS,
-        )
+        result = exchange(tmp_path, log_flush_request(log_path, run_id, "runner-usage-state-id"))
+        assert isinstance(result["data"], dict)
+        assert result["data"]["state"] == "processed"
+        assert json.loads(log_path.read_text())["message"] == "queued before flush"
 
-    def test_running_does_not_serve_status_when_jsonl_watcher_fails_to_start(
-        self, tmp_path, addon_control_cleanup
-    ):
-        ready_path = tmp_path / "control.sock"
-        startup_error = RuntimeError("can't start new thread")
-        real_thread_start = runner_flush_lifecycle.threading.Thread.start
-
-        def fail_start(_worker: threading.Thread) -> None:
-            raise startup_error
-
-        worker_started = False
-
-        def start_before_ready(worker: threading.Thread) -> None:
-            nonlocal worker_started
-
-            assert not ready_path.exists()
-            real_thread_start(worker)
-            worker_started = True
-
+    def test_running_can_retry_control_thread_start_failure(self, tmp_path, addon_control_cleanup):
         with (
-            patch.object(mitm_addon, "__file__", _addon_file_path(tmp_path)),
-            patch.object(runner_flush_lifecycle, "__file__", str(tmp_path / "runner_flush.py")),
             patch.object(
                 mitm_addon.ctx,
                 "options",
                 _Options(control_socket_dir=str(tmp_path)),
                 create=True,
             ),
+            patch.object(threading.Thread, "start", side_effect=RuntimeError("thread unavailable")),
+            pytest.raises(RuntimeError, match="thread unavailable"),
         ):
-            mitm_addon.configure({"okou_control_socket_dir", "okou_usage_state_id"})
-            assert not ready_path.exists()
-            with (
-                patch.object(
-                    runner_flush_lifecycle.threading.Thread,
-                    "start",
-                    new=fail_start,
-                ),
-                pytest.raises(RuntimeError) as raised,
-            ):
-                mitm_addon.running()
-
-            assert raised.value is startup_error
-            assert not ready_path.exists()
-
-            try:
-                with patch.object(
-                    runner_flush_lifecycle.threading.Thread,
-                    "start",
-                    new=start_before_ready,
-                ):
-                    mitm_addon.running()
-
-                assert worker_started
-                assert exchange(tmp_path, status_request("runner-usage-state-id"))["data"] == {
-                    "state": "running"
-                }
-            finally:
-                runner_flush_lifecycle.stop_runner_jsonl_flush_worker_for_tests()
+            mitm_addon.running()
+        with patch.object(
+            mitm_addon.ctx,
+            "options",
+            _Options(control_socket_dir=str(tmp_path)),
+            create=True,
+        ):
+            mitm_addon.running()
+        assert exchange(tmp_path, status_request("runner-usage-state-id"))["data"] == {
+            "state": "running"
+        }
 
     def test_configure_writes_fallback_pending_state_id_when_usage_state_id_is_empty(
         self, tmp_path

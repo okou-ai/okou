@@ -1148,14 +1148,43 @@ Free-member support. Existing route coverage checks all-Free configuration
 without a query parameter; invitation admission continues to use normalized
 status and administrator authorization, and package controls use `showUsagePack`.
 
-Keep `test-member-invitation-retirement.ts`, its frozen outgoing API fixture,
-the private retained-schema controls, and the new column transition validator
-until **1137 itself is deployed**, its production journal is verified, and the
-surviving invariants have permanent coverage. Free invitations, suspended
-direct/paid rejection, admin authorization, reactivation, historical backfill,
-and explicit `showUsagePack: false` remain covered. Issue #32575 stays open for
-that release verification and validator retirement; this PR performs no
-production migration or release.
+The final #32575 cleanup follows production release [#34303](https://github.com/vm0-ai/vm0/pull/34303),
+which promoted API 1.604.0 and App 0.900.0 from
+`8a391b88833ae0b075c4df194010641955d4f936`. That actual artifact contains
+#34317. The release PR's earlier branch head does not contain #34317 and is
+not the production artifact used for this verification.
+
+The [API production job](https://github.com/vm0-ai/vm0/actions/runs/34957141130/job/104345191059)
+checked out that exact artifact and completed **Run Production Migrations** at
+**2026-09-15 10:31:12.0275988 UTC**. This is the real production completion,
+separate from the preceding smoke clone's 10:31:09.4559442 UTC completion. The
+artifact's final journal entry is 1137, `when=1789460587817`. Its 1137 SQL,
+migration runner and entry point are byte-identical to #34317: the runner awaits
+both column drops and the journal insertion in one transaction before the entry
+point prints `Migrations complete`. That acknowledged execution establishes the
+committed frontier and column contraction; no direct production journal or
+catalog SELECT is claimed.
+
+Fresh serving-alias reads resolve both `api.vm0.ai` and `api.okou.ai` to READY
+production deployment `dpl_AFZ3enCuHEt768R3HaqanNg8ZxtH` at that same artifact.
+The [App production job](https://github.com/vm0-ai/vm0/actions/runs/34957141130/job/104346013714)
+verified the immutable App artifact and assets, then completed promotion at
+10:33:12 UTC. The serving `https://app.okou.ai/` HTML reports that exact SHA and
+version 0.900.0. Current main still loads the rollback resolver from main and
+enforces API 1.600.1 at `eb2f211a9af41450d0d5dad10c0c8ad12fac0a24` as the
+prepared-writer floor. Both that floor and the serving API use the canonical
+entitlement mapping and return migration state without a query opt-in. The
+serving/rollback compatibility cycle covered by the invitation validators is
+complete.
+
+The cleanup removes both invitation transition validators, the frozen outgoing
+API projection, and the retained/trigger-free private-schema variants. Permanent
+schema validation exercises the canonical projection on both replayed and freshly
+generated schemas. Historical `showUsagePack` backfill checks remain. Current API
+coverage retains infrastructure failure/transaction cases and verifies
+persisted status normalization through the billing endpoint; existing invitation
+and page suites retain Free, suspended, administrator, reactivation and explicit
+`showUsagePack: false` behavior. Close #32575 after the final cleanup merges.
 
 ### Prepared billing, OAuth and hosting trigger contraction (2026-09-15)
 
@@ -1183,6 +1212,29 @@ The invitation status-mirror trigger is included; its obsolete physical columns
 and App query opt-in remain #32575 work. E's privacy trigger is excluded, and
 the withdrawn feature remains withdrawn. See the
 [writer inventory, repair rules and migration receipts](database-trigger-retirement.md#a-d-contraction-migration-1132).
+
+### Withdrawn marketing privacy storage contraction (2026-09-15)
+
+Migration 1139 drops the three withdrawn privacy tables and their trigger/function
+under #33747. The old `user.deleted` cleanup still unconditionally names
+`privacy_choices`, so preparation #34296 must be released and its old writers
+drained before contraction can merge/release. The prepared cleanup handles all
+three relations present or absent under the shared advisory lock also taken
+exclusively by the migration. Current contraction code removes that temporary
+helper and schema dependency entirely.
+
+The rollback resolver derives the preparation's actual introduction from main's
+first-parent history of `marketing-privacy-cleanup.service.ts`, preserving that
+boundary after the file is deleted and across a squash merge. It rejects absent
+history and targets predating preparation before looking up artifacts. The retained
+target must also be a released READY artifact. The canonical preparation
+introduction is `e98391290d01e88ece8bf1acfcfc258b3f1e3c13`. Record the immutable
+production artifact and old-invocation drain on
+[contraction #34305](https://github.com/vm0-ai/vm0/pull/34305) before it becomes
+ready; this source guard alone does not prove serving or drain. See the
+[explicit release and rollback gates](marketing-privacy-choices.md#required-release-order-and-rollback-boundary).
+API rollback cannot recreate the retired rows. The withdrawn feature stays
+withdrawn, and #33275 owns any replacement privacy design.
 
 ### Workflow automation connector-account projections
 
@@ -1441,6 +1493,16 @@ Run cache invalidations are best-effort and identifier-only. Token/SSH-grant cha
 may leave cached authority usable for the remainder of an active Run if a notice
 is missed. End those Runs when immediate revocation is required.
 
+#34353 changes only Runner-local authority ownership, not the API, guest RPC or
+persisted data contracts. New Runners preserve SSH authority and healthy work
+across Ably connection loss, recovery and initial subscription unavailability;
+draining old Runners retain their previous disconnect-eviction behavior. First
+use/cache misses still authorize through the same API. Delivered invalidation,
+failure eviction and Run/sandbox teardown remain effective. The accepted
+Run-lifetime missed-notification window includes observed outages; this introduces
+no reconnect grace deadline, periodic reauthorization or new TTL. No coordinated
+API rollout or migration is required for this Runner change.
+
 ## Integration input attachments
 
 New Feishu/Lark, Teams, Telegram, and AgentPhone trigger attachments use the
@@ -1650,3 +1712,11 @@ consumer/recovery, cancellation, capacity counting, credential retention and era
 A v1–v3-only application is below the rollback floor while v4 records remain.
 Do not shrink the CHECK or cascade away releasing leases. See the linked contract
 for exact DDL timeouts, failure/retry behavior, scale receipts and activation gates.
+
+## DeepSeek V4.1 Flash Pi coverage
+
+The [V4.1 Pi catalog and deployment contract](../turbo/packages/pi-agent-runtime/src/deepseek-v41-catalog.md)
+requires the API's matching commit-addressed CLI for new admission and preserves
+old captured contexts. Existing Responses schemas and Runner claims are unchanged.
+Retain the V4.1 reader and API billing writer in serving/recovery and rollback
+targets while admitted V4.1 Pi work remains.

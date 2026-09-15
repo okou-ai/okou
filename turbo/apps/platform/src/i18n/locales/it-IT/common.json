@@ -1538,6 +1538,51 @@
       "title": "Azione non disponibile"
     },
     "agentPage": {
+      "getStarted": {
+        "checkin": {
+          "description": "Una volta al giorno, ogni giorno",
+          "name": "Accedi ogni giorno",
+          "unit": "al giorno"
+        },
+        "connector": {
+          "description": "Gmail, Notion e altri 100+",
+          "name": "Collega un connettore",
+          "unit": "per connettore"
+        },
+        "inReview": "In revisione",
+        "inReviewDescription": "Inviato, in attesa di revisione",
+        "invite": {
+          "description": "Ogni persona che aggiungi conta",
+          "name": "Invita il tuo team",
+          "unit": "per membro"
+        },
+        "personalBalanceNote": "I crediti vanno sul tuo saldo personale.",
+        "progressLabel": "Avanzamento dei primi passi",
+        "reward": "+{{amount}}",
+        "share": {
+          "description": "Pubblica, poi incolla il link",
+          "name": "Condividi {{assistantName}} su X"
+        },
+        "shareDialog": {
+          "description": "Pubblica qualcosa che hai creato, poi incolla il link. Hai un solo invio.",
+          "helper": "Il post deve essere pubblico e menzionare {{assistantName}}.",
+          "inputLabel": "Link del post",
+          "placeholder": "https://x.com/...",
+          "submit": "Invia",
+          "title": "Condividi {{assistantName}} su X"
+        },
+        "slack": {
+          "description": "Dove il tuo team lavora già",
+          "name": "Aggiungi {{assistantName}} a Slack"
+        },
+        "stepCount": "{{completed}}/{{total}}",
+        "subtitle": "Completa un passo, i crediti restano tuoi.",
+        "title": "Inizia",
+        "workflow": {
+          "description": "Trasforma un'attività ricorrente in un'automazione",
+          "name": "Crea un workflow"
+        }
+      },
       "growth": {
         "addInSlack": "Aggiungi {{assistantName}} su Slack",
         "connect": "Connetti",
@@ -2318,6 +2363,40 @@
             "prompt": "Creare un’immagine per il mio sito"
           }
         },
+        "presentation": {
+          "clientProposal": {
+            "label": "Scrivere una proposta per un cliente",
+            "prompt": "Crea una presentazione di proposta per un cliente. Chiedimi il cliente, il lavoro proposto, i tempi e il prezzo."
+          },
+          "companyOverview": {
+            "label": "Spiegare di cosa si occupa la mia azienda",
+            "prompt": "Crea una presentazione aziendale. Chiedimi cosa facciamo, chi serviamo e cosa il pubblico dovrebbe ricordare."
+          },
+          "eventTalk": {
+            "label": "Preparare un intervento per un evento",
+            "prompt": "Crea una presentazione per un intervento. Chiedimi l'evento, il pubblico e l'unica idea che voglio far arrivare."
+          },
+          "pitchDeck": {
+            "label": "Presentare la mia attività agli investitori",
+            "prompt": "Crea un pitch deck per investitori sulla mia attività. Chiedimi il problema, il prodotto, i risultati finora e quanto voglio raccogliere."
+          },
+          "productIntro": {
+            "label": "Presentare un nuovo prodotto",
+            "prompt": "Crea una presentazione che introduce un nuovo prodotto. Chiedimi cosa fa, a chi si rivolge e cosa lo rende diverso."
+          },
+          "resultsReadout": {
+            "label": "Presentare i miei risultati",
+            "prompt": "Trasforma i miei risultati in una presentazione di report. Chiedimi i numeri, il periodo coperto e la decisione che sostengono."
+          },
+          "teamUpdate": {
+            "label": "Preparare un aggiornamento per il team",
+            "prompt": "Crea una presentazione per l'aggiornamento del mio team. Chiedimi cosa è successo nel periodo, cosa viene dopo e chi sarà presente."
+          },
+          "training": {
+            "label": "Insegnare qualcosa al mio team",
+            "prompt": "Crea una presentazione di formazione su un tema che scelgo io. Chiedimi chi viene formato e cosa dovrà saper fare dopo."
+          }
+        },
         "video": {
           "animatePhoto": {
             "label": "Trasformare una foto in un video",
@@ -2523,7 +2602,6 @@
           "waterfall": "Waterfall chart",
           "word-cloud": "Word cloud"
         },
-        "chartSafety": "Leave blank and Okou will choose what fits your content.",
         "chooseAny": "Choose any",
         "chooseCharts": "Choose charts",
         "chooseOne": "Choose one",

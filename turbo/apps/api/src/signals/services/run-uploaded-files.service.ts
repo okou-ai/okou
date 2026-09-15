@@ -1,5 +1,4 @@
 import { command } from "ccstate";
-import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import type { HostedArtifactKind } from "@okouai/api-contracts/contracts/host";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
@@ -127,11 +126,7 @@ function videoArtifactPreviewArgs(
     !args.contentType?.startsWith("video/") ||
     // An oversized input always fails with `9402`; the video element fallback
     // covers it instead. An unknown size still gets one attempt.
-    (row.sizeBytes !== null && row.sizeBytes >= VIDEO_POSTER_MAX_INPUT_BYTES) ||
-    // The public thumbnail pipeline cannot read authenticated sources.
-    // Private derivatives join the generation slice in #32492.
-    parseArtifactReference(args.url) !== null ||
-    new URL(args.url).pathname === "/api/web/download-file"
+    (row.sizeBytes !== null && row.sizeBytes >= VIDEO_POSTER_MAX_INPUT_BYTES)
   ) {
     return null;
   }

@@ -786,9 +786,47 @@ describe("Pi API facade", () => {
     },
   );
 
-  it.each(["absent", "throwing"] as const)(
-    "preserves DeepSeek transport and pre-provider cancellation with a %s preparation observer",
-    async (observer) => {
+  it.each([
+    {
+      observer: "absent",
+      provider: "deepseek",
+      model: "deepseek-v4-flash",
+      withImage: false,
+    },
+    {
+      observer: "throwing",
+      provider: "deepseek",
+      model: "deepseek-v4-flash",
+      withImage: false,
+    },
+    {
+      observer: "absent",
+      provider: "deepseek",
+      model: "deepseek-flash",
+      withImage: true,
+    },
+    {
+      observer: "absent",
+      provider: "openrouter",
+      model: "deepseek/deepseek-v4.1-flash",
+      withImage: true,
+    },
+    {
+      observer: "absent",
+      provider: "deepseek",
+      model: "company-v41",
+      catalogModel: "deepseek-v4.1-flash",
+      withImage: true,
+    },
+    {
+      observer: "absent",
+      provider: "deepseek",
+      model: "deepseek-flash",
+      withImage: false,
+    },
+  ] as const)(
+    "preserves DeepSeek transport and pre-provider cancellation for $provider/$model (image=$withImage) with a $observer preparation observer",
+    async ({ observer, provider, model, withImage, ...catalog }) => {
       const providerRequests: Array<{
         readonly url: string | undefined;
         readonly body: Record<string, unknown>;
@@ -808,7 +846,7 @@ describe("Pi API facade", () => {
             >,
             userAgent: request.headers["user-agent"],
           });
-          responsesTextSse(response, "DeepSeek API-first answer");
+          responsesTextSse(response, "2");
         })().catch((error: unknown) => {
           response.destroy(
             error instanceof Error ? error : new Error(String(error)),
@@ -828,17 +866,56 @@ describe("Pi API facade", () => {
       }
 
       try {
+        const history = MemoryPiSession.create({
+          cwd: "/home/user/workspace",
+          id: SESSION_ID,
+        });
+        const image =
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII=";
+        if (withImage) {
+          history.appendMessage({
+            role: "user",
+            content: [
+              { type: "text", text: "Keep this image" },
+              { type: "image", data: image, mimeType: "image/png" },
+            ],
+            timestamp: 1,
+          });
+          history.appendMessage({
+            ...fauxAssistantMessage("Image received", { timestamp: 2 }),
+            api: "openai-responses",
+            provider,
+            model,
+            usage: {
+              input: 100,
+              output: 2,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 102,
+              cost: {
+                input: 0,
+                output: 0,
+                cacheRead: 0,
+                cacheWrite: 0,
+                total: 0,
+              },
+            },
+          });
+        }
         const args: PiApiFirstTurnArgs = {
           cwd: "/home/user/workspace",
           agentDir: "/home/user/.pi/agent",
           sessionId: SESSION_ID,
-          prompt: "answer through direct DeepSeek",
+          sessionJsonl: history.toJsonl(),
+          prompt:
+            "Do not use tools, read files or other chats, or perform any other task. What is one plus one? Reply with a single digit only. Do not explain or add any other text.",
           appendSystemPrompt: null,
           model: {
-            provider: "deepseek",
+            provider,
+            ...catalog,
             baseUrl: `http://127.0.0.1:${address.port}`,
             apiKey: "test-key",
-            model: "deepseek-v4-flash",
+            model,
             dialect: "openai-responses",
             transport: "sse",
           },
@@ -858,16 +935,26 @@ describe("Pi API facade", () => {
           url: "/responses",
           userAgent: "okou-pi-agent/1.0",
           body: {
-            model: "deepseek-v4-flash",
+            model,
             stream: true,
             store: false,
           },
         });
+        if (withImage) {
+          expect(JSON.stringify(providerRequests[0]?.body)).toContain(
+            `data:image/png;base64,${image}`,
+          );
+          expect(resolvePiAgentModel(args.model)).toMatchObject({
+            input: ["text", "image"],
+            contextWindow: 1_048_576,
+            maxTokens: 384_000,
+          });
+        }
         expect(providerRequests[0]?.body).not.toHaveProperty("service_tier");
         expect(providerRequests[0]?.body).not.toHaveProperty("temperature");
         expect(providerRequests[0]?.body).not.toHaveProperty("top_p");
         expect(result.assistantMessage.content).toStrictEqual([
-          { type: "text", text: "DeepSeek API-first answer" },
+          { type: "text", text: "2" },
         ]);
         const cancellation = new AbortController();
         const reason = new DOMException("request cancelled", "AbortError");
