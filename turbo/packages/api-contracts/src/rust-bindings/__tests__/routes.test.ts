@@ -108,6 +108,12 @@ const expectedBindings = [
   },
   {
     method: "POST",
+    path: "/api/webhooks/agent/session-output",
+    rustModulePath: ["webhooks", "agent", "session_output"],
+    rustConstName: "SEND",
+  },
+  {
+    method: "POST",
     path: "/api/webhooks/agent/checkpoints",
     rustModulePath: ["webhooks", "agent", "checkpoints"],
     rustConstName: "CREATE",

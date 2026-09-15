@@ -7,8 +7,8 @@ use crate::env::Framework;
 
 pub(super) fn normalize_for_sequencing(framework: Framework, event: Value) -> Vec<Value> {
     let events = match framework {
-        Framework::ClaudeCode => expand_message_content(event, false),
-        Framework::Pi => expand_message_content(event, true),
+        Framework::ClaudeCode => expand_message_content(event, false, false),
+        Framework::Pi => expand_message_content(event, true, true),
         Framework::Codex => expand_codex_file_changes(event),
     };
     events
@@ -60,7 +60,11 @@ fn codex_command_mut(event: &mut Value) -> Option<&mut Value> {
     item.get_mut("command")
 }
 
-fn expand_message_content(event: Value, retain_memory_citation_on_last: bool) -> Vec<Value> {
+fn expand_message_content(
+    event: Value,
+    retain_memory_citation_on_last: bool,
+    lift_block_run_event_id: bool,
+) -> Vec<Value> {
     let Value::Object(mut outer) = event else {
         return vec![event];
     };
@@ -78,6 +82,12 @@ fn expand_message_content(event: Value, retain_memory_citation_on_last: bool) ->
         return vec![Value::Object(outer)];
     };
     if content.len() <= 1 {
+        let run_event_id = lift_block_run_event_id
+            .then(|| content.first_mut().and_then(take_block_run_event_id))
+            .flatten();
+        if let Some(run_event_id) = run_event_id {
+            outer.insert("runEventId".to_string(), run_event_id);
+        }
         return vec![Value::Object(outer)];
     }
 
@@ -90,8 +100,14 @@ fn expand_message_content(event: Value, retain_memory_citation_on_last: bool) ->
     blocks
         .into_iter()
         .enumerate()
-        .map(|(index, block)| {
+        .map(|(index, mut block)| {
+            let run_event_id = lift_block_run_event_id
+                .then(|| take_block_run_event_id(&mut block))
+                .flatten();
             let mut normalized_outer = outer.clone();
+            if let Some(run_event_id) = run_event_id {
+                normalized_outer.insert("runEventId".to_string(), run_event_id);
+            }
             let mut normalized_message = message.clone();
             normalized_message.insert("content".to_string(), Value::Array(vec![block]));
             if index == last_index
@@ -103,6 +119,13 @@ fn expand_message_content(event: Value, retain_memory_citation_on_last: bool) ->
             Value::Object(normalized_outer)
         })
         .collect()
+}
+
+fn take_block_run_event_id(block: &mut Value) -> Option<Value> {
+    block
+        .as_object_mut()?
+        .remove("runEventId")
+        .filter(|value| value.as_str().is_some_and(|value| !value.is_empty()))
 }
 
 fn expand_codex_file_changes(event: Value) -> Vec<Value> {
@@ -381,8 +404,8 @@ mod tests {
                 "type": "assistant",
                 "message": {
                     "content": [
-                        { "type": "text", "text": "first" },
-                        { "type": "text", "text": "last" }
+                        { "type": "text", "text": "first", "runEventId": "sandbox:response:0" },
+                        { "type": "text", "text": "last", "runEventId": "sandbox:response:2" }
                     ],
                     "memoryCitation": {
                         "entries": [{
@@ -397,10 +420,34 @@ mod tests {
             }),
         );
         assert_eq!(events.len(), 2);
+        assert_eq!(events[0]["runEventId"], "sandbox:response:0");
+        assert_eq!(events[1]["runEventId"], "sandbox:response:2");
+        assert!(events[0].pointer("/message/content/0/runEventId").is_none());
+        assert!(events[1].pointer("/message/content/0/runEventId").is_none());
         assert!(events[0].pointer("/message/memoryCitation").is_none());
         assert_eq!(
             events[1].pointer("/message/memoryCitation/entries/0/path"),
             Some(&json!("memory.md"))
         );
+    }
+
+    #[test]
+    fn pi_singleton_block_lifts_its_native_run_event_id() {
+        let events = normalize_for_sequencing(
+            Framework::Pi,
+            json!({
+                "type": "assistant",
+                "message": {
+                    "content": [{
+                        "type": "text",
+                        "text": "only",
+                        "runEventId": "sandbox:response:4"
+                    }]
+                }
+            }),
+        );
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0]["runEventId"], "sandbox:response:4");
+        assert!(events[0].pointer("/message/content/0/runEventId").is_none());
     }
 }

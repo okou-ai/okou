@@ -68,7 +68,7 @@ async fn byte_adapter_handles_partial_writes_and_ping_during_socket_backpressure
                 while received.len() < bytes.len() || !pong {
                     match server.next().await.unwrap().unwrap() {
                         Message::Binary(data) => {
-                            assert!(data.len() <= 32 * 1024);
+                            assert!(data.len() <= 16 * 1024);
                             received.extend(data);
                         }
                         Message::Pong(data) => {
@@ -510,6 +510,39 @@ async fn shared_token_rotation_reopens_bound_hosts_without_evicting_another_conf
     );
     h.shutdown().await;
     wait_for(|| gateway.observed.closed.load(Ordering::SeqCst) == 5).await;
+}
+
+#[tokio::test]
+async fn sftp_files_preserve_bytes_through_bounded_origin_reads() {
+    use sha2::{Digest, Sha256};
+    for password in [false, true] {
+        let (mut h, gateway) = gateway::setup(
+            Reply::Sftp("normal"),
+            Mode::BoundedOrigin,
+            "ssh.example.com",
+        )
+        .await;
+        let _resolve = h.resolve(credential(&h, password, true)).await;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bounded origin file");
+        let bytes: Vec<u8> = (0..256 * 1024 + 17).map(|n| (n % 251) as u8).collect();
+        let upload = super::files::upload(&h, &path, &bytes, false).await;
+        assert_eq!(upload["type"], "completed", "{upload}");
+        assert_eq!(upload["sha256"], hex::encode(Sha256::digest(&bytes)));
+        assert_eq!(upload["bytes"], bytes.len());
+        assert_eq!(upload["effects"], "completed");
+        assert!(upload["residue"].is_null());
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        let (download, received) = super::files::download(&h, &path).await;
+        assert_eq!(download["type"], "completed", "{download}");
+        assert_eq!(download["bytes"], bytes.len());
+        assert_eq!(download["sha256"], upload["sha256"]);
+        assert_eq!(received, bytes);
+        wait_for(|| h.observed.reservations.load(Ordering::SeqCst) == 0).await;
+        h.shutdown().await;
+        wait_for(|| gateway.observed.closed.load(Ordering::SeqCst) == 2).await;
+    }
 }
 
 #[tokio::test]

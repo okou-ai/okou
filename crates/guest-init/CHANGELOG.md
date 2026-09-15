@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.261](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.260...guest-init-v0.16.261) (2026-09-15)
+
+
+### Bug Fixes
+
+* **runner:** protect native runtime memory from tool reclaim ([#34398](https://github.com/vm0-ai/vm0/issues/34398)) ([756b6bc](https://github.com/vm0-ai/vm0/commit/756b6bce47a0a4b341359971ebc7ae9a4c24c62e))
+
 ## [0.16.260](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.259...guest-init-v0.16.260) (2026-09-15)
 
 ## [0.16.259](https://github.com/vm0-ai/vm0/compare/guest-init-v0.16.258...guest-init-v0.16.259) (2026-09-15)

@@ -4085,7 +4085,11 @@ export function createChatPanelSignals(
     composer.feedback,
     messages.scroll.isProgrammaticScrollEvent$,
   );
-  const sharing = createChatThreadSharingSignals(threadId, messages.scroll);
+  const sharing = createChatThreadSharingSignals(
+    threadId,
+    messages.scroll,
+    messagePipeline.allChatGroups$,
+  );
   const locator = createChatConversationLocatorSignals({
     threadId,
     scrollContainer$: messages.scroll.scrollContainer$,

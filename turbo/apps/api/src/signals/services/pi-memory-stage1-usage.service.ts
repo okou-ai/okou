@@ -24,7 +24,7 @@ interface UsageEntry {
   readonly quantity: number;
 }
 
-interface RecordPiMemoryStage1UsageArgs {
+export interface RecordPiMemoryStage1UsageArgs {
   readonly memoryStorageId: string;
   readonly piSessionId: string;
   readonly sourceHistoryHash: string;
@@ -40,7 +40,9 @@ function quantity(value: number, field: string): number {
   return value;
 }
 
-function usageEntries(usage: PiMemoryStage1ProviderUsage): UsageEntry[] {
+export function piMemoryStage1UsageEntries(
+  usage: PiMemoryStage1ProviderUsage,
+): UsageEntry[] {
   const input = quantity(usage.input, "input");
   const output = quantity(usage.output, "output");
   const cacheRead = quantity(usage.cacheRead, "cache-read");
@@ -62,9 +64,7 @@ function usageEntries(usage: PiMemoryStage1ProviderUsage): UsageEntry[] {
       category: category("tokens.cache_creation"),
       quantity: cacheCreation,
     },
-  ].filter((entry) => {
-    return entry.quantity > 0;
-  });
+  ];
 }
 
 function idempotencyKey(
@@ -90,36 +90,45 @@ function idempotencyKey(
 export async function recordPiMemoryStage1Usage(
   db: Db,
   args: RecordPiMemoryStage1UsageArgs,
-): Promise<void> {
+): Promise<PiMemoryStage1UsageReceipt> {
   // BYOK vendor usage is never a model-credit event, including replay/zero usage.
   if (args.billing.mode !== "builtin") {
-    return;
+    return { disposition: "byok", accountingAt: null };
   }
-  const expected = usageEntries(args.usage).map((entry) => {
-    return {
-      runId: null,
-      billingContext: "runless",
-      idempotencyKey: idempotencyKey(args, entry.category),
-      orgId: args.billing.orgId,
-      userId: args.billing.userId,
-      kind: "model",
-      provider: PI_MEMORY_STAGE1_MODEL,
-      category: entry.category,
-      quantity: entry.quantity,
-    } as const;
-  });
+  const expected = piMemoryStage1UsageEntries(args.usage)
+    .filter((entry) => {
+      return entry.quantity > 0;
+    })
+    .map((entry) => {
+      return {
+        runId: null,
+        billingContext: "pi_memory_stage1",
+        idempotencyKey: idempotencyKey(args, entry.category),
+        orgId: args.billing.orgId,
+        userId: args.billing.userId,
+        kind: "model",
+        provider: PI_MEMORY_STAGE1_MODEL,
+        category: entry.category,
+        quantity: entry.quantity,
+      } as const;
+    });
   if (expected.length === 0) {
-    return;
+    return { disposition: "zero_usage", accountingAt: null };
   }
-  await db.transaction(async (tx) => {
-    await tx
+  return await db.transaction(async (tx) => {
+    const inserted = await tx
       .insert(usageEvent)
       .values(expected)
-      .onConflictDoNothing({ target: [usageEvent.idempotencyKey] });
+      .onConflictDoNothing({ target: [usageEvent.idempotencyKey] })
+      .returning({ id: usageEvent.id });
     const stored = await tx
       .select({
         idempotencyKey: usageEvent.idempotencyKey,
         runId: usageEvent.runId,
+        billingRunId: usageEvent.billingRunId,
+        billingContext: usageEvent.billingContext,
+        billingAnchorAt: usageEvent.billingAnchorAt,
+        createdAt: usageEvent.createdAt,
         orgId: usageEvent.orgId,
         userId: usageEvent.userId,
         kind: usageEvent.kind,
@@ -141,11 +150,18 @@ export async function recordPiMemoryStage1Usage(
         return [row.idempotencyKey, row] as const;
       }),
     );
+    // #34267 explicitly protects retained pre-D billing rows. Under #33892,
+    // remove legacy replay handling only after old serving/rollback writers
+    // retire and their raw keys drain; never retag historical charges.
     for (const row of stored) {
       const wanted = remaining.get(row.idempotencyKey);
       if (
         !wanted ||
-        row.runId !== null ||
+        [row.runId, row.billingRunId].some((id) => {
+          return id !== null;
+        }) ||
+        !["runless", "pi_memory_stage1"].includes(row.billingContext) ||
+        row.billingAnchorAt?.getTime() !== row.createdAt.getTime() ||
         row.orgId !== wanted.orgId ||
         row.userId !== wanted.userId ||
         row.kind !== wanted.kind ||
@@ -157,8 +173,53 @@ export async function recordPiMemoryStage1Usage(
       }
       remaining.delete(row.idempotencyKey);
     }
-    if (remaining.size > 0) {
-      throw new Error("Pi memory Stage 1 usage persistence is incomplete");
+    const first = stored[0];
+    if (
+      !first ||
+      remaining.size > 0 ||
+      (inserted.length !== 0 && inserted.length !== expected.length) ||
+      stored.some((row) => {
+        return (
+          row.billingContext !== first.billingContext ||
+          row.createdAt.getTime() !== first.createdAt.getTime()
+        );
+      })
+    ) {
+      throw new Error("Pi memory Stage 1 usage identity collision");
     }
+    return {
+      accountingAt: first.createdAt.toISOString(),
+      disposition:
+        inserted.length > 0
+          ? "new"
+          : first.billingContext === "runless"
+            ? "legacy_replay"
+            : "replay",
+    };
   });
+}
+
+export interface PiMemoryStage1UsageReceipt {
+  readonly accountingAt: string | null;
+  readonly disposition:
+    | "new"
+    | "replay"
+    | "legacy_replay"
+    | "zero_usage"
+    | "byok";
+}
+
+/** Opaque logical response identity; category delivery/outcome is not identity. */
+export function piMemoryStage1AccountingId(
+  args: RecordPiMemoryStage1UsageArgs,
+): string {
+  return uuidv5(
+    JSON.stringify([
+      args.memoryStorageId,
+      args.piSessionId,
+      args.sourceHistoryHash,
+      args.responseSourceId,
+    ]),
+    PI_MEMORY_STAGE1_USAGE_NAMESPACE,
+  );
 }

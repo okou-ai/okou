@@ -847,6 +847,27 @@ its only consumer sits inside the mobile drawer `aside`, which is `md:hidden`.
 `.okou-workspace-bg`'s `position: relative` was dead three times over: the
 unconditional `.okou-workspace-bg` rule already declares it.
 
+The two unlayered `.okou-app[data-desktop-shell]` selection rules outside that
+media block are now deleted as well, on the same evidence: one set
+`user-select: none` on app chrome and one restored `user-select: text` inside
+inputs, editors and the two chat bubbles. Measured on a reconstructed shell,
+with the attribute absent — which is every shipped build — `user-select`
+computes to `auto` on chrome, input and contenteditable both before and after.
+Forcing the attribute on separates the two sides: before gives `none` on chrome
+and `text` on the input, after gives `auto` for both. So the rules were real
+rather than no-ops, and the only thing that ever kept them inert was an
+attribute nothing writes.
+
+That deletion also retires the last references to `.okou-chat-bubble-user` and
+`.okou-chat-bubble-assistant`. The chat-bubble batch removed those class names
+from every element and recorded that they survived only inside this selection
+exception; with the exception gone, neither name appears anywhere in the
+repository outside the migration ledger. With the card tokens promoted to
+`:root`, `.okou-app` now declares nothing of its own: the one selector left in
+the stylesheet is the workspace canvas's
+`.okou-app[data-gradient-color-themes] .okou-workspace-bg::before`, which uses
+the class as a scoping ancestor rather than to carry a declaration.
+
 Deleting rather than porting is the right move because there is nothing to
 port. A replacement could only be a condition no element satisfies, and
 reproducing `.okou-app[data-desktop-shell] &` needs an arbitrary variant that

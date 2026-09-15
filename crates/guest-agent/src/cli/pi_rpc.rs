@@ -236,6 +236,7 @@
 //! user cancellation can subsequently override the final guest control
 //! diagnostic, but it does not mutate the public tool-result shape.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -246,7 +247,8 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
 use tokio_util::sync::CancellationToken;
 
-use super::pi_memory_citation::{CitationProjection, project_segments};
+use super::pi_memory_citation::{CitationParser, CitationProjection, project_segments};
+use super::pi_session_output::{PiSessionOutputSender, SESSION_OUTPUT_DELTA_MAX_BYTES};
 use crate::active_input::{ActiveInputFrame, ActiveInputWriter};
 use crate::error::AgentError;
 use crate::upstream_error_text::project_model_error_text;
@@ -257,6 +259,7 @@ const PI_RPC_RESPONSE_MAX_RETAINED_BYTES: usize =
     guest_contracts::stdout_framing::ORDINARY_CLI_STDOUT_MAX_LINE_BYTES;
 const PI_API_FIRST_TURN_BOUNDARY_CONTROL_TYPE: &str = "vm0_pi_api_first_turn_boundary";
 const MAX_EVENT_SEQUENCE_NUMBER: u32 = i32::MAX as u32;
+const MAX_STREAM_CONTENT_INDEX: usize = 1024;
 
 pub(super) struct PiRpcResponse {
     value: Value,
@@ -447,6 +450,74 @@ fn boundary_error(code: &str, message: &str) -> AgentError {
     AgentError::Execution(format!("[{code}] {message}"))
 }
 
+struct PiAssistantStream {
+    event_id_prefix: String,
+    parser: CitationParser,
+    started_sources: HashSet<usize>,
+    closed_sources: HashSet<usize>,
+    output: PiSessionOutputSender,
+}
+
+impl PiAssistantStream {
+    fn new(output: PiSessionOutputSender) -> Self {
+        Self {
+            event_id_prefix: format!("sandbox:{}", uuid::Uuid::new_v4()),
+            parser: CitationParser::new(0),
+            started_sources: HashSet::new(),
+            closed_sources: HashSet::new(),
+            output,
+        }
+    }
+
+    fn push(&mut self, source: usize, text: &str) {
+        if source > MAX_STREAM_CONTENT_INDEX || text.is_empty() {
+            return;
+        }
+        self.parser.push(text, source);
+        let visible = self.parser.take_visible_segments();
+        self.emit_visible(visible);
+    }
+
+    fn emit_visible(&mut self, visible: impl IntoIterator<Item = (usize, String)>) {
+        for (source, text) in visible {
+            if text.is_empty() || self.closed_sources.contains(&source) {
+                continue;
+            }
+            let text = if self.started_sources.contains(&source) {
+                text.as_str()
+            } else {
+                text.trim_start()
+            };
+            if text.is_empty() {
+                continue;
+            }
+
+            let run_event_id = format!("{}:{source}", self.event_id_prefix);
+            let mut remaining = text;
+            while !remaining.is_empty() {
+                let mut end = remaining.len().min(SESSION_OUTPUT_DELTA_MAX_BYTES);
+                while !remaining.is_char_boundary(end) {
+                    end -= 1;
+                }
+                let delta = remaining[..end].to_string();
+                if !self.output.try_send(&run_event_id, delta) {
+                    self.closed_sources.insert(source);
+                    break;
+                }
+                self.started_sources.insert(source);
+                remaining = &remaining[end..];
+            }
+        }
+    }
+
+    fn finish(mut self) -> String {
+        let parser = std::mem::replace(&mut self.parser, CitationParser::new(0));
+        let projection = parser.finish();
+        self.emit_visible(projection.visible_segments.into_iter().enumerate());
+        self.event_id_prefix
+    }
+}
+
 #[derive(Default)]
 struct PiAssistantTerminal {
     failed: bool,
@@ -518,6 +589,8 @@ pub(super) struct PiRpcProjection {
     started_at: Instant,
     emitted_session_init: bool,
     assistant_terminal: Option<PiAssistantTerminal>,
+    session_output: Option<PiSessionOutputSender>,
+    assistant_stream: Option<PiAssistantStream>,
     pending_retry: Option<PiRetryAttempt>,
     terminal_error: bool,
 }
@@ -530,9 +603,16 @@ impl PiRpcProjection {
             started_at: Instant::now(),
             emitted_session_init: false,
             assistant_terminal: None,
+            session_output: None,
+            assistant_stream: None,
             pending_retry: None,
             terminal_error: false,
         }
+    }
+
+    pub(super) fn with_session_output(mut self, output: PiSessionOutputSender) -> Self {
+        self.session_output = Some(output);
+        self
     }
 
     /// Project one official Pi RPC record into the existing public event stream.
@@ -547,6 +627,14 @@ impl PiRpcProjection {
         }
         match record.get("type").and_then(Value::as_str) {
             Some("response") => self.project_response(record, responses, record_bytes),
+            Some("message_start") => {
+                self.project_message_start(&record);
+                Ok(None)
+            }
+            Some("message_update") => {
+                self.project_message_update(&record);
+                Ok(None)
+            }
             Some("message_end") => self.project_message_end(record),
             Some("agent_settled") => Ok(Some(self.project_agent_settled())),
             Some("auto_retry_start") => {
@@ -627,6 +715,46 @@ impl PiRpcProjection {
         Ok(projected)
     }
 
+    fn project_message_start(&mut self, event: &Value) {
+        if event.pointer("/message/role").and_then(Value::as_str) != Some("assistant") {
+            return;
+        }
+        self.assistant_stream = self
+            .session_output
+            .as_ref()
+            .cloned()
+            .map(PiAssistantStream::new);
+    }
+
+    fn project_message_update(&mut self, event: &Value) {
+        let Some(stream) = self.assistant_stream.as_mut() else {
+            return;
+        };
+        let Some(delta) = event.get("assistantMessageEvent") else {
+            return;
+        };
+        let Some(source) = delta
+            .get("contentIndex")
+            .and_then(Value::as_u64)
+            .and_then(|source| usize::try_from(source).ok())
+        else {
+            return;
+        };
+        match delta.get("type").and_then(Value::as_str) {
+            Some("text_start") => {
+                if let Some(text) = delta.get("initialText").and_then(Value::as_str) {
+                    stream.push(source, text);
+                }
+            }
+            Some("text_delta") => {
+                if let Some(text) = delta.get("delta").and_then(Value::as_str) {
+                    stream.push(source, text);
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn project_message_end(&mut self, event: Value) -> Result<Option<Value>, AgentError> {
         let mut event = event;
         let Some(message) = event.get_mut("message").map(Value::take) else {
@@ -635,7 +763,8 @@ impl PiRpcProjection {
             ));
         };
         if message.get("role").and_then(Value::as_str) == Some("assistant") {
-            return self.project_assistant_message(message);
+            let event_id_prefix = self.assistant_stream.take().map(PiAssistantStream::finish);
+            return self.project_assistant_message(message, event_id_prefix.as_deref());
         }
         if message.get("role").and_then(Value::as_str) == Some("toolResult") {
             return self.project_tool_result_message(message).map(Some);
@@ -646,6 +775,7 @@ impl PiRpcProjection {
     fn project_assistant_message(
         &mut self,
         mut message: Value,
+        event_id_prefix: Option<&str>,
     ) -> Result<Option<Value>, AgentError> {
         let citation_projection = normalize_assistant_citations(&mut message);
         let mut terminal =
@@ -658,7 +788,7 @@ impl PiRpcProjection {
             request.retry_limit = retry.map(|retry| retry.max_attempts);
         }
         self.assistant_terminal = Some(terminal);
-        let content = assistant_content(&mut message)?;
+        let content = assistant_content(&mut message, event_id_prefix)?;
         if content.is_empty() && citation_projection.citation.is_none() {
             return Ok(None);
         }
@@ -878,13 +1008,16 @@ fn owned_object<const N: usize>(fields: [(&str, Value); N]) -> Value {
     )
 }
 
-fn assistant_content(message: &mut Value) -> Result<Vec<Value>, AgentError> {
+fn assistant_content(
+    message: &mut Value,
+    event_id_prefix: Option<&str>,
+) -> Result<Vec<Value>, AgentError> {
     let blocks = match message.get_mut("content").map(Value::take) {
         Some(Value::Array(blocks)) => blocks,
         _ => return Ok(Vec::new()),
     };
     let mut content = Vec::new();
-    for block in blocks {
+    for (content_index, block) in blocks.into_iter().enumerate() {
         if block.get("type").and_then(Value::as_str) == Some("text") {
             if let Some(text) = block
                 .get("text")
@@ -892,7 +1025,16 @@ fn assistant_content(message: &mut Value) -> Result<Vec<Value>, AgentError> {
                 .map(str::trim)
                 .filter(|text| !text.is_empty())
             {
-                content.push(json!({ "type": "text", "text": text }));
+                let mut projected = json!({ "type": "text", "text": text });
+                if let Some(prefix) = event_id_prefix
+                    && let Value::Object(fields) = &mut projected
+                {
+                    fields.insert(
+                        "runEventId".to_string(),
+                        Value::String(format!("{prefix}:{content_index}")),
+                    );
+                }
+                content.push(projected);
             }
         } else if block.get("type").and_then(Value::as_str) == Some("toolCall") {
             content.push(project_tool_call(block)?);
@@ -1423,6 +1565,311 @@ mod tests {
             assert_eq!(terminal["session_id"], fixture["sessionId"], "{name}");
             assert!(terminal["duration_ms"].as_u64().is_some(), "{name}");
         }
+    }
+
+    #[test]
+    fn streaming_uses_native_content_indices_and_reconciles_each_response() {
+        let hidden = "<oai-mem-citation><citation_entries>memory.md:1-1|note=[used]</citation_entries></oai-mem-citation>";
+        let hidden_tail = hidden
+            .strip_prefix("<oai-mem-")
+            .expect("citation fixture prefix");
+        let (output, mut output_rx) = super::super::pi_session_output::test_channel(32, "run-id");
+        let (responses, _responses_rx) = response_channel();
+        let mut projection =
+            PiRpcProjection::new("run-id", "thread-id").with_session_output(output);
+
+        assert!(
+            projection
+                .project(
+                    json!({
+                        "type": "message_start",
+                        "message": { "role": "assistant", "content": [] }
+                    }),
+                    &responses,
+                    0,
+                )
+                .expect("message start")
+                .is_none()
+        );
+        projection
+            .project(
+                json!({
+                    "type": "message_update",
+                    "assistantMessageEvent": {
+                        "type": "text_start",
+                        "contentIndex": 0,
+                        "initialText": "  Alpha<oai-mem-"
+                    },
+                    "usage": {}
+                }),
+                &responses,
+                0,
+            )
+            .expect("initial Anthropic text should stream");
+        projection
+            .project(
+                json!({
+                    "type": "message_update",
+                    "assistantMessageEvent": {
+                        "type": "text_delta",
+                        "contentIndex": 0,
+                        "delta": format!("{hidden_tail} one")
+                    },
+                    "usage": {}
+                }),
+                &responses,
+                0,
+            )
+            .expect("cross-delta citation should stream safely");
+        projection
+            .project(
+                json!({
+                    "type": "message_update",
+                    "assistantMessageEvent": {
+                        "type": "text_start",
+                        "contentIndex": 2
+                    },
+                    "usage": {}
+                }),
+                &responses,
+                0,
+            )
+            .expect("empty provider text start");
+        projection
+            .project(
+                json!({
+                    "type": "message_update",
+                    "assistantMessageEvent": {
+                        "type": "text_delta",
+                        "contentIndex": 2,
+                        "delta": "Third"
+                    },
+                    "usage": {}
+                }),
+                &responses,
+                0,
+            )
+            .expect("second text block should stream");
+
+        let first = projection
+            .project(
+                json!({
+                    "type": "message_end",
+                    "message": {
+                        "role": "assistant",
+                        "content": [
+                            { "type": "text", "text": format!("  Alpha{hidden} one") },
+                            { "type": "toolCall", "id": "call-1", "name": "read", "arguments": {} },
+                            { "type": "text", "text": "Third" }
+                        ],
+                        "model": "model",
+                        "timestamp": 1,
+                        "usage": {},
+                        "stopReason": "toolUse"
+                    }
+                }),
+                &responses,
+                0,
+            )
+            .expect("first response should project")
+            .expect("first response event");
+        let first_events = super::super::provider_event_normalization::normalize_for_sequencing(
+            crate::env::Framework::Pi,
+            first,
+        );
+        assert_eq!(first_events.len(), 3);
+        let first_id = first_events[0]["runEventId"]
+            .as_str()
+            .expect("first text run event id");
+        let third_id = first_events[2]["runEventId"]
+            .as_str()
+            .expect("third text run event id");
+        assert!(first_id.ends_with(":0"));
+        assert!(third_id.ends_with(":2"));
+        assert_eq!(
+            first_events[0]["message"]["content"][0]["text"],
+            "Alpha one"
+        );
+        assert_eq!(first_events[2]["message"]["content"][0]["text"], "Third");
+        assert!(first_events[1].get("runEventId").is_none());
+
+        let mut first_chunks = Vec::new();
+        while let Ok(chunk) = output_rx.try_recv() {
+            first_chunks.push(chunk);
+        }
+        assert_eq!(first_chunks.len(), 3);
+        assert_eq!(first_chunks[0].run_event_id, first_id);
+        assert_eq!(first_chunks[0].delta, "Alpha");
+        assert_eq!(first_chunks[1].run_event_id, first_id);
+        assert_eq!(first_chunks[1].delta, " one");
+        assert_eq!(first_chunks[2].run_event_id, third_id);
+        assert_eq!(first_chunks[2].delta, "Third");
+        let streamed = first_chunks
+            .iter()
+            .map(|chunk| chunk.delta.as_str())
+            .collect::<String>();
+        assert!(!streamed.contains("oai-mem-citation"));
+        assert!(!streamed.contains("memory.md"));
+
+        projection
+            .project(
+                json!({
+                    "type": "message_start",
+                    "message": { "role": "assistant", "content": [] }
+                }),
+                &responses,
+                0,
+            )
+            .expect("second response start");
+        projection
+            .project(
+                json!({
+                    "type": "message_update",
+                    "assistantMessageEvent": {
+                        "type": "text_delta",
+                        "contentIndex": 0,
+                        "delta": "Beta"
+                    },
+                    "usage": {}
+                }),
+                &responses,
+                0,
+            )
+            .expect("second response delta");
+        let second = projection
+            .project(
+                json!({
+                    "type": "message_end",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{ "type": "text", "text": "Beta" }],
+                        "model": "model",
+                        "timestamp": 2,
+                        "usage": {},
+                        "stopReason": "stop"
+                    }
+                }),
+                &responses,
+                0,
+            )
+            .expect("second response should project")
+            .expect("second response event");
+        let second_events = super::super::provider_event_normalization::normalize_for_sequencing(
+            crate::env::Framework::Pi,
+            second,
+        );
+        let second_id = second_events[0]["runEventId"]
+            .as_str()
+            .expect("second response run event id");
+        assert!(second_id.ends_with(":0"));
+        assert_ne!(second_id, first_id);
+        let second_chunk = output_rx.try_recv().expect("second response chunk");
+        assert_eq!(second_chunk.run_event_id, second_id);
+        assert_eq!(second_chunk.delta, "Beta");
+    }
+
+    #[test]
+    fn streaming_overflow_preserves_the_authoritative_message_and_result() {
+        let (output, _output_rx) = super::super::pi_session_output::test_channel(1, "run-id");
+        let (responses, _responses_rx) = response_channel();
+        let mut projection =
+            PiRpcProjection::new("run-id", "thread-id").with_session_output(output);
+
+        projection
+            .project(
+                json!({
+                    "type": "message_start",
+                    "message": { "role": "assistant", "content": [] }
+                }),
+                &responses,
+                0,
+            )
+            .expect("message start");
+        for delta in ["first", " second"] {
+            projection
+                .project(
+                    json!({
+                        "type": "message_update",
+                        "assistantMessageEvent": {
+                            "type": "text_delta",
+                            "contentIndex": 0,
+                            "delta": delta
+                        },
+                        "usage": {}
+                    }),
+                    &responses,
+                    0,
+                )
+                .expect("queue pressure must not fail projection");
+        }
+        let assistant = projection
+            .project(
+                json!({
+                    "type": "message_end",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{ "type": "text", "text": "first second" }],
+                        "model": "model",
+                        "timestamp": 1,
+                        "usage": {},
+                        "stopReason": "stop"
+                    }
+                }),
+                &responses,
+                0,
+            )
+            .expect("authoritative message must project")
+            .expect("authoritative message event");
+        assert_eq!(assistant["message"]["content"][0]["text"], "first second");
+        assert!(assistant["message"]["content"][0]["runEventId"].is_string());
+
+        let result = projection
+            .project(json!({ "type": "agent_settled" }), &responses, 0)
+            .expect("settlement must project")
+            .expect("settlement event");
+        assert_eq!(result["subtype"], "success");
+        assert_eq!(result["result"], "first second");
+    }
+
+    #[test]
+    fn streaming_splits_utf8_deltas_at_the_request_byte_bound() {
+        let (output, mut output_rx) = super::super::pi_session_output::test_channel(8, "run-id");
+        let (responses, _responses_rx) = response_channel();
+        let mut projection =
+            PiRpcProjection::new("run-id", "thread-id").with_session_output(output);
+        let text = "é".repeat(3000);
+
+        projection
+            .project(
+                json!({
+                    "type": "message_start",
+                    "message": { "role": "assistant", "content": [] }
+                }),
+                &responses,
+                0,
+            )
+            .expect("message start");
+        projection
+            .project(
+                json!({
+                    "type": "message_update",
+                    "assistantMessageEvent": {
+                        "type": "text_delta",
+                        "contentIndex": 0,
+                        "delta": text
+                    },
+                    "usage": {}
+                }),
+                &responses,
+                0,
+            )
+            .expect("large delta");
+
+        let first = output_rx.try_recv().expect("first bounded chunk");
+        let second = output_rx.try_recv().expect("second bounded chunk");
+        assert!(first.delta.len() <= SESSION_OUTPUT_DELTA_MAX_BYTES);
+        assert!(second.delta.len() <= SESSION_OUTPUT_DELTA_MAX_BYTES);
+        assert_eq!(format!("{}{}", first.delta, second.delta), "é".repeat(3000));
     }
 
     async fn next_command(reader: &mut BufReader<tokio::process::ChildStdout>) -> Value {

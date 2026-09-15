@@ -1,5 +1,6 @@
 import mermaid from "@okouai/mermaid-lite";
 import {
+  act,
   screen,
   waitFor,
   waitForElementToBeRemoved,
@@ -53,6 +54,70 @@ function diagramButtons(container: ParentNode = document.body): HTMLElement[] {
     return button.getAttribute("aria-label") === "Expand diagram";
   });
 }
+
+test.each(["settings", "system"] as const)(
+  "An idle diagram remains available when the app theme changes through %s",
+  async (entry) => {
+    const media = context.mocks.browser.matchMedia((query) => {
+      return query === "(min-width: 48rem)";
+    });
+    const chat = createMarkdownChatFixture(context);
+    const rows = completedMessageRows(
+      chat,
+      ["```mermaid", "flowchart TD", "  Plan --> Launch", "```"].join("\n"),
+    );
+    chat.install({
+      rows: () => {
+        return rows;
+      },
+    });
+
+    await setupPage({
+      context,
+      path: chat.path,
+      host: "app.okou.ai",
+      locale: "en-US",
+    });
+    const image = await screen.findByRole("img", { name: "Diagram" });
+    const source = image.getAttribute("src");
+    expect(getButtonByName("Expand diagram")).toBeEnabled();
+
+    if (entry === "settings") {
+      const rail = await screen.findByTestId("labeled-nav-rail");
+      click(within(rail).getByLabelText("Test User"));
+      const menu = await screen.findByRole("menu");
+      click(within(menu).getByText("Settings"));
+      const settings = await screen.findByRole("dialog", { name: "Settings" });
+      const dark = await waitFor(() => {
+        return getButtonByName("Dark", settings);
+      });
+      click(dark);
+      const settingsRemoved = waitForElementToBeRemoved(settings);
+      click(within(settings).getByLabelText("Close"));
+      await settingsRemoved;
+    } else {
+      act(() => {
+        media.setMatches((query) => {
+          return (
+            query === "(min-width: 48rem)" ||
+            query === "(prefers-color-scheme: dark)"
+          );
+        });
+      });
+    }
+
+    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+    expect(screen.getByRole("img", { name: "Diagram" })).toHaveAttribute(
+      "src",
+      source,
+    );
+    expect(getButtonByName("Expand diagram")).toBeEnabled();
+    click(getButtonByName("Expand diagram"));
+    await expect(
+      screen.findByRole("dialog", { name: "diagram.svg preview" }),
+    ).resolves.toBeInTheDocument();
+  },
+);
 
 async function openMermaidSplitView() {
   vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(

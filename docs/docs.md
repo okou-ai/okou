@@ -22,6 +22,8 @@ surface; the index does not replace their detailed rules.
   requirements for independently deployed components and persisted state.
 - [Personal subscription run identity](./personal-subscription-run-identity.md):
   concrete account ownership, bounded disconnect retention and activation gates.
+- [Subscription decryption experiment](./subscription-decryption-experiment.md):
+  bounded KMS concurrency, provider-lock measurements and failure trade-offs.
 - [Connector-account workflow automations](./connector-account-workflow-automation.md):
   workflow-thread account authority, exact provider ingress, lifecycle
   convergence, and persisted compatibility for account-backed triggers.

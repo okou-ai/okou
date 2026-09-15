@@ -25,6 +25,65 @@ pub const MAX_MANIFEST_BYTES: usize = 64 * 1024;
 /// Maximum complete binary helper input.
 pub const MAX_INPUT_BYTES: usize = 16 + MAX_MANIFEST_BYTES + MAX_PAYLOAD_BYTES;
 
+/// Whether another manifest entry owns paths needed by a decoded mount.
+///
+/// Ordinary storage and artifacts own their whole mount. Instructions downloaded
+/// into separate staging (or normalized in place without an archive) only manage
+/// the instruction filenames and copy temporaries at their logical home. Their
+/// unrelated children can therefore use decoded delivery. Callers must exclude
+/// only the decoded entry itself, not other entries with the same mount path.
+pub fn decoded_mount_conflicts(
+    target: &Path,
+    mount: &Path,
+    instructions_target_filename: Option<&str>,
+    extract_path: Option<&Path>,
+    has_archive: bool,
+) -> bool {
+    if !absolute_mount(target) || !absolute_mount(mount) {
+        return true;
+    }
+    let overlaps = |other: &Path| target.starts_with(other) || other.starts_with(target);
+    if instructions_target_filename.is_some()
+        && has_archive
+        && let Some(staging) = extract_path
+        && (!absolute_mount(staging) || overlaps(staging))
+    {
+        // Staging is extracted and later removed, even when logical homes differ.
+        return true;
+    }
+    if !overlaps(mount) {
+        return false;
+    }
+    if !matches!(
+        instructions_target_filename,
+        Some("CLAUDE.md" | "AGENTS.md")
+    ) || (has_archive && extract_path.is_none())
+    {
+        return true;
+    }
+    let Ok(relative) = target.strip_prefix(mount) else {
+        return true;
+    };
+    let Some(Component::Normal(child)) = relative.components().next() else {
+        // A decoded mount at or above the instruction home still conflicts.
+        return true;
+    };
+    let Some(child) = child.to_str() else {
+        return true;
+    };
+    matches!(child, "CLAUDE.md" | "AGENTS.md")
+        || child.starts_with(".CLAUDE.md.vm0-copy-")
+        || child.starts_with(".AGENTS.md.vm0-copy-")
+}
+
+fn absolute_mount(path: &Path) -> bool {
+    path.is_absolute()
+        && !path.as_os_str().as_encoded_bytes().contains(&0)
+        && path
+            .components()
+            .all(|part| matches!(part, Component::RootDir | Component::Normal(_)))
+}
+
 /// Build binary helper input containing a canonical manifest and decoded groups.
 pub fn encode_input(manifest: &[u8], groups: &[(&str, &[StorageFile])]) -> io::Result<Vec<u8>> {
     if manifest.len() > MAX_MANIFEST_BYTES {

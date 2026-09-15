@@ -15,6 +15,7 @@ import {
   webhookCompleteContract,
   webhookEventsContract,
   webhookHeartbeatContract,
+  webhookSessionOutputContract,
   webhookStoragesCommitContract,
   webhookStoragesPrepareContract,
   webhookTelemetryContract,
@@ -121,6 +122,11 @@ export const rustRouteBindings = [
   {
     route: webhookEventsContract.send,
     rustModulePath: ["webhooks", "agent", "events"],
+    rustConstName: "SEND",
+  },
+  {
+    route: webhookSessionOutputContract.send,
+    rustModulePath: ["webhooks", "agent", "session_output"],
     rustConstName: "SEND",
   },
   {

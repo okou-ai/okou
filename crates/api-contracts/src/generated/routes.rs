@@ -436,6 +436,16 @@ pub mod webhooks {
             };
         }
 
+        /// Generated route bindings under `webhooks::agent::session_output`.
+        pub mod session_output {
+            /// Publish transient session output from sandbox.
+            /// Route contract: `POST /api/webhooks/agent/session-output`.
+            pub const SEND: crate::Route = crate::Route {
+                method: crate::Method::Post,
+                path: "/api/webhooks/agent/session-output",
+            };
+        }
+
         /// Generated route bindings under `webhooks::agent::storages`.
         pub mod storages {
             /// Generated route bindings under `webhooks::agent::storages::commit`.

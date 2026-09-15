@@ -312,6 +312,12 @@ authentication and the official open-source cloudflared implementation:
   provides the byte-stream adapter: `GorillaConn.Write` sends binary messages and
   `GorillaConn.Read` preserves unread bytes across caller reads. This is the
   reference for carrying SSH bytes, not a separate SSH protocol.
+- The same file's origin-side `Conn.Read` consumes a complete binary message but
+  copies only what fits in its caller's buffer, without retaining excess bytes.
+  [cfio/copy.go](https://github.com/cloudflare/cloudflared/blob/733bfb939963e150dcf5c4faddb1603f744fbc98/cfio/copy.go)
+  uses a 16 KiB buffer except when optimized IO paths apply;
+  [ingress/origin_connection.go](https://github.com/cloudflare/cloudflared/blob/733bfb939963e150dcf5c4faddb1603f744fbc98/ingress/origin_connection.go)
+  connects that WebSocket adapter to the origin TCP stream.
 
 The source links pin commit `733bfb939963e150dcf5c4faddb1603f744fbc98`, the
 [cloudflared 2026.8.2 release](https://github.com/cloudflare/cloudflared/releases/tag/2026.8.2)
@@ -327,6 +333,21 @@ tokio-tungstenite and russh. The saved-recipient restrictions, buffer limits and
 no-login/no-redirect behavior below are Okou's security and resource policies;
 they are not copied as Cloudflare protocol requirements. Recheck upstream changes
 and repeat authorized provider acceptance when changing this baseline.
+
+The outgoing **message** bound is also an interoperability constraint. The
+[2026-09-15 differential](https://github.com/vm0-ai/vm0/issues/34411) held the
+OpenSSH client, authorized target and 256 KiB input constant: 16,384-byte messages
+preserved every byte and SHA-256, while 16,385- and 32,768-byte messages failed.
+The target ran cloudflared 2026.6.0, with the same relevant origin adapter as the
+pinned baseline. This verifies the safe bound on that path, not a universal
+WebSocket limit. A lossless local gateway alone does not reproduce this behavior;
+the bounded-origin SFTP regression discards excess message bytes like that origin.
+The diagnostic client is separate from native real-Run acceptance in #34370.
+Post-fix Run `85ed9fd8-2d77-418b-b5ae-d3ae1195cd89` on the authorized local-11
+Runner passed eight CLI upload/download cases: Access key authentication through
+1 MiB + 17 bytes, Access password authentication through 256 KiB, and Direct
+256 KiB. Source, remote and downloaded bytes/hashes matched; this closes the
+transfer reproduction, not #34370's independent Session and rollout gates.
 
 [Acceptance recorded on 2026-09-15](https://github.com/vm0-ai/vm0/issues/34080#issuecomment-5674394652)
 compares native Runner and the pinned official binary on an authorized endpoint:
@@ -350,7 +371,10 @@ including cancellation during setup, active work and idle eviction.
 The upgrade has a 32 KiB read budget within the existing setup deadline. Incoming
 WebSocket frames/messages are limited to 1 MiB, with an initial 16 KiB read buffer
 (the library can grow it within the frame bound). Writes
-accept at most 32 KiB per binary message and have a 64 KiB maximum write buffer.
+accept at most 16 KiB per binary message and have a 64 KiB maximum write buffer.
+Larger SSH writes continue through partial writes as separate complete messages,
+not fragments of one oversized message. This does not reduce the 1 GiB file
+limit or change the fifteen-minute transfer deadline.
 The adapter retains at most one incoming message, handles fragmentation and
 ping/pong/close, and bounds empty/control processing per poll. There are no
 separate pump tasks or unbounded carrier queues. Existing SSH keepalives, channel

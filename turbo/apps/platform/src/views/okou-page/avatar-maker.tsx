@@ -1,4 +1,5 @@
 import { useGet, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
   Button,
@@ -28,12 +29,7 @@ import {
 } from "@okouai/core/agent-avatar";
 import type { AvatarSvgConfig } from "./avatar-svg-utils.ts";
 import { AvatarSvgPreview } from "./avatar-svg-preview.tsx";
-import {
-  detach,
-  onDomEventFn,
-  Reason,
-  withCleanup,
-} from "../../signals/utils.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 import {
   type Step,
   avatarMakerOpen$,
@@ -52,8 +48,7 @@ import {
   goBackStep$,
   goForwardStep$,
   closeAvatarMaker$,
-  avatarMakerSaving$,
-  setAvatarMakerSaving$,
+  confirmAvatarMaker$,
 } from "../../signals/okou-page/settings/avatar-maker.ts";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 
@@ -365,12 +360,12 @@ function AvatarMakerDialogBody({
   const config = useGet(avatarMakerConfig$);
   const editing = useGet(avatarMakerEditing$);
   const step = useGet(avatarMakerStep$);
-  const saving = useGet(avatarMakerSaving$);
+  const [saveLoadable, confirm] = useLoadableSet(confirmAvatarMaker$);
+  const saving = saveLoadable.state === "loading";
 
   const selectOption = useSet(selectAvatarOption$);
   const dialogSignal = useGet(avatarMakerDialogSignal$);
   const closeMaker = useSet(closeAvatarMaker$);
-  const setSaving = useSet(setAvatarMakerSaving$);
 
   const title = editing
     ? t(($) => {
@@ -387,25 +382,11 @@ function AvatarMakerDialogBody({
         return $.avatar.description;
       });
 
-  const handleConfirm = onDomEventFn(async () => {
-    if (!dialogSignal) {
-      return;
+  const handleConfirm = () => {
+    if (dialogSignal) {
+      detach(confirm(onConfirm, dialogSignal), Reason.DomCallback);
     }
-    dialogSignal.throwIfAborted();
-    setSaving(true);
-    await withCleanup(
-      (async () => {
-        await onConfirm(config, dialogSignal);
-        dialogSignal.throwIfAborted();
-        closeMaker();
-      })(),
-      () => {
-        if (!dialogSignal.aborted) {
-          setSaving(false);
-        }
-      },
-    );
-  });
+  };
 
   return (
     <DialogContent
@@ -549,7 +530,7 @@ export function AvatarMaker({
           }
         }}
       >
-        <AvatarMakerDialogBody onConfirm={onConfirm} />
+        {open ? <AvatarMakerDialogBody onConfirm={onConfirm} /> : null}
       </Dialog>
     </>
   );

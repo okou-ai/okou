@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   clearAllDetached,
+  settleIncludingAbort,
   detach,
   Mechanism,
   startUntrackedBestEffortCleanup,
@@ -58,5 +59,16 @@ describe("clearAllDetached", () => {
     await clearAllDetached();
 
     expect(completed).toStrictEqual(["tracked"]);
+  });
+});
+
+describe("settleIncludingAbort", () => {
+  it("owns synchronous cancellation errors after irreversible work", async () => {
+    const error = new DOMException("observation failed", "AbortError");
+    await expect(
+      settleIncludingAbort(() => {
+        throw error;
+      }),
+    ).resolves.toStrictEqual({ ok: false, error });
   });
 });

@@ -11,6 +11,28 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.902.1](https://github.com/vm0-ai/vm0/compare/app-v0.902.0...app-v0.902.1) (2026-09-15)
+
+
+### Bug Fixes
+
+* **platform:** give the effort scale's dots enough weight to read ([#34341](https://github.com/vm0-ai/vm0/issues/34341)) ([5204958](https://github.com/vm0-ai/vm0/commit/52049588ce58cf9b7f7635e34e5268be1aa0422a))
+
+
+### Refactoring
+
+* **platform:** finish child abort ownership migration ([#34402](https://github.com/vm0-ai/vm0/issues/34402)) ([f4d8819](https://github.com/vm0-ai/vm0/commit/f4d8819d452ae325cbf76a2da318db84a4a5172f)), closes [#33860](https://github.com/vm0-ai/vm0/issues/33860)
+* **platform:** own card tokens at the document root ([#34400](https://github.com/vm0-ai/vm0/issues/34400)) ([c96243b](https://github.com/vm0-ai/vm0/commit/c96243bd807481295e95824d4e9b0fdd9d8d8e65))
+* **platform:** simplify dialog loading state ([#34408](https://github.com/vm0-ai/vm0/issues/34408)) ([7a4f632](https://github.com/vm0-ai/vm0/commit/7a4f632a353ceb22ee739dace2f0952920eeb7a6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.445.0
+    * @okouai/core bumped to 8.666.7
+
 ## [0.902.0](https://github.com/vm0-ai/vm0/compare/app-v0.901.0...app-v0.902.0) (2026-09-15)
 
 

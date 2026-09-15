@@ -24,12 +24,13 @@ Raw and hourly usage independently store `billing_run_id`, `billing_anchor_at`,
 and `billing_context`. The ID is deliberately not a content FK; an unavailable
 canonical source remains reportable rather than being deleted or fabricated:
 
-| Context          | Identity and time                              | Meaning                                                                      |
-| ---------------- | ---------------------------------------------- | ---------------------------------------------------------------------------- |
-| `run`            | Original run ID and verified run creation time | Canonical billing row agrees with billed org/user and anchor.                |
-| `runless`        | No run ID; original event creation time        | A producer explicitly knows the operation had no run.                        |
-| `missing_run`    | Original run ID, no anchor                     | A supplied run identity has no surviving verified source.                    |
-| `legacy_unknown` | Neither                                        | Historical NULL association or legacy producer with insufficient provenance. |
+| Context            | Identity and time                              | Meaning                                                                      |
+| ------------------ | ---------------------------------------------- | ---------------------------------------------------------------------------- |
+| `run`              | Original run ID and verified run creation time | Canonical billing row agrees with billed org/user and anchor.                |
+| `pi_memory_stage1` | No run ID; original model event creation time  | Explicit built-in Pi memory extraction; see the D contract below.            |
+| `runless`          | No run ID; original event creation time        | A producer explicitly knows the operation had no run.                        |
+| `missing_run`      | Original run ID, no anchor                     | A supplied run identity has no surviving verified source.                    |
+| `legacy_unknown`   | Neither                                        | Historical NULL association or legacy producer with insufficient provenance. |
 
 The raw INSERT trigger atomically attaches attribution for **every** writer,
 including old API instances and direct SQL. Its input never changes quantity,
@@ -48,7 +49,8 @@ invented for a run that once existed.
 
 ## Writer and consumer inventory
 
-Verified on base `fa2e6e6212dee848c8d37d72551cc5d9b7887ac4`:
+Foundation inventory verified on base `fa2e6e6212dee848c8d37d72551cc5d9b7887ac4`.
+The Stage 1 row is updated by #34267; the other foundation entries are unchanged:
 
 | Production writer                                                                       | Atomic capture / provenance                                                                                            |
 | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
@@ -57,7 +59,7 @@ Verified on base `fa2e6e6212dee848c8d37d72551cc5d9b7887ac4`:
 | `openrouter-usage.service.ts`                                                           | Raw trigger; explicit runless for request-local no-run usage.                                                          |
 | `webhooks-agent-health-usage-telemetry.ts`                                              | Raw trigger, runner-supplied run ID; current idempotent INSERT unchanged.                                              |
 | `pi-api-first-turn-usage.service.ts`                                                    | Raw trigger in current idempotency-validation transaction.                                                             |
-| `pi-memory-stage1-usage.service.ts`                                                     | Explicit runless; current deterministic keys and validation transaction unchanged.                                     |
+| `pi-memory-stage1-usage.service.ts`                                                     | Explicit `pi_memory_stage1`; existing deterministic category keys and billing semantics.                               |
 | `image-generation.service.ts`, `video-generation.service.ts`, `avatar-video.service.ts` | Raw trigger; callbacks carry original job billing identity; synchronous image requests carry request-local provenance. |
 | `voice-io-post.service.ts`                                                              | Raw trigger; explicit request-local runless classification.                                                            |
 | `intro-video-agent.service.ts`, `intro-video-render.service.ts`                         | Raw trigger; original job billing identity survives provider delay.                                                    |
@@ -188,3 +190,19 @@ authority. Delete completed backfill checkpoints after exporting and accepting
 their content-free report; failed checkpoints remain only until resumed or
 explicitly abandoned. Do not create permanent run snapshots, account profiles,
 prompt archives, or general audit retention to implement either lifecycle.
+
+## Stage 1 operation subtype (D)
+
+[#34267](https://github.com/vm0-ai/vm0/issues/34267) extends this foundation with
+`pi_memory_stage1`, a known immutable runless **model** context. Both physical
+ledgers enforce NULL live/billing run identity and a non-NULL original anchor;
+raw anchors equal creation time. Capture rejects incompatible explicit subtype
+inputs before normalization. Existing generic contexts and old writers remain
+valid. Matching retained old `runless` response keys are accepted without
+retagging or additional charging; arbitrary unknown/conflicting identities fail.
+
+The [cost and activation runbook](../../ops/pi-memory-stage1/README.md) defines
+original-time replay, exact gross credit-value estimation, bounded raw/hourly
+UNION reconciliation, legacy/missing coverage, two-transaction constraint
+validation and retained-schema rollback. This does not expand idempotency
+retention, infer Phase 2 from `agent`/model, activate monitoring, or perform A2.

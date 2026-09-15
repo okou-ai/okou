@@ -1,5 +1,5 @@
 {
-  "id": "4082c138-8354-4eeb-afe5-e51fe555c148",
+  "id": "9ed794ca-b484-4535-8d2c-4d2515fbda90",
   "prevId": "867c0879-afdf-430b-9c6b-f2a677f43109",
   "version": "7",
   "dialect": "postgresql",
@@ -1811,37 +1811,9 @@
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false
-        },
-        "terminal_effects_pending_at": {
-          "name": "terminal_effects_pending_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
-        "agent_run_sandbox_intent_terminal_idx": {
-          "name": "agent_run_sandbox_intent_terminal_idx",
-          "columns": [
-            {
-              "expression": "terminal_effects_pending_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "run_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"agent_run_sandbox_intent\".\"terminal_effects_pending_at\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "agent_run_sandbox_intent_queue_idx": {
           "name": "agent_run_sandbox_intent_queue_idx",
           "columns": [
@@ -1989,18 +1961,6 @@
         "runner_id": {
           "name": "runner_id",
           "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "claimed_owner_epoch": {
-          "name": "claimed_owner_epoch",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "claimed_generation": {
-          "name": "claimed_generation",
-          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
@@ -21468,174 +21428,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.agent_run_inference_objects": {
-      "name": "agent_run_inference_objects",
-      "schema": "",
-      "columns": {
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "hash": {
-          "name": "hash",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "agent_run_inference_object_hash_idx": {
-          "name": "agent_run_inference_object_hash_idx",
-          "columns": [
-            {
-              "expression": "hash",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "agent_run_inference_objects_run_id_agent_run_inference_run_id_fk": {
-          "name": "agent_run_inference_objects_run_id_agent_run_inference_run_id_fk",
-          "tableFrom": "agent_run_inference_objects",
-          "tableTo": "agent_run_inference",
-          "columnsFrom": [
-            "run_id"
-          ],
-          "columnsTo": [
-            "run_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_run_inference_objects_hash_pi_inference_objects_hash_fk": {
-          "name": "agent_run_inference_objects_hash_pi_inference_objects_hash_fk",
-          "tableFrom": "agent_run_inference_objects",
-          "tableTo": "pi_inference_objects",
-          "columnsFrom": [
-            "hash"
-          ],
-          "columnsTo": [
-            "hash"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "agent_run_inference_objects_run_id_kind_hash_pk": {
-          "name": "agent_run_inference_objects_run_id_kind_hash_pk",
-          "columns": [
-            "run_id",
-            "kind",
-            "hash"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.pi_inference_objects": {
-      "name": "pi_inference_objects",
-      "schema": "",
-      "columns": {
-        "hash": {
-          "name": "hash",
-          "type": "varchar(64)",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "content": {
-          "name": "content",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "pi_inference_object_gc_idx": {
-          "name": "pi_inference_object_gc_idx",
-          "columns": [
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "hash",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "pi_inference_object_hash_check": {
-          "name": "pi_inference_object_hash_check",
-          "value": "\"pi_inference_objects\".\"hash\" ~ '^[0-9a-f]{64}$'"
-        },
-        "pi_inference_object_kind_check": {
-          "name": "pi_inference_object_kind_check",
-          "value": "\"pi_inference_objects\".\"kind\" IN ('configuration', 'context', 'h1', 'secrets')"
-        },
-        "pi_inference_object_size_check": {
-          "name": "pi_inference_object_size_check",
-          "value": "octet_length(\"pi_inference_objects\".\"content\") <= 33554432"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.pi_memory_phase2_checkpoints": {
       "name": "pi_memory_phase2_checkpoints",
       "schema": "",
@@ -28967,7 +28759,7 @@
       "checkConstraints": {
         "usage_event_hourly_rollup_billing_context_check": {
           "name": "usage_event_hourly_rollup_billing_context_check",
-          "value": "(\n        (\"usage_event_hourly_rollup\".\"billing_context\" = 'run' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NOT NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'runless' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'missing_run' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NOT NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NULL)\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'legacy_unknown' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NULL)\n      )"
+          "value": "(\n        (\"usage_event_hourly_rollup\".\"billing_context\" = 'run' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NOT NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'runless' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'pi_memory_stage1' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NULL AND \"usage_event_hourly_rollup\".\"run_id\" IS NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NOT NULL AND \"usage_event_hourly_rollup\".\"kind\" = 'model')\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'missing_run' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NOT NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NULL)\n        OR (\"usage_event_hourly_rollup\".\"billing_context\" = 'legacy_unknown' AND \"usage_event_hourly_rollup\".\"billing_run_id\" IS NULL AND \"usage_event_hourly_rollup\".\"billing_anchor_at\" IS NULL)\n      )"
         },
         "chk_usage_event_hourly_rollup_processed_hour": {
           "name": "chk_usage_event_hourly_rollup_processed_hour",
@@ -29290,7 +29082,7 @@
       "checkConstraints": {
         "usage_event_billing_context_check": {
           "name": "usage_event_billing_context_check",
-          "value": "(\n        (\"usage_event\".\"billing_context\" = 'run' AND \"usage_event\".\"billing_run_id\" IS NOT NULL AND \"usage_event\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event\".\"billing_context\" = 'runless' AND \"usage_event\".\"billing_run_id\" IS NULL AND \"usage_event\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event\".\"billing_context\" = 'missing_run' AND \"usage_event\".\"billing_run_id\" IS NOT NULL AND \"usage_event\".\"billing_anchor_at\" IS NULL)\n        OR (\"usage_event\".\"billing_context\" = 'legacy_unknown' AND \"usage_event\".\"billing_run_id\" IS NULL AND \"usage_event\".\"billing_anchor_at\" IS NULL)\n      )"
+          "value": "(\n        (\"usage_event\".\"billing_context\" = 'run' AND \"usage_event\".\"billing_run_id\" IS NOT NULL AND \"usage_event\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event\".\"billing_context\" = 'runless' AND \"usage_event\".\"billing_run_id\" IS NULL AND \"usage_event\".\"billing_anchor_at\" IS NOT NULL)\n        OR (\"usage_event\".\"billing_context\" = 'pi_memory_stage1' AND \"usage_event\".\"billing_run_id\" IS NULL AND \"usage_event\".\"run_id\" IS NULL AND \"usage_event\".\"billing_anchor_at\" IS NOT NULL AND \"usage_event\".\"kind\" = 'model' AND \"usage_event\".\"billing_anchor_at\" = \"usage_event\".\"created_at\")\n        OR (\"usage_event\".\"billing_context\" = 'missing_run' AND \"usage_event\".\"billing_run_id\" IS NOT NULL AND \"usage_event\".\"billing_anchor_at\" IS NULL)\n        OR (\"usage_event\".\"billing_context\" = 'legacy_unknown' AND \"usage_event\".\"billing_run_id\" IS NULL AND \"usage_event\".\"billing_anchor_at\" IS NULL)\n      )"
         }
       },
       "isRLSEnabled": false
