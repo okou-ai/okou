@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.666.0](https://github.com/vm0-ai/vm0/compare/core-v8.665.0...core-v8.666.0) (2026-09-15)
+
+
+### Features
+
+* give intro video its own generation template type ([#34221](https://github.com/vm0-ai/vm0/issues/34221)) ([776735a](https://github.com/vm0-ai/vm0/commit/776735a14e2d2c8d3fe482b3c8b92b9dd66f5ce8))
+
+
+### Refactoring
+
+* remove progressiveArtifactPreview feature switch ([#34214](https://github.com/vm0-ai/vm0/issues/34214)) ([db1b28e](https://github.com/vm0-ai/vm0/commit/db1b28ee3ed5f570a45c5bf37a74238af716d715))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.442.0
+
 ## [8.665.0](https://github.com/vm0-ai/vm0/compare/core-v8.664.2...core-v8.665.0) (2026-09-15)
 
 
