@@ -645,10 +645,13 @@ utility of its own, which the important declaration outranks from inside the sam
 layer, so both halves still land on the bubble's 8px. But that same promotion
 would also beat the two competitors the retired
 rule _lost_ to — the vendored `.wmde-markdown > *:first-child` /
-`> *:last-child` resets, which are themselves important, and the vendored
-`blockquote > :first-child` / `:last-child` pair, which ties the retired rule on
-specificity and wins on source order because the Markdown chunk's stylesheet
-loads after the App's. Restating those four at the same tier is what keeps the
+`> *:last-child` resets, which carry `!important` and therefore win whatever the
+source order is, and the vendored `blockquote > :first-child` / `:last-child`
+pair, which ties the retired rule on specificity. (The Markdown chunk's
+stylesheet in fact loads _before_ the App's: it reaches the bundle through a
+static `router.tsx` import chain, so Rollup emits it first and the App block
+wins every tie. See the Markdown body batch in the migration log.) Restating
+those four at the same tier is what keeps the
 edge paragraphs flush. `[&_hr]:hidden` needs no important, because nothing
 unlayered declares `display` on a Markdown rule.
 
