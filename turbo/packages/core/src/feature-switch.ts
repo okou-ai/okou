@@ -305,7 +305,9 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
   },
   [FeatureSwitchKey.PiDeferredSandbox]: {
-    maintainer: "lancy@vm0.ai",
+    maintainer: "lancy@okou.ai",
+    description:
+      "Allow Pi inference before Sandbox admission after lifecycle activation prerequisites are met.",
     enabled: false,
   },
   [FeatureSwitchKey.PiLoop]: {

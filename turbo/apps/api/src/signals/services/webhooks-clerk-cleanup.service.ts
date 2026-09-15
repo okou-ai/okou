@@ -1,4 +1,7 @@
-import { assertPiInferenceScopeErasureReady } from "./pi-inference-lifecycle.service";
+import {
+  assertPiInferenceScopeErasureReady,
+  piInferenceErasureScopePredicate,
+} from "./pi-inference-lifecycle.service";
 import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { cleanupSharedThreadArtifacts$ } from "./shared-thread-artifacts.service";
@@ -106,12 +109,21 @@ async function publishCancelBestEffort(
   );
 }
 
-async function cancelOrgRuns(db: Db, orgId: string): Promise<void> {
+async function cancelOrgRuns(
+  db: Db,
+  orgId: string,
+  cascadeOwnedAgents = false,
+): Promise<void> {
   const cancelled = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: { status: "cancelled", completedAt: nowDate() },
       conditions: [
-        eq(agentRuns.orgId, orgId),
+        cascadeOwnedAgents
+          ? piInferenceErasureScopePredicate(tx, {
+              kind: "organization",
+              orgId,
+            })
+          : eq(agentRuns.orgId, orgId),
         inArray(agentRuns.status, ["queued", "pending", "running"]),
       ],
     });
@@ -168,12 +180,18 @@ async function cancelLastAdminOrgsStripeSubscriptions(
   }
 }
 
-async function cancelUserRuns(db: Db, userId: string): Promise<void> {
+async function cancelUserRuns(
+  db: Db,
+  userId: string,
+  cascadeOwnedAgents = false,
+): Promise<void> {
   const cancelled = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: { status: "cancelled", completedAt: nowDate() },
       conditions: [
-        eq(agentRuns.userId, userId),
+        cascadeOwnedAgents
+          ? piInferenceErasureScopePredicate(tx, { kind: "user", userId })
+          : eq(agentRuns.userId, userId),
         inArray(agentRuns.status, ["queued", "pending", "running"]),
       ],
     });
@@ -926,7 +944,7 @@ async function deleteUserData(
 export const cleanupClerkDeletedOrg$ = command(
   async ({ get, set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
-    await cancelOrgRuns(db, orgId);
+    await cancelOrgRuns(db, orgId, true);
     signal.throwIfAborted();
     await assertPiInferenceScopeErasureReady(db, {
       kind: "organization",
@@ -957,7 +975,7 @@ export const cleanupClerkDeletedOrgBilling$ = command(
 export const cleanupClerkDeletedUser$ = command(
   async ({ get, set }, userId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
-    await cancelUserRuns(db, userId);
+    await cancelUserRuns(db, userId, true);
     signal.throwIfAborted();
     await assertPiInferenceScopeErasureReady(db, { kind: "user", userId });
     signal.throwIfAborted();
@@ -973,7 +991,7 @@ export const cleanupClerkDeletedUser$ = command(
     await set(cleanupUserExternalServices$, db, userId, signal);
     signal.throwIfAborted();
     for (const orgId of emptyOrgIds) {
-      await cancelOrgRuns(db, orgId);
+      await cancelOrgRuns(db, orgId, true);
       signal.throwIfAborted();
       await assertPiInferenceScopeErasureReady(db, {
         kind: "organization",

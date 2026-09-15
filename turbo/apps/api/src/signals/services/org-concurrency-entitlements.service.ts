@@ -8,7 +8,6 @@ import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
 import { sandboxCapacityPredicate } from "./pi-inference-lifecycle.service";
-import { agentRunSandboxLease } from "@okouai/db/schema/agent-run-inference";
 
 export const CONCURRENCY_SUBSCRIPTION_PURPOSE = "concurrency_subscription";
 const CONCURRENCY_SUBSCRIPTION_ACTIVE_STATUSES = [
@@ -132,14 +131,10 @@ export async function loadOrgConcurrencyState(
       count: count().as("active_run_count"),
     })
     .from(agentRuns)
-    .leftJoin(
-      agentRunSandboxLease,
-      eq(agentRunSandboxLease.runId, agentRuns.id),
-    )
     .where(
       and(
         eq(agentRuns.orgId, args.orgId),
-        sandboxCapacityPredicate(args.activePendingAfter),
+        sandboxCapacityPredicate(db, args.orgId, args.activePendingAfter),
       ),
     )
     .as("active_concurrency_run_totals");

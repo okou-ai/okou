@@ -13,6 +13,7 @@ import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandbo
 import { createRouteMocks } from "./helpers/route-test";
 import {
   seedPiInferenceFixture,
+  transferPiFixtureAgentOwner,
   seedPiInferenceUsage,
   readPiInferenceUsage,
   erasePiInferenceScope,
@@ -306,6 +307,20 @@ describe("default-off Pi inference lifecycle readers", () => {
       });
     },
   );
+
+  it("fences indirect owned-agent cascades before removing another run's evidence", async () => {
+    const f = await fixture({ phase: "provider" });
+    const owner = "erased-agent-owner";
+    await transferPiFixtureAgentOwner(f, owner);
+    await seedPiInferenceUsage(f);
+    await expect(
+      erasePiInferenceScope({ ...f, userId: owner }, "user", context.signal),
+    ).rejects.toThrow("awaits usage or Sandbox release evidence");
+    expect((await accept(read(f), [200])).body.status).toBe("cancelled");
+    await expect(readPiInferenceUsage(f)).resolves.toStrictEqual([
+      { quantity: 1 },
+    ]);
+  });
 
   it("does not take a Sandbox-capacity lock for a run-owner CAS", async () => {
     const f = await fixture();

@@ -256,7 +256,9 @@ The [inference lifecycle foundation](pi-inference-lifecycle.md) reuses this docu
 captured credential-source and lifecycle-before-provider lock contract. A v4
 API-only or Sandbox-waiting run has public status `pending`, retains its exact
 admitted personal source, and needs no Runner job or Sandbox lease. Ordinary
-disconnect preserves that admitted reference; final terminal cleanup removes the
+disconnect preserves that admitted reference under the existing enabled retention
+policy (`PersonalSubscriptionPriority`); priority-off disconnect keeps its existing
+hard behavior. Final terminal cleanup removes the
 last disconnected reference under the existing provider lock. Hard user, org,
 membership or ban authority loss remains hard and does not authorize account
 reselection. The common terminal transition also fences inference/intent/lease

@@ -46,7 +46,6 @@ import {
   sandboxCapacityPredicate,
   readPiInferenceLifecycle,
 } from "./pi-inference-lifecycle.service";
-import { agentRunSandboxLease } from "@okouai/db/schema/agent-run-inference";
 import {
   activePaidConcurrencySlots,
   cappedBaseConcurrencyLimit,
@@ -127,13 +126,12 @@ async function activeMemberUsage(
       active,
     })
     .from(agentRuns)
-    .leftJoin(
-      agentRunSandboxLease,
-      eq(agentRunSandboxLease.runId, agentRuns.id),
-    )
     .leftJoin(userCache, eq(agentRuns.userId, userCache.userId))
     .where(
-      and(eq(agentRuns.orgId, orgId), sandboxCapacityPredicate(staleThreshold)),
+      and(
+        eq(agentRuns.orgId, orgId),
+        sandboxCapacityPredicate(db, orgId, staleThreshold),
+      ),
     )
     .groupBy(agentRuns.userId, userCache.name, userCache.email)
     .orderBy(desc(active), asc(agentRuns.userId));

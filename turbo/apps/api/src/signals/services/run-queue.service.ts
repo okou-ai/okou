@@ -28,7 +28,6 @@ import {
   legacySandboxRunPredicate,
   sandboxCapacityPredicate,
 } from "./pi-inference-lifecycle.service";
-import { agentRunSandboxLease } from "@okouai/db/schema/agent-run-inference";
 import { decryptQueuedRunnerJobPayload } from "./agent-run-queue-payload.service";
 import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
@@ -943,14 +942,10 @@ export const staleQueueOrgIds$ = command(
       const [activeRow] = await writeDb
         .select({ count: count() })
         .from(agentRuns)
-        .leftJoin(
-          agentRunSandboxLease,
-          eq(agentRunSandboxLease.runId, agentRuns.id),
-        )
         .where(
           and(
             eq(agentRuns.orgId, orgId),
-            sandboxCapacityPredicate(staleThreshold),
+            sandboxCapacityPredicate(writeDb, orgId, staleThreshold),
           ),
         );
       signal.throwIfAborted();

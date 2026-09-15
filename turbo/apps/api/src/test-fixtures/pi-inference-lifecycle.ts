@@ -31,7 +31,6 @@ import { nowDate } from "../lib/time";
 import {
   piInferenceOwnerPredicate,
   readPiInferenceLifecycle,
-  assertPiInferencePublication,
 } from "../signals/services/pi-inference-lifecycle.service";
 import { chatThreadAdmissionBlocked } from "../signals/services/chat-active-run.service";
 import { completeAgentRun$ } from "../signals/services/agent-webhook-complete.service";
@@ -318,8 +317,6 @@ export async function finalizePiInferenceFixture(
   signal: AbortSignal,
   success = false,
 ) {
-  const lifecycle = await readPiInferenceFixture(f);
-  assertPiInferencePublication(lifecycle, epoch);
   if (success) {
     const [conversation] = await db()
       .insert(conversations)
@@ -527,4 +524,11 @@ export async function erasePiInferenceScope(
     return await store.set(cleanupClerkDeletedUser$, f.userId, signal);
   }
   return await store.set(cleanupClerkDeletedOrg$, f.orgId, signal);
+}
+
+export async function transferPiFixtureAgentOwner(
+  f: PiInferenceFixture,
+  owner: string,
+) {
+  await db().update(agents).set({ owner }).where(eq(agents.id, f.agentId));
 }

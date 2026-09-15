@@ -195,6 +195,53 @@ try {
     "PASS validation failure preserves committed additive frontier; retry validates unchanged historical records",
   );
 
+  // Compare the replaced LEFT JOIN/OR count with the production UNION shape.
+  // Both use the same retained-table census and twenty live legacy reservations.
+  await client.query(
+    `UPDATE agent_runs SET status = 'running' WHERE id IN (SELECT id FROM agent_runs LIMIT 20); ANALYZE agent_runs`,
+  );
+  const legacyFilter = `r.org_id = 'foundation-scale' AND (r.launch_snapshot IS NULL OR r.launch_snapshot->'schemaVersion' <> '4'::jsonb) AND (r.status = 'running' OR (r.status = 'pending' AND (r.last_heartbeat_at > now() - interval '5 minutes' OR (r.last_heartbeat_at IS NULL AND r.created_at > now() - interval '5 minutes'))))`;
+  const activeLease = `l.state IN ('reserved','preparing','ready','claimed','releasing')`;
+  const joinedCount = `SELECT count(*) FROM agent_runs r LEFT JOIN agent_run_sandbox_lease l ON l.run_id = r.id WHERE r.org_id = 'foundation-scale' AND (${activeLease} OR (${legacyFilter}))`;
+  const unionCount = `SELECT count(*) FROM agent_runs WHERE id IN (
+    SELECT r.id FROM agent_runs r WHERE ${legacyFilter}
+    UNION SELECT l.run_id FROM agent_run_sandbox_lease l INNER JOIN agent_runs r ON r.id = l.run_id WHERE r.org_id = 'foundation-scale' AND ${activeLease}
+  )`;
+  interface PlanNode {
+    "Relation Name"?: string;
+    "Actual Rows"?: number;
+    "Rows Removed by Filter"?: number;
+    Plans?: PlanNode[];
+  }
+  function largestRunScan(node: PlanNode): number {
+    const scanned =
+      node["Relation Name"] === "agent_runs"
+        ? (node["Actual Rows"] ?? 0) + (node["Rows Removed by Filter"] ?? 0)
+        : 0;
+    return Math.max(scanned, ...(node.Plans ?? []).map(largestRunScan));
+  }
+  for (const [name, statement] of [
+    ["join-or", joinedCount],
+    ["union", unionCount],
+  ] as const) {
+    assert.equal(
+      (await client.query<{ count: string }>(statement)).rows[0]?.count,
+      "20",
+    );
+    const plan = (
+      await client.query<{ "QUERY PLAN": { Plan: PlanNode }[] }>(
+        `EXPLAIN (ANALYZE, FORMAT JSON) ${statement}`,
+      )
+    ).rows[0]!["QUERY PLAN"][0]!.Plan;
+    const scanned = largestRunScan(plan);
+    console.log(`Capacity count ${name}: largest retained-run scan ${scanned}`);
+    if (name === "union")
+      assert.ok(scanned < 1000, "Admission must not scan retained org history");
+  }
+  console.log(
+    "PASS mixed capacity count retains indexed legacy admission at census scale",
+  );
+
   await client.query("BEGIN");
   try {
     await client.query(`INSERT INTO agent_run_inference

@@ -11,6 +11,8 @@ import {
   agentRunSandboxIntent,
   agentRunSandboxLease,
 } from "@okouai/db/schema/agent-run-inference";
+import { agents } from "@okouai/db/schema/agent";
+import { agentSessions } from "@okouai/db/schema/agent-session";
 import { conversations } from "@okouai/db/schema/conversation";
 import { alias } from "drizzle-orm/pg-core";
 import { and, asc, eq, gt, inArray, ne, or, sql, type SQL } from "drizzle-orm";
@@ -31,29 +33,45 @@ export function legacySandboxRunPredicate(): SQL {
   return sql`${agentRuns.launchSnapshot} IS NULL OR ${agentRuns.launchSnapshot}->'schemaVersion' <> '4'::jsonb`;
 }
 
-/** One run contributes at most one slot, including terminal unreleased work. */
+/** UNION keeps both indexed admission paths and counts each run only once. */
 export function sandboxCapacityPredicate(
+  db: Pick<Db, "select">,
+  orgId: string,
   staleThreshold: Date,
-): SQL | undefined {
-  return or(
-    inArray(agentRunSandboxLease.state, [
-      "reserved",
-      "preparing",
-      "ready",
-      "claimed",
-      "releasing",
-    ]),
-    and(
-      sql`(${legacySandboxRunPredicate()})`,
-      or(
-        eq(agentRuns.status, "running"),
-        and(
-          eq(agentRuns.status, "pending"),
-          activePendingRunPredicate(staleThreshold),
+): SQL {
+  const legacy = db
+    .select({ id: agentRuns.id })
+    .from(agentRuns)
+    .where(
+      and(
+        eq(agentRuns.orgId, orgId),
+        sql`(${legacySandboxRunPredicate()})`,
+        or(
+          eq(agentRuns.status, "running"),
+          and(
+            eq(agentRuns.status, "pending"),
+            activePendingRunPredicate(staleThreshold),
+          ),
         ),
       ),
-    ),
-  );
+    );
+  const leased = db
+    .select({ id: agentRunSandboxLease.runId })
+    .from(agentRunSandboxLease)
+    .innerJoin(agentRuns, eq(agentRuns.id, agentRunSandboxLease.runId))
+    .where(
+      and(
+        eq(agentRuns.orgId, orgId),
+        inArray(agentRunSandboxLease.state, [
+          "reserved",
+          "preparing",
+          "ready",
+          "claimed",
+          "releasing",
+        ]),
+      ),
+    );
+  return inArray(agentRuns.id, legacy.union(leased));
 }
 
 async function selectPiInferenceLifecycle(
@@ -448,12 +466,39 @@ export function assertPiInferencePublication(
   }
 }
 
+type InferenceErasureScope =
+  | { readonly kind: "user"; readonly userId: string }
+  | { readonly kind: "organization"; readonly orgId: string };
+
+/** Match direct runs plus the actual Agent -> Session -> Run deletion cascade. */
+export function piInferenceErasureScopePredicate(
+  db: Pick<Db, "select">,
+  scope: InferenceErasureScope,
+): SQL {
+  const predicate = or(
+    scope.kind === "user"
+      ? eq(agentRuns.userId, scope.userId)
+      : eq(agentRuns.orgId, scope.orgId),
+    inArray(
+      agentRuns.sessionId,
+      db
+        .select({ id: agentSessions.id })
+        .from(agentSessions)
+        .innerJoin(agents, eq(agents.id, agentSessions.agentId))
+        .where(
+          scope.kind === "user"
+            ? eq(agents.owner, scope.userId)
+            : eq(agents.orgId, scope.orgId),
+        ),
+    ),
+  );
+  return sql`(${predicate})`;
+}
+
 /** Hard cancellation must precede this preflight; no erased external evidence first. */
 export async function assertPiInferenceScopeErasureReady(
   db: Db,
-  scope:
-    | { readonly kind: "user"; readonly userId: string }
-    | { readonly kind: "organization"; readonly orgId: string },
+  scope: InferenceErasureScope,
 ) {
   await db.transaction(async (tx) => {
     // Bound this preflight independently of any later external cleanup.
@@ -463,9 +508,7 @@ export async function assertPiInferenceScopeErasureReady(
       .from(agentRuns)
       .where(
         and(
-          scope.kind === "user"
-            ? eq(agentRuns.userId, scope.userId)
-            : eq(agentRuns.orgId, scope.orgId),
+          piInferenceErasureScopePredicate(tx, scope),
           sql`${agentRuns.launchSnapshot}->'schemaVersion' = '4'::jsonb`,
         ),
       )
