@@ -230,11 +230,11 @@ The 2026-09-15 05:17:59.234547–05:18:01.438157 UTC production census was
 statements, not a common snapshot. Attribution columns were not exposed by that
 masked schema, so live source coverage is unknown.
 
-1. `1137_pi_memory_stage1_billing_context` replaces only the two context checks
+1. `1138_pi_memory_stage1_billing_context` replaces only the two context checks
    with expanded `NOT VALID` checks and updates capture in one short transaction.
    Existing rows are not rewritten or relabeled. New writes are checked at once.
 2. Commit releases the `ACCESS EXCLUSIVE` locks before
-   `1138_validate_pi_memory_stage1_billing_context` scans the existing rows in a
+   `1139_validate_pi_memory_stage1_billing_context` scans the existing rows in a
    **different transaction**. It uses `SHARE UPDATE EXCLUSIVE`; no same-transaction
    lock downgrade is claimed. There is no explicit `LOCK TABLE` or timeout raise.
 3. Retain runner defaults (1s lock, 10s statement). If expansion times out, its
@@ -264,9 +264,10 @@ representative; distribution, hardware, cache and contention are synthetic.
 #34272 merged image-reference migration 1133, which is preserved.
 #34273 then merged inference lifecycle migrations 1134/1135; these and their
 validators are retained unchanged. #34304 then merged Clerk erasure bridge
-migration 1136; its schema, export and validator are preserved. D metadata was
-regenerated as 1137/1138 against canonical main
-`233a2d50d29334d6d5103f8fc3b39eca0c102123`.
+migration 1136; its schema, export and validator are preserved. #34317 then
+merged invitation-column retirement migration 1137; its SQL, snapshot and
+validator are preserved. D metadata was regenerated as 1138/1139 against
+canonical main `a368baa70eb9a83a4739469a9134c126643a04e3`.
 #34234 and #34263 competed for migration numbering during inventory. They are
 not ordering blockers. Preserve the first merged canonical main migrations and
 regenerate this branch's metadata through Drizzle if a conflict occurs.

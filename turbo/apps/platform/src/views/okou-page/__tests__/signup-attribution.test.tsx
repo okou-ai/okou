@@ -172,7 +172,7 @@ test("A malformed analytics cookie is ignored", async () => {
     acquisitionAttributionContract.recordSignup,
     ({ respond }) => {
       attributionRequests += 1;
-      return respond(200, { recorded: true });
+      return respond(200, { recorded: true, googleAdsAccountId: null });
     },
   );
 
@@ -190,7 +190,7 @@ test("An older account does not trigger a new sign-up conversion", async () => {
     acquisitionAttributionContract.recordSignup,
     ({ respond }) => {
       attributionRequests += 1;
-      return respond(200, { recorded: true });
+      return respond(200, { recorded: true, googleAdsAccountId: null });
     },
   );
 
@@ -251,7 +251,7 @@ test("A recent organic sign-up records its analytics client identifier", async (
     acquisitionAttributionContract.recordSignup,
     ({ body, respond }) => {
       recordedAttribution = body.attribution;
-      return respond(200, { recorded: true });
+      return respond(200, { recorded: true, googleAdsAccountId: null });
     },
   );
 
@@ -269,7 +269,7 @@ test("Previously recorded server attribution prevents a duplicate conversion", a
   context.mocks.api(
     acquisitionAttributionContract.recordSignup,
     ({ respond }) => {
-      return respond(200, { recorded: false });
+      return respond(200, { recorded: false, googleAdsAccountId: null });
     },
   );
 
@@ -290,7 +290,7 @@ test("A temporary attribution failure does not block Platform", async () => {
           error: { code: "UNAUTHORIZED", message: "Not authenticated" },
         });
       }
-      return respond(200, { recorded: true });
+      return respond(200, { recorded: true, googleAdsAccountId: null });
     },
   );
 
@@ -322,7 +322,7 @@ test.each([
       acquisitionAttributionContract.recordSignup,
       ({ body, respond }) => {
         recordedAttribution = body.attribution;
-        return respond(200, { recorded: true });
+        return respond(200, { recorded: true, googleAdsAccountId: null });
       },
     );
     const attribution = `gclid=original-click&${brand}_campaign_id=24220469665&${brand}_ad_group_id=123456`;
@@ -396,7 +396,7 @@ test("A returning user records Google Ads campaign context while Marketing owns 
     acquisitionAttributionContract.recordSignup,
     ({ body, respond }) => {
       receivedSignup = body;
-      return respond(200, { recorded: false });
+      return respond(200, { recorded: false, googleAdsAccountId: null });
     },
   );
   await setupPage({

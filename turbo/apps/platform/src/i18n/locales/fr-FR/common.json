@@ -1985,8 +1985,7 @@
           "print": "Impression et édition",
           "retro-tech": "Technologie rétro et interfaces"
         },
-        "preview": "Aperçu de {{title}}",
-        "previewUnavailable": "Aucun aperçu vidéo n’est disponible pour ce style."
+        "preview": "Aperçu de {{title}}"
       },
       "voice": {
         "auto": "Laisser Okou choisir",

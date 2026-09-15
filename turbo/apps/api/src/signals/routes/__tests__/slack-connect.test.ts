@@ -6,13 +6,9 @@ import { createStore } from "ccstate";
 import { createApp } from "../../../app-factory";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import {
   deleteSlackConnectOrg$,
-  findSlackOrgConnection$,
-  findSlackOrgInstallation$,
   seedSlackConnectOrg$,
   type SlackConnectFixture,
 } from "./helpers/slack-connect";
@@ -23,40 +19,7 @@ const TEST_APP_ROUTES = Object.freeze([...slackConnectRoutes]);
 const context = testContext();
 const store = createStore();
 const mocks = createRouteMocks(context);
-const storages = createStoragesBddApi(context);
 const SLACK_CONNECT_PATH = "/api/integrations/slack/connect";
-
-function userIdsFromClerkListArgs(args: unknown): readonly string[] {
-  if (typeof args !== "object" || args === null || !("userId" in args)) {
-    return [];
-  }
-  const userId = args.userId;
-  if (
-    !Array.isArray(userId) ||
-    !userId.every((candidate) => {
-      return typeof candidate === "string";
-    })
-  ) {
-    return [];
-  }
-  return userId;
-}
-
-function mockClerkUsersById(): void {
-  context.mocks.clerk.users.getUserList.mockImplementation((args: unknown) => {
-    return Promise.resolve({
-      data: userIdsFromClerkListArgs(args).map((userId) => {
-        return {
-          id: userId,
-          emailAddresses: [
-            { id: `email_${userId}`, emailAddress: `${userId}@example.com` },
-          ],
-          primaryEmailAddressId: `email_${userId}`,
-        };
-      }),
-    });
-  });
-}
 
 async function postRawSlackConnect(body: string): Promise<{
   readonly status: number;
@@ -228,20 +191,6 @@ describe("POST /api/integrations/slack/connect", () => {
     return store.set(deleteSlackConnectOrg$, fixture, context.signal);
   });
 
-  beforeEach(() => {
-    context.mocks.slack.chat.postMessage.mockResolvedValue({
-      ok: true,
-      ts: "mock.ts",
-      channel: "D_TEST",
-    });
-    context.mocks.slack.chat.postEphemeral.mockResolvedValue({
-      ok: true,
-      message_ts: "mock.ephemeral.ts",
-    });
-    context.mocks.slack.views.publish.mockResolvedValue({ ok: true });
-    mockClerkUsersById();
-  });
-
   it("returns 401 when not authenticated", async () => {
     const client = setupApp({ context, routes: slackConnectRoutes })(
       slackConnectContract,
@@ -251,6 +200,7 @@ describe("POST /api/integrations/slack/connect", () => {
       client.connect({
         headers: {},
         body: {
+          requestUserScopes: true,
           workspaceId: "T-test",
           slackUserId: "U-test",
         },
@@ -308,6 +258,7 @@ describe("POST /api/integrations/slack/connect", () => {
       client.connect({
         headers: { authorization: "Bearer clerk-session" },
         body: {
+          requestUserScopes: true,
           workspaceId: "T-nonexistent",
           slackUserId: fixture.slackUserId,
         },
@@ -317,13 +268,13 @@ describe("POST /api/integrations/slack/connect", () => {
 
     expect(response.body).toStrictEqual({
       error: {
-        message: "Workspace not found. Please install the Slack app first.",
+        message: "Slack workspace not found",
         code: "NOT_FOUND",
       },
     });
   });
 
-  it("member connects successfully to a bound workspace", async () => {
+  it("member starts user OAuth before connecting to a bound workspace", async () => {
     const fixture = await track(
       store.set(seedSlackConnectOrg$, {}, context.signal),
     );
@@ -336,267 +287,24 @@ describe("POST /api/integrations/slack/connect", () => {
       client.connect({
         headers: { authorization: "Bearer clerk-session" },
         body: {
+          requestUserScopes: true,
           workspaceId: fixture.slackWorkspaceId,
           slackUserId: fixture.slackUserId,
         },
       }),
-      [200],
+      [202],
     );
 
-    expect(response.body.role).toBe("member");
-    const connection = await store.set(
-      findSlackOrgConnection$,
-      {
-        slackWorkspaceId: fixture.slackWorkspaceId,
-        slackUserId: fixture.slackUserId,
-      },
-      context.signal,
+    expect(response.body.authorizationUrl).toContain(
+      "/api/slack/oauth/connect?connectorState=",
     );
-    expect(connection).toMatchObject({
-      id: response.body.connectionId,
-      userId: fixture.userId,
-      slackWorkspaceId: fixture.slackWorkspaceId,
-    });
-  });
-
-  it("does not provision artifact storage after connect", async () => {
-    const fixture = await track(
-      store.set(seedSlackConnectOrg$, {}, context.signal),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-    await accept(
-      client.connect({
+    const status = await accept(
+      client.getStatus({
         headers: { authorization: "Bearer clerk-session" },
-        body: {
-          workspaceId: fixture.slackWorkspaceId,
-          slackUserId: fixture.slackUserId,
-        },
       }),
       [200],
     );
-    await expect(
-      storages.listStorages(
-        {
-          userId: fixture.userId,
-          orgId: fixture.orgId,
-          orgRole: "org:admin",
-          email: `${fixture.userId}@example.test`,
-        },
-        "user",
-      ),
-    ).resolves.toStrictEqual([]);
-  });
-
-  it("sends an ephemeral Slack confirmation when channel context is provided", async () => {
-    const fixture = await track(
-      store.set(seedSlackConnectOrg$, {}, context.signal),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-    await accept(
-      client.connect({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          workspaceId: fixture.slackWorkspaceId,
-          slackUserId: fixture.slackUserId,
-          channelId: "C_TEST_CHANNEL",
-          threadTs: "1234567890.123456",
-        },
-      }),
-      [200],
-    );
-
-    await flushWaitUntilForTest();
-
-    expect(context.mocks.slack.chat.postEphemeral).toHaveBeenCalledWith(
-      expect.objectContaining({
-        channel: "C_TEST_CHANNEL",
-        user: fixture.slackUserId,
-        text: "You're connected!",
-        thread_ts: "1234567890.123456",
-      }),
-    );
-    expect(
-      JSON.stringify(context.mocks.slack.chat.postEphemeral.mock.calls),
-    ).toContain("<@U_BOT_TEST>");
-    expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
-    expect(context.mocks.slack.views.publish).toHaveBeenCalledWith(
-      expect.objectContaining({
-        user_id: fixture.slackUserId,
-        view: expect.objectContaining({
-          type: "home",
-          blocks: expect.arrayContaining([
-            expect.objectContaining({
-              type: "section",
-              text: expect.objectContaining({
-                text: expect.stringContaining("*Connected to Okou*"),
-              }),
-            }),
-          ]),
-        }),
-      }),
-    );
-    expect(
-      JSON.stringify(context.mocks.slack.views.publish.mock.calls),
-    ).toContain("<@U_BOT_TEST>");
-
-    const connection = await store.set(
-      findSlackOrgConnection$,
-      {
-        slackWorkspaceId: fixture.slackWorkspaceId,
-        slackUserId: fixture.slackUserId,
-      },
-      context.signal,
-    );
-    expect(connection?.dmWelcomeSent).toBeFalsy();
-  });
-
-  it("sends a DM welcome when no channel context is provided", async () => {
-    const fixture = await track(
-      store.set(seedSlackConnectOrg$, {}, context.signal),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-    await accept(
-      client.connect({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          workspaceId: fixture.slackWorkspaceId,
-          slackUserId: fixture.slackUserId,
-        },
-      }),
-      [200],
-    );
-
-    await flushWaitUntilForTest();
-
-    expect(context.mocks.slack.chat.postEphemeral).not.toHaveBeenCalled();
-    expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledTimes(2);
-    expect(context.mocks.slack.chat.postMessage).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        channel: fixture.slackUserId,
-        text: "You're connected!",
-      }),
-    );
-    expect(context.mocks.slack.chat.postMessage).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        channel: fixture.slackUserId,
-        text: "Hi! I'm <@U_BOT_TEST>.",
-        thread_ts: "mock.ts",
-      }),
-    );
-
-    const connection = await store.set(
-      findSlackOrgConnection$,
-      {
-        slackWorkspaceId: fixture.slackWorkspaceId,
-        slackUserId: fixture.slackUserId,
-      },
-      context.signal,
-    );
-    expect(connection?.dmWelcomeSent).toBeTruthy();
-  });
-
-  it("falls back to DM welcome when ephemeral Slack confirmation fails", async () => {
-    const fixture = await track(
-      store.set(seedSlackConnectOrg$, {}, context.signal),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-    context.mocks.slack.chat.postEphemeral.mockRejectedValueOnce(
-      Object.assign(new Error("not_in_channel"), {
-        data: { ok: false, error: "not_in_channel" },
-      }),
-    );
-
-    const client = setupApp({
-      baseUrl: "https://api.okou.ai",
-      context,
-      routes: slackConnectRoutes,
-    })(slackConnectContract);
-    await accept(
-      client.connect({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          workspaceId: fixture.slackWorkspaceId,
-          slackUserId: fixture.slackUserId,
-          channelId: "C_TEST_CHANNEL",
-        },
-      }),
-      [200],
-    );
-
-    await flushWaitUntilForTest();
-
-    expect(context.mocks.slack.chat.postEphemeral).toHaveBeenCalledWith(
-      expect.objectContaining({
-        channel: "C_TEST_CHANNEL",
-        user: fixture.slackUserId,
-      }),
-    );
-    expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledTimes(2);
-    expect(
-      JSON.stringify(context.mocks.slack.chat.postMessage.mock.calls),
-    ).toContain("connected to Okou");
-    expect(
-      JSON.stringify(context.mocks.slack.chat.postMessage.mock.calls),
-    ).toContain("<@U_BOT_TEST>");
-
-    const connection = await store.set(
-      findSlackOrgConnection$,
-      {
-        slackWorkspaceId: fixture.slackWorkspaceId,
-        slackUserId: fixture.slackUserId,
-      },
-      context.signal,
-    );
-    expect(connection?.dmWelcomeSent).toBeTruthy();
-  });
-
-  it("binds an unbound legacy VM0 workspace as Okou", async () => {
-    const fixture = await track(
-      store.set(
-        seedSlackConnectOrg$,
-        { installationOrgId: null, publicBrand: "vm0" },
-        context.signal,
-      ),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-    const response = await accept(
-      client.connect({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          workspaceId: fixture.slackWorkspaceId,
-          slackUserId: fixture.slackUserId,
-        },
-      }),
-      [200],
-    );
-
-    expect(response.body.role).toBe("admin");
-    const installation = await store.set(
-      findSlackOrgInstallation$,
-      fixture.slackWorkspaceId,
-      context.signal,
-    );
-    expect(installation?.orgId).toBe(fixture.orgId);
-    expect(installation?.installedByUserId).toBe(fixture.userId);
-    expect(installation?.publicBrand).toBe("okou");
+    expect(status.body.isConnected).toBeFalsy();
   });
 
   it("returns 403 when non-admin tries to connect unbound workspace", async () => {
@@ -616,6 +324,7 @@ describe("POST /api/integrations/slack/connect", () => {
       client.connect({
         headers: { authorization: "Bearer clerk-session" },
         body: {
+          requestUserScopes: true,
           workspaceId: fixture.slackWorkspaceId,
           slackUserId: fixture.slackUserId,
         },
@@ -624,10 +333,10 @@ describe("POST /api/integrations/slack/connect", () => {
     );
 
     expect(response.body.error.code).toBe("FORBIDDEN");
-    expect(response.body.error.message).toContain("Only org admins");
+    expect(response.body.error.message).toContain("Only admins");
   });
 
-  it("returns 403 when workspace is bound to a different org", async () => {
+  it("returns 404 when workspace is bound to a different org", async () => {
     const targetOrgId = `org_${randomUUID()}`;
     const fixture = await track(
       store.set(
@@ -645,89 +354,16 @@ describe("POST /api/integrations/slack/connect", () => {
       client.connect({
         headers: { authorization: "Bearer clerk-session" },
         body: {
+          requestUserScopes: true,
           workspaceId: fixture.slackWorkspaceId,
           slackUserId: fixture.slackUserId,
         },
       }),
-      [403],
+      [404],
     );
 
-    expect(response.body.error.code).toBe("FORBIDDEN");
-    const connection = await store.set(
-      findSlackOrgConnection$,
-      {
-        slackWorkspaceId: fixture.slackWorkspaceId,
-        slackUserId: fixture.slackUserId,
-      },
-      context.signal,
-    );
-    expect(connection).toBeUndefined();
-  });
-
-  it("returns 403 with switch-org message when user is member of target org but wrong active org", async () => {
-    const targetOrgId = `org_${randomUUID()}`;
-    const fixture = await track(
-      store.set(
-        seedSlackConnectOrg$,
-        { installationOrgId: targetOrgId },
-        context.signal,
-      ),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
-
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-    const response = await accept(
-      client.connect({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          workspaceId: fixture.slackWorkspaceId,
-          slackUserId: fixture.slackUserId,
-        },
-      }),
-      [403],
-    );
-
-    expect(response.body.error.message).toContain(
-      "switch to the correct organization",
-    );
-  });
-
-  it("connect is idempotent - second connect returns success", async () => {
-    const fixture = await track(
-      store.set(seedSlackConnectOrg$, {}, context.signal),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-    const first = await accept(
-      client.connect({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          workspaceId: fixture.slackWorkspaceId,
-          slackUserId: fixture.slackUserId,
-        },
-      }),
-      [200],
-    );
-    const second = await accept(
-      client.connect({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          workspaceId: fixture.slackWorkspaceId,
-          slackUserId: fixture.slackUserId,
-        },
-      }),
-      [200],
-    );
-
-    expect(second.body).toMatchObject({
-      success: true,
-      role: "admin",
-      connectionId: first.body.connectionId,
+    expect(response.body).toStrictEqual({
+      error: { message: "Slack workspace not found", code: "NOT_FOUND" },
     });
   });
 });

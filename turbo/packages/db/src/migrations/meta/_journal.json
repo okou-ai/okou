@@ -418,15 +418,22 @@
     {
       "idx": 1137,
       "version": "7",
-      "when": 1789461605043,
-      "tag": "1137_pi_memory_stage1_billing_context",
+      "when": 1789460587817,
+      "tag": "1137_retire_legacy_invitation_columns",
       "breakpoints": true
     },
     {
       "idx": 1138,
       "version": "7",
-      "when": 1789461614003,
-      "tag": "1138_validate_pi_memory_stage1_billing_context",
+      "when": 1789465785874,
+      "tag": "1138_pi_memory_stage1_billing_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 1139,
+      "version": "7",
+      "when": 1789465789294,
+      "tag": "1139_validate_pi_memory_stage1_billing_context",
       "breakpoints": true
     }
   ]
