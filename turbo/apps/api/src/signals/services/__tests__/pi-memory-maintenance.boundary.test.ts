@@ -357,6 +357,7 @@ async function assertHistoricalMissingAgentRetry(args: {
       .where(
         and(
           eq(agentRuns.orgId, args.scope.orgId),
+          eq(agentRuns.triggerSource, "agent"),
           eq(agentRuns.userId, args.scope.userId),
         ),
       ),

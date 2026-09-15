@@ -8737,11 +8737,6 @@ async function commitPreparedLaunchUnderLock(
     timing: args.timing,
   });
   if (threadSessionValidation?.kind !== "thread-session-snapshot-stale") {
-    const failure = await validateCapturedSubscriptionAccount(
-      tx,
-      args,
-      threadSessionValidation,
-    );
     if (args.createArgs.piMemoryPhase2Maintenance) {
       const validate = args.createArgs.validatePiMemoryPhase2Admission;
       if (!validate) {
@@ -8749,6 +8744,11 @@ async function commitPreparedLaunchUnderLock(
       }
       await validate(tx);
     }
+    const failure = await validateCapturedSubscriptionAccount(
+      tx,
+      args,
+      threadSessionValidation,
+    );
     if (failure) {
       return failure;
     }

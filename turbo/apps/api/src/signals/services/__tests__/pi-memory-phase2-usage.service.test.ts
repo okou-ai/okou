@@ -219,6 +219,7 @@ async function launchMaintenance(
     runId,
     binding,
     events,
+    headers,
     provider,
     baseFiles,
     async proxy() {
@@ -474,6 +475,7 @@ describe("Pi memory Phase 2 proxy billing", () => {
               reasoning: { effort: "medium" },
             });
             expect(request.body).not.toHaveProperty("text.format");
+            expect(request.body).not.toHaveProperty("service_tier");
             if (type === "custom-openai-responses") {
               expect(request.headers.get("x-source-key")).toBe(
                 `Key ${run.provider?.key}`,
@@ -609,9 +611,7 @@ test("preserves non-model usage for a genuinely launched BYOK run", async () => 
   const send = () => {
     return accept(
       client(webhookUsageEventContract).send({
-        headers: {
-          authorization: `Bearer ${generateSandboxToken(run.scope.userId, run.runId, run.scope.orgId)}`,
-        },
+        headers: run.headers,
         body: { runId: run.runId, events: [event] },
       }),
       [200],
@@ -629,6 +629,17 @@ test("keeps explicit built-in HTTP identity and cache-inclusive billing", async 
   const run = await launchMaintenance();
   const actual = await executePhase2Runtime(context, run.runId);
   expect(actual.requests).toHaveLength(3);
+  for (const request of actual.requests) {
+    expect(request.url).toBe("https://api.openai.com/v1/responses");
+    expect(request.headers.get("authorization")).toMatch(
+      /^Bearer built-in-key-runtime-fixture-/,
+    );
+    expect(request.body).toMatchObject({
+      model: "gpt-5.6-terra",
+      reasoning: { effort: "medium" },
+    });
+    expect(request.body).not.toHaveProperty("service_tier");
+  }
   expect(run.run).toMatchObject({
     modelProvider: "built-in",
     modelProviderId: null,

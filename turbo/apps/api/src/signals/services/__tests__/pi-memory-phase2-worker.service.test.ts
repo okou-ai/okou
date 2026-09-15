@@ -12,8 +12,11 @@ import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { conversations } from "@okouai/db/schema/agent-run-session-conversation";
 import { createStore } from "ccstate";
+import { createDeferredPromise } from "../../utils";
 import { and, eq, inArray } from "drizzle-orm";
 import { describe, expect, it, onTestFinished } from "vitest";
+import { holdAgentRunRowLockFixture } from "../../../test-fixtures/chat-events";
+import { countWaitingPersonalSubscriptionMutationsFixture } from "../../../test-fixtures/personal-subscription";
 import { testContext } from "../../../__tests__/test-context";
 import { db } from "../../../lib/db";
 import { mockOptionalEnv } from "../../../lib/env";
@@ -857,6 +860,7 @@ describe("Phase 2 complete source credential admission", () => {
     async (emptyBase) => {
       const job = await credentialJob("empty-credentials", emptyBase);
       await expectNoDispatch(job, "source_credentials_missing");
+      expect(testContext().mocks.s3.getSignedUrl).not.toHaveBeenCalled();
       for (let attempt = 2; attempt <= 3; attempt++) {
         const at = new Date(
           new Date("2026-09-05T02:00:00Z").getTime() +
@@ -1147,7 +1151,7 @@ test("does not admit a subscription disconnected during preparation", async () =
     }
     return "https://objects.example.test/prepared";
   });
-  // The canonical account lock precedes the private full-source revalidation.
+  // Final admission rejects disconnected accounts after all source-row locks.
   await expectNoDispatch(job, "credential_unavailable");
   expect(disconnected).toBeTruthy();
 });
@@ -1277,4 +1281,91 @@ test("rejects a selected source owned by another Storage owner", async () => {
     { piSessionId: randomUUID(), sourceRunId },
   ]);
   await expectNoDispatch(job, "source_owner_mismatch");
+});
+
+test("lets disconnect finish while final admission waits on a non-first source", async () => {
+  const job = await credentialJob("source-lifecycle-lock-order");
+  const provider = await createPhase2Provider(
+    testContext(),
+    job.scope,
+    "codex-oauth-token",
+    "member",
+  );
+  const sourceIds = [randomUUID(), randomUUID()].sort();
+  const lastSourceId = sourceIds[1];
+  if (!lastSourceId) {
+    throw new Error("Expected the non-first source");
+  }
+  await insertPhase2Candidates(
+    job.scope,
+    sourceIds.map((sourceRunId) => {
+      return { piSessionId: randomUUID(), sourceRunId };
+    }),
+    provider.binding,
+  );
+  const entered = createDeferredPromise<void>(testContext().signal);
+  let holding: ReturnType<typeof holdAgentRunRowLockFixture> | undefined;
+  let held: Awaited<ReturnType<typeof holdAgentRunRowLockFixture>> | undefined;
+  testContext().mocks.s3.getSignedUrl.mockImplementation(async () => {
+    if (!holding) {
+      holding = holdAgentRunRowLockFixture({
+        runId: lastSourceId,
+        signal: testContext().signal,
+      });
+    }
+    held = await holding;
+    if (!entered.settled()) {
+      entered.resolve(undefined);
+    }
+    return "https://objects.example.test/prepared";
+  });
+  const work = job.work();
+  const pending: Promise<unknown>[] = [work];
+  onTestFinished(async () => {
+    held?.release();
+    await held?.done;
+    await Promise.all(pending);
+  });
+  await entered.promise;
+  // Observe the real final-admission row wait after asynchronous preparation.
+  await expect
+    .poll(async () => {
+      return held ? await held.waiterCount() : 0;
+    })
+    .toBeGreaterThan(0);
+  let disconnected = false;
+  const disconnect = disconnectPhase2Codex(
+    testContext(),
+    job.scope,
+    provider.binding.modelProviderId,
+  ).then(() => {
+    disconnected = true;
+  });
+  pending.push(disconnect);
+  await expect
+    .poll(async () => {
+      if (disconnected) {
+        return "settled";
+      }
+      return (await countWaitingPersonalSubscriptionMutationsFixture({
+        ...job.scope,
+        type: "codex-oauth-token",
+      })) > 0
+        ? "blocked"
+        : "pending";
+    })
+    .not.toBe("pending");
+  expect(disconnected).toBeTruthy();
+  held?.release();
+  await held?.done;
+  await disconnect;
+  await expect(work).resolves.toStrictEqual({
+    outcome: "failed",
+    errorClass: "credential_unavailable",
+  });
+  await expect(readPhase2Job(job.scope)).resolves.toMatchObject({
+    maintenanceRunId: null,
+    completedRevision: 0,
+    retryCount: 1,
+  });
 });

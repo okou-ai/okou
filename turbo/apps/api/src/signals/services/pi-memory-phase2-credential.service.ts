@@ -16,6 +16,7 @@ import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";
 import type { AgentRunModelPin } from "./agent-run-create.service";
 import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-firewall-auth.service";
+import { lockModelProviderState } from "./auth-state-lock.service";
 import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import type { ClaimedPiMemoryPhase2Job } from "./pi-memory-phase2-job.service";
@@ -102,6 +103,80 @@ function sourcePin(source: Source, claim: ClaimedPiMemoryPhase2Job) {
   } satisfies AgentRunModelPin;
 }
 
+async function customCredentialSnapshot(
+  db: ReadDb,
+  source: Source & { readonly id: string },
+) {
+  // Settings mutate connection -> secret -> surface. Resolve the reference
+  // without a lock first, then lock and verify every edge in that same order.
+  const [reference] = await db
+    .select({ connectionId: modelProviderSurfaces.connectionId })
+    .from(modelProviderSurfaces)
+    .where(eq(modelProviderSurfaces.id, source.id));
+  if (!reference) {
+    reject("credential_unavailable");
+  }
+  const [connection] = await db
+    .select({
+      id: modelProviderConnections.id,
+      secretId: modelProviderConnections.secretId,
+    })
+    .from(modelProviderConnections)
+    .where(
+      and(
+        eq(modelProviderConnections.id, reference.connectionId),
+        eq(modelProviderConnections.orgId, source.orgId),
+      ),
+    )
+    .for("share");
+  if (!connection) {
+    reject("credential_unavailable");
+  }
+  const [secret] = await db
+    .select({ id: secrets.id, encryptedValue: secrets.encryptedValue })
+    .from(secrets)
+    .where(
+      and(
+        eq(secrets.id, connection.secretId),
+        eq(secrets.orgId, source.orgId),
+        eq(secrets.userId, "__org__"),
+      ),
+    )
+    .for("share");
+  const [surface] = await db
+    .select({
+      id: modelProviderSurfaces.id,
+      protocol: modelProviderSurfaces.protocol,
+      baseUrl: modelProviderSurfaces.apiBaseUrl,
+      header: modelProviderSurfaces.authHeaderName,
+      template: modelProviderSurfaces.authHeaderTemplate,
+      mappings: modelProviderSurfaces.modelMappings,
+    })
+    .from(modelProviderSurfaces)
+    .where(
+      and(
+        eq(modelProviderSurfaces.id, source.id),
+        eq(modelProviderSurfaces.connectionId, connection.id),
+      ),
+    )
+    .for("share");
+  if (!secret?.encryptedValue || !surface) {
+    reject("credential_unavailable");
+  }
+  if (
+    surface.protocol !== "openai-responses" ||
+    !surface.mappings[PI_MEMORY_PHASE2_MODEL]?.trim()
+  ) {
+    reject("provider_model_unsupported");
+  }
+  return {
+    ...surface,
+    connectionId: connection.id,
+    secretId: secret.id,
+    encryptedValue: secret.encryptedValue,
+  };
+}
+
 /** Capture ownership and route references only. Canonical launch preparation
  * owns decryption, firewall credentials and atomic subscription refresh. */
 async function credentialSnapshot(db: ReadDb, source: Source) {
@@ -143,43 +218,7 @@ async function credentialSnapshot(db: ReadDb, source: Source) {
     return { ...account, externalAccountId };
   }
   if (source.type === "custom-openai-responses") {
-    const [surface] = await db
-      .select({
-        id: modelProviderSurfaces.id,
-        connectionId: modelProviderConnections.id,
-        secretId: secrets.id,
-        protocol: modelProviderSurfaces.protocol,
-        baseUrl: modelProviderSurfaces.apiBaseUrl,
-        header: modelProviderSurfaces.authHeaderName,
-        template: modelProviderSurfaces.authHeaderTemplate,
-        mappings: modelProviderSurfaces.modelMappings,
-        encryptedValue: secrets.encryptedValue,
-      })
-      .from(modelProviderSurfaces)
-      .innerJoin(
-        modelProviderConnections,
-        eq(modelProviderConnections.id, modelProviderSurfaces.connectionId),
-      )
-      .innerJoin(secrets, eq(secrets.id, modelProviderConnections.secretId))
-      .where(
-        and(
-          eq(modelProviderSurfaces.id, source.id),
-          eq(modelProviderConnections.orgId, source.orgId),
-          eq(secrets.orgId, source.orgId),
-          eq(secrets.userId, "__org__"),
-        ),
-      )
-      .for("share");
-    if (!surface) {
-      reject("credential_unavailable");
-    }
-    if (
-      surface.protocol !== "openai-responses" ||
-      !surface.mappings[PI_MEMORY_PHASE2_MODEL]?.trim()
-    ) {
-      reject("provider_model_unsupported");
-    }
-    return surface;
+    return await customCredentialSnapshot(db, { ...source, id: source.id });
   }
   const route = gptApiKeyPiRoute(source.type);
   if (
@@ -313,6 +352,12 @@ export async function resolvePiMemoryPhase2Credential(
     route,
     validate: async (tx: Tx) => {
       signal.throwIfAborted();
+      // Match terminal lifecycle order: source runs -> Storage -> provider
+      // state -> credentials. New maintenance never borrows source retention.
+      const current = await readSources(tx, ids);
+      if (JSON.stringify(current) !== JSON.stringify(sources)) {
+        reject("source_binding_invalid");
+      }
       const [storage] = await tx
         .select({ id: storages.id })
         .from(storages)
@@ -328,9 +373,12 @@ export async function resolvePiMemoryPhase2Credential(
       if (!storage) {
         reject("storage_binding_changed");
       }
-      const current = await readSources(tx, ids);
-      if (JSON.stringify(current) !== JSON.stringify(sources)) {
-        reject("source_binding_invalid");
+      if (first.type === "codex-oauth-token") {
+        await lockModelProviderState(tx, {
+          orgId: first.orgId,
+          userId: first.userId,
+          type: first.type,
+        });
       }
       if (
         JSON.stringify(await credentialSnapshot(tx, first)) !==
