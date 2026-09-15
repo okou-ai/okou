@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { nowDate } from "../../../lib/time";
 import { acquisitionAttributionRoutes } from "../acquisition-attribution";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -42,10 +41,6 @@ describe("CI attribution", () => {
           headers,
           body: {
             attribution,
-            impactAttribution: {
-              clickId: "ci-impact-click",
-              capturedAt: nowDate().toISOString(),
-            },
           },
         }),
         [200],

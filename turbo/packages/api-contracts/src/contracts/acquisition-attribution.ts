@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import { impactAttributionSchema } from "./impact-attribution";
 
 const c = initContract();
 
@@ -63,7 +62,6 @@ export const adAttributionMetadataSchema = z
 const recordSignupAttributionRequestSchema = z.object({
   attribution: adAttributionMetadataSchema,
   // A sibling field keeps old strict first-touch readers compatible.
-  impactAttribution: impactAttributionSchema.optional(),
 });
 
 const recordSignupAttributionResponseSchema = z.object({
