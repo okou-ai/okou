@@ -38,24 +38,26 @@ export async function deleteRunConversations(
   runIds: readonly string[],
 ) {
   await assertPiInferenceErasureReady(tx, runIds);
-  const piObjectHashes: string[] = [];
+  // Capture references once under the caller's Run locks. One UUID-array
+  // binding avoids per-batch reads and PostgreSQL's scalar parameter limit.
+  const objectReferences =
+    runIds.length > 0
+      ? await tx
+          .select({ hash: agentRunInferenceObjects.hash })
+          .from(agentRunInferenceObjects)
+          .where(
+            eq(
+              agentRunInferenceObjects.runId,
+              sql`ANY(${sql.param(runIds)}::uuid[])`,
+            ),
+          )
+      : [];
+  const piObjectHashes = objectReferences.map((reference) => {
+    return reference.hash;
+  });
   // All erasure owners call this before parent cascades. Only proven releases
   // may be removed; the lease FK blocks unknown external cleanup atomically.
   for (let offset = 0; offset < runIds.length; offset += DELETION_BATCH_SIZE) {
-    const references = await tx
-      .select({ hash: agentRunInferenceObjects.hash })
-      .from(agentRunInferenceObjects)
-      .where(
-        inArray(
-          agentRunInferenceObjects.runId,
-          runIds.slice(offset, offset + DELETION_BATCH_SIZE),
-        ),
-      );
-    piObjectHashes.push(
-      ...references.map((reference) => {
-        return reference.hash;
-      }),
-    );
     await tx
       .delete(agentRunSandboxLease)
       .where(
