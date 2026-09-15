@@ -30,6 +30,10 @@ def start(flow: tcp.TCPFlow, *, registry_path: str) -> None:
     - An invalid sandbox entry calls ``flow.kill()`` without installing TCP logging metadata.
     - A valid registered sandbox installs the run ID, network and proxy log paths, and
       ``TCP_START_MONOTONIC``.
+
+    The version-locked TCP start bridge installed by ``mitm_addon.load()`` enforces killed
+    flows by closing both transports before forwarding application data. Pinned mitmproxy
+    does not enforce ``flow.kill()`` in its unadapted TCP layer.
     """
     client_peername = connection_endpoints.client_peername(flow.client_conn)
     client_ip = client_peername[0] if client_peername is not None else None

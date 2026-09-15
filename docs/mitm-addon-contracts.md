@@ -129,6 +129,36 @@ audience deletion bypass through these hooks. Old runners keep their previous
 behavior until deployed; permission catalogs that rely on this boundary must
 wait for the runner rollout.
 
+## TCP registry admission
+
+`tcp_logging.start()` admits a TCP flow from the current registry and client
+peer IP. An unavailable registry or an invalid sandbox entry kills the flow
+before run/logging metadata is installed. A positively unregistered client or
+missing peer IP remains a no-op; a valid sandbox retains normal forwarding and
+network-log byte accounting.
+
+The pinned mitmproxy `12.2.3` TCP layer does not enforce `flow.kill()` after its
+start hook. The [runtime compatibility layer](../crates/runner/mitm-addon/src/mitmproxy_compat.py)
+therefore adapts `TCPLayer.start` and its initial event-handler alias during
+`mitm_addon.load()`. Immediately after a killed start hook completes, it retires
+the relay, closes both transports, and emits one `tcp_error` hook. No new
+upstream is opened and buffered or subsequent application payloads are discarded
+in both directions, including when the upstream was already connected. Close
+events do not emit a second terminal hook.
+
+The adaptation is idempotent and runs behind the existing exact-version gate.
+Admitted and ignored flows retain mitmproxy's original start generator,
+including upstream connection errors. The [real TCP-layer regression
+suite](../crates/runner/mitm-addon/tests/test_mitmproxy_tcp_admission.py) exercises
+production addon loading and hook dispatch, transport commands, buffered data,
+and valid-sandbox network logs. Before upgrading mitmproxy, re-audit TCP start
+sequencing, the initial handler alias, generator completion and cleanup, close
+commands, and queued-event replay alongside the HTTP/WebSocket adaptations.
+
+This is start-time admission, with no change to HTTP/TLS admission or registry
+formats. Existing runners keep the previous behavior until replaced by the new
+runner artifact.
+
 ## WebSocket Framing Contract
 
 [`websocket_framing.py`](../crates/runner/mitm-addon/src/websocket_framing.py)

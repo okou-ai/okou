@@ -1,11 +1,12 @@
 """Version-locked bridges for mitmproxy state that public hooks omit."""
 
 import wsproto
-from mitmproxy import http, version
-from mitmproxy.proxy import layer
+from mitmproxy import flow, http, version
+from mitmproxy.proxy import commands, events, layer
 from mitmproxy.proxy.layers.http import HttpStream
 from mitmproxy.proxy.layers.http._events import RequestHeaders
 from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook
+from mitmproxy.proxy.layers.tcp import TcpErrorHook, TCPLayer, TcpStartHook
 
 import websocket_framing
 
@@ -17,6 +18,7 @@ _SUPPORTED_MITMPROXY_VERSION = "12.2.3"
 _SUPPORTED_WSPROTO_VERSION = "1.3.2"
 _BRIDGE_MARKER_ATTRIBUTE = "_request_end_stream_bridge"
 _REQUEST_END_STREAM_METADATA = "_request_end_stream"
+_TCP_START_MARKER_ATTRIBUTE = "_tcp_start_kill_bridge"
 
 
 def install_runtime_compatibility() -> None:
@@ -33,7 +35,57 @@ def install_runtime_compatibility() -> None:
         )
 
     _install_request_end_stream_bridge()
+    _install_tcp_start_kill_bridge()
     websocket_framing.install_websocket_framing()
+
+
+def _install_tcp_start_kill_bridge() -> None:
+    """Enforce a killed TCP start before upstream open or buffered payload replay."""
+    current_handler = TCPLayer.start
+    if hasattr(current_handler, _TCP_START_MARKER_ATTRIBUTE):
+        return
+    if TCPLayer._handle_event is not current_handler:
+        raise RuntimeError("mitmproxy TCPLayer has an incompatible start handler")
+
+    def start(self: TCPLayer, _: events.Event) -> layer.CommandGenerator[None]:
+        command_generator = current_handler(self, _)
+        try:
+            command = next(command_generator)
+            while True:
+                try:
+                    completion: object = yield command
+                except GeneratorExit:
+                    raise
+                except BaseException as error:
+                    command = command_generator.throw(error)
+                else:
+                    if (
+                        isinstance(command, TcpStartHook)
+                        and command.flow.error is not None
+                        and command.flow.error.msg == flow.Error.KILLED_MESSAGE
+                    ):
+                        command_generator.close()
+                        # Layer resumes queued data/close events after this hook. Retire
+                        # the relay first so those events cannot forward or end twice.
+                        self._handle_event = lambda event: self.done(event)
+                        yield commands.CloseConnection(self.context.client)
+                        yield commands.CloseConnection(self.context.server)
+                        yield TcpErrorHook(command.flow)
+                        return
+                    command = command_generator.send(completion)
+        except StopIteration:
+            return
+        finally:
+            command_generator.close()
+
+    # The pinned class binds its initial event handler to start at definition time.
+    # Its start/done parameter names differ from Layer._handle_event's annotation.
+    def handle_event(self: TCPLayer, event: events.Event) -> layer.CommandGenerator[None]:
+        return start(self, event)
+
+    setattr(start, _TCP_START_MARKER_ATTRIBUTE, True)
+    TCPLayer.start = start
+    TCPLayer._handle_event = handle_event
 
 
 def _install_request_end_stream_bridge() -> None:

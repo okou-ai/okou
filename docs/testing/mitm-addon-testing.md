@@ -164,6 +164,7 @@ suites before committing the upgrade.
 | `test_mitmproxy_bodyless_response_framing.py`           | Bodyless local firewall and connector-diagnostic responses through the real mitmproxy state machine                  |
 | `test_mitmproxy_codex_catalog_framing.py`               | Codex model-catalog cache and response framing through the real mitmproxy state machine                              |
 | `test_mitmproxy_request_body_admission_framing.py`      | auth.base and AWS SigV4 request-body admission through the real mitmproxy state machine                              |
+| `test_mitmproxy_tcp_admission.py`                       | TCP registry rejection, transport closure, buffered data, and valid forwarding/logging through the real TCP layer    |
 | `test_mitmproxy_websocket_framing.py`                   | Decoded WebSocket message bounds through mitmproxy's state machine and real addon hook dispatch                      |
 | `test_request_handler_usage_tracking.py`                | Request-hook billable usage tracking lifecycle                                                                       |
 | `test_response_headers_handler.py`                      | Response-header hook stream setup                                                                                    |

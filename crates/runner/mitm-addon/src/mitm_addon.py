@@ -2049,8 +2049,9 @@ def done():
 def tcp_start(flow: tcp.TCPFlow) -> None:
     """Apply ``tcp_logging.start()``'s canonical registry-admission contract.
 
-    The delegated contract includes its no-op outcomes and fail-closed flow killing before TCP
-    logging metadata is installed.
+    The delegated contract includes its no-op outcomes and rejection before TCP logging
+    metadata is installed. The version-locked TCP start bridge enforces killed flows by
+    closing both transports after this hook completes.
     """
     tcp_logging.start(flow, registry_path=get_registry_path())
 
