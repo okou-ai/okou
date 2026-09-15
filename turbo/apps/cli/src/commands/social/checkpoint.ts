@@ -302,14 +302,24 @@ export class CollectionCheckpoint {
           "Checkpoint must be a regular file of at most 16 MiB",
         );
       }
-      const buffer = Buffer.alloc(MAX_CHECKPOINT_BYTES + 1);
-      const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
-      if (bytesRead > MAX_CHECKPOINT_BYTES) {
+      const buffer = Buffer.alloc(stat.size + 1);
+      let offset = 0;
+      while (offset < buffer.length) {
+        const { bytesRead } = await file.read(
+          buffer,
+          offset,
+          Math.min(64 * 1024, buffer.length - offset),
+          offset,
+        );
+        if (bytesRead === 0) break;
+        offset += bytesRead;
+      }
+      if (offset === buffer.length) {
         throw new InvalidArgumentError(
-          "Checkpoint exceeds 16 MiB; start a new collection",
+          "Checkpoint changed while reading; wait for its writer to stop before resuming",
         );
       }
-      raw = parseCheckpointJson(buffer.toString("utf8", 0, bytesRead));
+      raw = parseCheckpointJson(buffer.toString("utf8", 0, offset));
     } finally {
       await file.close();
     }

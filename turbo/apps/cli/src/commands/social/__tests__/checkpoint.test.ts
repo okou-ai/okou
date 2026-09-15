@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import {
   mkdir,
   mkdtemp,
@@ -6,6 +6,7 @@ import {
   rm,
   stat,
   symlink,
+  truncate,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -23,6 +24,7 @@ const target = "https://instagram.com/p/example";
 const exit = new Error("observed process exit");
 let directory: string;
 let checkpoint: string;
+let token: string;
 const originalExitCode = process.exitCode;
 
 function response(ids: string[], cursor?: string) {
@@ -87,7 +89,8 @@ function start(limit = "2", extra: string[] = []) {
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), "okou-social-checkpoint-"));
   checkpoint = join(directory, "comments.json");
-  vi.stubEnv("OKOU_TOKEN", "test-okou-token");
+  token = randomBytes(32).toString("hex");
+  vi.stubEnv("OKOU_TOKEN", token);
   vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
 });
 afterEach(async () => {
@@ -98,6 +101,53 @@ afterEach(async () => {
 });
 
 describe("social collection checkpoints through the CLI", () => {
+  it("resumes a large Unicode tail intact without another provider request", async () => {
+    const text = "A多字节🙂".repeat(20_000);
+    let requests = 0;
+    server.use(
+      http.post(endpoint, () => {
+        requests += 1;
+        return HttpResponse.json({
+          ...response(["one", "two"]),
+          result: {
+            comments: [{ id: "one" }, { id: "two", text }],
+            hasMore: false,
+          },
+        });
+      }),
+    );
+    expect((await start("1")).code).toBe(0);
+    const resumed = await invoke([
+      "resume",
+      checkpoint,
+      "--limit",
+      "1",
+      "--json",
+    ]);
+    expect(resumed.code, resumed.errors).toBe(0);
+    expect(resumed.result).toMatchObject({
+      data: { items: [{ id: "two", text }] },
+      billing: { quantity: 0 },
+    });
+    expect(requests).toBe(1);
+  });
+
+  it("rejects oversized checkpoint files before reading provider data", async () => {
+    let requests = 0;
+    server.use(
+      http.post(endpoint, () => {
+        requests += 1;
+        return HttpResponse.json(response([]));
+      }),
+    );
+    await writeFile(checkpoint, "");
+    await truncate(checkpoint, 16 * 1024 * 1024 + 1);
+    const resumed = await invoke(["resume", checkpoint, "--json"]);
+    expect(resumed.code).toBe(1);
+    expect(resumed.errors).toContain("at most 16 MiB");
+    expect(requests).toBe(0);
+  });
+
   it("preserves the buffered page context when a later page overshoots", async () => {
     let requests = 0;
     server.use(
@@ -602,7 +652,7 @@ describe("social collection checkpoints through the CLI", () => {
       else payload.bufferedItems = [{ id: "altered" }];
       envelope.payload = JSON.stringify(payload);
       if (kind !== "altered")
-        envelope.signature = createHmac("sha256", "test-okou-token")
+        envelope.signature = createHmac("sha256", token)
           .update("okou-social-collection-v1\0http://localhost:3000\0")
           .update(envelope.payload)
           .digest("hex");
