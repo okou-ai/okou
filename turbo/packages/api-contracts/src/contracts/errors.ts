@@ -1,8 +1,5 @@
 import { z } from "zod";
-import {
-  formatRunBalanceError,
-  MODEL_UNAVAILABLE_MESSAGE,
-} from "./run-balance-errors";
+import { formatRunBalanceError } from "./run-balance-errors";
 import {
   getCanonicalModelDisplayName,
   normalizeRunModelId,
@@ -703,7 +700,6 @@ type StructuredRunErrorBehavior =
   | "generic"
   | "insufficient-credits"
   | "provider-balance"
-  | "model-unavailable"
   | "overloaded"
   | "passthrough"
   | "reconnect"
@@ -717,7 +713,6 @@ const STRUCTURED_RUN_ERROR_BEHAVIOR: Record<
   execution_timeout: "execution-timeout",
   insufficient_credits: "insufficient-credits",
   provider_insufficient_credits: "provider-balance",
-  model_unavailable: "model-unavailable",
   invalid_api_key: "generic",
   invalid_credentials: "credential",
   terms_acceptance_required: "terms",
@@ -781,9 +776,6 @@ function formatStructuredRunError(params: {
         message: params.errorMessage,
         modelProvider: params.modelProviderType,
       })!;
-    }
-    case "model-unavailable": {
-      return MODEL_UNAVAILABLE_MESSAGE;
     }
     case "credential": {
       const recoveryMessage =

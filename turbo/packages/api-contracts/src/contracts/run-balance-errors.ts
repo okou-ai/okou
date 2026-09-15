@@ -97,13 +97,14 @@ function isProviderBalanceResponseError(message: string): boolean {
   }
 }
 
+/** Public metadata omits platform billing reasons; internal diagnostics keep the real cause. */
 export function publicProviderBalanceFailureReason(
   modelProvider: string | null | undefined,
-): "provider_insufficient_credits" | "model_unavailable" {
+): "provider_insufficient_credits" | undefined {
   const provider = modelProviderTypeSchema.safeParse(modelProvider);
   return provider.success && provider.data !== "built-in"
     ? "provider_insufficient_credits"
-    : "model_unavailable";
+    : undefined;
 }
 
 /** Keep explicit vm0 credit failures independent of the run's credential owner. */
@@ -113,9 +114,6 @@ export function formatRunBalanceError(params: {
   readonly modelProvider?: string | null;
   readonly framework?: string | null;
 }): string | undefined {
-  if (params.failureReason === "model_unavailable") {
-    return MODEL_UNAVAILABLE_MESSAGE;
-  }
   if (
     params.failureReason === "provider_insufficient_credits" ||
     ((params.failureReason == null ||

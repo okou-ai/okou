@@ -55,12 +55,13 @@ describe("formatRunErrorForExternalSurface", () => {
     },
   );
 
-  it("never exposes built-in billing text through the public unavailable reason", () => {
+  it("presents built-in balance as unavailable while retaining the provider failure reason", () => {
     expect(
       formatRunErrorForExternalSurface({
         code: "UNKNOWN",
         message: "private platform billing detail",
-        failureReason: "model_unavailable",
+        failureReason: "provider_insufficient_credits",
+        modelProviderType: "built-in",
       }),
     ).toBe("The current model is unavailable.");
   });

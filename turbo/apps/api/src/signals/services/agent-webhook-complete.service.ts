@@ -3,10 +3,7 @@ import {
   assertPiInferencePublication,
 } from "./pi-inference-lifecycle.service";
 import { command } from "ccstate";
-import {
-  isLegacyProviderBalanceError,
-  publicProviderBalanceFailureReason,
-} from "@okouai/api-contracts/contracts/run-balance-errors";
+import { isLegacyProviderBalanceError } from "@okouai/api-contracts/contracts/run-balance-errors";
 import type { z } from "zod";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
@@ -214,39 +211,47 @@ function logGptApiKeyPiSandboxOutcome(
   return true;
 }
 
+const KNOWN_FAILURE_LOG_POLICY = Object.freeze({
+  // Input and execution limits need no operator action for either key owner.
+  safety_policy_refusal: "suppress",
+  input_too_large: "suppress",
+  execution_timeout: "suppress",
+  insufficient_credits: "suppress-byok",
+  provider_insufficient_credits: "suppress-byok",
+  invalid_api_key: "suppress-byok",
+  invalid_credentials: "suppress-byok",
+  terms_acceptance_required: "suppress-byok",
+  context_window_exceeded: "suppress-byok",
+  output_token_limit: "suppress-byok",
+  provider_rate_limited: "suppress-byok",
+  provider_overloaded: "suppress-byok",
+  provider_stream_timeout: "suppress-byok",
+  provider_server_error: "suppress-byok",
+  response_connection_lost: "suppress-byok",
+  reconnect_required: "suppress-byok",
+  usage_limit: "suppress-byok",
+  session_history_limit: "retain",
+  unsupported_model: "retain",
+} satisfies Record<
+  KnownRunFailureReason,
+  "suppress" | "suppress-byok" | "retain"
+>);
+
 function shouldSuppressKnownFailureLog(
   run: RunRecord,
   failureReason: KnownRunFailureReason,
 ): boolean {
-  switch (failureReason) {
-    // A content-safety rejection is decided by the submitted input, so it needs
-    // no operator action even when the built-in provider owns the credential.
-    case "safety_policy_refusal":
-    case "input_too_large":
-    case "execution_timeout": {
+  switch (KNOWN_FAILURE_LOG_POLICY[failureReason]) {
+    case "suppress": {
       return true;
     }
-    case "insufficient_credits":
-    case "provider_insufficient_credits":
-    case "invalid_api_key":
-    case "invalid_credentials":
-    case "terms_acceptance_required":
-    case "context_window_exceeded":
-    case "output_token_limit":
-    case "provider_rate_limited":
-    case "provider_overloaded":
-    case "provider_stream_timeout":
-    case "provider_server_error":
-    case "response_connection_lost":
-    case "reconnect_required":
-    case "usage_limit": {
+    case "suppress-byok": {
       const providerType = modelProviderTypeSchema.safeParse(run.modelProvider);
       return (
         providerType.success && !isBuiltInModelProviderType(providerType.data)
       );
     }
-    default: {
-      // Unavailable built-in models and other unhandled reasons need operator visibility.
+    case "retain": {
       return false;
     }
   }
@@ -423,7 +428,7 @@ async function loadCompletionRun(
 async function prepareCompletion(
   db: Tx,
   input: CompleteAgentRunInput,
-  run: RunRecord,
+  sessionId: string,
   signal: AbortSignal,
 ): Promise<PreparedCompletion> {
   if (input.body.exitCode !== 0) {
@@ -434,10 +439,9 @@ async function prepareCompletion(
       status: "failed",
       error,
       failureReason:
-        reason === "provider_insufficient_credits" ||
-        (reason === "insufficient_credits" &&
-          isLegacyProviderBalanceError(error, null))
-          ? publicProviderBalanceFailureReason(run.modelProvider)
+        reason === "insufficient_credits" &&
+        isLegacyProviderBalanceError(error, null)
+          ? "provider_insufficient_credits"
           : reason,
       failureKind: "reported",
     };
@@ -464,7 +468,7 @@ async function prepareCompletion(
   }
   return {
     status: "completed",
-    result: buildRunResult(checkpoint, run.sessionId),
+    result: buildRunResult(checkpoint, sessionId),
   };
 }
 
@@ -693,7 +697,7 @@ async function completeAgentRunTransition(
   }
   const canTransition = run.status === "pending" || run.status === "running";
   const prepared = canTransition
-    ? await prepareCompletion(tx, input, run, signal)
+    ? await prepareCompletion(tx, input, run.sessionId, signal)
     : null;
   signal.throwIfAborted();
   if (input.body.lastEventSequence !== undefined) {

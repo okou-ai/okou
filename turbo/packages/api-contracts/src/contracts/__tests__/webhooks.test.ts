@@ -449,7 +449,6 @@ describe("agent completion failure reasons", () => {
       "execution_timeout",
       "insufficient_credits",
       "provider_insufficient_credits",
-      "model_unavailable",
       "invalid_api_key",
       "invalid_credentials",
       "terms_acceptance_required",

@@ -3924,7 +3924,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       reason: "provider_insufficient_credits",
       error: "Credit balance is too low",
       expected: "The current model is unavailable.",
-      publicReason: "model_unavailable",
+      publicReason: undefined,
     },
     {
       name: "legacy built-in affordability",
@@ -3933,7 +3933,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       error:
         "API Error: 402 This request requires more credits. You can only afford 100 tokens.",
       expected: "The current model is unavailable.",
-      publicReason: "model_unavailable",
+      publicReason: undefined,
     },
     {
       name: "vm0 credits during built-in run",
@@ -4020,6 +4020,10 @@ describe("CHAT-02: failed chat callbacks", () => {
             : {}),
         },
       ]);
+      expect(
+        lifecycleMarkers(messages.events, run.runId, "failed")[0]
+          ?.failureReason,
+      ).toBe(scenario.publicReason);
       const detailError =
         scenario.expected === "insufficient_credits"
           ? scenario.error

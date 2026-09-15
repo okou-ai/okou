@@ -2181,9 +2181,6 @@ pub mod webhooks {
                 /// The upstream provider account lacks credits.
                 #[serde(rename = "provider_insufficient_credits")]
                 ProviderInsufficientCredits,
-                /// The selected model is unavailable to the user.
-                #[serde(rename = "model_unavailable")]
-                ModelUnavailable,
                 /// The configured API key is invalid.
                 #[serde(rename = "invalid_api_key")]
                 InvalidApiKey,

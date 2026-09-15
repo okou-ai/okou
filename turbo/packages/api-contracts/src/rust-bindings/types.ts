@@ -835,7 +835,6 @@ export const rustTypeBindings = [
           provider_insufficient_credits: [
             "The upstream provider account lacks credits.",
           ],
-          model_unavailable: ["The selected model is unavailable to the user."],
           invalid_api_key: ["The configured API key is invalid."],
           invalid_credentials: ["The configured credentials are invalid."],
           terms_acceptance_required: [

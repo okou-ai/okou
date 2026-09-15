@@ -866,10 +866,12 @@ commit. The reason is stored outside strict payload JSON so old API instances
 remain compatible during the additive database migration and traffic overlap.
 
 Balance failures keep `insufficient_credits` for vm0 credit admission and add
-`provider_insufficient_credits` for upstream model-account balance. API completion
-uses persisted run ownership to project a platform-owned provider failure as
-`model_unavailable`, retaining the original error in internal diagnostics. The
-webhook and Chat Event V7 schemas accept all valid reason tokens; older readers
+`provider_insufficient_credits` for upstream model-account balance. Completion
+stores that real failure reason for both BYOK and built-in runs. Public presentation
+uses persisted run ownership to display a platform-owned balance failure as
+"The current model is unavailable." and omit its billing reason from public chat
+metadata. Model unavailability is presentation, not a completion failure reason.
+The webhook and Chat Event V7 schemas accept all valid reason tokens; older readers
 use generic failure copy for an unknown token instead of rejecting the run or
 showing the vm0 recharge card. No schema migration is required.
 

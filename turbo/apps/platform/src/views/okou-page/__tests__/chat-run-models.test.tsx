@@ -498,13 +498,14 @@ test("A structured capacity failure offers recovery despite generic provider tex
 
 test.each([
   [
+    "BYOK",
     "provider_insufficient_credits",
     "Your connected model provider account has insufficient balance.",
   ],
-  ["model_unavailable", "The current model is unavailable."],
+  ["built-in", undefined, "The current model is unavailable."],
 ] as const)(
   "A balance failure (%s) displays its message without a recovery action",
-  async (failureReason, message) => {
+  async (_owner, failureReason, message) => {
     configureModelPolicies(["gpt-5.6-sol"]);
     installRunChat({
       selectedModel: "gpt-5.6-sol",

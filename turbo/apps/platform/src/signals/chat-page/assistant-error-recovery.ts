@@ -239,7 +239,6 @@ const STRUCTURED_RECOVERY_KIND = Object.freeze({
   execution_timeout: "execution-timeout",
   insufficient_credits: null,
   provider_insufficient_credits: null,
-  model_unavailable: null,
   invalid_api_key: null,
   invalid_credentials: null,
   terms_acceptance_required: null,
