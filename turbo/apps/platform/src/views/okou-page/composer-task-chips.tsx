@@ -27,7 +27,12 @@ import type {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ComposerPresentationRecommendations } from "./chat-composer.tsx";
-import { ComposerRail, RAIL_ITEM } from "./composer-rail.tsx";
+import {
+  ComposerRail,
+  RAIL_ITEM,
+  RAIL_TILE,
+  RAIL_TILE_CAPTION,
+} from "./composer-rail.tsx";
 import {
   slashTemplatePreviewGroup,
   type SlashTemplatePreview,
@@ -159,11 +164,7 @@ function ComposerTemplateCover({
     <Button
       type="button"
       variant="quiet"
-      className={cn(
-        "group/cover block h-auto shrink-0 rounded-lg p-0 text-left font-normal",
-        RAIL_ITEM,
-        width,
-      )}
+      className={cn(RAIL_TILE, width)}
       aria-label={t(
         ($) => {
           return $.chat.composer.slashPanel.useTemplate;
@@ -184,12 +185,10 @@ function ComposerTemplateCover({
           src={preview.coverUrl}
           alt=""
           loading="lazy"
-          className="h-full w-full object-cover object-center transition-transform duration-200 group-hover/cover:scale-[1.04]"
+          className="h-full w-full object-cover object-center transition-transform duration-200 group-hover/tile:scale-[1.04]"
         />
       </span>
-      <span className="mt-2 block truncate text-[12px] leading-4">
-        {preview.title}
-      </span>
+      <span className={RAIL_TILE_CAPTION}>{preview.title}</span>
     </Button>
   );
 }

@@ -21,6 +21,19 @@ const RAIL = cn(
 );
 export const RAIL_ITEM = "snap-start";
 /**
+ * Every shelf tile across the types: art in its own box, caption underneath and
+ * outside it. `quiet` paints a fill on hover, which on a tile this tall draws a
+ * grey slab around the artwork and its caption instead of pointing at either;
+ * the art carries the hover itself.
+ */
+export const RAIL_TILE = cn(
+  "group/tile block h-auto shrink-0 rounded-lg p-0 text-left font-normal",
+  "hover:bg-transparent active:bg-transparent",
+  RAIL_ITEM,
+);
+/** The caption sits under the art and outside it, on every type's shelf. */
+export const RAIL_TILE_CAPTION = "mt-2 block truncate text-[12px] leading-4";
+/**
  * The overrun dissolves instead of being cut through a chip or a cover, on
  * whichever side still has travel. Focus lifts the mask so a keyboard user
  * never lands on a control the fade has dimmed.

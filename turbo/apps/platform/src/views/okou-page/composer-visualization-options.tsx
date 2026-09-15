@@ -1,13 +1,17 @@
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { ToggleButton, cn } from "@okouai/ui";
+import { Button, ToggleButton, cn } from "@okouai/ui";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import {
   VISUALIZATION_OUTPUTS,
   type VisualizationChart,
   type VisualizationOutput,
 } from "../../signals/okou-page/composer-visualization.ts";
-import { ComposerRail, RAIL_ITEM } from "./composer-rail.tsx";
+import {
+  ComposerRail,
+  RAIL_TILE,
+  RAIL_TILE_CAPTION,
+} from "./composer-rail.tsx";
 import { CURATED_VISUALIZATION_CHARTS } from "./composer-visualization-chart-data.ts";
 import { VisualizationChartPreview } from "./composer-visualization-previews.tsx";
 
@@ -102,31 +106,40 @@ function VisualizationChartButton({
   const label = copy.charts[chart];
   const selected = charts.includes(chart);
   return (
-    <ToggleButton
-      selected={selected}
-      layout="tile"
+    // Built like a cover tile rather than a toggle: art in its own box, caption
+    // under it and outside it, so the row reads the same as every other type's
+    // shelf. The pressed state rides on the box, not on the whole control.
+    <Button
+      type="button"
+      variant="quiet"
+      aria-pressed={selected}
       aria-label={label}
-      className={cn(
-        RAIL_ITEM,
-        "w-[112px] shrink-0 overflow-hidden rounded-lg p-1.5",
-        // Only the resting tile drops the frame. Overriding the border and the
-        // fill on both branches left selection carried by ink opacity alone,
-        // which a multi-select cannot afford.
-        selected
-          ? "text-foreground hover:bg-primary/15"
-          : "border-transparent bg-muted/60 text-foreground/45 hover:bg-muted",
-      )}
+      className={cn(RAIL_TILE, "w-[140px]")}
       onClick={() => {
         toggleChart(chart);
       }}
     >
-      <span className="block h-[52px]">
+      <span
+        className={cn(
+          "flex h-[84px] items-center justify-center rounded-lg border-2 p-2.5 transition-colors",
+          // Selection is a heavier stroke, which survives a row of grey
+          // silhouettes in a way a fill alone does not.
+          selected
+            ? "border-primary bg-primary/10 text-foreground"
+            : "border-transparent bg-muted/60 text-foreground/45 group-hover/tile:bg-muted group-hover/tile:text-foreground/70",
+        )}
+      >
         <VisualizationChartPreview chart={chart} />
       </span>
-      <span className="mt-1 block truncate px-0.5 text-center text-[11px] leading-4">
+      <span
+        className={cn(
+          RAIL_TILE_CAPTION,
+          selected ? "text-foreground" : "text-muted-foreground",
+        )}
+      >
         {label}
       </span>
-    </ToggleButton>
+    </Button>
   );
 }
 

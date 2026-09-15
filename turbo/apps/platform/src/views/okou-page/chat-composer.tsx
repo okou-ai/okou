@@ -205,7 +205,11 @@ import {
   toVideoGenerationTemplate,
   toWebsiteGenerationTemplate,
 } from "./composer-template-catalog.ts";
-import { ComposerRail, RAIL_ITEM } from "./composer-rail.tsx";
+import {
+  ComposerRail,
+  RAIL_TILE,
+  RAIL_TILE_CAPTION,
+} from "./composer-rail.tsx";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type {
   ConnectorAccountConnection,
@@ -5820,11 +5824,7 @@ function ComposerPresentationSuggestion({
     <Button
       type="button"
       variant="quiet"
-      className={cn(
-        "group/tile block h-auto shrink-0 rounded-lg p-0 text-left font-normal",
-        RAIL_ITEM,
-        PRESENTATION_SHELF_COVER,
-      )}
+      className={cn(RAIL_TILE, PRESENTATION_SHELF_COVER)}
       onClick={onSelect}
     >
       <span
@@ -5836,7 +5836,7 @@ function ComposerPresentationSuggestion({
       >
         {children}
       </span>
-      <span className="mt-2 block truncate text-[12px] leading-4" title={title}>
+      <span className={RAIL_TILE_CAPTION} title={title}>
         {title}
       </span>
     </Button>
@@ -5887,7 +5887,10 @@ export function ComposerPresentationRecommendations({
         <PptImportCard
           signals={signals}
           compact
-          className={cn(RAIL_ITEM, "shrink-0", PRESENTATION_SHELF_COVER)}
+          className={cn(
+            "group/tile shrink-0 snap-start",
+            PRESENTATION_SHELF_COVER,
+          )}
           onImported={() => {
             setMode(null);
           }}
