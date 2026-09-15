@@ -3,6 +3,7 @@ import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agen
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { and, inArray, type SQL } from "drizzle-orm";
 
+import { fencePiInferenceTerminal } from "./pi-inference-lifecycle.service";
 import { cleanupDisconnectedPersonalModelProviderAccounts } from "./model-provider-account.service";
 import type { Tx } from "../../lib/db-types";
 
@@ -56,9 +57,18 @@ export async function transitionAgentRunsToTerminal(
       userId: agentRuns.userId,
       runnerGroup: agentRuns.runnerGroup,
       modelProviderId: agentRuns.modelProviderId,
+      launchSnapshot: agentRuns.launchSnapshot,
     });
   if (transitioned.length === 0) {
     return transitioned;
+  }
+  for (const run of transitioned) {
+    await fencePiInferenceTerminal(
+      tx,
+      run.runId,
+      run.launchSnapshot,
+      args.values.completedAt,
+    );
   }
   await tx.delete(agentRunConnectorDiagnosticRegistrations).where(
     inArray(

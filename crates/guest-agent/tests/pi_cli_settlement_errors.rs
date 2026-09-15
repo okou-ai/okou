@@ -162,6 +162,27 @@ fi
         terminal_failure.diagnostic.failure_reason,
         expected_failure_reason
     );
+    if expected_failure_reason == Some(FailureReason::ProviderRateLimited) {
+        assert_eq!(
+            result
+                .cli_observed_exit
+                .as_ref()
+                .and_then(|exit| exit.exit_code),
+            Some(0)
+        );
+        assert_eq!(
+            terminal_failure.diagnostic.model_request,
+            Some(guest_contracts::diagnostics::ModelRequestDiagnostic {
+                http_status: Some(429),
+                transport_attempts: 1,
+                retry_attempts: 0,
+                retry_limit: None,
+            })
+        );
+        let reason: api_contracts::generated::types::webhooks::agent::complete::RequestFailureReason =
+            terminal_failure.diagnostic.failure_reason.ok_or_else(|| std::io::Error::other("missing completion reason"))?.into();
+        assert_eq!(serde_json::to_value(reason)?, "provider_rate_limited");
+    }
 
     let system_log = std::fs::read_to_string(runtime.paths.system_log_file())?;
     assert!(
@@ -244,6 +265,66 @@ async fn guest_preserves_pi_error_and_aborted_settlement_results()
 -> Result<(), Box<dyn std::error::Error>> {
     let base_path = std::env::var_os("PATH").unwrap_or_default();
     let original_directory = std::env::current_dir()?;
+    // Shared with the real TypeScript provider-boundary regression. No status
+    // is inferred from the detail text by this guest entry point.
+    let rate_limit: Value = serde_json::from_str(include_str!(
+        "../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-rate-limit.json"
+    ))?;
+    run_settlement_case(
+        "00000000-0000-4000-8000-000000000130",
+        std::slice::from_ref(&rate_limit),
+        ExpectedTerminalResult::Exact(r#"{"detail":"Rate limit exceeded"}"#),
+        Some(FailureReason::ProviderRateLimited),
+        None,
+        &base_path,
+        &original_directory,
+    )
+    .await?;
+    for (run_id, status) in [
+        ("00000000-0000-4000-8000-000000000133", 200),
+        ("00000000-0000-4000-8000-000000000134", 401),
+    ] {
+        let mut other_status = rate_limit.clone();
+        other_status["diagnostics"][0]["details"]["httpStatus"] = Value::from(status);
+        run_settlement_case(
+            run_id,
+            &[other_status],
+            ExpectedTerminalResult::Exact(r#"{"detail":"Rate limit exceeded"}"#),
+            None,
+            None,
+            &base_path,
+            &original_directory,
+        )
+        .await?;
+    }
+    let mut explicit_usage = rate_limit.clone();
+    explicit_usage["errorMessage"] =
+        Value::from("You have hit your ChatGPT usage limit (plus plan).");
+    run_settlement_case(
+        "00000000-0000-4000-8000-000000000131",
+        &[explicit_usage],
+        ExpectedTerminalResult::Exact("You have hit your ChatGPT usage limit (plus plan)."),
+        Some(FailureReason::UsageLimit),
+        None,
+        &base_path,
+        &original_directory,
+    )
+    .await?;
+    let mut historical = rate_limit.clone();
+    historical
+        .as_object_mut()
+        .ok_or_else(|| std::io::Error::other("expected assistant object"))?
+        .remove("diagnostics");
+    run_settlement_case(
+        "00000000-0000-4000-8000-000000000132",
+        &[historical],
+        ExpectedTerminalResult::Exact(r#"{"detail":"Rate limit exceeded"}"#),
+        None,
+        None,
+        &base_path,
+        &original_directory,
+    )
+    .await?;
     run_settlement_case(
         "00000000-0000-4000-8000-000000000124",
         &[serde_json::json!({

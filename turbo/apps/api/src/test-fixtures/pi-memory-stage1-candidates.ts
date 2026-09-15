@@ -288,7 +288,9 @@ export async function readmitPiMemoryStage1CandidateFixture(
     !run ||
     !completedAt ||
     run.status !== "completed" ||
-    (launchSnapshot?.schemaVersion !== 2 && launchSnapshot?.schemaVersion !== 3)
+    (launchSnapshot?.schemaVersion !== 2 &&
+      launchSnapshot?.schemaVersion !== 3 &&
+      launchSnapshot?.schemaVersion !== 4)
   ) {
     throw new Error(
       "Expected a completed V2 or V3 Run for Pi memory readmission",

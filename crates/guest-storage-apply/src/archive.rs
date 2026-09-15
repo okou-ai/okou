@@ -189,7 +189,7 @@ fn is_within(path: &Path, target: &Path) -> bool {
 /// canonicalize it, and verify it still resolves within `target`.
 /// Returns false if any ancestor resolves outside `target` (e.g., a symlink directory
 /// was planted earlier in the archive to redirect writes outside the target).
-fn ancestors_within_target(path: &Path, target: &Path) -> bool {
+pub(crate) fn ancestors_within_target(path: &Path, target: &Path) -> bool {
     // Start from parent — path itself is the entry being extracted (doesn't exist yet).
     let Some(mut ancestor) = path.parent() else {
         return true;

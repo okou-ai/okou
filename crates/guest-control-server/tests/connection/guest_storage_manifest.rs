@@ -215,6 +215,36 @@ fn guest_storage_manifest_timeout_kills_and_reaps_process_group() {
 }
 
 #[test]
+fn decoded_storage_timeout_reaps_helper_without_reading_blocked_bulk_stdin() {
+    use guest_contracts::storage_files::{self, StorageFile};
+    let pid_path = unique_pid_path("storage-files-timeout");
+    let mut process_guard = ProcessGroupFileGuard::new(pid_path.as_str());
+    let (_directory, program) = create_program(&format!(
+        "[ \"$1\" = --storage-files-stdin ]; sleep 60 & printf '%s' \"$$\" > '{}'; wait",
+        pid_path.as_str()
+    ));
+    let (handle, mut host, timeout_gate) = start_with_timeout_gate(program, None);
+    let files = vec![StorageFile {
+        path: "file".into(),
+        mode: 0o644,
+        mtime: 1,
+        content: vec![42; 256 * 1024],
+    }];
+    let input = storage_files::encode_input(b"{}", &[("/mount", &files)]).unwrap();
+    send_request(&mut host, 414, 20, "run", "/run", &input);
+    let pid = process_guard.read_pid();
+    assert_eq!(
+        timeout_gate.recv_timeout(Duration::from_secs(3)).unwrap(),
+        pid
+    );
+    let result = read_result(&mut host, 414);
+    assert_eq!(result.termination, ExecTermination::TimedOut);
+    wait_for_pid_exit(pid, "decoded storage blocked input timeout");
+    process_guard.disarm();
+    finish_guest_connection(handle, host);
+}
+
+#[test]
 fn guest_storage_manifest_can_timeout_before_helper_readiness() {
     let fifo = unique_tmp_path("storage-manifest-not-ready", ".fifo");
     let (_directory, program) = create_program(&format!(

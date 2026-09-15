@@ -406,12 +406,15 @@ pub(crate) fn try_acquire_existing_or_missing_blocking(
 pub async fn try_acquire_existing_shared_or_missing(
     path: PathBuf,
 ) -> RunnerResult<ExistingTryLock> {
-    match tokio::task::spawn_blocking(move || {
-        acquire_existing_result_blocking(&path, LockMode::TryShared)
-    })
-    .await
-    .map_err(|e| RunnerError::Internal(format!("lock task: {e}")))??
-    {
+    tokio::task::spawn_blocking(move || try_acquire_existing_shared_or_missing_blocking(&path))
+        .await
+        .map_err(|e| RunnerError::Internal(format!("lock task: {e}")))?
+}
+
+pub(crate) fn try_acquire_existing_shared_or_missing_blocking(
+    path: &Path,
+) -> RunnerResult<ExistingTryLock> {
+    match acquire_existing_result_blocking(path, LockMode::TryShared)? {
         Some(LockAcquire::Acquired(lock)) => Ok(ExistingTryLock::Acquired(lock)),
         Some(LockAcquire::Busy) => Ok(ExistingTryLock::Busy),
         None => Ok(ExistingTryLock::Missing),

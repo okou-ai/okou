@@ -763,3 +763,119 @@ opens the preview. No runner ships here, so the canvas batch is `implemented`
 rather than `verified`, and the local equivalence evidence recorded with its
 pull request is bounded Chromium rendering of the two class lists, not a
 deployed-preview capture.
+
+## Markdown body classes — partially drained, audit blocked
+
+The `markdown-body-classes` batch owns `wmde-markdown` and
+`wmde-markdown-color`. One is retired; the other is not a rename and is returned
+to the external-contract audit its family already asks for. The batch opened
+with `okou-markdown-card` as well, which the fixed viewport and markdown card
+batch drained separately while this one was open.
+
+`wmde-markdown-color` was applied by `MarkdownFrame` and selected by nothing:
+zero rules in the App stylesheet, zero in `packages/ui`, and zero in the
+vendored `@uiw/react-markdown-preview` 5.2.0 sheet. Removing it is a pure
+deletion, measured at zero changed pixels and zero observation differences.
+
+`wmde-markdown` cannot follow it. It is the live hook for a third-party
+stylesheet rather than a first-party typography class. Of the vendored sheet's
+302 selector instances, 300 are gated on `.wmde-markdown`; the remaining two are
+`body[data-color-mode*="light"|"dark"]`, and nothing in the repository ever sets
+`data-color-mode` on `body` — `MarkdownFrame` sets it on its own element — so
+those two are already dead. The App block in `index.css` is a patch layer over
+that base rather than a replacement for it: it declares 48
+`--color-prettylights-syntax-*` variables and zero `.token` rules, and the
+vendored sheet owns every one of them.
+
+Renaming the App selectors to `[data-slot="markdown-body"]` and dropping the
+vendored import changes **2,785,793 pixels and 396 observations** over six
+rendered states. All Prism token colours collapse to the plain foreground,
+inline code loses its padding, size and mono family, `pre` loses its fill, size
+and leading, `kbd` loses its border, padding, radius, `inline-block` box and
+middle alignment, `hr` drops from 3.5px to 1px and loses its 24px margins, `img`
+loses `content-box` and `border-style: none`, and `strong` shifts from 600 to 700.
+
+Spelling the hook as `[data-slot="markdown-body"]` in the stylesheet would also
+contradict this guide's companion: the style guide records in five places that
+a `data-slot` carries no styles, and no handwritten first-party rule selects one
+today. The one `[data-slot=markdown-card]` selector in the shipped bundle is the
+utility Tailwind emits for `CHAT_BUBBLE_MARKDOWN_CLASS`, which is authored on
+the component, not in a stylesheet, and stays inside the ratchet. It would
+convert a tracked class selector into the attribute selector this document still
+lists as an unenforced follow-up, hiding the debt from the ratchet instead of
+draining it.
+
+`okou-markdown-card` was held here at first, because its only declarations lived
+in the shared rule `.wmde-markdown p, .wmde-markdown .okou-markdown-card` — then
+the only rule of this block still held in the legacy baseline, against 42
+`third-party-dom-adapter` allowlist entries — and re-spelling that rule changed
+its baseline atoms. The markdown card batch drained it instead by splitting the
+rule: the two card sites took a `my-1.5` utility, and `.wmde-markdown p` became
+the 43rd adapter entry. Every rule of this block is now a declared adapter entry
+and the legacy baseline holds none of them.
+
+That leaves the class token itself, and `turbo/style-allowlist.json` already
+holds those 43 entries plus the sheet's hash-pinned `vendorFiles` record, so the
+remaining decision — keep the declared adapter, or replace the Markdown
+renderer's styling wholesale — is a product decision rather than an equivalence.
+
+### Harness and negative controls
+
+`markdown-body-cases.json` registers the deployed surface. The acceptance
+evidence is a local equivalence harness rather than a deployed capture, so the
+batch is `blocked` rather than `baselined` or `verified`.
+
+The harness compiles the App's own Tailwind 4.2.2 entry point through the Vite
+plugin the App uses, preserving the real cascade order. That order was measured
+rather than assumed: the vendored sheet reaches the bundle through a static
+`router.tsx → … → rich-markdown.tsx` chain with no dynamic import, so Rollup
+emits it roughly 3,600 lines _before_ `index.css`, and the App block wins every
+specificity tie. The sample article is the real DOM that `parseMarkdownTree`
+produces, covering `h1`–`h6`, paragraphs, nested ordered and unordered lists,
+blockquotes, a four-row table with header and zebra rows, inline code, a fenced
+block with live Prism tokens, `kbd`, `hr`, `mark`, links, an image and both card
+sites. The fixture rebuilds the `.okou-app` shell and the `group` wrapper and
+copies `index.html`'s viewport meta verbatim, so the 390px cases lay out at
+390px instead of silently falling back to 980px. Hover is forced on the link and
+on its ancestors.
+
+Six states — desktop Light/Dark at 1280, both again with hover forced, and
+narrow 390 DPR 2 Light/Dark — compare full-frame pixels plus computed styles and
+geometry for 39 probes. Unchanged code reports zero changed pixels and zero
+observation differences, and so does the retired `wmde-markdown-color` class.
+
+Three negative controls establish that those zeros are not degenerate. Dropping
+the App's table zebra rule changes 574,100 pixels and 6 observations. Dropping
+its `h2` override changes 1,735,373 pixels and 234 observations, because the
+vendored `1.5em` heading and its border return. Dropping the dark link hover
+colour changes 157 pixels in the one state that forces hover and none in the
+state that does not, so the channel resolves a small, state-specific change and
+the hover forcing is load-bearing.
+
+This is bounded local Chromium evidence against a reconstructed ancestor chain.
+It does not certify the real chat transcript's scroll container, WebKit, native
+surfaces, or the Markdown renderer's asynchronous card and diagram states.
+
+### A correction to the style guide
+
+The chat bubble section of the style guide stated that the Markdown chunk's
+stylesheet loads _after_ the App's. The bundler says otherwise, and the claim is
+corrected there. The vendored sheet is imported by `rich-markdown.tsx`, which
+`router.tsx` reaches through a static chain that `main.tsx` evaluates before its
+own `./css/index.css` import, so Rollup emits the vendored rules first. The
+shipped bundle shows the same gap: in `index-Cte7Pkoy.css` the vendored
+`.wmde-markdown blockquote>:first-child` sits at byte 16,205 and the App's
+`.wmde-markdown p,.wmde-markdown .okou-markdown-card` at byte 302,592.
+
+Two of the four resets that section relies on still win, but by `!important`
+rather than by source order. The other two do not. The vendored `blockquote >
+:first-child` / `:last-child` pair carries no `!important` and ties the retired
+`.okou-chat-bubble-* .wmde-markdown p` rule at (0,2,1), so with the App emitted
+second the retired rule won: a blockquote's first and last paragraph inside a
+bubble carried its 8px, and the `[&_blockquote>*:first-child]:mt-0!` pair that
+replaced it flushes them. That is a real spacing change inside a batch recorded
+as an equivalence, so it is tracked as its own decision in
+[#34278](https://github.com/vm0-ai/vm0/issues/34278) rather than repaired here.
+It also means that batch's evidence never exercised the case: either its sample
+carried no blockquote inside a bubble, or its fixture did not reproduce this
+cascade order. Establish which before reusing that harness.

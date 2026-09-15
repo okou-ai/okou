@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 . "${SCRIPT_DIR}/runner-image-target.sh"
+. "${SCRIPT_DIR}/runner-binary-download.sh"
 . "${SCRIPT_DIR}/runner-guest-binaries.sh"
 . "${REPO_ROOT}/.github/scripts/runner-binary-build/contract.env"
 
@@ -1008,12 +1009,8 @@ download_reference() {
   transport="${RUNNER_CACHE_TEMP_ROOT}/transport"
   mkdir -p "$transport"
   runner="${transport}/runner"
-  timeout --kill-after=5s 60s aws s3api get-object \
-    --endpoint-url "https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
-    --bucket "$R2_BUCKET_NAME" --key "$object_key" \
-    --range "bytes=0-${RUNNER_BINARY_MAX_COMPRESSED_BYTES}" \
-    --cli-connect-timeout 5 --cli-read-timeout 30 \
-    "$compressed" >/dev/null
+  runner_binary_download cached-binary "$object_key" \
+    "bytes=0-${RUNNER_BINARY_MAX_COMPRESSED_BYTES}" "$compressed" 60 198
   zstd -q -d -c "$compressed" |
     head -c "$((RUNNER_BINARY_MAX_SIZE_BYTES + 1))" > "$runner"
   runner_size=$(stat -c '%s' "$runner")

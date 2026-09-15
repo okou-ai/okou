@@ -1,4 +1,4 @@
-"""Target-only KMS verification for an already isolated snapshot connection."""
+"""Target-only KMS verification for a caller-validated database connection."""
 
 import datetime as dt
 import hashlib
@@ -353,7 +353,7 @@ def process_failure(path, database, result, seconds):
 
 
 def verify_database(parsed, environment, deadline):
-    # The caller has validated this exact preview host, database, role and branch.
+    # The caller validates the exact host, database, role and authorized branch.
     query = {"sslmode": "verify-full"}
     uri = urllib.parse.urlunsplit(parsed._replace(query=urllib.parse.urlencode(query)))
     scoped = {**environment, "DATABASE_URL": uri}

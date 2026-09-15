@@ -242,6 +242,40 @@ async function validateConstraintValues(
     ],
   );
 
+  const inferenceSnapshot = {
+    schemaVersion: 4,
+    framework: "pi",
+    executionMode: "api-inference",
+    inferenceContractVersion: 1,
+  };
+  await client.query(
+    'UPDATE "agent_runs" SET "launch_snapshot" = $1::jsonb WHERE "id" = $2',
+    [JSON.stringify(inferenceSnapshot), runId],
+  );
+  for (const key of Object.keys(inferenceSnapshot)) {
+    const incomplete = Object.fromEntries(
+      Object.entries(inferenceSnapshot).filter(([field]) => {
+        return field !== key;
+      }),
+    );
+    await expectConstraintViolation(client, runId, incomplete);
+  }
+  await expectConstraintViolation(client, runId, {
+    ...inferenceSnapshot,
+    runnerProfile: "fabricated",
+  });
+  await expectConstraintViolation(client, runId, {
+    ...inferenceSnapshot,
+    framework: "codex",
+  });
+  await expectConstraintViolation(client, runId, {
+    ...inferenceSnapshot,
+    inferenceContractVersion: 2,
+  });
+  await expectConstraintViolation(client, runId, {
+    ...inferenceSnapshot,
+    executionMode: null,
+  });
   const invalidObjects: readonly unknown[] = [
     { framework: "codex", runnerProfile: "vm0/default" },
     { schemaVersion: 1, runnerProfile: "vm0/default" },
@@ -346,7 +380,7 @@ export async function validateAgentRunLaunchSnapshotSchema(
     await seedCanonicalAgentRun(client, fixture);
     await validateConstraintValues(client, fixture.runId, true, true);
     console.log(
-      "   ✅ fresh schema matches the nullable strict v1/v2/v3 contract\n",
+      "   ✅ fresh schema matches the nullable strict v1/v2/v3/v4 contract\n",
     );
   } finally {
     await client.end();

@@ -331,7 +331,13 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
         };
     let mut command = Command::new(program.path());
     command
-        .arg("--manifest-stdin")
+        .arg(
+            if manifest_json.starts_with(guest_contracts::storage_files::INPUT_MAGIC) {
+                "--storage-files-stdin"
+            } else {
+                "--manifest-stdin"
+            },
+        )
         .env(guest_contracts::env::RUN_ID_ENV, run_id)
         .env(
             guest_contracts::runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV,

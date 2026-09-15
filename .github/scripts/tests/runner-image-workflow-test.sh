@@ -34,6 +34,14 @@ image_inputs=$(cd "$test_root" && BASE_REF="$base_ref" GITHUB_OUTPUT='' bash -c 
 grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
   fail "transport-only changes must be recognized as runner image inputs"
 
+base_ref=$(fixture_git rev-parse HEAD)
+cp "${SCRIPT_DIR}/runner-binary-download.sh" "${test_root}/.github/scripts/"
+fixture_git add .github/scripts/runner-binary-download.sh
+fixture_git commit --quiet -m download
+image_inputs=$(cd "$test_root" && BASE_REF="$base_ref" GITHUB_OUTPUT='' bash -c "$image_input_step")
+grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
+  fail "download-only changes must be recognized as runner image inputs"
+
 jq -e '
   .jobs.prepare.outputs["turbo-runner-consumer-needed"] ==
     "${{ steps.needed.outputs.turbo-runner-consumer-needed }}" and
