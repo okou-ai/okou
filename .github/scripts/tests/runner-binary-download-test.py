@@ -367,6 +367,8 @@ class DownloadTests(unittest.TestCase):
                                 try:
                                     os.killpg(group, signal.SIGKILL)
                                 except ProcessLookupError:
+                                    # Normal cancellation may already have removed
+                                    # this fixture's process group.
                                     pass
                         if process.poll() is None:
                             process.communicate()
