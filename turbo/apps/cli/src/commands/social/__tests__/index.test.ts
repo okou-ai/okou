@@ -264,7 +264,10 @@ describe("okou social command", () => {
       return requests;
     }
 
-    function serveTranscript(data: Readonly<Record<string, unknown>>) {
+    function serveTranscript(
+      data: Readonly<Record<string, unknown>>,
+      creditsCharged = 0,
+    ) {
       const requests: unknown[] = [];
       server.use(
         http.post(
@@ -273,7 +276,7 @@ describe("okou social command", () => {
             requests.push(await request.json());
             return HttpResponse.json({
               ...socialResponse("youtube_transcript", null, data),
-              creditsCharged: 0,
+              creditsCharged,
             });
           },
         ),
@@ -433,6 +436,92 @@ describe("okou social command", () => {
       expect(requests).toHaveLength(1);
       expect(await readdir(directory)).toEqual(["captions.vtt"]);
     });
+
+    it.each([
+      "00:00:10,000 --> 00:00:11,000",
+      "00:00:10.000 --> 00:00:11.000",
+      "\t0:0:10,0-->0:0:11,0",
+    ])(
+      "rejects ambiguous SRT cue text without replacing the file or repeating extraction: %s",
+      async (timingLine) => {
+        const data = {
+          transcriptSegments: [
+            {
+              text: `Before\r\n${timingLine}\r\nAfter`,
+              start: 1,
+              duration: 4,
+            },
+          ],
+        };
+        const requests = serveTranscript(data, 3);
+        const path = join(directory, "captions.srt");
+        await writeFile(path, "original");
+        await socialCommand.parseAsync([
+          ...transcriptArgs,
+          "--format",
+          "srt",
+          "--output",
+          path,
+          "--overwrite",
+          "--json",
+        ]);
+        expect(process.exitCode).toBe(1);
+        expect(await readFile(path, "utf8")).toBe("original");
+        expect(JSON.parse(output()) as unknown).toMatchObject({
+          kind: "result",
+          data,
+          billing: { quantity: 1, creditsCharged: 3 },
+        });
+        expect(errorOutput()).toContain(
+          "SRT readers can interpret as another cue",
+        );
+        expect(errorOutput()).toContain("--format vtt");
+        expect(errorOutput()).toContain("without repeating the Social request");
+        expect(requests).toHaveLength(1);
+        expect(await readdir(directory)).toEqual(["captions.srt"]);
+      },
+    );
+
+    it.each([
+      {
+        format: "text",
+        expected: "Before\n00:00:10,000 --> 00:00:11,000\nAfter\n",
+      },
+      {
+        format: "vtt",
+        expected:
+          "WEBVTT\n\n1\n00:00:01.000 --> 00:00:05.000\nBefore\n00:00:10,000 --&gt; 00:00:11,000\nAfter\n\n",
+      },
+    ])(
+      "preserves literal timing lines when exporting $format",
+      async ({ format, expected }) => {
+        const requests = serveTranscript({
+          transcriptSegments: [
+            {
+              text: "Before\n00:00:10,000 --> 00:00:11,000\nAfter",
+              start: 1,
+              duration: 4,
+            },
+          ],
+        });
+        const path = join(directory, `transcript.${format}`);
+        await socialCommand.parseAsync([
+          ...transcriptArgs,
+          "--format",
+          format,
+          "--output",
+          path,
+          "--json",
+        ]);
+        expect(await readFile(path, "utf8")).toBe(expected);
+        expect(JSON.parse(output()) as unknown).toMatchObject({
+          kind: "export",
+          export: { format },
+        });
+        expect(requests).toHaveLength(1);
+        expect(await readdir(directory)).toEqual([`transcript.${format}`]);
+      },
+    );
 
     it.each([
       { name: "missing segments", segments: undefined },
@@ -5257,6 +5346,7 @@ describe("okou social command", () => {
       "Extraction support does not guarantee timestamped output",
     );
     expect(renderedHelp).toContain("Choose vtt for escaped literal markup");
+    expect(renderedHelp).toContain("SRT rejects timestamp-like cue-text lines");
     expect(renderedHelp).toContain(
       "recovered stdout JSON without repeating the request",
     );

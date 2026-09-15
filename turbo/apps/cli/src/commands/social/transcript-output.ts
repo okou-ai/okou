@@ -30,7 +30,7 @@ function plainText(data: z.infer<typeof transcriptSchema>): string {
 
 function subtitleError(message: string): never {
   throw new Error(
-    `${message}. Timed subtitles require real segment timing. Use --format text for plain-text export; after this failure, save data.transcript or join data.transcriptSegments[].text from the recovered stdout JSON without repeating the Social request`,
+    `${message}. Use --format text for plain-text export; after this failure, save data.transcript or join data.transcriptSegments[].text from the recovered stdout JSON without repeating the Social request`,
   );
 }
 
@@ -84,13 +84,26 @@ function subtitles(
         `Segment ${index + 1} has timing outside safe millisecond precision or an interval that rounds to zero`,
       );
     }
-    let cueText = text
+    const lines = text
       .replace(/\r\n?/gu, "\n")
       .split("\n")
       .filter((line) => {
         return line.trim().length > 0;
+      });
+    // SRT readers can recognize timing lines even without a blank cue separator.
+    if (
+      format === "srt" &&
+      lines.some((line) => {
+        return /^\s*[+-]?\d+:\s*[+-]?\d+:\s*[+-]?\d+[,.]\s*[+-]?\d+\s*-->/u.test(
+          line,
+        );
       })
-      .join("\n");
+    ) {
+      subtitleError(
+        `Segment ${index + 1} contains a timestamp-like line that SRT readers can interpret as another cue; choose --format vtt for literal timing text`,
+      );
+    }
+    let cueText = lines.join("\n");
     if (format === "vtt") {
       // This encoder uses WebVTT-supported references and leaves quotes intact.
       cueText = escapeText(cueText);

@@ -69,7 +69,7 @@ export function socialExportCapabilities(mode: SocialOutputMode) {
             timing:
               "Extraction does not guarantee timestamped output; srt/vtt require every segment's finite nonnegative start and positive duration in seconds, ordered starts, and valid millisecond intervals",
             markup:
-              "SRT preserves source cue text; reader markup support varies. WebVTT escapes literal markup",
+              "SRT preserves source cue text but rejects timestamp-like lines that readers can interpret as another cue; reader markup support varies. WebVTT escapes literal markup and timing text",
             recovery:
               "Missing or invalid timing fails without retrying; save plain text from the recovered stdout JSON",
           },
@@ -123,6 +123,7 @@ Transcript export:
   Cue starts must be ordered; overlaps are preserved. Unsafe or zero-length millisecond intervals fail.
   Cue text keeps Unicode; line endings are normalized and blank cue lines removed.
   SRT preserves source cue text; reader markup support varies. Choose vtt for escaped literal markup.
+  SRT rejects timestamp-like cue-text lines; choose vtt to preserve literal timing text.
   On failure, save plain text from the recovered stdout JSON without repeating the request.
   Example: okou social transcript https://youtu.be/<id> --format srt --output captions.srt`,
     );

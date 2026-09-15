@@ -286,6 +286,14 @@ line endings to LF and remove blank cue lines so they cannot terminate a cue.
 Nonblank lines and Unicode are preserved. Blank or NUL-containing cue text is
 rejected. This does not translate, align, or fabricate speech or timing.
 
+SRT also rejects source text whose line begins with a timestamp followed by
+`-->`, such as `00:00:10,000 --> 00:00:11,000`. Readers can interpret such a line
+as another cue even without a blank separator, changing the supplied timing and
+splitting the text. Decimal points and flexible numeric/whitespace spellings
+also count as ambiguous. Choose WebVTT or plain text before extraction when the
+transcript may quote subtitle syntax. An SRT rejection retains the retrieved
+stdout JSON and any existing output file; recover text without another request.
+
 Files contain only transcript/subtitle content. Retain the separate stdout JSON
 receipt for status, warnings, errors, and credits; its `export.language` also keeps
 the source language when supplied. JSON exports retain their original envelope.
