@@ -1198,7 +1198,6 @@ describe("GET/PUT /api/model-policies", () => {
       [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
       [FeatureSwitchKey.Effort]: true,
       [FeatureSwitchKey.CodexFastMode]: false,
-      [FeatureSwitchKey.RefactorModelSelect]: false,
     });
     useSession(fixture);
     const preferences = setupApp({

@@ -50,7 +50,6 @@ use super::session_history_download::{
 use super::session_restore::{
     MaterializedResumeSession, SessionRestoreDiagnostics, restore_session,
 };
-use super::storage::download_storages;
 use super::telemetry::{RunnerSpawnTiming, record_api_startup_boundaries};
 use super::workspace_session_history_materializer::{
     WorkspaceSessionHistoryMaterialization, WorkspaceSessionHistoryPhaseTiming,
@@ -1535,6 +1534,7 @@ async fn populate_storage_plan(
         &config.home,
         telemetry,
         fresh_delivery,
+        Some(&config.decoded_cache),
     )
     .await;
     telemetry.record(
@@ -1639,14 +1639,15 @@ async fn prepare_guest_storage(
                     telemetry,
                 )
                 .await?;
-                let prepared = prepared_storage.take().ok_or_else(|| {
+                let mut prepared = prepared_storage.take().ok_or_else(|| {
                     RunnerError::Internal(
                         "prepared storage disappeared after cache population".into(),
                     )
                 })?;
+                let files = prepared.plan.take_decoded();
                 let guest_manifest = prepared.plan.into_guest_manifest();
                 let download_started = Instant::now();
-                let download_result = download_storages(sandbox, context, &guest_manifest).await;
+                let download_result = super::storage::download_storages_with_files(sandbox, context, &guest_manifest, &files).await;
                 telemetry.record(
                     "runner_storage_manifest_guest_storage_apply",
                     download_started.elapsed(),
@@ -1677,9 +1678,10 @@ async fn prepare_guest_storage(
             } else {
                 let deferred =
                     populate_storage_plan(&mut plan, None, sandbox, config, telemetry).await?;
+                let files = plan.take_decoded();
                 let guest_manifest = plan.into_guest_manifest();
                 let download_started = Instant::now();
-                let download_result = download_storages(sandbox, context, &guest_manifest).await;
+                let download_result = super::storage::download_storages_with_files(sandbox, context, &guest_manifest, &files).await;
                 telemetry.record(
                     "runner_storage_manifest_guest_storage_apply",
                     download_started.elapsed(),

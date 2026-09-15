@@ -140,7 +140,6 @@ test("Uses the effective subscription for reasoning and Fast guidance", async ()
     featureSwitches: {
       [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
       [FeatureSwitchKey.Effort]: true,
-      [FeatureSwitchKey.RefactorModelSelect]: false,
       [FeatureSwitchKey.CodexFastMode]: false,
       [FeatureSwitchKey.PiLoop]: true,
     },
