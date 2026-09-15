@@ -636,10 +636,10 @@ test("Saved messages appear without an empty-state flash", async () => {
     auth: identity.auth,
   });
 
+  await housekeepingStarted.promise;
   const visibleSavedResponse = await screen.findByText(savedResponse);
   expect(visibleSavedResponse).toBeVisible();
 
-  await housekeepingStarted.promise;
   expect(
     document.querySelector("[data-chat-skeleton]"),
   ).not.toBeInTheDocument();
