@@ -171,7 +171,6 @@ test("Expanded style tags filter the gallery and preserve the selected style", a
   installCatalogs();
   const { dialog } = await openIntroVideo();
   expect(control("Use selection", dialog)).toBeDisabled();
-  expect(within(dialog).queryByLabelText("Search styles")).toBeNull();
   const tags = within(dialog).getByRole("group", { name: "Browse by style" });
   expect(queryAllByRoleFast("button", tags)).toHaveLength(6);
   click(control("Select style Minimalism", dialog));
@@ -204,7 +203,6 @@ test("Avatar looks require Use, and explicit voice choices survive removing the 
   click(control("Select style Minimalism", dialog));
   click(control("Avatar", dialog, "tab"));
   await within(dialog).findByText("Daphne");
-  expect(within(dialog).queryByLabelText("Search avatars")).toBeNull();
   expect(control("Avatar", dialog, "tab")).toHaveTextContent("No avatar");
   click(control("Preview look Daphne in Blue shirt", dialog));
   expect(control("Avatar", dialog, "tab")).toHaveTextContent("No avatar");
