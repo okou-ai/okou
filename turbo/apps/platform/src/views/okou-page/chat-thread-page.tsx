@@ -5146,10 +5146,14 @@ function AssistantErrorCard({
           </div>
         </div>
       </div>
-      <ChatCardDetails title={title}>
-        {details ?? <p>{description}</p>}
-        {actions}
-      </ChatCardDetails>
+      {(description !== "" ||
+        details !== undefined ||
+        actions !== undefined) && (
+        <ChatCardDetails title={title}>
+          {details ?? <p>{description}</p>}
+          {actions}
+        </ChatCardDetails>
+      )}
     </div>
   );
 }

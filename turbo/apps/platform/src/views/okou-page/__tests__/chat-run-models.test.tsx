@@ -19,7 +19,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import { click } from "../../../__tests__/page-helper.ts";
+import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import {
   parseChatClipboardPayload,
   readClipboardItemText,
@@ -582,7 +582,7 @@ test.each([
     const card = await screen.findByRole("status");
     expect(card).toHaveTextContent("Cette exécution n’a pas pu se terminer");
     expect(card).toHaveTextContent(expected);
-    click(within(card).getByRole("button", { name: "Voir les détails" }));
+    click(await findButton("Voir les détails"));
     const details = await screen.findByRole("dialog");
     expect(queryButton("Réessayer", details)).not.toBeInTheDocument();
     expect(
@@ -632,9 +632,17 @@ test.each([
     const card = await screen.findByRole("status");
     expect(card).toHaveTextContent(expected);
     expect(card).toHaveTextContent(action);
-    click(within(card).getByRole("button", { name: "Voir les détails" }));
+    click(await findButton("Voir les détails"));
     const details = await screen.findByRole("dialog");
-    const link = await within(details).findByRole("link", { name: url });
+    const link = await waitFor(() => {
+      const candidate = queryAllByRoleFast("link", details).find((element) => {
+        return element.textContent === url;
+      });
+      if (!candidate) {
+        throw new Error("Localized guidance link is unavailable");
+      }
+      return candidate;
+    });
     expect(link).toHaveAttribute("href", url);
     expect(queryButton("Réessayer", details)).not.toBeInTheDocument();
     expect(
@@ -676,7 +684,7 @@ test.each([
     await setupPage({ context, path: RUN_PATH, locale: "fr-FR" });
     const card = await screen.findByRole("status");
     expect(card).toHaveTextContent(expected);
-    click(within(card).getByRole("button", { name: "Voir les détails" }));
+    click(await findButton("Voir les détails"));
     const details = await screen.findByRole("dialog");
     expect(queryButton("Réessayer", details)).not.toBeInTheDocument();
     expect(
@@ -737,7 +745,7 @@ test.each([
     const card = screen.getByRole("status");
     expect(card).toHaveTextContent(title);
     expect(card).toHaveTextContent(description);
-    click(within(card).getByRole("button", { name: "Voir les détails" }));
+    click(await findButton("Voir les détails"));
     const details = await screen.findByRole("dialog");
     expect(queryButton("Réessayer", details)).toBeInTheDocument();
     expect(within(details).getByRole("combobox")).toBeInTheDocument();
