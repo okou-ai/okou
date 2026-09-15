@@ -12,11 +12,18 @@ import type { RailTravel } from "../../signals/okou-page/composer-task-chips.ts"
  * row always reaches the right edge of the column instead of stopping at a
  * fixed count and leaving the rest of the line empty; whatever does not fit is
  * simply further along, and the pagers move the rail by one visible width.
- * Snapping lands the left edge on an item, so paging never strands a half-cut
- * control under the pager that brought you there.
+ *
+ * `scroll-pl-14` is the fade's own width, and the two have to stay equal. Snap
+ * alignment honours scroll padding, so every rest position leaves a 56px gutter
+ * ahead of the leading item: the fade then dissolves only the tail of the item
+ * behind it, never the complete one being read. Without it the leading item
+ * lands flush at the edge and the mask eats its first 56px and the start of its
+ * caption. The back pager lives in that same gutter, so it stops covering art
+ * too.
  */
 const RAIL = cn(
   "flex min-w-0 snap-x snap-mandatory items-start overflow-x-auto scroll-smooth",
+  "scroll-pl-14",
   "motion-reduce:scroll-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
 );
 /**
@@ -54,8 +61,10 @@ export const RAIL_TILE = cn(
 export const RAIL_TILE_CAPTION = "mt-2 block truncate text-[12px] leading-4";
 /**
  * The overrun dissolves instead of being cut through a chip or a cover, on
- * whichever side still has travel. Focus lifts the mask so a keyboard user
- * never lands on a control the fade has dimmed.
+ * whichever side still has travel: at either end that side has nothing to
+ * dissolve, so it carries no fade. The 56px here is the rail's scroll padding;
+ * changing one without the other puts the fade back over a complete item.
+ * Focus lifts the mask so a keyboard user never lands on a control it dimmed.
  */
 const RAIL_FADE = {
   none: "",
