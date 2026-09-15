@@ -6,6 +6,7 @@ use crate::lock::{self, ExistingTryLock, TryLock};
 use crate::paths::{HomePaths, short_digest, touch_mtime};
 use nix::fcntl::{OFlag, openat};
 use nix::sys::stat::Mode;
+use nix::unistd::{UnlinkatFlags, unlinkat};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
@@ -106,8 +107,12 @@ fn open_directory(path: &Path) -> io::Result<File> {
 }
 
 fn open_entry(home: &HomePaths, name: &str, version: &str, rejected: bool) -> io::Result<File> {
+    open_version(home, name, &version_key(version, rejected))
+}
+
+fn open_version(home: &HomePaths, name: &str, version_key: &str) -> io::Result<File> {
     let mut directory = open_directory(&home.storages_dir())?;
-    for component in [short_digest(name), version_key(version, rejected)] {
+    for component in [short_digest(name), version_key.to_owned()] {
         directory = File::from(
             openat(
                 &directory,
@@ -218,6 +223,18 @@ fn read_entry(
             }
         }
     };
+    read_locked_entry(home, name, version, rejected, cancel)
+}
+
+/// Caller holds the entry lock throughout validation and any dependent action.
+fn read_locked_entry(
+    home: &HomePaths,
+    name: &str,
+    version: &str,
+    rejected: bool,
+    cancel: &CancellationToken,
+) -> io::Result<Option<Option<Vec<StorageFile>>>> {
+    let (path, _) = entry_paths(home, name, version, rejected);
     let root = match open_entry(home, name, version, rejected) {
         Ok(root) => root,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -292,6 +309,98 @@ fn read_entry(
     check_cancel(cancel)?;
     touch_mtime(&path);
     Ok(Some(Some(files)))
+}
+
+pub(super) fn retire_archive(
+    home: &HomePaths,
+    name: &str,
+    version: &str,
+    cancel: &CancellationToken,
+) -> io::Result<bool> {
+    check_cancel(cancel)?;
+    // Take the old format's exclusive lock first, without waiting on readers.
+    // Warming drops this source lock before publishing its extracted entry.
+    let _source =
+        match lock::try_acquire_existing_or_missing_blocking(&home.storage_lock(name, version))
+            .map_err(io::Error::other)?
+        {
+            ExistingTryLock::Acquired(lock) => lock,
+            ExistingTryLock::Busy => return Ok(false),
+            ExistingTryLock::Missing => {
+                // Orphan-lock GC can retain the archive while removing its
+                // free lock. Recreate only for observed data, then reopen and
+                // validate both entries under their locks below.
+                match fs::symlink_metadata(
+                    home.storage_cache_dir(name, version).join("archive.tar.gz"),
+                ) {
+                    Ok(_) => {}
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+                    Err(error) => return Err(error),
+                }
+                match lock::try_acquire_or_busy_blocking(&home.storage_lock(name, version))
+                    .map_err(io::Error::other)?
+                {
+                    TryLock::Acquired(lock) => lock,
+                    TryLock::Busy => return Ok(false),
+                }
+            }
+        };
+    let archive_root = match open_version(home, name, &short_digest(version)) {
+        Ok(root) => root,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let archive = match openat(
+        &archive_root,
+        "archive.tar.gz",
+        OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    ) {
+        Ok(file) => File::from(file),
+        Err(nix::errno::Errno::ENOENT) => return Ok(false),
+        Err(error) => return Err(error.into()),
+    };
+    let metadata = archive.metadata()?;
+    if !metadata.is_file() || metadata.nlink() != 1 {
+        return Err(invalid(
+            "retired storage archive is not a regular private file",
+        ));
+    }
+    let (_, replacement_lock) = entry_paths(home, name, version, false);
+    let _replacement =
+        match lock::try_acquire_existing_shared_or_missing_blocking(&replacement_lock)
+            .map_err(io::Error::other)?
+        {
+            ExistingTryLock::Acquired(lock) => lock,
+            ExistingTryLock::Busy | ExistingTryLock::Missing => return Ok(false),
+        };
+    if read_locked_entry(home, name, version, false, cancel)?
+        .flatten()
+        .is_none()
+    {
+        return Ok(false);
+    }
+    check_cancel(cancel)?;
+    // Both formats stay protected until deletion completes. Use directory FDs
+    // so no cache-parent symlink can redirect the destructive operation.
+    unlinkat(&archive_root, "archive.tar.gz", UnlinkatFlags::NoRemoveDir)
+        .map_err(io::Error::from)?;
+    let storages = open_directory(&home.storages_dir())?;
+    let parent = openat(
+        &storages,
+        short_digest(name).as_str(),
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(io::Error::from)?;
+    match unlinkat(
+        &parent,
+        short_digest(version).as_str(),
+        UnlinkatFlags::RemoveDir,
+    ) {
+        Ok(()) | Err(nix::errno::Errno::ENOTEMPTY) => Ok(true),
+        Err(error) => Err(error.into()),
+    }
 }
 
 pub(super) fn publish(

@@ -182,9 +182,6 @@ async fn execute_job_reuse_bypasses_fresh_pre_spawn_admission() {
 async fn execute_job_reuse_materializes_runner_owned_decoded_files_once() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
-    let registry_guard = crate::lock::acquire(dir.path().join("proxy-registry.json.lock"))
-        .await
-        .unwrap();
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let source_ip = sandbox.source_ip().to_string();
@@ -206,8 +203,8 @@ async fn execute_job_reuse_materializes_runner_owned_decoded_files_once() {
         .warm_from_archive("reused-archive", "v1")
         .await
         .unwrap();
-    // The real delivery still owns this fresh download, while its immutable
-    // decoded version came from a prior completed background fill.
+    // A prior background fill is sufficient even after compressed-cache GC.
+    // Production source preparation must not start another archive request.
     std::fs::remove_file(archive_dir.join("archive.tar.gz")).unwrap();
     let full_get = server
         .mock_async(|when, then| {
@@ -231,26 +228,13 @@ async fn execute_job_reuse_materializes_runner_owned_decoded_files_once() {
         .await
     });
 
-    tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, async {
-        while full_get.calls_async().await == 0 {
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .expect("archive request should start while reused proxy registration is blocked");
-    assert!(
-        !task.is_finished(),
-        "proxy lock should keep the reused run from reaching guest storage"
-    );
-    drop(registry_guard);
-
     let (outcome, telemetry) = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, task)
         .await
         .expect("reused run should finish after proxy registration is released")
         .expect("reused execution task should not panic");
 
     assert_eq!(outcome.exit_code(), 0, "error={:?}", outcome.error());
-    full_get.assert_calls_async(1).await;
+    full_get.assert_calls_async(0).await;
     let writes = overrides.write_files_calls();
     assert!(writes.is_empty());
     let manifests = overrides.storage_manifest_calls();
@@ -267,12 +251,7 @@ async fn execute_job_reuse_materializes_runner_owned_decoded_files_once() {
         manifest.storages[0].archive_url.as_deref(),
         Some(archive_url.as_str())
     );
-    assert_telemetry_action(
-        &telemetry,
-        "storage_cache_fresh_delivery_single_request",
-        true,
-        None,
-    );
+    assert_no_telemetry_action(&telemetry, "storage_cache_fresh_delivery_single_request");
     assert_telemetry_action(&telemetry, "storage_cache_decoded", true, None);
 }
 

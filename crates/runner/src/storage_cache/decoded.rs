@@ -22,6 +22,7 @@ const LOOKUP_KEY_BYTES: usize = 16 * 2 * 4096;
 #[derive(Debug)]
 pub(crate) struct CachedFiles {
     pub(crate) files: Vec<StorageFile>,
+    pub(crate) archive_retirement_candidate: bool,
     _memory: OwnedSemaphorePermit,
 }
 
@@ -99,6 +100,7 @@ impl DecodedCache {
 
     /// Read already extracted files, without opening or decoding their archive.
     /// Missing/busy/ineligible entries retain ordinary archive delivery.
+    #[cfg(test)]
     pub(crate) async fn get_ready(
         &self,
         name: &str,
@@ -172,7 +174,19 @@ impl DecodedCache {
                     if let Some(files) = &files {
                         ready_bytes += files.iter().map(|file| file.content.len()).sum::<usize>();
                     }
-                    result.push(files.map(|files| cached_files(files, memory)));
+                    result.push(files.map(|files| {
+                        // Only a scheduling hint, not authority to delete. An
+                        // absent archive must not repeatedly consume the bounded
+                        // background queue. Errors are handled by retirement,
+                        // not allowed to break a valid extracted-file delivery.
+                        let archive = inner
+                            .home
+                            .storage_cache_dir(&name, &version)
+                            .join("archive.tar.gz");
+                        let candidate = !matches!(std::fs::symlink_metadata(archive),
+                            Err(error) if error.kind() == io::ErrorKind::NotFound);
+                        cached_files(files, memory, candidate)
+                    }));
                 }
                 Ok(result)
             })
@@ -251,6 +265,21 @@ impl DecodedCache {
         Ok(())
     }
 
+    /// Optional post-spawn cleanup after the current plan used extracted files.
+    /// Unlike warming, this never downloads or recreates the compressed source.
+    pub(crate) async fn retire_archive(&self, name: &str, version: &str) -> io::Result<bool> {
+        if name.len() > 4096 || version.len() > 4096 {
+            return Ok(false);
+        }
+        let (name, version) = (name.to_owned(), version.to_owned());
+        Ok(self
+            .work(move |inner, _memory| {
+                disk::retire_archive(&inner.home, &name, &version, &inner.cancel)
+            })
+            .await?
+            .unwrap_or(false))
+    }
+
     #[cfg(test)]
     async fn resolve(
         &self,
@@ -275,14 +304,18 @@ impl DecodedCache {
                 files.as_deref(),
                 &inner.cancel,
             )?;
-            Ok(files.map(|files| cached_files(files, memory)))
+            Ok(files.map(|files| cached_files(files, memory, false)))
         })
         .await
         .map(Option::flatten)
     }
 }
 
-fn cached_files(files: Vec<StorageFile>, mut memory: OwnedSemaphorePermit) -> Arc<CachedFiles> {
+fn cached_files(
+    files: Vec<StorageFile>,
+    mut memory: OwnedSemaphorePermit,
+    archive_retirement_candidate: bool,
+) -> Arc<CachedFiles> {
     let charged = files.capacity() * std::mem::size_of::<StorageFile>()
         + files
             .iter()
@@ -294,6 +327,7 @@ fn cached_files(files: Vec<StorageFile>, mut memory: OwnedSemaphorePermit) -> Ar
     }
     Arc::new(CachedFiles {
         files,
+        archive_retirement_candidate,
         _memory: memory,
     })
 }

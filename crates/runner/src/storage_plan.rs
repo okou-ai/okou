@@ -62,6 +62,7 @@ pub(crate) struct StoragePlan {
     cleanup_paths: Vec<String>,
     instruction_cleanups: Vec<InstructionCleanup>,
     reused_entries: usize,
+    decoded_prepared: bool,
     decoded_manifest_admitted: Option<bool>,
     decoded: Vec<(
         String,
@@ -318,12 +319,39 @@ pub(crate) fn build_storage_plan(
         cleanup_paths,
         instruction_cleanups,
         reused_entries,
+        decoded_prepared: false,
         decoded_manifest_admitted: None,
         decoded: Vec::new(),
     })
 }
 
 impl StoragePlan {
+    pub(crate) fn decoded_prepared(&self) -> bool {
+        self.decoded_prepared
+    }
+
+    pub(crate) fn finish_decoded_preparation(&mut self) {
+        self.decoded_prepared = true;
+    }
+
+    pub(crate) fn has_decoded(&self, handle: ArchiveHandle) -> bool {
+        matches!(handle.kind, ArchiveKind::Storage)
+            && self.storages.get(handle.index).is_some_and(|entry| {
+                self.decoded
+                    .iter()
+                    .any(|(mount, _)| mount == &entry.mount_path)
+            })
+    }
+
+    pub(crate) fn decoded_archive_retirement_candidate(&self, handle: ArchiveHandle) -> bool {
+        matches!(handle.kind, ArchiveKind::Storage)
+            && self.storages.get(handle.index).is_some_and(|entry| {
+                self.decoded.iter().any(|(mount, files)| {
+                    mount == &entry.mount_path && files.archive_retirement_candidate
+                })
+            })
+    }
+
     pub(crate) fn decoded_manifest_rejected(&self) -> bool {
         self.decoded_manifest_admitted == Some(false)
     }

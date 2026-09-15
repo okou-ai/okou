@@ -558,8 +558,9 @@ The extracted storage cache is a separate, host-local cross-version boundary.
 New readers use `storages/<name-hash>/decoded-v1-<version-hash>/` containing an
 identity/content index and real files. Existing compressed readers continue to
 use their original hashed version directory and `archive.tar.gz`; neither
-reader interprets the other format. Compressed entries remain available during
-migration and rollback. New entries use the existing name/version-key flock,
+reader interprets the other format. Selection validates and pins usable extracted
+files before archive prefetch, so an admitted hit does not download or publish a
+missing compressed entry. New entries use the existing name/version-key flock,
 including the final-version lock for `.tmp` staging, so both old and new storage
 GC recursively account and evict them with the existing best-effort byte and
 entry targets. These targets are not hard disk-usage limits. Directory admission
@@ -598,6 +599,31 @@ shutdown joins background work and extracted-cache blocking tasks. The binary
 final-file input is private to the bundled Runner/Guest storage operation;
 ordinary HTTP downloads, API manifests and generic exec-stdin limits do not
 change. No backend reader-first deployment is required for that bundled input.
+
+After a run actually selects extracted-file delivery and successfully spawns its
+Agent, that same bounded background owner may retire the corresponding compressed
+archive. Retirement never downloads data. It takes the old archive's exclusive
+lock without waiting and validates the complete positive replacement under its
+own lock, retaining both locks through deletion. Busy, missing or non-admitted
+replacement work is skipped; malformed data is reported as a background error.
+It removes only the regular archive and an empty version directory, not unrelated
+files. GC can independently evict either format after those locks are released.
+
+Conversion alone does not delete an archive: a never-used converted entry may
+retain both formats until direct use or GC. Old Runners, rollback, instructions,
+artifacts and other archive-required consumers keep their original delivery and
+may refill a compressed cache miss. Queued archive-fill demand takes precedence
+over queued retirement for the same identity. This is use-driven best-effort
+cleanup, not a guarantee of exactly one representation across mixed consumers.
+
+Positive lookup includes a metadata-only archive-existence hint for maintenance
+admission. Already retired entries do not consume the background queue again,
+so a decoded prefix cannot repeatedly displace later warming or retirement.
+The hint neither reads compressed content nor authorizes deletion: retirement
+reopens and validates under locks. Metadata errors are left to that background
+validation rather than failing an otherwise valid extracted-file delivery. An
+orphaned source lock is recreated only for observed archive data, following the
+same lock repair rule as cache readers.
 
 Use **sandbox** for provider-neutral runner lifecycle, ownership, status,
 network-policy, and operator concepts. Use **VM** only for concrete
