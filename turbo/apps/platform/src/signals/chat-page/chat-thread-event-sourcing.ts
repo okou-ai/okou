@@ -199,11 +199,7 @@ const sharedChatThreadEventDataKey$ = computed((): ChatThreadEventDataKey => {
 });
 
 const applyPersistedChatThreadEventResult$ = command(
-  (
-    { set },
-    result: ChatThreadEventQueryResult,
-    signal: AbortSignal,
-  ): void => {
+  ({ set }, result: ChatThreadEventQueryResult, signal: AbortSignal): void => {
     const lastEvent = result.events.at(-1);
     const state: ChatThreadEventState = {
       snapshot:
