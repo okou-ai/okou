@@ -248,19 +248,6 @@ export function publishPresentationTemplatesChangedForOrgSafely(
   return Promise.resolve();
 }
 
-export async function publishImageReferencesChangedForUserSafely(
-  userId: string,
-): Promise<void> {
-  await publishUserSignal([userId], "imageReferencesChanged");
-}
-
-export function publishImageReferencesChangedForOrgSafely(
-  orgId: string,
-): Promise<void> {
-  waitUntil(bestEffort(publishOrgSignal(orgId, "imageReferencesChanged")));
-  return Promise.resolve();
-}
-
 /**
  * Notify an open chat thread that server-owned detail fields changed without a
  * request from that client. The client re-fetches the authoritative detail.

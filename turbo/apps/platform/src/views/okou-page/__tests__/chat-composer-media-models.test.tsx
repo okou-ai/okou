@@ -864,83 +864,78 @@ test("Choose a video model for the current thread", async () => {
   ]);
 });
 
-test.each(["desktop", "mobile"])(
-  "Choose image and video models from the compact overview on %s",
-  async (viewport) => {
-    if (viewport === "desktop") {
-      setDesktopViewport();
-    } else {
-      setMobileViewport();
-    }
-    installModelEnvironment();
-    mockThread({
-      selectedModel: DEFAULT_RUN_MODEL,
-      selectedImageModel: null,
-      selectedVideoModel: null,
-    });
-    const images: (ImageModel | null)[] = [];
-    const videos: (VideoModel | null)[] = [];
-    context.mocks.api(
-      chatThreadImageModelContract.update,
-      ({ body, respond }) => {
-        images.push(body.model);
-        return respond(204);
-      },
-    );
-    context.mocks.api(
-      chatThreadVideoModelContract.update,
-      ({ body, respond }) => {
-        videos.push(body.model);
-        return respond(204);
-      },
-    );
-    await setupPage({
-      context,
-      path: `/chats/${THREAD_ID}`,
-      featureSwitches: { [FeatureSwitchKey.RefactorModelSelect]: true },
-    });
-    await findComposerEditor();
-    await waitFor(() => {
-      expect(mediaModelRow("Claude Fable 5.1")).toBeVisible();
-    });
-    click(mediaModelRow("Claude Fable 5.1"));
-    await screen.findByRole("region", { name: "Models" });
-    click(mediaModelRow("Change Image model, Nano Banana 2"));
-    await screen.findByRole("region", { name: "Image models" });
-    expectSelected("Nano Banana 2");
-    click(mediaModelRow("GPT Image 1"));
-    await waitFor(() => {
-      expect(images).toStrictEqual(["gpt-image-1"]);
-    });
-    await waitFor(() => {
-      expect(
-        screen.queryByRole("region", { name: "Image models" }),
-      ).not.toBeInTheDocument();
-    });
-    click(mediaModelRow("Claude Fable 5.1"));
-    await screen.findByRole("region", { name: "Models" });
-    expect(mediaModelRow("Change Image model, GPT Image 1")).toBeVisible();
-    click(
-      mediaModelRow(
-        `Change Video model, ${VIDEO_MODEL_CONFIGS[DEFAULT_VIDEO_MODEL].label}`,
-      ),
-    );
-    await screen.findByRole("region", { name: "Video models" });
-    click(mediaModelRow("Seedance 2.0"));
-    await waitFor(() => {
-      expect(videos).toStrictEqual(["dreamina-seedance-2-0-260128"]);
-    });
-    await waitFor(() => {
-      expect(
-        screen.queryByRole("region", { name: "Video models" }),
-      ).not.toBeInTheDocument();
-    });
-    click(mediaModelRow("Claude Fable 5.1"));
-    await screen.findByRole("region", { name: "Models" });
-    expect(mediaModelRow("Change Video model, Seedance 2.0")).toBeVisible();
-    expect(mediaModelRow("Change Chat model, Claude Fable 5.1")).toBeVisible();
-  },
-);
+// The overview's pages are the narrow viewport's layout; a desktop reaches the
+// same media models through the flyout, which the tests below cover.
+test("Choose image and video models from the compact overview", async () => {
+  setMobileViewport();
+  installModelEnvironment();
+  mockThread({
+    selectedModel: DEFAULT_RUN_MODEL,
+    selectedImageModel: null,
+    selectedVideoModel: null,
+  });
+  const images: (ImageModel | null)[] = [];
+  const videos: (VideoModel | null)[] = [];
+  context.mocks.api(
+    chatThreadImageModelContract.update,
+    ({ body, respond }) => {
+      images.push(body.model);
+      return respond(204);
+    },
+  );
+  context.mocks.api(
+    chatThreadVideoModelContract.update,
+    ({ body, respond }) => {
+      videos.push(body.model);
+      return respond(204);
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ModelPickerFlyout]: true },
+  });
+  await findComposerEditor();
+  await waitFor(() => {
+    expect(mediaModelRow("Claude Fable 5.1")).toBeVisible();
+  });
+  click(mediaModelRow("Claude Fable 5.1"));
+  await screen.findByRole("region", { name: "Models" });
+  click(mediaModelRow("Change Image model, Nano Banana 2"));
+  await screen.findByRole("region", { name: "Image models" });
+  expectSelected("Nano Banana 2");
+  click(mediaModelRow("GPT Image 1"));
+  await waitFor(() => {
+    expect(images).toStrictEqual(["gpt-image-1"]);
+  });
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("region", { name: "Image models" }),
+    ).not.toBeInTheDocument();
+  });
+  click(mediaModelRow("Claude Fable 5.1"));
+  await screen.findByRole("region", { name: "Models" });
+  expect(mediaModelRow("Change Image model, GPT Image 1")).toBeVisible();
+  click(
+    mediaModelRow(
+      `Change Video model, ${VIDEO_MODEL_CONFIGS[DEFAULT_VIDEO_MODEL].label}`,
+    ),
+  );
+  await screen.findByRole("region", { name: "Video models" });
+  click(mediaModelRow("Seedance 2.0"));
+  await waitFor(() => {
+    expect(videos).toStrictEqual(["dreamina-seedance-2-0-260128"]);
+  });
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("region", { name: "Video models" }),
+    ).not.toBeInTheDocument();
+  });
+  click(mediaModelRow("Claude Fable 5.1"));
+  await screen.findByRole("region", { name: "Models" });
+  expect(mediaModelRow("Change Video model, Seedance 2.0")).toBeVisible();
+  expect(mediaModelRow("Change Chat model, Claude Fable 5.1")).toBeVisible();
+});
 
 test("Switch model type in the flyout without leaving the panel", async () => {
   installModelEnvironment();

@@ -230,11 +230,11 @@ The 2026-09-15 05:17:59.234547–05:18:01.438157 UTC production census was
 statements, not a common snapshot. Attribution columns were not exposed by that
 masked schema, so live source coverage is unknown.
 
-1. `1133_pi_memory_stage1_billing_context` replaces only the two context checks
+1. `1134_pi_memory_stage1_billing_context` replaces only the two context checks
    with expanded `NOT VALID` checks and updates capture in one short transaction.
    Existing rows are not rewritten or relabeled. New writes are checked at once.
 2. Commit releases the `ACCESS EXCLUSIVE` locks before
-   `1134_validate_pi_memory_stage1_billing_context` scans the existing rows in a
+   `1135_validate_pi_memory_stage1_billing_context` scans the existing rows in a
    **different transaction**. It uses `SHARE UPDATE EXCLUSIVE`; no same-transaction
    lock downgrade is claimed. There is no explicit `LOCK TABLE` or timeout raise.
 3. Retain runner defaults (1s lock, 10s statement). If expansion times out, its
@@ -261,6 +261,7 @@ scans are expected because the existing indexes do not lead with the billing
 anchor. No index is added on an unmeasured production workload. Volume is
 representative; distribution, hardware, cache and contention are synthetic.
 
+#34272 subsequently merged image-reference migration 1133, which is also preserved.
 #34234 and #34263 competed for migration numbering during inventory. They are
 not ordering blockers. Preserve the first merged canonical main migrations and
 regenerate this branch's metadata through Drizzle if a conflict occurs.

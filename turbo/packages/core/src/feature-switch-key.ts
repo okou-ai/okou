@@ -51,7 +51,6 @@ export enum FeatureSwitchKey {
   RealAgentInPreview = "_realAgentInPreview",
   ZapierConnector = "zapierConnector",
   ComputerUseDesktopPlugins = "computerUseDesktopPlugins",
-  ReferenceImages = "referenceImages",
   PrivateArtifacts = "privateArtifacts",
   SidebarSubscriptionUsage = "_sidebarSubscriptionUsage",
   PersonalModelProviderAccounts = "_multipleSubscriptions",

@@ -390,15 +390,22 @@
     {
       "idx": 1133,
       "version": "7",
-      "when": 1789453158674,
-      "tag": "1133_pi_memory_stage1_billing_context",
+      "when": 1789452513294,
+      "tag": "1133_retire_image_references",
       "breakpoints": true
     },
     {
       "idx": 1134,
       "version": "7",
-      "when": 1789453169094,
-      "tag": "1134_validate_pi_memory_stage1_billing_context",
+      "when": 1789454207922,
+      "tag": "1134_pi_memory_stage1_billing_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 1135,
+      "version": "7",
+      "when": 1789454236876,
+      "tag": "1135_validate_pi_memory_stage1_billing_context",
       "breakpoints": true
     }
   ]
