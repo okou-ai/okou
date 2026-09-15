@@ -1744,6 +1744,7 @@
       "upgradeWorkspace": "Aggiorna l'area di lavoro"
     },
     "composer": {
+      "add": "Aggiungi",
       "agentSuggestions": "Agenti",
       "configureModel": "Configura modello",
       "create": {

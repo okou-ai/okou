@@ -1712,6 +1712,7 @@
       "upgradeWorkspace": "워크스페이스 업그레이드"
     },
     "composer": {
+      "add": "추가",
       "agentSuggestions": "에이전트",
       "configureModel": "모델 구성",
       "create": {

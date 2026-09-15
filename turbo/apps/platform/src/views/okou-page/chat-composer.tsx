@@ -14,6 +14,11 @@ import {
   ComposerCreateVideoModelPicker,
   ComposerSelectedTask,
 } from "./composer-create.tsx";
+import {
+  ComposerAddMenu,
+  type ComposerAddMenuItem,
+} from "./composer-add-menu.tsx";
+import { composerCreateModeName } from "../../signals/okou-page/composer-create.ts";
 import type { ComposerVoiceInputStatus } from "../../signals/okou-page/composer-voice-input.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
@@ -66,6 +71,7 @@ import {
   ArrowLeft,
   ArrowUp,
   Bolt,
+  ChartNoAxesCombined,
   Check,
   Clapperboard,
   Download,
@@ -6801,32 +6807,28 @@ function selectedComposerTemplateAttachment(
     : undefined;
 }
 
-function TemplatePickerButton({
-  picker,
-  presentationItems,
-  runtime,
-  signals,
-}: {
-  picker: ComposerTemplatePicker;
-  presentationItems: readonly PresentationTemplateItem[];
-  runtime: TemplatePreviewRuntime;
-  signals: ComposerSignals;
-}) {
+/**
+ * Which templates the picker should land on, what to call the affordance that
+ * opens it, and how to warm its covers. The toolbar button and the add menu's
+ * template row are two presentations of one decision, so neither recomputes
+ * the create-mode mapping for itself.
+ */
+function useTemplatePickerTrigger(signals: ComposerSignals) {
   const { t } = useTranslation();
-  const mounted = useGet(signals.template.templatePickerMounted$);
-  const open = useGet(signals.template.templatePickerOpen$);
   const category = useGet(signals.template.templatePickerCategory$);
   const introVideoEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.IntroVideo] === true;
-  const referenceValue = useGet(signals.template.templatePickerReferenceValue$);
   const createMode = useGet(signals.create.mode$);
   const creativeVideo = useGet(signals.create.creativeVideo$);
+  const openTemplatePicker = useSet(signals.template.openTemplatePicker$);
+  const cardThemeIdBySlug = useGet(signals.template.templateCardThemeIdBySlug$);
+  const runtime = signals.template.templatePreview;
   const templateMode = creativeVideo
     ? "video"
     : createMode === "image"
       ? "illustration"
       : createMode;
-  const templateLabel =
+  const label =
     templateMode === "illustration"
       ? t(($) => {
           return $.chat.composer.create.addStyle;
@@ -6838,19 +6840,12 @@ function TemplatePickerButton({
         : t(($) => {
             return $.artifacts.templates.template;
           });
-  const setOpen = useSet(signals.template.setTemplatePickerOpen$);
-  const completeClose = useSet(signals.template.completeTemplatePickerClose$);
-  const setReferenceValue = useSet(
-    signals.template.setTemplatePickerReferenceValue$,
-  );
-  const openTemplatePicker = useSet(signals.template.openTemplatePicker$);
-  const cardThemeIdBySlug = useGet(signals.template.templateCardThemeIdBySlug$);
   const selectedCategory =
     templateMode === "presentation"
       ? "slides"
       : (templateMode ??
         resolveTemplatePickerCategory(category, introVideoEnabled));
-  const prewarmPicker = () => {
+  const prewarm = () => {
     prewarmTemplatePreviewImages(
       runtime,
       initialTemplatePreviewImageUrlsForCategory({
@@ -6860,80 +6855,115 @@ function TemplatePickerButton({
       templatePreviewPrewarmImageCountForCategory(selectedCategory),
     );
   };
+  const open = () => {
+    prewarm();
+    openTemplatePicker({ kind: "insert", category: selectedCategory });
+  };
+  return { label, templateMode, prewarm, open };
+}
 
+function TemplatePickerButton({ signals }: { signals: ComposerSignals }) {
+  const { label, templateMode, prewarm, open } =
+    useTemplatePickerTrigger(signals);
   return (
-    <>
-      <TooltipProvider delayDuration={300}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="quiet"
-              size={templateMode ? "sm" : "icon-sm"}
-              iconSize="md"
-              className={
-                templateMode
-                  ? "min-w-0 max-w-[13rem] gap-1 font-normal"
-                  : "shrink-0"
-              }
-              aria-label={templateLabel}
-              aria-pressed={false}
-              onPointerEnter={prewarmPicker}
-              onFocus={prewarmPicker}
-              onPointerDown={prewarmPicker}
-              onClick={() => {
-                prewarmPicker();
-                openTemplatePicker({
-                  kind: "insert",
-                  category: selectedCategory,
-                });
-              }}
-            >
-              {templateMode ? (
-                <>
-                  <Plus size={16} className="shrink-0" aria-hidden />
-                  <span className="min-w-0 truncate">{templateLabel}</span>
-                </>
-              ) : (
-                <SwatchBook size={18} aria-hidden="true" />
-              )}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="text-xs">
-            {templateLabel}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-      {mounted && (
-        <TemplatePickerDialog
-          value={referenceValue ?? undefined}
-          onChange={picker.onChange}
-          open={open}
-          onClose={() => {
-            setOpen(false);
-          }}
-          onCloseComplete={() => {
-            setReferenceValue(null);
-            completeClose();
-          }}
-          presentationItems={presentationItems}
-          runtime={runtime}
-          signals={signals}
-        />
-      )}
-    </>
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="quiet"
+            size={templateMode ? "sm" : "icon-sm"}
+            iconSize="md"
+            className={
+              templateMode
+                ? "min-w-0 max-w-[13rem] gap-1 font-normal"
+                : "shrink-0"
+            }
+            aria-label={label}
+            aria-pressed={false}
+            onPointerEnter={prewarm}
+            onFocus={prewarm}
+            onPointerDown={prewarm}
+            onClick={open}
+          >
+            {templateMode ? (
+              <>
+                <Plus size={16} className="shrink-0" aria-hidden />
+                <span className="min-w-0 truncate">{label}</span>
+              </>
+            ) : (
+              <SwatchBook size={18} aria-hidden="true" />
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-xs">
+          {label}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+/**
+ * Mounted independently of the button that opens it: the slash panel and an
+ * inline template chip's edit action reach the same dialog, so hiding the
+ * toolbar button must not take the dialog with it.
+ */
+function TemplatePickerDialogSlot({
+  picker,
+  presentationItems,
+  runtime,
+  signals,
+}: {
+  picker: ComposerTemplatePicker;
+  presentationItems: readonly PresentationTemplateItem[];
+  runtime: TemplatePreviewRuntime;
+  signals: ComposerSignals;
+}) {
+  const mounted = useGet(signals.template.templatePickerMounted$);
+  const open = useGet(signals.template.templatePickerOpen$);
+  const referenceValue = useGet(signals.template.templatePickerReferenceValue$);
+  const setOpen = useSet(signals.template.setTemplatePickerOpen$);
+  const completeClose = useSet(signals.template.completeTemplatePickerClose$);
+  const setReferenceValue = useSet(
+    signals.template.setTemplatePickerReferenceValue$,
+  );
+  if (!mounted) {
+    return null;
+  }
+  return (
+    <TemplatePickerDialog
+      value={referenceValue ?? undefined}
+      onChange={picker.onChange}
+      open={open}
+      onClose={() => {
+        setOpen(false);
+      }}
+      onCloseComplete={() => {
+        setReferenceValue(null);
+        completeClose();
+      }}
+      presentationItems={presentationItems}
+      runtime={runtime}
+      signals={signals}
+    />
   );
 }
 
 function ComposerTemplatePickerSlot({ signals }: { signals: ComposerSignals }) {
   const picker = useComposerTemplatePicker(signals);
+  const addMenuEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ComposerAddMenu] === true;
   return (
-    <TemplatePickerButton
-      picker={picker}
-      presentationItems={PRESENTATION_TEMPLATE_PICKER_ITEMS}
-      runtime={signals.template.templatePreview}
-      signals={signals}
-    />
+    <>
+      {!addMenuEnabled && <TemplatePickerButton signals={signals} />}
+      <TemplatePickerDialogSlot
+        picker={picker}
+        presentationItems={PRESENTATION_TEMPLATE_PICKER_ITEMS}
+        runtime={signals.template.templatePreview}
+        signals={signals}
+      />
+    </>
   );
 }
 
@@ -6971,14 +7001,25 @@ function CreateWorkflowPromptButton({
   );
 }
 
-function ComposerWorkflowPromptSlot({ signals }: { signals: ComposerSignals }) {
+/** Turns the draft into a workflow prompt; a menu row once the add menu owns it. */
+function useCreateWorkflowPrompt(signals: ComposerSignals) {
   const createWorkflowPrompt = useSet(signals.workflow.createWorkflowPrompt$);
   const pageSignal = useGet(pageSignal$);
+  return () => {
+    detach(createWorkflowPrompt(pageSignal), Reason.DomCallback);
+  };
+}
+
+function ComposerWorkflowPromptSlot({ signals }: { signals: ComposerSignals }) {
+  const onCreateWorkflowPrompt = useCreateWorkflowPrompt(signals);
+  const addMenuEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ComposerAddMenu] === true;
+  if (addMenuEnabled) {
+    return null;
+  }
   return (
     <CreateWorkflowPromptButton
-      onCreateWorkflowPrompt={() => {
-        detach(createWorkflowPrompt(pageSignal), Reason.DomCallback);
-      }}
+      onCreateWorkflowPrompt={onCreateWorkflowPrompt}
     />
   );
 }
@@ -9050,6 +9091,110 @@ function ComposerAttachButton({ signals }: { signals: ComposerSignals }) {
   );
 }
 
+/**
+ * The rows the `+` offers, in the order they answer "what does this message
+ * need": something brought in, then something to make. A create row is listed
+ * only where that generation is actually available — `create.modes` drops the
+ * media the workspace cannot run, and website and visualization exist only
+ * with the task chips — so the menu never offers a dead end.
+ */
+function useComposerAddMenuGroups(
+  signals: ComposerSignals,
+): readonly (readonly ComposerAddMenuItem[])[] {
+  const { t } = useTranslation();
+  const fileInput = useGet(signals.draft.composerFileInput$);
+  const template = useTemplatePickerTrigger(signals);
+  const createEnabled = useGet(signals.create.enabled$);
+  const selectCreateCommand = useSet(signals.create.selectCommand$);
+  const taskChipsEnabled = useGet(signals.taskChips.enabled$);
+  const selectTask = useSet(signals.taskChips.selectTask$);
+  const onCreateWorkflowPrompt = useCreateWorkflowPrompt(signals);
+  const createIcons = {
+    presentation: Presentation,
+    image: ImageIcon,
+    video: Video,
+  } as const;
+  const createRows = createEnabled
+    ? signals.create.modes.map((mode) => {
+        return {
+          id: mode,
+          Icon: createIcons[mode],
+          label: composerCreateModeName(mode),
+          onSelect: () => {
+            selectCreateCommand(mode);
+          },
+        };
+      })
+    : [];
+  const taskRows = taskChipsEnabled
+    ? [
+        {
+          id: "website",
+          Icon: Globe,
+          label: t(($) => {
+            return $.chat.taskChips.tasks.website;
+          }),
+          onSelect: () => {
+            selectTask("website");
+          },
+        },
+        {
+          id: "visualization",
+          Icon: ChartNoAxesCombined,
+          label: t(($) => {
+            return $.chat.taskChips.tasks.visualization;
+          }),
+          onSelect: () => {
+            selectTask("visualization");
+          },
+        },
+      ]
+    : [];
+  return [
+    [
+      {
+        id: "attach",
+        Icon: Paperclip,
+        label: t(($) => {
+          return $.chat.attachments.attach;
+        }),
+        onSelect: () => {
+          fileInput?.click();
+        },
+      },
+      {
+        id: "template",
+        Icon: SwatchBook,
+        label: template.label,
+        onSelect: template.open,
+        onPrewarm: template.prewarm,
+      },
+    ],
+    [
+      ...createRows,
+      ...taskRows,
+      {
+        id: "workflow",
+        Icon: Route,
+        label: t(($) => {
+          return $.chat.composer.createWorkflow;
+        }),
+        onSelect: onCreateWorkflowPrompt,
+      },
+    ],
+  ];
+}
+
+function ComposerAddSlot({ signals }: { signals: ComposerSignals }) {
+  const addMenuEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ComposerAddMenu] === true;
+  const groups = useComposerAddMenuGroups(signals);
+  if (!addMenuEnabled) {
+    return <ComposerAttachButton signals={signals} />;
+  }
+  return <ComposerAddMenu groups={groups} />;
+}
+
 function toRestorableAttachments(
   attachments: readonly {
     id: string | null;
@@ -10878,7 +11023,7 @@ function ComposerFooter({
                 narrowVideoGap,
               )}
             >
-              <ComposerAttachButton signals={signals} />
+              <ComposerAddSlot signals={signals} />
               <ComposerTemplatePickerSlot signals={signals} />
               <ComposerWorkflowPromptSlot signals={signals} />
               <ComposerConnectorsSlot

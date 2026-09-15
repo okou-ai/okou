@@ -1715,6 +1715,7 @@
       "upgradeWorkspace": "Arbeitsbereich upgraden"
     },
     "composer": {
+      "add": "Hinzufügen",
       "agentSuggestions": "Agenten",
       "configureModel": "Modell konfigurieren",
       "create": {

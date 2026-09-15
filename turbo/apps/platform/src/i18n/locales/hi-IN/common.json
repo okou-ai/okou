@@ -1715,6 +1715,7 @@
       "upgradeWorkspace": "अपने वर्कस्पेस को अपग्रेड करें"
     },
     "composer": {
+      "add": "जोड़ें",
       "agentSuggestions": "एजेंट",
       "configureModel": "मॉडल कॉन्फ़िगर करें",
       "create": {

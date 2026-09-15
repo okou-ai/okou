@@ -77,4 +77,5 @@ export enum FeatureSwitchKey {
   ChatThreadHeaderActions = "chatThreadHeaderActions",
   ComposerTemplateChipCover = "composerTemplateChipCover",
   ComposerSlashTemplatePanel = "composerSlashTemplatePanel",
+  ComposerAddMenu = "composerAddMenu",
 }

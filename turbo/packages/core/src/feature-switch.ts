@@ -478,6 +478,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ComposerAddMenu]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Collapse the composer toolbar's attach, template and workflow buttons into one plus menu that also starts a presentation, image, video, website or visualization.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
 };
 
 interface ResolvedHashes {

@@ -1712,6 +1712,7 @@
       "upgradeWorkspace": "Upgrade workspace Anda"
     },
     "composer": {
+      "add": "Tambah",
       "agentSuggestions": "Agen",
       "configureModel": "Konfigurasikan model",
       "create": {

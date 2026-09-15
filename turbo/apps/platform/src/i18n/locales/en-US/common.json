@@ -1715,6 +1715,7 @@
       "upgradeWorkspace": "Upgrade your workspace"
     },
     "composer": {
+      "add": "Add",
       "agentSuggestions": "Agents",
       "configureModel": "Configure model",
       "create": {
