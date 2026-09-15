@@ -1583,6 +1583,22 @@ export const orgModelPolicySchema = z.object({
   modelProviderSurfaceId: z.uuid().nullable().optional(),
   routeStatus: orgModelPolicyRouteStatusSchema,
   routeStatusReason: z.string().nullable(),
+  // Caller-specific, response-only routing. Optional across the B/C rollout.
+  // A candidate has not captured a concrete subscription account for a run.
+  memberEffective: z
+    .object({
+      providerType: modelProviderTypeSchema,
+      runtimeProviderType: modelProviderTypeSchema.nullable(),
+      credentialScope: modelProviderCredentialScopeSchema,
+      availability: z.enum([
+        "available",
+        "reconnect_required",
+        "unavailable",
+        "plan_restricted",
+      ]),
+      accountSelection: z.enum(["capture_required", "not_applicable"]),
+    })
+    .optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
