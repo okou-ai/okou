@@ -343,7 +343,7 @@ fn cli_failure_reason_classifies_provider_credit_affordability_error() {
         "API Error: 402 This request requires more credits, or fewer max_tokens. You requested up to 64000 tokens, but can only afford 1600. To increase, visit https://openrouter.ai/settings/credits and upgrade to a paid account",
     );
 
-    assert_eq!(reason, Some(FailureReason::InsufficientCredits));
+    assert_eq!(reason, Some(FailureReason::ProviderInsufficientCredits));
 }
 
 #[test]
@@ -366,12 +366,91 @@ fn cli_failure_reason_classifies_claude_result_credit_affordability_diagnostic()
     assert_eq!(msg.source, FailureDetailSource::ClaudeResult);
     assert_eq!(
         diagnostic.failure_reason,
-        Some(FailureReason::InsufficientCredits)
+        Some(FailureReason::ProviderInsufficientCredits)
     );
     assert_eq!(
         diagnostic.failure_detail_source,
         Some(FailureDetailSource::ClaudeResult)
     );
+}
+
+#[test]
+fn claude_balance_message_requires_exact_failed_result_source() {
+    for (framework, source, message, expected) in [
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::ClaudeResult,
+            "Credit balance is too low",
+            Some(FailureReason::ProviderInsufficientCredits),
+        ),
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::Stderr,
+            "Credit balance is too low",
+            None,
+        ),
+        (
+            AgentFramework::Codex,
+            FailureDetailSource::CodexJsonl,
+            "Credit balance is too low",
+            None,
+        ),
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::ClaudeResult,
+            "The tool printed Credit balance is too low",
+            None,
+        ),
+        (
+            AgentFramework::ClaudeCode,
+            FailureDetailSource::ClaudeResult,
+            "Credit balance is too low to explain this different error",
+            None,
+        ),
+    ] {
+        assert_eq!(
+            super::classify_cli_failure_reason(framework, source, message),
+            expected
+        );
+    }
+}
+
+#[test]
+fn provider_billing_envelopes_require_terminal_api_error_evidence() {
+    let bodies = [
+        r#"{"error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please purchase credits."}}"#,
+        r#"{"error":{"code":"insufficient_quota"}}"#,
+        r#"{"error":{"code":402,"message":"Payment required"}}"#,
+    ];
+    for body in bodies {
+        let message = format!("API Error: 400 {body}");
+        for (framework, source) in [
+            (
+                AgentFramework::ClaudeCode,
+                FailureDetailSource::ClaudeResult,
+            ),
+            (AgentFramework::Codex, FailureDetailSource::CodexJsonl),
+            (AgentFramework::Pi, FailureDetailSource::PiResult),
+        ] {
+            assert_eq!(
+                super::classify_cli_failure_reason(framework, source, &message),
+                Some(FailureReason::ProviderInsufficientCredits),
+            );
+        }
+        for (source, text) in [
+            (FailureDetailSource::Stderr, message.clone()),
+            (
+                FailureDetailSource::ClaudeResult,
+                format!("The tool printed: {message}"),
+            ),
+            (FailureDetailSource::ClaudeResult, body.to_owned()),
+        ] {
+            assert_eq!(
+                super::classify_cli_failure_reason(AgentFramework::ClaudeCode, source, &text),
+                None
+            );
+        }
+    }
 }
 
 #[test]

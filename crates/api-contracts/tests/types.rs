@@ -24,6 +24,8 @@ fn generated_completion_failure_reason_tokens_preserve_the_wire_contract() {
         "session_history_limit",
         "execution_timeout",
         "insufficient_credits",
+        "provider_insufficient_credits",
+        "model_unavailable",
         "invalid_api_key",
         "invalid_credentials",
         "terms_acceptance_required",

@@ -3,6 +3,10 @@ import {
   assertPiInferencePublication,
 } from "./pi-inference-lifecycle.service";
 import { command } from "ccstate";
+import {
+  isLegacyProviderBalanceError,
+  publicProviderBalanceFailureReason,
+} from "@okouai/api-contracts/contracts/run-balance-errors";
 import type { z } from "zod";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
@@ -180,6 +184,7 @@ function logGptApiKeyPiSandboxOutcome(
 ): boolean {
   if (
     input.executionOwner === "api-first" ||
+    commit.transitionFailureReason === "provider_insufficient_credits" ||
     commit.run.launchSnapshot?.framework !== "pi" ||
     !isGptApiKeyPiProviderType(commit.run.modelProvider)
   ) {
@@ -222,6 +227,7 @@ function shouldSuppressKnownFailureLog(
       return true;
     }
     case "insufficient_credits":
+    case "provider_insufficient_credits":
     case "invalid_api_key":
     case "invalid_credentials":
     case "terms_acceptance_required":
@@ -239,8 +245,8 @@ function shouldSuppressKnownFailureLog(
         providerType.success && !isBuiltInModelProviderType(providerType.data)
       );
     }
-    case "session_history_limit":
-    case "unsupported_model": {
+    default: {
+      // Unavailable built-in models and other unhandled reasons need operator visibility.
       return false;
     }
   }
@@ -417,14 +423,22 @@ async function loadCompletionRun(
 async function prepareCompletion(
   db: Tx,
   input: CompleteAgentRunInput,
-  sessionId: string,
+  run: RunRecord,
   signal: AbortSignal,
 ): Promise<PreparedCompletion> {
   if (input.body.exitCode !== 0) {
+    const error =
+      input.body.error?.trim() || "Run failed without error message";
+    const reason = input.body.failureReason;
     return {
       status: "failed",
-      error: input.body.error?.trim() || "Run failed without error message",
-      failureReason: input.body.failureReason,
+      error,
+      failureReason:
+        reason === "provider_insufficient_credits" ||
+        (reason === "insufficient_credits" &&
+          isLegacyProviderBalanceError(error, null))
+          ? publicProviderBalanceFailureReason(run.modelProvider)
+          : reason,
       failureKind: "reported",
     };
   }
@@ -450,7 +464,7 @@ async function prepareCompletion(
   }
   return {
     status: "completed",
-    result: buildRunResult(checkpoint, sessionId),
+    result: buildRunResult(checkpoint, run.sessionId),
   };
 }
 
@@ -679,7 +693,7 @@ async function completeAgentRunTransition(
   }
   const canTransition = run.status === "pending" || run.status === "running";
   const prepared = canTransition
-    ? await prepareCompletion(tx, input, run.sessionId, signal)
+    ? await prepareCompletion(tx, input, run, signal)
     : null;
   signal.throwIfAborted();
   if (input.body.lastEventSequence !== undefined) {

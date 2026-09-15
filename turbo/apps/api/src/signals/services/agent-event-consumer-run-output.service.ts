@@ -7,6 +7,7 @@ import { and, eq, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { runOutputMemoryCitations } from "@okouai/db/schema/run-output-memory-citation";
+import { publicBuiltInBalanceEvent } from "./run-balance-presentation";
 
 import type {
   AgentEvent,
@@ -197,13 +198,17 @@ function eventOutputId(event: AgentEvent): string {
 
 function assistantEventItems(args: {
   readonly events: readonly AgentEvent[];
+  readonly modelProvider: string | null;
 }): InsertAssistantEventsInput["items"] {
   const items: InsertAssistantEventsInput["items"][number][] = [];
   const events = [...args.events].sort((left, right) => {
     return left.sequenceNumber - right.sequenceNumber;
   });
   for (const event of events) {
-    const messageText = assistantMessageText(event);
+    const messageText = assistantMessageText({
+      ...event,
+      ...publicBuiltInBalanceEvent(event, args.modelProvider),
+    });
     if (messageText !== null) {
       items.push({
         eventType: "output.message",
@@ -237,10 +242,12 @@ async function insertRunOutputChatEvents(
   tx: Tx,
   payload: EventConsumerPayload,
   thread: MaterializedChatProjection["thread"],
+  modelProvider: string | null,
   signal: AbortSignal,
 ): Promise<AssistantEventInsertion> {
   const assistantItems = assistantEventItems({
     events: payload.events,
+    modelProvider,
   });
   return await insertAssistantEventsInTransaction(
     tx,
@@ -277,9 +284,15 @@ async function lockAgentRunForOutputMaterialization(
   tx: Tx,
   runId: string,
   signal: AbortSignal,
-): Promise<RunStatus> {
+): Promise<{
+  readonly status: RunStatus;
+  readonly modelProvider: string | null;
+}> {
   const [run] = await tx
-    .select({ status: agentRuns.status })
+    .select({
+      status: agentRuns.status,
+      modelProvider: agentRuns.modelProvider,
+    })
     .from(agentRuns)
     .where(eq(agentRuns.id, runId))
     .for("update")
@@ -288,7 +301,10 @@ async function lockAgentRunForOutputMaterialization(
   if (!run) {
     throw new AgentEventRunNotFoundError(runId);
   }
-  return runStatusSchema.parse(run.status);
+  return {
+    status: runStatusSchema.parse(run.status),
+    modelProvider: run.modelProvider,
+  };
 }
 
 type OutputMaterializationTransactionResult =
@@ -345,6 +361,7 @@ async function materializeAdmittedRunOutputEvents(
     readonly latestResult: OutputCandidate | null;
     readonly latestOutput: OutputCandidate | null;
     readonly citations: readonly EventCitation[];
+    readonly modelProvider: string | null;
   },
   signal: AbortSignal,
 ): Promise<RunOutputMaterializationResult> {
@@ -356,6 +373,7 @@ async function materializeAdmittedRunOutputEvents(
       tx,
       payload,
       thread,
+      args.modelProvider,
       signal,
     );
     insertedRowCount = insertion.insertedRowCount;
@@ -459,7 +477,7 @@ async function materializeRunOutputEvents(
           ? await lockChatQueueThread(tx, expectedThread.chatThreadId)
           : false;
         signal.throwIfAborted();
-        const status = await lockAgentRunForOutputMaterialization(
+        const run = await lockAgentRunForOutputMaterialization(
           tx,
           payload.runId,
           signal,
@@ -472,7 +490,7 @@ async function materializeRunOutputEvents(
         if (expectedThread && !threadLocked) {
           throw new Error("Agent run retained a missing chat thread");
         }
-        if (status === "timeout") {
+        if (run.status === "timeout") {
           return { outcome: "ignored-timeout" };
         }
 
@@ -484,6 +502,7 @@ async function materializeRunOutputEvents(
             latestResult: prepared.latestResult,
             latestOutput: prepared.latestOutput,
             citations: prepared.citations,
+            modelProvider: run.modelProvider,
           },
           signal,
         );

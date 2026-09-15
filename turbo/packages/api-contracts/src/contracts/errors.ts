@@ -1,5 +1,9 @@
 import { z } from "zod";
 import {
+  formatRunBalanceError,
+  MODEL_UNAVAILABLE_MESSAGE,
+} from "./run-balance-errors";
+import {
   getCanonicalModelDisplayName,
   normalizeRunModelId,
   type ModelProviderCredentialScope,
@@ -698,6 +702,8 @@ type StructuredRunErrorBehavior =
   | "execution-timeout"
   | "generic"
   | "insufficient-credits"
+  | "provider-balance"
+  | "model-unavailable"
   | "overloaded"
   | "passthrough"
   | "reconnect"
@@ -710,6 +716,8 @@ const STRUCTURED_RUN_ERROR_BEHAVIOR: Record<
   session_history_limit: "generic",
   execution_timeout: "execution-timeout",
   insufficient_credits: "insufficient-credits",
+  provider_insufficient_credits: "provider-balance",
+  model_unavailable: "model-unavailable",
   invalid_api_key: "generic",
   invalid_credentials: "credential",
   terms_acceptance_required: "terms",
@@ -747,6 +755,7 @@ function formatStructuredRunError(params: {
   readonly errorMessage: string;
   readonly framework?: ModelProviderFramework | null;
   readonly selectedModel?: string | null;
+  readonly modelProviderType?: ModelProviderType | null;
   readonly claudeCodeCredentialRecovery?: ClaudeCodeCredentialRecovery;
 }): string {
   const knownReason = knownRunFailureReasonSchema.safeParse(
@@ -765,6 +774,16 @@ function formatStructuredRunError(params: {
     }
     case "insufficient-credits": {
       return "insufficient_credits";
+    }
+    case "provider-balance": {
+      return formatRunBalanceError({
+        failureReason: params.failureReason,
+        message: params.errorMessage,
+        modelProvider: params.modelProviderType,
+      })!;
+    }
+    case "model-unavailable": {
+      return MODEL_UNAVAILABLE_MESSAGE;
     }
     case "credential": {
       const recoveryMessage =
@@ -814,6 +833,7 @@ export function formatRunErrorForExternalSurface(params: {
   readonly failureReason?: RunFailureReasonToken;
   readonly framework?: ModelProviderFramework | null;
   readonly selectedModel?: string | null;
+  readonly modelProviderType?: ModelProviderType | null;
   readonly claudeCodeCredentialRecovery?: ClaudeCodeCredentialRecovery;
   readonly insufficientCredits?:
     | {
@@ -828,6 +848,18 @@ export function formatRunErrorForExternalSurface(params: {
       };
 }): string {
   const errorMessage = params.message.trim() || "Run failed";
+  const modelProviderType = params.modelProviderType;
+  if ([undefined, "insufficient_credits"].includes(params.failureReason)) {
+    const balanceMessage = formatRunBalanceError({
+      failureReason: params.failureReason,
+      message: errorMessage,
+      modelProvider: modelProviderType,
+      framework: params.framework,
+    });
+    if (balanceMessage !== undefined) {
+      return balanceMessage;
+    }
+  }
 
   if (params.failureReason !== undefined) {
     return formatStructuredRunError({
@@ -835,6 +867,7 @@ export function formatRunErrorForExternalSurface(params: {
       errorMessage,
       framework: params.framework,
       selectedModel: params.selectedModel,
+      modelProviderType,
       claudeCodeCredentialRecovery: params.claudeCodeCredentialRecovery,
     });
   }

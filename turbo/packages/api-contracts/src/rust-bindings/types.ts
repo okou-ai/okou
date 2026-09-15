@@ -831,7 +831,11 @@ export const rustTypeBindings = [
         variants: {
           session_history_limit: ["Session history exceeded its size limit."],
           execution_timeout: ["The run reached its execution time limit."],
-          insufficient_credits: ["The provider account lacks credits."],
+          insufficient_credits: ["The vm0 workspace lacks credits."],
+          provider_insufficient_credits: [
+            "The upstream provider account lacks credits.",
+          ],
+          model_unavailable: ["The selected model is unavailable to the user."],
           invalid_api_key: ["The configured API key is invalid."],
           invalid_credentials: ["The configured credentials are invalid."],
           terms_acceptance_required: [

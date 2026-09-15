@@ -865,6 +865,23 @@ production rollback resolver rejects targets that do not contain the reader
 commit. The reason is stored outside strict payload JSON so old API instances
 remain compatible during the additive database migration and traffic overlap.
 
+Balance failures keep `insufficient_credits` for vm0 credit admission and add
+`provider_insufficient_credits` for upstream model-account balance. API completion
+uses persisted run ownership to project a platform-owned provider failure as
+`model_unavailable`, retaining the original error in internal diagnostics. The
+webhook and Chat Event V7 schemas accept all valid reason tokens; older readers
+use generic failure copy for an unknown token instead of rejecting the run or
+showing the vm0 recharge card. No schema migration is required.
+
+Prefer API readers before the runner writer for this change. Old runners and
+retained rows can still have missing reasons or legacy upstream affordability
+text labeled `insufficient_credits`; exact legacy presentation remains supported
+without inferring an unobserved status or suppressing unknown diagnostics. Remove
+that compatibility only after old runners drain and affected retained rows are
+gone or migrated. Public run, activity, HTTP callback, model-error event, and network-export
+projections keep built-in balance details internal; rolling back these readers
+can restore the prior disclosure behavior even though the tokens remain readable.
+
 Avoid one-shot protocol flips:
 
 - Do not require a new request field from frontend or runner in the same PR that
