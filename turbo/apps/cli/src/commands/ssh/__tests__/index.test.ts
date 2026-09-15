@@ -319,6 +319,27 @@ afterEach(() => {
 });
 
 describe("okou ssh command", () => {
+  it("explains saved Access routing and owner diagnostics without guest token options", async () => {
+    let help = "";
+    const previous = sshCommand.configureOutput();
+    sshCommand.configureOutput({
+      writeOut: (text) => {
+        help += text;
+      },
+    });
+    try {
+      await expect(
+        sshCommand.parseAsync(["--help"], { from: "user" }),
+      ).rejects.toThrow("CLI exit");
+      expect(help).toContain("Direct or Cloudflare Access");
+      expect(help).toContain("port 443 identify the gateway");
+      expect(help).toContain("/connectors/ssh");
+      expect(help).toContain("no proxy or token options");
+    } finally {
+      sshCommand.configureOutput(previous);
+    }
+  });
+
   it("uses exact structured input and EOF without shell expansion or additional arguments", async () => {
     await execute();
     expect(

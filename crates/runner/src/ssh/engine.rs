@@ -16,7 +16,7 @@ use tokio::net::TcpStream;
 
 use super::{
     FailureReason, Scope,
-    authority::{Authority, PreparedAuth, PreparedCredential},
+    authority::{Authority, PreparedAuth, PreparedCredential, Transport},
     io::{GuestIo, HostLease, SocketGuard, SshSocket},
     observation::Attempt,
     output::{Output, RemoteExit, Stream},
@@ -29,6 +29,7 @@ pub(super) struct Execution {
     pub(super) connection: uuid::Uuid,
     pub(super) lease: Arc<HostLease>,
     pub(super) credential: Arc<PreparedCredential>,
+    pub(super) access_tls: Arc<rustls::ClientConfig>,
 }
 
 pub(super) struct Connected {
@@ -60,6 +61,28 @@ impl Execution {
     ) -> Result<Connected, FailureReason> {
         let (stream, socket_guard) =
             SshSocket::new(stream, self.lease).map_err(|_| FailureReason::NetworkFailure)?;
+        let stream: Box<dyn super::access::SshStream> = match &self.credential.transport {
+            Transport::Direct => Box::new(stream),
+            Transport::CloudflareAccess(access) => {
+                observation.connecting = true;
+                let result = scope
+                    .wait(super::access::connect(
+                        stream,
+                        &self.credential.host,
+                        access,
+                        self.access_tls,
+                        observation,
+                    ))
+                    .await?;
+                match result {
+                    Ok(stream) => Box::new(stream),
+                    Err(reason) => {
+                        observation.access_failure = Some(reason);
+                        return Err(FailureReason::NetworkFailure);
+                    }
+                }
+            }
+        };
         let handler = trust::HostTrust::new(
             self.authority,
             self.run,

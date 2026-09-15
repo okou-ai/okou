@@ -1027,17 +1027,24 @@ The Access feature switch controls rollout; it does not add an Agent permission.
 Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
 
-| State                                                                 | Required behavior                                                                      |
-| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Existing Direct data after the additive migration                     | Hosts, credentials, pins, grants and observations remain unchanged; bindings are null. |
-| Current API and S1 Runner with protected handoff                      | Runner returns unavailable without dialing Direct SSH or forwarding the token.         |
-| Current API with an unauthorized protected host or Access feature off | Private authority is unavailable; guest inventory omits that host.                     |
-| Pre-Access API with protected rows                                    | Forbidden: the old reader can interpret the row as Direct.                             |
-| Protected writes before the native carrier and real-Run acceptance    | Forbidden outside controlled local tests.                                              |
+| State                                                                 | Required behavior                                                                                      |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Existing Direct data after the additive migration                     | Hosts, credentials, pins, grants and observations remain unchanged; bindings are null.                 |
+| Current API and S1 Runner with protected handoff                      | Runner returns unavailable without dialing Direct SSH or forwarding the token.                         |
+| Current API and S2 Runner with authorized protected handoff           | Runner uses native WSS/443, verifies gateway TLS and SSH identity separately, without Direct fallback. |
+| Current API with an unauthorized protected host or Access feature off | Private authority is unavailable; guest inventory omits that host.                                     |
+| Pre-Access API with protected rows                                    | Forbidden: the old reader can interpret the row as Direct.                                             |
+| Protected writes before the native carrier and real-Run acceptance    | Forbidden outside controlled local tests.                                                              |
 
 Feature disable does not make a protected row safe for a pre-Access reader.
 Do not deploy such a reader after protected writes exist; no automatic deletion
 or conversion is part of deployment.
+
+#34080 changes the Runner transport without changing guest CLI terminal enums or
+the S1 private API contract. Existing Direct requests keep their behavior. A
+missing/incompatible authority response fails closed; no pre-GA dual decoder is
+introduced. The feature remains default-off after the carrier code lands, pending
+authorized real-provider evidence and #34081's integrated acceptance.
 
 Run cache invalidations are best-effort and identifier-only. Token/SSH-grant changes
 may leave cached authority usable for the remainder of an active Run if a notice
