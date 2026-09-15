@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.14.6](https://github.com/vm0-ai/vm0/compare/guest-contracts-v0.14.5...guest-contracts-v0.14.6) (2026-09-15)
+
+## [0.14.5](https://github.com/vm0-ai/vm0/compare/guest-contracts-v0.14.4...guest-contracts-v0.14.5) (2026-09-14)
+
+
+### Refactoring
+
+* **rust:** unify http failure attempt diagnostics ([#33946](https://github.com/vm0-ai/vm0/issues/33946)) ([394a3c3](https://github.com/vm0-ai/vm0/commit/394a3c3615d2b2485646f50f718f6cb28fb48c71))
+
 ## [0.14.4](https://github.com/vm0-ai/vm0/compare/guest-contracts-v0.14.3...guest-contracts-v0.14.4) (2026-09-11)
 
 ## [0.14.3](https://github.com/vm0-ai/vm0/compare/guest-contracts-v0.14.2...guest-contracts-v0.14.3) (2026-09-11)

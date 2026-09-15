@@ -134,7 +134,23 @@ Tests scope badges through `data-slot="badge"`, which carries no styles. The ico
 
 Line height belongs to the badge because a font-size utility with an arbitrary value carries no paired line height. A badge that declared only `text-[11px]` therefore took its box from whatever `line-height` an ancestor happened to set: the same badge measured 22px, 26px, or 34px tall across four ancestors. It reuses the page-surface border tokens rather than declaring badge-specific aliases, so one hairline decision keeps one owner.
 
+Merge the badge's line height **after** caller classes. `tailwind-merge` removes an earlier line-height utility when a later font-size utility appears: `text-xs` replaces it with its paired line height, while `text-[10px]` leaves line height inherited. The badge keeps `leading-snug` last so both named and arbitrary font sizes retain the same unitless ratio. Callers choose the font size, not a separate line height.
+
+Control typography is a joint decision about font size, line height, height, and padding. Keep that decision in the shared component; fixed-height buttons and segments retain their own size scales. A line-height ratio is not a promise to center every label's ink: capitals, descenders, and fallback fonts have different extents. Verify stable baselines, descender clearance, icon alignment, and long-label wrapping in a browser across representative Latin and Chinese labels. Do not shift individual labels or impose a font-metric threshold on every control to make one word look centered.
+
 The `okou-badge`, `okou-pill`, and `okou-border-r` selectors and their consumers have been removed. `okou-pill` was scoped to `.okou-app` and set the muted foreground; its only consumer now spells that foreground itself. `okou-border-r` was a single settings-dialog divider and became `border-r border-r-gray-300` on that nav, keeping its lighter Gray 300 stroke while its width joins the shared hairline token.
+
+### Chat scrollbars
+
+`ScrollBar` from `@okouai/ui` owns the shadcn Base UI scrollbar styling shared
+by the chat sidebar and message pane. Compose it with Base UI's
+`ScrollArea.Root`, `ScrollArea.Viewport`, and `ScrollArea.Content`. The vertical
+track is 10px wide with 1px padding, a transparent left border, and a flexible
+rounded `bg-border` thumb. Base UI hides it when content does not overflow.
+Callers retain their viewport refs, scroll handlers, content layout, and
+scroll-position ownership; they do not add scrollbar width, color, or offset
+overrides. The documented `scroll-area-viewport`, `scroll-area-scrollbar`, and
+`scroll-area-thumb` slots identify the shared parts for browser verification.
 
 ### Icon controls and dialog bodies
 
@@ -162,9 +178,10 @@ and neutral thumb colors, including hover. All default dialog bodies use this
 treatment, including the existing workflow-recommendation detail body; artifact
 previews retain their own clipping and internal scroll ownership.
 
-The `icon-button` and `dialog-scrollable` selectors and their dependencies have
-been removed. `icon-tooltip-trigger` remains scoped to the third-party Mermaid
-block and migrates with that adapter.
+The `icon-button`, `dialog-scrollable` and `icon-tooltip-trigger` selectors and
+their dependencies have been removed. `IconTooltip` merges its disabled-child
+wrapper's utilities with `cn()`, and the Mermaid diagram box passes its own
+`wrapperClassName` into that slot.
 
 ### Animated layers
 
@@ -207,8 +224,8 @@ same reason the running indicator does: its keyframes animate `transform`, and
 Tailwind's `rotate-*` utility sets the individual `rotate` property, which would
 compose with the animation rather than be replaced by it.
 
-`--mic-volume-fill` stays a component-set runtime value, read through
-`after:h-[var(--mic-volume-fill,0%)]`.
+The legacy mic volume meter has since been retired; the voice draft tray owns
+the recording waveform.
 
 The `mic-starting-spinner` and `mic-volume-icon-meter` selectors have been
 removed; the `mic-starting-spin` keyframes remain.
@@ -268,12 +285,19 @@ retired `okou-btn-morandi` selector owned. Language, timezone, and voice-input
 settings all use the select variant. Dimensions, padding, and radius remain
 with the existing component and caller.
 
-The neutral button adds the existing outline interaction fills
-(`hover:bg-state-hover active:bg-state-pressed`) to the shared surface, keeping
-the hover overlay above those fills. Select triggers retain the opaque surface
-and hover overlay. The existing recovery links and Add automation trigger
-preserve that same interaction treatment with `hover:bg-control-surface
-active:bg-control-surface` on their `Button` instances.
+The neutral button states both interactions as overlays
+(`[&:hover]:bg-state-hover-overlay [&:active]:bg-state-pressed-overlay`) above
+that surface, and select triggers do the same for hover. It previously also
+carried the outline fills `hover:bg-state-hover active:bg-state-pressed`, which
+is the contradiction the state-layer note above describes: those utilities set
+`background-color`, so they replaced `bg-control-surface` rather than sitting on
+it. `gray-50` is a warm stop (hue 15°, saturation 40%) and the state layer is
+neutral, so hovering measured `#FCF9F8` → `#F1F0F0` and dropped the warm cast
+the resting fill carries. Overlays alone measure `#F5F2F1`, which stays in the
+same family. The existing recovery links and Add automation trigger keep
+`hover:bg-control-surface active:bg-control-surface` on their `Button`
+instances; those overrides used to cancel the replacing fill and are now
+redundant, and they render identically either way.
 
 Preserve consumer-specific interaction colors when extracting shared styles.
 The official workflow Configure button, for example, retains its existing
@@ -538,51 +562,550 @@ appearance. Leaving the separator to `TableRow` instead is not equivalent — a 
 border never wins that boundary, so the header rule simply disappears and every
 body row shifts up.
 
-### Desktop titlebar drag region — partially drained
+### Chat message bubbles
 
-The `okou-desktop-no-drag` selector and its consumer have been removed. The
-sidebar header and both drag regions now spell their live treatment as
+The `okou-chat-bubble-user` and `okou-chat-bubble-assistant` selectors and their
+consumers have been removed. Between them they carried seven declarations over
+four rules: the user bubble's fill and foreground, the assistant bubble's
+transparent fill and `border: none`, the 8px block spacing the Markdown body
+inside either bubble used instead of the App's 6px default, and the assistant
+bubble's suppressed horizontal rules.
+
+The two fills are ordinary utilities. The user bubble writes `bg-gray-200
+text-foreground` — `--color-gray-200` and `--color-foreground` are the
+registered names for `hsl(var(--gray-200))` and `hsl(var(--foreground))`, the
+same runtime variables the retired rule read, so every Dark and
+gradient-palette override still applies. The assistant bubble writes
+`bg-transparent border-none border-current`. The colour utility is there because
+`border: none` is a shorthand: it reset `border-color` to `currentcolor`, while
+`border-none` sets only the style. The width is 0 either way, so this is
+invisible today; it is kept because the retired rule decided it, so an assistant
+body that later carries a border keeps the treatment it has now.
+
+The Markdown block treatment is different in kind, because it applies to
+elements the Markdown library renders. `MarkdownEventBody` takes a `chatBubble`
+prop and composes the whole treatment onto the frame it already owns:
+
+```
+[&_:is(p,[data-slot=markdown-card])]:my-2! [&>*:first-child]:mt-0!
+[&>*:last-child]:mb-0! [&_blockquote>*:first-child]:mt-0!
+[&_blockquote>*:last-child]:mb-0! [&_hr]:hidden
+```
+
+Every margin there is important, and the four resets exist only because of it.
+The competitor for the paragraphs and cards is the App's own unlayered
+`.wmde-markdown p, .wmde-markdown .okou-markdown-card` rule, which a utility in
+`@layer utilities` cannot outrank without one; a layered important declaration
+does. But that same promotion would also beat the two competitors the retired
+rule _lost_ to — the vendored `.wmde-markdown > *:first-child` /
+`> *:last-child` resets, which are themselves important, and the vendored
+`blockquote > :first-child` / `:last-child` pair, which ties the retired rule on
+specificity and wins on source order because the Markdown chunk's stylesheet
+loads after the App's. Restating those four at the same tier is what keeps the
+edge paragraphs flush. `[&_hr]:hidden` needs no important, because nothing
+unlayered declares `display` on a Markdown rule.
+
+The card slot is addressed through `data-slot="markdown-card"` rather than its
+`okou-markdown-card` class, for the same reason the desktop titlebar block below
+cannot be respelled: naming a legacy class inside an arbitrary variant registers
+a new dependency on it, and that token belongs to a later batch. The slot
+carries no styles. `data-slot="chat-user-message"` likewise replaces the
+attachment-preview test's `.okou-chat-bubble-user` query.
+
+This narrows a contract on purpose, the way the nav chrome above does. The
+retired rules applied to _any_ Markdown frame that happened to sit inside a
+bubble; the replacement applies to the three call sites that ask for it — the
+chat transcript's Agent message, and the shared thread's rendered and
+rich-content Agent messages. Those are every Markdown frame inside a bubble
+today, so nothing changes now, and a future in-bubble frame asks for the
+treatment by name.
+
+Two of the four retired rules were already partly dead.
+`.okou-chat-bubble-user .wmde-markdown p` and its `.okou-markdown-card` sibling
+never matched: a user bubble's body renders spans and reference chips through
+`UserMessagePartView`, the shared thread's renders plain text, and the
+automation and goal bubbles render plain text, so no Markdown frame has ever
+existed inside one. Both bubble names also remain in the
+`.okou-app[data-desktop-shell] :where(…)` selection exception, which nothing in
+the repository can activate for the reason the titlebar section below records;
+that block belongs to the `okou-app` batch and is deliberately untouched here,
+so the two class names stay inside it while no element carries them. That
+selection exception is the last `[data-desktop-shell]` block in the stylesheet.
+
+Measured against `main` with the App's own Tailwind compiler (the 4.2.2 engine
+the Vite plugin bundles) in Chromium over CDP, across 28 captures — the default
+palette in Light and Dark at desktop 1280x1400 device scale 1 and 2 and narrow
+700x1400 device scale 2, each with and without the fine-pointer hover flags,
+plus all eight gradient palettes in Light and Dark at the desktop geometry:
+zero changed pixels and zero computed-style or geometry differences on every
+capture. `GradientColorThemes` is `enabled: false` with no organization
+allowlist, so the default palette is the online-visible result and the palette
+states are a superset. The fixture
+rebuilds the real ancestor chain down to the bubble and reproduces the Markdown
+frame's element, a first/middle/last paragraph, a loose list item, a blockquote,
+both card forms, a horizontal rule, and the single `<p class="m-0">` the plain
+Markdown path renders. The capture is taller than a real viewport on purpose:
+the chat pane scrolls inside an absolutely positioned container, so the document
+never grows and a page-height capture would compare only the first turn.
+
+Six negative controls establish that those zeros are not degenerate. Dropping
+the paragraph/card spacing changes 214,329 pixels on desktop Light and 10,227,660
+over all 28 captures; dropping the first-child reset changes 108,927 and
+5,131,289; dropping the rule suppression changes 211,552 and 10,147,418;
+dropping the user bubble's fill changes 32,890 and 1,690,648. The remaining two
+are invisible by construction and are caught by the observation channel alone:
+dropping the blockquote reset changes one observed margin per capture at zero
+pixels, and dropping `border-current` changes three observed border colours per
+capture at zero pixels.
+
+### Desktop titlebar drag region — drained
+
+The `okou-desktop-no-drag` selector and its consumer were removed first. The
+sidebar header and both drag regions then spelled their live treatment as
 utilities: `pt-1.5` for the header's `padding-top: 0.375rem`, `hidden` for the
 drag regions' `display: none`, and `[-webkit-app-region:no-drag]` for the
 header row. `-webkit-app-region` has no Tailwind utility, and it is a real
 declaration rather than a token decision, so it stays an arbitrary property.
 
-`okou-desktop-titlebar-drag-region` and `okou-sidebar-header` remain legacy
-selectors, and their class names remain on the two elements. The five
-declarations behind `.okou-app[data-desktop-shell]` inside
-`@media (min-width: 768px)` are deliberately left alone, so those class names
-are still the hooks that block selects. **Nothing in the repository sets that
-attribute**: it occurs only in the App stylesheet and in the baseline derived
-from it, so as shipped both drag regions are `display: none` and the header
-keeps its 6px inset. The header's `padding-top: 0` override is dead twice over,
-because its only consumer sits inside the mobile drawer `aside`, which is
-`md:hidden`.
+That left one `@media (min-width: 768px)` block behind
+`.okou-app[data-desktop-shell]` — four rules and nine declarations across
+`okou-sidebar-header`, `okou-desktop-titlebar-drag-region` and
+`okou-workspace-bg` — which has now been deleted outright, together with the
+`--okou-desktop-titlebar-height` variable its only reader used, the
+`okou-sidebar-header` class on the drawer header, and both `aria-hidden` drag
+region divs. `okou-desktop-titlebar-drag-region` and `okou-sidebar-header` are
+retired; `okou-workspace-bg` keeps the fifteen declarations that are unrelated
+to the desktop shell.
 
-Splitting the batch this way is safe precisely because the retired rules and
-the remaining block were both unlayered. An unlayered `display: block` or
-`padding-top: 0` still wins over a utility in `@layer utilities`, so forcing
-`data-desktop-shell` on reproduces the old computed styles exactly —
-`display: block`, `height: 48px`, `-webkit-app-region: drag`, header
-`padding-top: 0px`. Keep that ordering in mind before moving either remaining
-declaration: a replacement utility would not override the block the way the
-block overrides it.
+**Nothing in the repository ever set that attribute.** It occurred only in the
+App stylesheet, in the baseline derived from it, in the migration ledger, and in
+this document; there is no DOM write anywhere in the App, the UI package, the
+Desktop app, the Worker HTML, or a test. So the block never matched an element,
+both drag regions were always `display: none`, and the header always kept its
+6px inset. The header's `padding-top: 0` override was dead twice over, because
+its only consumer sits inside the mobile drawer `aside`, which is `md:hidden`.
+`.okou-workspace-bg`'s `position: relative` was dead three times over: the
+unconditional `.okou-workspace-bg` rule already declares it.
 
-The rest is not obviously abandoned. `buildDesktopWindowChromeOptions` asks
-Electron for `titleBarStyle: "hiddenInset"` with the traffic lights at
-`{ x: 16, y: 18 }` on darwin, which is precisely the layout a 48px drag region
-is written for, so the likelier reading is a live Desktop defect than
-deliberately inert CSS.
-
-Preserving that block verbatim as utilities is also mechanically unavailable.
-Reproducing `.okou-app[data-desktop-shell] &` needs an arbitrary variant that
-spells `okou-app` inside a `className`, and the class-usage scanner counts that
-as a dependency: the attempt fails `style-policy/growth` with `okou-app` usage
+Deleting rather than porting is the right move because there is nothing to
+port. A replacement could only be a condition no element satisfies, and
+reproducing `.okou-app[data-desktop-shell] &` needs an arbitrary variant that
+spells `okou-app` inside a `className`, which the class-usage scanner counts as
+a dependency: that attempt fails `style-policy/growth` with `okou-app` usage
 growing from 0 to 9, and `pnpm lint:style:prune` refuses to authorize it.
-Dropping `.okou-app` from the condition, deleting the block with its two
-`aria-hidden` divs, or restoring the attribute to repair Desktop are all
-product decisions, and each one also constrains `okou-app` and
-`okou-workspace-bg`, which share this family and the same dead attribute.
-Resolve that before draining the last two tokens.
+
+The behaviour the block described is not missing either.
+`buildDesktopWindowChromeOptions` asks Electron for
+`titleBarStyle: "hiddenInset"` with the traffic lights at `{ x: 16, y: 18 }` on
+darwin, which is precisely the layout a 48px drag region is written for — but
+that layout is already paired, in the Desktop renderer's own stylesheet rather
+than this one. `apps/desktop/src/main.ts` loads `desktopRendererUrl()`,
+`vm0-desktop://renderer/index.html`, and `renderer/styles.css` gives its
+`.app-header` `-webkit-app-region: drag` at the renderer's own titlebar height,
+with `no-drag` exceptions on its controls and three more drag/no-drag pairs in
+the recorder window. `okou-app` appears nowhere under `turbo/apps/desktop`, so
+neither this stylesheet nor a `.okou-app` element is in that document. **Desktop
+window dragging works; this was never the code that implemented it.**
+
+These rules were residue of a different integration, one that was never built:
+rendering the Platform UI inside the Desktop shell.
+[Issue #34162](https://github.com/vm0-ai/vm0/issues/34162) records that. The
+block becomes relevant again only if someone decides to host the Platform UI in
+the Desktop shell, and that drag chrome would then be designed with the decision
+rather than resurrected from a selector that had been inert since it was
+written. Note that Platform markup does reach an Electron window in one place
+today — the auth window `desktop-auth-window.ts` opens on the `/desktop-auth/*`
+routes — and that window sets no such attribute either.
+
+Measured against `main` with the App's own Tailwind compiler (the 4.2.2 engine
+the Vite plugin bundles) in Chromium over CDP. The fixture rebuilds the real
+ancestor chain — the `.okou-app` shell from `sidebar-layout.tsx`, the
+`md:hidden` drawer `aside`, the `hidden md:flex` labelled rail, and the
+`WorkspaceInset` with one element of every kind the retired `:where(…)` row
+selects — and carries `apps/platform/index.html`'s verbatim viewport meta,
+without which mobile emulation lays out at 980px and silently satisfies
+`min-width: 768px`. Twenty-four captures per side: desktop 1440x1000 at device
+scale 1 and 2 and narrow 390x844 at device scale 2, Light and Dark, fine- and
+coarse-pointer media, with `data-desktop-shell` absent and forced on, and
+`:hover` forced on every probe and on every ancestor up to the shell root.
+`GradientColorThemes` is `enabled: false` with no organization allowlist, so the
+default palette is the online-visible result.
+
+On the twelve online-visible captures — the attribute absent, which is the only
+state that has ever shipped — zero changed pixels, zero alpha changes, and zero
+computed-style or geometry differences on every surviving element. The only
+observation differences are the two deleted drag-region divs.
+
+Two negative controls establish that those zeros are not degenerate. Forcing
+`data-desktop-shell` onto the shell root changes 5,813 pixels per desktop
+capture at device scale 1 and 23,015 (Light) / 23,029 (Dark) at device scale 2,
+and moves `padding-top`, `display`, `height`, `flex-shrink`, `position`,
+`z-index` and `-webkit-app-region` on eleven probes — so the harness does reach
+the deleted block. Forcing the attribute cannot move the narrow captures,
+because 390px never satisfies `min-width: 768px`; a second control that drops
+the header's live `pt-1.5` changes those by 7,526 (Light) / 7,521 (Dark) pixels,
+so the narrow captures are sensitive too. An unchanged-code A/A replay is
+byte-identical across all 24 captures, so no rounding budget is claimed.
+
+### Third-party attribution of borrowed class names
+
+A class that looks like a vendor's is not automatically that vendor's. The
+exception boundary follows who authors the element, not who the name resembles.
+
+The queue drawer's check icon was a hand-written SVG in
+`queue-page/queue-drawer.tsx` that spelled `lucide` in its own `className`.
+Lucide never rendered it; the class was there to opt into the first-party
+`svg[class*="lucide"][stroke-width="2"]:not([data-stroke])` rule that normalizes
+the vendor's default stroke. A first-party element borrowing a vendor
+fingerprint to reach a first-party rule is legacy debt, not an adapter, so it
+takes a utility instead, and the icon stroke token moves into the namespace that
+already owns that decision. Tailwind resolves `stroke-*` against `--stroke-width-*`
+before it falls back to a bare number, so renaming `--icon-stroke-width` to
+`--stroke-width-icon` turns the token into the plain named utility `stroke-icon`,
+which emits the same `stroke-width: var(--stroke-width-icon)` the retired rule
+matched into. That is the shape the emoji spans ended at with
+`font-family-emoji`: a registered token read through its own namespace, not a
+custom property threaded through an arbitrary or data-type-hinted utility. Bare
+`stroke-2` keeps working, because the namespace lookup only precedes the numeric
+fallback. The element's own `strokeWidth="2"` presentation attribute stays,
+because CSS outranks it either way and the retired rule keyed on it. Both lucide
+rules remain for the real `lucide-react` DOM, including the allowlisted
+`svg.lucide-ellipsis circle` entry.
+
+`toaster` in `components/ui/sonner.tsx` is the mirror case. Sonner neither
+defines nor requires that class; the component invents it, hands it to Sonner's
+`className` prop, and then anchors its own `group-[.toaster]:` variants on it.
+Sonner's actual contract is the `[data-sonner-toaster]` attribute it puts on its
+own list element. There is also no mechanism to authorize this kind of
+dependency: `turbo/style-allowlist.json` holds CSS selectors, style injections
+and vendored files, so a legacy class named in a component's `className` can only
+be drained or left in the shrink-only baseline — never allowlisted.
+
+### Toast styling is decided by cascade layers, not specificity
+
+Sonner injects its stylesheet into `document.head` at module load, unlayered.
+Unlayered rules outrank every layer, so a `@layer utilities` declaration loses to
+`[data-sonner-toast][data-styled="true"]` no matter how specific the variant is.
+That is why the toast class string carries `!` on most of its utilities, and it
+is why the four that lack it — `bg-popover`, `text-foreground`, `border-border`
+and `shadow-lg` — have never applied. Measured on the real Sonner runtime, a dark
+toast computes `rgb(255, 255, 255)` on `rgb(23, 23, 23)` while `--color-popover`
+is `hsl(20 2.9% 20.2%)`: the panel stays light in Dark. The component also passes
+no `theme` prop, so Sonner itself is permanently in its `light` palette. The
+`description`, `actionButton` and `cancelButton` entries are inert for the same
+reason.
+
+Restoring those declarations is a visual decision, not an equivalence repair, and
+it is tracked separately. Marking the four important does fix Dark, but it also
+moves the Light foreground, border and shadow, and — because `!important` beats
+Sonner's unlayered `:focus-visible` rule — it replaces the toast's focus ring
+with the resting shadow. Adopting Sonner's supported `theme` prop instead takes
+Sonner's palette rather than the App's popover tokens. Draining `toaster` is
+blocked behind that choice, because whichever repair wins rewrites the same class
+string.
+
+### The Markdown code-fence copy control
+
+The `copied` contract has been retired. Its three App rules, its two
+`third-party-dom-adapter` allowlist entries and both of its consumption sites
+are gone, and `CodeBlockCopyButton` now owns the treatment for both fence
+shapes: the one the Markdown pipeline marks on every fenced block, and the one
+the Mermaid view renders when a diagram's source does not parse.
+
+`copied` is the borrowed-name case above, one step further along: the name is
+genuinely the vendor's, and the pinned `@uiw/react-markdown-preview` stylesheet
+really does define it, which is why two of its three App rules were allowlisted
+as adapters for that renderer's generated DOM. The element is still ours. The
+App mounts no part of that renderer — it imports only the stylesheet, and parses
+and renders Markdown itself — so every element that ever carried the class was
+first-party markup spelling `className="copied"` to borrow the vendored sheet's
+absolutely positioned, hover-revealed copy affordance. Authorship of the
+element, not authorship of the name or of the rule, is what the boundary asks
+about, so this was legacy debt and the two entries are retired with the rules.
+
+The replacement therefore reproduces the vendored declarations as well as the
+App's own overrides, because both were load-bearing and only the App's half
+could be deleted:
+
+| Retired declaration                                | Owner  | Replacement                                                               |
+| -------------------------------------------------- | ------ | ------------------------------------------------------------------------- |
+| `visibility: hidden`                               | vendor | `invisible`                                                               |
+| `pre:hover` → `visibility: visible`                | vendor | `[pre:hover_&]:visible`                                                   |
+| `display: flex`                                    | vendor | `flex`                                                                    |
+| `position: absolute; top: 6px; right: 6px`         | vendor | `absolute top-1.5 right-1.5`                                              |
+| `cursor: pointer`                                  | vendor | `cursor-pointer`                                                          |
+| `padding: 6px`                                     | vendor | `p-1.5`                                                                   |
+| `font-size: 12px`                                  | vendor | `text-[12px]`                                                             |
+| `transition: all 0.3s`                             | vendor | `transition-[visibility,background-color,color] duration-300 ease-[ease]` |
+| `border-radius: 6px`                               | App    | `rounded-md`                                                              |
+| `background: hsl(var(--gray-200))`                 | App    | `bg-gray-200`                                                             |
+| `color: hsl(var(--muted-foreground))`              | App    | `text-muted-foreground`                                                   |
+| `pre:hover .copied:hover` → gray-300 / foreground  | App    | `[pre:hover_&:hover:not(:active)]:…`                                      |
+| `pre:hover .copied:active` → gray-400 / foreground | App    | `[pre:hover_&:active]:…`                                                  |
+
+Four of those need stating.
+
+`rounded-md` is exactly the retired 6px: `--radius-md` is `calc(var(--radius) - 2px)` over a `0.5rem` radius. `p-1.5` replaces the shared control's own `p-2` through `cn()`, which is not a change of value — the unlayered vendored `padding: 6px` already outranked that utility, so 6px is what the control has always painted.
+
+`text-[12px]` names the size rather than taking `text-xs`, for the reason the badge batch records: an arbitrary font-size utility emits `font-size` alone, and `text-xs` would add a paired line height the retired declaration never set. `ease-[ease]` is needed for the same kind of reason — a Tailwind transition utility supplies Tailwind's own `--default-transition-timing-function`, while `transition: all 0.3s` left the timing function at its `ease` initial value.
+
+The transition is the one declaration deliberately not reproduced verbatim. This is an auxiliary control revealed by hover, so the rule above applies: name the properties that animate rather than taking `all`. Only `visibility`, `background-color` and `color` ever change on this control, and `visibility` has to stay in the list, because with it the control remains painted for the transition's duration after the pointer leaves and without it the control vanishes instantly. Measured, narrowing the list changes zero pixels in all 28 states and changes exactly one observation, `transition-property`, on the control itself.
+
+The reveal and both interaction fills spell `pre:hover &` rather than reaching for `group-hover:`. The retired rules were unlayered and ungated, so they also fired on a coarse pointer where a tap leaves a sticky hover; the arbitrary variants generate the same unconditional descendant selector. Spelling the ancestor also raises specificity above the shared control's own `hover:` fill, so the two stop racing inside one Tailwind layer.
+
+The hovered fill carries `:not(:active)` because Tailwind decides the order the retired rules decided by source position. Both retired rules had equal specificity and the pressed one came second, so it won while both matched; Tailwind sorts the pressed variant first, so the hovered fill steps aside by selector instead.
+
+`.wmde-markdown pre .copied.active` was dead and is gone with the rest. `CopyButton` never adds an `active` class — it swaps icons from React state — so that branch of the selector list never matched. The vendored sheet's own `.copied.active` rules remain, pinned and inert, because nothing carries the class any more. The `--color-copied-active-bg` overrides the App declared for them are removed with it.
+
+Measured against `main` with the App's own Tailwind compiler in Chromium over CDP, on the ancestor chain captured from the real chat thread page: 28 states — both fence shapes at rest, fence-hovered, control-hovered and pressed, in Light and Dark, on a fine and a coarse pointer — report zero changed pixels and zero computed-style or geometry differences. Negative controls that drop the control's padding, shift its offset by one spacing step and drop the reveal variant report 7,818, 3,579 and 9,164 changed pixels, so the zeros are not degenerate.
+
+### The Mermaid fallback fence
+
+`language-mermaid` is drained. `MermaidDiagramView` renders an ordinary code
+block when the parser rejects a fence's source, and that block used to spell
+`className="language-mermaid"` by hand to imitate the fence markup the Markdown
+pipeline produces. The class had nothing to select: no first-party declaration
+matches it, and the pinned `@uiw/react-markdown-preview` sheet's only
+`language-` rule is `.wmde-markdown .language-css .token.string`. Nor could
+tokens appear under it — the pipeline runs `rehype-prism-plus` with
+`ignoreMissing: true` and its common grammar bundle carries no mermaid grammar,
+so a mermaid fence is never tokenised on either path. The same component's
+`<details>` source block already carried no class, which is the shape the
+fallback block now takes. The retirement is therefore an equivalence, with no
+utility to replace the class with.
+
+This is the borrowed-name case again, one step simpler than `copied`: the
+element is ours, the name is a convention of `marked`'s fenced-code output, and
+there is no rule behind it in either sheet. So it was legacy debt rather than a
+third-party DOM adapter, and it could only be drained.
+
+`lib/rehype-mermaid.ts` still spells the class, and that use is out of scope
+rather than overlooked. It reads the class off a tree it did not author, to
+recognise a Mermaid fence before a diagram marker replaces it: `marked` writes
+the class for a Markdown fence, and a message carrying raw
+`<pre><code class="language-mermaid">` HTML writes it directly. Both are
+external DOM contracts being parsed, not first-party styling, so neither the
+legacy baseline nor `no-unknown-classes` counts them — the baseline resolves
+class attributes and class-helper calls, and the rule reads class attributes
+only. The rendered component's markup never re-enters that pipeline, so the
+drained attribute and the surviving detector do not meet. Page tests that query
+`code.language-mermaid` likewise match pipeline-generated markup, not this
+component. Removing the detector's class check would stop rendering
+raw-HTML-authored Mermaid blocks as diagrams, which is a product decision with
+no current test coverage, and is tracked separately from this drain.
+
+### Chat transcript cards
+
+`ChatCard` in `turbo/apps/platform/src/views/okou-page/components/chat-card.tsx`
+owns the surface shared by transcript notice cards, action cards and media
+frames. It follows `Badge`'s `useRender` shape, so a caller picks the host
+element with `render` and gets no wrapper. It is App-owned rather than shared, because its radius and
+shadow read the App-only `--okou-chat-card-*` variables declared on
+`.okou-app`.
+
+The border is deliberately `border-[1px] border-gray-400` rather than the shared
+`border` hairline and a semantic border token. The retired rule pinned a whole
+pixel because fractional borders visibly repaint when card contents resolve, so
+a card flickers at its edge as an image or an iframe lands. This migration
+preserves that; unifying the transcript's border width and colour with the rest
+of the product is a separate visual decision.
+
+The retired rule sat in `@layer components` so a caller's composed `border-*`,
+`bg-*` or `hover:*` utility could still outrank it — the browser session card's
+hover and selected borders are the only consumers that ever needed it. A
+component removes that arrangement rather than reproducing it: `cn()` merges the
+base with the caller's `className`, so a conflicting base utility is dropped
+instead of being outranked, and no layer ordering is involved. Measured on a
+reconstructed ancestor chain, the card's resting, hover, selected and
+selected-hover borders are identical before and after, and a control that drops
+the hover override moves 5,236 pixels, so the override is load-bearing rather
+than inert.
+
+The radius and shadow use `rounded-[var(…)]` and `shadow-[var(…)]`, matching the
+19 call sites that read the page-level `--okou-card-*` siblings the same way.
+Tailwind's shadow utility composes `--tw-shadow` in either spelling, so the
+serialized `box-shadow` carries four fully transparent placeholders the retired
+shorthand did not. The painted result is identical; a comparison should
+normalize those placeholders away rather than treat the string as the contract.
+One consequence is that `tailwind-merge` cannot classify an arbitrary
+`shadow-[var(…)]` as a box-shadow and so will not drop it for a caller's own
+`shadow-*`. No consumer overrides the shadow. Registering `@theme` tokens and a
+named `shadow-*` scale in `cn()` would restore that, and is the documented route
+if a consumer ever needs it.
+
+The `okou-chat-card` and `okou-chat-frame` selectors and their consumers have
+been removed.
+
+Five of the eighteen consumers never rendered that treatment. They live in the
+artifact preview dialog, and `DialogContent` portals to `document.body`, so the
+`.okou-app` ancestor `.okou-app .okou-chat-card` requires was never present and
+the rule painted nothing there. Measured on the rendered page before the change,
+all five report `closest(".okou-app") === null` while a transcript card reports
+`true`. Their class names were therefore deleted rather than replaced: the
+container keeps the treatment-free appearance it actually had. Giving the
+artifact preview a card surface is a separate visual decision, and it is not a
+one-line one — those two custom properties are scoped to `.okou-app`, so a
+`ChatCard` rendered in the portal resolves to a square, shadowless border
+instead. Measured on the portaled surface, adopting the shared base there would
+change 734,605 pixels.
+
+`okou-chat-frame` had exactly one consumer, that dialog's video stage, so it
+carried no live declaration anywhere.
+
+### Chat thinking states
+
+The `okou-thinking-enter`, `okou-thinking-spinner`, `okou-thinking-spinner-frame`
+and `okou-chat-skeleton-reveal` selectors and their consumers have been removed.
+`okou-thinking-spinner-frame` carried no declarations, so its removal is a pure
+class deletion. The four selectors had six consumption sites, three of them
+`okou-thinking-enter`, and all six live in `chat-thread-page.tsx`; the keyframes
+stay, because keyframes are not class selectors.
+
+Each retired `animation` shorthand becomes an `--animate-*` theme entry, so the
+consumers reach the motion through `animate-thinking-in` and
+`animate-chat-skeleton-reveal` instead of respelling a shorthand. The spinner
+keeps `animate-spin` and overrides only its duration, through
+`[animation-duration:1.4s]` beside `will-change-transform`.
+
+One computed-style difference is intended and carries no pixels. Under
+`prefers-reduced-motion: reduce` the spinner's `animation-duration` was `1.4s`
+before and is `0s` after. The retired rule sat outside every layer, so it kept
+setting a duration even once `motion-reduce:animate-none` had cleared
+`animation-name`; as a utility, the duration is now cleared with the rest of the
+shorthand. `animation-name` is `none` on both sides, so the property is inert
+and all 18 reduced-motion theme states report zero changed pixels.
+
+Measured against `main` with the App's own Tailwind compiler in Chromium over
+CDP, on the real ancestor chain (`.okou-app` shell, chat `<main>`, message list,
+thinking wrapper, response line, leading-icon span): 288 comparisons — 18 theme
+states (the default palette plus the eight gradient palettes, each in Light and
+Dark) across fine-pointer DPR 1 and DPR 2, coarse pointer, and reduced motion,
+with the animations paused at 0/200/400/700/1050 ms. Zero changed pixels, and
+the only observation difference is the inert reduced-motion duration above.
+Every capture also asserts that both sides report the same number of running
+animations, because a finite animation that ends is dropped from
+`getAnimations()` and would otherwise be compared at a different phase.
+
+The three-block loader is not part of this batch. `okou-blocks` was retired by
+the separate removal of the chat thinking spinner switch, which deleted the
+loader, its colour state and its keyframes outright; the rotating mark is now
+the only thinking indicator, so these states are the online-visible path.
+
+`okou-shimmer-text` was scoped out of this batch. Its gradient has six colour
+stops, and Tailwind's gradient utilities interpolate in oklab, so only the exact
+`bg-[linear-gradient(...)]` form reproduces it — 229 characters for that one
+utility, past the length this family keeps its class strings under. Choosing
+between that and an App-owned gradient token for a single consumer is a design
+decision rather than a mechanical replacement.
+
+### The standalone PWA fixed cover
+
+The `okou-pwa-fixed-cover` selector and its consumers have been removed. It was
+one declaration — `bottom: calc(-1 * var(--sab))` inside
+`@media (display-mode: standalone)` — on the mobile drawer scrim and on the
+artifact-preview dialog backdrop. Both are `fixed inset-0`, and a fixed cover is
+clipped by the visual viewport, so in a standalone PWA it stops short of the
+bottom safe inset; extending `bottom` paints it to the physical edge while the
+drawer's own content keeps its safe-area padding. Each consumer now writes
+`[@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))]`.
+
+Tailwind has no `display-mode` variant, and this is a genuine environment
+condition rather than a token decision, so it stays an arbitrary variant over an
+arbitrary value — the shape the existing `[@media(hover:hover)]:` call sites
+already use. The utility has to win against the `inset-0` on the same element,
+and it does: Tailwind emits the `inset` shorthand before the `bottom` longhand
+inside `@layer utilities`, and `cn()` keeps both, because a modifier-prefixed
+`bottom-*` never conflicts with an unprefixed `inset-0`.
+
+Measured against `main` with the App's own Tailwind compiler in Chromium over
+CDP: 216 states per pointer mode — two fixtures, the shell with its drawer and
+scrim and the portaled dialog backdrop, across the default palette plus the
+eight gradient palettes in Light and Dark, at 1440x900, 390x844 DPR 2 and 767px,
+each with and without a standalone display mode. Zero changed pixels and zero
+computed-style or geometry differences in both the fine-pointer and
+coarse-pointer runs.
+
+Two details make those zeros meaningful. `--sat`/`--sar`/`--sab`/`--sal` come
+from `env(safe-area-inset-*)` and resolve to `0px` in a desktop Chromium, which
+would make every inset under test measure zero and report a false no-change, so
+the harness injects non-zero insets on both sides and asserts them at every
+capture. And `display-mode` cannot be emulated: in Chromium 152
+`Emulation.setEmulatedMedia` accepts `{name:"display-mode",value:"standalone"}`
+without error while `matchMedia` still reports `browser`, for features-only,
+with `media:"screen"`, with `media:""`, and for value `fullscreen`. A window
+launched with `--app=<url>` against a served web app manifest reports a real
+standalone display mode, so the standalone states run there rather than against
+a substituted media condition.
+
+A pixel diff alone also cannot accept this rule, because its whole effect is
+paint below the visual viewport: on-screen pixels are identical whether it
+applies or not. Geometry is its channel, and the negative controls check both
+channels separately — dropping the migrated bottom extension moves the scrim and
+backdrop boxes without changing a pixel, while dropping their background fills
+changes millions of pixels.
+
+`okou-mobile-sidebar` and `okou-mobile-fixed-safe-area` remain legacy selectors.
+They sit together on the mobile drawer `aside`, and spelling them as utilities
+takes that element from 288 to 499 characters of class list and from two to six
+bracketed arbitrary values. Whether a six-declaration `::before` paint layer and
+a four-value safe-area padding belong inline there, behind a shared safe-area
+decision, or inside a drawer-surface component is a token-layer design call, so
+the batch is recorded `blocked` rather than resolved. The mechanics are
+otherwise clear: both rules are unlayered but nothing else on the element sets
+`isolation`, `::before`, padding or `box-sizing`, so no important marker would be
+needed. One difference would not be exact — Tailwind's `max-md` emits
+`@media (width < 48rem)` while the retired rule stopped at `max-width: 767px`,
+so between 767px and 768px the padding would newly apply. The element already
+gates its whole fixed-drawer geometry on `max-md`, so the two spellings disagree
+there today.
+
+### The onboarding workflow diagram canvas
+
+The diagram is a fixed 614x470 illustration scaled to 0.6, so its geometry was a
+block of coordinate variables plus absolutely positioned rules. Twelve of its
+selectors have been removed and their declarations now live as Tailwind
+utilities on the component: the wrapper, the dotted grid, the connector-line
+SVG, the travelling beam, the vertical control, the node base and its three
+positions, the icon stack host, the avatar host and the action copy.
+
+`owf-diagram` is deliberately still on the canvas element, reduced to the 25
+shared coordinate variables that the remaining tile and dot rules read. A class
+kept only as a variable carrier is not an exception for business styling: it
+contributes no geometry, and it retires with those readers. Inlining each
+variable into the rules that read them was not an option, because the ratchet
+compares whole declarations and would score a rewritten value as new
+first-party CSS.
+
+The beam registers `--animate-owf-beam-flow` as an `--animate-*` theme entry,
+the same form the thinking states use, and its keyframes stay in the stylesheet.
+Its retired `prefers-reduced-motion` override did two things — cancel the
+animation and dim the beam from 0.92 to 0.35 — so both belong to
+`motion-safe:`: the element carries `opacity-[0.35]` with
+`motion-safe:opacity-[0.92] motion-safe:animate-owf-beam-flow`. A
+`motion-reduce:` utility would have depended on emission order to win.
+
+The beam gradient, both of its drop shadows and the two literal brand strokes
+keep their exact values in arbitrary utilities. Tailwind's gradient utilities
+interpolate in oklab, and this gradient has five stops with literal `rgba()`
+colors. The grid's radial gradient likewise spells
+`hsl(var(--gray-500)/0.55)` rather than a ramp utility, because the retired rule
+named that alpha.
+
+Type maps onto the shared scale exactly: the node labels' 12px/16px is `text-xs`,
+the action title's 16px/24px is `text-base`, and its description's 14px/20px is
+`text-sm`, so no arbitrary font size survives. The description keeps
+`text-ellipsis` beside `line-clamp-2`, which the retired rule declared and the
+utility does not imply.
+
+One inherited cascade is preserved rather than corrected. The retained
+`.owf-diagram-icon-box img` rule sizes every image inside a tile at 34px and,
+being unlayered, outranks the `size-full` utility on the Okou avatar image, so
+that avatar renders at 34px inside its 64px host today. The canvas batch keeps
+that behaviour; changing it is a visual decision for the tiles batch.
+
+Page tests select the source node and source dot through
+`data-slot="onboarding-diagram-source-node"` and
+`data-slot="onboarding-diagram-source-dot"`, which carry no styles.
 
 ## Exception boundary
 

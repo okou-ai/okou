@@ -8,13 +8,8 @@ import { authRoute } from "../auth/auth-route";
 import { queryOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
 import { generateArtifactPreviewUrl } from "../external/s3";
-import { PRIVATE_ARTIFACT_PREVIEW_TTL_SECONDS } from "../../lib/private-artifact-preview";
 import { uploadedArtifactObject } from "../services/uploaded-artifact.service";
 import type { RouteEntry } from "../route-entry";
-
-// Long enough to cover a chat session without a reload, short enough to bound
-// the exposure of a URL that grants read access on its own.
-const FILE_URL_TTL_SECONDS = 2 * 60 * 60;
 
 const fileUrlInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(authContext$);
@@ -36,9 +31,6 @@ const fileUrlInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   // widens beyond what the ownership check already allowed.
   const preview = await get(
     generateArtifactPreviewUrl(object.bucket, object.key, {
-      expiresIn: object.isPrivate
-        ? PRIVATE_ARTIFACT_PREVIEW_TTL_SECONDS
-        : FILE_URL_TTL_SECONDS,
       signingDate: nowDate(),
     }),
   );

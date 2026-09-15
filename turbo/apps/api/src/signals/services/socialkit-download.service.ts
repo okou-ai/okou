@@ -2,16 +2,20 @@ import { v5 as uuidv5 } from "uuid";
 
 import {
   MANAGED_SOCIALKIT_BILLING_CATEGORY,
+  socialKitDownloadDeliveredQualitySchema,
   socialKitDownloadFormatSchema,
   socialKitDownloadPlatformSchema,
-  socialKitDownloadQualitySchema,
   socialKitDownloadResponseSchema,
+  type SocialKitDownloadListQuery,
+  type SocialKitDownloadListResponse,
   type SocialKitDownloadRequest,
   type SocialKitDownloadResponse,
+  type SocialKitErrorResponse,
 } from "@okouai/api-contracts/contracts/social";
 import { socialKitDownloadJobs } from "@okouai/db/schema/socialkit-download-job";
 import { command } from "ccstate";
-import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
 import { env } from "../../lib/env";
@@ -45,6 +49,7 @@ import {
 } from "./managed-usage.service";
 import { recordWebUploadedFile$ } from "./run-uploaded-files.service";
 import { validateScrapeTargetUrl } from "./scrape-target-policy";
+import { normalizeSocialKitError } from "./socialkit-error";
 
 const SOCIALKIT_API_BASE = "https://api.socialkit.dev";
 const SOCIALKIT_PROVIDER_TIMEOUT_MS = 240_000;
@@ -93,13 +98,18 @@ const INVALID_PROVIDER_RESPONSE_ERROR = {
 } satisfies DownloadJobError;
 
 interface SocialKitDownloadErrorResponse {
-  readonly status: 409 | 502 | 503;
-  readonly body: {
-    readonly error: {
-      readonly message: string;
-      readonly code: string;
-    };
-  };
+  readonly status: 400 | 404 | 409 | 422 | 429 | 502 | 503;
+  readonly body: SocialKitErrorResponse;
+}
+
+class ProviderRequestError extends Error {
+  readonly details: DownloadJobError;
+
+  constructor(readonly normalized: ReturnType<typeof normalizeSocialKitError>) {
+    super(normalized.error.message);
+    this.name = "ProviderRequestError";
+    this.details = { ...normalized.error, provider: normalized.evidence };
+  }
 }
 
 type CreateSocialKitDownloadResponse =
@@ -138,7 +148,8 @@ const providerReadySchema = z.object({
   durationSeconds: z.number().int().positive(),
   fileSizeMB: providerFileSizeMbSchema,
   creditsCost: z.number().int().positive(),
-  quality: socialKitDownloadQualitySchema,
+  billed: z.literal(true).optional(),
+  quality: socialKitDownloadDeliveredQualitySchema,
   format: socialKitDownloadFormatSchema,
   title: z.unknown().optional(),
   thumbnail: z.unknown().optional(),
@@ -152,7 +163,7 @@ const providerFailedSchema = z.object({
     .max(MAX_PROVIDER_FAILURE_CODE_CHARS)
     .regex(PROVIDER_FAILURE_CODE_PATTERN),
   error: z.string().trim().min(1).max(MAX_PROVIDER_FAILURE_MESSAGE_CHARS),
-  retryable: z.boolean(),
+  retryable: z.unknown().optional(),
 });
 
 const providerThumbnailSchema = z
@@ -204,12 +215,23 @@ function externalStatus(job: DownloadJob): SocialKitDownloadResponse["status"] {
 
 function responseForJob(job: DownloadJob): SocialKitDownloadResponse {
   const billed = job.creditsCharged !== null;
+  // Historical filenames/content types could be request-derived. Do not use
+  // them to reconstruct missing delivery evidence from older JSONB writers.
+  const deliveredFormat = job.artifact?.format ?? null;
+  const hasVideo = deliveredFormat
+    ? deliveredFormat === "mp4"
+    : job.providerResult?.format === "mp4";
   return socialKitDownloadResponseSchema.parse({
     downloadId: job.id,
     status: externalStatus(job),
     platform: job.request.platform,
     quality: job.request.quality,
     format: job.request.format,
+    requested: { quality: job.request.quality, format: job.request.format },
+    delivered: {
+      quality: hasVideo ? (job.providerResult?.quality ?? null) : null,
+      format: deliveredFormat,
+    },
     maxDuration: job.request.maxDuration,
     billingCategory: MANAGED_SOCIALKIT_BILLING_CATEGORY,
     provider: job.providerResult,
@@ -223,9 +245,20 @@ function responseForJob(job: DownloadJob): SocialKitDownloadResponse {
     artifact: job.artifact,
     error: job.error
       ? {
-          ...job.error,
+          code: job.error.code,
+          message: job.error.message,
+          ...(job.error.reason === undefined
+            ? {}
+            : { reason: job.error.reason }),
+          ...(job.error.retryAfterSeconds === undefined
+            ? {}
+            : { retryAfterSeconds: job.error.retryAfterSeconds }),
+          ...(job.error.resubmitRetryable === undefined
+            ? {}
+            : { resubmitRetryable: job.error.resubmitRetryable }),
           retryable:
-            job.status === "processing" || job.status === "artifact_failed",
+            (job.status === "processing" || job.status === "artifact_failed") &&
+            (job.error.retryable ?? true),
           billed,
         }
       : null,
@@ -277,14 +310,26 @@ function providerFailureError(
   accessKey: string,
 ): DownloadJobError | null {
   const parsed = providerFailedSchema.safeParse(value);
-  if (!parsed.success) {
+  const normalized = normalizeSocialKitError(200, value, { accessKey });
+  if (
+    !parsed.success &&
+    normalized.evidence.errorCode === undefined &&
+    normalized.evidence.retryable === undefined
+  ) {
     return null;
   }
   return {
-    code: `SOCIALKIT_PROVIDER_${parsed.data.errorCode}`,
+    code:
+      parsed.success && normalized.evidence.errorCode
+        ? `SOCIALKIT_PROVIDER_${normalized.evidence.errorCode}`
+        : PROVIDER_DOWNLOAD_FAILED_ERROR.code,
     message:
-      safeProviderFailureMessage(parsed.data.error, accessKey) ??
-      PROVIDER_DOWNLOAD_FAILED_ERROR.message,
+      (parsed.success
+        ? safeProviderFailureMessage(parsed.data.error, accessKey)
+        : null) ?? PROVIDER_DOWNLOAD_FAILED_ERROR.message,
+    reason: normalized.error.reason,
+    resubmitRetryable: normalized.error.retryable,
+    provider: normalized.evidence,
   };
 }
 
@@ -336,8 +381,11 @@ async function startProviderJob(
     signal,
   );
   if (!result.response.ok) {
-    throw new Error(
-      `SocialKit download start failed (${result.response.status})`,
+    throw new ProviderRequestError(
+      normalizeSocialKitError(result.response.status, result.body, {
+        accessKey,
+        headers: result.response.headers,
+      }),
     );
   }
   return providerStartSchema.parse(result.body).jobId;
@@ -369,8 +417,11 @@ async function pollProviderJob(
     if (result.response.status === 404) {
       return { status: "failed", error: null };
     }
-    throw new Error(
-      `SocialKit download status failed (${result.response.status})`,
+    throw new ProviderRequestError(
+      normalizeSocialKitError(result.response.status, result.body, {
+        accessKey,
+        headers: result.response.headers,
+      }),
     );
   }
   if (
@@ -401,7 +452,7 @@ async function pollProviderJob(
 
 interface SniffedMedia {
   readonly contentType: string;
-  readonly extension: string;
+  readonly extension: "mp4" | "m4a" | "mp3";
 }
 
 type IsoTrackKind = "audio" | "video";
@@ -818,25 +869,51 @@ function usageIdempotencyKey(downloadId: string): string {
   );
 }
 
+function providerCreditsPerMinute(media: {
+  readonly quality: string;
+  readonly format: SocialKitDownloadRequest["format"];
+}): number {
+  return media.format === "mp4" && Number.parseInt(media.quality, 10) >= 720
+    ? 4
+    : 1;
+}
+
 function readyMetadataIsValid(
   job: DownloadJob,
   ready: z.infer<typeof providerReadySchema>,
 ): boolean {
-  const expectedCredits = Math.max(1, Math.ceil(ready.durationSeconds / 60));
-  const maximumCredits = Math.max(1, Math.ceil(job.request.maxDuration / 60));
+  const minutes = Math.ceil(ready.durationSeconds / 60);
+  const requestedRate = providerCreditsPerMinute(job.request);
+  const deliveredRate =
+    job.request.platform === "tiktok"
+      ? Math.min(requestedRate, providerCreditsPerMinute(ready))
+      : requestedRate;
+  const expectedCredits = minutes * deliveredRate;
+  const maximumCredits =
+    Math.ceil(job.request.maxDuration / 60) * requestedRate;
+  // SocialKit retains legacy account rates for 30 days. Accept only the exact
+  // old or current cost, never arbitrary bounded usage. Remove the old-rate
+  // allowance after the managed account transition AND recoverable legacy jobs
+  // have drained; a paid job's refresh must not reprice its original usage.
+  const validCost =
+    ready.creditsCost === expectedCredits || ready.creditsCost === minutes;
   return !(
     ready.jobId !== job.providerJobId ||
     ready.platform !== job.request.platform ||
     ready.format !== job.request.format ||
     ready.durationSeconds > job.request.maxDuration ||
-    ready.creditsCost !== expectedCredits ||
-    ready.creditsCost > maximumCredits
+    !validCost ||
+    ready.creditsCost > maximumCredits ||
+    (job.providerResult !== null &&
+      (ready.creditsCost !== job.providerResult.creditsCost ||
+        ready.durationSeconds !== job.providerResult.durationSeconds))
   );
 }
 
 async function deferClaimedJob(
   writeDb: Db,
   job: DownloadJob,
+  error: DownloadJobError | undefined,
   signal: AbortSignal,
 ): Promise<void> {
   const [current] = await writeDb
@@ -854,7 +931,7 @@ async function deferClaimedJob(
     .update(socialKitDownloadJobs)
     .set({
       status: billed ? "artifact_failed" : "processing",
-      error: {
+      error: error ?? {
         code: billed
           ? "ARTIFACT_MATERIALIZATION_FAILED"
           : "SOCIALKIT_RECONCILIATION_FAILED",
@@ -863,7 +940,7 @@ async function deferClaimedJob(
           : "The SocialKit download could not be reconciled yet",
       },
       retryCount: sql`${socialKitDownloadJobs.retryCount} + 1`,
-      claimExpiresAt: sql`now() + LEAST(30, ${socialKitDownloadJobs.retryCount} + 1) * interval '1 minute'`,
+      claimExpiresAt: sql`now() + GREATEST(LEAST(30, ${socialKitDownloadJobs.retryCount} + 1) * 60, ${error?.retryAfterSeconds ?? 0}) * interval '1 second'`,
       updatedAt: nowDate(),
     })
     .where(
@@ -880,7 +957,10 @@ async function startAndPersistProviderJob(
   created: DownloadJob,
   accessKey: string,
   request: SocialKitDownloadRequest,
-): Promise<DownloadJob | null> {
+): Promise<
+  | { readonly job: DownloadJob }
+  | { readonly failure: SocialKitDownloadErrorResponse }
+> {
   const started = await settleIncludingAbort(
     startProviderJob(
       accessKey,
@@ -889,19 +969,40 @@ async function startAndPersistProviderJob(
     ),
   );
   if (!started.ok) {
+    const normalized =
+      started.error instanceof ProviderRequestError
+        ? started.error.normalized
+        : undefined;
+    const failure: SocialKitDownloadErrorResponse = normalized
+      ? { status: normalized.status, body: { error: normalized.error } }
+      : {
+          status: 502,
+          body: {
+            error: {
+              code: "SOCIALKIT_DOWNLOAD_START_FAILED",
+              message: "SocialKit could not start the download",
+              retryable: false,
+            },
+          },
+        };
     await writeDb
       .update(socialKitDownloadJobs)
       .set({
         status: "provider_failed",
         error: {
-          code: "SOCIALKIT_DOWNLOAD_START_FAILED",
-          message: "SocialKit could not start the download",
+          ...failure.body.error,
+          ...(normalized
+            ? {
+                provider: normalized.evidence,
+                resubmitRetryable: normalized.error.retryable,
+              }
+            : {}),
         },
         updatedAt: nowDate(),
         completedAt: nowDate(),
       })
       .where(eq(socialKitDownloadJobs.id, created.id));
-    return null;
+    return { failure };
   }
 
   const [processing] = await writeDb
@@ -921,7 +1022,7 @@ async function startAndPersistProviderJob(
   if (!processing) {
     throw new Error("Failed to persist SocialKit provider job");
   }
-  return processing;
+  return { job: processing };
 }
 
 export const createSocialKitDownload$ = command(
@@ -948,7 +1049,9 @@ export const createSocialKitDownload$ = command(
           kind: "social",
           provider: "socialkit",
           category: MANAGED_SOCIALKIT_BILLING_CATEGORY,
-          quantity: Math.max(1, Math.ceil(args.body.maxDuration / 60)),
+          quantity:
+            Math.ceil(args.body.maxDuration / 60) *
+            providerCreditsPerMinute(args.body),
         },
         label: "Okou SocialKit download",
       },
@@ -986,15 +1089,11 @@ export const createSocialKitDownload$ = command(
       args.body,
     );
     signal.throwIfAborted();
-    if (!processing) {
-      return errorResponse(
-        502,
-        "SocialKit could not start the download",
-        "SOCIALKIT_DOWNLOAD_START_FAILED",
-      );
+    if ("failure" in processing) {
+      return processing.failure;
     }
 
-    return { status: 202, body: responseForJob(processing) };
+    return { status: 202, body: responseForJob(processing.job) };
   },
 );
 
@@ -1021,6 +1120,78 @@ export const getSocialKitDownload$ = command(
       );
     signal.throwIfAborted();
     return job ? responseForJob(job) : null;
+  },
+);
+
+export const listSocialKitDownloads$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly query: SocialKitDownloadListQuery;
+    },
+    signal: AbortSignal,
+  ): Promise<SocialKitDownloadListResponse> => {
+    const db = set(writeDb$);
+    const { limit, cursor, status } = args.query;
+    const anchor = alias(socialKitDownloadJobs, "download_cursor");
+    const rows = await db
+      .select()
+      .from(socialKitDownloadJobs)
+      .where(
+        and(
+          eq(socialKitDownloadJobs.orgId, args.orgId),
+          eq(socialKitDownloadJobs.userId, args.userId),
+          status === "active"
+            ? inArray(socialKitDownloadJobs.status, [
+                "submitting",
+                ...ACTIVE_STATUSES,
+              ])
+            : status === undefined
+              ? undefined
+              : eq(
+                  socialKitDownloadJobs.status,
+                  status === "queued" ? "submitting" : status,
+                ),
+          cursor === undefined
+            ? undefined
+            : lt(
+                sql`(${socialKitDownloadJobs.createdAt}, ${socialKitDownloadJobs.id})`,
+                db
+                  .select({ createdAt: anchor.createdAt, id: anchor.id })
+                  .from(anchor)
+                  .where(
+                    and(
+                      eq(anchor.id, cursor),
+                      eq(anchor.orgId, args.orgId),
+                      eq(anchor.userId, args.userId),
+                    ),
+                  ),
+              ),
+        ),
+      )
+      .orderBy(
+        desc(socialKitDownloadJobs.createdAt),
+        desc(socialKitDownloadJobs.id),
+      )
+      .limit(limit + 1);
+    signal.throwIfAborted();
+    const page = rows.slice(0, limit);
+    const last = page.at(-1);
+    return {
+      downloads: page.map((job) => {
+        return {
+          ...responseForJob(job),
+          request: job.request,
+          resumeCommand:
+            job.status === "provider_failed"
+              ? null
+              : `okou social download --resume ${job.id}`,
+        };
+      }),
+      nextCursor: rows.length > limit && last ? last.id : null,
+    };
   },
 );
 
@@ -1071,6 +1242,8 @@ function safeProviderResult(ready: ProviderReady) {
     durationSeconds: ready.durationSeconds,
     fileSizeMB: ready.fileSizeMB,
     creditsCost: ready.creditsCost,
+    quality: ready.quality,
+    format: ready.format,
     ...(typeof ready.title === "string" && ready.title.length <= 1000
       ? { title: ready.title }
       : {}),
@@ -1199,6 +1372,12 @@ interface StoredArtifactObject {
   readonly sizeBytes: number;
 }
 
+const DOWNLOAD_CONTENT_TYPES = {
+  mp4: "video/mp4",
+  m4a: "audio/mp4",
+  mp3: "audio/mpeg",
+} satisfies Record<SocialKitDownloadRequest["format"], string>;
+
 const materializeSocialKitArtifact$ = command(
   async (
     { set },
@@ -1217,8 +1396,7 @@ const materializeSocialKitArtifact$ = command(
       media?.extension ?? args.job.request.format,
     );
     const contentType =
-      media?.contentType ??
-      (args.job.request.format === "mp4" ? "video/mp4" : "audio/mp4");
+      media?.contentType ?? DOWNLOAD_CONTENT_TYPES[args.job.request.format];
     // The artifact key is derived from the sniffed extension, so the download
     // must already be open before an object stored by an earlier attempt can be
     // looked up. Every retry re-polls the provider and gets a fresh
@@ -1284,6 +1462,7 @@ const materializeSocialKitArtifact$ = command(
       filename,
       contentType,
       sizeBytes: stored.sizeBytes,
+      format: media?.extension ?? null,
     };
     await set(
       recordWebUploadedFile$,
@@ -1371,7 +1550,7 @@ async function recordProviderFailure(
   error: DownloadJobError,
 ): Promise<void> {
   if (job.creditsCharged !== null) {
-    await deferClaimedJob(writeDb, job, signal);
+    await deferClaimedJob(writeDb, job, undefined, signal);
     return;
   }
   await writeDb
@@ -1415,13 +1594,14 @@ export const reconcileSocialKitDownload$ = command(
           deferClaimedJob(
             writeDb,
             job,
+            undefined,
             AbortSignal.timeout(CLAIM_CLEANUP_TIMEOUT_MS),
           ),
         );
       }
       signal.throwIfAborted();
       if (!recovered.ok) {
-        await deferClaimedJob(writeDb, job, signal);
+        await deferClaimedJob(writeDb, job, undefined, signal);
         signal.throwIfAborted();
         return true;
       }
@@ -1434,14 +1614,21 @@ export const reconcileSocialKitDownload$ = command(
         );
         signal.throwIfAborted();
         if (!poll.ok) {
-          await deferClaimedJob(writeDb, job, signal);
+          await deferClaimedJob(
+            writeDb,
+            job,
+            poll.error instanceof ProviderRequestError
+              ? poll.error.details
+              : undefined,
+            signal,
+          );
           return true;
         }
         if (poll.value.status === "processing") {
           if (job.creditsCharged === null) {
             await recordProcessingPoll(writeDb, job);
           } else {
-            await deferClaimedJob(writeDb, job, signal);
+            await deferClaimedJob(writeDb, job, undefined, signal);
           }
           signal.throwIfAborted();
           return true;
@@ -1485,7 +1672,7 @@ export const reconcileSocialKitDownload$ = command(
         );
         signal.throwIfAborted();
         if (!completed.ok) {
-          await deferClaimedJob(writeDb, job, signal);
+          await deferClaimedJob(writeDb, job, undefined, signal);
           return true;
         }
         return true;
@@ -1498,6 +1685,7 @@ export const reconcileSocialKitDownload$ = command(
           deferClaimedJob(
             writeDb,
             job,
+            undefined,
             AbortSignal.timeout(CLAIM_CLEANUP_TIMEOUT_MS),
           ),
         );

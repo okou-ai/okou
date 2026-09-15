@@ -19,7 +19,6 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import { settle } from "../utils";
 import { env } from "../../lib/env";
-import { PRIVATE_ARTIFACT_PREVIEW_TTL_SECONDS } from "../../lib/private-artifact-preview";
 import { db$, writeDb$ } from "../external/db";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import {
@@ -576,7 +575,6 @@ export const resolveArtifactShare$ = command(
     }
     const preview = await get(
       generateArtifactPreviewUrl(file.bucket, policy.target.key, {
-        expiresIn: PRIVATE_ARTIFACT_PREVIEW_TTL_SECONDS,
         signingDate: nowDate(),
         filename: file.filename,
       }),

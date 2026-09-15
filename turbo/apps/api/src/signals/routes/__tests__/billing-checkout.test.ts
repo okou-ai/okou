@@ -3849,6 +3849,10 @@ describe("POST /api/billing/usage-pack-checkout", () => {
       ).toISOString(),
     });
 
+    context.mocks.stripe.subscriptions.list.mockResolvedValue({
+      data: [],
+      has_more: false,
+    });
     await reconcileBillingOrganization(fixture.orgId);
 
     const state = await readUsagePackState(
@@ -3866,6 +3870,54 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     expect(
       context.mocks.stripe.checkout.sessions.retrieve,
     ).not.toHaveBeenCalled();
+
+    authenticateOrg(fixture);
+    mockClerkOrganization(fixture);
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          {
+            role: "org:admin",
+            publicUserData: { userId: fixture.userId },
+            createdAt: now(),
+          },
+        ],
+      },
+    );
+    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+      { data: [] },
+    );
+    mockStatefulUsagePackCheckoutSessions();
+    const replacement = await accept(
+      setupApp({ context, routes: billingCheckoutRoutes })(
+        billingUsagePackCheckoutContract,
+      ).create({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          tier: "pro",
+          memberUsagePacks: [{ memberId: fixture.userId, usagePackUsd: 20 }],
+          successUrl: `${APP_ORIGIN}/billing?billing=success`,
+          cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+        },
+      }),
+      [200],
+    );
+    expect(replacement.body).toHaveProperty("url");
+    const [created] = context.mocks.stripe.checkout.sessions.create.mock.calls;
+    const replacementId = created
+      ? stripeInputMetadata(created[0]).usagePackSubscriptionId
+      : undefined;
+    if (!replacementId) {
+      throw new Error("Expected a replacement usage pack purchase");
+    }
+    expect(replacementId).not.toBe(usagePackSubscriptionId);
+    await usagePackStateAction({
+      action: "cleanup",
+      orgId: fixture.orgId,
+      usagePackSubscriptionId: replacementId,
+      deleteGrants: false,
+      deleteOrgMetadata: false,
+    });
   });
 
   it("rechecks a stale snapshot after waiting for a concurrent Checkout writer", async () => {

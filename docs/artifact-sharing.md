@@ -20,9 +20,10 @@ or reshare.
   `APP_URL` in other environments). The app uses existing login with a same-origin
   return path, then calls the API with its session. The API checks the grant and
   current membership of the **original organization**, even when another org is
-  active. Success navigates directly to the signed file or isolated HTML; this
-  route adds no viewer or wrapper iframe. Denial shows only an unavailable
-  message. The app handoff and API response are private/no-store and no-referrer.
+  active. With `artifactViewer` enabled, success opens the standalone Okou
+  viewer; otherwise it navigates directly to the signed file or isolated HTML.
+  Denial shows an unavailable message without artifact metadata or content.
+  The app response and API response are private/no-store and no-referrer.
 - Public: `https://sh-<compactShareId>-<publicationToken>.okou.app/`, using the
   configured branded hosted domain. Anonymous requests go through the host
   Worker and never require an API or primary database round trip.
@@ -39,6 +40,24 @@ not-yet-shared version explicitly updates the selected version and copies the
 link; the organization link stays stable. Repeating the action for the already
 shared version only copies that link.
 CLI/model URLs continue to be stable authenticated API references.
+
+## Standalone artifact viewer
+
+The `artifactViewer` switch (staff organizations by default) applies to
+`/artifacts/<compact-reference>[.<extension>]` and the legacy
+`/share/artifacts/<shareId>` route. Both retain the existing login and resolver
+authorization. The viewer reuses the lightbox's media and document previews,
+image zoom controls, and download action in a full-page canvas with the shared
+thread page's brand header.
+
+The viewer's **Share** button directly copies the current app URL and reports
+clipboard success or failure. It never creates a grant, changes an audience,
+publishes content, or copies the temporary preview credential. Download resolves
+the canonical reference again and saves the original filename. HTML remains in
+the isolated preview origin inside a sandboxed iframe; URL fragments, including
+slide and PDF page positions, are retained. **Continue with Okou** opens a new
+chat with the canonical artifact link as its prompt, without importing the
+source thread.
 
 ## Storage authority and immutable bytes
 
@@ -127,10 +146,24 @@ all-cookie-blocked browser behavior require the corresponding dev deployment.
 
 Retain follow-ups for private snapshot/expired-grant retention and lifecycle
 cleanup, direct connector outputs, arbitrary hosted-asset ingestion by providers,
-and the remaining derivative/consumer audit from #32492. Shared-thread consumers
-keep their existing independent artifact authorization; sharing a thread does
-not publish its private attachments. This change adds no organization-recipient
+and the remaining derivative/consumer audit from #32492. Sharing selected user
+messages copies their attached files into immutable public objects under
+`artifacts/shared-threads/<shareId>/`. The snapshot stores their filenames,
+content types, sizes and public URLs; annotated images publish their rendered
+annotation copy. Every source is resolved for the sharing owner and original
+organization before publication. Copy or registration failures reject creation;
+there is no partial snapshot, retry or failed-copy reclamation. The source
+artifact's access policy is unchanged. Other artifact references in shared-thread
+content retain their independent authorization. This change adds no organization-recipient
 Drive export or editing authority.
+
+Shared-thread attachment metadata is stored in `shared_threads.message_attachments`,
+keyed by the snapshot's message index. The existing `messages` JSON keeps its
+previous strict shape, so old API readers can still serve the text. The additive
+column defaults to an empty object for historical shares and old writers; no
+attachment backfill or cleanup phase is required. The current API combines these
+columns into the optional `messages[].attachments` response field. Apply the
+migration before promoting that API through the normal release workflow.
 
 ## Local verification for slice 4
 

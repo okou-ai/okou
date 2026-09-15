@@ -3,6 +3,7 @@ import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agen
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { and, inArray, type SQL } from "drizzle-orm";
 
+import { cleanupDisconnectedPersonalModelProviderAccounts } from "./model-provider-account.service";
 import type { Tx } from "../../lib/db-types";
 
 type TerminalRunStatus = Extract<
@@ -54,6 +55,7 @@ export async function transitionAgentRunsToTerminal(
       orgId: agentRuns.orgId,
       userId: agentRuns.userId,
       runnerGroup: agentRuns.runnerGroup,
+      modelProviderId: agentRuns.modelProviderId,
     });
   if (transitioned.length === 0) {
     return transitioned;
@@ -66,5 +68,6 @@ export async function transitionAgentRunsToTerminal(
       }),
     ),
   );
+  await cleanupDisconnectedPersonalModelProviderAccounts(tx, transitioned);
   return transitioned;
 }

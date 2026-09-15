@@ -69,15 +69,28 @@ WITH relations AS MATERIALIZED (
     oid, first_block, least(first_block + 128, blocks), nspname, relname,
     format('(%s,0)', first_block), format('(%s,0)', least(first_block + 128, blocks))
   ) FROM relations CROSS JOIN LATERAL generate_series(0, blocks - 1, 128) AS first_block
-)
+), batches AS (
 -- Send at most 64 chunks together instead of waiting for a network round trip
 -- per chunk. PostgreSQL 14+ applies statement_timeout to each statement in a
 -- simple-query message; every chunk still emits its own progress and result.
 -- Keep each table plan separate and before its contiguous chunk batches.
-SELECT string_agg(command, E'\n' ORDER BY first_block)
+SELECT oid, min(first_block) AS first_block,
+  string_agg(command, E'\n' ORDER BY first_block) AS command
 FROM commands
 GROUP BY oid, CASE WHEN first_block < 0 THEN -1 ELSE first_block / (128 * 64) END
-ORDER BY oid, min(first_block)
+)
+-- A separate request exposes the batch being started before PostgreSQL buffers
+-- results from its statements. The client line-flushes this aggregate marker.
+SELECT command FROM (
+  SELECT oid, first_block, 1 AS stage, command FROM batches
+  UNION ALL
+  SELECT b.oid, b.first_block, 0, format(
+    'SELECT json_build_object(''kind'', ''batch-start'', ''relationOid'', %s,
+      ''firstBlock'', %s, ''endBlock'', %s, ''startedAt'', clock_timestamp());',
+    b.oid, b.first_block, least(b.first_block + 128 * 64, r.blocks)
+  ) FROM batches b JOIN relations r USING (oid) WHERE b.first_block >= 0
+) ordered_commands
+ORDER BY oid, first_block, stage
 \gexec
 
 -- Binary values may hide encodings that row_to_json renders as hex. Their

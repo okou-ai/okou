@@ -1,24 +1,18 @@
 import { withChatScrollLayout } from "./chat-scroll-layout.tsx";
-import { CopyButton } from "@okouai/ui";
 import { useLoadable, useSet } from "ccstate-react";
 import { Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type { MermaidDiagramSignals } from "../../signals/mermaid-diagram.ts";
 import { openImageLightbox$ } from "../../signals/okou-page/attachment-chips.ts";
+import { CodeBlockCopyButton } from "./code-block-copy-button.tsx";
 import { IconTooltipButton } from "./icon-tooltip.tsx";
 
 function MermaidCodeBlock({ signals }: { signals: MermaidDiagramSignals }) {
   return (
     <pre>
-      <code className="language-mermaid">{signals.code}</code>
-      <CopyButton
-        type="button"
-        text={signals.code}
-        showTooltip={false}
-        className="copied"
-        data-code={signals.code}
-      />
+      <code>{signals.code}</code>
+      <CodeBlockCopyButton code={signals.code} />
     </pre>
   );
 }
@@ -28,10 +22,13 @@ function MermaidCodeBlock({ signals }: { signals: MermaidDiagramSignals }) {
  *
  * A fence has exactly two presentations: a diagram when the mermaid parser
  * accepts the source, and an ordinary code block when it does not — the same
- * markup any other fence renders as, copy button included. While the diagram
- * is rendering, a box whose size is reserved up front holds its place, so the
- * render cannot move the thread under a reader. The SVG is letterboxed inside
- * that box and opens at full size in the lightbox.
+ * `pre`/`code` shape any other fence renders as, copy button included. That
+ * block carries no `language-` class: the one the Markdown pipeline puts on a
+ * fence is Prism's highlighting hook, and Prism has no mermaid grammar, so the
+ * class selects nothing here or there. While the diagram is rendering, a box
+ * whose size is reserved up front holds its place, so the render cannot move
+ * the thread under a reader. The SVG is letterboxed inside that box and opens
+ * at full size in the lightbox.
  */
 export function MermaidDiagramView({
   signals,

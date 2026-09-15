@@ -477,7 +477,7 @@ const startNewChatThreadCreate$ = command(
           eventId,
           modelSelection,
           reasoningEffortEnabled:
-            featureSwitches[FeatureSwitchKey.ChatReasoningEffort] ?? false,
+            featureSwitches[FeatureSwitchKey.RefactorModelSelect] ?? false,
         },
         signal,
       );
@@ -608,7 +608,7 @@ const sendNewThreadMessage$ = command(
         eventId: chatThreadEventId,
         modelSelection: resolvedModelSelection,
         reasoningEffortEnabled:
-          features[FeatureSwitchKey.ChatReasoningEffort] ?? false,
+          features[FeatureSwitchKey.RefactorModelSelect] ?? false,
         imageModel,
         videoModel,
         connectorSelections: request.connectorSelections,

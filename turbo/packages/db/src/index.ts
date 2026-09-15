@@ -1,3 +1,4 @@
+import * as accountErasureSchema from "./schema/account-erasure";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
 import * as runActivitySnapshotSchema from "./schema/run-activity-snapshot";
 import * as artifactShareSchema from "./schema/artifact-share";
@@ -142,8 +143,10 @@ import * as piMemoryPublicationProvenanceSchema from "./schema/pi-memory-publica
 import * as sshConnectionSchema from "./schema/ssh-connection";
 import * as sshCredentialSchema from "./schema/ssh-credential";
 import * as agentSshAccessSchema from "./schema/agent-ssh-access";
+import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config";
 
 export const schema = {
+  ...accountErasureSchema,
   ...runActivitySnapshotSchema,
   ...userSchema,
   ...privacyChoiceSchema,
@@ -288,6 +291,7 @@ export const schema = {
   ...sshConnectionSchema,
   ...sshCredentialSchema,
   ...agentSshAccessSchema,
+  ...cloudflareAccessConfigSchema,
 };
 
 export type DatabaseSchema = typeof schema;

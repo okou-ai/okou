@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.90.2](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.1...guest-agent-v0.90.2) (2026-09-15)
+
+## [0.90.1](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.90.0...guest-agent-v0.90.1) (2026-09-14)
+
+
+### Refactoring
+
+* use two-day presigned urls without renewal or retries ([#34149](https://github.com/vm0-ai/vm0/issues/34149)) ([a876fd2](https://github.com/vm0-ai/vm0/commit/a876fd28cd0a0fade04aa12fff33614ff156ba9b))
+
+## [0.90.0](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.10...guest-agent-v0.90.0) (2026-09-14)
+
+
+### Features
+
+* **pi:** add gated langfuse tracing ([#33756](https://github.com/vm0-ai/vm0/issues/33756)) ([5f5f9f3](https://github.com/vm0-ai/vm0/commit/5f5f9f3434f7770b0db8b8ccd7d94c9f37282160))
+
+## [0.89.10](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.9...guest-agent-v0.89.10) (2026-09-14)
+
+## [0.89.9](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.8...guest-agent-v0.89.9) (2026-09-14)
+
+
+### Bug Fixes
+
+* keep citation text private after short fence runs ([#33970](https://github.com/vm0-ai/vm0/issues/33970)) ([5781768](https://github.com/vm0-ai/vm0/commit/578176828ff6728a6febbd880a4dbf21e03e5188))
+
+
+### Performance Improvements
+
+* **guest-agent:** bound cascading json key masking ([#33942](https://github.com/vm0-ai/vm0/issues/33942)) ([abd1dc5](https://github.com/vm0-ai/vm0/commit/abd1dc5e8601481b46038688f959ae1f44e78658))
+
 ## [0.89.8](https://github.com/vm0-ai/vm0/compare/guest-agent-v0.89.7...guest-agent-v0.89.8) (2026-09-14)
 
 

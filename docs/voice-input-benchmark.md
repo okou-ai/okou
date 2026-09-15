@@ -1,18 +1,17 @@
 # Voice input v2 model benchmark
 
 Use one deployed PR App/API commit, one ordinary test organization, and a fixed
-audio corpus. Enable `voiceInputV2` and `_debug` at `/_/lab`, then choose **Voice
+audio corpus. Enable `_debug` at `/_/lab`, then choose **Voice
 input model** in **Settings → Debug**. The selection is a per-member preference
 scoped to the current organization. An unset preference or **Default** uses
 Gemini 3.1 Flash-Lite (`google/gemini-3.1-flash-lite`); choosing **Default** clears
 the saved preference. Changing the Debug switch only controls access to the
 settings and timing diagnostics; a saved model preference remains effective.
 
-Lab overrides already apply to every registered switch. The voice transcription
-and polish endpoints now honor those overrides without an additional staff-org
-check. Registry staff audiences still determine initial rollout defaults. The
-separate staff authorization for cancelling global model-provider cooldowns is
-an operational permission, not a feature-switch prerequisite.
+Voice transcription and polish are available to all signed-in users in an
+organization, subject to the existing audio-input quota. The separate staff
+authorization for cancelling global model-provider cooldowns is an operational
+permission, not a voice-input prerequisite.
 
 ## Model paths
 
@@ -85,7 +84,7 @@ agent-browser --session voice-benchmark --executable-path /usr/bin/chromium \
 ```
 
 Use the App/API origins from the deployment checks. Complete test sign-in and
-onboarding, set both Lab switches, and verify the selected model survives a
+onboarding, enable the Debug switch, and verify the selected model survives a
 reload. Drive the real record and stop controls. Capture microphone activation,
 the recording stop action, outgoing audio, response, and editable composer text.
 Use a known leading silence interval and align replay to capture readiness so

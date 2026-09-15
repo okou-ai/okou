@@ -626,31 +626,10 @@ both.
 
 ## Mic motion batch
 
-`mic-motion-cases.json` and `run-mic-motion.ts` cover the composer microphone
-button on the real deployed `/chats/:threadId` page in Light/Dark at device
-scale factor 1 and 2. Run `pnpm style:migration:mic-motion` from `e2e`,
-supplying App/API origins, their full build SHAs, the source SHA, private Clerk
-TEST storage state, an output directory and an optional frozen `--baseline`
-directory. When an immutable App or API deployment needs its original PR alias
-for Clerk or CORS, pass that alias as `--app-url` / `--api-url` and pin the
-immutable deployments with `--app-artifact-url` / `--api-artifact-url`; both
-identities are retained in the manifest.
-
-The fixture controls only external API/bootstrap and browser-media boundaries.
-It keeps the deployed Router, production voice commands, component branches and
-CSS intact; it performs no Agent run, purchase or real transcription. Each case
-checks starting and transcribing spinners at 0/175/350/525 ms, the recording
-meter at the four production levels (0/33/67/100%), and unpaused animation
-progress for both spinner states. Full-page captures have no masks and reuse the
-existing `channel-rounding-v1` pixel bounds. The archive excludes private
-storage state and records browser, fixture, runner, source and deployment
-identities.
-
-Capture and upload an unmigrated-target BEFORE/A-A pair before accepting the
-consumer migration, then replay the frozen pair against the final PR
-deployment. Record the archive URL and SHA-256 in the PR and migration
-manifest. A pinned phase proves appearance at that phase; only the separate
-unpaused observation proves the normal-motion contract.
+The legacy microphone meter and its visual replay harness were retired when
+voice input rolled out to all users. Recording and transcription now use the
+voice draft tray. The acceptance record below preserves the completed CSS
+migration evidence for the former microphone UI.
 
 ### Mic motion acceptance record (#33345)
 
@@ -736,3 +715,57 @@ in this composition and were kept only because the retired rule declared them.
 This is bounded local Chromium evidence against a reconstructed ancestor chain,
 not a deployed-preview capture: it does not certify the Base UI scroll area's
 own DOM, WebKit, native surfaces, or real navigation and virtualization.
+
+## Onboarding workflow diagram family
+
+The `owf-diagram-*` classes are now their own family, `onboarding-diagram`
+(phase 8), instead of sitting inside `motion-and-injection`. Only the travelling
+beam is motion; the other 24 classes are the geometry, positioning and surfaces
+of a fixed-coordinate illustration, so the motion family's replacement contract
+did not describe them and neither did its phase. The family is the largest
+remaining block of debt: 242 of the 324 declarations left in
+`apps/platform/src/views/css/index.css`, 25 of the 39 remaining legacy tokens,
+25 class references in `views/onboarding/onboarding-workflow-diagram.tsx`, and
+two class queries in that view's `__tests__/onboarding-flow.test.tsx`.
+
+`owf-diagram-avatar` is a twenty-sixth class. Its three declarations are frozen
+in `cssAtoms`, but it is absent from `legacyClassTokens`, so its consumption is
+not counted, and it cannot be added: `prunedBaseline()` only filters that array
+and `baselineGrowthErrors()` rejects any token the reference baseline lacks. The
+family records it so the plan is complete; deleting the class is what closes the
+gap.
+
+Two batches split the family by whether a token participates in the border-width
+contract. `onboarding-diagram-canvas` holds the 13 tokens with no border of their
+own — the canvas, grid, connector lines, beam, vertical control, the three node
+positions and the action copy — for 150 declarations.
+`onboarding-diagram-tiles` holds the other 13 and is `blocked` on the decision
+recorded with it.
+
+The canvas batch drained 125 of its 150 declarations and 12 of its 13 tokens.
+`owf-diagram` stays, reduced to the 25 shared coordinate variables that the
+retained tile and dot rules read; its eleven geometry declarations and the four
+variables only the drained rules consumed are gone. The class remains on the
+element purely as the carrier for those variables, because a retained
+declaration cannot be rewritten to inline its value: the ratchet treats a
+changed `cssAtom` as both a removal and an addition, and additions are refused.
+The variables retire with their last readers in the tiles batch.
+
+Tokens that share a DOM element stay in the same batch. The legacy rules are
+unlayered, so a utility written on an element whose sibling class still exists
+would lose to that class: migrating `owf-diagram-avatar` while
+`.owf-diagram-icon-box` still declares `width: 56px` would shrink the box rather
+than resize it. That constraint, not the token's own declarations, is what puts
+the avatar modifier in the blocked batch.
+
+`onboarding-diagram-cases.json` covers the three geometry branches the component
+actually renders, each through the workflow-run preview dialog:
+`file-sentry-crashes-github` draws both nodes, the destination curve and a
+two-icon source stack; `sort-gmail-draft-replies` has one connector, so it draws
+a source with no destination; `track-keyword-ranks-ahrefs` has none, so it draws
+neither and the beam takes its third path. The dialog's open state lives in
+`onboardingUi$` rather than the URL, so these cases still need a runner that
+opens the preview. No runner ships here, so the canvas batch is `implemented`
+rather than `verified`, and the local equivalence evidence recorded with its
+pull request is bounded Chromium rendering of the two class lists, not a
+deployed-preview capture.

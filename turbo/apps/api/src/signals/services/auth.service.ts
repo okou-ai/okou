@@ -3,12 +3,30 @@ import { cliTokens } from "@okouai/db/schema/cli-tokens";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { and, eq, gt } from "drizzle-orm";
 
-import { clerk$ } from "../external/clerk";
+import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import { db$, writeDb$ } from "../external/db";
+import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import type { ApiOrgRole, CliAuth, CliTokenRecord } from "../../types/auth";
+import { settle } from "../utils";
+
+const L = logger("AuthService");
 
 const MEMBER_ROLE_CACHE_TTL_MS = 60_000;
+
+/**
+ * Outcome of an organization membership read.
+ *
+ * `not_member` keeps its long-standing meaning: the identity is valid but
+ * holds no role in this organization, which legitimately degrades to a
+ * user-only context. `identity_not_found` is a distinct outcome — Clerk no
+ * longer knows the user at all — so callers can fail closed instead of
+ * silently degrading a deleted identity into the `not_member` path.
+ */
+type MemberRoleResult =
+  | { readonly kind: "member"; readonly role: ApiOrgRole }
+  | { readonly kind: "not_member" }
+  | { readonly kind: "identity_not_found" };
 
 function mapClerkRole(role: string): ApiOrgRole {
   return role === "org:admin" ? "admin" : "member";
@@ -68,7 +86,7 @@ export const getMemberRoleAndUpdateCache$ = command(
     orgId: string,
     userId: string,
     signal: AbortSignal,
-  ): Promise<{ role: ApiOrgRole } | null> => {
+  ): Promise<MemberRoleResult> => {
     const db = get(db$);
     const [cached] = await db
       .select({
@@ -91,16 +109,44 @@ export const getMemberRoleAndUpdateCache$ = command(
       currentTime - cached.cachedAt.getTime() < MEMBER_ROLE_CACHE_TTL_MS
     ) {
       const role: ApiOrgRole = cached.role === "admin" ? "admin" : "member";
-      return { role };
+      return { kind: "member", role };
     }
 
-    const memberships = await get(clerk$).users.getOrganizationMembershipList(
-      { userId, limit: 100 },
-      undefined,
+    const read = await settle(
+      get(clerk$).users.getOrganizationMembershipList(
+        { userId, limit: 100 },
+        undefined,
+        signal,
+      ),
       signal,
     );
-    signal.throwIfAborted();
-    const membership = memberships.data.find((candidate) => {
+
+    if (!read.ok) {
+      // Allowlist, deliberately written as a negated guard: a missing Clerk
+      // identity is the only failure this boundary is allowed to convert into
+      // a controlled result. Exhausted provider reads, rate limits, database
+      // failures and every other error keep their existing path by
+      // construction, because authentication must never swallow an error it
+      // has not explicitly classified.
+      if (!isClerkResourceNotFound(read.error)) {
+        throw read.error;
+      }
+
+      // Drop the stale row so cached organization authority cannot outlive the
+      // identity any longer than the row that is being removed here.
+      if (cached) {
+        await set(deleteMemberRoleCache$, orgId, userId, signal);
+      }
+      // A handled, expected condition: debug is the level `api/no-logger-info`
+      // prescribes for a routine diagnostic. The record carries the stable
+      // type and no user, organization or Clerk trace identifier.
+      L.debug("Clerk identity no longer exists during membership read", {
+        type: "clerk_identity_not_found",
+      });
+      return { kind: "identity_not_found" };
+    }
+
+    const membership = read.value.data.find((candidate) => {
       return candidate.organization.id === orgId;
     });
 
@@ -110,12 +156,12 @@ export const getMemberRoleAndUpdateCache$ = command(
       if (cached) {
         await set(deleteMemberRoleCache$, orgId, userId, signal);
       }
-      return null;
+      return { kind: "not_member" };
     }
 
     const role = mapClerkRole(membership.role);
     await set(upsertMemberRoleCache$, orgId, userId, role, signal);
-    return { role };
+    return { kind: "member", role };
   },
 );
 

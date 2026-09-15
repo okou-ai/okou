@@ -7,6 +7,7 @@ import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agentSshAccess } from "@okouai/db/schema/agent-ssh-access";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
+import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { and, asc, eq } from "drizzle-orm";
 
 import type { Db, ReadonlyDb } from "../external/db";
@@ -96,12 +97,12 @@ export async function updateAgentSshAccess(
   return result;
 }
 
-export async function listRunSshHosts(
+function runSshHostRows(
   db: ReadonlyDb,
   owner: Owner & { readonly runId: string },
 ) {
   // A left join preserves the authorized empty inventory in the same snapshot.
-  const rows = await db
+  return db
     .select({
       id: sshConnections.id,
       displayName: sshConnections.displayName,
@@ -110,6 +111,8 @@ export async function listRunSshHosts(
       username: sshCredentials.username,
       algorithm: sshConnections.learnedHostKeyAlgorithm,
       fingerprint: sshConnections.learnedHostKeyFingerprint,
+      accessId: sshConnections.cloudflareAccessId,
+      accessConfigId: cloudflareAccessConfigs.id,
     })
     .from(agentRuns)
     .innerJoin(
@@ -151,6 +154,14 @@ export async function listRunSshHosts(
         eq(sshCredentials.userId, owner.userId),
       ),
     )
+    .leftJoin(
+      cloudflareAccessConfigs,
+      and(
+        eq(cloudflareAccessConfigs.id, sshConnections.cloudflareAccessId),
+        eq(cloudflareAccessConfigs.orgId, owner.orgId),
+        eq(cloudflareAccessConfigs.userId, owner.userId),
+      ),
+    )
     .where(
       and(
         eq(agentRuns.id, owner.runId),
@@ -160,13 +171,39 @@ export async function listRunSshHosts(
       ),
     )
     .orderBy(asc(sshConnections.displayName), asc(sshConnections.id));
+}
+
+export async function listRunSshHosts(
+  db: ReadonlyDb,
+  owner: Owner & { readonly runId: string },
+  signal: AbortSignal,
+) {
+  const rows = await runSshHostRows(db, owner);
   if (rows.length === 0) {
     return null;
   }
+  const hasProtectedHosts = rows.some((row) => {
+    return row.accessId !== null;
+  });
+  const accessEnabled =
+    hasProtectedHosts &&
+    isFeatureEnabled(
+      FeatureSwitchKey.CloudflareAccess,
+      await loadUserFeatureSwitchContext(db, owner.orgId, owner.userId),
+    );
+  signal.throwIfAborted();
   return {
     hosts: rows.flatMap((row) => {
       if (row.id === null) {
         return [];
+      }
+      if (row.accessId !== null) {
+        if (row.accessConfigId === null) {
+          throw new Error("SSH Cloudflare Access configuration is missing");
+        }
+        if (!accessEnabled) {
+          return [];
+        }
       }
       return [
         sshHostSchema.parse({

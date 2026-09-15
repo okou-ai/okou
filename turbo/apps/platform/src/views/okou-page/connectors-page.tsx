@@ -13,6 +13,7 @@ import { useTranslation } from "react-i18next";
 import { Search, Plus, Filter, ChevronDown, Check } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
+import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import type {
   PublicConnectorCatalogCategoryMetadata,
   PublicConnectorCatalogDiscoveryResponse,
@@ -21,7 +22,10 @@ import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { Tabs, TabsList, TabsTrigger } from "@okouai/ui/components/ui/tabs";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import {
+  customConnectorMcpEnabled$,
+  featureSwitch$,
+} from "../../signals/external/feature-switch.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import {
   connectorsPageTab$,
@@ -30,12 +34,18 @@ import {
 } from "../../signals/okou-page/settings/custom-connectors.ts";
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import { agents$ } from "../../signals/agent.ts";
-import { CustomConnectorsPanel } from "./components/settings/custom-connectors-panel.tsx";
-import { ConnectorsDirectoryContent } from "./connectors-directory-content.tsx";
+import {
+  CustomConnectorGrid,
+  CustomConnectorsPanel,
+} from "./components/settings/custom-connectors-panel.tsx";
+import { filteredDirectoryCustomConnectors$ } from "../../signals/okou-page/settings/connector-directory-custom.ts";
+import {
+  ConnectorsDirectoryContent,
+  NewCustomConnectorButton,
+} from "./connectors-directory-content.tsx";
 import {
   connectorDirectoryCustomScope$,
   connectorsScope$,
-  openConnectorDirectoryScope$,
   setConnectorsScope$,
   type ConnectorsScope,
 } from "../../signals/okou-page/settings/connector-directory-route.ts";
@@ -496,17 +506,71 @@ function ConnectorFilterDropdown({
 }
 
 interface ConnectorsScopeBadge {
-  readonly count: number;
+  readonly connected: number;
+  readonly custom: number;
   readonly needsAttention: boolean;
 }
 
-/** Before the summaries land the segment says nothing rather than zero. */
+/** How many SSH hosts this workspace has, which is zero until it has any. */
+function configuredSshHosts(
+  summary: Loadable<{ configuredCount: number } | null>,
+): number {
+  return sshSummaryData(summary)?.configuredCount ?? 0;
+}
+
+/** The custom connectors the page needs: all of them, and the connected ones. */
+function directoryCustomConnectors(
+  loadable: Loadable<readonly CustomConnectorResponse[]>,
+): {
+  readonly all: readonly CustomConnectorResponse[];
+  readonly connected: readonly CustomConnectorResponse[];
+} {
+  const all = loadable.state === "hasData" ? loadable.data : [];
+  return {
+    all,
+    connected: all.filter((connector) => {
+      return connector.connected;
+    }),
+  };
+}
+
+/**
+ * Before the summaries land the segment says nothing rather than a zero it
+ * would have to take back.
+ */
 function connectorsScopeBadge(
-  loadable: Loadable<ConnectorsScopeBadge>,
+  loadable: Loadable<{
+    readonly count: number;
+    readonly needsAttention: boolean;
+  }>,
+  custom: number,
 ): ConnectorsScopeBadge {
-  return loadable.state === "hasData"
-    ? loadable.data
-    : { count: 0, needsAttention: false };
+  const connected =
+    loadable.state === "hasData"
+      ? loadable.data
+      : { count: 0, needsAttention: false };
+  return {
+    connected: connected.count,
+    custom,
+    needsAttention: connected.needsAttention,
+  };
+}
+
+/**
+ * What a segment says about the list behind it. A count that has not arrived
+ * shows nothing rather than a zero it would have to take back.
+ */
+function ConnectorsScopeCount({ value }: { readonly value: number }) {
+  if (value <= 0) {
+    return null;
+  }
+  // The count pairs its own line height: an arbitrary font size carries none,
+  // and the segment must not take its box from an ancestor.
+  return (
+    <span className="text-[11px]/4 tabular-nums text-muted-foreground/70">
+      {formatLocalizedNumber(value)}
+    </span>
+  );
 }
 
 /**
@@ -533,12 +597,18 @@ function ConnectorsScopeSegment({
       value={scope}
       onValueChange={setScope}
     >
-      <SegmentControlItem value="discover">
+      <SegmentControlItem
+        value="discover"
+        data-testid="connectors-scope-discover"
+      >
         {t(($) => {
           return $.connectors.catalog.scope.discover;
         })}
       </SegmentControlItem>
-      <SegmentControlItem value="mine" data-testid="connectors-scope-mine">
+      <SegmentControlItem
+        value="connected"
+        data-testid="connectors-scope-connected"
+      >
         {badge.needsAttention && (
           <span
             data-testid="connectors-scope-attention"
@@ -549,15 +619,15 @@ function ConnectorsScopeSegment({
           />
         )}
         {t(($) => {
-          return $.connectors.catalog.scope.mine;
+          return $.connectors.catalog.scope.connected;
         })}
-        {badge.count > 0 && (
-          // The count pairs its own line height: an arbitrary font size carries
-          // none, and the segment must not take its box from an ancestor.
-          <span className="text-[11px]/4 tabular-nums text-muted-foreground/70">
-            {formatLocalizedNumber(badge.count)}
-          </span>
-        )}
+        <ConnectorsScopeCount value={badge.connected} />
+      </SegmentControlItem>
+      <SegmentControlItem value="custom" data-testid="connectors-scope-custom">
+        {t(($) => {
+          return $.connectors.catalog.scope.custom;
+        })}
+        <ConnectorsScopeCount value={badge.custom} />
       </SegmentControlItem>
     </SegmentControl>
   );
@@ -727,6 +797,7 @@ function ConnectorsDirectoryToolbar({
   scope,
   setScope,
   badge,
+  isAdmin,
   agents,
   connectionFilter,
   setConnectionFilter,
@@ -740,6 +811,7 @@ function ConnectorsDirectoryToolbar({
   readonly scope: ConnectorsScope;
   readonly setScope: (value: ConnectorsScope) => void;
   readonly badge: ConnectorsScopeBadge;
+  readonly isAdmin: boolean;
   readonly agents: readonly AgentResponse[];
   readonly connectionFilter: ConnectorsConnectionFilter;
   readonly setConnectionFilter: (value: ConnectorsConnectionFilter) => void;
@@ -752,170 +824,175 @@ function ConnectorsDirectoryToolbar({
 }) {
   const { t } = useTranslation();
   const customScope = useGet(connectorDirectoryCustomScope$);
-  const openScope = useSet(openConnectorDirectoryScope$);
   const active = categories.find((section) => {
     return section.category === categoryFilter;
   });
-  const breadcrumb = customScope
-    ? t(($) => {
-        return $.connectors.catalog.directory.custom;
-      })
-    : active?.label;
+  // Custom is a scope, and the segment above already names the open one. Only a
+  // category needs a trail, because a category is a place inside the catalog.
+  const breadcrumb = customScope ? undefined : active?.label;
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center">
-        <ConnectorsScopeSegment
-          scope={scope}
-          setScope={setScope}
-          badge={badge}
-        />
-      </div>
-      {breadcrumb && (
-        <ConnectorsBreadcrumb
-          label={breadcrumb}
-          onBack={() => {
-            setCategoryFilter(null);
-          }}
-        />
-      )}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="relative min-w-0 sm:flex-1">
-          <Search
-            size={15}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60"
-            aria-hidden="true"
-          />
-          <Input
-            type="text"
-            placeholder={t(($) => {
-              return scope === "mine"
-                ? $.connectors.catalog.scope.searchMine
-                : $.connectors.catalog.search;
-            })}
-            value={search}
-            onChange={(event) => {
-              return setSearch(event.target.value);
-            }}
-            className="pl-9 pr-3"
+    // The controls outlive the header: the title scrolls away and the scope and
+    // the search stay reachable. The negative margins hand back the page's own
+    // top padding and column gap so nothing moves until the page is scrolled,
+    // and the strip under the controls dissolves what passes beneath them
+    // rather than clipping it on a line.
+    // z-30 clears the cards: their access buttons carry `relative z-20` in the
+    // same stacking context, and on a tie the later element in the document
+    // wins, so a z-20 bar would have the card's button painted over it.
+    <div className="sticky top-0 z-30 -mb-6 -mt-3">
+      <div className="flex flex-col gap-3 bg-background pt-3">
+        <div className="flex items-center">
+          <ConnectorsScopeSegment
+            scope={scope}
+            setScope={setScope}
+            badge={badge}
           />
         </div>
-        {scope === "mine" ? (
-          <ConnectorAgentFilterMenu
-            agents={agents}
-            value={connectionFilter}
-            onChange={setConnectionFilter}
+        {breadcrumb && (
+          <ConnectorsBreadcrumb
+            label={breadcrumb}
+            onBack={() => {
+              setCategoryFilter(null);
+            }}
           />
-        ) : (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9 shrink-0 self-end gap-1.5"
-                aria-label={t(($) => {
-                  return $.connectors.catalog.filters.aria;
-                })}
+        )}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative min-w-0 sm:flex-1">
+            <Search
+              size={15}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60"
+              aria-hidden="true"
+            />
+            <Input
+              type="text"
+              placeholder={t(($) => {
+                return scope === "connected"
+                  ? $.connectors.catalog.scope.searchConnected
+                  : scope === "custom"
+                    ? $.connectors.catalog.scope.searchCustom
+                    : $.connectors.catalog.search;
+              })}
+              value={search}
+              onChange={(event) => {
+                return setSearch(event.target.value);
+              }}
+              className="pl-9 pr-3"
+            />
+          </div>
+          {scope === "connected" ? (
+            <ConnectorAgentFilterMenu
+              agents={agents}
+              value={connectionFilter}
+              onChange={setConnectionFilter}
+            />
+          ) : scope === "custom" ? (
+            isAdmin && <NewCustomConnectorButton />
+          ) : (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 shrink-0 self-end gap-1.5"
+                  aria-label={t(($) => {
+                    return $.connectors.catalog.filters.aria;
+                  })}
+                >
+                  <Filter size={14} aria-hidden="true" />
+                  <span className="max-w-[160px] truncate">
+                    {t(
+                      ($) => {
+                        return $.connectors.catalog.filterWith;
+                      },
+                      {
+                        category:
+                          (customScope
+                            ? t(($) => {
+                                return $.connectors.catalog.directory.custom;
+                              })
+                            : active?.menuLabel) ??
+                          t(($) => {
+                            return $.connectors.catalog.filters.all;
+                          }),
+                      },
+                    )}
+                  </span>
+                  <ChevronDown size={14} aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="max-h-[min(420px,var(--available-height))] w-64 overflow-y-auto"
               >
-                <Filter size={14} aria-hidden="true" />
-                <span className="max-w-[160px] truncate">
-                  {t(
-                    ($) => {
-                      return $.connectors.catalog.filterWith;
-                    },
-                    {
-                      category:
-                        (customScope
-                          ? t(($) => {
-                              return $.connectors.catalog.directory.custom;
-                            })
-                          : active?.menuLabel) ??
-                        t(($) => {
-                          return $.connectors.catalog.filters.all;
-                        }),
-                    },
-                  )}
-                </span>
-                <ChevronDown size={14} aria-hidden="true" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="max-h-[min(420px,var(--available-height))] w-64 overflow-y-auto"
-            >
-              <ConnectorFilterSectionLabel>
-                {t(($) => {
-                  return $.connectors.catalog.directory.browse;
-                })}
-              </ConnectorFilterSectionLabel>
-              <ConnectorFilterOption
-                active={!customScope && categoryFilter === null}
-                onSelect={() => {
-                  setCategoryFilter(null);
-                }}
-              >
-                {t(($) => {
-                  return $.connectors.catalog.filters.all;
-                })}
-              </ConnectorFilterOption>
-              <ConnectorFilterOption
-                active={customScope}
-                onSelect={() => {
-                  openScope({ kind: "custom" });
-                }}
-              >
-                {t(($) => {
-                  return $.connectors.catalog.directory.custom;
-                })}
-              </ConnectorFilterOption>
-              {categories.some((section) => {
-                return section.category === REMOTE_ACCESS_CATEGORY;
-              }) && (
+                <ConnectorFilterSectionLabel>
+                  {t(($) => {
+                    return $.connectors.catalog.directory.browse;
+                  })}
+                </ConnectorFilterSectionLabel>
                 <ConnectorFilterOption
-                  active={categoryFilter === REMOTE_ACCESS_CATEGORY}
+                  active={!customScope && categoryFilter === null}
                   onSelect={() => {
-                    setCategoryFilter(REMOTE_ACCESS_CATEGORY);
+                    setCategoryFilter(null);
                   }}
                 >
                   {t(($) => {
-                    return $.connectors.catalog.remoteAccess;
+                    return $.connectors.catalog.filters.all;
                   })}
                 </ConnectorFilterOption>
-              )}
-              <DropdownMenuSeparator />
-              <ConnectorFilterSectionLabel>
-                {t(($) => {
-                  return $.connectors.catalog.filterCategory;
-                })}
-              </ConnectorFilterSectionLabel>
-              {categories
-                .filter((section) => {
-                  return section.category !== REMOTE_ACCESS_CATEGORY;
-                })
-                .map((section) => {
-                  const total = categoryCounts?.[section.category];
-                  return (
-                    <ConnectorFilterOption
-                      key={section.category}
-                      active={categoryFilter === section.category}
-                      onSelect={() => {
-                        setCategoryFilter(section.category);
-                      }}
-                    >
-                      <span className="min-w-0 truncate">
-                        {section.menuLabel}
-                      </span>
-                      {total !== undefined && (
-                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground/70">
-                          {total}
+                {categories.some((section) => {
+                  return section.category === REMOTE_ACCESS_CATEGORY;
+                }) && (
+                  <ConnectorFilterOption
+                    active={categoryFilter === REMOTE_ACCESS_CATEGORY}
+                    onSelect={() => {
+                      setCategoryFilter(REMOTE_ACCESS_CATEGORY);
+                    }}
+                  >
+                    {t(($) => {
+                      return $.connectors.catalog.remoteAccess;
+                    })}
+                  </ConnectorFilterOption>
+                )}
+                <DropdownMenuSeparator />
+                <ConnectorFilterSectionLabel>
+                  {t(($) => {
+                    return $.connectors.catalog.filterCategory;
+                  })}
+                </ConnectorFilterSectionLabel>
+                {categories
+                  .filter((section) => {
+                    return section.category !== REMOTE_ACCESS_CATEGORY;
+                  })
+                  .map((section) => {
+                    const total = categoryCounts?.[section.category];
+                    return (
+                      <ConnectorFilterOption
+                        key={section.category}
+                        active={categoryFilter === section.category}
+                        onSelect={() => {
+                          setCategoryFilter(section.category);
+                        }}
+                      >
+                        <span className="min-w-0 truncate">
+                          {section.menuLabel}
                         </span>
-                      )}
-                    </ConnectorFilterOption>
-                  );
-                })}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+                        {total !== undefined && (
+                          <span className="shrink-0 text-xs tabular-nums text-muted-foreground/70">
+                            {total}
+                          </span>
+                        )}
+                      </ConnectorFilterOption>
+                    );
+                  })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
       </div>
+      <div
+        aria-hidden="true"
+        className="h-6 bg-gradient-to-b from-background to-transparent"
+      />
     </div>
   );
 }
@@ -1410,29 +1487,31 @@ function renderBuiltinList({
 }
 
 /**
- * Which list the page body shows. The directory has two scopes and the tabs it
- * replaces have two of their own, so the choice lives here rather than as three
- * nested conditionals inside the page.
+ * Which list the page body shows. The directory has three scopes and the tabs
+ * it replaces have two of their own, so the choice lives here rather than as
+ * nested conditionals inside the page. Custom needs no branch of its own: the
+ * directory content already renders that scope and nothing else when it is
+ * the one open.
  */
 function ConnectorsPagePanels({
   shelfEnabled,
   scope,
   activeTab,
   builtinPanel,
-  minePanel,
+  connectedPanel,
   directoryPanel,
 }: {
   readonly shelfEnabled: boolean;
   readonly scope: ConnectorsScope;
   readonly activeTab: "builtin" | "custom";
   readonly builtinPanel: ReactNode;
-  readonly minePanel: ReactNode;
+  readonly connectedPanel: ReactNode;
   readonly directoryPanel: ReactNode;
 }) {
   if (!shelfEnabled) {
     return activeTab === "custom" ? <CustomConnectorsPanel /> : builtinPanel;
   }
-  return scope === "mine" ? minePanel : directoryPanel;
+  return scope === "connected" ? connectedPanel : directoryPanel;
 }
 
 /** The card grid before the catalog answers. */
@@ -1480,15 +1559,18 @@ function ConnectorEmptyState({ message }: { readonly message: string }) {
 }
 
 /**
- * The connectors this workspace already has. It is a plain grid rather than a
- * shelf view: the list is short enough to read, and the only dimension that
- * organises it -- which agent uses it -- lives in the toolbar.
+ * Everything with an account: connected built-ins, connected custom connectors,
+ * and the SSH hosts. A plain grid rather than a shelf view -- the list is short
+ * enough to read, and the only dimension that organises it, which agent uses
+ * it, lives in the toolbar.
  */
-function ConnectorsMinePanel({
+function ConnectorsConnectedPanel({
   connected,
   ready,
   connectionFilter,
   renderCard,
+  extras,
+  extraCount,
 }: {
   readonly connected: readonly PlatformConnectorCatalogStatusItem[];
   readonly ready: boolean;
@@ -1496,12 +1578,14 @@ function ConnectorsMinePanel({
   readonly renderCard: (
     connector: PlatformConnectorCatalogStatusItem,
   ) => ReactNode;
+  readonly extras: ReactNode;
+  readonly extraCount: number;
 }) {
   const { t } = useTranslation();
   if (!ready) {
     return <ConnectorCardSkeletons />;
   }
-  if (connected.length === 0) {
+  if (connected.length + extraCount === 0) {
     return (
       <ConnectorEmptyState
         message={t(($) => {
@@ -1520,10 +1604,11 @@ function ConnectorsMinePanel({
   }
   return (
     <div
-      data-testid="connectors-mine-grid"
+      data-testid="connectors-connected-grid"
       className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
     >
       {connected.map(renderCard)}
+      {extras}
     </div>
   );
 }
@@ -1817,9 +1902,15 @@ export function ConnectorsPage() {
   const setCategoryFilter = useSet(setConnectorsCategoryFilter$);
   const scope = useGet(connectorsScope$);
   const setScope = useSet(setConnectorsScope$);
-  const scopeBadge = connectorsScopeBadge(
-    useLastLoadable(connectedConnectorsBadge$),
+  const connectedBadge = useLastLoadable(connectedConnectorsBadge$);
+  const custom = directoryCustomConnectors(
+    useLastLoadable(filteredDirectoryCustomConnectors$),
   );
+  const customMcpEnabled = useGet(customConnectorMcpEnabled$);
+  const scopeBadge = connectorsScopeBadge(connectedBadge, custom.all.length);
+  // SSH belongs to the connected scope once hosts exist; until then it is only
+  // a thing to discover, and the catalog already carries it.
+  const connectedSshCount = configuredSshHosts(filteredSshSummary);
   const agentsLoadable = useLastLoadable(agents$);
   const agents = agentsLoadable.state === "hasData" ? agentsLoadable.data : [];
 
@@ -2035,6 +2126,7 @@ export function ConnectorsPage() {
                 scope={scope}
                 setScope={setScope}
                 badge={scopeBadge}
+                isAdmin={isAdmin}
                 agents={agents}
                 connectionFilter={connectionFilter}
                 setConnectionFilter={setConnectionFilter}
@@ -2085,12 +2177,28 @@ export function ConnectorsPage() {
               scope={scope}
               activeTab={activeTab}
               builtinPanel={builtinPanel}
-              minePanel={
-                <ConnectorsMinePanel
+              connectedPanel={
+                <ConnectorsConnectedPanel
                   connected={browse.connected}
                   ready={browse.ready}
                   connectionFilter={connectionFilter}
                   renderCard={renderCard}
+                  extraCount={custom.connected.length + connectedSshCount}
+                  extras={
+                    <>
+                      {custom.connected.length > 0 && (
+                        <CustomConnectorGrid
+                          connectors={custom.connected}
+                          isAdmin={isAdmin}
+                          mcpEnabled={customMcpEnabled}
+                          className="contents"
+                        />
+                      )}
+                      {connectedSshCount > 0 && (
+                        <SshConnectorCard configuredCount={connectedSshCount} />
+                      )}
+                    </>
+                  }
                 />
               }
               directoryPanel={

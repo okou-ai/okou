@@ -18,10 +18,11 @@ def read_exact(connection, length):
 
 
 class PgQueryProxy:
-    def __init__(self, socket_directory, request_delay=0):
+    def __init__(self, socket_directory, request_delay=0, before_chunk_batch=None):
         self.chunk_counts = []
         self.query_count = 0
         self.request_delay = request_delay
+        self.before_chunk_batch = before_chunk_batch
         self.errors = []
         observer = self
 
@@ -64,6 +65,8 @@ class PgQueryProxy:
                                     count = payload.count(b"'table-chunk'")
                                     if count:
                                         observer.chunk_counts.append(count)
+                                        if observer.before_chunk_batch is not None:
+                                            observer.before_chunk_batch()
                                 if observer.request_delay:
                                     time.sleep(observer.request_delay)
                             backend.sendall(kind + size + payload)

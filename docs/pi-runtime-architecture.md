@@ -331,4 +331,5 @@ the CLI and configuration they captured. API rollback does not rewrite stored ef
 or history; this staff-only feature requires the updated API and CLI to honor changed
 effort on resume.
 The existing Pi model-config generations and Runner/Guest schemas are unchanged.
-`ChatReasoningEffort` and `PiLoop` retain their existing rollout gates.
+`RefactorModelSelect` gates model selection and reasoning effort; `PiLoop`
+retains its independent runtime rollout gate.

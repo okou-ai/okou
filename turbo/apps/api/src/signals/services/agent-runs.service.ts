@@ -41,6 +41,7 @@ import {
   zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { now } from "../../lib/time";
+import { readPiLangfuseServerConfig } from "../../lib/pi-langfuse-debug";
 import { db$, type Db } from "../external/db";
 import { activePendingRunPredicate } from "./agent-run-activity.service";
 import {
@@ -311,6 +312,7 @@ export function agentRunById(args: {
         createdAt: agentRuns.createdAt,
         startedAt: agentRuns.startedAt,
         completedAt: agentRuns.completedAt,
+        langfuseTraceEnabled: agentRuns.langfuseTraceEnabled,
       })
       .from(agentRuns)
       .where(
@@ -326,6 +328,9 @@ export function agentRunById(args: {
       return null;
     }
 
+    const langfuseConfig = run.langfuseTraceEnabled
+      ? readPiLangfuseServerConfig()
+      : undefined;
     return {
       runId: run.id,
       status: run.status as RunStatus,
@@ -342,6 +347,11 @@ export function agentRunById(args: {
       createdAt: run.createdAt.toISOString(),
       startedAt: run.startedAt?.toISOString(),
       completedAt: run.completedAt?.toISOString(),
+      ...(langfuseConfig
+        ? {
+            langfuseTraceUrl: `${langfuseConfig.baseUrl}/project/${encodeURIComponent(langfuseConfig.projectId)}/traces/${run.id.replaceAll("-", "")}`,
+          }
+        : {}),
     };
   });
 }

@@ -54,7 +54,14 @@ const DEEPSEEK_V4_1_FLASH_MODEL_CATALOG = {
 const DEEPSEEK_MODEL_CATALOG = {
   ...DEEPSEEK_V4_FLASH_MODEL_CATALOG,
   models: [
-    deepseekV4FlashCatalogModel,
+    {
+      ...deepseekV41FlashCatalogModel,
+      slug: "deepseek-flash",
+    },
+    {
+      ...deepseekV41FlashCatalogModel,
+      slug: "deepseek-v4-flash",
+    },
     {
       ...deepseekV4FlashCatalogModel,
       slug: "deepseek-v4-pro",
@@ -142,16 +149,16 @@ const MODEL_PROVIDER_CODEX_RUNTIME_CONFIGS: Partial<
 };
 
 export const DEFAULT_ORG_MODEL_POLICY_MODELS = [
+  "claude-fable-5-1",
   "gpt-6-astra",
   "gpt-5.6-luna",
-  "deepseek-v4.1-flash",
 ] as const satisfies readonly SupportedRunModel[];
 
 export const DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL =
-  "deepseek-v4.1-flash" as const satisfies SupportedRunModel;
+  "gpt-5.6-luna" as const satisfies SupportedRunModel;
 
 export const LIMITED_FREE1_DEFAULT_RUN_MODEL =
-  "deepseek-v4.1-flash" as const satisfies SupportedRunModel;
+  "gpt-5.6-luna" as const satisfies SupportedRunModel;
 
 export const supportedRunModelSchema = z.enum(SUPPORTED_RUN_MODELS);
 
@@ -351,6 +358,7 @@ export const BUILT_IN_MODEL_TO_PROVIDER = {
   },
   "deepseek-v4.1-flash": {
     candidates: [
+      { concreteType: "deepseek", apiModel: "deepseek-flash" },
       {
         concreteType: "openrouter-codex",
         apiModel: "deepseek/deepseek-v4.1-flash",
@@ -542,11 +550,19 @@ const IMAGE_INPUT_UNSUPPORTED_MODELS = new Set([
   "minimax/minimax-m2.5",
 ]);
 
+/** Pass the resolved concrete provider to recognize provider-specific aliases. */
 export function getModelImageInputSupport(
   model: string | null | undefined,
+  providerType?: ModelProviderType,
 ): ModelImageInputSupport {
   if (!model) {
     return "unknown";
+  }
+  if (
+    providerType === "deepseek" &&
+    (model === "deepseek-flash" || model === "deepseek-v4-flash")
+  ) {
+    return "supported";
   }
   const normalized = normalizeBuiltInModelId(model);
   if (
@@ -566,8 +582,9 @@ export function getModelImageInputSupport(
 
 export function modelSupportsImageInput(
   model: string | null | undefined,
+  providerType?: ModelProviderType,
 ): boolean {
-  return getModelImageInputSupport(model) === "supported";
+  return getModelImageInputSupport(model, providerType) === "supported";
 }
 
 /**
@@ -677,8 +694,12 @@ export const MODEL_PROVIDER_TYPES = {
       OPENAI_BASE_URL: "https://api.deepseek.com/",
       OPENAI_MODEL: "$model",
     } satisfies ModelProviderEnvBindings,
-    models: ["deepseek-v4-flash", "deepseek-v4-pro"] as string[],
-    defaultModel: "deepseek-v4-flash",
+    models: [
+      "deepseek-flash",
+      "deepseek-v4-flash",
+      "deepseek-v4-pro",
+    ] as string[],
+    defaultModel: "deepseek-flash",
   },
   "vercel-ai-gateway": {
     framework: "claude-code" as const,
@@ -1335,9 +1356,14 @@ export function getModelProviderCodexCatalogForModel(
       logicalModel === "deepseek-v4-flash" ||
       logicalModel === "deepseek-v4-pro");
   const canonicalModel = normalizeRunModelId(logicalModel);
-  const overrideCatalog = isActiveRunModel(canonicalModel)
-    ? CODEX_MODEL_CATALOG_OVERRIDES[canonicalModel]
-    : undefined;
+  // The native V4 alias serves V4.1. Other providers keep the original
+  // legacy catalog until their upstream mapping is verified.
+  const overrideCatalog =
+    canonicalModel === "deepseek-v4-flash" && runtimeProviderType !== "deepseek"
+      ? DEEPSEEK_V4_FLASH_MODEL_CATALOG
+      : isActiveRunModel(canonicalModel)
+        ? CODEX_MODEL_CATALOG_OVERRIDES[canonicalModel]
+        : undefined;
   const sourceCatalogs = overrideCatalog
     ? [overrideCatalog]
     : getProvidersForModel(logicalModel).flatMap((type) => {
@@ -1574,6 +1600,22 @@ export const orgModelPolicySchema = z.object({
   modelProviderSurfaceId: z.uuid().nullable().optional(),
   routeStatus: orgModelPolicyRouteStatusSchema,
   routeStatusReason: z.string().nullable(),
+  // Caller-specific, response-only routing. Optional across the B/C rollout.
+  // A candidate has not captured a concrete subscription account for a run.
+  memberEffective: z
+    .object({
+      providerType: modelProviderTypeSchema,
+      runtimeProviderType: modelProviderTypeSchema.nullable(),
+      credentialScope: modelProviderCredentialScopeSchema,
+      availability: z.enum([
+        "available",
+        "reconnect_required",
+        "unavailable",
+        "plan_restricted",
+      ]),
+      accountSelection: z.enum(["capture_required", "not_applicable"]),
+    })
+    .optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

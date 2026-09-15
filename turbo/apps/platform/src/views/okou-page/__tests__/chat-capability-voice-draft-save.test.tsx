@@ -4,7 +4,6 @@ import {
   chatThreadDraftContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
@@ -98,7 +97,6 @@ test.each([
       locale: "en-US",
       context: { ...context, signal: initialPage.signal },
       path,
-      featureSwitches: { [FeatureSwitchKey.VoiceInputV2]: true },
     });
     click(await findEnabledButton("Voice input"));
     click(await findEnabledButton("Stop recording"));
@@ -134,7 +132,6 @@ test.each([
         locale: "en-US",
         context: refreshedContext,
         path,
-        featureSwitches: { [FeatureSwitchKey.VoiceInputV2]: true },
       });
       await findEnabledButton("Voice input");
     }

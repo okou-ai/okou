@@ -224,6 +224,7 @@ import {
   type MediaModelPanelState,
   type ModelProviderSelection,
 } from "./components/model-provider-picker.tsx";
+import { ChatEffortTrigger } from "./components/chat-effort-trigger.tsx";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { ConnectorCard } from "./components/settings/connector-card.tsx";
 import { CustomConnectorIcon } from "./components/settings/custom-connector-icon.tsx";
@@ -271,9 +272,8 @@ import {
 import {
   codexFastModeEnabled$,
   modelPickerFlyoutEnabled$,
-  modelPickerMenuEnabled$,
+  refactorModelSelectEnabled$,
   customConnectorMcpEnabled$,
-  voiceInputV2Enabled$,
   featureSwitch$,
 } from "../../signals/external/feature-switch.ts";
 import { preferredChatReasoningEffort } from "../../signals/okou-page/model-reasoning-effort.ts";
@@ -305,10 +305,6 @@ import type {
 import {
   audioInputAvailable$,
   audioInputQuota$,
-  sttRecording$,
-  sttStarting$,
-  sttTranscribing$,
-  sttVoiceLevel$,
 } from "../../signals/voice-io/voice-io-stt.ts";
 import { readChatMessageFromClipboard } from "../../signals/okou-page/clipboard.ts";
 import { shouldUseUserMessage } from "../../signals/okou-page/user-message-document-codec.ts";
@@ -4775,16 +4771,14 @@ function importedPptImageCandidateSource(
     return null;
   }
   const resolvedPreviewSourceUrl = previewSourceUrl ?? desiredSourceUrl;
-  if (
-    state.active === null &&
-    resolvedPreviewSourceUrl !== desiredSourceUrl &&
-    !importedPptImageLoadFailed(
+  if (state.active === null && resolvedPreviewSourceUrl !== desiredSourceUrl) {
+    return importedPptImageLoadFailed(
       state.failed,
       desiredUrl,
       resolvedPreviewSourceUrl,
     )
-  ) {
-    return resolvedPreviewSourceUrl;
+      ? null
+      : resolvedPreviewSourceUrl;
   }
   return importedPptImageLoadFailed(state.failed, desiredUrl, desiredSourceUrl)
     ? null
@@ -5674,7 +5668,8 @@ function ImportedPresentationTemplatePreviewPage({
   const loadedDetail =
     currentDetail?.id === summary.id
       ? currentDetail
-      : lastResolvedDetail?.id === summary.id
+      : detailLoadable.state === "loading" &&
+          lastResolvedDetail?.id === summary.id
         ? lastResolvedDetail
         : null;
   const detail =
@@ -5750,10 +5745,18 @@ function ImportedPresentationTemplatePreviewPage({
 function useImportedPresentationTemplatePickerItems(
   signals: ComposerSignals,
 ): readonly ImportedPresentationTemplatePickerItem[] {
+  const current = useLoadable(
+    signals.template.importedPresentationTemplatePickerItems$,
+  );
+  const lastResolved = useLastResolved(
+    signals.template.importedPresentationTemplatePickerItems$,
+  );
   const items =
-    useLastResolved(
-      signals.template.importedPresentationTemplatePickerItems$,
-    ) ?? [];
+    current.state === "hasData"
+      ? current.data
+      : current.state === "loading"
+        ? (lastResolved ?? [])
+        : [];
   const deletedTemplateIds = useGet(
     signals.template.importedPresentationTemplateDeletedIds$,
   );
@@ -5762,6 +5765,68 @@ function useImportedPresentationTemplatePickerItems(
     : items.filter((item) => {
         return !deletedTemplateIds.has(item.template.id);
       });
+}
+
+function ImportedPresentationTemplateLibraryStatus({
+  signals,
+}: {
+  readonly signals: ComposerSignals;
+}) {
+  const { t } = useTranslation();
+  const templates = useLoadable(
+    signals.template.importedPresentationTemplatePickerItems$,
+  );
+  const lastResolvedTemplates = useLastResolved(
+    signals.template.importedPresentationTemplatePickerItems$,
+  );
+  const realtime = useLoadable(
+    signals.template.presentationTemplatesRealtimeReady$,
+  );
+  const retryCatalog = useSet(
+    signals.template.retryImportedPresentationTemplates$,
+  );
+  let message: string;
+  let retry: (() => void) | undefined;
+  if (templates.state === "loading") {
+    if (lastResolvedTemplates?.length) {
+      return null;
+    }
+    message = t(($) => {
+      return $.chat.templates.importedLoading;
+    });
+  } else if (templates.state === "hasError") {
+    if (realtime.state === "hasError") {
+      message = t(($) => {
+        return $.chat.templates.importedUnavailable;
+      });
+    } else {
+      message = t(($) => {
+        return $.chat.templates.importedLoadFailed;
+      });
+      retry = retryCatalog;
+    }
+  } else if (templates.data.length === 0) {
+    message = t(($) => {
+      return $.chat.templates.importedEmpty;
+    });
+  } else {
+    return null;
+  }
+  return (
+    <div
+      className="col-span-full flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
+      role={templates.state === "hasError" ? "alert" : "status"}
+    >
+      <span>{message}</span>
+      {retry ? (
+        <Button type="button" variant="quiet" size="sm" onClick={retry}>
+          {t(($) => {
+            return $.chat.templates.retry;
+          })}
+        </Button>
+      ) : null}
+    </div>
+  );
 }
 
 function useImportedPresentationTemplates(
@@ -5847,6 +5912,7 @@ export function ComposerPresentationRecommendations({
         </Button>
       </div>
       <div className="grid min-w-0 grid-cols-2 items-start gap-4 sm:grid-cols-4">
+        <ImportedPresentationTemplateLibraryStatus signals={signals} />
         <PptImportCard
           signals={signals}
           compact
@@ -5927,6 +5993,7 @@ function PptTemplateGrid({
   // then the built-in templates.
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <ImportedPresentationTemplateLibraryStatus signals={signals} />
       <PptImportCard signals={signals} onImported={onImported} />
       {importedItems.map(({ imageBuffers, template }) => {
         return (
@@ -6768,23 +6835,6 @@ function selectedComposerTemplateAttachment(
   return websiteItem
     ? { type: "website", title: websiteItem.title, category: "website" }
     : undefined;
-}
-
-function ComposerImportedTemplateUrlRefreshLifecycle({
-  signals,
-}: {
-  signals: ComposerSignals;
-}) {
-  const setImportedTemplateUrlRefreshLifecycleRef = useSet(
-    signals.template.importedPresentationTemplateUrlRefreshLifecycleRef$,
-  );
-  return (
-    <span
-      ref={setImportedTemplateUrlRefreshLifecycleRef}
-      aria-hidden="true"
-      className="pointer-events-none absolute size-px overflow-hidden opacity-0"
-    />
-  );
 }
 
 function TemplatePickerButton({
@@ -8713,26 +8763,14 @@ function ComputerUseDownloadDialog({
 // ---------------------------------------------------------------------------
 
 interface MicButtonStatus {
-  readonly recording: boolean;
   readonly starting: boolean;
-  readonly transcribing: boolean;
   readonly quotaLoading: boolean;
 }
 
 function micButtonAriaLabel(status: MicButtonStatus): string {
-  if (status.recording) {
-    return i18n.t(($) => {
-      return $.chat.voice.stopRecording;
-    });
-  }
   if (status.starting) {
     return i18n.t(($) => {
       return $.chat.voice.starting;
-    });
-  }
-  if (status.transcribing) {
-    return i18n.t(($) => {
-      return $.chat.voice.transcribing;
     });
   }
   if (status.quotaLoading) {
@@ -8746,19 +8784,9 @@ function micButtonAriaLabel(status: MicButtonStatus): string {
 }
 
 function micButtonTooltip(status: MicButtonStatus): string {
-  if (status.recording) {
-    return i18n.t(($) => {
-      return $.chat.voice.stopRecording;
-    });
-  }
   if (status.starting) {
     return i18n.t(($) => {
       return $.chat.voice.openingMicrophone;
-    });
-  }
-  if (status.transcribing) {
-    return i18n.t(($) => {
-      return $.chat.voice.transcribingProgress;
     });
   }
   if (status.quotaLoading) {
@@ -8771,17 +8799,6 @@ function micButtonTooltip(status: MicButtonStatus): string {
   });
 }
 
-function voiceDraftMicButtonStatus(
-  recording: boolean,
-  action: ComposerActions["voiceAction"],
-) {
-  return {
-    recording: recording && action !== "start",
-    starting: action === "start",
-    transcribing: action === "finish" || action === "retry",
-  };
-}
-
 function MicButton({
   signals,
   actions,
@@ -8792,32 +8809,16 @@ function MicButton({
   const available = useGet(audioInputAvailable$);
   const quotaState = useLoadableState(audioInputQuota$);
   const quotaResolved = useLastResolved(audioInputQuota$) !== undefined;
-  const voiceInputV2Enabled = useGet(voiceInputV2Enabled$);
   // The last resolved status keeps this control stable while a composer
   // target reads its stored draft; run$ awaits that read before acting.
   const voiceDraftStatus = useLastResolved(signals.voice.state$)?.status;
-  const sttRecording = useGet(sttRecording$);
-  const sttStarting = useGet(sttStarting$);
-  const sttTranscribing = useGet(sttTranscribing$);
-  const capture = useGet(signals.voice.capture$);
-  const { recording, starting, transcribing } = voiceInputV2Enabled
-    ? voiceDraftMicButtonStatus(capture !== null, actions.voiceAction)
-    : {
-        recording: sttRecording,
-        starting: sttStarting,
-        transcribing: sttTranscribing,
-      };
-  const voiceLevel = useGet(sttVoiceLevel$);
-  const voiceLevelFill = `${Math.round((voiceLevel / 3) * 100)}%`;
+  const starting = actions.voiceAction === "start";
 
   const signal = useGet(pageSignal$);
-  const draftLoading = voiceInputV2Enabled && voiceDraftStatus === undefined;
-  const actionDisabled =
-    starting || transcribing || (!recording && !quotaResolved);
+  const draftLoading = voiceDraftStatus === undefined;
+  const actionDisabled = starting || !quotaResolved;
   const status = {
-    recording,
     starting,
-    transcribing,
     quotaLoading: quotaState === "loading" && !quotaResolved,
   };
 
@@ -8842,37 +8843,20 @@ function MicButton({
               // Background draft checks should not dim the mic on thread switches.
               "disabled:opacity-100": draftLoading && !actionDisabled,
               "bg-[#2E9E9F] text-white hover:bg-[#279394] hover:text-white":
-                recording || starting || transcribing,
+                starting,
             })}
             data-composer-voice-toggle
             onClick={handleClick}
             disabled={actionDisabled || draftLoading}
             aria-label={micButtonAriaLabel(status)}
-            aria-busy={starting || transcribing}
-            aria-keyshortcuts={
-              voiceInputV2Enabled
-                ? COMPOSER_VOICE_INPUT_ARIA_KEY_SHORTCUTS
-                : undefined
-            }
+            aria-busy={starting}
+            aria-keyshortcuts={COMPOSER_VOICE_INPUT_ARIA_KEY_SHORTCUTS}
           >
-            {starting || transcribing ? (
+            {starting ? (
               <span
                 className="block size-[17px] rounded-full border-2 border-[rgb(255_255_255_/_0.35)] border-t-[#ffffff] pointer-events-none [transform:rotate(0deg)_translateZ(0)] origin-center [backface-visibility:hidden] [will-change:transform] animate-mic-starting-spin"
                 aria-hidden="true"
               />
-            ) : recording ? (
-              <>
-                <span
-                  className="absolute bottom-4 left-1/2 h-2 w-[5px] rounded-full bg-[rgb(255_255_255_/_0.18)] overflow-hidden pointer-events-none [transform:translateX(-50%)] after:absolute after:right-0 after:bottom-0 after:left-0 after:h-[var(--mic-volume-fill,0%)] after:rounded-[inherit] after:bg-[linear-gradient(to_top,#bdf9ff,#ffffff)] after:content-[''] after:transition-[height] after:duration-[0.12s] after:ease-[cubic-bezier(0.25,0.1,0.25,1)]"
-                  aria-hidden="true"
-                  style={
-                    {
-                      "--mic-volume-fill": voiceLevelFill,
-                    } as CSSProperties
-                  }
-                />
-                <Mic size={17} className="relative" />
-              </>
             ) : (
               <Mic size={18} />
             )}
@@ -8884,11 +8868,9 @@ function MicButton({
           className="flex flex-col items-center gap-1 py-1.5"
         >
           <span>{micButtonTooltip(status)}</span>
-          {voiceInputV2Enabled && (
-            <kbd className="whitespace-nowrap font-sans text-xs opacity-70">
-              {getShortcutLabel(COMPOSER_VOICE_INPUT_SHORTCUT)}
-            </kbd>
-          )}
+          <kbd className="whitespace-nowrap font-sans text-xs opacity-70">
+            {getShortcutLabel(COMPOSER_VOICE_INPUT_SHORTCUT)}
+          </kbd>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
@@ -9649,7 +9631,7 @@ type ComposerResolvedVideoModelPickerState =
 // holding three of them read as the heaviest thing in the composer.
 function composerModelPickerTriggerClassName(): string {
   return cn(
-    "h-8 w-8 max-w-none gap-0 overflow-hidden border-transparent bg-transparent px-0 text-sm text-muted-foreground transition-colors sm:w-auto sm:max-w-[14rem] sm:gap-1 sm:px-3",
+    "h-8 w-8 max-w-none gap-0 overflow-hidden border-transparent bg-transparent px-0 text-sm text-muted-foreground transition-colors sm:w-auto sm:max-w-[14rem] sm:gap-1 sm:px-2",
     "[&>[data-slot=select-value]]:flex [&>[data-slot=select-value]]:items-center [&>[data-slot=select-value]]:justify-center sm:[&>[data-slot=select-value]]:justify-start",
     "[&>[data-slot=select-icon]]:hidden sm:[&>[data-slot=select-icon]]:block",
     "hover:bg-state-hover hover:text-foreground data-popup-open:bg-state-hover data-popup-open:text-foreground",
@@ -9673,7 +9655,7 @@ function ComposerRunModelPickerControl({
   mediaModelPanel: MediaModelPanelState | undefined;
 }) {
   const { t } = useTranslation();
-  const modelMenuEnabled = useGet(modelPickerMenuEnabled$);
+  const modelMenuEnabled = useGet(refactorModelSelectEnabled$);
   // The flyout needs the room a phone does not have; narrow viewports keep the
   // menu's pages until the sheet layout lands.
   const modelFlyoutEnabled = useGet(modelPickerFlyoutEnabled$) && desktopLayout;
@@ -9694,6 +9676,9 @@ function ComposerRunModelPickerControl({
             ? signals.model.menu
             : undefined
         }
+        // The effort control beside it carries the bolt when Fast is on, so the
+        // model keeps its own name.
+        fastShownByCaller
         flyoutLayout={modelFlyoutEnabled}
         onSelected={() => {
           setModelPickerOpen(false);
@@ -9835,14 +9820,33 @@ function ComposerModelPickerControls({
       : undefined;
   return (
     <>
-      <ComposerRunModelPickerControl
-        signals={signals}
-        value={value}
-        onChange={onChange}
-        codexFastModeEnabled={codexFastModeEnabled}
-        desktopLayout={desktopLayout}
-        mediaModelPanel={mediaModelPanel}
-      />
+      {/* Effort and the model are one choice about the next message, so they sit
+          as a pair: no gap between them and 8px of padding each, which leaves
+          16px between the two labels. The row's own gap then separates the pair
+          from the controls that do something else.
+
+          Effort sits level with the model rather than behind it. It is the only
+          way to reach effort and Fast now that the picker's settings page is
+          gone, so it shows at every width; the level's name is one short word,
+          which the row can afford even on a phone. */}
+      <div className="flex items-center">
+        <ChatEffortTrigger
+          value={value}
+          onChange={onChange}
+          triggerClassName={cn(
+            "px-2 text-sm text-muted-foreground",
+            COMPOSER_CONTROL_FOCUS_CLASS,
+          )}
+        />
+        <ComposerRunModelPickerControl
+          signals={signals}
+          value={value}
+          onChange={onChange}
+          codexFastModeEnabled={codexFastModeEnabled}
+          desktopLayout={desktopLayout}
+          mediaModelPanel={mediaModelPanel}
+        />
+      </div>
       <div className="mx-0 h-5 w-px bg-divider/60 sm:mx-0.5" />
     </>
   );
@@ -10856,7 +10860,6 @@ function ComposerFooter({
   const narrowVideoGap = creativeVideo
     ? "@max-[344px]/composer:gap-0"
     : undefined;
-  const voiceInputV2Enabled = useGet(voiceInputV2Enabled$);
   const voiceDraft = useResolved(signals.voice.state$);
   const capture = useGet(signals.voice.capture$);
   const status =
@@ -10873,7 +10876,6 @@ function ComposerFooter({
     ComposerVoiceInputStatus,
     "idle"
   > | null =
-    voiceInputV2Enabled &&
     status !== undefined &&
     status !== "idle" &&
     (status !== "recording" || capture !== null)
@@ -10985,7 +10987,6 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
           ref={actions.bind}
           className={cn("flex flex-col", layoutHeightClassNames.shell)}
         >
-          <ComposerImportedTemplateUrlRefreshLifecycle signals={signals} />
           <ComposerCreateControls signals={signals} />
           <ComposerAttachments signals={signals} />
           <ComposerSelectedTask signals={signals} />

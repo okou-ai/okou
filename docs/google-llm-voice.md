@@ -10,10 +10,10 @@ OpenRouter/fal provider, and generic chat/image/LLM consumers retain their routi
 
 ## Configuration
 
-Google Cloud routing is fully rolled out for all users with voice input access.
-The existing `voiceInputV2` access switch must be enabled; both voice API routes
-resolve that access on every request. All Gemini voice steps, including
-independent text polish, use Google Cloud without a routing override. GPT Audio
+Voice input and Google Cloud routing are fully rolled out. Both voice API routes
+require a signed-in user with an active organization; audio-input quota and
+request limits continue to apply. All Gemini voice steps, including independent
+text polish, use Google Cloud without a routing override. GPT Audio
 recognition and dedicated ASR retain their selected providers. Failures never
 change the selected provider.
 
@@ -137,6 +137,39 @@ public errors include tokens, audio, transcripts, raw provider responses, or
 unbounded provider-supplied reason strings. Auth, native validation/transport,
 and exhausted HTTP recovery retain separate diagnostic owners; successful
 recovery and caller cancellation do not produce terminal-error warnings.
+
+## Segment failure diagnostics
+
+The segment service emits `VoiceSegment` / `voice_transcription_failure` for
+terminal failures that do not already have a provider diagnostic. Existing
+Google authentication, native Google response/transport, permanent OpenRouter
+and ASR rejection, and exhausted recovery retain their diagnostic owners.
+Accepted no-speech and caller cancellation do not add a failure record.
+
+`stage` identifies audio reading, transcription, combined finalization, overlap
+reconciliation, stitching, standalone polish, or output validation. `reason`
+is a fixed category: malformed/oversized response, missing choices, truncated
+or non-stop completion, empty/invalid output, missing configuration, stitched
+transcript overflow, excessive transcription/polish rate, discarded speech, or
+`unknown`. The unknown category never serializes the thrown value.
+
+Records include the selected `input_model`, the effective `model`/`provider`
+when applicable, final/audio flags, audio/recording durations, and available
+saved/transcribed/polished character counts. Transcript validation retains the
+transcript-producing model even when a different model subsequently polishes
+it. Stitching and audio-reading failures do not invent a provider attribution.
+Available correlation is limited to a valid active trace ID, a UUID-shaped
+`x_client_request_id`, and a 40-hex `deployment_commit_sha`. Raw request headers,
+credentials, audio, transcripts, reference context, and provider bodies are
+excluded. Diagnostic sink failures cannot replace the handled HTTP result.
+
+For [#34193](https://github.com/vm0-ai/vm0/issues/34193), inspect a bounded
+metadata-only interval on the deployed commit. Correlate the new categories
+with exact segment POSTs and the existing provider owners. Count requests,
+client sessions, and Sentry events separately; OPTIONS 204 is not evidence of
+accepted no-speech. These diagnostics cannot reconstruct the historical
+provider output or prove that a saved recording survived or was recovered.
+Keep the incident open until production evidence supports its outcome.
 
 ## Runtime verification
 

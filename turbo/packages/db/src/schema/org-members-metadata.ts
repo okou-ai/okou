@@ -57,9 +57,6 @@ export const orgMembersMetadata = pgTable(
     /** Voice input v2 model selected in Debug preferences. */
     voiceInputModel: varchar("voice_input_model", { length: 255 }),
     onboardingDone: boolean("onboarding_done").notNull().default(false),
-    morningBriefDefaultEligibleAt: timestamp(
-      "morning_brief_default_eligible_at",
-    ),
     captureNetworkBodiesRemaining: integer(
       "capture_network_bodies_remaining",
     ).default(0),

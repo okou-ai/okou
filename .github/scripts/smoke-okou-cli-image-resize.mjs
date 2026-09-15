@@ -46,26 +46,45 @@ const agentLoopPath = join(packageDirectory, agentLoopChunks[0]);
 const agentLoopSource = await readFile(agentLoopPath, "utf8");
 const readToolMarker =
   "node_modules/@earendil-works/pi-coding-agent/dist/core/tools/read.js";
-const readToolStart = agentLoopSource.lastIndexOf(readToolMarker);
-assert.notEqual(
-  readToolStart,
-  -1,
-  "packaged agent loop is missing Pi read tool",
+const readToolModules = [];
+for (const entry of packageEntries) {
+  if (!entry.endsWith(".js")) continue;
+  const path = join(packageDirectory, entry);
+  const source =
+    entry === agentLoopChunks[0]
+      ? agentLoopSource
+      : await readFile(path, "utf8");
+  if (source.includes(readToolMarker)) {
+    readToolModules.push({ path, source });
+  }
+}
+assert.equal(
+  readToolModules.length,
+  1,
+  "expected one packaged Pi read tool module",
 );
-const nextModuleStart = agentLoopSource.indexOf("\n// ", readToolStart + 1);
+const readToolModule = readToolModules[0];
+const readToolStart = readToolModule.source.lastIndexOf(readToolMarker);
+const nextModuleStart = readToolModule.source.indexOf(
+  "\n// ",
+  readToolStart + 1,
+);
 assert.notEqual(nextModuleStart, -1, "packaged Pi read tool has no boundary");
-const readToolSource = agentLoopSource.slice(readToolStart, nextModuleStart);
-const createReadToolMatch = readToolSource.match(
-  /function (createReadTool\d*)\(cwd, options\)/,
+const readToolSource = readToolModule.source.slice(
+  readToolStart,
+  nextModuleStart,
 );
-assert(createReadToolMatch, "packaged agent loop is missing createReadTool");
+const createReadToolMatch = readToolSource.match(
+  /function (createReadTool(?:Definition)?\d*)\(cwd, options\)/,
+);
+assert(createReadToolMatch, "packaged Pi read tool is missing its constructor");
 await appendFile(
-  agentLoopPath,
+  readToolModule.path,
   `\nexport { ${createReadToolMatch[1]} as __smokeCreateReadTool };\n`,
 );
 
 const { __smokeCreateReadTool: createReadTool } = await import(
-  pathToFileURL(agentLoopPath).href
+  pathToFileURL(readToolModule.path).href
 );
 assert.equal(typeof createReadTool, "function");
 

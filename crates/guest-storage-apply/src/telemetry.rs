@@ -36,9 +36,8 @@
 //! The scheduler scans the pending queue when looking for a startable task. If
 //! a pending task conflicts with a reservation, it records one deferral
 //! observation against the first blocking reservation found during that scan
-//! and continues scanning. Reservations remain task-scoped during retry
-//! backoff, so repeated scans or repeated observations of the same task can
-//! increment these metrics. These values are therefore not counts of unique
+//! and continues scanning. Repeated scans or repeated observations of the same
+//! task can increment these metrics. These values are therefore not counts of unique
 //! tasks or unique path pairs. Each observation contributes to the total and
 //! exactly one of the three classified conflict families.
 //! Ordering checks against earlier pending tasks do not add observations; these
@@ -88,26 +87,22 @@
 //!   body reads.
 //! - `compressed_bytes_consumed_*`: compressed bytes read, classified with the
 //!   same eight size buckets as task outcomes.
-//! - `attempt_count_{1,2,3}`: one attempt, two attempts, or three or more
-//!   attempts.
+//! - `attempt_count_1`: one download request.
 //!
-//! Header time, body-read time, extraction-outside-body-read time, compressed
-//! bytes, and attempts are accumulated across every attempt of the task. The
-//! task total is emitted first, followed by the remote rows. Every remote row
-//! inherits the final task success value: a task that succeeds after a retry
-//! has successful rows containing all attempts, while a task that finally fails
-//! has failed rows containing the work observed before failure. Only the task
-//! total carries failure detail. `file://` tasks do not allocate remote metrics
-//! and never emit remote-attribution rows.
+//! Header time, body-read time, extraction-outside-body-read time, and compressed
+//! bytes describe the task's download. The task total is emitted first, followed
+//! by the remote rows. Every remote row inherits the task success value. Only
+//! the task total carries failure detail. `file://` tasks do not allocate remote
+//! metrics and never emit remote-attribution rows.
 //!
 //! # Compatibility boundary
 //!
 //! `complete_action_schema_is_exact_and_unique` constructs the complete list of
-//! 95 action names, checks its order, and checks uniqueness. The binary
+//! 91 action names, checks its order, and checks uniqueness. The binary
 //! attribution tests in
 //! `tests/integration/binary_logging/attribution.rs` cover action ordering,
-//! successful and failed downloads, local-versus-remote emission, retry
-//! aggregation, timing separation, size buckets, and framework task roles.
+//! successful and failed downloads, local-versus-remote emission,
+//! timing separation, size buckets, and framework task roles.
 //! The sibling `tests/integration/binary_logging/redaction.rs` tests cover
 //! sanitized failure details and the absence of raw URLs and paths. Changes to
 //! an action name, bucket, dimension, or emission point change this production
@@ -282,14 +277,9 @@ pub(crate) struct RemoteArchiveTaskMetrics {
     body_read: Duration,
     extract_outside_body_read: Duration,
     compressed_bytes_consumed: u64,
-    attempts: u32,
 }
 
 impl RemoteArchiveTaskMetrics {
-    pub(crate) fn begin_attempt(&mut self) {
-        self.attempts = self.attempts.saturating_add(1);
-    }
-
     pub(crate) fn record_attempt(
         &mut self,
         metrics: source::RemoteArchiveAttemptSnapshot,
@@ -396,14 +386,10 @@ impl ArchiveKind {
         }
     }
 
-    fn attempt_count_action(self, attempts: u32) -> &'static str {
-        match (self, attempts) {
-            (Self::Storage, 1) => "storage_download_remote_attempt_count_1",
-            (Self::Storage, 2) => "storage_download_remote_attempt_count_2",
-            (Self::Storage, _) => "storage_download_remote_attempt_count_3",
-            (Self::Artifact, 1) => "artifact_download_remote_attempt_count_1",
-            (Self::Artifact, 2) => "artifact_download_remote_attempt_count_2",
-            (Self::Artifact, _) => "artifact_download_remote_attempt_count_3",
+    fn attempt_count_action(self) -> &'static str {
+        match self {
+            Self::Storage => "storage_download_remote_attempt_count_1",
+            Self::Artifact => "artifact_download_remote_attempt_count_1",
         }
     }
 }
@@ -778,7 +764,7 @@ fn record_remote_archive_attribution(
         None,
     );
     record_sandbox_op(
-        archive_kind.attempt_count_action(metrics.attempts),
+        archive_kind.attempt_count_action(),
         Duration::ZERO,
         success,
         None,
@@ -806,7 +792,7 @@ mod tests {
     const COMPRESSED_BYTE_REPRESENTATIVES: [u64; 8] = [
         0, 1, 65_536, 262_144, 1_048_576, 4_194_304, 16_777_216, 67_108_864,
     ];
-    const EXPECTED_ACTION_SCHEMA: [&str; 95] = [
+    const EXPECTED_ACTION_SCHEMA: [&str; 91] = [
         "guest_storage_apply_task_count_0",
         "guest_storage_apply_task_count_1",
         "guest_storage_apply_task_count_2",
@@ -885,8 +871,6 @@ mod tests {
         "storage_download_remote_compressed_bytes_consumed_16_mib_to_64_mib",
         "storage_download_remote_compressed_bytes_consumed_64_mib_plus",
         "storage_download_remote_attempt_count_1",
-        "storage_download_remote_attempt_count_2",
-        "storage_download_remote_attempt_count_3",
         "artifact_download",
         "artifact_download_remote_request_to_response_headers",
         "artifact_download_remote_body_read",
@@ -900,8 +884,6 @@ mod tests {
         "artifact_download_remote_compressed_bytes_consumed_16_mib_to_64_mib",
         "artifact_download_remote_compressed_bytes_consumed_64_mib_plus",
         "artifact_download_remote_attempt_count_1",
-        "artifact_download_remote_attempt_count_2",
-        "artifact_download_remote_attempt_count_3",
     ];
 
     fn action_schema() -> Vec<&'static str> {
@@ -924,7 +906,7 @@ mod tests {
                 COMPRESSED_BYTE_REPRESENTATIVES
                     .map(|bytes| archive_kind.compressed_bytes_consumed_action(bytes)),
             );
-            actions.extend([1, 2, 3].map(|attempts| archive_kind.attempt_count_action(attempts)));
+            actions.push(archive_kind.attempt_count_action());
         }
         actions
     }
@@ -1083,24 +1065,10 @@ mod tests {
     }
 
     #[test]
-    fn attempt_count_actions_are_stable() {
-        assert_eq!(
-            [0, 1, 2, 3, 4].map(|attempts| { ArchiveKind::Storage.attempt_count_action(attempts) }),
-            [
-                "storage_download_remote_attempt_count_3",
-                "storage_download_remote_attempt_count_1",
-                "storage_download_remote_attempt_count_2",
-                "storage_download_remote_attempt_count_3",
-                "storage_download_remote_attempt_count_3",
-            ]
-        );
-    }
-
-    #[test]
     fn complete_action_schema_is_exact_and_unique() {
         let actions = action_schema();
 
         assert_eq!(actions.as_slice(), EXPECTED_ACTION_SCHEMA.as_slice());
-        assert_eq!(actions.iter().copied().collect::<HashSet<_>>().len(), 95);
+        assert_eq!(actions.iter().copied().collect::<HashSet<_>>().len(), 91);
     }
 }

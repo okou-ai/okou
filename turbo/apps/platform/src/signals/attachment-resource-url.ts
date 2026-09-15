@@ -130,12 +130,7 @@ function createAttachmentPresignedToken$(
   });
 }
 
-/**
- * Persisted chat attachments live behind an authenticated API route, and a bare
- * `src` attribute cannot carry an Authorization header. Exchange the canonical
- * API URL for a temporary token after the API has checked ownership. Public
- * addresses need no token and pass through unchanged.
- */
+/** Resolve the authenticated resource once for its owning preview. */
 export function createAttachmentPreviewSignals(
   inputUrl: string,
   resolvedToken?: AttachmentPresignedToken,
@@ -150,8 +145,8 @@ export function createAttachmentPreviewSignals(
     return (await get(presignedToken$))?.token ?? url;
   });
   const shareUrl$ = computed(async (get) => {
-    const presigned = await get(presignedToken$);
-    return presigned === null ? url : presigned.publicUrl;
+    const token = await get(presignedToken$);
+    return token === null ? url : token.publicUrl;
   });
   const thumbnailUrl$ = computed(async (get) => {
     return r2ImageTransformUrl(
@@ -161,6 +156,7 @@ export function createAttachmentPreviewSignals(
     );
   });
   return {
+    linkUrl$: resourceUrl$,
     presignedToken$,
     resourceUrl$,
     shareUrl$,

@@ -206,7 +206,8 @@ export interface WorkflowComposerSignals {
   readonly reloadWorkflows$: Command<Promise<void>, [AbortSignal]>;
   readonly selectedSuggestionIndex$: Computed<number>;
   readonly setSelectedSuggestionIndex$: Command<void, [number]>;
-  readonly previewSuggestionIndex$: Computed<number>;
+  /** Null while the pointer is not previewing, so keyboard selection leads. */
+  readonly previewSuggestionIndex$: Computed<number | null>;
   readonly previewSuggestion$: Command<void, [number | null]>;
   readonly closeSuggestionMenu$: Command<void, []>;
   readonly insertWorkflow$: Command<void, [ComposerSlashWorkflow]>;
@@ -224,8 +225,9 @@ export interface WorkflowComposerSignals {
   >;
   readonly insertText$: Command<void, [string]>;
   readonly readVoiceContext$: Command<VoiceIoEditorContext, []>;
-  readonly appendText$: Command<void, [string]>;
   readonly selectOrAppendText$: Command<void, [string]>;
+  /** Rewrites the prompt this composer inserted last instead of stacking. */
+  readonly replacePromptText$: Command<void, [string]>;
   readonly readInputForSubmission$: Command<
     Promise<WorkflowComposerSubmissionSnapshot>,
     [AbortSignal]
@@ -247,6 +249,7 @@ export type ComposerTemplateAttachmentType =
   | "illustration"
   | "video"
   | "avatar"
+  | "intro-video"
   | "workflow"
   | "website";
 
@@ -795,6 +798,7 @@ function templateAttachmentNodeAttributes(
       type !== "illustration" &&
       type !== "video" &&
       type !== "avatar" &&
+      type !== "intro-video" &&
       type !== "workflow" &&
       type !== "website") ||
     typeof title !== "string" ||
@@ -2354,10 +2358,10 @@ function createInsertTextCommands(editor: Editor) {
       .run();
   });
 
-  const selectText = (value: string): boolean => {
+  const findText = (value: string): { from: number; to: number } | null => {
     const text = value.trim();
     if (!text) {
-      return false;
+      return null;
     }
 
     let textRun = "";
@@ -2384,11 +2388,16 @@ function createInsertTextCommands(editor: Editor) {
         };
       }
     });
-    if (!selection) {
+    return selection;
+  };
+
+  const selectText = (value: string): boolean => {
+    const range = findText(value);
+    if (!range) {
       return false;
     }
 
-    editor.chain().focus().setTextSelection(selection).scrollIntoView().run();
+    editor.chain().focus().setTextSelection(range).scrollIntoView().run();
     return true;
   };
 
@@ -2403,21 +2412,44 @@ function createInsertTextCommands(editor: Editor) {
     editor.commands.insertContent(content);
   };
 
-  const appendText$ = command((_context, value: string) => {
-    appendText(value);
-  });
   const selectOrAppendText$ = command((_context, value: string) => {
     if (!selectText(value)) {
       appendText(value);
     }
   });
 
+  /**
+   * A suggestion row owns one prompt inside the draft, so the prompt it wrote
+   * last is the text a later pick rewrites. Anything the person typed is not
+   * ours to drop: once that prompt is gone from the draft the pick falls back
+   * to selecting or appending.
+   */
+  const insertedPrompt$ = state("");
+  const replacePromptText$ = command(({ get, set }, value: string) => {
+    const text = value.trim();
+    if (!text) {
+      return;
+    }
+    const inserted = findText(get(insertedPrompt$));
+    if (inserted) {
+      editor
+        .chain()
+        .focus()
+        .insertContentAt(inserted, { type: "text", text })
+        .scrollIntoView()
+        .run();
+    } else if (!selectText(text)) {
+      appendText(text);
+    }
+    set(insertedPrompt$, text);
+  });
+
   return {
     readVoiceContext$,
     insertText$,
     insertPromptMarkdown$,
-    appendText$,
     selectOrAppendText$,
+    replacePromptText$,
   };
 }
 
@@ -2804,10 +2836,11 @@ export function createWorkflowComposerSignals<
     set(selectedSuggestionIndexState$, index);
     set(previewSuggestionIndexState$, null);
   });
+  // Reported as-is rather than collapsed onto the keyboard index: the panel
+  // needs to know whether the pointer is the one driving, because that decides
+  // whether a row still carries the keyboard mark.
   const previewSuggestionIndex$ = computed((get) => {
-    return (
-      get(previewSuggestionIndexState$) ?? get(selectedSuggestionIndexState$)
-    );
+    return get(previewSuggestionIndexState$);
   });
   const previewSuggestion$ = command(({ set }, index: number | null) => {
     set(previewSuggestionIndexState$, index);

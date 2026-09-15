@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.23.85](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.84...guest-storage-apply-v0.23.85) (2026-09-15)
+
+## [0.23.84](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.83...guest-storage-apply-v0.23.84) (2026-09-14)
+
+
+### Refactoring
+
+* use two-day presigned urls without renewal or retries ([#34149](https://github.com/vm0-ai/vm0/issues/34149)) ([a876fd2](https://github.com/vm0-ai/vm0/commit/a876fd28cd0a0fade04aa12fff33614ff156ba9b))
+
+## [0.23.83](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.82...guest-storage-apply-v0.23.83) (2026-09-14)
+
 ## [0.23.82](https://github.com/vm0-ai/vm0/compare/guest-storage-apply-v0.23.81...guest-storage-apply-v0.23.82) (2026-09-12)
 
 

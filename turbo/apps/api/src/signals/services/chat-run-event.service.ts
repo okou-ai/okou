@@ -44,7 +44,7 @@ export async function resolveRunChatThreadModelContext(params: {
     threadId: params.threadId,
     persistRequestedCodexServiceTier: false,
     reasoningEffortEnabled: isFeatureEnabled(
-      FeatureSwitchKey.ChatReasoningEffort,
+      FeatureSwitchKey.RefactorModelSelect,
       featureSwitchContext,
     ),
     codexFastModeEnabled: isCodexFastModeEnabled(featureSwitchContext),

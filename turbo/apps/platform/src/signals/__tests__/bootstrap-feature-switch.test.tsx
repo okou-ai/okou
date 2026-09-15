@@ -61,7 +61,7 @@ async function setupModelPickerRolloutPage(args: {
     return respond(200, {
       switches: {},
       effectiveSwitches: {
-        [FeatureSwitchKey.ModelPickerMenu]: false,
+        [FeatureSwitchKey.RefactorModelSelect]: false,
         [FeatureSwitchKey.IntroVideo]: true,
       },
     });

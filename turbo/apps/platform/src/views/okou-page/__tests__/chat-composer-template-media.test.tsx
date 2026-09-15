@@ -89,21 +89,26 @@ function voice(options: {
   };
 }
 
-async function openAvatarCatalog() {
+async function openAvatarCatalog(
+  options: { readonly paginate?: boolean } = {},
+) {
   mockTemplateChat();
   const media = mockPlayableMedia();
   const firstPage = [
     avatar({ id: 1, name: "Motion Maya", motion: true }),
     avatar({ id: 2, name: "Still Sara" }),
-    ...Array.from({ length: 21 }, (_, index) => {
-      return avatar({ id: index + 3, name: `Professional ${index + 3}` });
-    }),
+    // Only the pagination scenario needs to fill the 24-card first page.
+    ...(options.paginate
+      ? Array.from({ length: 21 }, (_, index) => {
+          return avatar({ id: index + 3, name: `Professional ${index + 3}` });
+        })
+      : []),
     avatar({ id: 24, name: "Social Sam", style: "social" }),
   ];
   const additionalAvatar = avatar({ id: 25, name: "Additional Ada" });
   mockAvatarCatalog({
     avatars: firstPage,
-    additionalAvatars: [additionalAvatar],
+    additionalAvatars: options.paginate ? [additionalAvatar] : [],
     voices: [voice({ id: "voice-ada", name: "Ada Voice", sample: true })],
   });
   const user = userEvent.setup();
@@ -178,7 +183,7 @@ test("Clearing an avatar style restores the full catalog", async () => {
 });
 
 test("Choose a paginated avatar and voice after clearing its style filter", async () => {
-  const { user, dialog } = await openAvatarCatalog();
+  const { user, dialog } = await openAvatarCatalog({ paginate: true });
   const filters = await filterProfessionalAvatars(user, dialog);
   await user.click(buttonNamed("Clear", filters));
   await expect(

@@ -3,7 +3,6 @@
 //! Features:
 //! - Parallel downloads using std::thread (max 4 concurrent)
 //! - Streaming extraction (no temp files)
-//! - Retry logic with 3 attempts
 //!
 //! ## Manifest application and failure semantics
 //!
@@ -14,9 +13,8 @@
 //!
 //! Downloads whose targets do not overlap may run concurrently. A failed task
 //! does not cancel its siblings, so a `false` result can coexist with targets
-//! successfully materialized by other tasks. Archive attempts extract in place
-//! and retries reuse the same target, so a failed task may also leave changes
-//! written by an earlier entry or attempt.
+//! successfully materialized by other tasks. Archives extract in place, so a
+//! failed task may also leave changes written by an earlier entry.
 //!
 //! On preparation or aggregate download failure, the crate attempts to remove
 //! staged sources used to normalize instruction storage. That targeted cleanup
@@ -33,10 +31,10 @@
 //! individual-extension and combined metadata bound, enforced while tar parses
 //! metadata, before it can buffer unbounded input. Vector capacity and parsed
 //! descriptors add bounded overhead; the budget is not an exact heap/RSS cap.
-//! Oversized metadata is a non-retriable archive error. Ordinary file payloads
+//! Oversized metadata is an archive error. Ordinary file payloads
 //! and their padding are exempt, including unread payloads of skipped entries;
 //! sparse files retain their physical-data streaming and hole-seeking behavior.
-//! The budget resets between members and is independent for each attempt.
+//! The budget resets between members.
 
 mod archive;
 mod cleanup;

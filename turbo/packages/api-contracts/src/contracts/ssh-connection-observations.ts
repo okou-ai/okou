@@ -12,6 +12,9 @@ export const sshConnectionFailureReasonSchema = z.enum([
   "authentication_failed",
   "protocol",
   "timed_out",
+  "access_rejected",
+  "access_tls_failure",
+  "access_protocol_failure",
 ]);
 
 export const sshConnectionObservationSchema = z

@@ -1,3 +1,8 @@
+import {
+  FEISHU_PLATFORMS,
+  type FeishuPlatform,
+} from "@okouai/core/feishu-platform";
+import { loadFeishuInstallationConfig } from "./feishu-config";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { command } from "ccstate";
@@ -33,15 +38,10 @@ import {
   type CustomConnectorDefinitionRow,
 } from "./custom-connector-definition-selection";
 import type { Tx } from "../../lib/db-types";
+import { writeCustomConnectorOAuthState } from "./custom-connector-oauth-write.service";
 import type { PreparedServerSideVolume } from "./storage-volume-publication.service";
 import { resolveConnectorAccount } from "./connector-account-resolution.service";
 
-const FEISHU_API_PREFIX = "https://open.feishu.cn/open-apis/";
-const FEISHU_AUTHORIZATION_URL =
-  "https://accounts.feishu.cn/open-apis/authen/v1/authorize";
-const FEISHU_TOKEN_URL =
-  "https://open.feishu.cn/open-apis/authen/v2/oauth/token";
-const FEISHU_DISPLAY_NAME = "Feishu";
 const FEISHU_AUTHORIZATION_HEADER = "Authorization";
 const FEISHU_AUTHORIZATION_TEMPLATE = "Bearer {{oauth.access_token}}";
 
@@ -55,6 +55,7 @@ interface EnsureFeishuCustomConnectorArgs {
 }
 
 interface FeishuConnectorInstallation {
+  readonly platform: FeishuPlatform;
   readonly orgId: string;
   readonly customConnectorId: string | null;
   readonly ownerUserId: string | null;
@@ -93,7 +94,7 @@ const FEISHU_SKILL_MARKDOWN = `Use Feishu OpenAPI as the connected user to find 
 
 ## Authentication and access
 
-Base URL: \`${FEISHU_API_PREFIX}\`
+Base URL: \`${FEISHU_PLATFORMS.feishu.apiOrigin}/open-apis/\`
 
 The connector automatically injects an OAuth \`Authorization: Bearer\` header for the connected Feishu user. Never request, print, store, or add an access token, and never call Feishu OAuth token endpoints yourself.
 
@@ -184,14 +185,30 @@ curl -sS -X POST \
 7. Consult the current Feishu API reference when an endpoint, payload, supported token type, or resource-specific limitation is uncertain.
 `;
 
-function feishuCustomConnectorDisplayName(botName: string | null): string {
-  return botName ? `${FEISHU_DISPLAY_NAME}-${botName}` : FEISHU_DISPLAY_NAME;
+function feishuCustomConnectorDisplayName(
+  botName: string | null,
+  platform: FeishuPlatform,
+): string {
+  const name = FEISHU_PLATFORMS[platform].name;
+  return botName ? `${name}-${botName}` : name;
+}
+
+function feishuSkillMarkdown(platform: FeishuPlatform): string {
+  return FEISHU_SKILL_MARKDOWN.replaceAll(
+    "Feishu",
+    FEISHU_PLATFORMS[platform].name,
+  ).replaceAll("https://open.feishu.cn", FEISHU_PLATFORMS[platform].apiOrigin);
 }
 
 function desiredConnectorDefinition(installation: FeishuConnectorInstallation) {
   return {
-    displayName: feishuCustomConnectorDisplayName(installation.botName),
-    prefixTemplates: [FEISHU_API_PREFIX],
+    displayName: feishuCustomConnectorDisplayName(
+      installation.botName,
+      installation.platform,
+    ),
+    prefixTemplates: [
+      `${FEISHU_PLATFORMS[installation.platform].apiOrigin}/open-apis/`,
+    ],
     fields: [],
     headerInjections: [
       {
@@ -203,7 +220,7 @@ function desiredConnectorDefinition(installation: FeishuConnectorInstallation) {
     authMode: "oauth" as const,
     enabled: true,
     permissionBundleRef: null,
-    skillMarkdown: FEISHU_SKILL_MARKDOWN,
+    skillMarkdown: feishuSkillMarkdown(installation.platform),
   };
 }
 
@@ -213,8 +230,8 @@ function desiredOAuthConfig(installation: FeishuConnectorInstallation) {
     providerAdapter: "feishu" as const,
     clientId: installation.appId,
     encryptedClientSecret: installation.encryptedAppSecret,
-    authorizationUrl: FEISHU_AUTHORIZATION_URL,
-    tokenUrl: FEISHU_TOKEN_URL,
+    authorizationUrl: `${FEISHU_PLATFORMS[installation.platform].accountsOrigin}/open-apis/authen/v1/authorize`,
+    tokenUrl: `${FEISHU_PLATFORMS[installation.platform].apiOrigin}/open-apis/authen/v2/oauth/token`,
     tokenEndpointAuthMethod: "client_secret_post" as const,
     pkceMethod: "none" as const,
     scopes: [...FEISHU_OAUTH_SCOPES],
@@ -254,8 +271,9 @@ function oauthConfigMatches(
     config.providerAdapter === "feishu" &&
     config.clientId === installation.appId &&
     config.encryptedClientSecret === installation.encryptedAppSecret &&
-    config.authorizationUrl === FEISHU_AUTHORIZATION_URL &&
-    config.tokenUrl === FEISHU_TOKEN_URL &&
+    config.authorizationUrl ===
+      desiredOAuthConfig(installation).authorizationUrl &&
+    config.tokenUrl === desiredOAuthConfig(installation).tokenUrl &&
     config.tokenEndpointAuthMethod === "client_secret_post" &&
     config.pkceMethod === "none" &&
     isDeepStrictEqual(config.scopes, FEISHU_OAUTH_SCOPES) &&
@@ -270,31 +288,40 @@ async function createFeishuCustomConnector(
   prepared: PreparedFeishuCustomConnectorSkill,
   signal: AbortSignal,
 ): Promise<ReconciledFeishuCustomConnector> {
-  const [connector] = await tx
-    .insert(orgCustomConnectors)
-    .values({
-      id: prepared.connectorId,
-      orgId: args.orgId,
-      slug: getFeishuCustomConnectorSlug(args.installationId),
-      ...desiredConnectorDefinition(installation),
-      skillStorageVersionId: prepared.volume.version.versionId,
-      createdBy: installation.ownerUserId ?? args.userId,
-    })
-    .returning({ id: orgCustomConnectors.id });
-  signal.throwIfAborted();
-  if (!connector) {
-    throw new Error("Expected Feishu custom connector to be created");
-  }
-  await tx.insert(orgCustomConnectorOauthConfigs).values({
-    connectorId: connector.id,
-    ...desiredOAuthConfig(installation),
-  });
-  signal.throwIfAborted();
-  return {
-    connectorId: connector.id,
-    definitionChanged: true,
-    runtimeChanged: false,
-  };
+  return await writeCustomConnectorOAuthState(
+    tx,
+    [{ connectorId: prepared.connectorId, orgId: args.orgId }],
+    async () => {
+      const [connector] = await tx
+        .insert(orgCustomConnectors)
+        .values({
+          id: prepared.connectorId,
+          orgId: args.orgId,
+          slug: getFeishuCustomConnectorSlug(
+            args.installationId,
+            installation.platform,
+          ),
+          ...desiredConnectorDefinition(installation),
+          skillStorageVersionId: prepared.volume.version.versionId,
+          createdBy: installation.ownerUserId ?? args.userId,
+        })
+        .returning({ id: orgCustomConnectors.id });
+      signal.throwIfAborted();
+      if (!connector) {
+        throw new Error("Expected Feishu custom connector to be created");
+      }
+      await tx.insert(orgCustomConnectorOauthConfigs).values({
+        connectorId: connector.id,
+        ...desiredOAuthConfig(installation),
+      });
+      signal.throwIfAborted();
+      return {
+        connectorId: connector.id,
+        definitionChanged: true,
+        runtimeChanged: false,
+      };
+    },
+  );
 }
 
 async function repairFeishuCustomConnector(
@@ -304,42 +331,48 @@ async function repairFeishuCustomConnector(
   skillStorageVersionId: string,
   signal: AbortSignal,
 ): Promise<ReconciledFeishuCustomConnector> {
-  const credentialContractChanged =
-    existing.connector.authMode !== "oauth" ||
-    !isDeepStrictEqual(existing.connector.fields, []) ||
-    !oauthConfigMatches(existing.oauthConfig, installation);
-  await tx
-    .update(orgCustomConnectors)
-    .set({
-      ...desiredConnectorDefinition(installation),
-      skillStorageVersionId,
-      storageVersion: credentialContractChanged
-        ? existing.connector.storageVersion + 1
-        : existing.connector.storageVersion,
-      updatedAt: nowDate(),
-    })
-    .where(eq(orgCustomConnectors.id, existing.connector.id));
-  signal.throwIfAborted();
-  const oauthConfig = desiredOAuthConfig(installation);
-  await tx
-    .insert(orgCustomConnectorOauthConfigs)
-    .values({
-      connectorId: existing.connector.id,
-      ...oauthConfig,
-    })
-    .onConflictDoUpdate({
-      target: orgCustomConnectorOauthConfigs.connectorId,
-      set: {
-        ...oauthConfig,
-        updatedAt: nowDate(),
-      },
-    });
-  signal.throwIfAborted();
-  return {
-    connectorId: existing.connector.id,
-    definitionChanged: true,
-    runtimeChanged: true,
-  };
+  return await writeCustomConnectorOAuthState(
+    tx,
+    [{ connectorId: existing.connector.id, orgId: installation.orgId }],
+    async () => {
+      const credentialContractChanged =
+        existing.connector.authMode !== "oauth" ||
+        !isDeepStrictEqual(existing.connector.fields, []) ||
+        !oauthConfigMatches(existing.oauthConfig, installation);
+      await tx
+        .update(orgCustomConnectors)
+        .set({
+          ...desiredConnectorDefinition(installation),
+          skillStorageVersionId,
+          storageVersion: credentialContractChanged
+            ? existing.connector.storageVersion + 1
+            : existing.connector.storageVersion,
+          updatedAt: nowDate(),
+        })
+        .where(eq(orgCustomConnectors.id, existing.connector.id));
+      signal.throwIfAborted();
+      const oauthConfig = desiredOAuthConfig(installation);
+      await tx
+        .insert(orgCustomConnectorOauthConfigs)
+        .values({
+          connectorId: existing.connector.id,
+          ...oauthConfig,
+        })
+        .onConflictDoUpdate({
+          target: orgCustomConnectorOauthConfigs.connectorId,
+          set: {
+            ...oauthConfig,
+            updatedAt: nowDate(),
+          },
+        });
+      signal.throwIfAborted();
+      return {
+        connectorId: existing.connector.id,
+        definitionChanged: true,
+        runtimeChanged: true,
+      };
+    },
+  );
 }
 
 async function preflightFeishuCustomConnectorId(
@@ -382,6 +415,7 @@ async function reconcileFeishuCustomConnector(
       customConnectorId: feishuOrgInstallations.customConnectorId,
       ownerUserId: feishuOrgInstallations.ownerUserId,
       appId: feishuOrgInstallations.appId,
+      platform: feishuOrgInstallations.platform,
       encryptedAppSecret: feishuOrgInstallations.encryptedAppSecret,
       botName: feishuOrgInstallations.botName,
     })
@@ -498,6 +532,14 @@ export const ensureFeishuCustomConnector$ = command(
     signal: AbortSignal,
   ): Promise<string | null> => {
     const db = set(writeDb$);
+    const installation = await loadFeishuInstallationConfig(
+      db,
+      args.installationId,
+    );
+    signal.throwIfAborted();
+    if (!installation || installation.orgId !== args.orgId) {
+      return null;
+    }
     let connectorId = await preflightFeishuCustomConnectorId(db, args, signal);
     while (connectorId) {
       const volume = await set(
@@ -505,11 +547,18 @@ export const ensureFeishuCustomConnector$ = command(
         {
           orgId: args.orgId,
           connectorId,
-          connectorSlug: getFeishuCustomConnectorSlug(args.installationId),
-          displayName: FEISHU_DISPLAY_NAME,
-          skillMarkdown: FEISHU_SKILL_MARKDOWN,
-          skillName: FEISHU_CUSTOM_CONNECTOR_SKILL_METADATA.name,
-          skillDescription: FEISHU_CUSTOM_CONNECTOR_SKILL_METADATA.description,
+          connectorSlug: getFeishuCustomConnectorSlug(
+            args.installationId,
+            installation.platform,
+          ),
+          displayName: FEISHU_PLATFORMS[installation.platform].name,
+          skillMarkdown: feishuSkillMarkdown(installation.platform),
+          skillName: installation.platform,
+          skillDescription:
+            FEISHU_CUSTOM_CONNECTOR_SKILL_METADATA.description.replaceAll(
+              "Feishu",
+              FEISHU_PLATFORMS[installation.platform].name,
+            ),
         },
         signal,
       );

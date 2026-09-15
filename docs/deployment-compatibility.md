@@ -195,6 +195,151 @@ raises the frontend compatibility floor, rolling the frontend below that floor
 also requires rolling back the backend floor. Rolling the backend back to the
 dual-protocol preparation release remains safe for canonical clients.
 
+#### Instagram nullable views
+
+Instagram stats accepts provider `views` as a nonnegative integer, null, or
+omitted. New CLI packages send `x-okou-instagram-views: nullable` on stats
+requests so explicit null survives through inspection output. Zero is a verified
+count; null is unavailable and is never converted to zero. The optional
+`requireViews` input requests the provider's bounded recovery. Its documented
+missing-view HTTP 503 returns without managed billing or automatic retries.
+
+The API retains the old response format for callers without that header: only
+explicit null views are omitted, preserving engagement, author data, extensions,
+and numeric zero. This projection applies to session/PAT and agent/sandbox
+requests, alongside the existing provider-identity redaction boundary.
+
+- Old CLI -> new API: unchanged requests receive numeric or omitted views,
+  which the pinned older reader accepts. This legacy format cannot distinguish
+  unavailable null from an originally omitted field.
+- New CLI -> new API: null, omitted, zero, and positive views stay distinct.
+- New CLI -> old API: the additional header does not change the old request
+  body. Numeric/omitted successes remain readable; the old API can still reject
+  provider null. The new strict input is rejected before provider I/O until the
+  supporting API is deployed. Deploy that API before selecting the new package.
+
+Keep the old response projection until the backend selects a capable
+commit-addressed CLI artifact and the maximum queue, execution, and finalization
+lifetimes have passed. Confirm no pre-deployment context or supported external
+caller still depends on the old format before removing it in a later release.
+CLI semantic versions and runner binary drain alone are insufficient evidence.
+Removal is tracked in [#34047](https://github.com/vm0-ai/vm0/issues/34047).
+
+### Instagram search collection limits
+
+Instagram Reels Search exposes one anonymous batch of up to 12 results. The
+request accepts only page 1 and a query of at most 100 characters after trimming.
+Keyword, hashtag and encoded leading-hash inputs share normalization. The CLI's
+request preserves case because Unicode case folding can expand a validated
+100-character input; the provider performs its documented lowercase conversion.
+The CLI's `--limit` truncates returned items locally; it does not request more
+source coverage or forward the OpenAPI's unbounded `limit` parameter.
+
+Search responses retain the existing `provider_limited` collection state and
+`provider_ceiling` reason, adding optional
+`sourceLimit: { kind: "single_batch", maxItems: 12 }`. Empty and short batches,
+including `hasMore: false`, do not establish exhaustive search. The provider's
+`count` describes the batch and is not a reported global total.
+
+Retained CLI response schemas accept these existing discriminants and ignore
+the new optional field. Current CLI public projection also applies the fixed
+source limit to older API responses, including `complete` and page-2 `more`
+metadata, so it never follows the unsupported continuation. Aggregate and
+streamed terminal output preserve the source limit; `callerLimited` independently
+records whether the fetched batch was trimmed. `status: complete` still means
+the caller's requested count was satisfied, while collection state describes
+source completeness. Unsatisfied source-limited requests remain partial.
+
+No response variant is retired and no CLI drain, schema migration, or release
+floor change is required. Rolling back the API retains request compatibility
+for the current CLI; it does not restore pagination in that CLI.
+Remove the old-API metadata projection and its compatibility-only tests after
+every serving API and retained rollback target emits the canonical source limit;
+[issue #34053](https://github.com/vm0-ai/vm0/issues/34053) owns that removal gate.
+
+### Social download accounting and media metadata
+
+Social download admission uses the caller's maximum duration rounded up to
+started minutes and the requested format/quality tier: audio and SD video use
+one provider credit per minute; 720p/1080p video uses four. TikTok ready jobs use
+the delivered tier, capped at the requested tier, so a 720p request delivered at
+576p uses the SD rate. The default request remains 720p. These are **provider
+usage units**; managed usage applies the separately configured Okou retail
+price to the validated actual `creditsCost`, once per download job.
+
+The [provider API overview](https://docs.socialkit.dev/api-reference#credit-costs)
+documents a 30-day legacy-account pricing transition. Admission conservatively
+uses current published tiers, while settlement accepts only the exact current
+cost or the prior one-credit-per-minute cost from the authenticated ready job.
+It does not assume the production account's transition date or bill the
+preflight maximum. Remove the legacy allowance only after verifying the managed
+account's transition and that no recoverable historical jobs need the old rate.
+Follow-up [#34056](https://github.com/vm0-ai/vm0/issues/34056) owns these gates
+and the old-API normalization cleanup described below.
+An explicitly unbilled ready response is rejected. Polling headers may report
+zero new usage on a paid-link refresh; the original job cost remains authoritative.
+
+The additive response fields distinguish media intent from delivery evidence:
+
+- `quality` and `format` remain request aliases for older CLI artifacts;
+  `requested` explicitly contains those same values.
+- `provider.quality` and `provider.format` preserve the accepted ready metadata.
+  Provider-reported resolution accepts renditions such as `576p`, independently
+  of the finite request-quality choices. It is not a byte-level resolution
+  measurement.
+- `artifact.format` records the byte-sniffed MP4, M4A or MP3 type, or null when
+  unrecognized. `delivered.format` uses only that evidence. Existing filenames
+  and content types may be request-derived and are not used to infer it.
+- `delivered.quality` uses stored provider reporting and is null for audio.
+  Missing historical delivery metadata remains null. New artifact recovery can
+  establish a sniffed format without fabricating missing original quality.
+
+No relational migration or stored-job rewrite is required. Old JSONB writers
+legitimately omit the new optional media fields; new readers keep their original
+usage and return unknown delivery metadata. Interrupted settlement and paid-link
+refresh keep the same job and usage idempotency key. Refresh metadata must match
+the original accepted duration and cost, rather than reprice a paid download.
+
+| Pairing            | Supported behavior                                                                                                                                                                              |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Old CLI, new API   | Existing request aliases and response fields remain valid; additional fields can be ignored.                                                                                                    |
+| New CLI, old API   | Optional response fields allow parsing; output adds explicit requested values and null delivered values. Remove this normalization only when old API targets leave the rollout/rollback window. |
+| Old API, new JSONB | Additive keys do not change existing required values; rollback retains the old API's pre-existing HD validation limitation.                                                                     |
+| New API, old JSONB | Completed jobs remain readable; pending settlement and artifact recovery preserve original usage and unknown media fields.                                                                      |
+
+#### Explicit MP3 social downloads
+
+`social download --format mp3` requests audio through the existing download
+lifecycle. MP4 remains the default, M4A remains supported, and both audio
+formats use one provider unit per started minute regardless of video quality.
+The provider's ready format must match the request. Artifact bytes still
+determine the delivered extension and MIME: detected MP3 is `audio/mpeg`, and
+a different detected type is reported truthfully. For unrecognized bytes, the
+filename and MIME are request-derived hints (MP3 uses `audio/mpeg`) while
+`delivered.format` remains null. Sniffing does not validate an entire media file.
+
+MP3 requests become available when the capable API is deployed, using the
+existing authentication, capability, credit and active-task checks. MP3 extends
+values inside existing response and JSONB fields. Older API and CLI schemas
+reject those values, including when listing tasks that contain an MP3 request.
+
+Coordinate MP3-capable serving, reconciling and rollback API artifacts with
+compatible commit-addressed CLI selection and the incompatible queued, active
+and finalizing context drain described above. Upgrade supported external
+callers that may list or resume MP3 tasks. These compatibility conditions must
+be addressed as part of deployment because the new API accepts MP3 immediately.
+
+| Pairing                            | Behavior                                                                                                                          |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Old CLI, new API, MP4/M4A jobs     | MP4/M4A requests, polling and discovery retain their existing contract.                                                           |
+| New CLI, old API                   | MP4/M4A keep working. Explicit MP3 is rejected by the old API; never silently substitute a format or resubmit.                    |
+| New API, old JSONB                 | MP4/M4A tasks remain readable/resumable; missing historical delivery metadata stays unknown. No migration or rewrite is required. |
+| MP3-capable CLI/API, new MP3 JSONB | Creation, listing, polling and same-job recovery use the widened format contract.                                                 |
+| Old CLI/API, new MP3 JSONB         | Unsupported; exclude this pairing from supported deployment and rollback combinations once MP3 tasks exist.                       |
+
+After the first MP3 task is created, rollback must retain MP3-capable readers
+for as long as MP3 tasks remain readable or recoverable.
+
 ### Pi Gen1 wire-field retirement
 
 [#33966](https://github.com/vm0-ai/vm0/issues/33966) removes only the optional
@@ -896,6 +1041,41 @@ These objects are contracts, not generic fallbacks. Verify the exact outgoing
 SQL against them, record the release they protect, and remove the functions,
 triggers, and views after that release drains.
 
+## Cloudflare Access for SSH
+
+The #31996 delivery adds a protected transport to the existing SSH host domain.
+#34077 is additive database/API authority preparation, including the minimal
+current Runner contract reader and Platform diagnostic translations.
+`sshAccess` is staff-only, and `cloudflareAccess` stays disabled, including for staff.
+Under the [pre-GA policy](fallback.md), this feature keeps one canonical contract:
+no profile selector, duplicate old/new DTO, or legacy diagnostic projection.
+
+Before the first protected configuration or binding is written in a deployed
+environment, every serving API must understand protected authority, Runners from
+#34080 must own new Run admission, and incompatible active Runs must have drained.
+#34081 owns Access management UI and full real-Run acceptance before activation.
+Management stays inside `/connectors/ssh`. Access is a reusable host connection
+setting under the existing SSH Agent grant, not a separately authorized service.
+The Access feature switch controls rollout; it does not add an Agent permission.
+Native Service Auth interoperability must be verified; S1 contract tests are not
+provider E2E evidence. Do not use a production feature override as a test fixture.
+
+| State                                                                 | Required behavior                                                                      |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Existing Direct data after the additive migration                     | Hosts, credentials, pins, grants and observations remain unchanged; bindings are null. |
+| Current API and S1 Runner with protected handoff                      | Runner returns unavailable without dialing Direct SSH or forwarding the token.         |
+| Current API with an unauthorized protected host or Access feature off | Private authority is unavailable; guest inventory omits that host.                     |
+| Pre-Access API with protected rows                                    | Forbidden: the old reader can interpret the row as Direct.                             |
+| Protected writes before the native carrier and real-Run acceptance    | Forbidden outside controlled local tests.                                              |
+
+Feature disable does not make a protected row safe for a pre-Access reader.
+Do not deploy such a reader after protected writes exist; no automatic deletion
+or conversion is part of deployment.
+
+Run cache invalidations are best-effort and identifier-only. Token/SSH-grant changes
+may leave cached authority usable for the remainder of an active Run if a notice
+is missed. End those Runs when immediate revocation is required.
+
 ## Testing Expectations
 
 Tests should cover cross-version behavior when a change touches a deployment
@@ -1034,3 +1214,26 @@ existing storage-version lifecycle. US provider user IDs remain unchanged;
 EU IDs have an `eu:` prefix to distinguish independent regional ID namespaces.
 The personal API-key storage version stays at 1. No frontend, Runner, or
 production data migration is required.
+
+## Storage presigned URLs use a fixed two-day lifetime
+
+All first-party object-storage GET, PUT, and multipart-part URLs are signed for
+172800 seconds. API responses that advertise expiration use the same shared
+constant, including reference images, private previews, registry archives, chat
+snapshots, and exports. Private hosted preview tokens retain that same two-day
+lifetime. Provider-owned URLs and OAuth token lifetimes are unchanged.
+
+The app no longer renews preview credentials on a timer or after media errors.
+Presigned uploads and Runner/Guest object downloads make one application-level attempt;
+errors remain visible to the caller. Existing preview-resolution API contracts
+remain available to deployed older app and CLI versions. Old Runner versions can
+consume the longer-lived URLs without a wire-format change.
+
+Storage URL caches are read on demand and reuse unexpired entries. Missing or
+expired entries are signed once during the normal API request. There is no
+proactive refresh or retry. The cron endpoint is now
+`/api/cron/prune-storage-presigned-urls` and only removes expired cache rows.
+Cache keys include the lifetime, so new code does not reuse the previous shorter
+policy. The database's required `refresh_after` and `last_requested_at` columns
+remain writable for deployment coexistence; new rows set `refresh_after` to their
+expiration and new code does not use either column to schedule renewal.

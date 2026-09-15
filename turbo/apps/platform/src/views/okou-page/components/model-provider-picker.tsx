@@ -171,6 +171,14 @@ interface ModelProviderPickerProps {
   onSelected?: () => void;
   /** Model omitted from this caller's list of available choices. */
   excludedModel?: SupportedRunModel;
+  /**
+   * When true, the trigger leaves the Fast suffix off the model's name because
+   * the caller already shows that state. The composer's effort control sits
+   * beside the model and carries the bolt, so repeating the word on the model
+   * would say it twice and change the model's name as a side effect. The
+   * accessible name still carries it, for callers who cannot see the bolt.
+   */
+  fastShownByCaller?: boolean;
 }
 
 // Keep the inherit option distinct from an empty model identifier at the UI
@@ -299,17 +307,22 @@ function selectionLabel({
   placeholder,
   codexFastModeEnabled,
   fastLabel,
+  fastShownByCaller = false,
 }: {
   selection: ModelProviderSelection | null;
   placeholder: string;
   codexFastModeEnabled: boolean;
   fastLabel: string;
+  /** See `ModelProviderPickerProps.fastShownByCaller`. */
+  fastShownByCaller?: boolean;
 }): string {
   if (!selection) {
     return placeholder;
   }
   const modelLabel = getCanonicalModelDisplayName(selection.selectedModel);
-  return codexFastModeEnabled && selection.codexServiceTier === "fast"
+  return codexFastModeEnabled &&
+    !fastShownByCaller &&
+    selection.codexServiceTier === "fast"
     ? `${modelLabel} ${fastLabel}`
     : modelLabel;
 }
@@ -320,12 +333,14 @@ function ModelFirstTriggerLabel({
   mobileIcon,
   codexFastModeEnabled,
   fastLabel,
+  fastShownByCaller = false,
 }: {
   selection: ModelProviderSelection | null;
   placeholder: string;
   mobileIcon: boolean;
   codexFastModeEnabled: boolean;
   fastLabel: string;
+  fastShownByCaller?: boolean;
 }) {
   if (!selection) {
     return (
@@ -348,6 +363,7 @@ function ModelFirstTriggerLabel({
             placeholder,
             codexFastModeEnabled,
             fastLabel,
+            fastShownByCaller,
           })}
         </span>
       }
@@ -1237,6 +1253,7 @@ function ModelFirstSelectPicker({
   mobileIconTrigger,
   codexFastModeEnabled,
   fastLabel,
+  fastShownByCaller,
   open,
   onOpenChange,
   modal,
@@ -1249,6 +1266,7 @@ function ModelFirstSelectPicker({
   mobileIconTrigger: boolean;
   codexFastModeEnabled: boolean;
   fastLabel: string;
+  fastShownByCaller: boolean;
   open: boolean | undefined;
   onOpenChange:
     | ((
@@ -1278,6 +1296,7 @@ function ModelFirstSelectPicker({
             mobileIcon={mobileIconTrigger}
             codexFastModeEnabled={codexFastModeEnabled}
             fastLabel={fastLabel}
+            fastShownByCaller={fastShownByCaller}
           />
         </SelectValue>
       </SelectTrigger>
@@ -1553,6 +1572,7 @@ function EnabledExplicitModelFirstModelPicker(
                 mobileIcon={props.mobileIconTrigger}
                 codexFastModeEnabled={props.codexFastModeEnabled ?? false}
                 fastLabel={props.fastLabel}
+                fastShownByCaller={props.fastShownByCaller ?? false}
               />
             </span>
             <span data-slot="select-icon">
@@ -1590,6 +1610,7 @@ function EnabledExplicitModelFirstModelPicker(
       triggerClassName={props.triggerClassName}
       mobileIconTrigger={props.mobileIconTrigger}
       codexFastModeEnabled={props.codexFastModeEnabled ?? false}
+      fastShownByCaller={props.fastShownByCaller ?? false}
       fastLabel={props.fastLabel}
       open={props.open}
       onOpenChange={props.onOpenChange}
@@ -1616,6 +1637,7 @@ export function ModelProviderPicker({
   flyoutLayout = false,
   onSelected,
   excludedModel,
+  fastShownByCaller,
 }: ModelProviderPickerProps) {
   const { t } = useTranslation();
   const resolvedPlaceholder =
@@ -1654,6 +1676,7 @@ export function ModelProviderPicker({
       excludedModel={excludedModel}
       menuSignals={menuSignals}
       flyoutLayout={flyoutLayout}
+      fastShownByCaller={fastShownByCaller ?? false}
       {...(onSelected ? { onSelected } : {})}
       {...(mediaModelPanel ? { mediaModelPanel } : {})}
     />

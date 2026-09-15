@@ -454,6 +454,41 @@ test("Sent template references stay inline and read-only", async () => {
   expect(screen.queryByText("Create")).toBeNull();
 });
 
+test("A sent Intro Video reference is labelled Intro video, not Video", async () => {
+  // The chip names the product, not the envelope: creative video and talking
+  // avatar still share `type: "video"`, so a label derived from the wire type
+  // alone would be wrong for one of them.
+  const userMessage = {
+    version: 1,
+    parts: [
+      {
+        type: "template",
+        titleSnapshot: "Intro video",
+        template: {
+          type: "intro-video",
+          selection: {},
+        },
+      },
+      { type: "text", text: "for the launch." },
+    ],
+  } satisfies UserMessageDocument;
+  installMessageExperienceChat({
+    threadId: context.resourceId,
+    chatEvents: [userEventWith(userMessage)],
+  });
+
+  await setupPage({ context, path: `/chats/${context.resourceId}` });
+
+  const reference = await waitFor(() => {
+    const element = document.querySelector<HTMLElement>(
+      "[data-structured-template-reference]",
+    );
+    expect(element).not.toBeNull();
+    return element!;
+  });
+  expect(reference).toHaveAttribute("title", "Intro video · Intro video");
+});
+
 function documentRoot(): HTMLElement {
   const element = document.querySelector<HTMLElement>(
     "[data-structured-user-message]",

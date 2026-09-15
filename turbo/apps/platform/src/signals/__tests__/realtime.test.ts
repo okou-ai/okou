@@ -20,6 +20,7 @@ import { setApiClientRuntime$ } from "../api-client-runtime.ts";
 import { setAuthenticatedIdentity$ } from "../auth-context.ts";
 import { subscribeChatThreadRealtime$ } from "../chat-page/chat-thread-remote-signals.ts";
 import { testContext } from "./test-helpers.ts";
+import { hasRealtimeChannel } from "../../mocks/ably.ts";
 import {
   createChildAbortController,
   detach,
@@ -118,6 +119,52 @@ function testSubscriber(): AbortController {
   // eslint-disable-next-line ccstate/no-create-child-abort-controller -- migrate this lifetime to the ccstate signal hierarchy
   return createChildAbortController(context.signal);
 }
+
+test("A session output channel detaches after its final subscriber and can be reacquired", async () => {
+  mockSignedInUser();
+  await setupAuthAndRealtime();
+  const topic = "d0000000-0000-4000-a000-000000000851";
+  const channel = `run-output:test-user-123:test-org-123:${topic}`;
+  const first = testSubscriber();
+  const second = testSubscriber();
+  const firstOperation = context.store.set(
+    setAblyPayloadLoop$,
+    { scope: "run-output", topic, loopCommand$: keepAlivePayloadLoop$ },
+    first.signal,
+  );
+  const secondOperation = context.store.set(
+    setAblyPayloadLoop$,
+    { scope: "run-output", topic, loopCommand$: keepAlivePayloadLoop$ },
+    second.signal,
+  );
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(channel, topic),
+    ).toBeTruthy();
+  });
+  first.abort(new DOMException("First viewer left", "AbortError"));
+  await expect(firstOperation).rejects.toThrow("First viewer left");
+  expect(
+    context.mocks.ably.hasSubscriptionOnChannel(channel, topic),
+  ).toBeTruthy();
+  second.abort(new DOMException("Last viewer left", "AbortError"));
+  await expect(secondOperation).rejects.toThrow("Last viewer left");
+  expect(hasRealtimeChannel(channel)).toBeFalsy();
+  const next = testSubscriber();
+  const nextOperation = context.store.set(
+    setAblyPayloadLoop$,
+    { scope: "run-output", topic, loopCommand$: keepAlivePayloadLoop$ },
+    next.signal,
+  );
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(channel, topic),
+    ).toBeTruthy();
+  });
+  next.abort(new DOMException("Next viewer left", "AbortError"));
+  await expect(nextOperation).rejects.toThrow("Next viewer left");
+  expect(hasRealtimeChannel(channel)).toBeFalsy();
+});
 
 interface SharedWorkerRealtimeSubscription {
   readonly listener: (message: SharedDatabaseRealtimeMessage) => void;
@@ -292,6 +339,55 @@ test("Realtime authentication failure does not leave stale live updates", async 
 
   await expect(setupPromise).rejects.toThrow(/Ably connection failed/);
   await expect(loopPromise).rejects.toThrow(/Ably connection failed/);
+  expect(context.mocks.ably.hasSubscription(topic)).toBeFalsy();
+  await expect(
+    context.store.set(
+      setAblyLoop$,
+      { topic: "test:late-auth-failure", loopCommand$: finishLoop$ },
+      context.signal,
+    ),
+  ).rejects.toThrow(/Ably connection failed/);
+});
+
+// These transport failures have no page action for controlling one subscriber's
+// lifetime or the registration/attach gap. Exercise the real realtime setup and
+// external Ably boundary here; template loading/recovery has page coverage.
+test("Cancelling a subscriber releases its pending channel attach wait", async () => {
+  mockSignedInUser();
+  await setupAuthAndRealtime();
+  context.mocks.ably.triggerConnectionState("suspended");
+  const subscriber = testSubscriber();
+  const topic = "test:cancel-attach";
+  const operation = context.store.set(
+    setAblyLoop$,
+    { topic, loopCommand$: keepAliveLoop$ },
+    subscriber.signal,
+  );
+  await waitFor(() => {
+    expect(context.mocks.ably.hasSubscription(topic)).toBeTruthy();
+  });
+  subscriber.abort(new DOMException("Subscriber closed", "AbortError"));
+  await expect(operation).rejects.toThrow("Subscriber closed");
+  expect(context.mocks.ably.hasSubscription(topic)).toBeFalsy();
+});
+
+test("A channel that fails during registration rejects the subsequent attach wait", async () => {
+  mockSignedInUser();
+  await setupAuthAndRealtime();
+  const topic = "test:failed-before-attach-wait";
+  const registration = context.mocks.ably.deferSubscribeOnChannel(
+    "user:test-user-123",
+    topic,
+  );
+  const operation = context.store.set(
+    setAblyLoop$,
+    { topic, loopCommand$: keepAliveLoop$ },
+    context.signal,
+  );
+  await registration.started;
+  context.mocks.ably.triggerFailure("Channel failed during registration");
+  registration.attach();
+  await expect(operation).rejects.toThrow("Realtime channel attach failed");
   expect(context.mocks.ably.hasSubscription(topic)).toBeFalsy();
 });
 

@@ -46,7 +46,7 @@ const AUTOMATIC_WELCOME_THREAD_NAMESPACE =
  * triggers converge on `onConflictDoNothing`. The manual
  * `POST /api/welcome-chat-threads` path keeps its per-action caller id.
  */
-export function automaticWelcomeChatThreadId(
+function automaticWelcomeChatThreadId(
   recipient: WelcomeThreadRecipient,
 ): string {
   return uuidv5(

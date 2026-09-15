@@ -1,6 +1,6 @@
 {
   "name": "api",
-  "version": "1.594.0",
+  "version": "1.601.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -30,6 +30,8 @@
     "@clerk/backend": "^3.13.1",
     "@hono/node-server": "^2.0.10",
     "@hono/otel": "^1.1.2",
+    "@langfuse/otel": "5.10.0",
+    "@langfuse/tracing": "5.10.0",
     "@modelcontextprotocol/client": "^2.0.0",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
@@ -70,6 +72,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.85.1",
     "@hono/node-server-v1": "npm:@hono/node-server@1.19.14",
     "@hono/vite-build": "^1.11.1",
     "@opentelemetry/context-async-hooks": "2.11.0",

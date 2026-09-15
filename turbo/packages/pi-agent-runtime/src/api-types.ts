@@ -85,6 +85,16 @@ export interface PiMemoryToolSourceUse {
 export interface PiApiAssistantTextContent {
   readonly type: "text";
   readonly text: string;
+  readonly runEventId?: string;
+}
+
+export interface PiApiTextStream {
+  readonly eventIdPrefix: string;
+  readonly onDelta: (chunk: {
+    readonly runEventId: string;
+    readonly chunkIndex: number;
+    readonly delta: string;
+  }) => void;
 }
 
 export interface PiApiAssistantToolCallContent {
@@ -145,6 +155,7 @@ export type PiApiAssistantMessage = PiApiAssistantMessageFields &
 export type PiObservedServiceTier = string | null | undefined;
 
 export interface PiApiFirstTurnArgs {
+  readonly textStream?: PiApiTextStream;
   readonly cwd: string;
   readonly agentDir: string;
   readonly sessionId: string;
@@ -163,6 +174,26 @@ export interface PiApiFirstTurnArgs {
   readonly providerRequestBoundary?: (
     markProviderRequestMayHaveStarted: () => void,
   ) => Promise<void>;
+}
+
+/** Preparation has no provider ownership or durable publication authority. */
+export type PiApiTurnPreparationArgs = Omit<
+  PiApiFirstTurnArgs,
+  "ownership" | "providerRequestBoundary" | "textStream"
+>;
+
+export type PiApiTurnExecutionArgs = Pick<
+  PiApiFirstTurnArgs,
+  "ownership" | "providerRequestBoundary" | "textStream"
+>;
+
+/** A private, single-use session; never serialize or cache across attempts. */
+export interface PreparedPiApiTurn {
+  readonly execute: (
+    args: PiApiTurnExecutionArgs,
+    signal?: AbortSignal,
+  ) => Promise<PiApiFirstTurnResult>;
+  readonly dispose: () => void;
 }
 
 export interface PiApiFirstTurnResult {

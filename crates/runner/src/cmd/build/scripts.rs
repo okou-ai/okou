@@ -68,7 +68,10 @@ impl RootfsScripts {
             .unwrap(),
         );
         Self {
-            launcher: temp_dir.path().join("unshare-fixture.sh"),
+            // A checked-in executable avoids ETXTBSY from writable fixture
+            // descriptors inherited by unrelated parallel test processes.
+            launcher: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/unshare-fixture.sh"),
             temp_dir: Some(Arc::new(temp_dir)),
             primary_lock,
             template_lock: None,

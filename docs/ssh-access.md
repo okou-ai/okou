@@ -149,6 +149,50 @@ keys or automatically grant access. Browser notifications are separate from
 Runner authority invalidation and do not tighten
 the accepted Run-lifetime cache window.
 
+## Cloudflare Access backend preparation
+
+The backend foundation (#34077, parent #31996) adds reusable, user-owned Service
+Token configurations as SSH connection settings, independently of SSH login
+credentials. It remains default-off
+behind `cloudflareAccess` and requires `sshAccess`; no new management UI or
+working Access transport is delivered by this slice.
+
+The canonical `/api/ssh/cloudflare-access/configs` endpoints create, list, rename,
+replace credentials and delete configurations. Client ID and
+Client Secret are write-only. Reads return metadata and referencing host IDs/names;
+updates/deletion require the expected edit revision, and referenced deletion is
+rejected. Names may change without invalidating Runs. Token replacement advances
+a separate authority generation and all referencing SSH host generations.
+Configurations have no separate enabled state; the saved host binding selects
+Access, the existing SSH Agent grant authorizes use, and the feature switch
+controls rollout. Switching to Direct is not a way to disable a protected host.
+
+An SSH host explicitly selects a same-owner configuration, published DNS hostname
+and port 443. The origin SSH port belongs to Cloudflare, not this binding. Sharing
+a configuration across hosts does not share it across users or workspaces.
+Protected execution uses the existing SSH Agent grant; there is no separate
+Access grant. Creating or changing an Access configuration does not create a
+host, grant SSH or restore a manual denial. Existing first-SSH-host onboarding
+remains unchanged, and later Agents can use bound configurations once authorized
+for SSH. SSH username/key/password and server host-key trust remain independent
+of the Service Token.
+
+Configuration mutations reuse the owner's `ssh:changed` notification. The later
+Platform delivery manages these settings inside `/connectors/ssh`, not through
+an independent connector card, Agent Authorization row or Chat service. Access
+configuration counts do not replace SSH host-based visibility and summaries.
+
+SSH management uses one canonical contract. Protected metadata includes
+`transport: {type: "cloudflare_access", configId}`. Direct hosts omit the binding.
+An omitted transport on edit preserves the current binding; switching to Direct
+must be explicit and requires the current host generation. Unrelated Direct hosts
+remain manageable when Access is off.
+
+See [private authority](runner-ssh-authority.md#cloudflare-access-authority-preparation)
+and the [activation gate](deployment-compatibility.md#cloudflare-access-for-ssh).
+The accepted missed-notification window still lasts until Run end; this feature
+does not promise immediate revocation.
+
 ## Recent connection failures
 
 After an actual SSH attempt, the host card can show the last reported connection
@@ -227,20 +271,52 @@ For work spanning several CLI calls, use a managed session:
 
 ```sh
 okou ssh session start <connection-id> --command 'sleep 90; uname -a' --json
-okou ssh session status <session-id> --json
-okou ssh session read <session-id> --cursor 0 --json
+okou ssh session read <session-id>
+# Follow next_command; use --json for exact base64 chunks and structured metadata.
+okou ssh session read <session-id> --cursor <next_cursor> --wait 0 --max-bytes 32768 --json
 okou ssh session close <session-id> --json
 ```
 
-Start returns a session ID immediately; status reports setup failure, running
-state, or observed exit. `--shell` starts a persistent shell instead of a command;
+Start returns a session ID immediately; read includes setup failure, running
+state, or observed exit, so a separate status poll is unnecessary. `--shell`
+starts a persistent shell instead of a command;
 later `write --text <text>` calls share its working directory, environment and
 stdin. Include newlines when submitting shell commands. Optional `--pty` requests
 a terminal. `write --base64 <data>` preserves binary input, and `--eof` closes
 stdin after the submitted bytes. Use `signal --signal TERM` to submit a signal.
 
+Read waits up to 10 seconds for output or terminal state, not process completion.
+`--wait` accepts 0–30 seconds with millisecond precision; `--wait 0` reads
+immediately. Available pages are collected without further waits until caught up
+or a budget is reached. `--max-bytes` defaults to 16384 (range 1–65536). Each
+invocation is also limited to 256 chunks, 64 page requests and 35 seconds
+collecting. Reporting gets at most 5 seconds, or 1 second after collection
+timeout/cancellation. Only two reads per Run may wait concurrently.
+
+Plain output shows readable UTF-8 on its original stream and labels binary or
+terminal-control bytes with base64 and their cursor range. Adjacent same-stream
+pieces are joined before decoding; a code point spanning separate reads may be
+shown as base64. JSON preserves the exact ordered base64 chunks. Both forms
+include the latest verified state, `next_cursor`, lost ranges and a continuation
+command when meaningful. JSON `more_available` is relative to that snapshot,
+not a guarantee about future output. Before any valid page, state and
+`more_available` are null. After a reader failure, prior pages and their cursor
+remain valid observations, not proof of current authority or state.
+
+`stop_reason` distinguishes `caught_up`, `wait_elapsed`, `byte_limit`,
+`chunk_limit`, `request_limit`, `time_limit`, `terminal` and `failed`. Terminal
+means the remote terminal state was observed **and its output was drained**;
+terminal backlog still gets a continuation. CLI exit 0 means reading succeeded,
+including quiet wait expiry and remote nonzero exit; reader/RPC/output failures
+exit 1. Inspect the separate remote exit or failure before deciding work succeeded.
+Cancelling a read or exhausting its budget does not stop the remote process.
+A disconnected reader may hold its Runner request/guest park reservation until
+the requested wait expires (up to 30 seconds plus bounded terminal reserve).
+If the output pipe fails, a complete result may be undeliverable; reuse a
+previously confirmed cursor, never replay the remote command to recover output.
+
 Continue output reads with the returned `next_cursor`. Reading does not consume
-output, and a `lost` range explicitly identifies discarded bytes. `session list`
+output, and the `lost` array explicitly identifies discarded byte ranges. `session list`
 recovers the current Run's IDs after a lost start reply. All session commands
 require `ssh:write`. There are eight retained sessions per current Run; completed
 records remain for five minutes or until closed. Running sessions last at most
@@ -248,8 +324,9 @@ two hours and always end with their Run; they cannot resume in another Run.
 
 Input/signal submission and closing SSH do not prove the remote process stopped
 or its effects completed. Never automatically replay uncertain starts or input.
-An older Runner returns `unknown_method`; there is no automatic conversion into
-independent exec calls. Observed authorization-notification disconnects cancel
+This staff-gated session-read contract replaces the earlier defaults and payload
+without an old-reader compatibility path or automatic conversion into independent
+exec calls. Observed authorization-notification disconnects cancel
 managed sessions and prevent new starts until the subscription recovers.
 
 ### File upload and download

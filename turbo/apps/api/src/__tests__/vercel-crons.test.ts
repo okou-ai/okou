@@ -27,10 +27,10 @@ import {
   cronRenewGoogleWorkspaceEventSubscriptionsContract,
   cronReconcileBillingEntitlementsContract,
   cronReconcileSocialKitDownloadsContract,
-  cronRefreshStoragePresignedUrlsContract,
   cronSteerRunTimeBudgetContract,
   cronSyncSkillsContract,
   cronTelegramCleanupContract,
+  cronPruneStoragePresignedUrlsContract,
 } from "@okouai/api-contracts/contracts/cron";
 import { describe, expect, it } from "vitest";
 
@@ -139,7 +139,7 @@ const expectedVercelCrons = [
     schedule: "0 * * * *",
   },
   {
-    path: cronRefreshStoragePresignedUrlsContract.refresh.path,
+    path: cronPruneStoragePresignedUrlsContract.prune.path,
     schedule: "* * * * *",
   },
   {

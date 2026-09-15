@@ -3,7 +3,6 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import {
-  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
   getBuiltInApiModel,
   getModelProviderFirewall,
   getProviderRuntimeModel,
@@ -84,6 +83,7 @@ import {
   setApiTestConnectorCatalogValidationAuthority,
 } from "../../../test-fixtures/connector-catalog";
 import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
+import { setHistoricalModelProviderSelectionFixture } from "../../../test-fixtures/model-provider-selection";
 import {
   cleanupOwnedSkillsState,
   seedCurrentSkillVersionsState,
@@ -1118,38 +1118,38 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     expect(stored.appendSystemPrompt ?? "").toContain(toolHint);
   });
 
-  it("asks chat runs for a generic progressive artifact preview only while its switch is on", async () => {
+  it("advertises Lark messaging only while the organization rollout is enabled", async () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
     const { actor, agentId } = await entitledRunActor();
-    const promptHeading = "# Progressive Artifact Preview";
-
-    const gatedOff = await api.createRun(actor, {
+    const disabled = await api.createRun(actor, {
       agentId,
-      prompt: "make a launch deck",
+      prompt: "send a message",
       modelProvider: "anthropic-api-key",
     });
-    const gatedOffRun = await api.readRun(actor, gatedOff.runId);
-    expect(gatedOffRun.appendSystemPrompt ?? "").not.toContain(promptHeading);
+    const disabledRun = await api.readRun(actor, disabled.runId);
+    expect(disabledRun.appendSystemPrompt).not.toContain("okou lark");
+    expect(disabledRun.appendSystemPrompt).toContain(
+      "okou feishu message send --help",
+    );
+    await api.requestCancelRun(actor, disabled.runId, [200]);
 
     await connectors.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.ProgressiveArtifactPreview]: true,
+      [FeatureSwitchKey.LarkIntegration]: true,
     });
-
-    const gatedOn = await api.createRun(actor, {
+    const enabled = await api.createRun(actor, {
       agentId,
-      prompt: "make a launch deck",
+      prompt: "send a message",
       modelProvider: "anthropic-api-key",
     });
-    const gatedOnRun = await api.readRun(actor, gatedOn.runId);
-    const appendSystemPrompt = gatedOnRun.appendSystemPrompt ?? "";
-    expect(appendSystemPrompt).toContain(promptHeading);
-    expect(appendSystemPrompt).toContain("returned Alias URL");
-    expect(appendSystemPrompt).toContain("still working on it");
-    expect(appendSystemPrompt).toContain("same `--site` slug");
-    expect(appendSystemPrompt).toContain(
-      "Do not report named stages, draft/final labels, or completion percentages",
+    const enabledRun = await api.readRun(actor, enabled.runId);
+    expect(enabledRun.appendSystemPrompt).toContain(
+      "Lark messages: when the task explicitly asks to send or post to Lark",
     );
+    expect(enabledRun.appendSystemPrompt).toContain(
+      "Lark: `okou lark message send --help` for chats, DMs, and replies.",
+    );
+    await api.requestCancelRun(actor, enabled.runId, [200]);
   });
 
   it("claims an exact-empty direct dispatch run without connector scope", async () => {
@@ -5814,7 +5814,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     expect(queue.body.concurrency.active).toBe(0);
   });
 
-  it("defaults limited-free runs to DeepSeek V4.1 Flash and rejects paid models", async () => {
+  it("defaults limited-free runs to Luna and rejects paid models", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
@@ -5836,54 +5836,35 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       onboardingPaymentPending: false,
     });
     const modelPolicies = await misc.listModelPolicies(actor);
-    expect(modelPolicies.workspaceDefaultModel).toBe(
-      DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-    );
+    expect(modelPolicies.workspaceDefaultModel).toBe("gpt-5.6-luna");
     expect(
       modelPolicies.policies.find((policy) => {
-        return policy.model === DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
+        return policy.model === "gpt-5.6-luna";
       }),
     ).toMatchObject({ isDefault: true });
 
-    for (const model of [
-      DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-      "gpt-5.6-luna",
-    ] as const) {
-      await seedBuiltInModelKey(model);
-      const sent = await chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          prompt: `limited-free ${model} run`,
-          model,
-        },
-        [201],
-      );
-      if (sent.status !== 201 || sent.body.runId === null) {
-        throw new Error(`Expected ${model} to create a run`);
-      }
-      await api.heartbeatRunner(runnerGroup);
-      const claim = await api.claimRunnerJob(sent.body.runId);
-      expect(claim.cliAgentType).toBe("codex");
-      expect(claim.environment).toMatchObject({
-        OPENAI_MODEL: getBuiltInApiModel(model),
-      });
-      if (model === "deepseek-v4.1-flash") {
-        expect(claim.codexRuntimeConfig?.providerId).toBe("openrouter-codex");
-        expect(claim.codexRuntimeConfig?.modelCatalog?.models).toStrictEqual([
-          expect.objectContaining({
-            slug: "deepseek/deepseek-v4.1-flash",
-            context_window: 1_048_576,
-            input_modalities: ["text", "image"],
-            apply_patch_tool_type: null,
-          }),
-        ]);
-      }
-      expect(claim.modelUsageProvider).toBe(model);
-      await api.requestCancelRun(actor, sent.body.runId, [200]);
+    await seedBuiltInModelKey("gpt-5.6-luna");
+    const sent = await chat.requestSendEvent(
+      actor,
+      { agentId, prompt: "limited-free default model run" },
+      [201],
+    );
+    if (sent.status !== 201 || sent.body.runId === null) {
+      throw new Error("Expected the default Luna model to create a run");
     }
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(sent.body.runId);
+    expect(claim.cliAgentType).toBe("codex");
+    expect(claim.environment).toMatchObject({ OPENAI_MODEL: "gpt-5.6-luna" });
+    expect(claim.environment).not.toHaveProperty("OPENAI_BASE_URL");
+    expect(claim.modelUsageProvider).toBe("gpt-5.6-luna");
+    await api.requestCancelRun(actor, sent.body.runId, [200]);
 
-    for (const model of ["gpt-5.6-sol", "gpt-6-astra"] as const) {
+    for (const model of [
+      "gpt-5.6-sol",
+      "gpt-6-astra",
+      "claude-fable-5-1",
+    ] as const) {
       const rejectedThreadId = randomUUID();
       const rejected = await chat.requestSendEvent(
         actor,
@@ -5927,9 +5908,8 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
     await expectBuiltInModelRunRuntimeRoute(run.runId, selectedModel);
-    expect(claim.environment).toMatchObject({
-      OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
-    });
+    expect(claim.environment).toMatchObject({ OPENAI_MODEL: "gpt-5.6-luna" });
+    expect(claim.environment).not.toHaveProperty("OPENAI_BASE_URL");
 
     expect(
       claim.firewalls?.map((firewall) => {
@@ -6071,7 +6051,88 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.requestCancelRun(actor, sent.body.runId, [200]);
   });
 
-  it.each(["deepseek-v4-flash", "deepseek-v4-pro"] as const)(
+  it.each([
+    undefined,
+    "deepseek-flash",
+    "deepseek-v4-flash",
+    "deepseek-v4-pro",
+  ] as const)(
+    "claims native DeepSeek with saved selection %s or the provider default",
+    async (selectedModel) => {
+      const api = createRunsApi(context);
+      const { actor, runnerGroup } = await entitledRunActor();
+      const { providerId } = await api.createOrgModelProvider(actor, {
+        type: "deepseek",
+        secret: "native-deepseek-key",
+      });
+      if (selectedModel !== undefined) {
+        // The current credential API cannot write a saved model. Seed the
+        // historical state to verify the default cannot overwrite it.
+        if (!actor.orgId) {
+          throw new Error(
+            "Expected a workspace for the native DeepSeek fixture",
+          );
+        }
+        await setHistoricalModelProviderSelectionFixture({
+          orgId: actor.orgId,
+          providerId,
+          selectedModel,
+        });
+      }
+      // Model-first chat supplies a canonical selection. The direct-run
+      // fixture exercises provider-default resolution without that override.
+      const compose = await api.createDirectAgent(actor, {
+        version: "1",
+        agents: { main: { framework: "codex" } },
+      });
+      const run = await api.createDirectRun(actor, {
+        agentId: compose.agentId,
+        modelProviderType: "deepseek",
+        prompt: "native DeepSeek provider selection",
+      });
+      await api.heartbeatRunner(runnerGroup);
+      const claim = await api.claimRunnerJob(run.runId);
+      const runtimeModel = selectedModel ?? "deepseek-flash";
+
+      expect(claim.environment).toMatchObject({
+        OPENAI_MODEL: runtimeModel,
+        OPENAI_BASE_URL: "https://api.deepseek.com/",
+      });
+      expect(claim.codexRuntimeConfig).toMatchObject({
+        providerId: "deepseek",
+        modelCatalog: {
+          models: expect.arrayContaining([
+            expect.objectContaining({
+              slug: runtimeModel,
+              input_modalities:
+                runtimeModel === "deepseek-v4-pro"
+                  ? ["text"]
+                  : ["text", "image"],
+            }),
+          ]),
+        },
+      });
+      const providers = await api.listOrgModelProviders(actor);
+      expect(
+        providers.find((provider) => {
+          return provider.id === providerId;
+        }),
+      ).toMatchObject({
+        selectedModel: selectedModel ?? null,
+      });
+      expect(claim.modelUsageProvider).toBe(
+        runtimeModel === "deepseek-flash" ? undefined : runtimeModel,
+      );
+      expect(claim.billableFirewalls).not.toContain("model-provider:deepseek");
+      await api.requestCancelRun(actor, run.runId, [200]);
+    },
+  );
+
+  it.each([
+    "deepseek-v4-flash",
+    "deepseek-v4-pro",
+    "deepseek-v4.1-flash",
+  ] as const)(
     "claims built-in %s runs with the Responses adapter",
     async (selectedModel) => {
       const api = createRunsApi(context);
@@ -6113,7 +6174,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
           "DEEPSEEK_API_KEY",
         ),
         OPENAI_BASE_URL: "https://api.deepseek.com/",
-        OPENAI_MODEL: selectedModel,
+        OPENAI_MODEL: getBuiltInApiModel(selectedModel),
       });
       expect(claim.environment).not.toHaveProperty("ANTHROPIC_MODEL");
       expect(claim.codexRuntimeConfig).toMatchObject({
@@ -6133,16 +6194,22 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       }
       expect(catalogModels).toContainEqual(
         expect.objectContaining({
-          slug: selectedModel,
+          slug: getBuiltInApiModel(selectedModel),
           apply_patch_tool_type: "freeform",
           default_reasoning_level: "high",
-          input_modalities: ["text"],
+          input_modalities:
+            selectedModel === "deepseek-v4-pro" ? ["text"] : ["text", "image"],
           base_instructions: expect.stringContaining("You are Codex"),
           model_messages: expect.objectContaining({
             instructions_template: expect.stringContaining("You are Codex"),
           }),
         }),
       );
+      if (selectedModel === "deepseek-v4.1-flash") {
+        expect(catalogModels).toContainEqual(
+          expect.objectContaining({ context_window: 1_048_576 }),
+        );
+      }
       expect(
         claim.firewalls?.map((firewall) => {
           return firewallEntryName(firewall);
@@ -6150,77 +6217,112 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       ).toContain("model-provider:deepseek");
       expect(claim.billableFirewalls).toContain("model-provider:deepseek");
       expect(claim.modelUsageProvider).toBe(selectedModel);
+      const token = claim.platformEnvironment.OKOU_TOKEN;
+      if (!token) {
+        throw new Error(
+          "Expected the native DeepSeek run to expose OKOU_TOKEN",
+        );
+      }
+      expect(
+        (claim.appendSystemPrompt ?? "").includes("okou image-recognition"),
+      ).toBe(selectedModel === "deepseek-v4-pro");
+      expect(
+        verifyOkouToken(token)?.capabilities.includes(
+          "image-recognition:write",
+        ),
+      ).toBe(selectedModel === "deepseek-v4-pro");
 
       await api.requestCancelRun(actor, sent.body.runId, [200]);
     },
   );
 
-  it("projects DeepSeek V4.1 Flash metadata for an OpenRouter workspace key", async () => {
-    const api = createRunsApi(context);
-    const chat = createChatFilesBddApi(context);
-    const { actor, agentId, runnerGroup } = await entitledRunActor();
-    const { providerId } = await api.createOrgModelProvider(actor, {
-      type: "openrouter-codex",
-      secret: "openrouter-deepseek-v4-1-flash-key",
-    });
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "deepseek-v4.1-flash",
-        isDefault: true,
-        defaultProviderType: "openrouter-codex",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-    ]);
+  it.each(["deepseek-v4.1-flash", "deepseek-v4-flash"] as const)(
+    "projects DeepSeek %s metadata for an OpenRouter workspace key",
+    async (selectedModel) => {
+      const api = createRunsApi(context);
+      const chat = createChatFilesBddApi(context);
+      const { actor, agentId, runnerGroup } = await entitledRunActor();
+      const { providerId } = await api.createOrgModelProvider(actor, {
+        type: "openrouter-codex",
+        secret: "openrouter-deepseek-flash-key",
+      });
+      await api.updateOrgModelPolicies(actor, [
+        {
+          model: selectedModel,
+          isDefault: true,
+          defaultProviderType: "openrouter-codex",
+          credentialScope: "org",
+          modelProviderId: providerId,
+        },
+      ]);
 
-    const sent = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        prompt: "use DeepSeek V4.1 Flash through OpenRouter",
-        model: "deepseek-v4.1-flash",
-      },
-      [201],
-    );
-    if (sent.status !== 201 || sent.body.runId === null) {
-      throw new Error("Expected DeepSeek V4.1 Flash to create a run");
-    }
-    await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(sent.body.runId);
+      const sent = await chat.requestSendEvent(
+        actor,
+        {
+          agentId,
+          prompt: "use DeepSeek Flash through OpenRouter",
+          model: selectedModel,
+        },
+        [201],
+      );
+      if (sent.status !== 201 || sent.body.runId === null) {
+        throw new Error("Expected DeepSeek Flash to create a run");
+      }
+      await api.heartbeatRunner(runnerGroup);
+      const claim = await api.claimRunnerJob(sent.body.runId);
 
-    expect(claim.cliAgentType).toBe("codex");
-    expect(claim.environment).toMatchObject({
-      OPENAI_API_KEY: modelProviderPlaceholder(
-        "openrouter-codex",
-        "OPENROUTER_API_KEY",
-      ),
-      OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
-      OPENAI_MODEL: "deepseek/deepseek-v4.1-flash",
-    });
-    expect(claim.codexRuntimeConfig).toMatchObject({
-      providerId: "openrouter-codex",
-      baseUrl: "https://openrouter.ai/api/v1",
-      wireApi: "responses",
-      modelCatalog: {
-        models: [
-          expect.objectContaining({
-            slug: "deepseek/deepseek-v4.1-flash",
-            context_window: 1_048_576,
-            input_modalities: ["text", "image"],
-            apply_patch_tool_type: null,
-          }),
-        ],
-      },
-    });
-    expect(claim.modelUsageProvider).toBe("deepseek-v4.1-flash");
+      expect(claim.cliAgentType).toBe("codex");
+      expect(claim.environment).toMatchObject({
+        OPENAI_API_KEY: modelProviderPlaceholder(
+          "openrouter-codex",
+          "OPENROUTER_API_KEY",
+        ),
+        OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
+        OPENAI_MODEL: `deepseek/${selectedModel}`,
+      });
+      expect(claim.codexRuntimeConfig).toMatchObject({
+        providerId: "openrouter-codex",
+        baseUrl: "https://openrouter.ai/api/v1",
+        wireApi: "responses",
+        modelCatalog: {
+          models: [
+            expect.objectContaining({
+              slug: `deepseek/${selectedModel}`,
+              context_window: 1_048_576,
+              input_modalities:
+                selectedModel === "deepseek-v4.1-flash"
+                  ? ["text", "image"]
+                  : ["text"],
+              apply_patch_tool_type: null,
+            }),
+          ],
+        },
+      });
+      expect(claim.modelUsageProvider).toBe(selectedModel);
+      const token = claim.platformEnvironment.OKOU_TOKEN;
+      if (!token) {
+        throw new Error(
+          "Expected the OpenRouter DeepSeek run to expose OKOU_TOKEN",
+        );
+      }
+      expect(
+        (claim.appendSystemPrompt ?? "").includes("okou image-recognition"),
+      ).toBe(selectedModel === "deepseek-v4-flash");
+      expect(
+        verifyOkouToken(token)?.capabilities.includes(
+          "image-recognition:write",
+        ),
+      ).toBe(selectedModel === "deepseek-v4-flash");
 
-    await api.requestCancelRun(actor, sent.body.runId, [200]);
-  });
+      await api.requestCancelRun(actor, sent.body.runId, [200]);
+    },
+  );
 
   it("offers image recognition only for image-unsupported models", async () => {
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
-    const unsupportedModel = "deepseek-v4-flash";
+    const unsupportedModel = "deepseek-v4-pro";
+    const nativeFlashModel = "deepseek-v4-flash";
     const supportedModel = "claude-sonnet-5";
     const unknownModel = "gpt-5.6-sol";
     const { actor, agentId, runnerGroup } = await entitledRunActor();
@@ -6245,6 +6347,13 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       {
         model: unsupportedModel,
         isDefault: true,
+        defaultProviderType: "deepseek",
+        credentialScope: "org",
+        modelProviderId: deepseekProviderId,
+      },
+      {
+        model: nativeFlashModel,
+        isDefault: false,
         defaultProviderType: "deepseek",
         credentialScope: "org",
         modelProviderId: deepseekProviderId,
@@ -6299,6 +6408,20 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       "image-recognition:write",
     );
     await api.requestCancelRun(actor, unsupported.runId, [200]);
+
+    const nativeFlash = await claimModel(nativeFlashModel);
+    const nativeFlashToken = nativeFlash.claim.platformEnvironment.OKOU_TOKEN;
+    if (!nativeFlashToken) {
+      throw new Error("Expected the native Flash run to expose OKOU_TOKEN");
+    }
+    expect(nativeFlash.claim.appendSystemPrompt ?? "").not.toContain(
+      "okou image-recognition",
+    );
+    expect(verifyOkouToken(nativeFlashToken)?.capabilities).not.toContain(
+      "image-recognition:write",
+    );
+    expect(nativeFlash.claim.modelUsageProvider).toBe(nativeFlashModel);
+    await api.requestCancelRun(actor, nativeFlash.runId, [200]);
 
     const supported = await claimModel(supportedModel);
     const supportedToken = supported.claim.platformEnvironment.OKOU_TOKEN;
@@ -13199,32 +13322,53 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, gatedOn.runId, [200]);
   });
 
-  it("advertises Slack bot reads only while the feature is enabled", async () => {
+  it("advertises live Social status only while the feature is enabled", async () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
     const { actor, agentId } = await entitledRunActor();
 
     for (const enabled of [false, true]) {
       await connectors.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.SlackRead]: enabled,
+        [FeatureSwitchKey.SocialStatus]: enabled,
       });
       const run = await api.createRun(actor, {
         agentId,
-        prompt: "read the channel's recent messages",
+        prompt: "check public social service health",
         modelProvider: "anthropic-api-key",
       });
       const prompt =
         (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
+      expect(prompt).toContain("okou social capabilities [platform] --json");
+      expect(prompt).toContain(
+        "total/page limits, source constraints, and advanced inputs",
+      );
       if (enabled) {
-        expect(prompt).toContain("okou slack channel list --help");
-        expect(prompt).toContain("okou slack message history --help");
+        expect(prompt).toContain("okou social status [platform] --json");
+        expect(prompt).toContain(
+          "health does not establish caller access, account quota, or Okou balance",
+        );
       } else {
-        expect(prompt).not.toContain("okou slack message history --help");
-        expect(prompt).not.toContain("okou slack channel list --help");
+        expect(prompt).not.toContain("okou social status [platform] --json");
       }
-      expect(prompt).toContain("okou slack message send --help");
       await api.requestCancelRun(actor, run.runId, [200]);
     }
+  });
+
+  it("advertises Slack bot reads for an ordinary organization", async () => {
+    const api = createRunsApi(context);
+    const { actor, agentId } = await entitledRunActor();
+
+    const run = await api.createRun(actor, {
+      agentId,
+      prompt: "read the channel's recent messages",
+      modelProvider: "anthropic-api-key",
+    });
+    const prompt =
+      (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
+    expect(prompt).toContain("okou slack channel list --help");
+    expect(prompt).toContain("okou slack message history --help");
+    expect(prompt).toContain("okou slack message send --help");
+    await api.requestCancelRun(actor, run.runId, [200]);
   });
 
   it.each([true, false])(
@@ -13260,6 +13404,15 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
           "2 simultaneous transfers per Run, shared by uploads and downloads",
         );
         expect(prompt).toContain("No option overrides these limits");
+        expect(prompt).toContain("okou ssh session read <session-id>");
+        expect(prompt).toContain("Read waits up to 10 seconds for progress");
+        expect(prompt).toContain("--wait 0");
+        expect(prompt).toContain(
+          "35 seconds collecting, 256 chunks and 64 page requests",
+        );
+        expect(prompt).toContain(
+          "CLI exit 0 means the read succeeded, not that the remote process succeeded",
+        );
       } else {
         expect(prompt).not.toContain("okou ssh");
       }

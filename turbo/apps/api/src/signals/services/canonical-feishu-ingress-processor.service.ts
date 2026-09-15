@@ -11,6 +11,7 @@ import { logger } from "../../lib/log";
 import { env } from "../../lib/env";
 import { buildFeishuNoticeMessage } from "../../lib/feishu-message-card";
 import { inferMimetype } from "../../lib/mimetype";
+import type { FeishuPromptFile } from "../../lib/feishu-message-content";
 import {
   replyWithFeishuMessage,
   sendFeishuMessage,
@@ -24,7 +25,10 @@ import {
 import { settle } from "../utils";
 import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
-import { buildFeishuChatOpenUrl } from "./feishu-config";
+import {
+  isFeishuInstallationEnabled,
+  buildFeishuChatOpenUrl,
+} from "./feishu-config";
 import { ensureFeishuChatThreadRoute } from "./feishu-chat-ingress.service";
 import { resolveFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
 import {
@@ -48,7 +52,6 @@ import {
   type FeishuDispatchConnection,
   type FeishuDispatchInstallation,
   type FeishuInboundMessage,
-  type FeishuPromptFile,
 } from "./feishu-dispatch.service";
 
 const L = logger("CanonicalFeishuIngressProcessor");
@@ -77,7 +80,7 @@ const feishuInboundMessageSchema = z.object({
   openId: z.string(),
   text: z.string(),
   promptText: z.string(),
-  file: feishuPromptFileSchema.nullable(),
+  files: z.array(feishuPromptFileSchema),
 });
 
 function canonicalThreadId(args: {
@@ -141,6 +144,7 @@ async function loadClaimedIngress(db: Db, ingressId: string) {
       orgId: feishuOrgInstallations.orgId,
       ownerUserId: feishuOrgInstallations.ownerUserId,
       appId: feishuOrgInstallations.appId,
+      platform: feishuOrgInstallations.platform,
       defaultAgentId: feishuOrgInstallations.defaultAgentId,
       botName: feishuOrgInstallations.botName,
       messageReceivedAt: feishuOrgInstallations.messageReceivedAt,
@@ -187,7 +191,7 @@ function parseMatchingMessage(
       "Canonical Feishu ingress payload does not match installation",
     );
   }
-  return message;
+  return { ...message, platform: ingress.platform };
 }
 
 async function loadConnection(
@@ -297,10 +301,7 @@ function canonicalFeishuLaunchContext(args: {
   return {
     conversationHistory: args.conversationHistory,
     messageText: args.message.promptText,
-    messageFiles: [
-      ...(args.message.file ? [args.message.file] : []),
-      ...args.files,
-    ].map((file) => {
+    messageFiles: [...args.message.files, ...args.files].map((file) => {
       return {
         fileId: file.fileId,
         messageId: file.messageId,
@@ -330,8 +331,8 @@ function feishuInboundUserMessage(
   chatOpenUrl: string,
 ) {
   return createUserMessageDocument({
-    text: message.file ? null : message.promptText,
-    files: (message.file ? [message.file] : []).map((file) => {
+    text: message.files.length ? message.text : message.promptText,
+    files: message.files.map((file) => {
       return {
         id: file.fileId,
         filename: file.filename,
@@ -382,7 +383,10 @@ async function persistCanonicalFeishuIngress(
   signal.throwIfAborted();
 
   await args.db.transaction(async (tx) => {
-    const chatOpenUrl = buildFeishuChatOpenUrl(args.message.chatId);
+    const chatOpenUrl = buildFeishuChatOpenUrl(
+      args.message.chatId,
+      args.message.platform,
+    );
     const inserted = await insertChatEvent(
       tx,
       {
@@ -529,6 +533,9 @@ async function loadFeishuIngressDispatchContext(
   if (!ingress) {
     throw new Error("Canonical Feishu ingress is unavailable");
   }
+  if (!(await isFeishuInstallationEnabled(db, ingress))) {
+    throw new Error("Lark integration is not enabled");
+  }
   const message = parseMatchingMessage(ingress);
   const publicBrand = resolveFeishuIngressPublicBrand(ingress);
   if (ingress.defaultAgentId === null) {
@@ -536,6 +543,7 @@ async function loadFeishuIngressDispatchContext(
   }
   const installation: FeishuDispatchInstallation = {
     orgId: ingress.orgId,
+    platform: ingress.platform,
     ownerUserId: ingress.ownerUserId,
     defaultAgentId: ingress.defaultAgentId,
     botName: ingress.botName,

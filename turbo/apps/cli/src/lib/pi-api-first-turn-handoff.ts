@@ -58,6 +58,7 @@ interface PiApiFirstTurnHandoff {
   readonly sessionFile: string;
   readonly boundaryControl: PiApiFirstTurnBoundaryControl;
   readonly ownershipTransferMode: PiApiFirstTurnOwnershipTransferMode;
+  readonly langfuseParent?: PiApiFirstTurnManifest["langfuseParent"];
 }
 
 export interface HandoffRuntime {
@@ -229,7 +230,9 @@ function validateManifestIdentity(args: {
 }): void {
   if (
     args.config.baseSession.sessionId !== args.sessionId ||
-    args.manifest.session.sessionId !== args.sessionId
+    args.manifest.session.sessionId !== args.sessionId ||
+    (args.manifest.langfuseParent !== undefined &&
+      args.manifest.langfuseParent.sessionId !== args.sessionId)
   ) {
     throw new PiApiFirstTurnHandoffError(
       "PI_HANDOFF_SESSION_MISMATCH",
@@ -451,6 +454,9 @@ export async function resolvePiApiFirstTurnHandoff(args: {
   return {
     boundaryControl,
     ownershipTransferMode: manifest.mode,
+    ...(manifest.langfuseParent
+      ? { langfuseParent: manifest.langfuseParent }
+      : {}),
     sessionFile: await restoreSession({
       config: args.config,
       manifest,

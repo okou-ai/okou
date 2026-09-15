@@ -142,7 +142,7 @@ fn untrusted_error_bodies_do_not_replace_the_original_http_failure_or_leak() {
 }
 
 #[test]
-fn truncated_forbidden_body_keeps_status_and_does_not_retry() {
+fn truncated_forbidden_body_keeps_status() {
     let server = TcpTestServer::start(|server| {
         let mut stream = server
             .accept()?

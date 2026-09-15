@@ -22,10 +22,9 @@ export const resolveGoogleAdsAccount$ = command(
         },
         fetchOptions: { signal },
       }),
-      [200, 404],
+      [200],
     );
     signal.throwIfAborted();
-    // During mixed-version rollout an older API cannot prove ownership.
-    return result.status === 200 ? result.body.googleAdsAccountId : null;
+    return result.body.googleAdsAccountId;
   },
 );

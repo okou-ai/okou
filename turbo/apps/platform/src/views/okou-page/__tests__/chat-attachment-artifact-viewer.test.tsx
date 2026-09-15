@@ -7,6 +7,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { mockNow } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   ATTACHMENT_RUN_ID,
@@ -465,6 +466,7 @@ test("Image navigation remains inside its split-view chat", async () => {
 });
 
 test("Private HTML previews keep mounted frames stable and resolve again when reopened", async () => {
+  mockNow(new Date("2026-09-09T00:00:00.000Z"), context.signal);
   const deploymentId = "00000000-0000-4000-8000-000000000009";
   const canonicalUrl = `${artifactReferencePath(deploymentId, "index.html")}#slide-2`;
   const firstPreview = `https://pv-${"a".repeat(48)}.sites.vm7.io/`;

@@ -15,6 +15,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { testTeamsDispatchProbeRoutes } from "../test-teams-dispatch-probe";
 import { testTeamsStateRoutes } from "../test-teams-state";
 import { createFixtureTracker } from "./helpers/route-test";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 
 const context = testContext();
 const TEAMS_STATE_ROUTE = "/api/test/teams-state";
@@ -220,16 +221,11 @@ describe("GET /api/test/teams-state", () => {
     });
   });
 
-  it("returns seeded Teams diagnostics and dispatch state", async () => {
+  it("returns seeded Teams installation and account diagnostics", async () => {
     const fixture = await seedTeamsFixture({
       seedConnection: true,
       seedDefaultAgent: true,
     });
-    await dispatchTeamsMessage({
-      fixture,
-      text: "hello from teams diagnostics",
-    });
-
     const body = await readTeamsState(fixture.tenantId);
 
     expect(body.installation).toMatchObject({
@@ -250,6 +246,50 @@ describe("GET /api/test/teams-state", () => {
         }),
       ]),
     );
+    expect(body.org_metadata).toMatchObject({
+      orgId: fixture.orgId,
+      defaultAgentId: fixture.defaultAgentId,
+      credits: 10_000,
+      tier: "free",
+    });
+    expect(body.default_agent).toStrictEqual({
+      id: fixture.defaultAgentId,
+      name: "e2e-teams-agent",
+      orgId: fixture.orgId,
+    });
+  });
+
+  it("returns dispatched Teams run, route, and callback diagnostics", async () => {
+    createRunsApi(context).acceptStorageDownloads();
+    const fixture = await seedTeamsFixture({
+      seedConnection: true,
+      seedDefaultAgent: true,
+    });
+    server.use(
+      http.post(
+        `https://login.microsoftonline.com/${fixture.tenantId}/oauth2/v2.0/token`,
+        () => {
+          return HttpResponse.json({
+            access_token: "teams-graph-token",
+            token_type: "Bearer",
+            expires_in: 3600,
+          });
+        },
+      ),
+      http.get(
+        "https://graph.microsoft.com/v1.0/users/:userId/teamwork/installedApps",
+        () => {
+          return HttpResponse.json({ value: [] });
+        },
+      ),
+    );
+    await dispatchTeamsMessage({
+      fixture,
+      text: "hello from teams diagnostics",
+    });
+
+    const body = await readTeamsState(fixture.tenantId);
+
     expect(body.recent_runs).toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -297,17 +337,6 @@ describe("GET /api/test/teams-state", () => {
         }),
       ]),
     );
-    expect(body.org_metadata).toMatchObject({
-      orgId: fixture.orgId,
-      defaultAgentId: fixture.defaultAgentId,
-      credits: 10_000,
-      tier: "free",
-    });
-    expect(body.default_agent).toStrictEqual({
-      id: fixture.defaultAgentId,
-      name: "e2e-teams-agent",
-      orgId: fixture.orgId,
-    });
   });
 });
 

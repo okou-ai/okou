@@ -9,7 +9,11 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { findComposerEditor, tabByText } from "./chat-composer-test-helpers.ts";
+import {
+  composerInlineTemplates,
+  findComposerEditor,
+  tabByText,
+} from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
   THREAD_ID,
@@ -46,18 +50,57 @@ async function setupChips(enabled = true): Promise<HTMLElement> {
   return await findComposerEditor();
 }
 
+// The selected task is one control: the chip itself removes the selection, so
+// it is addressed by that action rather than by a wrapping group.
 function selectedTask(editor: HTMLElement, task: string): HTMLElement {
   const card = editor.closest<HTMLElement>('[data-slot="chat-composer-card"]');
   if (!card) {
     throw new Error("Expected composer card");
   }
-  return within(card).getByRole("group", { name: task });
+  return button(`Remove ${task}`, card);
+}
+
+/** Off-screen pages are `inert`, so the reachable page is what a user sees. */
+function onCurrentPage(group: HTMLElement): HTMLElement[] {
+  return queryAllByRoleFast("button", group).filter((item) => {
+    return item.closest("[inert]") === null;
+  });
+}
+
+/** Mirrors the row's own page size; a page shows at most this many ideas. */
+const IDEAS_PER_PAGE = 3;
+
+function hasPager(group: HTMLElement, label: string): boolean {
+  return queryAllByRoleFast("button", group).some((item) => {
+    return item.getAttribute("aria-label") === label;
+  });
+}
+
+function currentLabels(group: HTMLElement): string[] {
+  return onCurrentPage(group).map((item) => {
+    return item.textContent?.trim() ?? "";
+  });
 }
 
 function ideaButtons(ideas: HTMLElement): HTMLElement[] {
-  return queryAllByRoleFast("button", ideas).filter((item) => {
-    return !["More ideas", "More templates"].includes(
-      item.textContent?.trim() ?? "",
+  return onCurrentPage(ideas).filter((item) => {
+    const label = item.getAttribute("aria-label") ?? "";
+    return label !== "Next page" && label !== "Previous page";
+  });
+}
+
+function templateShelf(name: string): HTMLElement {
+  return screen.getByRole("group", { name });
+}
+
+function browseLabel(task: string): string {
+  return task === "Image" ? "Browse all styles" : "Browse all templates";
+}
+
+function coverButtons(shelf: HTMLElement): HTMLElement[] {
+  return onCurrentPage(shelf).filter((item) => {
+    return (
+      item.getAttribute("aria-label")?.startsWith("Use template ") === true
     );
   });
 }
@@ -112,7 +155,7 @@ test.each([
     } else {
       await screen.findByRole("group", { name: "Ideas to get started" });
     }
-    click(button(`Remove ${task}`, selected));
+    click(selected);
     await screen.findByRole("group", { name: "Choose a task" });
     expect(screen.queryByRole("group", { name: task })).toBeNull();
     expect(
@@ -305,7 +348,7 @@ test("Visualization preferences stay behind once another task is chosen", async 
     ),
   );
 
-  click(button("Remove Visualization", selectedTask(editor, "Visualization")));
+  click(selectedTask(editor, "Visualization"));
   click(
     button(
       "Website",
@@ -391,7 +434,7 @@ test("Task changes preserve uploaded files and the draft, and toggling off resto
   const tasks = screen.getByRole("group", { name: "Choose a task" });
   click(button("Image", tasks));
   await screen.findByRole("combobox", { name: "Image models" });
-  click(button("Remove Image", selectedTask(editor, "Image")));
+  click(selectedTask(editor, "Image"));
   const restoredTasks = await screen.findByRole("group", {
     name: "Choose a task",
   });
@@ -412,7 +455,7 @@ test("Task changes preserve uploaded files and the draft, and toggling off resto
   }
   click(portrait);
   await user.keyboard("{Escape}");
-  click(button("Remove Video", selectedTask(editor, "Video")));
+  click(selectedTask(editor, "Video"));
   await screen.findByRole("combobox", { name: "Claude Sonnet 4.6" });
   expect(screen.queryByTestId("composer-create-mode")).toBeNull();
   expect(editor).toHaveTextContent("Keep my draft");
@@ -434,31 +477,22 @@ test.each([
     first: "Put my product in a new scene",
     next: "Make a cover for my newsletter",
     prompt: "Put my product in a new scene.",
-    cycle: [
-      "Make a cover for my newsletter",
-      "Design a birthday invitation",
-      "Create an image for my website",
-      "Make a personal greeting card",
-      "Put my product in a new scene",
-    ],
   },
   {
     task: "Video",
     first: "Turn a photo into a video",
     next: "Explain an idea visually",
     prompt: "Animate a photo I provide",
-    cycle: ["Explain an idea visually", "Turn a photo into a video"],
   },
   {
     task: "Website",
     first: "Build a website for my business",
     next: "Put my café menu online",
     prompt: "Build a website that explains my business",
-    cycle: ["Put my café menu online", "Build a website for my business"],
   },
 ])(
-  "$task ideas rotate without changing the draft and append without replacing it",
-  async ({ task, first, next, prompt, cycle }) => {
+  "$task ideas rotate without changing the draft and keep what was typed",
+  async ({ task, first, next, prompt }) => {
     const capture = mockTemplateChat();
     const editor = await setupChips();
     const tasks = screen.getByRole("group", { name: "Choose a task" });
@@ -466,7 +500,7 @@ test.each([
     const ideas = await screen.findByRole("group", {
       name: "Ideas to get started",
     });
-    expect(ideaButtons(ideas)).toHaveLength(4);
+    expect(ideaButtons(ideas)).toHaveLength(IDEAS_PER_PAGE);
     await fill(editor, "Keep this context");
     click(button(first, ideas));
     await waitFor(() => {
@@ -475,18 +509,78 @@ test.each([
     const draft = editor.textContent;
     click(button(first, ideas));
     expect(editor.textContent).toBe(draft);
-    click(button("More ideas", ideas));
-    await within(ideas).findByText(next);
-    expect(within(ideas).queryByText(first)).toBeNull();
+    click(button("Next page", ideas));
+    await waitFor(() => {
+      expect(currentLabels(ideas)).toContain(next);
+    });
+    expect(currentLabels(ideas)).not.toContain(first);
     expect(editor.textContent).toBe(draft);
-    for (const label of cycle.slice(1)) {
-      click(button("More ideas", ideas));
-      await within(ideas).findByText(label);
-      expect(ideaButtons(ideas)).toHaveLength(4);
+    // Walk to the end. The pager stops there rather than wrapping, so the
+    // last page is the one without a `Next page`.
+    while (hasPager(ideas, "Next page")) {
+      click(button("Next page", ideas));
+      await waitFor(() => {
+        expect(ideaButtons(ideas).length).toBeGreaterThan(0);
+      });
+      expect(ideaButtons(ideas).length).toBeLessThanOrEqual(IDEAS_PER_PAGE);
       expect(editor.textContent).toBe(draft);
     }
+    expect(hasPager(ideas, "Next page")).toBeFalsy();
+    click(button("Previous page", ideas));
+    await waitFor(() => {
+      expect(hasPager(ideas, "Next page")).toBeTruthy();
+    });
     expect(editor).toHaveTextContent("Keep this context");
     expect(capture.sentMessages).toHaveLength(0);
+  },
+);
+
+test.each([
+  {
+    task: "Image",
+    first: "Put my product in a new scene",
+    second: "Make a headshot for work",
+    firstPrompt:
+      "Put my product in a new scene. I will add a product photo; help me choose a setting while keeping the product itself consistent.",
+    secondPrompt:
+      "Turn a photo of me into a professional headshot. Keep my identity recognizable and help me choose a natural background and lighting.",
+  },
+  {
+    task: "Video",
+    first: "Turn a photo into a video",
+    second: "Show my product in motion",
+    firstPrompt:
+      "Animate a photo I provide with natural movement. Keep the subject recognizable and ask what should move.",
+    secondPrompt:
+      "Create a short product showcase from my product photo. Keep its appearance consistent and highlight the feature I choose.",
+  },
+  {
+    task: "Website",
+    first: "Build a website for my business",
+    second: "Showcase my work in a portfolio",
+    firstPrompt:
+      "Build a website that explains my business, services, and how to contact me. Start with my business details and audience.",
+    secondPrompt:
+      "Create a portfolio website for my work. Help me organize my projects, introduce myself, and add contact details.",
+  },
+])(
+  "A second $task idea rewrites the first prompt instead of stacking one after it",
+  async ({ task, first, second, firstPrompt, secondPrompt }) => {
+    mockTemplateChat();
+    const editor = await setupChips();
+    click(button(task, screen.getByRole("group", { name: "Choose a task" })));
+    const ideas = await screen.findByRole("group", {
+      name: "Ideas to get started",
+    });
+    await fill(editor, "Keep this context");
+    click(button(first, ideas));
+    await waitFor(() => {
+      expect(editor.textContent).toBe(`Keep this context\n${firstPrompt}`);
+    });
+    click(button(second, ideas));
+    await waitFor(() => {
+      expect(editor.textContent).toBe(`Keep this context\n${secondPrompt}`);
+    });
   },
 );
 
@@ -608,6 +702,9 @@ test("Uploaded presentation suggestions use the existing template reference", as
   await waitFor(() => {
     expect(editor).toHaveTextContent("My brand deck");
   });
+  await waitFor(() => {
+    expect(button("Send")).toBeEnabled();
+  });
   click(button("Send"));
   await waitFor(() => {
     expect(capture.selectedTemplates).toHaveLength(1);
@@ -651,7 +748,7 @@ test("Importing a deck uses the existing analysis flow without a create-mode ins
   );
 });
 
-test("More templates and Website open the existing library in the matching category", async () => {
+test("Browsing the catalog opens the existing library in the matching category", async () => {
   mockTemplateChat();
   const editor = await setupChips();
   await fill(editor, "Keep my draft");
@@ -664,7 +761,7 @@ test("More templates and Website open the existing library in the matching categ
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
-  click(button("Remove Presentation", selectedTask(editor, "Presentation")));
+  click(selectedTask(editor, "Presentation"));
   const restoredTasks = await screen.findByRole("group", {
     name: "Choose a task",
   });
@@ -673,12 +770,51 @@ test("More templates and Website open the existing library in the matching categ
   expect(selectedTask(editor, "Website")).toBeVisible();
   expect(screen.queryByRole("group", { name: "Choose a task" })).toBeNull();
   await screen.findByText("Build a website for my business");
-  click(button("More templates"));
+  click(button(browseLabel("Website")));
   await screen.findByRole("dialog");
   expect(tabByText("Website")).toHaveAttribute("aria-selected", "true");
   expect(screen.queryByTestId("composer-create-mode")).toBeNull();
   expect(editor).toHaveTextContent("Keep my draft");
 });
+
+test.each([
+  {
+    task: "Website",
+    shelf: "Website templates",
+    browse: "Browse all templates",
+  },
+  { task: "Image", shelf: "Image styles", browse: "Browse all styles" },
+  { task: "Video", shelf: "Video templates", browse: "Browse all templates" },
+])(
+  "$task shows a cover shelf that pages through its catalog and attaches a template",
+  async ({ task, shelf, browse }) => {
+    mockTemplateChat();
+    const editor = await setupChips();
+    await fill(editor, "Keep my draft");
+    click(button(task, screen.getByRole("group", { name: "Choose a task" })));
+    const covers = templateShelf(shelf);
+    expect(button(browse, covers)).toBeVisible();
+    const first = coverButtons(covers);
+    expect(first.length).toBeGreaterThan(0);
+    expect(first.length).toBeLessThanOrEqual(5);
+    const firstLabels = first.map((item) => {
+      return item.getAttribute("aria-label");
+    });
+    click(button("Next page", covers));
+    await waitFor(() => {
+      expect(
+        coverButtons(templateShelf(shelf)).map((item) => {
+          return item.getAttribute("aria-label");
+        }),
+      ).not.toStrictEqual(firstLabels);
+    });
+    click(coverButtons(templateShelf(shelf))[0]!);
+    await waitFor(() => {
+      expect(composerInlineTemplates()).toHaveLength(1);
+    });
+    expect(editor).toHaveTextContent("Keep my draft");
+  },
+);
 
 test("Task chips do not replace the composer in an existing conversation", async () => {
   mockTemplateChat();
@@ -897,6 +1033,9 @@ test("Reply tracking prepares a custom workflow request without an unrelated tem
   expect(editor).toHaveTextContent("Help me watch one Gmail conversation");
   expect(editor).toHaveTextContent("reply");
   expect(capture.sentMessages).toHaveLength(0);
+  await waitFor(() => {
+    expect(button("Send")).toBeEnabled();
+  });
   click(button("Send"));
   await waitFor(() => {
     expect(capture.sentMessages).toHaveLength(1);

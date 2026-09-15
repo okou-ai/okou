@@ -12,7 +12,7 @@ import {
   isChatUserMessageEventType,
   type ChatEventType,
 } from "@okouai/api-contracts/contracts/chat-events";
-import { parseAvatarTemplateStylePresetId } from "@okouai/core/avatar-template";
+import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 
 interface UserMessageProjection {
   readonly agentPrompt: string;
@@ -277,19 +277,6 @@ function userMessageFilePrompt(part: UserMessageFilePart): string {
   return `${annotatedFile}\n\n[Image annotations]\n${JSON.stringify(part)}`;
 }
 
-function generationTemplateTypeLabel(
-  template: GenerationTemplateRequest,
-): string {
-  if (
-    template.type === "video" &&
-    parseAvatarTemplateStylePresetId(template.selection.stylePresetId) !==
-      undefined
-  ) {
-    return "avatar";
-  }
-  return template.type;
-}
-
 function inlineGenerationTemplatePrompt(
   part: {
     readonly titleSnapshot: string;
@@ -297,7 +284,7 @@ function inlineGenerationTemplatePrompt(
   },
   referenceNumber: number,
 ): string {
-  return `[Template #${referenceNumber}: ${part.titleSnapshot} (${generationTemplateTypeLabel(part.template)})]`;
+  return `[Template #${referenceNumber}: ${part.titleSnapshot} (${generationTemplateKind(part.template)})]`;
 }
 
 function formatFeedbackParts(
@@ -485,42 +472,47 @@ export function projectUserMessage(
 /**
  * Project a user message into static public text. User-visible snapshots are
  * retained while internal IDs, source links, and mail identifiers are omitted.
+ * Files are published separately as structured shared-message attachments.
  */
 export function projectUserMessageForPublicShare(
   document: UserMessageDocument,
 ): string {
   const sanitizedDocument: UserMessageDocument = {
     version: 1,
-    parts: document.parts.map((part): UserMessagePart => {
-      if (part.type !== "feedback") {
-        return part;
-      }
-      return {
-        type: "feedback",
-        quote: part.quote,
-        note: part.note.map((notePart): FeedbackNotePart => {
-          if (notePart.type === "text") {
-            return notePart;
-          }
-          if (notePart.type === "chat_thread") {
+    parts: document.parts
+      .filter((part) => {
+        return part.type !== "file";
+      })
+      .map((part): UserMessagePart => {
+        if (part.type !== "feedback") {
+          return part;
+        }
+        return {
+          type: "feedback",
+          quote: part.quote,
+          note: part.note.map((notePart): FeedbackNotePart => {
+            if (notePart.type === "text") {
+              return notePart;
+            }
+            if (notePart.type === "chat_thread") {
+              return {
+                type: "text",
+                text: `[Chat thread: ${notePart.titleSnapshot}]`,
+              };
+            }
+            if (notePart.type === "agent") {
+              return {
+                type: "text",
+                text: `[Agent: ${notePart.nameSnapshot}]`,
+              };
+            }
             return {
               type: "text",
-              text: `[Chat thread: ${notePart.titleSnapshot}]`,
+              text: `[Template: ${notePart.titleSnapshot}]`,
             };
-          }
-          if (notePart.type === "agent") {
-            return {
-              type: "text",
-              text: `[Agent: ${notePart.nameSnapshot}]`,
-            };
-          }
-          return {
-            type: "text",
-            text: `[Template: ${notePart.titleSnapshot}]`,
-          };
-        }),
-      };
-    }),
+          }),
+        };
+      }),
   };
   const displayText = projectUserMessage(sanitizedDocument).displayText.trim();
   if (displayText.length > 0) {

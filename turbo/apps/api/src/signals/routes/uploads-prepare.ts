@@ -23,7 +23,6 @@ import type { RouteEntry } from "../route-entry";
 import { onRejection, tapError } from "../utils";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
-const PUT_URL_TTL_SECONDS = 3600;
 const MULTIPART_PART_SIZE_BYTES = 5 * 1024 * 1024;
 
 const prepareUploadInner$ = command(
@@ -97,7 +96,6 @@ const prepareUploadInner$ = command(
                 s3Key,
                 uploadId,
                 partNumber,
-                PUT_URL_TTL_SECONDS,
               ),
             );
             signal.throwIfAborted();
@@ -134,7 +132,7 @@ const prepareUploadInner$ = command(
         bucket,
         s3Key,
         contentType,
-        { expiresIn: PUT_URL_TTL_SECONDS, usePublicEndpoint: true, metadata },
+        { usePublicEndpoint: true, metadata },
         signal,
       ),
     );

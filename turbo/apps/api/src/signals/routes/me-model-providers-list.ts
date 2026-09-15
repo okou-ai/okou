@@ -10,7 +10,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { refreshPersonalModelProviderSubscriptionUsage$ } from "../services/model-provider-subscription-usage.service";
-import { userModelProviders } from "../services/model-provider.service";
 import { listPersonalModelProviderAccounts } from "../services/model-provider-account.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { writeDb$ } from "../external/db";
@@ -36,17 +35,25 @@ const listInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     userFeatureSwitchContext(auth.orgId, auth.userId),
   );
   signal.throwIfAborted();
-  const result = isFeatureEnabled(
+  const accountsEnabled = isFeatureEnabled(
     FeatureSwitchKey.PersonalModelProviderAccounts,
     featureSwitchContext,
-  )
-    ? await listPersonalModelProviderAccounts({
-        db: set(writeDb$),
-        orgId: auth.orgId,
-        userId: auth.userId,
-        featureSwitchContext,
-      })
-    : await get(userModelProviders(auth.orgId, auth.userId));
+  );
+  const result = await listPersonalModelProviderAccounts(
+    {
+      db: set(writeDb$),
+      orgId: auth.orgId,
+      userId: auth.userId,
+      featureSwitchContext,
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+  if (!accountsEnabled) {
+    result.modelProviders = result.modelProviders.filter((provider) => {
+      return provider.isActive;
+    });
+  }
   signal.throwIfAborted();
   const visible = visibleModelFirstProviders(result);
   const refreshed = await set(
@@ -59,7 +66,26 @@ const listInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
-  return { status: 200 as const, body: refreshed };
+  return {
+    status: 200 as const,
+    body: accountsEnabled
+      ? refreshed
+      : {
+          modelProviders: refreshed.modelProviders.map(
+            ({ modelProviderId, isActive: _isActive, ...provider }) => {
+              if (!modelProviderId) {
+                throw new Error(
+                  "Concrete subscription account has no logical provider",
+                );
+              }
+              return {
+                ...provider,
+                id: modelProviderId,
+              };
+            },
+          ),
+        },
+  };
 });
 
 export const meModelProvidersListRoutes: readonly RouteEntry[] = [

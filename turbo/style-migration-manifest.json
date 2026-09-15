@@ -78,7 +78,6 @@
         "mic-volume-icon-meter",
         "motion-safe:animate-in",
         "motion-safe:fade-in",
-        "okou-blocks",
         "okou-chat-skeleton-reveal",
         "okou-realtime-cloud-flow",
         "okou-realtime-status-reconnecting",
@@ -86,31 +85,6 @@
         "okou-thinking-enter",
         "okou-thinking-spinner",
         "okou-thinking-spinner-frame",
-        "owf-diagram",
-        "owf-diagram-action",
-        "owf-diagram-action-copy",
-        "owf-diagram-action-one",
-        "owf-diagram-action-two",
-        "owf-diagram-beam",
-        "owf-diagram-dot-action-bottom",
-        "owf-diagram-dot-action-middle",
-        "owf-diagram-dot-action-top",
-        "owf-diagram-dot-destination-down",
-        "owf-diagram-dot-destination-in",
-        "owf-diagram-dot-source",
-        "owf-diagram-grid",
-        "owf-diagram-icon-box",
-        "owf-diagram-icon-stack",
-        "owf-diagram-icon-stack-item",
-        "owf-diagram-icon-stack-more",
-        "owf-diagram-lines",
-        "owf-diagram-node",
-        "owf-diagram-node-okou",
-        "owf-diagram-node-output",
-        "owf-diagram-node-source",
-        "owf-diagram-okou-icon",
-        "owf-diagram-vertical-control",
-        "owf-diagram-wrap",
         "running-indicator",
         "running-indicator-center",
         "running-indicator-ripple",
@@ -150,6 +124,40 @@
         "toaster",
         "wmde-markdown",
         "wmde-markdown-color"
+      ]
+    },
+    {
+      "id": "onboarding-diagram",
+      "owner": "bingjiez666",
+      "phase": 8,
+      "replacement": "Fixed-coordinate illustration canvas: geometry, motion and typography become Tailwind utilities on the component, and the 614x470 coordinate variables become TypeScript constants. Bordered artwork needs a separate border-width decision before it can move.",
+      "tokens": [
+        "owf-diagram",
+        "owf-diagram-action",
+        "owf-diagram-action-copy",
+        "owf-diagram-action-one",
+        "owf-diagram-action-two",
+        "owf-diagram-avatar",
+        "owf-diagram-beam",
+        "owf-diagram-dot-action-bottom",
+        "owf-diagram-dot-action-middle",
+        "owf-diagram-dot-action-top",
+        "owf-diagram-dot-destination-down",
+        "owf-diagram-dot-destination-in",
+        "owf-diagram-dot-source",
+        "owf-diagram-grid",
+        "owf-diagram-icon-box",
+        "owf-diagram-icon-stack",
+        "owf-diagram-icon-stack-item",
+        "owf-diagram-icon-stack-more",
+        "owf-diagram-lines",
+        "owf-diagram-node",
+        "owf-diagram-node-okou",
+        "owf-diagram-node-output",
+        "owf-diagram-node-source",
+        "owf-diagram-okou-icon",
+        "owf-diagram-vertical-control",
+        "owf-diagram-wrap"
       ]
     }
   ],
@@ -562,30 +570,6 @@
       "evidence": []
     },
     {
-      "id": "mic-motion",
-      "family": "motion-and-injection",
-      "tokens": ["mic-starting-spinner", "mic-volume-icon-meter"],
-      "consumers": ["apps/platform/src/views/okou-page/chat-composer.tsx"],
-      "cases": ["mic-light", "mic-dark", "mic-light-retina", "mic-dark-retina"],
-      "status": "verified",
-      "evidence": [
-        {
-          "kind": "before-and-unchanged-aa-with-normal-motion",
-          "url": "https://a.okou.io/tu82fjalef.zip",
-          "sha256": "cb2d57ff2c022af59fa893e08f72e4c538f4d4459ac35d9665950894ea0959c2",
-          "commit": "f3ae0b78c34b93d6a528c64851a8ac726ff8697f"
-        },
-        {
-          "kind": "after-with-before-raw-diffs-and-normal-motion",
-          "url": "https://a.okou.io/s75ljvx543.zip",
-          "sha256": "23a02bd90b48702a8dea2f292eede718627685f08dc671de4e205478892ed716",
-          "commit": "99b0374201651de592a1ded743ef8ebe74145e88"
-        }
-      ],
-      "pullRequest": "https://github.com/vm0-ai/vm0/pull/33345",
-      "mergeCommit": null
-    },
-    {
       "id": "neutral-control-surface",
       "family": "local-controls",
       "tokens": ["okou-btn-morandi"],
@@ -719,10 +703,34 @@
         "desktop-titlebar-drawer-light",
         "desktop-titlebar-drawer-dark"
       ],
-      "status": "blocked",
-      "blockedReason": "Partially drained. The three declarations that are live in production moved to utilities: the sidebar header padding to pt-1.5, both drag regions to hidden, and the no-drag row to an arbitrary -webkit-app-region property. That removed 3 of 8 declarations, fully retired okou-desktop-no-drag, and left 3 consumption sites. The remaining 5 declarations sit behind .okou-app[data-desktop-shell] inside a min-width 768px block, and no first-party source sets that attribute: it appears only in index.css and the baseline derived from it. Those rules are deliberately left untouched, and the two class names stay on their elements as the hooks that block still selects; because it remains outside every @layer, its display block and padding-top 0 still override the new utilities if the attribute ever returns, which was verified by forcing the attribute on. Electron requests titleBarStyle hiddenInset with trafficLightPosition 16,18 on darwin (apps/desktop/src/desktop-window-chrome.ts), so the missing 48px drag region is more likely a live Desktop defect than intentional dead code. Deleting that block, porting it with a weakened ancestor condition, or restoring the attribute to repair Desktop are product decisions that also affect okou-app and okou-workspace-bg in this same family. Reproducing the condition verbatim is additionally impossible under the shrink-only ratchet: an arbitrary variant naming .okou-app fails style-policy/growth with okou-app going from 0 to 9 uses, and lint:style:prune refuses it.",
+      "status": "implemented",
       "evidence": [],
       "pullRequest": "https://github.com/vm0-ai/vm0/pull/33838",
+      "mergeCommit": null
+    },
+    {
+      "id": "desktop-shell-dead-block",
+      "family": "platform-shell",
+      "tokens": [
+        "okou-desktop-titlebar-drag-region",
+        "okou-sidebar-header",
+        "okou-workspace-bg"
+      ],
+      "consumers": [
+        "apps/platform/src/views/okou-page/sidebar.tsx",
+        "apps/platform/src/views/okou-page/workspace-inset.tsx"
+      ],
+      "cases": [
+        "desktop-titlebar-rail-light",
+        "desktop-titlebar-rail-dark",
+        "desktop-titlebar-rail-light-retina",
+        "desktop-titlebar-rail-dark-retina",
+        "desktop-titlebar-drawer-light",
+        "desktop-titlebar-drawer-dark"
+      ],
+      "status": "implemented",
+      "evidence": [],
+      "pullRequest": "https://github.com/vm0-ai/vm0/pull/34165",
       "mergeCommit": null
     },
     {
@@ -791,6 +799,259 @@
       ],
       "status": "implemented",
       "evidence": []
+    },
+    {
+      "id": "queue-drawer-check-icon",
+      "family": "external-contract-audit",
+      "tokens": ["lucide"],
+      "consumers": ["apps/platform/src/views/queue-page/queue-drawer.tsx"],
+      "cases": [
+        "queue-drawer-check-icon-light",
+        "queue-drawer-check-icon-dark",
+        "queue-drawer-check-icon-light-retina",
+        "queue-drawer-check-icon-dark-retina",
+        "queue-drawer-check-icon-narrow",
+        "queue-drawer-check-icon-narrow-dark"
+      ],
+      "status": "implemented",
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
+    },
+    {
+      "id": "toast-surface-contract",
+      "family": "external-contract-audit",
+      "tokens": ["toaster"],
+      "consumers": ["packages/ui/src/components/ui/sonner.tsx"],
+      "cases": [
+        "toast-surface-light",
+        "toast-surface-dark",
+        "toast-surface-light-retina",
+        "toast-surface-dark-retina",
+        "toast-surface-narrow",
+        "toast-surface-narrow-dark"
+      ],
+      "status": "blocked",
+      "blockedReason": "The audit shows `toaster` is a first-party marker class, not an upstream contract, so it is drainable rather than allowlistable. Draining it is blocked on a product decision, not on mechanics. The same class string carries a confirmed defect: sonner injects its stylesheet unlayered into document.head, so the four un-prefixed variants (bg-popover, text-foreground, border-border, shadow-lg) never apply and dark-theme toasts render as a white panel. Repairing that defect rewrites this class string, and the two obvious repairs disagree visually: making the four important also changes the online-visible Light theme and removes sonner's :focus-visible ring, while adopting sonner's supported `theme` prop takes sonner's palette rather than the App's popover tokens. Choose the repair first; the drain then lands with it.",
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
+    },
+    {
+      "id": "chat-message-bubbles",
+      "family": "chat-and-content",
+      "tokens": ["okou-chat-bubble-assistant", "okou-chat-bubble-user"],
+      "consumers": [
+        "apps/platform/src/views/okou-page/chat-message-surface.tsx",
+        "apps/platform/src/views/okou-page/chat-thread-page.tsx",
+        "apps/platform/src/views/okou-page/settings-tab.tsx",
+        "apps/platform/src/views/components/markdown.tsx",
+        "apps/platform/src/views/components/rich-markdown.tsx",
+        "apps/platform/src/views/shared-thread-page/shared-thread-page.tsx",
+        "apps/platform/src/views/okou-page/__tests__/chat-attachment-message-previews.test.tsx"
+      ],
+      "cases": [
+        "chat-bubble-light",
+        "chat-bubble-dark",
+        "chat-bubble-light-retina",
+        "chat-bubble-dark-retina",
+        "chat-bubble-narrow",
+        "chat-bubble-narrow-dark",
+        "chat-bubble-agent-profile-light",
+        "chat-bubble-agent-profile-dark"
+      ],
+      "status": "implemented",
+      "evidence": [],
+      "pullRequest": "https://github.com/vm0-ai/vm0/pull/34076",
+      "mergeCommit": null
+    },
+    {
+      "id": "code-fence-copy-control",
+      "family": "external-contract-audit",
+      "tokens": ["copied"],
+      "consumers": [
+        "apps/platform/src/views/components/rich-markdown.tsx",
+        "apps/platform/src/views/components/mermaid-diagram.tsx"
+      ],
+      "cases": [
+        "code-fence-copy-light",
+        "code-fence-copy-dark",
+        "code-fence-copy-light-retina",
+        "code-fence-copy-dark-retina",
+        "code-fence-copy-narrow",
+        "code-fence-copy-narrow-dark"
+      ],
+      "status": "implemented",
+      "evidence": [],
+      "pullRequest": "https://github.com/vm0-ai/vm0/pull/34059",
+      "mergeCommit": null
+    },
+    {
+      "id": "chat-transcript-card",
+      "family": "chat-and-content",
+      "tokens": ["okou-chat-card", "okou-chat-frame"],
+      "consumers": [
+        "apps/platform/src/views/okou-page/banking-action-card.tsx",
+        "apps/platform/src/views/okou-page/browser-session-card.tsx",
+        "apps/platform/src/views/okou-page/chat-body-cards.tsx",
+        "apps/platform/src/views/okou-page/chat-thread-page.tsx",
+        "apps/platform/src/views/okou-page/connector-account-action-card.tsx",
+        "apps/platform/src/views/okou-page/attachment-chips.tsx"
+      ],
+      "cases": [
+        "chat-transcript-card-light",
+        "chat-transcript-card-dark",
+        "chat-transcript-card-light-retina",
+        "chat-transcript-card-dark-retina",
+        "chat-transcript-card-narrow",
+        "chat-transcript-card-narrow-dark"
+      ],
+      "status": "implemented",
+      "evidence": []
+    },
+    {
+      "id": "chat-thinking-states",
+      "family": "motion-and-injection",
+      "tokens": [
+        "okou-chat-skeleton-reveal",
+        "okou-thinking-enter",
+        "okou-thinking-spinner",
+        "okou-thinking-spinner-frame"
+      ],
+      "consumers": ["apps/platform/src/views/okou-page/chat-thread-page.tsx"],
+      "cases": [
+        "chat-thinking-light",
+        "chat-thinking-dark",
+        "chat-thinking-light-retina",
+        "chat-thinking-dark-retina",
+        "chat-thinking-narrow",
+        "chat-thinking-narrow-dark"
+      ],
+      "status": "implemented",
+      "evidence": [],
+      "pullRequest": "https://github.com/vm0-ai/vm0/pull/33843",
+      "mergeCommit": null
+    },
+    {
+      "id": "pwa-safe-area-cover",
+      "family": "platform-shell",
+      "tokens": ["okou-pwa-fixed-cover"],
+      "consumers": [
+        "apps/platform/src/views/okou-page/sidebar-layout.tsx",
+        "apps/platform/src/views/okou-page/attachment-chips.tsx"
+      ],
+      "cases": [
+        "pwa-safe-area-cover-shell-light",
+        "pwa-safe-area-cover-shell-dark",
+        "pwa-safe-area-cover-scrim-light",
+        "pwa-safe-area-cover-scrim-dark",
+        "pwa-safe-area-cover-lightbox-light",
+        "pwa-safe-area-cover-lightbox-dark",
+        "pwa-safe-area-cover-lightbox-desktop-light",
+        "pwa-safe-area-cover-lightbox-desktop-dark"
+      ],
+      "status": "implemented",
+      "blockedReason": null,
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
+    },
+    {
+      "id": "mobile-drawer-safe-area",
+      "family": "platform-shell",
+      "tokens": ["okou-mobile-fixed-safe-area", "okou-mobile-sidebar"],
+      "consumers": ["apps/platform/src/views/okou-page/sidebar.tsx"],
+      "cases": [
+        "pwa-safe-area-cover-shell-light",
+        "pwa-safe-area-cover-shell-dark",
+        "pwa-safe-area-cover-scrim-light",
+        "pwa-safe-area-cover-scrim-dark"
+      ],
+      "status": "blocked",
+      "blockedReason": "Both remaining tokens sit on one element, the mobile drawer aside at apps/platform/src/views/okou-page/sidebar.tsx, and draining them needs a design decision about where this shape belongs. okou-mobile-sidebar is isolation isolate plus a six-declaration ::before paint layer plus a standalone-only bottom extension on that layer; okou-mobile-fixed-safe-area is box-sizing and a four-value safe-area padding inside max-width 767px. Spelled as utilities on the consumer that is isolate, before:pointer-events-none, before:absolute, before:inset-0, before:-z-1, before:bg-sidebar, before:content-[\"\"], before:[@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))], max-md:box-border and max-md:p-[var(--sat)_var(--sar)_var(--sab)_var(--sal)]. Measured, that takes the element from 288 to 499 characters of class list and from 2 to 6 bracketed arbitrary values, four of them new. The element already carried a 235-character single string before any change. Whether that belongs inline, behind a shared safe-area padding decision, or inside a drawer-surface component is a design call about the token layer, not a mechanical substitution, so no value was chosen here. The mechanics are otherwise clear and unblocked: both legacy rules are unlayered, nothing else on the element sets isolation, ::before, padding or box-sizing, so the utilities would not have to outrank anything and no important marker is needed. max-md is also not an exact restatement of the retired condition. Tailwind emits @media (width < 48rem), so between 767px and 768px of viewport width the padding would newly apply while the retired rule stopped at 767px; the element already gates its whole fixed-drawer geometry on max-md, so the two spellings disagree there today. Nothing about this batch depends on data-desktop-shell, so it is independent of the desktop-titlebar block in the same family.",
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
+    },
+    {
+      "id": "onboarding-diagram-canvas",
+      "family": "onboarding-diagram",
+      "tokens": [
+        "owf-diagram",
+        "owf-diagram-action-copy",
+        "owf-diagram-beam",
+        "owf-diagram-grid",
+        "owf-diagram-icon-stack",
+        "owf-diagram-lines",
+        "owf-diagram-node",
+        "owf-diagram-node-okou",
+        "owf-diagram-node-output",
+        "owf-diagram-node-source",
+        "owf-diagram-okou-icon",
+        "owf-diagram-vertical-control",
+        "owf-diagram-wrap"
+      ],
+      "consumers": [
+        "apps/platform/src/views/onboarding/onboarding-workflow-diagram.tsx",
+        "apps/platform/src/views/onboarding/__tests__/onboarding-flow.test.tsx"
+      ],
+      "cases": [
+        "onboarding-diagram-full-light",
+        "onboarding-diagram-full-dark",
+        "onboarding-diagram-full-light-retina",
+        "onboarding-diagram-full-dark-retina",
+        "onboarding-diagram-full-narrow",
+        "onboarding-diagram-full-narrow-dark",
+        "onboarding-diagram-source-only-light",
+        "onboarding-diagram-source-only-dark",
+        "onboarding-diagram-no-connector-light",
+        "onboarding-diagram-no-connector-dark"
+      ],
+      "status": "implemented",
+      "evidence": [],
+      "pullRequest": "https://github.com/vm0-ai/vm0/pull/34225",
+      "mergeCommit": null
+    },
+    {
+      "id": "onboarding-diagram-tiles",
+      "family": "onboarding-diagram",
+      "tokens": [
+        "owf-diagram",
+        "owf-diagram-action",
+        "owf-diagram-action-one",
+        "owf-diagram-action-two",
+        "owf-diagram-avatar",
+        "owf-diagram-dot-action-bottom",
+        "owf-diagram-dot-action-middle",
+        "owf-diagram-dot-action-top",
+        "owf-diagram-dot-destination-down",
+        "owf-diagram-dot-destination-in",
+        "owf-diagram-dot-source",
+        "owf-diagram-icon-box",
+        "owf-diagram-icon-stack-item",
+        "owf-diagram-icon-stack-more"
+      ],
+      "consumers": [
+        "apps/platform/src/views/onboarding/onboarding-workflow-diagram.tsx",
+        "apps/platform/src/views/onboarding/__tests__/onboarding-flow.test.tsx"
+      ],
+      "cases": [
+        "onboarding-diagram-full-light",
+        "onboarding-diagram-full-dark",
+        "onboarding-diagram-full-light-retina",
+        "onboarding-diagram-full-dark-retina",
+        "onboarding-diagram-full-narrow",
+        "onboarding-diagram-full-narrow-dark",
+        "onboarding-diagram-source-only-light",
+        "onboarding-diagram-source-only-dark",
+        "onboarding-diagram-no-connector-light",
+        "onboarding-diagram-no-connector-dark"
+      ],
+      "status": "blocked",
+      "blockedReason": "The bordered artwork carries 92 of the family's 242 declarations, plus the 25 shared coordinate variables the canvas batch left on .owf-diagram because these rules read them, and is blocked on a border-width decision, not on mechanics. Four tiles declare a whole-pixel border: .owf-diagram-icon-box, .owf-diagram-icon-stack-item and .owf-diagram-icon-stack-more at 1px, .owf-diagram-action at 1px, and the six dots share border: 1.5px solid #ffffff. docs/styles.md gives --default-border-width (0.5px) sole ownership of border width and rejects a hand-written width such as border-[1px], and no 1px or 1.5px border token is registered, which is the same wall that blocks chat-card-surfaces. This canvas adds one factor that batch does not have: .owf-diagram is transform: scale(0.6), so the declared 1px already paints 0.6px and the shared hairline would paint 0.3px, with the dots going from 0.9px to 0.3px. Two options are open and neither was chosen here. Adopting border border-border is guide-conformant and needs a measured statement of the thinner ring. Moving the strokes into the diagram's existing viewBox=\"0 0 614 470\" SVG, whose coordinate space these tiles already use, keeps the artwork exact because an SVG stroke-width attribute is not a CSS border-width decision, at the cost of restructuring the tiles. Two element-level constraints are already known and fix the batch boundary. owf-diagram-avatar sits on the same element as owf-diagram-icon-box, and the unlayered .owf-diagram-icon-box { width: 56px; height: 56px } would outrank a utility, so the modifier cannot drain before the box. Separately, the unlayered .owf-diagram-icon-box img { width: 34px; height: 34px } currently outranks the size-full utility on the Okou avatar image, so that image renders at 34px inside its 64px host today; the replacement must reproduce that, and correcting it is a separate visual change.",
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
     }
   ],
   "caseFiles": [
@@ -805,12 +1066,18 @@
     "../e2e/playwright/style-migration/running-indicator-cases.json",
     "../e2e/playwright/style-migration/swatch-cases.json",
     "../e2e/playwright/style-migration/shared-recipe-cases.json",
-    "../e2e/playwright/style-migration/mic-motion-cases.json",
     "../e2e/playwright/style-migration/control-surface-cases.json",
     "../e2e/playwright/style-migration/hairline-rule-cases.json",
     "../e2e/playwright/style-migration/sidebar-thread-title-cases.json",
     "../e2e/playwright/style-migration/desktop-titlebar-cases.json",
     "../e2e/playwright/style-migration/nav-chrome-cases.json",
-    "../e2e/playwright/style-migration/okou-border-hairline-cases.json"
+    "../e2e/playwright/style-migration/okou-border-hairline-cases.json",
+    "../e2e/playwright/style-migration/external-contract-audit-cases.json",
+    "../e2e/playwright/style-migration/chat-bubble-cases.json",
+    "../e2e/playwright/style-migration/code-fence-copy-cases.json",
+    "../e2e/playwright/style-migration/chat-card-cases.json",
+    "../e2e/playwright/style-migration/chat-thinking-cases.json",
+    "../e2e/playwright/style-migration/pwa-safe-area-cover-cases.json",
+    "../e2e/playwright/style-migration/onboarding-diagram-cases.json"
   ]
 }

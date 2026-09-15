@@ -36,7 +36,6 @@
 
 use std::collections::{HashMap, HashSet, VecDeque, hash_map::Entry};
 use std::fmt;
-use std::future::Future;
 use std::io;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
@@ -56,10 +55,7 @@ use tracing::{info, warn};
 
 use crate::error::{RunnerError, RunnerResult};
 use crate::lock;
-use crate::object_download_policy::{
-    OBJECT_DOWNLOAD_MAX_ATTEMPTS, OBJECT_DOWNLOAD_TIMEOUT, is_retryable_http_status,
-    is_retryable_reqwest_error, sleep_object_download_retry_delay,
-};
+use crate::object_download_policy::OBJECT_DOWNLOAD_TIMEOUT;
 use crate::paths::{HomePaths, short_digest, touch_mtime};
 use crate::storage_plan::{ArchiveHandle, StoragePlan};
 use crate::telemetry::{JobTelemetry, SandboxOpRecord, SandboxOpReporter};
@@ -104,8 +100,7 @@ const STORAGE_CACHE_BACKGROUND_FILL_FILLED: &str = "storage_cache_background_fil
 const STORAGE_CACHE_BACKGROUND_FILL_ALREADY_CACHED: &str =
     "storage_cache_background_fill_already_cached";
 const STORAGE_CACHE_BACKGROUND_FILL_BUSY: &str = "storage_cache_background_fill_busy";
-const STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED: &str =
-    "storage_cache_background_fill_retryable_skipped";
+const STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE: &str = "storage_cache_background_fill_unavailable";
 const STORAGE_CACHE_BACKGROUND_FILL_SKIPPED: &str = "storage_cache_background_fill_skipped";
 const STORAGE_CACHE_BACKGROUND_FILL_FAILED: &str = "storage_cache_background_fill_failed";
 const STORAGE_CACHE_BACKGROUND_FILL_FAILED_ERROR: &str = "background-fill-failed";
@@ -130,10 +125,6 @@ const STORAGE_CACHE_FRESH_DELIVERY_PUBLISHED: &str = "storage_cache_fresh_delive
 const STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION_FAILED: &str =
     "storage_cache_fresh_delivery_publication_failed";
 const STORAGE_CACHE_FRESH_DELIVERY_STAGED: &str = "storage_cache_fresh_delivery_staged";
-const STORAGE_CACHE_FRESH_DELIVERY_STAGE_FALLBACK: &str =
-    "storage_cache_fresh_delivery_stage_fallback";
-const STORAGE_CACHE_FRESH_DELIVERY_GUEST_FALLBACK: &str =
-    "storage_cache_fresh_delivery_guest_fallback";
 const STORAGE_CACHE_FRESH_DELIVERY_SINGLE_REQUEST: &str =
     "storage_cache_fresh_delivery_single_request";
 const STORAGE_CACHE_FRESH_DELIVERY_SIZE_MANIFEST: &str =
@@ -782,10 +773,7 @@ enum FreshArchiveSizeSource {
 
 enum FreshArchiveFetchTaskResult {
     Downloaded(FreshArchiveDownloaded),
-    Terminal {
-        group: CacheTargetGroup,
-        reason: &'static str,
-    },
+    Terminal { reason: &'static str },
 }
 
 struct FreshArchivePublicationTaskResult {
@@ -798,15 +786,9 @@ struct FreshArchivePublished {
     permit: OwnedSemaphorePermit,
 }
 
-enum FreshArchiveResolved {
-    Ready {
-        group: CacheTargetGroup,
-        archive: FreshArchivePublished,
-    },
-    Passthrough {
-        group: CacheTargetGroup,
-        reason: &'static str,
-    },
+struct FreshArchiveResolved {
+    group: CacheTargetGroup,
+    archive: FreshArchivePublished,
 }
 
 /// In-flight runner ownership for archives selected from one storage plan.
@@ -956,14 +938,21 @@ impl FreshArchiveDelivery {
                         FreshArchivePublicationTaskResult { group, result }
                     });
                 }
-                FreshArchiveFetchTaskResult::Terminal { group, reason } => {
+                FreshArchiveFetchTaskResult::Terminal { reason } => {
                     let action = if reason == "cancelled" {
                         STORAGE_CACHE_FRESH_DELIVERY_CANCELLED
                     } else {
                         STORAGE_CACHE_FRESH_DELIVERY_FAILED
                     };
                     telemetry.record(action, Duration::ZERO, reason == "cancelled", Some(reason));
-                    resolved.push(FreshArchiveResolved::Passthrough { group, reason });
+                    self.cancel_and_drain(telemetry).await;
+                    return Err(if reason == "cancelled" {
+                        RunnerError::Cancelled
+                    } else {
+                        RunnerError::Internal(format!(
+                            "runner-owned archive download failed: {reason}"
+                        ))
+                    });
                 }
             }
         }
@@ -980,22 +969,20 @@ impl FreshArchiveDelivery {
                         true,
                         None,
                     );
-                    resolved.push(FreshArchiveResolved::Ready {
+                    resolved.push(FreshArchiveResolved {
                         group: task.group,
                         archive,
                     });
                 }
-                Err(_) => {
+                Err(error) => {
                     telemetry.record(
                         STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION_FAILED,
                         Duration::ZERO,
                         false,
                         Some("publication"),
                     );
-                    resolved.push(FreshArchiveResolved::Passthrough {
-                        group: task.group,
-                        reason: "publication",
-                    });
+                    self.cancel_and_drain(telemetry).await;
+                    return Err(error);
                 }
             }
         }
@@ -1163,7 +1150,6 @@ enum TargetOutcome {
     Hit,
     MissPassthrough { reason: &'static str },
     LockBusyPassthrough,
-    RunnerOwnedPassthrough { reason: &'static str },
 }
 
 enum DownloadBody {
@@ -1181,7 +1167,7 @@ enum CachedArchive {
 
 enum CacheFetchOutcome {
     Downloaded(Bytes),
-    RetryableSkipped,
+    Unavailable,
     Skipped,
 }
 
@@ -1190,7 +1176,7 @@ enum BackgroundFillOutcome {
     AlreadyCached { size: u64 },
     Busy,
     Skipped,
-    RetryableSkipped,
+    Unavailable,
 }
 
 struct BackgroundFillReport {
@@ -1208,9 +1194,7 @@ impl BackgroundFillReport {
                 (STORAGE_CACHE_BACKGROUND_FILL_ALREADY_CACHED, Some(size))
             }
             BackgroundFillOutcome::Busy => (STORAGE_CACHE_BACKGROUND_FILL_BUSY, None),
-            BackgroundFillOutcome::RetryableSkipped => {
-                (STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED, None)
-            }
+            BackgroundFillOutcome::Unavailable => (STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, None),
             BackgroundFillOutcome::Skipped => (STORAGE_CACHE_BACKGROUND_FILL_SKIPPED, None),
         };
         Self {
@@ -1440,9 +1424,9 @@ async fn flush_fresh_guest_stage_batch(
     batch: &mut FreshGuestStageBatch,
     stage: &mut GuestStageRecorder<'_>,
     outcomes: &mut Vec<(CacheTargetGroup, TargetOutcome)>,
-) {
+) -> RunnerResult<()> {
     if batch.writes.is_empty() {
-        return;
+        return Ok(());
     }
     let started_at = Instant::now();
     let result = stage
@@ -1455,32 +1439,20 @@ async fn flush_fresh_guest_stage_batch(
         started_at,
         &result,
     );
-    let success = result.is_ok();
+    result?;
     for group in batch.groups.drain(..) {
-        let outcome = if success {
-            stage.telemetry.record(
-                STORAGE_CACHE_FRESH_DELIVERY_STAGED,
-                Duration::ZERO,
-                true,
-                None,
-            );
-            TargetOutcome::Hit
-        } else {
-            stage.telemetry.record(
-                STORAGE_CACHE_FRESH_DELIVERY_STAGE_FALLBACK,
-                Duration::ZERO,
-                true,
-                Some("guest-stage"),
-            );
-            TargetOutcome::RunnerOwnedPassthrough {
-                reason: "guest-stage",
-            }
-        };
-        outcomes.push((group, outcome));
+        stage.telemetry.record(
+            STORAGE_CACHE_FRESH_DELIVERY_STAGED,
+            Duration::ZERO,
+            true,
+            None,
+        );
+        outcomes.push((group, TargetOutcome::Hit));
     }
     batch.writes.clear();
     batch.permits.clear();
     batch.content_bytes = 0;
+    Ok(())
 }
 
 async fn stage_fresh_archives(
@@ -1498,32 +1470,24 @@ async fn stage_fresh_archives(
         telemetry,
         metrics: stage_metrics,
     };
-
-    for result in resolved {
-        match result {
-            FreshArchiveResolved::Ready { group, archive } => {
-                let FreshArchivePublished { bytes, permit } = archive;
-                let target = group.targets.first().ok_or_else(|| {
-                    RunnerError::Internal("empty runner-owned archive target group".to_string())
-                })?;
-                let write = GuestStageWrite {
-                    guest_path: guest_archive_path(&target.name, &target.version),
-                    bytes,
-                };
-                if batch.should_flush_before(&write) {
-                    flush_fresh_guest_stage_batch(&mut batch, &mut stage, &mut outcomes).await;
-                }
-                batch.push(group, write, permit);
-                if batch.should_flush_after_push() {
-                    flush_fresh_guest_stage_batch(&mut batch, &mut stage, &mut outcomes).await;
-                }
-            }
-            FreshArchiveResolved::Passthrough { group, reason } => {
-                outcomes.push((group, TargetOutcome::RunnerOwnedPassthrough { reason }));
-            }
+    for FreshArchiveResolved { group, archive } in resolved {
+        let FreshArchivePublished { bytes, permit } = archive;
+        let target = group.targets.first().ok_or_else(|| {
+            RunnerError::Internal("empty runner-owned archive target group".to_string())
+        })?;
+        let write = GuestStageWrite {
+            guest_path: guest_archive_path(&target.name, &target.version),
+            bytes,
+        };
+        if batch.should_flush_before(&write) {
+            flush_fresh_guest_stage_batch(&mut batch, &mut stage, &mut outcomes).await?;
+        }
+        batch.push(group, write, permit);
+        if batch.should_flush_after_push() {
+            flush_fresh_guest_stage_batch(&mut batch, &mut stage, &mut outcomes).await?;
         }
     }
-    flush_fresh_guest_stage_batch(&mut batch, &mut stage, &mut outcomes).await;
+    flush_fresh_guest_stage_batch(&mut batch, &mut stage, &mut outcomes).await?;
     Ok(outcomes)
 }
 
@@ -1919,6 +1883,7 @@ fn collect_targets(plan: &StoragePlan) -> Vec<CacheTarget> {
 /// case, the caller must keep it paired with this plan and either resolve it
 /// through `populate_cache_with_fresh_delivery` or call
 /// [`FreshArchiveDelivery::cancel_and_drain`] before abandoning the plan.
+/// A preparation builds at most one HTTP client, only for an admitted cache miss.
 pub(crate) async fn prepare_fresh_archive_delivery(
     plan: &StoragePlan,
     home: &HomePaths,
@@ -1943,12 +1908,7 @@ pub(crate) async fn prepare_fresh_archive_delivery(
     let group_count = groups.len();
 
     let prepare_result: RunnerResult<()> = async {
-        let http = Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
-            .map_err(|error| {
-                RunnerError::Internal(format!("build runner-owned archive client: {error}"))
-            })?;
+        let mut http: Option<Client> = None;
 
         let mut scanned = 0;
         for group in groups.into_iter().take(FRESH_DELIVERY_SCAN_LIMIT) {
@@ -2034,7 +1994,20 @@ pub(crate) async fn prepare_fresh_archive_delivery(
             let archive_size = group.archive_size;
             let task_group = group.clone();
             let task_cancel = owner_cancel.clone();
-            let task_http = http.clone();
+            let task_http = match &mut http {
+                Some(http) => http,
+                slot @ None => slot.insert(
+                    Client::builder()
+                        .redirect(reqwest::redirect::Policy::none())
+                        .build()
+                        .map_err(|error| {
+                            RunnerError::Internal(format!(
+                                "build runner-owned archive client: {error}"
+                            ))
+                        })?,
+                ),
+            }
+            .clone();
             let (apply_tx, apply_rx) = oneshot::channel();
             delivery.apply.push(apply_tx);
             delivery.fetches.spawn(async move {
@@ -2046,23 +2019,18 @@ pub(crate) async fn prepare_fresh_archive_delivery(
                 let (bytes, size_source) = match fetch {
                     Ok(download) => download,
                     Err(reason) => {
-                        return FreshArchiveFetchTaskResult::Terminal {
-                            group: task_group,
-                            reason,
-                        };
+                        return FreshArchiveFetchTaskResult::Terminal { reason };
                     }
                 };
 
                 tokio::select! {
                     biased;
                     () = task_cancel.cancelled() => FreshArchiveFetchTaskResult::Terminal {
-                        group: task_group,
                         reason: "cancelled",
                     },
                     ready = apply_rx => {
                         if ready.is_err() {
                             FreshArchiveFetchTaskResult::Terminal {
-                                group: task_group,
                                 reason: "cancelled",
                             }
                         } else {
@@ -2212,21 +2180,11 @@ async fn process_group_background_fill(
     if group.archive_size.is_some_and(|size| size > CACHE_MAX_SIZE) {
         return Ok(BackgroundFillOutcome::Skipped);
     }
-
-    let mut saw_retryable_skipped = false;
-    for target in &group.targets {
-        match process_one_background_fill(target, group.archive_size, http, home).await? {
-            BackgroundFillOutcome::RetryableSkipped => {
-                saw_retryable_skipped = true;
-            }
-            outcome => return Ok(outcome),
-        }
-    }
-    if saw_retryable_skipped {
-        Ok(BackgroundFillOutcome::RetryableSkipped)
-    } else {
-        Ok(BackgroundFillOutcome::Skipped)
-    }
+    let target = group
+        .targets
+        .first()
+        .ok_or_else(|| RunnerError::Internal("empty storage cache target group".into()))?;
+    process_one_background_fill(target, group.archive_size, http, home).await
 }
 
 async fn process_group_hit_or_passthrough(
@@ -2292,7 +2250,7 @@ async fn process_one_background_fill(
             write_to_cache(&cache_dir, &bytes).await?;
             BackgroundFillOutcome::Filled { size }
         }
-        CacheFetchOutcome::RetryableSkipped => BackgroundFillOutcome::RetryableSkipped,
+        CacheFetchOutcome::Unavailable => BackgroundFillOutcome::Unavailable,
         CacheFetchOutcome::Skipped => BackgroundFillOutcome::Skipped,
     };
     drop(writer);
@@ -2309,7 +2267,7 @@ async fn fetch_cache_target(
         None => {
             // Legacy queued contexts do not carry encoded size. Preserve the
             // existing bounded range probe for those entries.
-            match retry_cache_fetch(|| probe_size(http, &target.archive_url)).await {
+            match probe_size(http, &target.archive_url).await {
                 Ok(SizeProbe::Known(n)) => n,
                 Ok(SizeProbe::Unknown(reason)) => {
                     let reason = reason.as_str();
@@ -2319,7 +2277,7 @@ async fn fetch_cache_target(
                         reason,
                         "storage_cache: probe returned no usable size header, passthrough"
                     );
-                    return Ok(CacheFetchOutcome::RetryableSkipped);
+                    return Ok(CacheFetchOutcome::Unavailable);
                 }
                 Err(e) => {
                     let reason = e.to_string();
@@ -2329,7 +2287,7 @@ async fn fetch_cache_target(
                         error = %reason,
                         "storage_cache: probe failed, passthrough"
                     );
-                    return Ok(CacheFetchOutcome::RetryableSkipped);
+                    return Ok(CacheFetchOutcome::Unavailable);
                 }
             }
         }
@@ -2344,15 +2302,12 @@ async fn fetch_cache_target(
         return Ok(CacheFetchOutcome::Skipped);
     }
 
-    let body = retry_cache_fetch(|| {
-        download_tarball(http, &target.archive_url, Some(size), CACHE_MAX_SIZE)
-    })
-    .await;
+    let body = download_tarball(http, &target.archive_url, Some(size), CACHE_MAX_SIZE).await;
     let bytes = match body {
         Ok(body) => body,
         Err(e) => {
             let reason = e.to_string();
-            match e.into_error() {
+            match e {
                 CacheDownloadError::Http(_) => {
                     warn!(
                         name = %target.name,
@@ -2360,7 +2315,7 @@ async fn fetch_cache_target(
                         error = %reason,
                         "storage_cache: full download failed, passthrough"
                     );
-                    return Ok(CacheFetchOutcome::RetryableSkipped);
+                    return Ok(CacheFetchOutcome::Unavailable);
                 }
                 CacheDownloadError::Internal(e) => return Err(e),
             }
@@ -2374,7 +2329,7 @@ async fn fetch_cache_target(
                 version = %target.version,
                 "storage_cache: full download returned empty archive, passthrough"
             );
-            return Ok(CacheFetchOutcome::RetryableSkipped);
+            return Ok(CacheFetchOutcome::Unavailable);
         }
         DownloadBody::OverSize { observed_size } => {
             warn!(
@@ -2401,7 +2356,7 @@ async fn fetch_cache_target(
             observed_size,
             "storage_cache: full download size differed from expectation, passthrough"
         );
-        return Ok(CacheFetchOutcome::RetryableSkipped);
+        return Ok(CacheFetchOutcome::Unavailable);
     }
 
     Ok(CacheFetchOutcome::Downloaded(bytes))
@@ -2599,10 +2554,6 @@ enum ProbeContentRange {
     Invalid,
 }
 
-trait CacheRetryableError {
-    fn is_retryable(&self) -> bool;
-}
-
 #[derive(Debug)]
 enum CacheHttpError {
     Status {
@@ -2616,7 +2567,6 @@ enum CacheHttpError {
     Transport {
         phase: &'static str,
         detail: String,
-        retryable: bool,
     },
 }
 
@@ -2633,11 +2583,9 @@ impl CacheHttpError {
         if let Some(status) = error.status() {
             return Self::status(phase, status);
         }
-        let retryable = is_retryable_reqwest_error(&error);
         Self::Transport {
             phase,
             detail: reqwest_error(error),
-            retryable,
         }
     }
 }
@@ -2650,16 +2598,6 @@ impl fmt::Display for CacheHttpError {
                 write!(f, "{phase}: unexpected status {status}")
             }
             Self::Transport { phase, detail, .. } => write!(f, "{phase}: {detail}"),
-        }
-    }
-}
-
-impl CacheRetryableError for CacheHttpError {
-    fn is_retryable(&self) -> bool {
-        match self {
-            Self::Status { status, .. } => is_retryable_http_status(*status),
-            Self::UnexpectedStatus { .. } => false,
-            Self::Transport { retryable, .. } => *retryable,
         }
     }
 }
@@ -2687,69 +2625,6 @@ impl fmt::Display for CacheDownloadError {
         match self {
             Self::Http(error) => write!(f, "{error}"),
             Self::Internal(error) => write!(f, "{error}"),
-        }
-    }
-}
-
-impl CacheRetryableError for CacheDownloadError {
-    fn is_retryable(&self) -> bool {
-        match self {
-            Self::Http(error) => error.is_retryable(),
-            Self::Internal(_) => false,
-        }
-    }
-}
-
-#[derive(Debug)]
-struct CacheRetryError<E> {
-    error: E,
-    attempts: usize,
-    exhausted_retry: bool,
-}
-
-impl<E> CacheRetryError<E> {
-    fn into_error(self) -> E {
-        self.error
-    }
-}
-
-impl<E: fmt::Display> fmt::Display for CacheRetryError<E> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.exhausted_retry {
-            write!(
-                f,
-                "retry exhausted after {} attempts: {}",
-                self.attempts, self.error
-            )
-        } else {
-            write!(f, "{}", self.error)
-        }
-    }
-}
-
-async fn retry_cache_fetch<T, E, F, Fut>(mut operation: F) -> Result<T, CacheRetryError<E>>
-where
-    E: CacheRetryableError,
-    F: FnMut() -> Fut,
-    Fut: Future<Output = Result<T, E>>,
-{
-    let mut attempt = 1;
-    loop {
-        match operation().await {
-            Ok(value) => return Ok(value),
-            Err(error) => {
-                let retryable = error.is_retryable();
-                let should_retry = retryable && attempt < OBJECT_DOWNLOAD_MAX_ATTEMPTS;
-                if !should_retry {
-                    return Err(CacheRetryError {
-                        error,
-                        attempts: attempt,
-                        exhausted_retry: retryable && attempt >= OBJECT_DOWNLOAD_MAX_ATTEMPTS,
-                    });
-                }
-                sleep_object_download_retry_delay().await;
-                attempt += 1;
-            }
         }
     }
 }
@@ -3165,14 +3040,6 @@ fn apply_outcome(
                 None,
             );
         }
-        TargetOutcome::RunnerOwnedPassthrough { reason } => {
-            telemetry.record(
-                STORAGE_CACHE_FRESH_DELIVERY_GUEST_FALLBACK,
-                Duration::ZERO,
-                true,
-                Some(reason),
-            );
-        }
     }
 }
 
@@ -3219,9 +3086,7 @@ fn add_passthrough_summary(
 ) {
     match outcome {
         TargetOutcome::Hit => summary.hit_targets += target_count,
-        TargetOutcome::MissPassthrough { .. } | TargetOutcome::RunnerOwnedPassthrough { .. } => {
-            summary.miss_targets += target_count
-        }
+        TargetOutcome::MissPassthrough { .. } => summary.miss_targets += target_count,
         TargetOutcome::LockBusyPassthrough => summary.lock_busy_targets += target_count,
     }
 }
@@ -4004,14 +3869,6 @@ mod tests {
         }
     }
 
-    fn truncated_ok_response(body: &[u8]) -> Vec<u8> {
-        let partial_len = (body.len() / 2).max(1);
-        let mut response =
-            format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len()).into_bytes();
-        response.extend_from_slice(&body[..partial_len]);
-        response
-    }
-
     #[tokio::test]
     async fn fresh_delivery_records_empty_scan_summary() {
         let temp = tempfile::tempdir().unwrap();
@@ -4053,6 +3910,197 @@ mod tests {
         assert_eq!(
             bounded_outcome_count(&ops, STORAGE_CACHE_FRESH_DELIVERY_SCAN_SUFFIX_UNKNOWN),
             0
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn fresh_delivery_only_needs_ca_certificates_for_admitted_misses() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        crate::ca::ensure(&home).await.unwrap();
+        let cert_file = home.ca_dir().join(crate::ca::CA_CERT);
+        let empty_cert_dir = temp.path().join("empty-certs");
+        fs::create_dir(&empty_cert_dir).await.unwrap();
+
+        crate::test_fixtures::ignored_child::run_ignored_child_test(
+            "storage_cache::tests::fresh_delivery_missing_ca_child",
+            ("VM0_TEST_FRESH_DELIVERY_MISSING_CA", "1"),
+            &[
+                ("SSL_CERT_FILE", Some(cert_file.to_str().unwrap())),
+                ("SSL_CERT_DIR", Some(empty_cert_dir.to_str().unwrap())),
+            ],
+            Duration::from_secs(30),
+        )
+        .await;
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    #[ignore = "runs in an isolated process with its own CA certificate files"]
+    async fn fresh_delivery_missing_ca_child() {
+        if !crate::test_fixtures::ignored_child::ignored_child_test_env_guard_enabled((
+            "VM0_TEST_FRESH_DELIVERY_MISSING_CA",
+            "1",
+        )) {
+            return;
+        }
+
+        // Initialize unrelated telemetry before making this child's CA store
+        // unavailable. Changing a private file needs no process-wide env mutation.
+        let mut telemetry = new_telemetry();
+        let server = MockServer::start_async().await;
+        let body = tarball_bytes();
+        let get = server
+            .mock_async(|when, then| {
+                when.method(GET).path("/archive.tar.gz");
+                then.status(200).body(body.clone());
+            })
+            .await;
+        let cert_file = std::env::var_os("SSL_CERT_FILE").unwrap();
+        let certificates = fs::read(&cert_file).await.unwrap();
+        fs::write(&cert_file, b"").await.unwrap();
+
+        for case in ["empty", "warm", "oversized", "lock-busy", "capacity"] {
+            let temp = tempfile::tempdir().unwrap();
+            let home = home_at(&temp);
+            let admission = FreshArchiveDeliveryAdmission::new();
+            let cancel = CancellationToken::new();
+            let storages = (0..if case == "empty" { 0 } else { 2 })
+                .map(|index| {
+                    let name = format!("{case}-{index}");
+                    if case == "warm" {
+                        write_cached_archive(&home, &name, "v1", &body);
+                    }
+                    storage_entry_with_archive_size(
+                        format!("/mnt/{name}"),
+                        server.url("/archive.tar.gz"),
+                        &name,
+                        "v1",
+                        Some(if case == "oversized" {
+                            CACHE_MAX_SIZE + 1
+                        } else {
+                            body.len() as u64
+                        }),
+                    )
+                })
+                .collect();
+            let mut plan = plan_from_entries(storages, Vec::new(), None);
+            let mut writers = Vec::new();
+            if case == "lock-busy" {
+                for index in 0..2 {
+                    writers.push(
+                        lock::acquire(home.storage_lock(&format!("{case}-{index}"), "v1"))
+                            .await
+                            .unwrap(),
+                    );
+                }
+            }
+            let held_capacity = (case == "capacity").then(|| {
+                Arc::clone(&admission.permits)
+                    .try_acquire_many_owned(FRESH_DELIVERY_RUNNER_LIMIT as u32)
+                    .unwrap()
+            });
+
+            let mut delivery =
+                prepare_fresh_archive_delivery(&plan, &home, &admission, &cancel, &mut telemetry)
+                    .await
+                    .unwrap_or_else(|error| panic!("{case} should not need a client: {error}"));
+            if case == "warm" {
+                let sandbox = MockSandbox::new("test");
+                let deferred = populate_cache_with_fresh_delivery(
+                    &mut plan,
+                    &sandbox,
+                    &home,
+                    &mut telemetry,
+                    Some(&mut delivery),
+                )
+                .await
+                .unwrap();
+                assert!(deferred.is_none());
+                let batches = sandbox.write_files_calls();
+                let files: Vec<_> = batches.iter().flat_map(|batch| &batch.files).collect();
+                assert_eq!(files.len(), 2);
+                for index in 0..2 {
+                    let path = guest_archive_path(&format!("warm-{index}"), "v1");
+                    assert!(
+                        files
+                            .iter()
+                            .any(|file| file.path == path && file.content == body)
+                    );
+                    assert_eq!(
+                        storage_archive_url(&plan, index),
+                        Some(format!("file://{path}").as_str())
+                    );
+                }
+            }
+            delivery.cancel_and_drain(&mut telemetry).await;
+            drop(held_capacity);
+            drop(writers);
+            assert_eq!(
+                admission.permits.available_permits(),
+                FRESH_DELIVERY_RUNNER_LIMIT,
+                "{case} must not retain capacity"
+            );
+        }
+
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let admission = FreshArchiveDeliveryAdmission::new();
+        let cancel = CancellationToken::new();
+        let mut plan = fresh_storage_plan_with_archive_size(
+            server.url("/archive.tar.gz"),
+            "cold",
+            "v1",
+            body.len() as u64,
+        );
+        let error =
+            prepare_fresh_archive_delivery(&plan, &home, &admission, &cancel, &mut telemetry)
+                .await
+                .err()
+                .expect("an admitted miss still requires a valid client");
+        assert!(
+            error
+                .to_string()
+                .contains("build runner-owned archive client")
+        );
+        assert_eq!(
+            admission.permits.available_permits(),
+            FRESH_DELIVERY_RUNNER_LIMIT
+        );
+        assert!(!home.storage_cache_dir("cold", "v1").exists());
+        get.assert_calls_async(0).await;
+
+        // Restoring the CA store makes the same archive eligible again. A leaked
+        // writer lock would skip this fetch; a cached failed client would fail it.
+        fs::write(&cert_file, certificates).await.unwrap();
+        let mut delivery =
+            prepare_fresh_archive_delivery(&plan, &home, &admission, &cancel, &mut telemetry)
+                .await
+                .unwrap();
+        let sandbox = MockSandbox::new("test");
+        assert!(
+            populate_cache_with_fresh_delivery(
+                &mut plan,
+                &sandbox,
+                &home,
+                &mut telemetry,
+                Some(&mut delivery),
+            )
+            .await
+            .unwrap()
+            .is_none()
+        );
+        get.assert_calls_async(1).await;
+        assert_eq!(
+            fs::read(home.storage_cache_dir("cold", "v1").join("archive.tar.gz"))
+                .await
+                .unwrap(),
+            body
+        );
+        assert_eq!(
+            admission.permits.available_permits(),
+            FRESH_DELIVERY_RUNNER_LIMIT
         );
     }
 
@@ -4312,166 +4360,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fresh_delivery_missing_content_length_falls_back_without_detached_fill() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let body = tarball_bytes();
-        let mut response =
-            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n".to_vec();
-        response.extend_from_slice(format!("{:x}\r\n", body.len()).as_bytes());
-        response.extend_from_slice(&body);
-        response.extend_from_slice(b"\r\n0\r\n\r\n");
-        let (url, server_task) = raw_http_url(response).await;
-        let name = "fresh-no-size";
-        let version = "v1";
-        let mut plan = fresh_storage_plan(url.clone(), name, version);
-
-        let deferred =
-            populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-
-        server_task.assert_finished().await;
-        assert!(deferred.is_none());
-        assert_eq!(storage_archive_url(&plan, 0), Some(url.as_str()));
-        assert!(sandbox.write_files_calls().is_empty());
-        assert!(
-            !home
-                .storage_cache_dir(name, version)
-                .join("archive.tar.gz")
-                .exists()
-        );
-        let ops = telemetry.pending_ops_snapshot();
-        assert_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_FAILED, false);
-        assert_op_error(
-            &ops,
-            STORAGE_CACHE_FRESH_DELIVERY_FAILED,
-            "response-size-missing",
-        );
-        assert_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_GUEST_FALLBACK, true);
-        assert_no_op(&ops, STORAGE_CACHE_BACKGROUND_FILL_DEFERRED_DELAY);
-    }
-
-    #[tokio::test]
-    async fn fresh_delivery_size_mismatch_falls_back_without_a_second_request() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let server = MockServer::start_async().await;
-        let body = tarball_bytes();
-        let get = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/fresh-mismatch.tar.gz")
-                    .header_missing("range");
-                then.status(200).body(body.clone());
-            })
-            .await;
-        let original = server.url("/fresh-mismatch.tar.gz");
-        let name = "fresh-mismatch";
-        let version = "v1";
-        let mut plan = fresh_storage_plan_with_archive_size(
-            original.clone(),
-            name,
-            version,
-            body.len() as u64 + 1,
-        );
-
-        let deferred =
-            populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-
-        assert!(deferred.is_none());
-        get.assert_calls_async(1).await;
-        assert_eq!(storage_archive_url(&plan, 0), Some(original.as_str()));
-        assert!(sandbox.write_files_calls().is_empty());
-        let ops = telemetry.pending_ops_snapshot();
-        assert_op_error(
-            &ops,
-            STORAGE_CACHE_FRESH_DELIVERY_FAILED,
-            "response-size-mismatch",
-        );
-        assert_op_count(&ops, STORAGE_CACHE_FRESH_DELIVERY_GUEST_FALLBACK, 1);
-        assert_no_op(&ops, STORAGE_CACHE_BACKGROUND_FILL_DEFERRED_DELAY);
-    }
-
-    #[tokio::test]
-    async fn fresh_delivery_zero_response_length_falls_back_without_cache_work() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let server = MockServer::start_async().await;
-        let get = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/fresh-zero.tar.gz")
-                    .header_missing("range");
-                then.status(200).header("content-length", "0");
-            })
-            .await;
-        let original = server.url("/fresh-zero.tar.gz");
-        let mut plan = fresh_storage_plan(original.clone(), "fresh-zero", "v1");
-
-        let deferred =
-            populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-
-        assert!(deferred.is_none());
-        get.assert_calls_async(1).await;
-        assert_eq!(storage_archive_url(&plan, 0), Some(original.as_str()));
-        let ops = telemetry.pending_ops_snapshot();
-        assert_op_error(
-            &ops,
-            STORAGE_CACHE_FRESH_DELIVERY_FAILED,
-            "response-size-zero",
-        );
-        assert_no_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_PUBLISHED);
-    }
-
-    #[tokio::test]
-    async fn fresh_delivery_http_failure_falls_back_after_one_request() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let server = MockServer::start_async().await;
-        let get = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/fresh-unavailable.tar.gz")
-                    .header_missing("range");
-                then.status(503);
-            })
-            .await;
-        let original = server.url("/fresh-unavailable.tar.gz");
-        let mut plan = fresh_storage_plan_with_archive_size(
-            original.clone(),
-            "fresh-unavailable",
-            "v1",
-            tarball_bytes().len() as u64,
-        );
-
-        let deferred =
-            populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-
-        assert!(deferred.is_none());
-        get.assert_calls_async(1).await;
-        assert_eq!(storage_archive_url(&plan, 0), Some(original.as_str()));
-        let ops = telemetry.pending_ops_snapshot();
-        assert_op_error(&ops, STORAGE_CACHE_FRESH_DELIVERY_FAILED, "http-status");
-        assert_op_count(&ops, STORAGE_CACHE_FRESH_DELIVERY_SINGLE_REQUEST, 1);
-        assert_op_count(&ops, STORAGE_CACHE_FRESH_DELIVERY_GUEST_FALLBACK, 1);
-    }
-
-    #[tokio::test]
     async fn fresh_delivery_rejects_unsolicited_partial_content() {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
@@ -4489,12 +4377,10 @@ mod tests {
         let original = server.url("/fresh-partial.tar.gz");
         let mut plan = fresh_storage_plan(original.clone(), "fresh-partial", "v1");
 
-        let deferred =
-            populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
+        let result =
+            populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry).await;
 
-        assert!(deferred.is_none());
+        assert!(matches!(result, Err(RunnerError::Internal(_))));
         get.assert_calls_async(1).await;
         assert_eq!(storage_archive_url(&plan, 0), Some(original.as_str()));
         assert!(
@@ -4506,7 +4392,6 @@ mod tests {
         let ops = telemetry.pending_ops_snapshot();
         assert_op_error(&ops, STORAGE_CACHE_FRESH_DELIVERY_FAILED, "http-status");
         assert_no_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_PUBLISHED);
-        assert_op_count(&ops, STORAGE_CACHE_FRESH_DELIVERY_GUEST_FALLBACK, 1);
     }
 
     #[tokio::test]
@@ -4540,19 +4425,16 @@ mod tests {
             body.len() as u64,
         );
 
-        let deferred =
-            populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
+        let result =
+            populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry).await;
 
-        assert!(deferred.is_none());
+        assert!(matches!(result, Err(RunnerError::Internal(_))));
         redirect.assert_calls_async(1).await;
         target.assert_calls_async(0).await;
         assert_eq!(storage_archive_url(&plan, 0), Some(original.as_str()));
         let ops = telemetry.pending_ops_snapshot();
         assert_op_error(&ops, STORAGE_CACHE_FRESH_DELIVERY_FAILED, "http-status");
         assert_op_count(&ops, STORAGE_CACHE_FRESH_DELIVERY_SINGLE_REQUEST, 1);
-        assert_op_count(&ops, STORAGE_CACHE_FRESH_DELIVERY_GUEST_FALLBACK, 1);
     }
 
     #[tokio::test]
@@ -4579,13 +4461,12 @@ mod tests {
                 5,
             );
 
-            let deferred =
+            let result =
                 populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
-                    .await
-                    .unwrap();
+                    .await;
 
             server_task.assert_finished().await;
-            assert!(deferred.is_none(), "case {case}");
+            assert!(matches!(result, Err(RunnerError::Internal(_))));
             assert_eq!(storage_archive_url(&plan, 0), Some(url.as_str()));
             let ops = telemetry.pending_ops_snapshot();
             assert_op_error(
@@ -5130,111 +5011,6 @@ mod tests {
             "2",
             None,
         );
-    }
-
-    #[tokio::test]
-    async fn fresh_delivery_publication_failure_falls_back_after_one_request() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let server = MockServer::start_async().await;
-        let body = tarball_bytes();
-        let get = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/fresh-publication-failure.tar.gz")
-                    .header_missing("range");
-                then.status(200).body(body.clone());
-            })
-            .await;
-        let original = server.url("/fresh-publication-failure.tar.gz");
-        let name = "fresh-publication-failure";
-        let version = "v1";
-        let mut plan = fresh_storage_plan_with_archive_size(
-            original.clone(),
-            name,
-            version,
-            body.len() as u64,
-        );
-        let admission = FreshArchiveDeliveryAdmission::new();
-        let cancel = CancellationToken::new();
-        let mut delivery =
-            prepare_fresh_archive_delivery(&plan, &home, &admission, &cancel, &mut telemetry)
-                .await
-                .unwrap();
-        let cache_dir = home.storage_cache_dir(name, version);
-        fs::create_dir_all(cache_dir.parent().unwrap())
-            .await
-            .unwrap();
-        fs::write(&cache_dir, b"blocks atomic directory rename")
-            .await
-            .unwrap();
-
-        let deferred = populate_cache_with_fresh_delivery(
-            &mut plan,
-            &sandbox,
-            &home,
-            &mut telemetry,
-            Some(&mut delivery),
-        )
-        .await
-        .unwrap();
-
-        assert!(deferred.is_none());
-        get.assert_calls_async(1).await;
-        assert_eq!(storage_archive_url(&plan, 0), Some(original.as_str()));
-        assert!(sandbox.write_files_calls().is_empty());
-        let ops = telemetry.pending_ops_snapshot();
-        assert_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_PUBLICATION_FAILED, false);
-        assert_op_count(&ops, STORAGE_CACHE_FRESH_DELIVERY_GUEST_FALLBACK, 1);
-    }
-
-    #[tokio::test]
-    async fn fresh_delivery_stage_failure_keeps_published_cache_and_guest_url() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        sandbox.push_write_file_result(Err(sandbox_write_file_error("vsock unavailable")));
-        let mut telemetry = new_telemetry();
-        let server = MockServer::start_async().await;
-        let body = tarball_bytes();
-        let get = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/fresh-stage-failure.tar.gz")
-                    .header_missing("range");
-                then.status(200).body(body.clone());
-            })
-            .await;
-        let original = server.url("/fresh-stage-failure.tar.gz");
-        let name = "fresh-stage-failure";
-        let version = "v1";
-        let mut plan = fresh_storage_plan_with_archive_size(
-            original.clone(),
-            name,
-            version,
-            body.len() as u64,
-        );
-
-        let deferred =
-            populate_cache_through_fresh_delivery(&mut plan, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-
-        assert!(deferred.is_none());
-        get.assert_calls_async(1).await;
-        assert_eq!(storage_archive_url(&plan, 0), Some(original.as_str()));
-        assert_eq!(
-            fs::read(home.storage_cache_dir(name, version).join("archive.tar.gz"))
-                .await
-                .unwrap(),
-            body
-        );
-        let ops = telemetry.pending_ops_snapshot();
-        assert_op(&ops, STORAGE_CACHE_FRESH_DELIVERY_STAGE_FALLBACK, true);
-        assert_op_count(&ops, STORAGE_CACHE_FRESH_DELIVERY_GUEST_FALLBACK, 1);
-        assert_no_op(&ops, STORAGE_CACHE_BACKGROUND_FILL_DEFERRED_DELAY);
     }
 
     #[tokio::test]
@@ -5990,15 +5766,15 @@ mod tests {
         assert_eq!(busy.len(), 1);
         assert_eq!(busy[0].action_type, STORAGE_CACHE_BACKGROUND_FILL_BUSY);
 
-        let retryable_skipped = BackgroundFillReport::from_outcome(
-            BackgroundFillOutcome::RetryableSkipped,
+        let failed = BackgroundFillReport::from_outcome(
+            BackgroundFillOutcome::Unavailable,
             Duration::from_millis(6),
         )
         .into_records();
-        assert_eq!(retryable_skipped.len(), 1);
+        assert_eq!(failed.len(), 1);
         assert_eq!(
-            retryable_skipped[0].action_type,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED
+            failed[0].action_type,
+            STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE
         );
 
         let failed = BackgroundFillReport::failed(Duration::from_millis(7)).into_records();
@@ -6071,14 +5847,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn background_fill_preserves_retryable_skipped_outcome() {
+    async fn background_fill_preserves_failed_outcome() {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
         let sandbox = MockSandbox::new("test");
         let mut telemetry = new_telemetry();
         let mut plan = fresh_storage_plan(
             "http://127.0.0.1:9/archive.tar.gz".to_string(),
-            "background-retryable",
+            "background-failed",
             "v1",
         );
 
@@ -6087,11 +5863,7 @@ mod tests {
             .run()
             .await;
 
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
     }
 
     #[tokio::test]
@@ -6523,42 +6295,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn probe_transient_status_retry_then_success_rewrites_url() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let body = tarball_bytes();
-        let responses = vec![
-            http_response("500 Internal Server Error", b""),
-            partial_content_response(body.len()),
-            http_response("200 OK", &body),
-        ];
-        let (url, handle) = raw_http_sequence_url(responses).await;
-        let name = "probe-retry-success";
-        let version = "v1";
-        let mut manifest = fresh_storage_plan(url, name, version);
-
-        let records =
-            populate_cache_through_background(&mut manifest, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-        await_raw_http_sequence(handle).await;
-
-        assert_eq!(
-            storage_archive_url(&manifest, 0),
-            Some(format!("file://{}", guest_archive_path(name, version)).as_str())
-        );
-        assert_eq!(
-            std::fs::read(home.storage_cache_dir(name, version).join("archive.tar.gz")).unwrap(),
-            body
-        );
-        assert_eq!(sandbox.write_file_calls().len(), 1);
-        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_FILLED, true);
-    }
-
-    #[tokio::test]
-    async fn probe_client_error_does_not_retry() {
+    async fn probe_http_error_preserves_original_url() {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
         let sandbox = MockSandbox::new("test");
@@ -6597,15 +6334,11 @@ mod tests {
         full.assert_calls_async(0).await;
         assert_eq!(storage_archive_url(&manifest, 0), Some(original.as_str()));
         assert!(sandbox.write_file_calls().is_empty());
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
     }
 
     #[tokio::test]
-    async fn probe_builder_error_does_not_retry() {
+    async fn probe_invalid_url_is_sanitized() {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
         let sandbox = MockSandbox::new("test");
@@ -6622,85 +6355,11 @@ mod tests {
 
         assert_eq!(storage_archive_url(&manifest, 0), Some(original.as_str()));
         assert!(sandbox.write_file_calls().is_empty());
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
     }
 
     #[tokio::test]
-    async fn full_download_transient_status_retry_then_success_rewrites_url() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let body = tarball_bytes();
-        let responses = vec![
-            partial_content_response(body.len()),
-            http_response("503 Service Unavailable", b""),
-            http_response("200 OK", &body),
-        ];
-        let (url, handle) = raw_http_sequence_url(responses).await;
-        let name = "download-retry-success";
-        let version = "v1";
-        let mut manifest = fresh_storage_plan(url, name, version);
-
-        let records =
-            populate_cache_through_background(&mut manifest, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-        await_raw_http_sequence(handle).await;
-
-        assert_eq!(
-            storage_archive_url(&manifest, 0),
-            Some(format!("file://{}", guest_archive_path(name, version)).as_str())
-        );
-        assert_eq!(
-            std::fs::read(home.storage_cache_dir(name, version).join("archive.tar.gz")).unwrap(),
-            body
-        );
-        assert_eq!(sandbox.write_file_calls().len(), 1);
-        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_FILLED, true);
-    }
-
-    #[tokio::test]
-    async fn full_download_body_read_error_retry_then_success_rewrites_url() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let body = tarball_bytes();
-        let responses = vec![
-            partial_content_response(body.len()),
-            truncated_ok_response(&body),
-            http_response("200 OK", &body),
-        ];
-        let (url, handle) = raw_http_sequence_url(responses).await;
-        let name = "download-body-retry-success";
-        let version = "v1";
-        let mut manifest = fresh_storage_plan(url, name, version);
-
-        let records =
-            populate_cache_through_background(&mut manifest, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-        await_raw_http_sequence(handle).await;
-
-        assert_eq!(
-            storage_archive_url(&manifest, 0),
-            Some(format!("file://{}", guest_archive_path(name, version)).as_str())
-        );
-        assert_eq!(
-            std::fs::read(home.storage_cache_dir(name, version).join("archive.tar.gz")).unwrap(),
-            body
-        );
-        assert_eq!(sandbox.write_file_calls().len(), 1);
-        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_FILLED, true);
-    }
-
-    #[tokio::test]
-    async fn full_download_client_error_does_not_retry() {
+    async fn full_download_http_error_is_sanitized() {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
         let sandbox = MockSandbox::new("test");
@@ -6744,106 +6403,20 @@ mod tests {
         full.assert_calls_async(1).await;
         assert_eq!(storage_archive_url(&manifest, 0), Some(original.as_str()));
         assert!(sandbox.write_file_calls().is_empty());
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
         let http = Client::builder().build().unwrap();
-        let reason = retry_cache_fetch(|| {
-            download_tarball(&http, &original, Some(body.len() as u64), CACHE_MAX_SIZE)
-        })
-        .await
-        .err()
-        .expect("403 download should fail")
-        .to_string();
+        let reason = download_tarball(&http, &original, Some(body.len() as u64), CACHE_MAX_SIZE)
+            .await
+            .err()
+            .expect("403 download should fail")
+            .to_string();
         full.assert_calls_async(2).await;
         assert!(reason.contains("403"), "expected 403 in reason: {reason}");
-        assert!(!reason.contains("retry exhausted"), "got: {reason}");
         assert!(
             !reason.contains("X-Amz-Signature")
                 && !reason.contains("secret")
                 && !reason.contains("credential")
                 && !reason.contains("/download-forbidden.tar.gz"),
-            "telemetry error must not include presigned URL details: {reason}"
-        );
-    }
-
-    #[tokio::test]
-    async fn full_download_retry_exhaustion_is_passthrough() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let server = MockServer::start_async().await;
-        let body = tarball_bytes();
-
-        let probe = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/download-fails.tar.gz")
-                    .header("range", "bytes=0-0");
-                then.status(206)
-                    .header("content-range", format!("bytes 0-0/{}", body.len()))
-                    .body(b"x");
-            })
-            .await;
-        let full = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/download-fails.tar.gz")
-                    .header_missing("range");
-                then.status(503);
-            })
-            .await;
-
-        let original = format!(
-            "{}?X-Amz-Signature=secret&X-Amz-Credential=credential",
-            server.url("/download-fails.tar.gz")
-        );
-        let name = "download-retry-exhausted";
-        let version = "v1";
-        let mut manifest = fresh_storage_plan(original.clone(), name, version);
-
-        let records =
-            populate_cache_through_background(&mut manifest, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-
-        probe.assert_async().await;
-        full.assert_calls_async(OBJECT_DOWNLOAD_MAX_ATTEMPTS).await;
-        assert_eq!(storage_archive_url(&manifest, 0), Some(original.as_str()));
-        assert!(sandbox.write_file_calls().is_empty());
-        assert!(
-            !home
-                .storage_cache_dir(name, version)
-                .join("archive.tar.gz")
-                .exists()
-        );
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
-        let http = Client::builder().build().unwrap();
-        let reason = retry_cache_fetch(|| {
-            download_tarball(&http, &original, Some(body.len() as u64), CACHE_MAX_SIZE)
-        })
-        .await
-        .err()
-        .expect("503 downloads should exhaust retries")
-        .to_string();
-        full.assert_calls_async(OBJECT_DOWNLOAD_MAX_ATTEMPTS * 2)
-            .await;
-        assert!(
-            reason.contains("retry exhausted after 3 attempts") && reason.contains("503"),
-            "unexpected retry exhaustion reason: {reason}"
-        );
-        assert!(
-            !reason.contains("X-Amz-Signature")
-                && !reason.contains("secret")
-                && !reason.contains("credential")
-                && !reason.contains("/download-fails.tar.gz"),
             "telemetry error must not include presigned URL details: {reason}"
         );
     }
@@ -7110,11 +6683,7 @@ mod tests {
                 .exists()
         );
         assert!(sandbox.write_file_calls().is_empty());
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
     }
 
     #[tokio::test]
@@ -7231,11 +6800,7 @@ mod tests {
                 .exists()
         );
         assert!(sandbox.write_file_calls().is_empty());
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
     }
 
     #[tokio::test]
@@ -7286,11 +6851,7 @@ mod tests {
                 .exists()
         );
         assert!(sandbox.write_file_calls().is_empty());
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
     }
 
     #[tokio::test]
@@ -7608,109 +7169,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn probe_retry_exhaustion_is_passthrough() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let server = MockServer::start_async().await;
-
-        let probe = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/broken.tar.gz")
-                    .header("range", "bytes=0-0");
-                then.status(500);
-            })
-            .await;
-
-        let original = format!(
-            "{}?X-Amz-Signature=secret&X-Amz-Credential=credential",
-            server.url("/broken.tar.gz")
-        );
-        let mut manifest = fresh_storage_plan(original.clone(), "broken-skill", "v1");
-
-        let records =
-            populate_cache_through_background(&mut manifest, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-
-        probe.assert_calls_async(OBJECT_DOWNLOAD_MAX_ATTEMPTS).await;
-
-        // archive_url untouched — guest-storage-apply will retry via the original URL.
-        assert_eq!(storage_archive_url(&manifest, 0), Some(original.as_str()));
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
-        let http = Client::builder().build().unwrap();
-        let error = retry_cache_fetch(|| probe_size(&http, &original))
-            .await
-            .unwrap_err()
-            .to_string();
-        probe
-            .assert_calls_async(OBJECT_DOWNLOAD_MAX_ATTEMPTS * 2)
-            .await;
-        assert!(
-            error.contains("retry exhausted after 3 attempts") && error.contains("500"),
-            "unexpected retry exhaustion reason: {error}"
-        );
-        assert!(
-            !error.contains("X-Amz-Signature")
-                && !error.contains("secret")
-                && !error.contains("credential")
-                && !error.contains("/broken.tar.gz"),
-            "telemetry error must not include presigned URL details: {error}"
-        );
-    }
-
-    #[tokio::test]
-    async fn probe_transport_retry_exhaustion_is_sanitized_passthrough() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let responses = vec![Vec::new(); OBJECT_DOWNLOAD_MAX_ATTEMPTS * 2];
-        let (url, handle) = raw_http_sequence_url(responses).await;
-
-        let original = format!("{url}?X-Amz-Signature=secret&X-Amz-Credential=credential");
-        let name = "transport-retry-exhausted";
-        let version = "v1";
-        let mut manifest = fresh_storage_plan(original.clone(), name, version);
-
-        let records =
-            populate_cache_through_background(&mut manifest, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-        let http = Client::builder().build().unwrap();
-        let error = retry_cache_fetch(|| probe_size(&http, &original))
-            .await
-            .unwrap_err()
-            .to_string();
-        await_raw_http_sequence(handle).await;
-
-        assert_eq!(storage_archive_url(&manifest, 0), Some(original.as_str()));
-        assert!(sandbox.write_file_calls().is_empty());
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
-        assert!(
-            error.contains("retry exhausted after 3 attempts"),
-            "unexpected retry exhaustion reason: {error}"
-        );
-        assert!(
-            !error.contains("X-Amz-Signature")
-                && !error.contains("secret")
-                && !error.contains("credential")
-                && !error.contains("/archive.tar.gz"),
-            "telemetry error must not include presigned URL details: {error}"
-        );
-    }
-
-    #[tokio::test]
     async fn probe_200_ignored_range_uses_content_length_without_reading_body() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -7789,11 +7247,7 @@ mod tests {
                 .exists()
         );
         assert!(sandbox.write_file_calls().is_empty());
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
     }
 
     #[tokio::test]
@@ -7840,11 +7294,7 @@ mod tests {
                 .join("archive.tar.gz")
                 .exists()
         );
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
     }
 
     #[tokio::test]
@@ -7891,11 +7341,7 @@ mod tests {
                 .join("archive.tar.gz")
                 .exists()
         );
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
     }
 
     #[tokio::test]
@@ -8610,304 +8056,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn duplicate_same_key_probe_failure_falls_back_to_next_target() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let server = MockServer::start_async().await;
-        let body = tarball_bytes();
-
-        let failed_probe = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/probe-fails.tar.gz")
-                    .header("range", "bytes=0-0");
-                then.status(500);
-            })
-            .await;
-        let failed_full = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/probe-fails.tar.gz")
-                    .header_missing("range");
-                then.status(200).body(body.clone());
-            })
-            .await;
-        let successful_probe = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/probe-succeeds.tar.gz")
-                    .header("range", "bytes=0-0");
-                then.status(206)
-                    .header("content-range", format!("bytes 0-0/{}", body.len()))
-                    .body(b"x");
-            })
-            .await;
-        let successful_full = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/probe-succeeds.tar.gz")
-                    .header_missing("range");
-                then.status(200).body(body.clone());
-            })
-            .await;
-
-        let name = "probe-fallback";
-        let version = "v1";
-        let mut manifest = fresh_duplicate_storage_plan(
-            server.url("/probe-fails.tar.gz"),
-            server.url("/probe-succeeds.tar.gz"),
-            name,
-            version,
-        );
-
-        let records =
-            populate_cache_through_background(&mut manifest, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-
-        failed_probe
-            .assert_calls_async(OBJECT_DOWNLOAD_MAX_ATTEMPTS)
-            .await;
-        failed_full.assert_calls_async(0).await;
-        successful_probe.assert_async().await;
-        successful_full.assert_async().await;
-        assert_eq!(
-            sandbox.write_file_calls().len(),
-            1,
-            "fallback target should stage one guest archive for the whole group"
-        );
-
-        let expected = format!("file://{}", guest_archive_path(name, version));
-        assert_eq!(storage_archive_url(&manifest, 0), Some(expected.as_str()));
-        assert_eq!(storage_archive_url(&manifest, 1), Some(expected.as_str()));
-
-        assert_background_op_count(&records, STORAGE_CACHE_BACKGROUND_FILL_FILLED, 1);
-    }
-
-    #[tokio::test]
-    async fn duplicate_same_key_invalid_download_falls_back_to_next_target() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let server = MockServer::start_async().await;
-        let body = tarball_bytes();
-
-        let invalid_probe = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/invalid-download.tar.gz")
-                    .header("range", "bytes=0-0");
-                then.status(206)
-                    .header("content-range", format!("bytes 0-0/{}", body.len()))
-                    .body(b"x");
-            })
-            .await;
-        let invalid_full = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/invalid-download.tar.gz")
-                    .header_missing("range");
-                then.status(200);
-            })
-            .await;
-        let successful_probe = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/valid-download.tar.gz")
-                    .header("range", "bytes=0-0");
-                then.status(206)
-                    .header("content-range", format!("bytes 0-0/{}", body.len()))
-                    .body(b"x");
-            })
-            .await;
-        let successful_full = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/valid-download.tar.gz")
-                    .header_missing("range");
-                then.status(200).body(body.clone());
-            })
-            .await;
-
-        let name = "download-fallback";
-        let version = "v1";
-        let mut manifest = fresh_duplicate_storage_plan(
-            server.url("/invalid-download.tar.gz"),
-            server.url("/valid-download.tar.gz"),
-            name,
-            version,
-        );
-
-        let records =
-            populate_cache_through_background(&mut manifest, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-
-        invalid_probe.assert_async().await;
-        invalid_full.assert_async().await;
-        successful_probe.assert_async().await;
-        successful_full.assert_async().await;
-        assert_eq!(
-            sandbox.write_file_calls().len(),
-            1,
-            "fallback target should stage one guest archive for the whole group"
-        );
-
-        let expected = format!("file://{}", guest_archive_path(name, version));
-        assert_eq!(storage_archive_url(&manifest, 0), Some(expected.as_str()));
-        assert_eq!(storage_archive_url(&manifest, 1), Some(expected.as_str()));
-
-        assert_background_op_count(&records, STORAGE_CACHE_BACKGROUND_FILL_FILLED, 1);
-    }
-
-    #[tokio::test]
-    async fn duplicate_same_key_all_probe_failures_yield_group_retryable_skip() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let server = MockServer::start_async().await;
-        let body = tarball_bytes();
-
-        let failed_probe_a = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/probe-fails-a.tar.gz")
-                    .header("range", "bytes=0-0");
-                then.status(500);
-            })
-            .await;
-        let failed_full_a = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/probe-fails-a.tar.gz")
-                    .header_missing("range");
-                then.status(200).body(body.clone());
-            })
-            .await;
-        let failed_probe_b = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/probe-fails-b.tar.gz")
-                    .header("range", "bytes=0-0");
-                then.status(503);
-            })
-            .await;
-        let failed_full_b = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/probe-fails-b.tar.gz")
-                    .header_missing("range");
-                then.status(200).body(body.clone());
-            })
-            .await;
-
-        let name = "probe-all-fail";
-        let version = "v1";
-        let original_a = server.url("/probe-fails-a.tar.gz");
-        let original_b = server.url("/probe-fails-b.tar.gz");
-        let mut manifest =
-            fresh_duplicate_storage_plan(original_a.clone(), original_b.clone(), name, version);
-
-        let records =
-            populate_cache_through_background(&mut manifest, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-
-        failed_probe_a
-            .assert_calls_async(OBJECT_DOWNLOAD_MAX_ATTEMPTS)
-            .await;
-        failed_probe_b
-            .assert_calls_async(OBJECT_DOWNLOAD_MAX_ATTEMPTS)
-            .await;
-        failed_full_a.assert_calls_async(0).await;
-        failed_full_b.assert_calls_async(0).await;
-        assert!(
-            sandbox.write_file_calls().is_empty(),
-            "all probe failures should not stage a guest archive"
-        );
-        assert_eq!(storage_archive_url(&manifest, 0), Some(original_a.as_str()));
-        assert_eq!(storage_archive_url(&manifest, 1), Some(original_b.as_str()));
-
-        assert_background_op_count(&records, STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED, 1);
-    }
-
-    #[tokio::test]
-    async fn duplicate_same_key_all_invalid_downloads_yield_group_retryable_skip() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = home_at(&temp);
-        let sandbox = MockSandbox::new("test");
-        let mut telemetry = new_telemetry();
-        let server = MockServer::start_async().await;
-        let body = tarball_bytes();
-
-        let empty_probe = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/empty-download.tar.gz")
-                    .header("range", "bytes=0-0");
-                then.status(206)
-                    .header("content-range", format!("bytes 0-0/{}", body.len()))
-                    .body(b"x");
-            })
-            .await;
-        let empty_full = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/empty-download.tar.gz")
-                    .header_missing("range");
-                then.status(200);
-            })
-            .await;
-        let mismatch_probe = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/size-mismatch.tar.gz")
-                    .header("range", "bytes=0-0");
-                then.status(206)
-                    .header("content-range", format!("bytes 0-0/{}", body.len() + 1))
-                    .body(b"x");
-            })
-            .await;
-        let mismatch_full = server
-            .mock_async(|when, then| {
-                when.method(GET)
-                    .path("/size-mismatch.tar.gz")
-                    .header_missing("range");
-                then.status(200).body(body.clone());
-            })
-            .await;
-
-        let name = "download-all-invalid";
-        let version = "v1";
-        let original_a = server.url("/empty-download.tar.gz");
-        let original_b = server.url("/size-mismatch.tar.gz");
-        let mut manifest =
-            fresh_duplicate_storage_plan(original_a.clone(), original_b.clone(), name, version);
-
-        let records =
-            populate_cache_through_background(&mut manifest, &sandbox, &home, &mut telemetry)
-                .await
-                .unwrap();
-
-        empty_probe.assert_async().await;
-        empty_full.assert_async().await;
-        mismatch_probe.assert_async().await;
-        mismatch_full.assert_async().await;
-        assert!(
-            sandbox.write_file_calls().is_empty(),
-            "all invalid downloads should not stage a guest archive"
-        );
-        assert_eq!(storage_archive_url(&manifest, 0), Some(original_a.as_str()));
-        assert_eq!(storage_archive_url(&manifest, 1), Some(original_b.as_str()));
-
-        assert_background_op_count(&records, STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED, 1);
-    }
-
-    #[tokio::test]
     async fn shared_version_distinct_names_get_distinct_guest_paths() {
         // Regression guard: two manifest entries that share `vasVersionId`
         // but differ in `vasStorageName` must resolve to distinct guest
@@ -9172,11 +8320,7 @@ mod tests {
                 .join("archive.tar.gz")
                 .exists()
         );
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
     }
 
     #[tokio::test]
@@ -9226,11 +8370,7 @@ mod tests {
                 .join("archive.tar.gz")
                 .exists()
         );
-        assert_background_op(
-            &records,
-            STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-            true,
-        );
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
     }
 
     #[tokio::test]
@@ -9308,11 +8448,7 @@ mod tests {
                     .exists(),
                 "{content_range} must not write a cache archive"
             );
-            assert_background_op(
-                &records,
-                STORAGE_CACHE_BACKGROUND_FILL_RETRYABLE_SKIPPED,
-                true,
-            );
+            assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_UNAVAILABLE, true);
         }
     }
 }

@@ -61,9 +61,10 @@ const REPLAY_WINDOW_MS = 23 * 60 * 60 * 1000;
 const stateSchema = z.object({
   phase: introVideoRenderPhaseSchema,
   projectDigest: z.string(),
-  projectStorage: z
-    .object({ bucket: z.string().min(1), key: z.string().min(1) })
-    .optional(),
+  projectStorage: z.object({
+    bucket: z.string().min(1),
+    key: z.string().min(1),
+  }),
   projectUrl: z.url(),
   callbackUrl: z.url(),
   submittedAt: z.iso.datetime().optional(),
@@ -331,19 +332,6 @@ const recordRenderIdentity$ = command(
   },
 );
 
-// Preserve admitted jobs written before input locations were persisted. Remove
-// after those jobs drain and the old API is outside the rollback window.
-function legacyRenderProjectStorage(generationId: string, digest: string) {
-  const bucket = env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME");
-  if (!bucket) {
-    throw new Error("Legacy private render input storage is not configured");
-  }
-  return {
-    bucket,
-    key: `intro-video-render-inputs/${generationId}/${digest}.zip`,
-  };
-}
-
 const submitClaimedRender$ = command(
   async (
     { get, set },
@@ -389,20 +377,16 @@ const submitClaimedRender$ = command(
       await set(markBuiltInGenerationRunning$, job.id, signal);
     }
     if (!state.submittedAt) {
-      const projectStorage =
-        state.projectStorage ??
-        legacyRenderProjectStorage(job.id, state.projectDigest);
       // An admitted job may wait days before its first provider submission.
       // Renew only before that first attempt; all replays keep the exact body.
       const projectUrl = await get(
         generatePrivatePresignedGetUrl(
-          projectStorage.bucket,
-          projectStorage.key,
-          26 * 60 * 60,
+          state.projectStorage.bucket,
+          state.projectStorage.key,
         ),
       );
       signal.throwIfAborted();
-      state = { ...state, projectStorage, projectUrl };
+      state = { ...state, projectUrl };
     }
     const submittedAt = state.submittedAt ?? nowDate().toISOString();
     await set(
@@ -412,7 +396,6 @@ const submitClaimedRender$ = command(
         phase: "submitting",
         submittedAt,
         projectUrl: state.projectUrl,
-        projectStorage: state.projectStorage,
         notice: "",
       },
       signal,

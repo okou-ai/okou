@@ -1,4 +1,3 @@
-import { stopAndTranscribe$ } from "../voice-io/voice-io-stt.ts";
 import {
   createComposerTaskChipsSignals,
   type ComposerTaskChipsSignals,
@@ -13,7 +12,7 @@ import type {
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { VOICE_IO_POLISH_MAX_TEXT_CHARS } from "@okouai/api-contracts/contracts/voice-io-polish";
-import { INTRO_VIDEO_TEMPLATE_ID } from "@okouai/core/intro-video-template";
+import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -78,8 +77,8 @@ type ComposerEditorSignals = Pick<
   | "insertPromptMarkdown$"
   | "insertUserMessage$"
   | "insertText$"
-  | "appendText$"
   | "selectOrAppendText$"
+  | "replacePromptText$"
 > & {
   readonly singleLineOnMobile: boolean;
 };
@@ -345,8 +344,8 @@ function composerEditorSignals(
     insertPromptMarkdown$: composer.insertPromptMarkdown$,
     insertUserMessage$: composer.insertUserMessage$,
     insertText$: composer.insertText$,
-    appendText$: composer.appendText$,
     selectOrAppendText$: composer.selectOrAppendText$,
+    replacePromptText$: composer.replacePromptText$,
   };
 }
 
@@ -522,7 +521,6 @@ function createComposerVoiceInput(
     },
   );
   return createComposerVoiceInputSignals(
-    workflowComposer.appendText$,
     deliverText$,
     workflowComposer.readVoiceContext$,
     lastAssistantMessage$,
@@ -557,7 +555,7 @@ export function createComposerSignals(
   });
   const taskChips = createComposerTaskChipsSignals(create, {
     insertTemplate$: workflowComposer.insertTemplate$,
-    insertPrompt$: workflowComposer.selectOrAppendText$,
+    insertPrompt$: workflowComposer.replacePromptText$,
     openTemplatePicker$: workflowComposer.openTemplatePicker$,
     focusEditor$: workflowComposer.focus$,
     saveDraft$: options.draft.save$,
@@ -853,8 +851,6 @@ function createSubmitCurrentInput({
       if (action !== "send" && action !== "queue") {
         return false;
       }
-      await set(stopAndTranscribe$, signal);
-      signal.throwIfAborted();
       if (!get(draft.attachmentUploadsReady$)) {
         return false;
       }
@@ -876,8 +872,7 @@ function createSubmitCurrentInput({
           message?.parts.some((part) => {
             return (
               part.type === "template" &&
-              part.template.type === "video" &&
-              part.template.selection.stylePresetId === INTRO_VIDEO_TEMPLATE_ID
+              generationTemplateKind(part.template) === "intro-video"
             );
           })
         ) {

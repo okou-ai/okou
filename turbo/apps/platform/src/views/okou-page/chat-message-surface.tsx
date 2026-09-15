@@ -59,6 +59,8 @@ export const CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS =
 export const CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS =
   "h-7 w-7 rounded-full object-cover object-top @[900px]:h-9 @[900px]:w-9";
 
+// Reveal immediately so hover does not create and remove a temporary opacity
+// layer in the scrolling transcript beside the assistant's SVG icons.
 export const CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS =
   "flex justify-end gap-1 mt-1 opacity-0 group-hover:opacity-100";
 
@@ -78,8 +80,9 @@ export function ChatUserMessageBubble({
 }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
+      data-slot="chat-user-message"
       className={cn(
-        "okou-chat-bubble-user rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden",
+        "rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden bg-gray-200 text-foreground",
         className,
       )}
       {...props}
@@ -95,7 +98,7 @@ export function ChatAssistantMessageBody({
     <div
       data-chat-selection-source
       className={cn(
-        "okou-chat-bubble-assistant p-0 text-[0.9375rem] leading-[1.7] min-w-0 [overflow-wrap:anywhere]",
+        "p-0 text-[0.9375rem] leading-[1.7] min-w-0 [overflow-wrap:anywhere] bg-transparent border-none border-current",
         className,
       )}
       {...props}

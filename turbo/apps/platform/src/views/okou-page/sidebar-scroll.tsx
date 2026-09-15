@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode, UIEvent } from "react";
 import { ScrollArea } from "@base-ui/react/scroll-area";
+import { ScrollBar } from "@okouai/ui";
 import { useSet } from "ccstate-react";
 import type { SidebarChatThreadScrollSignals } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
 
@@ -14,7 +15,7 @@ interface OverlayScrollAreaProps {
   readonly tabIndex?: number;
 }
 
-/** Overlay scroll area with a draggable Base UI scrollbar. */
+/** Sidebar scroll state with shadcn's Base UI scrollbar styling. */
 export function OverlayScrollArea({
   "aria-label": ariaLabel,
   className,
@@ -40,6 +41,7 @@ export function OverlayScrollArea({
     <ScrollArea.Root className={className}>
       <ScrollArea.Viewport
         ref={setViewportRef}
+        data-slot="scroll-area-viewport"
         className="h-full focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         style={style}
         onScroll={handleScroll}
@@ -52,15 +54,7 @@ export function OverlayScrollArea({
           {children}
         </ScrollArea.Content>
       </ScrollArea.Viewport>
-      <ScrollArea.Scrollbar
-        className="pointer-events-none m-px flex w-3 justify-center opacity-0 data-hovering:pointer-events-auto data-hovering:opacity-100 data-scrolling:pointer-events-auto data-scrolling:opacity-100"
-        data-testid="sidebar-scrollbar"
-      >
-        <ScrollArea.Thumb
-          className="w-[5px] rounded-full bg-foreground/15"
-          data-testid="sidebar-scrollbar-thumb"
-        />
-      </ScrollArea.Scrollbar>
+      <ScrollBar data-testid="sidebar-scrollbar" />
     </ScrollArea.Root>
   );
 }

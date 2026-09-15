@@ -1,6 +1,6 @@
 {
   "name": "@okouai/pi-agent-runtime",
-  "version": "1.27.6",
+  "version": "1.30.3",
   "private": true,
   "type": "module",
   "exports": {
@@ -28,6 +28,7 @@
   "dependencies": {
     "@earendil-works/pi-ai": "0.85.1",
     "@earendil-works/pi-coding-agent": "0.85.1",
+    "@langfuse/pi-observability-plugin": "0.1.2",
     "@okouai/api-contracts": "workspace:*",
     "@okouai/connectors": "workspace:*",
     "@smithy/node-http-handler": "4.7.3",

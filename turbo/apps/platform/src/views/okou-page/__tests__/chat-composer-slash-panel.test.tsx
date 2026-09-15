@@ -2,17 +2,21 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { workflowsCollectionContract } from "@okouai/api-contracts";
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
+import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import {
   fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
+import { mockTemplateChat } from "./chat-composer-template-gallery-test-helpers.ts";
 import {
   AGENT_ID,
+  THREAD_ID,
   context,
   expectInlineTemplateInComposer,
   findComposerEditor,
@@ -149,6 +153,38 @@ test("The pane carries more than one row of covers, so later templates are reach
     throw new Error("Expected an eighth presentation template");
   }
   expect(within(pane).getByText(later.title)).toBeInTheDocument();
+});
+
+test("Illustration covers keep their own proportion; decks keep the 16:9 tile", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu(true);
+
+  // A deck cover really is a slide, so it still asks for the 16:9 box.
+  const deckCover = detailPane()?.querySelector("img");
+  expect(deckCover?.getAttribute("src")).toContain("height=158");
+
+  await user.hover(slashButton("Illustration"));
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "illustration");
+  });
+  const pane = detailPane();
+  if (!pane) {
+    throw new Error("Expected the detail pane");
+  }
+  const [style] = ILLUSTRATION_TEMPLATE_ITEMS;
+  if (!style) {
+    throw new Error("Expected an illustration style");
+  }
+  const cover = pane.querySelector("img");
+  // Width only: passing a 16:9 height too made the transform fit a portrait
+  // style inside it, so the card received a picture far smaller than it paints.
+  expect(cover?.getAttribute("src")).toContain("width=280");
+  expect(cover?.getAttribute("src")).not.toContain("height=");
+  // The tile declares the catalog's own ratio rather than a shared one, which
+  // is what stops the artwork being cropped.
+  expect(cover?.parentElement?.getAttribute("style")).toContain(
+    `${String(style.width)} / ${String(style.height)}`,
+  );
 });
 
 test("Hovering a website row previews the website catalog", async () => {
@@ -400,6 +436,53 @@ test("A hovered category's template stays selectable when the pointer enters its
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
+test("A category row keeps no mark once the pointer is in its covers", async () => {
+  await openSlashMenu(true);
+  const presentation = slashButton("Presentation");
+  const website = slashButton("Website");
+  expect(presentation).toHaveAttribute("data-active", "true");
+
+  // Same boundary events as the test above: the pointer walks a category row
+  // and then crosses into the covers it previewed, without leaving the panel.
+  fireEvent.mouseOver(website);
+  fireEvent.mouseMove(website);
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "website");
+  });
+  const [first] = WEBSITE_TEMPLATE_ITEMS;
+  if (!first) {
+    throw new Error("Expected a website template");
+  }
+  const cover = slashButton(first.title);
+  fireEvent.mouseOut(website, { relatedTarget: cover });
+  fireEvent.mouseOver(cover, { relatedTarget: website });
+  fireEvent.mouseMove(cover);
+
+  // Neither the row the pointer left nor the row it started on stays marked,
+  // so the left column never argues with the covers on the right.
+  expect(website).not.toHaveAttribute("data-active");
+  expect(presentation).not.toHaveAttribute("data-active");
+  expect(detailPane()).toHaveAttribute("data-category", "website");
+});
+
+test("The keyboard selection is marked again once the pointer leaves", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu(true);
+  const presentation = slashButton("Presentation");
+  const website = slashButton("Website");
+
+  await user.hover(website);
+  await waitFor(() => {
+    expect(presentation).not.toHaveAttribute("data-active");
+  });
+
+  await user.unhover(website);
+  await waitFor(() => {
+    expect(presentation).toHaveAttribute("data-active", "true");
+  });
+  expect(detailPane()).toHaveAttribute("data-category", "slides");
+});
+
 test("The panel emphasizes the typed query inside a workflow name", async () => {
   setupModels();
   mockChatLifecycle(context);
@@ -435,4 +518,86 @@ test("Choosing a cover in the pane attaches that template without opening the pi
   await user.click(slashButton(first.title));
   await expectInlineTemplateInComposer(first.title);
   expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+const IMPORT_PROMPT =
+  "Analyse this deck and save its visual language as a reusable presentation template.";
+
+function uploadedFilePart(message: UserMessageDocument) {
+  const part = message.parts.find((candidate) => {
+    return candidate.type === "file";
+  });
+  if (!part || part.type !== "file") {
+    throw new Error("Imported message has no uploaded file");
+  }
+  return part;
+}
+
+test("Only the Presentation pane offers the deck import, and it leads the covers", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu(true);
+  const pane = detailPane();
+  if (!pane) {
+    throw new Error("Expected the detail pane");
+  }
+  const grid = pane.querySelector(
+    '[data-slot="slash-template-import"]',
+  )?.parentElement;
+  expect(grid?.firstElementChild).toHaveAttribute(
+    "data-slot",
+    "slash-template-import",
+  );
+  expect(within(pane).getByLabelText("Import your own deck")).toHaveAttribute(
+    "accept",
+    ".pptx,.ppt,.pdf",
+  );
+
+  // A deck is a presentation, so no other category carries the control.
+  await user.hover(slashButton("Website"));
+  await waitFor(() => {
+    expect(detailPane()).toHaveAttribute("data-category", "website");
+  });
+  expect(
+    document.querySelector('[data-slot="slash-template-import"]'),
+  ).toBeNull();
+});
+
+test("Importing a deck from the panel sends it for analysis", async () => {
+  const capture = mockTemplateChat();
+  context.mocks.upload.success({
+    id: "81000000-0000-4000-a000-000000000031",
+    filename: "panel-deck.pptx",
+    contentType:
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    size: 5,
+    url: "https://cdn.example.test/panel-deck.pptx",
+  });
+  const user = userEvent.setup();
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: {
+      [FeatureSwitchKey.ComposerCreateCommands]: true,
+      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
+    },
+  });
+  const editor = await findComposerEditor();
+  await fill(editor, "Draft /");
+  await screen.findByTestId("slash-workflow-menu");
+
+  await user.upload(
+    screen.getByLabelText("Import your own deck"),
+    new File(["deck"], "panel-deck.pptx", {
+      type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    }),
+  );
+
+  await waitFor(() => {
+    expect(capture.sentMessages).toHaveLength(1);
+  });
+  expect(uploadedFilePart(capture.sentMessages[0]!).filenameSnapshot).toBe(
+    "panel-deck.pptx",
+  );
+  expect(capture.runPrompts).toStrictEqual([IMPORT_PROMPT]);
 });

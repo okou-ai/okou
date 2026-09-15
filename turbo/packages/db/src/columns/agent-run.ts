@@ -46,6 +46,11 @@ export function agentRunColumns(sessionId: () => AnyPgColumn) {
     // Canonical resolved mounts used by new run writers.
     storageMounts: jsonb("storage_mounts").$type<AgentRunStorageMounts>(),
     launchSnapshot: jsonb("launch_snapshot").$type<AgentRunLaunchSnapshot>(),
+    // Immutable per-run telemetry admission; tracing is disabled unless the
+    // run was explicitly created with the user switch enabled.
+    langfuseTraceEnabled: boolean("langfuse_trace_enabled")
+      .default(false)
+      .notNull(),
     // Exact accepted Definition inputs mounted for this Run. Null preserves
     // historical and non-Official producers during the additive rollout.
     officialWorkflowProvenance: jsonb(

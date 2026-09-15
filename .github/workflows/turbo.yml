@@ -2740,26 +2740,23 @@ jobs:
           policies=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies")
           policy_payload=$(jq -c --arg providerId "$provider_id" '
             {
-              policies: (
-                [.policies[] |
-                  select(.model != "gpt-5.6-luna") |
+              policies: [
+                .policies[] |
                   {
                     model,
                     isDefault,
                     defaultProviderType,
                     credentialScope,
                     modelProviderId
-                  }
-                ] + [
-                  {
-                    model: "gpt-5.6-luna",
-                    isDefault: false,
-                    defaultProviderType: "openai-api-key",
-                    credentialScope: "org",
-                    modelProviderId: $providerId
-                  }
-                ]
-              )
+                  } |
+                  if .model == "gpt-5.6-luna" then
+                    . + {
+                      defaultProviderType: "openai-api-key",
+                      credentialScope: "org",
+                      modelProviderId: $providerId
+                    }
+                  else . end
+              ]
             }
           ' <<< "$policies")
           curl -fsS "${headers[@]}" \

@@ -225,10 +225,9 @@ test("Avatar looks require Use, and explicit voice choices survive removing the 
     return expect(capture.selectedTemplates).toHaveLength(1);
   });
   expect(capture.selectedTemplates[0]).toStrictEqual({
-    type: "video",
+    type: "intro-video",
     selection: {
-      stylePresetId: "explainer-video",
-      explainerOptions: {
+      options: {
         style: { kind: "catalog", style: STYLES[0] },
         avatar: { kind: "none" },
         voice: { kind: "catalog", voice: VOICE },
@@ -397,6 +396,9 @@ test("Desktop recording handoff keeps both uploaded files with the intro video s
   await expectInlineTemplate("Intro video");
   const message = screen.getByRole("textbox", { name: "Message" });
   expect(message).toHaveTextContent("desktop screen recording");
+  await waitFor(() => {
+    expect(control("Send")).toBeEnabled();
+  });
   const user = userEvent.setup({ delay: null });
   await user.click(message);
   await user.keyboard("{Enter}");
@@ -433,10 +435,9 @@ test("A saved intro video draft cannot send outside the rollout and remains edit
             type: "template",
             titleSnapshot: "Intro video",
             template: {
-              type: "video",
+              type: "intro-video",
               selection: {
-                stylePresetId: "explainer-video",
-                explainerOptions: {
+                options: {
                   style: { kind: "catalog", style: STYLES[0]! },
                   avatar: { kind: "none" },
                   voice: { kind: "none" },
@@ -455,6 +456,9 @@ test("A saved intro video draft cannot send outside the rollout and remains edit
     featureSwitches: { [FeatureSwitchKey.IntroVideo]: false },
   });
   await expectInlineTemplate("Intro video");
+  await waitFor(() => {
+    expect(control("Send")).toBeEnabled();
+  });
   const message = await screen.findByRole("textbox", { name: "Message" });
   const user = userEvent.setup({ delay: null });
   await user.click(message);
@@ -528,9 +532,7 @@ test("Intro Video never displays or submits the preceding Creative Video setting
   await waitFor(() => {
     expect(capture.sentMessages).toHaveLength(1);
   });
-  expect(capture.selectedTemplates[0]?.selection).toStrictEqual(
-    expect.objectContaining({ stylePresetId: "explainer-video" }),
-  );
+  expect(capture.selectedTemplates[0]?.type).toBe("intro-video");
   expect(
     capture.sentMessages[0]?.parts.some((part) => {
       return part.type === "additional_info";

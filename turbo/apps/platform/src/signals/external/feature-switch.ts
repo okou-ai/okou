@@ -93,8 +93,8 @@ export const composerImageAnnotationEnabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.ComposerImageAnnotation] ?? false;
 });
 
-export const modelPickerMenuEnabled$ = computed((get): boolean => {
-  return get(featureSwitch$)[FeatureSwitchKey.ModelPickerMenu] ?? false;
+export const refactorModelSelectEnabled$ = computed((get): boolean => {
+  return get(featureSwitch$)[FeatureSwitchKey.RefactorModelSelect] ?? false;
 });
 
 /** The flyout replaces the drill-in menu's pages with two detached panels. */
@@ -102,16 +102,8 @@ export const modelPickerFlyoutEnabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.ModelPickerFlyout] ?? false;
 });
 
-export const chatReasoningEffortEnabled$ = computed((get): boolean => {
-  return get(featureSwitch$)[FeatureSwitchKey.ChatReasoningEffort];
-});
-
 export const codexFastModeEnabled$ = computed((get): boolean => {
   return isCodexFastModeEnabled({ overrides: get(featureSwitch$) });
-});
-
-export const agentMessageMathEnabled$ = computed((get): boolean => {
-  return get(featureSwitch$)[FeatureSwitchKey.AgentMessageMath] ?? false;
 });
 
 export const avatarNeckSweaterEnabled$ = computed((get): boolean => {
@@ -124,10 +116,6 @@ export const avatarFramingEnabled$ = computed((get): boolean => {
 
 export const customConnectorMcpEnabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.CustomConnectorMcp] ?? false;
-});
-
-export const voiceInputV2Enabled$ = computed((get): boolean => {
-  return get(featureSwitch$)[FeatureSwitchKey.VoiceInputV2] ?? false;
 });
 
 export const applyFeatureSwitches$ = command(

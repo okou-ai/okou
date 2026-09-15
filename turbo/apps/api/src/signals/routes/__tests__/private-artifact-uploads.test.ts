@@ -143,6 +143,7 @@ describe("private artifact uploads", () => {
     const { id, url } = prepared.body;
     expect(prepared.body).toHaveProperty("uploadUrl");
     const put = context.mocks.s3.getSignedUrl.mock.calls.at(-1);
+    expect(put?.[2]).toMatchObject({ expiresIn: 172_800 });
     expect(put?.[1]).toMatchObject({
       input: { Bucket: bucket, Key: `private-artifacts/${id}/report.html` },
     });

@@ -40,7 +40,7 @@ function sourcePartForText(events: readonly ChatEvent[], text: string) {
 }
 
 describe("chat event annotations", () => {
-  it("projects precise source links and inherits them across replacements", async () => {
+  async function annotationProjection() {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
     await runs.ensureOrgModelProvider(actor);
@@ -56,6 +56,11 @@ describe("chat event annotations", () => {
       await seedChatEventAnnotationProjectionFixture(thread.id);
 
     const events = (await chat.listThreadEvents(actor, thread.id)).events;
+    return { events, claimedPendingId, rejectedPendingId };
+  }
+
+  it("projects precise source links for chat events", async () => {
+    const { events } = await annotationProjection();
     expect(sourcePartForText(events, "slack linked")).toStrictEqual({
       type: "source",
       kind: "slack",
@@ -104,6 +109,11 @@ describe("chat event annotations", () => {
       kind: "github",
       href: "https://github.com/vm0-ai/vm0/pull/24219",
     });
+  });
+
+  it("inherits precise source links across claimed and rejected replacements", async () => {
+    const { events, claimedPendingId, rejectedPendingId } =
+      await annotationProjection();
     const claimedReplacement = events.find((event) => {
       return event.revokesEventId === claimedPendingId;
     });

@@ -137,6 +137,36 @@ export const fields: readonly Field[] = [
   },
 ];
 
+// Recovery covers retained snapshots from before the SSH credential migration
+// and databases after it. Keep the original migration manifest above unchanged.
+// Both tables must be inspected when present; the recovery entry point requires
+// at least one. Retire this operational compatibility with #32264 recovery work.
+export const recoveryFields: readonly Field[] = [
+  ...fields.map((field) => {
+    return field.table === "ssh_connection_credentials"
+      ? { ...field, optional: true }
+      : field;
+  }),
+  {
+    table: "ssh_credentials",
+    primaryKey: "id",
+    column: "encrypted_private_key",
+    optional: true,
+  },
+  {
+    table: "ssh_credentials",
+    primaryKey: "id",
+    column: "encrypted_passphrase",
+    optional: true,
+  },
+  {
+    table: "ssh_credentials",
+    primaryKey: "id",
+    column: "encrypted_password",
+    optional: true,
+  },
+];
+
 export function fieldName(field: Field): string {
   return `${field.table}.${field.column}${field.jsonKey ? `.${field.jsonKey}` : ""}`;
 }
