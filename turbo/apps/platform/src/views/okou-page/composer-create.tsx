@@ -7,7 +7,7 @@ import {
   Check,
   ChevronDown,
   Globe,
-  Workflow,
+  Route,
   X,
 } from "lucide-react";
 import { toast } from "@okouai/ui/components/ui/sonner";
@@ -37,7 +37,6 @@ import {
   composerCreateModeDescription,
   composerCreateModeLabel,
   composerCreateModeName,
-  type ComposerCreateMode,
 } from "../../signals/okou-page/composer-create.ts";
 import { cn } from "@okouai/ui/lib/utils";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -51,15 +50,17 @@ import {
 const CREATE_CONTROL_FOCUS =
   "focus-visible:bg-state-hover focus-visible:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0";
 
-const CREATE_MODE_ICON_CLASS = {
-  presentation: "text-artifact-presentation",
-  video: "text-artifact-video",
-  image: "text-artifact-image",
-} satisfies Record<ComposerCreateMode, string>;
+/**
+ * One muted ink for every type. Only presentation, video and image ever had an
+ * `--artifact-*` foreground, so the six choices read as three coloured and
+ * three grey; colour on a picker is decoration, and the real colour here comes
+ * from the template covers.
+ */
+const CREATE_MODE_ICON_CLASS = "text-muted-foreground";
 
 const TASK_ICONS = {
   ...COMPOSER_CREATE_ICONS,
-  workflow: Workflow,
+  workflow: Route,
   website: Globe,
   visualization: ChartNoAxesCombined,
 } as const;
@@ -240,10 +241,7 @@ export function ComposerCreateControls({
           }
         }}
       >
-        <Icon
-          className={mode ? CREATE_MODE_ICON_CLASS[mode] : undefined}
-          aria-hidden
-        />
+        <Icon className={CREATE_MODE_ICON_CLASS} aria-hidden />
         <span className="truncate">
           {mode
             ? composerCreateModeLabel(mode)
@@ -337,7 +335,7 @@ export function ComposerCreatePicker({
                 setMode(type);
               }}
             >
-              <Icon className={CREATE_MODE_ICON_CLASS[type]} aria-hidden />
+              <Icon className={CREATE_MODE_ICON_CLASS} aria-hidden />
               <span className="min-w-0">
                 <span className="block text-sm">
                   {composerCreateModeName(type)}

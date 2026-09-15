@@ -128,6 +128,12 @@
   --animate-effort-aurora-curtain:
     effort-aurora-curtain 29s linear infinite,
     effort-aurora-breathe 13s ease-in-out infinite;
+
+  /* Chat thinking indicator and skeleton reveal. Registered here so consumers
+     reach them through `animate-*` rather than an `animation` shorthand; their
+     keyframes stay below in this stylesheet. */
+  --animate-thinking-in: okou-thinking-in 0.3s ease-out;
+  --animate-chat-skeleton-reveal: okou-chat-skeleton-reveal 0s 100ms forwards;
 }
 
 /* Palette previews keep the fixed 135deg/52% sRGB blend in Light and Dark.
@@ -460,24 +466,11 @@ body {
     transform: translateY(0);
   }
 }
-.okou-thinking-enter {
-  animation: okou-thinking-in 0.3s ease-out;
-}
-
-.okou-thinking-spinner {
-  animation-duration: 1.4s;
-  will-change: transform;
-}
 
 @keyframes okou-chat-skeleton-reveal {
   to {
     opacity: 1;
   }
-}
-.okou-chat-skeleton-reveal {
-  /* Avoid flashing the skeleton when cached chat events resolve immediately. */
-  opacity: 0;
-  animation: okou-chat-skeleton-reveal 0s 100ms forwards;
 }
 
 /* Conversation locator: mark where a rail jump landed, then fade back out. */

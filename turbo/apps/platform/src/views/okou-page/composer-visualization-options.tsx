@@ -1,6 +1,6 @@
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Card, ToggleButton, cn } from "@okouai/ui";
+import { ToggleButton, cn } from "@okouai/ui";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import {
   VISUALIZATION_OUTPUTS,
@@ -9,24 +9,6 @@ import {
 } from "../../signals/okou-page/composer-visualization.ts";
 import { CURATED_VISUALIZATION_CHARTS } from "./composer-visualization-chart-data.ts";
 import { VisualizationChartPreview } from "./composer-visualization-previews.tsx";
-
-function VisualizationHeader() {
-  const { t } = useTranslation();
-  const copy = t(
-    ($) => {
-      return $.chat.taskChips.visualization;
-    },
-    { returnObjects: true },
-  );
-  return (
-    <div className="flex min-w-0 items-center justify-between gap-3">
-      <h3 className="text-sm font-semibold">{copy.title}</h3>
-      <span className="shrink-0 text-xs text-muted-foreground">
-        {copy.optional}
-      </span>
-    </div>
-  );
-}
 
 function VisualizationOutputButton({
   output,
@@ -52,8 +34,8 @@ function VisualizationOutputButton({
       layout="tile"
       aria-label={label}
       className={cn(
-        "h-11 rounded-xl px-3 py-2 text-center text-xs font-medium text-foreground last:col-span-2 sm:last:col-span-1",
-        !selected && "bg-transparent",
+        "h-8 rounded-full px-3.5 text-xs font-medium",
+        !selected && "border-control-border bg-transparent",
       )}
       onClick={() => {
         setOutput(output);
@@ -80,7 +62,7 @@ function VisualizationOutputPicker({
     <section className="flex min-w-0 flex-col gap-2.5">
       <h4 className="text-xs font-medium">{copy.outputFormat}</h4>
       <div
-        className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-4"
+        className="flex min-w-0 flex-wrap items-center gap-1.5"
         role="group"
         aria-label={copy.outputFormat}
       >
@@ -122,8 +104,8 @@ function VisualizationChartButton({
       layout="tile"
       aria-label={label}
       className={cn(
-        "group min-h-[104px] overflow-hidden rounded-xl p-1.5 text-foreground",
-        !selected && "bg-transparent",
+        "group min-h-[104px] overflow-hidden rounded-xl border-transparent bg-muted/60 p-1.5",
+        selected ? "text-foreground" : "text-foreground/50",
       )}
       onClick={() => {
         toggleChart(chart);
@@ -152,7 +134,7 @@ function VisualizationChartPicker({
     { returnObjects: true },
   );
   return (
-    <section className="flex min-w-0 flex-col gap-2.5 border-t pt-3">
+    <section className="flex min-w-0 flex-col gap-2.5">
       <h4 className="text-xs font-medium">{copy.preferredCharts}</h4>
       <div
         className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6"
@@ -186,17 +168,14 @@ export function ComposerVisualizationOptions({
     { returnObjects: true },
   );
   return (
-    <Card
-      className="min-w-0 rounded-3xl p-3 sm:p-4"
+    <section
+      className="flex min-w-0 flex-col gap-4"
       role="region"
       aria-label={copy.panelLabel}
     >
-      <div className="flex min-w-0 flex-col gap-3">
-        <VisualizationHeader />
-        <VisualizationOutputPicker signals={signals} />
-        <VisualizationChartPicker signals={signals} />
-        <p className="text-xs text-muted-foreground">{copy.chartSafety}</p>
-      </div>
-    </Card>
+      <VisualizationOutputPicker signals={signals} />
+      <VisualizationChartPicker signals={signals} />
+      <p className="text-xs text-muted-foreground">{copy.chartSafety}</p>
+    </section>
   );
 }

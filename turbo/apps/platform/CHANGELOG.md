@@ -11,6 +11,13 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.896.2](https://github.com/vm0-ai/vm0/compare/app-v0.896.1...app-v0.896.2) (2026-09-15)
+
+
+### Refactoring
+
+* **platform:** move transcript chat cards onto a shared card component ([#33964](https://github.com/vm0-ai/vm0/issues/33964)) ([1794ce2](https://github.com/vm0-ai/vm0/commit/1794ce2989368ab4a25fbe97fe3bd42b64961bd0))
+
 ## [0.896.1](https://github.com/vm0-ai/vm0/compare/app-v0.896.0...app-v0.896.1) (2026-09-15)
 
 

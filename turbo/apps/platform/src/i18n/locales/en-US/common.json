@@ -2384,7 +2384,8 @@
         "browseStyles": "Browse all styles",
         "browseTemplates": "Browse all templates",
         "image": "Image styles",
-        "nextTemplates": "Next templates",
+        "nextPage": "Next page",
+        "previousPage": "Previous page",
         "video": "Video templates",
         "website": "Website templates"
       },
@@ -2499,7 +2500,6 @@
         },
         "more": "More",
         "noCharts": "No matching charts",
-        "optional": "Optional",
         "outputFormat": "Output format",
         "outputs": {
           "presentation": "Presentation",
@@ -2515,7 +2515,6 @@
         "selectedCount_one": "{{count}} selected",
         "selectedCount_other": "{{count}} selected",
         "summary": "{{output}} · Methods {{methodCount}} · Charts {{chartCount}}",
-        "title": "Visualization",
         "useWhenSuitable": "Use when suitable",
         "visualMethods": "Visual methods"
       },

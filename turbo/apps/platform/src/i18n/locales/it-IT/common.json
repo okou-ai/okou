@@ -2430,7 +2430,8 @@
         "browseStyles": "Sfoglia tutti gli stili",
         "browseTemplates": "Sfoglia tutti i modelli",
         "image": "Stili immagine",
-        "nextTemplates": "Modelli successivi",
+        "nextPage": "Pagina successiva",
+        "previousPage": "Pagina precedente",
         "video": "Modelli video",
         "website": "Modelli sito web"
       },
@@ -2545,7 +2546,6 @@
         },
         "more": "More",
         "noCharts": "No matching charts",
-        "optional": "Optional",
         "outputFormat": "Output format",
         "outputs": {
           "presentation": "Presentation",
@@ -2561,7 +2561,6 @@
         "selectedCount_one": "{{count}} selezionato",
         "selectedCount_other": "{{count}} selezionati",
         "summary": "{{output}} · Metodi {{methodCount}} · Grafici {{chartCount}}",
-        "title": "Visualizzazione",
         "useWhenSuitable": "Use when suitable",
         "visualMethods": "Visual methods"
       },

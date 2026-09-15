@@ -2430,7 +2430,8 @@
         "browseStyles": "Ver todos os estilos",
         "browseTemplates": "Ver todos os modelos",
         "image": "Estilos de imagem",
-        "nextTemplates": "Próximos modelos",
+        "nextPage": "Próxima página",
+        "previousPage": "Página anterior",
         "video": "Modelos de vídeo",
         "website": "Modelos de site"
       },
@@ -2545,7 +2546,6 @@
         },
         "more": "More",
         "noCharts": "No matching charts",
-        "optional": "Optional",
         "outputFormat": "Output format",
         "outputs": {
           "presentation": "Presentation",
@@ -2561,7 +2561,6 @@
         "selectedCount_one": "{{count}} selecionado",
         "selectedCount_other": "{{count}} selecionados",
         "summary": "{{output}} · Métodos {{methodCount}} · Gráficos {{chartCount}}",
-        "title": "Visualização",
         "useWhenSuitable": "Use when suitable",
         "visualMethods": "Visual methods"
       },

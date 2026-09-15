@@ -2375,7 +2375,8 @@
         "browseStyles": "すべてのスタイルを見る",
         "browseTemplates": "すべてのテンプレートを見る",
         "image": "画像スタイル",
-        "nextTemplates": "次のテンプレート",
+        "nextPage": "次のページ",
+        "previousPage": "前のページ",
         "video": "動画テンプレート",
         "website": "ウェブサイトテンプレート"
       },
@@ -2490,7 +2491,6 @@
         },
         "more": "More",
         "noCharts": "No matching charts",
-        "optional": "Optional",
         "outputFormat": "Output format",
         "outputs": {
           "presentation": "Presentation",
@@ -2506,7 +2506,6 @@
         "selectedCount_one": "{{count}} 件選択",
         "selectedCount_other": "{{count}} 件選択",
         "summary": "{{output}} · 表現方法 {{methodCount}} · グラフ {{chartCount}}",
-        "title": "可視化",
         "useWhenSuitable": "Use when suitable",
         "visualMethods": "Visual methods"
       },

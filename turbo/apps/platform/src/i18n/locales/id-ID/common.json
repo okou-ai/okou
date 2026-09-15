@@ -2375,7 +2375,8 @@
         "browseStyles": "Jelajahi semua gaya",
         "browseTemplates": "Jelajahi semua templat",
         "image": "Gaya gambar",
-        "nextTemplates": "Templat berikutnya",
+        "nextPage": "Halaman berikutnya",
+        "previousPage": "Halaman sebelumnya",
         "video": "Templat video",
         "website": "Templat situs web"
       },
@@ -2490,7 +2491,6 @@
         },
         "more": "More",
         "noCharts": "No matching charts",
-        "optional": "Optional",
         "outputFormat": "Output format",
         "outputs": {
           "presentation": "Presentation",
@@ -2506,7 +2506,6 @@
         "selectedCount_one": "{{count}} dipilih",
         "selectedCount_other": "{{count}} dipilih",
         "summary": "{{output}} · Metode {{methodCount}} · Bagan {{chartCount}}",
-        "title": "Visualisasi",
         "useWhenSuitable": "Use when suitable",
         "visualMethods": "Visual methods"
       },

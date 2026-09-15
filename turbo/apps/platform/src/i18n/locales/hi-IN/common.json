@@ -2384,7 +2384,8 @@
         "browseStyles": "सभी शैलियाँ देखें",
         "browseTemplates": "सभी टेम्पलेट देखें",
         "image": "चित्र शैलियाँ",
-        "nextTemplates": "अगले टेम्पलेट",
+        "nextPage": "अगला पृष्ठ",
+        "previousPage": "पिछला पृष्ठ",
         "video": "वीडियो टेम्पलेट",
         "website": "वेबसाइट टेम्पलेट"
       },
@@ -2499,7 +2500,6 @@
         },
         "more": "More",
         "noCharts": "No matching charts",
-        "optional": "Optional",
         "outputFormat": "Output format",
         "outputs": {
           "presentation": "Presentation",
@@ -2515,7 +2515,6 @@
         "selectedCount_one": "{{count}} चुना गया",
         "selectedCount_other": "{{count}} चुने गए",
         "summary": "{{output}} · तरीके {{methodCount}} · चार्ट {{chartCount}}",
-        "title": "विज़ुअलाइज़ेशन",
         "useWhenSuitable": "Use when suitable",
         "visualMethods": "Visual methods"
       },

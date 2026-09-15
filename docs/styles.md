@@ -872,6 +872,52 @@ change 734,605 pixels.
 `okou-chat-frame` had exactly one consumer, that dialog's video stage, so it
 carried no live declaration anywhere.
 
+### Chat thinking states
+
+The `okou-thinking-enter`, `okou-thinking-spinner`, `okou-thinking-spinner-frame`
+and `okou-chat-skeleton-reveal` selectors and their consumers have been removed.
+`okou-thinking-spinner-frame` carried no declarations, so its removal is a pure
+class deletion. The four selectors had six consumption sites, three of them
+`okou-thinking-enter`, and all six live in `chat-thread-page.tsx`; the keyframes
+stay, because keyframes are not class selectors.
+
+Each retired `animation` shorthand becomes an `--animate-*` theme entry, so the
+consumers reach the motion through `animate-thinking-in` and
+`animate-chat-skeleton-reveal` instead of respelling a shorthand. The spinner
+keeps `animate-spin` and overrides only its duration, through
+`[animation-duration:1.4s]` beside `will-change-transform`.
+
+One computed-style difference is intended and carries no pixels. Under
+`prefers-reduced-motion: reduce` the spinner's `animation-duration` was `1.4s`
+before and is `0s` after. The retired rule sat outside every layer, so it kept
+setting a duration even once `motion-reduce:animate-none` had cleared
+`animation-name`; as a utility, the duration is now cleared with the rest of the
+shorthand. `animation-name` is `none` on both sides, so the property is inert
+and all 18 reduced-motion theme states report zero changed pixels.
+
+Measured against `main` with the App's own Tailwind compiler in Chromium over
+CDP, on the real ancestor chain (`.okou-app` shell, chat `<main>`, message list,
+thinking wrapper, response line, leading-icon span): 288 comparisons — 18 theme
+states (the default palette plus the eight gradient palettes, each in Light and
+Dark) across fine-pointer DPR 1 and DPR 2, coarse pointer, and reduced motion,
+with the animations paused at 0/200/400/700/1050 ms. Zero changed pixels, and
+the only observation difference is the inert reduced-motion duration above.
+Every capture also asserts that both sides report the same number of running
+animations, because a finite animation that ends is dropped from
+`getAnimations()` and would otherwise be compared at a different phase.
+
+The three-block loader is not part of this batch. `okou-blocks` was retired by
+the separate removal of the chat thinking spinner switch, which deleted the
+loader, its colour state and its keyframes outright; the rotating mark is now
+the only thinking indicator, so these states are the online-visible path.
+
+`okou-shimmer-text` was scoped out of this batch. Its gradient has six colour
+stops, and Tailwind's gradient utilities interpolate in oklab, so only the exact
+`bg-[linear-gradient(...)]` form reproduces it — 229 characters for that one
+utility, past the length this family keeps its class strings under. Choosing
+between that and an App-owned gradient token for a single consumer is a design
+decision rather than a mechanical replacement.
+
 ### The standalone PWA fixed cover
 
 The `okou-pwa-fixed-cover` selector and its consumers have been removed. It was

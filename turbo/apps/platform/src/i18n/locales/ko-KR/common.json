@@ -2375,7 +2375,8 @@
         "browseStyles": "모든 스타일 보기",
         "browseTemplates": "모든 템플릿 보기",
         "image": "이미지 스타일",
-        "nextTemplates": "다음 템플릿",
+        "nextPage": "다음 페이지",
+        "previousPage": "이전 페이지",
         "video": "동영상 템플릿",
         "website": "웹사이트 템플릿"
       },
@@ -2490,7 +2491,6 @@
         },
         "more": "More",
         "noCharts": "No matching charts",
-        "optional": "Optional",
         "outputFormat": "Output format",
         "outputs": {
           "presentation": "Presentation",
@@ -2506,7 +2506,6 @@
         "selectedCount_one": "{{count}}개 선택됨",
         "selectedCount_other": "{{count}}개 선택됨",
         "summary": "{{output}} · 표현 방식 {{methodCount}} · 차트 {{chartCount}}",
-        "title": "시각화",
         "useWhenSuitable": "Use when suitable",
         "visualMethods": "Visual methods"
       },
