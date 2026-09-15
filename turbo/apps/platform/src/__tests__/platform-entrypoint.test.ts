@@ -68,14 +68,14 @@ describe("platform entrypoint", () => {
     expect(document.getElementById("root")).toBeEmptyDOMElement();
   });
 
-  it("starts the application without requesting Google Ads", async () => {
+  it("starts the application before requesting Google Ads", async () => {
     context.mocks.browser.userAgent(
       "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36",
     );
     vi.stubGlobal("SharedWorker", class extends EventTarget {});
     startPlatformEntrypoint();
     await waitForApplicationStart();
-    expect(googleAdsRequestedAfterApplicationStart).toBeFalsy();
+    expect(googleAdsRequestedAfterApplicationStart).toBeTruthy();
     expect(
       screen.queryByRole("heading", { name: /browser to continue/ }),
     ).toBeNull();

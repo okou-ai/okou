@@ -11,6 +11,7 @@ import { reloadAgents$ } from "../agent.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { ROUTES } from "../route-paths.ts";
 import { billingStatusAsync$ } from "../okou-page/billing.ts";
+import { readStoredAdAttributionMetadata$ } from "../bootstrap/ad-attribution.ts";
 import { reloadOnboardingStatus$ } from "../okou-page/onboarding.ts";
 import {
   ONBOARDING_CHECKOUT_STATE_PARAM,
@@ -23,7 +24,7 @@ import {
   capturePaidOnboardingRedirectToStripe$,
   capturePaidOnboardingRoleConfirmed$,
 } from "../bootstrap/paid-funnel-telemetry.ts";
-import { completePaidCheckout$ } from "../bootstrap/paid-checkout.ts";
+import { completeGoogleAdsPaidCheckout$ } from "../bootstrap/google-ads-paid-conversion.ts";
 
 export const completeOnboarding$ = command(
   async (
@@ -119,6 +120,7 @@ export const prepareOnboardingVideoRun$ = command(
       prompt: input.prompt,
       note: input.note,
     });
+    const adAttribution = set(readStoredAdAttributionMetadata$);
     const successUrl = checkoutReturnUrl(input, "pro", checkoutState);
     const cancelUrl = checkoutReturnUrl(input, "canceled", checkoutState);
     const { userId } = await get(authenticatedIdentity$);
@@ -128,10 +130,10 @@ export const prepareOnboardingVideoRun$ = command(
       client.create({
         body: {
           tier: "pro",
-          marketingAttributionVersion: 2,
           memberUsagePacks: [{ memberId: userId, usagePackUsd: 20 }],
           successUrl,
           cancelUrl,
+          ...(adAttribution === undefined ? {} : { adAttribution }),
         },
         fetchOptions: { signal },
       }),
@@ -159,7 +161,7 @@ export const prepareOnboardingVideoRun$ = command(
 export const completeOnboardingCheckoutReturn$ = command(
   async ({ set }, sessionId: string, signal: AbortSignal): Promise<void> => {
     await set(
-      completePaidCheckout$,
+      completeGoogleAdsPaidCheckout$,
       { sessionId, kind: "paid_in_onboarding" },
       signal,
     );

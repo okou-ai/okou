@@ -1,4 +1,3 @@
-import { removeAcquisitionParameters } from "../../lib/remove-acquisition.ts";
 import { command, computed, state } from "ccstate";
 import {
   billingStatusContract,
@@ -26,6 +25,7 @@ import {
   type UsagePackCheckoutRequest,
   type UsagePackPurchasePreviewResponse,
   type UsagePackMigrationStateResponse,
+  type GoogleAdsPaidConversion,
 } from "@okouai/api-contracts/contracts/billing";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { apiClient$ } from "../api-client.ts";
@@ -36,10 +36,17 @@ import { isOrgAdmin$ } from "../org.ts";
 import { bestEffort, settle, tapError, withCleanup } from "../utils.ts";
 import { accept } from "../../lib/accept.ts";
 import {
+  applyStoredAdAttribution$,
+  readStoredAdAttributionMetadata$,
+} from "../bootstrap/ad-attribution.ts";
+import {
   capturePaidOnboardingCheckoutCreated$,
   capturePaidOnboardingRedirectToStripe$,
 } from "../bootstrap/paid-funnel-telemetry.ts";
-import { completePaidCheckout$ } from "../bootstrap/paid-checkout.ts";
+import {
+  completeGoogleAdsPaidCheckout$,
+  fireGoogleAdsPaidConversion$,
+} from "../bootstrap/google-ads-paid-conversion.ts";
 import { currentLocale, i18n } from "../../i18n/index.ts";
 import { refreshOrgMembers$ } from "../external/org-members.ts";
 import { invalidateOrgModelPolicies$ } from "../external/org-model-policies.ts";
@@ -639,9 +646,10 @@ export const handleBillingRedirect$ = command(
 
     if ((billing === "pro" || billing === "team") && billingSessionId) {
       await set(
-        completePaidCheckout$,
+        completeGoogleAdsPaidCheckout$,
         {
           sessionId: billingSessionId,
+          kind: "paid_after_onboarding",
         },
         signal,
       );
@@ -751,6 +759,7 @@ export const startCheckout$ = command(
     const successUrl = checkoutReturnUrl();
     successUrl.searchParams.set("billing", tier);
     successUrl.searchParams.set("billing_session_id", "{CHECKOUT_SESSION_ID}");
+    set(applyStoredAdAttribution$, successUrl);
     const stripeSuccessUrl = successUrl
       .toString()
       .replace(
@@ -759,17 +768,19 @@ export const startCheckout$ = command(
       );
     const cancelUrl = checkoutReturnUrl();
     cancelUrl.searchParams.set("billing", "canceled");
+    set(applyStoredAdAttribution$, cancelUrl);
+    const adAttribution = set(readStoredAdAttributionMetadata$);
     const createClient = get(apiClient$);
     const client = createClient(billingCheckoutContract);
     const request: CheckoutRequest = {
       tier,
       supportsInAppPreview: true,
-      marketingAttributionVersion: 2,
       successUrl: stripeSuccessUrl,
       cancelUrl: cancelUrl.toString(),
       ...(options?.trialDays === undefined
         ? {}
         : { trialDays: options.trialDays }),
+      ...(adAttribution === undefined ? {} : { adAttribution }),
     };
     const result = await accept(
       client.create({
@@ -815,11 +826,11 @@ export const startUsagePackCheckout$ = command(
     newTab: boolean,
     signal: AbortSignal,
   ) => {
-    const currentUrl = new URL(window.location.href);
-    removeAcquisitionParameters(currentUrl.searchParams);
+    const currentUrl = window.location.href;
     const successUrl = new URL(currentUrl);
     successUrl.searchParams.set("billing", args.tier);
     successUrl.searchParams.set("billing_session_id", "{CHECKOUT_SESSION_ID}");
+    set(applyStoredAdAttribution$, successUrl);
     const stripeSuccessUrl = successUrl
       .toString()
       .replace(
@@ -828,15 +839,17 @@ export const startUsagePackCheckout$ = command(
       );
     const cancelUrl = new URL(currentUrl);
     cancelUrl.searchParams.set("billing", "canceled");
+    set(applyStoredAdAttribution$, cancelUrl);
+    const adAttribution = set(readStoredAdAttributionMetadata$);
     const createClient = get(apiClient$);
     const client = createClient(billingUsagePackCheckoutContract);
     const request: UsagePackCheckoutRequest = {
       tier: args.tier,
       supportsInAppPreview: true,
-      marketingAttributionVersion: 2,
       memberUsagePacks: [...args.memberUsagePacks],
       successUrl: stripeSuccessUrl,
       cancelUrl: cancelUrl.toString(),
+      ...(adAttribution === undefined ? {} : { adAttribution }),
     };
     const result = await accept(
       client.create({
@@ -865,6 +878,15 @@ export const startUsagePackCheckout$ = command(
     } else {
       window.location.href = result.body.url;
     }
+  },
+);
+
+const fireConfirmedGoogleAdsConversion$ = command(
+  ({ set }, conversion: GoogleAdsPaidConversion | undefined): void => {
+    if (!conversion) {
+      return;
+    }
+    set(fireGoogleAdsPaidConversion$, "paid_after_onboarding", conversion);
   },
 );
 
@@ -978,6 +1000,7 @@ export const confirmSubscriptionPurchase$ = command(
       }
       return;
     }
+    set(fireConfirmedGoogleAdsConversion$, response.body.googleAdsConversion);
     set(internalSubscriptionPurchasePreview$, null);
     set(reloadBillingStatus$);
     toast.success(

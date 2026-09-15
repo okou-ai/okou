@@ -1,6 +1,6 @@
-import { removeAcquisitionParameters } from "../lib/remove-acquisition.ts";
 import type { UserResource } from "@clerk/shared/types";
 import { command, computed, state } from "ccstate";
+import { normalizeGoogleAdsAttributionParams } from "@okouai/core/google-ads-attribution";
 import { isDesktopAuthFlow } from "../lib/desktop-auth-flow.ts";
 import {
   derivePlatformServiceOrigin,
@@ -31,6 +31,8 @@ import { sessionStorageSignals } from "./external/session-storage.ts";
 const reload$ = state(0);
 const clerkVersion$ = state(0);
 
+const ATTRIBUTION_SOURCE_PARAM = "vm0_source";
+const HOMEPAGE_ATTRIBUTION_VALUE = "homepage";
 const ONBOARDING_PATH = "/onboarding";
 const PRODUCTION_AUTH_REDIRECT_ORIGIN_PATTERN =
   /^https:\/\/(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*okou\.ai(?::\d+)?$/i;
@@ -41,6 +43,32 @@ export interface AuthBrandContext {
   readonly brandName: BrandName;
   readonly homeUrl: string;
 }
+
+const AD_ATTRIBUTION_PARAMS = [
+  "gclid",
+  "gbraid",
+  "wbraid",
+  "utm_source",
+  "utm_medium",
+  "utm_campaign",
+  "okou_campaign_id",
+  "okou_ad_group_id",
+  "utm_content",
+  "utm_term",
+  "vm0_experiment",
+  "vm0_variant",
+  "lp_variant",
+] as const;
+
+const AD_TRAFFIC_MARKERS = [
+  "gclid",
+  "gbraid",
+  "wbraid",
+  "utm_source",
+  "utm_campaign",
+  "okou_campaign_id",
+  "okou_ad_group_id",
+] as const;
 
 const HTTP_URL_PREFIX_REGEX = /^https?:\/\//i;
 const LEGACY_HTTP_URL_REGEX = /^https?:\/\/([^/?#\s]+)([/?#][^\s]*)?$/i;
@@ -143,6 +171,48 @@ export function getAllowedAuthRedirectOriginsForCurrentPage(): AllowedAuthRedire
   return getAllowedAuthRedirectOrigins();
 }
 
+function hasAdTraffic(params: URLSearchParams): boolean {
+  const normalized = normalizeGoogleAdsAttributionParams(params);
+  return AD_TRAFFIC_MARKERS.some((param) => {
+    return normalized.has(param);
+  });
+}
+
+function appendHomepageAttributionParams(
+  url: URLSearchParams,
+  landingSearch: string,
+): void {
+  const landingParams = normalizeGoogleAdsAttributionParams(
+    new URLSearchParams(landingSearch),
+  );
+  url.set(ATTRIBUTION_SOURCE_PARAM, HOMEPAGE_ATTRIBUTION_VALUE);
+  for (const param of AD_ATTRIBUTION_PARAMS) {
+    for (const value of landingParams.getAll(param)) {
+      url.append(param, value);
+    }
+  }
+}
+
+function setCurrentLandingContext(params: URLSearchParams): void {
+  if (!params.has("landing_host")) {
+    params.set("landing_host", location.hostname);
+  }
+  if (!params.has("landing_path")) {
+    params.set("landing_path", location.pathname);
+  }
+}
+
+function buildOnboardingEntryUrl(paramsInit?: URLSearchParams): string {
+  const params = normalizeGoogleAdsAttributionParams(
+    new URLSearchParams(paramsInit),
+  );
+  setCurrentLandingContext(params);
+  const url = new URL(ONBOARDING_PATH, resolveAppOrigin());
+  url.search = params.toString();
+  appendCapturedPreviewBypassToUrl(url);
+  return url.toString();
+}
+
 function isAllowedRedirectOrigin(
   redirectUrl: URL,
   allowedRedirectOrigins: readonly AllowedAuthRedirectOrigin[],
@@ -172,7 +242,6 @@ function readAllowedRedirectUrl(
   if (!redirectUrl) {
     return null;
   }
-  removeAcquisitionParameters(redirectUrl.searchParams);
   return isAllowedRedirectOrigin(redirectUrl, allowedRedirectOrigins)
     ? redirectUrl
     : null;
@@ -183,7 +252,6 @@ function readAuthRedirectParams(
   authHash: string,
 ): URLSearchParams {
   const searchParams = new URLSearchParams(authSearch);
-  removeAcquisitionParameters(searchParams);
   if (searchParams.has("redirect_url")) {
     return searchParams;
   }
@@ -217,9 +285,13 @@ export function buildSignupRedirectUrl(
     return redirectUrl.toString();
   }
 
-  const destination = new URL(ONBOARDING_PATH, appUrl);
-  appendCapturedPreviewBypassToUrl(destination);
-  return destination.toString();
+  if (!hasAdTraffic(params)) {
+    return new URL(ONBOARDING_PATH, appUrl).toString();
+  }
+
+  const redirectParams = new URLSearchParams();
+  appendHomepageAttributionParams(redirectParams, params.toString());
+  return buildOnboardingEntryUrl(redirectParams);
 }
 
 export function buildSignInRedirectUrl(
@@ -244,7 +316,6 @@ export function buildAuthModeSwitchUrl(
     allowedRedirectOrigins,
   );
   const searchParams = new URLSearchParams(authSearch);
-  removeAcquisitionParameters(searchParams);
   if (searchParams.has("redirect_url")) {
     if (redirectUrl) {
       searchParams.set("redirect_url", redirectUrl.toString());
@@ -257,17 +328,16 @@ export function buildAuthModeSwitchUrl(
   let hash = authHash;
   if (hashQueryIndex !== -1) {
     const hashParams = new URLSearchParams(authHash.slice(hashQueryIndex + 1));
-    removeAcquisitionParameters(hashParams);
     if (hashParams.has("redirect_url")) {
       if (redirectUrl) {
         hashParams.set("redirect_url", redirectUrl.toString());
       } else {
         hashParams.delete("redirect_url");
       }
+      const hashPath = authHash.slice(0, hashQueryIndex);
+      const hashSearch = hashParams.toString();
+      hash = hashSearch ? `${hashPath}?${hashSearch}` : hashPath;
     }
-    const hashPath = authHash.slice(0, hashQueryIndex);
-    const hashSearch = hashParams.toString();
-    hash = hashSearch ? `${hashPath}?${hashSearch}` : hashPath;
   }
 
   const search = searchParams.toString();

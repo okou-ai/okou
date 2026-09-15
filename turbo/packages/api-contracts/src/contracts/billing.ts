@@ -210,7 +210,6 @@ const checkoutRequestSchema = z.object({
   cancelUrl: stripeRedirectUrlSchema,
   trialDays: z.literal(7).optional(),
   adAttribution: adAttributionMetadataSchema.optional(),
-  marketingAttributionVersion: z.literal(2).optional(),
 });
 
 export const USAGE_PACKS_USD = [20, 50, 100, 200] as const;
@@ -279,7 +278,6 @@ const usagePackCheckoutRequestSchema = z.object({
   successUrl: z.string().url(),
   cancelUrl: z.string().url(),
   adAttribution: adAttributionMetadataSchema.optional(),
-  marketingAttributionVersion: z.literal(2).optional(),
 });
 
 const usagePackChangeStatusSchema = z.enum([

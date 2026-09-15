@@ -58,7 +58,7 @@ test("Returning from concurrency checkout confirms purchased capacity", async ()
 });
 
 test.each(["7935750692", "1001302527", "unknown-account"])(
-  "A confirmed subscription completes without browser conversion for account %s",
+  "A confirmed subscription reports a browser conversion only for the new account: %s",
   async (accountId) => {
     const googleTag = vi.fn<GoogleTag>();
     vi.stubGlobal("gtag", googleTag);
@@ -88,7 +88,18 @@ test.each(["7935750692", "1001302527", "unknown-account"])(
         "",
         "/agents",
       );
-      expect(googleTag).not.toHaveBeenCalled();
+      expect(googleTag).toHaveBeenCalledTimes(
+        accountId === "7935750692" ? 1 : 0,
+      );
+    });
+    if (accountId !== "7935750692") {
+      return;
+    }
+    expect(googleTag).toHaveBeenCalledWith("event", "conversion", {
+      send_to: "AW-18407336975/ePWuCPuRrOccEI_YpslE",
+      value: 40,
+      currency: "USD",
+      transaction_id: "invoice_subscription_123",
     });
   },
 );
@@ -119,7 +130,7 @@ test("A confirmed subscription without a browser conversion payload completes ch
   expect(googleTag).not.toHaveBeenCalled();
 });
 
-test("A confirmed usage-pack purchase completes without browser conversion", async () => {
+test("A confirmed usage-pack purchase reports the paid conversion", async () => {
   const googleTag = vi.fn<GoogleTag>();
   vi.stubGlobal("gtag", googleTag);
   context.mocks.api(
@@ -225,5 +236,11 @@ test("A confirmed usage-pack purchase completes without browser conversion", asy
   await expect(
     screen.findByText("Subscription change confirmed."),
   ).resolves.toBeVisible();
-  expect(googleTag).not.toHaveBeenCalled();
+  expect(googleTag).toHaveBeenCalledTimes(1);
+  expect(googleTag).toHaveBeenCalledWith("event", "conversion", {
+    send_to: "AW-18407336975/ePWuCPuRrOccEI_YpslE",
+    value: 40,
+    currency: "USD",
+    transaction_id: "invoice_usage_pack_123",
+  });
 });

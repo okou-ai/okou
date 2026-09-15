@@ -2,8 +2,6 @@ import { command, computed, state } from "ccstate";
 import type { ObservedAcquisitionEvent } from "@okouai/api-contracts/contracts/impact-marketing";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { now } from "../../lib/time.ts";
-import { IN_VITEST } from "../../env.ts";
-import { setLoop } from "../utils.ts";
 
 interface PendingEvent {
   userId: string;
@@ -45,23 +43,5 @@ export const enqueueMarketingEvent$ = command(
     });
     window.dispatchEvent(new Event("okou:acquisition:queued"));
     return event.id;
-  },
-);
-export const flushMarketingEvent$ = command(
-  async ({ get }, id: string, signal: AbortSignal) => {
-    let attempts = 0;
-    await setLoop(
-      () => {
-        attempts += 1;
-        return (
-          !get(pendingMarketingEvents$).some((entry) => {
-            return entry.event.id === id;
-          }) || attempts >= (IN_VITEST ? 2 : 20)
-        );
-      },
-      100,
-      signal,
-      { retryTransientErrors: false },
-    );
   },
 );

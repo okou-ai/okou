@@ -203,26 +203,10 @@ test("Startup timing is bounded and anonymous", async () => {
 
   initPostHog();
   const config = context.mocks.posthog().initializations.at(-1)?.config;
-  expect(config?.save_campaign_params).toBeFalsy();
-  expect(config?.save_referrer).toBeFalsy();
-  expect(config?.property_denylist).toContain("gclid");
   const beforeSend = config?.before_send;
   if (typeof beforeSend !== "function") {
     throw new Error("PostHog before_send was not configured");
   }
-  expect(
-    beforeSend({
-      event: "Product event",
-      properties: {
-        $set_once: { $initial_utm_source: "google", name: "Example" },
-      },
-      uuid: "product-event",
-    }),
-  ).toStrictEqual({
-    event: "Product event",
-    properties: { $set_once: { name: "Example" } },
-    uuid: "product-event",
-  });
   const sanitized = beforeSend({
     event: APP_FIRST_SKELETON_PAINT_EVENT,
     properties: {

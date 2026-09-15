@@ -44,7 +44,13 @@ import {
   apiClient$,
   type ApiClientFactory,
 } from "../../api-client.ts";
-import { resetSignal, setLoop, tapError, withCleanup } from "../../utils.ts";
+import {
+  resetSignal,
+  setLoop,
+  settle,
+  tapError,
+  withCleanup,
+} from "../../utils.ts";
 import { setAblyPayloadLoop$ } from "../../realtime.ts";
 import { agents$ } from "../../agent.ts";
 import { reloadAgentConnectorAuthorizations$ } from "../agent-connector-authorizations.ts";
@@ -69,6 +75,7 @@ import {
   readConnectorAccountCount,
   readConnectorOAuthCompletion,
 } from "./connector-accounts.ts";
+import { syncGoogleAdsConversionMilestones$ } from "../../bootstrap/google-ads-conversion-milestones.ts";
 
 type PostConnectOptions = {
   readonly authorizeVisibleAgents?: boolean;
@@ -995,6 +1002,7 @@ const finishConnectorConnection$ = command(
     if (options.clearSelectedConnector) {
       set(internalSelectedConnectorSlug$, null);
     }
+    await settle(set(syncGoogleAdsConversionMilestones$, signal), signal);
     return true;
   },
 );

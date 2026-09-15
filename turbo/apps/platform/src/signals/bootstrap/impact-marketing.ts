@@ -35,7 +35,12 @@ function waitForMessage(
       return;
     }
     const data = event.data as { type?: unknown; nonce?: unknown } | null;
-    if (data?.type === type && (nonce === undefined || data.nonce === nonce)) {
+    const ready =
+      type === "okou:acquisition:ready" && data?.type === "okou:impact:ready";
+    if (
+      (data?.type === type || ready) &&
+      (nonce === undefined || data?.nonce === nonce)
+    ) {
       finish(true);
     }
   };
@@ -65,7 +70,7 @@ const runImpactHandoff$ = command(
       apiBase: "api",
     });
     let loaded = false;
-    let checkSignup = true;
+    let checkedSignupUserId: string | undefined;
     while (!signal.aborted) {
       const identity = await get(authenticatedIdentity$);
       signal.throwIfAborted();
@@ -81,7 +86,7 @@ const runImpactHandoff$ = command(
           body: {
             acquisition: {
               version: 2,
-              checkSignup,
+              checkSignup: checkedSignupUserId !== identity.userId,
               events: pending.map((entry) => {
                 return entry.event;
               }),
@@ -132,7 +137,7 @@ const runImpactHandoff$ = command(
       const recorded = await complete;
       signal.throwIfAborted();
       if (recorded) {
-        checkSignup = false;
+        checkedSignupUserId = identity.userId;
         const ids = new Set(
           pending.map((entry) => {
             return entry.event.id;

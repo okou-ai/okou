@@ -21,6 +21,7 @@ import { pathParams$, replacePathSilently$, searchParams$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
 import { settle } from "../utils.ts";
 import { i18n } from "../../i18n/index.ts";
+import { syncGoogleAdsConversionMilestones$ } from "../bootstrap/google-ads-conversion-milestones.ts";
 import { connectorIconFromSearchParams } from "./connector-redirecting-page-setup.ts";
 
 type ConnectorCallbackPageResult =
@@ -256,6 +257,9 @@ export const setupConnectorCallbackPage$ = command(
         connectorSlug,
         signal,
       );
+    }
+    if (result.status === "success") {
+      await settle(set(syncGoogleAdsConversionMilestones$, signal), signal);
     }
     set(
       updatePage$,

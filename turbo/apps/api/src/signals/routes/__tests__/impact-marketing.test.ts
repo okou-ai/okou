@@ -184,13 +184,14 @@ test("signs the server-verified creation time and allowlisted observations", asy
   });
 });
 
-test("does not replay a signup already recorded by an older App", async () => {
+test("includes an already-recorded signup in the Marketing shadow comparison", async () => {
   const actor = authenticatedActor();
+  const createdAt = nowDate().getTime() - 60_000;
   context.mocks.clerk.users.getUserList.mockResolvedValue({
     data: [
       {
         id: actor.userId,
-        createdAt: nowDate().getTime() - 60_000,
+        createdAt,
         privateMetadata: {
           signup_attribution: { recorded_at: nowDate().toISOString() },
         },
@@ -207,5 +208,31 @@ test("does not replay a signup already recorded by an older App", async () => {
   const payload = response.body.handoff?.token.split(".")[0] ?? "";
   expect(
     JSON.parse(Buffer.from(payload, "base64url").toString()).acquisition,
-  ).toStrictEqual({ version: 2, events: [] });
+  ).toStrictEqual({
+    version: 2,
+    signupAt: createdAt,
+    events: [],
+  });
+});
+
+test("keeps Impact identity handoff available when the shadow signup lookup fails", async () => {
+  const actor = authenticatedActor();
+  context.mocks.clerk.users.getUserList.mockRejectedValue(
+    new Error("Clerk unavailable"),
+  );
+  const response = await accept(
+    client().handoff({
+      headers,
+      body: { acquisition: { version: 2, checkSignup: true, events: [] } },
+    }),
+    [200],
+  );
+  const payload = response.body.handoff?.token.split(".")[0] ?? "";
+  expect(
+    JSON.parse(Buffer.from(payload, "base64url").toString()),
+  ).toMatchObject({
+    sub: actor.userId,
+    org: actor.orgId,
+    acquisition: { version: 2, events: [] },
+  });
 });

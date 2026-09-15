@@ -8,6 +8,7 @@ import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { clerk$ } from "../external/clerk";
 import { nowDate } from "../../lib/time";
+import { settle } from "../utils";
 
 const handoff$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
@@ -21,21 +22,23 @@ const handoff$ = command(async ({ get, set }, signal: AbortSignal) => {
   const now = nowDate().getTime();
   let signupAt: number | undefined;
   if (request?.checkSignup && auth.orgId) {
-    const users = await get(clerk$).users.getUserList({
-      userId: [auth.userId],
-      limit: 1,
-    });
+    // A failed shadow lookup must not interrupt the existing Impact handoff.
+    const users = await settle(
+      get(clerk$).users.getUserList({ userId: [auth.userId], limit: 1 }),
+      signal,
+    );
     signal.throwIfAborted();
-    const user = users.data.find((candidate) => {
-      return candidate.id === auth.userId;
-    });
-    // A previous App's signup record suppresses replay when a recent user
-    // refreshes into the replacement bundle during the serving transition.
+    const user = users.ok
+      ? users.value.data.find((candidate) => {
+          return candidate.id === auth.userId;
+        })
+      : undefined;
+    // Shadow signup observations include users already recorded by the legacy
+    // path so the two acquisition records can be compared by user ID.
     if (
       user &&
       !user.banned &&
       !user.locked &&
-      !user.privateMetadata.signup_attribution &&
       Number.isSafeInteger(user.createdAt) &&
       user.createdAt <= now &&
       now - user.createdAt <= 30 * 60_000

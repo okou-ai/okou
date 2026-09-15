@@ -13,14 +13,23 @@ import { setPageSignal$ } from "./page-signal.ts";
 import { clearPage$ } from "./react-router.ts";
 import { rootSignal$ } from "./root-signal.ts";
 import { bridgeConnected$ } from "./shared-database-bridge-state.ts";
-import { detach, onDomEventFn, Reason, resetSignal } from "./utils.ts";
+import {
+  bestEffort,
+  detach,
+  onDomEventFn,
+  Reason,
+  resetSignal,
+  settle,
+} from "./utils.ts";
 import { logger } from "./log.ts";
 import {
   capturePageView,
   markBootstrapRouteSetup$,
   markNavigationPushState$,
 } from "../lib/posthog.ts";
-import { clearLegacyAcquisition$ } from "./bootstrap/clear-legacy-acquisition.ts";
+import { recordAdAttribution$ } from "./bootstrap/ad-attribution.ts";
+import { recordSignupAttribution$ } from "./bootstrap/signup-attribution.ts";
+import { bootstrapGoogleAdsConversionMilestones$ } from "./bootstrap/google-ads-conversion-milestones.ts";
 
 const L = logger("Route");
 
@@ -162,13 +171,27 @@ const loadRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(markBootstrapRouteSetup$, currentRoute.path);
   L.debug("loading route", currentRoute.path);
   if (currentRoute.analytics !== false) {
-    set(clearLegacyAcquisition$);
+    set(recordAdAttribution$, get(searchParams$));
   }
 
   await set(currentRoute.setup, routeSignal);
   signal.throwIfAborted();
   if (currentRoute.analytics !== false) {
     capturePageView();
+  }
+  // Record first-touch signup attribution as part of the route-load lifecycle.
+  // Bind to the parent `signal`, not the per-route `routeSignal`: a superseding
+  // route load aborts the previous `routeSignal` via resetRouteSignal$, and
+  // binding here would reject the superseded load with AbortError. The parent
+  // signal mirrors the `signal.throwIfAborted()` gate above, so supersession
+  // completes cleanly. The command early-returns when there is nothing to
+  // record, so this only performs network work on the first qualifying load.
+  // Attribution is best-effort so a final API failure cannot
+  // reject the route load; the command only persists its dedupe marker after a
+  // successful record, allowing a later route to retry.
+  if (currentRoute.analytics !== false) {
+    await bestEffort(set(recordSignupAttribution$, signal), signal);
+    await settle(set(bootstrapGoogleAdsConversionMilestones$, signal), signal);
   }
 });
 

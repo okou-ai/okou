@@ -1,3 +1,4 @@
+import { pendingMarketingEvents$ } from "../../../signals/bootstrap/marketing-events.ts";
 import { acquisitionAttributionContract } from "@okouai/api-contracts/contracts/acquisition-attribution";
 import {
   agentsByIdContract,
@@ -91,6 +92,13 @@ function firstItem<Item>(items: readonly Item[]): Item {
   }
   return item;
 }
+
+const ONBOARDING_START_SEND_TO = "AW-18144854014/GVKdCLbQ9LscEP7_kcxD";
+const CHECKOUT_START_SEND_TO = "AW-18144854014/EEovCKmuvbscEP7_kcxD";
+const ADSMARCH_ONBOARDING_START_SEND_TO = "AW-18407336975/xkGcCLaRrOccEI_YpslE";
+const ADSMARCH_CHECKOUT_START_SEND_TO = "AW-18407336975/hWi8CPWRrOccEI_YpslE";
+const ADSMARCH_PAID_IN_ONBOARDING_SEND_TO =
+  "AW-18407336975/M7QYCPiRrOccEI_YpslE";
 
 type GtagFn = (...args: unknown[]) => void;
 
@@ -1362,7 +1370,12 @@ test("A completed video checkout resumes onboarding and the run", async () => {
     expect(checkoutCompletionAttempts).toBe(2);
     expect(pathname()).toMatch(/^\/chats\//u);
   });
-  expect(gtag).not.toHaveBeenCalled();
+  expect(gtag).toHaveBeenCalledWith("event", "conversion", {
+    send_to: ADSMARCH_PAID_IN_ONBOARDING_SEND_TO,
+    value: 49,
+    currency: "USD",
+    transaction_id: "in_onboarding_paid",
+  });
 });
 
 test("Missing checkout state recovers to video configuration", async () => {
@@ -1406,17 +1419,17 @@ test("An invalid template link returns to the matching picker", async () => {
 test.each([
   {
     accountId: "1001302527",
-    onboarding: [],
-    checkout: [],
+    onboarding: [ONBOARDING_START_SEND_TO],
+    checkout: [CHECKOUT_START_SEND_TO],
   },
   {
     accountId: "7935750692",
-    onboarding: [],
-    checkout: [],
+    onboarding: [ADSMARCH_ONBOARDING_START_SEND_TO],
+    checkout: [ADSMARCH_CHECKOUT_START_SEND_TO],
   },
   { accountId: null, onboarding: [], checkout: [] },
 ])(
-  "Onboarding and checkout do not call Google directly for $accountId",
+  "Onboarding and checkout route only to $accountId",
   async ({ accountId, onboarding, checkout }) => {
     context.mocks.api(
       acquisitionAttributionContract.resolveGoogleAdsAccount,
@@ -1467,5 +1480,21 @@ test.each([
       expect(window.location.href).toContain("checkout.stripe.com");
       expect(sentConversions(gtag)).toStrictEqual([...onboarding, ...checkout]);
     });
+    const observations = context.store.get(pendingMarketingEvents$);
+    expect(
+      observations.map((entry) => {
+        return entry.event.name;
+      }),
+    ).toStrictEqual(
+      expect.arrayContaining([
+        "StepViewed",
+        "CheckoutCreated",
+        "RedirectToStripe",
+      ]),
+    );
+    for (const observation of observations) {
+      expect(observation.event.properties).not.toHaveProperty("gclid");
+      expect(observation.event.properties).not.toHaveProperty("ga_client_id");
+    }
   },
 );
