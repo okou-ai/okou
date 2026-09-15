@@ -769,6 +769,38 @@ dropping the blockquote reset changes one observed margin per capture at zero
 pixels, and dropping `border-current` changes three observed border colours per
 capture at zero pixels.
 
+### The workspace canvas
+
+The `okou-workspace-bg` selector and its consumers have been removed. It was a
+`::before` paint layer behind the workspace pane, and it had four variants —
+default and gradient palette, each in Light and Dark — that differed only in a
+fill colour and a gradient. Those are two runtime values, so they are now keyed
+at `:root` and reached through one `bg-workspace-canvas` and one
+`bg-workspace-canvas-image`, registered as `@theme inline` entries over
+`--okou-workspace-canvas-fill` and `--okou-workspace-canvas-image`. `inline`
+keeps the reference, so the theme and palette attributes still decide at use
+time.
+
+Keying at `:root` is what removes the selectors. `signals/theme.ts` writes
+`data-theme` and `data-gradient-color-themes` onto the document element, and the
+shell carrying `okou-app` is mounted exactly when
+`applyColorThemeDocumentAttributes` sets that palette attribute, so
+`.okou-app[data-gradient-color-themes] .okou-workspace-bg::before` and
+`:root[data-gradient-color-themes]` select the same states. Each theme test
+wraps in `:where()` so it stays at the specificity of the rule it refines and
+source order decides between them.
+
+The retired dark rule matched `.dark .okou-workspace-bg::before` as well as the
+attribute form. `applyTheme` always sets both, so the attribute alone is
+equivalent, and dropping the class is required rather than optional: a class in
+the selector registers a first-party class-selector declaration against the
+shrink-only baseline, which is the same reason the composer veil records.
+
+`before:bg-[length:100%_100%]` is retained although no measurement can move it.
+`background-size: 100% 100%` and the initial `auto auto` size a gradient to the
+same box, so dropping it changes zero pixels; it is kept because the retired
+rule declared it and the computed value is part of what this drain preserves.
+
 ### Desktop titlebar drag region — drained
 
 The `okou-desktop-no-drag` selector and its consumer were removed first. The
@@ -785,8 +817,8 @@ That left one `@media (min-width: 768px)` block behind
 `--okou-desktop-titlebar-height` variable its only reader used, the
 `okou-sidebar-header` class on the drawer header, and both `aria-hidden` drag
 region divs. `okou-desktop-titlebar-drag-region` and `okou-sidebar-header` are
-retired; `okou-workspace-bg` keeps the fifteen declarations that are unrelated
-to the desktop shell.
+retired; `okou-workspace-bg` kept the fifteen declarations unrelated to the
+desktop shell, and the section below drains those.
 
 **Nothing in the repository ever set that attribute.** It occurred only in the
 App stylesheet, in the baseline derived from it, in the migration ledger, and in

@@ -14,7 +14,7 @@ export function connectErrorMessage(error: unknown, fallback: string): string {
 /** Centered card layout for connector sign-in, authorization, and status pages. */
 export function PageShell({ children }: { children: ReactNode }) {
   return (
-    <div className="okou-app box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-(--sab) okou-workspace-bg">
+    <div className="okou-app box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-(--sab) relative z-0 before:absolute before:inset-0 before:-z-1 before:bg-workspace-canvas before:bg-workspace-canvas-image before:bg-[length:100%_100%] before:content-['']">
       <div className="flex flex-1 items-center justify-center p-4">
         <div
           className={surfaceVariants({

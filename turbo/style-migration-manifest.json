@@ -1151,6 +1151,32 @@
       "evidence": [],
       "pullRequest": null,
       "mergeCommit": null
+    },
+    {
+      "id": "workspace-canvas",
+      "family": "platform-shell",
+      "tokens": ["okou-workspace-bg"],
+      "consumers": [
+        "apps/platform/src/views/okou-page/workspace-inset.tsx",
+        "apps/platform/src/views/okou-page/connect-page-shell.tsx",
+        "apps/platform/src/views/export-page/export-page.tsx",
+        "apps/platform/src/views/shared-thread-page/shared-thread-page.tsx"
+      ],
+      "cases": [
+        "workspace-canvas-light",
+        "workspace-canvas-dark",
+        "workspace-canvas-gradient-light",
+        "workspace-canvas-gradient-dark",
+        "workspace-canvas-connect-light",
+        "workspace-canvas-shared-thread-dark",
+        "workspace-canvas-narrow",
+        "workspace-canvas-narrow-dark"
+      ],
+      "status": "implemented",
+      "blockedReason": null,
+      "evidence": [],
+      "pullRequest": null,
+      "mergeCommit": null
     }
   ],
   "caseFiles": [
@@ -1182,6 +1208,7 @@
     "../e2e/playwright/style-migration/markdown-card-cases.json",
     "../e2e/playwright/style-migration/markdown-body-cases.json",
     "../e2e/playwright/style-migration/shimmer-text-cases.json",
-    "../e2e/playwright/style-migration/composer-surface-cases.json"
+    "../e2e/playwright/style-migration/composer-surface-cases.json",
+    "../e2e/playwright/style-migration/workspace-canvas-cases.json"
   ]
 }
