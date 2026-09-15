@@ -68,6 +68,7 @@ AXIOM_DATASET_SUFFIX=dev
 LANGFUSE_PUBLIC_KEY=op://Development/langfuse/LANGFUSE_PUBLIC_KEY
 LANGFUSE_SECRET_KEY=op://Development/langfuse/LANGFUSE_SECRET_KEY
 LANGFUSE_BASE_URL=https://us.cloud.langfuse.com
+LANGFUSE_PROJECT_ID=cmu0bvhcu012gad0drbw8ddts
 
 # Required: Secrets encryption
 SECRETS_ENCRYPTION_KEY=op://Development/vm0/SECRETS_ENCRYPTION_KEY

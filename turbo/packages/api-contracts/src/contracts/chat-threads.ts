@@ -447,13 +447,11 @@ const presentationGenerationTemplateRequestSchema = z.object({
  * Talking-avatar parameters. Unrelated to text-to-video despite sharing the
  * "video" envelope.
  *
- * What keeps the envelope shared is persisted data, not client parsing: every
- * selection ever stored in a chat message or draft carries `type: "video"` with
- * the product encoded in `stylePresetId`, so readers must keep accepting that
- * shape until those rows are backfilled. Splitting the discriminant is a
- * cross-version protocol change; see `docs/deployment-compatibility.md` for the
- * phasing it requires. `generationTemplateKind` in `@okouai/core` owns the
- * style-preset split so no reader has to re-derive it.
+ * What keeps this envelope shared is persisted data, not client parsing: avatar
+ * selections have always been stored as `type: "video"` with the product
+ * encoded in `stylePresetId`, and those rows are customer data. Intro Video
+ * left the envelope because its rows were staff-only; an avatar split would
+ * need the backfill and phasing in `docs/deployment-compatibility.md` first.
  */
 const avatarGenerationOptionsSchema = z
   .object({
@@ -469,16 +467,6 @@ const videoGenerationTemplateRequestSchema = z.object({
   selection: z.object({
     stylePresetId: z.string().min(1),
     avatarOptions: avatarGenerationOptionsSchema.optional(),
-    /**
-     * Intro Video selections. Both the key and `stylePresetId`'s
-     * `"explainer-video"` value predate the product name and are persisted with
-     * the message, so neither can be renamed without a backfill.
-     *
-     * Optional because a draft can hold the selection before its settings are
-     * chosen; classify with `generationTemplateKind` rather than the presence
-     * of this object.
-     */
-    explainerOptions: introVideoOptionsSchema.optional(),
 
     /**
      * The four fields below are no longer written: the web-client floor has
@@ -499,6 +487,30 @@ const videoGenerationTemplateRequestSchema = z.object({
     /** @deprecated Read-only fallback; write avatarOptions.aspectRatio. */
     aspectRatio: avatarVideoAspectRatioSchema.optional(),
   }),
+});
+
+/**
+ * Intro Video selections.
+ *
+ * There is exactly one Intro Video template, so the selection carries only the
+ * user's configuration — no template id. `options` is optional because the
+ * picker persists a draft selection before a style, avatar, and voice are all
+ * chosen; classify with `type` rather than the presence of this object.
+ *
+ * Until 2026-09 these rode inside the `"video"` envelope as
+ * `stylePresetId: "explainer-video"` plus an `explainerOptions` key. That shape
+ * is deliberately no longer accepted: Intro Video was staff-only and off by
+ * default, so `docs/fallback.md` section 2 applies and no reader tolerates the
+ * retired shape. Selections stored before the split classify as creative video,
+ * which mislabels them and drops them when an old message is replayed.
+ */
+const introVideoGenerationTemplateRequestSchema = z.object({
+  type: z.literal("intro-video"),
+  selection: z
+    .object({
+      options: introVideoOptionsSchema.optional(),
+    })
+    .strict(),
 });
 
 const illustrationGenerationTemplateRequestSchema = z.object({
@@ -527,6 +539,7 @@ const websiteGenerationTemplateRequestSchema = z.object({
 const generationTemplateRequestSchema = z.discriminatedUnion("type", [
   presentationGenerationTemplateRequestSchema,
   videoGenerationTemplateRequestSchema,
+  introVideoGenerationTemplateRequestSchema,
   illustrationGenerationTemplateRequestSchema,
   workflowGenerationTemplateRequestSchema,
   websiteGenerationTemplateRequestSchema,
@@ -2067,6 +2080,7 @@ export {
   userMessageDocumentSchema,
   presentationGenerationTemplateRequestSchema,
   videoGenerationTemplateRequestSchema,
+  introVideoGenerationTemplateRequestSchema,
   illustrationGenerationTemplateRequestSchema,
   websiteGenerationTemplateRequestSchema,
   chatEventSchema,
@@ -2126,6 +2140,9 @@ export type AvatarGenerationOptions = z.infer<
 >;
 export type VideoGenerationTemplateRequest = z.infer<
   typeof videoGenerationTemplateRequestSchema
+>;
+export type IntroVideoGenerationTemplateRequest = z.infer<
+  typeof introVideoGenerationTemplateRequestSchema
 >;
 export type IllustrationGenerationTemplateRequest = z.infer<
   typeof illustrationGenerationTemplateRequestSchema

@@ -226,7 +226,9 @@ old/new API, queued CLI, Runner, installed-client and provider-producer drains.
 There is no legacy contraction, release execution, or historical remediation
 in this slice. Never operate on the recovered September 12 account.
 
-Before production worker activation, the controller must independently verify a
-bounded claim plan as terminal work accumulates (including an appropriate
-pending/retryable index or equivalent plan and representative EXPLAIN evidence).
-The receipt/UUID repair does not change the current claim index or migration1124.
+The [B1-S claim-scale evidence](account-erasure-claim-scale.md) covers the
+pending/retryable partial claim and deadline indexes, actual Drizzle SQL and
+default/generic PostgreSQL plans, repeated completion batches, and dead-tuple
+cost before/after vacuum. Migration 1124 remains unchanged. Controller acceptance
+and production index readback are still required before worker activation;
+pending eligibility filters, long snapshots and H's full-chain scale gate remain.

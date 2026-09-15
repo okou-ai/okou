@@ -3,11 +3,7 @@ import {
   type SessionOutputDelta,
 } from "@okouai/api-contracts/contracts/realtime";
 import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
-import {
-  PI_LANGFUSE_RELAY_MAX_BYTES,
-  piLangfuseTracesContract,
-} from "@okouai/api-contracts/contracts/pi-langfuse";
-import { webhooksAgentLangfuseRoutes } from "../webhooks-agent-langfuse";
+import { assertPiLangfuseRelayContract } from "./helpers/pi-langfuse-relay";
 import {
   PI_NATIVE_CREDENTIAL_PLACEHOLDER,
   piModelConfigV4Schema,
@@ -137,6 +133,7 @@ import {
   readQueuedLangfuseContextFixture,
   readRunLangfuseTraceEnabledFixture,
   readRunModelRuntimeRouteFixture,
+  readRunModelSourceFixture,
   readSessionHistoryBlobRefCountFixture,
   setRunLaunchSnapshotFixture,
   setRunPiMemoryAdmissionInputsFixture,
@@ -794,6 +791,24 @@ async function configureUserOwnedGptPiModel(
   const secret = `${route.type}-pi-fixture-key`;
   await configureApiKeyGptPiModel(actor, route, secret);
   return { secret, accountId: null };
+}
+
+async function configureOrganizationGptModel(
+  actor: ApiTestUser,
+): Promise<void> {
+  const { providerId } = await upsertOrgModelProvider(actor, {
+    type: "openai-api-key",
+    secret: "unused-organization-openai-key",
+  });
+  await chatCallbacks.updateOrgModelPolicies(actor, [
+    {
+      model: "gpt-5.6-terra",
+      isDefault: true,
+      defaultProviderType: "openai-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
 }
 
 async function configureSubscriptionPiModel(
@@ -8079,7 +8094,8 @@ describe("CHAT-02: model-first provider policies", () => {
     mockPiCheckpointObjectStore();
     mockOptionalEnv("LANGFUSE_PUBLIC_KEY", "pk-lf-bdd-trace-link");
     mockOptionalEnv("LANGFUSE_SECRET_KEY", "sk-lf-bdd-trace-link");
-    mockOptionalEnv("LANGFUSE_BASE_URL", "https://langfuse.example/");
+    mockOptionalEnv("LANGFUSE_BASE_URL", undefined);
+    mockOptionalEnv("LANGFUSE_PROJECT_ID", undefined);
     server.use(
       http.post("https://api.openai.com/v1/responses", () => {
         return new HttpResponse(piResponsesTextSse("Completed answer", 0), {
@@ -8113,7 +8129,7 @@ describe("CHAT-02: model-first provider policies", () => {
         [FeatureSwitchKey.LangfuseTrace]: false,
       },
     );
-    const traceUrl = `https://langfuse.example/trace/${traced.runId.replaceAll("-", "")}`;
+    const traceUrl = `https://us.cloud.langfuse.com/project/cmu0bvhcu012gad0drbw8ddts/traces/${traced.runId.replaceAll("-", "")}`;
     expect((await api.readRun(actor, traced.runId)).langfuseTraceUrl).toBe(
       traceUrl,
     );
@@ -8137,6 +8153,11 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     const peer = { ...actor, userId: `${actor.userId}_peer` };
     await api.requestReadRun(peer, traced.runId, [404]);
+    mockOptionalEnv("LANGFUSE_BASE_URL", "https://langfuse.example/");
+    mockOptionalEnv("LANGFUSE_PROJECT_ID", "  project-debug  ");
+    expect((await api.readRun(actor, traced.runId)).langfuseTraceUrl).toBe(
+      `https://langfuse.example/project/project-debug/traces/${traced.runId.replaceAll("-", "")}`,
+    );
     mockOptionalEnv("LANGFUSE_BASE_URL", "javascript:alert(1)");
     await expect(api.readRun(actor, traced.runId)).resolves.not.toHaveProperty(
       "langfuseTraceUrl",
@@ -8234,104 +8255,12 @@ describe("CHAT-02: model-first provider policies", () => {
         [FeatureSwitchKey.LangfuseTrace]: false,
       },
     );
-    const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`;
-    const manifest = piApiFirstTurnManifestSchema.parse(
-      JSON.parse(checkpointObjects.get(manifestKey)?.toString("utf8") ?? "{}"),
-    );
-    if (
-      manifest.schemaVersion !== 3 ||
-      manifest.outcome !== "ownership-transfer" ||
-      !manifest.langfuseParent
-    ) {
-      throw new Error("Expected an admitted sandbox-first trace parent");
-    }
-    expect(manifest).toMatchObject({
-      mode: "sandbox-first",
-      langfuseParent: {
-        traceId: run.runId.replaceAll("-", ""),
-        spanId: expect.stringMatching(/^[a-f0-9]{16}$/u),
-        sessionId: run.threadId,
-        sandboxWaitStartedAt: expect.any(Number),
-      },
+    const relay = await assertPiLangfuseRelayContract(context, {
+      runId: run.runId,
+      sessionId: run.threadId,
+      token: claimed.claim.platformEnvironment.OKOU_TOKEN,
+      checkpointObjects,
     });
-    const payload = JSON.stringify({
-      resourceSpans: [
-        {
-          scopeSpans: [
-            {
-              spans: [
-                {
-                  traceId: run.runId.replaceAll("-", ""),
-                  spanId: "a".repeat(16),
-                  parentSpanId: manifest.langfuseParent.spanId,
-                  name: "Sandbox Continuation",
-                },
-              ],
-            },
-          ],
-        },
-      ],
-    });
-    const exports: { headers: Headers; body: string }[] = [];
-    server.use(
-      http.post(
-        "https://langfuse.example/api/public/otel/v1/traces",
-        async ({ request }) => {
-          exports.push({
-            headers: request.headers,
-            body: await request.text(),
-          });
-          return HttpResponse.json({});
-        },
-      ),
-    );
-    const relay = setupApp({ context, routes: webhooksAgentLangfuseRoutes })(
-      piLangfuseTracesContract,
-    );
-    const request = {
-      params: { runId: run.runId },
-      headers: {
-        authorization: `Bearer ${claimed.claim.platformEnvironment.OKOU_TOKEN}`,
-      },
-      extraHeaders: {
-        "content-type": "application/json",
-        "x-langfuse-ingestion-version": "3",
-        "x-langfuse-public-key": "user-selected-dev-project",
-        "x-untrusted-header": "must-not-be-forwarded",
-      },
-      body: payload,
-    };
-    await accept(relay.export(request), [200]);
-    expect(exports).toHaveLength(1);
-    expect(exports[0]?.body).toBe(payload);
-    expect(exports[0]?.headers.get("authorization")).toBe(
-      `Basic ${Buffer.from("pk-lf-bdd-trace-admission:sk-lf-bdd-trace-admission").toString("base64")}`,
-    );
-    expect(exports[0]?.headers.get("x-langfuse-ingestion-version")).toBe("4");
-    expect(exports[0]?.headers.get("x-langfuse-public-key")).toBeNull();
-    expect(exports[0]?.headers.get("x-untrusted-header")).toBeNull();
-    await accept(
-      relay.export({
-        ...request,
-        body: "x".repeat(PI_LANGFUSE_RELAY_MAX_BYTES + 1),
-      }),
-      [413],
-    );
-    await accept(
-      relay.export({
-        ...request,
-        extraHeaders: { "content-type": "text/plain" },
-      }),
-      [415],
-    );
-    expect(exports).toHaveLength(1);
-    server.use(
-      http.post("https://langfuse.example/api/public/otel/v1/traces", () => {
-        return new HttpResponse("private upstream diagnostic", { status: 429 });
-      }),
-    );
-    const rejected = await accept(relay.export(request), [503]);
-    expect(rejected.body.error.message).toBe("Trace export failed");
     await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
 
     const untraced = await sendChatRun(
@@ -8345,15 +8274,9 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     await flushWaitUntilForTest();
     const untracedClaim = await claimChatRun(runnerGroup, untraced.runId);
-    await accept(
-      relay.export({
-        ...request,
-        params: { runId: untraced.runId },
-        headers: {
-          authorization: `Bearer ${untracedClaim.claim.platformEnvironment.OKOU_TOKEN}`,
-        },
-      }),
-      [403],
+    await relay.expectAdmissionDenied(
+      untraced.runId,
+      untracedClaim.claim.platformEnvironment.OKOU_TOKEN,
     );
     await cancelChatRun(actor, untraced.runId, untracedClaim.sandboxHeaders);
   });
@@ -20753,16 +20676,23 @@ describe("CHAT-02: run-level model overrides", () => {
         { name: "Fast", tier: "fast", generation: 3, outcome: "cancelled" },
       ] as const
     ).flatMap((scenario) => {
-      return GPT_PI_BDD_MODELS.map((selectedModel) => {
-        return {
-          ...scenario,
-          selectedModel,
-        };
+      return GPT_PI_BDD_MODELS.flatMap((selectedModel) => {
+        const routes =
+          selectedModel === "gpt-5.6-terra" && scenario.outcome === "completed"
+            ? [false, true]
+            : [false];
+        return routes.map((organizationApi) => {
+          return {
+            ...scenario,
+            selectedModel,
+            organizationApi,
+          };
+        });
       });
     }),
   )(
-    "hands native $name subscription $selectedModel tools to a generation-$generation Sandbox with $outcome outcome and no built-in billing",
-    async ({ tier, generation, outcome, selectedModel }) => {
+    "hands native $name subscription $selectedModel tools to a generation-$generation Sandbox with $outcome outcome and no built-in billing (organization API: $organizationApi)",
+    async ({ tier, generation, outcome, selectedModel, organizationApi }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const firewall = createFirewallApi(context);
       chatCallbacks.failIfChatCallbackRouteIsFetched();
@@ -20779,7 +20709,19 @@ describe("CHAT-02: run-level model overrides", () => {
         },
         selectedModel,
       );
+      if (organizationApi) {
+        await api.updateOrgModelPolicies(actor, [
+          {
+            model: selectedModel,
+            isDefault: true,
+            defaultProviderType: "built-in",
+            credentialScope: "org",
+            modelProviderId: null,
+          },
+        ]);
+      }
       await authDeviceSupport.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.PersonalSubscriptionPriority]: organizationApi,
         [FeatureSwitchKey.PersonalModelProviderAccounts]: false,
         [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.CodexFastMode]: true,
@@ -21098,6 +21040,15 @@ describe("CHAT-02: run-level model overrides", () => {
         providerCalls: 0,
       },
       {
+        name: "transient provider failure",
+        failureReason: undefined,
+        errorCode: "PI_API_MODEL_FAILED",
+        refreshErrorCode: null,
+        expectedReconnect: false,
+        expired: false,
+        providerCalls: 1,
+      },
+      {
         name: "subscription usage limit",
         failureReason: "usage_limit" as const,
         errorCode: "PI_API_MODEL_FAILED",
@@ -21107,12 +21058,18 @@ describe("CHAT-02: run-level model overrides", () => {
         providerCalls: 1,
       },
     ].flatMap((scenario) => {
-      return ([undefined, "fast"] as const).map((tier) => {
-        return { ...scenario, tier };
+      return ([undefined, "fast"] as const).flatMap((tier) => {
+        return [false, true].map((organizationApi) => {
+          return {
+            ...scenario,
+            tier,
+            organizationApi,
+          };
+        });
       });
     }),
   )(
-    "classifies a $name with tier $tier without replay, billing, or private diagnostics",
+    "classifies a $name with tier $tier without replay, billing, or private diagnostics (organization API: $organizationApi)",
     async (scenario) => {
       mockOptionalEnv("OKOU_DEBUG", "webhook:firewall-auth,pi-api-first-turn");
       const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -21120,10 +21077,33 @@ describe("CHAT-02: run-level model overrides", () => {
       const externalAccountId = `chat-${scenario.failureReason}-account`;
       const refreshToken = `rt_${scenario.failureReason}_high_entropy`;
       await authDeviceSupport.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.PersonalSubscriptionPriority]:
+          scenario.organizationApi,
         [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
         [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.CodexFastMode]: true,
       });
+      if (scenario.organizationApi) {
+        mockCodexDeviceAuthProvider({
+          tokenScope: "personal",
+          accountId: `sibling-${randomUUID()}`,
+          accessTokenExpiresAt: Math.floor(now() / 1000) + 7200,
+        });
+        const siblingStart = await authDevice.requestCodexStart(
+          actor,
+          "personal",
+          [200],
+          { mode: "add" },
+        );
+        if (siblingStart.status !== 200) {
+          throw new Error("Expected sibling authorization");
+        }
+        await authDevice.requestCodexComplete(
+          actor,
+          siblingStart.body.sessionToken,
+          [200],
+        );
+      }
       const oauth = mockCodexDeviceAuthProvider({
         tokenScope: "personal",
         accountId: externalAccountId,
@@ -21153,6 +21133,12 @@ describe("CHAT-02: run-level model overrides", () => {
       ) {
         throw new Error("Expected subscription auth to complete");
       }
+      if (scenario.organizationApi) {
+        await authDeviceSupport.activatePersonalModelProviderAccount(
+          actor,
+          completed.body.provider.id,
+        );
+      }
       let refreshAttempts = 0;
       if (scenario.expired) {
         server.use(
@@ -21171,31 +21157,68 @@ describe("CHAT-02: run-level model overrides", () => {
         );
       }
 
-      await chatCallbacks.updateOrgModelPolicies(actor, [
-        {
-          model: "gpt-5.6-terra",
-          isDefault: true,
-          defaultProviderType: "codex-oauth-token",
-          credentialScope: "member",
-          modelProviderId: null,
-        },
-      ]);
+      if (scenario.organizationApi) {
+        await configureOrganizationGptModel(actor);
+      } else {
+        await chatCallbacks.updateOrgModelPolicies(actor, [
+          {
+            model: "gpt-5.6-terra",
+            isDefault: true,
+            defaultProviderType: "codex-oauth-token",
+            credentialScope: "member",
+            modelProviderId: null,
+          },
+        ]);
+      }
       mockPiResourceArchiveDownloads();
       const checkpointObjects = mockPiCheckpointObjectStore();
       let modelCalls = 0;
+      const providerAttempted = createDeferredPromise<void>(context.signal);
+      const alternateRequests: string[] = [];
       server.use(
-        http.post("https://chatgpt.com/backend-api/codex/responses", () => {
-          modelCalls += 1;
-          return HttpResponse.json(
-            {
-              error: {
-                code: "usage_limit_reached",
-                message: privateMarker,
+        http.post(
+          /^https:\/\/(api\.openai\.com|openrouter\.ai|api\.anthropic\.com)\//,
+          ({ request }) => {
+            alternateRequests.push(request.url);
+            return HttpResponse.json(
+              { error: "unexpected alternate API" },
+              { status: 500 },
+            );
+          },
+        ),
+      );
+      server.use(
+        http.post(
+          "https://chatgpt.com/backend-api/codex/responses",
+          async ({ request }) => {
+            modelCalls += 1;
+            expect(request.headers.get("authorization")).toBe(
+              `Bearer ${oauth.oauthTokenResponses[0]?.access_token}`,
+            );
+            expect(request.headers.get("chatgpt-account-id")).toBe(
+              externalAccountId,
+            );
+            await expect(readCodexRequestJson(request)).resolves.toMatchObject({
+              model: "gpt-5.6-terra",
+            });
+            providerAttempted.resolve(undefined);
+            return HttpResponse.json(
+              {
+                error: {
+                  code:
+                    scenario.name === "transient provider failure"
+                      ? "server_error"
+                      : "usage_limit_reached",
+                  message: privateMarker,
+                },
               },
-            },
-            { status: 429 },
-          );
-        }),
+              {
+                status:
+                  scenario.name === "transient provider failure" ? 503 : 429,
+              },
+            );
+          },
+        ),
       );
 
       const run = await sendChatRun(actor, {
@@ -21204,6 +21227,26 @@ describe("CHAT-02: run-level model overrides", () => {
         model: "gpt-5.6-terra",
         runOptions: { codexServiceTier: scenario.tier },
       });
+      if (scenario.name === "transient provider failure") {
+        // Existing Pi recovery hands the same personal source to Sandbox. This
+        // is not an organization API/model/account retry or a paid model route.
+        await providerAttempted.promise;
+        await flushWaitUntilForTest();
+        await waitForRunStatus(actor, run.runId, "pending", 10_000);
+        const { claim, sandboxHeaders } = await claimChatRun(
+          runnerGroup,
+          run.runId,
+        );
+        expect(claim.billableFirewalls).toStrictEqual([]);
+        expect(
+          claim.secretConnectorMetadataMap?.CHATGPT_ACCESS_TOKEN?.sourceId,
+        ).toBe(completed.body.provider.id);
+        await failChatRun(
+          run.runId,
+          sandboxHeaders,
+          "[PI_API_MODEL_FAILED] Upstream provider temporarily unavailable",
+        );
+      }
       await waitForRunStatus(actor, run.runId, "failed", 10_000);
       await flushWaitUntilForTest();
 
@@ -21213,6 +21256,17 @@ describe("CHAT-02: run-level model overrides", () => {
         error: expect.stringContaining(`[${scenario.errorCode}]`),
       });
       expect(modelCalls).toBe(scenario.providerCalls);
+      expect(alternateRequests).toStrictEqual([]);
+      await expect(readRunModelSourceFixture(run.runId)).resolves.toMatchObject(
+        {
+          modelProvider: "codex-oauth-token",
+          modelProviderCredentialScope: "member",
+          modelProviderId: completed.body.provider.id,
+          selectedModel: "gpt-5.6-terra",
+          creditAdmitted: false,
+          builtInModelKeyId: null,
+        },
+      );
       expect(refreshAttempts).toBe(scenario.expired ? 1 : 0);
       expect(oauth.oauthToken).toHaveLength(1);
       if (scenario.expectedReconnect) {
@@ -21325,6 +21379,7 @@ describe("CHAT-02: run-level model overrides", () => {
         [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
         [FeatureSwitchKey.PersonalModelProviderAccounts]: accountsEnabled,
       });
+      await configureOrganizationGptModel(actor);
       const instructions = await publishPendingPiInstructions(actor, agentId);
       const thread = await chat.createThread(actor, { agentId });
       const sdk = await context.mocks.piSdk.controlInitialization(
@@ -24513,10 +24568,9 @@ describe("CHAT-02: prior rounds and thread titles", () => {
 
 describe("CHAT-02: generation templates and attachments", () => {
   const introVideoTemplate: GenerationTemplateRequest = {
-    type: "video",
+    type: "intro-video",
     selection: {
-      stylePresetId: "explainer-video",
-      explainerOptions: {
+      options: {
         style: {
           kind: "catalog",
           style: {
@@ -24596,8 +24650,8 @@ describe("CHAT-02: generation templates and attachments", () => {
         agentId,
         prompt: "Explain it",
         userMessage: userMessageWithTemplate("Explain it", {
-          type: "video",
-          selection: { stylePresetId: "explainer-video" },
+          type: "intro-video",
+          selection: {},
         }),
       },
       [400],
@@ -30769,6 +30823,81 @@ describe("shared native Pi route activation", () => {
     },
     90_000,
   );
+
+  it("rotates native Claude API Pi to personal Claude Code while preserving the logical model", async () => {
+    const { actor, agentId, runnerGroup, providerId } =
+      await entitledChatActor();
+    configureNativeCliArtifact();
+    await authDeviceSupport.updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.PiLoop]: true,
+      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+      [FeatureSwitchKey.PersonalModelProviderAccounts]: false,
+    });
+    const model = "claude-sonnet-5";
+    await api.updateOrgModelPolicies(actor, [
+      {
+        model,
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
+    mockPiResourceArchiveDownloads();
+    mockPiCheckpointObjectStore();
+    let apiCalls = 0;
+    server.use(
+      http.post("https://api.anthropic.com/v1/messages", () => {
+        apiCalls += 1;
+        return nativeMessagesResponse(
+          model,
+          "org API answer before personal connection",
+        );
+      }),
+    );
+    const first = await sendChatRun(actor, {
+      agentId,
+      model,
+      prompt: "use the organization API",
+    });
+    await waitForRunStatus(actor, first.runId, "completed");
+    await flushWaitUntilForTest();
+    const original = await readThreadSessionBinding(context, first.threadId);
+    await misc.upsertPersonalModelProvider(
+      actor,
+      {
+        type: "claude-code-oauth-token",
+        secret: "sk-ant-oat-personal-rotation",
+      },
+      [200, 201],
+    );
+    const second = await sendChatRun(actor, {
+      agentId,
+      threadId: first.threadId,
+      prompt: "use my subscription on the same model",
+    });
+    const claim = await claimChatRun(runnerGroup, second.runId);
+    expect(claim.claim.cliAgentType).toBe("claude-code");
+    expect(claim.claim.resumeSession).toBeNull();
+    expect(
+      (await readThreadSessionBinding(context, first.threadId))
+        .agent_session_id,
+    ).not.toBe(original.agent_session_id);
+    expect(claimEnvironment(claim.claim).ANTHROPIC_MODEL).toBe(model);
+    await expect(
+      readRunModelSourceFixture(second.runId),
+    ).resolves.toMatchObject({
+      modelProvider: "claude-code-oauth-token",
+      modelProviderCredentialScope: "member",
+      selectedModel: model,
+      creditAdmitted: false,
+      builtInModelKeyId: null,
+    });
+    await expectNoThreadModelUpdateEvent(actor, first.threadId, model);
+    await expectNoBuiltInModelUsage(second.runId);
+    expect(apiCalls).toBe(1);
+    await cancelChatRun(actor, second.runId, claim.sandboxHeaders);
+  });
 
   it("does not switch the captured native route after a provider authentication failure", async () => {
     const { actor, agentId } = await entitledChatActor();

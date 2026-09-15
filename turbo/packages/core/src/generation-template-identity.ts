@@ -4,6 +4,7 @@ import {
   generationTemplateKind,
   type GenerationTemplateKind,
 } from "./generation-template-kind";
+import { INTRO_VIDEO_TEMPLATE_ID } from "./intro-video-template";
 import { isUserPresentationTemplateId } from "./presentation-template-selection";
 import { findWorkflowTemplateItem } from "./workflow-template-items";
 
@@ -121,13 +122,13 @@ function presentationIdentity(
 }
 
 /**
- * Talking avatar and Intro Video are reported as their own categories even
- * though they travel inside the video envelope.
+ * Talking avatar is reported as its own category even though it travels inside
+ * the video envelope.
  *
- * All three share `type: "video"` on the wire, so bucketing on `type` alone
- * would merge three products with three separate catalogues into one number.
- * The split itself belongs to `generationTemplateKind`; this only records what
- * each kind reports as.
+ * Both share `type: "video"` on the wire, so bucketing on `type` alone would
+ * merge two products with two separate catalogues into one number. The split
+ * itself belongs to `generationTemplateKind`; this only records what each kind
+ * reports as.
  */
 function videoIdentity(
   selection: Extract<GenerationTemplateRequest, { type: "video" }>["selection"],
@@ -171,6 +172,12 @@ export function generationTemplateIdentity(
     }
     case "video": {
       return videoIdentity(request.selection);
+    }
+    case "intro-video": {
+      // One template, so the product name is the identifier. Selections stored
+      // before the wire split reported `explainer-video` in the `video`
+      // category; neither is rewritten.
+      return builtinIdentity("intro-video", INTRO_VIDEO_TEMPLATE_ID);
     }
     case "illustration": {
       return builtinIdentity(

@@ -178,9 +178,10 @@ and neutral thumb colors, including hover. All default dialog bodies use this
 treatment, including the existing workflow-recommendation detail body; artifact
 previews retain their own clipping and internal scroll ownership.
 
-The `icon-button` and `dialog-scrollable` selectors and their dependencies have
-been removed. `icon-tooltip-trigger` remains scoped to the third-party Mermaid
-block and migrates with that adapter.
+The `icon-button`, `dialog-scrollable` and `icon-tooltip-trigger` selectors and
+their dependencies have been removed. `IconTooltip` merges its disabled-child
+wrapper's utilities with `cn()`, and the Mermaid diagram box passes its own
+`wrapperClassName` into that slot.
 
 ### Animated layers
 
@@ -813,6 +814,41 @@ The hovered fill carries `:not(:active)` because Tailwind decides the order the 
 `.wmde-markdown pre .copied.active` was dead and is gone with the rest. `CopyButton` never adds an `active` class — it swaps icons from React state — so that branch of the selector list never matched. The vendored sheet's own `.copied.active` rules remain, pinned and inert, because nothing carries the class any more. The `--color-copied-active-bg` overrides the App declared for them are removed with it.
 
 Measured against `main` with the App's own Tailwind compiler in Chromium over CDP, on the ancestor chain captured from the real chat thread page: 28 states — both fence shapes at rest, fence-hovered, control-hovered and pressed, in Light and Dark, on a fine and a coarse pointer — report zero changed pixels and zero computed-style or geometry differences. Negative controls that drop the control's padding, shift its offset by one spacing step and drop the reveal variant report 7,818, 3,579 and 9,164 changed pixels, so the zeros are not degenerate.
+
+### The Mermaid fallback fence
+
+`language-mermaid` is drained. `MermaidDiagramView` renders an ordinary code
+block when the parser rejects a fence's source, and that block used to spell
+`className="language-mermaid"` by hand to imitate the fence markup the Markdown
+pipeline produces. The class had nothing to select: no first-party declaration
+matches it, and the pinned `@uiw/react-markdown-preview` sheet's only
+`language-` rule is `.wmde-markdown .language-css .token.string`. Nor could
+tokens appear under it — the pipeline runs `rehype-prism-plus` with
+`ignoreMissing: true` and its common grammar bundle carries no mermaid grammar,
+so a mermaid fence is never tokenised on either path. The same component's
+`<details>` source block already carried no class, which is the shape the
+fallback block now takes. The retirement is therefore an equivalence, with no
+utility to replace the class with.
+
+This is the borrowed-name case again, one step simpler than `copied`: the
+element is ours, the name is a convention of `marked`'s fenced-code output, and
+there is no rule behind it in either sheet. So it was legacy debt rather than a
+third-party DOM adapter, and it could only be drained.
+
+`lib/rehype-mermaid.ts` still spells the class, and that use is out of scope
+rather than overlooked. It reads the class off a tree it did not author, to
+recognise a Mermaid fence before a diagram marker replaces it: `marked` writes
+the class for a Markdown fence, and a message carrying raw
+`<pre><code class="language-mermaid">` HTML writes it directly. Both are
+external DOM contracts being parsed, not first-party styling, so neither the
+legacy baseline nor `no-unknown-classes` counts them — the baseline resolves
+class attributes and class-helper calls, and the rule reads class attributes
+only. The rendered component's markup never re-enters that pipeline, so the
+drained attribute and the surviving detector do not meet. Page tests that query
+`code.language-mermaid` likewise match pipeline-generated markup, not this
+component. Removing the detector's class check would stop rendering
+raw-HTML-authored Mermaid blocks as diagrams, which is a product decision with
+no current test coverage, and is tracked separately from this drain.
 
 ### Chat transcript cards
 

@@ -24,7 +24,13 @@ import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { nowDate } from "../../lib/time";
-import { safeJsonParse, settle } from "../utils";
+import { settle } from "../utils";
+import {
+  GmailAuthorizationError,
+  gmailResponseRequiresReconnect,
+  handleGmailSendError,
+  type GmailDraftRejection,
+} from "./gmail-error";
 import {
   loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeSnapshot,
@@ -44,24 +50,6 @@ const DEFAULT_ACCESS_TOKEN_EXPIRES_IN_MS = 60 * 60 * 1000;
 const GMAIL_API_BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
 const GMAIL_ACCESS_TOKEN_ENV = "GMAIL_TOKEN";
 const oauthScopesSchema = z.array(z.string());
-const gmailErrorResponseSchema = z
-  .object({
-    error: z
-      .object({
-        details: z
-          .array(
-            z
-              .object({
-                domain: z.string().optional(),
-                reason: z.string().optional(),
-              })
-              .passthrough(),
-          )
-          .optional(),
-      })
-      .passthrough(),
-  })
-  .passthrough();
 
 interface GmailMessagePart {
   readonly partId: string;
@@ -241,36 +229,6 @@ interface GmailSentValue {
   readonly messageId: string;
   readonly threadId: string;
   readonly details: MailDetails | null;
-}
-
-class GmailAuthorizationError extends Error {
-  constructor() {
-    super("Gmail authorization is no longer valid");
-    this.name = "GmailAuthorizationError";
-  }
-}
-
-async function gmailResponseRequiresReconnect(
-  response: Response,
-): Promise<boolean> {
-  if (response.status === 401) {
-    return true;
-  }
-  if (response.status !== 403) {
-    return false;
-  }
-  const parsed = gmailErrorResponseSchema.safeParse(
-    safeJsonParse(await response.text()),
-  );
-  return (
-    parsed.success &&
-    parsed.data.error.details?.some((detail) => {
-      return (
-        detail.domain === "googleapis.com" &&
-        detail.reason === "ACCESS_TOKEN_SCOPE_INSUFFICIENT"
-      );
-    }) === true
-  );
 }
 
 interface MailAccess {
@@ -868,7 +826,15 @@ async function gmailSendLinkedDraft(
     readonly gmailDraftId: string;
   },
   signal: AbortSignal,
-): Promise<{ readonly messageId: string; readonly threadId: string } | null> {
+): Promise<
+  | {
+      readonly kind: "sent";
+      readonly messageId: string;
+      readonly threadId: string;
+    }
+  | GmailDraftRejection
+  | null
+> {
   const response = await fetch(`${GMAIL_API_BASE}/drafts/send`, {
     method: "POST",
     signal,
@@ -878,17 +844,14 @@ async function gmailSendLinkedDraft(
     },
     body: JSON.stringify({ id: args.gmailDraftId }),
   });
-  if (await gmailResponseRequiresReconnect(response)) {
-    throw new GmailAuthorizationError();
-  }
   if (response.status === 404) {
     return null;
   }
   if (!response.ok) {
-    throw new Error(`Gmail rejected the draft send (HTTP ${response.status})`);
+    return await handleGmailSendError(response);
   }
   const message = gmailSentResourceSchema.parse(await response.json());
-  return { messageId: message.id, threadId: message.threadId };
+  return { kind: "sent", messageId: message.id, threadId: message.threadId };
 }
 
 async function gmailGetMessageResource(
@@ -1501,6 +1464,7 @@ async function sendGmailDraftWithAccess(
     }
   | { readonly kind: "missing" }
   | { readonly kind: "reconnect" }
+  | GmailDraftRejection
 > {
   const currentResult = await runGmailOperation(
     {
@@ -1554,6 +1518,9 @@ async function sendGmailDraftWithAccess(
   }
   if (sentResult.kind === "error") {
     throw sentResult.error;
+  }
+  if (sentResult.value?.kind === "rejected") {
+    return sentResult.value;
   }
   return sentResult.value
     ? { kind: "ok", current: currentResult.value, sent: sentResult.value }
@@ -1896,7 +1863,7 @@ export const sendMailDraft$ = command(
       readonly mailDraftId: string;
     },
     signal: AbortSignal,
-  ): Promise<MailDraftMutationResult> => {
+  ): Promise<MailDraftMutationResult | GmailDraftRejection> => {
     const db = get(db$);
     const row = await loadOwnedMailDraft({ db, ...args });
     signal.throwIfAborted();
@@ -1936,6 +1903,9 @@ export const sendMailDraft$ = command(
     signal.throwIfAborted();
     if (gmail.kind === "reconnect") {
       return reconnectMailError;
+    }
+    if (gmail.kind === "rejected") {
+      return gmail;
     }
     if (gmail.kind === "missing") {
       const deleted = await markDeleted({ db: set(writeDb$), row });

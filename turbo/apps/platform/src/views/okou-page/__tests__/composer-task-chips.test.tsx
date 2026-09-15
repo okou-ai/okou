@@ -491,7 +491,7 @@ test.each([
     prompt: "Build a website that explains my business",
   },
 ])(
-  "$task ideas rotate without changing the draft and append without replacing it",
+  "$task ideas rotate without changing the draft and keep what was typed",
   async ({ task, first, next, prompt }) => {
     const capture = mockTemplateChat();
     const editor = await setupChips();
@@ -532,6 +532,55 @@ test.each([
     });
     expect(editor).toHaveTextContent("Keep this context");
     expect(capture.sentMessages).toHaveLength(0);
+  },
+);
+
+test.each([
+  {
+    task: "Image",
+    first: "Put my product in a new scene",
+    second: "Make a headshot for work",
+    firstPrompt:
+      "Put my product in a new scene. I will add a product photo; help me choose a setting while keeping the product itself consistent.",
+    secondPrompt:
+      "Turn a photo of me into a professional headshot. Keep my identity recognizable and help me choose a natural background and lighting.",
+  },
+  {
+    task: "Video",
+    first: "Turn a photo into a video",
+    second: "Show my product in motion",
+    firstPrompt:
+      "Animate a photo I provide with natural movement. Keep the subject recognizable and ask what should move.",
+    secondPrompt:
+      "Create a short product showcase from my product photo. Keep its appearance consistent and highlight the feature I choose.",
+  },
+  {
+    task: "Website",
+    first: "Build a website for my business",
+    second: "Showcase my work in a portfolio",
+    firstPrompt:
+      "Build a website that explains my business, services, and how to contact me. Start with my business details and audience.",
+    secondPrompt:
+      "Create a portfolio website for my work. Help me organize my projects, introduce myself, and add contact details.",
+  },
+])(
+  "A second $task idea rewrites the first prompt instead of stacking one after it",
+  async ({ task, first, second, firstPrompt, secondPrompt }) => {
+    mockTemplateChat();
+    const editor = await setupChips();
+    click(button(task, screen.getByRole("group", { name: "Choose a task" })));
+    const ideas = await screen.findByRole("group", {
+      name: "Ideas to get started",
+    });
+    await fill(editor, "Keep this context");
+    click(button(first, ideas));
+    await waitFor(() => {
+      expect(editor.textContent).toBe(`Keep this context\n${firstPrompt}`);
+    });
+    click(button(second, ideas));
+    await waitFor(() => {
+      expect(editor.textContent).toBe(`Keep this context\n${secondPrompt}`);
+    });
   },
 );
 

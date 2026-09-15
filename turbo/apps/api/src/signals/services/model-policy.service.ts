@@ -1,4 +1,10 @@
 import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
+import {
+  loadMemberModelRouteContext,
+  resolveEffectivePolicyRoute,
+  type ResolvedModelFirstPolicyRoute,
+} from "./effective-model-route.service";
+import { checkOrgPlanRunAdmission } from "./run-admission.service";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
 import { command } from "ccstate";
 import { and, eq, inArray, notInArray } from "drizzle-orm";
@@ -762,12 +768,38 @@ function selectWorkspaceDefaultPolicy(
   );
 }
 
+function memberRouteAvailability(params: {
+  readonly planDenied: boolean;
+  readonly effective: ResolvedModelFirstPolicyRoute | null;
+  readonly orgRouteAvailable: boolean;
+}): NonNullable<OrgModelPolicy["memberEffective"]>["availability"] {
+  if (params.planDenied) {
+    return "plan_restricted";
+  }
+  const effective = params.effective;
+  if (
+    !effective ||
+    effective.personalConnectionState === "unavailable" ||
+    (effective.modelProviderCredentialScope === "org" &&
+      !params.orgRouteAvailable)
+  ) {
+    return "unavailable";
+  }
+  return effective.personalConnectionState === "reconnect_required"
+    ? "reconnect_required"
+    : "available";
+}
+
 async function listOrgModelPolicies(
   db: Db,
   orgId: string,
   userId: string,
 ): Promise<OrgModelPoliciesResponse> {
   const rows = await ensureOrgModelPolicies(db, orgId, userId);
+  const member = await loadMemberModelRouteContext(db, orgId, userId);
+  const capabilities = member.priorityEnabled
+    ? await loadOrgPlanCapabilities(db, orgId)
+    : null;
   const providers = await listOrgProviderRoutes(db, orgId);
   const surfaces = await listOrgSurfaceRoutes(db, orgId);
   const providersById = new Map(
@@ -783,17 +815,60 @@ async function listOrgModelPolicies(
   const policies = await Promise.all(
     rows.map(async (row) => {
       const policy = serializePolicy(row, providersById, surfacesById);
-      if (!isBuiltInModelProviderType(policy.defaultProviderType)) {
-        return policy;
+      const runtimeRoute = isBuiltInModelProviderType(
+        policy.defaultProviderType,
+      )
+        ? await resolveBuiltInModelRuntimeRoute(db, policy.model)
+        : null;
+      const administrative: OrgModelPolicy = isBuiltInModelProviderType(
+        policy.defaultProviderType,
+      )
+        ? { ...policy, runtimeProviderType: runtimeRoute?.providerType ?? null }
+        : policy;
+      if (!member.priorityEnabled) {
+        return administrative;
       }
-      const runtimeRoute = await resolveBuiltInModelRuntimeRoute(
+      const effective = await resolveEffectivePolicyRoute({
         db,
-        policy.model,
-      );
+        orgId,
+        policy: row,
+        member,
+        capabilities:
+          capabilities?.status === "active"
+            ? capabilities
+            : { restrictedBuiltInModels: false, supportByok: true },
+      });
+      const providerType =
+        effective?.modelProviderType ?? policy.defaultProviderType;
+      const credentialScope =
+        effective?.modelProviderCredentialScope ?? policy.credentialScope;
+      const planDenied = checkOrgPlanRunAdmission({
+        capabilities,
+        modelProviderType: providerType,
+        selectedModel: policy.model,
+      });
+      const availability = memberRouteAvailability({
+        planDenied: !!planDenied,
+        effective,
+        orgRouteAvailable:
+          policy.routeStatus === "valid" &&
+          (!isBuiltInModelProviderType(providerType) || runtimeRoute !== null),
+      });
       return {
-        ...policy,
-        runtimeProviderType: runtimeRoute?.providerType ?? null,
-      };
+        ...administrative,
+        memberEffective: {
+          providerType,
+          runtimeProviderType: isBuiltInModelProviderType(providerType)
+            ? (runtimeRoute?.providerType ?? null)
+            : providerType,
+          credentialScope,
+          availability,
+          accountSelection:
+            credentialScope === "member"
+              ? "capture_required"
+              : "not_applicable",
+        },
+      } satisfies OrgModelPolicy;
     }),
   );
   const workspaceDefault = selectWorkspaceDefaultPolicy(policies);
