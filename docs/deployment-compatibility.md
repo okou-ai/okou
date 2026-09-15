@@ -1376,6 +1376,16 @@ Run cache invalidations are best-effort and identifier-only. Token/SSH-grant cha
 may leave cached authority usable for the remainder of an active Run if a notice
 is missed. End those Runs when immediate revocation is required.
 
+#34353 changes only Runner-local authority ownership, not the API, guest RPC or
+persisted data contracts. New Runners preserve SSH authority and healthy work
+across Ably connection loss, recovery and initial subscription unavailability;
+draining old Runners retain their previous disconnect-eviction behavior. First
+use/cache misses still authorize through the same API. Delivered invalidation,
+failure eviction and Run/sandbox teardown remain effective. The accepted
+Run-lifetime missed-notification window includes observed outages; this introduces
+no reconnect grace deadline, periodic reauthorization or new TTL. No coordinated
+API rollout or migration is required for this Runner change.
+
 ## Integration input attachments
 
 New Feishu/Lark, Teams, Telegram, and AgentPhone trigger attachments use the

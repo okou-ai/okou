@@ -344,8 +344,12 @@ Input/signal submission and closing SSH do not prove the remote process stopped
 or its effects completed. Never automatically replay uncertain starts or input.
 This staff-gated session-read contract replaces the earlier defaults and payload
 without an old-reader compatibility path or automatic conversion into independent
-exec calls. Observed authorization-notification disconnects cancel
-managed sessions and prevent new starts until the subscription recovers.
+exec calls. Ably notification disconnects, reconnects and prolonged unavailability
+do not stop healthy SSH work or prevent new Sessions/file transfers. First use and
+cache misses still require API authorization. Delivered authority/configuration
+invalidation and Run/sandbox end retire affected Sessions and transports; missed
+notices can leave previously authorized access usable until the Run ends. There
+is no fixed revocation deadline or automatic replay of uncertain work.
 
 ### File upload and download
 
