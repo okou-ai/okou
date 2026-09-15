@@ -220,11 +220,15 @@ function resolveAuth(options: SetupPageOptions): {
   };
 }
 
+interface PageStartup {
+  readonly ready: Promise<void>;
+}
+
 async function setupPageAsync(
   options: SetupPageOptions,
   signal: AbortSignal,
   pageRendered: () => void,
-): Promise<StartedPage> {
+): Promise<PageStartup> {
   ensureTestLocalStorage();
   applyPageEnvironment(options.env, signal);
   await initializeI18nWithResources(
@@ -367,6 +371,10 @@ function waitForFirstPageContent(signal: AbortSignal): {
 }
 
 interface StartedPage {
+  // Resolves once the first page content is observable. This boundary is
+  // independent of startup, so tests that deliberately block a startup request
+  // can still await the rendered page before their first assertion.
+  readonly content: Promise<void>;
   readonly ready: Promise<void>;
 }
 
@@ -387,7 +395,7 @@ export async function startPage(
   // startPage deliberately returns while startup may still be blocked. Ordinary
   // setupPage callers await the same finite operation directly below.
   detach(ready, Reason.Entrance, "pending page startup");
-  return { ready };
+  return { content: content.ready, ready };
 }
 
 async function waitForPageStartup(

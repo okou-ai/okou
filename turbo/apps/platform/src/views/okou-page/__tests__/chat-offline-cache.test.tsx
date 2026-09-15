@@ -629,7 +629,9 @@ test("Saved messages appear without an empty-state flash", async () => {
     });
   });
 
-  await startPage({
+  // Startup stays blocked on the gated housekeeping request, so this test awaits
+  // the rendered page instead of full startup before asserting cached content.
+  const page = await startPage({
     context,
     path: `/chats/${thread.id}`,
     host: "app.okou.ai",
@@ -637,6 +639,7 @@ test("Saved messages appear without an empty-state flash", async () => {
   });
 
   await visibleAppSkeleton();
+  await page.content;
 
   const visibleSavedResponse = await screen.findByText(savedResponse);
   expect(visibleSavedResponse).toBeVisible();

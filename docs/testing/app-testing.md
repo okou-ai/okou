@@ -30,7 +30,9 @@ Startup belongs to the test context's original abort signal. Cancelling that
 lifetime rejects `setupPage()` and a pending `startPage().ready`; cancellation
 is not page readiness. Tests that inspect blocked startup may leave
 `startPage().ready` unawaited: the shared helper owns its cancellation rejection
-and observer cleanup.
+and observer cleanup. Such a test still needs a synchronization boundary before
+its first assertion; await `startPage().content`, which resolves on first
+observable page content and does not wait for the blocked startup request.
 
 Every page test follows this order:
 
