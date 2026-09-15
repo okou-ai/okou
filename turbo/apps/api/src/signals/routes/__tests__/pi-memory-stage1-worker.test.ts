@@ -1,3 +1,4 @@
+import { mockStage1CostLogFailure } from "../../../__tests__/mocks";
 import {
   builtinMemoryQuotaCases,
   seedMemoryQuotaCase,
@@ -114,6 +115,7 @@ interface ProviderUsage {
 interface ProviderReply {
   readonly text: string;
   readonly usage?: ProviderUsage;
+  readonly incomplete?: boolean;
 }
 
 type SessionHistoryEncoding =
@@ -188,6 +190,7 @@ function responsesSse(
     cached_tokens: 2,
     cache_write_tokens: 3,
   },
+  incomplete = false,
 ): string {
   const responseId = `resp_pi_memory_stage1_${sequence.toString()}`;
   const messageId = `msg_pi_memory_stage1_${sequence.toString()}`;
@@ -231,11 +234,14 @@ function responsesSse(
       },
     },
     {
-      type: "response.completed",
+      type: incomplete ? "response.incomplete" : "response.completed",
       response: {
         id: responseId,
         object: "response",
-        status: "completed",
+        status: incomplete ? "incomplete" : "completed",
+        ...(incomplete
+          ? { incomplete_details: { reason: "max_output_tokens" } }
+          : {}),
         output: [
           {
             type: "message",
@@ -300,14 +306,16 @@ function installProvider(
         };
         calls.push(invocation);
         const reply = await responder(invocation);
-        const { text, usage } =
-          typeof reply === "string" ? { text: reply, usage: undefined } : reply;
+        const { text, usage, incomplete } =
+          typeof reply === "string"
+            ? { text: reply, usage: undefined, incomplete: false }
+            : reply;
         return new HttpResponse(
           new ReadableStream<Uint8Array>({
             start(controller) {
               controller.enqueue(
                 new TextEncoder().encode(
-                  responsesSse(text, invocation.sequence, usage),
+                  responsesSse(text, invocation.sequence, usage, incomplete),
                 ),
               );
               controller.close();
@@ -677,6 +685,47 @@ async function corruptStage1CatalogPayload(value: unknown): Promise<void> {
 }
 
 describe("Pi memory Stage 1 worker", () => {
+  it("retains provider consumption from an incomplete terminal response", async () => {
+    const storage = createStorageFixture();
+    const piSessionId = randomUUID();
+    const candidate = await storage.seed({
+      piSessionId,
+      raw: settledHistory(piSessionId, "paid incomplete response"),
+    });
+    const provider = installProvider(() => {
+      return { text: "partial", incomplete: true };
+    });
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      claimed: 1,
+      retryableFailure: 1,
+      succeeded: 0,
+    });
+    expect(provider.calls).toHaveLength(1);
+    await expect(inspectUsage(storage)).resolves.toHaveLength(4);
+    await expect(inspect(candidate)).resolves.toMatchObject({
+      status: "retryable_failure",
+      last_error_class: "provider_failure",
+    });
+  });
+
+  it("keeps a completed extraction and its usage when the cost logger throws", async () => {
+    const storage = createStorageFixture();
+    const piSessionId = randomUUID();
+    await storage.seed({
+      piSessionId,
+      raw: settledHistory(piSessionId, "cost transport failure"),
+    });
+    mockStage1CostLogFailure();
+    const provider = installProvider();
+    await expect(runScoped(storage)).resolves.toMatchObject({
+      succeeded: 1,
+      retryableFailure: 0,
+    });
+    await expect(inspectUsage(storage)).resolves.toHaveLength(4);
+    await expect(runScoped(storage)).resolves.toMatchObject({ claimed: 0 });
+    expect(provider.calls).toHaveLength(1);
+  });
+
   it("leaves switch-off legacy work unclaimed before any download or provider call", async () => {
     const enabledStorage = createStorageFixture();
     const disabledStorage = createStorageFixture({ piMemoryEnabled: false });

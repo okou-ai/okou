@@ -391,6 +391,16 @@ export default [
     },
   },
   {
+    files: ["src/signals/services/pi-memory-stage1-cost.service.ts"],
+    rules: {
+      // Versioned cost observations are the explicit production budget contract.
+      "api/no-logger-info": [
+        "error",
+        { allowedMessages: ["Pi memory Stage 1 cost observed"] },
+      ],
+    },
+  },
+  {
     files: ["src/signals/services/pi-memory-quota.service.ts"],
     rules: {
       // Quota admission is a bounded production decision, including expected
@@ -647,6 +657,8 @@ export default [
       "src/signals/services/__tests__/pi-memory-candidate-accounting.service.test.ts",
       // #34044 requires real transactions, UTC clock, deletion and old-writer races.
       "src/signals/services/__tests__/pi-memory-stage1-schedule.service.test.ts",
+      // D explicitly requires immutable billing/compaction snapshot infrastructure.
+      "src/signals/services/__tests__/pi-memory-stage1-usage.service.test.ts",
       "src/signals/services/__tests__/workflow-automation-context.test.ts",
     ],
     rules: {
@@ -809,6 +821,8 @@ export default [
       "src/signals/services/__tests__/pi-memory-candidate-accounting.service.test.ts",
       // #34044 requires real transactions, UTC clock, deletion and old-writer races.
       "src/signals/services/__tests__/pi-memory-stage1-schedule.service.test.ts",
+      // D explicitly requires immutable billing/compaction snapshot infrastructure.
+      "src/signals/services/__tests__/pi-memory-stage1-usage.service.test.ts",
       // The logger is the subject here, not a diagnostic: this suite covers the
       // app factory's log wiring and flush ownership, which no route exposes.
       "src/__tests__/app-factory.test.ts",

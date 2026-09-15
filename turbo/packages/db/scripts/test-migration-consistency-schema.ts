@@ -1,4 +1,5 @@
 #!/usr/bin/env tsx
+import { validatePiMemoryStage1Cost } from "./test-pi-memory-stage1-cost";
 /**
  * Migration Consistency Test - Schema Comparison
  *
@@ -1386,7 +1387,7 @@ const EXPECTED_PERMANENT_FUNCTIONS = [
     schemaName: "public",
   },
   {
-    bodyHash: "7fa1f4813c3bcfb4d16269639d9640a3",
+    bodyHash: "b002912b7bba9df6783801b84490bada",
     functionName: "capture_usage_billing_attribution",
     identityArguments: "",
     kind: "f",
@@ -3353,6 +3354,7 @@ async function main(): Promise<void> {
 
     await validateCanonicalIntegrationIdentitySchema(dbUrl1);
     await validatePermanentTriggerAndFunctionInventory(dbUrl1);
+    await validatePiMemoryStage1Cost(dbUrl1);
     await validatePermanentMarketingPrivacyState(dbUrl1);
     await validatePermanentUsagePackPendingSnapshotState(dbUrl1);
     await validatePermanentArtifactTriggerBehavior(dbUrl1);

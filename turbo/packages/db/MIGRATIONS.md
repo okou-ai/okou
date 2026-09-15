@@ -41,6 +41,15 @@ expired transition validator must be deleted.
   variants. Keep these transition controls until the production journal and
   completed rollout satisfy all three conditions above. Current API route
   coverage, guard constraints and the exact remaining catalog are permanent.
+- `scripts/test-pi-memory-stage1-cost.ts` protects D's 1133/1134 context expansion
+  and separate validation transactions (#34267). It runs from the full
+  schema-consistency test on isolated current-schema clones, with actual
+  1118/1119 pre-D checks/capture, 134,426 raw and 321,528 hourly rows, default
+  timeouts, lock-mode inspection, mixed writers and exact-numeric query plans.
+  Retire its historical replay only after the three gates above; preserve the
+  Stage 1 current-schema checks, capture body inventory and API infrastructure
+  compaction/immutable-identity tests. This validator authorizes no production
+  SQL or attribution backfill.
 
 - `scripts/test-pi-candidate-trigger-retirement.ts` protects migration
   `1121_retire_pi_candidate_reference_trigger` (#33975): original catalog

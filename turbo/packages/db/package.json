@@ -59,7 +59,7 @@
     "db:studio": "drizzle-kit studio",
     "db:reset": "tsx scripts/reset-db.ts",
     "check:account-erasure-claim-scale": "tsx scripts/check-account-erasure-claim-scale.ts",
-    "test:migration-consistency": "pnpm test:migration-runner && pnpm test:kms-rotation && pnpm test:pi-memory-checkpoint-settlement && pnpm test:pi-memory-citations && pnpm test:show-usage-pack-migration && pnpm test:member-invitation-retirement && pnpm test:reusable-ssh-credentials && pnpm test:cloudflare-access && pnpm test:morning-brief-enrollment-installation && pnpm test:billing-attribution && pnpm test:pi-candidate-trigger-retirement && pnpm test:historical-blob-audit && pnpm test:erasure-journal && pnpm test:prepared-domain-trigger-retirement && tsx scripts/test-migration-consistency-schema.ts",
+    "test:migration-consistency": "pnpm test:pi-memory-stage1-alerts && pnpm test:migration-runner && pnpm test:kms-rotation && pnpm test:pi-memory-checkpoint-settlement && pnpm test:pi-memory-citations && pnpm test:show-usage-pack-migration && pnpm test:member-invitation-retirement && pnpm test:reusable-ssh-credentials && pnpm test:cloudflare-access && pnpm test:morning-brief-enrollment-installation && pnpm test:billing-attribution && pnpm test:pi-candidate-trigger-retirement && pnpm test:historical-blob-audit && pnpm test:erasure-journal && pnpm test:prepared-domain-trigger-retirement && tsx scripts/test-migration-consistency-schema.ts",
     "test:cloudflare-access": "tsx scripts/test-cloudflare-access.ts",
     "test:kms-rotation": "tsx scripts/migrations/013-kms-account-rotation/test.ts && tsx scripts/migrations/013-kms-account-rotation/test-business.ts",
     "test:show-usage-pack-migration": "tsx scripts/test-show-usage-pack-migration.ts",
@@ -76,7 +76,10 @@
     "test:historical-blob-audit": "tsx scripts/test-historical-session-blob-audit.ts",
     "journal:generate": "drizzle-kit generate --dialect postgresql --schema ./src/erasure-journal/schema.ts --out ./erasure-journal-migrations",
     "test:erasure-journal": "tsx scripts/test-erasure-journal.ts",
-    "test:prepared-domain-trigger-retirement": "tsx scripts/test-prepared-domain-trigger-retirement.ts"
+    "test:prepared-domain-trigger-retirement": "tsx scripts/test-prepared-domain-trigger-retirement.ts",
+    "billing:pi-memory-stage1": "tsx scripts/pi-memory-stage1-cost.ts",
+    "test:pi-memory-stage1-cost": "tsx scripts/test-pi-memory-stage1-cost.ts",
+    "test:pi-memory-stage1-alerts": "node --test ../../../ops/pi-memory-stage1/v1/fixtures.test.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-kms": "^3.1127.0",

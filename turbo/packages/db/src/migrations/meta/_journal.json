@@ -386,6 +386,20 @@
       "when": 1789448024786,
       "tag": "1132_retire_prepared_domain_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 1133,
+      "version": "7",
+      "when": 1789453158674,
+      "tag": "1133_pi_memory_stage1_billing_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 1134,
+      "version": "7",
+      "when": 1789453169094,
+      "tag": "1134_validate_pi_memory_stage1_billing_context",
+      "breakpoints": true
     }
   ]
 }
