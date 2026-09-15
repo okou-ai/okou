@@ -23,7 +23,7 @@ import { cronRenewGoogleWorkspaceEventSubscriptionsRoutes } from "./routes/cron-
 import { cronProcessUsageEventsRoutes } from "./routes/cron-process-usage-events";
 import { cronReconcileSocialKitDownloadRoutes } from "./routes/cron-reconcile-socialkit-downloads";
 import { cronReconcileBillingEntitlementsRoutes } from "./routes/cron-reconcile-billing-entitlements";
-import { cronRefreshStoragePresignedUrlsRoutes } from "./routes/cron-refresh-storage-presigned-urls";
+import { cronPruneStoragePresignedUrlsRoutes } from "./routes/cron-prune-storage-presigned-urls";
 import { cronMaterializeMemorySummariesRoutes } from "./routes/cron-materialize-memory-summaries";
 import { cronExtractPiMemoryStage1Routes } from "./routes/cron-extract-pi-memory-stage1";
 import { cronConsolidatePiMemoryPhase2Routes } from "./routes/cron-consolidate-pi-memory-phase2";
@@ -252,7 +252,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronProcessUsageEventsRoutes,
   ...cronReconcileSocialKitDownloadRoutes,
   ...cronReconcileBillingEntitlementsRoutes,
-  ...cronRefreshStoragePresignedUrlsRoutes,
+  ...cronPruneStoragePresignedUrlsRoutes,
   ...cronMaterializeMemorySummariesRoutes,
   ...cronMaterializePiResourceIndexesRoutes,
   ...cronExtractPiMemoryStage1Routes,

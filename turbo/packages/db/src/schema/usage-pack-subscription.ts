@@ -282,7 +282,8 @@ export const usagePackSubscriptions = pgTable(
 );
 
 /**
- * One database-owned pending count per organization. Migration 0954 preserves
+ * One persisted pending count per organization. Explicit API transactions and
+ * the retained 0954 trigger share this guard during rollout. Migration 0954 preserves
  * the exact count when legacy writers already left competing snapshots. New
  * writers may claim the organization only after reconciliation reaches zero.
  */

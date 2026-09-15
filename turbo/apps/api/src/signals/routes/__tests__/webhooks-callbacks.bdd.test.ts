@@ -3,7 +3,6 @@ import { oomEvidenceSchema } from "@okouai/api-contracts/contracts/oom-evidence"
 import { createHash, randomInt, randomUUID } from "node:crypto";
 
 import { createStore } from "ccstate";
-import { LIMITED_FREE1_DEFAULT_RUN_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import { RESUME_SESSION_HISTORY_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
 import { MAX_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/storages";
 import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
@@ -758,7 +757,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       limitedFreeProviders.find((provider) => {
         return provider.type === "built-in";
       })?.selectedModel,
-    ).toBe(LIMITED_FREE1_DEFAULT_RUN_MODEL);
+    ).toBe("gpt-5.6-luna");
 
     api.verifyNextClerkWebhook({
       type: "organizationMembership.created",

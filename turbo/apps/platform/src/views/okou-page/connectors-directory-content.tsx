@@ -29,7 +29,7 @@ import {
 
 type SourceState = "loading" | "hasData" | "hasError";
 
-function NewCustomConnectorButton() {
+export function NewCustomConnectorButton() {
   const { t } = useTranslation();
   const openCreate = useSet(openCustomConnectorCreateDialog$);
   return (
@@ -101,14 +101,11 @@ function DirectoryCustomSection({
       })}
       className="flex flex-col gap-3"
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-sm font-medium text-muted-foreground">
-          {t(($) => {
-            return $.connectors.catalog.directory.custom;
-          })}
-        </h2>
-        {isAdmin && <NewCustomConnectorButton />}
-      </div>
+      <h2 className="text-sm font-medium text-muted-foreground">
+        {t(($) => {
+          return $.connectors.catalog.directory.custom;
+        })}
+      </h2>
       {sourceState === "hasError" ? (
         <DirectoryLoadError
           message={t(($) => {
@@ -214,7 +211,10 @@ export function ConnectorsDirectoryContent({
   const showCreated = useSet(showCreatedDirectoryConnector$);
   const retryCatalog = useSet(reloadConnectors$);
   const connectors = custom.state === "hasData" ? custom.data : [];
-  const showCustom = customOnly || category === null;
+  // Custom is its own scope now, so the catalog no longer carries it as a
+  // trailing block. Browsing is scoped; searching is not, so a keyword still
+  // reaches across and reports its custom matches in their own section.
+  const showCustom = customOnly || (Boolean(search) && category === null);
   const showBuiltin = !customOnly && category !== REMOTE_ACCESS_CATEGORY;
   const showRemote =
     !customOnly && (category === null || category === REMOTE_ACCESS_CATEGORY);

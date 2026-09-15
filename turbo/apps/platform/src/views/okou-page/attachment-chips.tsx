@@ -105,6 +105,7 @@ import {
   type ImageArtifactNavigationItem,
 } from "./artifact-image-navigation.ts";
 import { ZoomableArtifactImageCanvas } from "./zoomable-image-canvas.tsx";
+import type { ZoomableImageCanvasSignals } from "../../signals/zoomable-image-canvas.ts";
 import { AutoFocusedArtifactIframe } from "./auto-focused-artifact-iframe.tsx";
 import { PresentationArtifactViewport } from "./presentation-artifact-viewport.tsx";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
@@ -626,11 +627,13 @@ function ArtifactDialogTextBody({
 
 function ArtifactDialogImageStage({
   filename,
+  imageCanvasSignals,
   imageNavigation,
   preview,
   resourceUrl,
 }: {
   filename: string;
+  imageCanvasSignals: ZoomableImageCanvasSignals;
   imageNavigation?: ArtifactImageNavigationActions;
   preview: Extract<AttachmentLightboxState, { kind: "image" }>;
   resourceUrl: string | null;
@@ -659,7 +662,7 @@ function ArtifactDialogImageStage({
               key={resourceUrl}
               src={resourceUrl}
               alt={filename}
-              signals={attachmentLightboxImageCanvasSignals}
+              signals={imageCanvasSignals}
               imageTestId="attachment-lightbox-image"
               contentClassName="p-6"
               imageClassName="rounded-lg shadow-sm"
@@ -703,10 +706,12 @@ function ArtifactDialogImageStage({
 
 function ArtifactDialogImageBody({
   filename,
+  imageCanvasSignals,
   imageNavigation,
   preview,
 }: {
   filename: string;
+  imageCanvasSignals: ZoomableImageCanvasSignals;
   imageNavigation?: ArtifactImageNavigationActions;
   preview: Extract<AttachmentLightboxState, { kind: "image" }>;
 }) {
@@ -714,6 +719,7 @@ function ArtifactDialogImageBody({
   return (
     <ArtifactDialogImageStage
       filename={filename}
+      imageCanvasSignals={imageCanvasSignals}
       imageNavigation={imageNavigation}
       preview={preview}
       resourceUrl={resourceUrl}
@@ -810,7 +816,7 @@ function ArtifactDialogDocumentFrameBody({
   // PDF Open Parameters: #navpanes=0 hides Chromium's built-in left rail so the
   // embedded preview shows just the page and toolbar by default.
   const src =
-    resourceUrl !== null && preview.kind === "pdf"
+    resourceUrl !== null && preview.kind === "pdf" && !resourceUrl.includes("#")
       ? `${resourceUrl}#navpanes=0`
       : resourceUrl;
 
@@ -880,12 +886,16 @@ function ArtifactDialogOfficeDocumentBody({
   );
 }
 
-function ArtifactDialogBody({
+export function ArtifactPreviewBody({
   artifact,
+  fullscreen,
+  imageCanvasSignals,
   imageNavigation,
   preview,
 }: {
   artifact: AttachmentArtifactMetadata | undefined;
+  fullscreen: boolean;
+  imageCanvasSignals: ZoomableImageCanvasSignals;
   imageNavigation?: ArtifactImageNavigationActions;
   preview: AttachmentLightboxState;
 }) {
@@ -895,6 +905,7 @@ function ArtifactDialogBody({
     return (
       <ArtifactDialogImageBody
         filename={filename}
+        imageCanvasSignals={imageCanvasSignals}
         imageNavigation={imageNavigation}
         preview={preview}
       />
@@ -937,6 +948,7 @@ function ArtifactDialogBody({
       <ArtifactDialogHtmlBody
         artifact={artifact}
         filename={filename}
+        fullscreen={fullscreen}
         preview={preview}
       />
     );
@@ -950,14 +962,15 @@ function ArtifactDialogBody({
 function ArtifactDialogHtmlBody({
   artifact,
   filename,
+  fullscreen,
   preview,
 }: {
   artifact: AttachmentArtifactMetadata | undefined;
   filename: string;
+  fullscreen: boolean;
   preview: AttachmentLightboxState;
 }) {
   const { t } = useTranslation();
-  const fullscreen = useGet(lightboxDialogFullscreen$);
   const src = useLastResolved(preview.resourceUrl$) ?? null;
   const isPresentationHtml = artifact?.artifactKind === "presentation-html";
 
@@ -1378,8 +1391,10 @@ function ArtifactPreviewDialogContent({
                 <ConnectorConnectionStatus />
               </div>
             ) : (
-              <ArtifactDialogBody
+              <ArtifactPreviewBody
                 artifact={artifact}
+                fullscreen={fullscreen}
+                imageCanvasSignals={attachmentLightboxImageCanvasSignals}
                 imageNavigation={imageNavigation}
                 preview={preview}
               />

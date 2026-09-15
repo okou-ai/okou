@@ -307,11 +307,6 @@ const refreshWorkerChatIndicators$ = command(
     set(reloadWorkerComputed$, "chat-thread-indicators");
     await set(readWorkerChatThreadIndicators$);
     signal.throwIfAborted();
-    // Warming belongs to the refresh that observed the change. The
-    // `threadListChanged` subscription primes this loop on connect, so the
-    // first warming still runs before any realtime event arrives.
-    await set(catchUpChatEvent$);
-    signal.throwIfAborted();
   },
 );
 
@@ -319,6 +314,9 @@ const reloadWorkerChatIndicatorsFromRealtime$ = command(
   async ({ set }, signal: AbortSignal): Promise<boolean> => {
     await set(refreshWorkerChatIndicators$, signal);
     set(reloadComputedForConnections$, "chat-thread-indicators");
+    // Notify tabs before optional warming can delay or fail this refresh.
+    await set(catchUpChatEvent$);
+    signal.throwIfAborted();
     return false;
   },
 );
@@ -328,6 +326,8 @@ const reloadWorkerChatIndicatorsFromReadCursor$ = command(
     await set(refreshWorkerChatIndicators$, signal);
     set(forwardChatThreadReadCursorUpdated$, payload);
     set(reloadComputedForConnections$, "chat-thread-indicators");
+    await set(catchUpChatEvent$);
+    signal.throwIfAborted();
     return false;
   },
 );

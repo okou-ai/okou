@@ -5,12 +5,17 @@ import {
   MANAGED_SOCIALKIT_BILLING_CATEGORY,
   MANAGED_SOCIALKIT_TOOLS,
   socialKitTranscriptErrorReasonSchema,
+  socialKitCollectionSourceLimitSchema,
   type ManagedSocialKitTool,
   type ManagedSocialKitToolName,
   socialKitRequestSchema,
 } from "./social-tools";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import {
+  socialPlatformSchema,
+  socialStatusResponseSchema,
+} from "./social-discovery";
 
 export {
   findManagedSocialKitTool,
@@ -22,6 +27,7 @@ export {
   SOCIALKIT_TRANSCRIPT_ERROR_CODES,
   socialKitTranscriptErrorReasonSchema,
   socialKitRequestSchema,
+  socialKitSummaryFieldsSchema,
   type ManagedSocialKitCollection,
   type ManagedSocialKitCatalogBilling,
   type ManagedSocialKitCatalogProviderLimit,
@@ -41,13 +47,38 @@ export {
   type SocialKitTranscriptErrorCode,
   type SocialKitTranscriptErrorReason,
   type SocialKitRequest,
+  type SocialKitCollectionSourceLimit,
 } from "./social-tools";
 
 const c = initContract();
 
+export const socialErrorReasonSchema = z.enum([
+  ...socialKitTranscriptErrorReasonSchema.options,
+  "content_restricted",
+  "content_unavailable",
+  "no_transcript",
+  "transcript_not_ready",
+  "media_not_ready",
+  "upstream_failure",
+  "rate_limited",
+  "provider_quota_exhausted",
+  "provider_authentication",
+  "invalid_input",
+]);
+
+export type SocialErrorReason = z.infer<typeof socialErrorReasonSchema>;
+
+export const socialRetryAfterSecondsSchema = z
+  .number()
+  .int()
+  .min(0)
+  .max(2_147_483_647);
+
 export const socialKitErrorSchema = apiErrorSchema.extend({
   error: apiErrorSchema.shape.error.extend({
-    reason: socialKitTranscriptErrorReasonSchema.optional(),
+    reason: socialErrorReasonSchema.optional(),
+    retryable: z.boolean().optional(),
+    retryAfterSeconds: socialRetryAfterSecondsSchema.optional(),
   }),
 });
 
@@ -134,6 +165,13 @@ export const socialKitDownloadQualitySchema = z.enum([
 
 export const socialKitDownloadFormatSchema = z.enum(["mp4", "m4a"]);
 
+// Delivered resolutions include source renditions such as TikTok's 576p.
+export const socialKitDownloadDeliveredQualitySchema = z
+  .string()
+  .regex(/^[1-9]\d{0,3}p$/u);
+
+const socialKitDownloadArtifactFormatSchema = z.enum(["mp4", "m4a", "mp3"]);
+
 export const socialKitDownloadRequestSchema = z
   .object({
     platform: socialKitDownloadPlatformSchema,
@@ -167,6 +205,8 @@ const socialKitDownloadProviderResultSchema = z.object({
   durationSeconds: z.number().int().nonnegative(),
   fileSizeMB: z.number().nonnegative(),
   creditsCost: z.number().int().positive(),
+  quality: socialKitDownloadDeliveredQualitySchema.optional(),
+  format: socialKitDownloadFormatSchema.optional(),
   title: z.string().max(1000).optional(),
   thumbnail: z.url().max(4096).optional(),
 });
@@ -177,14 +217,29 @@ const socialKitDownloadArtifactSchema = z.object({
   filename: z.string().min(1),
   contentType: z.string().min(1),
   sizeBytes: z.number().int().positive(),
+  format: socialKitDownloadArtifactFormatSchema.nullable().optional(),
 });
 
 export const socialKitDownloadResponseSchema = z.object({
   downloadId: z.string().uuid(),
   status: socialKitDownloadStatusSchema,
   platform: socialKitDownloadPlatformSchema,
+  // Retain the request aliases for already selected commit-addressed CLIs.
   quality: socialKitDownloadQualitySchema,
   format: socialKitDownloadFormatSchema,
+  // Optional while older API artifacts remain supported rollout/rollback targets.
+  requested: z
+    .object({
+      quality: socialKitDownloadQualitySchema,
+      format: socialKitDownloadFormatSchema,
+    })
+    .optional(),
+  delivered: z
+    .object({
+      quality: socialKitDownloadDeliveredQualitySchema.nullable(),
+      format: socialKitDownloadArtifactFormatSchema.nullable(),
+    })
+    .optional(),
   maxDuration: z.number().int().positive(),
   billingCategory: z.literal(MANAGED_SOCIALKIT_BILLING_CATEGORY),
   provider: socialKitDownloadProviderResultSchema.nullable(),
@@ -201,6 +256,10 @@ export const socialKitDownloadResponseSchema = z.object({
       message: z.string(),
       retryable: z.boolean(),
       billed: z.boolean(),
+      reason: socialErrorReasonSchema.optional(),
+      retryAfterSeconds: socialRetryAfterSecondsSchema.optional(),
+      // A terminal job cannot resume; this advice applies to a new submission.
+      resubmitRetryable: z.boolean().optional(),
     })
     .nullable(),
   createdAt: z.iso.datetime(),
@@ -212,6 +271,42 @@ export type SocialKitDownloadRequest = z.infer<
 >;
 export type SocialKitDownloadResponse = z.infer<
   typeof socialKitDownloadResponseSchema
+>;
+
+export const socialKitDownloadListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  cursor: z.string().uuid().optional(),
+  status: z
+    .enum([...socialKitDownloadStatusSchema.options, "active"])
+    .optional(),
+});
+
+export const socialKitDownloadListResponseSchema = z.object({
+  downloads: z.array(
+    socialKitDownloadResponseSchema.extend({
+      request: socialKitDownloadRequestSchema,
+      resumeCommand: z.string().nullable(),
+    }),
+  ),
+  nextCursor: z.string().uuid().nullable(),
+});
+
+export const socialKitDownloadConflictSchema = apiErrorSchema.extend({
+  error: apiErrorSchema.shape.error.extend({
+    recovery: z
+      .object({
+        downloadId: z.string().uuid(),
+        resumeCommand: z.string(),
+      })
+      .optional(),
+  }),
+});
+
+export type SocialKitDownloadListQuery = z.infer<
+  typeof socialKitDownloadListQuerySchema
+>;
+export type SocialKitDownloadListResponse = z.infer<
+  typeof socialKitDownloadListResponseSchema
 >;
 
 export const socialKitCollectionProviderLimitedReasonSchema = z.enum([
@@ -259,6 +354,7 @@ const socialKitCollectionSchema = z
       itemsReturned: z.number().int().nonnegative(),
       reason: socialKitCollectionProviderLimitedReasonSchema.optional(),
       uncertainty: socialKitCollectionUncertaintySchema.optional(),
+      sourceLimit: socialKitCollectionSourceLimitSchema.optional(),
       reportedTotal: reportedTotalSchema.optional(),
     }),
   ])
@@ -462,6 +558,16 @@ export function projectPublicSocialResponse(
   }
 
   let collection = response.collection;
+  // New CLI -> old API compatibility. Remove this projection once every serving
+  // API and retained rollback target emits the fixed batch metadata (#34053).
+  if (tool.collection?.sourceLimit && collection) {
+    collection = {
+      state: "provider_limited",
+      itemsReturned: collection.itemsReturned,
+      reason: "provider_ceiling",
+      sourceLimit: tool.collection.sourceLimit,
+    };
+  }
   if (
     tool.collection?.emptyResult?.reliability === "unreliable" &&
     collection?.state === "complete" &&
@@ -492,10 +598,25 @@ export function projectPublicSocialResponse(
 }
 
 export const socialContract = c.router({
+  status: {
+    method: "GET",
+    path: "/api/social/status",
+    headers: authHeadersSchema,
+    query: z.object({ platform: socialPlatformSchema.optional() }).strict(),
+    responses: {
+      200: socialStatusResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+    summary: "Get reported Social service health without billing",
+  },
   request: {
     method: "POST",
     path: "/api/social/request",
-    headers: authHeadersSchema,
+    headers: authHeadersSchema.extend({
+      "x-okou-instagram-views": z.literal("nullable").optional(),
+    }),
     body: socialKitRequestSchema,
     responses: {
       200: socialKitResponseSchema,
@@ -504,6 +625,8 @@ export const socialContract = c.router({
       402: socialKitErrorSchema,
       403: socialKitErrorSchema,
       404: socialKitErrorSchema,
+      422: socialKitErrorSchema,
+      429: socialKitErrorSchema,
       502: socialKitErrorSchema,
       503: socialKitErrorSchema,
     },
@@ -516,16 +639,33 @@ export const socialContract = c.router({
     body: socialKitDownloadRequestSchema,
     responses: {
       202: socialKitDownloadResponseSchema,
-      400: apiErrorSchema,
+      400: socialKitErrorSchema,
       401: apiErrorSchema,
       402: apiErrorSchema,
       403: apiErrorSchema,
-      409: apiErrorSchema,
+      404: socialKitErrorSchema,
+      409: socialKitDownloadConflictSchema,
+      422: socialKitErrorSchema,
+      429: socialKitErrorSchema,
       500: apiErrorSchema,
-      502: apiErrorSchema,
-      503: apiErrorSchema,
+      502: socialKitErrorSchema,
+      503: socialKitErrorSchema,
     },
     summary: "Start an Okou Social artifact download",
+  },
+  listDownloads: {
+    method: "GET",
+    path: "/api/social/downloads",
+    headers: authHeadersSchema,
+    query: socialKitDownloadListQuerySchema,
+    responses: {
+      200: socialKitDownloadListResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      500: apiErrorSchema,
+    },
+    summary: "List saved downloads for the current user and organization",
   },
   getDownload: {
     method: "GET",

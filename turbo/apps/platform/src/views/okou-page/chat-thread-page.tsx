@@ -1,7 +1,7 @@
 import type { ThinkingSummaries } from "../../signals/chat-page/thread-activity-summary.ts";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
+import { ScrollArea } from "@base-ui/react/scroll-area";
 import type {
-  CSSProperties,
   FormEvent,
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
@@ -72,6 +72,7 @@ import {
   Checkbox,
   Input,
   Skeleton,
+  ScrollBar,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -91,6 +92,7 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  BrandLangfuse,
   BrandSlack,
   ElapsedTime,
   ThinkingMessages,
@@ -243,6 +245,7 @@ import type {
 } from "../../signals/chat-page/chat-event-types.ts";
 import type { ChatRunModelSelection } from "../../signals/chat-page/chat-event-state.ts";
 import type { AgentReferenceSignals } from "../../signals/chat-page/agent-reference-signals.ts";
+import type { RunDetailSignals } from "../../signals/chat-page/run-detail.ts";
 import type { AssistantErrorRecovery } from "../../signals/chat-page/assistant-error-recovery.ts";
 import { userMessageFileAttachments } from "../../signals/chat-page/user-message-files.ts";
 import type {
@@ -3686,23 +3689,27 @@ function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
   };
 
   return (
-    <div className="flex-1 min-h-0 relative isolate">
-      <div
+    <ScrollArea.Root className="flex-1 min-h-0 isolate">
+      <ScrollArea.Viewport
         ref={scrollContainerOnRef}
+        data-slot="scroll-area-viewport"
         data-scroll-container
         tabIndex={-1}
         onScroll={handleScroll}
         className={cn(
-          "absolute inset-0 overflow-y-auto focus:outline-none [overflow-anchor:none] [scrollbar-gutter:stable]",
+          "absolute inset-0 focus:outline-none [overflow-anchor:none]",
           standalonePwa && "overscroll-contain",
         )}
       >
-        <ChatThreadEventsMain thread={thread} />
-      </div>
+        <ScrollArea.Content>
+          <ChatThreadEventsMain thread={thread} />
+        </ScrollArea.Content>
+      </ScrollArea.Viewport>
+      <ScrollBar data-testid="chat-message-scrollbar" />
       <ChatThreadSkeletonOverlay thread={thread} />
       <ScrollToBottomButton thread={thread} />
       <ChatConversationLocator thread={thread} />
-    </div>
+    </ScrollArea.Root>
   );
 }
 
@@ -3841,6 +3848,11 @@ function ChatThreadBottomBar({ thread }: { thread: ChatPanelSignals }) {
                   },
                   { count: selectedCount },
                 )}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {t(($) => {
+                  return $.chat.sharing.publicDescription;
+                })}
               </p>
               {createLoadable.state === "hasError" ? (
                 <p className="mt-0.5 text-xs text-destructive">
@@ -4299,54 +4311,30 @@ function ThinkingLabel({
   return <ShimmerText>{thinkingLabel}</ShimmerText>;
 }
 
-function ThinkingLoader({
-  blockStyle,
-  spinnerEnabled,
-}: {
-  blockStyle: CSSProperties;
-  spinnerEnabled: boolean;
-}) {
-  if (spinnerEnabled) {
-    return (
-      <span
-        aria-hidden
-        data-thinking-loader="spinner"
-        className="okou-thinking-spinner-frame inline-flex size-4 shrink-0 items-center justify-center"
-      >
-        <img
-          src={thinkingSpinnerImg}
-          alt=""
-          // The 48px asset has a 4px inset. A 17px canvas makes its visible
-          // mark match the perceived size of the 16px line icons.
-          className="okou-thinking-spinner size-[17px] max-w-none shrink-0 animate-spin motion-reduce:animate-none"
-        />
-      </span>
-    );
-  }
-
+function ThinkingLoader() {
   return (
     <span
-      data-thinking-loader="blocks"
-      className="okou-blocks size-4 shrink-0 place-content-center"
-      style={blockStyle}
+      aria-hidden
+      data-thinking-loader="spinner"
+      className="okou-thinking-spinner-frame inline-flex size-4 shrink-0 items-center justify-center"
     >
-      <span />
-      <span />
-      <span />
+      <img
+        src={thinkingSpinnerImg}
+        alt=""
+        // The 48px asset has a 4px inset. A 17px canvas makes its visible
+        // mark match the perceived size of the 16px line icons.
+        className="okou-thinking-spinner size-[17px] max-w-none shrink-0 animate-spin motion-reduce:animate-none"
+      />
     </span>
   );
 }
 
 function InlineThinkingRow({
-  blockStyle,
   isQueued,
-  spinnerEnabled,
   thinkingLabel,
   serverThinkingLabel,
 }: {
-  blockStyle: CSSProperties;
   isQueued: boolean;
-  spinnerEnabled: boolean;
   thinkingLabel: string;
   serverThinkingLabel?: ServerThinkingLabel;
 }) {
@@ -4358,10 +4346,7 @@ function InlineThinkingRow({
       )}
     >
       <span className={CHAT_THREAD_RESPONSE_LEADING_ICON_CLASS}>
-        <ThinkingLoader
-          blockStyle={blockStyle}
-          spinnerEnabled={spinnerEnabled}
-        />
+        <ThinkingLoader />
       </span>
       <ThinkingLabel
         isQueued={isQueued}
@@ -4417,17 +4402,13 @@ function FinishedRunRow({
 
 function WaitingForAssistantResponse({
   thread,
-  blockStyle,
   isQueued,
-  spinnerEnabled,
   thinkingLabel,
   serverThinkingLabel,
   inAssistantGroup,
 }: {
   thread: ChatPanelSignals;
-  blockStyle: CSSProperties;
   isQueued: boolean;
-  spinnerEnabled: boolean;
   thinkingLabel: string;
   serverThinkingLabel?: ServerThinkingLabel;
   inAssistantGroup: boolean;
@@ -4444,9 +4425,7 @@ function WaitingForAssistantResponse({
         className="okou-thinking-enter min-w-0"
       >
         <InlineThinkingRow
-          blockStyle={blockStyle}
           isQueued={isQueued}
-          spinnerEnabled={spinnerEnabled}
           thinkingLabel={thinkingLabel}
           serverThinkingLabel={serverThinkingLabel}
         />
@@ -4470,9 +4449,7 @@ function WaitingForAssistantResponse({
         >
           <ChatAssistantMessageBody>
             <InlineThinkingRow
-              blockStyle={blockStyle}
               isQueued={isQueued}
-              spinnerEnabled={spinnerEnabled}
               thinkingLabel={thinkingLabel}
               serverThinkingLabel={serverThinkingLabel}
             />
@@ -4485,9 +4462,7 @@ function WaitingForAssistantResponse({
 
 function AssistantThinkingStatusRow({
   active,
-  blockStyle,
   isQueued,
-  spinnerEnabled,
   thinkingLabel,
   serverThinkingLabel,
   thread,
@@ -4495,9 +4470,7 @@ function AssistantThinkingStatusRow({
   inAssistantGroup,
 }: {
   active: boolean;
-  blockStyle: CSSProperties;
   isQueued: boolean;
-  spinnerEnabled: boolean;
   thinkingLabel: string;
   serverThinkingLabel?: ServerThinkingLabel;
   thread: ChatPanelSignals;
@@ -4509,9 +4482,7 @@ function AssistantThinkingStatusRow({
 
   const content = active ? (
     <InlineThinkingRow
-      blockStyle={blockStyle}
       isQueued={isQueued}
-      spinnerEnabled={spinnerEnabled}
       thinkingLabel={thinkingLabel}
       serverThinkingLabel={serverThinkingLabel}
     />
@@ -4575,15 +4546,6 @@ function ThinkingIndicator({
   mode: ThinkingIndicatorMode;
   inAssistantGroup?: boolean;
 }) {
-  const featureSwitches = useGet(featureSwitch$);
-  const spinnerEnabled =
-    featureSwitches[FeatureSwitchKey.ChatThinkingSpinner] ?? false;
-  const [c1, c2, c3] = useGet(thread.blockColors$);
-  const blockStyle = {
-    "--zb-c1": c1,
-    "--zb-c2": c2,
-    "--zb-c3": c3,
-  } as CSSProperties;
   const summaries = useLastResolved(thread.thinkingSummaries$);
   const thinkingRunId = useLastResolved(thread.thinkingRunId$);
   const recommendedFollowupSource =
@@ -4607,9 +4569,7 @@ function ThinkingIndicator({
     return (
       <AssistantThinkingStatusRow
         active={active}
-        blockStyle={blockStyle}
         isQueued={isQueued}
-        spinnerEnabled={spinnerEnabled}
         thinkingLabel={thinkingLabel}
         serverThinkingLabel={serverThinkingLabel}
         thread={thread}
@@ -4623,9 +4583,7 @@ function ThinkingIndicator({
   return (
     <WaitingForAssistantResponse
       thread={thread}
-      blockStyle={blockStyle}
       isQueued={isQueued}
-      spinnerEnabled={spinnerEnabled}
       thinkingLabel={thinkingLabel}
       serverThinkingLabel={serverThinkingLabel}
       inAssistantGroup={inAssistantGroup}
@@ -5779,7 +5737,7 @@ function MessageAttachment({
           onImageClick(a);
         }}
         placeholderClassName="h-full w-full"
-        resourceUrl$={a.signals.resourceUrl$}
+        resourceUrl$={a.signals.linkUrl$}
         thumbnailUrl$={a.signals.thumbnailUrl$}
         url={a.url}
       />
@@ -6716,7 +6674,7 @@ function WorkflowUserMessage({
     messageDocumentToDisplayText(event.userMessage)?.trim() ||
     part.automationBrief?.trim();
   const bubbleClassName =
-    "okou-chat-bubble-user rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden whitespace-pre-wrap transition-colors duration-150";
+    "rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden whitespace-pre-wrap transition-colors duration-150 bg-gray-200 text-foreground";
   const body = workflowBody ? (
     <div className={bubbleClassName}>
       <div className="px-4 py-3">{workflowBody}</div>
@@ -6790,7 +6748,7 @@ function GoalUserMessage({
         <div className="flex w-full flex-col items-end">
           <MessageAnnotation renderPart={renderPart} />
           {goalBrief ? (
-            <div className="okou-chat-bubble-user rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden ring-1 ring-emerald-900/10">
+            <div className="rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden ring-1 ring-emerald-900/10 bg-gray-200 text-foreground">
               <div className="px-4 py-3 whitespace-pre-wrap">{goalBrief}</div>
             </div>
           ) : null}
@@ -7325,6 +7283,7 @@ function PagedAssistantEventItem({
         data-chat-run-id={event.runId}
       >
         <MarkdownEventBody
+          chatBubble
           className={
             workHistory ? CHAT_THREAD_WORK_HISTORY_MARKDOWN_CLASS : undefined
           }
@@ -7636,8 +7595,62 @@ function RelatedArtifactsDialog({
   );
 }
 
+function RunLangfuseLink({ signals }: { readonly signals: RunDetailSignals }) {
+  const { t } = useTranslation();
+  const detail = useLoadable(signals.detail$);
+  const url =
+    detail.state === "hasData" ? detail.data?.langfuseTraceUrl : undefined;
+  if (!url) {
+    return null;
+  }
+  return (
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            asChild
+            variant="quiet"
+            size="icon-xs"
+            iconSize="sm"
+            className="text-muted-foreground/60"
+          >
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={t(($) => {
+                return $.chat.run.viewLangfuseTrace;
+              })}
+            >
+              <BrandLangfuse aria-hidden />
+            </a>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          {t(($) => {
+            return $.chat.run.viewLangfuseTrace;
+          })}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+function RunLangfuseAction({
+  thread,
+  runId,
+}: {
+  readonly thread: ChatPanelSignals;
+  readonly runId: string;
+}) {
+  const runDetails = useGet(thread.runDetails$);
+  const signals = runDetails.get(runId);
+  return signals ? <RunLangfuseLink signals={signals} /> : null;
+}
+
 function PagedGroupPrimaryActions({
   firstRunId,
+  thread,
   hasContent,
   usage,
   copied,
@@ -7645,6 +7658,7 @@ function PagedGroupPrimaryActions({
   relatedArtifacts,
 }: {
   firstRunId: string | undefined;
+  thread: ChatPanelSignals;
   hasContent: boolean;
   usage: ChatEventUsagePayload | undefined;
   copied: boolean;
@@ -7698,6 +7712,9 @@ function PagedGroupPrimaryActions({
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
+      )}
+      {showActivityLogs && firstRunId && (
+        <RunLangfuseAction thread={thread} runId={firstRunId} />
       )}
       {hasContent && (
         <TooltipProvider delayDuration={300}>
@@ -7783,6 +7800,7 @@ function PagedGroupActions({
     <div className={CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_CLASS}>
       <PagedGroupPrimaryActions
         firstRunId={firstRunId}
+        thread={thread}
         hasContent={hasContent}
         usage={usage}
         copied={copied}

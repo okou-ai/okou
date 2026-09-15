@@ -11,10 +11,6 @@ import { bodyResultOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
-  readOnlyStoragePresignedUrlCacheKey,
-  workflowSkillStoragePresignedUrlCacheKey,
-} from "../services/system-storage-presigned-url-cache.service";
-import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
 } from "./test-endpoint-helpers";
@@ -65,60 +61,6 @@ async function cleanupForAction(
     .where(
       objectKeyPrefixCondition(body.object_key_prefix, cacheScope(body.scope)),
     );
-  signal.throwIfAborted();
-  return actionOk();
-}
-
-async function seedCacheRowForAction(
-  db: Db,
-  body: CacheStateAction<"seed-cache-row">,
-  signal: AbortSignal,
-) {
-  const scope = cacheScope(body.scope);
-  const keyInput = {
-    bucket: body.bucket,
-    objectKey: body.object_key,
-    storageVersionId: body.storage_version_id,
-    resolvedOrgId: body.resolved_org_id,
-    publicEndpoint: body.public_endpoint,
-  };
-  await db
-    .insert(systemStoragePresignedUrlCache)
-    .values({
-      cacheKey:
-        scope === "workflow_skill_storage"
-          ? workflowSkillStoragePresignedUrlCacheKey(keyInput)
-          : readOnlyStoragePresignedUrlCacheKey(keyInput),
-      scope,
-      bucket: body.bucket,
-      objectKey: body.object_key,
-      storageVersionId: body.storage_version_id,
-      resolvedOrgId: body.resolved_org_id,
-      publicEndpoint: body.public_endpoint,
-      ttlSeconds: body.ttl_seconds,
-      presignedUrl: body.presigned_url,
-      expiresAt: new Date(body.expires_at),
-      refreshAfter: new Date(body.refresh_after),
-      lastRequestedAt: new Date(body.last_requested_at ?? body.refresh_after),
-      updatedAt: new Date(body.refresh_after),
-    })
-    .onConflictDoUpdate({
-      target: systemStoragePresignedUrlCache.cacheKey,
-      set: {
-        scope: sql`excluded.scope`,
-        bucket: sql`excluded.bucket`,
-        objectKey: sql`excluded.object_key`,
-        storageVersionId: sql`excluded.storage_version_id`,
-        resolvedOrgId: sql`excluded.resolved_org_id`,
-        publicEndpoint: sql`excluded.public_endpoint`,
-        ttlSeconds: sql`excluded.ttl_seconds`,
-        presignedUrl: sql`excluded.presigned_url`,
-        expiresAt: sql`excluded.expires_at`,
-        refreshAfter: sql`excluded.refresh_after`,
-        lastRequestedAt: sql`excluded.last_requested_at`,
-        updatedAt: sql`excluded.updated_at`,
-      },
-    });
   signal.throwIfAborted();
   return actionOk();
 }
@@ -183,9 +125,6 @@ const mutateWorkflowSkillStoragePresignedUrlCacheState$ = command(
     switch (body.action) {
       case "cleanup": {
         return await cleanupForAction(db, body, signal);
-      }
-      case "seed-cache-row": {
-        return await seedCacheRowForAction(db, body, signal);
       }
       case "read-cache-by-object-key-prefix": {
         return await readCacheByObjectKeyPrefixForAction(db, body, signal);

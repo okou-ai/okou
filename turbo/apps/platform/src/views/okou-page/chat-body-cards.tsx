@@ -369,7 +369,7 @@ function ArtifactCardView({
         }}
         load={signals.previewImageLoad}
         placeholderClassName="h-full w-full"
-        resourceUrl$={signals.resourceUrl$}
+        resourceUrl$={signals.linkUrl$}
         thumbnailUrl$={signals.thumbnailUrl$}
         url={signals.url}
       />,

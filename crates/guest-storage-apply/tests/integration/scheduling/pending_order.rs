@@ -88,7 +88,7 @@ fn assert_pending_overlay_order(
         (true, "child"),
         "pending parent must precede its child; starts={starts:?}"
     );
-    assert_eq!(starts.len(), 4, "unexpected retries: {starts:?}");
+    assert_eq!(starts.len(), 4, "unexpected download count: {starts:?}");
     assert_eq!(
         std::fs::read_to_string(physical_parent.join("a/a.txt"))?,
         "blocker"

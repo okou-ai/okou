@@ -1,3 +1,4 @@
+import type { PiMemoryStage1Billing } from "./pi-memory-stage1-credential.service";
 import { MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS } from "@okouai/api-contracts/contracts/model-price-tiers";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import {
@@ -27,8 +28,7 @@ interface RecordPiMemoryStage1UsageArgs {
   readonly memoryStorageId: string;
   readonly piSessionId: string;
   readonly sourceHistoryHash: string;
-  readonly orgId: string;
-  readonly userId: string;
+  readonly billing: PiMemoryStage1Billing;
   readonly responseSourceId: string;
   readonly usage: PiMemoryStage1ProviderUsage;
 }
@@ -91,13 +91,17 @@ export async function recordPiMemoryStage1Usage(
   db: Db,
   args: RecordPiMemoryStage1UsageArgs,
 ): Promise<void> {
+  // BYOK vendor usage is never a model-credit event, including replay/zero usage.
+  if (args.billing.mode !== "builtin") {
+    return;
+  }
   const expected = usageEntries(args.usage).map((entry) => {
     return {
       runId: null,
       billingContext: "runless",
       idempotencyKey: idempotencyKey(args, entry.category),
-      orgId: args.orgId,
-      userId: args.userId,
+      orgId: args.billing.orgId,
+      userId: args.billing.userId,
       kind: "model",
       provider: PI_MEMORY_STAGE1_MODEL,
       category: entry.category,

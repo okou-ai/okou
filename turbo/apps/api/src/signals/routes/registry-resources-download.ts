@@ -25,6 +25,7 @@ import { queryOf } from "../context/request";
 import { db$ } from "../external/db";
 import { generatePresignedGetUrl } from "../external/s3";
 import type { RouteEntry } from "../route-entry";
+import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 
 type PullableRegistryEntry = RegistryEntry | VideoTemplateRegistryEntry;
 
@@ -34,7 +35,7 @@ interface PrivateRegistryResourceArchive {
   readonly sha256: string;
 }
 
-const DOWNLOAD_URL_TTL_SECONDS = 900;
+const DOWNLOAD_URL_TTL_SECONDS = PRESIGNED_URL_TTL_SECONDS;
 
 function storageServiceNotConfigured() {
   return {
@@ -328,7 +329,6 @@ const downloadPresentationTemplateInner$ = computed(async (get) => {
     generatePresignedGetUrl(
       bucket,
       `${version.s3Key}/archive.tar.gz`,
-      DOWNLOAD_URL_TTL_SECONDS,
       archiveFilename(query.id),
       true,
     ),
@@ -389,7 +389,6 @@ const downloadRegistryResourceInner$ = computed(async (get) => {
     generatePresignedGetUrl(
       bucket,
       `${version.s3Key}/archive.tar.gz`,
-      DOWNLOAD_URL_TTL_SECONDS,
       archiveFilename(query.id),
       true,
     ),

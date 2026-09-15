@@ -146,16 +146,16 @@ const MODEL_PROVIDER_CODEX_RUNTIME_CONFIGS: Partial<
 };
 
 export const DEFAULT_ORG_MODEL_POLICY_MODELS = [
+  "claude-fable-5-1",
   "gpt-6-astra",
   "gpt-5.6-luna",
-  "deepseek-v4.1-flash",
 ] as const satisfies readonly SupportedRunModel[];
 
 export const DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL =
-  "deepseek-v4.1-flash" as const satisfies SupportedRunModel;
+  "gpt-5.6-luna" as const satisfies SupportedRunModel;
 
 export const LIMITED_FREE1_DEFAULT_RUN_MODEL =
-  "deepseek-v4.1-flash" as const satisfies SupportedRunModel;
+  "gpt-5.6-luna" as const satisfies SupportedRunModel;
 
 export const supportedRunModelSchema = z.enum(SUPPORTED_RUN_MODELS);
 

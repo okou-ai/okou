@@ -91,7 +91,6 @@ export function createVoiceDraftCaptureSignals() {
           const monitored = await settle(
             startAudioActivityMonitor(
               stream,
-              () => {},
               (level) => {
                 set(samples$, (samples) => {
                   return [

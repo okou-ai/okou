@@ -1754,6 +1754,15 @@ async fn execute_inner_with_storage_manifest() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let factory = MockSandboxFactory::new();
+    let server = httpmock::MockServer::start_async().await;
+    let full_get = server
+        .mock_async(|when, then| {
+            when.method(httpmock::Method::GET)
+                .path("/data.tar.gz")
+                .header_missing("range");
+            then.status(200).body(b"storage archive");
+        })
+        .await;
 
     let mut ctx = minimal_context();
     ctx.storage_manifest = Some(StorageManifest {
@@ -1761,14 +1770,15 @@ async fn execute_inner_with_storage_manifest() {
             "data",
             "/data",
             "v1",
-            "https://example.com/data.tar.gz",
+            &server.url("/data.tar.gz"),
         )],
         artifacts: vec![],
     });
-    let (exit_code, _) = run_new_sandbox_status(&factory, &ctx, &config, &default_params())
+    let (exit_code, error_msg) = run_new_sandbox_status(&factory, &ctx, &config, &default_params())
         .await
         .unwrap();
-    assert_eq!(exit_code, 0);
+    assert_eq!(exit_code, 0, "error={error_msg:?}");
+    full_get.assert_async().await;
 }
 
 #[tokio::test]

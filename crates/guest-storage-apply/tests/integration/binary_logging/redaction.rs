@@ -9,53 +9,8 @@ use std::io;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
-const EXPECTED_RETRY_ATTEMPTS: usize = 3;
 const SERVER_STREAM_READ_TIMEOUT: Duration = Duration::from_secs(1);
 const SERVER_START_TIMEOUT: Duration = Duration::from_secs(5);
-
-fn validate_attempt_warning(
-    log_name: &str,
-    log: &str,
-    attempt: usize,
-    expected_error: &str,
-) -> Result<(), String> {
-    let prefix = format!("Attempt {attempt}/{EXPECTED_RETRY_ATTEMPTS} failed after ");
-    let line = log
-        .lines()
-        .find(|line| line.contains(&prefix) && line.contains(expected_error))
-        .ok_or_else(|| {
-            format!("missing {prefix:?} with {expected_error:?} in {log_name}: {log}")
-        })?;
-    let elapsed = line
-        .split_once(&prefix)
-        .and_then(|(_, suffix)| suffix.split_once("ms: "))
-        .map(|(elapsed, _)| elapsed)
-        .ok_or_else(|| format!("malformed attempt warning in {log_name}: {line}"))?;
-    if elapsed.is_empty() || !elapsed.chars().all(|character| character.is_ascii_digit()) {
-        return Err(format!(
-            "invalid elapsed milliseconds in {log_name}: {line}"
-        ));
-    }
-    Ok(())
-}
-
-fn validate_attempt_warnings(
-    log_name: &str,
-    log: &str,
-    expected_error: &str,
-    expected_attempts: usize,
-) -> Result<(), String> {
-    let warning_count = log.lines().filter(|line| line.contains("Attempt ")).count();
-    if warning_count != expected_attempts {
-        return Err(format!(
-            "unexpected attempt warning count in {log_name}: {log}"
-        ));
-    }
-    for attempt in 1..=expected_attempts {
-        validate_attempt_warning(log_name, log, attempt, expected_error)?;
-    }
-    Ok(())
-}
 
 #[derive(Clone, Copy)]
 enum ConnectionBehavior {
@@ -224,8 +179,6 @@ fn binary_does_not_log_http_archive_url_on_fatal_status() {
         stderr.contains("HTTP status 404"),
         "unexpected stderr: {stderr}"
     );
-    validate_attempt_warning("stderr", &stderr, 1, "HTTP status 404").unwrap();
-    validate_attempt_warning("system log", &system_log_content, 1, "HTTP status 404").unwrap();
 
     let ops = fixture.ops_entries().unwrap();
     assert!(
@@ -270,8 +223,6 @@ fn binary_classifies_malformed_http_url_without_logging_it() {
     assert_does_not_contain_any("sandbox ops log", &ops_log_content, &forbidden);
 
     let expected_error = "HTTP request error (kind=invalid_request)";
-    validate_attempt_warnings("stderr", &stderr, expected_error, 1).unwrap();
-    validate_attempt_warnings("system log", &system_log_content, expected_error, 1).unwrap();
 
     let ops = fixture.ops_entries().unwrap();
     assert!(
@@ -323,14 +274,6 @@ fn binary_classifies_system_resolver_failure_without_logging_url() {
     assert_does_not_contain_any("sandbox ops log", &ops_log_content, &forbidden);
 
     let expected_error = "HTTP request error (kind=dns phase=resolve)";
-    validate_attempt_warnings("stderr", &stderr, expected_error, EXPECTED_RETRY_ATTEMPTS).unwrap();
-    validate_attempt_warnings(
-        "system log",
-        &system_log_content,
-        expected_error,
-        EXPECTED_RETRY_ATTEMPTS,
-    )
-    .unwrap();
 
     let ops = fixture.ops_entries().unwrap();
     assert!(
@@ -361,7 +304,7 @@ fn binary_classifies_connection_drop_without_logging_url() {
     let accepted = server.finish().unwrap();
 
     assert!(!output.status.success());
-    assert_eq!(accepted, EXPECTED_RETRY_ATTEMPTS);
+    assert_eq!(accepted, 1);
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     let system_log_content = fixture.read_system_log().unwrap();
@@ -379,14 +322,6 @@ fn binary_classifies_connection_drop_without_logging_url() {
     assert_does_not_contain_any("sandbox ops log", &ops_log_content, &forbidden);
 
     let expected_error = "HTTP request error (kind=io io_kind=UnexpectedEof)";
-    validate_attempt_warnings("stderr", &stderr, expected_error, EXPECTED_RETRY_ATTEMPTS).unwrap();
-    validate_attempt_warnings(
-        "system log",
-        &system_log_content,
-        expected_error,
-        EXPECTED_RETRY_ATTEMPTS,
-    )
-    .unwrap();
 
     let ops = fixture.ops_entries().unwrap();
     assert!(

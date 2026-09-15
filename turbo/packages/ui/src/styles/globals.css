@@ -234,6 +234,11 @@
     var(--state-layer) / var(--state-selected-hover-alpha)
   );
   --color-state-pressed: hsl(var(--state-layer) / var(--state-pressed-alpha));
+  /* Pressed counterpart of the hover overlay, for the same opaque fills. */
+  --background-image-state-pressed-overlay: linear-gradient(
+    var(--color-state-pressed),
+    var(--color-state-pressed)
+  );
 
   --color-background-hover: color-mix(
     in srgb,

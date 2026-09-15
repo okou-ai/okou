@@ -1008,7 +1008,12 @@
     "toasts": {
       "copyLinkFailed": "Gagal menyalin tautan",
       "downloadFailed": "Gagal mengunduh",
-      "linkCopied": "Tautan disalin"
+      "linkCopied": "Tautan disalin",
+      "sharing": "Membagikan…"
+    },
+    "viewer": {
+      "continuePrompt": "Bantu saya mengerjakan artefak ini: {{url}}",
+      "continueWithBrand": "Lanjutkan dengan {{brandName}}"
     }
   },
   "auth": {
@@ -1742,14 +1747,9 @@
       "selectModel": "Pilih model",
       "slashPanel": {
         "browseAll": "Jelajahi semua templat",
-        "illustrationDescription": "Satu gambar, dengan gaya yang Anda pilih",
         "make": "Buat",
-        "slidesDescription": "Salindia HTML yang siap dipresentasikan",
         "templateCount_other": "{{count}} templat",
-        "useTemplate": "Gunakan templat {{title}}",
-        "videoDescription": "Teks menjadi video, dengan parameter dari model yang dipilih",
-        "websiteDescription": "Situs statis yang bisa Anda terbitkan",
-        "workflowDescription": "Alur kerja tersimpan yang bisa dijalankan dari komposer"
+        "useTemplate": "Gunakan templat {{title}}"
       },
       "temporarilySwitchTo": "Beralih sementara ke",
       "threadSuggestions": "Thread chat",
@@ -2103,6 +2103,7 @@
         "wiring": "Menyambungkannya..."
       },
       "viewActivityLogs": "Lihat log aktivitas",
+      "viewLangfuseTrace": "Lihat trace Langfuse",
       "viewLogs": "Lihat log eksekusi",
       "waitingIn": "Menunggu di",
       "workedFor": "Dikerjakan selama {{duration}}",
@@ -2117,6 +2118,7 @@
       "createFailed": "Percakapan yang dibagikan tidak dapat dibuat. Coba lagi.",
       "deselectGroup": "Batalkan pilihan grup pesan",
       "linkCopied": "Tautan disalin",
+      "publicDescription": "Pesan yang dipilih dan lampirannya akan menjadi publik.",
       "selectedCount_other": "{{count}} dipilih",
       "selectGroup": "Pilih grup pesan",
       "shareLink": "Tautan percakapan yang dibagikan",
@@ -2369,6 +2371,14 @@
       "moreTemplates": "Template lainnya",
       "presentationTemplates": "Template presentasi",
       "removeTask": "Hapus {{task}}",
+      "shelf": {
+        "browseStyles": "Jelajahi semua gaya",
+        "browseTemplates": "Jelajahi semua templat",
+        "image": "Gaya gambar",
+        "nextTemplates": "Templat berikutnya",
+        "video": "Templat video",
+        "website": "Templat situs web"
+      },
       "tasks": {
         "image": "Gambar",
         "presentation": "Slide",
@@ -2796,7 +2806,6 @@
       "importedLoadFailed": "Tidak dapat memuat templat yang diunggah.",
       "importedLoading": "Memuat templat yang diunggah…",
       "importedUnavailable": "Templat yang diunggah untuk sementara tidak tersedia.",
-      "previewRefreshFailed": "Tidak dapat memperbarui pratinjau templat.",
       "previewTemplate": "Pratinjau template {{title}}",
       "previewVideo": "Pratinjau template video {{title}}",
       "previewWebsite": "Pratinjau template situs web {{title}}",
@@ -2899,7 +2908,6 @@
       "storageFailed": "Audio tidak dapat disimpan. Coba lagi hanya memulihkan audio yang sudah tersimpan di perangkat ini.",
       "textTakingShape": "Teks sedang terbentuk",
       "transcribing": "Mentranskripsi",
-      "transcribingProgress": "Mentranskripsi...",
       "transcriptionFailed": "Transkripsi suara gagal. Coba lagi."
     },
     "workflows": {
@@ -3129,9 +3137,11 @@
       "scope": {
         "aria": "Cakupan konektor",
         "attention": "Perlu perhatian",
+        "connected": "Terhubung",
+        "custom": "Kustom",
         "discover": "Jelajahi",
-        "mine": "Konektor Anda",
-        "searchMine": "Cari konektor Anda"
+        "searchConnected": "Cari konektor yang terhubung",
+        "searchCustom": "Cari konektor kustom"
       },
       "search": "Cari konektor",
       "shelf": {
@@ -5610,7 +5620,7 @@
         "categoryImage": "Gambar",
         "categoryVideo": "Video",
         "chatModels": "Model chat",
-        "effort": "Upaya penalaran",
+        "effort": "Upaya",
         "fast": "Cepat",
         "fastImpact": {
           "apiCost": "2× biaya token API",
@@ -5634,10 +5644,8 @@
         "loadError": "Tidak dapat memuat model.",
         "loading": "Memuat model...",
         "menu": {
-          "adjustSettings": "Sesuaikan pengaturan {{model}}",
           "backToModels": "Kembali ke model",
-          "changeModel": "Ubah model {{category}}, {{model}}",
-          "chatSettings": "Pengaturan chat"
+          "changeModel": "Ubah model {{category}}, {{model}}"
         },
         "models": "Model",
         "noConfiguredModels": "Tidak ada model yang dikonfigurasi",
@@ -6909,6 +6917,9 @@
       "noWorkflows": "Tidak ada alur kerja",
       "open": "Buka {{title}}",
       "openRecovery": "Buka pemulihan {{title}}",
+      "ownerLoading": "Memuat penulis…",
+      "ownerRetry": "Penulis tidak tersedia. Buka kembali untuk mencoba lagi.",
+      "ownerUnavailable": "Penulis tidak tersedia",
       "runsAs": "Dijalankan sebagai",
       "runsAsAria": "Dijalankan sebagai {{agent}}",
       "section": {

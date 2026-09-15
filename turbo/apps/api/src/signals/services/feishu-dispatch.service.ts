@@ -2,10 +2,8 @@ import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
 } from "@okouai/core/feishu-platform";
-import { randomBytes } from "node:crypto";
 import { command } from "ccstate";
 import { and, desc, eq, isNull, or } from "drizzle-orm";
-import { z } from "zod";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
 import {
@@ -23,6 +21,11 @@ import {
   buildFeishuNoticeMessage,
 } from "../../lib/feishu-message-card";
 import { logger } from "../../lib/log";
+import {
+  formatFeishuMessageContent,
+  parseFeishuMessageContent,
+  type FeishuPromptFile,
+} from "../../lib/feishu-message-content";
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
 import {
   addFeishuMessageReaction,
@@ -34,7 +37,7 @@ import {
 } from "../external/feishu-client";
 import type { Db } from "../external/db";
 import { nowDate } from "../../lib/time";
-import { safeJsonParse, tapError } from "../utils";
+import { tapError } from "../utils";
 import { buildFeishuConnectUrl } from "./feishu-connect-token";
 import { publishCustomConnectorUserInvalidationAfterCommit } from "./connector-client-invalidation.service";
 import { disconnectFeishuCustomConnectorOAuthConnection } from "./feishu-custom-connector.service";
@@ -49,21 +52,6 @@ const L = logger("FeishuDispatch");
 const FEISHU_THINKING_EMOJI = "Typing";
 const FEISHU_AGENT_PICKER_MAX_OPTIONS = 100;
 const FEISHU_MODEL_PICKER_MAX_OPTIONS = 100;
-const textContentSchema = z.object({ text: z.string() });
-const resourceContentSchema = z.object({
-  file_key: z.string().optional(),
-  image_key: z.string().optional(),
-  file_name: z.string().optional(),
-});
-
-export interface FeishuPromptFile {
-  readonly fileId: string;
-  readonly messageId: string;
-  readonly fileKey: string;
-  readonly type: "file" | "image";
-  readonly filename: string;
-}
-
 interface FeishuPromptContext {
   readonly text: string;
   readonly files: readonly FeishuPromptFile[];
@@ -84,7 +72,7 @@ export interface FeishuInboundMessage {
   readonly openId: string;
   readonly text: string;
   readonly promptText: string;
-  readonly file: FeishuPromptFile | null;
+  readonly files: readonly FeishuPromptFile[];
 }
 
 export function shouldReplyInFeishuThread(
@@ -431,77 +419,19 @@ export async function replyFeishuAgentUnavailable(
   );
 }
 
-export function feishuPromptFile(args: {
-  readonly messageId: string;
-  readonly messageType: string;
-  readonly content: string;
-}): FeishuPromptFile | null {
-  if (!["audio", "file", "image", "media"].includes(args.messageType)) {
-    return null;
-  }
-  const parsed = resourceContentSchema.safeParse(safeJsonParse(args.content));
-  if (!parsed.success) {
-    return null;
-  }
-  const resourceType = args.messageType === "image" ? "image" : "file";
-  const fileKey =
-    resourceType === "image" ? parsed.data.image_key : parsed.data.file_key;
-  if (!fileKey) {
-    return null;
-  }
-  const fallbackName =
-    args.messageType === "image"
-      ? "image"
-      : args.messageType === "audio"
-        ? "audio"
-        : args.messageType === "media"
-          ? "video"
-          : "file";
-  const filename =
-    parsed.data.file_name?.replace(/\s+/gu, " ").trim() || fallbackName;
-  return {
-    fileId: `feishu_file_${randomBytes(16).toString("base64url")}`,
-    messageId: args.messageId,
-    fileKey,
-    type: resourceType,
-    filename,
-  };
-}
-
-export function formatFeishuFileContext(
-  file: FeishuPromptFile,
-  platform: FeishuPlatform = "feishu",
-): string {
-  return [
-    `[${FEISHU_PLATFORMS[platform].name} file] ${file.filename}`,
-    `   [MESSAGE_ID] ${file.messageId}`,
-    `   [FILE_KEY] ${file.fileId}`,
-    `   [TYPE] ${file.type}`,
-  ].join("\n");
-}
-
 function historyMessageContext(
   message: FeishuHistoryMessage,
   platform: FeishuPlatform,
 ): FeishuPromptContext {
-  const file = message.body?.content
-    ? feishuPromptFile({
+  const content = message.body?.content
+    ? parseFeishuMessageContent({
         messageId: message.message_id,
         messageType: message.msg_type,
         content: message.body.content,
       })
     : null;
-  if (file) {
-    return { text: formatFeishuFileContext(file, platform), files: [file] };
-  }
-  if (message.msg_type !== "text" || !message.body?.content) {
+  if (!content) {
     return { text: `[${message.msg_type} message]`, files: [] };
-  }
-  const parsed = textContentSchema.safeParse(
-    safeJsonParse(message.body.content),
-  );
-  if (!parsed.success) {
-    return { text: "[text message]", files: [] };
   }
   const text = (message.mentions ?? []).reduce((currentText, mention) => {
     if (!mention.key) {
@@ -512,8 +442,11 @@ function historyMessageContext(
       mention.key,
       mention.id ? `${label} (${mention.id})` : label,
     );
-  }, parsed.data.text);
-  return { text, files: [] };
+  }, content.text);
+  return {
+    text: formatFeishuMessageContent({ text, files: content.files }, platform),
+    files: content.files,
+  };
 }
 
 function formatFeishuSenderBlock(message: FeishuHistoryMessage): string {

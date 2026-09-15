@@ -1,5 +1,9 @@
 import { command, computed, state, type Computed } from "ccstate";
 
+import { providerUnavailable } from "../../lib/error";
+import { logger } from "../../lib/log";
+import { clerkReadUnavailable } from "../external/clerk";
+import { settle } from "../utils";
 import { waitUntil } from "../context/wait-until";
 import {
   isPatToken,
@@ -16,7 +20,14 @@ import {
   getMemberRoleAndUpdateCache$,
   updateCliTokenLastUsedAt$,
 } from "../services/auth.service";
-import { authorization$, cookie$ } from "../context/hono";
+import {
+  authorization$,
+  cookie$,
+  route$,
+  setResHeader$,
+} from "../context/hono";
+
+const L = logger("AuthContext");
 
 export interface AuthOptions {
   readonly requiredCapability?: Capability;
@@ -26,7 +37,7 @@ export interface AuthOptions {
 }
 
 export type AuthErrorResponse = {
-  readonly status: 400 | 401 | 403;
+  readonly status: 400 | 401 | 403 | 503;
   readonly body: {
     readonly error: { readonly message: string; readonly code: string };
   };
@@ -79,7 +90,13 @@ const cliAuth$ = command(
       resolved.userId,
       signal,
     );
-    if (!membership) {
+    // A deleted Clerk identity must not degrade into the user-only context a
+    // non-member legitimately receives; returning null reaches the existing
+    // 401 result instead.
+    if (membership.kind === "identity_not_found") {
+      return null;
+    }
+    if (membership.kind === "not_member") {
       return {
         tokenType: "pat",
         userId: resolved.userId,
@@ -160,7 +177,10 @@ const agentAuth$ = command(
       agentAuth.userId,
       signal,
     );
-    if (!membership) {
+    if (membership.kind === "identity_not_found") {
+      return null;
+    }
+    if (membership.kind === "not_member") {
       return {
         tokenType: "agent" as const,
         userId: result.userId,
@@ -310,7 +330,36 @@ export const requiredAuthContext$ = command(
     signal: AbortSignal,
   ): Promise<AuthContext | AuthErrorResponse> => {
     const authHeader = get(authorization$);
-    const authContext = await set(resolvedAuthContext$, options, signal);
+    const resolved = await settle(
+      set(resolvedAuthContext$, options, signal),
+      signal,
+    );
+    if (!resolved.ok) {
+      // Allowlist, deliberately written as a negated guard: an exhausted Clerk
+      // read is the only authentication failure mapped to a response here.
+      // Everything else keeps escaping to the unhandled-request path.
+      const unavailable = clerkReadUnavailable(resolved.error);
+      if (!unavailable) {
+        throw resolved.error;
+      }
+
+      // An exhausted provider retry stays an actionable error-level record.
+      const route = get(route$);
+      L.error("Clerk read unavailable during authentication", {
+        type: "provider_unavailable",
+        provider: "clerk",
+        provider_status: unavailable.providerStatus,
+        failure_class: "transient_read_exhausted",
+        method: route.method,
+        route: route.path,
+      });
+      set(setResHeader$, "Cache-Control", "no-store");
+      return providerUnavailable(
+        "Authentication provider is temporarily unavailable",
+      );
+    }
+
+    const authContext = resolved.value;
     if (authContext) {
       if (options.requireOrganization && !authContext.orgId) {
         return missingOrganizationError(

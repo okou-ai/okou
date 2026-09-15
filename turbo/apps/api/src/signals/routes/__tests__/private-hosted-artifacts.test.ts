@@ -107,15 +107,15 @@ test("keeps runless deployments private across switch rollback and only issues o
   );
   expect(view.headers.get("cache-control")).toBe("private, no-store");
   expect(view.headers.get("referrer-policy")).toBe("no-referrer");
-  const renewed = await api.requestPrivateHostedPreview(
+  const second = await api.requestPrivateHostedPreview(
     actor,
     draft.deploymentId,
     [200],
   );
-  if (renewed.status !== 200) {
-    throw new Error("Expected renewed preview");
+  if (second.status !== 200) {
+    throw new Error("Expected a second private preview");
   }
-  expect(renewed.body.url).not.toBe(preview.body.url);
+  expect(second.body.url).not.toBe(preview.body.url);
   expect(
     (await api.readHostedSiteFiles(actor, `dpl-${draft.deploymentId}`)).url,
   ).toBe(canonical);

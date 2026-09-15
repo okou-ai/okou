@@ -499,7 +499,10 @@ function FeishuCreateStep() {
               .descriptionBefore;
           })}
           <a
-            href={FEISHU_PLATFORMS[platform].developerConsoleUrl}
+            href={new URL(
+              "/page/launcher?from=backend_oneclick",
+              FEISHU_PLATFORMS[platform].developerConsoleUrl,
+            ).toString()}
             target="_blank"
             rel="noreferrer"
             className="font-medium text-foreground underline underline-offset-4"

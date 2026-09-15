@@ -1,6 +1,6 @@
 [package]
 name = "guest-telemetry"
-version = "0.3.74"
+version = "0.3.75"
 edition.workspace = true
 
 [dependencies]

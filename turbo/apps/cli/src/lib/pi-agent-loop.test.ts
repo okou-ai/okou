@@ -29,6 +29,7 @@ import {
 } from "@okouai/pi-agent-runtime/node";
 
 import {
+  consumePiLangfuseBootstrapConfig,
   piSandboxAgentConfigFromEnv,
   recordPiMemoryToolSourceUse,
   runPiSandboxAgentLoop,
@@ -949,6 +950,34 @@ describe("sandbox Pi agent loop", () => {
       truncated: false,
       durationMs: 3,
     });
+  });
+
+  it("consumes and unlinks the private Langfuse bootstrap before model setup", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "okou-pi-langfuse-config-"));
+    const path = join(directory, "langfuse-bootstrap.json");
+    await writeFile(
+      path,
+      JSON.stringify({
+        publicKey: "pk-lf-private",
+        secretKey: "sk-lf-private",
+        baseUrl: "https://us.cloud.langfuse.com",
+        userId: "anonymous-user",
+        environment: "internal-debug",
+      }),
+      { mode: 0o600 },
+    );
+    const env = { OKOU_PI_LANGFUSE_CONFIG_FILE: path };
+
+    await expect(consumePiLangfuseBootstrapConfig(env)).resolves.toStrictEqual({
+      publicKey: "pk-lf-private",
+      secretKey: "sk-lf-private",
+      baseUrl: "https://us.cloud.langfuse.com",
+      userId: "anonymous-user",
+      environment: "internal-debug",
+    });
+    expect(env).not.toHaveProperty("OKOU_PI_LANGFUSE_CONFIG_FILE");
+    await expect(readFile(path)).rejects.toMatchObject({ code: "ENOENT" });
+    await rm(directory, { recursive: true, force: true });
   });
 
   it("resolves the Pi session, launch payload file, and model credential", async () => {

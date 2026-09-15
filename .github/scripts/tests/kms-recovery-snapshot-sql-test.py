@@ -4,9 +4,11 @@
 import hashlib
 import json
 import os
+import select
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -100,8 +102,63 @@ class SnapshotSqlTest(unittest.TestCase):
                 """
                 )
                 self.assertEqual(fixture.returncode, 0, fixture.stderr)
-                with PgQueryProxy(root) as proxy:
-                    result = psql("-f", str(SQL), extra_env=proxy.environment)
+                paused, release = threading.Event(), threading.Event()
+
+                def pause_first_batch():
+                    if not paused.is_set():
+                        paused.set()
+                        release.wait(10)
+
+                with PgQueryProxy(root, before_chunk_batch=pause_first_batch) as proxy:
+                    process = subprocess.Popen(
+                        [
+                            "stdbuf",
+                            "-oL",
+                            "psql",
+                            "-X",
+                            "-qAt",
+                            "-v",
+                            "ON_ERROR_STOP=1",
+                            "-f",
+                            str(SQL),
+                        ],
+                        env={**environment, **proxy.environment},
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                    )
+                    prefix = b""
+                    try:
+                        self.assertTrue(
+                            paused.wait(10), "first batch never reached the wire"
+                        )
+                        # The server has not received the first chunk query yet.
+                        # Its start marker must already be visible to a pipe reader.
+                        while not any(
+                            json.loads(line).get("kind") == "batch-start"
+                            for line in prefix.splitlines()
+                            if line.endswith(b"}")
+                        ):
+                            ready, _, _ = select.select([process.stdout], [], [], 5)
+                            self.assertTrue(ready, "batch start was buffered")
+                            progress_bytes = os.read(process.stdout.fileno(), 65536)
+                            self.assertTrue(
+                                progress_bytes, "scan exited before reporting the batch"
+                            )
+                            prefix += progress_bytes
+                    finally:
+                        release.set()
+                        try:
+                            stdout, stderr = process.communicate(timeout=30)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            process.communicate()
+                            raise
+                    result = subprocess.CompletedProcess(
+                        process.args,
+                        process.returncode,
+                        (prefix + stdout).decode(),
+                        stderr.decode(),
+                    )
                 self.assertEqual(proxy.errors, [])
                 self.assertEqual(result.returncode, 0, result.stderr)
                 records = [
@@ -163,7 +220,8 @@ class SnapshotSqlTest(unittest.TestCase):
                             for r in records
                             if not (
                                 r.get("relationOid") == oid
-                                and r["kind"] in {"table-plan", "table-chunk"}
+                                and r["kind"]
+                                in {"table-plan", "table-chunk", "batch-start"}
                             )
                         ],
                         "incomplete_table_scan",

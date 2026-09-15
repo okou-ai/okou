@@ -1,3 +1,4 @@
+import { writeUsagePackPendingSnapshots } from "../services/usage-pack-pending-snapshot.service";
 import {
   BILLING_RECONCILIATION_FIXTURE_KINDS,
   testBillingReconciliationStateContract,
@@ -514,11 +515,17 @@ async function seedBillingReconciliationState(
     future: new Date(at.getTime() + 30 * DAY_MS),
   };
 
-  await db.transaction(async (tx) => {
-    await insertOrganizationFixtures(tx, fixtures, times, mode);
-    await insertCoreBillingFixtures(tx, fixtures, times, mode);
-    await insertUsagePackFixtures(tx, fixtures, marker, times, mode);
-  });
+  await writeUsagePackPendingSnapshots(
+    db,
+    fixtures.map((fixture) => {
+      return fixture.orgId;
+    }),
+    async (tx) => {
+      await insertOrganizationFixtures(tx, fixtures, times, mode);
+      await insertCoreBillingFixtures(tx, fixtures, times, mode);
+      await insertUsagePackFixtures(tx, fixtures, marker, times, mode);
+    },
+  );
   signal.throwIfAborted();
   return fixtures;
 }
@@ -790,7 +797,7 @@ async function cleanupBillingReconciliationState(
   const orgIds = fixtureReferences(marker).map((fixture) => {
     return fixture.orgId;
   });
-  await db.transaction(async (tx) => {
+  await writeUsagePackPendingSnapshots(db, orgIds, async (tx) => {
     await tx
       .delete(usagePackSubscriptionMigrations)
       .where(inArray(usagePackSubscriptionMigrations.orgId, orgIds));

@@ -1230,6 +1230,13 @@ async function expectSlackPiMemoryCandidate(args: {
   if (!run.completedAt) {
     throw new Error("Expected completed Slack Pi run timestamp");
   }
+  // Explicit canonical-writer fixture: completion itself never schedules.
+  const beforeAdmission = await readPiMemoryStage1CandidateFixture({
+    orgId: args.scenario.orgId,
+    userId: args.scenario.actor.userId,
+  });
+  expect(beforeAdmission?.sourceRunId).not.toBe(args.runId);
+  await readmitPiMemoryStage1CandidateFixture(args.runId);
   const candidate = await readPiMemoryStage1CandidateFixture({
     orgId: args.scenario.orgId,
     userId: args.scenario.actor.userId,
@@ -1255,7 +1262,7 @@ async function expectSlackPiMemoryCandidate(args: {
   );
   expect(
     candidate.eligibleAt.getTime() - candidate.sourceCompletedAt.getTime(),
-  ).toBe(60_000);
+  ).toBe(0);
   await expect(
     countPiMemoryStage1CandidatesFixture({
       memoryStorageId: candidate.memoryStorageId,
@@ -2946,7 +2953,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
   it.each(["gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.6-luna"] as const)(
     "admits canonical Slack %s turns into one Pi session without duplicate ownership",
     async (selectedModel) => {
-      mockEnv("PI_MEMORY_STAGE1_IDLE_DELAY_MS", 60_000);
       const scenario = await establishCanonicalSlackHistory(
         await configureCanonicalSlackPiActor(selectedModel),
       );
@@ -4582,6 +4588,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await bdd.bootstrapLimitedFreeOnboarding(actor, {
       displayName: "BDD Slack Picker Default",
     });
+    await runs.grantProEntitlement(actor);
     const status = await bdd.readOnboardingStatus(actor);
     if (!status.defaultAgentId) {
       throw new Error("Expected onboarding to configure a default agent");
@@ -4704,7 +4711,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       integrations.modelPickerSubmission({
         workspaceId: teamId,
         slackUserId,
-        selectedValue: "deepseek-v4.1-flash",
+        selectedValue: "gpt-6-astra",
         channelId: "C_BDD_PICK",
       }),
     );
@@ -4713,13 +4720,13 @@ describe("INT-01: Slack app deep webhook flows", () => {
       expect.objectContaining({
         channel: "C_BDD_PICK",
         user: slackUserId,
-        text: "Switched to *DeepSeek V4.1 Flash* for new Slack threads.",
+        text: "Switched to *GPT 6 Astra* for new Slack threads.",
       }),
     );
     await expect(
       integrations.readUserModelPreference(actor),
     ).resolves.toMatchObject({
-      selectedModel: "deepseek-v4.1-flash",
+      selectedModel: "gpt-6-astra",
     });
 
     const replaceModel = await integrations.postSlackInteractive(

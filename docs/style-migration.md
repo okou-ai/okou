@@ -626,31 +626,10 @@ both.
 
 ## Mic motion batch
 
-`mic-motion-cases.json` and `run-mic-motion.ts` cover the composer microphone
-button on the real deployed `/chats/:threadId` page in Light/Dark at device
-scale factor 1 and 2. Run `pnpm style:migration:mic-motion` from `e2e`,
-supplying App/API origins, their full build SHAs, the source SHA, private Clerk
-TEST storage state, an output directory and an optional frozen `--baseline`
-directory. When an immutable App or API deployment needs its original PR alias
-for Clerk or CORS, pass that alias as `--app-url` / `--api-url` and pin the
-immutable deployments with `--app-artifact-url` / `--api-artifact-url`; both
-identities are retained in the manifest.
-
-The fixture controls only external API/bootstrap and browser-media boundaries.
-It keeps the deployed Router, production voice commands, component branches and
-CSS intact; it performs no Agent run, purchase or real transcription. Each case
-checks starting and transcribing spinners at 0/175/350/525 ms, the recording
-meter at the four production levels (0/33/67/100%), and unpaused animation
-progress for both spinner states. Full-page captures have no masks and reuse the
-existing `channel-rounding-v1` pixel bounds. The archive excludes private
-storage state and records browser, fixture, runner, source and deployment
-identities.
-
-Capture and upload an unmigrated-target BEFORE/A-A pair before accepting the
-consumer migration, then replay the frozen pair against the final PR
-deployment. Record the archive URL and SHA-256 in the PR and migration
-manifest. A pinned phase proves appearance at that phase; only the separate
-unpaused observation proves the normal-motion contract.
+The legacy microphone meter and its visual replay harness were retired when
+voice input rolled out to all users. Recording and transcription now use the
+voice draft tray. The acceptance record below preserves the completed CSS
+migration evidence for the former microphone UI.
 
 ### Mic motion acceptance record (#33345)
 

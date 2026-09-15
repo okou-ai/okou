@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "batch": "mic-motion",
+  "batch": "code-fence-copy-control",
   "cases": [
     {
-      "id": "mic-light",
+      "id": "code-fence-copy-light",
       "path": "/chats/:threadId",
       "theme": "light",
       "viewport": {
@@ -13,7 +13,7 @@
       "deviceScaleFactor": 1
     },
     {
-      "id": "mic-dark",
+      "id": "code-fence-copy-dark",
       "path": "/chats/:threadId",
       "theme": "dark",
       "viewport": {
@@ -23,7 +23,7 @@
       "deviceScaleFactor": 1
     },
     {
-      "id": "mic-light-retina",
+      "id": "code-fence-copy-light-retina",
       "path": "/chats/:threadId",
       "theme": "light",
       "viewport": {
@@ -33,7 +33,7 @@
       "deviceScaleFactor": 2
     },
     {
-      "id": "mic-dark-retina",
+      "id": "code-fence-copy-dark-retina",
       "path": "/chats/:threadId",
       "theme": "dark",
       "viewport": {
@@ -41,6 +41,30 @@
         "height": 1000
       },
       "deviceScaleFactor": 2
+    },
+    {
+      "id": "code-fence-copy-narrow",
+      "path": "/chats/:threadId",
+      "theme": "light",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "deviceScaleFactor": 2,
+      "hasTouch": true,
+      "isMobile": true
+    },
+    {
+      "id": "code-fence-copy-narrow-dark",
+      "path": "/chats/:threadId",
+      "theme": "dark",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "deviceScaleFactor": 2,
+      "hasTouch": true,
+      "isMobile": true
     }
   ]
 }

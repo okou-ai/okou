@@ -3,7 +3,6 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import {
-  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
   getBuiltInApiModel,
   getModelProviderFirewall,
   getProviderRuntimeModel,
@@ -5848,7 +5847,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     expect(queue.body.concurrency.active).toBe(0);
   });
 
-  it("defaults limited-free runs to DeepSeek V4.1 Flash and rejects paid models", async () => {
+  it("defaults limited-free runs to Luna and rejects paid models", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
@@ -5870,58 +5869,35 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       onboardingPaymentPending: false,
     });
     const modelPolicies = await misc.listModelPolicies(actor);
-    expect(modelPolicies.workspaceDefaultModel).toBe(
-      DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-    );
+    expect(modelPolicies.workspaceDefaultModel).toBe("gpt-5.6-luna");
     expect(
       modelPolicies.policies.find((policy) => {
-        return policy.model === DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
+        return policy.model === "gpt-5.6-luna";
       }),
     ).toMatchObject({ isDefault: true });
 
-    for (const model of [
-      DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-      "gpt-5.6-luna",
-    ] as const) {
-      await seedBuiltInModelKey(model);
-      const sent = await chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          prompt: `limited-free ${model} run`,
-          model,
-        },
-        [201],
-      );
-      if (sent.status !== 201 || sent.body.runId === null) {
-        throw new Error(`Expected ${model} to create a run`);
-      }
-      await api.heartbeatRunner(runnerGroup);
-      const claim = await api.claimRunnerJob(sent.body.runId);
-      expect(claim.cliAgentType).toBe("codex");
-      expect(claim.environment).toMatchObject({
-        OPENAI_MODEL: getBuiltInApiModel(model),
-      });
-      if (model === "deepseek-v4.1-flash") {
-        expect(claim.environment).toMatchObject({
-          OPENAI_BASE_URL: "https://api.deepseek.com/",
-          OPENAI_MODEL: "deepseek-flash",
-        });
-        expect(claim.codexRuntimeConfig?.providerId).toBe("deepseek");
-        expect(claim.codexRuntimeConfig?.modelCatalog?.models).toContainEqual(
-          expect.objectContaining({
-            slug: "deepseek-flash",
-            context_window: 1_048_576,
-            input_modalities: ["text", "image"],
-            apply_patch_tool_type: "freeform",
-          }),
-        );
-      }
-      expect(claim.modelUsageProvider).toBe(model);
-      await api.requestCancelRun(actor, sent.body.runId, [200]);
+    await seedBuiltInModelKey("gpt-5.6-luna");
+    const sent = await chat.requestSendEvent(
+      actor,
+      { agentId, prompt: "limited-free default model run" },
+      [201],
+    );
+    if (sent.status !== 201 || sent.body.runId === null) {
+      throw new Error("Expected the default Luna model to create a run");
     }
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(sent.body.runId);
+    expect(claim.cliAgentType).toBe("codex");
+    expect(claim.environment).toMatchObject({ OPENAI_MODEL: "gpt-5.6-luna" });
+    expect(claim.environment).not.toHaveProperty("OPENAI_BASE_URL");
+    expect(claim.modelUsageProvider).toBe("gpt-5.6-luna");
+    await api.requestCancelRun(actor, sent.body.runId, [200]);
 
-    for (const model of ["gpt-5.6-sol", "gpt-6-astra"] as const) {
+    for (const model of [
+      "gpt-5.6-sol",
+      "gpt-6-astra",
+      "claude-fable-5-1",
+    ] as const) {
       const rejectedThreadId = randomUUID();
       const rejected = await chat.requestSendEvent(
         actor,
@@ -5965,9 +5941,8 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
     await expectBuiltInModelRunRuntimeRoute(run.runId, selectedModel);
-    expect(claim.environment).toMatchObject({
-      OPENAI_BASE_URL: "https://api.deepseek.com/",
-    });
+    expect(claim.environment).toMatchObject({ OPENAI_MODEL: "gpt-5.6-luna" });
+    expect(claim.environment).not.toHaveProperty("OPENAI_BASE_URL");
 
     expect(
       claim.firewalls?.map((firewall) => {
@@ -6109,7 +6084,11 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.requestCancelRun(actor, sent.body.runId, [200]);
   });
 
-  it.each(["deepseek-v4-flash", "deepseek-v4-pro"] as const)(
+  it.each([
+    "deepseek-v4-flash",
+    "deepseek-v4-pro",
+    "deepseek-v4.1-flash",
+  ] as const)(
     "claims built-in %s runs with the Responses adapter",
     async (selectedModel) => {
       const api = createRunsApi(context);
@@ -6151,7 +6130,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
           "DEEPSEEK_API_KEY",
         ),
         OPENAI_BASE_URL: "https://api.deepseek.com/",
-        OPENAI_MODEL: selectedModel,
+        OPENAI_MODEL: getBuiltInApiModel(selectedModel),
       });
       expect(claim.environment).not.toHaveProperty("ANTHROPIC_MODEL");
       expect(claim.codexRuntimeConfig).toMatchObject({
@@ -6171,16 +6150,24 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       }
       expect(catalogModels).toContainEqual(
         expect.objectContaining({
-          slug: selectedModel,
+          slug: getBuiltInApiModel(selectedModel),
           apply_patch_tool_type: "freeform",
           default_reasoning_level: "high",
-          input_modalities: ["text"],
+          input_modalities:
+            selectedModel === "deepseek-v4.1-flash"
+              ? ["text", "image"]
+              : ["text"],
           base_instructions: expect.stringContaining("You are Codex"),
           model_messages: expect.objectContaining({
             instructions_template: expect.stringContaining("You are Codex"),
           }),
         }),
       );
+      if (selectedModel === "deepseek-v4.1-flash") {
+        expect(catalogModels).toContainEqual(
+          expect.objectContaining({ context_window: 1_048_576 }),
+        );
+      }
       expect(
         claim.firewalls?.map((firewall) => {
           return firewallEntryName(firewall);
@@ -13237,32 +13224,53 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
     await api.requestCancelRun(actor, gatedOn.runId, [200]);
   });
 
-  it("advertises Slack bot reads only while the feature is enabled", async () => {
+  it("advertises live Social status only while the feature is enabled", async () => {
     const api = createRunsApi(context);
     const connectors = createConnectorBddApi(context);
     const { actor, agentId } = await entitledRunActor();
 
     for (const enabled of [false, true]) {
       await connectors.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.SlackRead]: enabled,
+        [FeatureSwitchKey.SocialStatus]: enabled,
       });
       const run = await api.createRun(actor, {
         agentId,
-        prompt: "read the channel's recent messages",
+        prompt: "check public social service health",
         modelProvider: "anthropic-api-key",
       });
       const prompt =
         (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
+      expect(prompt).toContain("okou social capabilities [platform] --json");
+      expect(prompt).toContain(
+        "total/page limits, source constraints, and advanced inputs",
+      );
       if (enabled) {
-        expect(prompt).toContain("okou slack channel list --help");
-        expect(prompt).toContain("okou slack message history --help");
+        expect(prompt).toContain("okou social status [platform] --json");
+        expect(prompt).toContain(
+          "health does not establish caller access, account quota, or Okou balance",
+        );
       } else {
-        expect(prompt).not.toContain("okou slack message history --help");
-        expect(prompt).not.toContain("okou slack channel list --help");
+        expect(prompt).not.toContain("okou social status [platform] --json");
       }
-      expect(prompt).toContain("okou slack message send --help");
       await api.requestCancelRun(actor, run.runId, [200]);
     }
+  });
+
+  it("advertises Slack bot reads for an ordinary organization", async () => {
+    const api = createRunsApi(context);
+    const { actor, agentId } = await entitledRunActor();
+
+    const run = await api.createRun(actor, {
+      agentId,
+      prompt: "read the channel's recent messages",
+      modelProvider: "anthropic-api-key",
+    });
+    const prompt =
+      (await api.readRun(actor, run.runId)).appendSystemPrompt ?? "";
+    expect(prompt).toContain("okou slack channel list --help");
+    expect(prompt).toContain("okou slack message history --help");
+    expect(prompt).toContain("okou slack message send --help");
+    await api.requestCancelRun(actor, run.runId, [200]);
   });
 
   it.each([true, false])(

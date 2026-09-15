@@ -140,6 +140,18 @@ Control typography is a joint decision about font size, line height, height, and
 
 The `okou-badge`, `okou-pill`, and `okou-border-r` selectors and their consumers have been removed. `okou-pill` was scoped to `.okou-app` and set the muted foreground; its only consumer now spells that foreground itself. `okou-border-r` was a single settings-dialog divider and became `border-r border-r-gray-300` on that nav, keeping its lighter Gray 300 stroke while its width joins the shared hairline token.
 
+### Chat scrollbars
+
+`ScrollBar` from `@okouai/ui` owns the shadcn Base UI scrollbar styling shared
+by the chat sidebar and message pane. Compose it with Base UI's
+`ScrollArea.Root`, `ScrollArea.Viewport`, and `ScrollArea.Content`. The vertical
+track is 10px wide with 1px padding, a transparent left border, and a flexible
+rounded `bg-border` thumb. Base UI hides it when content does not overflow.
+Callers retain their viewport refs, scroll handlers, content layout, and
+scroll-position ownership; they do not add scrollbar width, color, or offset
+overrides. The documented `scroll-area-viewport`, `scroll-area-scrollbar`, and
+`scroll-area-thumb` slots identify the shared parts for browser verification.
+
 ### Icon controls and dialog bodies
 
 `IconButton` from `@okouai/ui` owns a neutral 36px square control, the shared
@@ -211,8 +223,8 @@ same reason the running indicator does: its keyframes animate `transform`, and
 Tailwind's `rotate-*` utility sets the individual `rotate` property, which would
 compose with the animation rather than be replaced by it.
 
-`--mic-volume-fill` stays a component-set runtime value, read through
-`after:h-[var(--mic-volume-fill,0%)]`.
+The legacy mic volume meter has since been retired; the voice draft tray owns
+the recording waveform.
 
 The `mic-starting-spinner` and `mic-volume-icon-meter` selectors have been
 removed; the `mic-starting-spin` keyframes remain.
@@ -272,12 +284,19 @@ retired `okou-btn-morandi` selector owned. Language, timezone, and voice-input
 settings all use the select variant. Dimensions, padding, and radius remain
 with the existing component and caller.
 
-The neutral button adds the existing outline interaction fills
-(`hover:bg-state-hover active:bg-state-pressed`) to the shared surface, keeping
-the hover overlay above those fills. Select triggers retain the opaque surface
-and hover overlay. The existing recovery links and Add automation trigger
-preserve that same interaction treatment with `hover:bg-control-surface
-active:bg-control-surface` on their `Button` instances.
+The neutral button states both interactions as overlays
+(`[&:hover]:bg-state-hover-overlay [&:active]:bg-state-pressed-overlay`) above
+that surface, and select triggers do the same for hover. It previously also
+carried the outline fills `hover:bg-state-hover active:bg-state-pressed`, which
+is the contradiction the state-layer note above describes: those utilities set
+`background-color`, so they replaced `bg-control-surface` rather than sitting on
+it. `gray-50` is a warm stop (hue 15°, saturation 40%) and the state layer is
+neutral, so hovering measured `#FCF9F8` → `#F1F0F0` and dropped the warm cast
+the resting fill carries. Overlays alone measure `#F5F2F1`, which stays in the
+same family. The existing recovery links and Add automation trigger keep
+`hover:bg-control-surface active:bg-control-surface` on their `Button`
+instances; those overrides used to cancel the replacing fill and are now
+redundant, and they render identically either way.
 
 Preserve consumer-specific interaction colors when extracting shared styles.
 The official workflow Configure button, for example, retains its existing
@@ -542,6 +561,101 @@ appearance. Leaving the separator to `TableRow` instead is not equivalent — a 
 border never wins that boundary, so the header rule simply disappears and every
 body row shifts up.
 
+### Chat message bubbles
+
+The `okou-chat-bubble-user` and `okou-chat-bubble-assistant` selectors and their
+consumers have been removed. Between them they carried seven declarations over
+four rules: the user bubble's fill and foreground, the assistant bubble's
+transparent fill and `border: none`, the 8px block spacing the Markdown body
+inside either bubble used instead of the App's 6px default, and the assistant
+bubble's suppressed horizontal rules.
+
+The two fills are ordinary utilities. The user bubble writes `bg-gray-200
+text-foreground` — `--color-gray-200` and `--color-foreground` are the
+registered names for `hsl(var(--gray-200))` and `hsl(var(--foreground))`, the
+same runtime variables the retired rule read, so every Dark and
+gradient-palette override still applies. The assistant bubble writes
+`bg-transparent border-none border-current`. The colour utility is there because
+`border: none` is a shorthand: it reset `border-color` to `currentcolor`, while
+`border-none` sets only the style. The width is 0 either way, so this is
+invisible today; it is kept because the retired rule decided it, so an assistant
+body that later carries a border keeps the treatment it has now.
+
+The Markdown block treatment is different in kind, because it applies to
+elements the Markdown library renders. `MarkdownEventBody` takes a `chatBubble`
+prop and composes the whole treatment onto the frame it already owns:
+
+```
+[&_:is(p,[data-slot=markdown-card])]:my-2! [&>*:first-child]:mt-0!
+[&>*:last-child]:mb-0! [&_blockquote>*:first-child]:mt-0!
+[&_blockquote>*:last-child]:mb-0! [&_hr]:hidden
+```
+
+Every margin there is important, and the four resets exist only because of it.
+The competitor for the paragraphs and cards is the App's own unlayered
+`.wmde-markdown p, .wmde-markdown .okou-markdown-card` rule, which a utility in
+`@layer utilities` cannot outrank without one; a layered important declaration
+does. But that same promotion would also beat the two competitors the retired
+rule _lost_ to — the vendored `.wmde-markdown > *:first-child` /
+`> *:last-child` resets, which are themselves important, and the vendored
+`blockquote > :first-child` / `:last-child` pair, which ties the retired rule on
+specificity and wins on source order because the Markdown chunk's stylesheet
+loads after the App's. Restating those four at the same tier is what keeps the
+edge paragraphs flush. `[&_hr]:hidden` needs no important, because nothing
+unlayered declares `display` on a Markdown rule.
+
+The card slot is addressed through `data-slot="markdown-card"` rather than its
+`okou-markdown-card` class, for the same reason the desktop titlebar block below
+cannot be respelled: naming a legacy class inside an arbitrary variant registers
+a new dependency on it, and that token belongs to a later batch. The slot
+carries no styles. `data-slot="chat-user-message"` likewise replaces the
+attachment-preview test's `.okou-chat-bubble-user` query.
+
+This narrows a contract on purpose, the way the nav chrome above does. The
+retired rules applied to _any_ Markdown frame that happened to sit inside a
+bubble; the replacement applies to the three call sites that ask for it — the
+chat transcript's Agent message, and the shared thread's rendered and
+rich-content Agent messages. Those are every Markdown frame inside a bubble
+today, so nothing changes now, and a future in-bubble frame asks for the
+treatment by name.
+
+Two of the four retired rules were already partly dead.
+`.okou-chat-bubble-user .wmde-markdown p` and its `.okou-markdown-card` sibling
+never matched: a user bubble's body renders spans and reference chips through
+`UserMessagePartView`, the shared thread's renders plain text, and the
+automation and goal bubbles render plain text, so no Markdown frame has ever
+existed inside one. Both bubble names also remain in the
+`.okou-app[data-desktop-shell] :where(…)` selection exception, which nothing in
+the repository can activate for the reason the titlebar section below records;
+that block belongs to the `okou-app` batch and is deliberately untouched here,
+so the two class names stay inside it while no element carries them.
+
+Measured against `main` with the App's own Tailwind compiler (the 4.2.2 engine
+the Vite plugin bundles) in Chromium over CDP, across 28 captures — the default
+palette in Light and Dark at desktop 1280x1400 device scale 1 and 2 and narrow
+700x1400 device scale 2, each with and without the fine-pointer hover flags,
+plus all eight gradient palettes in Light and Dark at the desktop geometry:
+zero changed pixels and zero computed-style or geometry differences on every
+capture. `GradientColorThemes` is `enabled: false` with no organization
+allowlist, so the default palette is the online-visible result and the palette
+states are a superset. The fixture
+rebuilds the real ancestor chain down to the bubble and reproduces the Markdown
+frame's element, a first/middle/last paragraph, a loose list item, a blockquote,
+both card forms, a horizontal rule, and the single `<p class="m-0">` the plain
+Markdown path renders. The capture is taller than a real viewport on purpose:
+the chat pane scrolls inside an absolutely positioned container, so the document
+never grows and a page-height capture would compare only the first turn.
+
+Six negative controls establish that those zeros are not degenerate. Dropping
+the paragraph/card spacing changes 214,329 pixels on desktop Light and 10,227,660
+over all 28 captures; dropping the first-child reset changes 108,927 and
+5,131,289; dropping the rule suppression changes 211,552 and 10,147,418;
+dropping the user bubble's fill changes 32,890 and 1,690,648. The remaining two
+are invisible by construction and are caught by the observation channel alone:
+dropping the blockquote reset changes one observed margin per capture at zero
+pixels, and dropping `border-current` changes three observed border colours per
+capture at zero pixels.
+
 ### Desktop titlebar drag region — partially drained
 
 The `okou-desktop-no-drag` selector and its consumer have been removed. The
@@ -645,6 +759,60 @@ Sonner's palette rather than the App's popover tokens. Draining `toaster` is
 blocked behind that choice, because whichever repair wins rewrites the same class
 string.
 
+### The Markdown code-fence copy control
+
+The `copied` contract has been retired. Its three App rules, its two
+`third-party-dom-adapter` allowlist entries and both of its consumption sites
+are gone, and `CodeBlockCopyButton` now owns the treatment for both fence
+shapes: the one the Markdown pipeline marks on every fenced block, and the one
+the Mermaid view renders when a diagram's source does not parse.
+
+`copied` is the borrowed-name case above, one step further along: the name is
+genuinely the vendor's, and the pinned `@uiw/react-markdown-preview` stylesheet
+really does define it, which is why two of its three App rules were allowlisted
+as adapters for that renderer's generated DOM. The element is still ours. The
+App mounts no part of that renderer — it imports only the stylesheet, and parses
+and renders Markdown itself — so every element that ever carried the class was
+first-party markup spelling `className="copied"` to borrow the vendored sheet's
+absolutely positioned, hover-revealed copy affordance. Authorship of the
+element, not authorship of the name or of the rule, is what the boundary asks
+about, so this was legacy debt and the two entries are retired with the rules.
+
+The replacement therefore reproduces the vendored declarations as well as the
+App's own overrides, because both were load-bearing and only the App's half
+could be deleted:
+
+| Retired declaration                                | Owner  | Replacement                                                               |
+| -------------------------------------------------- | ------ | ------------------------------------------------------------------------- |
+| `visibility: hidden`                               | vendor | `invisible`                                                               |
+| `pre:hover` → `visibility: visible`                | vendor | `[pre:hover_&]:visible`                                                   |
+| `display: flex`                                    | vendor | `flex`                                                                    |
+| `position: absolute; top: 6px; right: 6px`         | vendor | `absolute top-1.5 right-1.5`                                              |
+| `cursor: pointer`                                  | vendor | `cursor-pointer`                                                          |
+| `padding: 6px`                                     | vendor | `p-1.5`                                                                   |
+| `font-size: 12px`                                  | vendor | `text-[12px]`                                                             |
+| `transition: all 0.3s`                             | vendor | `transition-[visibility,background-color,color] duration-300 ease-[ease]` |
+| `border-radius: 6px`                               | App    | `rounded-md`                                                              |
+| `background: hsl(var(--gray-200))`                 | App    | `bg-gray-200`                                                             |
+| `color: hsl(var(--muted-foreground))`              | App    | `text-muted-foreground`                                                   |
+| `pre:hover .copied:hover` → gray-300 / foreground  | App    | `[pre:hover_&:hover:not(:active)]:…`                                      |
+| `pre:hover .copied:active` → gray-400 / foreground | App    | `[pre:hover_&:active]:…`                                                  |
+
+Four of those need stating.
+
+`rounded-md` is exactly the retired 6px: `--radius-md` is `calc(var(--radius) - 2px)` over a `0.5rem` radius. `p-1.5` replaces the shared control's own `p-2` through `cn()`, which is not a change of value — the unlayered vendored `padding: 6px` already outranked that utility, so 6px is what the control has always painted.
+
+`text-[12px]` names the size rather than taking `text-xs`, for the reason the badge batch records: an arbitrary font-size utility emits `font-size` alone, and `text-xs` would add a paired line height the retired declaration never set. `ease-[ease]` is needed for the same kind of reason — a Tailwind transition utility supplies Tailwind's own `--default-transition-timing-function`, while `transition: all 0.3s` left the timing function at its `ease` initial value.
+
+The transition is the one declaration deliberately not reproduced verbatim. This is an auxiliary control revealed by hover, so the rule above applies: name the properties that animate rather than taking `all`. Only `visibility`, `background-color` and `color` ever change on this control, and `visibility` has to stay in the list, because with it the control remains painted for the transition's duration after the pointer leaves and without it the control vanishes instantly. Measured, narrowing the list changes zero pixels in all 28 states and changes exactly one observation, `transition-property`, on the control itself.
+
+The reveal and both interaction fills spell `pre:hover &` rather than reaching for `group-hover:`. The retired rules were unlayered and ungated, so they also fired on a coarse pointer where a tap leaves a sticky hover; the arbitrary variants generate the same unconditional descendant selector. Spelling the ancestor also raises specificity above the shared control's own `hover:` fill, so the two stop racing inside one Tailwind layer.
+
+The hovered fill carries `:not(:active)` because Tailwind decides the order the retired rules decided by source position. Both retired rules had equal specificity and the pressed one came second, so it won while both matched; Tailwind sorts the pressed variant first, so the hovered fill steps aside by selector instead.
+
+`.wmde-markdown pre .copied.active` was dead and is gone with the rest. `CopyButton` never adds an `active` class — it swaps icons from React state — so that branch of the selector list never matched. The vendored sheet's own `.copied.active` rules remain, pinned and inert, because nothing carries the class any more. The `--color-copied-active-bg` overrides the App declared for them are removed with it.
+
+Measured against `main` with the App's own Tailwind compiler in Chromium over CDP, on the ancestor chain captured from the real chat thread page: 28 states — both fence shapes at rest, fence-hovered, control-hovered and pressed, in Light and Dark, on a fine and a coarse pointer — report zero changed pixels and zero computed-style or geometry differences. Negative controls that drop the control's padding, shift its offset by one spacing step and drop the reveal variant report 7,818, 3,579 and 9,164 changed pixels, so the zeros are not degenerate.
 ### The standalone PWA fixed cover
 
 The `okou-pwa-fixed-cover` selector and its consumers have been removed. It was

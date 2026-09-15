@@ -260,9 +260,9 @@ type Settled<T> =
   | { readonly ok: false; readonly error: unknown };
 
 /**
- * Settle `p` without propagating AbortError. Use only after an irreversible
- * provider operation has started and cancellation is itself an ambiguous
- * outcome that the caller must persist explicitly.
+ * Settle `p` without propagating AbortError. Use when cancellation is an
+ * explicitly owned outcome: observing and releasing a prepared resource, or
+ * persisting an ambiguous result after an irreversible provider operation.
  */
 export async function settleIncludingAbort<T>(
   p: Promise<T>,

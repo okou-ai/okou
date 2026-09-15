@@ -10,7 +10,6 @@ import {
   privateHostedDeployments,
 } from "@okouai/db/schema/hosted-site";
 import { notFound } from "../../lib/error";
-import { PRIVATE_ARTIFACT_PREVIEW_TTL_SECONDS } from "../../lib/private-artifact-preview";
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
@@ -42,7 +41,6 @@ const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
     }
     const preview = await get(
       generateArtifactPreviewUrl(file.bucket, file.key, {
-        expiresIn: PRIVATE_ARTIFACT_PREVIEW_TTL_SECONDS,
         signingDate: nowDate(),
       }),
     );

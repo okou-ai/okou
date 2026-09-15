@@ -19,23 +19,16 @@ import {
 } from "../services/voice-io-post.service";
 
 const L = logger("VoiceIoStt");
-const MAX_CLIENT_DIAGNOSTICS_LOG_LENGTH = 1000;
 
 function logSttUploadInspection(
   file: File,
   parsedDurationSeconds: number | null,
-  formData: FormData,
 ): void {
-  const clientDiagnostics = formData.get("clientDiagnostics");
   L.debug("STT upload inspected", {
     fileMime: file.type,
     fileSize: file.size,
     fileName: file.name,
     parsedDurationSeconds,
-    clientDiagnostics:
-      typeof clientDiagnostics === "string"
-        ? clientDiagnostics.slice(0, MAX_CLIENT_DIAGNOSTICS_LOG_LENGTH)
-        : null,
   });
 }
 
@@ -92,7 +85,7 @@ const postSttInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   const durationSeconds =
     audioDurationSeconds === null ? null : Math.ceil(audioDurationSeconds);
-  logSttUploadInspection(file, durationSeconds, formData);
+  logSttUploadInspection(file, durationSeconds);
   if (
     durationSeconds !== null &&
     durationSeconds > MAX_STT_REQUEST_DURATION_SECONDS

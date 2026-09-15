@@ -6,6 +6,12 @@ The disposable test-runtime PR #32646 is verification evidence and must not merg
 Reuse the existing keys and credentials; this tooling creates no credentials,
 changes no deployment configuration, and disables no keys.
 
+Production cutover and backfill are complete. The cutover procedures below
+document that completed migration. Continue retirement through the
+[permanent-retirement runbook](../../../../../../.github/kms-migration-32264/permanent-retirement.md),
+which requires code rollbacks to retain the target KMS configuration and keeps
+the original backup as historical evidence.
+
 | Role   | Production key ARN                                                            |
 | ------ | ----------------------------------------------------------------------------- |
 | Source | `arn:aws:kms:us-west-2:072707626411:key/a1b3922b-fab1-4ed3-aa9e-40f86f92a7a8` |
@@ -145,6 +151,15 @@ requires a fresh scan.
 verification certificate; run a fresh full `--verify` after migration. Reports
 contain field names, counts, known source/target ARNs and opaque cursor IDs only.
 Provider and SQL error messages are suppressed because they may include data.
+Failure reports also include `failureDetails` with a fixed stage and an
+allowlisted error code. Connection failures retain an incomplete checkpoint;
+provider messages, SQL text, and plaintext are never recorded. The snapshot
+inspection wrapper retains validated marker records before target verification,
+then records the child exit/timeout and only bound aggregate report fields on
+failure. It exposes cursor presence, never the cursor value. Partial counts and
+a failed child report do not establish cryptographic recovery or retirement
+clearance.
+
 An unknown key, invalid envelope, unsupported schema, or KMS failure prevents
 successful migration/verification. No automatic retry overwrites a changed row.
 
@@ -156,6 +171,23 @@ connector and model credentials, OAuth/device state, Slack/GitHub/Telegram/Feish
 tokens, webhook secrets, SSH keys, browser URL snapshots, and both run queues.
 It validates physical column types and primary keys and rejects untracked
 `encrypted_*` columns before scanning.
+
+The isolated snapshot verifier additionally passes `--recovery-schema` with
+`--verify`. This read-only option retains the historical SSH fields and includes
+`ssh_credentials.encrypted_private_key`, `encrypted_passphrase` and
+`encrypted_password` under primary key `id`. At least one of the historical and
+current SSH tables must exist. When both exist, both are scanned; any present
+table must have all declared columns and its exact primary key. A missing table
+does not permit a missing column in its replacement. Unknown encrypted columns
+still fail verification.
+
+Recovery reports explicitly identify this schema and use a distinct manifest
+digest, so their cursors and reports cannot substitute for the original migration
+manifest. `--recovery-schema` is rejected for inventory and migration. The
+original manifest and completed backfill remain unchanged. This compatibility
+belongs to the retained recovery points in #32264; it is not an application
+reader fallback. Live schema and ciphertext still require their own collected
+verification before retirement.
 
 - Envelope format: KMS `ReEncrypt` changes only `kms.keyId` and
   `kms.encryptedDataKey`; AES ciphertext, IV and authentication tag stay intact.

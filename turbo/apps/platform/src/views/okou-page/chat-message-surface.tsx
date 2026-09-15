@@ -78,8 +78,9 @@ export function ChatUserMessageBubble({
 }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
+      data-slot="chat-user-message"
       className={cn(
-        "okou-chat-bubble-user rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden",
+        "rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden bg-gray-200 text-foreground",
         className,
       )}
       {...props}
@@ -95,7 +96,7 @@ export function ChatAssistantMessageBody({
     <div
       data-chat-selection-source
       className={cn(
-        "okou-chat-bubble-assistant p-0 text-[0.9375rem] leading-[1.7] min-w-0 [overflow-wrap:anywhere]",
+        "p-0 text-[0.9375rem] leading-[1.7] min-w-0 [overflow-wrap:anywhere] bg-transparent border-none border-current",
         className,
       )}
       {...props}

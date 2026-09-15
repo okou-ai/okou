@@ -1008,7 +1008,12 @@
     "toasts": {
       "copyLinkFailed": "リンクのコピーに失敗しました",
       "downloadFailed": "ダウンロードに失敗しました",
-      "linkCopied": "リンクがコピーされました"
+      "linkCopied": "リンクがコピーされました",
+      "sharing": "共有中…"
+    },
+    "viewer": {
+      "continuePrompt": "この成果物を使った作業を手伝ってください: {{url}}",
+      "continueWithBrand": "{{brandName}} で続ける"
     }
   },
   "auth": {
@@ -1742,14 +1747,9 @@
       "selectModel": "モデルを選択してください",
       "slashPanel": {
         "browseAll": "すべてのテンプレートを見る",
-        "illustrationDescription": "選んだスタイルで 1 枚の画像を生成します",
         "make": "作成",
-        "slidesDescription": "そのまま発表できる HTML スライド",
         "templateCount_other": "{{count}} 件のテンプレート",
-        "useTemplate": "テンプレート {{title}} を使う",
-        "videoDescription": "テキストから動画を生成し、パラメーターは選択したモデルに従います",
-        "websiteDescription": "公開できる静的サイト",
-        "workflowDescription": "コンポーザーから実行できる保存済みワークフロー"
+        "useTemplate": "テンプレート {{title}} を使う"
       },
       "temporarilySwitchTo": "一時的な切り替え先",
       "threadSuggestions": "チャットスレッド",
@@ -2103,6 +2103,7 @@
         "wiring": "配線を合わせてみると・・・"
       },
       "viewActivityLogs": "アクティビティログを表示する",
+      "viewLangfuseTrace": "Langfuse トレースを表示",
       "viewLogs": "実行ログを表示する",
       "waitingIn": "待機中",
       "workedFor": "{{duration}} で働いていました",
@@ -2117,6 +2118,7 @@
       "createFailed": "共有された会話を作成できませんでした。もう一度お試しください。",
       "deselectGroup": "メッセージグループの選択を解除",
       "linkCopied": "リンクをコピーしました",
+      "publicDescription": "選択したメッセージと添付ファイルが公開されます。",
       "selectedCount_other": "{{count}}件選択中",
       "selectGroup": "メッセージグループを選択",
       "shareLink": "共有された会話のリンク",
@@ -2369,6 +2371,14 @@
       "moreTemplates": "他のテンプレート",
       "presentationTemplates": "プレゼンテンプレート",
       "removeTask": "{{task}}を削除",
+      "shelf": {
+        "browseStyles": "すべてのスタイルを見る",
+        "browseTemplates": "すべてのテンプレートを見る",
+        "image": "画像スタイル",
+        "nextTemplates": "次のテンプレート",
+        "video": "動画テンプレート",
+        "website": "ウェブサイトテンプレート"
+      },
       "tasks": {
         "image": "画像",
         "presentation": "スライド",
@@ -2796,7 +2806,6 @@
       "importedLoadFailed": "アップロード済みテンプレートを読み込めませんでした。",
       "importedLoading": "アップロード済みテンプレートを読み込み中…",
       "importedUnavailable": "アップロード済みテンプレートは一時的に利用できません。",
-      "previewRefreshFailed": "テンプレートのプレビューを更新できませんでした。",
       "previewTemplate": "プレビュー テンプレート {{title}}",
       "previewVideo": "プレビュービデオテンプレート {{title}}",
       "previewWebsite": "Web サイト テンプレートのプレビュー {{title}}",
@@ -2899,7 +2908,6 @@
       "storageFailed": "音声を保存できませんでした。再試行で復元できるのは、この端末に保存済みの音声のみです。",
       "textTakingShape": "テキストを作成中",
       "transcribing": "文字起こし",
-      "transcribingProgress": "転記中...",
       "transcriptionFailed": "音声の転写に失敗しました。もう一度やり直してください。"
     },
     "workflows": {
@@ -3129,9 +3137,11 @@
       "scope": {
         "aria": "コネクタの表示範囲",
         "attention": "対応が必要",
+        "connected": "接続済み",
+        "custom": "カスタム",
         "discover": "探す",
-        "mine": "あなたのコネクタ",
-        "searchMine": "あなたのコネクタを検索"
+        "searchConnected": "接続済みのコネクタを検索",
+        "searchCustom": "カスタムコネクタを検索"
       },
       "search": "コネクターを検索",
       "shelf": {
@@ -5610,7 +5620,7 @@
         "categoryImage": "画像",
         "categoryVideo": "動画",
         "chatModels": "チャットモデル",
-        "effort": "推論の強度",
+        "effort": "強度",
         "fast": "速い",
         "fastImpact": {
           "apiCost": "APIトークン料金 2×",
@@ -5634,10 +5644,8 @@
         "loadError": "モデルをロードできません。",
         "loading": "モデルをロード中...",
         "menu": {
-          "adjustSettings": "{{model}} の設定を調整",
           "backToModels": "モデルに戻る",
-          "changeModel": "{{category}}モデルを変更、{{model}}",
-          "chatSettings": "チャット設定"
+          "changeModel": "{{category}}モデルを変更、{{model}}"
         },
         "models": "モデル",
         "noConfiguredModels": "設定されたモデルはありません",
@@ -6909,6 +6917,9 @@
       "noWorkflows": "ワークフローなし",
       "open": "{{title}} を開く",
       "openRecovery": "{{title}} の復旧を開く",
+      "ownerLoading": "作成者を読み込み中…",
+      "ownerRetry": "作成者情報を取得できません。再度開いてお試しください。",
+      "ownerUnavailable": "作成者情報を取得できません",
       "runsAs": "として実行",
       "runsAsAria": "{{agent}} として実行",
       "section": {

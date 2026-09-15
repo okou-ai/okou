@@ -397,6 +397,9 @@ test("Desktop recording handoff keeps both uploaded files with the intro video s
   await expectInlineTemplate("Intro video");
   const message = screen.getByRole("textbox", { name: "Message" });
   expect(message).toHaveTextContent("desktop screen recording");
+  await waitFor(() => {
+    expect(control("Send")).toBeEnabled();
+  });
   const user = userEvent.setup({ delay: null });
   await user.click(message);
   await user.keyboard("{Enter}");
@@ -455,6 +458,9 @@ test("A saved intro video draft cannot send outside the rollout and remains edit
     featureSwitches: { [FeatureSwitchKey.IntroVideo]: false },
   });
   await expectInlineTemplate("Intro video");
+  await waitFor(() => {
+    expect(control("Send")).toBeEnabled();
+  });
   const message = await screen.findByRole("textbox", { name: "Message" });
   const user = userEvent.setup({ delay: null });
   await user.click(message);

@@ -3,6 +3,7 @@ import type {
   PiModelConfig,
   StoredExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
+import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 
 export interface PiApiFirstTurnActivation {
   readonly runId: string;
@@ -16,6 +17,7 @@ export interface PiApiFirstTurnActivation {
     | "encryptedSecrets"
     | "environment"
     | "modelUsageProvider"
+    | "platformEnvironment"
     | "resumeSession"
     | "secretConnectorMap"
     | "secretConnectorMetadataMap"
@@ -30,11 +32,11 @@ export interface PiApiFirstTurnActivation {
 }
 
 export const PI_API_FIRST_TURN_API_OWNERSHIP_TIMEOUT_MS = 45_000;
+export const PI_API_FIRST_TURN_URL_TTL_SECONDS = PRESIGNED_URL_TTL_SECONDS;
 const PI_API_FIRST_TURN_HANDOFF_SETTLEMENT_TIMEOUT_MS = 10_000;
 export const PI_API_FIRST_TURN_COORDINATION_TIMEOUT_MS =
   PI_API_FIRST_TURN_API_OWNERSHIP_TIMEOUT_MS +
   PI_API_FIRST_TURN_HANDOFF_SETTLEMENT_TIMEOUT_MS;
-export const PI_API_FIRST_TURN_URL_TTL_SECONDS = 6 * 60 * 60;
 
 export function requirePiApiFirstTurnExecutionContext(
   context: Pick<
@@ -45,6 +47,7 @@ export function requirePiApiFirstTurnExecutionContext(
     | "environment"
     | "modelUsageProvider"
     | "piLaunchConfig"
+    | "platformEnvironment"
     | "piModelConfig"
     | "piSessionId"
     | "resumeSession"
@@ -69,6 +72,7 @@ export function requirePiApiFirstTurnExecutionContext(
     environment: context.environment,
     modelUsageProvider: context.modelUsageProvider,
     piLaunchConfig: context.piLaunchConfig,
+    platformEnvironment: context.platformEnvironment,
     piModelConfig: context.piModelConfig,
     piSessionId: context.piSessionId,
     resumeSession: context.resumeSession,

@@ -1,20 +1,11 @@
 pub(crate) struct DownloadError {
     pub(crate) message: String,
-    pub(crate) retriable: bool,
 }
 
 impl DownloadError {
-    pub(crate) fn fatal(message: impl Into<String>) -> Self {
+    pub(crate) fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
-            retriable: false,
-        }
-    }
-
-    pub(crate) fn transport(message: impl Into<String>, retriable: bool) -> Self {
-        Self {
-            message: message.into(),
-            retriable,
         }
     }
 }

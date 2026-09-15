@@ -1028,7 +1028,12 @@
     "toasts": {
       "copyLinkFailed": "Échec de la copie du lien",
       "downloadFailed": "Échec du téléchargement",
-      "linkCopied": "Lien copié"
+      "linkCopied": "Lien copié",
+      "sharing": "Partage en cours…"
+    },
+    "viewer": {
+      "continuePrompt": "Aide-moi à travailler avec cet artefact : {{url}}",
+      "continueWithBrand": "Continuer avec {{brandName}}"
     }
   },
   "auth": {
@@ -1774,16 +1779,11 @@
       "selectModel": "Sélectionner le modèle",
       "slashPanel": {
         "browseAll": "Parcourir tous les modèles",
-        "illustrationDescription": "Une seule image, dans le style que vous choisissez",
         "make": "Créer",
-        "slidesDescription": "Une présentation HTML prête à projeter",
         "templateCount_one": "{{count}} modèle",
         "templateCount_many": "{{count}} modèles",
         "templateCount_other": "{{count}} modèles",
-        "useTemplate": "Utiliser le modèle {{title}}",
-        "videoDescription": "Du texte à la vidéo, avec les paramètres du modèle choisi",
-        "websiteDescription": "Un site statique que vous pouvez publier",
-        "workflowDescription": "Un workflow enregistré que vous pouvez lancer depuis le compositeur"
+        "useTemplate": "Utiliser le modèle {{title}}"
       },
       "temporarilySwitchTo": "Passer temporairement à",
       "threadSuggestions": "Conversations",
@@ -2156,6 +2156,7 @@
         "wiring": "Branchement des éléments..."
       },
       "viewActivityLogs": "Voir les journaux d'activité",
+      "viewLangfuseTrace": "Voir la trace Langfuse",
       "viewLogs": "Voir les journaux d'exécution",
       "waitingIn": "En attente",
       "workedFor": "Fonctionné pendant {{duration}}",
@@ -2170,6 +2171,7 @@
       "createFailed": "Impossible de créer la conversation partagée. Réessayez.",
       "deselectGroup": "Désélectionner le groupe de messages",
       "linkCopied": "Lien copié",
+      "publicDescription": "Les messages sélectionnés et leurs pièces jointes seront publics.",
       "selectedCount_one": "{{count}} sélectionné",
       "selectedCount_many": "{{count}} sélectionnés",
       "selectedCount_other": "{{count}} sélectionnés",
@@ -2424,6 +2426,14 @@
       "moreTemplates": "Autres modèles",
       "presentationTemplates": "Modèles de présentation",
       "removeTask": "Retirer {{task}}",
+      "shelf": {
+        "browseStyles": "Parcourir tous les styles",
+        "browseTemplates": "Parcourir tous les modèles",
+        "image": "Styles d'image",
+        "nextTemplates": "Modèles suivants",
+        "video": "Modèles de vidéo",
+        "website": "Modèles de site web"
+      },
       "tasks": {
         "image": "Image",
         "presentation": "Diapositives",
@@ -2851,7 +2861,6 @@
       "importedLoadFailed": "Impossible de charger les modèles importés.",
       "importedLoading": "Chargement des modèles importés…",
       "importedUnavailable": "Les modèles importés sont temporairement indisponibles.",
-      "previewRefreshFailed": "Impossible d’actualiser les aperçus des modèles.",
       "previewTemplate": "Aperçu du modèle {{title}}",
       "previewVideo": "Aperçu du modèle vidéo {{title}}",
       "previewWebsite": "Aperçu du modèle de site web {{title}}",
@@ -2954,7 +2963,6 @@
       "storageFailed": "Impossible de sauvegarder le son. Réessayer ne récupère que le son déjà enregistré sur cet appareil.",
       "textTakingShape": "Le texte prend forme",
       "transcribing": "Transcription",
-      "transcribingProgress": "Transcription en cours...",
       "transcriptionFailed": "Échec de la transcription vocale. Réessayez."
     },
     "workflows": {
@@ -3192,9 +3200,11 @@
       "scope": {
         "aria": "Portée des connecteurs",
         "attention": "Nécessite votre attention",
+        "connected": "Connecté",
+        "custom": "Personnalisés",
         "discover": "Découvrir",
-        "mine": "Vos connecteurs",
-        "searchMine": "Trouver vos connecteurs"
+        "searchConnected": "Trouver les connecteurs connectés",
+        "searchCustom": "Trouver les connecteurs personnalisés"
       },
       "search": "Trouver des connecteurs",
       "shelf": {
@@ -5681,7 +5691,7 @@
         "categoryImage": "Image",
         "categoryVideo": "Vidéo",
         "chatModels": "Modèles de chat",
-        "effort": "Effort de raisonnement",
+        "effort": "Effort",
         "fast": "Rapide",
         "fastImpact": {
           "apiCost": "2× le coût des tokens API",
@@ -5705,10 +5715,8 @@
         "loadError": "Impossible de charger les modèles.",
         "loading": "Chargement des modèles...",
         "menu": {
-          "adjustSettings": "Ajuster les paramètres de {{model}}",
           "backToModels": "Retour aux modèles",
-          "changeModel": "Changer le modèle {{category}}, {{model}}",
-          "chatSettings": "Paramètres du chat"
+          "changeModel": "Changer le modèle {{category}}, {{model}}"
         },
         "models": "Modèles",
         "noConfiguredModels": "Aucun modèle configuré",
@@ -6997,6 +7005,9 @@
       "noWorkflows": "Aucun workflow",
       "open": "Ouvrir {{title}}",
       "openRecovery": "Ouvrir la récupération de {{title}}",
+      "ownerLoading": "Chargement de l’auteur…",
+      "ownerRetry": "Auteur indisponible. Rouvrez pour réessayer.",
+      "ownerUnavailable": "Auteur indisponible",
       "runsAs": "S'exécute en tant que",
       "runsAsAria": "S'exécute en tant que {{agent}}",
       "section": {

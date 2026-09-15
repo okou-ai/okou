@@ -30,6 +30,10 @@ describe("instrument", () => {
         },
         serviceName: "vm0-api",
         traceExporter: expect.any(OTLPTraceExporter),
+        idGenerator: {
+          generateSpanId: expect.any(Function),
+          generateTraceId: expect.any(Function),
+        },
       }),
     );
   });

@@ -1,12 +1,8 @@
 {
   "version": 1,
   "legacyClassTokens": [
-    "copied",
     "language-mermaid",
     "okou-app",
-    "okou-blocks",
-    "okou-chat-bubble-assistant",
-    "okou-chat-bubble-user",
     "okou-chat-card",
     "okou-chat-frame",
     "okou-chat-skeleton-reveal",
@@ -96,14 +92,18 @@
         "important": false
       },
       {
-        "atRules": ["@media (max-width:767px)"],
+        "atRules": [
+          "@media (max-width:767px)"
+        ],
         "selector": ".okou-mobile-fixed-safe-area",
         "property": "box-sizing",
         "value": "border-box",
         "important": false
       },
       {
-        "atRules": ["@media (max-width:767px)"],
+        "atRules": [
+          "@media (max-width:767px)"
+        ],
         "selector": ".okou-mobile-fixed-safe-area",
         "property": "padding",
         "value": "var(--sat) var(--sar) var(--sab) var(--sal)",
@@ -159,70 +159,90 @@
         "important": false
       },
       {
-        "atRules": ["@media (display-mode:standalone)"],
+        "atRules": [
+          "@media (display-mode:standalone)"
+        ],
         "selector": ".okou-mobile-sidebar::before",
         "property": "bottom",
         "value": "calc(-1*var(--sab))",
         "important": false
       },
       {
-        "atRules": ["@media (min-width:768px)"],
+        "atRules": [
+          "@media (min-width:768px)"
+        ],
         "selector": ".okou-app[data-desktop-shell] .okou-sidebar-header",
         "property": "padding-top",
         "value": "0",
         "important": false
       },
       {
-        "atRules": ["@media (min-width:768px)"],
+        "atRules": [
+          "@media (min-width:768px)"
+        ],
         "selector": ".okou-app[data-desktop-shell] .okou-desktop-titlebar-drag-region",
         "property": "display",
         "value": "block",
         "important": false
       },
       {
-        "atRules": ["@media (min-width:768px)"],
+        "atRules": [
+          "@media (min-width:768px)"
+        ],
         "selector": ".okou-app[data-desktop-shell] .okou-desktop-titlebar-drag-region",
         "property": "flex-shrink",
         "value": "0",
         "important": false
       },
       {
-        "atRules": ["@media (min-width:768px)"],
+        "atRules": [
+          "@media (min-width:768px)"
+        ],
         "selector": ".okou-app[data-desktop-shell] .okou-desktop-titlebar-drag-region",
         "property": "height",
         "value": "var(--okou-desktop-titlebar-height)",
         "important": false
       },
       {
-        "atRules": ["@media (min-width:768px)"],
+        "atRules": [
+          "@media (min-width:768px)"
+        ],
         "selector": ".okou-app[data-desktop-shell] .okou-desktop-titlebar-drag-region",
         "property": "-webkit-app-region",
         "value": "drag",
         "important": false
       },
       {
-        "atRules": ["@media (min-width:768px)"],
+        "atRules": [
+          "@media (min-width:768px)"
+        ],
         "selector": ".okou-app[data-desktop-shell] .okou-workspace-bg",
         "property": "position",
         "value": "relative",
         "important": false
       },
       {
-        "atRules": ["@media (min-width:768px)"],
+        "atRules": [
+          "@media (min-width:768px)"
+        ],
         "selector": ".okou-app[data-desktop-shell] .okou-workspace-bg :where(button,a,input,textarea,select,[role=\"button\"],[role=\"link\"],[role=\"textbox\"],[contenteditable]:not([contenteditable=\"false\"]))",
         "property": "position",
         "value": "relative",
         "important": false
       },
       {
-        "atRules": ["@media (min-width:768px)"],
+        "atRules": [
+          "@media (min-width:768px)"
+        ],
         "selector": ".okou-app[data-desktop-shell] .okou-workspace-bg :where(button,a,input,textarea,select,[role=\"button\"],[role=\"link\"],[role=\"textbox\"],[contenteditable]:not([contenteditable=\"false\"]))",
         "property": "z-index",
         "value": "2",
         "important": false
       },
       {
-        "atRules": ["@media (min-width:768px)"],
+        "atRules": [
+          "@media (min-width:768px)"
+        ],
         "selector": ".okou-app[data-desktop-shell] .okou-workspace-bg :where(button,a,input,textarea,select,[role=\"button\"],[role=\"link\"],[role=\"textbox\"],[contenteditable]:not([contenteditable=\"false\"]))",
         "property": "-webkit-app-region",
         "value": "no-drag",
@@ -310,125 +330,6 @@
         "selector": ".okou-chat-skeleton-reveal",
         "property": "animation",
         "value": "okou-chat-skeleton-reveal 0s 100ms forwards",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks",
-        "property": "display",
-        "value": "inline-grid",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks",
-        "property": "grid-template-columns",
-        "value": "repeat(2,5px)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks",
-        "property": "grid-template-rows",
-        "value": "repeat(2,5px)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks",
-        "property": "gap",
-        "value": "1.5px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span",
-        "property": "border-radius",
-        "value": "1.5px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(1)",
-        "property": "background",
-        "value": "var(--zb-c1)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(1)",
-        "property": "grid-column",
-        "value": "2",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(1)",
-        "property": "grid-row",
-        "value": "1",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(1)",
-        "property": "animation",
-        "value": "okou-block-pop 1.4s ease-in-out infinite",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(2)",
-        "property": "background",
-        "value": "var(--zb-c2)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(2)",
-        "property": "grid-column",
-        "value": "1",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(2)",
-        "property": "grid-row",
-        "value": "2",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(2)",
-        "property": "animation",
-        "value": "okou-block-pop 1.4s ease-in-out 0.2s infinite",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(3)",
-        "property": "background",
-        "value": "var(--zb-c3)",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(3)",
-        "property": "grid-column",
-        "value": "2",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(3)",
-        "property": "grid-row",
-        "value": "2",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-blocks span:nth-child(3)",
-        "property": "animation",
-        "value": "okou-block-pop 1.4s ease-in-out 0.4s infinite",
         "important": false
       },
       {
@@ -537,59 +438,39 @@
         "important": false
       },
       {
-        "atRules": ["@layer components"],
+        "atRules": [
+          "@layer components"
+        ],
         "selector": ".okou-app .okou-chat-card,.okou-app .okou-chat-frame",
         "property": "border",
         "value": "1px solid hsl(var(--gray-400))",
         "important": false
       },
       {
-        "atRules": ["@layer components"],
+        "atRules": [
+          "@layer components"
+        ],
         "selector": ".okou-app .okou-chat-card,.okou-app .okou-chat-frame",
         "property": "border-radius",
         "value": "var(--okou-chat-card-radius)",
         "important": false
       },
       {
-        "atRules": ["@layer components"],
+        "atRules": [
+          "@layer components"
+        ],
         "selector": ".okou-app .okou-chat-card,.okou-app .okou-chat-frame",
         "property": "box-shadow",
         "value": "var(--okou-chat-card-shadow)",
         "important": false
       },
       {
-        "atRules": ["@layer components"],
+        "atRules": [
+          "@layer components"
+        ],
         "selector": ".okou-app .okou-chat-card",
         "property": "background-color",
         "value": "hsl(var(--card))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app .okou-chat-bubble-user",
-        "property": "background-color",
-        "value": "hsl(var(--gray-200))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app .okou-chat-bubble-user",
-        "property": "color",
-        "value": "hsl(var(--foreground))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app .okou-chat-bubble-assistant",
-        "property": "background-color",
-        "value": "transparent",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-app .okou-chat-bubble-assistant",
-        "property": "border",
-        "value": "none",
         "important": false
       },
       {
@@ -705,7 +586,9 @@
         "important": false
       },
       {
-        "atRules": ["@media (prefers-reduced-motion:reduce)"],
+        "atRules": [
+          "@media (prefers-reduced-motion:reduce)"
+        ],
         "selector": ".okou-app .okou-composer::after",
         "property": "transition",
         "value": "none",
@@ -723,41 +606,6 @@
         "selector": ".wmde-markdown p,.wmde-markdown .okou-markdown-card",
         "property": "margin-bottom",
         "value": "6px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-chat-bubble-assistant .wmde-markdown p,.okou-chat-bubble-user .wmde-markdown p,.okou-chat-bubble-assistant .wmde-markdown .okou-markdown-card,.okou-chat-bubble-user .wmde-markdown .okou-markdown-card",
-        "property": "margin-top",
-        "value": "8px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-chat-bubble-assistant .wmde-markdown p,.okou-chat-bubble-user .wmde-markdown p,.okou-chat-bubble-assistant .wmde-markdown .okou-markdown-card,.okou-chat-bubble-user .wmde-markdown .okou-markdown-card",
-        "property": "margin-bottom",
-        "value": "8px",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".okou-chat-bubble-assistant .wmde-markdown hr",
-        "property": "display",
-        "value": "none",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown pre:hover .copied:active,.wmde-markdown pre .copied.active",
-        "property": "background",
-        "value": "hsl(var(--gray-400))",
-        "important": false
-      },
-      {
-        "atRules": [],
-        "selector": ".wmde-markdown pre:hover .copied:active,.wmde-markdown pre .copied.active",
-        "property": "color",
-        "value": "hsl(var(--foreground))",
         "important": false
       },
       {
@@ -1419,14 +1267,18 @@
         "important": false
       },
       {
-        "atRules": ["@media (prefers-reduced-motion:reduce)"],
+        "atRules": [
+          "@media (prefers-reduced-motion:reduce)"
+        ],
         "selector": ".owf-diagram-beam",
         "property": "animation",
         "value": "none",
         "important": false
       },
       {
-        "atRules": ["@media (prefers-reduced-motion:reduce)"],
+        "atRules": [
+          "@media (prefers-reduced-motion:reduce)"
+        ],
         "selector": ".owf-diagram-beam",
         "property": "opacity",
         "value": "0.35",
@@ -2585,11 +2437,9 @@
       "wmde-markdown-color": 1
     },
     "apps/platform/src/views/components/mermaid-diagram.tsx": {
-      "copied": 1,
       "language-mermaid": 1
     },
     "apps/platform/src/views/components/rich-markdown.tsx": {
-      "copied": 1,
       "okou-markdown-card": 2
     },
     "apps/platform/src/views/export-page/export-page.tsx": {
@@ -2615,13 +2465,7 @@
     "apps/platform/src/views/okou-page/chat-forward-dialog.tsx": {
       "okou-app": 1
     },
-    "apps/platform/src/views/okou-page/chat-message-surface.tsx": {
-      "okou-chat-bubble-assistant": 1,
-      "okou-chat-bubble-user": 1
-    },
     "apps/platform/src/views/okou-page/chat-thread-page.tsx": {
-      "okou-blocks": 1,
-      "okou-chat-bubble-user": 2,
       "okou-chat-card": 2,
       "okou-chat-skeleton-reveal": 1,
       "okou-shimmer-text": 1,
@@ -2653,9 +2497,6 @@
     },
     "apps/platform/src/views/okou-page/replace-composer-draft-dialog.tsx": {
       "okou-app": 1
-    },
-    "apps/platform/src/views/okou-page/settings-tab.tsx": {
-      "okou-chat-bubble-assistant": 1
     },
     "apps/platform/src/views/okou-page/sidebar-dialogs.tsx": {
       "okou-app": 2

@@ -168,33 +168,14 @@ test("A template subscription failure releases both scopes and leaves built-ins 
   });
 });
 
-test("Retrying a failed catalog restores templates and preview renewal", async () => {
+test("Retrying a failed catalog restores uploaded templates", async () => {
   mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
   mockTemplateChat();
-  const source = createUploadedTemplate({
+  const uploaded = createUploadedTemplate({
     id: UPLOADED_TEMPLATE_ID,
     title: "Recovered catalog",
   });
-  const uploaded = {
-    ...source,
-    previewAssets: source.previewAssets.map((asset) => {
-      return {
-        ...asset,
-        expiresAt: new Date(UPLOADED_TEMPLATE_NOW_MS + 40_000).toISOString(),
-      };
-    }),
-  };
   mockPresentationTemplateLibrary([uploaded]);
-  context.mocks.api(
-    presentationTemplatesContract.resolvePreviewUrls,
-    ({ respond }) => {
-      return respond(200, {
-        assets: source.previewAssets.map((asset) => {
-          return { ...asset, url: `${asset.url}?renewed` };
-        }),
-      });
-    },
-  );
   let unavailable = true;
   context.mocks.api(presentationTemplatesContract.list, ({ respond }) => {
     return unavailable
@@ -225,70 +206,6 @@ test("Retrying a failed catalog restores templates and preview renewal", async (
   ).resolves.toBeInTheDocument();
   expect(
     within(picker).queryByText("Couldn't load uploaded templates."),
-  ).not.toBeInTheDocument();
-  await expect(
-    pendingImportedTemplateImage(importedTemplateMedia(uploaded.id), "renewed"),
-  ).resolves.toBeInTheDocument();
-});
-
-test("A failed preview renewal can retry while the loaded cover stays in place", async () => {
-  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
-  mockTemplateChat();
-  const source = createUploadedTemplate({
-    id: UPLOADED_TEMPLATE_ID,
-    title: "Renewable previews",
-  });
-  const uploaded = {
-    ...source,
-    previewAssets: source.previewAssets.map((asset) => {
-      return {
-        ...asset,
-        expiresAt: new Date(UPLOADED_TEMPLATE_NOW_MS + 40_000).toISOString(),
-      };
-    }),
-  };
-  mockPresentationTemplateLibrary([uploaded]);
-  let unavailable = true;
-  context.mocks.api(
-    presentationTemplatesContract.resolvePreviewUrls,
-    ({ respond }) => {
-      return unavailable
-        ? respond(500, {
-            error: {
-              code: "INTERNAL_SERVER_ERROR",
-              message: "Preview renewal unavailable",
-            },
-          })
-        : respond(200, {
-            assets: source.previewAssets.map((asset) => {
-              return { ...asset, url: `${asset.url}?renewed` };
-            }),
-          });
-    },
-  );
-  const user = userEvent.setup();
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    host: "app.okou.ai",
-  });
-  const picker = await openTemplatePicker(user, "Presentation");
-  const media = importedTemplateMedia(uploaded.id);
-  const previousImage = await loadImportedTemplateImage(media, "slide-1");
-  await expect(
-    within(picker).findByText("Couldn't refresh template previews."),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryAllByText("Preview renewal unavailable")).toHaveLength(0);
-  unavailable = false;
-  click(buttonNamed("Retry", picker));
-  const renewedImage = await pendingImportedTemplateImage(media, "renewed");
-  expect(previousImage).toHaveAttribute("data-active", "true");
-  fireEvent.load(renewedImage);
-  await waitFor(() => {
-    expect(renewedImage).toHaveAttribute("data-active", "true");
-  });
-  expect(
-    within(picker).queryByText("Couldn't refresh template previews."),
   ).not.toBeInTheDocument();
 });
 

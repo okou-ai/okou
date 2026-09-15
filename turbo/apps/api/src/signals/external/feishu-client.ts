@@ -773,6 +773,9 @@ export async function listFeishuChatMessages(
   url.searchParams.set("sort_type", "ByCreateTimeDesc");
   url.searchParams.set("page_size", String(args.pageSize ?? 50));
   url.searchParams.set("with_sender_name", "true");
+  // The rendered card representation can replace Markdown and artifact links
+  // with image previews. Read the original schema for conversation context.
+  url.searchParams.set("card_msg_content_type", "user_card_content");
   const response = await fetch(url, {
     headers: {
       authorization: `Bearer ${token}`,
