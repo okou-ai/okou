@@ -327,39 +327,46 @@ export const subscribeChatThreadRealtime$ = command(
         ready.resolve();
       }
     };
-    const options = { onSubscribed: markSubscribed };
-    const subscription = Promise.all(
-      subscriptions.map((subscription) => {
-        if (subscription.kind === "invalidate") {
-          return set(
-            setAblyInvalidationLoop$,
-            {
-              topic: subscription.topic,
-              invalidations: subscription.invalidations,
-              options,
-            },
-            signal,
-          );
+    const options = {
+      onSubscribed: markSubscribed,
+      onError: (error: unknown) => {
+        if (!ready.settled()) {
+          ready.reject(error);
+        } else {
+          throw error;
         }
-        return set(
-          setAblyLoop$,
+      },
+    };
+    for (const subscription of subscriptions) {
+      if (subscription.kind === "invalidate") {
+        set(
+          setAblyInvalidationLoop$,
           {
             topic: subscription.topic,
-            loopCommand$: subscription.loopCommand$,
+            invalidations: subscription.invalidations,
             options,
           },
           signal,
         );
-      }),
-    );
+        continue;
+      }
+      set(
+        setAblyLoop$,
+        {
+          topic: subscription.topic,
+          loopCommand$: subscription.loopCommand$,
+          options,
+        },
+        signal,
+      );
+    }
 
-    await Promise.race([ready.promise, subscription]);
+    await ready.promise;
     signal.throwIfAborted();
     if (ready.settled() && handlers.onSubscribed$) {
       await set(handlers.onSubscribed$, signal);
       signal.throwIfAborted();
     }
-    await subscription;
   },
 );
 

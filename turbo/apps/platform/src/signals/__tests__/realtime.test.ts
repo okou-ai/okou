@@ -8,6 +8,9 @@ import {
   setupRealtime$,
   setAblyLoop$,
   setAblyPayloadLoop$,
+  waitAblyLoopUntil$,
+  waitAblyPayloadLoopUntil$,
+  waitAblyInvalidationLoopUntil$,
   setRealtimeDegradedNotifier$,
   setSharedWorkerRealtimeBridge$,
 } from "../realtime.ts";
@@ -21,7 +24,7 @@ import { setAuthenticatedIdentity$ } from "../auth-context.ts";
 import { subscribeChatThreadRealtime$ } from "../chat-page/chat-thread-remote-signals.ts";
 import { testContext } from "./test-helpers.ts";
 import { hasRealtimeChannel } from "../../mocks/ably.ts";
-import { detach, Reason, resetSignal, settle } from "../utils.ts";
+import { resetSignal, settle } from "../utils.ts";
 import type { SharedDatabaseBridge } from "../../shared-database/bridge.ts";
 import type {
   ComputedKey,
@@ -130,12 +133,12 @@ test("A session output channel detaches after its final subscriber and can be re
     context.signal,
   );
   const firstOperation = context.store.set(
-    setAblyPayloadLoop$,
+    waitAblyPayloadLoopUntil$,
     { scope: "run-output", topic, loopCommand$: keepAlivePayloadLoop$ },
     firstSignal,
   );
   const secondOperation = context.store.set(
-    setAblyPayloadLoop$,
+    waitAblyPayloadLoopUntil$,
     { scope: "run-output", topic, loopCommand$: receivePayload$ },
     secondSignal,
   );
@@ -158,7 +161,7 @@ test("A session output channel detaches after its final subscriber and can be re
   expect(hasRealtimeChannel(channel)).toBeFalsy();
   const nextSignal = context.store.set(resetFirstSubscriber$, context.signal);
   const nextOperation = context.store.set(
-    setAblyPayloadLoop$,
+    waitAblyPayloadLoopUntil$,
     { scope: "run-output", topic, loopCommand$: receivePayload$ },
     nextSignal,
   );
@@ -246,7 +249,7 @@ test("Route app subscriptions through the SharedWorker without an App Ably clien
   context.store.set(setSharedWorkerRealtimeBridge$, bridge);
   await context.store.set(setupRealtime$, context.signal);
   const loopPromise = context.store.set(
-    setAblyLoop$,
+    waitAblyLoopUntil$,
     { topic: "connectorPermissionUpdated", loopCommand$: loop$ },
     context.signal,
   );
@@ -272,7 +275,7 @@ test("A pending live-update listener starts after realtime connects", async () =
   });
 
   const loopPromise = context.store.set(
-    setAblyLoop$,
+    waitAblyLoopUntil$,
     {
       topic,
       loopCommand$: loop$,
@@ -303,7 +306,7 @@ test("Workspace live updates stay in the active workspace", async () => {
   });
 
   const loopPromise = context.store.set(
-    setAblyLoop$,
+    waitAblyLoopUntil$,
     {
       scope: "org",
       topic,
@@ -340,7 +343,7 @@ test("Realtime authentication failure does not leave stale live updates", async 
 
   const topic = "test:auth-failure";
   const loopPromise = context.store.set(
-    setAblyLoop$,
+    waitAblyLoopUntil$,
     {
       topic,
       loopCommand$: finishLoop$,
@@ -354,7 +357,7 @@ test("Realtime authentication failure does not leave stale live updates", async 
   expect(context.mocks.ably.hasSubscription(topic)).toBeFalsy();
   await expect(
     context.store.set(
-      setAblyLoop$,
+      waitAblyLoopUntil$,
       { topic: "test:late-auth-failure", loopCommand$: finishLoop$ },
       context.signal,
     ),
@@ -376,8 +379,8 @@ test.each(["subscriber", "parent"])(
     context.mocks.ably.triggerConnectionState("suspended");
     const topic = "test:cancel-attach";
     const operation = context.store.set(
-      setAblyLoop$,
-      { topic, loopCommand$: keepAliveLoop$ },
+      waitAblyInvalidationLoopUntil$,
+      { topic, invalidations: [noopInvalidation$] },
       subscriberSignal,
     );
     await waitFor(() => {
@@ -402,7 +405,7 @@ test("A channel that fails during registration rejects the subsequent attach wai
     topic,
   );
   const operation = context.store.set(
-    setAblyLoop$,
+    waitAblyLoopUntil$,
     { topic, loopCommand$: keepAliveLoop$ },
     context.signal,
   );
@@ -423,7 +426,7 @@ test("Live updates remain usable after the transport reconnects", async () => {
   });
 
   await setupAuthAndRealtime();
-  const loopPromise = context.store.set(
+  context.store.set(
     setAblyLoop$,
     {
       topic,
@@ -431,7 +434,6 @@ test("Live updates remain usable after the transport reconnects", async () => {
     },
     context.signal,
   );
-  detach(loopPromise, Reason.Daemon, "test realtime loop");
 
   await waitFor(() => {
     expect(context.mocks.ably.hasSubscription(topic)).toBeTruthy();
@@ -465,12 +467,11 @@ test("A subscription created while the connection is suspended still starts", as
     message: "Unable to connect (network unreachable)",
   });
 
-  const loopPromise = context.store.set(
+  context.store.set(
     setAblyLoop$,
     { topic, loopCommand$: loop$ },
     context.signal,
   );
-  detach(loopPromise, Reason.Daemon, "suspended realtime loop");
 
   // The listener has to survive the whole offline episode; asserting it before
   // the reconnect is what keeps this test honest about the recovery.
@@ -486,6 +487,8 @@ test("A subscription created while the connection is suspended still starts", as
 });
 
 test("A suspended connection keeps the listener instead of failing", async () => {
+  const resetSubscriber$ = resetSignal();
+  const subscriberSignal = context.store.set(resetSubscriber$, context.signal);
   mockSignedInUser();
   const topic = "test:suspended-no-failure";
 
@@ -496,16 +499,16 @@ test("A suspended connection keeps the listener instead of failing", async () =>
   });
 
   const loopPromise = context.store.set(
-    setAblyLoop$,
+    waitAblyLoopUntil$,
     { topic, loopCommand$: keepAliveLoop$ },
-    context.signal,
+    subscriberSignal,
   );
   let loopSettled = false;
   const observeLoop = async (): Promise<void> => {
     await settle(loopPromise);
     loopSettled = true;
   };
-  detach(observeLoop(), Reason.Daemon, "suspended realtime loop");
+  const observation = observeLoop();
 
   // The transport is unavailable, not broken. Dropping the listener here is
   // what used to strand the subscription: Ably reattaches the channel on
@@ -514,6 +517,8 @@ test("A suspended connection keeps the listener instead of failing", async () =>
     expect(context.mocks.ably.hasSubscription(topic)).toBeTruthy();
   });
   expect(loopSettled).toBeFalsy();
+  context.store.set(resetSubscriber$);
+  await expect(observation).rejects.toBe(subscriberSignal.reason);
 });
 
 test("Subscription initialization runs only after the channel attaches", async () => {
@@ -532,18 +537,14 @@ test("Subscription initialization runs only after the channel attaches", async (
     message: "Unable to connect (network unreachable)",
   });
 
-  detach(
-    context.store.set(
-      setAblyPayloadLoop$,
-      {
-        topic,
-        loopCommand$: keepAlivePayloadLoop$,
-        initializeCommand$: initialize$,
-      },
-      context.signal,
-    ),
-    Reason.Daemon,
-    "initialize after attach",
+  context.store.set(
+    setAblyPayloadLoop$,
+    {
+      topic,
+      loopCommand$: keepAlivePayloadLoop$,
+      initializeCommand$: initialize$,
+    },
+    context.signal,
   );
 
   // Catch-up must not run against a channel that cannot deliver messages yet,
@@ -560,30 +561,29 @@ test("Subscription initialization runs only after the channel attaches", async (
   });
 });
 
-test("A terminal channel failure still stops the subscription", async () => {
+test("A background subscription reports a terminal channel failure after returning", async () => {
   mockSignedInUser();
   const topic = "test:terminal-channel-failure";
-
+  const failed = context.mocks.deferred<unknown>();
   await setupAuthAndRealtime();
-  context.mocks.ably.triggerConnectionState("suspended", {
-    code: 80_003,
-    message: "Unable to connect (network unreachable)",
-  });
-  const loopPromise = context.store.set(
+  context.mocks.ably.triggerConnectionState("suspended");
+  context.store.set(
     setAblyLoop$,
-    { topic, loopCommand$: keepAliveLoop$ },
+    {
+      topic,
+      loopCommand$: keepAliveLoop$,
+      options: { onError: failed.resolve },
+    },
     context.signal,
   );
-  await vi.waitFor(() => {
+  await waitFor(() => {
     expect(context.mocks.ably.hasSubscription(topic)).toBeTruthy();
   });
-
-  // Waiting for `attached` must not swallow a terminal channel state:
-  // authentication revocation keeps its existing terminal semantics.
   context.mocks.ably.triggerFailure("connection failed");
-
-  const result = await settle(loopPromise);
-  expect(result.ok).toBeFalsy();
+  await expect(failed.promise).resolves.toMatchObject({
+    message: "connection failed",
+  });
+  expect(context.mocks.ably.hasSubscription(topic)).toBeFalsy();
 });
 
 test("A continuity gap re-reads the subscription baseline", async () => {
@@ -596,18 +596,14 @@ test("A continuity gap re-reads the subscription baseline", async () => {
   });
 
   await setupAuthAndRealtime();
-  detach(
-    context.store.set(
-      setAblyPayloadLoop$,
-      {
-        topic,
-        loopCommand$: keepAlivePayloadLoop$,
-        initializeCommand$: initialize$,
-      },
-      context.signal,
-    ),
-    Reason.Daemon,
-    "continuity gap loop",
+  context.store.set(
+    setAblyPayloadLoop$,
+    {
+      topic,
+      loopCommand$: keepAlivePayloadLoop$,
+      initializeCommand$: initialize$,
+    },
+    context.signal,
   );
   await waitFor(() => {
     expect(baselineReads).toBe(1);
@@ -636,18 +632,14 @@ test("A replayed reattach does not re-read the subscription baseline", async () 
   });
 
   await setupAuthAndRealtime();
-  detach(
-    context.store.set(
-      setAblyPayloadLoop$,
-      {
-        topic,
-        loopCommand$: keepAlivePayloadLoop$,
-        initializeCommand$: initialize$,
-      },
-      context.signal,
-    ),
-    Reason.Daemon,
-    "continuity preserved loop",
+  context.store.set(
+    setAblyPayloadLoop$,
+    {
+      topic,
+      loopCommand$: keepAlivePayloadLoop$,
+      initializeCommand$: initialize$,
+    },
+    context.signal,
   );
   await waitFor(() => {
     expect(baselineReads).toBe(1);
@@ -672,14 +664,10 @@ test("A continuity gap pokes a topic loop", async () => {
   });
 
   await setupAuthAndRealtime();
-  detach(
-    context.store.set(
-      setAblyLoop$,
-      { topic, loopCommand$: loop$, options: { runOnSubscribe: true } },
-      context.signal,
-    ),
-    Reason.Daemon,
-    "continuity gap topic loop",
+  context.store.set(
+    setAblyLoop$,
+    { topic, loopCommand$: loop$, options: { runOnSubscribe: true } },
+    context.signal,
   );
   await waitFor(() => {
     expect(runs).toBe(1);
@@ -713,7 +701,7 @@ test("An update arriving during processing is not lost", async () => {
 
   await context.store.set(setupRealtime$, context.signal);
   const loopPromise = context.store.set(
-    setAblyLoop$,
+    waitAblyLoopUntil$,
     {
       topic,
       loopCommand$: loop$,
@@ -750,7 +738,7 @@ test("A transient live-update error is retried", async () => {
 
   await context.store.set(setupRealtime$, context.signal);
   const loopPromise = context.store.set(
-    setAblyLoop$,
+    waitAblyLoopUntil$,
     {
       topic,
       loopCommand$: loop$,
@@ -789,7 +777,7 @@ test("Payload updates received during subscription initialization are applied", 
   );
 
   await setupAuthAndRealtime();
-  const loopPromise = context.store.set(
+  context.store.set(
     setAblyPayloadLoop$,
     {
       topic,
@@ -798,7 +786,6 @@ test("Payload updates received during subscription initialization are applied", 
     },
     context.signal,
   );
-  detach(loopPromise, Reason.Daemon, "test realtime loop");
 
   await initializationStarted.promise;
   context.mocks.ably.trigger(topic, { connectorSlug: "gmail" });
@@ -829,7 +816,7 @@ test("A permanently bad live update does not block later updates", async () => {
 
   await context.store.set(setupRealtime$, context.signal);
   const loopPromise = context.store.set(
-    setAblyPayloadLoop$,
+    waitAblyPayloadLoopUntil$,
     {
       topic,
       loopCommand$: loop$,
@@ -865,7 +852,7 @@ test("A persistent refresh error pauses until a new update", async () => {
 
   await context.store.set(setupRealtime$, context.signal);
   const loopPromise = context.store.set(
-    setAblyLoop$,
+    waitAblyLoopUntil$,
     {
       topic,
       loopCommand$: loop$,
@@ -899,25 +886,21 @@ test("Chat thread notifications invalidate their matching resources", async () =
   };
 
   await context.store.set(setupRealtime$, context.signal);
-  detach(
-    context.store.set(
-      subscribeChatThreadRealtime$,
-      {
-        threadId,
-        invalidations: {
-          threadDetail: [
-            recordInvalidation("thread-detail"),
-            recordInvalidation("connector-preference"),
-          ],
-          automations: [recordInvalidation("automations")],
-          artifacts: [recordInvalidation("artifacts")],
-        },
-        handlers: { onWorkflowsChanged$: keepAliveLoop$ },
+  await context.store.set(
+    subscribeChatThreadRealtime$,
+    {
+      threadId,
+      invalidations: {
+        threadDetail: [
+          recordInvalidation("thread-detail"),
+          recordInvalidation("connector-preference"),
+        ],
+        automations: [recordInvalidation("automations")],
+        artifacts: [recordInvalidation("artifacts")],
       },
-      context.signal,
-    ),
-    Reason.Daemon,
-    "test chat thread realtime invalidations",
+      handlers: { onWorkflowsChanged$: keepAliveLoop$ },
+    },
+    context.signal,
   );
 
   await waitFor(() => {

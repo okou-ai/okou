@@ -10,6 +10,7 @@ import { expect, test } from "vitest";
 import {
   queryAllByRoleFast,
   setupPage,
+  startPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -43,7 +44,7 @@ test("Cached conversations appear before remote synchronization", async () => {
   });
   installChatListAgent(context, agents.promise);
 
-  await setupPage({
+  await startPage({
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,
@@ -69,7 +70,7 @@ test("A complete cached conversation list remains navigable", async () => {
   });
   installChatListAgent(context);
 
-  await setupPage({
+  await startPage({
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,
@@ -115,7 +116,7 @@ test("Rename dialog uses the latest cached title", async () => {
     });
   });
 
-  await setupPage({
+  await startPage({
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,
@@ -199,7 +200,7 @@ test("The unread filter applies to cached conversations", async () => {
     });
   });
 
-  await setupPage({
+  await startPage({
     context,
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,

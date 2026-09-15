@@ -13,7 +13,7 @@ import {
 import {
   createDeferredPromise,
   resetSignal,
-  setLoop,
+  waitLoopUntil,
   withCleanup,
 } from "../utils.ts";
 import {
@@ -106,7 +106,7 @@ const confirmRecovery$ = command(
     await withCleanup(
       Promise.race([
         expired.promise,
-        setLoop(
+        waitLoopUntil(
           async () => {
             if (now() >= deadline || attempts >= 10) {
               return true;

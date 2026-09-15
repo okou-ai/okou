@@ -730,19 +730,17 @@ const reloadBillingStatusFromRealtime$ = command(
   },
 );
 
-export const setupBillingRealtime$ = command(
-  async ({ set }, signal: AbortSignal) => {
-    await set(
-      setAblyLoop$,
-      {
-        topic: "billing:changed",
-        loopCommand$: reloadBillingStatusFromRealtime$,
-        options: { runOnSubscribe: true },
-      },
-      signal,
-    );
-  },
-);
+export const setupBillingRealtime$ = command(({ set }, signal: AbortSignal) => {
+  set(
+    setAblyLoop$,
+    {
+      topic: "billing:changed",
+      loopCommand$: reloadBillingStatusFromRealtime$,
+      options: { runOnSubscribe: true },
+    },
+    signal,
+  );
+});
 
 function checkoutReturnUrl(): URL {
   return new URL(window.location.pathname, window.location.origin);

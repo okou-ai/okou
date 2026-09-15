@@ -12,7 +12,7 @@ import { clerk$, clerkUser$, resolveAppAuthUrl } from "../auth.ts";
 import { updatePage$ } from "../react-router.ts";
 import { replaceState } from "../location.ts";
 import { searchParams$ } from "../route.ts";
-import { setLoop, settle } from "../utils.ts";
+import { setDaemon, waitLoopUntil, settle } from "../utils.ts";
 import {
   callbackScheme,
   completeDesktopSession$,
@@ -224,7 +224,7 @@ function createDesktopCallback(
     // Keep a poll budget so the timeout surfaces as an ordinary error the page
     // can turn into the retry prompt.
     let polls = 0;
-    await setLoop(
+    await waitLoopUntil(
       async (loopSignal) => {
         if (polls++ >= CALLBACK_POLL_LIMIT) {
           throw new Error("Desktop sign-in timed out");
@@ -388,20 +388,23 @@ function createDesktopAuthSignals(
     }
   });
 
-  const initialize$ = command(async ({ set }, signal: AbortSignal) => {
-    const attempt = AbortSignal.any([
-      signal,
-      AbortSignal.timeout(mode === "callback" ? 120_000 : 25_000),
-    ]);
-    const result = await settle(
-      waitForDesktopOperation(set(run$, attempt), attempt),
-      signal,
-    );
-    if (!result.ok) {
-      // Deliberately discard API/Clerk errors: their text can contain secrets.
-      set(callbackUrl$, null);
-      set(phase$, "failed");
-    }
+  const initialize$ = command(({ set }, signal: AbortSignal): void => {
+    // The page is ready while the cancellable native sign-in flow is pending.
+    setDaemon(async (ownerSignal) => {
+      const attempt = AbortSignal.any([
+        ownerSignal,
+        AbortSignal.timeout(mode === "callback" ? 120_000 : 25_000),
+      ]);
+      const result = await settle(
+        waitForDesktopOperation(set(run$, attempt), attempt),
+        ownerSignal,
+      );
+      if (!result.ok) {
+        // Deliberately discard API/Clerk errors: their text can contain secrets.
+        set(callbackUrl$, null);
+        set(phase$, "failed");
+      }
+    }, signal);
   });
 
   const selectOrganization$ = createDesktopSelection(
@@ -449,6 +452,6 @@ export function setupDesktopAuthPage(mode: DesktopAuthRoute) {
     set(updatePage$, createElement(DesktopAuthPage, { signals, mode }));
     await set(hideAppSkeleton$, signal);
     signal.throwIfAborted();
-    await set(signals.initialize$, signal);
+    set(signals.initialize$, signal);
   });
 }

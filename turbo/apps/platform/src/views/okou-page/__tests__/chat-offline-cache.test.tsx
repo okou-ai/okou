@@ -629,7 +629,7 @@ test("Saved messages appear without an empty-state flash", async () => {
     });
   });
 
-  await setupPage({
+  await startPage({
     context,
     path: `/chats/${thread.id}`,
     host: "app.okou.ai",

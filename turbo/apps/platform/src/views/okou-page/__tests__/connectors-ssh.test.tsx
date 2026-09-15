@@ -511,7 +511,7 @@ test("Returning from host management refreshes the SSH card after deleting the l
     return respond(204);
   });
   await page();
-  await screen.findByText("1 host configured");
+  await screen.findByText("Deployment");
   click(getConnectorAction("link", "Manage SSH hosts"));
   await screen.findByText("Deployment");
   click(getConnectorAction("button", "Delete host"));

@@ -62,10 +62,13 @@ function assistantText(sequenceNumber: number, text: string): AgentEvent {
   });
 }
 
-function lastSequence(events: readonly AgentEvent[]): number {
+function lastSequence(events: readonly AgentEvent[]): number | null {
+  if (events.length === 0) {
+    return null;
+  }
   return events.reduce((maximum, item) => {
     return Math.max(maximum, Math.floor(item.sequenceNumber));
-  }, -1);
+  }, 0);
 }
 
 function mockActivity(

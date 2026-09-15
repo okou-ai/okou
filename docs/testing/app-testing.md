@@ -21,8 +21,10 @@ a rendered page can cover the behavior.
 ## Canonical Page Test
 
 `setupPage` is the canonical public helper that starts Platform. It initializes
-the requested locale, renders the complete Router, and resolves after the first
-page content is observable. Always await it before the first page assertion.
+the requested locale, awaits finite production bootstrap/setup, renders the
+complete Router, and resolves after the first page content is observable.
+Background loops are owned by their shared starters; ordinary setup does not
+detach a pending route setup. Always await it before the first page assertion.
 
 Startup belongs to the test context's original abort signal. Cancelling that
 lifetime rejects `setupPage()` and a pending `startPage().ready`; cancellation

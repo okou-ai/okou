@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Each case supplies its own REPO fixture instead of the calling workflow's repo.
+unset GITHUB_REPOSITORY
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WAIT="${SCRIPT_DIR}/wait-runner-image.sh"
 TMPDIR="$(mktemp -d)"
