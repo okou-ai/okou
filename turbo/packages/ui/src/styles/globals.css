@@ -1,14 +1,36 @@
 @import "tailwindcss";
 
-/* Enable Tailwind dark: variant with data-theme attribute */
-@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
-
-/*
+/* ==========================================================================
  * Okou Design System
+ * ==========================================================================
+ *
  * Based on Figma: https://www.figma.com/design/eTWIsjktpymTDYEb55OxXx/VM0-Cloud
  *
  * Typography: Noto Sans
  * Primary Color: #ffa500 (Amber)
+ *
+ * --- How this file is laid out ------------------------------------------
+ *
+ *   1. Variants     the dark variant Tailwind hands to `dark:` utilities.
+ *   2. @theme       the Tailwind-facing token layer. Every semantic utility
+ *                   the product spells -- `bg-card`, `border-border`,
+ *                   `text-muted-foreground`, `rounded-surface` -- resolves
+ *                   here, and each token names a role rather than a colour.
+ *   3. @layer base  the runtime values those roles point at: one block per
+ *                   theme, both carrying the same sections in the same
+ *                   order, followed by the element defaults that apply them.
+ *   4. @keyframes   the motion the tokens in 2 reference by name.
+ *
+ * Sections 2 and 3 meet at the primitive variables. A token in 2 is written
+ * once and never mentions a theme; the two blocks in 3 are the only place a
+ * theme decision is made. A component spells the role and never the value.
+ *
+ * Within a block, a banner opens a group and a plain comment explains the
+ * declarations directly beneath it. Keep both theme blocks on the same
+ * section order, so a value and its counterpart stay a screen apart rather
+ * than a search apart.
+ *
+ * --- The palette ---------------------------------------------------------
  *
  * The two primitive scales below are derived from the published palette:
  * https://zero-design-color.sites.vm0.io
@@ -32,9 +54,19 @@
  *
  * Amber is a light fill: it takes Ink text, never white (7.95:1 vs 1.97:1).
  * That is why `--primary-foreground` is Ink in both themes.
- */
+ * ========================================================================== */
 
-/* Define theme colors and typography for Tailwind v4 */
+/* ==========================================================================
+ * 1. Variants
+ * ========================================================================== */
+
+/* Enable Tailwind dark: variant with data-theme attribute */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+/* ==========================================================================
+ * 2. Design tokens (Tailwind v4 @theme)
+ * ========================================================================== */
+
 @theme {
   /* ===================================
    * Typography
@@ -44,6 +76,15 @@
     "Segoe UI", Roboto, sans-serif;
   --font-family-mono:
     var(--font-jetbrains-mono), "JetBrains Mono", ui-monospace, monospace;
+
+  /* Figma action-label role, used by compact primary actions. */
+  --text-action: 13px;
+  --text-action--line-height: 17px;
+
+  /* The rest of the Figma type scale -- 24/18/14/12px over 32/28/20/16px --
+     is exactly what Tailwind's own `--text-*` and `--leading-*` produce at a
+     16px root, so `text-2xl` and `leading-8` already are the scale. Overriding
+     them in px would only cost the reader-scaled rem. */
 
   /* ===================================
    * Primary Color Scale
@@ -78,11 +119,6 @@
   --color-gray-950: hsl(var(--gray-950));
 
   /* ===================================
-   * Divider
-   * =================================== */
-  --color-divider: hsl(var(--divider));
-
-  /* ===================================
    * Theme-aware Colors
    * =================================== */
   --color-white: hsl(var(--white));
@@ -92,32 +128,24 @@
   /* ===================================
    * Semantic Colors
    * =================================== */
-  --color-border: hsl(var(--border));
-  --color-surface-focus: hsl(var(--surface-focus));
-  --color-input: hsl(var(--input));
-  /* Neutral standalone controls follow the runtime palette in both themes. */
-  --color-control-surface: hsl(var(--gray-50));
-  --color-control-border: hsl(var(--gray-400));
-  --color-ring: hsl(var(--ring));
   --color-background: hsl(var(--background));
   --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
   --color-secondary: hsl(var(--secondary));
   --color-secondary-foreground: hsl(var(--secondary-foreground));
-  --color-destructive: hsl(var(--destructive));
-  --color-destructive-foreground: hsl(var(--destructive-foreground));
-  --color-interrupt: hsl(var(--interrupt));
-  --color-interrupt-foreground: hsl(var(--interrupt-foreground));
   --color-muted: hsl(var(--muted));
   --color-muted-foreground: hsl(var(--muted-foreground));
   --color-accent: hsl(var(--accent));
   --color-accent-foreground: hsl(var(--accent-foreground));
-  --color-popover: hsl(var(--popover));
-  --color-popover-foreground: hsl(var(--popover-foreground));
-  --color-card: hsl(var(--card));
-  --color-card-foreground: hsl(var(--card-foreground));
-  --color-surface-border: hsl(var(--gray-400));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-interrupt: hsl(var(--interrupt));
+  --color-interrupt-foreground: hsl(var(--interrupt-foreground));
   --color-sidebar: hsl(var(--sidebar));
   --color-sidebar-rail: hsl(var(--sidebar-rail));
   --color-sidebar-foreground: hsl(var(--sidebar-foreground));
@@ -126,6 +154,10 @@
   --color-semantic-foreground: hsl(var(--semantic-foreground));
   --color-on-filled: hsl(var(--on-filled));
   --color-background-50: hsl(var(--background-50));
+  --color-input: hsl(var(--input));
+  /* Neutral standalone controls follow the runtime palette in both themes. */
+  --color-control-surface: hsl(var(--gray-50));
+  --color-control-border: hsl(var(--gray-400));
 
   /* ===================================
    * Brand Tint / Brand Text
@@ -141,7 +173,20 @@
   --color-brand-text-hover: hsl(var(--brand-text-hover));
 
   /* ===================================
-   * Border width
+   * Borders, Rules, and Focus
+   *
+   * `--color-border` is for real borders and follows the hairline width below.
+   * `--color-divider` is the lightest neutral rule -- separators and `h-px` /
+   * `w-px` hairlines painted as backgrounds -- which is sized explicitly and
+   * therefore keeps its own, lighter step.
+   * =================================== */
+  --color-border: hsl(var(--border));
+  --color-divider: hsl(var(--divider));
+  --color-surface-border: hsl(var(--gray-400));
+  --color-surface-focus: hsl(var(--surface-focus));
+  --color-ring: hsl(var(--ring));
+
+  /* Border width
    *
    * One hairline for the whole product. Tailwind's bare `border`, `border-t`,
    * `divide-y`, and friends all read this key, so components ask for "a border"
@@ -153,61 +198,8 @@
    * one device pixel where 1px paints two, so every bare border carries half
    * the ink it used to. Colour has to carry what the width no longer does,
    * which is why `--border` sits a stop darker than the ramp's lightest step.
-   * Layout is unaffected: the used value is still rounded to whole pixels.
-   * =================================== */
+   * Layout is unaffected: the used value is still rounded to whole pixels. */
   --default-border-width: 0.5px;
-
-  /* Radius */
-  --radius-xl: 14px;
-  --radius-lg: var(--radius);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-sm: calc(var(--radius) - 4px);
-
-  /* Page surfaces: theme-neutral geometry, theme-aware fill and elevation. */
-  --radius-surface: 1.25rem;
-  --radius-surface-compact: 12px;
-  --border-width-surface: var(--default-border-width);
-  --shadow-surface: var(--surface-shadow);
-  --ease-surface: ease;
-
-  /* Font Size (from Figma) */
-  --font-size-2xl: 24px;
-  --font-size-lg: 18px;
-  --font-size-sm: 14px;
-  --font-size-xs: 12px;
-
-  /* Figma action-label role, used by compact primary actions. */
-  --text-action: 13px;
-  --text-action--line-height: 17px;
-
-  /* Line Height (from Figma) */
-  --line-height-8: 32px;
-  --line-height-7: 28px;
-  --line-height-5: 20px;
-  --line-height-4: 16px;
-
-  /* ===================================
-   * Icon System
-   * =================================== */
-  --stroke-width-icon: 1.5;
-
-  /* Running indicator — the breathing dot's two animated layers. The keyframes
-     animate `transform`, so consumers must set `transform` rather than the
-     individual `translate`/`scale` properties, which would compose on top of
-     the animation instead of being replaced by it. */
-  --animate-running-indicator-center: running-indicator-center 2400ms
-    cubic-bezier(0.33, 0, 0.66, 1) infinite;
-  --animate-running-indicator-ripple: running-indicator-ripple 2400ms ease-out
-    infinite;
-
-  /* ===================================
-   * Input System
-   * Design tokens for consistent input styles across the application
-   * Applied automatically to all input and textarea elements
-   * =================================== */
-  --input-border-radius: 8px; /* rounded-lg */
-  --input-focus-ring-width: 3px;
-  --input-focus-ring-opacity: 0.1;
 
   /* ===================================
    * Interaction States
@@ -320,19 +312,57 @@
   --color-segment-selected: hsl(var(--segment-selected));
   --color-segment-track: hsl(var(--segment-track));
   --shadow-segment-selected: var(--segment-selected-shadow);
+
+  /* ===================================
+   * Radius and Surfaces
+   * =================================== */
+  --radius-xl: 14px;
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  /* Page surfaces: theme-neutral geometry, theme-aware fill and elevation. */
+  --radius-surface: 1.25rem;
+  --radius-surface-compact: 12px;
+  --border-width-surface: var(--default-border-width);
+  --shadow-surface: var(--surface-shadow);
+  --ease-surface: ease;
+
+  /* ===================================
+   * Icon System
+   * =================================== */
+  --stroke-width-icon: 1.5;
+
+  /* ===================================
+   * Motion
+   * =================================== */
+
+  /* Running indicator -- the breathing dot's two animated layers. The keyframes
+     animate `transform`, so consumers must set `transform` rather than the
+     individual `translate`/`scale` properties, which would compose on top of
+     the animation instead of being replaced by it. */
+  --animate-running-indicator-center: running-indicator-center 2400ms
+    cubic-bezier(0.33, 0, 0.66, 1) infinite;
+  --animate-running-indicator-ripple: running-indicator-ripple 2400ms ease-out
+    infinite;
 }
 
-@layer base {
-  :root {
-    --surface-shadow:
-      0 2px 12px hsl(30 6% 45% / 0.05), 0 0 0 0.5px hsl(30 6% 45% / 0.025);
-    /* ===================================
-     * Base Color Palette (Tailwind Style)
-     * =================================== */
+/* ==========================================================================
+ * 3. Runtime theme values and element defaults
+ * ========================================================================== */
 
-    /* Primary Color Scale (Amber). Adopted stop-for-stop from the palette, so
-       the brand colour is 300 and the scale darkens monotonically from there.
-       Only `--primary-0` is generated, above the published 50. */
+@layer base {
+  /* =====================================================================
+   * Light theme
+   * ===================================================================== */
+  :root {
+    /* ===================================
+     * Primary Color Scale (Amber)
+     *
+     * Adopted stop-for-stop from the palette, so the brand colour is 300 and
+     * the scale darkens monotonically from there. Only `--primary-0` is
+     * generated, above the published 50.
+     * =================================== */
     --primary-0: 31.4 100% 97.5%; /* #FFF9F2 */
     --primary-50: 31.4 100% 91.4%; /* #FFEAD3 */
     --primary-100: 31.6 100% 85.5%; /* #FFDCB5 */
@@ -346,8 +376,12 @@
     --primary-900: 35.5 81.6% 17.1%; /* #4F3208 */
     --primary-950: 33.2 63.3% 11.8%; /* #31200B */
 
-    /* Neutral Gray Color Scale (Light). Linen is exact at 100, Ink at 950;
-       intermediate chroma tapers toward zero in OKLab. */
+    /* ===================================
+     * Neutral Gray Color Scale
+     *
+     * Linen is exact at 100, Ink at 950; intermediate chroma tapers toward
+     * zero in OKLab.
+     * =================================== */
     --gray-0: 0 33.3% 99.4%; /* #FEFDFD */
     --gray-50: 15 40% 98%; /* #FCF9F8 */
     --gray-100: 17.1 41.2% 96.7%; /* #FAF5F3 */
@@ -361,15 +395,9 @@
     --gray-900: 30 1.9% 20.8%; /* #363534 */
     --gray-950: 40 4.3% 13.5%; /* #242321 */
 
-    /* Divider Color */
-    /* The lightest neutral rule: dividers, separators, and resting rail ticks.
-       These are painted as backgrounds at an explicit `h-px` / `w-px`, so they
-       never lost thickness to the 0.5px border hairline and must not inherit
-       the border's compensating darkening. Pinned to the step `--border` used
-       before that compensation. */
-    --divider: var(--gray-200);
-
-    /* Theme-aware Colors */
+    /* ===================================
+     * Theme-aware Colors
+     * =================================== */
     --white: 0 0% 100%; /* #FFFFFF */
     --black: var(--gray-950); /* gray-950 - Ink */
 
@@ -379,8 +407,9 @@
     --overlay: 40 4.3% 13.5%; /* #242321 - Ink */
 
     /* ===================================
-     * Semantic Colors (Light Theme)
+     * Semantic Colors
      * =================================== */
+
     /* The page sits one step above the ramp, because `gray-50` is the app's
        neutral *fill* (chips, icon containers, inset panels, mobile bars). If
        the page took gray-50 as well, every one of those fills would vanish
@@ -433,23 +462,7 @@
     --interrupt: 13.9 100% 59.4%; /* #FF6030 - Coral 500 */
     --interrupt-foreground: var(--on-filled); /* white on Coral 500 */
 
-    /* One stop darker than the surface ramp's lightest step, because a border
-       is now half as thick as it used to be. gray-200 was calibrated for a 1px
-       line; at the shared 0.5px hairline it carries half the ink and stops
-       reading on a near-white card. gray-300 restores ~87% of the original
-       weight while staying lighter than the old 1px line. */
-    --border: var(--gray-300);
-    /* Large editable surfaces emphasize their existing edge on focus. One step
-       is enough: the composer is the widest border on the page, so its stroke
-       carries far more ink than a control-sized one at the same color. */
-    --surface-focus: var(--gray-400);
     --input: var(--white); /* white - same as card */
-    --ring: var(--primary-400); /* primary-400 - 6.73:1 on the canvas */
-
-    /* Brand as a wash and as text (published brand-subtle / brand-text). */
-    --brand-subtle: var(--primary-50); /* #FFEAD3 */
-    --brand-text: var(--primary-700); /* #885600 */
-    --brand-text-hover: var(--primary-800); /* #6C4300 */
 
     /* Text on filled/colored backgrounds (buttons, tooltips, badges) */
     --on-filled: 0 0% 100%; /* Pure white for text on colored backgrounds */
@@ -473,13 +486,45 @@
       --gray-50
     ); /* gray-50 - lighter background for code blocks */
 
-    /* Interaction state ladder (light).
+    /* ===================================
+     * Brand Tint / Brand Text
+     * =================================== */
+    /* Brand as a wash and as text (published brand-subtle / brand-text). */
+    --brand-subtle: var(--primary-50); /* #FFEAD3 */
+    --brand-text: var(--primary-700); /* #885600 */
+    --brand-text-hover: var(--primary-800); /* #6C4300 */
 
-       The layer colour is chosen so that compositing it onto a surface lands
-       back on the neutral ramp rather than just darkening it. It is solved
-       from the step it has to produce: at `--state-hover-alpha` over a white
-       card this colour composites to gray-100's lightness, while higher alphas
-       keep the states ordered without introducing another hue. */
+    /* ===================================
+     * Borders, Rules, and Focus
+     * =================================== */
+
+    /* One stop darker than the surface ramp's lightest step, because a border
+       is now half as thick as it used to be. gray-200 was calibrated for a 1px
+       line; at the shared 0.5px hairline it carries half the ink and stops
+       reading on a near-white card. gray-300 restores ~87% of the original
+       weight while staying lighter than the old 1px line. */
+    --border: var(--gray-300);
+    /* The lightest neutral rule: dividers, separators, and resting rail ticks.
+       These are painted as backgrounds at an explicit `h-px` / `w-px`, so they
+       never lost thickness to the 0.5px border hairline and must not inherit
+       the border's compensating darkening. Pinned to the step `--border` used
+       before that compensation. */
+    --divider: var(--gray-200);
+    /* Large editable surfaces emphasize their existing edge on focus. One step
+       is enough: the composer is the widest border on the page, so its stroke
+       carries far more ink than a control-sized one at the same color. */
+    --surface-focus: var(--gray-400);
+    --ring: var(--primary-400); /* primary-400 - 6.73:1 on the canvas */
+
+    /* ===================================
+     * Interaction States
+     *
+     * The layer colour is chosen so that compositing it onto a surface lands
+     * back on the neutral ramp rather than just darkening it. It is solved
+     * from the step it has to produce: at `--state-hover-alpha` over a white
+     * card this colour composites to gray-100's lightness, while higher alphas
+     * keep the states ordered without introducing another hue.
+     * =================================== */
     --state-layer: 0 1% 41.2%; /* #6A6868 */
 
     --state-hover-alpha: 5%;
@@ -489,35 +534,52 @@
     --state-on-filled-hover-alpha: 10%;
     --state-on-filled-pressed-alpha: 16%;
 
-    /* Segment control (light): white lifts off the track.
-       The track takes gray-200 rather than the `--muted` gray-100 the base
-       theme uses. Against a white canvas gray-100 clears 1.06:1, so both the
-       track and the white selection dissolve into the page and the control
-       stops reading as a control. Dark already tracks on gray-200. */
+    /* ===================================
+     * Segment Control
+     *
+     * White lifts off the track. The track takes gray-200 rather than the
+     * `--muted` gray-100 the base theme uses: against a white canvas gray-100
+     * clears 1.06:1, so both the track and the white selection dissolve into
+     * the page and the control stops reading as a control. Dark already tracks
+     * on gray-200 and inherits this stop.
+     * =================================== */
     --segment-selected: 0 0% 100%;
     --segment-track: var(--gray-200);
     --segment-selected-shadow:
       0 1px 2px hsl(30 4.3% 13.5% / 0.06), 0 1px 3px hsl(30 4.3% 13.5% / 0.08);
 
+    /* ===================================
+     * Radius and Surfaces
+     * =================================== */
     --radius: 0.5rem;
+    --surface-shadow:
+      0 2px 12px hsl(30 6% 45% / 0.05), 0 0 0 0.5px hsl(30 6% 45% / 0.025);
   }
 
+  /* Gradient color themes restate elevation against their tinted surfaces. */
   :root[data-gradient-color-themes] {
     --surface-shadow:
       0 2px 12px hsl(var(--state-layer) / 0.035),
       0 0 0 0.5px hsl(var(--state-layer) / 0.018);
   }
 
+  /* =====================================================================
+   * Dark theme
+   *
+   * Same sections in the same order as the light block above. Anything the
+   * dark theme does not restate keeps the light declaration, which resolves
+   * against the dark ramp at this element.
+   * ===================================================================== */
   .dark,
   [data-theme="dark"] {
     /* ===================================
-     * Base Color Palette (Dark Theme)
+     * Primary Color Scale (Amber - Dark)
+     *
+     * The palette publishes one Amber, and the brand fill is the same #FFA500
+     * in both themes, so the scale is not reversed here. Dark only reaches for
+     * different stops: the brand solid stays 300, its hover steps *up* to 200,
+     * and 950 becomes the subtle fill.
      * =================================== */
-
-    /* Primary Color Scale (Amber - Dark). The palette publishes one Amber, and
-       the brand fill is the same #FFA500 in both themes, so the scale is not
-       reversed here. Dark only reaches for different stops: the brand solid
-       stays 300, its hover steps *up* to 200, and 950 becomes the subtle fill. */
     --primary-0: 31.4 100% 97.5%; /* #FFF9F2 */
     --primary-50: 31.4 100% 91.4%; /* #FFEAD3 */
     --primary-100: 31.6 100% 85.5%; /* #FFDCB5 */
@@ -531,9 +593,13 @@
     --primary-900: 35.5 81.6% 17.1%; /* #4F3208 */
     --primary-950: 33.2 63.3% 11.8%; /* #31200B */
 
-    /* Neutral Gray Color Scale (Dark). The existing shell and Ink canvas stay
-       fixed at 0 and 50; Linen is exact at 950. Text stops are measured against
-       gray-300, the lightest common neutral surface. */
+    /* ===================================
+     * Neutral Gray Color Scale (Dark)
+     *
+     * The existing shell and Ink canvas stay fixed at 0 and 50; Linen is exact
+     * at 950. Text stops are measured against gray-300, the lightest common
+     * neutral surface.
+     * =================================== */
     --gray-0: 30 3.7% 10.6%; /* #1C1B1A - deepest shell surface */
     --gray-50: 40 4.3% 13.5%; /* #242321 - Ink, page background */
     --gray-100: 20 2.9% 20.2%; /* #353332 */
@@ -547,15 +613,16 @@
     --gray-900: 12 7% 86.1%; /* #DEDAD9 */
     --gray-950: 17.1 41.2% 96.7%; /* #FAF5F3 */
 
-    /* Divider Color (Dark) */
-    --divider: var(--gray-200); /* pinned lightest rule: see the light note */
-
-    /* Theme-aware Colors (Dark - inverted) */
+    /* ===================================
+     * Theme-aware Colors (inverted)
+     *
+     * `--overlay` is deliberately not restated: see the light note.
+     * =================================== */
     --white: 40 4.3% 13.5%; /* #242321 - Ink */
     --black: 0 0% 100%; /* #FFFFFF */
 
     /* ===================================
-     * Semantic Colors (Dark Theme)
+     * Semantic Colors
      * =================================== */
     --background: var(--gray-50); /* gray-50 */
     --foreground: var(--gray-950); /* gray-950 */
@@ -595,20 +662,9 @@
     --interrupt: 13.9 100% 59.4%; /* #FF6030 - Coral 500 */
     --interrupt-foreground: var(--on-filled); /* white on Coral 500 */
 
-    --border: var(--gray-300); /* one stop up: see the light note above */
-    /* Saturation, not lightness, carries focus here: lifting a neutral against a
-       dark card reads as a white outline rather than as emphasis. */
-    --surface-focus: 38.8 38% 38%;
     --input: var(
       --gray-200
     ); /* gray-200 - lighter than card for visible input surfaces */
-    --ring: var(--primary-300); /* primary-300 - the brand stop reads on Ink */
-
-    /* Brand as a wash and as text. Dark takes the opposite end of the same
-       scale: the wash drops to 950 and the text rises to the brand stop. */
-    --brand-subtle: var(--primary-950); /* #31200B */
-    --brand-text: var(--primary-300); /* #FFA500 */
-    --brand-text-hover: var(--primary-200); /* #FFC580 */
 
     /* Text on filled/colored backgrounds (buttons, tooltips, badges) */
     --on-filled: 0 0% 100%; /* Pure white for text on colored backgrounds */
@@ -618,20 +674,45 @@
     --sidebar-foreground: var(--gray-950); /* gray-950 */
     --sidebar-primary: var(--primary-800); /* primary-800 */
     --sidebar-primary-foreground: var(--gray-50); /* gray-50 */
-    --tooltip-bg: hsl(
-      var(--gray-300)
-    ); /* tooltip - visible against dark surfaces */
-
     --semantic-foreground: var(--gray-0); /* gray-0 */
 
     --background-50: var(
       --gray-50
     ); /* gray-50 - lighter background for code blocks */
 
-    /* Interaction state ladder (dark).
-       Dark surfaces need a wider ladder than light ones to read as the same
-       step, so the alphas are raised rather than mirrored. The layer stays
-       near-neutral so the states read as elevation rather than a hue shift. */
+    /* Tooltip fill, read through an inline style rather than a token utility.
+       The light theme has no counterpart, so light tooltips fall back to the
+       literal spelled in `tooltip.tsx`. */
+    --tooltip-bg: hsl(
+      var(--gray-300)
+    ); /* tooltip - visible against dark surfaces */
+
+    /* ===================================
+     * Brand Tint / Brand Text
+     * =================================== */
+    /* Dark takes the opposite end of the same scale: the wash drops to 950 and
+       the text rises to the brand stop. */
+    --brand-subtle: var(--primary-950); /* #31200B */
+    --brand-text: var(--primary-300); /* #FFA500 */
+    --brand-text-hover: var(--primary-200); /* #FFC580 */
+
+    /* ===================================
+     * Borders, Rules, and Focus
+     * =================================== */
+    --border: var(--gray-300); /* one stop up: see the light note above */
+    --divider: var(--gray-200); /* pinned lightest rule: see the light note */
+    /* Saturation, not lightness, carries focus here: lifting a neutral against a
+       dark card reads as a white outline rather than as emphasis. */
+    --surface-focus: 38.8 38% 38%;
+    --ring: var(--primary-300); /* primary-300 - the brand stop reads on Ink */
+
+    /* ===================================
+     * Interaction States
+     *
+     * Dark surfaces need a wider ladder than light ones to read as the same
+     * step, so the alphas are raised rather than mirrored. The layer stays
+     * near-neutral so the states read as elevation rather than a hue shift.
+     * =================================== */
     --state-layer: 20 42.9% 98.6%; /* #FDFBFA */
 
     --state-hover-alpha: 7%;
@@ -641,8 +722,12 @@
     --state-on-filled-hover-alpha: 12%;
     --state-on-filled-pressed-alpha: 20%;
 
-    /* Segment control (dark): the selection steps *up* the grey ramp from the
-       gray-200 track, and the veil turns black so it still reads as a lift. */
+    /* ===================================
+     * Segment Control
+     *
+     * The selection steps *up* the grey ramp from the gray-200 track, and the
+     * veil turns black so it still reads as a lift.
+     * =================================== */
     --segment-selected: var(--gray-400);
     --segment-selected-shadow:
       0 1px 3px hsl(0 0% 0% / 0.3), 0 2px 6px hsl(0 0% 0% / 0.2);
@@ -650,6 +735,9 @@
 }
 
 @layer base {
+  /* =====================================================================
+   * Element defaults
+   * ===================================================================== */
   * {
     @apply border-border;
     /* Keep native focus outlines stable when transition-colors is applied. */
@@ -683,6 +771,12 @@
     fill: currentColor;
   }
 }
+
+/* ==========================================================================
+ * 4. Keyframes
+ * ========================================================================== */
+
+/* --- Dialog ------------------------------------------------------------- */
 
 @keyframes okou-dialog-backdrop-in {
   from {
@@ -723,6 +817,8 @@
     transform: translateY(8px);
   }
 }
+
+/* --- Running indicator --------------------------------------------------- */
 
 @keyframes running-indicator-center {
   0%,
