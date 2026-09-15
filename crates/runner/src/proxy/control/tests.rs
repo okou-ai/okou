@@ -71,7 +71,10 @@ async fn status_round_trip_supports_long_launch_paths() {
     )
     .await
     .unwrap();
-    server.await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), server)
+        .await
+        .unwrap()
+        .unwrap();
 }
 
 #[tokio::test]
@@ -155,7 +158,10 @@ async fn status_rejects_incoherent_or_invalid_responses() {
             .is_err(),
             "accepted {defect:?} response"
         );
-        server.await.unwrap();
+        tokio::time::timeout(Duration::from_secs(2), server)
+            .await
+            .unwrap()
+            .unwrap();
     }
 }
 
@@ -180,7 +186,10 @@ async fn response_without_terminal_eof_remains_bounded() {
     .unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::TimedOut);
     let _ = release.send(());
-    server.await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), server)
+        .await
+        .unwrap()
+        .unwrap();
 }
 
 #[tokio::test]
