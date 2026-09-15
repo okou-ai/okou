@@ -517,10 +517,7 @@ export function createThreadMetaLookup(): Command<
       }
 
       const cacheHydrationStartedAt = performance.now();
-      await waitForOperation(
-        get(initialChatThreadEventCacheHydrated$),
-        signal,
-      );
+      await waitForOperation(get(initialChatThreadEventCacheHydrated$), signal);
       signal.throwIfAborted();
       const cacheHydrationWaitMs = Math.round(
         performance.now() - cacheHydrationStartedAt,
