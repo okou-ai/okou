@@ -393,15 +393,17 @@ cost or the prior one-credit-per-minute cost from the authenticated ready job.
 It does not assume the production account's transition date or bill the
 preflight maximum. Remove the legacy allowance only after verifying the managed
 account's transition and that no recoverable historical jobs need the old rate.
-Follow-up [#34056](https://github.com/vm0-ai/vm0/issues/34056) owns these gates
-and the old-API normalization cleanup described below.
+Parent [#34056](https://github.com/vm0-ai/vm0/issues/34056) retains these
+unverified provider-account and historical-job gates. Its response-only child
+[#34320](https://github.com/vm0-ai/vm0/issues/34320) removes the separately
+drained old-API normalization described below; it does not remove legacy rates.
 An explicitly unbilled ready response is rejected. Polling headers may report
 zero new usage on a paid-link refresh; the original job cost remains authoritative.
 
-The additive response fields distinguish media intent from delivery evidence:
+The response fields distinguish media intent from delivery evidence:
 
 - `quality` and `format` remain request aliases for older CLI artifacts;
-  `requested` explicitly contains those same values.
+  the required `requested` block explicitly contains those same values.
 - `provider.quality` and `provider.format` preserve the accepted ready metadata.
   Provider-reported resolution accepts renditions such as `576p`, independently
   of the finite request-quality choices. It is not a byte-level resolution
@@ -410,8 +412,9 @@ The additive response fields distinguish media intent from delivery evidence:
   unrecognized. `delivered.format` uses only that evidence. Existing filenames
   and content types may be request-derived and are not used to infer it.
 - `delivered.quality` uses stored provider reporting and is null for audio.
-  Missing historical delivery metadata remains null. New artifact recovery can
-  establish a sniffed format without fabricating missing original quality.
+  The `delivered` block is required, but both members remain nullable. Missing
+  historical delivery metadata remains null. New artifact recovery can establish
+  a sniffed format without fabricating missing original quality.
 
 No relational migration or stored-job rewrite is required. Old JSONB writers
 legitimately omit the new optional media fields; new readers keep their original
@@ -419,12 +422,33 @@ usage and return unknown delivery metadata. Interrupted settlement and paid-link
 refresh keep the same job and usage idempotency key. Refresh metadata must match
 the original accepted duration and cost, rather than reprice a paid download.
 
-| Pairing            | Supported behavior                                                                                                                                                                              |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Old CLI, new API   | Existing request aliases and response fields remain valid; additional fields can be ignored.                                                                                                    |
-| New CLI, old API   | Optional response fields allow parsing; output adds explicit requested values and null delivered values. Remove this normalization only when old API targets leave the rollout/rollback window. |
-| Old API, new JSONB | Additive keys do not change existing required values; rollback retains the old API's pre-existing HD validation limitation.                                                                     |
-| New API, old JSONB | Completed jobs remain readable; pending settlement and artifact recovery preserve original usage and unknown media fields.                                                                      |
+The response-envelope retirement was verified on **2026-09-15**:
+
+- [#34070](https://github.com/vm0-ai/vm0/pull/34070), merge
+  `9c55bc983c52f37369576d36eb32fbb0aec94994`, first shipped the unconditional
+  create/get/list writer in API **1.598.0**.
+- The [API production promotion](https://github.com/vm0-ai/vm0/actions/runs/34940290360/job/104290489082)
+  checked out and built `05af5a0fe3cdbd9188a9b3d66545bab2dab2a834`, API
+  **1.603.2**, and published `api.vm0.ai` at **07:24:43 UTC**. This is the
+  build's release SHA, not the moving GitHub deployment metadata SHA.
+- The [rollback resolver](../.github/scripts/resolve-production-rollback-target.sh)
+  already enforces `eb2f211a9af41450d0d5dad10c0c8ad12fac0a24`, API **1.600.1**,
+  which contains that writer. The [rollback workflow](../.github/workflows/rollback-production.yml)
+  loads the resolver from `main`, so a historical target cannot replace the guard.
+  No additional rollback floor is introduced.
+
+APIs without these blocks are therefore outside supported canonical serving and
+rollback targets. The CLI passes through the API's redacted response without
+synthesizing missing blocks. This receipt retires only absent response blocks:
+it proves neither a provider-rate transition nor an old-CLI drain, and does not
+replace the independent MP3 compatibility requirements below.
+
+| Pairing                      | Supported behavior                                                                                                         |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Old CLI, new API             | Existing request aliases remain valid for mutually supported formats; additional blocks can be ignored.                    |
+| New CLI, supported old API   | Writer-capable APIs already emit both blocks, including explicit nulls. No CLI normalization is needed.                    |
+| Supported old API, new JSONB | Additive media keys preserve existing required values for mutually supported formats.                                      |
+| New API, old JSONB           | Completed jobs remain readable; pending settlement and artifact recovery preserve original usage and unknown media fields. |
 
 #### Explicit MP3 social downloads
 
