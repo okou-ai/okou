@@ -1,6 +1,6 @@
 # Personal subscription run identity
 
-This document covers the #34012 preparation and its #34098/#34111 repairs for #34010. It does not change provider precedence, organization model policies, subscription protocols, model catalogs, pricing, or UI availability.
+This document covers the #34012 preparation and its #34098/#34111/#34164 repairs for #34010. It does not change provider precedence, organization model policies, subscription protocols, model catalogs, pricing, or UI availability.
 
 ## Binding and credential ownership
 
@@ -152,7 +152,7 @@ checks the locked current bundle before spending the refresh token.
 | Existing exact-source firewall auth                      | Re-reads shared account credentials, including contexts created before this repair. Complete runtime bundles are materialized after any refresh so Authorization and account-ID headers cannot come from separate snapshots.                                        |
 | Runtime refresh state/input and mirror-capable mutations | Locked coordination precedes rotating input consumption. Inactive/retained exact IDs bypass active-mirror import; explicit connection/selection can commit its supplied account.                                                                                    |
 | Usage, reset and reconnect-state observation             | Reads the complete current account bundle. Retired management IDs remain unavailable. Codex import invalidates singleton/account reset-credit expiry epochs before/after mutation; current connection, activation, deletion and reset invalidation remain in place. |
-| Pi initial Codex credentials                             | Uses one shared bundle after refresh. A3's independent missing `activation.runId` in final all-binding validation remains unchanged and is not accepted by this repair.                                                                                             |
+| Pi initial Codex credentials                             | Uses one shared bundle after refresh. Final validation carries the captured run ID and rejects every reconnect-required state before provider execution; see A3 below.                                                                                              |
 
 ### Management import boundaries (#34142)
 
@@ -169,7 +169,7 @@ account's reset credits. Connected-account terminal/transient refresh errors
 retain their existing 500 and retry behavior. Every shared state lookup carries
 its existing optional run ID: admitted runtime callers retain their exact
 account authority, while settings and Pi memory Stage 1 have no foreground run
-ID. Pi final validation remains the separate A3 boundary.
+ID. The final Pi boundary is described in A3 below.
 
 ### Verification and compatibility limits
 
@@ -208,3 +208,28 @@ gate or a feature override is insufficient. #34010 owns this later floor,
 independent acceptance, release/runtime verification and eventual bridge
 removal after every writer/context/rollback gate closes. This PR changes no
 rollback selector, performs no production operation and is not EPIC R1.
+
+## A3: final Pi credential validation (#34164)
+
+After SDK initialization and before prepared execution/provider requests, Pi
+revalidates the captured account with the activation's exact run ID, org, user
+and source metadata. The shared predicate permits connected accounts and
+requires an exact nonterminal run binding for retained accounts. Ordinary
+disconnect or different-identity replacement therefore preserves admitted A
+when retention is enabled; a later run selects the current connected account.
+Both singleton and multiple-account settings paths use this boundary.
+
+Every `needsReconnect` state is unavailable, including a real HTTP 400
+`invalid_grant` that leaves nonblank stored credentials. The three recognized
+terminal refresh codes keep their typed handling; other reconnect states and
+missing sources use the existing `reconnect_required` guidance. Validation is
+read-only: it does not refresh, retry, reselect, rebuild prepared credentials or
+move remote work under lifecycle/admission locks. Initial Codex materialization
+still uses one shared complete bundle and the existing refresh owner.
+
+The held-SDK API regressions assert actual Authorization/account-ID requests,
+A/A followed by B/B after replacement, unchanged OAuth request counts, terminal
+refresh rejection, cancellation and membership revocation, session disposal and
+absence of output artifacts/Built-in usage on rejection. Priority-off deletion
+remains destructive. This repair changes no persisted shape, protocol, routing
+policy or feature configuration; priority remains default-off including staff.

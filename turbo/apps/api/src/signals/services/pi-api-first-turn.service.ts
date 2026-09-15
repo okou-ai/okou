@@ -1061,6 +1061,7 @@ async function apiFirstTurnModelConfig(
         const resolved = await settle(
           resolveModelProviderRuntimeSecretForApi({
             db: args.db,
+            runId: args.activation.runId,
             orgId: args.activation.orgId,
             userId: args.activation.userId,
             key: binding.secretName,
@@ -1148,7 +1149,7 @@ async function validateApiFirstTurnCredentialSources(
     ) {
       throw new PiApiFirstTurnCodexReconnectRequiredError();
     }
-    if (!state.value) {
+    if (!state.value || state.value.needsReconnect) {
       throw piApiFirstTurnError(
         "PI_API_MODEL_CREDENTIAL_INVALID",
         "Pi API first-turn subscription access token is unavailable",
@@ -1168,6 +1169,7 @@ async function validateApiFirstTurnCredentialSources(
     const resolved = await settle(
       resolveModelProviderRuntimeSecretForApi({
         db: args.db,
+        runId: args.activation.runId,
         orgId: args.activation.orgId,
         userId: args.activation.userId,
         key: binding.secretName,
