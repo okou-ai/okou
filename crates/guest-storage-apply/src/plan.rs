@@ -1,5 +1,5 @@
 use crate::download::DownloadTask;
-use crate::instructions::{InstructionCleanup, InstructionNormalization};
+use crate::instructions::{InstructionCleanup, InstructionFilename, InstructionNormalization};
 use crate::manifest::{ArtifactEntry, Manifest, StorageEntry};
 use std::path::Path;
 
@@ -72,15 +72,22 @@ impl ManifestEntryKind {
 
 impl RunPlan {
     pub(crate) fn from_manifest(manifest: &Manifest) -> Self {
-        // Collect all mount paths that should be preserved (unchanged storages
-        // and artifacts). Memory rides in artifacts[] post-#10602 so the memory
-        // slot no longer needs its own preservation branch.
-        let mut preserved_paths: Vec<String> = manifest
-            .storages
-            .iter()
-            .filter(|s| s.cached)
-            .map(|s| s.mount_path.clone())
-            .collect();
+        let mut preserved_paths = Vec::new();
+        for entry in manifest.storages.iter().filter(|entry| entry.cached) {
+            if entry.instructions_target_filename.is_some() {
+                // Instructions own only their managed files, not the framework home:
+                // changed or removed skill children still need stale-path cleanup.
+                // Keep both names until normalization can select an alternate source.
+                preserved_paths.extend(InstructionFilename::ALL.map(|filename| {
+                    Path::new(&entry.mount_path)
+                        .join(filename.as_str())
+                        .to_string_lossy()
+                        .into_owned()
+                }));
+            } else {
+                preserved_paths.push(entry.mount_path.clone());
+            }
+        }
         preserved_paths.extend(
             manifest
                 .artifacts
@@ -397,7 +404,14 @@ mod tests {
 
         assert_eq!(plan.cleanup_paths, ["/home/user/.codex"]);
         assert!(plan.instruction_cleanups.is_empty());
-        assert_eq!(plan.preserved_paths, ["/home/user/.codex", "/workspace"]);
+        assert_eq!(
+            plan.preserved_paths,
+            [
+                "/home/user/.codex/CLAUDE.md",
+                "/home/user/.codex/AGENTS.md",
+                "/workspace"
+            ]
+        );
         assert_eq!(plan.instruction_files.len(), 1);
         assert_eq!(
             plan.instruction_files[0],
