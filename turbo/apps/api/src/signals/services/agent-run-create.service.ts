@@ -11583,7 +11583,6 @@ export async function validateDeferredPiMaterialization(
     }
   }
   if (args.admission.personal) {
-    await lockModelProviderState(tx, args.admission.personal);
     if (
       !(await validatePersonalSubscriptionAdmission(
         { ...args.admission.personal, db: tx },
@@ -11628,7 +11627,10 @@ export async function prepareDeferredPiClaimAdmission(
         }
       : undefined;
   const subscription = personal
-    ? await preparePersonalSubscriptionAdmission({ ...personal, db }, signal)
+    ? await preparePersonalSubscriptionAdmission(
+        { ...personal, db, timing: new ApiDispatchTimingCollector() },
+        signal,
+      )
     : null;
   return { configuration, officialWorkflowRun, personal, subscription };
 }

@@ -118,7 +118,7 @@ impl DeferredReleaseOutbox {
                     let Some(entry) = cursor
                         .scopes
                         .as_mut()
-                        .expect("scope cursor initialized")
+                        .ok_or_else(|| std::io::Error::other("missing recovery scope cursor"))?
                         .next_entry()
                         .await?
                     else {
@@ -340,7 +340,7 @@ impl DeferredReleaseOutbox {
             for _ in 0..100 {
                 let Some(entry) = cursor
                     .as_mut()
-                    .expect("cursor initialized")
+                    .ok_or_else(|| std::io::Error::other("missing claim recovery cursor"))?
                     .next_entry()
                     .await?
                 else {
@@ -369,7 +369,9 @@ impl DeferredReleaseOutbox {
                     if discovery.is_none() {
                         discovery = Some(process::discover_all_with_status().await);
                     }
-                    let scan = discovery.as_ref().expect("scan initialized");
+                    let scan = discovery
+                        .as_ref()
+                        .ok_or_else(|| std::io::Error::other("missing process recovery scan"))?;
                     let firecrackers = &scan.processes.firecrackers;
                     if !scan.proc_scan_complete
                         || firecrackers
@@ -454,7 +456,7 @@ impl DeferredReleaseOutbox {
                 };
                 let mut body = serde_json::to_value(&receipt).map_err(std::io::Error::other)?;
                 body.as_object_mut()
-                    .expect("receipt is an object")
+                    .ok_or_else(|| std::io::Error::other("invalid release receipt object"))?
                     .remove("runId");
                 let released = api
                     .release_deferred_sandbox(receipt.run_id, &body)

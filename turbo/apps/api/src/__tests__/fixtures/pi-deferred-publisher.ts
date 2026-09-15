@@ -77,4 +77,8 @@ async function publishFixture(
   );
   process.stdout.write(JSON.stringify({ hash }));
 }
-await publishFixture(orgId, userId, sessionId).finally(closeDbPool);
+try {
+  await publishFixture(orgId, userId, sessionId);
+} finally {
+  await closeDbPool();
+}

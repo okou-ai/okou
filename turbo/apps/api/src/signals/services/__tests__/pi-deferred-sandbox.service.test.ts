@@ -690,6 +690,15 @@ describe("durable deferred Pi consumer through actual PostgreSQL and Runner rout
       .update(modelProviderAccounts)
       .set({ isActive: false, disconnectedAt: new Date() })
       .where(eq(modelProviderAccounts.id, run.modelProviderId));
+    await db()
+      .update(agentRuns)
+      .set({ modelProviderId: null })
+      .where(eq(agentRuns.id, f.runId));
+    await accept(claim(f.runId, true, randomUUID()), [404]);
+    await db()
+      .update(agentRuns)
+      .set({ modelProviderId: run.modelProviderId })
+      .where(eq(agentRuns.id, f.runId));
     // Retention authorizes this existing run's exact account, never a reselection.
     const result = await accept(claim(f.runId, true, randomUUID()), [200]);
     expect(result.body.piModelConfig).toMatchObject({
