@@ -6,15 +6,15 @@ Validation is read-only. No dataset, monitor, notifier or production configurati
 
 | File                                     | SHA-256                                                            |
 | ---------------------------------------- | ------------------------------------------------------------------ |
-| [cost.apl](cost.apl)                     | `c2c7f724d639e42c598cbab959588191e568f3bef1855a0b373022ca71a5f3e3` |
+| [cost.apl](cost.apl)                     | `07e44e33dbd8fed0950ee06f62ebcaddbb860980c12121bc04babf3f9667e1be` |
 | [health.apl](health.apl)                 | `240406475a459e8362a4ec9a7e10f6690692fa766e73145a08890d83526b7099` |
 | [fixtures.json](fixtures.json)           | `a7fc2cc9326762ec55d981cd345e59293ed51f8b460efc20c63498b00b879037` |
 | [query-fixtures.mjs](query-fixtures.mjs) | `b72f13043498d6ef4f5282f34af039a5549fdca34619376134e57b3528c953e8` |
-| [validate-apl.mjs](validate-apl.mjs)     | `aaf642d30ae2a60fbf26a134816a4a2c006fb7ce47fcc1e6e833db5edf9ec1db` |
+| [validate-apl.mjs](validate-apl.mjs)     | `e450df332a2c73b81af8e5e3634994702259475ac3ad4cab72454b7b7342b64f` |
 
 ## Exact production requests
 
-Executed 2026-09-15T17:00:45.014Z through 2026-09-15T17:00:46.452Z.
+Executed 2026-09-15T17:08:54.290Z through 2026-09-15T17:08:55.415Z.
 
 `POST https://api.axiom.co/v1/datasets/_apl?format=tabular`
 
@@ -46,12 +46,12 @@ Full sanitized production response bodies:
 {
   "format": "tabular",
   "status": {
-    "elapsedTime": 181712,
+    "elapsedTime": 141226,
     "blocksExamined": 7,
     "blocksCached": 0,
     "blocksMatched": 0,
     "blocksSkipped": 0,
-    "rowsExamined": 128841,
+    "rowsExamined": 128926,
     "rowsMatched": 0,
     "bytesRead": 699531,
     "numGroups": 0,
@@ -83,11 +83,24 @@ Full sanitized production response bodies:
         },
         {
           "name": "grossCreditValueUsd",
-          "type": "unknown"
+          "type": "float",
+          "agg": {
+            "name": "computed",
+            "fields": ["nanoUsd"]
+          }
         }
       ],
-      "order": [],
-      "groups": [],
+      "order": [
+        {
+          "field": "grossCreditValueUsd",
+          "desc": true
+        }
+      ],
+      "groups": [
+        {
+          "name": "accountingDay"
+        }
+      ],
       "range": {
         "field": "_time",
         "start": "0001-01-01T00:00:00Z",
@@ -110,12 +123,12 @@ Full sanitized production response bodies:
 {
   "format": "tabular",
   "status": {
-    "elapsedTime": 279505,
+    "elapsedTime": 90583,
     "blocksExamined": 38,
     "blocksCached": 0,
     "blocksMatched": 0,
     "blocksSkipped": 0,
-    "rowsExamined": 644209,
+    "rowsExamined": 644634,
     "rowsMatched": 4,
     "bytesRead": 3648055,
     "numGroups": 1,
@@ -182,7 +195,7 @@ Full sanitized production response bodies:
 
 ## Query-only execution corpus
 
-Executed 2026-09-15T16:58:44.514Z through 2026-09-15T16:59:02.172Z. **53 scenarios / 106 requests**, all HTTP 200, `isPartial=false`, and `datasetNames=[]`. Each scenario runs both exact query bodies; only the input dataset binding and `now()` clock are substituted by the committed harness. The request window is the same explicit five-minute window above. The typed fixture clock controls the synthetic accounting/observation window.
+Executed 2026-09-15T17:08:37.579Z through 2026-09-15T17:08:54.577Z. **53 scenarios / 106 requests**, all HTTP 200, `isPartial=false`, and `datasetNames=[]`. Every response also passes exact group-name and value-aggregation metadata assertions. Each scenario runs both exact query bodies; only the input dataset binding and `now()` clock are substituted by the committed harness. The request window is the same explicit five-minute window above. The typed fixture clock controls the synthetic accounting/observation window.
 
 The table records actual service rows, not JavaScript-calculated costs. Health cells list positive incident groups (`day:count`); `none` means no detected fixture problem. The threshold assertions use the committed monitor definitions. `healthProblemCount` can count multiple problem classes per identity.
 
@@ -243,6 +256,8 @@ The table records actual service rows, not JavaScript-calculated costs. Health c
 | 52  | millisecond order keeps the earlier observation before a repriced one | 2026-09-15: 1                 | 2026-09-15: 1                 | PASS       |
 
 ## Discovered service constraints
+
+- Full tracked review of the initial PR head found that a final `project` erased `groups` and value `agg` metadata, although all scalar values passed. The final cost operator is now a grouped `summarize` after the precision filter. Both exact-file production responses and all 106 fixture responses preserve the configured group and aggregation metadata. The harness rejects the earlier result shape.
 
 - `ensure_field(..., typeof(real))` can attempt an implicit float conversion and fail on malformed string data (`unable to convert string to float`). Numeric fields now use nullable explicit conversion from a dynamic field. The malformed quantity/display cases execute successfully and report health.
 - A literal constant datasource with table operations in one `let` failed with `const datasources may not have table operations`; a nested dynamic projection also hit `field '_tmp2' not found`. The supported adapter first binds a flat typed `datatable`, then aliases it. This changes no production query operator.

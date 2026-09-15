@@ -23,7 +23,8 @@
         "notifyEveryRun": false,
         "alertOnNoData": false,
         "resolvable": false
-      }
+      },
+      "groupField": "accountingDay"
     },
     {
       "queryFile": "health.apl",
@@ -41,7 +42,8 @@
         "notifyEveryRun": false,
         "alertOnNoData": false,
         "resolvable": false
-      }
+      },
+      "groupField": "incidentDay"
     }
   ],
   "queryRevision": 2

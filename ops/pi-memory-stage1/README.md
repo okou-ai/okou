@@ -141,7 +141,10 @@ aggregation groups by the same **`YYYY-MM-DD` UTC string** for `accountingDay`
 and `incidentDay`. `substring(tostring(startofday(timestamp)), 0, 10)` is
 service-supported; `format_datetime` is not. The explicit `arg_min` result list
 excludes its grouping key. Additional tie breaks on anchor/status/unit fields
-make contradictory tied observations deterministic and still unhealthy.
+make contradictory tied observations deterministic and still unhealthy. The final
+operator is a grouped `summarize`: a trailing `project` removes Axiom's grouping
+and aggregation metadata even when its scalar rows look correct. The live
+harness asserts both metadata fields for each response, including no data.
 
 - Every evaluation independently calculates today's `[00:00, next 00:00)`
   group. Equality breaches a budget whose goal is `< $20/day`.

@@ -41,9 +41,10 @@ const config = JSON.parse(
   await readFile(new URL("definitions.json", import.meta.url), "utf8"),
 );
 const queries = await Promise.all(
-  config.monitors.map(async ({ queryFile, definition }) => ({
+  config.monitors.map(async ({ queryFile, definition, groupField }) => ({
     queryFile,
     definition,
+    groupField,
     apl: await readFile(new URL(queryFile, import.meta.url), "utf8"),
   })),
 );
@@ -70,7 +71,7 @@ function tableRows(response) {
     ),
   );
 }
-async function execute(label, apl) {
+async function execute(label, apl, groupField, columnName) {
   const request = { apl, startTime: values.start, endTime: values.end };
   const requestedAt = new Date().toISOString();
   const response = await fetch(endpoint, {
@@ -102,6 +103,10 @@ async function execute(label, apl) {
     datasetNames: body.datasetNames,
     rows: body.tables ? tableRows(body) : undefined,
     messages: body.status?.messages,
+    groups: body.tables?.[0]?.groups,
+    valueAggregation: body.tables?.[0]?.fields.find(
+      (field) => field.name === columnName,
+    )?.agg,
   };
   summary.results.push(result);
   await writeFile(
@@ -116,7 +121,17 @@ async function execute(label, apl) {
       [],
       "Fixtures must never read a live dataset",
     );
-  console.log(`${label}: HTTP 200, non-partial`);
+  assert.equal(body.tables.length, 1, `${label}: one monitor result table`);
+  assert.deepEqual(
+    body.tables[0].groups,
+    [{ name: groupField }],
+    `${label}: monitor grouping metadata`,
+  );
+  assert.ok(
+    result.valueAggregation,
+    `${label}: monitor value aggregation metadata`,
+  );
+  console.log(`${label}: HTTP 200, non-partial, grouped aggregate`);
   return result.rows;
 }
 function bindFixture(apl, fixture) {
@@ -178,7 +193,8 @@ function bindFixture(apl, fixture) {
   );
 }
 if (values.mode === "production") {
-  for (const { queryFile, apl } of queries) await execute(queryFile, apl);
+  for (const { queryFile, apl, groupField, definition } of queries)
+    await execute(queryFile, apl, groupField, definition.columnName);
   summary.interpretation =
     "Bounded parser/query receipt only. Empty cost or zero health is expected inactivity while all off; ingestion completeness and monitor delivery remain unproven.";
 } else {
@@ -191,10 +207,12 @@ if (values.mode === "production") {
     await readFile(new URL("query-fixtures.mjs", import.meta.url), "utf8"),
   );
   for (const [index, fixture] of fixtures.entries()) {
-    for (const { queryFile, apl, definition } of queries) {
+    for (const { queryFile, apl, definition, groupField } of queries) {
       const rows = await execute(
         `${String(index).padStart(2, "0")}-${queryFile}`,
         bindFixture(apl, fixture),
+        groupField,
+        definition.columnName,
       );
       if (queryFile === "cost.apl")
         assert.deepEqual(

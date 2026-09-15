@@ -33,4 +33,4 @@
 // Axiom sum(long) returns float. Every partial sum is exact below this bound.
 | summarize nanoUsd = sum(nanoUsd) by accountingDay
 | where nanoUsd < 9007199254740991
-| project accountingDay, grossCreditValueUsd = nanoUsd / 1000000000.0
+| summarize grossCreditValueUsd = sum(nanoUsd) / 1000000000.0 by accountingDay
