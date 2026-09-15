@@ -28,6 +28,7 @@ const POST_RESULT_RELEASE_TWO_SOCKET: &str = ".vm0-post-result-release-2.sock";
 const TRANSCRIPT_FENCE_PADDING_BYTES: usize = 16 * 1024;
 const STDOUT_STREAM_CHUNK_BYTES: usize = 8 * 1024;
 const TOOL_OOM_PARENT_HEADROOM_BYTES: u64 = 192 * 1024 * 1024;
+const TOOL_OOM_RUNTIME_BYTES: usize = 128 * 1024 * 1024;
 const TOOL_MARKER_TIMEOUT: Duration = Duration::from_secs(5);
 const TOOL_COMPLETION_TIMEOUT: Duration = Duration::from_secs(5);
 const TOOL_OOM_CONVERGENCE_TIMEOUT: Duration = Duration::from_secs(15);
@@ -38,25 +39,44 @@ const TOOL_OOM_SURVIVOR_RELEASE: &str = "/tmp/vm0-tool-oom-survivor.release";
 
 const TOOL_OOM_SURVIVOR_SCRIPT: &str = r#"
 set -eu
-awk -F: '$1 == "0" { print $3 }' /proc/self/cgroup > /tmp/vm0-tool-oom-survivor.cgroup
-while [ ! -e /tmp/vm0-tool-oom-survivor.release ]; do
-  sleep 0.01
-done
+test "$(cat /proc/self/oom_score_adj)" = 1000
+exec python3 -c '
+import pathlib, time
+assert pathlib.Path("/proc/self/oom_score_adj").read_text().strip() == "1000"
+memory = bytearray(32 * 1024 * 1024)
+memory[::4096] = b"\x01" * (len(memory) // 4096)
+relative = next(line[3:] for line in pathlib.Path("/proc/self/cgroup").read_text().splitlines() if line.startswith("0::"))
+pathlib.Path("/tmp/vm0-tool-oom-survivor.cgroup").write_text(relative)
+while not pathlib.Path("/tmp/vm0-tool-oom-survivor.release").exists():
+    time.sleep(0.01)
+'
 "#;
 
 const TOOL_OOM_OFFENDER_SCRIPT: &str = r#"
 set -eu
+test "$(cat /proc/self/oom_score_adj)" = 1000
 awk -F: '$1 == "0" { print $3 }' /proc/self/cgroup > /tmp/vm0-tool-oom-offender.cgroup
 (trap '' TERM; while :; do sleep 1; done) &
 python3 -c '
-import time
+import os, pathlib, time
 
-chunks = []
+assert pathlib.Path("/proc/self/oom_score_adj").read_text().strip() == "1000"
+limit = int(os.environ["VM0_TEST_OOM_ALLOCATOR_BYTES"])
+for _ in range(4):
+    if os.fork() == 0:
+        assert pathlib.Path("/proc/self/oom_score_adj").read_text().strip() == "1000"
+        chunks = []
+        allocated = 0
+        while allocated < limit:
+            chunk = bytearray(min(4 * 1024 * 1024, limit - allocated))
+            chunk[::4096] = b"\x01" * (len(chunk) // 4096)
+            allocated += len(chunk)
+            chunks.append(chunk)
+            time.sleep(0.01)
+        while True:
+            time.sleep(1)
 while True:
-    chunk = bytearray(16 * 1024 * 1024)
-    chunk[::4096] = b"\x01" * (len(chunk) // 4096)
-    chunks.append(chunk)
-    time.sleep(0.01)
+    os.wait()
 '
 "#;
 
@@ -535,12 +555,15 @@ fn verify_append_prompt_transport(payload: &str) -> Result<String, String> {
     Ok("file-backed appended prompt survived broad pkill".to_string())
 }
 
-pub(super) fn run_parallel_shell_tool_oom_scenario(output_format: &str) -> ExitCode {
+pub(super) fn run_parallel_shell_tool_oom_scenario(
+    output_format: &str,
+    guest_wide: bool,
+) -> ExitCode {
     if output_format != "stream-json" {
         return ExitCode::from(1);
     }
 
-    match verify_parallel_shell_tool_oom() {
+    match verify_parallel_shell_tool_oom(guest_wide) {
         Ok(summary) => {
             emit_result_pair(false, &summary);
             ExitCode::SUCCESS
@@ -554,7 +577,7 @@ pub(super) fn run_parallel_shell_tool_oom_scenario(output_format: &str) -> ExitC
     }
 }
 
-fn verify_parallel_shell_tool_oom() -> Result<String, String> {
+fn verify_parallel_shell_tool_oom(guest_wide: bool) -> Result<String, String> {
     let runtime_relative = unified_cgroup_path(std::process::id())?;
     let runtime_suffix = "/workload/runtime";
     let operation_relative = runtime_relative
@@ -572,6 +595,26 @@ fn verify_parallel_shell_tool_oom() -> Result<String, String> {
     let original_memory_max_bytes = original_memory_max
         .parse::<u64>()
         .map_err(|error| format!("invalid workload memory.max {original_memory_max}: {error}"))?;
+    if read_trimmed(Path::new("/proc/self/oom_score_adj"))? != "0" {
+        return Err("runtime OOM score is not the unmodified default".to_string());
+    }
+    let runtime_bytes = if guest_wide {
+        // Keep every individual tool allocator smaller than the runtime. With
+        // four half-sized allocators, total charge still exhausts this Guest.
+        let meminfo = std::fs::read_to_string("/proc/meminfo")
+            .map_err(|error| format!("read Guest memory size: {error}"))?;
+        let memory_kib = meminfo
+            .lines()
+            .find_map(|line| line.strip_prefix("MemTotal:"))
+            .and_then(|value| value.split_whitespace().next())
+            .and_then(|value| value.parse::<usize>().ok())
+            .ok_or_else(|| "Guest memory size is missing".to_string())?;
+        memory_kib * 1024 / 3
+    } else {
+        TOOL_OOM_RUNTIME_BYTES
+    };
+    let runtime_memory = vec![1_u8; runtime_bytes];
+    std::hint::black_box(&runtime_memory);
     let workload_current = read_trimmed(&workload_path.join("memory.current"))?
         .parse::<u64>()
         .map_err(|error| format!("invalid workload memory.current: {error}"))?;
@@ -587,6 +630,8 @@ fn verify_parallel_shell_tool_oom() -> Result<String, String> {
         return Err("tools cgroup unexpectedly has its own memory limit".to_string());
     }
     let before_events = read_cgroup_events(&workload_path.join("memory.events"))?;
+    let runtime_path = workload_path.join("runtime");
+    let before_runtime_events = read_cgroup_events(&runtime_path.join("memory.events"))?;
 
     for marker in [
         TOOL_OOM_SURVIVOR_CGROUP,
@@ -600,8 +645,17 @@ fn verify_parallel_shell_tool_oom() -> Result<String, String> {
         }
     }
 
-    write_cgroup_value_as_root(&memory_max_path, &test_memory_max.to_string())?;
     let mut fixture = ParallelToolOomFixture::new(memory_max_path, original_memory_max);
+    // Test-only limit changes, confined to a disposable Guest operation. The
+    // guard restores the original value on every returning path.
+    write_cgroup_value_as_root(
+        &fixture.memory_max_path,
+        &if guest_wide {
+            "max".to_string()
+        } else {
+            test_memory_max.to_string()
+        },
+    )?;
 
     fixture.survivor = Some(spawn_bash_tool(TOOL_OOM_SURVIVOR_SCRIPT)?);
     let survivor_relative = wait_for_tool_marker(
@@ -612,7 +666,19 @@ fn verify_parallel_shell_tool_oom() -> Result<String, String> {
             .ok_or_else(|| "survivor process is missing".to_string())?,
     )?;
 
-    fixture.offender = Some(spawn_bash_tool(TOOL_OOM_OFFENDER_SCRIPT)?);
+    fixture.offender = Some(
+        bash_tool_command()
+            .args(["-c", TOOL_OOM_OFFENDER_SCRIPT])
+            .env(
+                "VM0_TEST_OOM_ALLOCATOR_BYTES",
+                (runtime_bytes / 2).to_string(),
+            )
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|error| format!("spawn offender Bash tool: {error}"))?,
+    );
     let offender_relative = wait_for_tool_marker(
         TOOL_OOM_OFFENDER_CGROUP,
         fixture
@@ -640,6 +706,14 @@ fn verify_parallel_shell_tool_oom() -> Result<String, String> {
         return Err(format!(
             "offender Bash tool was not killed as a group: {offender_status}"
         ));
+    }
+    let offender_path = Path::new("/sys/fs/cgroup").join(offender_relative.trim_start_matches('/'));
+    let deadline = Instant::now() + TOOL_COMPLETION_TIMEOUT;
+    while read_cgroup_events(&offender_path.join("cgroup.events"))?.get("populated") != Some(&0) {
+        if Instant::now() >= deadline {
+            return Err("OOM-killed tool still has live descendants".to_string());
+        }
+        std::thread::sleep(TOOL_OOM_POLL_INTERVAL);
     }
 
     let survivor = fixture
@@ -671,11 +745,62 @@ fn verify_parallel_shell_tool_oom() -> Result<String, String> {
     if oom_group_kills == 0 {
         return Err("workload cgroup did not record an OOM group kill".to_string());
     }
+    let memcg_ooms = event_delta(&before_events, &after_events, "oom")?;
+    if (memcg_ooms == 0) != guest_wide {
+        return Err(format!(
+            "wrong OOM scope: guest_wide={guest_wide} memcg_ooms={memcg_ooms}"
+        ));
+    }
+    let after_runtime_events = read_cgroup_events(&runtime_path.join("memory.events"))?;
+    if event_delta(&before_runtime_events, &after_runtime_events, "oom_kill")? != 0 {
+        return Err("OOM killed a runtime process instead of only the tool".to_string());
+    }
 
+    // Keep the competing runtime allocation alive through victim selection.
+    std::hint::black_box(&runtime_memory);
+    drop(runtime_memory);
     fixture.restore_memory_max()?;
     Ok(format!(
-        "parallel-shell-tool-oom-survived oom_group_kill={oom_group_kills} offender={offender_relative} survivor={survivor_relative}"
+        "parallel-shell-tool-oom-survived oom_group_kill={oom_group_kills} guest_wide={guest_wide} memcg_ooms={memcg_ooms} offender={offender_relative} survivor={survivor_relative}"
     ))
+}
+
+pub(super) fn run_runtime_only_oom_scenario(output_format: &str) -> ExitCode {
+    if output_format != "stream-json" {
+        return ExitCode::from(1);
+    }
+    let result = verify_runtime_only_oom();
+    eprintln!("runtime-only OOM fixture unexpectedly returned: {result:?}");
+    ExitCode::from(1)
+}
+
+fn verify_runtime_only_oom() -> Result<(), String> {
+    let runtime = unified_cgroup_path(std::process::id())?;
+    let workload = runtime
+        .strip_suffix("/runtime")
+        .filter(|path| path.starts_with("/vm0-exec/exec-") && path.ends_with("/workload"))
+        .ok_or_else(|| "runtime-only OOM requires managed runtime placement".to_string())?;
+    if read_trimmed(Path::new("/proc/self/oom_score_adj"))? != "0" {
+        return Err("runtime OOM score changed".to_string());
+    }
+    let path = Path::new("/sys/fs/cgroup").join(workload.trim_start_matches('/'));
+    let original_max = read_trimmed(&path.join("memory.max"))?;
+    let current = read_trimmed(&path.join("memory.current"))?
+        .parse::<u64>()
+        .map_err(|error| format!("parse runtime charge: {error}"))?;
+    let fixture = ParallelToolOomFixture::new(path.join("memory.max"), original_max);
+    write_cgroup_value_as_root(
+        &fixture.memory_max_path,
+        &(current + TOOL_OOM_PARENT_HEADROOM_BYTES).to_string(),
+    )?;
+    // No managed tools exist. Exhaust only this disposable operation's memcg;
+    // the runtime must remain eligible, and Runner must report its real death.
+    let mut chunks = Vec::new();
+    for _ in 0..64 {
+        chunks.push(vec![1_u8; 4 * 1024 * 1024]);
+        std::hint::black_box(&chunks);
+    }
+    Err("runtime survived its test-only memory limit".to_string())
 }
 
 struct ParallelToolOomFixture {
@@ -706,10 +831,28 @@ impl ParallelToolOomFixture {
 
 impl Drop for ParallelToolOomFixture {
     fn drop(&mut self) {
+        let tools_relative = unified_cgroup_path(std::process::id())
+            .ok()
+            .and_then(|runtime| {
+                runtime
+                    .strip_suffix("/runtime")
+                    .map(|path| format!("{path}/tools"))
+            });
         for child in [&mut self.offender, &mut self.survivor]
             .into_iter()
             .flatten()
         {
+            // A fixture error must not leave distributed allocators behind.
+            // Only kill this owned child's validated tool leaf, never runtime.
+            if let Some(tools_relative) = &tools_relative
+                && let Ok(relative) = unified_cgroup_path(child.id())
+                && validate_tool_cgroup(&relative, tools_relative).is_ok()
+            {
+                let path = Path::new("/sys/fs/cgroup")
+                    .join(relative.trim_start_matches('/'))
+                    .join("cgroup.kill");
+                let _ = write_cgroup_value_as_root(&path, "1");
+            }
             let _ = child.kill();
             let _ = child.wait();
         }

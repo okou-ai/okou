@@ -134,6 +134,49 @@ test "$(cat "$parent/workload/tools/memory.max")" = max
 test "$(cat "$parent/workload/tools/memory.oom.group")" = 0
 grep -qw memory "$parent/workload/tools/cgroup.subtree_control"
 test "$(cat "/sys/fs/cgroup$relative/memory.oom.group")" = 1
+test "$(cat /proc/self/oom_score_adj)" = 1000
+bash -c 'test "$(cat /proc/self/oom_score_adj)" = 1000'
+for runtime_pid in $(cat "$parent/workload/runtime/cgroup.procs"); do
+  test "$(cat "/proc/$runtime_pid/oom_score_adj")" = 0
+done
+
+# A private mount namespace makes only this launcher's real procfs score file
+# read-only. Enter as root for fixture setup, then restore the runtime UID/GID
+# before the production launcher authenticates with the placement broker.
+test_uid=$(id -u)
+test_gid=$(id -g)
+for setup_mode in hook shell; do
+if sudo -n --preserve-env=OKOU_TOOL_CGROUP_PROCS_ENDPOINT \
+  unshare --mount bash -s -- "$parent/workload/runtime/cgroup.procs" \
+  "$test_uid" "$test_gid" "$setup_mode" \
+  >"$marker/oom-priority-$setup_mode.stdout" \
+  2>"$marker/oom-priority-$setup_mode.stderr" <<'SETUP'
+set -eu
+mount --make-rprivate /
+score_file=/proc/$$/oom_score_adj
+mount --bind "$score_file" "$score_file"
+mount -o remount,bind,ro "$score_file"
+printf 0 > "$1"
+if [ "$4" = hook ]; then
+  exec setpriv --reuid="$2" --regid="$3" --clear-groups \
+    /usr/local/bin/guest-tool-exec hook <<'HOOK'
+{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"true"}}
+HOOK
+fi
+exec setpriv --reuid="$2" --regid="$3" --clear-groups \
+  /usr/local/bin/guest-tool-exec -c 'touch /tmp/vm0-process-containment/unsafe-command-ran'
+SETUP
+then
+  test "$setup_mode" = hook
+else
+  test "$?" = 125
+  test "$setup_mode" = shell
+fi
+done
+test ! -e "$marker/unsafe-command-ran"
+grep -Fq '"permissionDecision":"allow"' "$marker/oom-priority-hook.stdout"
+grep -Fq 'OOM priority setup failed:' "$marker/oom-priority-shell.stderr"
+
 test -z "${OKOU_WORKLOAD_CGROUP_PROCS_ENDPOINT+x}"
 test "${OKOU_TOOL_CGROUP_PROCS_ENDPOINT+x}" = x
 test -n "$OKOU_TOOL_CGROUP_PROCS_ENDPOINT"
@@ -667,6 +710,44 @@ MEMORY_REUSE_RESULT_JSON=$(awk '/^\{/{line=$0} END{print line}' <<<"$MEMORY_REUS
 MEMORY_REUSE_RUN_ID=$(jq -r '.run_id // empty' <<<"$MEMORY_REUSE_RESULT_JSON")
 [ -n "$MEMORY_REUSE_RUN_ID" ] || fail "memory-pressure reuse result omitted run ID"
 
+echo "--- Pressure: prefer tools during Guest-wide OOM ---"
+GLOBAL_MEMORY_THREAD_ID=$(cat /proc/sys/kernel/random/uuid)
+GLOBAL_MEMORY_RESULT=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
+  --timeout 30 \
+  --chat-thread-id "$GLOBAL_MEMORY_THREAD_ID" \
+  --session-id e2e-process-containment-global-memory \
+  --feature-flag sandboxReuse=true \
+  --prompt '@guest-wide-tool-oom') \
+  || fail "Guest-wide tool OOM did not preserve runtime and sibling"
+printf '%s\n' "$GLOBAL_MEMORY_RESULT"
+GLOBAL_MEMORY_JSON=$(awk '/^\{/{line=$0} END{print line}' <<<"$GLOBAL_MEMORY_RESULT")
+GLOBAL_MEMORY_RUN_ID=$(jq -r '.run_id // empty' <<<"$GLOBAL_MEMORY_JSON")
+[ -n "$GLOBAL_MEMORY_RUN_ID" ] || fail "Guest-wide OOM result omitted run ID"
+GLOBAL_MEMORY_LOG="/var/lib/vm0-runner/logs/system-stream-${GLOBAL_MEMORY_RUN_ID}.log"
+sudo grep -E -q 'parallel-shell-tool-oom-survived .*guest_wide=true memcg_ooms=0' \
+  "$GLOBAL_MEMORY_LOG" || fail "Guest-wide OOM scope or recovery was not verified"
+GLOBAL_REUSE_RESULT=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
+  --chat-thread-id "$GLOBAL_MEMORY_THREAD_ID" \
+  --session-id e2e-process-containment-global-memory \
+  --feature-flag sandboxReuse=true --prompt 'true') \
+  || fail "Guest-wide OOM did not preserve subsequent execution"
+printf '%s\n' "$GLOBAL_REUSE_RESULT"
+GLOBAL_REUSE_JSON=$(awk '/^\{/{line=$0} END{print line}' <<<"$GLOBAL_REUSE_RESULT")
+GLOBAL_REUSE_RUN_ID=$(jq -r '.run_id // empty' <<<"$GLOBAL_REUSE_JSON")
+[ -n "$GLOBAL_REUSE_RUN_ID" ] || fail "Guest-wide recovery omitted run ID"
+
+echo "--- Pressure: runtime remains eligible without managed tools ---"
+if RUNTIME_OOM_RESULT=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
+  --timeout 30 --prompt '@runtime-only-oom'); then
+  fail "runtime-only OOM incorrectly succeeded"
+fi
+printf '%s\n' "$RUNTIME_OOM_RESULT"
+RUNTIME_OOM_JSON=$(awk '/^\{/{line=$0} END{print line}' <<<"$RUNTIME_OOM_RESULT")
+[ "$(jq -r '.exit_code' <<<"$RUNTIME_OOM_JSON")" = 137 ] \
+  || fail "runtime-only OOM did not report exit 137"
+RUNTIME_OOM_RUN_ID=$(jq -r '.run_id // empty' <<<"$RUNTIME_OOM_JSON")
+[ -n "$RUNTIME_OOM_RUN_ID" ] || fail "runtime-only OOM result omitted run ID"
+
 echo "--- Pressure: exhaust workload PID capacity and reclaim descendants ---"
 PID_CHAT_THREAD_ID=$(cat /proc/sys/kernel/random/uuid)
 PID_SESSION_ID="e2e-process-containment-pids"
@@ -753,6 +834,15 @@ sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
 
 LOGS=$(sudo journalctl --no-pager "_SYSTEMD_INVOCATION_ID=$INVOCATION_ID" 2>&1) \
   || fail "failed to read runner logs"
+printf '%s\n' "$LOGS" \
+  | grep -F "run_id=$GLOBAL_REUSE_RUN_ID" \
+  | grep -F 'job finished' | grep -F 'reused=true' >/dev/null \
+  || fail "Guest-wide OOM recovery did not reuse its sandbox"
+printf '%s\n' "$LOGS" \
+  | grep -F "run_id=$RUNTIME_OOM_RUN_ID" \
+  | grep -F 'job execution failed' \
+  | grep -F 'resource_failure_kind=guest_memory_oom_killed' >/dev/null \
+  || fail "runtime-only OOM lost genuine agent-OOM attribution"
 printf '%s\n' "$LOGS" \
   | grep -F "run_id=$MEMORY_RUN_ID" \
   | grep -F 'job finished' \

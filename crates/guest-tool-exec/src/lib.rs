@@ -43,9 +43,21 @@ pub fn run() -> ExitCode {
         return ExitCode::from(125);
     }
 
+    if let Err(error) = set_tool_oom_priority() {
+        eprintln!("guest tool exec: OOM priority setup failed: {error}");
+        return ExitCode::from(125);
+    }
+
     let error = exec_shell();
     eprintln!("guest tool exec: failed to exec shell: {error}");
     ExitCode::from(126)
+}
+
+fn set_tool_oom_priority() -> io::Result<()> {
+    // Change only the placed launcher, before exec or user-created descendants.
+    // Ordinary children inherit this preference; the runtime and hook do not.
+    // This prioritizes eligible tools, without making the runtime OOM-immune.
+    std::fs::write("/proc/self/oom_score_adj", "1000")
 }
 
 fn run_pre_tool_use_hook() -> ExitCode {
@@ -284,6 +296,7 @@ mod tests {
     use super::*;
     use std::os::unix::ffi::OsStringExt;
 
+    mod oom_priority;
     mod placement;
 
     #[test]
