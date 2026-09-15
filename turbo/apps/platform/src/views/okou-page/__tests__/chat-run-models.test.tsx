@@ -496,6 +496,31 @@ test("A structured capacity failure offers recovery despite generic provider tex
   expect(recovery).not.toHaveTextContent(providerError);
 });
 
+test.each([
+  [
+    "provider_insufficient_credits",
+    "Your connected model provider account has insufficient balance.",
+  ],
+  ["model_unavailable", "The current model is unavailable."],
+] as const)(
+  "A balance failure (%s) displays its message without a recovery action",
+  async (failureReason, message) => {
+    configureModelPolicies(["gpt-5.6-sol"]);
+    installRunChat({
+      selectedModel: "gpt-5.6-sol",
+      chatEvents: failedRunEvents(message, "gpt-5.6-sol", failureReason),
+    });
+
+    await setupPage({ context, path: RUN_PATH });
+
+    await readyChat();
+    expect(screen.getByText(message)).toBeInTheDocument();
+    expect(queryButton("Try again")).not.toBeInTheDocument();
+    expect(queryButton("Reset and try again")).not.toBeInTheDocument();
+    expect(queryButton("Upgrade to Pro")).not.toBeInTheDocument();
+  },
+);
+
 test("An unknown structured failure does not infer recovery from provider text", async () => {
   const providerError =
     "Selected model is at capacity. Please try a different model.";
