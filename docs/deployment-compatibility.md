@@ -304,33 +304,33 @@ dual-protocol preparation release remains safe for canonical clients.
 
 #### Instagram nullable views
 
-Instagram stats accepts provider `views` as a nonnegative integer, null, or
-omitted. New CLI packages send `x-okou-instagram-views: nullable` on stats
-requests so explicit null survives through inspection output. Zero is a verified
-count; null is unavailable and is never converted to zero. The optional
-`requireViews` input requests the provider's bounded recovery. Its documented
-missing-view HTTP 503 returns without managed billing or automatic retries.
+Instagram stats preserves provider `views` as a nonnegative integer, null, or
+omitted for every caller, without capability-header negotiation. Zero is a
+verified count; null is unavailable and is never converted to zero. Engagement,
+author data, extensions and the existing provider-identity redaction boundary
+remain unchanged. The optional `requireViews` input requests the provider's
+bounded recovery. Its documented missing-view HTTP 503 returns without managed
+billing or automatic retries.
 
-The API retains the old response format for callers without that header: only
-explicit null views are omitted, preserving engagement, author data, extensions,
-and numeric zero. This projection applies to session/PAT and agent/sandbox
-requests, alongside the existing provider-identity redaction boundary.
+The [#34047 retirement receipt](https://github.com/vm0-ai/vm0/issues/34047#issuecomment-5676398885)
+records the first capable API release, `api-v1.597.0`, promoted on September 14,
+2026 at 13:54:04 UTC. That release selected the immutable CLI artifact
+`1c1d6963d034592bc9b3ca671f5f9475c2314234`. On September 15, after the queue,
+execution and finalization window, the operator explicitly confirmed both queues
+empty, all pre-cutoff runs finished, and no supported independently pinned older
+CLI caller. This is operator-confirmed drain, not an automated database census
+or an inference from runner versions alone.
 
-- Old CLI -> new API: unchanged requests receive numeric or omitted views,
-  which the pinned older reader accepts. This legacy format cannot distinguish
-  unavailable null from an originally omitted field.
-- New CLI -> new API: null, omitted, zero, and positive views stay distinct.
-- New CLI -> old API: the additional header does not change the old request
-  body. Numeric/omitted successes remain readable; the old API can still reject
-  provider null. The new strict input is rejected before provider I/O until the
-  supporting API is deployed. Deploy that API before selecting the new package.
+- Capable pre-cleanup CLI -> canonical API: nullable results remain readable;
+  the old capability header is no longer needed.
+- Headerless CLI -> canonical API: null, omitted, zero and positive views stay
+  distinct.
+- Headerless CLI -> capable bridge API: null is temporarily omitted but remains
+  readable; strict lookup remains supported. This also applies to rollback to
+  the bridge API until the canonical API serves again.
 
-Keep the old response projection until the backend selects a capable
-commit-addressed CLI artifact and the maximum queue, execution, and finalization
-lifetimes have passed. Confirm no pre-deployment context or supported external
-caller still depends on the old format before removing it in a later release.
-CLI semantic versions and runner binary drain alone are insufficient evidence.
-Removal is tracked in [#34047](https://github.com/vm0-ai/vm0/issues/34047).
+Pre-reader CLI artifacts are outside the confirmed supported caller set. This
+cleanup changes no persisted format, Runner protocol, or other social operation.
 
 ### Instagram search collection limits
 
@@ -349,20 +349,32 @@ including `hasMore: false`, do not establish exhaustive search. The provider's
 `count` describes the batch and is not a reported global total.
 
 Retained CLI response schemas accept these existing discriminants and ignore
-the new optional field. Current CLI public projection also applies the fixed
-source limit to older API responses, including `complete` and page-2 `more`
-metadata, so it never follows the unsupported continuation. Aggregate and
-streamed terminal output preserve the source limit; `callerLimited` independently
+the new optional field. The API owns source-limit normalization; public projection
+preserves its canonical metadata. Aggregate and streamed terminal output preserve
+the source limit; `callerLimited` independently
 records whether the fetched batch was trimmed. `status: complete` still means
 the caller's requested count was satisfied, while collection state describes
 source completeness. Unsatisfied source-limited requests remain partial.
 
-No response variant is retired and no CLI drain, schema migration, or release
-floor change is required. Rolling back the API retains request compatibility
-for the current CLI; it does not restore pagination in that CLI.
-Remove the old-API metadata projection and its compatibility-only tests after
-every serving API and retained rollback target emits the canonical source limit;
-[issue #34053](https://github.com/vm0-ai/vm0/issues/34053) owns that removal gate.
+The old-API metadata projection is retired by
+[#34053](https://github.com/vm0-ai/vm0/issues/34053), using the following
+production and supported rollback evidence from 2026-09-15:
+
+- Writer commit `e43a677e7508192b61801356f234dbcf231a0fbe` (#34067) first
+  shipped in API 1.596.0. The [API 1.603.2 production promotion](https://github.com/vm0-ai/vm0/actions/runs/34940290360/job/104290489082)
+  checked out and built `05af5a0fe3cdbd9188a9b3d66545bab2dab2a834`, which
+  contains that writer, and published the production alias at 07:24:43 UTC.
+- The existing rollback resolver requires
+  `eb2f211a9af41450d0d5dad10c0c8ad12fac0a24` (API 1.600.1) for prepared
+  domain writers. That release already contains the Instagram writer, so every
+  supported rollback target emits canonical source-limit metadata. The rollback
+  workflow loads the resolver from current `main`.
+
+No response variant is retired and no CLI drain, schema migration, or additional
+release floor is required. Old CLI -> current API remains readable. New CLI ->
+supported rollback API preserves the same single-batch metadata. Pre-fix APIs
+are no longer repaired by the new CLI; historical fixed deployment URLs or a
+manual bypass of the official rollback workflow are outside this boundary.
 
 ### Social download accounting and media metadata
 

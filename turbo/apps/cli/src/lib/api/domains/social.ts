@@ -186,10 +186,7 @@ export async function callSocialKit(
     },
   });
   const result = await client.request({
-    headers:
-      body.tool === "instagram_stats"
-        ? { "x-okou-instagram-views": "nullable" }
-        : {},
+    headers: {},
     body: effectivePublicSocialRequest(body),
     fetchOptions: { signal: AbortSignal.timeout(SOCIALKIT_API_TIMEOUT_MS) },
   });
