@@ -40,9 +40,9 @@ function InteriorTicks({
               // line through the bar, which is what Claude and ChatGPT do.
               "absolute top-1/2 size-1 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-200",
               passed === undefined
-                ? "bg-gray-400/45"
+                ? "bg-gray-500/80"
                 : step <= passed
-                  ? "bg-gray-500/40"
+                  ? "bg-gray-600/75"
                   : "bg-transparent",
             )}
             style={{
