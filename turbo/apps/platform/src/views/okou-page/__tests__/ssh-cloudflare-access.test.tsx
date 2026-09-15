@@ -523,6 +523,42 @@ test.each(["switch", "api"])(
   },
 );
 
+test("An eligible protected host can explicitly change to Direct", async () => {
+  let current = host;
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [config] });
+  });
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [current] });
+  });
+  context.mocks.api(sshConnectionsContract.update, ({ body, respond }) => {
+    current = {
+      ...(body.transport?.type === "direct" ? directHost : current),
+      port: body.port ?? current.port,
+      generation: 2,
+    };
+    return respond(200, current);
+  });
+  await page();
+  await screen.findByText(host.displayName);
+  click(getAction("button", "Edit host"));
+  const dialog = await screen.findByRole("dialog");
+  await within(dialog).findByLabelText("Access configuration");
+  click(getAction("radio", "Direct", dialog));
+  expect(within(dialog).getByLabelText("Port")).toHaveValue(22);
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  await screen.findByText("deploy@ssh.example.com:22");
+  click(getAction("button", "Edit host"));
+  const saved = await screen.findByRole("dialog");
+  expect(getAction("radio", "Direct", saved)).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+});
+
 test("A Direct draft survives a failed conflict refresh and concurrent Access binding", async () => {
   let current = directHost;
   let refreshFails = false;
@@ -878,6 +914,9 @@ test.each(["navigation", "owner", "feature"])(
         );
         clerk.stateChanged();
       } else {
+        // Eligibility cannot change through this page or an SSH notification.
+        // The Lab flow navigates away, already covered above. Inject only this
+        // infrastructure-owned snapshot to exercise in-place feature loss.
         context.store.set(applyFeatureSwitches$, {
           ...context.store.get(featureSwitch$),
           [FeatureSwitchKey.CloudflareAccess]: false,
