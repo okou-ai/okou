@@ -129,9 +129,10 @@ impl Drop for Subscription {
 /// channel, and returns a [`Subscription`] that yields [`Event`]s.
 ///
 /// The background task automatically handles reconnection, token renewal, and
-/// heartbeat timeout detection. See [`Subscription`] for how a full event channel
-/// can delay reconnect and post-reconnect receive progress until the caller drains
-/// events or closes the subscription.
+/// heartbeat timeout detection. While acquiring a renewal token, it continues
+/// receiving messages on the established connection. See [`Subscription`] for how
+/// a full event channel can delay reconnect and post-reconnect receive progress
+/// until the caller drains events or closes the subscription.
 pub async fn subscribe(config: SubscribeConfig) -> Result<Subscription, Error> {
     let timing = config.timing.unwrap_or_default();
     let close_timeout = timing.close_timeout;
@@ -194,6 +195,7 @@ pub async fn subscribe(config: SubscribeConfig) -> Result<Subscription, Error> {
             rest_host: rest,
             http,
             get_token: config.get_token,
+            pending_token_renewal: None,
             timing,
             drop_warnings: DropWarningState::default(),
             transport_close_tracker: transport_close_tracker.clone(),
