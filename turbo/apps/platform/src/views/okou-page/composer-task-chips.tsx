@@ -4,9 +4,9 @@ import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
   ArrowUpRight,
-  ChevronLeft,
   CalendarDays,
   ChartNoAxesCombined,
+  ChevronLeft,
   ChevronRight,
   FileText,
   Globe,
@@ -15,10 +15,10 @@ import {
   MessageSquare,
   Presentation,
   RefreshCw,
+  Route,
   Sparkles,
   UserRound,
   Video,
-  Route,
 } from "lucide-react";
 import { Button } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
@@ -76,7 +76,13 @@ const IDEA_ICONS = {
     CalendarDays,
   ],
 } as const;
-const IDEAS_PER_PAGE = 4;
+/**
+ * What one page can show inside the 900px column once the pagers take their
+ * 88px. Idea labels are sentences and run 150-260px, so three is the count
+ * that fits the widest three; covers are a fixed 200px, so four land 24px
+ * into the 56px fade rather than past it.
+ */
+const IDEAS_PER_PAGE = 3;
 const IMAGE_IDEAS = [
   "productScene",
   "headshot",
@@ -117,7 +123,7 @@ const WEBSITE_IDEAS = [
   "linkPage",
   "bookingPage",
 ] as const;
-const TEMPLATES_PER_PAGE = 5;
+const TEMPLATES_PER_PAGE = 4;
 /**
  * Both rows are a single line that usually overruns the 900px column. The rail
  * hides the overrun and the mask dissolves its last 56px, so the row ends in a
@@ -216,7 +222,7 @@ function ComposerPagedRow({
           <ChevronLeft className="size-4" aria-hidden />
         </Button>
       )}
-      <div className={cn(ROW_RAIL, page < pageCount - 1 && ROW_FADE)}>
+      <div className={cn(ROW_RAIL, ROW_FADE)}>
         <div className={ROW_TRACK} style={{ "--page": page } as CSSProperties}>
           {children.map((content, index) => {
             const pageKey = `page-${String(index)}`;

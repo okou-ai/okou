@@ -67,6 +67,9 @@ function onCurrentPage(group: HTMLElement): HTMLElement[] {
   });
 }
 
+/** Mirrors the row's own page size; a page shows at most this many ideas. */
+const IDEAS_PER_PAGE = 3;
+
 function hasPager(group: HTMLElement, label: string): boolean {
   return queryAllByRoleFast("button", group).some((item) => {
     return item.getAttribute("aria-label") === label;
@@ -497,7 +500,7 @@ test.each([
     const ideas = await screen.findByRole("group", {
       name: "Ideas to get started",
     });
-    expect(ideaButtons(ideas)).toHaveLength(4);
+    expect(ideaButtons(ideas)).toHaveLength(IDEAS_PER_PAGE);
     await fill(editor, "Keep this context");
     click(button(first, ideas));
     await waitFor(() => {
@@ -519,7 +522,7 @@ test.each([
       await waitFor(() => {
         expect(ideaButtons(ideas).length).toBeGreaterThan(0);
       });
-      expect(ideaButtons(ideas).length).toBeLessThanOrEqual(4);
+      expect(ideaButtons(ideas).length).toBeLessThanOrEqual(IDEAS_PER_PAGE);
       expect(editor.textContent).toBe(draft);
     }
     expect(hasPager(ideas, "Next page")).toBeFalsy();
