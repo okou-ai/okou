@@ -413,9 +413,7 @@ describe("social collection checkpoints through the CLI", () => {
         expect(requests).toHaveLength(1);
       }
       expect((await stat(checkpoint)).mode & 0o777).toBe(0o600);
-      expect(await readFile(checkpoint, "utf8")).not.toContain(
-        "test-okou-token",
-      );
+      expect(await readFile(checkpoint, "utf8")).not.toContain(token);
     },
   );
 
