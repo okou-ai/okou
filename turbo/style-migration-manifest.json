@@ -1049,7 +1049,7 @@
       ],
       "status": "implemented",
       "evidence": [],
-      "pullRequest": null,
+      "pullRequest": "https://github.com/vm0-ai/vm0/pull/34271",
       "mergeCommit": null
     }
   ],
