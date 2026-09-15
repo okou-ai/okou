@@ -1,5 +1,5 @@
 {
-  "id": "476f11d9-cdd6-4cb5-967e-575ab7b099dc",
+  "id": "15177f96-587f-4245-b91e-b043016f5bfb",
   "prevId": "8e87af2b-4d65-4622-a524-609dcf6c61cc",
   "version": "7",
   "dialect": "postgresql",
@@ -1659,12 +1659,6 @@
         "model_provider_id": {
           "name": "model_provider_id",
           "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "model_provider_account_identity": {
-          "name": "model_provider_account_identity",
-          "type": "varchar(64)",
           "primaryKey": false,
           "notNull": false
         },
@@ -24453,6 +24447,19 @@
           "primaryKey": false,
           "notNull": true
         },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "has_artifact_snapshot": {
+          "name": "has_artifact_snapshot",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "source_chat_thread_id": {
           "name": "source_chat_thread_id",
           "type": "uuid",
@@ -24494,6 +24501,21 @@
         }
       },
       "indexes": {
+        "shared_threads_org_idx": {
+          "name": "shared_threads_org_idx",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "shared_threads_user_created_idx": {
           "name": "shared_threads_user_created_idx",
           "columns": [

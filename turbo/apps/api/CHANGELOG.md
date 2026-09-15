@@ -8,6 +8,57 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.603.0](https://github.com/vm0-ai/vm0/compare/api-v1.602.0...api-v1.603.0) (2026-09-15)
+
+
+### Features
+
+* **attribution:** keep impact data exclusively in marketing ([#33929](https://github.com/vm0-ai/vm0/issues/33929)) ([d72ff4b](https://github.com/vm0-ai/vm0/commit/d72ff4b88be43dbc571777858d4b688140d9835c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.443.0
+    * @okouai/core bumped to 8.666.1
+    * @okouai/db bumped to 1.259.1
+    * @okouai/pi-agent-runtime bumped to 1.30.5
+
+## [1.602.0](https://github.com/vm0-ai/vm0/compare/api-v1.601.0...api-v1.602.0) (2026-09-15)
+
+
+### Features
+
+* **api:** prioritize personal subscriptions over organization api routes ([#34223](https://github.com/vm0-ai/vm0/issues/34223)) ([8a5e129](https://github.com/vm0-ai/vm0/commit/8a5e1299b4d26bd114ccec017b84b7a83fb4a164))
+* **cli:** export social research results to json and csv files ([#34203](https://github.com/vm0-ai/vm0/issues/34203)) ([a48ae33](https://github.com/vm0-ai/vm0/commit/a48ae330b6cfad84fad0309bc09d55b85769cd2b))
+* give intro video its own generation template type ([#34221](https://github.com/vm0-ai/vm0/issues/34221)) ([776735a](https://github.com/vm0-ai/vm0/commit/776735a14e2d2c8d3fe482b3c8b92b9dd66f5ce8))
+* support explicit mp3 social downloads ([#34206](https://github.com/vm0-ai/vm0/issues/34206)) ([fa8f29d](https://github.com/vm0-ai/vm0/commit/fa8f29d8fa01cea92ed2dfbc915408cf293839cc))
+
+
+### Bug Fixes
+
+* **api:** add bounded image recognition failure diagnostics ([#34200](https://github.com/vm0-ai/vm0/issues/34200)) ([8bbe352](https://github.com/vm0-ai/vm0/commit/8bbe352b3a7ab9e07a34e70e2ee178ced56ef4ad)), closes [#34172](https://github.com/vm0-ai/vm0/issues/34172) [#33959](https://github.com/vm0-ai/vm0/issues/33959)
+* **api:** include the project in langfuse trace links ([#34215](https://github.com/vm0-ai/vm0/issues/34215)) ([fda0a6e](https://github.com/vm0-ai/vm0/commit/fda0a6ef129d7c6edb21452c4f4660e52fc5b63d))
+* **api:** retain bounded voice transcription failure diagnostics ([#34227](https://github.com/vm0-ai/vm0/issues/34227)) ([750c4fc](https://github.com/vm0-ai/vm0/commit/750c4fc7848844f6803cbca7527514aae826b04f)), closes [#34193](https://github.com/vm0-ai/vm0/issues/34193)
+* **db:** bound account erasure claims over completed work ([#34224](https://github.com/vm0-ai/vm0/issues/34224)) ([77aaeca](https://github.com/vm0-ai/vm0/commit/77aaecaa50a77fad2f021115ae23790881b0de6e))
+* **mail:** handle recognized gmail draft-send rejections ([#34210](https://github.com/vm0-ai/vm0/issues/34210)) ([9a09a5c](https://github.com/vm0-ai/vm0/commit/9a09a5c95e02784281bd3f92689f49a85811c1b3))
+
+
+### Refactoring
+
+* remove progressiveArtifactPreview feature switch ([#34214](https://github.com/vm0-ai/vm0/issues/34214)) ([db1b28e](https://github.com/vm0-ai/vm0/commit/db1b28ee3ed5f570a45c5bf37a74238af716d715))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.442.0
+    * @okouai/core bumped to 8.666.0
+    * @okouai/db bumped to 1.259.0
+    * @okouai/pi-agent-runtime bumped to 1.30.4
+
 ## [1.601.0](https://github.com/vm0-ai/vm0/compare/api-v1.600.1...api-v1.601.0) (2026-09-15)
 
 

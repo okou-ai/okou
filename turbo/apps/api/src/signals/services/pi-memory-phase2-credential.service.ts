@@ -1,8 +1,13 @@
+import type { PiMemoryQuotaSource } from "./pi-memory-quota.service";
+import { decryptStoredSecretValue } from "./crypto.utils";
 import { isModelSupportedByProvider } from "@okouai/api-contracts/contracts/model-providers";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
+import {
+  modelProviderAccounts,
+  modelProviderAccountSecrets,
+} from "@okouai/db/schema/model-provider-account";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import {
   modelProviderConnections,
@@ -258,6 +263,27 @@ async function credentialSnapshot(db: ReadDb, source: Source) {
   return key;
 }
 
+async function readQuotaPairSnapshot(db: ReadDb, sourceId: string) {
+  return await db
+    .select({
+      id: modelProviderAccountSecrets.id,
+      name: modelProviderAccountSecrets.name,
+      encryptedValue: modelProviderAccountSecrets.encryptedValue,
+    })
+    .from(modelProviderAccountSecrets)
+    .where(
+      and(
+        eq(modelProviderAccountSecrets.modelProviderAccountId, sourceId),
+        inArray(modelProviderAccountSecrets.name, [
+          "CHATGPT_ACCESS_TOKEN",
+          "CHATGPT_ACCOUNT_ID",
+        ]),
+      ),
+    )
+    .orderBy(asc(modelProviderAccountSecrets.id))
+    .for("share");
+}
+
 async function prepareSubscription(
   db: Db,
   source: Source,
@@ -267,6 +293,7 @@ async function prepareSubscription(
   if (!source.id) {
     reject("source_binding_invalid");
   }
+  const sourceId = source.id;
   const featureSwitchContext = await loadUserFeatureSwitchContext(
     db,
     source.orgId,
@@ -293,13 +320,57 @@ async function prepareSubscription(
     signal,
   );
   signal.throwIfAborted();
+  if (bundle.status !== "available") {
+    reject("credential_unavailable");
+  }
+  const accessToken = bundle.values.get("CHATGPT_ACCESS_TOKEN");
   if (
-    bundle.status !== "available" ||
-    !bundle.values.get("CHATGPT_ACCESS_TOKEN")?.trim() ||
+    !accessToken?.trim() ||
     bundle.values.get("CHATGPT_ACCOUNT_ID") !== externalAccountId
   ) {
     reject("credential_unavailable");
   }
+
+  // Prove the bounded encrypted pair outside final admission: decryption calls
+  // KMS. Canonical preparation above remains the only refresh/resolution owner.
+  const snapshot = await readQuotaPairSnapshot(db, sourceId);
+  signal.throwIfAborted();
+  for (const [name, expected] of [
+    ["CHATGPT_ACCESS_TOKEN", accessToken],
+    ["CHATGPT_ACCOUNT_ID", externalAccountId],
+  ] as const) {
+    const row = snapshot.find((item) => {
+      return item.name === name;
+    });
+    if (
+      !row ||
+      (await decryptStoredSecretValue(
+        row.encryptedValue,
+        featureSwitchContext,
+      )) !== expected
+    ) {
+      reject("credential_unavailable");
+    }
+    signal.throwIfAborted();
+  }
+  const proof = JSON.stringify(snapshot);
+
+  return {
+    quota: {
+      providerClass: "codex",
+      accessToken,
+      accountId: externalAccountId,
+    } satisfies PiMemoryQuotaSource,
+    validate: async (tx: Tx) => {
+      // Final admission is database-only. Any later row/ciphertext change,
+      // including equivalent re-encryption, requires a fresh admission proof.
+      const current = await readQuotaPairSnapshot(tx, sourceId);
+      signal.throwIfAborted();
+      if (JSON.stringify(current) !== proof) {
+        reject("credential_unavailable");
+      }
+    },
+  };
 }
 
 /** Whole selections rebuild one evidence subtree: splitting or filtering them
@@ -336,9 +407,13 @@ export async function resolvePiMemoryPhase2Credential(
   }
   const captured = await credentialSnapshot(db, first);
   signal.throwIfAborted();
-  if (typeof captured === "object" && "externalAccountId" in captured) {
-    await prepareSubscription(db, first, captured.externalAccountId, signal);
-  }
+  const subscription =
+    typeof captured === "object" && "externalAccountId" in captured
+      ? await prepareSubscription(db, first, captured.externalAccountId, signal)
+      : undefined;
+  const quota: PiMemoryQuotaSource = subscription?.quota ?? {
+    providerClass: pin.modelProvider === "built-in" ? "builtin" : "api_key",
+  };
   const route =
     pin.modelProvider === "built-in"
       ? await resolveBuiltInModelRuntimeRoute(db, PI_MEMORY_PHASE2_MODEL)
@@ -350,6 +425,7 @@ export async function resolvePiMemoryPhase2Credential(
   return {
     pin,
     route,
+    quota,
     validate: async (tx: Tx) => {
       signal.throwIfAborted();
       // Match terminal lifecycle order: source runs -> Storage -> provider
@@ -386,6 +462,7 @@ export async function resolvePiMemoryPhase2Credential(
       ) {
         reject("credential_unavailable");
       }
+      await subscription?.validate(tx);
       const context = await loadUserFeatureSwitchContext(
         tx,
         claim.orgId,

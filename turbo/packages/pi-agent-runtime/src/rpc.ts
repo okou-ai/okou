@@ -27,9 +27,7 @@ export type PiSandboxOwnershipTransferMode =
   | "settled-session-continuation";
 
 export interface PiLangfuseRuntimeConfig {
-  readonly publicKey: string;
-  readonly secretKey: string;
-  readonly baseUrl?: string;
+  readonly relay: { readonly endpoint: string; readonly token: string };
   readonly userId?: string;
   readonly environment?: string;
 }
@@ -40,6 +38,7 @@ const LANGFUSE_RUNTIME_ENVIRONMENT = {
   sessionId: "LANGFUSE_PI_PARENT_SESSION_ID",
   depth: "LANGFUSE_PI_PARENT_DEPTH",
   continuation: "PI_LANGFUSE_CONTINUATION",
+  sandboxWaitStartedAt: "OKOU_PI_LANGFUSE_SANDBOX_WAIT_STARTED_AT",
 } as const;
 
 const LANGFUSE_CONFIG_ENVIRONMENT = {
@@ -48,6 +47,8 @@ const LANGFUSE_CONFIG_ENVIRONMENT = {
   baseUrl: "LANGFUSE_BASE_URL",
   userId: "LANGFUSE_USER_ID",
   environment: "LANGFUSE_TRACING_ENVIRONMENT",
+  relayEndpoint: "OKOU_PI_LANGFUSE_OTLP_ENDPOINT",
+  relayToken: "OKOU_PI_LANGFUSE_OTLP_TOKEN",
 } as const;
 
 export function installLangfuseRuntimeEnvironment(
@@ -69,11 +70,9 @@ export function installLangfuseRuntimeEnvironment(
     delete process.env[name];
   }
   if (enabled && config) {
-    process.env[LANGFUSE_CONFIG_ENVIRONMENT.publicKey] = config.publicKey;
-    process.env[LANGFUSE_CONFIG_ENVIRONMENT.secretKey] = config.secretKey;
-    if (config.baseUrl) {
-      process.env[LANGFUSE_CONFIG_ENVIRONMENT.baseUrl] = config.baseUrl;
-    }
+    process.env[LANGFUSE_CONFIG_ENVIRONMENT.relayEndpoint] =
+      config.relay.endpoint;
+    process.env[LANGFUSE_CONFIG_ENVIRONMENT.relayToken] = config.relay.token;
     if (config.userId) {
       process.env[LANGFUSE_CONFIG_ENVIRONMENT.userId] = config.userId;
     }
@@ -86,6 +85,9 @@ export function installLangfuseRuntimeEnvironment(
     process.env[LANGFUSE_RUNTIME_ENVIRONMENT.spanId] = parent.spanId;
     process.env[LANGFUSE_RUNTIME_ENVIRONMENT.sessionId] = parent.sessionId;
     process.env[LANGFUSE_RUNTIME_ENVIRONMENT.depth] = "0";
+    process.env[LANGFUSE_RUNTIME_ENVIRONMENT.sandboxWaitStartedAt] = String(
+      parent.sandboxWaitStartedAt,
+    );
   }
   if (enabled && ownershipTransferMode === "pending-tool-continuation") {
     process.env[LANGFUSE_RUNTIME_ENVIRONMENT.continuation] = "true";

@@ -900,6 +900,7 @@ export const piLangfuseParentSchema = z
       }, "Span ID must be non-zero"),
     traceFlags: z.literal(1),
     sessionId: z.uuid(),
+    sandboxWaitStartedAt: z.number().int().nonnegative(),
   })
   .strict()
   .readonly();

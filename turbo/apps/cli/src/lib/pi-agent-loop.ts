@@ -24,13 +24,12 @@ import {
   resolvePiApiFirstTurnHandoff,
   type PiApiFirstTurnBoundaryControl,
 } from "./pi-api-first-turn-handoff";
+import { piLangfuseTracesContract } from "@okouai/api-contracts/contracts/pi-langfuse";
 
 const RUN_ID_ENV = "OKOU_RUN_ID";
 const PI_SESSION_ID_ENV = "OKOU_PI_SESSION_ID";
 const PI_LAUNCH_PAYLOAD_FILE_ENV = "OKOU_PI_LAUNCH_PAYLOAD_FILE";
 const PI_MODEL_CONFIG_ENV = "OKOU_PI_MODEL_CONFIG";
-const PI_LANGFUSE_CONFIG_FILE_ENV = "OKOU_PI_LANGFUSE_CONFIG_FILE";
-const PI_LANGFUSE_CONFIG_MAX_BYTES = 64 * 1024;
 const PI_API_FIRST_TURN_BOUNDARY_CONTROL_TYPE =
   "vm0_pi_api_first_turn_boundary";
 const PI_MEMORY_PHASE2_VALIDATION_FILENAME = "maintenance-validation.json";
@@ -84,98 +83,6 @@ function parseJsonEnv(env: NodeJS.ProcessEnv, name: string): unknown {
   }
 }
 
-function nonemptyString(
-  value: unknown,
-  maxLength: number = PI_LANGFUSE_CONFIG_MAX_BYTES,
-): string | undefined {
-  return typeof value === "string" &&
-    value.length > 0 &&
-    value.length <= maxLength
-    ? value
-    : undefined;
-}
-
-function parsePiLangfuseBootstrapConfig(
-  raw: Buffer,
-): PiLangfuseRuntimeConfig | undefined {
-  if (raw.length === 0 || raw.length > PI_LANGFUSE_CONFIG_MAX_BYTES) {
-    return undefined;
-  }
-  try {
-    const parsed = JSON.parse(raw.toString("utf8")) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return undefined;
-    }
-    const record = parsed as Record<string, unknown>;
-    const publicKey = nonemptyString(record.publicKey);
-    const secretKey = nonemptyString(record.secretKey);
-    if (!publicKey || !secretKey) {
-      return undefined;
-    }
-    const baseUrl = nonemptyString(record.baseUrl);
-    if (baseUrl) {
-      const parsedUrl = new URL(baseUrl);
-      if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:") {
-        return undefined;
-      }
-    }
-    const userId = nonemptyString(record.userId);
-    const environment = nonemptyString(record.environment);
-    return {
-      publicKey,
-      secretKey,
-      ...(baseUrl ? { baseUrl } : {}),
-      ...(userId ? { userId } : {}),
-      ...(environment ? { environment } : {}),
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-export async function consumePiLangfuseBootstrapConfig(
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<PiLangfuseRuntimeConfig | undefined> {
-  const path = env[PI_LANGFUSE_CONFIG_FILE_ENV];
-  delete env[PI_LANGFUSE_CONFIG_FILE_ENV];
-  if (!path) {
-    return undefined;
-  }
-  let file;
-  try {
-    file = await open(path, "r+");
-  } catch {
-    return undefined;
-  }
-  try {
-    try {
-      await unlink(path);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-        try {
-          await file.truncate(0);
-        } catch (cleanupError) {
-          throw new Error("Pi Langfuse bootstrap file could not be removed", {
-            cause: cleanupError,
-          });
-        }
-        return undefined;
-      }
-    }
-    const raw = Buffer.alloc(PI_LANGFUSE_CONFIG_MAX_BYTES + 1);
-    try {
-      const { bytesRead } = await file.read(raw, 0, raw.length, 0);
-      return parsePiLangfuseBootstrapConfig(raw.subarray(0, bytesRead));
-    } catch {
-      return undefined;
-    } finally {
-      raw.fill(0);
-    }
-  } finally {
-    await file.close();
-  }
-}
-
 async function readLaunchPayload(
   env: NodeJS.ProcessEnv,
 ): Promise<PiLaunchPayload> {
@@ -215,8 +122,8 @@ async function writePiApiFirstTurnBoundaryControl(
 export async function piSandboxAgentConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<PiSandboxAgentConfig> {
-  const langfuseConfig = await consumePiLangfuseBootstrapConfig(env);
   const runId = requiredEnv(env, RUN_ID_ENV);
+  const langfuseConfig = piLangfuseRelayConfig(env, runId);
   const parsedModel = piModelConfigSchema.parse(
     parseJsonEnv(env, PI_MODEL_CONFIG_ENV),
   );
@@ -232,6 +139,28 @@ export async function piSandboxAgentConfigFromEnv(
       },
     }),
     ...(langfuseConfig ? { langfuseConfig } : {}),
+  };
+}
+
+function piLangfuseRelayConfig(
+  env: NodeJS.ProcessEnv,
+  runId: string,
+): PiLangfuseRuntimeConfig | undefined {
+  if (env.OKOU_PI_LANGFUSE_DEBUG_ENABLED !== "true") {
+    return undefined;
+  }
+  const apiUrl = requiredEnv(env, "OKOU_API_BACKEND_URL");
+  const endpoint = new URL(
+    piLangfuseTracesContract.export.path.replace(
+      ":runId",
+      encodeURIComponent(runId),
+    ),
+    apiUrl.startsWith("http") ? apiUrl : `https://${apiUrl}`,
+  ).toString();
+  return {
+    relay: { endpoint, token: requiredEnv(env, "OKOU_TOKEN") },
+    userId: env.LANGFUSE_USER_ID,
+    environment: env.LANGFUSE_TRACING_ENVIRONMENT,
   };
 }
 

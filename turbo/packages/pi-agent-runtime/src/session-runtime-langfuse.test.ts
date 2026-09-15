@@ -18,19 +18,23 @@ const RESOURCE_SNAPSHOT = {
   agentsFiles: [],
   skills: [],
 };
-const originalPublicKey = process.env.LANGFUSE_PUBLIC_KEY;
-const originalSecretKey = process.env.LANGFUSE_SECRET_KEY;
+const managedEnvironment = [
+  "LANGFUSE_PUBLIC_KEY",
+  "LANGFUSE_SECRET_KEY",
+  "OKOU_PI_LANGFUSE_OTLP_ENDPOINT",
+  "OKOU_PI_LANGFUSE_OTLP_TOKEN",
+];
+const originalEnvironment = Object.fromEntries(
+  managedEnvironment.map((name) => {
+    return [name, process.env[name]];
+  }),
+);
 
 function restoreEnvironment(): void {
-  if (originalPublicKey === undefined) {
-    delete process.env.LANGFUSE_PUBLIC_KEY;
-  } else {
-    process.env.LANGFUSE_PUBLIC_KEY = originalPublicKey;
-  }
-  if (originalSecretKey === undefined) {
-    delete process.env.LANGFUSE_SECRET_KEY;
-  } else {
-    process.env.LANGFUSE_SECRET_KEY = originalSecretKey;
+  for (const name of managedEnvironment) {
+    const value = originalEnvironment[name];
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
   }
 }
 
@@ -54,36 +58,45 @@ async function createSession(enableLangfuseObservability: boolean) {
 
 describe("Pi Langfuse extension gate", () => {
   it("does not load the plugin when the trusted runtime decision is false", async () => {
-    process.env.LANGFUSE_PUBLIC_KEY = "pk-lf-disabled";
-    process.env.LANGFUSE_SECRET_KEY = "sk-lf-disabled";
+    process.env.OKOU_PI_LANGFUSE_OTLP_ENDPOINT = "https://api.okou.test/traces";
+    process.env.OKOU_PI_LANGFUSE_OTLP_TOKEN = "disabled-run-token";
     const created = await createSession(false);
     try {
-      expect(process.env.LANGFUSE_PUBLIC_KEY).toBe("pk-lf-disabled");
-      expect(process.env.LANGFUSE_SECRET_KEY).toBe("sk-lf-disabled");
+      expect(process.env.OKOU_PI_LANGFUSE_OTLP_TOKEN).toBe(
+        "disabled-run-token",
+      );
     } finally {
       created.session.dispose();
     }
   });
 
-  it("fails closed and removes partial credentials", async () => {
-    process.env.LANGFUSE_PUBLIC_KEY = "pk-lf-partial";
+  it("rejects partial relay configuration even with ambient connector keys", async () => {
+    process.env.OKOU_PI_LANGFUSE_OTLP_ENDPOINT = "https://api.okou.test/traces";
+    delete process.env.OKOU_PI_LANGFUSE_OTLP_TOKEN;
+    process.env.LANGFUSE_PUBLIC_KEY = "pk-lf-user-project";
+    process.env.LANGFUSE_SECRET_KEY = "sk-lf-user-project";
+    const created = await createSession(true);
+    try {
+      expect(process.env.LANGFUSE_PUBLIC_KEY).toBeUndefined();
+      expect(process.env.LANGFUSE_SECRET_KEY).toBeUndefined();
+      expect(process.env.OKOU_PI_LANGFUSE_OTLP_TOKEN).toBeUndefined();
+      expect(process.env.OKOU_PI_LANGFUSE_OTLP_ENDPOINT).toBeUndefined();
+    } finally {
+      created.session.dispose();
+    }
+  });
+
+  it("loads the relay plugin and removes captured authentication before tools run", async () => {
+    delete process.env.LANGFUSE_PUBLIC_KEY;
     delete process.env.LANGFUSE_SECRET_KEY;
+    process.env.OKOU_PI_LANGFUSE_OTLP_ENDPOINT = "https://api.okou.test/traces";
+    process.env.OKOU_PI_LANGFUSE_OTLP_TOKEN = "enabled-run-token";
     const created = await createSession(true);
     try {
       expect(process.env.LANGFUSE_PUBLIC_KEY).toBeUndefined();
       expect(process.env.LANGFUSE_SECRET_KEY).toBeUndefined();
-    } finally {
-      created.session.dispose();
-    }
-  });
-
-  it("loads the plugin and removes captured credentials before tools run", async () => {
-    process.env.LANGFUSE_PUBLIC_KEY = "pk-lf-enabled";
-    process.env.LANGFUSE_SECRET_KEY = "sk-lf-enabled";
-    const created = await createSession(true);
-    try {
-      expect(process.env.LANGFUSE_PUBLIC_KEY).toBeUndefined();
-      expect(process.env.LANGFUSE_SECRET_KEY).toBeUndefined();
+      expect(process.env.OKOU_PI_LANGFUSE_OTLP_TOKEN).toBeUndefined();
+      expect(process.env.OKOU_PI_LANGFUSE_OTLP_ENDPOINT).toBeUndefined();
     } finally {
       created.session.dispose();
     }

@@ -1,5 +1,38 @@
 # Changelog
 
+## [9.331.0](https://github.com/vm0-ai/vm0/compare/cli-v9.330.0...cli-v9.331.0) (2026-09-15)
+
+
+### Features
+
+* **cli:** resume social collections from durable checkpoints ([#34207](https://github.com/vm0-ai/vm0/issues/34207)) ([de87aa7](https://github.com/vm0-ai/vm0/commit/de87aa7c0e75df187eecfdf8c14b90b0bde5fe0f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.443.0
+    * @okouai/core bumped to 8.666.1
+    * @okouai/pi-agent-runtime bumped to 1.30.5
+
+## [9.330.0](https://github.com/vm0-ai/vm0/compare/cli-v9.329.3...cli-v9.330.0) (2026-09-15)
+
+
+### Features
+
+* **cli:** export social research results to json and csv files ([#34203](https://github.com/vm0-ai/vm0/issues/34203)) ([a48ae33](https://github.com/vm0-ai/vm0/commit/a48ae330b6cfad84fad0309bc09d55b85769cd2b))
+* support explicit mp3 social downloads ([#34206](https://github.com/vm0-ai/vm0/issues/34206)) ([fa8f29d](https://github.com/vm0-ai/vm0/commit/fa8f29d8fa01cea92ed2dfbc915408cf293839cc))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.442.0
+    * @okouai/core bumped to 8.666.0
+    * @okouai/pi-agent-runtime bumped to 1.30.4
+
 ## [9.329.3](https://github.com/vm0-ai/vm0/compare/cli-v9.329.2...cli-v9.329.3) (2026-09-15)
 
 
