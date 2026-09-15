@@ -35,6 +35,7 @@ zstd.workspace = true
 [dev-dependencies]
 httpmock = { workspace = true, features = ["cookies"] }
 nix = { workspace = true, features = ["inotify", "process"] }
+rustix = { workspace = true, features = ["event"] }
 shell-quote.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 guest-control-client.workspace = true
