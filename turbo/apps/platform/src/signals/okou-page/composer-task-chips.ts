@@ -12,16 +12,19 @@ import type {
 import { createComposerVisualizationSignals } from "./composer-visualization.ts";
 
 export type ComposerTask =
-  | ComposerCreateMode
-  | "workflow"
-  | "website"
-  | "visualization";
+  ComposerCreateMode | "workflow" | "website" | "visualization";
 export type ComposerIdeaTask = Exclude<
   ComposerTask,
   "presentation" | "visualization"
 >;
 /** The idea tasks whose catalog carries cover art, so they get a cover shelf. */
 export type ComposerTemplateTask = Exclude<ComposerIdeaTask, "workflow">;
+
+/** What a row reports after laying out: whether either pager has anywhere to go. */
+export interface RailTravel {
+  readonly canScrollBack: boolean;
+  readonly canScrollForward: boolean;
+}
 
 export function createComposerTaskChipsSignals(
   create: ComposerCreateSignals,
@@ -89,36 +92,26 @@ export function createComposerTaskChipsSignals(
     },
   );
   /**
-   * The rows are a two-way pager, not a shuffle: the last page does not wrap
-   * back to the first, so `‹` and `›` can say truthfully whether there is
-   * anything in that direction. `nextIdeas$` above keeps its wrap because the
-   * workflow row is still a single "more" button rather than a pager.
+   * How far a rail can still travel, per rail. A rail packs its items
+   * continuously and pages by one visible width, so how many fit on a page is
+   * a layout outcome rather than a constant; only the row itself can report
+   * it. A rail that has never reported is assumed to fit, which hides both
+   * pagers until the first measurement proves otherwise.
    */
-  const stepIdeaPage$ = command(
-    ({ get, set }, task: ComposerIdeaTask, step: number, pageCount: number) => {
-      const pages = get(internalIdeaPages$);
-      set(internalIdeaPages$, {
-        ...pages,
-        [task]: Math.min(Math.max(pages[task] + step, 0), pageCount - 1),
-      });
-    },
-  );
-  const internalTemplatePages$ = state({ image: 0, video: 0, website: 0 });
-  const templatePages$ = computed((get) => {
-    return get(internalTemplatePages$);
+  const internalRailTravel$ = state<Readonly<Record<string, RailTravel>>>({});
+  const railTravel$ = computed((get) => {
+    return get(internalRailTravel$);
   });
-  const stepTemplatePage$ = command(
-    (
-      { get, set },
-      task: ComposerTemplateTask,
-      step: number,
-      pageCount: number,
-    ) => {
-      const pages = get(internalTemplatePages$);
-      set(internalTemplatePages$, {
-        ...pages,
-        [task]: Math.min(Math.max(pages[task] + step, 0), pageCount - 1),
-      });
+  const setRailTravel$ = command(
+    ({ get, set }, rail: string, travel: RailTravel) => {
+      const current = get(internalRailTravel$)[rail];
+      if (
+        current?.canScrollBack === travel.canScrollBack &&
+        current.canScrollForward === travel.canScrollForward
+      ) {
+        return;
+      }
+      set(internalRailTravel$, { ...get(internalRailTravel$), [rail]: travel });
     },
   );
   return {
@@ -127,9 +120,8 @@ export function createComposerTaskChipsSignals(
     selectTask$,
     ideaPages$,
     nextIdeas$,
-    stepIdeaPage$,
-    templatePages$,
-    stepTemplatePage$,
+    railTravel$,
+    setRailTravel$,
     workflows,
     visualization,
   };

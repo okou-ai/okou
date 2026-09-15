@@ -64,6 +64,7 @@ import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import {
   AlertTriangle,
   ArrowLeft,
+  ArrowRight,
   ArrowUp,
   Bolt,
   Check,
@@ -76,8 +77,8 @@ import {
   Lock,
   Mic,
   Monitor,
-  Paperclip,
   Palette,
+  Paperclip,
   Play,
   Plug,
   Plus,
@@ -85,16 +86,16 @@ import {
   Route,
   Search,
   SlidersHorizontal,
-  Terminal,
   Square,
   SwatchBook,
+  Terminal,
   Trash2,
+  type LucideIcon,
   User,
   UserCheck,
   Users,
   Video,
   X,
-  type LucideIcon,
 } from "lucide-react";
 import {
   Dialog,
@@ -204,6 +205,7 @@ import {
   toVideoGenerationTemplate,
   toWebsiteGenerationTemplate,
 } from "./composer-template-catalog.ts";
+import { ComposerRail, RAIL_ITEM } from "./composer-rail.tsx";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type {
   ConnectorAccountConnection,
@@ -975,6 +977,8 @@ const TEMPLATE_TILE_USE =
 // Caption metrics track the illustration card: same text size, and enough
 // breathing room under the artwork that the title never crowds it.
 const TEMPLATE_TILE_CAPTION = "flex items-baseline gap-2 px-2 pb-2 pt-2";
+/** The cover width every type's shelf uses, so the rows line up across tabs. */
+const PRESENTATION_SHELF_COVER = "w-[200px]";
 const TEMPLATE_TILE_NAME =
   "min-w-0 truncate text-sm font-medium leading-5 text-foreground";
 
@@ -4553,10 +4557,12 @@ function PptImportCard({
   signals,
   onImported,
   compact = false,
+  className,
 }: {
   signals: ComposerSignals;
   onImported: () => void;
   compact?: boolean;
+  className?: string;
 }) {
   const { t } = useTranslation();
   const rootSignal = useGet(rootSignal$);
@@ -4567,7 +4573,7 @@ function PptImportCard({
   return (
     <label
       data-presentation-template-import=""
-      className={TEMPLATE_TILE_WRAPPER}
+      className={cn(TEMPLATE_TILE_WRAPPER, className)}
     >
       <span
         className={cn(
@@ -5814,22 +5820,24 @@ function ComposerPresentationSuggestion({
     <Button
       type="button"
       variant="quiet"
-      className="group/tile block h-auto min-w-0 rounded-xl p-0 text-left font-normal hover:bg-gray-50"
+      className={cn(
+        "group/tile block h-auto shrink-0 rounded-lg p-0 text-left font-normal",
+        RAIL_ITEM,
+        PRESENTATION_SHELF_COVER,
+      )}
       onClick={onSelect}
     >
       <span
         className={cn(
           TEMPLATE_TILE_MEDIA,
           TEMPLATE_TILE_RING,
-          "block aspect-video group-hover/tile:opacity-90",
+          "block aspect-video rounded-lg group-hover/tile:opacity-90",
         )}
       >
         {children}
       </span>
-      <span className={cn(TEMPLATE_TILE_CAPTION, "block")}>
-        <span className={cn(TEMPLATE_TILE_NAME, "block")} title={title}>
-          {title}
-        </span>
+      <span className="mt-2 block truncate text-[12px] leading-4" title={title}>
+        {title}
       </span>
     </Button>
   );
@@ -5842,30 +5850,29 @@ export function ComposerPresentationRecommendations({
 }) {
   const { t } = useTranslation();
   const picker = useComposerTemplatePicker(signals);
-  const imported = useImportedPresentationTemplatePickerItems(signals).slice(
-    0,
-    3,
-  );
-  const builtIn = PRESENTATION_TEMPLATE_PICKER_ITEMS.slice(
-    0,
-    3 - imported.length,
-  );
+  const imported = useImportedPresentationTemplatePickerItems(signals);
+  const builtIn = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   const openTemplates = useSet(signals.template.openTemplatePicker$);
   const setMode = useSet(signals.create.setMode$);
+  const label = t(($) => {
+    return $.chat.taskChips.presentationTemplates;
+  });
+  // The same header line, rail and cover metrics as every other type's shelf.
+  // The import tile leads the rail because uploading a deck is the one action
+  // this catalog has that the others do not.
   return (
     <div
-      className="flex flex-col gap-2"
+      className="flex min-w-0 flex-col gap-3"
       role="group"
-      aria-label={t(($) => {
-        return $.chat.taskChips.presentationTemplates;
-      })}
+      aria-label={label}
     >
-      <div className="flex justify-end">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <p className="min-w-0 truncate text-[13px] font-medium">{label}</p>
         <Button
           type="button"
           variant="quiet"
           size="xs"
-          className="font-normal hover:bg-gray-50"
+          className="shrink-0 gap-1.5 font-normal"
           onClick={() => {
             openTemplates({ kind: "insert", category: "slides" });
           }}
@@ -5873,13 +5880,14 @@ export function ComposerPresentationRecommendations({
           {t(($) => {
             return $.chat.taskChips.moreTemplates;
           })}
+          <ArrowRight className="size-3" aria-hidden />
         </Button>
       </div>
-      <div className="grid min-w-0 grid-cols-2 items-start gap-4 sm:grid-cols-4">
-        <ImportedPresentationTemplateLibraryStatus signals={signals} />
+      <ComposerRail signals={signals} rail="templates:presentation" gap="gap-3">
         <PptImportCard
           signals={signals}
           compact
+          className={cn(RAIL_ITEM, "shrink-0", PRESENTATION_SHELF_COVER)}
           onImported={() => {
             setMode(null);
           }}
@@ -5925,7 +5933,7 @@ export function ComposerPresentationRecommendations({
             </ComposerPresentationSuggestion>
           );
         })}
-      </div>
+      </ComposerRail>
     </div>
   );
 }

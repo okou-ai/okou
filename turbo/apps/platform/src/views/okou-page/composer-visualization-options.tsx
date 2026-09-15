@@ -7,6 +7,7 @@ import {
   type VisualizationChart,
   type VisualizationOutput,
 } from "../../signals/okou-page/composer-visualization.ts";
+import { ComposerRail, RAIL_ITEM } from "./composer-rail.tsx";
 import { CURATED_VISUALIZATION_CHARTS } from "./composer-visualization-chart-data.ts";
 import { VisualizationChartPreview } from "./composer-visualization-previews.tsx";
 
@@ -31,17 +32,19 @@ function VisualizationOutputButton({
   return (
     <ToggleButton
       selected={selected}
-      layout="tile"
+      // `tile` is `block w-full`, which made every chip claim its own row once
+      // the picker stopped being a grid. `inline` is the layout that shrinks.
+      layout="inline"
       aria-label={label}
       className={cn(
-        "h-8 rounded-full px-3.5 text-xs font-medium",
+        "h-8 shrink-0 rounded-full px-3.5 py-0 text-xs font-medium",
         !selected && "border-control-border bg-transparent",
       )}
       onClick={() => {
         setOutput(output);
       }}
     >
-      <span className="block truncate">{label}</span>
+      {label}
     </ToggleButton>
   );
 }
@@ -104,17 +107,23 @@ function VisualizationChartButton({
       layout="tile"
       aria-label={label}
       className={cn(
-        "group min-h-[104px] overflow-hidden rounded-xl border-transparent bg-muted/60 p-1.5",
-        selected ? "text-foreground" : "text-foreground/50",
+        RAIL_ITEM,
+        "w-[112px] shrink-0 overflow-hidden rounded-lg p-1.5",
+        // Only the resting tile drops the frame. Overriding the border and the
+        // fill on both branches left selection carried by ink opacity alone,
+        // which a multi-select cannot afford.
+        selected
+          ? "text-foreground hover:bg-primary/15"
+          : "border-transparent bg-muted/60 text-foreground/45 hover:bg-muted",
       )}
       onClick={() => {
         toggleChart(chart);
       }}
     >
-      <span className="block h-[70px]">
+      <span className="block h-[52px]">
         <VisualizationChartPreview chart={chart} />
       </span>
-      <span className="mt-1.5 block truncate px-1 text-center text-xs font-medium">
+      <span className="mt-1 block truncate px-0.5 text-center text-[11px] leading-4">
         {label}
       </span>
     </ToggleButton>
@@ -136,10 +145,11 @@ function VisualizationChartPicker({
   return (
     <section className="flex min-w-0 flex-col gap-2.5">
       <h4 className="text-xs font-medium">{copy.preferredCharts}</h4>
-      <div
-        className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6"
-        role="group"
-        aria-label={copy.preferredCharts}
+      <ComposerRail
+        signals={signals}
+        rail="charts"
+        label={copy.preferredCharts}
+        gap="gap-2"
       >
         {CURATED_VISUALIZATION_CHARTS.map((chart) => {
           return (
@@ -150,7 +160,7 @@ function VisualizationChartPicker({
             />
           );
         })}
-      </div>
+      </ComposerRail>
     </section>
   );
 }
@@ -175,7 +185,6 @@ export function ComposerVisualizationOptions({
     >
       <VisualizationOutputPicker signals={signals} />
       <VisualizationChartPicker signals={signals} />
-      <p className="text-xs text-muted-foreground">{copy.chartSafety}</p>
     </section>
   );
 }
