@@ -143,14 +143,14 @@
      read in. Opacity has exactly one owner - the items - so the two do not
      multiply into a wash. Consumers reach both through `motion-safe:animate-*`,
      so reduced motion drops the class entirely and the content is simply
-     present. The item entry carries its own delay because `animate-*` compiles
-     to the `animation` shorthand, which resets a separate `animation-delay`
-     utility back to zero; the row sets `--rail-enter-index` per item. It is
-     `backwards` so a delayed item does not paint at full opacity while it
-     waits. Keyframes stay below. */
+     present. The item entry is `backwards` so a staggered item does not paint
+     at full opacity while it waits; the row sets each item's delay inline,
+     because `animate-*` compiles to the `animation` shorthand and a shorthand
+     resets any separate `animation-delay` rule back to zero. Keyframes stay
+     below. */
   --animate-composer-panel-in: okou-composer-panel-in 220ms ease-out;
   --animate-composer-rail-item-in: okou-composer-rail-item-in 260ms ease-out
-    calc(var(--rail-enter-index, 0) * 28ms) backwards;
+    backwards;
 
   /* Onboarding workflow diagram beam. Its keyframes stay below; the consumer
      reaches this entry through `motion-safe:animate-owf-beam-flow`. */

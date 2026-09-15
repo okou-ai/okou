@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -25,12 +25,21 @@ const RAIL = cn(
  */
 const RAIL_ITEM_FRAME = "shrink-0 snap-start";
 /**
- * Items resolve left to right as the row arrives. The delay is capped so a
+ * Items resolve left to right as the row arrives. The step is capped so a
  * catalog of eighteen still finishes in about a fifth of a second: past the
  * first few the eye reads the row as one movement, not as a queue.
+ *
+ * The delay is set inline rather than through a utility or a theme token. A
+ * `animation-delay` utility loses to the shorthand that `animate-*` compiles
+ * to, and a `var()` written into the token resolves against `:root`, where the
+ * per-item value does not exist - the token would bake in its own fallback.
  */
 const RAIL_ITEM_ENTER = "motion-safe:animate-composer-rail-item-in";
+const RAIL_ITEM_ENTER_STEP_MS = 28;
 const RAIL_ITEM_ENTER_CAP = 7;
+function railItemEnterDelay(index: number): string {
+  return `${String(Math.min(index, RAIL_ITEM_ENTER_CAP) * RAIL_ITEM_ENTER_STEP_MS)}ms`;
+}
 /**
  * Every shelf tile across the types: art in its own box, caption underneath and
  * outside it. `quiet` paints a fill on hover, which on a tile this tall draws a
@@ -195,11 +204,7 @@ export function ComposerRail({
             <div
               key={`rail-item-${String(index)}`}
               className={cn(RAIL_ITEM_FRAME, RAIL_ITEM_ENTER)}
-              style={
-                {
-                  "--rail-enter-index": Math.min(index, RAIL_ITEM_ENTER_CAP),
-                } as CSSProperties
-              }
+              style={{ animationDelay: railItemEnterDelay(index) }}
             >
               {item}
             </div>
