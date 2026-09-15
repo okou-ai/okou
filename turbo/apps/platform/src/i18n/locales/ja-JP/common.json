@@ -1938,8 +1938,7 @@
           "print": "印刷と出版",
           "retro-tech": "レトロテックとインターフェース"
         },
-        "preview": "{{title}} のプレビュー",
-        "previewUnavailable": "このスタイルの動画プレビューはありません。"
+        "preview": "{{title}} のプレビュー"
       },
       "voice": {
         "auto": "Okou におまかせ",
@@ -2799,7 +2798,6 @@
         "website": "ウェブサイト",
         "workflow": "ワークフロー"
       },
-      "importedEmpty": "アップロード済みテンプレートはまだありません。",
       "importedLoadFailed": "アップロード済みテンプレートを読み込めませんでした。",
       "importedLoading": "アップロード済みテンプレートを読み込み中…",
       "importedUnavailable": "アップロード済みテンプレートは一時的に利用できません。",
@@ -5618,6 +5616,10 @@
         "categoryVideo": "動画",
         "chatModels": "チャットモデル",
         "effort": "強度",
+        "effortScale": {
+          "faster": "速さ",
+          "smarter": "賢さ"
+        },
         "fast": "速い",
         "fastImpact": {
           "apiCost": "APIトークン料金 2×",

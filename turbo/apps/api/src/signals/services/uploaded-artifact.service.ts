@@ -5,7 +5,12 @@ import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { userFeatureSwitchContext } from "./feature-switches.service";
-import { s3ObjectHead, tryListMultipartS3Parts } from "../external/s3";
+import {
+  generateArtifactPreviewUrl,
+  s3ObjectHead,
+  tryListMultipartS3Parts,
+} from "../external/s3";
+import { nowDate } from "../../lib/time";
 import {
   allocateArtifactObject$,
   resolvedArtifactObject,
@@ -13,6 +18,7 @@ import {
 } from "./artifact-storage.service";
 import {
   allocatePrivateArtifact$,
+  completePrivateArtifact$,
   privateArtifactRecord,
   privateArtifactUrl,
 } from "./private-artifact-storage.service";
@@ -27,11 +33,13 @@ export const allocateUploadedArtifact$ = command(
       readonly contentType: string;
       readonly size: number;
       readonly publicBrand: PublicBrand;
-      readonly purpose: "artifact" | undefined;
+      readonly purpose?: "artifact";
+      readonly id?: string;
+      readonly variant?: string;
     },
     signal: AbortSignal,
   ) => {
-    if (args.purpose === "artifact" && args.orgId) {
+    if (args.orgId) {
       const context = await get(
         userFeatureSwitchContext(args.orgId, args.userId),
       );
@@ -45,7 +53,11 @@ export const allocateUploadedArtifact$ = command(
       }
     }
     const artifact = await set(allocateArtifactObject$, args, signal);
-    return { ...artifact, bucket: env("R2_USER_ARTIFACTS_BUCKET_NAME") };
+    return {
+      ...artifact,
+      bucket: env("R2_USER_ARTIFACTS_BUCKET_NAME"),
+      storageMetadata: { publicBrand: args.publicBrand },
+    };
   },
 );
 
@@ -53,6 +65,8 @@ interface UploadedArtifactIdentity {
   readonly id: string;
   readonly userId: string;
   readonly orgId: string | undefined;
+  readonly filenameHint?: string;
+  readonly variant?: string;
 }
 
 export function uploadedArtifactObject(args: UploadedArtifactIdentity) {
@@ -84,7 +98,14 @@ export function uploadedArtifactObject(args: UploadedArtifactIdentity) {
       };
     }
     // Historical public objects remain readable without rewriting their URLs.
-    const object = await get(resolvedArtifactObject(args.userId, args.id));
+    const object = await get(
+      resolvedArtifactObject(
+        args.userId,
+        args.id,
+        args.filenameHint,
+        args.variant,
+      ),
+    );
     return object
       ? {
           ...object,
@@ -92,6 +113,38 @@ export function uploadedArtifactObject(args: UploadedArtifactIdentity) {
           isPrivate: false,
         }
       : null;
+  });
+}
+
+/** Finalize verified bytes before an integration publishes or transfers them. */
+export const materializeUploadedArtifact$ = command(
+  async ({ get, set }, args: UploadedArtifactIdentity, signal: AbortSignal) => {
+    const object = await get(uploadedArtifactObject(args));
+    signal.throwIfAborted();
+    if (object?.isPrivate) {
+      await set(completePrivateArtifact$, { id: args.id, ...object }, signal);
+    }
+    return object;
+  },
+);
+
+/** Provider fetch URLs expire; callers persist object.url instead. */
+export function uploadedArtifactFetchUrl(object: {
+  readonly isPrivate: boolean;
+  readonly bucket: string;
+  readonly key: string;
+  readonly url: string;
+}) {
+  return computed(async (get) => {
+    if (!object.isPrivate) {
+      return object.url;
+    }
+    const signed = await get(
+      generateArtifactPreviewUrl(object.bucket, object.key, {
+        signingDate: nowDate(),
+      }),
+    );
+    return signed.url;
   });
 }
 

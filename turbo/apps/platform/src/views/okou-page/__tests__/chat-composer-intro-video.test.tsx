@@ -21,6 +21,7 @@ import {
   AGENT_ID,
   context,
   expectInlineTemplate,
+  mockPlayableMedia,
   mockTemplateChat,
   openTemplatePicker,
   sendComposerMessage,
@@ -318,20 +319,42 @@ test("Style loading retries a failed later page and excludes portrait-only refer
   expect(within(dialog).queryByLabelText("Select style Minimalism")).toBeNull();
 });
 
-test("Style preview playback and failure do not select a style or resume after leaving the gallery", async () => {
+test("Hovering a style plays its preview and leaving restores the thumbnail", async () => {
   installCatalogs();
-  const { dialog } = await openIntroVideo();
-  click(control("Preview Minimalism", dialog));
-  const preview = within(dialog).getByLabelText("Minimalism");
-  expect(preview.tagName).toBe("VIDEO");
+  const media = mockPlayableMedia();
+  const { dialog, user } = await openIntroVideo();
+  const previewControl = control("Preview Minimalism", dialog);
+  const preview = previewControl.parentElement?.querySelector("video");
+  if (!preview) {
+    throw new Error("Style preview video not found");
+  }
+  await user.hover(previewControl);
+  expect(media.play).toHaveBeenCalledTimes(1);
+  fireEvent.playing(preview);
+  expect(preview).toHaveAttribute("data-preview-playing", "true");
   expect(control("Select style Minimalism", dialog)).toHaveAttribute(
     "aria-pressed",
     "false",
   );
+  await user.unhover(previewControl);
+  expect(media.pause).toHaveBeenCalledTimes(1);
+  expect(preview).toHaveAttribute("data-preview-playing", "false");
+});
+
+test("A failed style preview keeps its thumbnail and stays selectable", async () => {
+  installCatalogs();
+  const media = mockPlayableMedia();
+  const { dialog, user } = await openIntroVideo();
+  const previewControl = control("Preview Minimalism", dialog);
+  const preview = previewControl.parentElement?.querySelector("video");
+  if (!preview) {
+    throw new Error("Style preview video not found");
+  }
+  await user.click(previewControl);
+  expect(media.play).toHaveBeenCalledTimes(1);
   fireEvent.error(preview);
-  expect(within(dialog).getByRole("status")).toHaveTextContent(
-    "A video preview is not available",
-  );
+  expect(preview).toHaveAttribute("data-preview-playing", "false");
+  expect(previewControl).toBeVisible();
   click(control("Select style Minimalism", dialog));
   expect(control("Style", dialog, "tab")).toHaveTextContent("Minimalism");
   click(control("Voice", dialog, "tab"));

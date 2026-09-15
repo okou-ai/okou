@@ -1983,8 +1983,7 @@
           "print": "Impression et édition",
           "retro-tech": "Technologie rétro et interfaces"
         },
-        "preview": "Aperçu de {{title}}",
-        "previewUnavailable": "Aucun aperçu vidéo n’est disponible pour ce style."
+        "preview": "Aperçu de {{title}}"
       },
       "voice": {
         "auto": "Laisser Okou choisir",
@@ -2854,7 +2853,6 @@
         "website": "Site web",
         "workflow": "Workflow"
       },
-      "importedEmpty": "Aucun modèle importé pour le moment.",
       "importedLoadFailed": "Impossible de charger les modèles importés.",
       "importedLoading": "Chargement des modèles importés…",
       "importedUnavailable": "Les modèles importés sont temporairement indisponibles.",
@@ -5689,6 +5687,10 @@
         "categoryVideo": "Vidéo",
         "chatModels": "Modèles de chat",
         "effort": "Effort",
+        "effortScale": {
+          "faster": "Plus rapide",
+          "smarter": "Plus intelligent"
+        },
         "fast": "Rapide",
         "fastImpact": {
           "apiCost": "2× le coût des tokens API",

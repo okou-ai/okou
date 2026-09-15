@@ -22753,7 +22753,7 @@ describe("CHAT-02: run-level model overrides", () => {
           });
         })
         .toBe(true);
-      await expect.poll(admissionLock.waiterCount).toBe(2);
+      await expect.poll(admissionLock.transitiveWaiterCount).toBe(2);
       if (sdk) {
         await expect.poll(sdk.initializationCount).toBe(2);
       }
@@ -28717,7 +28717,7 @@ describe("CHAT-02: shared user message queue", () => {
         });
       })
       .toBe(true);
-    await expect.poll(admissionLock.waiterCount).toBe(2);
+    await expect.poll(admissionLock.transitiveWaiterCount).toBe(2);
     admissionLock.release();
 
     const sent = await send;

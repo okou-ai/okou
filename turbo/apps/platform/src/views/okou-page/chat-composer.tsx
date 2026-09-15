@@ -67,6 +67,7 @@ import {
   ArrowUp,
   Bolt,
   Check,
+  Clapperboard,
   Download,
   Globe,
   Image as ImageIcon,
@@ -315,6 +316,11 @@ import {
 } from "./avatar-template-picker.tsx";
 import { ComposerVideoOptionsChip } from "./composer-video-options.tsx";
 import { ComposerPresentationOptions } from "./composer-presentation-options.tsx";
+import {
+  markVideoPreviewPlaying,
+  resetVideoPreview,
+  startVideoPreview,
+} from "./video-preview-hover.ts";
 import {
   localizedWorkflowTemplate,
   localizedWorkflowTemplateCategory,
@@ -859,43 +865,6 @@ function websiteTemplateCardImageUrl(item: WebsiteTemplateItem): string {
   return r2ImageTransformUrl(item.previewImageUrl, TEMPLATE_CARD_PREVIEW_SIZE);
 }
 
-function playVideoTemplatePreview(video: HTMLVideoElement | null): void {
-  if (!video) {
-    return;
-  }
-  video.defaultMuted = true;
-  video.muted = true;
-  video.playsInline = true;
-  video.preload = "metadata";
-  detach(video.play(), Reason.DomCallback);
-}
-
-function markVideoTemplatePreviewPlaying(
-  video: HTMLVideoElement | null,
-  playing: boolean,
-): void {
-  if (!video) {
-    return;
-  }
-  video.dataset.previewPlaying = playing ? "true" : "false";
-}
-
-function resetVideoTemplatePreview(video: HTMLVideoElement | null): void {
-  if (!video) {
-    return;
-  }
-  video.pause();
-  video.currentTime = 0;
-  markVideoTemplatePreviewPlaying(video, false);
-}
-
-function toggleVideoTemplatePreview(video: HTMLVideoElement | null): void {
-  if (!video || (!video.paused && !video.ended)) {
-    return;
-  }
-  playVideoTemplatePreview(video);
-}
-
 function videoTemplatePosterImage(item: VideoTemplateItem): string {
   if (item.cardPreviewImage !== undefined) {
     return r2ImageTransformUrl(
@@ -914,10 +883,10 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
       data-video-template-preview=""
       className="group/video-template-preview relative h-full w-full overflow-hidden bg-muted"
       onMouseEnter={(event) => {
-        toggleVideoTemplatePreview(event.currentTarget.querySelector("video"));
+        startVideoPreview(event.currentTarget.querySelector("video"));
       }}
       onMouseLeave={(event) => {
-        resetVideoTemplatePreview(event.currentTarget.querySelector("video"));
+        resetVideoPreview(event.currentTarget.querySelector("video"));
       }}
     >
       <video
@@ -928,16 +897,16 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
         muted
         loop
         onPlaying={(event) => {
-          markVideoTemplatePreviewPlaying(event.currentTarget, true);
+          markVideoPreviewPlaying(event.currentTarget, true);
         }}
         onPause={(event) => {
-          markVideoTemplatePreviewPlaying(event.currentTarget, false);
+          markVideoPreviewPlaying(event.currentTarget, false);
         }}
         onEnded={(event) => {
-          resetVideoTemplatePreview(event.currentTarget);
+          resetVideoPreview(event.currentTarget);
         }}
         onError={(event) => {
-          markVideoTemplatePreviewPlaying(event.currentTarget, false);
+          markVideoPreviewPlaying(event.currentTarget, false);
         }}
       >
         <source src={item.previewWebm} type="video/webm; codecs=vp9" />
@@ -964,7 +933,7 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
         onClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
-          toggleVideoTemplatePreview(
+          startVideoPreview(
             event.currentTarget.parentElement?.querySelector("video") ?? null,
           );
         }}
@@ -4365,7 +4334,7 @@ function TemplatePickerCategoryNav({
             label: t(($) => {
               return $.artifacts.templates.introVideo;
             }),
-            Icon: Presentation,
+            Icon: Clapperboard,
           },
         ]
       : []),
@@ -5804,10 +5773,6 @@ function ImportedPresentationTemplateLibraryStatus({
       });
       retry = retryCatalog;
     }
-  } else if (templates.data.length === 0) {
-    message = t(($) => {
-      return $.chat.templates.importedEmpty;
-    });
   } else {
     return null;
   }

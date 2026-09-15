@@ -1,9 +1,66 @@
 # mitmproxy Addon Runtime Contracts
 
-These contracts cover addon logging, WebSocket framing and inspection, and path
+These contracts cover addon control, logging, WebSocket framing and inspection, and path
 normalization. Read the relevant section before changing the addon or its pinned
 mitmproxy/wsproto dependencies. See the [testing guide](testing/mitm-addon-testing.md)
 for environment setup, commands, and executable coverage.
+
+## Runner-private control and readiness
+
+Runner and its embedded addon ship together. `okou_control_socket_dir` selects
+the current managed launch directory; `okou_usage_state_id` is also the control
+generation and rotates on restart. Readiness requires a correlated `proxy.status`
+reply followed by EOF, then the existing TCP listener probe, within the original
+10-second startup deadline. A socket inode alone is not readiness. Only read-only
+startup probes retry, with at most one second per control attempt.
+
+The addon owns a separate asyncio I/O thread. It opens the launch directory with
+`O_DIRECTORY | O_NOFOLLOW`, requires the effective UID and private permissions,
+and exclusively binds `control.sock` with mode `0600`. Runner creates launch
+directories with mode `0700`. Neither bind failure nor addon shutdown unlinks an
+endpoint: Runner removes the launch directory only after reaping its process
+tree. Each side connects/binds through its own live directory descriptor's
+`/proc/self/fd/<fd>/control.sock` alias, so long launch paths work on Linux.
+
+Each Unix stream carries one request and at most one terminal reply: a four-byte
+big-endian unsigned length followed by UTF-8 JSON. Frames are 1–65,536 bytes;
+there are at most 16 admitted connections, a backlog of 16, and a five-second
+whole-connection deadline. Partial frames, oversize lengths, disconnected or
+slow peers cannot retain admission indefinitely. Overload closes without reading
+or inventing a request ID. Malformed or pipelined peers can observe a reset.
+
+Requests have exactly `requestId`, `generation`, `method`, and `params`. Identifiers
+match `[A-Za-z0-9_.-]{1,64}`; duplicate keys, non-JSON constants, and unknown fields
+are rejected. The only method is `proxy.status`, with empty object parameters:
+
+```json
+{
+  "requestId": "request-1",
+  "generation": "launch-generation",
+  "method": "proxy.status",
+  "params": {}
+}
+```
+
+A successful reply contains those identities, `"type": "result"`, and
+`"data": {"state": "running"}`. An error instead contains `"type": "error"` and
+`"code": "invalid_request"`, `"stale_generation"`, or `"unknown_method"`;
+`requestId` is null when no valid correlation can be recovered. Error generation
+always identifies the serving addon. Rust rejects mismatched identities, unknown
+response fields/states, extra response bytes, and missing terminal EOF.
+
+The JSONL watcher starts before control admission. Shutdown stops control
+admission, closes every accepted socket (including tasks not yet started), and
+joins the I/O thread before existing blocking drains. This is a readiness
+snapshot, not an ongoing health guarantee or business-state acknowledgement.
+A lost reply after transmission means an unknown outcome; the transport does
+not automatically replay future mutations or move business state onto its thread.
+
+JSONL flush, registry/catalog consumption, SIGUSR1 delivery drain, and API/billing
+contracts remain unchanged. Old Runner instances retain their embedded addon;
+no API-first deployment or mixed Runner/addon protocol fallback is needed. This
+stage does not implement token accounting or guest RPC, and unit/packaged runtime
+tests do not claim production soak or a measured latency improvement.
 
 ## Logging Boundaries
 

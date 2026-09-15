@@ -602,7 +602,7 @@ async fn execute_inner_retries_fresh_after_workspace_cache_hit_create_failure() 
     overrides.push_create_result(Err(sandbox_create_error("bad seed image")));
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
     let server = httpmock::MockServer::start_async().await;
-    let body = b"workspace retry archive".to_vec();
+    let body = storage_archive(b"workspace retry archive");
     let full_get = server
         .mock_async(|when, then| {
             when.method(httpmock::Method::GET)

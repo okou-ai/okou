@@ -1946,8 +1946,7 @@
           "print": "मुद्रण और प्रकाशन",
           "retro-tech": "रेट्रो तकनीक और इंटरफ़ेस"
         },
-        "preview": "{{title}} का पूर्वावलोकन",
-        "previewUnavailable": "इस शैली का वीडियो पूर्वावलोकन उपलब्ध नहीं है।"
+        "preview": "{{title}} का पूर्वावलोकन"
       },
       "voice": {
         "auto": "Okou को चुनने दें",
@@ -2808,7 +2807,6 @@
         "website": "वेबसाइट",
         "workflow": "वर्कफ़्लो"
       },
-      "importedEmpty": "अभी तक कोई टेम्पलेट अपलोड नहीं किया गया है।",
       "importedLoadFailed": "अपलोड किए गए टेम्पलेट लोड नहीं हो सके।",
       "importedLoading": "अपलोड किए गए टेम्पलेट लोड हो रहे हैं…",
       "importedUnavailable": "अपलोड किए गए टेम्पलेट फ़िलहाल उपलब्ध नहीं हैं।",
@@ -5631,6 +5629,10 @@
         "categoryVideo": "वीडियो",
         "chatModels": "चैट मॉडल",
         "effort": "प्रयास",
+        "effortScale": {
+          "faster": "तेज़",
+          "smarter": "समझदार"
+        },
         "fast": "तेज़",
         "fastImpact": {
           "apiCost": "2× API टोकन लागत",

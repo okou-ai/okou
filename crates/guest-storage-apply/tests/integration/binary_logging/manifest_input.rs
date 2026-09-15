@@ -5,6 +5,53 @@ use super::{
 use crate::support::{manifest_json, write_manifest};
 
 #[test]
+fn binary_applies_decoded_files_without_remote_attribution() {
+    use guest_contracts::storage_files::{self, StorageFile};
+    let fixture = BinaryLoggingFixture::new("decoded-files").unwrap();
+    let target = fixture.dir.path().join("mount");
+    let json = serde_json::to_vec(&serde_json::json!({"storageMounts":[{
+        "mountPath":target,"archiveUrl":"https://must-not-fetch.invalid/archive"
+    }]}))
+    .unwrap();
+    let files = vec![StorageFile {
+        path: "file".into(),
+        mode: 0o644,
+        mtime: 100,
+        content: vec![23; 200_000],
+    }];
+    let input = storage_files::encode_input(&json, &[(target.to_str().unwrap(), &files)]).unwrap();
+    let output = process::CommandExecution::spawn(
+        fixture.command().arg("--storage-files-stdin"),
+        Some(&input),
+    )
+    .unwrap()
+    .wait()
+    .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        std::fs::read(target.join("file")).unwrap(),
+        files[0].content
+    );
+    let ops = fixture.ops_entries().unwrap();
+    let total = ops
+        .iter()
+        .find(|op| op["action_type"] == "storage_download")
+        .unwrap();
+    assert_eq!(total["outcome"], "decoded_files");
+    assert!(!ops.iter().any(|op| {
+        op["action_type"]
+            .as_str()
+            .unwrap()
+            .starts_with("storage_download_remote_")
+    }));
+    assert_single_download_total_success(&ops, true);
+}
+
+#[test]
 fn binary_reads_manifest_from_stdin() {
     let fixture = BinaryLoggingFixture::new("stdin-success").unwrap();
     let json = manifest_json(&[], None).unwrap();

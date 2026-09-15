@@ -3930,12 +3930,24 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     );
   });
 
-  it.each(["image", "file"] as const)(
-    "imports a Feishu %s into canonical storage before dispatch",
-    async (type) => {
+  it.each([
+    { type: "image", privateFiles: false },
+    { type: "file", privateFiles: false },
+    { type: "image", privateFiles: true },
+    { type: "file", privateFiles: true },
+  ] as const)(
+    "imports a Feishu $type before dispatch (private=$privateFiles)",
+    async ({ type, privateFiles }) => {
       const fixture = await setupFeishuRunFixture();
       await connectFixtureUser(fixture);
       const { actor, runnerGroup, appId, callbackUrl } = fixture;
+      const flagActor = {
+        ...actor,
+        orgId: requireValue(actor.orgId, "Expected organization"),
+      };
+      await updateFeatureSwitchesForUser(context, flagActor, {
+        [FeatureSwitchKey.PrivateArtifacts]: privateFiles,
+      });
       const uploads = captureIntegrationInputUploads(context);
       const messageId = `om_${randomUUID()}`;
       const fileKey = `file_${randomUUID()}`;
@@ -3991,7 +4003,11 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
         "Expected canonical file id",
       );
       expect(claim.prompt).not.toContain(fileKey);
+      await updateFeatureSwitchesForUser(context, flagActor, {
+        [FeatureSwitchKey.PrivateArtifacts]: !privateFiles,
+      });
       await expectIntegrationInputPreview(context, {
+        privateFiles,
         actor,
         fileId,
         bytes,

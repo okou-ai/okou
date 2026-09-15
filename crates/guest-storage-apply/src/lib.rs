@@ -40,6 +40,7 @@ mod archive;
 mod cleanup;
 mod download;
 mod error;
+mod files;
 mod http_failure;
 mod instructions;
 mod manifest;
@@ -100,9 +101,49 @@ pub fn run_manifest_bytes(manifest_json: &[u8]) -> bool {
     run_manifest(manifest)
 }
 
+/// Apply bounded binary storage input after validating all mount bindings and files.
+pub fn run_storage_files_bytes(input: &[u8]) -> bool {
+    let parsed = (|| {
+        let (json, payload) = guest_contracts::storage_files::split_input(input)?;
+        let manifest = manifest::parse(json)
+            .map_err(|_| std::io::Error::other("invalid storage manifest JSON"))?;
+        let files = guest_contracts::storage_files::decode(payload)?;
+        files::validate_bindings(&manifest, &files)?;
+        Ok::<_, std::io::Error>((manifest, files))
+    })();
+    match parsed {
+        Ok((manifest, files)) => run_manifest_with_files(manifest, files),
+        Err(error) => {
+            log_error!(LOG_TAG, "Invalid decoded storage input: {error}");
+            false
+        }
+    }
+}
+
 fn run_manifest(manifest: Manifest) -> bool {
+    run_manifest_with_files(manifest, Vec::new())
+}
+
+fn run_manifest_with_files(
+    manifest: Manifest,
+    files: Vec<guest_contracts::storage_files::StorageFiles>,
+) -> bool {
     let plan_start = Instant::now();
-    let plan = RunPlan::from_manifest(&manifest);
+    let mut plan = RunPlan::from_manifest(&manifest);
+    for group in files {
+        let Some(task) = plan
+            .download_tasks
+            .iter_mut()
+            .find(|task| task.mount_path() == group.mount_path)
+        else {
+            log_error!(
+                LOG_TAG,
+                "Decoded storage target missing from execution plan"
+            );
+            return false;
+        };
+        task.set_files(group.files);
+    }
     record_sandbox_op(
         "guest_storage_apply_plan_build",
         plan_start.elapsed(),

@@ -53,6 +53,8 @@ import {
 } from "./connector-credential-runtime.service";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { runOwnedChatEventForRunCondition } from "./chat-event-type.service";
+import { artifactFileReference } from "./private-artifact-storage.service";
+import { uploadedArtifactObject } from "./uploaded-artifact.service";
 
 const GOOGLE_DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files";
 const GOOGLE_DRIVE_UPLOAD_URL =
@@ -831,8 +833,16 @@ function artifactSourceUrls(artifact: ArtifactFileRow): readonly string[] {
 function resolveArtifactS3Object(
   artifact: ArtifactFileRow,
   userId: string,
-): Computed<ArtifactS3Object | null> {
-  return computed((): ArtifactS3Object | null => {
+  orgId: string,
+): Computed<Promise<ArtifactS3Object | null>> {
+  return computed(async (get): Promise<ArtifactS3Object | null> => {
+    const reference = artifact.url ? artifactFileReference(artifact.url) : null;
+    if (reference) {
+      const object = await get(
+        uploadedArtifactObject({ id: reference.id, userId, orgId }),
+      );
+      return object ? { bucketName: object.bucket, key: object.key } : null;
+    }
     const value = artifact.metadata.s3Key;
     if (typeof value === "string") {
       const s3Object = resolveArtifactS3ObjectFromKey(value, userId);
@@ -1256,7 +1266,7 @@ export const syncArtifactToGoogleDrive$ = command(
     const s3Object =
       hostedContent || artifact.metadata.access === "owner-private-v1"
         ? null
-        : await get(resolveArtifactS3Object(artifact, args.userId));
+        : await get(resolveArtifactS3Object(artifact, args.userId, args.orgId));
     signal.throwIfAborted();
     let content: ResolvedArtifactContent;
     if (hostedContent) {

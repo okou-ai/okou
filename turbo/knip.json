@@ -22,9 +22,10 @@
         "src/signals/external/stripe-client.ts",
         "src/signals/external/env.ts",
         "src/scripts/**/*.ts",
-        "src/**/*.{test,spec}.ts"
+        "src/**/*.{test,spec}.ts",
+        "scripts/erasure-bridge/{acceptance,child}.ts"
       ],
-      "project": ["src/**/*.ts"],
+      "project": ["src/**/*.ts", "scripts/erasure-bridge/*.ts"],
       "ignoreDependencies": ["@hono/node-server-v1", "clerk"]
     },
     "apps/platform": {

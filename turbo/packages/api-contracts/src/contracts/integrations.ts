@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { artifactUrlSchema } from "./artifact-references";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
@@ -650,7 +651,7 @@ const canonicalSlackUploadInitResponseSchema = z.object({
   operationId: z.string().uuid(),
   uploadUrl: z.string().url().optional(),
   uploadHeaders: z.record(z.string(), z.string()).optional(),
-  url: z.string().url(),
+  url: artifactUrlSchema,
 });
 
 const slackUploadInitResponseSchema = z.union([
@@ -686,7 +687,7 @@ const slackUploadMaterializeBodySchema = z.object({
 
 const slackUploadMaterializeResponseSchema = z.object({
   assetId: z.string().uuid(),
-  url: z.string().url(),
+  url: artifactUrlSchema,
   delivery: z.discriminatedUnion("status", [
     z.object({
       status: z.literal("pending"),

@@ -1,4 +1,5 @@
 import { command } from "ccstate";
+import { env } from "../../lib/env";
 import {
   integrationsTeamsUploadCompleteContract,
   type TeamsUploadCompleteBody,
@@ -11,7 +12,10 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
 import { sendTeamsMessage } from "../external/teams-bot-client";
-import { resolveArtifactObject$ } from "../services/artifact-storage.service";
+import {
+  materializeUploadedArtifact$,
+  uploadedArtifactFetchUrl,
+} from "../services/uploaded-artifact.service";
 import { recordTeamsUploadedFile$ } from "../services/run-uploaded-files.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -126,8 +130,8 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const object = await set(
-    resolveArtifactObject$,
-    { userId: auth.userId, id: body.uploadId },
+    materializeUploadedArtifact$,
+    { userId: auth.userId, orgId: auth.orgId, id: body.uploadId },
     signal,
   );
   if (!object) {
@@ -142,17 +146,22 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   };
   const mimetype = body.contentType ?? object.contentType;
 
+  const fetchUrl = await get(uploadedArtifactFetchUrl(object));
+  signal.throwIfAborted();
   const result = await sendTeamsMessage(
     {
       serviceUrl: installation.serviceUrl,
       conversationId: body.conversationId,
       activityId: body.activityId,
       tenantId: installation.teamsTenantId,
-      text: buildTeamsFileText({ body, file }),
+      text: buildTeamsFileText({
+        body,
+        file: { ...file, fileUrl: new URL(file.fileUrl, env("APP_URL")).href },
+      }),
       attachments: [
         {
           contentType: mimetype,
-          contentUrl: file.fileUrl,
+          contentUrl: fetchUrl,
           name: file.filename,
         },
       ],

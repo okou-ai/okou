@@ -113,6 +113,33 @@ referrer policy and the host Worker's same-origin resource policy. Both must be
 deployed to verify full HTML resource loading against the hosted-domain WAF.
 The viewer and sharing use the existing `privateArtifacts` rollout switch.
 
+#### Private attachment uploads
+
+The API accepts the previous attachment prepare request without `purpose`, and
+selects private storage from the existing `privateArtifacts` switch. The current
+App completes a private single PUT before exposing a ready attachment; multipart
+completion finalizes the ownership record on the API. Older composers omit the
+single-upload complete call, so authenticated reference resolution verifies the
+owned object with HEAD before signing it. An incomplete multipart upload has no
+readable object. This previous-App bridge can be removed only after a later App
+floor excludes those composers; #32492 owns that retirement.
+
+Storage reads are independent of the rollout switch. Historical public objects
+and canonical `accessLevel: private` records without a versioned storage marker
+remain public objects; new private IDs never fall through to public storage.
+This is a durable-data compatibility boundary, with no bulk migration in this
+change. Template records select storage from their persisted source/page key
+namespace, and Social job snapshots use an optional `privateArtifacts` field
+(absent means the historical public mode). These readers must remain until the
+corresponding persisted records have been migrated or explicitly retired.
+
+Integration upload and Social responses use the existing stable `/artifacts/`
+reference format for new private files. API, App and CLI consumers must support
+that format before enabling the cohort; existing public response values are
+unchanged. Signed provider/preview URLs are issued on reads and are not stored as
+the durable file identity. No database migration, force-upgrade floor, Worker
+protocol change, or infrastructure change is introduced here.
+
 #### Connector App retirement
 
 The first singleton-free connector App release is `0.843.1`, built from
@@ -153,6 +180,51 @@ decoders in the cleanup release. The normal migration transaction and timeouts
 apply; a failed cleanup blocks release and rolls back. #29777 removes the
 remaining singleton contract only after this migration release succeeds.
 Investigate unexpected new singleton writes rather than adding a cleanup loop.
+
+#### Slack connector OAuth rollout cleanup
+
+The combined Slack integration and user OAuth flow from
+[#33421](https://github.com/vm0-ai/vm0/pull/33421) first shipped in App `0.887.0`
+and API `1.584.1`, release
+`9ce193854ab828baeec40579a6d36cdf2d4dbf73`. Its
+[API promotion](https://github.com/vm0-ai/vm0/actions/runs/34578216432/job/103198883138)
+completed on 2026-09-11 at 08:30:58 UTC, followed by
+[App promotion](https://github.com/vm0-ai/vm0/actions/runs/34578216432/job/103199718280)
+at 08:33:05 UTC. App `0.886.0` still omitted `requestUserScopes`.
+
+On 2026-09-15, production App HTML identified App `0.899.2` from
+`05af5a0fe3cdbd9188a9b3d66545bab2dab2a834`. Its
+[API promotion](https://github.com/vm0-ai/vm0/actions/runs/34940290360/job/104290489082)
+completed at 07:25:09 UTC with API `1.603.2`, followed by
+[App promotion](https://github.com/vm0-ai/vm0/actions/runs/34940290360/job/104291320762)
+at 07:27:07 UTC. The canonical rollback resolver already requires
+`PREPARED_DOMAIN_TRIGGER_RELEASE`
+`eb2f211a9af41450d0d5dad10c0c8ad12fac0a24`, which contains #33421. Pre-OAuth
+APIs are outside the supported production rollback boundary without adding a
+new rollback restriction.
+
+Cleanup [#34306](https://github.com/vm0-ai/vm0/pull/34306) raises the App floor
+from `0.873.0` to `0.887.0` in this later release, after the replacement App is
+live. Identified App versions below that floor receive `426` before route
+handling and must refresh on their next handled API request. Idle pages are
+not reloaded automatically. This affects all handled App API requests. An App
+rollback must also remain at or above `0.887.0` while this floor is enforced.
+
+Slack Connect requires `requestUserScopes: true` and returns only
+`202 { authorizationUrl }` on success. The App follows that URL; connection
+binding and notifications happen after the existing OAuth callback verifies
+the grant. The direct-connect branch, its response shape, and rollout-only
+tests are removed. Existing callback identity, workspace, membership, and
+single-use-state checks remain in force.
+
+The floor does not exclude non-App callers or missing/unparseable versions;
+they can use the same canonical OAuth request. Authenticated requests without
+`requestUserScopes: true` receive the contract's `400` validation response.
+Current repository production code has one caller, the App, which already
+sends that field; no CLI caller was found. The complete retained 72-hour
+request-log query ending 2026-09-15 at 07:14:20 UTC contained one POST: App
+`0.893.2`, response `202`. It found no non-App or unidentified POST; this is
+bounded caller evidence, not a guarantee about every external client.
 
 ### Backend
 
@@ -553,6 +625,77 @@ it is upgraded (potentially causing a cache miss, not exposing an active build).
 
 Runner and guest binaries are deployed as one runner artifact. Compatibility is
 not required between a runner binary and a guest binary from a different version.
+
+The extracted storage cache is a separate, host-local cross-version boundary.
+New readers use `storages/<name-hash>/decoded-v1-<version-hash>/` containing an
+identity/content index and real files. Existing compressed readers continue to
+use their original hashed version directory and `archive.tar.gz`; neither
+reader interprets the other format. Selection validates and pins usable extracted
+files before archive prefetch, so an admitted hit does not download or publish a
+missing compressed entry. New entries use the existing name/version-key flock,
+including the final-version lock for `.tmp` staging, so both old and new storage
+GC recursively account and evict them with the existing best-effort byte and
+entry targets. These targets are not hard disk-usage limits. Directory admission
+also bounds each extracted entry's inode footprint.
+
+Unsupported-archive admission records use separate
+`decoded-v1-rejected-<version-hash>/` keys under the same GC and lock rules.
+Only background fill reads these records; foreground lookup probes positive
+file entries only, so unsupported archives do not pay a rejection-record lock
+and read on every startup. Each reader validates its expected entry kind.
+
+Readers hold that lock while validating the bounded index, identity, file types,
+sizes and content digests, then pin owned bytes through Guest apply. GC can evict
+the disk entry afterward without invalidating an in-flight delivery. Orphaned
+lock GC may remove an unlocked lock while retaining its data; a reader recreates
+and revalidates the lock only for a present entry, then reopens the directory
+under the lock. Missing, busy or unsupported entries keep ordinary delivery;
+malformed present cache data is an error, not an unverified hit.
+
+The bounded binary-manifest check is computed once on the first usable ready
+hit, before omitting archive staging. Miss-only runs do not clone and serialize
+the manifest just to decide whether an unused binary input would fit.
+
+Lookup windows admit at most 128 identities with 128 KiB of owned key bytes,
+retaining the per-key limits. Non-admitted keys retain ordinary delivery;
+this bounds metadata even when a plan contains unusually long identities.
+Ready-file read-ahead stops after reaching 15 MiB of content, with at most one
+additional storage's size in that last read; the wider miss-probe window does
+not increase the former 16-MiB content read-ahead bound.
+
+First-fill extraction belongs to the existing bounded background-fill owner and
+starts only after Agent spawn. Before that point, selected work owns no task,
+cache lock or open file. Publication uses private staging and atomic rename;
+this is a disposable cache, not a power-loss-durable source of truth. Runner
+shutdown joins background work and extracted-cache blocking tasks. The binary
+final-file input is private to the bundled Runner/Guest storage operation;
+ordinary HTTP downloads, API manifests and generic exec-stdin limits do not
+change. No backend reader-first deployment is required for that bundled input.
+
+After a run actually selects extracted-file delivery and successfully spawns its
+Agent, that same bounded background owner may retire the corresponding compressed
+archive. Retirement never downloads data. It takes the old archive's exclusive
+lock without waiting and validates the complete positive replacement under its
+own lock, retaining both locks through deletion. Busy, missing or non-admitted
+replacement work is skipped; malformed data is reported as a background error.
+It removes only the regular archive and an empty version directory, not unrelated
+files. GC can independently evict either format after those locks are released.
+
+Conversion alone does not delete an archive: a never-used converted entry may
+retain both formats until direct use or GC. Old Runners, rollback, instructions,
+artifacts and other archive-required consumers keep their original delivery and
+may refill a compressed cache miss. Queued archive-fill demand takes precedence
+over queued retirement for the same identity. This is use-driven best-effort
+cleanup, not a guarantee of exactly one representation across mixed consumers.
+
+Positive lookup includes a metadata-only archive-existence hint for maintenance
+admission. Already retired entries do not consume the background queue again,
+so a decoded prefix cannot repeatedly displace later warming or retirement.
+The hint neither reads compressed content nor authorizes deletion: retirement
+reopens and validates under locks. Metadata errors are left to that background
+validation rather than failing an otherwise valid extracted-file delivery. An
+orphaned source lock is recreated only for observed archive data, following the
+same lock repair rule as cache readers.
 
 Use **sandbox** for provider-neutral runner lifecycle, ownership, status,
 network-policy, and operator concepts. Use **VM** only for concrete

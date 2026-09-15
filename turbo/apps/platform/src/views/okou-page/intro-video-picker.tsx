@@ -292,7 +292,6 @@ function StylePicker({ signals }: PickerProps) {
   const { t } = useTranslation();
   const catalog = useLoadable(introVideoStyleGallerySignals.catalog$);
   const reload = useSet(introVideoStyleGallerySignals.reload$);
-  const setGalleryRef = useSet(introVideoStyleGallerySignals.setGalleryRef$);
   const style = useGet(signals.style$);
   const setStyle = useSet(signals.setStyle$);
   const group = useGet(signals.group$);
@@ -331,7 +330,6 @@ function StylePicker({ signals }: PickerProps) {
       <StyleTags signals={signals} hasOther={hasOther} />
       <div
         key={group}
-        ref={setGalleryRef}
         data-intro-video-catalog-scroll=""
         className="min-h-0 flex-1 overflow-y-auto px-4 pb-5 sm:px-6"
       >

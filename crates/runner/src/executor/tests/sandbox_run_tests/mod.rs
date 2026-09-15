@@ -65,6 +65,18 @@ mod reuse;
 mod ssh;
 mod workspace_cache;
 
+fn storage_archive(content: &[u8]) -> Vec<u8> {
+    let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::none());
+    let mut tar = tar::Builder::new(encoder);
+    let mut header = tar::Header::new_ustar();
+    header.set_size(content.len() as u64);
+    header.set_mode(0o644);
+    header.set_mtime(1);
+    header.set_cksum();
+    tar.append_data(&mut header, "file", content).unwrap();
+    tar.into_inner().unwrap().finish().unwrap()
+}
+
 fn codex_oauth_context() -> crate::types::ExecutionContext {
     let mut context = minimal_context();
     context.cli_agent_type = "codex".into();

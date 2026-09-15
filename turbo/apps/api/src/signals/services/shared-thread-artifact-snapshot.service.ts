@@ -480,7 +480,20 @@ export const prepareSharedThreadArtifacts$ = command(
 
     const messages: SharedMessage[] = [];
     for (const message of args.messages) {
-      messages.push({ ...message, content: await rewrite(message.content) });
+      const attachments:
+        | NonNullable<SharedMessage["attachments"]>[number][]
+        | undefined = message.attachments === undefined ? undefined : [];
+      for (const attachment of message.attachments ?? []) {
+        attachments?.push({
+          ...attachment,
+          url: await rewrite(attachment.url),
+        });
+      }
+      messages.push({
+        ...message,
+        content: await rewrite(message.content),
+        ...(attachments === undefined ? {} : { attachments }),
+      });
     }
     if (resources.size === 0) {
       return null;

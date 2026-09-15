@@ -179,19 +179,33 @@ async fn execute_job_reuse_bypasses_fresh_pre_spawn_admission() {
 }
 
 #[tokio::test]
-async fn execute_job_reuse_stages_runner_owned_archive_once() {
+async fn execute_job_reuse_materializes_runner_owned_decoded_files_once() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
-    let registry_guard = crate::lock::acquire(dir.path().join("proxy-registry.json.lock"))
-        .await
-        .unwrap();
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let source_ip = sandbox.source_ip().to_string();
     let (idle_sandbox, _budget_lease) =
         make_reusable_idle_sandbox(sandbox, source_ip, "test-session").await;
     let server = MockServer::start_async().await;
-    let body = b"reused archive".to_vec();
+    let body = storage_archive(b"reused archive");
+    let home = crate::paths::HomePaths::with_root(dir.path().to_owned());
+    let archive_dir = home.storage_cache_dir("reused-archive", "v1");
+    std::fs::create_dir_all(&archive_dir).unwrap();
+    std::fs::write(archive_dir.join("archive.tar.gz"), &body).unwrap();
+    drop(
+        crate::lock::acquire(home.storage_lock("reused-archive", "v1"))
+            .await
+            .unwrap(),
+    );
+    config
+        .decoded_cache
+        .warm_from_archive("reused-archive", "v1")
+        .await
+        .unwrap();
+    // A prior background fill is sufficient even after compressed-cache GC.
+    // Production source preparation must not start another archive request.
+    std::fs::remove_file(archive_dir.join("archive.tar.gz")).unwrap();
     let full_get = server
         .mock_async(|when, then| {
             when.method(GET)
@@ -214,49 +228,31 @@ async fn execute_job_reuse_stages_runner_owned_archive_once() {
         .await
     });
 
-    tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, async {
-        while full_get.calls_async().await == 0 {
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .expect("archive request should start while reused proxy registration is blocked");
-    assert!(
-        !task.is_finished(),
-        "proxy lock should keep the reused run from reaching guest storage"
-    );
-    drop(registry_guard);
-
     let (outcome, telemetry) = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, task)
         .await
-        .expect("reused run should finish after proxy registration is released")
+        .expect("decoded-only reused run should finish without downloading the archive")
         .expect("reused execution task should not panic");
 
     assert_eq!(outcome.exit_code(), 0, "error={:?}", outcome.error());
-    full_get.assert_calls_async(1).await;
+    full_get.assert_calls_async(0).await;
     let writes = overrides.write_files_calls();
-    assert_eq!(writes.len(), 1);
-    assert_eq!(writes[0].files.len(), 1);
-    assert_eq!(writes[0].files[0].content, body);
+    assert!(writes.is_empty());
     let manifests = overrides.storage_manifest_calls();
     assert_eq!(manifests.len(), 1);
+    let (json, payload) =
+        guest_contracts::storage_files::split_input(&manifests[0].manifest_json).unwrap();
     let manifest: guest_contracts::storage_manifest::Manifest =
-        serde_json::from_slice(&manifests[0].manifest_json).unwrap();
-    let staged_url = manifest.storages[0].archive_url.as_deref().unwrap();
-    assert!(staged_url.starts_with("file://"), "got: {staged_url}");
-    assert_ne!(staged_url, archive_url);
-    assert_telemetry_action(
-        &telemetry,
-        "storage_cache_fresh_delivery_single_request",
-        true,
-        None,
+        serde_json::from_slice(json).unwrap();
+    let groups = guest_contracts::storage_files::decode(payload).unwrap();
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].mount_path, manifest.storages[0].mount_path);
+    assert_eq!(groups[0].files[0].content, b"reused archive");
+    assert_eq!(
+        manifest.storages[0].archive_url.as_deref(),
+        Some(archive_url.as_str())
     );
-    assert_telemetry_action(
-        &telemetry,
-        "storage_cache_fresh_delivery_staged",
-        true,
-        None,
-    );
+    assert_no_telemetry_action(&telemetry, "storage_cache_fresh_delivery_single_request");
+    assert_telemetry_action(&telemetry, "storage_cache_decoded", true, None);
 }
 
 #[tokio::test]

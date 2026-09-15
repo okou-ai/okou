@@ -1,11 +1,37 @@
 import type { RunStatus } from "@okouai/api-contracts/contracts/runs";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { and, inArray, type SQL } from "drizzle-orm";
+import { and, eq, inArray, type SQL } from "drizzle-orm";
 
 import { fencePiInferenceTerminal } from "./pi-inference-lifecycle.service";
 import { cleanupDisconnectedPersonalModelProviderAccounts } from "./model-provider-account.service";
 import type { Tx } from "../../lib/db-types";
+import { nowDate } from "../../lib/time";
+
+export const COMPUTE_CLOSURE_ERROR = "account_erasure:subject_closed";
+
+/** The admission owner already holds B1 subjects and the run/session rows.
+ * Closure has a separate capture lifecycle: preserve diagnostic and provider
+ * locators, credit admission and queues instead of ordinary terminal cleanup.
+ */
+export async function stopErasureClosedComputeRun(
+  tx: Tx,
+  runId: string,
+): Promise<void> {
+  await tx
+    .update(agentRuns)
+    .set({
+      status: "cancelled",
+      completedAt: nowDate(),
+      error: COMPUTE_CLOSURE_ERROR,
+    })
+    .where(
+      and(
+        eq(agentRuns.id, runId),
+        inArray(agentRuns.status, ["pending", "queued"]),
+      ),
+    );
+}
 
 type TerminalRunStatus = Extract<
   RunStatus,

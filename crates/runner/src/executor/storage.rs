@@ -36,16 +36,40 @@ pub(super) fn guest_storage_apply_env<'a>(
     ]
 }
 
+#[cfg(test)]
 pub(super) async fn download_storages(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
     manifest: &Manifest,
 ) -> RunnerResult<()> {
+    download_storages_with_files(sandbox, context, manifest, &[]).await
+}
+
+pub(super) async fn download_storages_with_files(
+    sandbox: &dyn Sandbox,
+    context: &ExecutionContext,
+    manifest: &Manifest,
+    files: &[(
+        String,
+        std::sync::Arc<crate::storage_cache::decoded::CachedFiles>,
+    )],
+) -> RunnerResult<()> {
     let manifest_json = serde_json::to_vec(manifest)
         .map_err(|e| RunnerError::Internal(format!("manifest json: {e}")))?;
+    let manifest_json = if files.is_empty() {
+        manifest_json
+    } else {
+        let groups = files
+            .iter()
+            .map(|(mount, files)| (mount.as_str(), files.files.as_slice()))
+            .collect::<Vec<_>>();
+        guest_contracts::storage_files::encode_input(&manifest_json, &groups)
+            .map_err(|e| RunnerError::Internal(format!("storage files input: {e}")))?
+    };
     let run_id = context.run_id.to_string();
     let runtime_dir = guest_runtime_dir(context.run_id)?;
-    let use_dedicated = manifest_json.len() <= guest_control_proto::MAX_EXEC_STDIN_BYTES;
+    let use_dedicated =
+        !files.is_empty() || manifest_json.len() <= guest_control_proto::MAX_EXEC_STDIN_BYTES;
     let transport = if use_dedicated {
         "dedicated"
     } else {
