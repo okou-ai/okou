@@ -114,7 +114,9 @@ function VisualizationChartButton({
       variant="quiet"
       aria-pressed={selected}
       aria-label={label}
-      className={cn(RAIL_TILE, "w-[140px]")}
+      // The button base clamps any nested icon to `size-4`; this tile's child is
+      // a drawing that has to fill its box, not an icon.
+      className={cn(RAIL_TILE, "w-[140px] [&_svg]:size-full")}
       onClick={() => {
         toggleChart(chart);
       }}
