@@ -1813,11 +1813,12 @@ pub(super) async fn register_proxy(
         billable_firewalls: &context.billable_firewalls,
         model_usage_provider: context.model_usage_provider.as_deref(),
     };
-    config
+    let publication = config
         .registry
         .register_sandbox(source_ip, &registration)
         .await
         .map_err(|e| RunnerError::Internal(format!("register sandbox in proxy registry: {e}")))?;
+    publication.observe().await;
     let network_log_session = config
         .network_log_manager
         .register_source_ip(source_ip, network_log_path)
@@ -1900,7 +1901,9 @@ pub(super) async fn unregister_proxy_registry(
     if let Some(runtime_sync) = config.connector_runtime_sync.as_ref() {
         runtime_sync.unregister_run(run_id).await;
     }
-    result
+    let publication = result?;
+    publication.observe().await;
+    Ok(())
 }
 
 /// Post-job cleanup: copy logs, unregister proxy registry.

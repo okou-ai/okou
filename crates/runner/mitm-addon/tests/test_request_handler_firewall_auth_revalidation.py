@@ -1,6 +1,7 @@
 """Registry authorization revalidation across firewall-auth waits."""
 
 import asyncio
+import hashlib
 import json
 from pathlib import Path
 from typing import Literal, cast
@@ -14,12 +15,15 @@ import auth_base_forwarder
 import connector_intent
 import flow_metadata_keys as metadata_keys
 import mitm_addon
+import registry_control
 import request_classification
+import runner_control
 from body_limits import STREAM_BUFFER_LIMIT
 from tests.auth_base_forwarder_helpers import (
     fake_forwarder_upstream,
     forwarder_concurrency_harness,
 )
+from tests.control_helpers import exchange, registry_apply_request
 from tests.firewall_auth_helpers import firewall_auth_response
 from tests.firewall_helpers import cancel_pending_task
 from tests.registry_builtin_helpers import write_registry_with_cache
@@ -340,6 +344,7 @@ def _assert_auth_base_forward_rejected(
 
 
 @pytest.mark.parametrize("hook_phase", ["request", "requestheaders"])
+@pytest.mark.parametrize("apply_via_control", [False, True])
 @pytest.mark.parametrize(
     "registry_mutation",
     ["remove", "replace_run", "revoke_permission"],
@@ -352,6 +357,7 @@ async def test_registry_change_during_auth_blocks_old_authorization(
     monkeypatch,
     hook_phase: HookPhase,
     registry_mutation: RegistryMutation,
+    apply_via_control: bool,
 ):
     registry_path = _write_registry(
         tmp_path,
@@ -386,6 +392,23 @@ async def test_registry_change_during_auth_blocks_old_authorization(
         try:
             await asyncio.wait_for(auth_resolution_entered.wait(), timeout=1)
             _mutate_registry(registry_path, tmp_path, registry_mutation)
+            if apply_via_control:
+                owner = registry_control.RegistryControl(
+                    asyncio.get_running_loop(), str(registry_path)
+                )
+                server = runner_control.ControlServer(tmp_path, "generation-1", owner)
+                server.start()
+                try:
+                    digest = hashlib.sha256(registry_path.read_bytes()).hexdigest()
+                    receipt = await asyncio.to_thread(
+                        exchange, tmp_path, registry_apply_request(digest)
+                    )
+                    data = receipt["data"]
+                    assert isinstance(data, dict)
+                    assert data["state"] == "applied"
+                finally:
+                    owner.close()
+                    server.stop()
             release_auth_resolution.set()
             await asyncio.gather(hook_task)
         finally:
