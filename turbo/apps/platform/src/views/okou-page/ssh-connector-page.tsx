@@ -650,6 +650,10 @@ function useSshHostSaveBlocked(dialog: SshDialogState, isSaving: boolean) {
   const fileResult = useLoadable(sshPrivateKeyFileResult$);
   const credentials = useLoadable(sshCredentials$);
   const hostEditor = dialog.kind === "create" || dialog.kind === "edit";
+  const unavailableProtectedHost =
+    dialog.connection !== null &&
+    "transport" in dialog.connection &&
+    (!enabled || (configs.state === "hasData" && configs.data === null));
   const invalidAccess =
     hostEditor &&
     transport.mode === "cloudflare_access" &&
@@ -664,6 +668,7 @@ function useSshHostSaveBlocked(dialog: SshDialogState, isSaving: boolean) {
   return (
     isSaving ||
     fileResult.state === "loading" ||
+    unavailableProtectedHost ||
     invalidAccess ||
     invalidCredential ||
     !!conflict
@@ -837,6 +842,9 @@ function HostCard({
   const configs = useLoadable(sshCloudflareConfigs$);
   const configId =
     "transport" in connection ? connection.transport.configId : null;
+  const unavailable =
+    configId !== null &&
+    (!enabled || (configs.state === "hasData" && configs.data === null));
   const config =
     configs.state === "hasData"
       ? configs.data?.find((value) => {
@@ -858,7 +866,7 @@ function HostCard({
       </p>
       {configId && (
         <p className="text-sm text-muted-foreground">
-          {!enabled
+          {unavailable
             ? t(($) => {
                 return $.ssh.cloudflare.unavailable;
               })
@@ -892,6 +900,7 @@ function HostCard({
       <div className="flex flex-wrap gap-2">
         <Button
           variant="outline"
+          disabled={unavailable}
           onClick={() => {
             return detach(open("edit", connection, signal), Reason.DomCallback);
           }}
@@ -902,7 +911,7 @@ function HostCard({
         </Button>
         <Button
           variant="outline"
-          disabled={!connection.learnedHostKey}
+          disabled={unavailable || !connection.learnedHostKey}
           onClick={() => {
             return detach(
               open("reset", connection, signal),
@@ -916,6 +925,7 @@ function HostCard({
         </Button>
         <Button
           variant="outline"
+          disabled={unavailable}
           onClick={() => {
             return detach(
               open("delete", connection, signal),

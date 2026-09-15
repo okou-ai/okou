@@ -222,6 +222,8 @@ saving against the new revision. A further concurrent change still fails the
 revision check. Load failures offer **Retry** and remain distinct from feature
 unavailability and translated business errors. A protected host remains visibly
 protected when Access is unavailable; it is never silently converted to Direct.
+Protected host edits, key resets and deletion are unavailable until Access
+eligibility is restored; unrelated Direct hosts remain manageable.
 
 Configuration mutations reuse the owner's `ssh:changed` notification to refresh
 metadata without clearing open drafts. There is no independent connector card,
@@ -230,8 +232,10 @@ configuration counts do not replace SSH host-based visibility and summaries.
 
 SSH management uses one canonical contract. Protected metadata includes
 `transport: {type: "cloudflare_access", configId}`. Direct hosts omit the binding.
-An omitted transport on edit preserves the current binding; switching to Direct
-must be explicit and requires the current host generation. Unrelated Direct hosts
+An omitted transport on edit preserves the current binding. The Platform submits
+the selected transport explicitly, including when retrying after reviewing a
+concurrent change. Switching to Direct requires Access eligibility and the current
+host generation. Unrelated Direct hosts
 remain manageable when Access is off.
 
 See [private authority](runner-ssh-authority.md#cloudflare-access-authority-preparation)

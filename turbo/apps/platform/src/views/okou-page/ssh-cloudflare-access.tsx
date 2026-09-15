@@ -14,6 +14,7 @@ import {
   CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH,
   type CloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
+import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
 import {
   sshCloudflareConfigs$,
   sshCloudflareEnabled$,
@@ -30,6 +31,7 @@ import {
 import { localizedSshError } from "../../lib/ssh-error.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { SshLoadError } from "./ssh-load-error.tsx";
 
 export function SshConflictReview() {
   const { t } = useTranslation();
@@ -41,6 +43,7 @@ export function SshConflictReview() {
     return null;
   }
   const current = review.state === "hasData" ? review.data : null;
+  const hostConflict = conflict === SSH_ERROR_CODES.GENERATION_CONFLICT;
   return (
     <div className="grid gap-3 rounded-lg border p-4 text-sm">
       <p role="alert">
@@ -49,11 +52,12 @@ export function SshConflictReview() {
             return $.ssh.errors.failed;
           })}
       </p>
-      {review.state === "hasError" && <AccessLoadError />}
+      {review.state === "hasError" &&
+        (hostConflict ? <SshLoadError /> : <AccessLoadError />)}
       {review.state === "loading" && (
         <p role="status">
           {t(($) => {
-            return $.ssh.cloudflare.loading;
+            return hostConflict ? $.ssh.loading : $.ssh.cloudflare.loading;
           })}
         </p>
       )}

@@ -1165,8 +1165,9 @@ provider E2E evidence. Do not use a production feature override as a test fixtur
 The management UI uses the existing canonical Access endpoints; it adds no
 schema or private Runner contract. With Access off it keeps Direct management
 available and hides Access creation. Already-bound hosts still identify their
-protected transport and cannot save protected edits while unavailable. Owners
-must explicitly choose Direct to remove a binding. Losing the feature or changing
+protected transport; editing, resetting keys and deleting them remain unavailable
+under the canonical API gate. Removing a binding requires Access eligibility and
+an explicit Direct selection. Losing the feature or changing
 owner clears open secret forms and cancels their pending UI work. API authorization
 and same-owner foreign keys remain authoritative; frontend visibility is not an
 access check.

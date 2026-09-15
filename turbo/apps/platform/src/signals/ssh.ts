@@ -235,7 +235,11 @@ export const chooseSshTransport$ = command(({ get, set }, mode: string) => {
     set(transportEditor$, (current) => {
       return { ...current, mode };
     });
-    if (get(conflict$) === SSH_ERROR_CODES.ACCESS_NOT_FOUND) {
+    const conflict = get(conflict$);
+    if (
+      conflict === SSH_ERROR_CODES.ACCESS_NOT_FOUND ||
+      (mode === "direct" && conflict === SSH_ERROR_CODES.ACCESS_UNAVAILABLE)
+    ) {
       set(conflict$, null);
     }
   }
@@ -819,16 +823,13 @@ function hostFieldsFromForm(
       transport.mode === "cloudflare_access"
         ? 443
         : Number(textField(form, "port")),
-    ...(transport.mode === "cloudflare_access"
-      ? {
-          transport: {
+    transport:
+      transport.mode === "cloudflare_access"
+        ? {
             type: "cloudflare_access",
             configId: transport.configId,
-          },
-        }
-      : dialog.connection && "transport" in dialog.connection
-        ? { transport: { type: "direct" } }
-        : {}),
+          }
+        : { type: "direct" },
     credential:
       editor.selection === "new"
         ? { create: credentialFromForm(form, editor) }

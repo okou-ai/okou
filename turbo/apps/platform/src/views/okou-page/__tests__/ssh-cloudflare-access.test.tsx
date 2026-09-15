@@ -47,7 +47,7 @@ const credential: SshCredentialResponse = Object.freeze({
   createdAt: timestamp,
   updatedAt: timestamp,
 });
-const host: SshConnectionResponse = Object.freeze({
+const directHost: SshConnectionResponse = Object.freeze({
   id: "c0000000-0000-4000-8000-000000000001",
   displayName: "Development",
   host: "ssh.example.com",
@@ -59,6 +59,9 @@ const host: SshConnectionResponse = Object.freeze({
   learnedHostKey: null,
   createdAt: timestamp,
   updatedAt: timestamp,
+});
+const host: SshConnectionResponse = Object.freeze({
+  ...directHost,
   transport: { type: "cloudflare_access" as const, configId: config.id },
 });
 
@@ -446,40 +449,217 @@ test("A referenced deletion race explains the new affected host without removing
   ).toBeDisabled();
 });
 
-test("An unavailable Access feature leaves protected hosts explicit and allows an intentional Direct conversion", async () => {
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return respond(200, { connections: [host] });
-  });
+test.each(["switch", "api"])(
+  "Access unavailable via %s blocks protected mutations but preserves Direct management",
+  async (reason) => {
+    const direct = {
+      ...directHost,
+      id: "c0000000-0000-4000-8000-000000000002",
+      displayName: "Direct host",
+    };
+    context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+      return respond(200, {
+        connections: [
+          {
+            ...host,
+            learnedHostKey: {
+              algorithm: "ssh-ed25519",
+              fingerprint: "SHA256:test",
+            },
+          },
+          direct,
+        ],
+      });
+    });
+    context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+      return respond(404, {
+        error: {
+          code: "CLOUDFLARE_ACCESS_UNAVAILABLE",
+          message: "not user copy",
+        },
+      });
+    });
+    const requests: unknown[] = [];
+    context.mocks.api(sshConnectionsContract.update, ({ body, respond }) => {
+      requests.push(body);
+      return respond(200, direct);
+    });
+    await page(false, reason !== "switch");
+    const protectedCard = (await screen.findByText(host.displayName)).closest(
+      "article",
+    );
+    expect(protectedCard).not.toBeNull();
+    await within(protectedCard!).findByText(
+      "Cloudflare Access is not available for this account. Protected hosts cannot connect; Direct hosts are unaffected.",
+    );
+    expect(getAction("button", "Edit host", protectedCard!)).toBeDisabled();
+    expect(
+      getAction("button", "Reset host key", protectedCard!),
+    ).toBeDisabled();
+    expect(getAction("button", "Delete host", protectedCard!)).toBeDisabled();
+    const directCard = (await screen.findByText(direct.displayName)).closest(
+      "article",
+    );
+    click(getAction("button", "Edit host", directCard!));
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByLabelText("Public hostname or IP address"),
+    ).toHaveValue(direct.host);
+    expect(within(dialog).getByLabelText("Port")).toHaveValue(443);
+    click(getAction("button", "Save", dialog));
+    await waitFor(() => {
+      return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(requests).toStrictEqual([
+      {
+        expectedGeneration: 1,
+        displayName: direct.displayName,
+        host: direct.host,
+        port: 443,
+        credential: { id: credential.id },
+        transport: { type: "direct" },
+      },
+    ]);
+  },
+);
+
+test("A Direct draft survives a failed conflict refresh and concurrent Access binding", async () => {
+  let current = directHost;
+  let refreshFails = false;
   const requests: unknown[] = [];
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [config] });
+  });
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return refreshFails
+      ? respond(500, {
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "private dependency detail",
+          },
+        })
+      : respond(200, { connections: [current] });
+  });
   context.mocks.api(sshConnectionsContract.update, ({ body, respond }) => {
     requests.push(body);
-    return respond(200, host);
+    if (body.expectedGeneration === 1) {
+      current = { ...host, displayName: "Protected elsewhere", generation: 2 };
+      refreshFails = true;
+      return respond(409, {
+        error: { code: "SSH_GENERATION_CONFLICT", message: "not user copy" },
+      });
+    }
+    current = {
+      ...(body.transport?.type === "direct" ? directHost : current),
+      displayName: body.displayName ?? current.displayName,
+      generation: 3,
+    };
+    return respond(200, current);
   });
-  await page(false, false);
-  await screen.findByText(host.displayName);
-  expect(queryAction("radio", "Cloudflare Access")).not.toBeInTheDocument();
+  await page();
+  await screen.findByText(directHost.displayName);
   click(getAction("button", "Edit host"));
   const dialog = await screen.findByRole("dialog");
-  expect(within(dialog).getByLabelText("Published hostname")).toHaveValue(
-    host.host,
-  );
+  await fill(within(dialog).getByLabelText("Display name"), "My Direct draft");
+  click(getAction("button", "Save", dialog));
+  await within(dialog).findByText("Could not load SSH settings. Try again.");
   expect(getAction("button", "Save", dialog)).toBeDisabled();
-  click(getAction("radio", "Direct", dialog));
-  expect(within(dialog).getByLabelText("Port")).toHaveValue(22);
+  refreshFails = false;
+  click(getAction("button", "Retry", dialog));
+  await within(dialog).findByText("Protected elsewhere");
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  click(getAction("button", "Keep my changes with this version", dialog));
+  await waitFor(() => {
+    return expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
   click(getAction("button", "Save", dialog));
   await waitFor(() => {
     return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  expect(requests).toStrictEqual([
-    {
-      expectedGeneration: 1,
-      displayName: host.displayName,
-      host: host.host,
-      port: 22,
-      credential: { id: credential.id },
-      transport: { type: "direct" },
-    },
-  ]);
+  await screen.findByText("My Direct draft");
+  click(getAction("button", "Edit host"));
+  const saved = await screen.findByRole("dialog");
+  expect(getAction("radio", "Direct", saved)).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  expect(within(saved).getByLabelText("Port")).toHaveValue(443);
+  expect(requests).toStrictEqual(
+    [1, 2].map((expectedGeneration) => {
+      return {
+        expectedGeneration,
+        displayName: "My Direct draft",
+        host: directHost.host,
+        port: 443,
+        credential: { id: credential.id },
+        transport: { type: "direct" },
+      };
+    }),
+  );
+});
+
+test("A new host can be explicitly saved as Direct after Access becomes unavailable", async () => {
+  let unavailable = false;
+  let hosts: SshConnectionResponse[] = [];
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: hosts });
+  });
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return unavailable
+      ? respond(404, {
+          error: {
+            code: "CLOUDFLARE_ACCESS_UNAVAILABLE",
+            message: "not user copy",
+          },
+        })
+      : respond(200, { configs: [config] });
+  });
+  context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
+    if (body.transport?.type === "cloudflare_access") {
+      unavailable = true;
+      return respond(404, {
+        error: {
+          code: "CLOUDFLARE_ACCESS_UNAVAILABLE",
+          message: "not user copy",
+        },
+      });
+    }
+    const saved = {
+      ...directHost,
+      displayName: body.displayName,
+      port: body.port,
+    };
+    hosts = [saved];
+    return respond(201, saved);
+  });
+  await page(true);
+  const dialog = await screen.findByRole("dialog");
+  await fill(within(dialog).getByLabelText("Display name"), "Recoverable host");
+  await fill(
+    within(dialog).getByLabelText("Public hostname or IP address"),
+    host.host,
+  );
+  await selectCredential(dialog);
+  click(getAction("radio", "Cloudflare Access", dialog));
+  await within(dialog).findByLabelText("Access configuration");
+  await selectConfig(dialog);
+  click(getAction("button", "Save", dialog));
+  await within(dialog).findAllByText(
+    "Cloudflare Access is not available for this account. Protected hosts cannot connect; Direct hosts are unaffected.",
+  );
+  click(getAction("radio", "Direct", dialog));
+  await waitFor(() => {
+    return expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+    "Recoverable host",
+  );
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  await screen.findByText("Recoverable host");
+  await screen.findByText("deploy@ssh.example.com:22");
 });
 
 test("Changing the owner clears Access secrets and hides the previous owner's configurations", async () => {
