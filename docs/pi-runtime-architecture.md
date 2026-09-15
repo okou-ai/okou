@@ -122,6 +122,27 @@ existing trust boundaries.
    the original response/category idempotency, but cannot publish output,
    checkpoint, or a second terminal event.
 
+## Codex model failure diagnostics
+
+The owned Codex Responses fetch boundary records only the last transport
+attempt's observed HTTP status and the number of fetch attempts for that model
+call. Failed native assistant messages carry these numeric fields in the SDK's
+`okou_model_request` diagnostic; provider text and session retry policy remain
+unchanged. Both stream iteration and `result()` expose the same diagnostic.
+
+Guest projects this evidence into the failed terminal result and optional
+`FailureDiagnostic.modelRequest`. It counts completed failed model retries and
+records the retry limit from native `auto_retry_start` events. A scheduled sleep
+does not count as a completed retry. Successful assistant output and settlement
+clear the retry state; aborted messages and tool results cannot supply model
+HTTP evidence. Historical messages without this diagnostic remain supported.
+
+Observed HTTP 429 supplies `provider_rate_limited` after existing explicit
+usage-limit/reconnect classification. Runner uses its existing INFO rule and
+records the numeric request/retry fields. Completion keeps the established
+failure reason and user-owned-provider warning suppression. This does not
+change displayed error copy, API-first recovery policy, or terminal ownership.
+
 ## Shared bootstrap, distinct session policies
 
 `createPiModelRuntime` receives the **already-resolved model**, captured stream
