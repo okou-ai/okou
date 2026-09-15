@@ -2810,7 +2810,6 @@
         "website": "Webseite",
         "workflow": "Workflow"
       },
-      "importedEmpty": "Noch keine hochgeladenen Vorlagen.",
       "importedLoadFailed": "Hochgeladene Vorlagen konnten nicht geladen werden.",
       "importedLoading": "Hochgeladene Vorlagen werden geladen…",
       "importedUnavailable": "Hochgeladene Vorlagen sind vorübergehend nicht verfügbar.",

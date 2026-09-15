@@ -2856,7 +2856,6 @@
         "website": "Site web",
         "workflow": "Workflow"
       },
-      "importedEmpty": "Aucun modèle importé pour le moment.",
       "importedLoadFailed": "Impossible de charger les modèles importés.",
       "importedLoading": "Chargement des modèles importés…",
       "importedUnavailable": "Les modèles importés sont temporairement indisponibles.",

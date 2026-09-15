@@ -2856,7 +2856,6 @@
         "website": "Site",
         "workflow": "Fluxo de trabalho"
       },
-      "importedEmpty": "Nenhum modelo enviado ainda.",
       "importedLoadFailed": "Não foi possível carregar os modelos enviados.",
       "importedLoading": "Carregando modelos enviados…",
       "importedUnavailable": "Os modelos enviados estão temporariamente indisponíveis.",
