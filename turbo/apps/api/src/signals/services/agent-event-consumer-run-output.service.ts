@@ -7,7 +7,7 @@ import { and, eq, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { runOutputMemoryCitations } from "@okouai/db/schema/run-output-memory-citation";
-import { publicBuiltInBalanceEvent } from "./run-balance-presentation";
+import { publicAssistantBalanceError } from "./run-balance-presentation";
 
 import type {
   AgentEvent,
@@ -205,16 +205,18 @@ function assistantEventItems(args: {
     return left.sequenceNumber - right.sequenceNumber;
   });
   for (const event of events) {
-    const messageText = assistantMessageText({
-      ...event,
-      ...publicBuiltInBalanceEvent(event, args.modelProvider),
-    });
+    const messageText = assistantMessageText(event);
     if (messageText !== null) {
+      const balanceError = publicAssistantBalanceError(
+        event,
+        args.modelProvider,
+      );
       items.push({
-        eventType: "output.message",
         runEventSequenceNumber: event.sequenceNumber,
-        content: messageText,
         runEventId: eventOutputId(event),
+        ...(balanceError === undefined
+          ? { eventType: "output.message", content: messageText }
+          : { eventType: "output.error", error: balanceError }),
       });
       continue;
     }

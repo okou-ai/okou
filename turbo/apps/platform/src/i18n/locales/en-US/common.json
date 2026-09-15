@@ -5351,6 +5351,31 @@
       "teamDescription": "Scale your team with 10 parallel runs and more credits."
     }
   },
+  "runErrors": {
+    "actions": {
+      "addCredits": "Add credits",
+      "openModelProviders": "Open Model Providers",
+      "reconnectClaude": "Reconnect Claude Code",
+      "shareWithAdmin": "Share with an admin"
+    },
+    "anthropicKeyAdmin": "Claude Code could not authenticate with the configured Anthropic API key. Update or replace the API key in Model Providers, then retry.",
+    "anthropicKeyMember": "Claude Code could not authenticate with the configured Anthropic API key. Ask a workspace admin to update or replace the API key.",
+    "askAdmin": "Ask a workspace admin to add credits or upgrade the workspace plan.",
+    "claudeReconnect": "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.",
+    "claudeTerms": "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Model Providers, accept the updated terms and policy, then retry.",
+    "codexOverloaded": "Selected model is at capacity. Please try a different model.",
+    "codexReconnect": "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.",
+    "contentPolicyRejected": "The model provider rejected this request under its content safety policy. Retrying the same input will fail again. Try rephrasing the request, starting a new conversation, or switching to a different model.",
+    "executionTimeout": "This run reached its execution time limit.",
+    "failed": "Run failed",
+    "modelRoutesUnavailable": "Every built-in model route for this model is temporarily unavailable. Please try again later.",
+    "modelTemporarilyUnavailable": "Model temporarily unavailable",
+    "modelUnavailable": "The current model is unavailable.",
+    "overloaded": "{{model}} is overloaded. Please wait a few minutes and try again, or switch to another model.",
+    "providerBalance": "Your connected model provider account has insufficient balance.",
+    "transient": "Oops, something went wrong. Please try again later.",
+    "vm0Credits": "Insufficient credits. Add credits or configure your own API key to continue."
+  },
   "serviceStatus": {
     "dismiss": "Dismiss service update",
     "label": "Service status updates",

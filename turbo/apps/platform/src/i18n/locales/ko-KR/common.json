@@ -5346,6 +5346,31 @@
       "teamDescription": "10개 병렬 실행과 더 많은 크레딧으로 팀을 확장하세요."
     }
   },
+  "runErrors": {
+    "actions": {
+      "addCredits": "크레딧 추가",
+      "openModelProviders": "모델 제공업체 열기",
+      "reconnectClaude": "Claude Code 다시 연결",
+      "shareWithAdmin": "관리자와 공유"
+    },
+    "anthropicKeyAdmin": "설정된 Anthropic API 키로 Claude Code를 인증할 수 없습니다. 모델 제공업체에서 API 키를 업데이트하거나 교체한 후 다시 시도하세요.",
+    "anthropicKeyMember": "설정된 Anthropic API 키로 Claude Code를 인증할 수 없습니다. 워크스페이스 관리자에게 API 키 업데이트 또는 교체를 요청하세요.",
+    "askAdmin": "워크스페이스 관리자에게 크레딧 추가 또는 요금제 업그레이드를 요청하세요.",
+    "claudeReconnect": "Claude Code 구독 인증에 실패했습니다. 모델 제공업체에서 Claude Code를 다시 연결한 후 다시 시도하세요.",
+    "claudeTerms": "Claude Code를 사용하려면 업데이트된 이용약관 및 개인정보 처리방침에 동의해야 합니다. 모델 제공업체에 연결된 Claude 계정으로 https://claude.ai 에 로그인하고 업데이트된 내용에 동의한 후 다시 시도하세요.",
+    "codexOverloaded": "선택한 모델이 처리 한도에 도달했습니다. 다른 모델을 사용해 보세요.",
+    "codexReconnect": "ChatGPT 세션을 다시 연결해야 합니다. 모델 제공업체에서 ChatGPT (Codex)를 다시 연결한 후 다시 시도하세요.",
+    "contentPolicyRejected": "모델 제공업체가 콘텐츠 안전 정책에 따라 이 요청을 거부했습니다. 동일한 입력으로 재시도하면 다시 실패합니다. 요청을 바꾸거나 새 대화를 시작하거나 다른 모델로 전환하세요.",
+    "executionTimeout": "이 실행이 시간 제한에 도달했습니다.",
+    "failed": "실행 실패",
+    "modelRoutesUnavailable": "이 모델의 모든 기본 제공 경로를 일시적으로 사용할 수 없습니다. 나중에 다시 시도하세요.",
+    "modelTemporarilyUnavailable": "모델을 일시적으로 사용할 수 없음",
+    "modelUnavailable": "현재 모델을 사용할 수 없습니다.",
+    "overloaded": "{{model}}이(가) 과부하 상태입니다. 몇 분 후 다시 시도하거나 다른 모델로 전환하세요.",
+    "providerBalance": "연결된 모델 제공업체 계정의 잔액이 부족합니다.",
+    "transient": "오류가 발생했습니다. 나중에 다시 시도하세요.",
+    "vm0Credits": "크레딧이 부족합니다. 계속하려면 크레딧을 추가하거나 본인의 API 키를 설정하세요."
+  },
   "serviceStatus": {
     "dismiss": "서비스 업데이트 닫기",
     "label": "서비스 상태 업데이트",

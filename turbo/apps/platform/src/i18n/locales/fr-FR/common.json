@@ -5416,6 +5416,31 @@
       "teamDescription": "Développez votre équipe avec 10 exécutions parallèles et plus de crédits."
     }
   },
+  "runErrors": {
+    "actions": {
+      "addCredits": "Ajouter des crédits",
+      "openModelProviders": "Ouvrir les fournisseurs de modèles",
+      "reconnectClaude": "Reconnecter Claude Code",
+      "shareWithAdmin": "Partager avec un administrateur"
+    },
+    "anthropicKeyAdmin": "Claude Code n’a pas pu s’authentifier avec la clé API Anthropic configurée. Mettez à jour ou remplacez la clé API dans les fournisseurs de modèles, puis réessayez.",
+    "anthropicKeyMember": "Claude Code n’a pas pu s’authentifier avec la clé API Anthropic configurée. Demandez à un administrateur de l’espace de travail de mettre à jour ou de remplacer la clé API.",
+    "askAdmin": "Demandez à un administrateur de l’espace de travail d’ajouter des crédits ou de passer à une offre supérieure.",
+    "claudeReconnect": "L’authentification de l’abonnement Claude Code a échoué. Reconnectez Claude Code dans les fournisseurs de modèles, puis réessayez.",
+    "claudeTerms": "Claude Code nécessite l’acceptation des conditions d’utilisation et de la politique de confidentialité mises à jour. Connectez-vous à https://claude.ai avec le compte Claude associé dans les fournisseurs de modèles, acceptez les nouvelles conditions et la politique, puis réessayez.",
+    "codexOverloaded": "Le modèle sélectionné est saturé. Veuillez essayer un autre modèle.",
+    "codexReconnect": "La session ChatGPT doit être reconnectée. Reconnectez ChatGPT (Codex) dans les fournisseurs de modèles, puis réessayez.",
+    "contentPolicyRejected": "Le fournisseur de modèle a refusé cette demande en raison de sa politique de sécurité du contenu. Réessayer avec la même saisie échouera à nouveau. Reformulez la demande, commencez une nouvelle conversation ou choisissez un autre modèle.",
+    "executionTimeout": "Cette exécution a atteint sa limite de temps.",
+    "failed": "Échec de l’exécution",
+    "modelRoutesUnavailable": "Toutes les routes intégrées de ce modèle sont temporairement indisponibles. Veuillez réessayer plus tard.",
+    "modelTemporarilyUnavailable": "Modèle temporairement indisponible",
+    "modelUnavailable": "Le modèle actuel est indisponible.",
+    "overloaded": "{{model}} est surchargé. Patientez quelques minutes avant de réessayer, ou choisissez un autre modèle.",
+    "providerBalance": "Le solde du compte de votre fournisseur de modèle connecté est insuffisant.",
+    "transient": "Une erreur s’est produite. Veuillez réessayer plus tard.",
+    "vm0Credits": "Crédits insuffisants. Ajoutez des crédits ou configurez votre propre clé API pour continuer."
+  },
   "serviceStatus": {
     "dismiss": "Masquer la mise à jour du service",
     "label": "Mises à jour de l’état du service",

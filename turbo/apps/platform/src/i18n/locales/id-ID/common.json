@@ -5346,6 +5346,31 @@
       "teamDescription": "Kembangkan tim Anda dengan 10 eksekusi paralel dan lebih banyak kredit."
     }
   },
+  "runErrors": {
+    "actions": {
+      "addCredits": "Tambah kredit",
+      "openModelProviders": "Buka Penyedia Model",
+      "reconnectClaude": "Hubungkan kembali Claude Code",
+      "shareWithAdmin": "Bagikan kepada admin"
+    },
+    "anthropicKeyAdmin": "Claude Code tidak dapat melakukan autentikasi dengan kunci API Anthropic yang dikonfigurasi. Perbarui atau ganti kunci API di Penyedia Model, lalu coba lagi.",
+    "anthropicKeyMember": "Claude Code tidak dapat melakukan autentikasi dengan kunci API Anthropic yang dikonfigurasi. Minta admin ruang kerja untuk memperbarui atau mengganti kunci API.",
+    "askAdmin": "Minta admin ruang kerja untuk menambah kredit atau meningkatkan paket ruang kerja.",
+    "claudeReconnect": "Autentikasi langganan Claude Code gagal. Hubungkan kembali Claude Code di Penyedia Model, lalu coba lagi.",
+    "claudeTerms": "Claude Code memerlukan persetujuan atas Ketentuan Penggunaan dan Kebijakan Privasi yang diperbarui. Masuk ke https://claude.ai dengan akun Claude yang terhubung di Penyedia Model, setujui pembaruan tersebut, lalu coba lagi.",
+    "codexOverloaded": "Model yang dipilih sedang mencapai kapasitas maksimum. Silakan coba model lain.",
+    "codexReconnect": "Sesi ChatGPT perlu dihubungkan kembali. Hubungkan kembali ChatGPT (Codex) di Penyedia Model, lalu coba lagi.",
+    "contentPolicyRejected": "Penyedia model menolak permintaan ini berdasarkan kebijakan keamanan kontennya. Mencoba lagi dengan masukan yang sama akan tetap gagal. Ubah kalimat permintaan, mulai percakapan baru, atau beralih ke model lain.",
+    "executionTimeout": "Proses ini mencapai batas waktu eksekusi.",
+    "failed": "Eksekusi gagal",
+    "modelRoutesUnavailable": "Semua rute bawaan untuk model ini sementara tidak tersedia. Silakan coba lagi nanti.",
+    "modelTemporarilyUnavailable": "Model sementara tidak tersedia",
+    "modelUnavailable": "Model saat ini tidak tersedia.",
+    "overloaded": "{{model}} sedang kelebihan beban. Tunggu beberapa menit dan coba lagi, atau beralih ke model lain.",
+    "providerBalance": "Saldo akun penyedia model yang terhubung tidak mencukupi.",
+    "transient": "Terjadi kesalahan. Silakan coba lagi nanti.",
+    "vm0Credits": "Kredit tidak mencukupi. Tambah kredit atau konfigurasikan kunci API Anda sendiri untuk melanjutkan."
+  },
   "serviceStatus": {
     "dismiss": "Tutup pembaruan layanan",
     "label": "Pembaruan status layanan",

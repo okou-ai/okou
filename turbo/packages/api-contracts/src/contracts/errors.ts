@@ -250,25 +250,25 @@ export const CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE =
 const AGENT_EXECUTION_TIMEOUT_RUN_ERROR =
   /^Agent execution timed out after [1-9]\d* seconds$/u;
 
-const CODEX_OAUTH_RECONNECT_REQUIRED_MESSAGE =
+export const CODEX_OAUTH_RECONNECT_REQUIRED_MESSAGE =
   "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.";
 
-const CLAUDE_CODE_SUBSCRIPTION_RECONNECT_REQUIRED_MESSAGE =
+export const CLAUDE_CODE_SUBSCRIPTION_RECONNECT_REQUIRED_MESSAGE =
   "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.";
 
-const CLAUDE_CODE_ANTHROPIC_API_KEY_ADMIN_MESSAGE =
+export const CLAUDE_CODE_ANTHROPIC_API_KEY_ADMIN_MESSAGE =
   "Claude Code could not authenticate with the configured Anthropic API key. Update or replace the API key in Model Providers, then retry.";
 
-const CLAUDE_CODE_ANTHROPIC_API_KEY_MEMBER_MESSAGE =
+export const CLAUDE_CODE_ANTHROPIC_API_KEY_MEMBER_MESSAGE =
   "Claude Code could not authenticate with the configured Anthropic API key. Ask a workspace admin to update or replace the API key.";
 
-const CLAUDE_CODE_TERMS_ACCEPTANCE_REQUIRED_MESSAGE =
+export const CLAUDE_CODE_TERMS_ACCEPTANCE_REQUIRED_MESSAGE =
   "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Model Providers, accept the updated terms and policy, then retry.";
 
 const CLAUDE_PROVIDER_OVERLOADED_FALLBACK_MODEL = "Claude Model";
-const CLAUDE_PROVIDER_OVERLOADED_GUIDANCE =
+export const CLAUDE_PROVIDER_OVERLOADED_GUIDANCE =
   "is overloaded. Please wait a few minutes and try again, or switch to another model.";
-const CODEX_PROVIDER_OVERLOADED_MESSAGE =
+export const CODEX_PROVIDER_OVERLOADED_MESSAGE =
   "Selected model is at capacity. Please try a different model.";
 
 const CLAUDE_CODE_LIMIT_SNIPPETS = [

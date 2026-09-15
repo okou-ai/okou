@@ -4056,9 +4056,14 @@ describe("CHAT-02: failed chat callbacks", () => {
     },
   );
 
-  it.each([false, true])(
-    "protects built-in=%s billing events and network exports while preserving ordinary output",
-    async (builtIn) => {
+  it.each([
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true],
+  ])(
+    "protects built-in=%s multi-block=%s billing events and network exports while preserving ordinary output",
+    async (builtIn, multipleBlocks) => {
       const { actor, agentId, runnerGroup, providerId } =
         await entitledChatActor();
       await seedBuiltInModelKey(context, "claude-sonnet-5");
@@ -4079,6 +4084,12 @@ describe("CHAT-02: failed chat callbacks", () => {
       const raw = "Credit balance is too low";
       const visible = builtIn ? "The current model is unavailable." : raw;
       const text = { content: [{ type: "text", text: raw }] };
+      const providerFailureContent = [
+        ...text.content,
+        ...(multipleBlocks
+          ? [{ type: "text", text: "Please check the provider account." }]
+          : []),
+      ];
       const events = [
         { type: "result", sequenceNumber: 0, is_error: true, result: raw },
         { type: "result", sequenceNumber: 1, is_error: false, result: raw },
@@ -4095,7 +4106,11 @@ describe("CHAT-02: failed chat callbacks", () => {
           // Captured from the pinned Claude Code 2.1.270 stream-json output.
           is_api_error_message: true,
           error: "billing_error",
-          message: { ...text, id: "provider-failure", role: "assistant" },
+          message: {
+            content: providerFailureContent,
+            id: "provider-failure",
+            role: "assistant",
+          },
         },
         {
           type: "response.failed",
@@ -4124,7 +4139,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         headers,
         [200],
       );
-      // The assistant message must be safe before terminal error formatting runs.
+      // Provider errors use the localizable error surface before completion.
       await flushWaitUntilForTest();
       const messages = await chat.listThreadEvents(actor, run.threadId);
       const output = assistantMessages(messages.events).filter((event) => {
@@ -4134,7 +4149,18 @@ describe("CHAT-02: failed chat callbacks", () => {
         output.map((event) => {
           return event.content;
         }),
-      ).toStrictEqual([raw, visible]);
+      ).toStrictEqual([raw]);
+      expect(
+        messages.events.filter((event) => {
+          return event.eventType === "output.error";
+        }),
+      ).toMatchObject([
+        {
+          error: builtIn
+            ? "The current model is unavailable."
+            : "Your connected model provider account has insufficient balance.",
+        },
+      ]);
       await failChatRun(
         run.runId,
         headers,
@@ -4237,7 +4263,9 @@ describe("CHAT-02: failed chat callbacks", () => {
           message: {
             id: "provider-failure",
             role: "assistant",
-            content: [{ type: "text", text: visible }],
+            content: builtIn
+              ? [{ type: "text", text: visible }]
+              : providerFailureContent,
           },
         },
         builtIn

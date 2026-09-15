@@ -1,4 +1,5 @@
 import {
+  formatRunBalanceError,
   isLegacyProviderBalanceError,
   isProviderBalanceErrorBody,
   MODEL_UNAVAILABLE_MESSAGE,
@@ -10,6 +11,35 @@ function record(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+}
+
+/** Only marked provider errors are eligible; ordinary assistant text stays verbatim. */
+export function publicAssistantBalanceError(
+  event: Readonly<Record<string, unknown>>,
+  modelProvider: string | null | undefined,
+  eventType: unknown = event.type,
+): string | undefined {
+  if (eventType !== "assistant" || event.is_api_error_message !== true) {
+    return undefined;
+  }
+  const content = record(event.message)?.content;
+  if (!Array.isArray(content)) {
+    return undefined;
+  }
+  for (const block of content) {
+    const item = record(block);
+    if (item?.type === "text" && typeof item.text === "string") {
+      const error = formatRunBalanceError({
+        message: item.text,
+        modelProvider,
+        framework: "claude-code",
+      });
+      if (error !== undefined) {
+        return error;
+      }
+    }
+  }
+  return undefined;
 }
 
 /** Public projection only: retain the source event in internal diagnostics. */
@@ -46,29 +76,20 @@ function publicBalanceEventBody(
         : {}),
     };
   }
-  if (eventType === "assistant" && event.is_api_error_message === true) {
-    const message = record(event.message);
-    const content = message?.content;
-    if (
-      Array.isArray(content) &&
-      content.some((block) => {
-        const item = record(block);
-        return (
-          item?.type === "text" &&
-          typeof item.text === "string" &&
-          isLegacyProviderBalanceError(item.text, "claude-code")
-        );
-      })
-    ) {
-      return {
-        ...event,
-        error: "model_unavailable",
-        message: {
-          ...message,
-          content: [{ type: "text", text: MODEL_UNAVAILABLE_MESSAGE }],
-        },
-      };
-    }
+  const assistantError = publicAssistantBalanceError(
+    event,
+    "built-in",
+    eventType,
+  );
+  if (assistantError !== undefined) {
+    return {
+      ...event,
+      error: "model_unavailable",
+      message: {
+        ...record(event.message),
+        content: [{ type: "text", text: assistantError }],
+      },
+    };
   }
   return publicProviderErrorEvent(event, eventType);
 }

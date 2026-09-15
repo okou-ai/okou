@@ -247,6 +247,7 @@ import type { ChatRunModelSelection } from "../../signals/chat-page/chat-event-s
 import type { AgentReferenceSignals } from "../../signals/chat-page/agent-reference-signals.ts";
 import type { RunDetailSignals } from "../../signals/chat-page/run-detail.ts";
 import type { AssistantErrorRecovery } from "../../signals/chat-page/assistant-error-recovery.ts";
+import { localizedRunError } from "../../lib/run-error.ts";
 import { userMessageFileAttachments } from "../../signals/chat-page/user-message-files.ts";
 import type {
   ChatPanelSignals,
@@ -5376,7 +5377,7 @@ function AssistantErrorFallback({ error }: { error: string }) {
       description={
         <Markdown
           className="!text-muted-foreground"
-          source={error}
+          source={localizedRunError(error)}
           style={{ fontSize: "inherit", lineHeight: "inherit" }}
         />
       }

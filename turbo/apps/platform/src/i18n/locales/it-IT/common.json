@@ -5416,6 +5416,31 @@
       "teamDescription": "Fai crescere il tuo team con 10 esecuzioni parallele e più crediti."
     }
   },
+  "runErrors": {
+    "actions": {
+      "addCredits": "Aggiungi crediti",
+      "openModelProviders": "Apri i fornitori di modelli",
+      "reconnectClaude": "Ricollega Claude Code",
+      "shareWithAdmin": "Condividi con un amministratore"
+    },
+    "anthropicKeyAdmin": "Claude Code non è riuscito ad autenticarsi con la chiave API Anthropic configurata. Aggiorna o sostituisci la chiave API in Fornitori di modelli, poi riprova.",
+    "anthropicKeyMember": "Claude Code non è riuscito ad autenticarsi con la chiave API Anthropic configurata. Chiedi a un amministratore dello spazio di lavoro di aggiornare o sostituire la chiave API.",
+    "askAdmin": "Chiedi a un amministratore dello spazio di lavoro di aggiungere crediti o passare a un piano superiore.",
+    "claudeReconnect": "L’autenticazione dell’abbonamento Claude Code non è riuscita. Ricollega Claude Code in Fornitori di modelli, poi riprova.",
+    "claudeTerms": "Claude Code richiede di accettare le condizioni d’uso e l’informativa sulla privacy aggiornate. Accedi a https://claude.ai con l’account Claude collegato in Fornitori di modelli, accetta gli aggiornamenti, poi riprova.",
+    "codexOverloaded": "Il modello selezionato è al limite della capacità. Prova un altro modello.",
+    "codexReconnect": "La sessione ChatGPT deve essere ricollegata. Ricollega ChatGPT (Codex) in Fornitori di modelli, poi riprova.",
+    "contentPolicyRejected": "Il fornitore del modello ha rifiutato questa richiesta in base alla sua politica sulla sicurezza dei contenuti. Riprovare con lo stesso input non risolverà il problema. Riformula la richiesta, avvia una nuova conversazione o cambia modello.",
+    "executionTimeout": "Questa esecuzione ha raggiunto il limite di tempo.",
+    "failed": "Esecuzione non riuscita",
+    "modelRoutesUnavailable": "Tutti i percorsi integrati per questo modello sono temporaneamente non disponibili. Riprova più tardi.",
+    "modelTemporarilyUnavailable": "Modello temporaneamente non disponibile",
+    "modelUnavailable": "Il modello attuale non è disponibile.",
+    "overloaded": "{{model}} è sovraccarico. Attendi qualche minuto e riprova, oppure passa a un altro modello.",
+    "providerBalance": "Il saldo dell’account del fornitore di modelli collegato è insufficiente.",
+    "transient": "Si è verificato un errore. Riprova più tardi.",
+    "vm0Credits": "Crediti insufficienti. Aggiungi crediti o configura la tua chiave API per continuare."
+  },
   "serviceStatus": {
     "dismiss": "Ignora aggiornamento del servizio",
     "label": "Aggiornamenti sullo stato del servizio",
