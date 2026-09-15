@@ -1,8 +1,12 @@
 """Real control requests observe bounded writer prefixes without owning disk I/O."""
 
 import json
+import select
+import socket
 import threading
+from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
+from pathlib import Path
 from typing import cast
 from unittest.mock import patch
 from uuid import uuid4
@@ -17,6 +21,7 @@ from tests.control_helpers import (
     exchange,
     frame,
     log_flush_request,
+    read_reply,
 )
 
 
@@ -56,6 +61,29 @@ def _mapping(value: object) -> dict[str, object]:
     return cast(dict[str, object], value)
 
 
+@contextmanager
+def saturated_flush_clients(
+    directory: Path, request: dict[str, object]
+) -> Iterator[list[socket.socket]]:
+    with ExitStack() as clients:
+        connections = [clients.enter_context(control_connection(directory)) for _ in range(9)]
+        for connection in connections:
+            connection.sendall(frame(json.dumps(request).encode()))
+        # Send order does not imply admission order. A busy reply from any peer
+        # proves the other eight requests own writer slots while the append is gated.
+        readable, _, _ = select.select(connections, [], [], 2)
+        assert readable, "no flush request returned the capacity rejection"
+        rejected = readable[0]
+        assert read_reply(rejected) == {
+            "requestId": request["requestId"],
+            "generation": request["generation"],
+            "type": "error",
+            "code": "busy",
+        }
+        connections.remove(rejected)
+        yield connections
+
+
 def test_flush_progresses_with_delivery_owner_blocked_and_no_main_loop(tmp_path, control):
     run_id = str(uuid4())
     path = tmp_path / f"network-{run_id}.jsonl"
@@ -75,10 +103,7 @@ def test_cancelled_clients_retain_bounded_prefix_capacity(tmp_path, control):
     path = tmp_path / f"network-{run_id}.jsonl"
     request = log_flush_request(path, run_id)
     with blocked_write(path) as release:
-        with ExitStack() as clients:
-            for _ in range(8):
-                connection = clients.enter_context(control_connection(tmp_path))
-                connection.sendall(frame(json.dumps(request).encode()))
+        with saturated_flush_clients(tmp_path, request):
             assert exchange(tmp_path, request)["code"] == "busy"
         # Every peer has disconnected, but the actual append still owns all
         # eight prefixes. Short reads remain independent of those operations.
@@ -110,10 +135,7 @@ def test_shutdown_closes_clients_without_releasing_stalled_writer_prefixes(tmp_p
     path = tmp_path / f"network-{run_id}.jsonl"
     request = log_flush_request(path, run_id)
     with blocked_write(path):
-        with ExitStack() as clients:
-            connections = [clients.enter_context(control_connection(tmp_path)) for _ in range(8)]
-            for connection in connections:
-                connection.sendall(frame(json.dumps(request).encode()))
+        with saturated_flush_clients(tmp_path, request) as connections:
             assert exchange(tmp_path, request)["code"] == "busy"
             control.stop()
             for connection in connections:
