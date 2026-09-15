@@ -3,7 +3,7 @@
   "status": "unactivated",
   "requiredConfiguration": [
     "reviewed production notifierIds",
-    "live APL validation",
+    "post-deployment APL revalidation at activation",
     "group transition and bounded delivery verification"
   ],
   "monitors": [
@@ -43,5 +43,6 @@
         "resolvable": false
       }
     }
-  ]
+  ],
+  "queryRevision": 2
 }

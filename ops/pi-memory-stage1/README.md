@@ -1,10 +1,11 @@
 # Stage 1 cost attribution and budget guardrail
 
-Issue [#34267](https://github.com/vm0-ai/vm0/issues/34267), child D of
+Issue [#34267](https://github.com/vm0-ai/vm0/issues/34267), with query repair
+[#34433](https://github.com/vm0-ai/vm0/issues/34433), child D of
 [#33892](https://github.com/vm0-ai/vm0/issues/33892). **Definitions only, not an
 active alert.** PiMemory remains off for everyone, including staff, and
 `PI_MEMORY_BACKGROUND_WORKERS_ENABLED=false`. This change authorizes no release,
-production SQL, purge, override, probe, monitor mutation or notification.
+production SQL, purge, override, model probe, monitor mutation or notification.
 
 ## Accounting and source contract
 
@@ -120,8 +121,14 @@ suffix; no live request or credential is used. It verifies:
 | `fields.currency`, `fields.unit`, `fields.creditsPerUsd`                                            | USD, gross_credit_value, 1000                                           |
 | `fields.pricingProvider`, `fields.priceBasis`                                                       | Resolved lookup and captured category/rate/unit/update-time JSON string |
 
-APL uses bracketed dotted fields, e.g. `['fields.accountingId']`. Production-only
-queries select `vm0-web-logs-prod` and explicit source/context/operation; cost
+APL projects dotted fields through `ensure_field` into ordinary aliases. The
+fallback type supplies a typed NULL when a column has never materialized; it
+never supplies zero. Numeric fields use `todouble(ensure_field(...,
+typeof(dynamic)))`: malformed scalar values become NULL instead of a failed
+implicit float conversion. Identity/status fields retain their string contract.
+The fixed-width UTC ISO `observedAt` string is preserved for ordering; converting
+it back from a datetime can remove `.000` and change lexical millisecond order.
+Production-only queries select `vm0-web-logs-prod` and explicit source/context/operation; cost
 excludes BYOK, staging and dev. No logger root-field promotion is required.
 
 ## Versioned monitor artifacts
@@ -130,7 +137,11 @@ excludes BYOK, staging and dev. No logger root-field promotion is required.
 [health.apl](v1/health.apl) are offline, disabled definitions. Cost is a threshold
 monitor with `AboveOrEqual`, threshold 20, five-minute interval, three-day
 bounded ingestion range and `columnName=grossCreditValueUsd`. The final
-aggregation groups by a **string UTC accounting day**, not a time bin.
+aggregation groups by the same **`YYYY-MM-DD` UTC string** for `accountingDay`
+and `incidentDay`. `substring(tostring(startofday(timestamp)), 0, 10)` is
+service-supported; `format_datetime` is not. The explicit `arg_min` result list
+excludes its grouping key. Additional tie breaks on anchor/status/unit fields
+make contradictory tied observations deterministic and still unhealthy.
 
 - Every evaluation independently calculates today's `[00:00, next 00:00)`
   group. Equality breaches a budget whose goal is `< $20/day`.
@@ -166,25 +177,76 @@ Consequently no absence-based heartbeat/coverage guarantee is implemented.
 Use authorized DB reconciliation and controller deployment/admission evidence;
 do not infer an enabled-user success or seven days below budget from all-off.
 
-### Validation evidence and limits
+### Actual-query validation and evidence
 
-- `node --test ops/pi-memory-stage1/v1/fixtures.test.mjs` tests the independent
-  local fixture oracle: below/equal/above, fractional equality, duplicates,
-  first-price/replay, unknown/malformed, BYOK, nonproduction, day boundaries and
-  delayed observations. Fixture amounts are controlled threshold inputs, not
-  production Luna prices. This does **not execute an APL parser**.
-- Logger tests exercise the actual installed SDK transport. Worker route tests
-  verify usage persistence on provider/output failures and no new provider call
-  after a cost-log failure. Real PostgreSQL tests cover immutable identity,
-  historical replay and single-snapshot compaction/reconsolidation.
-- Official monitor [semantics](https://axiom.co/docs/monitor-data/threshold-monitors)
-  and [create schema](https://axiom.co/docs/restapi/endpoints/createMonitor) were
-  read on 2026-09-15. They support the configured fields; this is documentation
-  evidence, **not live APL, monitor API or delivery validation**.
-- Existing access gap remains: monitors GET 403 despite `monitors|read` allowed;
-  notifiers GET 403 and `notifiers|read` denied. No repeated discovery, invented
-  notifier, live monitor write or notification occurred. Live parser/query
-  validation and actual destination are **unverified**.
+Query revision 2 remains under `v1`: event version, threshold, cadence and monitor
+names are unchanged. [Validation receipts](v1/validation.md) bind the exact APL
+and fixture sources by SHA-256. Both final production queries returned HTTP 200,
+non-partial. The query-only corpus executes every committed operator in Axiom;
+no local interpreter supplies the result.
+
+```bash
+node ops/pi-memory-stage1/v1/validate-apl.mjs --mode production \
+  --start 2026-09-15T16:22:40.786857Z --end 2026-09-15T16:27:40.786857Z \
+  --output /tmp/stage1-production-receipts
+node ops/pi-memory-stage1/v1/validate-apl.mjs --mode fixtures \
+  --start 2026-09-15T16:22:40.786857Z --end 2026-09-15T16:27:40.786857Z \
+  --output /tmp/stage1-fixture-receipts
+node --test ops/pi-memory-stage1/v1/fixtures.test.mjs ops/pi-memory-stage1/v1/artifacts.test.mjs
+node ops/pi-memory-stage1/v1/build-definitions.mjs --review-only
+```
+
+Use a fresh, bounded UTC window when revalidating. `AXIOM_TOKEN` is supplied
+unchanged by the authorized query connector; do not print or persist it. Each
+invocation requires a new output directory and an explicit window of at most
+five minutes. Requests have a 45-second deadline and no automatic retry. The
+full sanitized request and response are saved before HTTP/partial/result
+assertions. No secret-dependent CI job is added.
+
+- Production mode sends the file bytes unchanged to
+  `POST https://api.axiom.co/v1/datasets/_apl?format=tabular`. The query's internal
+  observation retention is still bounded to today plus the prior two UTC days.
+  Axiom may report bucket-range alignment; it must still report `isPartial=false`.
+- Fixture mode binds the sole dataset expression to a typed inline `datatable`
+  and replaces only `now()` with the fixture clock. All filters, projections,
+  ordering, summaries and health branches run unchanged. The adapter binds
+  production rows by `dataset`; it does not feed staging rows into a production
+  source. It preserves absent columns and scalar NULLs. `dynamic(null)` is not
+  equivalent to a nullable string/number in this service. Every fixture response
+  must declare `datasetNames=[]`: no live dataset is read or written.
+- The corpus covers thresholds (including one nano below/above and 100 × 0.2),
+  duplicated transport/category/outcome, cross-day replay, first-price loss,
+  repricing, contradictory identity/ties in both input orders, millisecond order,
+  midnight, delayed prior-day data, expired groups, BYOK/nonproduction, missing
+  columns, malformed scalar values, valid zero and precision coverage.
+  Expected results are assertions against service output, not another valuation.
+- The original 24 local oracle checks remain labeled as independent semantic
+  checks. Two offline compiler tests prove review bodies embed the actual APL
+  and stay disabled with no destination. `--review-only` emits empty
+  `notifierIds`; actual destination-bound generation still requires supplied,
+  controller-reviewed IDs. Neither form contacts the monitor API.
+
+**Verified precision limit:** Axiom `sum(long)` returns a float. The query-only
+probe `9007199254740992 + 1` returned `9007199254740992`; `todecimal` is unsupported.
+The cost query therefore emits a daily value only when the nonnegative integer
+nano sum is strictly below `9007199254740991` (about 9 million USD). All partial
+sums in that range are exact, including the 20 USD threshold. At/above the bound,
+the day is unavailable, never zero. Health reports precision coverage using
+distinct identity/anchor/nano facts; identical duplicates do not inflate it.
+Conflicting facts can conservatively trigger this health check and independently
+trigger identity/repricing checks. SQL retains exact numeric reconciliation.
+This makes the pre-existing bounded aggregate-range activation requirement
+explicit; it does not change writer valuation, token prices or credit rounding.
+
+The production all-off receipt is expected inactivity, with **unproven ingestion
+completeness**. No/zero cost and zero health findings do not prove healthy billing
+coverage. Logger transport, worker and DB evidence remains in the original D
+acceptance. Query-only group rollover/reset is verified; notification opening,
+recovery, repeat suppression, notifier destination and delivery are not.
+
+The existing inventory access gap remains: monitors GET 403 despite
+`monitors|read` allowed; notifiers GET 403 and `notifiers|read` denied. This repair
+made no inventory retry or monitor/notifier mutation. Query access succeeded.
 
 ## Bounded ledger reconciliation
 
@@ -290,8 +352,9 @@ This owner stops at protected merge. The controller separately:
 3. Runs both exact APL files through the live parser/query service with a bounded
    range. Verifies dot-field types, integer conversion, `arg_min` string order,
    `let`/`union`, grouped summaries and current/prior-day behavior. Runs the
-   controlled corpus in an explicitly authorized test destination if needed;
-   local fixtures alone do not pass this gate.
+   query-only corpus with this harness and retain both query hashes and receipts.
+   No fixture dataset, ingestion or paid extraction is needed. Local fixtures
+   alone do not pass this gate.
 4. Compiles disabled request bodies offline:
    `node ops/pi-memory-stage1/v1/build-definitions.mjs ACTUAL_REVIEWED_NOTIFIER_ID`.
    Reviews exact output, binds actual IDs and creates disabled monitors under
