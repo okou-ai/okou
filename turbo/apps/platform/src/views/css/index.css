@@ -609,26 +609,6 @@ body {
   --okou-chat-card-shadow: 0 1px 2px hsl(var(--state-layer) / 0.035);
 }
 
-/* Desktop shell: avoid accidental selection on app chrome while preserving content/editors. */
-.okou-app[data-desktop-shell] {
-  -webkit-user-select: none;
-  user-select: none;
-}
-
-.okou-app[data-desktop-shell]
-  :where(
-    input,
-    textarea,
-    select,
-    [contenteditable]:not([contenteditable="false"]),
-    [role="textbox"],
-    .okou-chat-bubble-user,
-    .okou-chat-bubble-assistant
-  ) {
-  -webkit-user-select: text;
-  user-select: text;
-}
-
 /* Reusable 0.7px border utilities — replaces inline style={{ border: "0.7px solid ..." }}
 
    Do not delete this rule yet, and do not trust the tooling about it. Its last
