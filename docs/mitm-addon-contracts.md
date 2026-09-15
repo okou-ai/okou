@@ -49,16 +49,21 @@ A successful reply contains those identities, `"type": "result"`, and
 always identifies the serving addon. Rust rejects mismatched identities, unknown
 response fields/states, extra response bytes, and missing terminal EOF.
 
-The JSONL watcher starts before control admission. Shutdown stops control
-admission, closes every accepted socket (including tasks not yet started), and
-joins the I/O thread before existing blocking drains. This is a readiness
-snapshot, not an ongoing health guarantee or business-state acknowledgement.
-A lost reply after transmission means an unknown outcome; the transport does
-not automatically replay future mutations or move business state onto its thread.
+Shutdown stops control admission, closes every accepted socket (including tasks
+not yet started), and joins the I/O thread before existing blocking drains. The
+`logs.flush` method observes a writer-owned, accepted JSONL prefix: it captures
+the requested run/path boundary, waits for that prefix to be processed (including
+failed append attempts), and returns either `processed` or `deadline`. A
+`processed` result is not an fsync or durability acknowledgement. Cancellation
+does not release an admitted writer ticket, and a lost reply after transmission
+means an unknown outcome; the transport does not automatically replay future
+mutations or move business state onto its thread.
 
 JSONL flush, registry/catalog consumption, SIGUSR1 delivery drain, and API/billing
-contracts remain unchanged. Old Runner instances retain their embedded addon;
-no API-first deployment or mixed Runner/addon protocol fallback is needed. This
+contracts remain unchanged. The old JSONL marker request/state files and watcher
+are removed; Runner and the embedded addon use the private control socket for
+flush coordination. Old Runner instances retain their embedded addon; no
+API-first deployment or mixed Runner/addon protocol fallback is needed. This
 stage does not implement token accounting or guest RPC, and unit/packaged runtime
 tests do not claim production soak or a measured latency improvement.
 

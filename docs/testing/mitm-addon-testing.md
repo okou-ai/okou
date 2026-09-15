@@ -196,9 +196,9 @@ suites before committing the upgrade.
 | `test_response_handler_cleanup.py`                      | Response-hook terminal request/response stream-state cleanup                                                         |
 | `test_error_handler.py`                                 | Error hook logging and usage cleanup                                                                                 |
 | `test_done_hook.py`                                     | Shutdown hook delivery, runner flush coordination, and executor cleanup                                              |
-| `test_runner_flush_request.py`                          | Shared usage and JSONL runner flush marker contracts                                                                 |
+| `test_runner_flush_request.py`                          | Runner-triggered usage flush marker contracts                                                                         |
+| `test_runner_log_flush.py`                              | Runner-triggered `logs.flush` control requests, bounded prefixes, cancellation, and target validation                |
 | `test_runner_usage_flush_signal.py`                     | Runner-triggered usage signal, worker, retry, and timer coordination                                                 |
-| `test_runner_jsonl_flush.py`                            | Runner-triggered JSONL watcher, acknowledgement, timeout, and replay behavior                                        |
 | `test_tls_clienthello_hook.py`                          | TLS clienthello admission behavior                                                                                   |
 | `test_tcp_hooks.py`                                     | TCP start, logging, message drain, end, and error hooks                                                              |
 | `test_state_file.py`                                    | Shared safe-open, descriptor identity, bounded-read, and cleanup contracts                                           |
