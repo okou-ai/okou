@@ -21,7 +21,7 @@ cleanup() {
     git -C "$REPO_ROOT" worktree remove "$WORKTREE_DIR" --force >/dev/null 2>&1 ||
       echo "Warning: Could not unregister temporary base worktree" >&2
   fi
-  rm -rf "$TEMP_DIR"
+  rm -rf "$TEMP_DIR" || echo "Warning: Could not remove temporary hash files" >&2
   exit "$status"
 }
 trap cleanup EXIT
