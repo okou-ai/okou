@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
@@ -114,16 +114,16 @@ async function openVideoOptions(expectedSpec: string): Promise<HTMLElement> {
   return await screen.findByLabelText("Video options");
 }
 
-async function selectToolbarOption(
-  label: string,
-  value: string,
-): Promise<void> {
-  click(await screen.findByRole("combobox", { name: label }));
-  click(await screen.findByRole("option", { name: value }));
+/** Every value lives in the settings pane, so editing one opens it first. */
+async function selectPaneOption(spec: string, value: string): Promise<void> {
+  const pane = await openVideoOptions(spec);
+  click(fastControl("radio", value, pane));
+}
+
+async function closeVideoOptions(): Promise<void> {
+  await userEvent.setup({ delay: null }).keyboard("{Escape}");
   await waitFor(() => {
-    expect(screen.getByRole("combobox", { name: label })).toHaveTextContent(
-      value,
-    );
+    expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
   });
 }
 
@@ -216,10 +216,9 @@ test.each([false, true])(
     });
     await selectVideoTemplate();
     for (const label of ["Ratio", "Resolution", "Duration"]) {
-      expect(screen.getByRole("combobox", { name: label })).toHaveAttribute(
-        "aria-expanded",
-        "false",
-      );
+      expect(
+        screen.queryByRole("combobox", { name: label }),
+      ).not.toBeInTheDocument();
     }
     expect(
       fastControl("button", "Video options 16:9 · 8s · 720p"),
@@ -311,7 +310,8 @@ test.each([false, true])(
     const editor = await enterText(prompt);
     await enterVideoMode("Claude Fable 5.1");
     const template = await selectVideoTemplate();
-    await selectToolbarOption("Ratio", "9:16");
+    await selectPaneOption("16:9 · 8s · 720p", "9:16");
+    await closeVideoOptions();
     await sendCurrent(editor, prompt);
 
     await waitFor(() => {
@@ -394,8 +394,8 @@ test.each(["task", "command"] as const)(
     click(await screen.findByRole("option", { name: "MiniMax H3" }));
     await waitFor(() => {
       expect(
-        screen.getByRole("combobox", { name: "Resolution" }),
-      ).toHaveTextContent("2k");
+        fastControl("button", "Video options 16:9 · 8s · 2k"),
+      ).toBeInTheDocument();
     });
     await sendCurrent(editor, prompt);
     await waitFor(() => {
@@ -450,16 +450,24 @@ test("Changing a Creative Video style retains settings without reopening the pan
   await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
   const editor = await enterText("Keep this scene description");
   await selectVideoTemplate();
-  await selectToolbarOption("Ratio", "9:16");
-  await selectToolbarOption("Resolution", "1080p");
-  await selectToolbarOption("Duration", "10s");
-  click(fastControl("button", "Generate audio"));
-  expect(fastControl("button", "Generate audio")).toHaveAttribute(
-    "aria-pressed",
-    "false",
-  );
+  await selectPaneOption("16:9 · 8s · 720p", "9:16");
+  await selectPaneOption("9:16 · 8s · 720p", "1080p");
+  const duration = await screen.findByRole("slider", { name: "Duration" });
+  duration.focus();
+  await userEvent.setup({ delay: null }).keyboard("{ArrowRight}{ArrowRight}");
+  await waitFor(() => {
+    expect(duration).toHaveAttribute("aria-valuetext", "10s");
+  });
+  const audio = screen.getByRole("switch", { name: "Generate audio" });
+  click(audio);
+  await waitFor(() => {
+    expect(
+      screen.getByRole("switch", { name: "Generate audio" }),
+    ).not.toBeChecked();
+  });
   const summary = fastControl("button", "Video options 9:16 · 10s · 1080p");
   expect(summary).toHaveAttribute("aria-description", "Audio off");
+  await closeVideoOptions();
   const edit = composerInlineTemplates()[0]?.querySelector("button");
   if (!edit) {
     throw new Error("Template edit button missing");
@@ -487,15 +495,18 @@ test("Changing a Creative Video style retains settings without reopening the pan
   expect(
     fastControl("button", "Video options 9:16 · 10s · 1080p"),
   ).toHaveAttribute("aria-description", "Audio off");
-  expect(screen.getByRole("combobox", { name: "Ratio" })).toHaveTextContent(
-    "9:16",
+  const restored = await openVideoOptions("9:16 · 10s · 1080p");
+  expect(fastControl("radio", "9:16", restored)).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  expect(fastControl("radio", "1080p", restored)).toHaveAttribute(
+    "aria-checked",
+    "true",
   );
   expect(
-    screen.getByRole("combobox", { name: "Resolution" }),
-  ).toHaveTextContent("1080p");
-  expect(screen.getByRole("combobox", { name: "Duration" })).toHaveTextContent(
-    "10s",
-  );
+    within(restored).getByRole("slider", { name: "Duration" }),
+  ).toHaveAttribute("aria-valuetext", "10s");
 });
 
 async function restoreTemplateDraft(
@@ -557,27 +568,4 @@ test("An Intro Video draft excludes settings even after choosing Create video", 
       return button.getAttribute("aria-label")?.startsWith("Video options ");
     }),
   ).toBeFalsy();
-});
-
-test("The video options button owns every setting when the switch is on", async () => {
-  installVideoSubmissionCapture();
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ComposerVideoOptionsButton]: true },
-  });
-  await selectVideoTemplate();
-  for (const label of ["Ratio", "Resolution", "Duration"]) {
-    expect(
-      screen.queryByRole("combobox", { name: label }),
-    ).not.toBeInTheDocument();
-  }
-  const pane = await openVideoOptions("16:9 · 8s · 720p");
-  click(fastControl("radio", "9:16", pane));
-  await waitFor(() => {
-    expect(
-      fastControl("button", "Video options 9:16 · 8s · 720p"),
-    ).toBeInTheDocument();
-  });
-  expect(screen.queryByRole("combobox", { name: "Ratio" })).toBeNull();
 });

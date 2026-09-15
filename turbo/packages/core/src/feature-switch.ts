@@ -478,13 +478,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ComposerVideoOptionsButton]: {
-    maintainer: "bingjie@okou.ai",
-    description:
-      "Collapse the composer's inline video ratio, resolution, duration, and audio controls into the summary button that opens the settings pane.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
 };
 
 interface ResolvedHashes {
