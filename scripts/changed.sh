@@ -3,20 +3,83 @@
 # Usage: changed.sh [base-ref]
 # Output: JSON object with package names as keys and boolean values (true = changed)
 # Example output: {"@okouai/cli": true, "@okouai/web": false}
+# Hash-command failures preserve their status; invalid task JSON exits 2.
+# Failure diagnostics are bounded/redacted on stderr. Raw dry-run JSON is withheld.
 
-set -e
+set -euo pipefail
 
 BASE_REF=${1:-HEAD^}
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REPO_ROOT=$(git rev-parse --show-toplevel)
+TEMP_DIR=$(mktemp -d)
+WORKTREE_DIR="$TEMP_DIR/base"
+
+cleanup() {
+  local status=$?
+  trap - EXIT
+  if [ -d "$WORKTREE_DIR" ]; then
+    git -C "$REPO_ROOT" worktree remove "$WORKTREE_DIR" --force >/dev/null 2>&1 ||
+      echo "Warning: Could not unregister temporary base worktree" >&2
+  fi
+  rm -rf "$TEMP_DIR"
+  exit "$status"
+}
+trap cleanup EXIT
 
 echo "Comparing current HEAD against $BASE_REF..." >&2
 
 # Helper function to extract all task hashes from turbo output
 extract_all_hashes() {
   local file=$1
-  # Find the line with opening brace, then parse JSON from there
-  grep -n "^{" "$file" | head -1 | cut -d: -f1 | xargs -I {} tail -n +{} "$file" | \
-    jq -r '.tasks[] | select(.task == "build") | {taskId: .taskId, hash: .hash}' 2>/dev/null | \
-    jq -s 'map({(.taskId | split("#")[0]): .hash}) | add' 2>/dev/null || echo "{}"
+  # Reject incomplete graphs rather than letting consumers interpret them as no changes.
+  jq -se '
+    if length != 1 then error("Expected one Turbo result") else .[0] end
+    | .tasks
+    | if type != "array" then error("Expected tasks") else . end
+    | if all(.[]; (.task | type == "string") and (.task | length > 0))
+      then . else error("Invalid task") end
+    | map(select(.task == "build"))
+    | if length == 0 then error("No build tasks") else . end
+    | if all(.[];
+        (.taskId | type == "string") and
+        (.taskId | test("^[^#]+#build$")) and
+        (.hash | type == "string") and (.hash | length > 0)
+      ) then . else error("Invalid build task") end
+    | if (map(.taskId) | unique | length) != length
+      then error("Duplicate build tasks") else . end
+    | map({(.taskId | split("#")[0]): .hash}) | add
+  ' "$file" 2>/dev/null
+}
+
+report_hash_failure() {
+  local phase=$1 commit=$2 status=$3 reason=$4
+  echo "Error: $phase hash calculation for $commit: $reason (exit $status)" >&2
+  echo 'Command: npx -y turbo@^2.5.6 run build --dry=json' >&2
+  # Never expose dry-run JSON: it may contain resolved environment values.
+  # A formatter failure must not replace the original command status.
+  node "$SCRIPT_DIR/turbo-hash-diagnostics.mjs" \
+    "$TEMP_DIR/$phase.stderr" "$TEMP_DIR/$phase.json" >&2 2>/dev/null ||
+    echo "Diagnostic formatting unavailable; captured output withheld" >&2
+}
+
+calculate_hashes() {
+  local phase=$1 commit=$2 status hashes
+  echo "Calculating hashes for $phase commit..." >&2
+  if npx -y turbo@^2.5.6 run build --dry=json \
+    >"$TEMP_DIR/$phase.json" 2>"$TEMP_DIR/$phase.stderr"; then
+    :
+  else
+    status=$?
+    report_hash_failure "$phase" "$commit" "$status" "Turbo command failed"
+    return "$status"
+  fi
+
+  if hashes=$(extract_all_hashes "$TEMP_DIR/$phase.json"); then
+    printf '%s\n' "$hashes"
+  else
+    report_hash_failure "$phase" "$commit" 2 "Invalid or empty Turbo build-task JSON"
+    return 2
+  fi
 }
 
 # Get current commit hash
@@ -27,43 +90,17 @@ echo "Current commit: $CURRENT_COMMIT" >&2
 echo "Base commit:    $BASE_COMMIT" >&2
 
 # Get task hashes for current commit
-cd turbo
-echo "Calculating hashes for current commit..." >&2
-npx -y turbo@^2.5.6 run build --dry=json > /tmp/turbo-current.json 2>&1
-CURRENT_HASHES=$(extract_all_hashes /tmp/turbo-current.json)
-
-if [ "$CURRENT_HASHES" = "{}" ]; then
-  echo "Error: Could not extract current hashes" >&2
-  exit 2
-fi
-
-echo "Current hashes:" >&2
-echo "$CURRENT_HASHES" | jq '.' >&2
+cd "$REPO_ROOT/turbo"
+CURRENT_HASHES=$(calculate_hashes current "$CURRENT_COMMIT")
 
 # Create a temporary worktree for base commit
-WORKTREE_DIR=$(mktemp -d)
-trap "rm -rf $WORKTREE_DIR" EXIT
-
 echo "Creating worktree for base commit..." >&2
 git worktree add --detach "$WORKTREE_DIR" "$BASE_COMMIT" >/dev/null 2>&1
 
 # Get task hashes for base commit
 cd "$WORKTREE_DIR/turbo"
-echo "Calculating hashes for base commit..." >&2
-npx -y turbo@^2.5.6 run build --dry=json > /tmp/turbo-base.json 2>&1
-BASE_HASHES=$(extract_all_hashes /tmp/turbo-base.json)
-
-if [ "$BASE_HASHES" = "{}" ]; then
-  echo "Error: Could not extract base hashes" >&2
-  exit 2
-fi
-
-echo "Base hashes:" >&2
-echo "$BASE_HASHES" | jq '.' >&2
-
-# Cleanup worktree
-cd - >/dev/null
-git worktree remove "$WORKTREE_DIR" --force >/dev/null 2>&1
+BASE_HASHES=$(calculate_hashes base "$BASE_COMMIT")
+cd "$REPO_ROOT"
 
 # Compare hashes and generate output
 echo "Comparing hashes..." >&2
