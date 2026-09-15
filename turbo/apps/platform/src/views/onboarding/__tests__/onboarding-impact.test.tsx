@@ -22,6 +22,16 @@ function goBack() {
   click(button);
 }
 
+function selectWorkflowAutomation() {
+  const radio = queryAllByRoleFast("radio").find((candidate) => {
+    return candidate.textContent?.includes("Workflow automation");
+  });
+  if (!radio) {
+    throw new Error("Expected the Workflow automation option");
+  }
+  click(radio);
+}
+
 function onboardingNeeded() {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
@@ -38,7 +48,7 @@ async function openOnboarding() {
   ).resolves.toBeInTheDocument();
 }
 
-test("Onboarding sends one cookie request while steps remain usable without an iframe", async () => {
+test("Onboarding sends one bearer-authenticated request while steps remain usable without an iframe", async () => {
   onboardingNeeded();
   const received = context.mocks.deferred<Request>();
   const complete = context.mocks.deferred<void>();
@@ -53,12 +63,12 @@ test("Onboarding sends one cookie request while steps remain usable without an i
   await openOnboarding();
   const request = await received.promise;
   expect(request.credentials).toBe("include");
-  expect(request.headers.has("authorization")).toBeFalsy();
+  expect(request.headers.get("authorization")).toBe("Bearer test-token");
   expect(request.headers.has("content-type")).toBeFalsy();
   await expect(request.text()).resolves.toBe("");
   expect(document.querySelector("iframe")).toBeNull();
 
-  click(screen.getByRole("radio", { name: /Workflow automation/u }));
+  selectWorkflowAutomation();
   await expect(
     screen.findByRole("heading", { name: "What do you work on?" }),
   ).resolves.toBeInTheDocument();
@@ -73,7 +83,7 @@ test("Onboarding sends one cookie request while steps remain usable without an i
   complete.resolve();
 });
 
-test.each(["http", "network"])(
+test.each(["http", "unauthorized", "network"])(
   "A %s failure does not block onboarding or retry on navigation",
   async (failure) => {
     onboardingNeeded();
@@ -82,13 +92,15 @@ test.each(["http", "network"])(
     context.mocks.http.post(ENDPOINT, () => {
       requests++;
       received.resolve();
-      return failure === "http"
-        ? new Response(null, { status: 503 })
-        : Response.error();
+      return failure === "network"
+        ? Response.error()
+        : new Response(null, {
+            status: failure === "unauthorized" ? 401 : 503,
+          });
     });
     await openOnboarding();
     await received.promise;
-    click(screen.getByRole("radio", { name: /Workflow automation/u }));
+    selectWorkflowAutomation();
     await expect(
       screen.findByRole("heading", { name: "What do you work on?" }),
     ).resolves.toBeInTheDocument();
@@ -101,6 +113,32 @@ test.each(["http", "network"])(
     expect(requests).toBe(1);
   },
 );
+
+test("A missing session token skips attribution while onboarding remains usable", async () => {
+  onboardingNeeded();
+  let requests = 0;
+  context.mocks.http.post(ENDPOINT, () => {
+    requests++;
+    return new Response(null, { status: 204 });
+  });
+  await setupPage({
+    context,
+    path: "/onboarding",
+    host: "app.okou.ai",
+    auth: {
+      user: { id: "test-user-123", fullName: "Test User" },
+      session: { token: "" },
+    },
+  });
+  await expect(
+    screen.findByRole("heading", { name: "What do you want to make first" }),
+  ).resolves.toBeInTheDocument();
+  selectWorkflowAutomation();
+  await expect(
+    screen.findByRole("heading", { name: "What do you work on?" }),
+  ).resolves.toBeInTheDocument();
+  expect(requests).toBe(0);
+});
 
 test("An already onboarded user sends no attribution request", async () => {
   let requests = 0;
@@ -126,7 +164,7 @@ test("A persisted attempt survives a reload for the same user and organization",
     return new Response(null, { status: 204 });
   });
   await openOnboarding();
-  click(screen.getByRole("radio", { name: /Workflow automation/u }));
+  selectWorkflowAutomation();
   await expect(
     screen.findByRole("heading", { name: "What do you work on?" }),
   ).resolves.toBeInTheDocument();

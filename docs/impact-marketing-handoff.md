@@ -18,7 +18,9 @@ Marketing captures `im_ref` only after initialized Termly advertising consent.
 The host-only `__Host-okou_impact_v2` cookie carries the click ID, capture time and
 consent epoch. Marketing-to-App links no longer carry Impact query parameters.
 The App sends one empty `POST https://www.okou.ai/api/marketing/impact/onboarding`
-when an authenticated user enters onboarding. The browser includes cookies;
+when an authenticated user enters onboarding. It uses the same session-token
+provider as calls to `api.okou.ai` and sends `Authorization: Bearer <token>`.
+The browser also includes Marketing cookies for consent and click attribution;
 there is no iframe, `postMessage`, identity-proof fetch, or Termly initialization
 in this flow. The root owns the bounded request independently of route readiness,
 so changing onboarding steps does not cancel it or wait for its response.
@@ -29,21 +31,22 @@ network/HTTP failures. Other browsers or cleared storage can submit again; the
 Marketing write is idempotent. Already-onboarded users do not submit, and missing
 or invalid attribution/consent is skipped rather than waiting for new consent.
 
-Marketing verifies the shared Clerk session cookie, including signature, expiry,
+Marketing verifies the Clerk bearer token, including signature, expiry,
 App authorized party, user identity and active admin organization. It reads its
 own host-only click and consent cookies and retains server-side withdrawal and
 account-binding checks. The endpoint accepts only the configured App Origin,
-uses credentialed CORS and `Cache-Control: no-store`, and returns an empty `204`
+allows the browser's Authorization preflight, uses credentialed CORS and
+`Cache-Control: no-store`, and returns an empty `204`
 for completed or skipped captures. GET does not write. No attribution data is
 returned to the App or its API.
 
 ### Deployment boundary
 
-Deploy the Marketing cookie endpoint before the App change. This cutover retires
+Deploy the Marketing bearer-authenticated endpoint before the App change. This cutover retires
 `/finish-onboarding`, `/api/marketing/impact/config`, both signed handoff APIs,
 and their iframe, identity-proof and nonce machinery. Old iframe clients and
 pre-cutover rollback artifacts are outside the supported boundary; they must
-refresh onto the cookie-request App to record attribution. No client-version
+refresh onto the bearer-request App to record attribution. No client-version
 floor or compatibility bridge is introduced.
 
 Marketing migration `0002_drop_impact_handoffs.sql` drops the obsolete replay
@@ -86,8 +89,8 @@ Refunds may correct known submissions after withdrawal, but never create a sale.
 
 The onboarding request has no rollout switch. Marketing uses its existing
 `CLERK_SECRET_KEY`, attribution database and `IMPACT_APP_ORIGIN` configuration.
-The production Clerk primary is `app.okou.ai`, with a session shared across
-Okou subdomains. The App API no longer signs attribution proofs or needs
+Authentication does not depend on a session cookie reaching the Marketing domain.
+The App API no longer signs attribution proofs or needs
 `MARKETING_ATTRIBUTION_SECRET` / `MARKETING_ATTRIBUTION_ORIGIN`.
 
 Follow the Marketing runbook for its dedicated Neon database, credentials and
@@ -98,7 +101,7 @@ active attribution readers or writers. No historical consent is reconstructed.
 
 ## Verification and completion
 
-Focused tests cover cookie identity, metadata filtering, original purchase
+Focused tests cover bearer identity, credentialed CORS, metadata filtering, original purchase
 times, delayed and out-of-order webhooks, immutable attribution, consent withdrawal,
 duplicate submissions and refunds. Marketing tests exercise the Neon HTTP driver
 against isolated real PostgreSQL schemas. No destructive App migration is needed.

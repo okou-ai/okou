@@ -1,13 +1,14 @@
 import { z } from "zod";
-import { initContract } from "./base";
+import { authHeadersSchema, initContract } from "./base";
 
 const c = initContract();
 
-/** Marketing owns this cookie-authenticated endpoint; it receives no App bearer token. */
+/** Marketing verifies the App bearer token and reads its own attribution cookies. */
 export const impactOnboardingContract = c.router({
   record: {
     method: "POST",
     path: "/api/marketing/impact/onboarding",
+    headers: authHeadersSchema,
     body: c.noBody(),
     responses: {
       204: c.noBody(),

@@ -2,6 +2,7 @@ import { command, state } from "ccstate";
 import { impactOnboardingContract } from "@okouai/api-contracts/contracts/impact-marketing";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import { resolveApiBaseForTarget } from "../api-base.ts";
+import { apiClientRuntime$ } from "../api-client-runtime.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
 import {
   bestEffort,
@@ -37,16 +38,26 @@ const sendOnboardingImpact$ = command(
     // Record the attempt before sending. Navigation, reloads and failures do
     // not retry this optional onboarding attribution request.
     set(attempts.set$, [...previous, key].join("\n"));
-    // This Marketing-owned API uses cookies only. The App's authenticated
-    // client would add bearer/client headers and require an extra preflight.
+    const requestSignal = AbortSignal.any([
+      signal,
+      AbortSignal.timeout(10_000),
+    ]);
+    // Use the same session-token provider as the canonical App API client.
+    // Marketing cookies carry attribution, not the authenticated identity.
+    const token = await get(apiClientRuntime$).getToken(requestSignal);
+    requestSignal.throwIfAborted();
+    if (!token) {
+      return;
+    }
     const client = initClient(impactOnboardingContract, {
       baseUrl: resolveApiBaseForTarget("www"),
     });
     await client.record({
+      headers: { authorization: `Bearer ${token}` },
       fetchOptions: {
         credentials: "include",
         keepalive: true,
-        signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+        signal: requestSignal,
       },
     });
   },
