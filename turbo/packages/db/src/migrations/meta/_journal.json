@@ -407,6 +407,13 @@
       "when": 1789453865355,
       "tag": "1135_validate_pi_inference_launch",
       "breakpoints": true
+    },
+    {
+      "idx": 1136,
+      "version": "7",
+      "when": 1789457078003,
+      "tag": "1136_retire_legacy_invitation_columns",
+      "breakpoints": true
     }
   ]
 }

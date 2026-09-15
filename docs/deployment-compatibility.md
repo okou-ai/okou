@@ -897,19 +897,56 @@ between migration and promotion. No schema migration or rollback-floor change
 is part of this preparation release.
 
 Migration 1132 below subsequently handles the three entitlement triggers and
-enforces the canonical-only rollback artifact. To finish the remaining #32575
-column/client cleanup:
+enforces the canonical-only rollback artifact. Its production completion and
+the remaining #32575 column/client contraction are recorded next.
 
-1. Preserve the 1132 serving/rollback evidence below and confirm its production
-   journal completion before treating its trigger contraction as shipped.
-2. Generate the column-drop migration with Drizzle. Audit remaining persisted
-   SQL first, then drop both legacy columns. The entitlement triggers/functions
-   are removed by #33747 migration 1132; preserve its journal and transition
-   evidence. Unrelated triggers are outside #32575.
-3. Remove the App migration query opt-in and contract. Retire the invitation
-   transition validator only after its contraction has shipped and permanent
-   coverage retains active Free invitations, suspended direct/paid rejection,
-   admin authorization, reactivation and explicit `showUsagePack: false`.
+#### Legacy invitation column contraction (2026-09-15)
+
+The [API 1.603.1 production job](https://github.com/vm0-ai/vm0/actions/runs/34936717500/job/104278924406)
+checked out and built `caa4352ddba6ef4b1912cbbb7838afb94ac4aa82`. Its **Run
+Production Migrations** step records the real production 1132 receipt at
+2026-09-15 06:38:10.5347961 UTC: eight matched/retired triggers, eight matched
+functions and zero audited invariant violations on PostgreSQL 17.10. This is
+separate from the preceding smoke-clone receipt. `Migrations complete` follows
+at **06:38:10.7737004 UTC**. The shipped migration runner and entry point are
+byte-identical to this change's base: the runner awaits the transaction including
+the journal insertion before the entry point reports completion. This establishes
+the 1132 journal frontier, `when=1789448024786`; no direct production journal
+SELECT is claimed.
+
+The 2026-09-15 serving-alias read resolves both `api.vm0.ai` and `api.okou.ai`
+to READY production deployment `dpl_i8s7vaEvyqeKFD7m2hTa2W2CAKYW` at that same
+artifact. It descends from the enforced API 1.600.1 rollback floor,
+`eb2f211a9af41450d0d5dad10c0c8ad12fac0a24`, which in turn contains #33909's
+canonical-only mapping and unconditional all-Free migration response. The
+resolver continues to load from current main and reject earlier artifacts.
+Current and supported rollback APIs therefore neither name the old columns in
+SQL nor require the App's migration query opt-in.
+
+Drizzle-generated migration `1136_retire_legacy_invitation_columns` removes
+`member_invite_usage_pack_required` and `member_invitation_allowed`. It locks
+only `org_plan_entitlements`, checks the predecessor journal frontier, exact
+column definitions, persisted routine bodies in user schemas, and all recorded
+column dependencies before either drop. Only the columns' own defaults and
+native NOT NULL constraints may disappear; unexpected indexes, checks, views,
+triggers or functions abort the transaction. The normal 1s lock / 10s statement
+limits and atomic journal insertion remain in force. Historical migrations and
+1132's evidence remain unchanged.
+
+The App removes `supportsFreeMembers=true` from the migration GET request and
+its request contract. Catalog/management responses still explicitly advertise
+Free-member support. Existing route coverage checks all-Free configuration
+without a query parameter; invitation admission continues to use normalized
+status and administrator authorization, and package controls use `showUsagePack`.
+
+Keep `test-member-invitation-retirement.ts`, its frozen outgoing API fixture,
+the private retained-schema controls, and the new column transition validator
+until **1136 itself is deployed**, its production journal is verified, and the
+surviving invariants have permanent coverage. Free invitations, suspended
+direct/paid rejection, admin authorization, reactivation, historical backfill,
+and explicit `showUsagePack: false` remain covered. Issue #32575 stays open for
+that release verification and validator retirement; this PR performs no
+production migration or release.
 
 ### Prepared billing, OAuth and hosting trigger contraction (2026-09-15)
 

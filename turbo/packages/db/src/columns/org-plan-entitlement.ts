@@ -8,7 +8,7 @@ import {
 } from "drizzle-orm/pg-core";
 import type { OrgPlanEntitlementSourceMetadata } from "../jsonb-contracts/org-plan-entitlement";
 
-/** Canonical application columns, shared with the migration-only schema. */
+/** Canonical columns shared by application and migration mappings. */
 export function orgPlanEntitlementColumns() {
   return {
     orgId: text("org_id").primaryKey(),
