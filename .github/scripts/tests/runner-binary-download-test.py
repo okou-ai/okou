@@ -37,6 +37,10 @@ if stage and not key.endswith(stage):
     mode = "success"
 if mode in ("cancel", "timeout", "timeout-once", "budget-timeout") and (mode != "timeout-once" or attempt == 1):
     destination.write_bytes(b"incomplete")
+    # Inject the external timeout outcome without racing Python startup against
+    # a tiny wall-clock deadline. budget-timeout exercises real GNU termination.
+    if mode.startswith("timeout"):
+        sys.exit(124)
     if mode == "cancel":
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
         with (root / "ready").open("w") as ready:
@@ -81,8 +85,6 @@ root = pathlib.Path(os.environ["FIXTURE_ROOT"])
 args = sys.argv[1:]
 with (root / "deadlines").open("a") as output:
     output.write(json.dumps(args[:2]) + "\n")
-if os.environ["FIXTURE_MODE"].startswith("timeout"):
-    args[1] = "0.2s"
 os.execv(os.environ["REAL_TIMEOUT"], ["timeout", *args])
 """
 
@@ -333,6 +335,7 @@ class DownloadTests(unittest.TestCase):
                         start_new_session=True,
                     )
                     child_group = None
+                    child_descriptor = None
                     try:
                         self.assertTrue(
                             select.select([descriptor], [], [], 5)[0],
@@ -340,6 +343,7 @@ class DownloadTests(unittest.TestCase):
                         )
                         child = int(os.read(descriptor, 100).strip())
                         child_group = os.getpgid(child)
+                        child_descriptor = os.pidfd_open(child)
                         process.send_signal(interrupt)
                         stdout, stderr = process.communicate(timeout=5)
                         self.assertEqual(process.returncode, 128 + interrupt, stderr)
@@ -352,10 +356,8 @@ class DownloadTests(unittest.TestCase):
                         self.assertEqual(
                             list(self.root.glob("runner-binary-transport.*")), []
                         )
-                        # A killed grandchild can briefly await its init reaper.
-                        stat = Path(f"/proc/{child}/stat")
                         self.assertTrue(
-                            not stat.exists() or stat.read_text().split()[2] == "Z",
+                            select.select([child_descriptor], [], [], 5)[0],
                             "cancelled download/backoff is still running",
                         )
                     finally:
@@ -368,6 +370,8 @@ class DownloadTests(unittest.TestCase):
                                     pass
                         if process.poll() is None:
                             process.communicate()
+                        if child_descriptor is not None:
+                            os.close(child_descriptor)
                         os.close(descriptor)
                         ready.unlink()
 
