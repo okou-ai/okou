@@ -291,6 +291,7 @@ async function createRunUploadedFile(args: {
   readonly prompt: string;
   readonly filename: string;
   readonly contentType: string;
+  readonly size?: number;
 }): Promise<{ readonly url: string }> {
   const run = await sendChatRun(args.owner.actor, {
     agentId: args.owner.agentId,
@@ -305,7 +306,7 @@ async function createRunUploadedFile(args: {
   args.owner.objectStore.addObject({
     bucket: "test-user-artifacts",
     key: `artifacts/${args.owner.actor.userId}/${fileId}/${args.filename}`,
-    size: 1024,
+    size: args.size ?? 1024,
   });
   const completed = await chat.completeUploadWithBearer(
     bearer,
@@ -449,6 +450,33 @@ describe("video Artifact previews", () => {
     );
     expect(previewedArtifact?.thumbnail).toBeNull();
   }, 180_000);
+
+  it.each([104_857_600, 104_857_601])(
+    "skips the poster request for a %i-byte input the transformer rejects",
+    async (size) => {
+      const owner = await artifactActor(
+        `Artifacts API oversized ${size} preview agent`,
+      );
+      const frameRequests = mockCloudflareVideoFrame(owner.actor.userId);
+
+      await createRunUploadedFile({
+        owner,
+        prompt: "upload oversized footage",
+        filename: `oversized-${size}.mp4`,
+        contentType: "video/mp4",
+        size,
+      });
+      await flushWaitUntilForTest();
+
+      expect(frameRequests).toHaveLength(0);
+      const previewedArtifact = await findCatalogArtifact(
+        owner.actor,
+        `oversized-${size}.mp4`,
+      );
+      expect(previewedArtifact?.thumbnail).toBeNull();
+    },
+    180_000,
+  );
 
   it("reuses an existing write-once poster after a concurrent upload", async () => {
     const owner = await artifactActor(
