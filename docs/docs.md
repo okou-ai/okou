@@ -51,7 +51,7 @@ surface; the index does not replace their detailed rules.
 - [Dependency override audit](./dependency-overrides.md): retained dependency
   constraints, their origins, and evidence for removing obsolete overrides.
 - [Marketing privacy rollback](./marketing-privacy-choices.md): withdrawn runtime
-  behavior, retained database state, and rollout boundaries.
+  behavior, storage retirement, and rollout boundaries.
 - [Google Cloud LLM voice routing](./google-llm-voice.md): shared Vercel workload
   identities, API configuration, Oregon-first model routing, and rollout gates.
 - [Google Ads browser routing](./google-ads-browser-routing.md): verified account

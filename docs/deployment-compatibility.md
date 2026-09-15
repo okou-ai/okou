@@ -938,6 +938,27 @@ and App query opt-in remain #32575 work. E's privacy trigger is excluded, and
 the withdrawn feature remains withdrawn. See the
 [writer inventory, repair rules and migration receipts](database-trigger-retirement.md#a-d-contraction-migration-1132).
 
+### Withdrawn marketing privacy storage contraction (2026-09-15)
+
+Migration 1134 drops the three withdrawn privacy tables and their trigger/function
+under #33747. The old `user.deleted` cleanup still unconditionally names
+`privacy_choices`, so preparation #34296 must be released and its old writers
+drained before contraction can merge/release. The prepared cleanup handles all
+three relations present or absent under the shared advisory lock also taken
+exclusively by the migration. Current contraction code removes that temporary
+helper and schema dependency entirely.
+
+The rollback resolver derives the preparation's actual introduction from main's
+first-parent history of `marketing-privacy-cleanup.service.ts`, preserving that
+boundary after the file is deleted and across a squash merge. It rejects absent
+history and targets predating preparation before looking up artifacts. The retained target
+must also be a released READY artifact. This source guard does not prove the
+preparation has served; record the immutable production artifact and drained
+writers before merging/releasing contraction. See the
+[explicit release and rollback gates](marketing-privacy-choices.md#required-release-order-and-rollback-boundary).
+API rollback cannot recreate the retired rows. The withdrawn feature stays
+withdrawn, and #33275 owns any replacement privacy design.
+
 ### Workflow automation connector-account projections
 
 Connector-backed workflow event automations persist account authority in an

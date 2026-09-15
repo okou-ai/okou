@@ -393,6 +393,13 @@
       "when": 1789452513294,
       "tag": "1133_retire_image_references",
       "breakpoints": true
+    },
+    {
+      "idx": 1134,
+      "version": "7",
+      "when": 1789455362944,
+      "tag": "1134_retire_marketing_privacy_storage",
+      "breakpoints": true
     }
   ]
 }
