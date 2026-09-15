@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.194.0](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.193.0...runner-rs-v0.194.0) (2026-09-15)
+
+
+### Features
+
+* **runner:** carry ssh over native cloudflare access websockets ([#34235](https://github.com/vm0-ai/vm0/issues/34235)) ([d0e77ab](https://github.com/vm0-ai/vm0/commit/d0e77ab1325582bc095e6895f678cd7c99b0cf10))
+
 ## [0.193.0](https://github.com/vm0-ai/vm0/compare/runner-rs-v0.192.6...runner-rs-v0.193.0) (2026-09-15)
 
 

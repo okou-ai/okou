@@ -1,5 +1,26 @@
 # Changelog
 
+## [9.332.0](https://github.com/vm0-ai/vm0/compare/cli-v9.331.0...cli-v9.332.0) (2026-09-15)
+
+
+### Features
+
+* **runner:** carry ssh over native cloudflare access websockets ([#34235](https://github.com/vm0-ai/vm0/issues/34235)) ([d0e77ab](https://github.com/vm0-ai/vm0/commit/d0e77ab1325582bc095e6895f678cd7c99b0cf10))
+
+
+### Bug Fixes
+
+* align artifact viewer and shorten sharing urls ([#34249](https://github.com/vm0-ai/vm0/issues/34249)) ([f833361](https://github.com/vm0-ai/vm0/commit/f833361a484782b0d85ea6dd6d4929f0a6034d14))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.443.1
+    * @okouai/core bumped to 8.666.2
+    * @okouai/pi-agent-runtime bumped to 1.30.6
+
 ## [9.331.0](https://github.com/vm0-ai/vm0/compare/cli-v9.330.0...cli-v9.331.0) (2026-09-15)
 
 
