@@ -23,7 +23,7 @@ import {
 import { setupMorningBriefRealtime$ } from "./okou-page/settings/morning-brief-preference.ts";
 import { initializeUserTimezone$ } from "./okou-page/settings/user-preferences.ts";
 import type { SharedDatabaseBridge } from "../shared-database/bridge.ts";
-import { waitForOperation } from "./utils.ts";
+import { setDaemon, waitForOperation } from "./utils.ts";
 
 const runAppRealtimeDaemons$ = command(
   async (
@@ -36,15 +36,13 @@ const runAppRealtimeDaemons$ = command(
     if (!bridge) {
       return;
     }
-    await Promise.all([
-      set(subscribePermissionUpdate$, signal),
-      set(setupBillingRealtime$, signal),
-      set(setupUserPreferenceRealtime$, signal),
-      set(setupModelPolicyRealtime$, signal),
-      set(setupMorningBriefRealtime$, signal),
-      set(subscribeCustomConnectorListChanged$, signal),
-      set(subscribeSshChanged$, signal),
-    ]);
+    set(subscribePermissionUpdate$, signal);
+    set(setupBillingRealtime$, signal);
+    set(setupUserPreferenceRealtime$, signal);
+    set(setupModelPolicyRealtime$, signal);
+    set(setupMorningBriefRealtime$, signal);
+    set(subscribeCustomConnectorListChanged$, signal);
+    set(subscribeSshChanged$, signal);
   },
 );
 
@@ -90,20 +88,22 @@ const initializeAuthenticatedRealtime$ = command(
 );
 
 /** Run user-scoped application realtime services for the root lifecycle. */
-export const runAuthenticatedRealtime$ = command(
-  async ({ set }, signal: AbortSignal): Promise<void> => {
-    const initialization = set(initializeAuthenticatedRealtime$, signal);
-    // Install the catalog's operation before authentication or bridge setup can
-    // settle, so every startup failure reaches its consumers.
-    const templates = set(
-      subscribePresentationTemplatesChanged$,
-      initialization,
-      signal,
-    );
-    await Promise.all([
-      templates,
-      set(runAppRealtimeDaemons$, initialization, signal),
-    ]);
+export const setupAuthenticatedRealtime$ = command(
+  ({ set }, signal: AbortSignal): void => {
+    setDaemon(async (ownerSignal) => {
+      const initialization = set(initializeAuthenticatedRealtime$, ownerSignal);
+      // Claim the catalog's readiness before authentication or bridge setup can
+      // settle, so startup failures remain visible to its consumers.
+      const templates = set(
+        subscribePresentationTemplatesChanged$,
+        initialization,
+        ownerSignal,
+      );
+      await Promise.all([
+        templates,
+        set(runAppRealtimeDaemons$, initialization, ownerSignal),
+      ]);
+    }, signal);
   },
 );
 

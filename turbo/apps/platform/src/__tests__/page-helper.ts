@@ -224,7 +224,7 @@ async function setupPageAsync(
   options: SetupPageOptions,
   signal: AbortSignal,
   pageRendered: () => void,
-): Promise<void> {
+): Promise<StartedPage> {
   ensureTestLocalStorage();
   applyPageEnvironment(options.env, signal);
   await initializeI18nWithResources(
@@ -297,11 +297,8 @@ async function setupPageAsync(
     { once: true },
   );
 
-  // Not wrapped in act() — background polling loops would cause act() to
-  // hang indefinitely waiting for them to settle. React "not wrapped in
-  // act" warnings are suppressed in setup.ts.
   signal.throwIfAborted();
-  const runtime = store.set(
+  const ready = store.set(
     bootstrap$,
     options.appVersion ?? TEST_APP_VERSION,
     () => {
@@ -315,18 +312,7 @@ async function setupPageAsync(
     },
     signal,
   );
-  detach(
-    runtime.sharedDatabaseDaemon,
-    Reason.Daemon,
-    "test shared database daemon",
-  );
-  detach(
-    runtime.authenticatedRealtimeDaemon,
-    Reason.Daemon,
-    "test authenticated realtime daemon",
-  );
-  detach(runtime.clerkIdentityDaemon, Reason.Daemon, "test clerk identity");
-  detach(runtime.ready, Reason.Entrance, "test page readiness");
+  return { ready };
 }
 
 function waitForFirstPageContent(signal: AbortSignal): {
@@ -396,16 +382,33 @@ export async function startPage(
   const signal = AbortSignal.any([options.context.signal, rootSignal]);
   signal.throwIfAborted();
   const content = waitForFirstPageContent(signal);
-  await setupPageAsync(options, signal, content.pageRendered);
+  const startup = await setupPageAsync(options, signal, content.pageRendered);
+  const ready = waitForPageStartup(startup.ready, content.ready, signal);
+  // startPage deliberately returns while startup may still be blocked. Ordinary
+  // setupPage callers await the same finite operation directly below.
+  detach(ready, Reason.Entrance, "pending page startup");
+  return { ready };
+}
+
+async function waitForPageStartup(
+  startup: Promise<void>,
+  content: Promise<void>,
+  signal: AbortSignal,
+): Promise<void> {
+  await Promise.all([startup, content]);
   signal.throwIfAborted();
-  return { ready: content.ready };
 }
 
 export async function setupPage(options: SetupPageOptions): Promise<void> {
-  const signal = options.context.signal;
-  const page = await startPage(options);
-  await page.ready;
+  const rootSignal = window._okou?.rootSignal;
+  if (!rootSignal) {
+    throw new Error("Platform lifecycle was not initialized");
+  }
+  const signal = AbortSignal.any([options.context.signal, rootSignal]);
   signal.throwIfAborted();
+  const content = waitForFirstPageContent(signal);
+  const startup = await setupPageAsync(options, signal, content.pageRendered);
+  await waitForPageStartup(startup.ready, content.ready, signal);
 }
 
 // Helper to create a browser history mock that updates mockLocation.

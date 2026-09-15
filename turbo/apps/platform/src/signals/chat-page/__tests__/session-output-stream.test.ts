@@ -104,40 +104,37 @@ function channelOf(runId: string): string {
   return sessionOutputChannelName(USER_ID, ORG_ID, runId);
 }
 
-/**
- * Hand control back only after the observer has nothing left to do as a
- * microtask. The resubscription driver advances from a resolved notification
- * through synchronous continuations, so once the microtask queue is exhausted it
- * can only be parked on the macrotask the shared loop inserts between rounds.
- */
-async function settleIntoLoopYield(): Promise<void> {
-  for (let tick = 0; tick < 32; tick += 1) {
-    await Promise.resolve();
-  }
-}
-
-test("A run change arriving between loop rounds still moves the subscription", async () => {
+test("A run change during channel attachment keeps only the latest run subscribed", async () => {
   await setupStreamingViewer();
-  const events$ = state<ChatEvent[]>([]);
+  const events$ = state<ChatEvent[]>([promptEvent(FIRST_RUN_ID, 1)]);
   const chatEvents$ = computed((get) => {
     return get(events$);
   });
   const signals = createSessionOutputStreamSignals(THREAD_ID, chatEvents$);
   const resetViewer$ = resetSignal();
   const viewerSignal = context.store.set(resetViewer$, context.signal);
-  const subscription = context.store.set(signals.subscribe$, viewerSignal);
-  // The first round sees no live run, so waking it tears down no transport and
-  // the observer reaches the loop's own yield without any macrotask of its own.
-  context.store.set(events$, [promptEvent(FIRST_RUN_ID, 1)]);
-  await context.store.set(notifyChatEventsChanged$, chatEvents$, viewerSignal);
-  await settleIntoLoopYield();
-  // The first run is armed but its subscription has not started yet.
+  const attaching = context.mocks.ably.deferSubscribeOnChannel(
+    channelOf(FIRST_RUN_ID),
+    FIRST_RUN_ID,
+  );
+  context.store.set(signals.subscribe$, viewerSignal);
+  await attaching.started;
+
   context.store.set(events$, [
     promptEvent(FIRST_RUN_ID, 1),
     completedEvent(FIRST_RUN_ID, 2),
     promptEvent(SECOND_RUN_ID, 3),
   ]);
-  await context.store.set(notifyChatEventsChanged$, chatEvents$, viewerSignal);
+  const resetNotifier$ = resetSignal();
+  const notifierSignal = context.store.set(resetNotifier$, context.signal);
+  await context.store.set(
+    notifyChatEventsChanged$,
+    chatEvents$,
+    notifierSignal,
+  );
+  // Finishing a change notification must not cancel the route's new subscription.
+  context.store.set(resetNotifier$);
+  attaching.attach();
   await waitFor(() => {
     expect(
       context.mocks.ably.hasSubscriptionOnChannel(
@@ -153,5 +150,12 @@ test("A run change arriving between loop rounds still moves the subscription", a
     ),
   ).toBeFalsy();
   context.store.set(resetViewer$);
-  await expect(subscription).rejects.toThrow(DOMException);
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(
+        channelOf(SECOND_RUN_ID),
+        SECOND_RUN_ID,
+      ),
+    ).toBeFalsy();
+  });
 });

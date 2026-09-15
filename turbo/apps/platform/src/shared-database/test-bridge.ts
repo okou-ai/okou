@@ -15,13 +15,7 @@ import {
   setSharedDatabaseBridgeHostForTest$,
   type SharedDatabaseBridgeHost,
 } from "../signals/shared-database-browser.ts";
-import {
-  createDeferredPromise,
-  detach,
-  onDomEventFn,
-  Reason,
-  waitForOperation,
-} from "../signals/utils.ts";
+import { onDomEventFn, waitForOperation } from "../signals/utils.ts";
 import type {
   SharedDatabaseBridge,
   SharedDatabaseBridgeEvents,
@@ -106,12 +100,12 @@ interface DirectSharedDatabaseBridgeOptions {
   readonly identity: SharedDatabaseIdentity;
 }
 
-const holdHeartbeatLoop: SharedDatabaseHeartbeatLoop = async (
+const holdHeartbeatLoop: SharedDatabaseHeartbeatLoop = (
   heartbeat,
   signal,
-): Promise<void> => {
+): void => {
+  signal.throwIfAborted();
   heartbeat();
-  await createDeferredPromise<void>(signal).promise;
 };
 
 function directRealtimeChannelName(
@@ -265,10 +259,7 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
       },
       { once: true },
     );
-    const daemon = this.workerStore.set(startSharedDatabaseWorkerDaemons$);
-    if (daemon) {
-      detach(daemon, Reason.Daemon, "test shared database Worker");
-    }
+    this.workerStore.set(startSharedDatabaseWorkerDaemons$);
     return Promise.resolve();
   }
 

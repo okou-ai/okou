@@ -222,7 +222,7 @@ test("A Clerk core failure offers a visible refresh without an automatic retry",
   });
 
   const alert = await screen.findByRole("alert");
-  await page.ready;
+  await expect(page.ready).rejects.toBe(failure);
   expect(alert).toHaveTextContent("Oops! Something went sideways");
   expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
   expect(screen.queryByTestId("app-skeleton")).not.toBeInTheDocument();

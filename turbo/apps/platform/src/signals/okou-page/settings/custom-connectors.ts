@@ -25,7 +25,7 @@ import { apiClient$ } from "../../api-client.ts";
 import { agents$ } from "../../agent.ts";
 import { searchParams$, updateSearchParams$ } from "../../route.ts";
 import { setAblyLoop$ } from "../../realtime.ts";
-import { setLoop, withCleanup } from "../../utils.ts";
+import { waitLoopUntil, withCleanup } from "../../utils.ts";
 import type { PlatformConnectorAccountMutationIntent } from "../../connector-domain.ts";
 import {
   readConnectorAccountCount,
@@ -196,8 +196,8 @@ const reloadCustomConnectorsFromRealtime$ = command(({ set }) => {
 });
 
 export const subscribeCustomConnectorListChanged$ = command(
-  async ({ set }, signal: AbortSignal) => {
-    await set(
+  ({ set }, signal: AbortSignal) => {
+    set(
       setAblyLoop$,
       {
         topic: "customConnectorListChanged",
@@ -606,7 +606,7 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
         connectionId: startResult.connectedAccountId,
       };
     }
-    await setLoop(
+    await waitLoopUntil(
       () => {
         return authWindow.closed;
       },

@@ -13,7 +13,7 @@ import {
 import {
   createChildAbortController,
   resetSignal,
-  setLoop,
+  waitLoopUntil,
   withCleanup,
 } from "../utils.ts";
 import {
@@ -99,7 +99,7 @@ const confirmRecovery$ = command(
     // At most 10 serial GETs, 2s after each completed pending read, and a 30s
     // total deadline including hung requests. No transport or OAuth retries.
     await withCleanup(
-      setLoop(
+      waitLoopUntil(
         async () => {
           if (now() >= deadline || attempts >= 10) {
             return true;

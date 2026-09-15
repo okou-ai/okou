@@ -460,7 +460,7 @@ export const startFeishuSettingsRealtime$ = command(
     signal.throwIfAborted();
     set(internalInstallations$, current);
 
-    await set(
+    set(
       setAblyLoop$,
       {
         topic: "feishu:changed",

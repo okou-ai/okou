@@ -68,19 +68,21 @@ export function createSessionOutputStreamSignals(
     },
   );
   const streamRunOutput$ = command(
-    async ({ set }, runId: string, signal: AbortSignal): Promise<void> => {
-      const [result] = await Promise.allSettled([
-        set(
-          setAblyPayloadLoop$,
-          { scope: "run-output", topic: runId, loopCommand$: receive$ },
-          signal,
-        ),
-      ]);
-      // A reset ends the round; only a transport failure is worth reporting.
-      signal.throwIfAborted();
-      if (result.status === "rejected") {
-        L.warn("Session output subscription failed", result.reason);
-      }
+    ({ set }, runId: string, signal: AbortSignal): void => {
+      set(
+        setAblyPayloadLoop$,
+        {
+          scope: "run-output",
+          topic: runId,
+          loopCommand$: receive$,
+          options: {
+            onError: (error) => {
+              L.warn("Session output subscription failed", error);
+            },
+          },
+        },
+        signal,
+      );
     },
   );
   const stream = createActiveRunSubscription(
@@ -88,19 +90,11 @@ export function createSessionOutputStreamSignals(
     activeRunId$,
     streamRunOutput$,
   );
-  const subscribe$ = command(
-    async ({ set }, signal: AbortSignal): Promise<void> => {
-      signal.throwIfAborted();
-      // A switch change moves the demand without producing a chat event.
-      set(
-        registerFeatureSwitchListener$,
-        () => {
-          set(stream.reconcile$);
-        },
-        signal,
-      );
-      await set(stream.subscribe$, signal);
-    },
-  );
+  const subscribe$ = command(({ set }, signal: AbortSignal): void => {
+    signal.throwIfAborted();
+    const reconcile = set(stream.subscribe$, signal);
+    // A switch change moves the demand without producing a chat event.
+    set(registerFeatureSwitchListener$, reconcile, signal);
+  });
   return { subscribe$ };
 }

@@ -2722,8 +2722,8 @@ interface RunTrackingDeps {
   setupChatEvents$: Command<Promise<void>, [AbortSignal]>;
   catchUpChatEvents$: Command<Promise<void>, [AbortSignal]>;
   reloadArtifacts$: Command<void, []>;
-  subscribeBrowserSessions$: Command<Promise<void>, [AbortSignal]>;
-  subscribeSessionOutput$: Command<Promise<void>, [AbortSignal]>;
+  subscribeBrowserSessions$: Command<void, [AbortSignal]>;
+  subscribeSessionOutput$: Command<void, [AbortSignal]>;
   subscribeThinkingSummaries$: ThreadActivitySummarySignals["subscribe$"];
   automationSignals: Pick<ChatPanelSignals, "headerAutomations">;
   cancellationRecovery: ReturnType<typeof createCancellationRecoverySignals>;

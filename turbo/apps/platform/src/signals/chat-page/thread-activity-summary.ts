@@ -37,9 +37,9 @@ function createThinkingSummaryDemand(
   // demand. The guard keeps a thread that is no longer current from reloading
   // before its own subscription is torn down.
   const refreshRunSummary$ = command(
-    async ({ get, set }, runId: string, signal: AbortSignal): Promise<void> => {
+    ({ get, set }, runId: string, signal: AbortSignal): void => {
       set(readyRunId$, null);
-      await setLoop(
+      setLoop(
         () => {
           if (get(currentActiveRunId$) !== runId) {
             return false;
