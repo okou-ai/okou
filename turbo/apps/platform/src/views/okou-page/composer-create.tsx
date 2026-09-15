@@ -71,9 +71,23 @@ const TASK_ICONS = {
  * already the widest row, and Creative Video adds a ratio/resolution/duration
  * group at 760px, so the label drops out below that width the same way the
  * model picker drops its own below 600px.
+ *
+ * `leading-5` pairs the line height with the arbitrary font size: `text-[13px]`
+ * emits `font-size` alone and would otherwise inherit whatever the ancestor row
+ * happens to set.
  */
-const MODE_CONTROL_NARROW = "@max-[760px]/composer:px-2";
+const MODE_CONTROL_SHAPE =
+  "h-8 min-w-0 gap-2 px-2.5 text-[13px] leading-5 font-normal @max-[760px]/composer:px-2";
 const MODE_CONTROL_LABEL = "@max-[760px]/composer:hidden";
+
+/**
+ * Both type controls are `neutral`, whose fill is opaque, so focus has to be an
+ * overlay: a translucent `bg-state-*` sets `background-color` and would replace
+ * `bg-control-surface` outright. The picker options are `quiet` and keep
+ * `CREATE_CONTROL_FOCUS`.
+ */
+const MODE_CONTROL_FOCUS =
+  "focus-visible:bg-state-hover-overlay focus-visible:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0";
 
 export function ComposerSelectedTask({
   signals,
@@ -104,9 +118,9 @@ export function ComposerSelectedTask({
       type="button"
       variant="neutral"
       className={cn(
-        "group h-8 max-w-full shrink-0 gap-2 px-2.5 text-[13px] font-normal",
-        MODE_CONTROL_NARROW,
-        CREATE_CONTROL_FOCUS,
+        "group max-w-full shrink-0",
+        MODE_CONTROL_SHAPE,
+        MODE_CONTROL_FOCUS,
       )}
       aria-label={t(
         ($) => {
@@ -231,9 +245,8 @@ export function ComposerCreateControls({
         className={cn(
           // The same shape as the selected-task chip: these are one control
           // under two switches, and they now sit in the same row.
-          "min-w-0 gap-2 px-2.5 text-[13px] font-normal",
-          MODE_CONTROL_NARROW,
-          CREATE_CONTROL_FOCUS,
+          MODE_CONTROL_SHAPE,
+          MODE_CONTROL_FOCUS,
         )}
         onClick={() => {
           setPickerOpen(!pickerOpen);
