@@ -73,6 +73,7 @@ import {
   setupOnboardingWorkflowRunPage$,
 } from "./onboarding/onboarding-page-setup.ts";
 import { setupIdeationPage$ } from "./okou-page/ideation-page-setup.ts";
+import { runOnboardingImpact$ } from "./onboarding/onboarding-impact.ts";
 import { setupConnectorsPage$ } from "./connectors-page/connectors-page-setup.ts";
 import { setupComputerUseAuthorizationPage$ } from "./computer-use-authorization/computer-use-authorization-page-setup.ts";
 import { setupBrowserAuthorizationPage$ } from "./browser-authorization/browser-authorization-page-setup.ts";
@@ -608,6 +609,7 @@ const completeBootstrap$ = command(
 );
 
 interface BootstrapRuntime {
+  readonly onboardingAttribution: Promise<void>;
   readonly authenticatedRealtimeDaemon: Promise<void>;
   readonly clerkIdentityDaemon: Promise<void>;
   readonly ready: Promise<void>;
@@ -663,9 +665,13 @@ export const bootstrap$ = command(
     const authenticatedRealtimeDaemon = isDesktopAuthFlow()
       ? Promise.resolve()
       : set(runAuthenticatedRealtime$, signal);
+    const onboardingAttribution = isDesktopAuthFlow()
+      ? Promise.resolve()
+      : set(runOnboardingImpact$, signal);
     const ready = set(completeBootstrap$, render, signal);
 
     return {
+      onboardingAttribution,
       authenticatedRealtimeDaemon,
       clerkIdentityDaemon,
       ready,

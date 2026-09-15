@@ -17,16 +17,34 @@ historical billing data.
 Marketing captures `im_ref` only after initialized Termly advertising consent.
 The host-only `__Host-okou_impact_v2` cookie carries the click ID, capture time and
 consent epoch. Marketing-to-App links no longer carry Impact query parameters.
-The App mounts `https://www.okou.ai/finish-onboarding` for authenticated users,
-including onboarding and returning subscribers.
+The App sends one empty `POST https://www.okou.ai/api/marketing/impact/onboarding`
+when an authenticated user enters onboarding. The browser includes cookies;
+there is no iframe, `postMessage`, identity-proof fetch, or Termly initialization
+in this flow. The root owns the bounded request independently of route readiness,
+so changing onboarding steps does not cancel it or wait for its response.
 
-The session-only `/api/attribution/impact/handoff` endpoint signs a 120-second
-identity proof containing authenticated user/org, admin authority, exact origins,
-a nonce and expiry. The App passes it with `postMessage`; Marketing reads its
-own cookies and associates them with that identity. The App receives only an
-acknowledgment. There is no attribution lookup or billing-attribution sync API.
-Both windows check the exact origin/source and nonce. The iframe lifetime ends
-on unmount/account change, and retries do not block navigation or checkout.
+The App records an attempt in browser local storage per user/organization before
+sending. Reloads and later visits in that browser do not retry it, including
+network/HTTP failures. Other browsers or cleared storage can submit again; the
+Marketing write is idempotent. Already-onboarded users do not submit, and missing
+or invalid attribution/consent is skipped rather than waiting for new consent.
+
+Marketing verifies the shared Clerk session cookie, including signature, expiry,
+App authorized party, user identity and active admin organization. It reads its
+own host-only click and consent cookies and retains server-side withdrawal and
+account-binding checks. The endpoint accepts only the configured App Origin,
+uses credentialed CORS and `Cache-Control: no-store`, and returns an empty `204`
+for completed or skipped captures. GET does not write. No attribution data is
+returned to the App or its API.
+
+### Rollout compatibility
+
+Deploy the Marketing cookie endpoint before the App change. The old App/API
+`/api/attribution/impact/handoff` signer and Marketing `/finish-onboarding` and
+signed `/api/marketing/impact/handoff` endpoints remain for already-open App
+bundles and supported rollback versions. Those old clients retain their existing
+Termly/iframe behavior; new clients never use it. Remove the old protocol only
+after an App version floor excludes its callers and rollback no longer needs it.
 
 ## Payment correlation
 
@@ -46,7 +64,7 @@ its creation time; renewals use their own invoice creation time.
 This timestamp contains no referral information.
 
 Marketing immediately freezes and submits an eligible consented capture available
-at the first payment webhook. Orders awaiting an eligible iframe association get
+at the first payment webhook. Orders awaiting an eligible identity association get
 a 10-minute window and return `503 pending_identity` with `Retry-After: 600`.
 Stripe owns redelivery; a retry can submit as soon as eligible attribution arrives.
 The user's payment never waits. After the window expires, Marketing freezes an
@@ -62,9 +80,10 @@ Refunds may correct known submissions after withdrawal, but never create a sale.
 
 ## Configuration
 
-The hidden bridge loads for every authenticated user with an organization.
-Marketing attribution is permanent behavior, with no App or server rollout switch.
-The API requires:
+The onboarding request has no rollout switch. Marketing uses its existing
+`CLERK_SECRET_KEY`, attribution database and `IMPACT_APP_ORIGIN` configuration.
+The production Clerk primary is `app.okou.ai`, with a session shared across
+Okou subdomains. The legacy App API signer still requires:
 
 - `MARKETING_ATTRIBUTION_SECRET`: the same random secret of at least 32 bytes in
   the Marketing Worker, used only to sign/verify identity proofs.

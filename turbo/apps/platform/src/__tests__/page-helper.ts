@@ -326,6 +326,11 @@ async function setupPageAsync(
     "test authenticated realtime daemon",
   );
   detach(runtime.clerkIdentityDaemon, Reason.Daemon, "test clerk identity");
+  detach(
+    runtime.onboardingAttribution,
+    Reason.Entrance,
+    "test onboarding attribution",
+  );
   detach(runtime.ready, Reason.Entrance, "test page readiness");
 }
 

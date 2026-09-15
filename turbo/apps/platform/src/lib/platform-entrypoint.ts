@@ -62,6 +62,11 @@ function startApplication(rootSignal: AbortSignal): void {
       "app realtime subscriptions",
     );
     detach(runtime.clerkIdentityDaemon, Reason.Daemon, "clerk identity");
+    detach(
+      runtime.onboardingAttribution,
+      Reason.Entrance,
+      "onboarding attribution",
+    );
     await runtime.ready;
   }
 

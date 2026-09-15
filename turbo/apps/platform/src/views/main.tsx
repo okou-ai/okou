@@ -1,4 +1,3 @@
-import { ImpactMarketingFrame } from "./components/impact-marketing-frame.tsx";
 import { StrictMode } from "react";
 import type { Store } from "ccstate";
 import { StoreProvider, useGet, useSet } from "ccstate-react";
@@ -82,7 +81,6 @@ export const setupRouter = (
           <ClerkOptionsProvider>
             <Router />
           </ClerkOptionsProvider>
-          <ImpactMarketingFrame />
           <InspectLogFileInput />
           <ForceUpgradeDialog />
           <InstatusStatusNotice />
