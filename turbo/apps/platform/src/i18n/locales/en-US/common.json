@@ -1928,10 +1928,8 @@
         "changeAvatar": "Change avatar",
         "chooseStyle": "Choose a style",
         "chooseStyleAndVoice": "Choose a style and a voice.",
-        "noMatches": "No matches found. Try a different search or category.",
+        "noMatches": "No matches found. Try a different category.",
         "ready": "Ready to use. Add your content in the chat.",
-        "searchAvatars": "Search avatars",
-        "searchStyles": "Search styles",
         "settings": "Intro video settings",
         "style": "Style",
         "useSelection": "Use selection"

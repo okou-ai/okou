@@ -1965,10 +1965,8 @@
         "changeAvatar": "Changer d’avatar",
         "chooseStyle": "Choisir un style",
         "chooseStyleAndVoice": "Choisissez un style et une voix.",
-        "noMatches": "Aucun résultat. Essayez une autre recherche ou catégorie.",
+        "noMatches": "Aucun résultat. Essayez une autre catégorie.",
         "ready": "Prêt à utiliser. Ajoutez votre contenu dans le chat.",
-        "searchAvatars": "Rechercher des avatars",
-        "searchStyles": "Rechercher des styles",
         "settings": "Paramètres de la vidéo d’intro",
         "style": "Style",
         "useSelection": "Utiliser la sélection"

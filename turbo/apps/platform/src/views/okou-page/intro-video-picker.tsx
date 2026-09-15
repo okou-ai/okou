@@ -1,12 +1,11 @@
 import type { ReactNode } from "react";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
-import { Button, Input, Skeleton, cn } from "@okouai/ui";
+import { Button, Skeleton, cn } from "@okouai/ui";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import {
   ArrowRight,
   Check,
   LayoutTemplate,
-  Search,
   UserRound,
   UserRoundX,
   Volume2,
@@ -122,32 +121,6 @@ function PickerSkeleton() {
       {Array.from({ length: 6 }, (_, index) => {
         return <Skeleton key={index} className="aspect-video rounded-xl" />;
       })}
-    </div>
-  );
-}
-
-function PickerSearch({
-  signals,
-  label,
-}: PickerProps & { readonly label: string }) {
-  const search = useGet(signals.search$);
-  const setSearch = useSet(signals.setSearch$);
-  return (
-    <div className="relative w-40 min-w-0 sm:w-48">
-      <Search
-        size={14}
-        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-      />
-      <Input
-        type="search"
-        aria-label={label}
-        placeholder={label}
-        value={search}
-        onChange={(event) => {
-          setSearch(event.target.value);
-        }}
-        className="h-8 pl-9 text-xs placeholder:text-xs"
-      />
     </div>
   );
 }
@@ -323,18 +296,16 @@ function StylePicker({ signals }: PickerProps) {
   const style = useGet(signals.style$);
   const setStyle = useSet(signals.setStyle$);
   const group = useGet(signals.group$);
-  const search = useGet(signals.search$).trim().toLocaleLowerCase();
   const items =
     catalog.state === "hasData"
       ? catalog.data.filter((item) => {
           return (
-            (group === "all" ||
-              (group === "other"
-                ? !INTRO_VIDEO_STYLE_TAGS.some((tag) => {
-                    return item.tags.includes(tag);
-                  })
-                : item.tags.includes(group))) &&
-            item.name.toLocaleLowerCase().includes(search)
+            group === "all" ||
+            (group === "other"
+              ? !INTRO_VIDEO_STYLE_TAGS.some((tag) => {
+                  return item.tags.includes(tag);
+                })
+              : item.tags.includes(group))
           );
         })
       : [];
@@ -347,29 +318,19 @@ function StylePicker({ signals }: PickerProps) {
     });
   return (
     <>
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6">
-        <div className="flex min-w-0 items-center gap-2">
-          <h3 className="text-xs font-medium">
-            {t(($) => {
-              return $.chat.introVideo.picker.chooseStyle;
-            })}
-          </h3>
-          {catalog.state === "hasData" && (
-            <span className="text-xs text-muted-foreground">
-              {items.length}
-            </span>
-          )}
-        </div>
-        <PickerSearch
-          signals={signals}
-          label={t(($) => {
-            return $.chat.introVideo.picker.searchStyles;
+      <div className="flex min-w-0 shrink-0 items-center gap-2 px-4 py-3 sm:px-6">
+        <h3 className="text-xs font-medium">
+          {t(($) => {
+            return $.chat.introVideo.picker.chooseStyle;
           })}
-        />
+        </h3>
+        {catalog.state === "hasData" && (
+          <span className="text-xs text-muted-foreground">{items.length}</span>
+        )}
       </div>
       <StyleTags signals={signals} hasOther={hasOther} />
       <div
-        key={`${group}:${search}`}
+        key={group}
         ref={setGalleryRef}
         data-intro-video-catalog-scroll=""
         className="min-h-0 flex-1 overflow-y-auto px-4 pb-5 sm:px-6"
@@ -407,7 +368,6 @@ function AvatarPicker({ signals }: PickerProps) {
   const { t } = useTranslation();
   const selection = useGet(signals.avatar$);
   const setSelection = useSet(signals.setAvatar$);
-  const search = useGet(signals.search$).trim().toLocaleLowerCase();
   const catalog = useLoadable(introVideoAvatarPickerSignals.catalogPage$);
   const lastCatalog = useLastResolved(
     introVideoAvatarPickerSignals.catalogPage$,
@@ -424,14 +384,10 @@ function AvatarPicker({ signals }: PickerProps) {
       : lastCatalog?.generation === generation
         ? lastCatalog
         : undefined;
-  const groups = visible
-    ? groupIntroVideoAvatars(visible.items).filter((group) => {
-        return group.name.toLocaleLowerCase().includes(search);
-      })
-    : [];
+  const groups = visible ? groupIntroVideoAvatars(visible.items) : [];
   return (
     <>
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-6">
+      <div className="flex shrink-0 items-center gap-2 px-4 py-3 sm:px-6">
         <h3 className="sr-only">
           {t(($) => {
             return $.chat.introVideo.avatar.heading;
@@ -455,12 +411,6 @@ function AvatarPicker({ signals }: PickerProps) {
             return $.chat.introVideo.avatar.none;
           })}
         </Button>
-        <PickerSearch
-          signals={signals}
-          label={t(($) => {
-            return $.chat.introVideo.picker.searchAvatars;
-          })}
-        />
       </div>
       <div
         data-intro-video-catalog-scroll=""

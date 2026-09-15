@@ -12,7 +12,6 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
   click,
-  fill,
   queryAllByRoleFast,
   setupPage,
   startPage,
@@ -168,10 +167,11 @@ test.each([
   expect(control("Intro video", dialog, "tab")).toBeVisible();
 });
 
-test("Expanded style tags combine with search and preserve the selected style", async () => {
+test("Expanded style tags filter the gallery and preserve the selected style", async () => {
   installCatalogs();
   const { dialog } = await openIntroVideo();
   expect(control("Use selection", dialog)).toBeDisabled();
+  expect(within(dialog).queryByLabelText("Search styles")).toBeNull();
   const tags = within(dialog).getByRole("group", { name: "Browse by style" });
   expect(queryAllByRoleFast("button", tags)).toHaveLength(6);
   click(control("Select style Minimalism", dialog));
@@ -183,12 +183,11 @@ test("Expanded style tags combine with search and preserve the selected style", 
   expect(within(dialog).getByText("Watercolor")).toBeVisible();
   expect(within(dialog).queryByLabelText("Select style Minimalism")).toBeNull();
   expect(control("Style", dialog, "tab")).toHaveTextContent("Minimalism");
-  await fill(within(dialog).getByLabelText("Search styles"), "no match");
+  click(control("Pop culture", tags));
   expect(within(dialog).getByRole("status")).toHaveTextContent(
     "No matches found",
   );
-  await fill(within(dialog).getByLabelText("Search styles"), "");
-  click(control("Handmade and materials", tags));
+  click(control("Pop culture", tags));
   expect(control("Handmade and materials", tags)).toHaveAttribute(
     "aria-pressed",
     "false",
@@ -205,6 +204,7 @@ test("Avatar looks require Use, and explicit voice choices survive removing the 
   click(control("Select style Minimalism", dialog));
   click(control("Avatar", dialog, "tab"));
   await within(dialog).findByText("Daphne");
+  expect(within(dialog).queryByLabelText("Search avatars")).toBeNull();
   expect(control("Avatar", dialog, "tab")).toHaveTextContent("No avatar");
   click(control("Preview look Daphne in Blue shirt", dialog));
   expect(control("Avatar", dialog, "tab")).toHaveTextContent("No avatar");

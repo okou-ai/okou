@@ -1920,10 +1920,8 @@
         "changeAvatar": "アバターを変更",
         "chooseStyle": "スタイルを選択",
         "chooseStyleAndVoice": "スタイルと音声を選択してください。",
-        "noMatches": "見つかりませんでした。検索条件やカテゴリを変更してください。",
+        "noMatches": "見つかりませんでした。別のカテゴリを選んでください。",
         "ready": "準備ができました。チャットにコンテンツを追加してください。",
-        "searchAvatars": "アバターを検索",
-        "searchStyles": "スタイルを検索",
         "settings": "イントロ動画の設定",
         "style": "スタイル",
         "useSelection": "この設定を使用"
