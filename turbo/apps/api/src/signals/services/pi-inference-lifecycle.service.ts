@@ -413,7 +413,7 @@ export async function assertPiInferenceErasureReady(
     )
     .where(
       and(
-        inArray(agentRunInference.runId, runIds),
+        eq(agentRunInference.runId, sql`ANY(${sql.param(runIds)}::uuid[])`),
         or(
           ne(agentRunSandboxLease.state, "released"),
           and(
