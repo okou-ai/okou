@@ -2,7 +2,7 @@ import { command } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { clerk$, clerkUser$, setupClerk$ } from "./auth.ts";
 import { setAuthenticatedIdentity$ } from "./auth-context.ts";
-import { subscribeEventDrivenChatThreads$ } from "./chat-page/chat-thread-event-sourcing.ts";
+import { initializeChatThreadEventSource$ } from "./chat-page/chat-thread-event-sourcing.ts";
 import { setupUserPreferenceRealtime$ } from "./external/user-model-preference.ts";
 import { setupModelPolicyRealtime$ } from "./external/model-policy-realtime.ts";
 import { subscribePermissionUpdate$ } from "./permission-allow/permission-allow-signals.ts";
@@ -120,7 +120,7 @@ export const setupAuthenticatedBootstrapData$ = command(
     await get(bridgeConnected$);
     signal.throwIfAborted();
     await Promise.all([
-      set(subscribeEventDrivenChatThreads$, signal),
+      set(initializeChatThreadEventSource$, signal),
       set(initializeUserTimezone$, signal),
     ]);
   },
