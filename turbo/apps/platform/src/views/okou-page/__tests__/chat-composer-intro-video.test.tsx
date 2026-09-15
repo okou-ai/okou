@@ -364,7 +364,7 @@ test("Switching settings with the keyboard preserves the selection", async () =>
   );
 });
 
-test("Desktop recording handoff keeps both uploaded files with the intro video selection", async () => {
+test("Desktop recording handoff keeps both uploaded files without opening the template picker", async () => {
   const capture = installCatalogs();
   context.mocks.api(webFilesContract.fileUrl, ({ query, respond }) => {
     return respond(200, {
@@ -387,15 +387,13 @@ test("Desktop recording handoff keeps both uploaded files with the intro video s
     path: `/agents/${AGENT_ID}/chat?${params.toString()}`,
     featureSwitches: { [FeatureSwitchKey.IntroVideo]: true },
   });
-  const dialog = await screen.findByRole("dialog");
-  await within(dialog).findByText("Minimalism");
-  click(control("Select style Minimalism", dialog));
-  click(control("Voice", dialog, "tab"));
-  click(within(dialog).getByText("No voiceover"));
-  click(control("Use selection", dialog));
-  await expectInlineTemplate("Intro video");
-  const message = screen.getByRole("textbox", { name: "Message" });
-  expect(message).toHaveTextContent("desktop screen recording");
+  const message = await screen.findByRole("textbox", { name: "Message" });
+  await waitFor(() => {
+    expect(message).toHaveTextContent("desktop screen recording");
+  });
+  // The recording arrives as a plain attachment, so the composer stays in the
+  // user's hands instead of forcing the intro video template picker open.
+  expect(screen.queryByRole("dialog")).toBeNull();
   await waitFor(() => {
     expect(control("Send")).toBeEnabled();
   });
@@ -421,6 +419,7 @@ test("Desktop recording handoff keeps both uploaded files with the intro video s
       return part.type === "file";
     }),
   ).toHaveLength(2);
+  expect(capture.selectedTemplates).toStrictEqual([]);
 });
 
 test("A saved intro video draft cannot send outside the rollout and remains editable", async () => {
