@@ -149,13 +149,31 @@ keys or automatically grant access. Browser notifications are separate from
 Runner authority invalidation and do not tighten
 the accepted Run-lifetime cache window.
 
-## Cloudflare Access backend preparation
+## Cloudflare Access for SSH
 
 The backend foundation (#34077, parent #31996) adds reusable, user-owned Service
 Token configurations as SSH connection settings, independently of SSH login
 credentials. It remains default-off
-behind `cloudflareAccess` and requires `sshAccess`; no new management UI or
-working Access transport is delivered by this slice.
+behind `cloudflareAccess` and requires `sshAccess`. #34080 adds the native Runner
+carrier; the management UI and complete real-Run acceptance remain #34081.
+Neither merged code nor local tests establish real-provider acceptance or enable rollout.
+
+The carrier uses a customer-managed published SSH hostname on WSS/443 and a
+Service Token allowed by the application's **Service Auth** policy. The token's
+Client ID and Client Secret authenticate the gateway handshake; they are not SSH
+login credentials, Cloudflare management API tokens or Tunnel installation tokens.
+The origin SSH address/port belongs in Cloudflare. Okou does not install a Tunnel,
+start a client-side cloudflared process or join the customer's private network.
+The Runner uses verified TLS and then independently verifies the SSH host key
+before key/password login. Rejected Access connections never retry as Direct.
+
+Existing CLI commands use the saved connection ID with no proxy/token options.
+For a protected host, the hostname and port in `okou ssh host list` identify the
+gateway, not the origin SSH port. Exec, Sessions and SFTP share this transport and
+retain their existing limits. Ask the owner to inspect `/connectors/ssh` diagnostics
+when connection setup fails. An Access rejection can mean policy or token scope,
+not necessarily an expired token; gateway TLS/protocol failures remain distinct
+from SSH authentication and host-key failures.
 
 The canonical `/api/ssh/cloudflare-access/configs` endpoints create, list, rename,
 replace credentials and delete configurations. Client ID and

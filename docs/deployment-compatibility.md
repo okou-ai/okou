@@ -78,6 +78,41 @@ after a backend deployment. When changing an API used by the frontend, keep the
 old request shape working until old browser clients can no longer reasonably be
 active, or introduce a versioned/new endpoint and migrate the frontend first.
 
+#### Artifact share names and short references
+
+Share status adds optional `shortUrl`; `url` continues returning the legacy
+32-character organization reference for already-open App bundles. New Apps
+prefer `shortUrl` and fall back to `url` when talking to an older API. An explicit
+share action allocates the new alias when a current API reports `shortUrl: null`;
+opening the menu does not mutate a share. Both organization reference formats
+resolve through the same membership and policy checks.
+
+The R2 policy fields `organizationReference` and `publicSlug` are optional, so
+old policies remain readable. The immutable reference index and public alias
+registry survive an older writer dropping those optional fields. Current APIs
+reuse the same organization index and retain the legacy public-token registry
+entry. Named public sites use the existing generic Worker publication reader;
+they require no database migration or new Worker routing format. Current APIs
+must serve short-reference resolution before Apps begin copying those links.
+Rolling the API back removes short-reference support until it is restored;
+existing legacy organization URLs remain available in the `url` response.
+
+The compatibility scope preserves the explicitly requested existing links;
+`privateArtifacts` being non-GA does not independently require a rollback bridge.
+Issue [#32492](https://github.com/vm0-ai/vm0/issues/32492) owns later retirement:
+the optional response reader can be removed once older APIs leave serving and
+supported rollback targets. The legacy organization `url` projection can be
+removed only after the short-reference App is live and an App minimum version
+excludes earlier bundles. Open pages have no passive expiry. Neither gate is
+closed in this PR. Durable-link readers and aliases remain until a separate
+retirement decision accounts for the stored references; a deployment or App
+floor alone cannot invalidate links already copied by users.
+
+The iframe loading correction spans the App's explicit first-party iframe
+referrer policy and the host Worker's same-origin resource policy. Both must be
+deployed to verify full HTML resource loading against the hosted-domain WAF.
+The viewer and sharing use the existing `privateArtifacts` rollout switch.
+
 #### Connector App retirement
 
 The first singleton-free connector App release is `0.843.1`, built from
@@ -1127,21 +1162,61 @@ The Access feature switch controls rollout; it does not add an Agent permission.
 Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
 
-| State                                                                 | Required behavior                                                                      |
-| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Existing Direct data after the additive migration                     | Hosts, credentials, pins, grants and observations remain unchanged; bindings are null. |
-| Current API and S1 Runner with protected handoff                      | Runner returns unavailable without dialing Direct SSH or forwarding the token.         |
-| Current API with an unauthorized protected host or Access feature off | Private authority is unavailable; guest inventory omits that host.                     |
-| Pre-Access API with protected rows                                    | Forbidden: the old reader can interpret the row as Direct.                             |
-| Protected writes before the native carrier and real-Run acceptance    | Forbidden outside controlled local tests.                                              |
+| State                                                                 | Required behavior                                                                                      |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Existing Direct data after the additive migration                     | Hosts, credentials, pins, grants and observations remain unchanged; bindings are null.                 |
+| Current API and S1 Runner with protected handoff                      | Runner returns unavailable without dialing Direct SSH or forwarding the token.                         |
+| Current API and S2 Runner with authorized protected handoff           | Runner uses native WSS/443, verifies gateway TLS and SSH identity separately, without Direct fallback. |
+| Current API with an unauthorized protected host or Access feature off | Private authority is unavailable; guest inventory omits that host.                                     |
+| Pre-Access API with protected rows                                    | Forbidden: the old reader can interpret the row as Direct.                                             |
+| Protected writes before the native carrier and real-Run acceptance    | Forbidden outside controlled local tests.                                                              |
 
 Feature disable does not make a protected row safe for a pre-Access reader.
 Do not deploy such a reader after protected writes exist; no automatic deletion
 or conversion is part of deployment.
 
+#34080 changes the Runner transport without changing guest CLI terminal enums or
+the S1 private API contract. Existing Direct requests keep their behavior. A
+missing/incompatible authority response fails closed; no pre-GA dual decoder is
+introduced. The feature remains default-off after the carrier code lands, pending
+authorized real-provider evidence and #34081's integrated acceptance.
+
 Run cache invalidations are best-effort and identifier-only. Token/SSH-grant changes
 may leave cached authority usable for the remainder of an active Run if a notice
 is missed. End those Runs when immediate revocation is required.
+
+## Integration input attachments
+
+New Feishu/Lark, Teams, Telegram, and AgentPhone trigger attachments use the
+existing canonical input asset rows and `R2_USER_ARTIFACTS_BUCKET_NAME`, as Slack
+does. Successful imports emit the existing `userMessage` file part and
+`[Web file]` prompt format; existing frontends and pinned CLIs can read them
+without a coordinated release. Provider download commands continue to accept
+their original IDs.
+
+Feishu, Telegram, and AgentPhone store the resolved prompt in their existing
+launch context. Teams adds an optional `messageFiles[].canonicalAsset` object;
+new readers fall back to the original provider reference when it is absent,
+and old readers can still resolve that retained provider reference. Both queue
+launch and active input delivery read this persisted context. No database
+migration or historical attachment backfill is required. Failed imports retain
+the canonical file part and the provider-native prompt reference, matching
+Slack. Only ready imports emit a `[Web file]` prompt.
+
+All adapters share MIME validation, streamed size enforcement, a 10-second
+per-file import timeout, and retry classification: HTTP 429/5xx and transient
+failures remain retryable; other HTTP failures and invalid/unsupported/oversized
+files do not. The general size limit is 100 MiB; Telegram retains its Bot API
+20 MiB download limit.
+
+The new adapters deduplicate across messages by user, organization, installation,
+and stable upstream file identity. Message IDs remain provenance, not identity.
+Telegram uses `file_unique_id`; Teams uses file `uniqueId` where available.
+Resources without a provider file ID use a hash of the full resource URL, so
+unrelated attachments with the same message-local attachment number cannot
+collide. Slack retains its existing user/file-ID identity, including existing
+canonical asset rows. This does not deduplicate equal bytes under distinct
+upstream resource identities.
 
 ## Testing Expectations
 

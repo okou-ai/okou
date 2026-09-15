@@ -94,6 +94,14 @@ passed with the unchanged 1132 SQL. All 230 private compatibility cases and
 each schema. Their scenario results, persisted projections and invariant counts
 match. The 26-file matrix above remains evidence for its recorded prior base.
 
+After main `9d3e9f181a3b86c2c215bd15549eeee84b10bd69` added the independent
+erasure-journal check, both validators remain registered. Its journal test,
+all 19 retirement scenarios, permanent schema checks and 230 private cases
+passed. The hosting slug-helper extraction was also verified with the same
+13 API cases on each schema; their persisted state matches and all eight
+audited invariant counts are zero. Earlier broader matrices retain their
+recorded bases.
+
 Retire transition controls only after the production journal, completed compatibility cycle and permanent surviving
 coverage satisfy `turbo/packages/db/MIGRATIONS.md`.
 

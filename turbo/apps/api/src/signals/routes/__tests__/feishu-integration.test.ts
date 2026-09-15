@@ -70,6 +70,11 @@ import {
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  captureIntegrationInputUploads,
+  expectIntegrationInputPreview,
+  listIntegrationInputFileParts,
+} from "./helpers/integration-input-assets";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import {
   clearFeishuConnectorOwnership,
@@ -735,6 +740,12 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     context.mocks.ably.publish.mockResolvedValue(undefined);
 
     server.use(
+      http.get(
+        `${provider.apiOrigin}/open-apis/im/v1/messages/:messageId/resources/:fileKey`,
+        () => {
+          return new HttpResponse(null, { status: 503 });
+        },
+      ),
       http.post(
         `${provider.apiOrigin}/open-apis/auth/v3/tenant_access_token/internal`,
         () => {
@@ -3919,6 +3930,191 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     );
   });
 
+  it.each(["image", "file"] as const)(
+    "imports a Feishu %s into canonical storage before dispatch",
+    async (type) => {
+      const fixture = await setupFeishuRunFixture();
+      await connectFixtureUser(fixture);
+      const { actor, runnerGroup, appId, callbackUrl } = fixture;
+      const uploads = captureIntegrationInputUploads(context);
+      const messageId = `om_${randomUUID()}`;
+      const fileKey = `file_${randomUUID()}`;
+      const bytes = Buffer.from(`canonical ${type} bytes`);
+      const contentType = type === "image" ? "image/png" : "application/pdf";
+      let downloads = 0;
+      server.use(
+        http.get(
+          `${provider.apiOrigin}/open-apis/im/v1/messages/${messageId}/resources/${fileKey}`,
+          ({ request }) => {
+            expect(new URL(request.url).searchParams.get("type")).toBe(type);
+            expect(request.headers.get("authorization")).toBe(
+              "Bearer tenant-access-token",
+            );
+            downloads += 1;
+            return new HttpResponse(bytes, {
+              headers: { "content-type": contentType },
+            });
+          },
+        ),
+      );
+      const eventData = {
+        sender: {
+          sender_id: { open_id: "ou_feishu_user" },
+          sender_type: "user",
+        },
+        message: {
+          message_id: messageId,
+          chat_id: "oc_feishu_dm",
+          chat_type: "p2p",
+          message_type: type,
+          content: JSON.stringify(
+            type === "image"
+              ? { image_key: fileKey }
+              : { file_key: fileKey, file_name: "report.pdf" },
+          ),
+        },
+      };
+      const event = v2Event(appId, "im.message.receive_v1", eventData);
+      await postEvent(callbackUrl, event, { encrypted: true });
+      await flushWaitUntilForTest();
+      const listed = await runsApi.listAgentRuns(actor, { limit: 20 });
+      const run = requireValue(
+        listed.runs.find((candidate) => {
+          return candidate.prompt.includes("[Web file]");
+        }),
+        "Expected imported file run",
+      );
+      await runsApi.heartbeatRunner(runnerGroup);
+      const claim = await runsApi.claimRunnerJob(run.id);
+      const fileId = requireValue(
+        claim.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1],
+        "Expected canonical file id",
+      );
+      expect(claim.prompt).not.toContain(fileKey);
+      await expectIntegrationInputPreview(context, {
+        actor,
+        fileId,
+        bytes,
+        contentType,
+        uploads,
+        okouToken: claim.platformEnvironment.OKOU_TOKEN,
+      });
+      await postEvent(callbackUrl, event, { encrypted: true });
+      await flushWaitUntilForTest();
+      await postEvent(
+        callbackUrl,
+        v2Event(appId, "im.message.receive_v1", {
+          ...eventData,
+          message: { ...eventData.message, message_id: `om_${randomUUID()}` },
+        }),
+        { encrypted: true },
+      );
+      await flushWaitUntilForTest();
+      expect(downloads).toBe(1);
+      expect(uploads).toHaveLength(1);
+      await expect(
+        listIntegrationInputFileParts(context, actor),
+      ).resolves.toStrictEqual([
+        expect.objectContaining({ fileId }),
+        expect.objectContaining({ fileId }),
+      ]);
+    },
+  );
+
+  it.each([403, 429, 503])(
+    "applies Slack retry policy to Feishu file HTTP %s across messages",
+    async (status) => {
+      const fixture = await setupFeishuRunFixture();
+      await connectFixtureUser(fixture);
+      const { actor, runnerGroup, appId, callbackUrl } = fixture;
+      const uploads = captureIntegrationInputUploads(context);
+      const fileKey = `file_${randomUUID()}`;
+      const bytes = Buffer.from("recovered Feishu input");
+      let upstreamFailed = true;
+      let downloads = 0;
+      server.use(
+        http.get(
+          `${provider.apiOrigin}/open-apis/im/v1/messages/:messageId/resources/${fileKey}`,
+          () => {
+            downloads += 1;
+            return upstreamFailed
+              ? new HttpResponse(null, { status })
+              : new HttpResponse(bytes, {
+                  headers: { "content-type": "application/pdf" },
+                });
+          },
+        ),
+      );
+      const postFile = async () => {
+        await postEvent(
+          callbackUrl,
+          v2Event(appId, "im.message.receive_v1", {
+            sender: {
+              sender_id: { open_id: "ou_feishu_user" },
+              sender_type: "user",
+            },
+            message: {
+              message_id: `om_${randomUUID()}`,
+              chat_id: "oc_feishu_dm",
+              chat_type: "p2p",
+              message_type: "file",
+              content: JSON.stringify({
+                file_key: fileKey,
+                file_name: "retry-policy.pdf",
+              }),
+            },
+          }),
+          { encrypted: true },
+        );
+        await flushWaitUntilForTest();
+      };
+      await postFile();
+      const firstParts = await listIntegrationInputFileParts(context, actor);
+      expect(firstParts).toHaveLength(1);
+      const fileId = requireValue(
+        firstParts[0]?.fileId,
+        "Expected failed file item",
+      );
+      expect(fileId).toMatch(/^[0-9a-f-]{36}$/u);
+      const listed = await runsApi.listAgentRuns(actor, { limit: 20 });
+      const run = requireValue(listed.runs[0], "Expected native file run");
+      await runsApi.heartbeatRunner(runnerGroup);
+      const claim = await runsApi.claimRunnerJob(run.id);
+      expect(claim.prompt).not.toContain("[Web file]");
+      upstreamFailed = false;
+      await postFile();
+      await expect(
+        listIntegrationInputFileParts(context, actor),
+      ).resolves.toStrictEqual([
+        expect.objectContaining({ fileId }),
+        expect.objectContaining({ fileId }),
+      ]);
+      const delivery = await runsApi.reserveRunnerActiveInputs(
+        claim.sandboxToken,
+        run.id,
+      );
+      if (delivery.outcome !== "reserved") {
+        throw new Error("Expected the next Feishu file message");
+      }
+      const retryable = status === 429 || status >= 500;
+      expect(downloads).toBe(retryable ? 2 : 1);
+      expect(uploads).toHaveLength(retryable ? 1 : 0);
+      if (retryable) {
+        expect(delivery.prompt).toContain(`[ID] ${fileId}`);
+        await expectIntegrationInputPreview(context, {
+          actor,
+          fileId,
+          bytes,
+          contentType: "application/pdf",
+          uploads,
+          okouToken: claim.platformEnvironment.OKOU_TOKEN,
+        });
+      } else {
+        expect(delivery.prompt).not.toContain("[Web file]");
+      }
+    },
+  );
+
   it("runs a Feishu DM file with downloadable resource context", async () => {
     const fixture = await setupFeishuRunFixture();
     const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } = fixture;
@@ -4148,12 +4344,11 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
         userMessage: {
           version: 1,
           parts: [
-            {
+            expect.objectContaining({
               type: "file",
-              fileId,
               filenameSnapshot: "quarterly-report.pdf",
-              contentType: "application/pdf",
-            },
+            }),
+            { type: "text", text: expect.stringContaining(feishuFilePrompt) },
             {
               type: "source",
               kind: "feishu",
@@ -4232,13 +4427,25 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
   });
 
   it.each(["p2p", "group"] as const)(
-    "runs a rich post with text and multiple downloadable images in %s",
+    "runs a rich post with imported and native images in %s",
     async (chatType) => {
       const fixture = await setupFeishuRunFixture();
       const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
         fixture;
       await connectFixtureUser(fixture);
       const messageId = `om_post_${randomUUID()}`;
+      const uploads = captureIntegrationInputUploads(context);
+      const imageBytes = Buffer.from("first rich post image");
+      server.use(
+        http.get(
+          `${provider.apiOrigin}/open-apis/im/v1/messages/${messageId}/resources/img_post_first`,
+          () => {
+            return new HttpResponse(imageBytes, {
+              headers: { "content-type": "image/png" },
+            });
+          },
+        ),
+      );
       const rows = [
         [
           ...(chatType === "group" ? [{ tag: "at", user_id: "@_user_1" }] : []),
@@ -4314,14 +4521,24 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
       if (chatType === "group") {
         expect(claim.prompt).toContain("@Nova");
       }
+      const importedFileId = requireValue(
+        claim.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1],
+        "Expected the imported rich post image",
+      );
+      expect(uploads).toHaveLength(1);
+      await expectIntegrationInputPreview(context, {
+        actor,
+        fileId: importedFileId,
+        bytes: imageBytes,
+        contentType: "image/png",
+        uploads,
+        okouToken: claim.platformEnvironment.OKOU_TOKEN,
+      });
       await expectFeishuResourceDownloads({
         actor,
         runId: run.id,
         prompt: claim.prompt,
-        resources: [
-          { messageId, fileKey: "img_post_first", type: "image" },
-          { messageId, fileKey: "img_post_second", type: "image" },
-        ],
+        resources: [{ messageId, fileKey: "img_post_second", type: "image" }],
       });
 
       const threads = await accept(
@@ -4350,6 +4567,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
             parts: [
               expect.objectContaining({
                 type: "file",
+                fileId: importedFileId,
                 filenameSnapshot: "image",
               }),
               expect.objectContaining({
@@ -4358,7 +4576,9 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
               }),
               {
                 type: "text",
-                text: "Image comparison\nCompare these images with [the brief](https://example.com/brief)",
+                text: expect.stringContaining(
+                  "Image comparison\nCompare these images with [the brief](https://example.com/brief)",
+                ),
               },
               expect.objectContaining({ type: "source", kind: "feishu" }),
             ],

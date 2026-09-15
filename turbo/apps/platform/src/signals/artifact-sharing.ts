@@ -84,9 +84,17 @@ const artifactShareUrl$ = command(
       status.url &&
       status.audience === args.audience &&
       status.selectedTarget &&
-      status.selectedVersion === status.candidateVersion
+      status.selectedVersion === status.candidateVersion &&
+      // A current API explicitly reports null until the owner allocates the
+      // short organization link or named site URL. Older APIs omit the field.
+      // #32492 retires the absent-field reader after old APIs leave serving
+      // and rollback; the legacy response stays until the App floor advances.
+      !(
+        (args.audience === "organization" || target.kind === "html") &&
+        status.shortUrl === null
+      )
     ) {
-      return status.url;
+      return status.shortUrl ?? status.url;
     }
     const response = await accept(
       get(apiClient$)(artifactSharesContract).update({
@@ -100,7 +108,7 @@ const artifactShareUrl$ = command(
     if (get(pageVersion$) !== pageVersion) {
       return null;
     }
-    return response.body.url;
+    return response.body.shortUrl ?? response.body.url;
   },
 );
 

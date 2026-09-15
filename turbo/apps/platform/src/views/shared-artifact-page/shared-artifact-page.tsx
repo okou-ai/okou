@@ -1,9 +1,10 @@
 import { Button } from "@okouai/ui";
 import { useGet, useSet } from "ccstate-react";
-import { ArrowUpRight, Maximize2, Minimize2, Share2 } from "lucide-react";
+import { ArrowUpRight, Share2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { BRAND_NAME } from "../../signals/branding.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { shellDocumentAttributesRef$ } from "../../signals/theme.ts";
 import {
   copySharedArtifactLink$,
   type SharedArtifactPreview,
@@ -20,17 +21,12 @@ import { artifactFallbackSubtitle } from "../okou-page/artifact-display.ts";
 
 function ArtifactViewerActions({
   artifact,
-  viewer,
 }: {
   artifact: SharedArtifactPreview;
-  viewer: SharedArtifactViewerSignals;
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const copyLink = useSet(copySharedArtifactLink$);
-  const fullscreen = useGet(viewer.fullscreen$);
-  const fullscreenAvailable = useGet(viewer.fullscreenAvailable$);
-  const toggleFullscreen = useSet(viewer.toggleFullscreen$);
   const continueUrl = new URL("/", window.location.origin);
   continueUrl.searchParams.set(
     "prompt",
@@ -73,36 +69,13 @@ function ArtifactViewerActions({
         iconSize={18}
         showGoogleDriveAction={false}
       />
-      {fullscreenAvailable && (
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-sm"
-          className="hidden sm:inline-flex"
-          showTooltip
-          aria-label={t(($) => {
-            return fullscreen
-              ? $.artifacts.actions.exitFullscreen
-              : $.artifacts.actions.enterFullscreen;
-          })}
-          onClick={() => {
-            detach(
-              toggleFullscreen(pageSignal),
-              Reason.DomCallback,
-              "toggle artifact fullscreen",
-            );
-          }}
-        >
-          {fullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-        </Button>
-      )}
       <ArtifactActionSeparator />
       <Button
         size="sm"
         asChild
         showTooltip
         aria-label={continueLabel}
-        className="ml-1 h-8 w-8 bg-foreground p-0 text-background hover:bg-foreground-hover sm:ml-2 sm:w-auto sm:px-3"
+        className="ml-1 h-8 w-8 p-0 sm:ml-2 sm:w-auto sm:px-3"
       >
         <a href={continueUrl.href}>
           <span className="hidden sm:inline">{continueLabel}</span>
@@ -121,8 +94,7 @@ export function SharedArtifactPage({
   viewer: SharedArtifactViewerSignals;
 }) {
   const { t } = useTranslation();
-  const mountRef = useSet(viewer.mountRef$);
-  const fullscreen = useGet(viewer.fullscreen$);
+  const mountRef = useSet(shellDocumentAttributesRef$);
   const title =
     artifact?.filename ??
     t(($) => {
@@ -154,15 +126,13 @@ export function SharedArtifactPage({
             </p>
           )}
         </div>
-        {artifact !== null && (
-          <ArtifactViewerActions artifact={artifact} viewer={viewer} />
-        )}
+        {artifact !== null && <ArtifactViewerActions artifact={artifact} />}
       </header>
       <main className="relative min-h-0 flex-1 overflow-hidden bg-muted/30">
         {artifact !== null ? (
           <ArtifactPreviewBody
             artifact={undefined}
-            fullscreen={fullscreen}
+            fullscreen={false}
             imageCanvasSignals={viewer.imageCanvas}
             preview={artifact.preview}
           />

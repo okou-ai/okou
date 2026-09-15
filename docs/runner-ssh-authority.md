@@ -201,10 +201,12 @@ host generation and learned key; `authentication` holds SSH key/password data,
 while `access` holds `configId`, effective `generation`, `clientId` and
 `clientSecret`. Both secret sets stay inside the official Runner boundary.
 Generated `ResolveResponse` uses bounded zeroizing secret fields and has no Debug,
-Clone or Serialize implementation. Until #34080 installs the native WSS carrier,
-the Runner rejects protected handoffs as unavailable without dialing Direct SSH.
-The carrier must require port 443 before sending a token; TLS/SNI and
-public-destination checks also belong to #34080.
+Clone or Serialize implementation. #34080 consumes this handoff through the
+native WSS carrier, requiring port 443 and a canonical DNS recipient before
+network use. Public-destination validation pins the socket; verified TLS/SNI
+and the HTTP Host use that same saved hostname. No Direct fallback exists.
+An S1-only Runner still rejects protected handoffs as unavailable; the feature
+must not be activated on that Runner. See the activation gate below.
 
 Pin and observation retain host-first locking and recheck protected authority
 through the non-null configuration with a share lock, while retaining the

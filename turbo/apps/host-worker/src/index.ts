@@ -847,7 +847,9 @@ interface PrivatePreviewGrant {
 function privateResponse(response: Response): Response {
   const headers = new Headers(response.headers);
   headers.set("Cache-Control", "private, no-store");
-  headers.set("Referrer-Policy", "no-referrer");
+  // Let this isolated origin identify its own CSS/JS/image requests to the
+  // hosted-site WAF. Cross-origin requests must not disclose preview tokens.
+  headers.set("Referrer-Policy", "same-origin");
   // Generated code receives only its own short-lived origin, never app cookies.
   // Prevent service workers from bypassing the network authorization expiry.
   headers.set(

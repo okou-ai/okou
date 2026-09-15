@@ -11,7 +11,7 @@ import type {
   TestTelegramStateResponse,
 } from "@okouai/api-contracts/contracts/test-telegram-state";
 import { HttpResponse, http } from "msw";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createApp } from "../../../app-factory";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -30,6 +30,11 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import {
+  captureIntegrationInputUploads,
+  expectIntegrationInputPreview,
+  listIntegrationInputFileParts,
+} from "./helpers/integration-input-assets";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -2671,6 +2676,351 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     );
     await expect(selectedModelFor(fixture)).resolves.toBe("claude-sonnet-5");
   });
+
+  it.each(["photo", "document"] as const)(
+    "imports Telegram %s into canonical storage before dispatch",
+    async (type) => {
+      const fixture = await trackFixture(
+        seedTelegramPostFixture({ linkTelegramUser: true }),
+      );
+      const actor = actorForFixture(fixture);
+      const runnerGroup = configureCanonicalTelegramRunner();
+      telegramApiMocks();
+      const uploads = captureIntegrationInputUploads(context);
+      const bytes = Buffer.from(`telegram ${type} bytes`);
+      const contentType = type === "photo" ? "image/jpeg" : "application/pdf";
+      context.mocks.telegram.getFile.mockResolvedValue({
+        file_id: "telegram-file",
+        file_path: "incoming/file",
+        file_size: bytes.length,
+      });
+      server.use(
+        http.get(
+          `https://api.telegram.org/file/bot${TEST_BOT_TOKEN}/incoming/file`,
+          () => {
+            return new HttpResponse(bytes, {
+              headers: { "content-type": contentType },
+            });
+          },
+        ),
+      );
+      const body = {
+        update_id: 551,
+        message: {
+          message_id: 5511,
+          chat: { id: Number(fixture.telegramUserId), type: "private" },
+          from: { id: Number(fixture.telegramUserId), first_name: "Alice" },
+          caption: "inspect imported telegram file",
+          ...(type === "photo"
+            ? {
+                photo: [
+                  {
+                    file_id: "telegram-file",
+                    file_unique_id: "unique-file",
+                    width: 800,
+                    height: 600,
+                  },
+                ],
+              }
+            : {
+                document: {
+                  file_id: "telegram-file",
+                  file_unique_id: "unique-file",
+                  file_name: "report.pdf",
+                  mime_type: contentType,
+                },
+              }),
+        },
+      };
+      const response = await postWebhook({
+        telegramBotId: fixture.telegramBotId,
+        secret: fixture.webhookSecret,
+        body,
+      });
+      expect(response.status).toBe(200);
+      await flushWaitUntilForTest();
+      const listed = await runsApi.listAgentRuns(actor, { limit: 20 });
+      const run = listed.runs.find((candidate) => {
+        return candidate.prompt.includes("[Web file]");
+      });
+      if (!run) {
+        throw new Error("Expected imported Telegram run");
+      }
+      const claim = await claimTelegramRun(run.id, runnerGroup);
+      expect(claim.prompt).toContain("inspect imported telegram file");
+      const fileId = claim.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
+      if (!fileId) {
+        throw new Error("Expected canonical Telegram file id");
+      }
+      await expectIntegrationInputPreview(context, {
+        actor,
+        fileId,
+        bytes,
+        contentType,
+        uploads,
+        okouToken: claim.platformEnvironment.OKOU_TOKEN,
+      });
+      await postWebhook({
+        telegramBotId: fixture.telegramBotId,
+        secret: fixture.webhookSecret,
+        body,
+      });
+      await flushWaitUntilForTest();
+      expect(uploads).toHaveLength(1);
+      const nextBody = {
+        ...body,
+        update_id: 552,
+        message: {
+          ...body.message,
+          message_id: 5512,
+          caption: "inspect the follow-up file",
+          ...("photo" in body.message
+            ? {
+                photo: body.message.photo.map((photo) => {
+                  return { ...photo, file_id: "rotated-telegram-file" };
+                }),
+              }
+            : {
+                document: {
+                  ...body.message.document,
+                  file_id: "rotated-telegram-file",
+                },
+              }),
+        },
+      };
+      await postWebhook({
+        telegramBotId: fixture.telegramBotId,
+        secret: fixture.webhookSecret,
+        body: nextBody,
+      });
+      await flushWaitUntilForTest();
+      const delivery = await runsApi.reserveRunnerActiveInputs(
+        claim.sandboxToken,
+        run.id,
+      );
+      if (delivery.outcome !== "reserved") {
+        throw new Error("Expected imported active input");
+      }
+      expect(delivery.prompt).toContain("inspect the follow-up file");
+      expect(delivery.prompt).toContain("[Web file]");
+      const followUpId = delivery.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
+      if (!followUpId) {
+        throw new Error("Expected imported active file id");
+      }
+      expect(followUpId).toBe(fileId);
+      expect(uploads).toHaveLength(1);
+      expect(context.mocks.telegram.getFile).toHaveBeenCalledTimes(1);
+      await expectIntegrationInputPreview(context, {
+        actor,
+        fileId: followUpId,
+        bytes,
+        contentType,
+        uploads,
+        okouToken: claim.platformEnvironment.OKOU_TOKEN,
+      });
+    },
+  );
+
+  it.each([403, 429])(
+    "applies Slack retry policy to Telegram file metadata error %s",
+    async (status) => {
+      const telegramClient = await vi.importActual<
+        typeof import("../../external/telegram-client")
+      >("../../external/telegram-client");
+      context.mocks.telegram.getFile.mockImplementation(
+        (token, fileId, signal) => {
+          if (
+            typeof token !== "string" ||
+            typeof fileId !== "string" ||
+            (signal !== undefined && !(signal instanceof AbortSignal))
+          ) {
+            throw new Error("Expected Telegram file download arguments");
+          }
+          return telegramClient.getFile(token, fileId, signal);
+        },
+      );
+      const fixture = await trackFixture(
+        seedTelegramPostFixture({ linkTelegramUser: true }),
+      );
+      const actor = actorForFixture(fixture);
+      const runnerGroup = configureCanonicalTelegramRunner();
+      telegramApiMocks();
+      const uploads = captureIntegrationInputUploads(context);
+      const bytes = Buffer.from("recovered Telegram attachment");
+      let metadataCalls = 0;
+      server.use(
+        http.get(
+          `https://api.telegram.org/bot${TEST_BOT_TOKEN}/getFile`,
+          () => {
+            metadataCalls += 1;
+            return metadataCalls === 1
+              ? HttpResponse.json({
+                  ok: false,
+                  error_code: status,
+                  description: "File unavailable",
+                })
+              : HttpResponse.json({
+                  ok: true,
+                  result: {
+                    file_id: "retry-file",
+                    file_path: "incoming/retry-file",
+                  },
+                });
+          },
+        ),
+        http.get(
+          `https://api.telegram.org/file/bot${TEST_BOT_TOKEN}/incoming/retry-file`,
+          () => {
+            return new HttpResponse(bytes, {
+              headers: { "content-type": "application/pdf" },
+            });
+          },
+        ),
+      );
+      const postFile = async (messageId: number) => {
+        const response = await postWebhook({
+          telegramBotId: fixture.telegramBotId,
+          secret: fixture.webhookSecret,
+          body: {
+            update_id: messageId,
+            message: {
+              message_id: messageId,
+              chat: { id: Number(fixture.telegramUserId), type: "private" },
+              from: { id: Number(fixture.telegramUserId), first_name: "Alice" },
+              caption: "retry telegram attachment",
+              document: {
+                file_id: "retry-file",
+                file_unique_id: "retry-unique-file",
+                file_name: "retry.pdf",
+                mime_type: "application/pdf",
+              },
+            },
+          },
+        });
+        expect(response.status).toBe(200);
+        await flushWaitUntilForTest();
+      };
+      await postFile(5801);
+      const firstParts = await listIntegrationInputFileParts(context, actor);
+      expect(firstParts).toHaveLength(1);
+      const fileId = firstParts[0]?.fileId;
+      if (!fileId) {
+        throw new Error("Expected a failed Telegram file item");
+      }
+      const listed = await runsApi.listAgentRuns(actor, { limit: 20 });
+      const run = listed.runs[0];
+      if (!run) {
+        throw new Error("Expected Telegram retry run");
+      }
+      const claim = await claimTelegramRun(run.id, runnerGroup);
+      expect(claim.prompt).not.toContain("[Web file]");
+      await postFile(5802);
+      await expect(
+        listIntegrationInputFileParts(context, actor),
+      ).resolves.toStrictEqual([
+        expect.objectContaining({ fileId }),
+        expect.objectContaining({ fileId }),
+      ]);
+      const delivery = await runsApi.reserveRunnerActiveInputs(
+        claim.sandboxToken,
+        run.id,
+      );
+      if (delivery.outcome !== "reserved") {
+        throw new Error("Expected the next Telegram file message");
+      }
+      expect(metadataCalls).toBe(status === 429 ? 2 : 1);
+      expect(uploads).toHaveLength(status === 429 ? 1 : 0);
+      if (status === 429) {
+        expect(delivery.prompt).toContain(`[ID] ${fileId}`);
+        await expectIntegrationInputPreview(context, {
+          actor,
+          fileId,
+          bytes,
+          contentType: "application/pdf",
+          uploads,
+          okouToken: claim.platformEnvironment.OKOU_TOKEN,
+        });
+      } else {
+        expect(delivery.prompt).not.toContain("[Web file]");
+      }
+    },
+  );
+
+  it.each(["declared size", "streamed size", "upstream error"] as const)(
+    "retains Telegram file references after an import fails on %s",
+    async (failure) => {
+      const fixture = await trackFixture(
+        seedTelegramPostFixture({ linkTelegramUser: true }),
+      );
+      const actor = actorForFixture(fixture);
+      const runnerGroup = configureCanonicalTelegramRunner();
+      telegramApiMocks();
+      const uploads = captureIntegrationInputUploads(context);
+      context.mocks.telegram.getFile.mockResolvedValue({
+        file_id: "oversized-file",
+        file_path: "incoming/large-file",
+      });
+      server.use(
+        http.get(
+          `https://api.telegram.org/file/bot${TEST_BOT_TOKEN}/incoming/large-file`,
+          () => {
+            return failure === "upstream error"
+              ? new HttpResponse(null, { status: 403 })
+              : new HttpResponse(Buffer.alloc(20 * 1024 * 1024 + 1), {
+                  headers: { "content-type": "application/pdf" },
+                });
+          },
+        ),
+      );
+      const response = await postWebhook({
+        telegramBotId: fixture.telegramBotId,
+        secret: fixture.webhookSecret,
+        body: {
+          update_id: 561,
+          message: {
+            message_id: 5611,
+            chat: { id: Number(fixture.telegramUserId), type: "private" },
+            from: { id: Number(fixture.telegramUserId), first_name: "Alice" },
+            caption: "inspect this large report",
+            document: {
+              file_id: "oversized-file",
+              file_unique_id: "unique-file",
+              file_name: "large.pdf",
+              mime_type: "application/pdf",
+              ...(failure === "declared size"
+                ? { file_size: 20 * 1024 * 1024 + 1 }
+                : {}),
+            },
+          },
+        },
+      });
+      expect(response.status).toBe(200);
+      await flushWaitUntilForTest();
+      const listed = await runsApi.listAgentRuns(actor, { limit: 20 });
+      const run = listed.runs.find((candidate) => {
+        return candidate.prompt.includes("inspect this large report");
+      });
+      if (!run) {
+        throw new Error("Expected Telegram fallback run");
+      }
+      const claim = await claimTelegramRun(run.id, runnerGroup);
+      expect(claim.prompt).toContain("[Telegram file]");
+      expect(claim.prompt).toContain("[FILE_ID] oversized-file");
+      expect(claim.prompt).not.toContain("[Web file]");
+      expect(uploads).toHaveLength(0);
+      await expect(
+        listIntegrationInputFileParts(context, actor),
+      ).resolves.toStrictEqual([
+        expect.objectContaining({
+          fileId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
+          filenameSnapshot: "large.pdf",
+        }),
+      ]);
+      if (failure === "declared size") {
+        expect(context.mocks.telegram.getFile).not.toHaveBeenCalled();
+      }
+    },
+  );
 
   it("sends typing without an immediate reply for accepted custom-bot runs", async () => {
     runsApi.acceptStorageDownloads();
