@@ -64,16 +64,14 @@ adds no refresh path.
 
 ## Rollout
 
-Apply migrations 1139–1140 before promoting the new API. The expand transaction
-adds the CHECK as `NOT VALID`, enforcing new writes without scanning retained
-Runs under an exclusive table lock. A separate transaction validates the CHECK
-with a 30-second statement limit; the migration runner retains its one-second
-lock limit. Validation timeout prevents API promotion and can be retried after
-investigating the database, while the committed expand step remains compatible
-with the serving API. Existing API and Runner
-versions continue to work after this nullable additive migration; old writers
-leave the field NULL. New API code requires the column. Keep the additive schema
-if rolling API code back.
+Apply migration 1143 before promoting the new API. The new column has no default,
+so every existing row receives NULL and already satisfies the CHECK. The CHECK
+intentionally remains `NOT VALID`: new inserts and updates are enforced without
+an unnecessary historical-row scan or follow-up validation migration. The
+migration runner retains its one-second lock and ten-second statement limits.
+Existing API and Runner versions continue to work after this nullable additive
+migration; old writers leave the field NULL. New API code requires the column.
+Keep the additive schema if rolling API code back.
 
 Deploy this API slice across the serving fleet before enabling Runner polling in
 #34384. Mixed or rolled-back API versions can return an unsupported endpoint or
