@@ -8,6 +8,36 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.606.0](https://github.com/vm0-ai/vm0/compare/api-v1.605.1...api-v1.606.0) (2026-09-15)
+
+
+### Features
+
+* stream Pi sandbox assistant output ([#34299](https://github.com/vm0-ai/vm0/issues/34299)) ([2c12008](https://github.com/vm0-ai/vm0/commit/2c12008061eaf9d1fc8e0d2c1240697433182c8d))
+
+
+### Bug Fixes
+
+* **api:** classify structured fal generation failures ([#34356](https://github.com/vm0-ai/vm0/issues/34356)) ([5d0a89e](https://github.com/vm0-ai/vm0/commit/5d0a89e48a3eae26ad3ef65158807a49b6d32d8e)), closes [#34176](https://github.com/vm0-ai/vm0/issues/34176)
+* **api:** fence late run output during account closure ([#34367](https://github.com/vm0-ai/vm0/issues/34367)) ([4afeea7](https://github.com/vm0-ai/vm0/commit/4afeea7d7dad509f06d50c3ce19b04a555edfc3c))
+* verify current secrets before retiring production kms ([#34324](https://github.com/vm0-ai/vm0/issues/34324)) ([bbf1950](https://github.com/vm0-ai/vm0/commit/bbf195015e59841a3c81c6c7dbeca9fe56ca5d9b))
+* **voice:** lower output validation floor to 100 characters ([#34405](https://github.com/vm0-ai/vm0/issues/34405)) ([f45972c](https://github.com/vm0-ai/vm0/commit/f45972ceb1a633fd4555b4a961ca80c3a2cee9dd))
+
+
+### Performance Improvements
+
+* **api:** remove redundant subscription admission queries ([#34360](https://github.com/vm0-ai/vm0/issues/34360)) ([344201d](https://github.com/vm0-ai/vm0/commit/344201de328c71e9263a61c78901fcafbdd4798c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.445.0
+    * @okouai/core bumped to 8.666.7
+    * @okouai/db bumped to 1.262.2
+    * @okouai/pi-agent-runtime bumped to 1.30.11
+
 ## [1.605.1](https://github.com/vm0-ai/vm0/compare/api-v1.605.0...api-v1.605.1) (2026-09-15)
 
 
