@@ -4251,7 +4251,15 @@ function ShimmerText({
   return (
     <p
       className={cn(
-        "okou-shimmer-text h-auto min-w-0 flex-1 truncate",
+        // The bright band lives in the label's own background gradient, so the
+        // only thing that moves is the gradient's paint origin; nothing here
+        // moves a box that holds glyphs. `contain: paint` keeps the per-frame
+        // repaint inside the label. The `-webkit-` clip stays beside
+        // `bg-clip-text` because Tailwind emits only the unprefixed property
+        // while the retired rule declared both; keeping it changes nothing on
+        // the build's target browsers, which is why it is here rather than
+        // dropped as part of a styling change.
+        "h-auto min-w-0 flex-1 animate-shimmer truncate bg-shimmer-text bg-clip-text [background-size:200%_100%] [-webkit-background-clip:text] [-webkit-text-fill-color:transparent] [contain:paint]",
         CHAT_THREAD_RESPONSE_SUPPORTING_TEXT_CLASS,
         className,
       )}

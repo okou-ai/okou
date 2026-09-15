@@ -350,6 +350,11 @@ import {
 } from "./chat-queued-event.service";
 import { recordFirstAssistantEventEligibility } from "./chat-first-assistant-event-metric.service";
 import { bindPiMemoryPhase2MaintenanceRun } from "./pi-memory-phase2-maintenance.service";
+import {
+  admitNewComputeRun,
+  validateNewComputeSession,
+  withComputeOwnershipRetry,
+} from "./compute-erasure-admission.service";
 import { isWebChatTriggerSource } from "./chat-trigger-source.service";
 import { resolveMediaModelsForRun } from "./run-media-model.service";
 import {
@@ -8240,6 +8245,22 @@ async function persistFailedLaunch(
   args: CommitFailedLaunchArgs,
   message: string,
 ): Promise<FailedLaunchCommitResult> {
+  if (
+    !(await admitNewComputeRun(tx, {
+      userId: args.createArgs.userId,
+      orgId: args.createArgs.orgId,
+      agentId: args.context.resolved.agentId,
+      ownerUserId: args.context.resolved.ownerUserId,
+      agentOrgId: args.context.resolved.orgId,
+      maintenanceStorageId:
+        args.createArgs.piMemoryPhase2Maintenance?.memoryStorageId,
+      existingSessionId: args.identity.shouldCreateSession
+        ? undefined
+        : args.identity.sessionId,
+    }))
+  ) {
+    return conflict("Run admission is unavailable");
+  }
   if (args.createArgs.piMemoryPhase2Maintenance) {
     const validate = args.createArgs.validatePiMemoryPhase2Admission;
     if (!validate) {
@@ -8277,6 +8298,18 @@ async function persistFailedLaunch(
     sessionSnapshotState: "unvalidated",
     timing: args.timing,
   });
+  if (
+    !(await validateNewComputeSession(tx, {
+      userId: args.createArgs.userId,
+      orgId: args.createArgs.orgId,
+      agentId: args.context.resolved.agentId,
+      existingSessionId: args.identity.shouldCreateSession
+        ? undefined
+        : args.identity.sessionId,
+    }))
+  ) {
+    return conflict("Run admission is unavailable");
+  }
   const queueFirstClaim = await claimQueueFirstAssociationForLaunch({
     tx,
     admission: queueFirstAdmission,
@@ -8324,8 +8357,10 @@ async function commitFailedLaunch(
   CreateRunSuccessResult | CreateRunErrorResult | QueueFirstRunClaimLost
 > {
   const message = runFailureMessage(args.error);
-  const committed = await args.db.transaction(async (tx) => {
-    return await persistFailedLaunch(tx, args, message);
+  const committed = await withComputeOwnershipRetry(() => {
+    return args.db.transaction(async (tx) => {
+      return await persistFailedLaunch(tx, args, message);
+    });
   });
 
   if (isRouteError(committed)) {
@@ -8734,6 +8769,18 @@ async function commitPreparedLaunchUnderLock(
     identity: args.identity,
     timing: args.timing,
   });
+  if (
+    !(await validateNewComputeSession(tx, {
+      userId: args.createArgs.userId,
+      orgId: args.createArgs.orgId,
+      agentId: args.context.resolved.agentId,
+      existingSessionId: args.identity.shouldCreateSession
+        ? undefined
+        : args.identity.sessionId,
+    }))
+  ) {
+    return conflict("Run admission is unavailable");
+  }
   let capturedIdentity: string | null = null;
   if (threadSessionValidation?.kind !== "thread-session-snapshot-stale") {
     if (args.createArgs.piMemoryPhase2Maintenance) {
@@ -8877,41 +8924,62 @@ async function commitValidatedPreparedLaunch(
 async function commitPreparedLaunch(
   args: CommitPreparedLaunchArgs,
 ): Promise<AtomicLaunchCommitCompletion> {
-  const committed = await args.db.transaction(async (tx) => {
-    const payload = queuedRunnerJobPayload({
-      ...args.launch.runnerJobPayload,
-      reuseKey: runnerReuseKey(args.createArgs.chatThreadId),
-    });
-    await acquireOfficialWorkflowRunCatalogAdmissionLock(
-      tx,
-      args.context.officialWorkflowRun,
-    );
-    await args.timing.measure(
-      "api_dispatch_admission_lock_wait",
-      "nested",
-      async () => {
-        await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(hashtext(${args.createArgs.orgId}))`,
-        );
-      },
-    );
-    const admissionLockHeldStartedAt = now();
-    const result = await commitPreparedLaunchUnderLock(tx, args, payload);
-    if (
-      "kind" in result &&
-      (result.kind === "pending" || result.kind === "queued")
-    ) {
-      await requestPiMemoryStage1Day(tx, {
-        ...result.run,
-        userId: args.createArgs.userId,
-        orgId: args.createArgs.orgId,
-        chatThreadId: args.createArgs.chatThreadId ?? null,
-        triggerSource: args.context.body.triggerSource,
-        launchSnapshot: args.context.launchSnapshot,
-        completedAt: null,
+  const committed = await withComputeOwnershipRetry(() => {
+    return args.db.transaction(async (tx) => {
+      if (
+        !(await admitNewComputeRun(tx, {
+          userId: args.createArgs.userId,
+          orgId: args.createArgs.orgId,
+          agentId: args.context.resolved.agentId,
+          ownerUserId: args.context.resolved.ownerUserId,
+          agentOrgId: args.context.resolved.orgId,
+          maintenanceStorageId:
+            args.createArgs.piMemoryPhase2Maintenance?.memoryStorageId,
+          existingSessionId: args.identity.shouldCreateSession
+            ? undefined
+            : args.identity.sessionId,
+        }))
+      ) {
+        return {
+          result: conflict("Run admission is unavailable"),
+          admissionLockHeldStartedAt: now(),
+        };
+      }
+      const payload = queuedRunnerJobPayload({
+        ...args.launch.runnerJobPayload,
+        reuseKey: runnerReuseKey(args.createArgs.chatThreadId),
       });
-    }
-    return { result, admissionLockHeldStartedAt };
+      await acquireOfficialWorkflowRunCatalogAdmissionLock(
+        tx,
+        args.context.officialWorkflowRun,
+      );
+      await args.timing.measure(
+        "api_dispatch_admission_lock_wait",
+        "nested",
+        async () => {
+          await tx.execute(
+            sql`SELECT pg_advisory_xact_lock(hashtext(${args.createArgs.orgId}))`,
+          );
+        },
+      );
+      const admissionLockHeldStartedAt = now();
+      const result = await commitPreparedLaunchUnderLock(tx, args, payload);
+      if (
+        "kind" in result &&
+        (result.kind === "pending" || result.kind === "queued")
+      ) {
+        await requestPiMemoryStage1Day(tx, {
+          ...result.run,
+          userId: args.createArgs.userId,
+          orgId: args.createArgs.orgId,
+          chatThreadId: args.createArgs.chatThreadId ?? null,
+          triggerSource: args.context.body.triggerSource,
+          launchSnapshot: args.context.launchSnapshot,
+          completedAt: null,
+        });
+      }
+      return { result, admissionLockHeldStartedAt };
+    });
   });
   const transactionReturnedAt = now();
   args.timing.recordElapsed(

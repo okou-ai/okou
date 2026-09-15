@@ -15,12 +15,15 @@ import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { testContext } from "../../../__tests__/test-context";
+import { withBuiltInModelRuntimeRouteUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { testSlackStateRoutes } from "../test-slack-state";
 import { testTelegramStateRoutes } from "../test-telegram-state";
 import { integrationsTelegramRoutes } from "../integrations-telegram";
 import { seedRun$ } from "./helpers/usage-state";
 import { createFixtureTracker } from "./helpers/route-test";
+import { createBddApi } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 
 const context = testContext();
 const store = createStore();
@@ -142,16 +145,6 @@ function mockTelegramApi(): void {
 
 function postTelegramState(body: Record<string, unknown>): Promise<Response> {
   return requestApp(TELEGRAM_STATE_ROUTE, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
-
-function postTelegramStateAction(
-  body: Record<string, unknown>,
-): Promise<Response> {
-  return requestApp(`${TELEGRAM_STATE_ROUTE}/action`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -282,8 +275,17 @@ async function dispatchTelegramMessage(args: {
   readonly text: string;
   readonly messageId?: number;
 }): Promise<void> {
+  const actor = createBddApi(context).user({
+    userId: args.fixture.userId,
+    orgId: args.fixture.orgId,
+  });
+  const runs = createRunsApi(context);
+  // Own the provider and initialize storage downloads so dispatch does not
+  // depend on another test's shared model keys or mock teardown.
+  await runs.ensureOrgModelProvider(actor);
+  runs.acceptStorageDownloads();
   context.mocks.s3.send.mockResolvedValue({});
-  mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
+  runs.configureRunnerGroup();
   mockEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
   mockOptionalEnv("OKOU_WEB_URL", "http://localhost:3000");
   mockEnv("APP_URL", "http://localhost:3002");
@@ -370,23 +372,21 @@ describe("GET /api/test/telegram-state", () => {
     expect(body.default_agent).toBeNull();
   });
 
-  it("returns seeded Telegram diagnostic state", async () => {
+  it("returns seeded Telegram diagnostic state without built-in model keys", async () => {
     mockEnv("ENV", "development");
     mockOptionalEnv("TELEGRAM_API_URL", TELEGRAM_TEST_API_BASE_URL);
     const fixture = await seedTelegramFixture();
-    const modelSeedResponse = await postTelegramStateAction({
-      action: "seed-model-policies",
-      org_id: fixture.orgId,
-      user_id: fixture.userId,
-      compose_id: fixture.defaultAgentId,
-    });
-    expect(modelSeedResponse.status).toBe(200);
     const chatId = uniqueNumericId();
-    await dispatchTelegramMessage({
-      fixture,
-      chatId,
-      text: "telegram state diagnostic run",
-    });
+    await withBuiltInModelRuntimeRouteUnavailableForTest(
+      "claude-sonnet-5",
+      async () => {
+        await dispatchTelegramMessage({
+          fixture,
+          chatId,
+          text: "telegram state diagnostic run",
+        });
+      },
+    );
 
     const body = await readTelegramState(fixture.botId);
 
@@ -404,6 +404,7 @@ describe("GET /api/test/telegram-state", () => {
     expect(recentRuns(body.recent_runs)).toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({
+          error: null,
           triggerSource: "telegram",
           promptPreview: "telegram state diagnostic run",
         }),

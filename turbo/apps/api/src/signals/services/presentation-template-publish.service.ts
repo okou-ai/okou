@@ -17,15 +17,15 @@ import { gunzipSync } from "node:zlib";
 import { Parser } from "tar";
 
 import { badRequestMessage } from "../../lib/error";
-import { env } from "../../lib/env";
 import { createDeferredPromise, safeSync, settle } from "../utils";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { downloadS3BufferWithMaxBytes } from "../external/s3";
-import { resolveArtifactObject$ } from "./artifact-storage.service";
+import { uploadedArtifactObject } from "./uploaded-artifact.service";
 import { uploadVolumeServerSide$ } from "./storage-volume-upload.service";
 
 interface ResolvedUpload {
+  readonly bucket: string;
   readonly id: string;
   readonly storageKey: string;
   readonly filename: string;
@@ -42,28 +42,32 @@ interface PackageFile {
  * Resolve the caller's own uploads, the same way `/uploads/complete` does: an
  * id resolves to an object only when that object's stored metadata names this
  * user. Ownership is therefore never taken from the request body, and this
- * works for a browser upload as well as a run upload — the former writes no
- * `run_uploaded_files` row at all.
+ * works for browser and run uploads, including private ownership records and
+ * historical public objects without a `run_uploaded_files` row.
  */
 const resolveUploads$ = command(
   async (
-    { set },
+    { get },
     args: {
       readonly ownerUserId: string;
+      readonly orgId: string;
       readonly ids: readonly string[];
     },
     signal: AbortSignal,
   ): Promise<ReadonlyMap<string, ResolvedUpload>> => {
     const resolved = new Map<string, ResolvedUpload>();
     for (const id of new Set(args.ids)) {
-      const object = await set(
-        resolveArtifactObject$,
-        { userId: args.ownerUserId, id },
-        signal,
+      const object = await get(
+        uploadedArtifactObject({
+          userId: args.ownerUserId,
+          orgId: args.orgId,
+          id,
+        }),
       );
       signal.throwIfAborted();
       if (object) {
         resolved.set(id, {
+          bucket: object.bucket,
           id,
           storageKey: object.key,
           filename: object.filename,
@@ -256,7 +260,7 @@ export const publishPresentationTemplate$ = command(
     const ids = [body.sourceFileId, ...body.pageFileIds, body.packageFileId];
     const uploads = await set(
       resolveUploads$,
-      { ownerUserId: args.ownerUserId, ids },
+      { ownerUserId: args.ownerUserId, orgId: args.orgId, ids },
       signal,
     );
     signal.throwIfAborted();
@@ -288,7 +292,7 @@ export const publishPresentationTemplate$ = command(
       );
     }
 
-    const bucket = env("R2_USER_ARTIFACTS_BUCKET_NAME");
+    const bucket = packageUpload.bucket;
     const archive = await get(
       downloadS3BufferWithMaxBytes(
         bucket,

@@ -1,3 +1,4 @@
+import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   createEvent,
@@ -44,64 +45,77 @@ function composerRoot(): HTMLElement {
   return composer;
 }
 
-test("A user can add files by pasting or dropping them", async () => {
-  mockAttachmentChat(context);
-  context.mocks.upload.success({
-    id: "a0000000-0000-4000-a000-000000000081",
-    filename: "notes.txt",
-    contentType: "text/plain",
-    size: 11,
-    url: "https://cdn.vm7.io/artifacts/tests/chat-attachments/notes.txt",
-  });
+test.each([false, true])(
+  "A user can paste or drop public and private attachments (private=%s)",
+  async (privateFiles) => {
+    mockAttachmentChat(context);
+    context.mocks.upload.success({
+      id: "a0000000-0000-4000-a000-000000000081",
+      filename: "notes.txt",
+      contentType: "text/plain",
+      size: 11,
+      url: privateFiles
+        ? artifactReferencePath(
+            "a0000000-0000-4000-a000-000000000081",
+            "notes.txt",
+          )
+        : "https://cdn.vm7.io/artifacts/tests/chat-attachments/notes.txt",
+    });
 
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+    await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
 
-  const editor = await screen.findByRole("textbox", { name: "Message" });
-  const textFile = new File(["file notes"], "notes.txt", {
-    type: "text/plain",
-  });
-  fireEvent.paste(editor, {
-    clipboardData: {
-      getData: (type: string) => {
-        return type === "text/plain" ? "Pasted planning notes" : "";
-      },
-      items: [
-        {
-          kind: "file",
-          type: "text/plain",
-          getAsFile: () => {
-            return textFile;
-          },
+    const editor = await screen.findByRole("textbox", { name: "Message" });
+    const textFile = new File(["file notes"], "notes.txt", {
+      type: "text/plain",
+    });
+    fireEvent.paste(editor, {
+      clipboardData: {
+        getData: (type: string) => {
+          return type === "text/plain" ? "Pasted planning notes" : "";
         },
-      ],
-    },
-  });
+        items: [
+          {
+            kind: "file",
+            type: "text/plain",
+            getAsFile: () => {
+              return textFile;
+            },
+          },
+        ],
+      },
+    });
 
-  await expect(screen.findByText("notes.txt")).resolves.toBeVisible();
-  await expect(findNamedButton("Remove notes.txt")).resolves.toBeVisible();
-  await waitFor(() => {
-    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
-      "Pasted planning notes",
-    );
-  });
+    await expect(screen.findByText("notes.txt")).resolves.toBeVisible();
+    await expect(findNamedButton("Remove notes.txt")).resolves.toBeVisible();
+    await waitFor(() => {
+      expect(
+        screen.getByRole("textbox", { name: "Message" }),
+      ).toHaveTextContent("Pasted planning notes");
+    });
 
-  context.mocks.upload.success({
-    id: "a0000000-0000-4000-a000-000000000082",
-    filename: "brief.pdf",
-    contentType: "application/pdf",
-    size: 12,
-    url: "https://cdn.vm7.io/artifacts/tests/chat-attachments/brief.pdf",
-  });
-  const pdf = new File(["pdf contents"], "brief.pdf", {
-    type: "application/pdf",
-  });
-  fireEvent.drop(composerRoot(), {
-    dataTransfer: { files: [pdf] },
-  });
+    context.mocks.upload.success({
+      id: "a0000000-0000-4000-a000-000000000082",
+      filename: "brief.pdf",
+      contentType: "application/pdf",
+      size: 12,
+      url: privateFiles
+        ? artifactReferencePath(
+            "a0000000-0000-4000-a000-000000000082",
+            "brief.pdf",
+          )
+        : "https://cdn.vm7.io/artifacts/tests/chat-attachments/brief.pdf",
+    });
+    const pdf = new File(["pdf contents"], "brief.pdf", {
+      type: "application/pdf",
+    });
+    fireEvent.drop(composerRoot(), {
+      dataTransfer: { files: [pdf] },
+    });
 
-  await expect(screen.findByText("brief.pdf")).resolves.toBeVisible();
-  await expect(findNamedButton("Remove brief.pdf")).resolves.toBeVisible();
-});
+    await expect(screen.findByText("brief.pdf")).resolves.toBeVisible();
+    await expect(findNamedButton("Remove brief.pdf")).resolves.toBeVisible();
+  },
+);
 
 test("Image annotation is offered only when the feature is available", async () => {
   const image = draftAttachment("billing-page.png");

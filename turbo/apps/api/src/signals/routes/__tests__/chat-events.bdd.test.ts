@@ -8218,7 +8218,6 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     expect(queuedContext.platformEnvironment).toMatchObject({
       OKOU_PI_LANGFUSE_DEBUG_ENABLED: "true",
-      OKOU_PI_LANGFUSE_RELAY_ENABLED: "true",
       LANGFUSE_TRACING_ENABLED: "true",
     });
     expect(queuedContext.platformEnvironment).not.toHaveProperty(
@@ -22753,7 +22752,7 @@ describe("CHAT-02: run-level model overrides", () => {
           });
         })
         .toBe(true);
-      await expect.poll(admissionLock.waiterCount).toBe(2);
+      await expect.poll(admissionLock.transitiveWaiterCount).toBe(2);
       if (sdk) {
         await expect.poll(sdk.initializationCount).toBe(2);
       }
@@ -28717,7 +28716,7 @@ describe("CHAT-02: shared user message queue", () => {
         });
       })
       .toBe(true);
-    await expect.poll(admissionLock.waiterCount).toBe(2);
+    await expect.poll(admissionLock.transitiveWaiterCount).toBe(2);
     admissionLock.release();
 
     const sent = await send;

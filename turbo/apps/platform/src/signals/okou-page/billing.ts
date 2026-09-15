@@ -501,12 +501,7 @@ export const usagePackMigrationAsync$ = computed(
     get(usagePackMigrationReload$);
     const createClient = get(apiClient$);
     const client = createClient(billingUsagePackMigrationContract);
-    // Retained rollback APIs still require this opt-in to return all-Free
-    // configuration. Retire with the contract query after their gate (#32575).
-    const result = await accept(
-      client.get({ query: { supportsFreeMembers: "true" } }),
-      [200, 403, 404, 409],
-    );
+    const result = await accept(client.get(), [200, 403, 404, 409]);
     return result.status === 200 ? result.body : null;
   },
 );

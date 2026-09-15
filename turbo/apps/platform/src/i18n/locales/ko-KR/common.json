@@ -1944,8 +1944,7 @@
           "print": "인쇄와 출판",
           "retro-tech": "레트로 기술과 인터페이스"
         },
-        "preview": "{{title}} 미리보기",
-        "previewUnavailable": "이 스타일의 동영상 미리보기가 없습니다."
+        "preview": "{{title}} 미리보기"
       },
       "voice": {
         "auto": "Okou에게 맡기기",

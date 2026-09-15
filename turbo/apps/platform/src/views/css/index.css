@@ -135,6 +135,9 @@
   --animate-thinking-in: okou-thinking-in 0.3s ease-out;
   --animate-chat-skeleton-reveal: okou-chat-skeleton-reveal 0s 100ms forwards;
 
+  /* Shimmer sweep for the thinking label, on the same contract. */
+  --animate-shimmer: okou-shimmer 3.5s linear infinite;
+
   /* Onboarding workflow diagram beam. Its keyframes stay below; the consumer
      reaches this entry through `motion-safe:animate-owf-beam-flow`. */
   --animate-owf-beam-flow: owf-beam-flow 2.8s linear infinite;
@@ -171,6 +174,23 @@
      It is not `h-dvh`: the standalone block below moves it to `100lvh`. Inline
      keeps the reference, so the media query still decides at use time. */
   --height-viewport: var(--okou-viewport-height);
+
+  /* The thinking label's shimmer. Six stops, so the sweep reads as a band with
+     a flat core rather than a point: the two inner stops hold the bright
+     foreground across 48-52% while the outer pairs hold the muted colour flat
+     to each edge. Tailwind's own gradient utilities interpolate in oklab and
+     compose from three positions, so they cannot express this; it is inline so
+     the muted/foreground runtime variables still resolve per theme on the
+     element. */
+  --background-image-shimmer-text: linear-gradient(
+    90deg,
+    hsl(var(--muted-foreground) / 0.8) 0%,
+    hsl(var(--muted-foreground) / 0.8) 35%,
+    hsl(var(--foreground)) 48%,
+    hsl(var(--foreground)) 52%,
+    hsl(var(--muted-foreground) / 0.8) 65%,
+    hsl(var(--muted-foreground) / 0.8) 100%
+  );
 }
 
 /* Safe area insets as CSS custom properties — more reliable than direct env() in inline
@@ -402,17 +422,16 @@ body {
   }
 }
 
-/* Shimmer text effect for active/thinking states.
+/* Shimmer text effect for active/thinking states. Reached through
+   `--animate-shimmer` and `--background-image-shimmer-text` above; the rest of
+   the treatment is utilities on `ShimmerText`.
 
-   The bright band lives in the label's own background gradient, so the only
-   thing that moves is the gradient's paint origin. Sweeping it instead with a
-   translated overlay needs the overlay and the text copy inside it to cancel
-   each other out on every frame, and the compositor rasterises each animated
-   layer against its own whole-device-pixel origin, so that cancellation drifts
-   by up to a pixel and the status text jitters sideways. Nothing here moves a
-   box that holds glyphs, so the text cannot shift.
-
-   `contain: paint` keeps the per-frame repaint inside the label. */
+   Only the gradient's paint origin moves. Sweeping the band with a translated
+   overlay instead needs the overlay and the text copy inside it to cancel each
+   other out on every frame, and the compositor rasterises each animated layer
+   against its own whole-device-pixel origin, so that cancellation drifts by up
+   to a pixel and the status text jitters sideways. Nothing here moves a box
+   that holds glyphs, so the text cannot shift. */
 @keyframes okou-shimmer {
   from {
     background-position: 100% center;
@@ -420,23 +439,6 @@ body {
   to {
     background-position: -100% center;
   }
-}
-.okou-shimmer-text {
-  background: linear-gradient(
-    90deg,
-    hsl(var(--muted-foreground) / 0.8) 0%,
-    hsl(var(--muted-foreground) / 0.8) 35%,
-    hsl(var(--foreground)) 48%,
-    hsl(var(--foreground)) 52%,
-    hsl(var(--muted-foreground) / 0.8) 65%,
-    hsl(var(--muted-foreground) / 0.8) 100%
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  contain: paint;
-  animation: okou-shimmer 3.5s linear infinite;
 }
 
 @keyframes okou-thinking-in {
@@ -558,8 +560,6 @@ body {
   /* Cards rendered inside a chat message sit one level in from the page, so
      they take one step down the radius scale. */
   --okou-chat-card-radius: 0.75rem;
-  /* The composer is the largest surface on the page and leads the radius scale. */
-  --okou-composer-radius: 1.5rem;
   --okou-card-shadow:
     0 2px 12px hsl(30 6% 45% / 0.05), 0 0 0 0.5px hsl(30 6% 45% / 0.025);
   /* A card inside a message is not elevated off the page the way a page-level
@@ -677,39 +677,6 @@ body {
 }
 
 /* Morandi outline buttons */
-
-/* Composer / input card (white, light border — “Just ask” / chat input) */
-.okou-app .okou-composer {
-  --okou-composer-ring: var(--gray-500);
-  background-color: hsl(var(--card));
-  border: 0.7px solid hsl(var(--gray-400));
-  border-radius: var(--okou-composer-radius);
-  box-shadow: var(--okou-card-shadow);
-}
-
-/* Keep the finished border and shadow on their own layer so focus animates
-   through compositor-friendly opacity instead of repainting the card. */
-.okou-app .okou-composer::after {
-  content: "";
-  position: absolute;
-  inset: -0.7px;
-  border: 0.7px solid hsl(var(--okou-composer-ring));
-  border-radius: inherit;
-  box-shadow: var(--okou-composer-focus-veil);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1);
-  will-change: opacity;
-}
-.okou-app .okou-composer:focus-within::after {
-  opacity: 1;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .okou-app .okou-composer::after {
-    transition: none;
-  }
-}
 
 @layer base {
   *,
@@ -1283,17 +1250,6 @@ details > summary {
   to {
     offset-distance: 100%;
   }
-}
-
-/* Dark carries the brand hue instead of a lighter neutral. The light ring can
-   stay neutral because there it darkens, and
-   darker-than-the-border already reads as emphasis. Lifting a neutral against a
-   dark card does not: it lands on a bright grey that reads as a white outline
-   rather than as focus, which is what `--ring` means on every other control.
-   Saturation, not lightness, does the work, so the ring stays quieter than the
-   full Amber stop. */
-:where([data-theme="dark"]) .okou-app .okou-composer {
-  --okou-composer-ring: 38.8 38% 38%;
 }
 
 /* Colour themes realigned to the permanent palette's lightness steps. */

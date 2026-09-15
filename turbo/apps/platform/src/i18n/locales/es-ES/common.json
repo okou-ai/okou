@@ -1989,8 +1989,7 @@
           "print": "Impresión y publicaciones",
           "retro-tech": "Tecnología retro e interfaces"
         },
-        "preview": "Vista previa de {{title}}",
-        "previewUnavailable": "Este estilo no tiene una vista previa de vídeo disponible."
+        "preview": "Vista previa de {{title}}"
       },
       "voice": {
         "auto": "Dejar que Okou elija",

@@ -1944,8 +1944,7 @@
           "print": "印刷と出版",
           "retro-tech": "レトロテックとインターフェース"
         },
-        "preview": "{{title}} のプレビュー",
-        "previewUnavailable": "このスタイルの動画プレビューはありません。"
+        "preview": "{{title}} のプレビュー"
       },
       "voice": {
         "auto": "Okou におまかせ",

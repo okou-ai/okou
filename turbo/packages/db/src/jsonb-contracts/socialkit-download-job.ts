@@ -1,4 +1,6 @@
 export interface SocialKitDownloadRequestSnapshot {
+  /** Fixed at creation; historical jobs retain public storage. */
+  readonly privateArtifacts?: boolean;
   readonly platform: "youtube" | "tiktok" | "instagram" | "facebook";
   readonly url: string;
   readonly maxDuration: number;

@@ -1258,13 +1258,17 @@ async function printIntent(
   intent: SocialIntent,
   options: SocialExportOptions,
 ): Promise<void> {
-  await withSocialOutput(options, false, async (write) => {
-    const response = await callSocialKit(intent.request);
-    if (response.collection) {
-      throw new Error("Okou Social returned unexpected collection metadata");
-    }
-    await write(successfulOutput(intent, response));
-  });
+  await withSocialOutput(
+    options,
+    intent.operation === "transcript" ? "transcript" : "single",
+    async (write) => {
+      const response = await callSocialKit(intent.request);
+      if (response.collection) {
+        throw new Error("Okou Social returned unexpected collection metadata");
+      }
+      await write(successfulOutput(intent, response));
+    },
+  );
 }
 
 async function printCollectionResult(
@@ -1275,7 +1279,7 @@ async function printCollectionResult(
   if (checkpoint && options.output !== undefined) {
     await checkpoint.file.assertDistinctOutput(options.output);
   }
-  await withSocialOutput(options, true, async (write) => {
+  await withSocialOutput(options, "collection", async (write) => {
     let output: SocialOutput;
     try {
       output = await retrieveCollection(
@@ -2023,15 +2027,15 @@ const downloadCommand = new Command()
     });
   });
 
-for (const command of [
-  inspectCommand,
-  postsCommand,
-  searchCommand,
-  commentsCommand,
-  transcriptCommand,
-  summarizeCommand,
-]) {
-  addSocialExportOptions(command);
+for (const [command, mode] of [
+  [inspectCommand, "single"],
+  [postsCommand, "collection"],
+  [searchCommand, "collection"],
+  [commentsCommand, "collection"],
+  [transcriptCommand, "transcript"],
+  [summarizeCommand, "single"],
+] as const) {
+  addSocialExportOptions(command, mode);
 }
 
 export const socialCommand = new Command()
@@ -2065,6 +2069,7 @@ Examples:
   Checkpoint:  okou social comments https://www.instagram.com/p/<id>/ --limit 20 --checkpoint comments.json --json
   Continue:    okou social resume comments.json --limit 20 --json
   Transcript:  okou social transcript https://youtu.be/<id> --json
+  Captions:    okou social transcript https://youtu.be/<id> --format vtt --output captions.vtt
   Summary:     okou social summarize https://youtu.be/<id> --json
   Fields:      okou social summarize https://youtu.be/<id> --fields '{"audience":"Who this video helps","actionItems":"Practical next steps"}' --json
   Fields file: okou social summarize https://youtu.be/<id> --fields-file summary-fields.json --json
@@ -2091,6 +2096,7 @@ Notes:
   - Instagram search accepts up to 100 trimmed characters and exposes one anonymous batch of up to 12 reels
   - Collection output is aggregated unless --stream explicitly requests JSON Lines
   - Research commands support --output, --select, --format json/csv, and explicit --overwrite; see each command's help
+  - Transcript additionally supports --format text/srt/vtt with --output; timed subtitles require real segment timing
   - Exported files are local; retain stdout metadata receipts and use okou web upload-file for web-chat delivery
   - --stream writes one kind=page record per fetched page, followed by one metadata-only kind=summary record
   - Handled collection failures retain accepted results and emit one terminal result/summary with error and progress

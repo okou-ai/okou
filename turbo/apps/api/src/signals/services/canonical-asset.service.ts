@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import type {
@@ -17,7 +17,6 @@ import type { ChatEventAttachFileMetadata } from "@okouai/db/schema/chat-event";
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
 import type { SlackFile } from "../../lib/slack-webhook-context";
-import { env } from "../../lib/env";
 import { buildFileUrlFromKey, isArtifactKeyV2 } from "../../lib/file-url";
 import { inferMimetype } from "../../lib/mimetype";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
@@ -45,9 +44,59 @@ import {
 import { syncArtifactCatalogForFile$ } from "./artifact-catalog.service";
 import { publishArtifactsChangedForRun } from "./artifact-realtime.service";
 import { sourceForRun } from "./run-uploaded-files.service";
+import {
+  artifactStorageBucket,
+  privateArtifactCreationEnabled,
+  privateArtifactLocation,
+  privateArtifactUrl,
+} from "./private-artifact-storage.service";
 
 const INPUT_IMPORT_TIMEOUT_MS = 10_000;
 const MAX_INPUT_FILE_SIZE_BYTES = 100 * 1024 * 1024;
+
+type CanonicalArtifactLocation = ArtifactObjectLocation & {
+  readonly storageMetadata: RunUploadedFileMetadata;
+};
+
+const allocateCanonicalArtifact$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly userId: string;
+      readonly orgId: string;
+      readonly filename: string;
+      readonly publicBrand: PublicBrand;
+    },
+    signal: AbortSignal,
+  ): Promise<CanonicalArtifactLocation> => {
+    const enabled = await get(
+      privateArtifactCreationEnabled(args.orgId, args.userId),
+    );
+    signal.throwIfAborted();
+    if (enabled) {
+      return privateArtifactLocation(
+        randomUUID(),
+        args.filename,
+        args.publicBrand,
+      );
+    }
+    const location = await set(allocateArtifactObject$, args, signal);
+    return { ...location, storageMetadata: { publicBrand: args.publicBrand } };
+  },
+);
+
+function canonicalAssetUrl(asset: CanonicalAssetRow): string {
+  if (!asset.storageKey || !asset.filename) {
+    throw new Error("Canonical asset storage identity is missing");
+  }
+  artifactStorageBucket(asset.metadata);
+  return asset.metadata.storage === undefined
+    ? buildFileUrlFromKey(
+        asset.storageKey,
+        canonicalAssetPublicBrand(asset.metadata),
+      )
+    : privateArtifactUrl(asset.id, asset.filename);
+}
 
 export class InputFileImportError extends Error {
   constructor(
@@ -349,7 +398,7 @@ async function canonicalInputAssetAfterTransitionConflict(
 async function ensureCanonicalInputAsset(
   db: Db,
   args: CanonicalInputFileArgs & {
-    readonly artifact: ArtifactObjectLocation;
+    readonly artifact: CanonicalArtifactLocation;
   },
 ): Promise<CanonicalAssetRow> {
   const scope = args.scope;
@@ -367,7 +416,7 @@ async function ensureCanonicalInputAsset(
       contentType: args.contentType,
       sizeBytes: args.size ?? null,
       url: null,
-      metadata: { publicBrand: args.publicBrand },
+      metadata: args.artifact.storageMetadata,
       assetVersion: CANONICAL_ASSET_VERSION,
       classification: "input",
       accessLevel: "private",
@@ -526,6 +575,9 @@ async function markCanonicalInputReady(
     const [ready] = await db
       .update(runUploadedFiles)
       .set({
+        ...(args.asset.metadata.storage === undefined
+          ? {}
+          : { url: canonicalAssetUrl(args.asset) }),
         sizeBytes: args.sizeBytes,
         checksumSha256: args.checksumSha256,
         contentType: args.contentType,
@@ -667,18 +719,21 @@ const importCanonicalInputFile$ = command(
         }
         await get(
           putS3Object(
-            env("R2_USER_ARTIFACTS_BUCKET_NAME"),
+            artifactStorageBucket(args.asset.metadata),
             args.asset.storageKey,
             buffer,
             contentType,
             {
               signal: importSignal,
-              metadata: artifactObjectMetadata(
-                args.userId,
-                args.asset.id,
-                args.asset.filename ?? args.asset.id,
-                canonicalAssetPublicBrand(args.asset.metadata),
-              ),
+              metadata:
+                args.asset.metadata.storage !== undefined
+                  ? { "artifact-id": args.asset.id }
+                  : artifactObjectMetadata(
+                      args.userId,
+                      args.asset.id,
+                      args.asset.filename ?? args.asset.id,
+                      canonicalAssetPublicBrand(args.asset.metadata),
+                    ),
             },
           ),
         );
@@ -725,34 +780,43 @@ const materializeCanonicalSlackInputFile$ = command(
     }
     const filename = slackFileFilename(args.file);
     const contentType = canonicalInputContentType(filename, args.file.mimetype);
-    const artifact = await set(
-      allocateArtifactObject$,
-      {
-        userId: args.userId,
-        filename,
-        publicBrand: args.publicBrand,
-      },
-      signal,
-    );
     const db = set(writeDb$);
-    let asset = await ensureCanonicalInputAsset(db, {
-      ...args,
-      source: "slack",
+    let asset = await canonicalAssetByIdentity(db, {
+      userId: args.userId,
       scope: "slack-input",
       key: fileId,
-      externalId: fileId,
-      size: args.file.size,
-      provenance: {
-        provider: "slack",
-        workspaceId: args.workspaceId,
-        channelId: args.channelId,
-        messageTs: args.messageTs,
-        externalFileId: fileId,
-      },
-      filename,
-      contentType,
-      artifact,
     });
+    signal.throwIfAborted();
+    if (!asset) {
+      const artifact = await set(
+        allocateCanonicalArtifact$,
+        {
+          userId: args.userId,
+          orgId: args.orgId,
+          filename,
+          publicBrand: args.publicBrand,
+        },
+        signal,
+      );
+      asset = await ensureCanonicalInputAsset(db, {
+        ...args,
+        source: "slack",
+        scope: "slack-input",
+        key: fileId,
+        externalId: fileId,
+        size: args.file.size,
+        provenance: {
+          provider: "slack",
+          workspaceId: args.workspaceId,
+          channelId: args.channelId,
+          messageTs: args.messageTs,
+          externalFileId: fileId,
+        },
+        filename,
+        contentType,
+        artifact,
+      });
+    }
     signal.throwIfAborted();
     if (asset.materializationStatus === "ready") {
       return canonicalSlackInputResult(asset, fileId);
@@ -835,7 +899,7 @@ export const materializeCanonicalInputFile$ = command(
     let asset = await canonicalAssetByIdentity(db, args);
     signal.throwIfAborted();
     if (!asset) {
-      const artifact = await set(allocateArtifactObject$, args, signal);
+      const artifact = await set(allocateCanonicalArtifact$, args, signal);
       asset = await ensureCanonicalInputAsset(db, { ...args, artifact });
       signal.throwIfAborted();
     }
@@ -929,6 +993,50 @@ export async function registerCanonicalWebInputAssets(
   },
 ): Promise<void> {
   for (const file of args.files) {
+    // A private upload already has an ownership record. Attach that same
+    // record without discarding its storage marker or creating a public alias.
+    if (file.objectKey.startsWith("private-artifacts/")) {
+      const [owned] = await db
+        .select()
+        .from(runUploadedFiles)
+        .where(eq(runUploadedFiles.id, file.id))
+        .limit(1);
+      if (!owned || owned.metadata.storage === undefined) {
+        throw new Error("Private attachment storage record is missing");
+      }
+      artifactStorageBucket(owned.metadata);
+      if (
+        owned.userId !== args.userId ||
+        owned.orgId !== args.orgId ||
+        owned.storageKey !== file.objectKey
+      ) {
+        throw new Error("Private attachment belongs to another owner");
+      }
+      await db
+        .update(runUploadedFiles)
+        .set({
+          chatThreadId: args.chatThreadId,
+          assetVersion: CANONICAL_ASSET_VERSION,
+          classification: "input",
+          materializationStatus: "ready",
+          contentType: file.contentType,
+          sizeBytes: file.size,
+          url: privateArtifactUrl(file.id, file.filename),
+          idempotencyScope: "web-input",
+          idempotencyKey: file.id,
+        })
+        // Reusing a generated or canonical integration file as an input must
+        // retain its original run, classification, and idempotency identity.
+        .where(
+          and(
+            eq(runUploadedFiles.id, file.id),
+            isNull(runUploadedFiles.assetVersion),
+            isNull(runUploadedFiles.runId),
+            isNull(runUploadedFiles.chatThreadId),
+          ),
+        );
+      continue;
+    }
     const [inserted] = await db
       .insert(runUploadedFiles)
       .values({
@@ -995,7 +1103,7 @@ interface PreparedCanonicalPublishedAsset {
 async function ensureCanonicalPublishedAsset(
   db: Db,
   args: PrepareCanonicalPublishedAssetArgs,
-  artifact: ArtifactObjectLocation,
+  artifact: CanonicalArtifactLocation,
   context: {
     readonly scope: string;
     readonly source: RunUploadedFileSource;
@@ -1016,7 +1124,7 @@ async function ensureCanonicalPublishedAsset(
       contentType: args.contentType,
       sizeBytes: args.size,
       url: null,
-      metadata: { publicBrand: args.publicBrand },
+      metadata: artifact.storageMetadata,
       assetVersion: CANONICAL_ASSET_VERSION,
       classification: "published-output",
       accessLevel: "published",
@@ -1046,17 +1154,6 @@ async function ensureCanonicalPublishedAsset(
     }));
   if (!asset) {
     throw new Error("Canonical publication asset conflict is missing");
-  }
-  if (
-    asset.filename !== args.filename ||
-    asset.contentType !== args.contentType ||
-    asset.sizeBytes !== args.size ||
-    asset.checksumSha256 !== args.checksumSha256
-  ) {
-    throw new Error("Upload operation identity was reused for another file");
-  }
-  if (!asset.storageKey) {
-    throw new Error("Canonical publication storage key is missing");
   }
   return asset;
 }
@@ -1130,31 +1227,48 @@ export const prepareCanonicalPublishedAsset$ = command(
       return null;
     }
 
-    const artifact = await set(
-      allocateArtifactObject$,
-      {
-        userId: args.userId,
-        filename: args.filename,
-        publicBrand: args.publicBrand,
-      },
-      signal,
-    );
-    const assetResult = await settle(
-      ensureCanonicalPublishedAsset(db, args, artifact, {
-        scope,
-        source,
-        chatThreadId: run.chatThreadId,
-      }),
-      signal,
-    );
-    if (!assetResult.ok) {
-      if (isForeignKeyViolation(assetResult.error)) {
-        return null;
-      }
-      throw assetResult.error;
-    }
-    const asset = assetResult.value;
+    let asset = await canonicalAssetByIdentity(db, {
+      userId: args.userId,
+      scope,
+      key: args.operationId,
+    });
     signal.throwIfAborted();
+    if (!asset) {
+      const artifact = await set(
+        allocateCanonicalArtifact$,
+        {
+          userId: args.userId,
+          orgId: args.orgId,
+          filename: args.filename,
+          publicBrand: args.publicBrand,
+        },
+        signal,
+      );
+      const assetResult = await settle(
+        ensureCanonicalPublishedAsset(db, args, artifact, {
+          scope,
+          source,
+          chatThreadId: run.chatThreadId,
+        }),
+        signal,
+      );
+      if (!assetResult.ok) {
+        if (isForeignKeyViolation(assetResult.error)) {
+          return null;
+        }
+        throw assetResult.error;
+      }
+      asset = assetResult.value;
+    }
+    signal.throwIfAborted();
+    if (
+      asset.filename !== args.filename ||
+      asset.contentType !== args.contentType ||
+      asset.sizeBytes !== args.size ||
+      asset.checksumSha256 !== args.checksumSha256
+    ) {
+      throw new Error("Upload operation identity was reused for another file");
+    }
     const deliveryResult = await settle(
       ensureCanonicalSlackDelivery(db, asset.id, args),
       signal,
@@ -1172,20 +1286,20 @@ export const prepareCanonicalPublishedAsset$ = command(
     if (!storageKey) {
       throw new Error("Canonical publication storage key is missing");
     }
-    const metadata = isArtifactKeyV2(storageKey)
-      ? artifactObjectMetadata(
-          args.userId,
-          asset.id,
-          args.filename,
-          canonicalAssetPublicBrand(asset.metadata),
-        )
-      : undefined;
+    const metadata =
+      asset.metadata.storage !== undefined
+        ? { "artifact-id": asset.id }
+        : isArtifactKeyV2(storageKey)
+          ? artifactObjectMetadata(
+              args.userId,
+              asset.id,
+              args.filename,
+              canonicalAssetPublicBrand(asset.metadata),
+            )
+          : undefined;
     const uploadHeaders = metadata ? s3MetadataHeaders(metadata) : undefined;
 
-    const url = buildFileUrlFromKey(
-      storageKey,
-      canonicalAssetPublicBrand(asset.metadata),
-    );
+    const url = canonicalAssetUrl(asset);
     if (asset.materializationStatus === "ready") {
       return {
         assetId: asset.id,
@@ -1205,7 +1319,7 @@ export const prepareCanonicalPublishedAsset$ = command(
     signal.throwIfAborted();
     const uploadUrl = await get(
       generatePresignedPutUrl(
-        env("R2_USER_ARTIFACTS_BUCKET_NAME"),
+        artifactStorageBucket(asset.metadata),
         storageKey,
         args.contentType,
         {
@@ -1272,17 +1386,14 @@ export const materializeCanonicalPublishedAsset$ = command(
         message: "Canonical publication asset was not found",
       };
     }
-    const url = buildFileUrlFromKey(
-      asset.storageKey,
-      canonicalAssetPublicBrand(asset.metadata),
-    );
+    const url = canonicalAssetUrl(asset);
     if (asset.materializationStatus === "ready") {
       await set(syncArtifactCatalogForFile$, asset.id, signal);
       return { ok: true, assetId: asset.id, url };
     }
 
     const head = await get(
-      s3ObjectHead(env("R2_USER_ARTIFACTS_BUCKET_NAME"), asset.storageKey),
+      s3ObjectHead(artifactStorageBucket(asset.metadata), asset.storageKey),
     );
     signal.throwIfAborted();
     const expectedSize = asset.sizeBytes;

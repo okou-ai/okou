@@ -1,6 +1,6 @@
 /**
  * Historical JSONB fixture: current download endpoints cannot write the old
- * provider/artifact shapes without media metadata. Only remove those additive
+ * request/provider/artifact shapes without storage policy or media metadata. Only remove those additive
  * fields from an API-created job; tests observe recovery through the real API.
  */
 import { socialKitDownloadJobs } from "@okouai/db/schema/socialkit-download-job";
@@ -16,6 +16,7 @@ export async function restoreLegacyDownloadMetadataFixture(
     .set(writeDb$)
     .update(socialKitDownloadJobs)
     .set({
+      request: sql`${socialKitDownloadJobs.request} - 'privateArtifacts'`,
       providerResult: sql`${socialKitDownloadJobs.providerResult} - 'quality' - 'format'`,
       artifact: sql`${socialKitDownloadJobs.artifact} - 'format'`,
     })
