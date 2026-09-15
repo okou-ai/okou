@@ -1049,10 +1049,12 @@ helper and schema dependency entirely.
 The rollback resolver derives the preparation's actual introduction from main's
 first-parent history of `marketing-privacy-cleanup.service.ts`, preserving that
 boundary after the file is deleted and across a squash merge. It rejects absent
-history and targets predating preparation before looking up artifacts. The retained target
-must also be a released READY artifact. This source guard does not prove the
-preparation has served; record the immutable production artifact and drained
-writers before merging/releasing contraction. See the
+history and targets predating preparation before looking up artifacts. The retained
+target must also be a released READY artifact. The canonical preparation
+introduction is `e98391290d01e88ece8bf1acfcfc258b3f1e3c13`. Record the immutable
+production artifact and old-invocation drain on
+[contraction #34305](https://github.com/vm0-ai/vm0/pull/34305) before it becomes
+ready; this source guard alone does not prove serving or drain. See the
 [explicit release and rollback gates](marketing-privacy-choices.md#required-release-order-and-rollback-boundary).
 API rollback cannot recreate the retired rows. The withdrawn feature stays
 withdrawn, and #33275 owns any replacement privacy design.

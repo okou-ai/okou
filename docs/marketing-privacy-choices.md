@@ -46,7 +46,8 @@ helper are removed as well. No compatibility view or replacement trigger is
 installed. Migrations `1108`–`1110`, their snapshots and journal entries remain
 immutable historical replay records.
 
-The source audit at `main@bc9a254f8005d20b6514254c30c903649f7f1b00` found one
+The source audit, repeated against prepared release source
+`8b9763e341ea8519c1aad5e62ad72dfa5c582eb8`, found one
 remaining runtime dependency: the `user.deleted` cleanup deleted personal and
 linked browser choices, cascading to revisions and receipts. No current
 creation, consent update, delivery authorization, cron or backfill writer was
@@ -55,11 +56,14 @@ metadata are outside this three-table retirement.
 
 ## Required release order and rollback boundary
 
-**The contraction PR remains blocked until the preparation is serving.**
+**The preparation must be serving before contraction can merge.**
 [Preparation #34296](https://github.com/vm0-ai/vm0/pull/34296), reviewed source
 `95339650899c7bf8d50b8d8c18dc7e36a4a015c4`, makes account cleanup work with all
-three tables present or all three absent. That source is a PR commit, not a
-production artifact or a claimed merge/serving receipt.
+three tables present or all three absent. Its canonical main introduction is
+`e98391290d01e88ece8bf1acfcfc258b3f1e3c13`. Record the immutable serving,
+old-invocation drain and prepared rollback receipts on
+[contraction #34305](https://github.com/vm0-ai/vm0/pull/34305) before marking it
+ready; merge ancestry by itself is not a serving receipt.
 
 1. Merge and release #34296 separately. Record its immutable serving API
    artifact/version and verify the old unconditional-cleanup API has drained,
@@ -110,8 +114,12 @@ same two actual `user.deleted` webhook cases passed with retained and absent
 storage in separate databases. These are test-owned data, not production rows.
 
 Contraction passed eight real PostgreSQL migration scenarios, the complete
-database migration-consistency chain, and the same two actual account-deletion
-webhook cases against the database migrated through 1137. Generated metadata
+database migration-consistency chain, four actual account-deletion/lifecycle
+webhook cases and the signed Clerk erasure-compatibility route against the
+database migrated through 1137. Prepared release source
+`8b9763e341ea8519c1aad5e62ad72dfa5c582eb8` also passed those five route cases
+against that contracted database and all six private-schema compatibility cases.
+This includes main's newer Pi erasure ingress and replay guards. Generated metadata
 removes exactly the three tables; other schema objects are unchanged. Rollback
 resolver tests cover old targets, missing history and the canonical introduction
 after the preparation helper is deleted. API/database types, scoped lints and
