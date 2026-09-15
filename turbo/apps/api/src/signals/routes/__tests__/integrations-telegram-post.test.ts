@@ -1721,13 +1721,15 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   });
 
   it.each([
-    { ownerKind: "custom", enabled: true },
-    { ownerKind: "official", enabled: true },
-    { ownerKind: "custom", enabled: false },
-    { ownerKind: "official", enabled: false },
+    { ownerKind: "custom", enabled: true, scenario: "models" },
+    { ownerKind: "official", enabled: true, scenario: "models" },
+    { ownerKind: "custom", enabled: true, scenario: "replies" },
+    { ownerKind: "official", enabled: true, scenario: "replies" },
+    { ownerKind: "custom", enabled: false, scenario: "models" },
+    { ownerKind: "official", enabled: false, scenario: "models" },
   ] as const)(
-    "routes $ownerKind Telegram DMs with scoped sessions enabled=$enabled",
-    async ({ ownerKind, enabled }) => {
+    "routes $ownerKind Telegram DM $scenario with scoped sessions enabled=$enabled",
+    async ({ ownerKind, enabled, scenario }) => {
       const runnerGroup = configureCanonicalTelegramRunner();
       configureOfficialBotEnv();
       const actor = authOrgApi.user();
@@ -1908,6 +1910,44 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
 
       const main = await completeDm("start the main DM", 3501);
       expect(main.claim.resumeSession).toBeNull();
+      if (scenario === "replies") {
+        const branch = await completeDm(
+          "start a reply chain",
+          3503,
+          3501,
+          "Long DM answer. ".repeat(350),
+        );
+        expect(branch.claim.resumeSession).toBeNull();
+        expect(branch.replyCount).toBeGreaterThan(1);
+        const branchFollowUp = await completeDm(
+          "continue the reply chain",
+          3504,
+          branch.botReplyId,
+        );
+        expect(branchFollowUp.claim.resumeSession?.sessionId).toBe(
+          branch.sessionId,
+        );
+        const earlierReply = await completeDm(
+          "reply to the earlier user message",
+          3505,
+          3503,
+        );
+        expect(earlierReply.claim.resumeSession?.sessionId).toBe(
+          branchFollowUp.sessionId,
+        );
+        await sendDm("/model claude-opus-4-8", 3506);
+        const pinnedReply = await completeDm(
+          "keep the reply chain model",
+          3508,
+          branch.botReplyId,
+        );
+        expect(pinnedReply.claim.modelUsageProvider).toBe("claude-sonnet-5");
+        expect(pinnedReply.claim.resumeSession?.sessionId).toBe(
+          earlierReply.sessionId,
+        );
+        return;
+      }
+
       const followUp = await completeDm("continue the main DM", 3502);
       expect(followUp.claim.resumeSession?.sessionId).toBe(main.sessionId);
 
@@ -1921,45 +1961,10 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         return;
       }
 
-      const branch = await completeDm(
-        "start a reply chain",
-        3503,
-        3501,
-        "Long DM answer. ".repeat(350),
-      );
-      expect(branch.claim.resumeSession).toBeNull();
-      expect(branch.replyCount).toBeGreaterThan(1);
-      const branchFollowUp = await completeDm(
-        "continue the reply chain",
-        3504,
-        branch.botReplyId,
-      );
-      expect(branchFollowUp.claim.resumeSession?.sessionId).toBe(
-        branch.sessionId,
-      );
-      const earlierReply = await completeDm(
-        "reply to the earlier user message",
-        3505,
-        3503,
-      );
-      expect(earlierReply.claim.resumeSession?.sessionId).toBe(
-        branchFollowUp.sessionId,
-      );
-
       await sendDm("/model claude-opus-4-8", 3506);
       const alternate = await completeDm("use the alternate DM model", 3507);
       expect(alternate.claim.modelUsageProvider).toBe("claude-opus-4-8");
       expect(alternate.claim.resumeSession).toBeNull();
-      const pinnedReply = await completeDm(
-        "keep the reply chain model",
-        3508,
-        branch.botReplyId,
-      );
-      expect(pinnedReply.claim.modelUsageProvider).toBe("claude-sonnet-5");
-      expect(pinnedReply.claim.resumeSession?.sessionId).toBe(
-        earlierReply.sessionId,
-      );
-
       await sendDm("/model claude-sonnet-5", 3509);
       const returned = await completeDm("return to the main model", 3510);
       expect(returned.claim.resumeSession?.sessionId).toBe(followUp.sessionId);
