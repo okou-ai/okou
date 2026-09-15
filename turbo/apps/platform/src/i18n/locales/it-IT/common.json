@@ -2856,7 +2856,6 @@
         "website": "Sito web",
         "workflow": "Flusso di lavoro"
       },
-      "importedEmpty": "Nessun modello ancora caricato.",
       "importedLoadFailed": "Impossibile caricare i modelli caricati.",
       "importedLoading": "Caricamento dei modelli caricati…",
       "importedUnavailable": "I modelli caricati sono temporaneamente non disponibili.",
@@ -5691,6 +5690,10 @@
         "categoryVideo": "Video",
         "chatModels": "Modelli chat",
         "effort": "Sforzo",
+        "effortScale": {
+          "faster": "Più veloce",
+          "smarter": "Più intelligente"
+        },
         "fast": "Veloce",
         "fastImpact": {
           "apiCost": "2× il costo dei token API",

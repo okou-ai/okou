@@ -24,7 +24,10 @@ import {
   publishThreadListChanged,
 } from "../external/realtime";
 import { logger } from "../../lib/log";
-import { activePendingRunPredicate } from "./agent-run-activity.service";
+import {
+  legacySandboxRunPredicate,
+  sandboxCapacityPredicate,
+} from "./pi-inference-lifecycle.service";
 import { decryptQueuedRunnerJobPayload } from "./agent-run-queue-payload.service";
 import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
@@ -397,6 +400,7 @@ async function failQueuedRunAdmission(
     conditions: [
       eq(agentRuns.id, args.row.runId),
       eq(agentRuns.status, "queued"),
+      sql`(${legacySandboxRunPredicate()})`,
     ],
   });
   if (!failed) {
@@ -740,6 +744,7 @@ export const cleanupExpiredQueueEntries$ = command(
           and(
             inArray(agentRuns.id, expiredRunIds),
             eq(agentRuns.status, "queued"),
+            sql`(${legacySandboxRunPredicate()})`,
           ),
         )
         .orderBy(agentRuns.createdAt, agentRuns.id);
@@ -770,6 +775,7 @@ export const cleanupExpiredQueueEntries$ = command(
               conditions: [
                 inArray(agentRuns.id, candidateRunIds),
                 eq(agentRuns.status, "queued"),
+                sql`(${legacySandboxRunPredicate()})`,
                 inArray(agentRuns.id, expiredRunIds),
               ],
             });
@@ -845,6 +851,7 @@ export const cleanupQueuedRunLaunchOrphans$ = command(
         .where(
           and(
             eq(agentRuns.status, "queued"),
+            sql`(${legacySandboxRunPredicate()})`,
             lt(agentRuns.createdAt, cutoff),
             runIds === null ? undefined : inArray(agentRuns.id, runIds),
             notExists(
@@ -884,6 +891,7 @@ export const cleanupQueuedRunLaunchOrphans$ = command(
         },
         conditions: [
           eq(agentRuns.status, "queued"),
+          sql`(${legacySandboxRunPredicate()})`,
           inArray(agentRuns.id, candidateRunIds),
           notExists(
             tx
@@ -937,13 +945,7 @@ export const staleQueueOrgIds$ = command(
         .where(
           and(
             eq(agentRuns.orgId, orgId),
-            or(
-              eq(agentRuns.status, "running"),
-              and(
-                eq(agentRuns.status, "pending"),
-                activePendingRunPredicate(staleThreshold),
-              ),
-            ),
+            sandboxCapacityPredicate(writeDb, orgId, staleThreshold),
           ),
         );
       signal.throwIfAborted();

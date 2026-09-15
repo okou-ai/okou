@@ -388,6 +388,12 @@ export const testRuntimeStateActionResponseSchema = z.object({
               runnerProfile: z.string().min(1).max(255),
             })
             .strict(),
+          z.strictObject({
+            schemaVersion: z.literal(4),
+            framework: z.literal("pi"),
+            executionMode: z.literal("api-inference"),
+            inferenceContractVersion: z.literal(1),
+          }),
         ])
         .nullable(),
     })

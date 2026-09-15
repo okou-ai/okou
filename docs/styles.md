@@ -676,15 +676,26 @@ The competitor for the paragraphs is the App's own unlayered `.wmde-markdown p`
 rule, which a utility in `@layer utilities` cannot outrank without one; a layered
 important declaration does. The card slot has since been drained to a `my-1.5`
 utility of its own, which the important declaration outranks from inside the same
-layer, so both halves still land on the bubble's 8px. But that same promotion
-would also beat the two competitors the retired
-rule _lost_ to — the vendored `.wmde-markdown > *:first-child` /
-`> *:last-child` resets, which are themselves important, and the vendored
-`blockquote > :first-child` / `:last-child` pair, which ties the retired rule on
-specificity and wins on source order because the Markdown chunk's stylesheet
-loads after the App's. Restating those four at the same tier is what keeps the
-edge paragraphs flush. `[&_hr]:hidden` needs no important, because nothing
-unlayered declares `display` on a Markdown rule.
+layer, so both halves still land on the bubble's 8px. That same promotion also
+clears the vendored `.wmde-markdown > *:first-child` / `> *:last-child` resets,
+which carry `!important` and therefore beat every unlayered rule whatever the
+source order is. The retired rule lost to those two, so restating them at the
+same tier is what keeps the frame's own edge paragraphs flush.
+
+The vendored `blockquote > :first-child` / `:last-child` pair is a different
+case, and the source order decides it. That order runs the other way from what
+this section first recorded: the Markdown chunk's stylesheet reaches the bundle
+through a static `router.tsx` import chain that `main.tsx` evaluates before its
+own `./css/index.css`, so Rollup emits the vendored rules first and the App
+block wins every tie. The pair is not important and ties the retired
+`.okou-chat-bubble-* .wmde-markdown p` rule at (0,2,1), so the retired rule won:
+inside a bubble, a blockquote's first and last paragraph carried its 8px.
+`[&_blockquote>*:first-child]:mt-0!` and its `mb-0!` sibling flush those two
+edges instead, which narrows that spacing rather than restating it. See the
+Markdown body batch in the migration log for the measurement, and
+[#34278](https://github.com/vm0-ai/vm0/issues/34278) for the spacing decision
+itself. `[&_hr]:hidden` needs no important, because nothing unlayered declares
+`display` on a Markdown rule.
 
 The card slot is addressed through `data-slot="markdown-card"` rather than its
 `okou-markdown-card` class. At the time this batch landed that was because
@@ -1101,12 +1112,31 @@ the separate removal of the chat thinking spinner switch, which deleted the
 loader, its colour state and its keyframes outright; the rotating mark is now
 the only thinking indicator, so these states are the online-visible path.
 
-`okou-shimmer-text` was scoped out of this batch. Its gradient has six colour
-stops, and Tailwind's gradient utilities interpolate in oklab, so only the exact
-`bg-[linear-gradient(...)]` form reproduces it — 229 characters for that one
-utility, past the length this family keeps its class strings under. Choosing
-between that and an App-owned gradient token for a single consumer is a design
-decision rather than a mechanical replacement.
+`okou-shimmer-text` was scoped out of that batch and has since been drained on
+its own terms. Its gradient has six colour stops, and Tailwind's own gradient
+utilities interpolate in oklab and compose from three positions, so no `bg-*`
+utility can express it and the inline `bg-[linear-gradient(…)]` form runs to 229
+characters for one class. The decision that batch deferred was between that and
+an App-owned token; the token won.
+
+`--background-image-shimmer-text` is an `@theme inline` entry, so `bg-shimmer-text`
+emits the gradient with its `--muted-foreground` and `--foreground` references
+intact and each theme still resolves them on the element. `--animate-shimmer`
+joins the `--animate-*` entries beside it on the same contract, and the
+`okou-shimmer` keyframes stay in the stylesheet, because keyframes are not class
+selectors. The remaining declarations are ordinary utilities on `ShimmerText` in
+`chat-thread-page.tsx`, which already existed as a component and needed no new
+wrapper.
+
+Two of them need stating. `[background-size:200%_100%]` is an arbitrary property
+rather than `bg-size-*`, matching the effort slider's `[background-size:…]`
+beside its own aurora tokens. And `[-webkit-background-clip:text]` stays beside
+`bg-clip-text` because Tailwind emits only the unprefixed property: its default
+targets do not need the prefix, but the retired rule declared both, so keeping it
+is the no-change choice. Chromium treats the two as aliases, so no measurement
+here can separate them — dropping either one leaves both computing to `text`.
+Removing the prefixed declaration is a browser-support decision, not part of this
+drain.
 
 ### The standalone PWA fixed cover
 

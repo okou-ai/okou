@@ -1,3 +1,7 @@
+import {
+  assertPiInferenceScopeErasureReady,
+  piInferenceErasureScopePredicate,
+} from "./pi-inference-lifecycle.service";
 import { piMemoryStage1Days } from "@okouai/db/schema/pi-memory-stage1-schedule";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { cleanupSharedThreadArtifacts$ } from "./shared-thread-artifacts.service";
@@ -30,7 +34,6 @@ import { telegramInstallations } from "@okouai/db/schema/telegram-installation";
 import { telegramUserLinks } from "@okouai/db/schema/telegram-user-link";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { users } from "@okouai/db/schema/user";
-import { privacyChoices } from "@okouai/db/schema/privacy-choice";
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import { variables } from "@okouai/db/schema/variable";
 import {
@@ -82,6 +85,7 @@ import {
 import { deleteConnectorOwnerState } from "./connector-owner-cleanup.service";
 import { deleteStoragesWithPiMemoryCandidates } from "./pi-memory-stage1-candidate.service";
 import { transitionAgentRunsToTerminal } from "./agent-run-terminal-transition.service";
+import { cleanupRetainedMarketingPrivacy } from "./marketing-privacy-cleanup.service";
 
 const L = logger("WebhookClerkCleanup");
 const CLERK_ORG_MEMBERSHIP_PAGE_SIZE = 100;
@@ -105,12 +109,21 @@ async function publishCancelBestEffort(
   );
 }
 
-async function cancelOrgRuns(db: Db, orgId: string): Promise<void> {
+async function cancelOrgRuns(
+  db: Db,
+  orgId: string,
+  cascadeOwnedAgents = false,
+): Promise<void> {
   const cancelled = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: { status: "cancelled", completedAt: nowDate() },
       conditions: [
-        eq(agentRuns.orgId, orgId),
+        cascadeOwnedAgents
+          ? piInferenceErasureScopePredicate(tx, {
+              kind: "organization",
+              orgId,
+            })
+          : eq(agentRuns.orgId, orgId),
         inArray(agentRuns.status, ["queued", "pending", "running"]),
       ],
     });
@@ -167,12 +180,18 @@ async function cancelLastAdminOrgsStripeSubscriptions(
   }
 }
 
-async function cancelUserRuns(db: Db, userId: string): Promise<void> {
+async function cancelUserRuns(
+  db: Db,
+  userId: string,
+  cascadeOwnedAgents = false,
+): Promise<void> {
   const cancelled = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: { status: "cancelled", completedAt: nowDate() },
       conditions: [
-        eq(agentRuns.userId, userId),
+        cascadeOwnedAgents
+          ? piInferenceErasureScopePredicate(tx, { kind: "user", userId })
+          : eq(agentRuns.userId, userId),
         inArray(agentRuns.status, ["queued", "pending", "running"]),
       ],
     });
@@ -903,16 +922,7 @@ async function deleteUserData(
     .delete(orgMembersMetadata)
     .where(eq(orgMembersMetadata.userId, userId));
   await db.delete(userCache).where(eq(userCache.userId, userId));
-  // Removing the subjects also removes their revision evidence. Linked browser
-  // receipts must stop resolving the deleted person's preferences.
-  await db
-    .delete(privacyChoices)
-    .where(
-      or(
-        eq(privacyChoices.userId, userId),
-        eq(privacyChoices.linkedUserId, userId),
-      ),
-    );
+  await cleanupRetainedMarketingPrivacy(db, userId, signal);
   signal.throwIfAborted();
   await db.transaction(async (tx) => {
     await tx.execute(
@@ -925,6 +935,13 @@ async function deleteUserData(
 export const cleanupClerkDeletedOrg$ = command(
   async ({ get, set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
+    await cancelOrgRuns(db, orgId, true);
+    signal.throwIfAborted();
+    await assertPiInferenceScopeErasureReady(db, {
+      kind: "organization",
+      orgId,
+    });
+    signal.throwIfAborted();
     await set(
       cleanupSharedThreadArtifacts$,
       { kind: "organization", orgId },
@@ -949,6 +966,10 @@ export const cleanupClerkDeletedOrgBilling$ = command(
 export const cleanupClerkDeletedUser$ = command(
   async ({ get, set }, userId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
+    await cancelUserRuns(db, userId, true);
+    signal.throwIfAborted();
+    await assertPiInferenceScopeErasureReady(db, { kind: "user", userId });
+    signal.throwIfAborted();
     await set(cleanupSharedThreadArtifacts$, { kind: "user", userId }, signal);
     const emptyOrgIds = await emptyOrgIdsAfterDeletingUser(
       db,
@@ -961,6 +982,13 @@ export const cleanupClerkDeletedUser$ = command(
     await set(cleanupUserExternalServices$, db, userId, signal);
     signal.throwIfAborted();
     for (const orgId of emptyOrgIds) {
+      await cancelOrgRuns(db, orgId, true);
+      signal.throwIfAborted();
+      await assertPiInferenceScopeErasureReady(db, {
+        kind: "organization",
+        orgId,
+      });
+      signal.throwIfAborted();
       await set(
         cleanupSharedThreadArtifacts$,
         { kind: "organization", orgId },
@@ -1025,6 +1053,7 @@ export const cleanupClerkBannedUser$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
     await cancelUserRuns(db, userId);
+    signal.throwIfAborted();
     signal.throwIfAborted();
     await cancelLastAdminOrgsStripeSubscriptions(db, userId);
   },

@@ -3938,7 +3938,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       },
       {
         prompt: "round six",
-        error: usageLimitError,
+        error: '{"detail":"Rate limit exceeded"}',
         expectedError: "Oops, something went wrong. Please try again later.",
         failureReason: "provider_rate_limited",
       },

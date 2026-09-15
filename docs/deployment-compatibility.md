@@ -554,6 +554,77 @@ it is upgraded (potentially causing a cache miss, not exposing an active build).
 Runner and guest binaries are deployed as one runner artifact. Compatibility is
 not required between a runner binary and a guest binary from a different version.
 
+The extracted storage cache is a separate, host-local cross-version boundary.
+New readers use `storages/<name-hash>/decoded-v1-<version-hash>/` containing an
+identity/content index and real files. Existing compressed readers continue to
+use their original hashed version directory and `archive.tar.gz`; neither
+reader interprets the other format. Selection validates and pins usable extracted
+files before archive prefetch, so an admitted hit does not download or publish a
+missing compressed entry. New entries use the existing name/version-key flock,
+including the final-version lock for `.tmp` staging, so both old and new storage
+GC recursively account and evict them with the existing best-effort byte and
+entry targets. These targets are not hard disk-usage limits. Directory admission
+also bounds each extracted entry's inode footprint.
+
+Unsupported-archive admission records use separate
+`decoded-v1-rejected-<version-hash>/` keys under the same GC and lock rules.
+Only background fill reads these records; foreground lookup probes positive
+file entries only, so unsupported archives do not pay a rejection-record lock
+and read on every startup. Each reader validates its expected entry kind.
+
+Readers hold that lock while validating the bounded index, identity, file types,
+sizes and content digests, then pin owned bytes through Guest apply. GC can evict
+the disk entry afterward without invalidating an in-flight delivery. Orphaned
+lock GC may remove an unlocked lock while retaining its data; a reader recreates
+and revalidates the lock only for a present entry, then reopens the directory
+under the lock. Missing, busy or unsupported entries keep ordinary delivery;
+malformed present cache data is an error, not an unverified hit.
+
+The bounded binary-manifest check is computed once on the first usable ready
+hit, before omitting archive staging. Miss-only runs do not clone and serialize
+the manifest just to decide whether an unused binary input would fit.
+
+Lookup windows admit at most 128 identities with 128 KiB of owned key bytes,
+retaining the per-key limits. Non-admitted keys retain ordinary delivery;
+this bounds metadata even when a plan contains unusually long identities.
+Ready-file read-ahead stops after reaching 15 MiB of content, with at most one
+additional storage's size in that last read; the wider miss-probe window does
+not increase the former 16-MiB content read-ahead bound.
+
+First-fill extraction belongs to the existing bounded background-fill owner and
+starts only after Agent spawn. Before that point, selected work owns no task,
+cache lock or open file. Publication uses private staging and atomic rename;
+this is a disposable cache, not a power-loss-durable source of truth. Runner
+shutdown joins background work and extracted-cache blocking tasks. The binary
+final-file input is private to the bundled Runner/Guest storage operation;
+ordinary HTTP downloads, API manifests and generic exec-stdin limits do not
+change. No backend reader-first deployment is required for that bundled input.
+
+After a run actually selects extracted-file delivery and successfully spawns its
+Agent, that same bounded background owner may retire the corresponding compressed
+archive. Retirement never downloads data. It takes the old archive's exclusive
+lock without waiting and validates the complete positive replacement under its
+own lock, retaining both locks through deletion. Busy, missing or non-admitted
+replacement work is skipped; malformed data is reported as a background error.
+It removes only the regular archive and an empty version directory, not unrelated
+files. GC can independently evict either format after those locks are released.
+
+Conversion alone does not delete an archive: a never-used converted entry may
+retain both formats until direct use or GC. Old Runners, rollback, instructions,
+artifacts and other archive-required consumers keep their original delivery and
+may refill a compressed cache miss. Queued archive-fill demand takes precedence
+over queued retirement for the same identity. This is use-driven best-effort
+cleanup, not a guarantee of exactly one representation across mixed consumers.
+
+Positive lookup includes a metadata-only archive-existence hint for maintenance
+admission. Already retired entries do not consume the background queue again,
+so a decoded prefix cannot repeatedly displace later warming or retirement.
+The hint neither reads compressed content nor authorizes deletion: retirement
+reopens and validates under locks. Metadata errors are left to that background
+validation rather than failing an otherwise valid extracted-file delivery. An
+orphaned source lock is recreated only for observed archive data, following the
+same lock repair rule as cache readers.
+
 Use **sandbox** for provider-neutral runner lifecycle, ownership, status,
 network-policy, and operator concepts. Use **VM** only for concrete
 Firecracker/KVM implementation details such as the Firecracker `/vm` API, VM
@@ -1379,3 +1450,18 @@ Cache keys include the lifetime, so new code does not reuse the previous shorter
 policy. The database's required `refresh_after` and `last_requested_at` columns
 remain writable for deployment coexistence; new rows set `refresh_after` to their
 expiration and new code does not use either column to schedule renewal.
+
+## Pi inference lifecycle reader floor (#34242)
+
+The [Pi inference lifecycle contract](pi-inference-lifecycle.md) adds a strict v4
+launch discriminator without a Runner profile and three sparse ownership/intent/lease
+tables. Full-launch v1–v3 and historical NULL writes remain legal. The generated
+expand migration replaces the launch CHECK as NOT VALID; a separate bounded
+validation transaction scans retained runs before API promotion. New runtime
+writers are absent and `piDeferredSandbox` is org-scoped and off, including staff.
+
+After future v4 activation, disabling starts must retain phase/epoch-aware readers,
+consumer/recovery, cancellation, capacity counting, credential retention and erasure.
+A v1–v3-only application is below the rollback floor while v4 records remain.
+Do not shrink the CHECK or cascade away releasing leases. See the linked contract
+for exact DDL timeouts, failure/retry behavior, scale receipts and activation gates.

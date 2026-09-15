@@ -15,16 +15,6 @@ describe("isChatEffortEnabled", () => {
       isChatEffortEnabled({ overrides: { [FeatureSwitchKey.Effort]: false } }),
     ).toBe(false);
   });
-
-  // An app bundle built before the split still asks for the retired key, so a
-  // user who has it keeps effort until those bundles drain.
-  it("should still honour the retired switch", () => {
-    expect(
-      isChatEffortEnabled({
-        overrides: { [FeatureSwitchKey.RefactorModelSelect]: true },
-      }),
-    ).toBe(true);
-  });
 });
 
 describe("isCodexFastModeEnabled", () => {

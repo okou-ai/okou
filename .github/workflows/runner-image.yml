@@ -203,7 +203,7 @@ jobs:
           set -euo pipefail
 
           runner_image_ci_changed=false
-          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(turbo|crates|runner-image)\.yml$|^\.github/actions/(setup-ssh-tunnel|provision)/|^\.github/scripts/runner-binary-build/|^\.github/scripts/(prepare-runner-image|runner-binary-cache|runner-binary-cache-plan|runner-binary-transport|runner-host-architecture-groups|runner-image-context|runner-image-manifest|runner-image-target|wait-runner-image)\.sh$|^ansible/(ansible\.cfg|playbooks/(build-runner|provision-runner|promote-runner|rollback-runner)\.yml)$"; then
+          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(turbo|crates|runner-image)\.yml$|^\.github/actions/(setup-ssh-tunnel|provision)/|^\.github/scripts/runner-binary-build/|^\.github/scripts/(prepare-runner-image|runner-binary-cache|runner-binary-cache-plan|runner-binary-download|runner-binary-transport|runner-host-architecture-groups|runner-image-context|runner-image-manifest|runner-image-target|wait-runner-image)\.sh$|^ansible/(ansible\.cfg|playbooks/(build-runner|provision-runner|promote-runner|rollback-runner)\.yml)$"; then
             runner_image_ci_changed=true
           fi
 

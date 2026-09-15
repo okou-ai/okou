@@ -11,6 +11,22 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.899.2](https://github.com/vm0-ai/vm0/compare/app-v0.899.1...app-v0.899.2) (2026-09-15)
+
+
+### Refactoring
+
+* **app:** drain the fixed viewport shell and markdown card selectors ([#34233](https://github.com/vm0-ai/vm0/issues/34233)) ([c0e6c3f](https://github.com/vm0-ai/vm0/commit/c0e6c3f7438d92b699e0f80b57e7af390f101f11))
+* give effort its own switch ([#34269](https://github.com/vm0-ai/vm0/issues/34269)) ([df5644a](https://github.com/vm0-ai/vm0/commit/df5644a8cb7e7905813ba4d1dc40aa9b98e4de92))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.443.2
+    * @okouai/core bumped to 8.666.3
+
 ## [0.899.1](https://github.com/vm0-ai/vm0/compare/app-v0.899.0...app-v0.899.1) (2026-09-15)
 
 

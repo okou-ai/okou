@@ -745,9 +745,12 @@ function AvatarVoiceSkeletonGrid() {
 function CatalogLoadingSpinner() {
   const { t } = useTranslation();
   return (
+    // The status row owns the containing block: an sr-only label is absolute,
+    // so without it the label escapes the list scroller's clip and lands
+    // thousands of pixels below, growing the dialog's scrollable area.
     <div
       role="status"
-      className="flex h-14 shrink-0 items-center justify-center text-muted-foreground"
+      className="relative flex h-14 shrink-0 items-center justify-center text-muted-foreground"
     >
       <Loader2 className="size-5 animate-spin" aria-hidden="true" />
       <span className="sr-only">
