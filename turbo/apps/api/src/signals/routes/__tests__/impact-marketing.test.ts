@@ -87,18 +87,19 @@ test("ignores cached Apps submitting old Impact query/cookie attribution after c
       },
     ],
   });
+  const cachedSignupBody = {
+    attribution: {},
+    impactAttribution: {
+      clickId: "forged",
+      capturedAt: nowDate().toISOString(),
+    },
+  };
   const response = await accept(
     setupApp({ context, routes: acquisitionAttributionRoutes })(
       acquisitionAttributionContract,
     ).recordSignup({
       headers,
-      body: {
-        attribution: {},
-        impactAttribution: {
-          clickId: "forged",
-          capturedAt: nowDate().toISOString(),
-        },
-      },
+      body: cachedSignupBody,
     }),
     [200],
   );
