@@ -5556,14 +5556,17 @@ mod tests {
             .await;
         let poll = server.mock_async(|when, then| {
             when.method(POST).path("/api/runners/poll");
-            then.status(200).json_body(serde_json::json!({"job": {"runId": run_id, "profile": crate::profile::DEFAULT_PROFILE}}));
+            then.status(200).json_body(serde_json::json!({"job": {"runId": run_id, "experimentalProfile": crate::profile::DEFAULT_PROFILE}}));
         }).await;
         let provider = api_provider_for_test(
             server.base_url(),
             CancellationToken::new(),
             Arc::new(PollWakeups::new(false)),
         );
-        let candidate = provider.discover().await.expect("old API poll candidate");
+        let candidate = tokio::time::timeout(Duration::from_secs(1), provider.discover())
+            .await
+            .expect("old API poll should decode")
+            .expect("old API poll candidate");
         assert!(!candidate.deferred_sandbox());
         assert!(provider.claim(candidate).await.is_none());
         transient.assert_calls_async(1).await;

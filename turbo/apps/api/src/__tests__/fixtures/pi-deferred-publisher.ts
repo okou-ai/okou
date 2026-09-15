@@ -5,6 +5,7 @@ import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { db, closeDbPool } from "../../lib/db";
 import { publishPiInferenceObject } from "../../signals/services/pi-inference-object.service";
 import { piDeferredH1Schema } from "../../signals/services/pi-deferred-sandbox-contract";
+import { settleIncludingAbort } from "../../signals/utils";
 
 const [
   orgId,
@@ -77,8 +78,10 @@ async function publishFixture(
   );
   process.stdout.write(JSON.stringify({ hash }));
 }
-try {
-  await publishFixture(orgId, userId, sessionId);
-} finally {
-  await closeDbPool();
+const published = await settleIncludingAbort(
+  publishFixture(orgId, userId, sessionId),
+);
+await closeDbPool();
+if (!published.ok) {
+  throw published.error;
 }
