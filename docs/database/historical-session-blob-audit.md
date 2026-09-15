@@ -178,7 +178,8 @@ pnpm -F @okouai/db test:historical-blob-audit
 ```
 
 This dedicated PostgreSQL validator is included in `test:migration-consistency`.
-It executes the actual psql file against the full current migrated schema,
+It executes the complete SQL file in a fresh PostgreSQL driver connection against
+the full current migrated schema (CI has the driver, but no psql executable),
 compares unchanged rows/catalog, exercises shared aliases and archive-ID
 collisions, missing conversation/candidate metadata, undercounts, negatives,
 zero preparation, inline/null history, exact B cutoff boundaries, unknown time,

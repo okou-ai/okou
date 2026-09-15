@@ -1,14 +1,12 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { promisify } from "node:util";
 import { Client } from "pg";
 import postgres from "postgres";
 import { z } from "zod";
 import { applyPendingMigrations } from "./migration-runner";
 
-// This tool's public boundary is PostgreSQL/psql. Corrupt historical fixtures
+// This tool's public boundary is PostgreSQL. Corrupt historical fixtures
 // cannot be created through the API. All writes use a fresh test-owned database
 // with the real current migrations, never the database named by DATABASE_URL.
 const databaseUrl = process.env.DATABASE_URL;
@@ -92,22 +90,32 @@ async function readReceipt() {
   return row.historical_session_blob_reference_audit;
 }
 
+async function runSqlFile(sqlFile: string) {
+  // Execute every shipped statement in a fresh connection. CI already has pg,
+  // but its toolchain does not install the separate psql executable.
+  const connection = new Client({ connectionString: fixtureUrl.toString() });
+  await connection.connect();
+  try {
+    const results = z
+      .array(z.object({ command: z.string(), rows: z.array(z.unknown()) }))
+      .parse(await connection.query(sqlFile));
+    const selections = results.filter((result) => {
+      return result.command === "SELECT";
+    });
+    assert.equal(selections.length, 1);
+    const selection = selections[0];
+    assert.ok(selection);
+    assert.equal(selection.rows.length, 1);
+    return selection.rows[0];
+  } finally {
+    await connection.end();
+  }
+}
+
 async function runFile() {
-  const result = await promisify(execFile)("psql", [
-    "-X",
-    "--no-password",
-    "--set",
-    "ON_ERROR_STOP=1",
-    "--quiet",
-    "--tuples-only",
-    "--no-align",
-    "--dbname",
-    fixtureUrl.toString(),
-    "--file",
-    path.pathname,
-  ]);
-  assert.equal(result.stderr, "");
-  return receiptSchema.parse(JSON.parse(result.stdout));
+  return z
+    .object({ historical_session_blob_reference_audit: receiptSchema })
+    .parse(await runSqlFile(source)).historical_session_blob_reference_audit;
 }
 
 async function state() {
@@ -352,7 +360,7 @@ try {
   assert.deepEqual(
     await state(),
     before,
-    "The whole shipped psql file must leave rows and catalog unchanged",
+    "The whole shipped SQL file must leave rows and catalog unchanged",
   );
   assert.equal(receipt.assumptions.catalog_matches_inventory, true);
   assert.deepEqual(receipt.population, {
@@ -413,20 +421,15 @@ try {
   );
 
   // The unchanged candidate tool remains the semantic comparison boundary.
-  const candidateFile = await promisify(execFile)("psql", [
-    "-X",
-    "-qAt",
-    "--set",
-    "ON_ERROR_STOP=1",
-    "--dbname",
-    fixtureUrl.toString(),
-    "--file",
-    new URL("./audit-pi-memory-candidate-references.sql", import.meta.url)
-      .pathname,
-  ]);
+  const candidateFile = await readFile(
+    new URL("./audit-pi-memory-candidate-references.sql", import.meta.url),
+    "utf8",
+  );
   const candidateReceipt = z
-    .object({ reconciliation: counts })
-    .parse(JSON.parse(candidateFile.stdout));
+    .object({
+      pi_candidate_reference_audit: z.object({ reconciliation: counts }),
+    })
+    .parse(await runSqlFile(candidateFile)).pi_candidate_reference_audit;
   for (const [key, value] of Object.entries(candidateReceipt.reconciliation)) {
     assert.equal(receipt.candidate_only[key], value, key);
   }
