@@ -1124,7 +1124,7 @@ test("Keep independent effort selections when changing models", async () => {
   setNarrowViewport();
   const user = userEvent.setup({ delay: null });
   installNewChat(
-    ["claude-sonnet-5", "gpt-5.6-sol", "gpt-5.5"],
+    ["claude-sonnet-5", "gpt-5.6-sol", "gpt-5.6-luna"],
     "claude-sonnet-5",
   );
   await setupPage({
@@ -1190,23 +1190,23 @@ test("Keep independent effort selections when changing models", async () => {
   );
   click(
     buttonNamed(
-      "GPT 5.5",
+      "GPT 5.6 Luna",
       await screen.findByRole("region", { name: "Chat models" }),
     ),
   );
   await openEffortPanel();
   slider = await screen.findByRole("slider", { name: "Effort" });
-  expect(slider).toHaveAttribute("aria-valuetext", "Xhigh");
+  expect(slider).toHaveAttribute("aria-valuetext", "Max");
   slider.focus();
   await user.keyboard("{End}");
   await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "Xhigh");
+    expect(slider).toHaveAttribute("aria-valuetext", "Max");
   });
   await user.keyboard("{Escape}");
-  click(await findButton("GPT 5.5"));
+  click(await findButton("GPT 5.6 Luna"));
   click(
     buttonNamed(
-      "Change Chat model, GPT 5.5",
+      "Change Chat model, GPT 5.6 Luna",
       await screen.findByRole("region", { name: "Models" }),
     ),
   );

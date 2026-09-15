@@ -213,10 +213,10 @@ test("Connect Codex before sending with a personal route", async () => {
   const user = userEvent.setup({ delay: null });
   const clipboard = context.mocks.browser.clipboardWriteText();
   const opened = context.mocks.browser.open(context.mocks.browser.authWindow());
-  installRunChat({ selectedModel: "gpt-5.5" });
+  installRunChat({ selectedModel: "gpt-5.6-luna" });
   configurePersonalRoute({
-    model: "gpt-5.5",
-    modelLabel: "GPT 5.5",
+    model: "gpt-5.6-luna",
+    modelLabel: "GPT 5.6 Luna",
     providerType: "codex-oauth-token",
   });
   context.mocks.api(codexDeviceAuthContract.start, ({ respond }) => {
@@ -248,7 +248,7 @@ test("Connect Codex before sending with a personal route", async () => {
 
   const composer = await screen.findByRole("textbox", { name: "Message" });
   await expect(
-    screen.findByRole("combobox", { name: "GPT 5.5" }),
+    screen.findByRole("combobox", { name: "GPT 5.6 Luna" }),
   ).resolves.toBeVisible();
 
   await user.click(composer);

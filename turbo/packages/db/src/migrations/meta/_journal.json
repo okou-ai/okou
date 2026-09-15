@@ -456,6 +456,13 @@
       "when": 1789485938847,
       "tag": "1142_validate_pi_memory_stage1_billing_context",
       "breakpoints": true
+    },
+    {
+      "idx": 1143,
+      "version": "7",
+      "when": 1789500879269,
+      "tag": "1143_retire_gpt_5_5",
+      "breakpoints": true
     }
   ]
 }

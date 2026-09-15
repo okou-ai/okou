@@ -84,7 +84,8 @@
     "test:marketing-privacy-retirement": "tsx scripts/test-marketing-privacy-retirement.ts",
     "billing:pi-memory-stage1": "tsx scripts/pi-memory-stage1-cost.ts",
     "test:pi-memory-stage1-cost": "tsx scripts/test-pi-memory-stage1-cost.ts",
-    "test:pi-memory-stage1-alerts": "node --test ../../../ops/pi-memory-stage1/v1/fixtures.test.mjs"
+    "test:pi-memory-stage1-alerts": "node --test ../../../ops/pi-memory-stage1/v1/fixtures.test.mjs",
+    "test:gpt-55-retirement": "tsx scripts/test-gpt-55-retirement.ts"
   },
   "dependencies": {
     "@aws-sdk/client-kms": "^3.1127.0",

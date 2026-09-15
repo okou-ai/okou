@@ -253,6 +253,16 @@ describe("custom model provider gateway routes", () => {
       },
     },
     {
+      name: "retired GPT 5.5 model mapping",
+      surface: {
+        protocol: "openai-responses" as const,
+        apiBaseUrl: "https://gateway.example.com",
+        authHeaderName: "Authorization",
+        authHeaderTemplate: "Bearer {{secret}}",
+        modelMappings: { "gpt-5.5": "old-deployment" },
+      },
+    },
+    {
       name: "incompatible model mapping",
       surface: {
         protocol: "anthropic-messages" as const,
@@ -260,6 +270,16 @@ describe("custom model provider gateway routes", () => {
         authHeaderName: "Authorization",
         authHeaderTemplate: "Bearer {{secret}}",
         modelMappings: { "gpt-5.6-sol": "openai/gpt-5.6-sol" },
+      },
+    },
+    {
+      name: "retired GPT 5.5 upstream behind an active model mapping",
+      surface: {
+        protocol: "openai-responses" as const,
+        apiBaseUrl: "https://gateway.example.com",
+        authHeaderName: "Authorization",
+        authHeaderTemplate: "Bearer {{secret}}",
+        modelMappings: { "gpt-5.6-sol": "openai/gpt-5.5" },
       },
     },
   ] satisfies readonly {

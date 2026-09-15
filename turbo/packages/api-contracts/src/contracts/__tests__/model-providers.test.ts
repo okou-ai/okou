@@ -25,6 +25,7 @@ import {
   isModelSupportedByProvider,
   isCodexFastModeModel,
   isSupportedRunModel,
+  getRunModelAccess,
   normalizeRunModelId,
   getAuthMethodsForType,
   getSecretNameForType,
@@ -312,6 +313,15 @@ describe("model-first canonical catalog", () => {
     expect(SUPPORTED_RUN_MODELS).toContain("claude-sonnet-4-6");
   });
 
+  it.each(["gpt-5.5", "openai/gpt-5.5"])(
+    "keeps %s historical while removing current provider access",
+    (model) => {
+      expect(getRunModelAccess(model)).toBe("retired");
+      expect(getRunModelAccess(model, true)).toBe("retired");
+      expect(getProvidersForModel(model)).toEqual([]);
+    },
+  );
+
   it("returns compatible provider types for canonical models", () => {
     expect(getProvidersForModel("claude-fable-5-1")).toEqual([
       "built-in",
@@ -373,13 +383,7 @@ describe("model-first canonical catalog", () => {
       "codex-oauth-token",
       "openrouter-codex",
     ]);
-    expect(getProvidersForModel("gpt-5.5")).toEqual([
-      "built-in",
-      "openai-api-key",
-      "codex-oauth-token",
-      "openrouter-codex",
-      "vercel-ai-gateway-codex",
-    ]);
+    expect(getProvidersForModel("gpt-5.5")).toEqual([]);
     expect(getProvidersForModel("gpt-5.6-sol")).toEqual([
       "built-in",
       "openai-api-key",
@@ -453,7 +457,7 @@ describe("model-first canonical catalog", () => {
     expect(
       isModelSupportedByProvider("gpt-5.6-sol", "vercel-ai-gateway-codex"),
     ).toBe(true);
-    expect(isModelSupportedByProvider("gpt-5.5", "openai-api-key")).toBe(true);
+    expect(isModelSupportedByProvider("gpt-5.5", "openai-api-key")).toBe(false);
     expect(isModelSupportedByProvider("gpt-5.5", "anthropic-api-key")).toBe(
       false,
     );
@@ -644,7 +648,6 @@ describe("model-first canonical catalog", () => {
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
-      "gpt-5.5",
     ]);
     expect(getBuiltInModelRouteVendors()).toEqual([
       "anthropic",
@@ -867,7 +870,7 @@ describe("getBuiltInVisibleModels", () => {
   it("returns only active built-in models", () => {
     const models = getBuiltInVisibleModels();
     expect(models).toEqual(ACTIVE_RUN_MODELS);
-    expect(models).toContain("gpt-5.5");
+    expect(models).not.toContain("gpt-5.5");
     expect(models).toContain("claude-sonnet-4-6");
   });
 });
@@ -1111,7 +1114,6 @@ describe("openai-api-key codex provider", () => {
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
-      "gpt-5.5",
     ]);
     expect(getDefaultModel("openai-api-key")).toBe("gpt-5.6-sol");
   });
@@ -1330,7 +1332,6 @@ describe("codex-oauth-token codex provider", () => {
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
-      "gpt-5.5",
     ]);
     expect(getDefaultModel("codex-oauth-token")).toBe("gpt-5.6-sol");
   });
@@ -1494,7 +1495,6 @@ describe("codex-framework gateway providers (openrouter-codex, vercel-ai-gateway
           "openai/gpt-5.6-sol",
           "openai/gpt-5.6-terra",
           "openai/gpt-5.6-luna",
-          "openai/gpt-5.5",
         ]),
       );
       if (type === "openrouter-codex") {
@@ -1523,9 +1523,6 @@ describe("codex-framework gateway providers (openrouter-codex, vercel-ai-gateway
   it("translates canonical models to vendor-prefixed runtime IDs", () => {
     expect(getProviderRuntimeModel("openrouter-codex", "gpt-6-astra")).toBe(
       "openai/gpt-6-astra",
-    );
-    expect(getProviderRuntimeModel("openrouter-codex", "gpt-5.5")).toBe(
-      "openai/gpt-5.5",
     );
     expect(
       getProviderRuntimeModel("openrouter-codex", "deepseek-v4.1-flash"),

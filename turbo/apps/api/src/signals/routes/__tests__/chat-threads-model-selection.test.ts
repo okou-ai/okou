@@ -288,7 +288,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       [400],
     );
     expect(rejected.body.error.message).toBe(
-      "Claude Fable 5 has been retired. Select Claude Fable 5.1.",
+      "This model has been retired. Select another available model.",
     );
     const thread = await accept(
       metadataClient().get({ headers, params: { id: fixture.threadId } }),

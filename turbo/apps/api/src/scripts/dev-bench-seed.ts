@@ -138,7 +138,7 @@ export const DEV_BENCH_THREAD_PROFILES: readonly ThreadProfile[] = [
   {
     slug: "release-pr-auto-merge",
     title: "[dev bench] prod-shaped chat thread B - 2.8k rows",
-    selectedModel: "gpt-5.5",
+    selectedModel: "gpt-5.6-luna",
     startAt: "2026-06-05T01:01:49.357Z",
     endAt: "2026-06-23T03:36:38.261Z",
     targetRunRows: 2821,

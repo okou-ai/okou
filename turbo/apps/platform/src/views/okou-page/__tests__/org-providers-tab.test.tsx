@@ -142,8 +142,8 @@ function claudeOpusApiKeyPolicy(): OrgModelPolicy {
 function missingOpenAiPolicy(): OrgModelPolicy {
   return {
     id: "00000000-0000-4000-a000-000000000213",
-    model: "gpt-5.5",
-    modelLabel: "GPT 5.5",
+    model: "gpt-5.6-luna",
+    modelLabel: "GPT 5.6 Luna",
     isDefault: false,
     defaultProviderType: "openai-api-key",
     credentialScope: "org",
@@ -771,7 +771,8 @@ test("Deleting a gateway removes it from an already routed workspace model", asy
 
 test.each([
   { model: "GPT 5.6 Sol", active: true },
-  { model: "GPT 5.5", active: true },
+  { model: "GPT 5.6 Luna", active: true },
+  { model: "GPT 5.5", active: false },
   { model: "Claude Sonnet 4.6", active: true },
   { model: "Claude Opus 4.8", active: true },
   { model: "DeepSeek V4 Flash", active: true },
@@ -1194,20 +1195,22 @@ test("Repair a model route whose provider is missing", async () => {
   ]);
   await openProvidersTab();
 
-  const missingRow = await screen.findByTestId("org-model-policy-row-gpt-5.5");
+  const missingRow = await screen.findByTestId(
+    "org-model-policy-row-gpt-5.6-luna",
+  );
   expect(within(missingRow).getByText("Missing provider")).toBeInTheDocument();
   expect(
     within(missingRow).getByText("Workspace OpenAI API key was removed"),
   ).toBeInTheDocument();
 
-  click(within(missingRow).getByLabelText("Actions for GPT 5.5"));
+  click(within(missingRow).getByLabelText("Actions for GPT 5.6 Luna"));
   click(menuItemByText("Edit model"));
   const editDialog = await screen.findByRole("dialog", { name: "Edit model" });
   click(radioByName(/Built-in/u, editDialog));
   click(buttonByText("Save changes", editDialog));
 
   await waitFor(() => {
-    const repairedRow = screen.getByTestId("org-model-policy-row-gpt-5.5");
+    const repairedRow = screen.getByTestId("org-model-policy-row-gpt-5.6-luna");
     expect(within(repairedRow).getByText("Built-in")).toBeInTheDocument();
     expect(within(repairedRow).queryByText("Missing provider")).toBeNull();
     expect(
@@ -1217,16 +1220,16 @@ test("Repair a model route whose provider is missing", async () => {
 
   const defaultRow = screen.getByTestId("default-model-row");
   click(within(defaultRow).getByRole("combobox"));
-  click(await screen.findByRole("option", { name: "GPT 5.5" }));
+  click(await screen.findByRole("option", { name: "GPT 5.6 Luna" }));
 
   await waitFor(() => {
     expect(within(defaultRow).getByRole("combobox")).toHaveTextContent(
-      "GPT 5.5",
+      "GPT 5.6 Luna",
     );
     expect(
-      within(screen.getByTestId("org-model-policy-row-gpt-5.5")).queryByText(
-        "Missing provider",
-      ),
+      within(
+        screen.getByTestId("org-model-policy-row-gpt-5.6-luna"),
+      ).queryByText("Missing provider"),
     ).toBeNull();
   });
 });

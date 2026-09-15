@@ -40,6 +40,7 @@ const MODEL_DISPLAY_NAMES = Object.freeze<Record<string, string>>({
   "gpt-5.6-terra": "GPT 5.6 Terra",
   "gpt-5.6-luna": "GPT 5.6 Luna",
   "gpt-5.5": "GPT 5.5",
+  "openai/gpt-5.5": "GPT 5.5",
   "gpt-5.3-codex": "GPT-5.3 Codex",
   "gpt-5.2": "GPT-5.2",
   // Built-in video generation

@@ -40,8 +40,8 @@ const MODEL_POLICIES_RESPONSE = {
     },
     {
       id: "00000000-0000-4000-8000-000000000102",
-      model: "gpt-5.5",
-      modelLabel: "GPT 5.5",
+      model: "gpt-5.6-luna",
+      modelLabel: "GPT 5.6 Luna",
       isDefault: false,
       defaultProviderType: "codex-oauth-token",
       credentialScope: "member",
@@ -108,7 +108,7 @@ describe("okou chat model command", () => {
     expect(output).toContain("claude-sonnet-5");
     expect(output).toContain("--thread <id>");
     expect(output).not.toContain("No personal subscription connected");
-    expect(output).not.toContain("gpt-5.5");
+    expect(output).not.toContain("gpt-5.6-luna");
   });
 
   it("prints the current chat model and switchable models without an argument", async () => {
@@ -202,11 +202,11 @@ describe("okou chat model command", () => {
     );
 
     await expect(async () => {
-      await chatCommand.parseAsync(["node", "cli", "model", "gpt-5.5"]);
+      await chatCommand.parseAsync(["node", "cli", "model", "gpt-5.6-luna"]);
     }).rejects.toThrow("process.exit called");
 
     const stderr = mockConsoleError.mock.calls.flat().join("\n");
-    expect(stderr).toContain("Model is not switchable: gpt-5.5");
+    expect(stderr).toContain("Model is not switchable: gpt-5.6-luna");
     expect(stderr).toContain("No personal subscription connected");
     expect(stderr).toContain("Run: okou chat model --help");
     expect(mockExit).toHaveBeenCalledWith(1);
@@ -234,7 +234,7 @@ describe("okou chat model command", () => {
       }),
       http.post(OTHER_MODEL_SELECTION_URL, async ({ request }) => {
         await expect(request.json()).resolves.toStrictEqual({
-          model: "gpt-5.5",
+          model: "gpt-5.6-luna",
         });
         return new HttpResponse(null, { status: 204 });
       }),
@@ -250,7 +250,7 @@ describe("okou chat model command", () => {
       "model",
       "--thread",
       OTHER_THREAD_ID,
-      "gpt-5.5",
+      "gpt-5.6-luna",
     ]);
     expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
       "Chat model updated",
