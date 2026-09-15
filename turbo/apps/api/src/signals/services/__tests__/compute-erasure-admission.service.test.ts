@@ -546,6 +546,27 @@ describe("actual compute transactions versus the B1 projector", () => {
     ).resolves.toBeNull();
   });
 
+  it("keeps inconsistent queue/run ownership as an error without admitting work", async () => {
+    const w = await writerFixture("promotion");
+    if (!w.runId) {
+      throw new Error("Missing synthetic queue");
+    }
+    await db
+      .update(agentRunQueue)
+      .set({ userId: `synthetic-queue-owner-${randomUUID()}` })
+      .where(eq(agentRunQueue.runId, w.runId));
+    await expect(settle(w.invoke())).resolves.toMatchObject({ ok: false });
+    await expect(
+      db
+        .select({
+          status: agentRuns.status,
+          creditAdmitted: agentRuns.creditAdmitted,
+        })
+        .from(agentRuns)
+        .where(eq(agentRuns.id, w.runId)),
+    ).resolves.toStrictEqual([{ status: "queued", creditAdmitted: false }]);
+  });
+
   it("keeps an open corrupt queued payload as an infrastructure error without billing failure", async () => {
     const w = await writerFixture("promotion");
     if (!w.runId) {

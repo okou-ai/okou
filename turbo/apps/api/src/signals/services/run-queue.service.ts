@@ -131,6 +131,7 @@ interface QueueCandidate {
     readonly orgId: string;
   } | null;
   readonly userId: string;
+  readonly runOwner: { readonly userId: string; readonly orgId: string } | null;
   readonly createdAt: Date;
   readonly encryptedParams: string | null;
   readonly runStatus: string | null;
@@ -334,6 +335,7 @@ async function loadDrainCandidates(
       agentId: agentSessions.agentId,
       resourceOwner: { userId: agents.owner, orgId: agents.orgId },
       userId: agentRunQueue.userId,
+      runOwner: { userId: agentRuns.userId, orgId: agentRuns.orgId },
       createdAt: agentRunQueue.createdAt,
       encryptedParams: agentRunQueue.encryptedParams,
       runStatus: agentRuns.status,
@@ -518,6 +520,17 @@ async function promoteQueuedCandidateInTransaction(
   args: PromoteQueuedCandidateArgs,
   timing: ApiDispatchTimingCollector,
 ): Promise<{ readonly result: PromotionResult; readonly lockHeldAt: number }> {
+  // A mismatch in the single discovery snapshot is persisted corruption, not
+  // a resource disappearing while admission waits. Preserve its existing error.
+  if (
+    args.row.runOwner &&
+    (args.row.runOwner.userId !== args.row.userId ||
+      args.row.runOwner.orgId !== args.orgId)
+  ) {
+    throw new Error(
+      `Queued run "${args.row.runId}" does not match its queue owner`,
+    );
+  }
   const admission = await prepareComputeRunAdmission(tx, args.row.runId, {
     userId: args.row.userId,
     orgId: args.orgId,
