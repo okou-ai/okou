@@ -31,20 +31,20 @@ export function classifyProviderFailure(
   const reason = payload && providerErrorReason(payload);
   if (reason) return reason;
 
-  const errorMessage = payload && object(payload.error)?.message;
+  const errorMessage = payload && (object(payload.error) ?? payload).message;
   const normalized = (typeof errorMessage === "string" ? errorMessage : message)
     .trim()
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/^codex error: /u, "");
   if (
-    /^(?:codex error: )?our servers are currently overloaded\. please try again later\.$/u.test(
-      normalized,
-    ) ||
+    normalized ===
+      "our servers are currently overloaded. please try again later." ||
     normalized ===
       "selected model is at capacity. please try a different model."
   )
     return "provider_overloaded";
   if (
-    /^(?:codex error: )?(?:you(?:'ve| have) hit your (?:chatgpt )?usage limit|you(?:'ve| have) hit your (?:session|weekly) limit)\b/u.test(
+    /^(?:you(?:'ve| have) hit your (?:chatgpt )?usage limit|you(?:'ve| have) hit your (?:session|weekly) limit)\b/u.test(
       normalized,
     )
   )

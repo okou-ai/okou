@@ -82,6 +82,25 @@ function successResponse() {
 }
 
 describe("Codex model request diagnostics", () => {
+  it("preserves a top-level provider message before the SDK renders HTTP 503", async () => {
+    server.use(
+      http.post(endpoint, () => {
+        return HttpResponse.json(
+          {
+            message:
+              "Our servers are currently overloaded. Please try again later.",
+          },
+          { status: 503 },
+        );
+      }),
+    );
+    const result = await stream().result();
+    expect(result.stopReason).toBe("error");
+    expect(projectPiApiAssistantMessage(result, 503).failureReason).toBe(
+      "provider_overloaded",
+    );
+  });
+
   it.each([
     {
       status: 503,

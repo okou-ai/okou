@@ -39,6 +39,29 @@ fn text_failure_reason(message: &str) -> Option<FailureReason> {
     {
         return Some(FailureReason::ProviderOverloaded);
     }
+    if normalized
+        .strip_prefix("you've hit your ")
+        .or_else(|| normalized.strip_prefix("you have hit your "))
+        .is_some_and(|detail| {
+            [
+                "usage limit",
+                "chatgpt usage limit",
+                "session limit",
+                "weekly limit",
+            ]
+            .iter()
+            .any(|prefix| {
+                detail.strip_prefix(prefix).is_some_and(|suffix| {
+                    suffix
+                        .chars()
+                        .next()
+                        .is_none_or(|c| !c.is_ascii_alphanumeric() && c != '_')
+                })
+            })
+        })
+    {
+        return Some(FailureReason::UsageLimit);
+    }
     if normalized == "terminated" {
         return Some(FailureReason::ResponseConnectionLost);
     }

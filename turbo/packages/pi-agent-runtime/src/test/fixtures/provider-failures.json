@@ -1,5 +1,21 @@
 [
   {
+    "message": "{\"message\":\"Our servers are currently overloaded. Please try again later.\"}",
+    "reason": "provider_overloaded"
+  },
+  {
+    "message": "API Error: 429 {\"error\":{\"message\":\"You have hit your ChatGPT usage limit.\"}}",
+    "reason": "usage_limit"
+  },
+  {
+    "message": "Codex error: Selected model is at capacity. Please try a different model.",
+    "reason": "provider_overloaded"
+  },
+  {
+    "message": "Codex error: terminated",
+    "reason": "response_connection_lost"
+  },
+  {
     "message": "{\"error\":\"insufficient_credits\"}",
     "reason": "insufficient_credits"
   },
