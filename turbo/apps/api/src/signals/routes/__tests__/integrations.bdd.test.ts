@@ -1694,7 +1694,7 @@ describe("INT-01: Slack integration and Slack app routes", () => {
     );
     expect(missingWorkspace.body).toStrictEqual({
       error: {
-        message: "Workspace not found. Please install the Slack app first.",
+        message: "Slack workspace not found",
         code: "NOT_FOUND",
       },
     });
