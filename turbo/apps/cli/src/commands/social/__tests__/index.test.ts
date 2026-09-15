@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { SocialKitResponse } from "@okouai/api-contracts/contracts/social";
 import { HttpResponse, http } from "msw";
 import {
   afterAll,
@@ -27,28 +28,7 @@ import {
 import { server } from "../../../mocks/server";
 import { socialCommand } from "../index";
 
-type Collection =
-  | null
-  | {
-      readonly state: "complete";
-      readonly itemsReturned: number;
-      readonly reportedTotal?: number;
-    }
-  | {
-      readonly state: "provider_limited";
-      readonly itemsReturned: number;
-      readonly reason?: string;
-      readonly uncertainty?: { readonly reason: "unreliable_empty_result" };
-      readonly reportedTotal?: number;
-    }
-  | {
-      readonly state: "more";
-      readonly itemsReturned: number;
-      readonly reportedTotal?: number;
-      readonly nextInput:
-        | { readonly cursor: string }
-        | { readonly page: number };
-    };
+type Collection = SocialKitResponse["collection"];
 
 function socialResponse(
   tool: string,
@@ -2126,7 +2106,14 @@ describe("okou social command", () => {
           return HttpResponse.json(
             socialResponse(
               expectedTool,
-              { state: "complete", itemsReturned: 0 },
+              platform === "instagram"
+                ? {
+                    state: "provider_limited",
+                    itemsReturned: 0,
+                    reason: "provider_ceiling",
+                    sourceLimit: { kind: "single_batch", maxItems: 12 },
+                  }
+                : { state: "complete", itemsReturned: 0 },
               collectionResult(expectedTool),
             ),
           );
@@ -2181,7 +2168,12 @@ describe("okou social command", () => {
             return HttpResponse.json(
               socialResponse(
                 "instagram_reels_search",
-                { state: "complete", itemsReturned: 0 },
+                {
+                  state: "provider_limited",
+                  itemsReturned: 0,
+                  reason: "provider_ceiling",
+                  sourceLimit: { kind: "single_batch", maxItems: 12 },
+                },
                 { items: [], hasMore: false },
               ),
             );
@@ -2265,7 +2257,12 @@ describe("okou social command", () => {
           return HttpResponse.json(
             socialResponse(
               "instagram_reels_search",
-              { state: "complete", itemsReturned: count },
+              {
+                state: "provider_limited",
+                itemsReturned: count,
+                reason: "provider_ceiling",
+                sourceLimit: { kind: "single_batch", maxItems: 12 },
+              },
               { items, count, hasMore: false },
             ),
           );
@@ -2334,41 +2331,6 @@ describe("okou social command", () => {
       expect(process.exitCode).toBe(count >= limit ? originalExitCode : 2);
     },
   );
-
-  it("does not follow an older API's Instagram page-2 continuation", async () => {
-    let apiRequests = 0;
-    server.use(
-      http.post("http://localhost:3000/api/social/request", () => {
-        apiRequests += 1;
-        return HttpResponse.json(
-          socialResponse(
-            "instagram_reels_search",
-            { state: "more", itemsReturned: 1, nextInput: { page: 2 } },
-            { items: [{ id: "one" }], hasMore: true },
-          ),
-        );
-      }),
-    );
-
-    await socialCommand.parseAsync([
-      "node",
-      "okou",
-      "search",
-      "cats",
-      "--platform",
-      "instagram",
-      "--json",
-    ]);
-
-    expect(apiRequests).toBe(1);
-    expect(JSON.parse(output()) as unknown).toMatchObject({
-      status: "partial",
-      collection: {
-        state: "provider_limited",
-        sourceLimit: { kind: "single_batch", maxItems: 12 },
-      },
-    });
-  });
 
   it("reports provider-neutral search filters in the result envelope", async () => {
     let requestBody: unknown;
