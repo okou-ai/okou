@@ -49,6 +49,8 @@ const AVATAR: Readonly<IntroVideoAvatar> = {
   groupId: "daphne",
   name: "Daphne in Grey blazer",
   defaultVoiceId: "daphne-voice",
+  defaultVoiceName: "Daphne - Warm & Friendly",
+  defaultVoiceSampleUrl: "https://files.example.test/daphne-voice.mp3",
   previewImageUrl: "https://files.example.test/daphne.png",
 };
 const VOICE = Object.freeze({
@@ -234,6 +236,23 @@ test("Avatar looks require Use, and explicit voice choices survive removing the 
       },
     },
   });
+});
+
+test("The chosen avatar's own voice can be auditioned at the voice step", async () => {
+  installCatalogs();
+  const { dialog } = await openIntroVideo();
+  click(control("Avatar", dialog, "tab"));
+  await within(dialog).findByText("Daphne");
+  click(control("Choose an avatar: Daphne in Grey blazer", dialog));
+  click(control("Voice", dialog, "tab"));
+  const preview = await within(dialog).findByLabelText(
+    "Preview voice Daphne - Warm & Friendly",
+  );
+  expect(preview).toBeEnabled();
+  click(within(dialog).getByText("No voiceover"));
+  expect(control("Voice", dialog, "tab")).toHaveTextContent("No voiceover");
+  click(within(dialog).getByText("Avatar’s voice"));
+  expect(control("Voice", dialog, "tab")).toHaveTextContent("Avatar’s voice");
 });
 
 test("Applying and reopening a template restores all settings without creating another chip", async () => {

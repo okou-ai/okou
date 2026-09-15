@@ -25,6 +25,12 @@ const HEYGEN_VOICES_URL = `${HEYGEN_API_BASE_URL}/voices`;
 const HEYGEN_VOICE_SPEECH_URL = `${HEYGEN_VOICES_URL}/speech`;
 const HEYGEN_AVATAR_PAGE_SIZE = 50;
 const HEYGEN_RATE_LIMIT_RETRY_MAX_MS = 30_000;
+/** HeyGen's maximum voice page; the widest scan per request while filling a page. */
+const HEYGEN_VOICE_SCAN_PAGE_SIZE = 100;
+/** Bounds how many provider pages one catalog request may scan before yielding. */
+const HEYGEN_CATALOG_SCAN_LIMIT = 10;
+/** Default-voice lookups run per avatar page, so keep the fan-out bounded. */
+const HEYGEN_VOICE_LOOKUP_BATCH_SIZE = 8;
 
 type HeyGenErrorStatus = 400 | 502 | 503;
 
@@ -163,6 +169,8 @@ interface HeyGenPublicAvatar {
   readonly groupId: string;
   readonly name: string;
   readonly defaultVoiceId: string;
+  readonly defaultVoiceName?: string;
+  readonly defaultVoiceSampleUrl?: string;
   readonly previewImageUrl?: string;
   readonly previewVideoUrl?: string;
   readonly gender?: "female" | "male";
@@ -570,7 +578,84 @@ function parseHeyGenPage(value: unknown):
   return { data: value.data, hasMore: value.has_more, nextToken };
 }
 
-export async function listHeyGenPublicAvatars(
+interface HeyGenCatalogScan<T> {
+  readonly items: readonly T[];
+  readonly hasMore: boolean;
+  readonly nextToken: string | null;
+}
+
+/**
+ * A filtered catalog can leave a provider page empty, and an empty page stalls
+ * the picker's infinite scroll. Keep reading provider pages until one of them
+ * survives filtering, the catalog ends, or this request's scan budget runs out.
+ */
+async function scanHeyGenCatalog<T>(
+  token: string | undefined,
+  fetchPage: (
+    token: string | undefined,
+  ) => Promise<HeyGenCatalogScan<T> | HeyGenErrorResponse>,
+): Promise<HeyGenCatalogScan<T> | HeyGenErrorResponse> {
+  const items: T[] = [];
+  const seenTokens = new Set<string>();
+  let cursor = token;
+  for (let scan = 0; scan < HEYGEN_CATALOG_SCAN_LIMIT; scan += 1) {
+    const page = await fetchPage(cursor);
+    if (isHeyGenErrorResponse(page)) {
+      return page;
+    }
+    items.push(...page.items);
+    const nextToken = page.hasMore ? page.nextToken : null;
+    if (!nextToken) {
+      return { items, hasMore: false, nextToken: null };
+    }
+    if (seenTokens.has(nextToken)) {
+      return badGateway(
+        "HeyGen returned a repeated catalog token",
+        "HEYGEN_BAD_RESPONSE",
+      );
+    }
+    seenTokens.add(nextToken);
+    cursor = nextToken;
+    if (items.length > 0) {
+      return { items, hasMore: true, nextToken };
+    }
+  }
+  return { items, hasMore: true, nextToken: cursor ?? null };
+}
+
+/** Reads one voice, keeping only what a user can audition first. */
+async function getHeyGenSampledVoice(
+  voiceId: string,
+  apiKey: string,
+  signal: AbortSignal,
+): Promise<HeyGenPublicVoice | undefined | HeyGenErrorResponse> {
+  const response = await requestHeyGen(
+    {
+      method: "GET",
+      url: `${HEYGEN_VOICES_URL}/${encodeURIComponent(voiceId)}`,
+      retryRateLimit: true,
+    },
+    apiKey,
+    signal,
+  );
+  if (response.status === 404) {
+    return undefined;
+  }
+  const body = await readHeyGenResponse(response);
+  if (isHeyGenErrorResponse(body)) {
+    return body;
+  }
+  if (!isRecord(body)) {
+    return badGateway(
+      "HeyGen returned an invalid voice",
+      "HEYGEN_BAD_RESPONSE",
+    );
+  }
+  const voice = parseHeyGenVoice(body.data);
+  return voice?.sampleUrl ? voice : undefined;
+}
+
+async function fetchHeyGenAvatarPage(
   options: HeyGenAvatarCatalogOptions,
   apiKey: string,
   signal: AbortSignal,
@@ -609,6 +694,94 @@ export async function listHeyGenPublicAvatars(
     hasMore: page.hasMore,
     nextToken: page.nextToken,
   };
+}
+
+/**
+ * Resolves each look's own voice so the picker can audition it. A look whose
+ * voice carries no sample is dropped: the wizard only offers voices a user can
+ * hear first. A provider failure stays a failure rather than an empty catalog.
+ */
+async function withHeyGenDefaultVoiceSamples(
+  avatars: readonly HeyGenPublicAvatar[],
+  apiKey: string,
+  signal: AbortSignal,
+): Promise<readonly HeyGenPublicAvatar[] | HeyGenErrorResponse> {
+  const voiceIds = [
+    ...new Set(
+      avatars.map((avatar) => {
+        return avatar.defaultVoiceId;
+      }),
+    ),
+  ];
+  const samples = new Map<string, HeyGenPublicVoice>();
+  for (
+    let offset = 0;
+    offset < voiceIds.length;
+    offset += HEYGEN_VOICE_LOOKUP_BATCH_SIZE
+  ) {
+    const resolved = await Promise.all(
+      voiceIds
+        .slice(offset, offset + HEYGEN_VOICE_LOOKUP_BATCH_SIZE)
+        .map(async (voiceId) => {
+          return [
+            voiceId,
+            await getHeyGenSampledVoice(voiceId, apiKey, signal),
+          ] as const;
+        }),
+    );
+    for (const [voiceId, voice] of resolved) {
+      if (isHeyGenErrorResponse(voice)) {
+        return voice;
+      }
+      if (voice) {
+        samples.set(voiceId, voice);
+      }
+    }
+  }
+  return avatars.flatMap((avatar) => {
+    const voice = samples.get(avatar.defaultVoiceId);
+    return voice?.sampleUrl
+      ? [
+          {
+            ...avatar,
+            defaultVoiceName: voice.name,
+            defaultVoiceSampleUrl: voice.sampleUrl,
+          },
+        ]
+      : [];
+  });
+}
+
+export async function listHeyGenPublicAvatars(
+  options: HeyGenAvatarCatalogOptions,
+  apiKey: string,
+  signal: AbortSignal,
+): Promise<HeyGenPublicAvatarPage | HeyGenErrorResponse> {
+  const result = await scanHeyGenCatalog(options.token, async (token) => {
+    const page = await fetchHeyGenAvatarPage(
+      { ...options, token },
+      apiKey,
+      signal,
+    );
+    if (isHeyGenErrorResponse(page)) {
+      return page;
+    }
+    const avatars = await withHeyGenDefaultVoiceSamples(
+      page.avatars,
+      apiKey,
+      signal,
+    );
+    return isHeyGenErrorResponse(avatars)
+      ? avatars
+      : { items: avatars, hasMore: page.hasMore, nextToken: page.nextToken };
+  });
+  return isHeyGenErrorResponse(result)
+    ? result
+    : {
+        avatars: result.items,
+        hasMore: result.hasMore,
+        nextToken: result.nextToken,
+      };
 }
 
 export async function listHeyGenPublicStyles(
@@ -987,6 +1160,43 @@ export async function listHeyGenPublicVoices(
     hasMore: body.has_more,
     nextToken,
   };
+}
+
+/**
+ * HeyGen's default ranking front-loads hundreds of voices that carry no sample,
+ * so the wizard's first pages would otherwise hold nothing a user can audition.
+ * Scan with the provider's widest page to keep filling one request to a few
+ * calls. Voice verification still reads the unfiltered catalog, because an
+ * already selected voice stays usable whether or not it offers a sample.
+ */
+export async function listHeyGenPublicVoicesWithSamples(
+  options: HeyGenVoiceCatalogOptions,
+  apiKey: string,
+  signal: AbortSignal,
+): Promise<HeyGenPublicVoicePage | HeyGenErrorResponse> {
+  const result = await scanHeyGenCatalog(options.token, async (token) => {
+    const page = await listHeyGenPublicVoices(
+      { ...options, token, pageSize: HEYGEN_VOICE_SCAN_PAGE_SIZE },
+      apiKey,
+      signal,
+    );
+    return isHeyGenErrorResponse(page)
+      ? page
+      : {
+          items: page.voices.filter((voice) => {
+            return voice.sampleUrl !== undefined;
+          }),
+          hasMore: page.hasMore,
+          nextToken: page.nextToken,
+        };
+  });
+  return isHeyGenErrorResponse(result)
+    ? result
+    : {
+        voices: result.items,
+        hasMore: result.hasMore,
+        nextToken: result.nextToken,
+      };
 }
 
 function heyGenSpeechContentType(

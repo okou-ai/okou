@@ -811,7 +811,7 @@ function toggleVoicePreview(event: ReactMouseEvent<HTMLButtonElement>): void {
   detach(audio.play(), Reason.DomCallback);
 }
 
-interface VoiceCardVoice {
+export interface VoiceCardVoice {
   readonly id: string;
   readonly name: string;
   readonly sampleUrl?: string;
@@ -822,7 +822,22 @@ interface VoiceCardVoice {
   readonly useCase?: string;
 }
 
-function VoicePreviewControl({ voice }: { readonly voice: VoiceCardVoice }) {
+/**
+ * DOM contract for the row that hosts a {@link VoicePreviewControl}: the toggle
+ * finds its audio through the card and flips `data-playing` for the icon swap.
+ */
+export const VOICE_PREVIEW_CARD_PROPS = {
+  "data-avatar-voice-card": "",
+  "data-playing": "false",
+} as const;
+
+export const VOICE_PREVIEW_CARD_CLASS = "group/voice";
+
+export function VoicePreviewControl({
+  voice,
+}: {
+  readonly voice: VoiceCardVoice;
+}) {
   const { t } = useTranslation();
   return (
     <>
@@ -903,8 +918,7 @@ function AvatarVoiceCard<T extends VoiceCardVoice>({
   };
   return (
     <div
-      data-avatar-voice-card=""
-      data-playing="false"
+      {...VOICE_PREVIEW_CARD_PROPS}
       data-recommended={recommended ? "" : undefined}
       role="button"
       tabIndex={0}
@@ -927,7 +941,8 @@ function AvatarVoiceCard<T extends VoiceCardVoice>({
         }
       }}
       className={cn(
-        "group/voice flex cursor-pointer items-center gap-3 rounded-xl border bg-card p-3 transition-colors duration-200 hover:border-foreground/20 hover:bg-card-hover hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        VOICE_PREVIEW_CARD_CLASS,
+        "flex cursor-pointer items-center gap-3 rounded-xl border bg-card p-3 transition-colors duration-200 hover:border-foreground/20 hover:bg-card-hover hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         AVATAR_CARD_SHADOW,
         selected
           ? "border-primary bg-primary/[0.04]"
@@ -1406,9 +1421,12 @@ export function VoiceLibraryToolbar() {
 }
 
 export function VoiceLibraryContent({
+  header,
   selectedVoiceId,
   onSelect,
 }: {
+  /** Rendered inside the picker so its own previews stop when a card plays. */
+  readonly header?: ReactNode;
   readonly selectedVoiceId: string | undefined;
   readonly onSelect: (voice: IntroVideoVoice) => void;
 }) {
@@ -1416,8 +1434,9 @@ export function VoiceLibraryContent({
     <div
       data-avatar-voice-picker=""
       data-intro-video-voice-provider="heygen"
-      className="flex min-h-0 flex-1 flex-col overflow-hidden"
+      className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden"
     >
+      {header}
       <IntroVideoVoiceCatalog
         selectedVoiceId={selectedVoiceId}
         onSelect={onSelect}

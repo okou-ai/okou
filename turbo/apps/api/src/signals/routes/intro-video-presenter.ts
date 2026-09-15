@@ -25,7 +25,7 @@ import {
   isHeyGenErrorResponse,
   listHeyGenPublicAvatars,
   listHeyGenPublicStyles,
-  listHeyGenPublicVoices,
+  listHeyGenPublicVoicesWithSamples,
   submitHeyGenAvatarVideo,
   verifyHeyGenPublicAvatar,
   verifyHeyGenPublicVoice,
@@ -196,7 +196,7 @@ const getVoicesInner$ = command(async ({ get }, signal: AbortSignal) => {
     );
   }
   const query = get(voicesQuery$);
-  const result = await listHeyGenPublicVoices(
+  const result = await listHeyGenPublicVoicesWithSamples(
     {
       token: query.token,
       pageSize: query.pageSize ?? 24,
