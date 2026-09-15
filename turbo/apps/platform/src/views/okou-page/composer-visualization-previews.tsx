@@ -73,7 +73,7 @@ function LineChartArtwork() {
       <path
         d="M25 62C37 56 42 60 50 54S67 49 76 51 91 40 101 44 117 34 127 36 142 29 153 31"
         fill="none"
-        className="stroke-current opacity-60"
+        className="stroke-current"
         strokeOpacity="0.85"
         strokeWidth="1.5"
         strokeLinecap="round"
@@ -131,7 +131,7 @@ function ScatterChartArtwork() {
     <>
       <path
         d="M28 63 146 15"
-        className="stroke-current opacity-60"
+        className="stroke-current"
         strokeOpacity="0.75"
         strokeDasharray="3 3"
         strokeWidth="1.1"
@@ -161,7 +161,7 @@ function AreaChartArtwork() {
     <>
       <path
         d="M25 61C37 56 42 59 51 51S68 47 77 43 91 32 102 36 115 27 127 30 142 18 153 20V69H25Z"
-        className="fill-current opacity-75"
+        className="fill-current"
         fillOpacity="0.16"
       />
       <path
@@ -173,7 +173,7 @@ function AreaChartArtwork() {
       />
       <path
         d="M25 65C38 62 43 64 51 60S68 55 77 57 91 46 102 49 115 42 127 44 142 37 153 39V69H25Z"
-        className="fill-current opacity-60"
+        className="fill-current"
         fillOpacity="0.1"
       />
       <path
@@ -307,7 +307,6 @@ function RadarChartArtwork() {
             points={polygon(radius)}
             fill="none"
             className="stroke-current opacity-20"
-            strokeOpacity="0.8"
             strokeWidth="0.7"
           />
         );
@@ -328,13 +327,13 @@ function RadarChartArtwork() {
       })}
       <polygon
         points="77,14 101,30 101,58 77,68 53,58 60,34"
-        className="fill-current opacity-75 stroke-current opacity-75"
+        className="fill-current stroke-current"
         fillOpacity="0.15"
         strokeWidth="1.5"
       />
       <polygon
         points="77,22 94,34 107,61 77,62 48,61 58,33"
-        className="fill-current opacity-60 stroke-current opacity-60"
+        className="fill-current stroke-current"
         fillOpacity="0.1"
         strokeWidth="1.3"
       />
@@ -348,28 +347,28 @@ function SankeyChartArtwork() {
       <path
         d="M32 21C57 21 59 28 81 28S110 17 130 17"
         fill="none"
-        className="stroke-current opacity-75"
+        className="stroke-current"
         strokeOpacity="0.34"
         strokeWidth="14"
       />
       <path
         d="M32 53C57 53 58 42 81 42S109 56 130 56"
         fill="none"
-        className="stroke-current opacity-40"
+        className="stroke-current"
         strokeOpacity="0.38"
         strokeWidth="18"
       />
       <path
         d="M88 31C105 31 111 37 130 37"
         fill="none"
-        className="stroke-current opacity-60"
+        className="stroke-current"
         strokeOpacity="0.34"
         strokeWidth="8"
       />
       <path
         d="M88 49C105 49 111 69 130 69"
         fill="none"
-        className="stroke-current opacity-35"
+        className="stroke-current"
         strokeOpacity="0.34"
         strokeWidth="7"
       />
@@ -435,7 +434,6 @@ function GanttChartArtwork() {
               y1="13"
               y2="70"
               className="stroke-current opacity-20"
-              strokeOpacity="0.62"
               strokeWidth="0.7"
             />
           </g>
@@ -450,7 +448,6 @@ function GanttChartArtwork() {
               y1={18 + index * 16}
               y2={18 + index * 16}
               className="stroke-current opacity-20"
-              strokeOpacity="0.45"
               strokeWidth="0.7"
             />
           </g>
@@ -709,7 +706,7 @@ function FlightLineMotion() {
               fill="none"
               pathLength="100"
               strokeDasharray="14 86"
-              className="stroke-current opacity-60"
+              className="stroke-current"
               strokeOpacity="0.55"
               strokeWidth="1.2"
               strokeLinecap="round"
@@ -780,7 +777,7 @@ function FlightLineStill() {
             <path
               d={trail}
               fill="none"
-              className="stroke-current opacity-60"
+              className="stroke-current"
               strokeOpacity="0.55"
               strokeWidth="1.2"
               strokeLinecap="round"
@@ -798,7 +795,7 @@ function FlightLineStill() {
         cy={FLIGHT_LINE_HUB.y}
         r="7"
         fill="none"
-        className="stroke-current opacity-60"
+        className="stroke-current"
         strokeOpacity="0.22"
         strokeWidth="0.6"
       />
@@ -807,7 +804,7 @@ function FlightLineStill() {
         cy={FLIGHT_LINE_HUB.y}
         r="4.6"
         fill="none"
-        className="stroke-current opacity-60"
+        className="stroke-current"
         strokeOpacity="0.45"
         strokeWidth="0.7"
       />
@@ -837,7 +834,7 @@ function RouteMapChartArtwork() {
             key={d}
             d={d}
             fill="none"
-            className="stroke-current opacity-75"
+            className="stroke-current"
             strokeOpacity="0.5"
             strokeWidth="1.2"
             strokeLinecap="round"
@@ -863,7 +860,6 @@ function ChoroplethMapChartArtwork() {
         d={WORLD_GRATICULE_PATH}
         fill="none"
         className="stroke-current opacity-20"
-        strokeOpacity="0.5"
         strokeWidth="0.5"
       />
       {WORLD_COUNTRY_TIERS.map(({ d, tone }) => {
