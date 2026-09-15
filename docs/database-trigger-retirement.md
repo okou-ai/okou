@@ -2,7 +2,108 @@
 
 Issue [#33747](https://github.com/vm0-ai/vm0/issues/33747) tracks the complete
 nine-trigger migration plan, domain-specific concurrency requirements, and
-release evidence. Preparation changes do not authorize trigger removal.
+release evidence. A–D preparation shipped before migration `1132`; the sections
+below retain the writer and repair contracts established by those releases.
+
+## A-D contraction: migration 1132
+
+`1132_retire_prepared_domain_triggers` removes exactly the eight A–D triggers
+and eight functions. It retains E's `marketing_privacy_withdrawal` trigger,
+ordinary constraints, indexes, pending guards, and both legacy invitation
+columns. The withdrawn privacy feature stays withdrawn. This is part of
+#33747; it does not complete all nine behaviors or #32575's column cleanup.
+
+The verified rollback artifact is **API 1.600.1**, tag `api-v1.600.1`, at
+`eb2f211a9af41450d0d5dad10c0c8ad12fac0a24`. Its
+[promotion log](https://github.com/vm0-ai/vm0/actions/runs/34915532910/job/104212801721)
+records that checkout, build version and `api.vm0.ai` alias at
+**2026-09-15 01:07:30 UTC**. A bounded Vercel read found exactly one READY
+production deployment for that SHA, `dpl_FFSpvSwiDJXUAZ73dswXhMr51jjP`.
+The **2026-09-15 02:56–02:57 UTC** alias/deployment read resolved `api.vm0.ai`
+to READY deployment
+`dpl_9ZpnkRGxSvqExXz6jr6m1GwgNrKm`, **API 1.601.0** at
+`3ace38cfefa54eb9df33715131a3ee8be1be3c27`, a verified descendant of the floor.
+All four preparation merge commits are ancestors of both artifacts. Billing
+reconciliation and cleanup crons are routes in the same API build, as are
+Stripe/Clerk webhooks; the writer inventory below contains no independent
+background database writer to upgrade. Historical numbered scripts are not
+supported current repair entry points.
+
+The rollback resolver now requires the verified API 1.600.1 release as an
+ancestor, including the canonical-only invitation mapping. The previous floor
+`6e1abbb785dc1613d0f5cd1b1dd80fae694abb46` contained A/B but excluded C/D.
+The rollback workflow checks out current `main`, so an old target cannot
+replace this guard. API rollback does not restore triggers; earlier artifacts
+require a separately reviewed schema restoration and reconciliation.
+
+Migration 1132 takes table locks in billing-root → pending-guard → organization
+metadata → entitlement → connector-parent → OAuth-config → site → deployment
+order. It does not take row/advisory locks after those table locks. The audit
+is a separate statement under READ COMMITTED, so it observes committed writers
+that finished before the lock was granted. The runner's **1 second lock / 10
+second statement** limits remain unchanged; a timeout rolls back every drop.
+
+Before deletion it checks exact trigger definitions/enabled state and function
+identity/body/configuration, known-tier metadata entitlement presence, managed
+credit capability, OAuth pairs/orphans, requested slugs, deployment organization
+ownership, and exact pending guard counts. Manual entitlements and grandfathered
+pending roots are preserved. It does not compare historical site ownership to
+mutable/deleted run metadata: ownership deliberately survives run/thread cleanup.
+No data correction, cancellation, repair or backfill happens in this migration.
+Unknown catalog drift, bad data, dependencies or a journal failure abort the
+whole transaction. Drops use RESTRICT, with no CASCADE or replacement trigger.
+
+The existing production release first runs migrations on its production smoke
+clone, then on production before API promotion. Both executions must succeed.
+The content-free `prepared_domain_trigger_retirement_v1` receipt identifies
+counts and audit results. A notice alone is **not committed evidence**: require
+the production journal insertion and `Migrations complete`, separately from
+smoke-clone success. This PR does not claim that production contraction ran.
+
+The bounded MaskDB read on **2026-09-15 02:48 UTC** found **6,812** metadata
+organizations created by **02:47:36 UTC**, all with entitlements; the cutoff
+count was unchanged after scanning. MaskDB still exposes neither the pending
+roots/guards, OAuth configs nor PostgreSQL catalogs, and does not expose
+`can_buy_credits`. This is limited presence evidence, not a complete production
+invariant proof. The migration's locked checks provide the missing release-time
+precondition and fail closed instead of inferring success from inaccessible data.
+
+The [combined preparation evidence](https://github.com/vm0-ai/vm0/issues/33747#issuecomment-5666495664)
+records direct persisted-state comparisons on main `3c8b18e`, all-eight-absent
+route checks, and retained/outgoing controls. Current private API suites load
+legacy function definitions from immutable 1078/1098 SQL into their owned
+schemas; they remain valid after public functions disappear. Current route
+suites use the fully contracted database. Retired outgoing-only route fixtures
+are removed; retained private controls stay through the 1132 transition.
+The 1132 verification based on main `de87aa7c0e75df187eecfdf8c14b90b0bde5fe0f`
+passed the same 795 cases across 26 current API route files on each schema,
+with none skipped, plus 230 private compatibility cases. Post-route counts and
+invariants match; the existing entitlement-only teardown fixture leaves one
+missing entitlement on each schema and is recorded separately from writer
+creation behavior. All seven other audited invariant counts are zero.
+`test-prepared-domain-trigger-retirement.ts` verifies actual migration/journal
+atomicity, unchanged data/constraints/privacy, grandfathered roots, audit
+rejections, a fresh snapshot after a blocked writer, timeout and retry. A
+synthetic 10,000 organizations/roots/connectors/sites plus 20,000 deployments
+completed the migration in 69 ms on PostgreSQL 17.10 with the default limits;
+this is bounded local load evidence, not a production timing prediction.
+After merging main `4a60b74daa3cba9e11fdb6a072fa989dd1a242d3`, the expanded
+migration-consistency chain, including the independent historical blob audit,
+passed with the unchanged 1132 SQL. All 230 private compatibility cases and
+329 cases in five affected billing, lifecycle and chat route files passed on
+each schema. Their scenario results, persisted projections and invariant counts
+match. The 26-file matrix above remains evidence for its recorded prior base.
+
+After main `9d3e9f181a3b86c2c215bd15549eeee84b10bd69` added the independent
+erasure-journal check, both validators remain registered. Its journal test,
+all 19 retirement scenarios, permanent schema checks and 230 private cases
+passed. The hosting slug-helper extraction was also verified with the same
+13 API cases on each schema; their persisted state matches and all eight
+audited invariant counts are zero. Earlier broader matrices retain their
+recorded bases.
+
+Retire transition controls only after the production journal, completed compatibility cycle and permanent surviving
+coverage satisfy `turbo/packages/db/MIGRATIONS.md`.
 
 ## Organization entitlement preparation
 
@@ -24,9 +125,9 @@ release evidence. Preparation changes do not authorize trigger removal.
 
 Both operations use the canonical runtime entitlement mapping introduced by
 #33909. Current invitation admission derives from normalized `status`; neither
-operation names or mirrors either legacy invitation column. The status-mirror
-trigger remains for outgoing API SQL until #32575's serving/rollback gate
-permits contraction. Its eventual removal needs no replacement API mirror.
+operation names or mirrors either legacy invitation column. Migration 1132
+removes the status-mirror trigger without an API mirror;
+#32575 retains ownership of the two physical columns and client cleanup.
 
 Metadata writes and their entitlement operation must share a transaction.
 Pass the **returned** `orgId` and `tier`, not the attempted insert values: a
@@ -58,11 +159,8 @@ complete their metadata writes. `upsertOrgMetadataFixture` already writes the
 managed entitlement. Deliberately divergent entitlement fixtures use the same
 canonical runtime mapping and explicit status.
 
-`insertOrgMetadataAsLegacyWriterFixture`,
-`updateOrgPlanKeyAsLegacyWriterFixture`, and the frozen migration compatibility
-fixtures intentionally simulate old writers. They continue to exercise the
-retained triggers during preparation; retire those expectations only after
-the corresponding serving/rollback gate passes.
+The frozen private-schema compatibility fixtures still simulate old writers.
+The current-route-only legacy metadata/plan fixtures are retired with 1132.
 
 ### Repair and backfill writes
 
@@ -81,11 +179,11 @@ this preparation change.
 
 ## Compatibility and removal gate
 
-All three organization-entitlement triggers remain installed during this
-preparation release. An existing trigger can create the row before the API
-ensure runs; `ON CONFLICT DO NOTHING` preserves it without reapplying grants or
-overwriting a manual entitlement. The retained invitation trigger continues
-to serve outgoing API statements; current API writers do not depend on it.
+All three organization-entitlement triggers were retained during preparation
+and are removed together by 1132. An existing trigger can create the row
+before the API ensure runs; `ON CONFLICT DO NOTHING` preserves it without reapplying grants or
+overwriting a manual entitlement. During preparation the retained invitation
+trigger served outgoing API statements; current API writers do not depend on it.
 
 The compatibility tests use private schemas with actual PostgreSQL constraints
 on the retained schema, without entitlement triggers, and after dropping both
@@ -94,15 +192,12 @@ changes, preservation, rollback,
 retry, and a verified blocked concurrent writer. Shared/public triggers are
 never disabled by the tests. Full route suites run in the PR pipeline.
 
-Production migrations precede API promotion. Before shipping a new migration
-that removes these triggers, record the prepared serving/background artifacts,
-the oldest supported rollback artifact, and proof that all relevant writers
-have migrated. A merge alone is not deployment evidence. After removal, an
-application rollback must target a prepared artifact; it does not recreate the
-database triggers. Coordinate invitation-trigger and column removal with the
+The 1132 release boundary above records the prepared artifact and enforced
+rollback floor. Production migration/journal completion remains a release gate;
+application rollback does not recreate triggers. The two physical invitation
+columns and remaining client cleanup stay with the
 [invitation contraction gate](deployment-compatibility.md#invitation-and-free-member-contract-cleanup-2026-09-14)
-owned by #32575; its prepared serving and rollback artifacts must exclude both
-legacy columns.
+owned by #32575.
 
 The purchase, OAuth, hosting, and privacy work packages remain tracked in
 #33747. In particular, [the privacy implementation rollback](marketing-privacy-choices.md)
@@ -155,12 +250,10 @@ foreign key still rejects a mismatched organization. There is no public API for
 moving configs. New repair/backfill writers must use this transaction contract,
 rather than issue standalone SQL that relied on deferred triggers.
 
-Both `trg_org_custom_connectors_oauth_mode` and
-`trg_org_custom_connector_oauth_configs_mode`, and their functions, remain
-installed in this preparation PR. They only validate, so they can coexist with
-the explicit API operation without duplicate side effects. No schema or
-migration changes are needed. Outgoing generic and Feishu/Lark writers already
-lock the parent before config changes and can coexist with the prepared writer.
+Both OAuth triggers and their functions were retained during preparation and
+are removed by 1132. They only validated, so they coexisted with the explicit
+API operation without duplicate side effects. Outgoing generic and Feishu/Lark
+writers already lock the parent before config changes and can coexist with the prepared writer.
 
 The compatibility suite uses private schemas with the shipped checks, unique
 keys, composite config foreign key, and either retained or absent OAuth
@@ -170,12 +263,9 @@ actual blocked concurrent prepared/outgoing writers. It never disables shared
 triggers. Product behavior remains covered by generic connector, Feishu and
 Lark API route suites.
 
-Before a later migration drops the two triggers/functions, record the prepared
-serving and background artifacts, oldest supported rollback artifact, and a
-fresh writer inventory in #33747. Removal requires all of those writers to use
-the explicit contract. A merged preparation PR alone does not establish the
-serving/rollback gate, and rolling back an API artifact does not restore dropped
-triggers.
+The 1132 contraction uses the recorded prepared serving/background artifact
+and enforced rollback floor above. New writers and repairs must retain this
+explicit transaction contract after physical removal.
 
 ## Hosted-site ownership preparation
 
@@ -212,8 +302,8 @@ Paths below are relative to `turbo/apps/api/src/` unless stated otherwise.
 | `signals/services/host.service.ts`: completion/promotion         | Retains the existing site row lock and updates only deployment status and active-version fields. It does not change ownership, requested slug or originating run. Existing completion authorization and chat checks remain in place.                                                              |
 | `signals/routes/test-cron-cleanup-sandboxes-state.ts`            | Current setup explicitly canonicalizes site ownership and admits its deployment in one transaction. Its teardown deletes only the owned site; ordinary foreign keys cascade deployments.                                                                                                          |
 | `test-fixtures/hosted-sites.ts`                                  | The historical VM0-brand fixture explicitly writes its requested slug and has no originating run/chat owner. It is already independent of the two triggers.                                                                                                                                       |
-| `signals/routes/test-runtime-state.ts`                           | The two `*-as-previous-api` operations deliberately retain old SQL shapes as outgoing-version controls. They require the retained triggers and are not current repair entry points.                                                                                                               |
-| `turbo/packages/db/scripts/test-migration-consistency-schema.ts` | Retains the exact shipped trigger/function inventory and its outgoing-writer assertions during preparation.                                                                                                                                                                                       |
+| `signals/routes/test-runtime-state.ts`                           | The two hosted `*-as-previous-api` operations are removed with 1132. Historical writer controls remain in the private compatibility suite.                                                                                                                                                        |
+| `turbo/packages/db/scripts/test-migration-consistency-schema.ts` | Checks the contracted trigger/function inventory and surviving ordinary constraints; the API owns current business behavior.                                                                                                                                                                      |
 | Numbered `014-public-artifact-registration` backfill             | Reads sites/deployments for artifact registration; it does not write their ownership. Preserve this historical migration.                                                                                                                                                                         |
 
 Acquire run row locks before site row locks. Allocation uses `FOR UPDATE` on
@@ -253,19 +343,14 @@ cross-chat rejection, actual allocation transactions, concurrent versions,
 public/private behavior, insertion failure and retry, and run/site row locks.
 API route coverage exercises site reuse, chat isolation, organization-site
 adoption rejection, completion permissions, public/private workflows and
-concurrent prepares. The previous-API route control intentionally belongs to
-the retained schema only; an old writer is unsupported after contraction.
+concurrent prepares. The previous-API control remains in its private retained
+schema; a trigger-dependent writer is unsupported after contraction.
 
-Both hosting triggers and their functions remain installed. Their
-canonical assignments/validation can coexist with prepared values without
-duplicating a side effect. This preparation makes no schema, migration or
-rollback-floor change. Before physical removal, record prepared serving and
-background artifacts, the oldest permitted rollback artifact, a fresh writer
-audit and the retained/absent compatibility evidence in #33747. All current
-writers and supported rollback writers must use the explicit contract; merge
-alone does not prove that gate. Retire outgoing-writer fixture expectations
-and update the exact schema inventory in the later removal change. API
-rollback does not restore database triggers.
+Both hosting triggers/functions coexisted with prepared values during the
+preparation releases and are removed by 1132. Historical writer controls stay
+in private schemas; current-route legacy fixtures are retired. The exact
+remaining catalog is checked by migration consistency. API rollback does not
+restore database triggers.
 
 ## Pending usage-pack purchase preparation
 
@@ -294,7 +379,7 @@ Paths below are relative to `turbo/apps/api/src/` unless stated otherwise.
 | `signals/services/org-deletion-billing.service.ts`                                                                 | Reads billing correlations to cancel Stripe objects. It does not delete local roots; cancellation callbacks/reconciliation use the explicit lifecycle writer. Roots have no organization foreign key and do not disappear through an organization cascade. Preserve existing billing retention.                                                                           |
 | `signals/routes/test-usage-pack-subscription-state.ts`                                                             | Current seed and both root cleanup operations use the explicit boundary. Timestamp/legacy Checkout correlation actions change neither status nor organization. The explicitly named pre-serialization fixture deliberately reconstructs historical competing roots and calls the explicit repair operation. It is fixture-owned setup, not a current admission path.      |
 | `signals/routes/test-billing-reconciliation-state.ts`                                                              | Setup and cleanup lock their complete, uniquely owned organization set before writing any root, allocation or organization metadata. Guard release is part of cleanup.                                                                                                                                                                                                    |
-| `turbo/packages/db/scripts/test-migration-consistency-schema.ts`                                                   | Keeps the shipped function/trigger inventory and legacy SQL behavior assertions until contraction. No current numbered external-data migration writes these roots. Shipped migrations and historical numbered scripts remain unchanged.                                                                                                                                   |
+| `turbo/packages/db/scripts/test-migration-consistency-schema.ts`                                                   | Checks contracted inventory and permanent guard uniqueness/range. Private API suites own pending behavior and historical writer controls. No current numbered external-data migration writes these roots. Shipped migrations and historical numbered scripts remain unchanged.                                                                                            |
 
 There is no current product/admin endpoint for moving a root to another
 organization or physically deleting it. A new administrative writer must use
@@ -382,15 +467,14 @@ Checkout request. Run the same routes in isolated UTC databases with the
 trigger retained and with only this trigger/function absent; never drop shared
 suite triggers to select a test mode.
 
-The shipped trigger/function, guard table, unique index and check constraint
-remain installed. Before a later migration removes the trigger/function,
-record the prepared immutable API artifacts serving requests and background
-jobs, the oldest supported rollback artifact, fresh writer inventory, guard
+Migration 1132 removes the shipped trigger/function and retains the guard
+table, unique index and count constraint. Its release record must include the
+prepared immutable API artifacts serving requests and background jobs, the oldest supported rollback artifact, fresh writer inventory, guard
 reconciliation evidence and this compatibility matrix in #33747. Every
 serving/background/rollback writer must use the explicit operation. Keep the
 guard/index after contraction. A source audit or merged preparation PR is not
 proof that the serving/rollback gate passed. Rolling back below the prepared
 floor after contraction requires a separately reviewed schema restoration and
-reconciliation; application rollback does not recreate a trigger. This PR does
-not run production migration or deployment observation, and does not resume
-marketing privacy functionality.
+reconciliation; application rollback does not recreate a trigger. The
+contraction PR does not itself run production migration or continuous
+deployment observation, and does not resume marketing privacy functionality.

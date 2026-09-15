@@ -32,6 +32,16 @@ expired transition validator must be deleted.
 
 ### Active transition validators
 
+- `scripts/test-prepared-domain-trigger-retirement.ts` protects migration
+  `1132_retire_prepared_domain_triggers` (#33747): all eight A–D drops in one
+  transaction, exact original catalogs, invariant rejection, unchanged data,
+  preserved ordinary constraints/privacy, grandfathered counts, default lock
+  timeout, retry and journal-failure rollback. The four private API write suites
+  retain shipped legacy functions in owned schemas alongside the contracted
+  variants. Keep these transition controls until the production journal and
+  completed rollout satisfy all three conditions above. Current API route
+  coverage, guard constraints and the exact remaining catalog are permanent.
+
 - `scripts/test-pi-candidate-trigger-retirement.ts` protects migration
   `1121_retire_pi_candidate_reference_trigger` (#33975): original catalog
   identity, single-snapshot candidate ownership, narrowly classified #33973
@@ -44,9 +54,10 @@ expired transition validator must be deleted.
 - `scripts/test-member-invitation-retirement.ts` protects migration
   `1098_retire_member_invitation_capability` (#32573). It checks removal of
   manual invitation overrides, legacy INSERT/UPSERT/RETURNING statements, and
-  current status-only writes observed by old API readers. The physical column
-  and derived-status trigger remain only for serving and rollback compatibility;
-  remove them with this validator after the gates in #32575 pass. The current
+  current status-only writes observed by old API readers. Migration 1132 removes
+  the derived-status trigger. The physical columns
+  remain for #32575's separate contraction; keep this validator until that
+  column transition passes its release gates. The current
   application uses a canonical-only runtime mapping and no longer mirrors the
   legacy usage-pack column. The validator also exercises that mapping's real
   insert, conflict update, select and returning on an isolated contracted table.

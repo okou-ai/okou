@@ -896,20 +896,47 @@ in place. Removing them in this same release would break outgoing API SQL
 between migration and promotion. No schema migration or rollback-floor change
 is part of this preparation release.
 
-To finish #32575 after this API is released:
+Migration 1132 below subsequently handles the three entitlement triggers and
+enforces the canonical-only rollback artifact. To finish the remaining #32575
+column/client cleanup:
 
-1. Record its successful production promotion and outgoing API drain. Enforce
-   a supported rollback floor that contains the canonical-only runtime mapping
-   and unconditional migration response; the existing floor is insufficient.
-2. Generate the column-drop migration with Drizzle. Audit persisted SQL first,
-   including `ensure_legacy_org_metadata_plan_entitlement`, then drop both
-   legacy columns and the invitation status-mirror trigger/function. Update
-   their exact inventory entries. Coordinate the overlapping trigger with
-   #33747; unrelated triggers are outside #32575.
+1. Preserve the 1132 serving/rollback evidence below and confirm its production
+   journal completion before treating its trigger contraction as shipped.
+2. Generate the column-drop migration with Drizzle. Audit remaining persisted
+   SQL first, then drop both legacy columns. The entitlement triggers/functions
+   are removed by #33747 migration 1132; preserve its journal and transition
+   evidence. Unrelated triggers are outside #32575.
 3. Remove the App migration query opt-in and contract. Retire the invitation
    transition validator only after its contraction has shipped and permanent
    coverage retains active Free invitations, suspended direct/paid rejection,
    admin authorization, reactivation and explicit `showUsagePack: false`.
+
+### Prepared billing, OAuth and hosting trigger contraction (2026-09-15)
+
+Migration `1132_retire_prepared_domain_triggers` removes A–D's eight triggers
+and functions from #33747. The supported rollback floor is API 1.600.1,
+`api-v1.600.1`, at `eb2f211a9af41450d0d5dad10c0c8ad12fac0a24`; it contains
+all four prepared writers, their webhook/cron paths and the canonical-only
+invitation mapping. Its [production promotion](https://github.com/vm0-ai/vm0/actions/runs/34915532910/job/104212801721)
+records checkout/build and alias publication at 2026-09-15 01:07:30 UTC.
+A bounded Vercel read verifies exactly one READY production artifact for that
+SHA. The 2026-09-15 02:56–02:57 UTC alias/deployment read resolved API 1.601.0 at
+`3ace38cfefa54eb9df33715131a3ee8be1be3c27`, a descendant of that floor.
+The rollback resolver enforces the floor before resolving API/Runner artifacts;
+the workflow always loads the resolver from `main`.
+
+The prepared API works on both schemas, so migration-before-promotion and an
+API rollback to that floor preserve the explicit writes. Current route tests
+run with all eight absent; private service suites preserve retained/outgoing
+SQL controls until contraction has actually shipped. The migration keeps its
+1s lock / 10s statement limits and validates catalog/data under locks before
+any drop. Production smoke and production journal completion are distinct
+release gates; no production deletion is asserted by this source change.
+
+The invitation status-mirror trigger is included; its obsolete physical columns
+and App query opt-in remain #32575 work. E's privacy trigger is excluded, and
+the withdrawn feature remains withdrawn. See the
+[writer inventory, repair rules and migration receipts](database-trigger-retirement.md#a-d-contraction-migration-1132).
 
 ### Workflow automation connector-account projections
 
