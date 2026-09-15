@@ -423,7 +423,9 @@ describe("managed artifact privacy", () => {
         expect(contentWrite).toBeGreaterThan(registrationWrite);
         expect(result.url).toMatch(/^https:\/\/a\.okou\.io\//u);
         expect(result.sourceUrl).toBe(sourceUrl);
-        expect(result.embedUrl).toContain("cdn-cgi/image/");
+        expect(result.embedUrl).toBe(
+          `${result.url}?thumbnail=1&fit=scale-down&quality=85`,
+        );
         mocks.clerk.session(`user_${randomUUID()}`, fixture.actor.orgId);
         await accept(
           fixture
