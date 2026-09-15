@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { installPreparedDomainLegacyFunctions } from "../../../test-fixtures/prepared-domain-legacy-functions";
 
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
@@ -62,44 +63,57 @@ async function createHarness(retainTriggers: boolean) {
     }
   };
   const initialized = await settle(
-    db.transaction(async (tx) => {
-      await tx.execute(sql`CREATE SCHEMA ${sql.identifier(schemaName)}`);
-      await tx.execute(sql`
+    (async () => {
+      const setupClient = await pool.connect();
+      const created = await settle(
+        drizzle(setupClient).transaction(async (tx) => {
+          await tx.execute(sql`CREATE SCHEMA ${sql.identifier(schemaName)}`);
+          await tx.execute(sql`
       CREATE TABLE agent_runs (
         id uuid PRIMARY KEY, chat_thread_id uuid, trigger_source text
       )
     `);
-      await tx.execute(
-        sql`CREATE TABLE hosted_sites (LIKE public.hosted_sites INCLUDING ALL)`,
-      );
-      await tx.execute(
-        sql`CREATE TABLE hosted_deployments (LIKE public.hosted_deployments INCLUDING ALL)`,
-      );
-      await tx.execute(
-        sql`CREATE TABLE private_hosted_deployments (LIKE public.private_hosted_deployments INCLUDING ALL)`,
-      );
-      await tx.execute(sql`
+          await tx.execute(
+            sql`CREATE TABLE hosted_sites (LIKE public.hosted_sites INCLUDING ALL)`,
+          );
+          await tx.execute(
+            sql`CREATE TABLE hosted_deployments (LIKE public.hosted_deployments INCLUDING ALL)`,
+          );
+          await tx.execute(
+            sql`CREATE TABLE private_hosted_deployments (LIKE public.private_hosted_deployments INCLUDING ALL)`,
+          );
+          await tx.execute(sql`
       ALTER TABLE hosted_deployments ADD FOREIGN KEY (site_id, public_brand)
       REFERENCES hosted_sites (id, public_brand) ON DELETE CASCADE
     `);
-      await tx.execute(sql`
+          await tx.execute(sql`
       ALTER TABLE private_hosted_deployments ADD FOREIGN KEY (site_id, public_brand)
       REFERENCES hosted_sites (id, public_brand) ON DELETE CASCADE
     `);
-      if (retainTriggers) {
-        await tx.execute(sql`
+          if (retainTriggers) {
+            await installPreparedDomainLegacyFunctions(setupClient, [
+              "canonicalize_hosted_site_scope_0753",
+              "enforce_hosted_deployment_scope_0753",
+            ]);
+            await tx.execute(sql`
         CREATE TRIGGER canonicalize_hosted_site_scope_0753
         BEFORE INSERT OR UPDATE OF created_from_run_id, requested_slug, chat_thread_id
         ON hosted_sites FOR EACH ROW
-        EXECUTE FUNCTION public.canonicalize_hosted_site_scope_0753()
+        EXECUTE FUNCTION canonicalize_hosted_site_scope_0753()
       `);
-        await tx.execute(sql`
+            await tx.execute(sql`
         CREATE TRIGGER enforce_hosted_deployment_scope_0753
         BEFORE INSERT ON hosted_deployments FOR EACH ROW
-        EXECUTE FUNCTION public.enforce_hosted_deployment_scope_0753()
+        EXECUTE FUNCTION enforce_hosted_deployment_scope_0753()
       `);
+          }
+        }),
+      );
+      setupClient.release();
+      if (!created.ok) {
+        throw created.error;
       }
-    }),
+    })(),
   );
   if (!initialized.ok) {
     await destroy();

@@ -30,6 +30,11 @@ import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createUserConfigBddApi } from "./helpers/api-bdd-user-config";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  captureIntegrationInputUploads,
+  expectIntegrationInputPreview,
+  listIntegrationInputFileParts,
+} from "./helpers/integration-input-assets";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import { readAgentRunCallbacks$ } from "./helpers/agent-run-callback";
 import {
@@ -1659,6 +1664,30 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
 
     const contentUrl = "https://contoso.sharepoint.com/sites/docs/spec.png";
+    const fileBytes = Buffer.from("teams file bytes");
+    const expectedShareId = `u!${Buffer.from(contentUrl, "utf8").toString(
+      "base64url",
+    )}`;
+    server.use(
+      http.get(
+        "https://graph.microsoft.com/v1.0/shares/:shareId/driveItem/content",
+        ({ params, request }) => {
+          expect(params.shareId).toBe(expectedShareId);
+          expect(request.headers.get("authorization")).toBe(
+            "Bearer teams-graph-token",
+          );
+          return new HttpResponse(fileBytes, {
+            status: 200,
+            headers: {
+              "content-type": "image/png",
+              "content-length": String(fileBytes.length),
+            },
+          });
+        },
+      ),
+    );
+
+    const uploads = captureIntegrationInputUploads(context);
     const response = await postTeamsActivity({
       activity: teamsMessageActivity(fixture, {
         id: activityId,
@@ -1702,7 +1731,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     const fileId = fileIdMatch?.[1];
     expect(fileId).toBeTruthy();
     expect(fileId).not.toContain(contentUrl);
-    expect(fileId).toMatch(/^teams_file_[A-Za-z0-9_-]{22}$/u);
+    expect(fileId).toMatch(/^[0-9a-f-]{36}$/u);
 
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
     const threadEvents = await accept(
@@ -1751,55 +1780,66 @@ describe("POST /api/webhooks/teams/bot", () => {
       }),
     );
 
-    const fileBytes = Buffer.from("teams file bytes");
-    const expectedShareId = `u!${Buffer.from(contentUrl, "utf8").toString(
-      "base64url",
-    )}`;
-    server.use(
-      http.get(
-        "https://graph.microsoft.com/v1.0/shares/:shareId/driveItem/content",
-        ({ params, request }) => {
-          expect(params.shareId).toBe(expectedShareId);
-          expect(request.headers.get("authorization")).toBe(
-            "Bearer teams-graph-token",
-          );
-          return new HttpResponse(fileBytes, {
-            status: 200,
-            headers: {
-              "content-type": "image/png",
-              "content-length": String(fileBytes.length),
-            },
-          });
-        },
-      ),
-    );
-
-    const app = createAppWithRoutes({
-      signal: context.signal,
-      routes: integrationsTeamsDownloadFileRoutes,
+    await expectIntegrationInputPreview(context, {
+      actor,
+      fileId: fileId ?? "",
+      contentType: "image/png",
+      bytes: fileBytes,
+      uploads,
+      okouToken: claim.platformEnvironment.OKOU_TOKEN,
     });
-    const downloadResponse = await app.request(
-      `/api/integrations/teams/download-file?${new URLSearchParams({
-        file_id: fileId ?? "",
-      }).toString()}`,
-      {
-        headers: {
-          authorization: `Bearer ${okouToken({
-            userId: fixture.userId,
-            orgId: fixture.orgId,
-            runId,
-          })}`,
-        },
-      },
-    );
-
-    expect(downloadResponse.status).toBe(200);
-    expect(downloadResponse.headers.get("content-type")).toBe("image/png");
-    expect(downloadResponse.headers.get("x-file-mimetype")).toBe("image/png");
-    expect(downloadResponse.headers.get("x-file-name")).toBe("spec.png");
-    const receivedBytes = Buffer.from(await downloadResponse.arrayBuffer());
-    expect(receivedBytes.equals(fileBytes)).toBeTruthy();
   });
+
+  it.each(["uniqueId", "resource URL"] as const)(
+    "deduplicates Teams files across messages by %s without mixing attachments",
+    async (identity) => {
+      const { fixture, actor } = await setupConnectedTeamsBotActor();
+      const uploads = captureIntegrationInputUploads(context);
+      let downloads = 0;
+      server.use(
+        http.get("https://contoso.sharepoint.com/input/:file", ({ params }) => {
+          downloads += 1;
+          return new HttpResponse(String(params.file), {
+            headers: { "content-type": "image/png" },
+          });
+        }),
+      );
+      for (const index of [0, 1, 2]) {
+        const file = index === 2 ? "second.png" : "first.png";
+        const response = await postTeamsActivity({
+          activity: {
+            ...teamsPersonalMessageActivity({
+              fixture,
+              id: teamsFixtureExternalId(fixture, `dedupe-file-${index}`),
+              text: `Inspect file ${index}`,
+            }),
+            attachments: [
+              {
+                id: "0",
+                contentType:
+                  "application/vnd.microsoft.teams.file.download.info",
+                content: {
+                  downloadUrl: `https://contoso.sharepoint.com/input/${file}${identity === "uniqueId" ? `?token=${index}` : ""}`,
+                  fileName: file,
+                  ...(identity === "uniqueId" ? { uniqueId: file } : {}),
+                },
+              },
+            ],
+          },
+          token: teamsToken(),
+        });
+        expect(response.status).toBe(200);
+        await readTeamsBotResponseAndFlush(response);
+      }
+      const parts = await listIntegrationInputFileParts(context, actor);
+      expect(parts).toHaveLength(3);
+      expect(parts[0]?.fileId).toMatch(/^[0-9a-f-]{36}$/u);
+      expect(parts[1]?.fileId).toBe(parts[0]?.fileId);
+      expect(parts[2]?.fileId).not.toBe(parts[0]?.fileId);
+      expect(downloads).toBe(2);
+      expect(uploads).toHaveLength(2);
+    },
+  );
 
   it("uses short file ids for Teams personal attachments", async () => {
     const { fixture, actor, runnerGroup } = await setupConnectedTeamsBotActor();
@@ -1813,8 +1853,12 @@ describe("POST /api/webhooks/teams/bot", () => {
     );
     downloadUrl.searchParams.set("tempauth", "a".repeat(1400));
     const fileBytes = Buffer.from("teams personal file bytes");
+    let importPending = true;
     server.use(
       http.get(downloadUrl.origin + downloadUrl.pathname, () => {
+        if (importPending) {
+          return new HttpResponse(null, { status: 503 });
+        }
         return new HttpResponse(fileBytes, {
           status: 200,
           headers: {
@@ -1860,7 +1904,16 @@ describe("POST /api/webhooks/teams/bot", () => {
     const fileId = claim.prompt.match(/ {3}\[ID\] ([^\n]+)/u)?.[1];
     expect(fileId).toMatch(/^teams_file_[A-Za-z0-9_-]{22}$/u);
     expect(fileId?.length).toBeLessThan(64);
+    await expect(
+      listIntegrationInputFileParts(context, actor),
+    ).resolves.toStrictEqual([
+      expect.objectContaining({
+        fileId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
+        filenameSnapshot: "personal.png",
+      }),
+    ]);
 
+    importPending = false;
     const app = createAppWithRoutes({
       signal: context.signal,
       routes: integrationsTeamsDownloadFileRoutes,
@@ -3031,7 +3084,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       );
       expect(claim.prompt).toContain("ship the Teams dispatch");
       expect(claim.prompt).toContain(
-        "[Web file] current-task.txt (text/plain)",
+        "[Teams file] current-task.txt (text/plain)",
       );
       expect(claim.prompt).not.toContain("deployment-plan.pdf");
       expect(claim.prompt).not.toContain("release-checklist.txt");

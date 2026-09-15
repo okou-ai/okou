@@ -2326,8 +2326,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
       files: [
         {
           id: "F_CANONICAL_INPUT",
+          // Resolve a generic MIME type from the validated download response.
           name: "source-notes.txt",
-          mimetype: "text/plain",
+          mimetype: "application/octet-stream",
           size: fileBody.length,
           url_private_download: fileUrl,
         },

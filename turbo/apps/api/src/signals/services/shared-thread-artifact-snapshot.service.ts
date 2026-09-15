@@ -111,6 +111,11 @@ function resourceReference(value: string, signal: AbortSignal) {
   return computed(async (get): Promise<ResourceReference | null> => {
     const reference = parseArtifactReference(value, env("APP_URL"));
     if (reference) {
+      // Organization links grant viewing, not publication of the source.
+      // Snapshotting requires its owner artifact/deployment reference.
+      if (reference.id === null) {
+        throw new SharedThreadArtifactUnavailable();
+      }
       return { id: reference.id, suffix: reference.fragment };
     }
     const file = artifactFileReference(value);

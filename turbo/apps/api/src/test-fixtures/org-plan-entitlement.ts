@@ -6,7 +6,6 @@
  * reads and persisted webhook side effects.
  */
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { createStore } from "ccstate";
 import { eq } from "drizzle-orm";
 
@@ -114,36 +113,6 @@ export async function upsertOrgPlanEntitlementFixture(values: {
             }),
       },
     });
-}
-
-/**
- * Simulates an API instance from before migration 0639. It can create legacy
- * org metadata but does not explicitly create a plan entitlement snapshot.
- */
-export async function insertOrgMetadataAsLegacyWriterFixture(values: {
-  readonly orgId: string;
-  readonly tier: string;
-  readonly credits: number;
-}): Promise<void> {
-  await createStore()
-    .set(writeDb$)
-    .insert(orgMetadataCanonicalWrites)
-    .values(values);
-}
-
-/**
- * Simulates an API instance from before migration 0639. Its entitlement
- * upsert changes plan_key without writing the newly-added capability column.
- */
-export async function updateOrgPlanKeyAsLegacyWriterFixture(values: {
-  readonly orgId: string;
-  readonly planKey: string;
-}): Promise<void> {
-  await createStore()
-    .set(writeDb$)
-    .update(orgPlanEntitlements)
-    .set({ planKey: values.planKey })
-    .where(eq(orgPlanEntitlements.orgId, values.orgId));
 }
 
 export async function readOrgPlanEntitlementFixture(

@@ -53,7 +53,7 @@ export function artifactFileReference(
 ): { readonly id: string } | null {
   const reference = parseArtifactReference(value, env("APP_URL"));
   if (reference) {
-    return { id: reference.id };
+    return { id: reference.id ?? "" };
   }
   if (value.startsWith("/artifacts/")) {
     return { id: "" };

@@ -136,6 +136,25 @@ describe("okou host clone command", () => {
     });
   });
 
+  it("keeps organization share references on the app authorization path", async () => {
+    const destination = join(tempDir, "shared-site");
+    await expect(
+      hostCommand.parseAsync([
+        "node",
+        "cli",
+        "clone",
+        "/artifacts/a1b2c3d4e5.html",
+        destination,
+        "--json",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(mockConsoleError).toHaveBeenCalledWith(
+      expect.stringContaining("use its owner artifact reference"),
+    );
+    expect(mockExit).toHaveBeenCalledWith(1);
+    expect(existsSync(destination)).toBe(false);
+  });
+
   it("uses the public slug as the default destination", async () => {
     const index = Buffer.from("<!doctype html>");
 

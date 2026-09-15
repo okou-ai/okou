@@ -1,5 +1,6 @@
 import { command, computed, state } from "ccstate";
 import { debounceCommand } from "../command-scheduling.ts";
+import { localStorageSignals } from "../external/local-storage.ts";
 import { resetSignal } from "../utils.ts";
 import { hideKeyboardShortcutHints$ } from "../keyboard-shortcut-hints.ts";
 
@@ -139,26 +140,30 @@ export const closeChatThreadEmojiMenu$ = command(({ set }) => {
 // ---------------------------------------------------------------------------
 // Session list collapse state (RecentChatSection)
 // ---------------------------------------------------------------------------
-const internalSessionListCollapsed$ = state(false);
+const sessionListCollapsedStorage = localStorageSignals(
+  "sidebar-session-list-collapsed",
+);
 export const sessionListCollapsed$ = computed((get) => {
-  return get(internalSessionListCollapsed$);
+  return get(sessionListCollapsedStorage.get$) === "true";
 });
 export const setSessionListCollapsed$ = command(
   ({ set }, collapsed: boolean) => {
-    set(internalSessionListCollapsed$, collapsed);
+    set(sessionListCollapsedStorage.set$, String(collapsed));
   },
 );
 
 // ---------------------------------------------------------------------------
 // Manage section collapse state (Sidebar)
 // ---------------------------------------------------------------------------
-const internalManageSectionCollapsed$ = state(false);
+const manageSectionCollapsedStorage = localStorageSignals(
+  "sidebar-manage-section-collapsed",
+);
 export const manageSectionCollapsed$ = computed((get) => {
-  return get(internalManageSectionCollapsed$);
+  return get(manageSectionCollapsedStorage.get$) === "true";
 });
 export const setManageSectionCollapsed$ = command(
   ({ set }, collapsed: boolean) => {
-    set(internalManageSectionCollapsed$, collapsed);
+    set(manageSectionCollapsedStorage.set$, String(collapsed));
   },
 );
 
@@ -258,12 +263,14 @@ export const endPinnedAgentDrag$ = command(({ set }) => {
 // ---------------------------------------------------------------------------
 // Agent card / pinned section collapse state
 // ---------------------------------------------------------------------------
-const internalAgentCardCollapsed$ = state(false);
+const agentCardCollapsedStorage = localStorageSignals(
+  "sidebar-agent-card-collapsed",
+);
 export const agentCardCollapsed$ = computed((get) => {
-  return get(internalAgentCardCollapsed$);
+  return get(agentCardCollapsedStorage.get$) === "true";
 });
 export const setAgentCardCollapsed$ = command(({ set }, collapsed: boolean) => {
-  set(internalAgentCardCollapsed$, collapsed);
+  set(agentCardCollapsedStorage.set$, String(collapsed));
 });
 
 // ---------------------------------------------------------------------------

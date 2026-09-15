@@ -1,4 +1,4 @@
-import { command, computed, state } from "ccstate";
+import { command } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../i18n/index.ts";
 import { createAttachmentPreviewSignals } from "./attachment-resource-url.ts";
@@ -10,7 +10,6 @@ import {
   createTextPreviewComputed,
   isTextPreviewKind,
 } from "./text-preview.ts";
-import { onRef } from "./utils.ts";
 import { createZoomableImageCanvasSignals } from "./zoomable-image-canvas.ts";
 
 export interface SharedArtifactPreview {
@@ -84,39 +83,8 @@ export const copySharedArtifactLink$ = command(
 );
 
 export function createSharedArtifactViewerSignals() {
-  const fullscreen$ = state(false);
-  const fullscreenAvailable$ = state(false);
   return {
     imageCanvas: createZoomableImageCanvasSignals(),
-    fullscreen$: computed((get) => {
-      return get(fullscreen$);
-    }),
-    fullscreenAvailable$: computed((get) => {
-      return get(fullscreenAvailable$);
-    }),
-    mountRef$: onRef(
-      command(({ set }, _element: HTMLDivElement, signal: AbortSignal) => {
-        set(fullscreenAvailable$, document.fullscreenEnabled === true);
-        const updateFullscreen = () => {
-          set(fullscreen$, Boolean(document.fullscreenElement));
-        };
-        updateFullscreen();
-        document.addEventListener("fullscreenchange", updateFullscreen, {
-          signal,
-        });
-      }),
-    ),
-    toggleFullscreen$: command(async (_context, signal: AbortSignal) => {
-      signal.throwIfAborted();
-      if (document.fullscreenElement) {
-        await document.exitFullscreen();
-      } else {
-        // Include body portals so download menus and feedback remain
-        // usable while viewing the artifact in fullscreen.
-        await document.documentElement.requestFullscreen();
-      }
-      signal.throwIfAborted();
-    }),
   };
 }
 

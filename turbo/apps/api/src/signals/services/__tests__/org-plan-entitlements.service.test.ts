@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { installPreparedDomainLegacyFunctions } from "../../../test-fixtures/prepared-domain-legacy-functions";
 
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -66,39 +67,53 @@ async function createHarness(
     }
   };
   const initialized = await settle(
-    db.transaction(async (tx) => {
-      await tx.execute(sql`CREATE SCHEMA ${sql.identifier(schemaName)}`);
-      await tx.execute(
-        sql`CREATE TABLE org_metadata (LIKE public.org_metadata INCLUDING ALL)`,
-      );
-      await tx.execute(
-        sql`CREATE TABLE org_plan_entitlements (LIKE public.org_plan_entitlements INCLUDING ALL)`,
-      );
-      if (schema === "contracted") {
-        await tx.execute(sql`
+    (async () => {
+      const setupClient = await pool.connect();
+      const created = await settle(
+        drizzle(setupClient).transaction(async (tx) => {
+          await tx.execute(sql`CREATE SCHEMA ${sql.identifier(schemaName)}`);
+          await tx.execute(
+            sql`CREATE TABLE org_metadata (LIKE public.org_metadata INCLUDING ALL)`,
+          );
+          await tx.execute(
+            sql`CREATE TABLE org_plan_entitlements (LIKE public.org_plan_entitlements INCLUDING ALL)`,
+          );
+          if (schema === "contracted") {
+            await tx.execute(sql`
           ALTER TABLE org_plan_entitlements
           DROP COLUMN member_invitation_allowed,
           DROP COLUMN member_invite_usage_pack_required
         `);
-      }
-      if (schema === "retained") {
-        await tx.execute(sql`
+          }
+          if (schema === "retained") {
+            await installPreparedDomainLegacyFunctions(setupClient, [
+              "ensure_legacy_org_metadata_plan_entitlement",
+              "sync_legacy_org_plan_entitlement_can_buy_credits",
+              "sync_legacy_org_plan_entitlement_member_invitation_allowed",
+            ]);
+            await tx.execute(sql`
         CREATE TRIGGER ensure_legacy_org_metadata_plan_entitlement
         AFTER INSERT ON org_metadata FOR EACH ROW
-        EXECUTE FUNCTION public.ensure_legacy_org_metadata_plan_entitlement()
+        EXECUTE FUNCTION ensure_legacy_org_metadata_plan_entitlement()
       `);
-        await tx.execute(sql`
+            await tx.execute(sql`
         CREATE TRIGGER sync_legacy_org_plan_entitlement_can_buy_credits
         BEFORE INSERT OR UPDATE OF plan_key ON org_plan_entitlements
-        FOR EACH ROW EXECUTE FUNCTION public.sync_legacy_org_plan_entitlement_can_buy_credits()
+        FOR EACH ROW EXECUTE FUNCTION sync_legacy_org_plan_entitlement_can_buy_credits()
       `);
-        await tx.execute(sql`
+            await tx.execute(sql`
         CREATE TRIGGER sync_legacy_org_plan_entitlement_member_invitation_allowed
         BEFORE INSERT OR UPDATE OF status, member_invitation_allowed ON org_plan_entitlements
-        FOR EACH ROW EXECUTE FUNCTION public.sync_legacy_org_plan_entitlement_member_invitation_allowed()
+        FOR EACH ROW EXECUTE FUNCTION sync_legacy_org_plan_entitlement_member_invitation_allowed()
       `);
+          }
+        }),
+      );
+      setupClient.release();
+      if (!created.ok) {
+        throw created.error;
       }
-    }),
+    })(),
   );
   if (!initialized.ok) {
     await destroy();

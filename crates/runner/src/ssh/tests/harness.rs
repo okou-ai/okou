@@ -240,6 +240,27 @@ impl Harness {
         host_key: PrivateKey,
         api_url: Option<String>,
     ) -> Self {
+        Self::with_options(reply, key, host_key, api_url, None).await
+    }
+
+    pub(super) async fn with_tls(reply: Reply, tls: Arc<rustls::ClientConfig>) -> Self {
+        Self::with_options(
+            reply,
+            key(Algorithm::Ed25519),
+            key(Algorithm::Ed25519),
+            None,
+            Some(tls),
+        )
+        .await
+    }
+
+    async fn with_options(
+        reply: Reply,
+        key: PrivateKey,
+        host_key: PrivateKey,
+        api_url: Option<String>,
+        tls: Option<Arc<rustls::ClientConfig>>,
+    ) -> Self {
         let api = MockServer::start_async().await;
         let (control, control_peer) = control_connection().await;
         let identity = RunnerProcessIdentity::new(uuid::Uuid::new_v4(), 27).unwrap();
@@ -263,6 +284,9 @@ impl Harness {
             .unwrap()
             .unwrap();
         Arc::get_mut(&mut runtime).unwrap().network = network.clone();
+        if let Some(tls) = tls {
+            Arc::get_mut(&mut runtime).unwrap().access_tls = tls;
+        }
         let (incoming, receiver) = mpsc::channel(32);
         let cancel = CancellationToken::new();
         let lifecycle = CancellationToken::new();

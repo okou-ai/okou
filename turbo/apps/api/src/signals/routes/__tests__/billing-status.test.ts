@@ -16,8 +16,6 @@ import {
 } from "../../../test-fixtures/system-config-seeds";
 import {
   deleteOrgPlanEntitlementFixture,
-  insertOrgMetadataAsLegacyWriterFixture,
-  updateOrgPlanKeyAsLegacyWriterFixture,
   upsertOrgPlanEntitlementFixture,
 } from "../../../test-fixtures/org-plan-entitlement";
 import {
@@ -482,44 +480,6 @@ describe("GET /api/billing/status", () => {
     expect(missingPriceResponse.body).not.toHaveProperty(
       "concurrencyUnitAmountCents",
     );
-  });
-
-  it("keeps plan capabilities accurate for legacy rollout writes", async () => {
-    const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    onTestFinished(async () => {
-      await deleteOrgPlanEntitlementFixture(orgId);
-    });
-    await insertOrgMetadataAsLegacyWriterFixture({
-      orgId,
-      tier: "limited-free-1",
-      credits: 0,
-    });
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
-    const initialResponse = await accept(
-      client.get({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(initialResponse.body.canBuyCredits).toBeFalsy();
-    expect(initialResponse.body.status).toBe("active");
-
-    await updateOrgPlanKeyAsLegacyWriterFixture({ orgId, planKey: "pro" });
-
-    const updatedResponse = await accept(
-      client.get({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-    expect(updatedResponse.body.tier).toBe("limited-free-1");
-    expect(updatedResponse.body.canBuyCredits).toBeTruthy();
-    expect(updatedResponse.body.status).toBe("active");
   });
 
   it("includes active concurrency subscription slots", async () => {

@@ -495,6 +495,36 @@ test("another user's artifact and unavailable managed dependencies cannot be pub
   expect(catalog.artifacts).toStrictEqual([]);
 });
 
+test.each(["short", "legacy"] as const)(
+  "%s organization share references cannot authorize a public thread snapshot",
+  async (format) => {
+    const f = await fixture();
+    const file = await f.upload();
+    context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
+      id: f.actor.orgId,
+      name: "Owner organization",
+    });
+    const shared = await accept(
+      api()(artifactSharesContract).update({
+        headers: headers(f.actor),
+        body: {
+          target: { kind: "file", id: file.id },
+          audience: "organization",
+        },
+      }),
+      [200],
+    );
+    const url = format === "short" ? shared.body.shortUrl : shared.body.url;
+    const selection = await f.selection(`[Organization report](${url})`);
+    await accept(share(f.actor, selection), [400]);
+    const catalog = await chat.listArtifactCatalog(f.actor, {
+      kind: "shared-thread",
+      chatThreadId: selection.threadId,
+    });
+    expect(catalog.artifacts).toStrictEqual([]);
+  },
+);
+
 test("a partial copy failure leaves no usable share and cleans copied private bytes", async () => {
   const f = await fixture();
   const file = await f.upload();

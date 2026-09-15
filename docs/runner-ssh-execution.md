@@ -281,6 +281,126 @@ cargo test --manifest-path crates/Cargo.toml --profile local -p runner --bin run
 
 ## Authority, trust and destination
 
+### Native Cloudflare Access carrier
+
+#34080 inserts a native rustls/tokio-tungstenite carrier below the shared SSH
+engine for S1's `resolved_access` handoff. Direct hosts still use the original
+TCP stream. Protected hosts require a saved canonical DNS name, port 443 and
+separate bounded Service Token headers; there are no guest-supplied URL, proxy,
+cookie, redirect, browser-login or cloudflared subprocess paths.
+
+#### Protocol references and interoperability baseline
+
+The Access-specific carrier follows Cloudflare's documented Service Token
+authentication and the official open-source cloudflared implementation:
+
+- [Service tokens](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/)
+  documents `CF-Access-Client-Id` / `CF-Access-Client-Secret` headers and the
+  **Service Auth** policy needed for non-interactive authentication.
+- [SSH with client-side cloudflared](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/use-cases/ssh/ssh-cloudflared-authentication/)
+  documents the client-side SSH access model. Okou implements the carrier natively
+  instead of launching the documented client-side executable.
+- [carrier/websocket.go](https://github.com/cloudflare/cloudflared/blob/733bfb939963e150dcf5c4faddb1603f744fbc98/carrier/websocket.go)
+  provides the reference HTTP-to-WebSocket handshake, request headers and stream
+  setup (`createWebsocketStream`, `clientConnect`).
+- [websocket/connection.go](https://github.com/cloudflare/cloudflared/blob/733bfb939963e150dcf5c4faddb1603f744fbc98/websocket/connection.go)
+  provides the byte-stream adapter: `GorillaConn.Write` sends binary messages and
+  `GorillaConn.Read` preserves unread bytes across caller reads. This is the
+  reference for carrying SSH bytes, not a separate SSH protocol.
+
+The source links pin commit `733bfb939963e150dcf5c4faddb1603f744fbc98`, the
+[cloudflared 2026.8.2 release](https://github.com/cloudflare/cloudflared/releases/tag/2026.8.2)
+used for real-provider comparison. Initial research pinned
+`f11dea9cb7079e90a982c1a2d5548ab40847fdcf`; both carrier files are unchanged between
+those revisions. The official Linux amd64 comparison binary's SHA-256 is
+`fcfb02b575a52ca1af2e3267af4e1517bcdeb30ac48c834c69abaed3c0576ad2`.
+
+This is an implementation-derived interoperability baseline, not a claim of a
+separately versioned Access-over-WebSocket specification or a provider guarantee
+of permanent compatibility. Standard TLS, WebSocket and SSH handling use rustls,
+tokio-tungstenite and russh. The saved-recipient restrictions, buffer limits and
+no-login/no-redirect behavior below are Okou's security and resource policies;
+they are not copied as Cloudflare protocol requirements. Recheck upstream changes
+and repeat authorized provider acceptance when changing this baseline.
+
+[Acceptance recorded on 2026-09-15](https://github.com/vm0-ai/vm0/issues/34080#issuecomment-5674394652)
+compares native Runner and the pinned official binary on an authorized endpoint:
+SSH authentication, bidirectional IO across 65 seconds of idle time, invalid-token
+rejection and connection cleanup. It records the native lane's private API and
+public-DNS-answer fixtures; it does not establish deployed-Run, production-DNS or
+full two-hour Session acceptance.
+
+#### Runner transport and lifecycle
+
+The existing network policy validates all DNS answers and selects one public IP.
+TLS verifies the saved hostname using the bundled WebPKI roots and uses that name
+for SNI. It explicitly selects the Runner's existing AWS-LC TLS provider; enabling
+a second rustls provider would make Ably's implicit provider selection ambiguous.
+The WSS upgrade sends the same HTTP Host to `/`. Service Token values
+are sent only after TLS succeeds. A non-101 upgrade or unsolicited extension is
+rejected without inspecting or forwarding provider bodies. The native socket's
+physical-close guard and HostLease remain beneath TLS/WS and detached SSH IO,
+including cancellation during setup, active work and idle eviction.
+
+The upgrade has a 32 KiB read budget within the existing setup deadline. Incoming
+WebSocket frames/messages are limited to 1 MiB, with an initial 16 KiB read buffer
+(the library can grow it within the frame bound). Writes
+accept at most 32 KiB per binary message and have a 64 KiB maximum write buffer.
+The adapter retains at most one incoming message, handles fragmentation and
+ping/pong/close, and bounds empty/control processing per poll. There are no
+separate pump tasks or unbounded carrier queues. Existing SSH keepalives, channel
+limits, two-hour lifetime, Session reads/stdin/PTY and SFTP limits remain intact.
+
+Pool reuse checks both host generation and the transport binding/config generation.
+Run cache ownership and connection-scoped invalidations are unchanged. Token
+rotation evicts the affected bound connections; rename does not. Missed notices
+can still retain cached authority until Run end. No uncertain command, stdin or
+file publication is replayed over another transport.
+
+Guest terminal enums do not change: upgrade/TLS failures are `network_failure`;
+later stream/SSH errors retain existing protocol/disconnect outcomes. Owner
+observations distinguish `access_rejected` (401/403), `access_tls_failure` and
+`access_protocol_failure`, without treating gateway authorization as SSH login.
+Gateway 429/5xx responses and socket IO failures remain `network_failure`, not a
+claim that the token was rejected or that the gateway uses an incompatible protocol.
+Post-authentication command/file failures remain successful connection observations.
+Production log filters suppress raw TLS/WebSocket dependency diagnostics at every
+level, including token-bearing handshake traces and reflected provider errors.
+
+Controlled TLS/WS/SSH peers test the real dispatcher. An authorized Service Auth
+comparison against pinned cloudflared remains a separate required real-provider
+gate; local tests are not evidence of that gate or of production long-session
+reliability. #34081 retains full UI-driven real-Run acceptance and screenshots.
+
+The ignored `ssh::tests::access::live::authorized_provider_exec_idle_session_rejection_and_cleanup`
+test drives the production dispatcher, carrier and SSH engine against an explicitly
+authorized provider. Its API authority response is a fixture, not a deployed Run.
+Set these inputs only for a target and credentials approved for this test:
+
+- `OKOU_TEST_CF_ENV_FILE`: a local file containing `CF_ACCESS_CLIENT_ID` and
+  `CF_ACCESS_CLIENT_SECRET`; values must not be passed in command arguments.
+- `OKOU_TEST_CF_SSH_HOST` and `OKOU_TEST_CF_SSH_USER`: the published gateway name
+  and SSH username.
+- `OKOU_TEST_CF_SSH_KEY_FILE`: an authorized private-key file.
+- `OKOU_TEST_CF_SSH_HOST_KEY`: the independently trusted OpenSSH public host key.
+
+Run the exact test with `cargo test --manifest-path crates/Cargo.toml --profile local
+-p runner --bin runner ssh::tests::access::live::authorized_provider_exec_idle_session_rejection_and_cleanup
+-- --ignored --exact --nocapture`. It verifies exec, pooled reuse, bidirectional
+Session IO across 65 seconds of idle time, EOF, invalid-token rejection, notified
+credential replacement and actual socket shutdown. It neither changes Cloudflare
+configuration nor enables feature switches or writes product data.
+
+Development environments that synthesize non-public proxy addresses can supply
+independently verified current A/AAAA answers through the test-only
+`OKOU_TEST_CF_SSH_DNS_ANSWERS` comma-separated list. All supplied addresses still
+pass the production public-destination policy; TLS/SNI and SSH host-key validation
+remain enabled. Record that resolver fixture in acceptance evidence. Do not use
+this lane to claim production DNS, UI-driven Runs or the full two-hour Session
+allowance have been tested.
+
+### Private authority and host identity
+
 Resolve/pin requests use the host's immutable Runner process identity and exact
 current Run assignment. A token prefix selects official transport only; API
 authentication and winning-claim checks provide the actual authority. Responses

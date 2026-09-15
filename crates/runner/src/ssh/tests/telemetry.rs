@@ -17,6 +17,10 @@ fn production_filter_rejects_raw_dependency_diagnostics_at_every_level_and_sink(
             "russh::keys::format",
             "ssh_key::private",
             "ssh_cipher",
+            "tungstenite::handshake::client",
+            "tokio_tungstenite",
+            "rustls::client",
+            "tokio_rustls",
         ] {
             for level in [
                 log::Level::Error,

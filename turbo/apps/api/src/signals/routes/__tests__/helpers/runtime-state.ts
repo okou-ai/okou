@@ -828,49 +828,6 @@ export async function readChatEventSnapshotHead(
   return response.chat_event_snapshot_head;
 }
 
-export async function insertHostedSiteAsPreviousApi(
-  context: TestContext,
-  args: {
-    readonly userId: string;
-    readonly orgId: string;
-    readonly runId: string;
-    readonly site: string;
-    readonly publicSlug: string;
-  },
-): Promise<string> {
-  const response = await postAction(context, {
-    action: "insert-hosted-site-as-previous-api",
-    user_id: args.userId,
-    org_id: args.orgId,
-    run_id: args.runId,
-    site: args.site,
-    public_slug: args.publicSlug,
-  });
-  if (!response.hosted_site_id) {
-    throw new Error("insertHostedSiteAsPreviousApi missing hosted_site_id");
-  }
-  return response.hosted_site_id;
-}
-
-export async function insertHostedDeploymentAsPreviousApi(
-  context: TestContext,
-  args: {
-    readonly userId: string;
-    readonly orgId: string;
-    readonly runId: string;
-    readonly hostedSiteId: string;
-  },
-): Promise<boolean> {
-  const response = await postAction(context, {
-    action: "insert-hosted-deployment-as-previous-api",
-    user_id: args.userId,
-    org_id: args.orgId,
-    run_id: args.runId,
-    hosted_site_id: args.hostedSiteId,
-  });
-  return response.hosted_deployment_scope_blocked ?? false;
-}
-
 export async function clearRunApiStart(
   context: TestContext,
   runId: string,

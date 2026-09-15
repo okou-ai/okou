@@ -5618,6 +5618,10 @@ test("Upload a supplementary workflow file", async () => {
 
 test("Load workflow authors only after a title tooltip opens and reuse on reopen", async () => {
   const user = userEvent.setup();
+  vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(true);
+  vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(
+    24,
+  );
   mockWorkflowApis([salesResearch()]);
   const response = context.mocks.deferred<void>();
   let requests = 0;
@@ -5642,13 +5646,24 @@ test("Load workflow authors only after a title tooltip opens and reuse on reopen
   expect(within(tooltip).getByText("Created by")).toBeInTheDocument();
   expect(within(tooltip).getByText("Runs as")).toBeInTheDocument();
   expect(within(tooltip).getByText("Sales Research")).toBeInTheDocument();
+  expect(
+    within(tooltip).getByText("Collects account context before outreach."),
+  ).toBeInTheDocument();
   await expect(
     within(tooltip).findByText("Loading author…"),
   ).resolves.toBeInTheDocument();
+  expect(within(tooltip).getByRole("status")).toHaveAttribute(
+    "aria-busy",
+    "true",
+  );
   response.resolve();
   await expect(
     within(tooltip).findByText("Lazy Author"),
   ).resolves.toBeInTheDocument();
+  expect(within(tooltip).getByRole("status")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
   expect(
     within(tooltip).getByRole("img", { name: "Lazy Author" }),
   ).toHaveAttribute("src", "https://example.com/lazy-author.png");
@@ -5666,11 +5681,16 @@ test("Load workflow authors only after a title tooltip opens and reuse on reopen
 test("Load detail author on keyboard focus without delaying the detail page", async () => {
   const user = userEvent.setup();
   mockWorkflowApis([salesResearch()]);
+  const response = context.mocks.deferred<void>();
   let requests = 0;
-  context.mocks.api(workflowsDetailContract.ownerProfile, ({ respond }) => {
-    requests += 1;
-    return respond(200, { displayName: "Keyboard Author", imageUrl: null });
-  });
+  context.mocks.api(
+    workflowsDetailContract.ownerProfile,
+    async ({ respond }) => {
+      requests += 1;
+      await response.promise;
+      return respond(200, { displayName: "Keyboard Author", imageUrl: null });
+    },
+  );
   await setupPage({
     context,
     path: `/workflows/${SALES_WORKFLOW_ID}/automations`,
@@ -5683,6 +5703,19 @@ test("Load detail author on keyboard focus without delaying the detail page", as
   await user.keyboard("{Tab}");
   screen.getByRole("heading", { name: "Sales Research" }).focus();
   const tooltip = await screen.findByRole("tooltip");
+  await expect(
+    within(tooltip).findByText("Loading author…"),
+  ).resolves.toBeInTheDocument();
+  expect(within(tooltip).getByRole("status")).toHaveAttribute(
+    "aria-busy",
+    "true",
+  );
+  expect(within(tooltip).getByText("Sales Research")).toBeInTheDocument();
+  expect(
+    within(tooltip).getByText("Collects account context before outreach."),
+  ).toBeInTheDocument();
+  expect(within(tooltip).getByText("Runs as")).toBeInTheDocument();
+  response.resolve();
   await expect(
     within(tooltip).findByText("Keyboard Author"),
   ).resolves.toBeInTheDocument();

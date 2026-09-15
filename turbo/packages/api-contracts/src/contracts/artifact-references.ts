@@ -3,7 +3,20 @@ import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const REFERENCE_PATH =
-  /^\/artifacts\/([a-f0-9]{32})(\.[a-z0-9]{1,12})?(#[^\s]*)?$/u;
+  /^\/artifacts\/([a-f0-9]{32}|[a-z0-9]{10})(\.[a-z0-9]{1,12})?(#[^\s]*)?$/u;
+
+export function artifactShareReferencePath(
+  reference: string,
+  filename: string,
+): string {
+  const hash = z
+    .string()
+    .regex(/^[a-z0-9]{10}$/u)
+    .parse(reference);
+  const extension =
+    filename.toLowerCase().match(/\.[a-z0-9]{1,12}$/u)?.[0] ?? "";
+  return `/artifacts/${hash}${extension}`;
+}
 
 export function artifactReferencePath(id: string, filename?: string): string {
   const hash = z.uuid().parse(id).replaceAll("-", "").toLowerCase();
@@ -30,6 +43,14 @@ export function parseArtifactReference(value: string, appOrigin?: string) {
   const match = REFERENCE_PATH.exec(path);
   if (!match?.[1]) return null;
   const hash = match[1];
+  if (hash.length === 10) {
+    return {
+      id: null,
+      hash,
+      extension: match[2] ?? "",
+      fragment: match[3] ?? "",
+    };
+  }
   const id = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-${hash.slice(12, 16)}-${hash.slice(16, 20)}-${hash.slice(20)}`;
   if (!z.uuid().safeParse(id).success) return null;
   return { id, hash, extension: match[2] ?? "", fragment: match[3] ?? "" };
@@ -47,7 +68,9 @@ export const artifactReferencesContract = c.router({
     path: "/api/artifact-references/:reference",
     headers: authHeadersSchema,
     pathParams: z.object({
-      reference: z.string().regex(/^[a-f0-9]{32}(?:\.[a-z0-9]{1,12})?$/u),
+      reference: z
+        .string()
+        .regex(/^(?:[a-f0-9]{32}|[a-z0-9]{10})(?:\.[a-z0-9]{1,12})?$/u),
     }),
     responses: {
       200: z.object({
