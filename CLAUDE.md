@@ -35,7 +35,7 @@ Use [the documentation index](docs/docs.md) to select relevant guidance.
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
 | Tests or test failures                     | [Testing](docs/testing.md), then the matching application guide                                             |
 | React, signals, async ownership            | [ccstate](.claude/skills/ccstate/SKILL.md), [effects](docs/effect.md), [cache](docs/cache.md) as applicable |
-| App or shared UI styling                   | [Styles](docs/styles.md)                                                                                    |
+| App or shared UI styling                   | [Styles and integrated visual verification](docs/styles.md)                                                 |
 | Database schema or queries                 | [Database development](.claude/skills/database-development/SKILL.md)                                        |
 | New user-facing features or switch changes | [Feature switches](.claude/skills/feature-switch/SKILL.md)                                                  |
 | CLI commands                               | [CLI design](.claude/skills/cli-design/SKILL.md)                                                            |

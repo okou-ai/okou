@@ -4,6 +4,42 @@ The App design system has one component-facing styling API: Tailwind utilities. 
 
 First-party CSS class selectors are not a second component API. New CSS modules, `<style>` elements, runtime stylesheet injection, and CSS-in-JS are subject to the same boundary because they otherwise bypass Tailwind and the token system.
 
+## Verify the integrated UI
+
+An approved standalone artifact is the visual reference. Verify its implementation
+in the real App with the shared components and compiled styles before reporting
+the visual change as verified. Keep the artifact URL or supplied screenshot with
+the task so the comparison uses the agreed design.
+
+- Read the shared component's variants and the classes produced by `cn()` before
+  adapting its layout. For example, `ToggleButton`'s `tile` layout includes
+  `w-full`; moving its parent from a grid to wrapping flex does not make the
+  buttons compact. Check selected and resting branches separately so caller
+  classes do not erase the component's selected border and background.
+- Use the actual App Preview URL reported by the PR deployment, and record the
+  deployed commit. Compare the affected view with the reference at the same
+  viewport, theme, feature switches, and interaction state. Include a narrow
+  viewport when wrapping or overflow is affected, and affected theme variants
+  when colors or selected states change.
+- Exercise the relevant controls in the real browser. Check their rendered
+  geometry, wrapping, clipping, and selected/hover/focus states as applicable;
+  capture the affected view and use computed styles or element bounds to explain
+  a discrepancy. Allow fonts and required assets to load before comparing.
+- Keep page tests for behavior. The App's `happy-dom` tests do not perform browser
+  layout, so passing assertions about labels, `aria-pressed`, or class names
+  cannot verify widths, alignment, or visible selected-state contrast. Do not
+  replace browser evidence with hard-coded geometry in those tests.
+- Include the reference, Preview URL, deployed commit, checked states, and key
+  screenshots in the verification handoff. Repeat affected visual checks after
+  subsequent changes to the implementation, shared styles, or merge resolution.
+  If Preview access or deployment is blocked, report the blocker and leave visual
+  verification pending. A verified Preview also remains distinct from a verified
+  production release.
+
+Use the PR pipeline for builds and tests when local servers or full test runs are
+outside the task's authorization. These instructions define the visual
+verification procedure; they do not add an automated visual CI gate.
+
 ## Final state
 
 The final goal is zero first-party CSS class selectors for business styling, including all existing selectors. Preventing growth is an interim guardrail, not completion of this goal.
