@@ -6479,12 +6479,12 @@ function UserMessageFeedbackGroup({
             {showDivider ? (
               <div
                 data-structured-feedback-divider=""
-                className="border-t border-border"
+                className="border-t border-border-on-fill"
               />
             ) : null}
             <blockquote
               data-structured-feedback-quote=""
-              className="border-l-2 border-border pl-3 text-muted-foreground"
+              className="border-l-2 border-border-on-fill pl-3 text-muted-foreground"
             >
               {renderPart.part.quote}
             </blockquote>
