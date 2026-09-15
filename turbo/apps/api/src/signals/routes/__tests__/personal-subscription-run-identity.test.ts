@@ -3163,30 +3163,38 @@ describe("member-effective model policy contract", () => {
     await runs.requestCancelRun(f.actor, sent.body.runId, [200]);
   });
 
-  it("does not manufacture an organization API for an unconverted member policy", async () => {
-    const f = await fixture("claude-code-oauth-token");
-    await support.deletePersonalModelProvider(f.actor, f.type, [204]);
-    const sent = await createChatFilesBddApi(context).requestSendEvent(
-      f.actor,
-      {
-        agentId: f.agentId,
-        model: f.model,
-        prompt: "legacy policy requires my subscription",
-      },
-      [409],
-    );
-    expect(sent.status).toBe(409);
-    expect(sent.body).toMatchObject({
-      error: { message: expect.stringContaining("subscription") },
-    });
-    const policies = await createMiscRoutesApi(context).listModelPolicies(
-      f.actor,
-    );
-    expect(policies.policies[0]).toMatchObject({
-      defaultProviderType: f.type,
-      credentialScope: "member",
-    });
-  });
+  it.each([
+    ["claude-code-oauth-token", true],
+    ["claude-code-oauth-token", false],
+    ["codex-oauth-token", true],
+    ["codex-oauth-token", false],
+  ] as const)(
+    "requires the configured %s subscription with priority %s",
+    async (type, priority) => {
+      const f = await fixture(type, false, priority);
+      await support.deletePersonalModelProvider(f.actor, f.type, [204]);
+      const sent = await createChatFilesBddApi(context).requestSendEvent(
+        f.actor,
+        {
+          agentId: f.agentId,
+          model: f.model,
+          prompt: "organization policy requires my subscription",
+        },
+        [409],
+      );
+      expect(sent.status).toBe(409);
+      expect(sent.body).toMatchObject({
+        error: { message: expect.stringContaining("subscription") },
+      });
+      const policies = await createMiscRoutesApi(context).listModelPolicies(
+        f.actor,
+      );
+      expect(policies.policies[0]).toMatchObject({
+        defaultProviderType: f.type,
+        credentialScope: "member",
+      });
+    },
+  );
 });
 
 describe("personal effective provider entitlement", () => {

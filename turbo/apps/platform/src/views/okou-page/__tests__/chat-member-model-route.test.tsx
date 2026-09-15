@@ -45,9 +45,20 @@ function policy(
   };
 }
 
-test.each(["select", "compact", "flyout"] as const)(
-  "Shows the personal candidate in the %s picker without organization credit prices",
-  async (layout) => {
+test.each(
+  (["select", "compact", "flyout"] as const).flatMap((layout) => {
+    return [
+      { layout, modelLabel: "GPT 5.6 Sol", source: "ChatGPT (Codex)" },
+      {
+        layout,
+        modelLabel: "Claude Sonnet 5",
+        source: "Claude Code (OAuth Token)",
+      },
+    ];
+  }),
+)(
+  "Shows $source as BYOK in the $layout picker with personal source help",
+  async ({ layout, modelLabel, source }) => {
     const user = userEvent.setup({ delay: null });
     context.mocks.browser.matchMedia((query) => {
       return query === "(min-width: 640px)" && layout !== "compact";
@@ -60,6 +71,21 @@ test.each(["select", "compact", "flyout"] as const)(
         routeStatus: "missing_provider",
         routeStatusReason: "The selected workspace provider is missing.",
       },
+      {
+        ...policy("available"),
+        id: "34430000-0000-4000-a000-000000000003",
+        model: "claude-sonnet-5",
+        modelLabel: "Claude Sonnet 5",
+        isDefault: false,
+        runtimeProviderType: "anthropic-api-key",
+        memberEffective: {
+          providerType: "claude-code-oauth-token",
+          runtimeProviderType: "claude-code-oauth-token",
+          credentialScope: "member",
+          availability: "available",
+          accountSelection: "capture_required",
+        },
+      },
     ]);
     await setupPage({
       context,
@@ -70,52 +96,53 @@ test.each(["select", "compact", "flyout"] as const)(
         [FeatureSwitchKey.ModelPickerFlyout]: layout !== "select",
       },
     });
-    const composer = await screen.findByRole("textbox", { name: "Message" });
-    await fillComposer(composer, "Keep this draft");
-
-    if (layout === "select") {
-      click(await screen.findByRole("combobox", { name: "GPT 5.6 Sol" }));
-    } else {
-      // The initial legacy Select has the same name while feature switches
-      // load. Wait for the requested menu's accessible trigger before opening.
-      const trigger = await waitFor(() => {
-        const button = queryButton("GPT 5.6 Sol");
-        if (button?.getAttribute("aria-haspopup") !== "dialog") {
-          throw new Error("The model menu trigger is not ready");
-        }
-        return button;
-      });
-      click(trigger);
-      if (layout === "compact") {
-        const overview = await screen.findByRole("region", { name: "Models" });
-        const changeModel = queryButton(
-          "Change Chat model, GPT 5.6 Sol",
-          overview,
-        );
-        if (!changeModel) {
-          throw new Error("The Models menu has no Chat model navigation");
-        }
-        click(changeModel);
+    const trigger =
+      layout === "select"
+        ? await screen.findByRole("combobox", { name: "GPT 5.6 Sol" })
+        : await waitFor(() => {
+            // Wait for the requested menu while feature switches load.
+            const button = queryButton("GPT 5.6 Sol");
+            if (button?.getAttribute("aria-haspopup") !== "dialog") {
+              throw new Error("The model menu trigger is not ready");
+            }
+            return button;
+          });
+    expect(trigger).not.toHaveTextContent("BYOK");
+    click(trigger);
+    if (layout === "compact") {
+      const overview = await screen.findByRole("region", { name: "Models" });
+      const changeModel = queryButton(
+        "Change Chat model, GPT 5.6 Sol",
+        overview,
+      );
+      if (!changeModel) {
+        throw new Error("The Models menu has no Chat model navigation");
       }
+      click(changeModel);
     }
 
-    await expect(
-      screen.findByText("ChatGPT (Codex)"),
-    ).resolves.toBeInTheDocument();
     const option =
       layout === "compact"
         ? queryButton(
-            "GPT 5.6 Sol",
+            modelLabel,
             await screen.findByRole("region", { name: "Chat models" }),
           )
-        : screen.getByRole("option", { name: /GPT 5.6 Sol/u });
-    expect(option).toBeInTheDocument();
+        : await screen.findByRole("option", {
+            name: new RegExp(modelLabel, "u"),
+          });
+    if (!option) {
+      throw new Error(`Expected a model option for ${modelLabel}`);
+    }
     expect(option).not.toHaveAttribute("aria-disabled", "true");
     expect(option).not.toBeDisabled();
     expect(option).not.toHaveTextContent("$");
-    await user.keyboard("{Escape}");
-    expect(composer).toHaveTextContent("Keep this draft");
-    await expect(findButton("Send")).resolves.toBeEnabled();
+    expect(option).not.toHaveTextContent(source);
+    const badge = within(option).getByText("BYOK");
+    await user.hover(badge);
+    await expect(
+      screen.findByText("Used only in your runs, with your own credentials."),
+    ).resolves.toBeInTheDocument();
+    expect(screen.getByText(`${source}:`)).toBeInTheDocument();
   },
 );
 

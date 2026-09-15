@@ -337,7 +337,7 @@ export async function resolveEffectivePolicyRoute(params: {
     return null;
   }
   const { providerType, credentialScope } = parsePolicyRoute(policy);
-  // Legacy member policies remain their original subscription route until D.
+  // Organization Subscription policies keep their required member route under either switch state.
   // A missing nullable org FK is configuration loss, not malformed structure.
   if (params.member.priorityEnabled && credentialScope === "org") {
     const supported = getProvidersForModel(policy.model);

@@ -1,10 +1,10 @@
 # Personal subscription run identity
 
-This document covers the #34012 identity foundation, its #34098/#34111/#34164 repairs, and #34197 effective member routing for #34010. Subscription protocols, model catalogs, pricing, and account UI availability remain unchanged.
+This document covers the #34012 identity foundation, its #34098/#34111/#34164 repairs, #34197 effective member routing, C launch consumers, and the September 16 correction (#34430) for #34010. Subscription protocols, model catalogs, pricing, and account UI availability remain unchanged.
 
 ## Effective member routing (B)
 
-With the existing organization-scoped `PersonalSubscriptionPriority` enabled, a new member run uses a supported personal Claude/Codex subscription before the API configured for its allowed logical model. The switch remains configured off, including staff; account UI availability is independent. Organization model restrictions, active entitlement and the effective provider's BYOK permission still apply. A permitted subscription needs no organization model credits. Other tools and generation keep their independent billing.
+With the existing organization-scoped `PersonalSubscriptionPriority` enabled, a new member run uses a supported personal Claude/Codex subscription before the API configured for its allowed logical model. The switch keeps `enabled: false` with the existing `STAFF_ORG_ID_HASHES` allowlist: staff workspaces default on and external workspaces default off. Explicit organization overrides under `__org__` still win; individual overrides cannot bypass its organization scope. Account UI availability (`_multipleSubscriptions`) remains independent. Organization model restrictions, active entitlement and the effective provider's BYOK permission still apply. A permitted subscription needs no organization model credits. Other tools and generation keep their independent billing.
 
 `effective-model-route.service.ts` is the shared database-only leaf for model selection and the optional member projection. It validates logical model and policy structure, then chooses a logical personal candidate or the configured organization route. Missing nullable custom provider/surface references and mappings matter only when that organization route is selected. Unknown discriminators and contradictory policy structure remain errors. A chosen personal route never returns null because of subscription failure, so persisted-model reconciliation cannot turn reconnect, refresh, quota, KMS or provider errors into another model or paid API.
 
@@ -16,7 +16,7 @@ Effective provider selection precedes executor, session and model credit/billing
 
 The policy response optionally adds `memberEffective` with `providerType`, `runtimeProviderType`, `credentialScope`, `availability` (`available`, `reconnect_required`, `unavailable`, or `plan_restricted`) and `accountSelection` (`capture_required` or `not_applicable`). Availability is local metadata, not a live provider health or quota check. Personal candidates require capture and carry no account ID or credentials. The field is omitted while priority is off. Existing administrative provider/runtime/scope/IDs/route status/default fields retain their meaning in GET and PUT; request schemas and persisted thread fields do not change. C owns client adoption of this additive response and its optional-field handling.
 
-Legacy member/OAuth policies retain their subscription route and missing-connection guidance until D; B never invents an organization API for them. Genuine absence or catalog non-support uses only an already configured organization API. The historical mirror bridge remains tied to real independently deployed writers and admitted contexts, not to B's gated response shape. #34010 owns the serving-writer drain, historical-context drain, executable rollback floor, D conversion and eventual E cleanup. This slice has no migration/backfill, rollout activation or production acceptance; R1 and subsequent release gates remain with the controller.
+Organization Subscription policies retain their required subscription route and missing-connection guidance under either switch state; they never acquire an organization API because a subscription is absent or fails. Genuine absence or catalog non-support uses only an already configured organization API. The historical mirror bridge remains tied to real independently deployed writers and admitted contexts, not to B's gated response shape. #34010 owns the actual serving-writer, historical-context and executable rollback prerequisites. The former D policy conversion and mandatory E cleanup are cancelled for all organizations; supported Subscription routes and the retained switch are not cleanup targets. This slice has no migration/backfill, rollout activation or production acceptance; R1 and subsequent release gates remain with the controller.
 
 ## Launch consumers and policy writes (C)
 
@@ -24,8 +24,11 @@ Member UI and CLI consumers read the optional `memberEffective` projection
 through a separate member adapter. Administrative routing remains unchanged.
 The projection describes a local logical candidate, never a captured account
 or live quota guarantee. Missing projection fields retain the old API/OFF
-interpretation, including missing credentials on an unconverted Subscription
-policy. Failed refreshes retain the last resolved choices and the user's draft,
+interpretation, including missing credentials on an organization Subscription
+policy. Expanded model menus use the short **BYOK** badge for Claude/Codex
+personal routes in select, compact and flyout layouts; the tooltip retains the
+provider source and own-credentials help. The closed button and Fast guidance
+keep their existing presentation. Failed refreshes retain the last resolved choices and the user's draft,
 selected model, effort, and Fast preference.
 
 Authenticated user/org `modelPoliciesChanged` notices invalidate only the
@@ -37,9 +40,10 @@ Policy GET returns an opaque `revision` over the persisted administrative rows,
 independently of the requesting member. Settings submit that revision with the
 array they actually read. Priority-enabled PUT rejects missing or stale
 preconditions with a refresh/upgrade conflict before lazy seed/default repair
-or policy/preference changes. Unchanged legacy Subscription rows may be saved;
-new or resurrected member routes are rejected. A current admin may still
-intentionally edit, remove, or replace a route. The API-key-create flow reads a
+or policy/preference changes. With a current revision, an eligible admin can
+add a Subscription route, change an API route to Subscription, or edit an
+existing Subscription choice. Provider choices remain independent of the
+precondition requirement, with model/plan/provider validation unchanged. The API-key-create flow reads a
 fresh policy snapshot before constructing its subsequent conditional write.
 
 Replacement and seed/default repair share an organization-local transaction
@@ -53,9 +57,12 @@ not enable Priority for those callers or change Actions definitions.
 
 The canonical rollback resolver requires accepted B merge
 `8a5e1299b4d26bd114ccec017b84b7a83fb4a164` in addition to all prior floors and
-artifact checks. Before D converts policies, the controller must raise that
-floor to the then-known accepted C merge and close the serving-writer exposure
-window under R1. C neither converts stored policy rows nor activates Priority.
+artifact checks. The correction retains this executable floor and the actual
+credential writer/context compatibility gates. Cancellation of policy
+conversion creates no new conversion-specific floor or migration. No saved
+policy, model default, member preference or connection is rewritten by switch
+evaluation or the change to its default audience. The controller owns separate
+release and production acceptance.
 
 ## Binding and credential ownership
 
@@ -375,7 +382,8 @@ A/A followed by B/B after replacement, unchanged OAuth request counts, terminal
 refresh rejection, cancellation and membership revocation, session disposal and
 absence of output artifacts/Built-in usage on rejection. Priority-off deletion
 remains destructive. This repair changes no persisted shape, protocol, routing
-policy or feature configuration; priority remains default-off including staff.
+policy or feature configuration. Priority was default-off including staff at
+A3; #34430 changes only its default audience as described above.
 
 ## Pi API inference without Sandbox admission (#34242)
 
